@@ -1,9 +1,10 @@
 import { cva } from 'class-variance-authority';
-import { useEffect, useReducer, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useReducer, useRef, useState, type ReactNode } from 'react';
 
 import { Button } from './Button.tsx';
 import { Collapse } from './Collapse.tsx';
 import { Key } from './Key.tsx';
+import { DetailsText } from './Problem.tsx';
 
 const icon = cva('flex-none', {
   variants: {
@@ -74,6 +75,11 @@ export interface ToastProps {
   actions?: ReactNode;
   /** The one thing to do about a one-line toast, at its end. */
   action?: ToastAction | undefined;
+  /**
+   * What came back with a failure that nothing in view could hold, as it came, behind a Details
+   * button under the line, with Copy.
+   */
+  details?: string | undefined;
 }
 
 const more = cva('col-start-2 min-w-0 wrap-anywhere text-fg-muted text-small', {
@@ -86,7 +92,9 @@ const more = cva('col-start-2 min-w-0 wrap-anywhere text-fg-muted text-small', {
  * such as an update, may add a body and buttons. Not for an error that needs action, which is a
  * `Problem` in place, and not for what already shows where the reader is looking.
  */
-export function Toast({ tone, icon: mark, title, body, actions, action }: ToastProps) {
+export function Toast({ tone, icon: mark, title, body, actions, action, details }: ToastProps) {
+  const [detailed, setDetailed] = useState(false);
+  const detailsId = useId();
   return (
     <div className="grid w-toast-w toast items-start rounded-md bg-bg-overlay text-fg shadow-pop text-ui">
       <span className={icon({ tone })}>{mark ?? ICONS[tone]}</span>
@@ -101,6 +109,20 @@ export function Toast({ tone, icon: mark, title, body, actions, action }: ToastP
         <div className={more({ plain: typeof body === 'string' })}>{body}</div>
       )}
       {actions !== undefined && <div className="col-start-2 mt-8 flex gap-6">{actions}</div>}
+      {details !== undefined && (
+        <div className="col-start-2 col-end-4 min-w-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-expanded={detailed}
+            aria-controls={detailsId}
+            onClick={() => setDetailed((was) => !was)}
+          >
+            Details
+          </Button>
+          <DetailsText id={detailsId} open={detailed} details={details} gap={false} />
+        </div>
+      )}
     </div>
   );
 }
@@ -149,6 +171,8 @@ export interface StackedToast {
   /** The result, in a few words: "Merged #264". */
   readonly title: ReactNode;
   readonly action?: ToastAction | undefined;
+  /** What came back with a failure, behind Details: see `ToastProps.details`. */
+  readonly details?: string | undefined;
 }
 
 export interface ToastStackProps {
@@ -219,7 +243,12 @@ export function ToastStack({ toasts, onDismiss, waiting }: ToastStackProps) {
             }}
           >
             <Timed id={toast.id} times={shown.current.get(toast.id)?.times ?? 1} onDone={dismiss}>
-              <Toast tone={toast.tone} title={toast.title} action={toast.action} />
+              <Toast
+                tone={toast.tone}
+                title={toast.title}
+                action={toast.action}
+                details={toast.details}
+              />
             </Timed>
           </Collapse>
         ))}

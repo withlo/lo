@@ -44,7 +44,6 @@ const restricted: Extract<Preview, { kind: 'blocked' }> = {
     ],
     openAnyway: false,
   },
-  details: null,
 };
 
 /** The restricted pull request, blocked for `why`. */
@@ -157,6 +156,8 @@ describe('the open box', () => {
     expect(enterAction(holding(E2E, pull))).toBe('Open');
     expect(enterAction(holding(E2E, ask))).toBe('Open as a');
     expect(enterAction(holding(E2E, ask, 'b'))).toBe('Open as b');
+    // A login highlighted for an earlier link that this one doesn't offer isn't who it opens as.
+    expect(enterAction(holding(E2E, ask, 'c'))).toBe('Open as a');
     expect(enterAction(holding(E2E, web(true)))).toBe('Open on GitHub');
     expect(
       enterAction(holding(E2E, { kind: 'web', url: E2E, github: false, page: null, secure: true })),
@@ -183,6 +184,19 @@ describe('the open box', () => {
         ),
       ),
     ).toBe('Sign in again');
+    expect(
+      enterAction(
+        holding(
+          E2E,
+          refused({
+            kind: 'refused',
+            cause: { kind: 'unreadable', login: 'rozed-bot' },
+            links: [],
+            openAnyway: false,
+          }),
+        ),
+      ),
+    ).toBe('Try again');
     expect(enterAction(holding(E2E, refused({ kind: 'hidden', signedIn: false })))).toBe(
       'Sign in with GitHub…',
     );
@@ -206,6 +220,28 @@ describe('the open box', () => {
       ['tab.openExternal', { url: 'https://github.com/settings/connections/applications/x' }],
     ]);
     expect(bridge.calls.some(([channel]) => channel === 'open.open')).toBe(false);
+  });
+
+  it('looks a link up again on ⏎ when its account’s sign-in couldn’t be read', async () => {
+    const unreadable = refused({
+      kind: 'refused',
+      cause: { kind: 'unreadable', login: 'rozed-bot' },
+      links: [],
+      openAnyway: false,
+    });
+    const looks: Preview[] = [unreadable, pull];
+    answering({ 'open.look': () => looks.shift() });
+    openBox(E2E);
+    await settle();
+    expect(currentPreview()).toEqual(unreadable);
+    submit();
+    await settle();
+    expect(bridge.calls).toEqual([
+      ['open.look', { text: E2E }],
+      ['open.look', { text: E2E }],
+    ]);
+    expect(currentPreview()).toEqual(pull);
+    expect(boxStore.getState().open).toBe(true);
   });
 
   it('copies a plain http link on ⏎, and hands it to nothing', async () => {

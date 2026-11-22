@@ -50,17 +50,25 @@ export function folderOf(path: string): string {
   return path.slice(0, path.lastIndexOf('/'));
 }
 
-/** Says how an install a command asked for went, in a note: there's no row in view to say it. */
-function tell(done: Installed | undefined): void {
+/**
+ * Says how an install a command asked for went, in a note: there's no row in view to say it. A
+ * failure keeps what main or the system said behind Details: the path, and why it failed.
+ */
+function tell(done: Installed | undefined, details?: string): void {
   if (done === undefined) {
-    notify(NOT_INSTALLED, '');
+    notify(NOT_INSTALLED, '', undefined, details);
   } else if (done.kind === 'installed') {
     announce(
       'Installed `lo` command',
       done.onPath ? '' : `Add \`${folderOf(done.path)}\` to \`PATH\`.`,
     );
   } else {
-    notify(NOT_INSTALLED, notInstalledReason(done));
+    notify(
+      NOT_INSTALLED,
+      notInstalledReason(done),
+      undefined,
+      done.kind === 'taken' ? done.path : done.details,
+    );
   }
 }
 
@@ -82,7 +90,7 @@ export async function installCommand(
   } catch (error) {
     console.error("Lo couldn't install the lo command:", error);
     commandStore.setState({ done: from === 'row' ? undefined : null });
-    if (from === 'command') tell(undefined);
+    if (from === 'command') tell(undefined, error instanceof Error ? error.message : undefined);
     return undefined;
   } finally {
     commandStore.setState({ installing: false });

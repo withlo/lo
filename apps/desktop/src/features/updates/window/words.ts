@@ -3,6 +3,7 @@
 
 import { formatBytes } from '@lo/ui';
 
+import { explain } from '../../../window/explain.ts';
 import type { Failure } from '../contract.ts';
 
 /** What names a build beside its version: built from source, or the commit a packaged Lo was. */
@@ -47,15 +48,16 @@ export function downloadingText(version: string, received: number, total: number
   return far === undefined ? `Downloading Lo ${version}…` : `Downloading Lo ${version} · ${far}`;
 }
 
-/** Why a check or a download failed, as an error's reason: nothing where it isn't known. */
+/**
+ * Why a check or a download failed, as an error's reason: the guide's cause for GitHub's part,
+ * else the update's own, and nothing where it isn't known.
+ */
 export function failureReason(why: Failure): string | undefined {
   switch (why) {
     case 'offline':
-      return 'Offline.';
     case 'timeout':
-      return 'GitHub didn’t respond.';
     case 'github':
-      return 'GitHub returned an error.';
+      return explain({ kind: why });
     case 'noDownload':
       return 'The update has no download for this computer.';
     case 'damaged':

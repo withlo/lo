@@ -27,9 +27,15 @@ export function main(): Client<typeof contract> {
   return connected;
 }
 
+/** What main or the system said went wrong, as it came, for Details. */
+function said(error: unknown): string | undefined {
+  return error instanceof Error ? error.message : undefined;
+}
+
 /**
  * Runs `request`, and says why it didn't happen: main's reason alone, where main refused it as not
- * applying now, or else `title`, what failed.
+ * applying now, or else `title`, what failed, with main's words behind Details. Run from a toast
+ * that has gone, or from the menu, nothing in view holds the failure, so a note does.
  */
 async function asking(title: string, request: () => Promise<void>): Promise<void> {
   try {
@@ -37,7 +43,7 @@ async function asking(title: string, request: () => Promise<void>): Promise<void
   } catch (error) {
     console.error(`${title}:`, error);
     if (error instanceof IpcError && error.code === 'unavailable') refuse(error.message);
-    else notify(title, '');
+    else notify(title, '', undefined, said(error));
   }
 }
 
@@ -69,6 +75,7 @@ function tell(answer: CheckAnswer): void {
         checkFailedTitle(answer.why),
         failureReason(answer.why) ?? '',
         checkWay(answer.why, 'command'),
+        answer.details,
       );
       return;
     case 'available':
@@ -119,8 +126,11 @@ export async function check(from: 'command' | 'settings' = 'command'): Promise<v
     if (from === 'command') tell(answer);
   } catch (error) {
     console.error("Lo couldn't check for updates:", error);
-    if (from === 'settings') updatesStore.setState({ failed: { why: 'unknown' } });
-    else tell({ status: 'failed', why: 'unknown' });
+    const details = said(error);
+    const failed =
+      details === undefined ? { why: 'unknown' as const } : { why: 'unknown' as const, details };
+    if (from === 'settings') updatesStore.setState({ failed });
+    else tell({ status: 'failed', ...failed });
   } finally {
     setChecking(false);
     // Lo may have been moved since it last said, and the answer may have taken an offer back.

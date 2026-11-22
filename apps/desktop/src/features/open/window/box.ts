@@ -79,7 +79,10 @@ function lookUp(text: string): void {
     .look({ text })
     .then(
       (preview) => {
-        if (boxStore.getState().text === text) boxStore.setState({ preview, lookedAt: text });
+        // The row the keys were on was the last preview's.
+        if (boxStore.getState().text === text) {
+          boxStore.setState({ preview, lookedAt: text, highlighted: undefined });
+        }
       },
       (error: unknown) => {
         console.error("Lo couldn't look the link up:", error);
@@ -215,9 +218,13 @@ export function enterAction(state: BoxState = boxStore.getState()): string | und
     case 'empty':
     case 'invalid':
       return undefined;
-    case 'pull':
+    case 'pull': {
       if (preview.as.kind !== 'ask') return 'Open';
-      return `Open as ${state.highlighted ?? preview.as.logins[0] ?? ''}`;
+      // Only a row of this preview's: one the keys were on before belonged to another.
+      const { logins } = preview.as;
+      const on = state.highlighted;
+      return `Open as ${on !== undefined && logins.includes(on) ? on : (logins[0] ?? '')}`;
+    }
     case 'web':
       return webWords(preview).action;
     case 'blocked': {
@@ -277,6 +284,11 @@ export function takeWay(way: BlockedWay, text: string): void {
       return;
     case 'signIn':
       addAccount();
+      return;
+    case 'retry':
+      // Looked up again from nothing, so the wait shows while it goes.
+      boxStore.setState({ lookedAt: undefined });
+      lookUp(text);
       return;
     default:
       throw new Error(`A way on Lo doesn't know: ${JSON.stringify(way satisfies never)}`);

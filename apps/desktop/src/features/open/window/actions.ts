@@ -41,9 +41,9 @@ export function said(title: string, done: Opened): void {
   else notify(title, refusalReason(done.why) ?? '');
 }
 
-/** What main said went wrong, as it came, when it said. */
-function details(error: unknown): string {
-  return error instanceof IpcError ? error.message : '';
+/** What main said went wrong, as it came, when it said, for Details. */
+function details(error: unknown): string | undefined {
+  return error instanceof IpcError ? error.message : undefined;
 }
 
 /** Opens `row`, or the one chosen: with its account while it can see the repository. */
@@ -59,7 +59,7 @@ export async function openRow(row?: RecentPull): Promise<void> {
     said(title, await main().open({ text: rowLink(opening), login: opening.login }));
   } catch (error) {
     console.error("Lo couldn't open the pull request:", error);
-    notify(title, details(error));
+    notify(title, '', undefined, details(error));
   }
 }
 
@@ -72,7 +72,7 @@ export async function followLink(url: string): Promise<void> {
     said('Couldn’t open the link', await main().open({ text: url }));
   } catch (error) {
     console.error("Lo couldn't open the link:", error);
-    notify('Couldn’t open the link', details(error));
+    notify('Couldn’t open the link', '', undefined, details(error));
   }
 }
 
@@ -87,7 +87,7 @@ export async function pasteLink(): Promise<void> {
     said('Couldn’t open the link', await main().open({ text: link }));
   } catch (error) {
     console.error("Lo couldn't open the link on the clipboard:", error);
-    notify('Couldn’t open the link', details(error));
+    notify('Couldn’t open the link', '', undefined, details(error));
   }
 }
 

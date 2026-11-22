@@ -112,7 +112,7 @@ test('says what a link it doesn’t open is, and sends a web link to the browser
     const row = box(page).getByRole('option');
     await expect(row).toContainText('e2e #80');
     await expect(row).toContainText(TITLE);
-    await expect(row).toContainText('as rozed-bot');
+    await expect(row).toContainText('rozed-bot');
     await expect(box(page)).toContainText('Open');
     await page.keyboard.press('Enter');
 
@@ -122,7 +122,7 @@ test('says what a link it doesn’t open is, and sends a web link to the browser
     // `⌘O` opens it too on macOS, and the link to an open pull request shows its tab.
     await page.keyboard.press(mac ? 'Meta+O' : 'Control+L');
     await input(page).fill(E2E);
-    await expect(box(page).getByRole('option')).toContainText('as rozed-bot');
+    await expect(box(page).getByRole('option')).toContainText('rozed-bot');
     await page.keyboard.press('Enter');
     await expect(page.getByRole('tablist', { name: 'Pull requests' }).getByRole('tab')).toHaveCount(
       1,
@@ -249,7 +249,7 @@ test('lists the pull requests opened lately, filters them and opens one by its k
   await accountIn(page);
   await expect(page.getByText('No pull requests yet')).toBeVisible();
   await type(page, E2E);
-  await expect(box(page).getByRole('option')).toContainText('as rozed-bot');
+  await expect(box(page).getByRole('option')).toContainText('rozed-bot');
   await page.keyboard.press('Enter');
   await expect(heading(page)).toHaveText(TITLE);
   // Its poller has read it, which keeps it among the recent ones, with its title.
@@ -328,7 +328,7 @@ test('fills the box from the clipboard, and never takes anything else on it', as
   await page.keyboard.press(cmd('L'));
   await expect(input(page)).toHaveValue(E2E);
   await expect(box(page)).toContainText('From clipboard');
-  await expect(box(page).getByRole('option')).toContainText('as rozed-bot');
+  await expect(box(page).getByRole('option')).toContainText('rozed-bot');
   await page.keyboard.press('Escape');
 
   // `⌘V` in Recent opens it.

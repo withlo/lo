@@ -3,14 +3,8 @@
 // them, so each is said one way wherever it shows: under the open box's field, under the welcome's,
 // or in a note for a link another app handed Lo.
 
-import {
-  notPull,
-  type Blocked,
-  type Cause,
-  type GithubPage,
-  type NotPull,
-  type Refusal,
-} from '../contract.ts';
+import { explain } from '../../../window/explain.ts';
+import { notPull, type Blocked, type GithubPage, type NotPull, type Refusal } from '../contract.ts';
 
 /**
  * What a pull request link looks like, said of text that isn't one, with code between backticks:
@@ -54,40 +48,15 @@ export function refusalReason(why: Refusal): string | undefined {
   }
 }
 
-/** A time of day, in the system's own format: `14:05`. */
-function timeOfDay(time: number): string {
-  return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(time);
-}
-
-/** Why GitHub didn't say, as a reason line: nothing where the cause isn't known. */
-export function causeReason(cause: Cause): string | undefined {
-  switch (cause.kind) {
-    case 'offline':
-      return 'Offline.';
-    case 'github':
-      return 'GitHub returned an error.';
-    case 'rateLimit':
-      return cause.resets === null
-        ? 'GitHub’s rate limit was reached.'
-        : `GitHub’s rate limit resets at ${timeOfDay(cause.resets)}.`;
-    case 'signedOut':
-      return `${cause.login} is signed out.`;
-    case 'sso':
-      return `${cause.org} requires single sign-on.`;
-    case 'unapproved':
-      return `${cause.org} hasn’t approved Lo.`;
-    case 'unknown':
-      return undefined;
-    default:
-      throw new Error(`A cause Lo doesn't know: ${JSON.stringify(cause satisfies never)}`);
-  }
-}
-
-/** What the reader can do about a pull request the box can't open. */
+/**
+ * What the reader can do about a pull request the box can't open: follow GitHub's link, open it
+ * anyway, sign in, or look it up again.
+ */
 export type BlockedWay =
   | { readonly kind: 'link'; readonly label: string; readonly url: string }
   | { readonly kind: 'openAnyway' }
-  | { readonly kind: 'signIn'; readonly again: boolean };
+  | { readonly kind: 'signIn'; readonly again: boolean }
+  | { readonly kind: 'retry' };
 
 /** A pull request the box can't open, as an error: its title, one reason, and the way on. */
 export interface BlockedWords {
@@ -107,7 +76,7 @@ export function blockedWords(
     case 'unchecked':
       return {
         title: `Couldn’t check ${name}`,
-        reason: causeReason(why.cause),
+        reason: explain(why.cause),
         way: { kind: 'openAnyway' },
       };
     case 'missing':
@@ -133,8 +102,10 @@ export function blockedWords(
             ? { kind: 'openAnyway' }
             : why.cause.kind === 'signedOut'
               ? { kind: 'signIn', again: true }
-              : undefined;
-      return { title: cant, reason: causeReason(why.cause), way };
+              : why.cause.kind === 'unreadable'
+                ? { kind: 'retry' }
+                : undefined;
+      return { title: cant, reason: explain(why.cause), way };
     }
     case 'unknown':
       return { title: cant, reason: undefined, way: undefined };
@@ -152,6 +123,8 @@ export function wayLabel(way: BlockedWay): string {
       return 'Open anyway';
     case 'signIn':
       return way.again ? 'Sign in again' : 'Sign in with GitHub…';
+    case 'retry':
+      return 'Try again';
     default:
       throw new Error(`A way on Lo doesn't know: ${JSON.stringify(way satisfies never)}`);
   }

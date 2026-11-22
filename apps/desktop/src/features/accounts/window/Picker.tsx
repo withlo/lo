@@ -150,7 +150,11 @@ export function PickerView({
       problem={
         error === undefined || chosen === undefined || question === undefined
           ? undefined
-          : { title: `Couldn’t remember ${chosen} for ${question.owner}`, details: error }
+          : {
+              // For what it was to be remembered for: the owner, or this repository alone.
+              title: `Couldn’t remember ${chosen} for ${question.remember === 'owner' ? question.owner : `${question.owner}/${question.name}`}`,
+              details: error,
+            }
       }
       leaveKeys={labels('esc')}
       onKeyDown={onKeyDown}

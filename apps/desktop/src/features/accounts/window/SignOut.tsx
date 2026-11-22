@@ -61,6 +61,11 @@ export function SignOutView({
           if (accountsStore.getState().dialog === dialog) closeDialog();
         },
         (thrown: unknown) => {
+          // Gone already, as when the last try took the account and failed after: that's done.
+          if (thrown instanceof IpcError && thrown.code === 'missing') {
+            if (accountsStore.getState().dialog === dialog) closeDialog();
+            return;
+          }
           setBusy(false);
           setError({
             login: chosen,
@@ -112,8 +117,12 @@ export function SignOutView({
       testId="sign-out"
     >
       <p className="m-0 text-fg-muted">
-        Its sign-in is deleted from this computer. Repos that opened with it ask for an account
-        again.
+        {only !== undefined
+          ? 'Its sign-in is deleted'
+          : chosen === undefined
+            ? 'The account’s sign-in is deleted'
+            : `${chosen}’s sign-in is deleted`}{' '}
+        from this computer. Repos that opened with it ask for an account again.
       </p>
       {only === undefined && (
         <div ref={choices}>

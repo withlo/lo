@@ -62,15 +62,18 @@ export type Refusal = z.output<typeof refusal>;
 
 /**
  * Why GitHub didn't say whether an account can see a pull request: no connection, GitHub's own
- * error, its rate limit (resetting at `resets`, in milliseconds since the Unix epoch, when it
- * said), an account signed out, an organization that requires single sign-on or hasn't approved
- * Lo, or something else.
+ * error, no answer in time, its rate limit (resetting at `resets`, in milliseconds since the Unix
+ * epoch, when it said), an account signed out or whose sign-in can't be read, an organization that
+ * requires single sign-on or hasn't approved Lo, or something else. The window words it with the
+ * guide's causes (`window/explain.ts`).
  */
 export const cause = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('offline') }),
   z.strictObject({ kind: z.literal('github') }),
+  z.strictObject({ kind: z.literal('timeout') }),
   z.strictObject({ kind: z.literal('rateLimit'), resets: z.number().nullable() }),
   z.strictObject({ kind: z.literal('signedOut'), login }),
+  z.strictObject({ kind: z.literal('unreadable'), login }),
   z.strictObject({ kind: z.literal('sso'), org: z.string() }),
   z.strictObject({ kind: z.literal('unapproved'), org: z.string() }),
   z.strictObject({ kind: z.literal('unknown') }),
@@ -141,7 +144,7 @@ export const preview = z.discriminatedUnion('kind', [
     kind: z.literal('blocked'),
     ...pullRequest,
     why: blocked,
-    details: z.string().nullable(),
+    details: z.string().optional(),
   }),
   z.strictObject({
     kind: z.literal('web'),
@@ -208,7 +211,7 @@ export const installed = z.discriminatedUnion('kind', [
   z.strictObject({
     kind: z.literal('failed'),
     why: z.enum(['unreadable', 'unwritable']),
-    details: z.string(),
+    details: z.string().optional(),
   }),
 ]);
 export type Installed = z.output<typeof installed>;

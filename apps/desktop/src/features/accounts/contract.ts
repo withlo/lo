@@ -146,7 +146,7 @@ export const importFailure = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('notSignedIn') }),
   z.strictObject({ kind: z.literal('unusable'), state: z.string() }),
   z.strictObject({ kind: z.literal('otherAccount'), other: login }),
-  z.strictObject({ kind: z.literal('unknown'), details: z.string() }),
+  z.strictObject({ kind: z.literal('unknown'), details: z.string().optional() }),
 ]);
 export type ImportFailure = z.output<typeof importFailure>;
 

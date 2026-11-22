@@ -182,6 +182,36 @@ describe('notices', () => {
     expect(lines.map((line) => line.textContent)).toEqual(['One reason.', 'Another reason.']);
   });
 
+  it('set what’s between backticks as code, in the line and under it, never the backticks', () => {
+    act(() => notify('Couldn’t install the `lo` command', 'Another `lo` file is already there.'));
+    act(() => announce('Installed the `lo` command', 'Run `lo .` in a repo.'));
+    const cards = [...(status()?.querySelectorAll('.toast') ?? [])];
+    expect(cards.map((card) => card.textContent)).toEqual([
+      'Couldn’t install the lo commandAnother lo file is already there.',
+      'Installed the lo commandRun lo . in a repo.',
+    ]);
+    const code = [...(status()?.querySelectorAll('.toast .code-small') ?? [])];
+    expect(code.map((each) => each.textContent)).toEqual(['lo', 'lo', 'lo', 'lo .']);
+  });
+
+  it('keep what came with a failure behind Details, with Copy', async () => {
+    act(() => notify('Couldn’t update Lo', '', undefined, 'Failed to copy Lo.app'));
+    const card = status()?.querySelector('.toast');
+    const details = [...(card?.querySelectorAll('button') ?? [])].find(
+      (button) => button.textContent === 'Details',
+    );
+    expect(details?.getAttribute('aria-expanded')).toBe('false');
+    expect(card?.textContent).not.toContain('Failed to copy Lo.app');
+    await act(async () => {
+      details?.click();
+      await Promise.resolve();
+    });
+    expect(details?.getAttribute('aria-expanded')).toBe('true');
+    const text = document.getElementById(details?.getAttribute('aria-controls') ?? '');
+    expect(text?.textContent).toContain('Failed to copy Lo.app');
+    expect(text?.querySelector('button')?.textContent).toMatch(/^Copy/);
+  });
+
   it('say what’s done with a tick, in one line', () => {
     act(() => announce('Made #82, #83 and #84 a GitHub stack'));
     expect(toast()).toEqual({

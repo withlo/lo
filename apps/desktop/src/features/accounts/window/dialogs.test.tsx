@@ -575,6 +575,34 @@ describe('the account picker', () => {
     expect(dialog('account-picker')).toBeNull();
   });
 
+  it('says what it couldn’t remember the choice for, and opens with it all the same', async () => {
+    installBridge({
+      'accounts.choose': () => {
+        throw new IpcError('failed', 'The settings file is read-only.');
+      },
+    });
+    showAccounts([account('a'), account('b')]);
+    render();
+    let answered: string | undefined = 'none yet';
+    act(() => {
+      void pickAccount({ owner: 'o', name: 'r', logins: ['a', 'b'], remember: 'repo' }).then(
+        (login) => {
+          answered = login;
+        },
+      );
+    });
+    click(button(dialog('account-picker'), 'Open as a'));
+    await settle();
+    expect(dialog('account-picker')?.querySelector('[role="alert"]')?.textContent).toBe(
+      'Couldn’t remember a for o/r',
+    );
+    expect(answered).toBe('none yet');
+    click(button(dialog('account-picker'), 'Open as a'));
+    await settle();
+    expect(answered).toBe('a');
+    expect(dialog('account-picker')).toBeNull();
+  });
+
   it('answers nothing when cancelled, or when another dialog takes its place', async () => {
     installBridge({ 'accounts.signIn': () => waiting, 'accounts.cancelSignIn': () => undefined });
     showAccounts([account('a'), account('b')]);
@@ -642,6 +670,31 @@ describe('signing out', () => {
     expect(dialog('sign-out')).toBeNull();
   });
 
+  it('counts an account already gone as signed out when it tries again', async () => {
+    let gone = false;
+    const bridge = installBridge({
+      'accounts.remove': () => {
+        if (gone) throw new IpcError('missing', 'Lo isn’t signed in to rozed-bot.');
+        gone = true;
+        throw new IpcError('failed', "Lo couldn't sign out of rozed-bot completely.");
+      },
+    });
+    showAccounts([account('rozed-bot')]);
+    render();
+    act(() => openSignOut(['rozed-bot']));
+    await settle();
+    click(button(dialog('sign-out'), 'Sign out'));
+    await settle();
+    expect(dialog('sign-out')?.querySelector('[role="alert"]')?.textContent).toBe(
+      'Couldn’t sign out of rozed-bot',
+    );
+    // The first try took the account and failed after: trying again finds it gone, which is done.
+    click(button(dialog('sign-out'), 'Try again'));
+    await settle();
+    expect(bridge.calls.filter(([channel]) => channel === 'accounts.remove')).toHaveLength(2);
+    expect(dialog('sign-out')).toBeNull();
+  });
+
   it('asks which account when there are several, and picks none for the person', async () => {
     const bridge = installBridge({ 'accounts.remove': () => undefined });
     showAccounts([account('rozed-bot'), account('tess-okafor', { source: 'gh' })]);
@@ -657,12 +710,15 @@ describe('signing out', () => {
     // Nothing can be signed out of until one is picked.
     expect(button(shown, 'Sign out').getAttribute('aria-disabled')).toBe('true');
     expect(button(shown, 'Sign out').getAttribute('aria-description')).toBe('Choose an account');
+    // Until one is picked, what's deleted is the account's sign-in, whichever it is.
+    expect(shown?.textContent).toContain('The account’s sign-in is deleted from this computer.');
     press(shown ?? document.body, 'Enter');
     await settle();
     expect(bridge.calls.filter(([channel]) => channel === 'accounts.remove')).toEqual([]);
 
     click(choices()[1] ?? document.body);
     expect(button(shown, 'Sign out of tess-okafor').getAttribute('aria-disabled')).toBeNull();
+    expect(shown?.textContent).toContain('tess-okafor’s sign-in is deleted from this computer.');
     click(button(shown, 'Sign out of tess-okafor'));
     await settle();
     expect(bridge.calls).toContainEqual(['accounts.remove', { login: 'tess-okafor' }]);

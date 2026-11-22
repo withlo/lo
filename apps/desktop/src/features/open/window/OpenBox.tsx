@@ -52,10 +52,18 @@ const WARN_ICON = (
   </svg>
 );
 
+/** An account, as the box draws one beside its name. */
+const PERSON = (
+  <svg className="lo-i lo-i--sm flex-none text-fg-muted" viewBox="0 0 16 16" aria-hidden="true">
+    <circle cx="8" cy="5.25" r="2.75" />
+    <path d="M3 13.5c.5-2.5 2.5-4 5-4s4.5 1.5 5 4" />
+  </svg>
+);
+
 /** A wait under the input: a turning ring and what's being done. */
 function Waiting({ children }: { children: string }) {
   return (
-    <span className="flex items-center gap-8 text-fg-muted">
+    <span role="status" className="flex items-center gap-8 text-fg-muted">
       <Spinner size="xs" />
       {children}
     </span>
@@ -79,12 +87,15 @@ function Note({
     <>
       {WARN_ICON}
       <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <span className="font-semibold">{title}</span>
-        {reason !== undefined && (
-          <span className="text-fg-muted text-small">
-            <Ticks text={reason} />
-          </span>
-        )}
+        {/* What a screen reader hears as it comes: the title and the reason, not the button. */}
+        <span role="status" className="flex flex-col gap-2">
+          <span className="font-semibold">{title}</span>
+          {reason !== undefined && (
+            <span className="text-fg-muted text-small">
+              <Ticks text={reason} />
+            </span>
+          )}
+        </span>
         {action !== undefined && (
           <span className="mt-6 flex">
             <Button size="sm" onClick={action.onClick}>
@@ -98,10 +109,26 @@ function Note({
   );
 }
 
+/**
+ * Runs `action` from a button under the field, and gives the field focus back: the button goes
+ * with what it acted on, and the box stays open while it's done, or the link is looked up again.
+ */
+function fromField(action: () => void): () => void {
+  return () => {
+    const field = document.activeElement
+      ?.closest('[data-lo-scope="palette"]')
+      ?.querySelector<HTMLInputElement>('input');
+    action();
+    field?.focus();
+  };
+}
+
 /** What the box says under the input, for what's in it, if anything. */
 function messageFor(state: BoxState, preview: Preview | undefined): ReactNode {
   const { text, opening, error } = state;
-  if (opening) return <Waiting>Opening pull request…</Waiting>;
+  if (opening) {
+    return <Waiting>{preview?.kind === 'web' ? 'Opening link…' : 'Opening pull request…'}</Waiting>;
+  }
   if (error !== undefined) {
     return (
       <div className="min-w-0 flex-1">
@@ -111,7 +138,7 @@ function messageFor(state: BoxState, preview: Preview | undefined): ReactNode {
           details={error.details}
           action={
             error.retry === true
-              ? { label: 'Try again', onClick: submit, keys: labels('enter') }
+              ? { label: 'Try again', onClick: fromField(submit), keys: labels('enter') }
               : undefined
           }
         />
@@ -133,7 +160,7 @@ function messageFor(state: BoxState, preview: Preview | undefined): ReactNode {
         <Note
           title={words.title}
           reason={words.reason}
-          action={{ label: words.action, onClick: submit }}
+          action={{ label: words.action, onClick: fromField(submit) }}
         />
       );
     }
@@ -144,13 +171,13 @@ function messageFor(state: BoxState, preview: Preview | undefined): ReactNode {
           <Problem
             title={title}
             reason={reason}
-            details={preview.details ?? undefined}
+            details={preview.details}
             action={
               way === undefined
                 ? undefined
                 : {
                     label: wayLabel(way),
-                    onClick: () => takeWay(way, text),
+                    onClick: fromField(() => takeWay(way, text)),
                     keys: labels('enter'),
                   }
             }
@@ -183,14 +210,7 @@ function RowView({ row, preview }: { row: Row; preview: Extract<Preview, { kind:
   if (row.kind === 'as') {
     return (
       <>
-        <svg
-          className="lo-i lo-i--sm flex-none text-fg-muted"
-          viewBox="0 0 16 16"
-          aria-hidden="true"
-        >
-          <circle cx="8" cy="5.25" r="2.75" />
-          <path d="M3 13.5c.5-2.5 2.5-4 5-4s4.5 1.5 5 4" />
-        </svg>
+        {PERSON}
         <span className="whitespace-nowrap">Open as {row.login}</span>
         <span className="min-w-0 truncate text-fg-muted text-small">
           {name} {preview.title ?? ''}
@@ -198,19 +218,24 @@ function RowView({ row, preview }: { row: Row; preview: Extract<Preview, { kind:
       </>
     );
   }
+  // Whom it opens as, as a fact at the row's end: the account's name alone, as the status bar
+  // shows one, or "Read only" without one.
   const as =
-    preview.as.kind === 'account'
-      ? `as ${preview.as.login}`
-      : preview.as.kind === 'anonymous'
-        ? 'Read only'
-        : '';
+    preview.as.kind === 'account' ? (
+      <span className="flex items-center gap-4">
+        {PERSON}
+        {preview.as.login}
+      </span>
+    ) : preview.as.kind === 'anonymous' ? (
+      'Read only'
+    ) : null;
   return (
     <>
       {name}
       <span className="min-w-0 truncate">{preview.title ?? ''}</span>
       <span className="ms-auto flex flex-none items-center gap-8">
         {preview.state !== null && <StatePill state={preview.state} />}
-        <span className="text-fg-muted text-small">{as}</span>
+        {as !== null && <span className="text-fg-muted text-small">{as}</span>}
       </span>
     </>
   );

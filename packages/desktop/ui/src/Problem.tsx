@@ -59,7 +59,6 @@ const problem = cva('min-w-0 text-ui', {
  * buttons.
  */
 export function Problem({ title, reason, action, details, layout = 'inline' }: ProblemProps) {
-  const copy = useCopy();
   const [detailed, setDetailed] = useState(false);
   const detailsId = useId();
   const view = layout === 'view';
@@ -129,20 +128,48 @@ export function Problem({ title, reason, action, details, layout = 'inline' }: P
         </div>
       )}
       {details !== undefined && (
-        <div id={detailsId} className={view ? 'w-full max-w-read-measure' : undefined}>
-          <Collapse open={detailed}>
-            {/* Its gap is inside what opens, so a closed one takes no room. */}
-            <div className={view ? undefined : 'pt-8'}>
-              <div className="flex items-start gap-8 rounded-sm bg-bg-well p-8 text-start">
-                <pre className="m-0 problem-details min-w-0 flex-1 overflow-auto wrap-anywhere whitespace-pre-wrap text-fg-muted code-small">
-                  {details}
-                </pre>
-                <CopyButton size="sm" onCopy={() => copy(details)} />
-              </div>
-            </div>
-          </Collapse>
-        </div>
+        <DetailsText
+          id={detailsId}
+          open={detailed}
+          details={details}
+          className={view ? 'w-full max-w-read-measure' : undefined}
+          gap={!view}
+        />
       )}
+    </div>
+  );
+}
+
+export interface DetailsTextProps {
+  /** For the Details button's `aria-controls`. */
+  id: string;
+  open: boolean;
+  /** What came back, as it came. */
+  details: string;
+  className?: string | undefined;
+  /** A gap above it, inside what opens, for when it sits under a line of its own. */
+  gap?: boolean | undefined;
+}
+
+/**
+ * The raw text behind a Details button, with Copy, which opens and closes under what failed. A
+ * `Problem` holds one, and so does a note that says a failure nothing in view could hold.
+ */
+export function DetailsText({ id, open, details, className, gap = true }: DetailsTextProps) {
+  const copy = useCopy();
+  return (
+    <div id={id} className={className}>
+      <Collapse open={open}>
+        {/* Its gap is inside what opens, so a closed one takes no room. */}
+        <div className={gap ? 'pt-8' : undefined}>
+          <div className="flex items-start gap-8 rounded-sm bg-bg-well p-8 text-start">
+            <pre className="m-0 problem-details min-w-0 flex-1 overflow-auto wrap-anywhere whitespace-pre-wrap text-fg-muted code-small">
+              {details}
+            </pre>
+            <CopyButton size="sm" onCopy={() => copy(details)} />
+          </div>
+        </div>
+      </Collapse>
     </div>
   );
 }

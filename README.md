@@ -140,9 +140,9 @@ what that shows.
 Lo checks GitHub Releases for a newer version 30 seconds after it starts, then every 6 hours, and
 whenever you ask: "Check for updates" in the command palette (and, on a Mac, the app menu), "Check
 now" in Settings, or "Get a newer Lo" on the overview. It asks GitHub alone, and no id of your copy
-goes with the request. To stop the checks Lo makes by itself, turn off "Check for updates by itself"
-in Settings, or `updates.check` in [`settings.json`](docs/settings.md). A build from source doesn't
-check: asked to, it says so, with "Open on GitHub" for Lo's releases.
+goes with the request. To stop the checks Lo makes by itself, turn off "Check for updates
+automatically" in Settings, or `updates.check` in [`settings.json`](docs/settings.md). A build from
+source doesn't check: asked to, it says so, with "Open on GitHub" for Lo's releases.
 
 A newer version shows as a toast, "Lo 0.2.0 is available", above the status bar. It waits until you
 act on it and never takes focus. What it offers depends on how Lo was installed:

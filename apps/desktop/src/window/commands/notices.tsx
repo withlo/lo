@@ -6,7 +6,8 @@
 //
 // A note is one line: the result, or the reason. `refuse` and `announce` with nothing after the
 // line are the two to use. A title with a body under it is the older shape, still drawn for the
-// callers that have it.
+// callers that have it, and the shape of the one failure a note may hold: one with nothing in view
+// to hold it, which keeps main's words behind Details.
 
 import {
   Ticks,
@@ -31,6 +32,8 @@ export interface Note {
   readonly done?: boolean | undefined;
   /** The one thing to do about it, at its end. */
   readonly action?: ToastAction | undefined;
+  /** What main or the system said of a failure, as it came, behind Details. */
+  readonly details?: string | undefined;
 }
 
 /**
@@ -92,7 +95,8 @@ const same = (one: Note, other: Note) =>
   one.title === other.title &&
   one.body === other.body &&
   (one.done ?? false) === (other.done ?? false) &&
-  one.action?.label === other.action?.label;
+  one.action?.label === other.action?.label &&
+  one.details === other.details;
 
 /**
  * Shows `note` under the others. One already showing that says the same isn't said twice: it's the
@@ -137,11 +141,13 @@ export function announce(title: string, body = ''): void {
 /**
  * Says `title` with `body` under it, a line a reason: the older shape of a note that says why
  * something didn't happen, with `action`, the one thing to do about it, where there's one. A
- * command that can't run uses {@link refuse}; something that failed says so where it was asked for,
- * not here, unless nothing where it was asked for is in view.
+ * command that can't run uses {@link refuse}. Something that failed says so where it was asked
+ * for, not here, unless nothing in view can hold it, as for a command run from the menu or a toast
+ * that has gone: then the note is the error, `title` what failed and `body` why, with `details`,
+ * what main or the system said, behind Details.
  */
-export function notify(title: string, body: string, action?: ToastAction): void {
-  show({ title, body, action });
+export function notify(title: string, body: string, action?: ToastAction, details?: string): void {
+  show({ title, body, action, details });
 }
 
 /** Takes back the note `title` and `body` say, if it's showing: what it said is over. */
@@ -161,12 +167,12 @@ function lines(text: string): ReactNode {
   ));
 }
 
-/** What a note's toast says: its line, and what's under it, quieter. */
+/** What a note's toast says: its line, and what's under it, quieter, each with its code as code. */
 function lineOf(note: Note): ReactNode {
   if (note.body === '') return lines(note.title);
   return (
     <>
-      {note.title}
+      <Ticks text={note.title} />
       <span className="block text-fg-muted text-small">{lines(note.body)}</span>
     </>
   );
@@ -174,7 +180,13 @@ function lineOf(note: Note): ReactNode {
 
 /** A note's toast: an info icon and the reason, or a tick and what's done. */
 function toastOf(id: string, note: Note): StackedToast {
-  return { id, tone: note.done ? 'success' : 'info', title: lineOf(note), action: note.action };
+  return {
+    id,
+    tone: note.done ? 'success' : 'info',
+    title: lineOf(note),
+    action: note.action,
+    details: note.details,
+  };
 }
 
 /**

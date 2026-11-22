@@ -2,6 +2,7 @@ import {
   Accounts,
   approvalUrl,
   GithubClient,
+  GithubError,
   Token,
   type Account,
   type Grant,
@@ -13,6 +14,7 @@ import { describe, expect, it } from 'vitest';
 import type { Opening } from '../../tab/contract.ts';
 import {
   Browser,
+  causeOf,
   COMES_BACK_WITHIN,
   link,
   look,
@@ -454,6 +456,17 @@ function browser(isDefault = false) {
   });
   return { made, opened, later: (ms: number) => (now += ms) };
 }
+
+describe('causeOf', () => {
+  it('says whose sign-in can’t be read, where it knows', () => {
+    const unreadable = new GithubError({ kind: 'tokenUnavailable', message: 'Keychain locked' });
+    expect(causeOf(unreadable, 'rozed-dev', 'rozed-bot')).toEqual({
+      kind: 'unreadable',
+      login: 'rozed-bot',
+    });
+    expect(causeOf(unreadable, 'rozed-dev')).toEqual({ kind: 'unknown' });
+  });
+});
 
 describe('Browser', () => {
   const ISSUE = 'https://github.com/rozed-dev/e2e/issues/12';

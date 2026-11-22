@@ -293,7 +293,7 @@ async function lookAtPull(named: PullLink, github: LinkGithub): Promise<Preview>
     repo,
     number,
     why,
-    details: details ?? null,
+    ...(details === undefined ? {} : { details }),
   });
   let choice: Choice;
   try {
@@ -387,9 +387,10 @@ export function causeOf(error: unknown, owner: string, login?: string): Cause {
     case 'inconsistent':
     case 'decode':
       return { kind: 'github' };
+    case 'tokenUnavailable':
+      return login === undefined ? { kind: 'unknown' } : { kind: 'unreadable', login };
     case 'notFound':
     case 'refusedUrl':
-    case 'tokenUnavailable':
       return { kind: 'unknown' };
     default:
       detail satisfies never;

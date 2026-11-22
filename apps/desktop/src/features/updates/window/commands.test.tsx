@@ -87,7 +87,11 @@ describe('Check for updates', () => {
       details: 'ERR_INTERNET_DISCONNECTED',
     });
     await run('updates.check');
-    expect(notice()).toMatchObject({ title: 'Couldn’t check for updates', body: 'Offline.' });
+    expect(notice()).toMatchObject({
+      title: 'Couldn’t check for updates',
+      body: 'Offline.',
+      details: 'ERR_INTERNET_DISCONNECTED',
+    });
     expect(notice()?.action?.label).toBe('Try again');
   });
 
@@ -120,7 +124,11 @@ describe('Check for updates', () => {
       throw new Error('boom');
     };
     await run('updates.check');
-    expect(notice()).toMatchObject({ title: 'Couldn’t check for updates', body: '' });
+    expect(notice()).toMatchObject({
+      title: 'Couldn’t check for updates',
+      body: '',
+      details: 'boom',
+    });
   });
 
   it('leaves a newer Lo, one downloading and one ready to their toasts, with no note', async () => {
@@ -184,12 +192,12 @@ describe('the other commands', () => {
     };
     await run(id);
     expect(notice()).toEqual({ title: 'No update available', body: '' });
-    // Failed: what failed.
+    // Failed: what failed, with main's words behind Details, since nothing in view holds it.
     answers[id] = () => {
       throw new IpcError('failed', 'Failed to copy Lo.app');
     };
     await run(id);
-    expect(notice()).toEqual({ title, body: '' });
+    expect(notice()).toEqual({ title, body: '', details: 'Failed to copy Lo.app' });
   });
 
   it('never ask for more than they say: no command installs or restarts but its own', async () => {
