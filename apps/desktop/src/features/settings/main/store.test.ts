@@ -34,23 +34,29 @@ vi.mock('./file.ts', async (importOriginal) => {
   };
 });
 
+/** What Settings shows of a setting, which main doesn't read. */
+const row = { group: 'file', label: 'A setting', description: 'A setting for a test.' } as const;
+
 const theme = defineSetting(
   'theme',
   z.enum(['dark', 'light', 'system']),
   'system',
   'dark, light or system',
+  row,
 );
 const layout = defineSetting(
   'diff.layout',
   z.enum(['split', 'inline']),
   'split',
   'split or inline',
+  row,
 );
 const cap = defineSetting(
   'cache.cap',
   z.number().int().min(1).max(100),
   10,
   'a whole number from 1 to 100',
+  row,
 );
 
 let folder: string;
@@ -227,7 +233,7 @@ describe('reading', () => {
     const { settings } = open();
     settings.declare(theme);
     settings.declare(theme);
-    expect(() => settings.declare(defineSetting('theme', z.string(), 'x', 'text'))).toThrow(
+    expect(() => settings.declare(defineSetting('theme', z.string(), 'x', 'text', row))).toThrow(
       'The setting theme is declared twice.',
     );
   });
@@ -239,6 +245,7 @@ describe('reading', () => {
       schema: z.string().transform((text): string | Date => new Date(text)),
       fallback: '2000-01-01',
       accepts: 'a date',
+      ...row,
       window: 'write',
     };
     const { settings } = open();
@@ -470,7 +477,7 @@ describe('changing a setting', () => {
     const text = '{ "theme": "dark" }\n';
     write(text);
     const { settings, log } = open();
-    const anything = defineSetting('anything', z.json(), null, 'any JSON');
+    const anything = defineSetting('anything', z.json(), null, 'any JSON', row);
     settings.declare(anything);
     // Written, this would nest the file deeper than Lo reads.
     let deep: z.output<ReturnType<typeof z.json>> = 0;
@@ -572,7 +579,7 @@ describe('changing a setting', () => {
 
   it('writes a value the schema accepts, and what the schema made of it', async () => {
     const { settings } = open();
-    const trimmed = defineSetting('name', z.string().trim().min(1), 'x', 'a name');
+    const trimmed = defineSetting('name', z.string().trim().min(1), 'x', 'a name', row);
     settings.declare(trimmed);
     await settings.set('name', '  Lo  ');
     expect(JSON.parse(contents())).toEqual({ name: 'Lo' });
@@ -730,7 +737,7 @@ describe('changing a setting', () => {
   it('refuses to make a file over the limit', async () => {
     write(`{ "padding": "${'x'.repeat(1024 * 1024 - 100)}" }`);
     const { settings } = open();
-    const note = defineSetting('note', z.string(), '', 'text');
+    const note = defineSetting('note', z.string(), '', 'text', row);
     settings.declare(note);
     const refused = await refusal(settings.set('note', 'y'.repeat(200)));
     expect(refused?.code).toBe('unwritable');
@@ -750,6 +757,7 @@ describe('changing a setting', () => {
 describe('a setting only main changes', () => {
   /** A list of names, which the window shows and only main writes, ignoring names of one letter. */
   const names = defineSetting('code.names', z.array(z.string().min(1)), [], 'a list of names', {
+    ...row,
     window: 'read',
     problems: (value) =>
       value

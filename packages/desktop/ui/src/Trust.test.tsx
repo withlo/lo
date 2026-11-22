@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // Settings' list of what the reader trusts: a row for each repo or pull request from a fork, how
-// long ago it was trusted, and the button that removes it.
+// long ago it was trusted, and the button that stops trusting it.
 
 import { useState } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -28,15 +28,15 @@ function Held({ entries }: { entries: readonly TrustEntry[] }) {
   );
 }
 
-/** The "Remove" button of the row for `key`. */
+/** The "Stop trusting" button of the row for `key`. */
 function remove(host: HTMLElement, key: string): HTMLButtonElement {
   return host.querySelector<HTMLButtonElement>(`[role="listitem"][data-key="${key}"] button`)!;
 }
 
 const ENTRIES: TrustEntry[] = [
-  { key: 'api', name: 'fieldwork/atlas-api', kind: 'repo', trusted: '12 days ago' },
-  { key: 'web', name: 'fieldwork/atlas-web', kind: 'repo', trusted: '3 days ago' },
-  { key: 'fork', name: 'sam-whit/atlas-api#4833', kind: 'fork', trusted: 'today' },
+  { key: 'api', name: 'fieldwork/atlas-api', kind: 'repo', trusted: 'trusted 12 d ago' },
+  { key: 'web', name: 'fieldwork/atlas-web', kind: 'repo', trusted: 'trusted 3 d ago' },
+  { key: 'fork', name: 'sam-whit/atlas-api#4833', kind: 'fork', trusted: 'trusted just now' },
 ];
 
 /** A list whose row goes only when `#land` is pressed, as when main answers after the press. */
@@ -64,12 +64,12 @@ describe('TrustList', () => {
     const host = render(<TrustList entries={ENTRIES} />);
     const rows = [...host.querySelectorAll('[role="listitem"]')];
     expect(rows.map((row) => row.textContent)).toEqual([
-      'fieldwork/atlas-apiRepo · trusted 12 days agoRemove',
-      'fieldwork/atlas-webRepo · trusted 3 days agoRemove',
-      'sam-whit/atlas-api#4833One PR from a fork · trusted todayRemove',
+      'fieldwork/atlas-apiRepo · trusted 12 d agoStop trusting',
+      'fieldwork/atlas-webRepo · trusted 3 d agoStop trusting',
+      'sam-whit/atlas-api#4833Pull request from a fork · trusted just nowStop trusting',
     ]);
     expect(host.querySelector('[role="list"]')?.getAttribute('aria-label')).toBe(
-      'Trusted repos and PRs',
+      'Trusted repos and pull requests',
     );
   });
 
@@ -93,11 +93,15 @@ describe('TrustList', () => {
   it('says which row each button removes, to a screen reader, without changing what it says', () => {
     const host = render(<TrustList entries={ENTRIES} />);
     const buttons = [...host.querySelectorAll('button')];
-    expect(buttons.map((button) => button.textContent)).toEqual(['Remove', 'Remove', 'Remove']);
+    expect(buttons.map((button) => button.textContent)).toEqual([
+      'Stop trusting',
+      'Stop trusting',
+      'Stop trusting',
+    ]);
     expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual([
-      'Remove fieldwork/atlas-api',
-      'Remove fieldwork/atlas-web',
-      'Remove sam-whit/atlas-api#4833',
+      'Stop trusting fieldwork/atlas-api',
+      'Stop trusting fieldwork/atlas-web',
+      'Stop trusting sam-whit/atlas-api#4833',
     ]);
   });
 
@@ -109,17 +113,13 @@ describe('TrustList', () => {
     expect(document.activeElement).toBe(buttons[1]);
   });
 
-  it('says when nothing is trusted, and points to places that are always there', () => {
+  it('says when nothing is trusted', () => {
     const host = render(<TrustList entries={[]} />);
-    // Not to the banner, which a reader has dismissed by now.
-    expect(host.textContent).toBe(
-      'Nothing is trusted yet. Trust a repo or a PR from the language servers item in the status bar, or from the command palette.',
-    );
-    expect(host.textContent).not.toContain('banner');
+    expect(host.textContent).toBe('No trusted repos or pull requests');
     expect(host.querySelector('button')).toBeNull();
     expect(host.querySelector('[role="list"]')).toBeNull();
     expect(host.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe(
-      'Trusted repos and PRs',
+      'Trusted repos and pull requests',
     );
   });
 
@@ -142,11 +142,11 @@ describe('TrustList', () => {
     const host = render(<Held entries={[ENTRIES[0]!]} />);
     focus(remove(host, 'api'));
     click(remove(host, 'api'));
-    const list = host.querySelector<HTMLElement>('[aria-label="Trusted repos and PRs"]')!;
+    const list = host.querySelector<HTMLElement>('[aria-label="Trusted repos and pull requests"]')!;
     expect(document.activeElement).toBe(list);
     expect(list.getAttribute('role')).toBe('group');
     // It is the same element before and after, so nothing it held is lost with the row.
-    expect(host.textContent).toContain('Nothing is trusted yet.');
+    expect(host.textContent).toContain('No trusted repos or pull requests');
     // The list takes focus when it is told to, and is no stop for `Tab` of its own.
     expect(list.getAttribute('tabindex')).toBe('-1');
   });
@@ -173,13 +173,15 @@ describe('TrustList', () => {
   it('shows the format characters in a name, and in the label of the button that names it', () => {
     const host = render(
       <TrustList
-        entries={[{ key: 'x', name: 'evil\u202Elive/atlas', kind: 'repo', trusted: 'today' }]}
+        entries={[
+          { key: 'x', name: 'evil\u202Elive/atlas', kind: 'repo', trusted: 'trusted just now' },
+        ]}
       />,
     );
     expect(host.textContent).toContain('evilU+202Elive/atlas');
     expect(host.textContent).not.toMatch(/\p{Cf}/u);
     expect(host.querySelector('button')?.getAttribute('aria-label')).toBe(
-      'Remove evil\u2039U+202E\u203Alive/atlas',
+      'Stop trusting evil\u2039U+202E\u203Alive/atlas',
     );
   });
 

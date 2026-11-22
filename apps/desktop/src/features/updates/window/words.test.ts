@@ -29,8 +29,8 @@ describe('buildText', () => {
   });
 
   it('says a build run from source is, whatever commit it was built at', () => {
-    expect(buildText({ packaged: false, commit: '0123456' })).toBe('Run from source');
-    expect(buildText({ packaged: false })).toBe('Run from source');
+    expect(buildText({ packaged: false, commit: '0123456' })).toBe('Built from source');
+    expect(buildText({ packaged: false })).toBe('Built from source');
   });
 
   it('says nothing for a packaged Lo built where no commit could be found', () => {

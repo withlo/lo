@@ -59,6 +59,7 @@ export default defineCommands(
      */
     installCommand: {
       label: 'Install command-line tool',
+      control: 'Install on the lo command row of Settings',
       group: 'Tabs and window',
       keys: [],
       bar: { menu: 'App', order: 10 },

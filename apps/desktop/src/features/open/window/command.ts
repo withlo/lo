@@ -14,12 +14,15 @@ export interface CommandStore {
   readonly installing: boolean;
   /** What the last install said. */
   readonly said: string | undefined;
+  /** What the last install did, which Settings' row shows; `undefined` when main couldn't be asked. */
+  readonly done: Installed | null | undefined;
 }
 
 export const commandStore = createStore<CommandStore>()(() => ({
   state: undefined,
   installing: false,
   said: undefined,
+  done: null,
 }));
 
 /** Asks main where `lo` is. */
@@ -55,17 +58,17 @@ export function installedWords(done: Installed): string {
  */
 export async function installCommand(): Promise<Installed | undefined> {
   if (commandStore.getState().installing) return undefined;
-  commandStore.setState({ installing: true, said: undefined });
+  commandStore.setState({ installing: true, said: undefined, done: null });
   try {
     const done = await main().installCommand();
     const said = installedWords(done);
-    commandStore.setState({ said });
+    commandStore.setState({ said, done });
     notify('Install command-line tool', said);
     return done;
   } catch (error) {
     console.error("Lo couldn't install the lo command:", error);
     const said = "Lo couldn't install the lo command.";
-    commandStore.setState({ said });
+    commandStore.setState({ said, done: undefined });
     notify('Install command-line tool', said);
     return undefined;
   } finally {

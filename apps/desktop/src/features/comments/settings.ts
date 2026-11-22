@@ -10,4 +10,8 @@ import { defineSetting } from '../settings/contract.ts';
  * click, arrows, Shift to select, and typing in a box as soon as it has focus. Lo's own single
  * keys work either way.
  */
-export const vim = defineSetting('editor.vim', z.boolean(), false, 'true or false');
+export const vim = defineSetting('editor.vim', z.boolean(), false, 'true or false', {
+  group: 'keyboard',
+  label: 'Vim keys',
+  description: 'Modal editing in code views and comment boxes.',
+});

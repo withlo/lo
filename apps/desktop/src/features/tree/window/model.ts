@@ -24,9 +24,8 @@ export type Viewed = 'viewed' | 'unviewed' | 'dismissed';
 /** How the panel lists the files: as the tree, or the changed ones in review order. */
 export type Mode = 'tree' | 'review';
 
-/** What the reader chose for a tab's tree. */
+/** What the reader chose for a tab's tree. How it lists the files is `tree.mode`, every tab's. */
 export interface Choices {
-  readonly mode: Mode;
   /** Only the changed files, still as a tree. */
   readonly changedOnly: boolean;
   /** Folders opened by hand, by key: they stay open. */
@@ -36,7 +35,6 @@ export interface Choices {
 }
 
 export const NO_CHOICES: Choices = {
-  mode: 'tree',
   changedOnly: false,
   opened: new Set(),
   closed: new Set(),
@@ -334,13 +332,14 @@ function reviewModel(
 
 /**
  * What the panel shows of `state`, with each folder's entries main sent so far, GitHub's viewed
- * marks by path, and what the reader chose.
+ * marks by path, what the reader chose for the tab, and how the files are listed.
  */
 export function model(
   state: TreeState,
   folders: ReadonlyMap<string, readonly Entry[]>,
   viewed: ReadonlyMap<string, Viewed>,
   choices: Choices,
+  mode: Mode = 'tree',
 ): Model {
   const changes = state.changes ?? [];
   const { root, omitted } = build(state, changes, folders);
@@ -353,7 +352,7 @@ export function model(
     }
   };
   collect(root);
-  if (choices.mode === 'review') {
+  if (mode === 'review') {
     return {
       ...reviewModel(changes, viewed),
       folders: allFolders,

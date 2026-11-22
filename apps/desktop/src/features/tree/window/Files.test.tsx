@@ -22,6 +22,37 @@ vi.mock('../../tab/window/shared.ts', async (original) => ({
   activeTab: () => screen.tab,
 }));
 
+// `tree.mode`, as Settings has it: every tab's.
+const setting = vi.hoisted(() => ({ mode: 'tree', heard: new Set<() => void>() }));
+vi.mock('../../settings/window/shared.ts', async () => {
+  const { useSyncExternalStore } = await import('react');
+  return {
+    settingNow: () => setting.mode,
+    useSetting: () =>
+      useSyncExternalStore(
+        (listener: () => void) => {
+          setting.heard.add(listener);
+          return () => setting.heard.delete(listener);
+        },
+        () => setting.mode,
+      ),
+    changeSetting: (_setting: unknown, value: string) => {
+      setting.mode = value;
+      for (const listener of setting.heard) listener();
+      return Promise.resolve(true);
+    },
+    settingRow: () => ({}),
+  };
+});
+
+/** Lists every tab's files in `mode`, as `t` or Settings does. */
+function listIn(mode: 'tree' | 'review'): void {
+  act(() => {
+    setting.mode = mode;
+    for (const listener of setting.heard) listener();
+  });
+}
+
 // The viewed marks, as `e` reads and toggles them, by path.
 const marks = vi.hoisted(() => new Set<string>());
 vi.mock('../../revisions/window/shared.ts', async (original) => ({
@@ -85,7 +116,8 @@ const LOCAL: TreeState = {
 
 afterEach(() => {
   for (const store of [states, focus, onScreen]) store.set(TAB.id, undefined);
-  choices.set(TAB.id, { mode: 'tree', changedOnly: false, opened: new Set(), closed: new Set() });
+  choices.set(TAB.id, { changedOnly: false, opened: new Set(), closed: new Set() });
+  setting.mode = 'tree';
 });
 
 /** Runs command `id` as its key does, with the count typed before it, if any. */
@@ -195,7 +227,7 @@ describe('following the diff', () => {
       'src/parser.ts',
       'pnpm-lock.yaml',
     ]);
-    act(() => choices.update(TAB.id, (current) => ({ ...current, mode: 'review' })));
+    listIn('review');
     expect(fileOrder(TAB.id).at(-1)).toBe('pnpm-lock.yaml');
     expect(fileOrder(TAB.id)[0]).toBe('assets/mark.png');
   });
@@ -291,7 +323,7 @@ describe('the tree’s keys', () => {
       changesFrom: 'github',
     };
     render(github);
-    act(() => choices.update(TAB.id, (current) => ({ ...current, mode: 'review' })));
+    listIn('review');
     act(() => move(TAB.id, 1));
     expect(focus.get(TAB.id)).toBe('a.pb.go');
     expect(shown.get(TAB.id)?.rows.findIndex((row) => row.key === 'a.pb.go')).toBe(1);

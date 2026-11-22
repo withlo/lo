@@ -38,25 +38,57 @@ describe('settingKey', () => {
 
 describe('defineSetting', () => {
   const layout = z.enum(['split', 'inline']);
+  const row = {
+    group: 'pullRequests',
+    label: 'Diff layout',
+    description: 'How a diff shows its old and new sides.',
+  } as const;
 
-  it('makes a setting of a key, a schema, a default and what the schema accepts', () => {
-    expect(defineSetting('diff.layout', layout, 'split', 'split or inline')).toEqual({
+  it('makes a setting of a key, a schema, a default, what the schema accepts and its row', () => {
+    expect(
+      defineSetting('diff.layout', layout, 'split', 'split or inline', {
+        ...row,
+        options: { split: 'Side by side', inline: 'Inline' },
+      }),
+    ).toEqual({
       key: 'diff.layout',
       schema: layout,
       fallback: 'split',
       accepts: 'split or inline',
+      ...row,
+      options: { split: 'Side by side', inline: 'Inline' },
       window: 'write',
     });
   });
 
   it('makes one the window may only read, when asked', () => {
     expect(
-      defineSetting('diff.layout', layout, 'split', 'split or inline', { window: 'read' }).window,
+      defineSetting('diff.layout', layout, 'split', 'split or inline', { ...row, window: 'read' })
+        .window,
     ).toBe('read');
   });
 
+  it('refuses a row with no label, or a line past 90 characters or with no full stop', () => {
+    expect(() =>
+      defineSetting('diff.layout', layout, 'split', 'x', { ...row, label: ' ' }),
+    ).toThrow('The setting diff.layout has no label.');
+    for (const description of ['x'.repeat(90) + '.', 'No full stop']) {
+      expect(() =>
+        defineSetting('diff.layout', layout, 'split', 'x', { ...row, description }),
+      ).toThrow('The description of the setting diff.layout is one line of 90 characters at most');
+    }
+  });
+
+  it('refuses options that aren’t values its schema accepts, or that leave out the default', () => {
+    const options: Record<string, string> = { split: 'Side by side', wrapped: 'Wrapped' };
+    const wide: z.ZodType<string> = layout;
+    expect(() => defineSetting('diff.layout', wide, 'split', 'x', { ...row, options })).toThrow(
+      'The options of the setting diff.layout are values its schema accepts.',
+    );
+  });
+
   it('refuses a key that is not written as the file writes them', () => {
-    expect(() => defineSetting('Diff layout', layout, 'split', 'x')).toThrow(
+    expect(() => defineSetting('Diff layout', layout, 'split', 'x', row)).toThrow(
       'A setting is named in words joined by dots',
     );
   });
@@ -64,15 +96,15 @@ describe('defineSetting', () => {
   it('refuses a default its own schema refuses', () => {
     // The type checker would stop this too; the file's values never come through it.
     const schema: z.ZodType<string> = layout;
-    expect(() => defineSetting('diff.layout', schema, 'wrapped', 'split or inline')).toThrow(
+    expect(() => defineSetting('diff.layout', schema, 'wrapped', 'split or inline', row)).toThrow(
       "The default of the setting diff.layout isn't a value its schema accepts.",
     );
   });
 
   it('refuses a default that is not JSON, which is all the file holds', () => {
-    expect(() => defineSetting('when', z.date(), new Date(0), 'a date')).toThrow(
-      "The default of the setting when isn't JSON",
-    );
+    expect(() =>
+      defineSetting('when', z.date(), new Date(0), 'a date', { ...row, group: 'file' }),
+    ).toThrow("The default of the setting when isn't JSON");
   });
 });
 

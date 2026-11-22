@@ -1,9 +1,9 @@
 // The code feature in the window: trust, the syntax index, language servers and code features.
-// The banner on a view nothing trusts, Settings' Trust section, and the palette's trust commands,
+// The banner on a view nothing trusts, Settings' Trusted row, and the palette's trust commands,
 // each of which only asks main; the index's item in the status bar, and each language server's,
-// with its log; Settings' Toolchains section; and `gd`, `gr`, `K`, `gh` and `gO`, with the peek's
-// and the references panel's keys, which ask main over the code port and show what it answers in
-// the diff's code views, the right panel and over the window.
+// with its log; Settings' Type hints and Toolchains rows; and `gd`, `gr`, `K`, `gh` and `gO`, with
+// the peek's and the references panel's keys, which ask main over the code port and show what it
+// answers in the diff's code views, the right panel and over the window.
 
 import { handlers } from '@lo/ui/commands';
 import { createElement } from 'react';
@@ -11,9 +11,10 @@ import { createElement } from 'react';
 import type { WindowFeature } from '../../../window/features.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { onCodeRest, onDiffDrawn } from '../../diff/window/shared.ts';
-import { onSettingsChange } from '../../settings/window/shared.ts';
+import { onSettingsChange, settingRow, watchSetting } from '../../settings/window/shared.ts';
 import { banners, dialogs, onClosed, right, status as statusBar } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
+import { hints } from '../settings.ts';
 import { CodeOverlays, ReferencesPanel, SaidStatus } from './Code.tsx';
 import { takeIndex } from './indexes.ts';
 import { IndexStatus } from './IndexStatus.tsx';
@@ -26,6 +27,7 @@ import {
   closeReferences,
   codeNow,
   definition,
+  followHints,
   goToAnswer,
   goToFocused,
   listedNow,
@@ -136,6 +138,7 @@ export default {
       render: ({ tab }) => createElement(TrustBanner, { tab }),
       ...trustSwitch,
     }),
+    settingRow(hints, { order: 10, command: 'code.hints' }),
     Trusted,
     Toolchains,
     // After the diff's (20) and the overview's (30).
@@ -178,5 +181,6 @@ export default {
     onCodeRest(rested);
     onDiffDrawn(redrawn);
     onClosed(viewClosed);
+    watchSetting(hints, followHints);
   },
 } satisfies WindowFeature;

@@ -1,11 +1,12 @@
-// The overview skill's rows: the step on the welcome screen, and the rows in Settings' Command line,
-// for installing it and for the command that installs it from a terminal.
+// The overview skill's rows: the step on the welcome screen, and the rows in Settings ›
+// Integrations, for installing it and for the command that installs it from a terminal.
 
 import { Button, Key, keyAria, Setting, SetupItem } from '@lo/ui';
 import { useEffect } from 'react';
 import { useStore } from 'zustand';
 
 import { useKeys } from '../../../window/commands/registry.ts';
+import { defineRow } from '../../settings/window/shared.ts';
 import { keyOf } from './labels.ts';
 import {
   checkSkill,
@@ -51,26 +52,42 @@ export function SkillStep() {
   );
 }
 
-/** The skill's row in Settings: where it stands for each agent, and installing it. */
-export function SkillRow() {
+/** The skill's row in Settings: what it's for, where it stands for each agent, and installing it. */
+function Skill({ label, description }: { label: string; description: string }) {
   const { state, installing, said } = useSkill();
+  const standsAt = said ?? (state === undefined ? undefined : standing(state));
   return (
     <Setting
-      label="Overview skill"
-      description={<span role="status">{said ?? standing(state)}</span>}
+      label={label}
+      description={description}
+      below={
+        <p role="status" className="text-fg-muted text-small">
+          {standsAt}
+        </p>
+      }
     >
-      <Button disabled={installing} onClick={() => void installSkill()}>
+      <Button busy={installing} working="Installing…" onClick={() => void installSkill()}>
         {installLabel(state)}
       </Button>
     </Setting>
   );
 }
 
+export const SkillRow = defineRow({
+  id: 'overview.skillRow',
+  group: 'integrations',
+  order: 20,
+  label: 'Overview skill',
+  description: 'Teaches Claude Code and Codex to write overviews.',
+  words: () => ['agent', 'install', 'Claude Code', 'Codex'],
+  render: Skill,
+});
+
 /**
  * The command that installs the skill from a terminal, by the version of the checker Lo's own skill
  * runs, with a button that copies it, as `yc` does.
  */
-export function InstallCommandRow() {
+function InstallCommand({ label }: { label: string; description: string }) {
   useKeys();
   const copied = useStore(skillStore, (state) => state.copied);
   useEffect(() => {
@@ -79,13 +96,8 @@ export function InstallCommandRow() {
   const keys = keyOf('overview.copyInstallCommand');
   return (
     <Setting
-      label="Install from a terminal"
-      description={
-        <>
-          <span className="text-fg code-small select-all">{INSTALL_COMMAND}</span> installs the
-          skill Lo does, for each agent set up on the computer you run it on.
-        </>
-      }
+      label={label}
+      description={<span className="text-fg code-small select-all">{INSTALL_COMMAND}</span>}
     >
       <Button {...keyAria(keys, undefined)} onClick={() => void copyInstallCommand()}>
         {/* Both labels take the room of the longer, so the button and the row hold still. */}
@@ -103,3 +115,14 @@ export function InstallCommandRow() {
     </Setting>
   );
 }
+
+export const InstallCommandRow = defineRow({
+  id: 'overview.installCommand',
+  group: 'integrations',
+  order: 30,
+  label: 'On another computer',
+  // The row's line is the command itself.
+  description: INSTALL_COMMAND,
+  words: () => ['overview skill', 'terminal', 'install', 'copy'],
+  render: InstallCommand,
+});

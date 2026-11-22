@@ -1,8 +1,8 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useLayoutEffect, useRef, type ReactNode } from 'react';
 
 import { Button } from './Button.tsx';
 import { showFormat } from './controls.ts';
-import { Setting } from './Settings.tsx';
+import { SettingsEmpty, SettingsListItem } from './Settings.tsx';
 import { ShownText } from './ShownText.tsx';
 
 /** What a trust entry covers: every pull request of a repo, or one pull request from a fork. */
@@ -15,44 +15,52 @@ export interface TrustEntry {
   /** Its name, as GitHub writes it: `fieldwork/atlas-api`, or `sam-whit/atlas-api#4833`. */
   name: string;
   kind: TrustKind;
-  /** How long ago it was trusted, as the row says it: "12 days ago", "today". */
-  trusted: string;
+  /** When it was trusted, or where it came from: "trusted 12 d ago", "added in `settings.json`". */
+  trusted: ReactNode;
+  /** Why stopping trusting it didn't work, under its line, while that holds. */
+  problem?: ReactNode;
 }
 
 export interface TrustRowProps {
   entry: TrustEntry;
-  /** Remove was pressed: its language servers stop at once. */
+  /** "Stop trusting" was pressed: its language servers stop at once. */
   onRemove?: ((key: string) => void) | undefined;
 }
 
 const KIND: Record<TrustKind, string> = {
   repo: 'Repo',
-  fork: 'One PR from a fork',
+  fork: 'Pull request from a fork',
 };
 
 /**
- * One trusted repo, or one trusted pull request from a fork, as a setting: its name in the code
- * font, what it covers and since when, and the button that takes the trust away.
+ * One trusted repo, or one trusted pull request from a fork, as an item of Settings' list: its name
+ * in the code font, what it covers and since when, and the button that stops trusting it.
  */
 export function TrustRow({ entry, onRemove }: TrustRowProps) {
   return (
-    <Setting
+    <SettingsListItem
+      data={{ 'data-key': entry.key }}
       label={
-        <span className="text-fg code-small">
+        <span className="min-w-0 truncate text-fg code-small">
           <ShownText text={entry.name} />
         </span>
       }
-      description={`${KIND[entry.kind]} · trusted ${entry.trusted}`}
+      description={
+        <>
+          {KIND[entry.kind]} · {entry.trusted}
+        </>
+      }
+      note={entry.problem}
     >
       <Button
         variant="ghost"
         size="sm"
-        aria-label={`Remove ${showFormat(entry.name)}`}
+        aria-label={`Stop trusting ${showFormat(entry.name)}`}
         onClick={() => onRemove?.(entry.key)}
       >
-        Remove
+        Stop trusting
       </Button>
-    </Setting>
+    </SettingsListItem>
   );
 }
 
@@ -69,10 +77,11 @@ interface Removal {
 }
 
 /**
- * Settings' list of what the reader trusts: a row each, or a line saying nothing is yet. Removing a
- * row stops that repo's language servers and turns them off for its pull requests. Focus doesn't
- * fall to the page with the button that had it: it moves to the next row's "Remove", or the
- * previous one's when the last row went, or to the list itself when nothing is left.
+ * Settings' list of what the reader trusts: an item each, or a heading saying there's none. Stopping
+ * trusting one stops that repo's language servers and turns them off for its pull requests. Focus
+ * doesn't fall to the page with the button that had it: it moves to the next item's "Stop
+ * trusting", or the previous one's when the last item went, or to the list itself when nothing is
+ * left.
  */
 export function TrustList({ entries, onRemove }: TrustListProps) {
   const list = useRef<HTMLDivElement>(null);
@@ -99,23 +108,16 @@ export function TrustList({ entries, onRemove }: TrustListProps) {
   return (
     <div
       ref={list}
-      // With nothing to list it's a group holding the line, not a list without items. It's the
-      // same element either way, so it can take focus when the last row goes.
+      // With nothing to list it's a group holding the empty state, not a list without items. It's
+      // the same element either way, so it can take focus when the last row goes.
       role={entries.length === 0 ? 'group' : 'list'}
-      aria-label="Trusted repos and PRs"
+      aria-label="Trusted repos and pull requests"
       tabIndex={-1}
       className="outline-none focus-visible:shadow-ring-inset"
     >
-      {entries.length === 0 && (
-        <p className="m-0 border-t border-border-subtle py-12 text-fg-muted text-ui">
-          Nothing is trusted yet. Trust a repo or a PR from the language servers item in the status
-          bar, or from the command palette.
-        </p>
-      )}
+      {entries.length === 0 && <SettingsEmpty heading="No trusted repos or pull requests" />}
       {entries.map((entry) => (
-        <div key={entry.key} role="listitem" data-key={entry.key}>
-          <TrustRow entry={entry} onRemove={remove} />
-        </div>
+        <TrustRow key={entry.key} entry={entry} onRemove={remove} />
       ))}
     </div>
   );

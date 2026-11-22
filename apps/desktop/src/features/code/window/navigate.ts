@@ -18,6 +18,7 @@ import {
   type CodeViewKind,
 } from '../../diff/window/shared.ts';
 import { revisionLabel, revisionsOf } from '../../revisions/window/shared.ts';
+import { changeSetting } from '../../settings/window/shared.ts';
 import {
   activeTab,
   localCopyOf,
@@ -29,6 +30,7 @@ import {
   type RightKept,
 } from '../../tab/window/shared.ts';
 import type { Definitions, Hints, Hover, Lines, NoHover, Outline, References } from '../port.ts';
+import { hints as hintsSetting } from '../settings.ts';
 import {
   allOutside,
   cardOf,
@@ -619,7 +621,10 @@ export function rested(tab: string, view: CodeViewKind, at: Place | undefined): 
 
 /** Inline type hints, for the window. */
 export interface HintsState {
-  /** Whether they're on: off at each start, and on only once `gh` has found some to show. */
+  /**
+   * Whether they're on: as `code.hints` says, which `gh` saves only once it has found some to show,
+   * and Settings and the file change.
+   */
   readonly on: boolean;
   /** The view a `gh` turning them on asks in, until its answer comes. */
   readonly pressed: string | undefined;
@@ -693,6 +698,7 @@ async function turnOn(tab: string): Promise<void> {
     const none = noHints(found, statuses.get(tab), servers.get(tab));
     hints.setState({ on: none === undefined, pressed: undefined }, true);
     if (none !== undefined) say(tab, none);
+    else void changeSetting(hintsSetting, true);
   } catch (error) {
     if (signal.aborted) return;
     hintsOff();
@@ -701,9 +707,10 @@ async function turnOn(tab: string): Promise<void> {
 }
 
 /**
- * `gh`: inline type hints on for the window, asked for the code on screen, or off everywhere. They
- * come on only when the code on screen gets some: when it gets none, as on a repo Lo runs no
- * language server for, `gh` says why and leaves them off, so the next one asks again.
+ * `gh`: inline type hints on for the window, asked for the code on screen, or off everywhere, and
+ * saved either way. They come on only when the code on screen gets some: when it gets none, as on
+ * a repo Lo runs no language server for, `gh` says why and leaves them off, so the next one asks
+ * again.
  */
 export async function toggleHints(): Promise<void> {
   const on = onCode();
@@ -713,6 +720,7 @@ export async function toggleHints(): Promise<void> {
   const { on: shown, pressed } = hints.getState();
   if (shown || pressed !== undefined) {
     hintsOff();
+    void changeSetting(hintsSetting, false);
     return;
   }
   const why = notYet(localCopyOf(tab));
@@ -734,6 +742,23 @@ export function redrawn(tab: string): void {
   asked.catch((error: unknown) => {
     if (failureOf(error) !== undefined) console.error('Lo couldn’t ask for type hints:', error);
   });
+}
+
+/**
+ * Follows `code.hints` as it's read and changed, by `gh`, Settings or the file: on, hints are on for
+ * the window and the code on screen asks for its own, quietly; off, they go from every view.
+ */
+export function followHints(on: boolean): void {
+  const { on: shown, pressed } = hints.getState();
+  // Off while `gh` asks is only the setting as it was: `gh` decides.
+  if (!on) {
+    if (shown) hintsOff();
+    return;
+  }
+  if (shown || pressed !== undefined) return;
+  hints.setState({ on: true, pressed: undefined }, true);
+  const screen = onCode();
+  if (typeof screen !== 'string') redrawn(screen.tab);
 }
 
 /** View `tab` closed: what was asked about it stops, and it's forgotten. */

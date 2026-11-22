@@ -54,11 +54,8 @@ const step = (page: Page) =>
 const toast = (page: Page, text: string) =>
   page.getByRole('status').filter({ hasText: text }).first();
 
-/** The skill's row, in Settings' Command line section. */
-const row = (page: Page) =>
-  page.locator('[data-settings-section="open.command"]').locator('.setting-row').filter({
-    hasText: 'Overview skill',
-  });
+/** The skill's row, in Settings › Integrations. */
+const row = (page: Page) => page.locator('[data-settings-row="overview.skillRow"]');
 
 /** Where an agent's copy of the skill's `SKILL.md` goes in `home`. */
 const claudeSkill = (home: string) => join(home, '.claude', 'skills', 'lo-overview', 'SKILL.md');
@@ -181,13 +178,8 @@ test.describe('in Settings, from a terminal', () => {
     const command = `npx @withlo/overview@${pinned} install`;
 
     await openSettings(page);
-    const terminal = page
-      .locator('[data-settings-section="open.command"]')
-      .locator('.setting-row')
-      .filter({ hasText: 'Install from a terminal' });
-    await expect(terminal).toContainText(
-      `${command} installs the skill Lo does, for each agent set up on the computer you run it on.`,
-    );
+    const terminal = page.locator('[data-settings-row="overview.installCommand"]');
+    await expect(terminal).toContainText(`On another computer${command}`);
     // Writing the clipboard only where it's the test's own: not on a Mac someone works on.
     test.skip(mac, "The Mac's clipboard is its user's.");
     await page.keyboard.press('y');

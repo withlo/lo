@@ -23,6 +23,7 @@ import {
   onOverviewChanged,
   setBlockThreads,
 } from '../../overview/window/shared.ts';
+import { settingRow } from '../../settings/window/shared.ts';
 import { setLayerCounts } from '../../stacks/window/shared.ts';
 import { viewIds } from '../../tab/contract.ts';
 import {
@@ -35,6 +36,7 @@ import {
 } from '../../tab/window/shared.ts';
 import { fileCountsChanged, setFileCounts } from '../../tree/window/shared.ts';
 import keys from '../keys.ts';
+import { vim } from '../settings.ts';
 import { DiscardedToast } from './Discarded.tsx';
 import {
   atWork,
@@ -250,6 +252,8 @@ export default {
     },
   }),
   views: [
+    // Settings › Keyboard, first.
+    settingRow(vim, { order: 10 }),
     defineView(right, {
       id: 'comments.panel',
       order: 10,

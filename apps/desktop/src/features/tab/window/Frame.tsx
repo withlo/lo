@@ -12,7 +12,7 @@ import { Slot } from '../../../window/slots.tsx';
 import { main } from './main.ts';
 import { moreStore, setFolded, setMoreOpen } from './more.ts';
 import { dropTab, movedStore } from './order.ts';
-import { cover, kinds, useActiveTab, useTabs } from './shared.ts';
+import { cover, kinds, stripEnd, useActiveTab, useTabs } from './shared.ts';
 import { pullsStore } from './store.ts';
 import { stripTab } from './strip.ts';
 
@@ -58,6 +58,7 @@ export function TabStrip() {
           )
         }
         menuContainer={document.getElementById('root')}
+        end={<Slot slot={stripEnd} props={{}} />}
       />
       <div role="status" className="sr-only">
         {said}

@@ -71,6 +71,9 @@ function rows(sql: string): Record<string, unknown>[] {
   }
 }
 
+/** Settings › Accounts. */
+const accounts = (page: Page) => page.getByRole('region', { name: 'Accounts' });
+
 /** Opens Settings by its key, from the middle of the window. */
 async function openSettings(page: Page): Promise<void> {
   await page.locator('main[data-lo-middle]').focus();
@@ -101,7 +104,7 @@ test('signs in with GitHub: the code, GitHub’s page, and the account, never it
   github,
 }) => {
   await openSettings(page);
-  await page.getByRole('button', { name: 'Add an account' }).click();
+  await accounts(page).getByRole('button', { name: 'Sign in with GitHub…' }).click();
   const dialog = page.getByTestId('sign-in');
   await expect(dialog.getByRole('img', { name: 'Code F A K E - 1 2 3 4' })).toBeVisible();
   const origin = new URL(github.urls.api).origin;
@@ -182,7 +185,7 @@ test.describe('a sign-in that is cancelled', () => {
 
   test('stops polling GitHub once its dialog closes', async ({ page, github }) => {
     await openSettings(page);
-    await page.getByRole('button', { name: 'Add an account' }).click();
+    await accounts(page).getByRole('button', { name: 'Sign in with GitHub…' }).click();
     const dialog = page.getByTestId('sign-in');
     await expect(dialog).toContainText('Waiting for approval…');
     await expect.poll(() => polls(github)).toBeGreaterThan(0);
@@ -207,7 +210,7 @@ test.describe('a system with no keychain Lo keeps tokens with', () => {
     page,
   }) => {
     await openSettings(page);
-    await page.getByRole('button', { name: 'Add an account' }).click();
+    await accounts(page).getByRole('button', { name: 'Sign in with GitHub…' }).click();
     const dialog = page.getByTestId('sign-in');
     await expect(dialog.getByRole('alert')).toContainText('Couldn’t sign in');
     await expect(dialog.getByRole('button', { name: /Quit Lo/ })).toBeFocused();
@@ -218,7 +221,7 @@ test.describe('a system with no keychain Lo keeps tokens with', () => {
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
 
-    await page.getByRole('button', { name: 'Import from gh' }).click();
+    await accounts(page).getByRole('button', { name: 'Import from GitHub CLI' }).click();
     const importing = page.getByTestId('import-gh');
     await expect(importing).toContainText("Lo can't keep your tokens safely");
     expect(
@@ -302,7 +305,7 @@ test.describe('importing from gh', () => {
 
   test("imports gh's accounts once GitHub says whose each token is", async ({ page, github }) => {
     await openSettings(page);
-    await page.getByRole('button', { name: 'Import from gh' }).click();
+    await accounts(page).getByRole('button', { name: 'Import from GitHub CLI' }).click();
     const dialog = page.getByTestId('import-gh');
     await expect(dialog).toContainText('gh 2.103.3 at');
     await expect(dialog).toContainText('is signed in to 2 accounts');

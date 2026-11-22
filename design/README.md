@@ -230,9 +230,10 @@ time.
 
 One switch turns every move off: popups, heights and tints change at once, and the mark is still.
 
-- It follows the system's setting by default. `setMotion('reduce' | 'full' | 'system')` from
-  `@lo/ui` sets it for the window, by writing `data-lo-motion` on `<html>`, which `css/base.css`
-  reads.
+- It follows the system's setting by default, or `motion.reduce` in Settings › Appearance, except in
+  tests, which start the window with every move off and keep it so.
+  `setMotion('reduce' | 'full' | 'system')` from `@lo/ui` sets it for the window, by writing
+  `data-lo-motion` on `<html>`, which `css/base.css` reads.
 - The stylesheet reaches every transition and animation. Anything that moves from a script asks
   `motionReduced()` (in a component, `useMotionReduced()`) and shows where it would have ended.
 - Off, a transition takes no time and never ends, since it never starts. Wait for a move with
@@ -388,22 +389,54 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
 - `⌘` in a key becomes `Ctrl` on Linux. Write keys in the macOS form in docs; the app shows each
   platform its own.
 
+## Settings
+
+Settings is a page in a tab of its own (`⌘,`, the gear at the end of the tab strip, or the palette):
+a list of its groups on the left, and the rows in a 720 px column beside it, under a search field
+(`/` or `⌘F`) that filters them by label, line and key. The groups are Accounts, Appearance,
+Keyboard, Pull requests, Code intelligence, Storage, Integrations and About, in that order. At the
+foot of the list, "Open `settings.json`" and "Open keymap file".
+
+A preference is a setting with a row. The menu bar and the palette may toggle it, and never own it.
+
+- **The row.** Each row is a `Setting`: its label, in four words at most, and one line under it, and
+  its control at the end. Its key (`diff.layout`) shows beside the label under the pointer or focus.
+  "Reset" shows beside the control while the setting isn't its default. What's wrong with a value is
+  a line under the row's own line, and the result of something the row did goes under it, as a
+  `Problem` when it failed.
+- **The line is at most 90 characters,** ending with a full stop, on what the setting does. It never
+  says "Lo", "This setting" or what the default is: the row's Reset says that. `defineSetting`
+  refuses a longer one.
+- **The control is drawn from the setting.** A setting on or off is a `Switch`; one with a few
+  options is a `SegmentedControl` of them. Anything else has a control of its own, and a setting a
+  key also changes shows the key's chip beside its control.
+- **A list is a `SettingsList`:** the row's label, line and controls for adding to it, then the list
+  in a box under them, each item a `SettingsListItem` with its own lead, label, line and buttons.
+  Accounts, trusted repos and toolchains share it. An empty list is a heading and a line in the box,
+  with what to do about it.
+- **A row's button for a command is `SettingsCommand`,** which takes the command's label, key and
+  reason as any control does.
+- **A feature adds its own rows.** `settingRow(setting, { order })` in its `window/index.ts` draws a
+  setting's row from what `defineSetting` says of it (group, label, line, options), and search reads
+  the same. `defineRow` makes any other row, given its group, label and line.
+
 ## Components
 
 Lo's components are React components in `packages/desktop/ui`, styled with Tailwind CSS on these
 tokens. Their code is the source for how each one looks.
 
-| Group            | Components                                                                       |
-| ---------------- | -------------------------------------------------------------------------------- |
-| Window           | PullRequestTab, TabBar, PRHeader, StatusBar, Banner                              |
-| Panels           | StackTree, FileTree                                                              |
-| Controls         | Button, HintButton, MoreButton, CopyButton, Key, SegmentedControl, Switch, Input |
-| Marks            | StatePill, Tag, Avatar, Marks                                                    |
-| Floating         | Dialog, Popover, ContextMenu, Palette, Tooltip, ToastStack                       |
-| Motion and waits | Collapse, Swap, Loading, Skeleton, Spinner, LogoMotion, Problem                  |
-| Review           | Thread, Diff, CodeView, CommentBox                                               |
-| Overview         | OverviewDocument, CodeBlock, Figure, Walkthrough, TabsAndFolds, Glossary         |
-| Flows            | Choice, Checklist, Composer, Peek, Timeline                                      |
+| Group            | Components                                                                            |
+| ---------------- | ------------------------------------------------------------------------------------- |
+| Window           | PullRequestTab, TabBar, PRHeader, StatusBar, Banner                                   |
+| Panels           | StackTree, FileTree                                                                   |
+| Controls         | Button, HintButton, MoreButton, CopyButton, Key, SegmentedControl, Switch, Input      |
+| Marks            | StatePill, Tag, Avatar, Marks                                                         |
+| Floating         | Dialog, Popover, ContextMenu, Palette, Tooltip, ToastStack                            |
+| Motion and waits | Collapse, Swap, Loading, Skeleton, Spinner, LogoMotion, Problem                       |
+| Review           | Thread, Diff, CodeView, CommentBox                                                    |
+| Overview         | OverviewDocument, CodeBlock, Figure, Walkthrough, TabsAndFolds, Glossary              |
+| Flows            | Choice, Checklist, Composer, Peek, Timeline                                           |
+| Settings         | SettingsPage, SettingsGroup, Setting, SettingsList, SettingsListItem, SettingsCommand |
 
 Build new screens from these. If something new is needed, make it from the same tokens and keep it
 to one job.

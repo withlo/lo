@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // The overview skill's rows in a window of their own, with main answered by a stand-in bridge: the
-// step on the welcome screen, the rows in Settings' Command line, and the command in the app menu.
+// step on the welcome screen, the rows in Settings › Integrations, and the command in the app menu.
 // What main installs, and in which folders, is tested beside it, in a temporary home.
 
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -17,7 +17,7 @@ import { notice } from '../../../window/commands/notices.tsx';
 import { createRegistry } from '../../../window/commands/registry.ts';
 import { Slot, Slots } from '../../../window/slots.tsx';
 import { installBridge, type FakeBridge } from '../../../window/test/bridge.ts';
-import { commandLine } from '../../open/window/shared.ts';
+import { rows } from '../../settings/window/shared.ts';
 import { setup } from '../../welcome/window/shared.ts';
 import type { SkillAgent, SkillResult, SkillState } from '../contract.ts';
 import feature from './index.ts';
@@ -117,8 +117,8 @@ function render(): HTMLElement {
         <ul aria-label="Optional steps">
           <Slot slot={setup} props={{}} />
         </ul>
-        <section aria-label="Command line">
-          <Slot slot={commandLine} props={{}} />
+        <section aria-label="Integrations">
+          <Slot slot={rows} props={{}} />
         </section>
       </Slots>,
     ),
@@ -131,7 +131,12 @@ function render(): HTMLElement {
 }
 
 const step = () => document.querySelector<HTMLElement>('[aria-label="Optional steps"] > li');
-const row = () => document.querySelector<HTMLElement>('[aria-label="Command line"]');
+/** Settings' row called `label`. */
+const settingRow = (label: string) =>
+  [...document.querySelectorAll<HTMLElement>('.setting-row')].find(
+    (each) => each.querySelector('.text-ui-strong')?.textContent === label,
+  ) ?? null;
+const row = () => settingRow('Overview skill');
 
 function button(within: Element | null, text: string): HTMLButtonElement {
   const found = [...(within?.querySelectorAll('button') ?? [])].find((each) =>
@@ -343,7 +348,7 @@ describe('Settings’ row', () => {
     await settle();
     // The install is over, and the window hasn't heard where things stand: no button to press.
     expect(button(step(), 'Install').disabled).toBe(true);
-    expect(button(row(), 'Install').disabled).toBe(true);
+    expect(button(row(), 'Install').getAttribute('aria-disabled')).toBe('true');
     act(() => release?.());
     await settle();
     expect(bridge.calls.filter(([channel]) => channel === 'overview.installSkill')).toHaveLength(1);
@@ -361,12 +366,12 @@ describe('Settings’ row', () => {
     expect(button(row(), 'Install again')).toBeDefined();
   });
 
-  it('is disabled while an install is under way', async () => {
+  it('is busy while an install is under way', async () => {
     main(state());
     render();
     await settle();
     act(() => skillStore.setState({ installing: true }));
-    expect(button(row(), 'Install').disabled).toBe(true);
+    expect(button(row(), 'Install').getAttribute('aria-busy')).toBe('true');
     expect(button(step(), 'Install').disabled).toBe(true);
   });
 });
@@ -386,10 +391,7 @@ describe('the command in the app menu', () => {
 });
 
 /** Settings' row for the command that installs the skill from a terminal. */
-const commandRow = () =>
-  [...(row()?.querySelectorAll<HTMLElement>('.setting-row') ?? [])].find((each) =>
-    each.textContent.startsWith('Install from a terminal'),
-  );
+const commandRow = () => settingRow('On another computer');
 /** What the window asked main to put on the clipboard. */
 const copies = () =>
   shared.calls.filter(([channel]) => channel === 'tab.copy').map(([, input]) => input);
@@ -413,9 +415,7 @@ describe('Settings’ row for the command that installs the skill', () => {
     render();
     await settle();
     expect(commandRow()?.querySelector('.code-small')?.textContent).toBe(command);
-    expect(commandRow()?.querySelector('.text-fg-muted')?.textContent).toBe(
-      `${command} installs the skill Lo does, for each agent set up on the computer you run it on.`,
-    );
+    expect(commandRow()?.querySelector('.text-fg-muted')?.textContent).toBe(command);
     const copy = button(commandRow() ?? null, 'Copy');
     expect([...copy.querySelectorAll('kbd')].map((each) => each.textContent)).toEqual(['y', 'c']);
     expect(copy.getAttribute('aria-description')).toBe('Keys y then c');

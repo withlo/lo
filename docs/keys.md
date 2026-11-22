@@ -25,8 +25,8 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | End of the overview                  | `G`, `End`    | In `overview`                | `overview.bottom`          |
 | Page down                            | `PgDn`        | In `overview`                | `overview.pageDown`        |
 | Page up                              | `PgUp`        | In `overview`                | `overview.pageUp`          |
-| Next section of Settings             | `j`           | In `settings`                | `settings.nextSection`     |
-| Previous section of Settings         | `k`           | In `settings`                | `settings.previousSection` |
+| Next group                           | `j`           | In `settings`                | `settings.nextSection`     |
+| Previous group                       | `k`           | In `settings`                | `settings.previousSection` |
 | Next event in the timeline           | `j`, `↓`      | In `timeline`                | `timeline.down`            |
 | Previous event in the timeline       | `k`, `↑`      | In `timeline`                | `timeline.up`              |
 | Next link or button in the event     | `Tab`         | In `timeline`                | `timeline.nextLink`        |
@@ -151,6 +151,7 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Open the link on the clipboard | `⌘V`                    | In `recent`                         | `open.paste`         |
 | Filter recent pull requests    | `/`                     | In `recent`                         | `open.filter`        |
 | Open the pull request          | `⏎`                     | In `recent`                         | `open.openRecent`    |
+| Search settings                | `/`, `⌘F`               | In `settings`                       | `settings.search`    |
 | Go to a file                   | `⌘P`                    | Anywhere but `dialog` and `palette` | `tree.find`          |
 
 ## View
@@ -305,7 +306,7 @@ mode. In the box's preview, or on its frame, `Esc` closes it at once, from any m
 | Sign out…                         | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `accounts.signOut`      |
 | Zoom in                           | `⌘=`, `⌘⇧=`                                              | Anywhere                                                                               | `app.zoomIn`            |
 | Zoom out                          | `⌘-`                                                     | Anywhere                                                                               | `app.zoomOut`           |
-| Actual size                       | `⌘0`                                                     | Anywhere                                                                               | `app.actualSize`        |
+| Reset zoom                        | `⌘0`                                                     | Anywhere                                                                               | `app.actualSize`        |
 | Show licenses                     | None: in the app menu on macOS, its menu and the palette | Anywhere                                                                               | `app.licenses`          |
 | Every key                         | `?`                                                      | Anywhere                                                                               | `keys.help`             |
 | Show the right-click menu         | `Menu`, `⇧F10`                                           | Anywhere but `menu`, `dialog` and `palette`                                            | `keys.menu`             |
@@ -313,7 +314,7 @@ mode. In the box's preview, or on its frame, `Esc` closes it at once, from any m
 | Open the keymap file              | `g ,`                                                    | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `keys.openKeymap`       |
 | Install command-line tool         | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `open.installCommand`   |
 | Install overview skill            | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `overview.installSkill` |
-| Open Settings                     | `⌘,`                                                     | Anywhere but `dialog` and `palette`                                                    | `settings.open`         |
+| Settings                          | `⌘,`                                                     | Anywhere but `dialog` and `palette`                                                    | `settings.open`         |
 | Tab 1                             | `⌘1`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show1`             |
 | Tab 2                             | `⌘2`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show2`             |
 | Tab 3                             | `⌘3`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show3`             |

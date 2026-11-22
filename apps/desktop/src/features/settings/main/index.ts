@@ -11,6 +11,7 @@ import { provides } from '../../../main/services.ts';
 import { IpcError } from '../../../ipc/contract.ts';
 import { github } from '../../accounts/service.ts';
 import { contract } from '../contract.ts';
+import { motion } from '../settings.ts';
 import { clearing, settings as service } from '../service.ts';
 import { applySettings } from './apply.ts';
 import { clear, measure } from './cache.ts';
@@ -81,6 +82,8 @@ export default defineFeature(contract, {
     clearCache: (_input, { git, use }) => clear(git, use(github), [...clearers]),
   },
   start({ git }) {
+    // The window applies motion itself, so main only declares it, for Settings to change.
+    settings().declare(motion);
     // The window follows the system's appearance, which this sets: the app feature reports it.
     applySettings(settings(), {
       appearance: nativeTheme,

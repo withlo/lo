@@ -59,9 +59,9 @@ export default defineCommands(
       menu: { on: 'line', order: 7 },
     },
     /**
-     * Inline type hints in the code views, on or off for the window; off at each start. They come
-     * on only when the code on screen gets some: otherwise the status bar says why, and they stay
-     * off.
+     * Inline type hints in the code views, on or off for the window, and kept as `code.hints`. They
+     * come on only when the code on screen gets some: otherwise the status bar says why, and they
+     * stay off.
      */
     hints: {
       label: 'Type hints',

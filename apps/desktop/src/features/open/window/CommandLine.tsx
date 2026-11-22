@@ -1,53 +1,104 @@
-// Settings' Command line section: the `lo` command, where it is, and installing it, then the rows
-// other features put in the section after it.
+// Settings' row for the `lo` command, in Integrations: where it's installed, if it is, installing
+// it, and how the last install went.
 
-import { Button, Setting } from '@lo/ui';
+import { Button, Problem, Setting } from '@lo/ui';
 import { useEffect } from 'react';
 import { useStore } from 'zustand';
 
-import { Slot } from '../../../window/slots.tsx';
-import { defineSection } from '../../settings/window/shared.ts';
+import { defineRow } from '../../settings/window/shared.ts';
+import type { Installed } from '../contract.ts';
 import { checkCommand, commandStore, installCommand } from './command.ts';
-import { commandLine } from './shared.ts';
 
-/** The `lo` command's row: where it's installed, if it is, and a button to install it. */
+/** A path, or a folder's, as code. */
+function Code({ text }: { text: string }) {
+  return <span className="break-all code-small">{text}</span>;
+}
+
+/** What the last install left to say on the row: a folder to add to `PATH`, or why it failed. */
+function Result({ done }: { done: Installed | undefined }) {
+  if (done?.kind === 'installed') {
+    if (done.onPath) return null;
+    return (
+      <p className="text-fg-muted text-small">
+        Add <Code text={done.path.slice(0, done.path.lastIndexOf('/'))} /> to{' '}
+        <span className="code-small">PATH</span>.
+      </p>
+    );
+  }
+  const title = (
+    <>
+      Couldn’t install the <span className="code-small">lo</span> command
+    </>
+  );
+  if (done?.kind === 'taken') {
+    return (
+      <Problem
+        title={title}
+        reason={
+          <>
+            Another <span className="code-small">lo</span> file is already there.
+          </>
+        }
+        details={done.path}
+      />
+    );
+  }
+  return (
+    <Problem
+      title={title}
+      details={done?.message}
+      action={{ label: 'Try again', onClick: () => void installCommand() }}
+    />
+  );
+}
+
 function CommandRow() {
-  const { state, installing, said } = useStore(commandStore);
+  const { state, installing, done } = useStore(commandStore);
   useEffect(() => {
     void checkCommand();
   }, []);
   const [first] = state?.installed ?? [];
   const current = state?.installed.some((each) => each.current) ?? false;
-  const where =
-    first === undefined
-      ? 'Review a pull request from a terminal with lo <link>.'
-      : current
-        ? `Installed at ${first.path}. Review a pull request from a terminal with lo <link>.`
-        : `Installed at ${first.path} by another copy of Lo. Install it again to open this one.`;
   return (
     <Setting
       label={
         <>
-          The <span className="code-text">lo</span> command
+          <span className="code-text">lo</span> command
         </>
       }
-      description={<span role="status">{said ?? where}</span>}
+      description={
+        <span role="status">
+          {first === undefined ? (
+            <>
+              Opens a pull request from a terminal with{' '}
+              <span className="code-small">lo &lt;link&gt;</span>.
+            </>
+          ) : current ? (
+            <>
+              Installed at <Code text={first.path} />.
+            </>
+          ) : (
+            <>
+              Installed at <Code text={first.path} />. It opens another copy of Lo.
+            </>
+          )}
+        </span>
+      }
+      below={done === null ? undefined : <Result done={done} />}
     >
-      <Button disabled={installing} onClick={() => void installCommand()}>
+      <Button busy={installing} working="Installing…" onClick={() => void installCommand()}>
         {first === undefined ? 'Install' : 'Install again'}
       </Button>
     </Setting>
   );
 }
 
-export default defineSection({
+export default defineRow({
   id: 'open.command',
-  order: 70,
-  title: 'Command line',
-  render: () => (
-    <>
-      <CommandRow />
-      <Slot slot={commandLine} props={{}} />
-    </>
-  ),
+  group: 'integrations',
+  order: 10,
+  label: 'lo command',
+  description: 'Opens a pull request from a terminal with lo <link>.',
+  words: () => ['terminal', 'command line', 'install', 'PATH'],
+  render: CommandRow,
 });

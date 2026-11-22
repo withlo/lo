@@ -27,7 +27,7 @@ export function loaderOf(id: string): Loader {
     files: (input, signal) => diffJobs().files(input, { signal }),
     moves: (input, signal) => diffJobs().moves(input, { signal }),
     highlight: (input, signal) => diffJobs().highlight(input, { signal }),
-    order: (changes) => orderIn(changes, orderModeOf(id)),
+    order: (changes) => orderIn(changes, orderModeOf()),
     log: (message, error) => console.error(message, error),
   });
   loader = made;

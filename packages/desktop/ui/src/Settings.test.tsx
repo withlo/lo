@@ -8,8 +8,14 @@ import { buildCss, declarations, hasRule } from '../scripts/stylesheet.ts';
 import { Button } from './Button.tsx';
 import { Input } from './Input.tsx';
 import { Meter } from './Meter.tsx';
-import { Setting, SettingsPage, SettingsSection } from './Settings.tsx';
-import { ThemeChoice, type ThemeName } from './ThemeChoice.tsx';
+import {
+  Setting,
+  SettingsEmpty,
+  SettingsGroup,
+  SettingsList,
+  SettingsListItem,
+  SettingsPage,
+} from './Settings.tsx';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -35,9 +41,6 @@ function click(element: Element | null | undefined): void {
   });
 }
 
-/** The cards of a theme choice. */
-const cards = (container: HTMLElement) => [...container.querySelectorAll('[role="radio"]')];
-
 /** The markup of a button. */
 const buttonMarkup = (props: Parameters<typeof Button>[0]) =>
   renderToStaticMarkup(<Button {...props} />);
@@ -58,14 +61,30 @@ const page = (
       { id: 'a.two', label: 'Two' },
     ]}
     current="a.two"
-    footer="Settings live in ~/.config/lo/"
+    search={<Input type="search" aria-label="Search settings" />}
+    footer={<Button size="sm">Open settings.json</Button>}
   >
-    <SettingsSection id="a.one" title="One" description="The first.">
-      <Setting label="Name" description="What it is called.">
+    <SettingsGroup id="a.one" title="One">
+      <Setting label="Name" description="What it is called." settingKey="a.name" onReset={() => {}}>
         <Button size="sm">Change</Button>
       </Setting>
-    </SettingsSection>
-    <SettingsSection id="a.two" title="Two" />
+    </SettingsGroup>
+    <SettingsGroup id="a.two" title="Two">
+      <SettingsList
+        label="Accounts"
+        description="Each one."
+        actions={<Button size="sm">Add</Button>}
+      >
+        <div role="list">
+          <SettingsListItem label="rozed-bot" description="github.com">
+            <Button size="sm">Sign out</Button>
+          </SettingsListItem>
+        </div>
+      </SettingsList>
+      <SettingsList label="Empty">
+        <SettingsEmpty heading="Nothing here" line="Add one above." />
+      </SettingsList>
+    </SettingsGroup>
   </SettingsPage>
 );
 
@@ -163,20 +182,46 @@ describe('Meter', () => {
 });
 
 describe('Settings', () => {
-  it('draws the list of sections beside the sections, with the one on screen marked', () => {
+  it('draws the list of groups beside the groups, with the one on screen marked', () => {
     const container = render(page);
     const nav = container.querySelector('nav[aria-label="Settings"]');
     const items = [...(nav?.querySelectorAll('button') ?? [])];
-    expect(items.map((item) => item.textContent)).toEqual(['One', 'Two']);
-    expect(items.map((item) => item.getAttribute('aria-current'))).toEqual([null, 'true']);
-    expect(nav?.textContent).toContain('Settings live in ~/.config/lo/');
+    expect(items.map((item) => item.textContent)).toEqual(['One', 'Two', 'Open settings.json']);
+    expect(items.map((item) => item.getAttribute('aria-current'))).toEqual([null, 'true', null]);
     const headings = [...container.querySelectorAll('h2')].map((heading) => heading.textContent);
     expect(headings).toEqual(['One', 'Two']);
-    // Each section is named by its title.
+    // Each group is named by its title, and the search sits over them, outside what scrolls.
     const section = container.querySelector('section#a\\.one');
     expect(section?.getAttribute('aria-labelledby')).toBe('a.one-title');
-    expect(section?.querySelector('p')?.textContent).toBe('The first.');
-    expect(container.querySelector('section#a\\.two p')).toBeNull();
+    expect(container.querySelector('input[type="search"]')?.closest('.overflow-auto')).toBeNull();
+  });
+
+  it('shows a row’s key beside its label, and Reset before its control', () => {
+    const reset = vi.fn<() => void>();
+    const container = render(
+      <Setting label="Name" settingKey="a.name" onReset={reset} resetName="Name">
+        <Button>Change</Button>
+      </Setting>,
+    );
+    const row = container.querySelector('.setting-row');
+    expect(row?.getAttribute('data-setting')).toBe('a.name');
+    expect(row?.querySelector('[aria-hidden="true"]')?.textContent).toBe('a.name');
+    const button = row?.querySelector('[data-reset]');
+    expect(button?.getAttribute('aria-label')).toBe('Reset Name');
+    click(button);
+    expect(reset).toHaveBeenCalledOnce();
+    // Focus goes to the control beside it, as Reset goes once the setting is its default.
+    expect(document.activeElement?.textContent).toBe('Change');
+  });
+
+  it('draws a list row’s label, line and actions over the list in its box', () => {
+    const container = render(page);
+    const [, accounts, empty] = container.querySelectorAll('section#a\\.two > *');
+    expect(accounts?.textContent).toBe('AccountsEach one.Addrozed-botgithub.comSign out');
+    expect(accounts?.querySelector('[role="listitem"]')?.textContent).toBe(
+      'rozed-botgithub.comSign out',
+    );
+    expect(empty?.textContent).toBe('EmptyNothing hereAdd one above.');
   });
 
   it('tells which section was chosen in the list', () => {
@@ -215,7 +260,6 @@ describe('Settings', () => {
     const markup = renderToStaticMarkup(
       <>
         {page}
-        <ThemeChoice value="dark" onChange={() => undefined} />
         <Meter value={1} max={2} label="Room" />
         <Input aria-label="x" />
       </>,
@@ -224,47 +268,10 @@ describe('Settings', () => {
     const css = await buildCss(classes);
     expect(classes.filter((name) => !hasRule(css, name))).toEqual([]);
     const flat = css.replaceAll(/\s+/g, ' ');
-    // 220 px of list, then the sections; a row's name and what it does, then its controls.
+    // 220 px of list, then the groups; a row's name and what it does, then its controls.
     expect(flat).toContain('grid-template-columns: var(--lo-settings-nav-w) minmax(0, 1fr)');
     expect(flat).toContain('grid-template-columns: minmax(0, 1fr) auto');
     expect(flat).toContain('gap: var(--lo-sp-4) var(--lo-sp-24)');
     expect(declarations(css, 'max-w-settings-w')).toBe('max-width: var(--lo-settings-w);');
-    expect(declarations(css, 'w-swatch-w')).toBe('width: var(--lo-swatch-w);');
-    expect(declarations(css, 'h-swatch-h')).toBe('height: var(--lo-swatch-h);');
-  });
-});
-
-describe('ThemeChoice', () => {
-  it('offers each theme as a card that shows it, the chosen one checked', () => {
-    const container = render(<ThemeChoice value="light" onChange={() => undefined} />);
-    expect(container.querySelector('[role="radiogroup"]')?.getAttribute('aria-label')).toBe(
-      'Theme',
-    );
-    expect(cards(container).map((card) => card.textContent)).toEqual([
-      'Dark',
-      'Light',
-      'Match the system',
-    ]);
-    expect(cards(container).map((card) => card.getAttribute('aria-checked'))).toEqual([
-      'false',
-      'true',
-      'false',
-    ]);
-    // Each swatch is painted by the theme it shows; the system's holds one of each.
-    const swatches = [...container.querySelectorAll('[data-theme]')].map((swatch) =>
-      swatch.getAttribute('data-theme'),
-    );
-    expect(swatches).toEqual(['dark', 'light', 'dark', 'light']);
-  });
-
-  it('follows its value, and says which card was chosen', () => {
-    const chosen = vi.fn<(theme: ThemeName) => void>();
-    const container = render(<ThemeChoice value="dark" onChange={chosen} />);
-    const [, light, system] = cards(container);
-    click(light);
-    expect(chosen).toHaveBeenLastCalledWith('light');
-    click(system);
-    expect(chosen).toHaveBeenLastCalledWith('system');
-    expect(cards(container)[0]?.getAttribute('aria-checked')).toBe('true');
   });
 });
