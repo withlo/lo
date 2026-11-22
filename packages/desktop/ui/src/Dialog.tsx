@@ -210,6 +210,8 @@ export function Dialog(props: DialogProps) {
   // to copy, or the main button after a failure with nothing to do again. The main button takes
   // focus then, or else the button that leaves, before the browser drops it on the panel: it's
   // what `⏎` presses next.
+  // The main button comes and goes with the state, or with `again` in a failure that stays one.
+  const drawn = action !== undefined && !(state === 'failed' && action.again === null);
   useLayoutEffect(() => {
     const at = panel.current;
     const to = main.current ?? leave.current;
@@ -222,7 +224,7 @@ export function Dialog(props: DialogProps) {
       at.contains(active) &&
       !(active.checkVisibility?.({ visibilityProperty: true }) ?? true);
     if (gone || hidden) to.focus({ preventScroll: true });
-  }, [state, open]);
+  }, [state, open, drawn]);
   return (
     <Base.Root
       open={open}

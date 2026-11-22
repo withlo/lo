@@ -281,6 +281,17 @@ export function openRun(tab: PullTab, layers: readonly number[]): void {
     .catch((error: unknown) => failed(error, tab, layers));
 }
 
+/**
+ * Try again under the stack's tree: shows the layers that couldn't be shown as one diff again. The
+ * tree takes focus first, as the button goes with what went wrong.
+ */
+export function runAgain(tab: PullTab): void {
+  const trouble = runTrouble.get(tab.id);
+  if (!trouble) return;
+  treeOnScreen()?.focus();
+  openRun(tab, trouble.layers);
+}
+
 /** The row of layer `number` in the stack of `tab`, if it has one. */
 function rowOf(tab: PullTab, number: number) {
   const view = stacks.get(tab.id);

@@ -953,6 +953,9 @@ it('lets a chain’s merge whose answer was lost be left while Lo reads how it w
     reason:
       'GitHub didn’t respond. Lo keeps checking, and moves the layers above once it has merged.',
   });
+  // The step says where it stands, and only the main button waits.
+  expect(rows()[0]).toContain('Not confirmed');
+  expect(rows().join(' ')).not.toContain('Checking…');
   expect(foot()).toEqual(['Close', 'Check again']);
   press('Check again');
   expect(working()).toBe('Checking…');

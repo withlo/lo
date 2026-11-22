@@ -12,6 +12,7 @@ import {
   MergeJobs,
   PullRef,
   type Cached,
+  type GithubErrorDetail,
   type MergeFacts,
   type PollEvent,
   type PollStatus,
@@ -67,6 +68,8 @@ interface Setup {
   facts?: MergeFacts;
   /** What each read afresh gets, in turn; the last again. */
   reads?: MergeFacts[];
+  /** What each read afresh fails with, in place of what it gets. */
+  readFails?: GithubErrorDetail;
   /** Approves, and calls `heard` when GitHub's answer is lost. */
   approve?: (id: string, head: string, heard: () => void) => Promise<Approved>;
   /** How long Lo waits for an approval whose answer was lost to settle: a minute. */
@@ -131,16 +134,24 @@ function setup(options: Setup = {}) {
     },
     readAfresh() {
       marks += 1;
-      const next = reads.length > 1 ? reads.shift()! : reads[0]!;
-      cached = { value: next, fetchedAt: NOW };
+      const failed = options.readFails;
+      if (!failed) {
+        const next = reads.length > 1 ? reads.shift()! : reads[0]!;
+        cached = { value: next, fetchedAt: NOW };
+      }
       queueMicrotask(() => {
         for (const listener of listeners) {
-          listener({ kind: 'read', pull, name: MERGE_FACTS.name });
+          listener(
+            failed
+              ? { kind: 'readFailed', pull, name: MERGE_FACTS.name, error: failed }
+              : { kind: 'read', pull, name: MERGE_FACTS.name },
+          );
         }
       });
       return { read: 1, generation: marks };
     },
     readSince<T>(): SinceMark<Cached<T>> {
+      if (options.readFails) return { kind: 'waiting' };
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- what MERGE_FACTS reads.
       return { kind: 'read', read: cached as Cached<T> };
     },
@@ -330,6 +341,20 @@ describe('the plan', () => {
       plan: { approval: { kind: 'alreadyApproved' } },
     });
     expect(marks()).toBe(1);
+  });
+
+  it('says GitHub returned an error when a read afresh for the plan fails, with what it said for Details', async () => {
+    const { shipping } = setup({
+      readFails: { kind: 'api', status: 502, message: 'Bad Gateway', errors: [] },
+    });
+    await expect(shipping.plan(ID, true)).resolves.toEqual({
+      kind: 'refused',
+      refusal: expect.objectContaining({
+        kind: 'failed',
+        text: 'GitHub returned an error.',
+        details: expect.stringContaining('Bad Gateway'),
+      }),
+    });
   });
 
   it('approves nothing on your own pull request', async () => {

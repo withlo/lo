@@ -73,7 +73,14 @@ function planShip(id: string, number: number, still?: ShipDialog, afresh = false
   setDialog(planning);
   const refused = (refusal: Refusal) => {
     if (shipping.getState().dialog !== planning) return;
-    setDialog({ kind: 'refused', id, number, plan: undefined, refusal });
+    setDialog({
+      kind: 'refused',
+      id,
+      number,
+      plan: undefined,
+      refusal,
+      ...(afresh ? { afresh } : {}),
+    });
   };
   main()
     .ship(afresh ? { id, afresh } : { id })
@@ -107,7 +114,9 @@ function replan(afresh: boolean): void {
   const dialog = shipping.getState().dialog;
   if (!dialog || dialog.kind === 'planning' || dialog.kind === 'confirm') return;
   if (dialog.kind === 'refused') {
-    planShip(dialog.id, dialog.number, stillFinding(dialog) ? dialog : undefined, afresh);
+    // Planned from GitHub read again, it's asked so again.
+    const again = afresh || dialog.afresh === true;
+    planShip(dialog.id, dialog.number, stillFinding(dialog) ? dialog : undefined, again);
   } else {
     planShip(dialog.plan.id, dialog.plan.number, undefined, afresh);
   }

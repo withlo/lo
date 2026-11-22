@@ -9,7 +9,7 @@ import { installBridge } from '../../../window/test/bridge.ts';
 import type * as TabShared from '../../tab/window/shared.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
 import type { Row, StackView } from '../contract.ts';
-import { choosing, focused, stacks } from './layers.ts';
+import { choosing, focused, runTrouble, stacks } from './layers.ts';
 import {
   back,
   cancel,
@@ -17,6 +17,7 @@ import {
   goDown,
   goUp,
   moveFocus,
+  runAgain,
   showTarget,
   upTo,
   upToNamed,
@@ -230,6 +231,26 @@ describe('choosing a run of layers', () => {
     upTo({ kind: 'layer', layer: 84 });
     await answered();
     expect(bridge.calls).toEqual([['stacks.run', { id: tab.id, bottom: 82, top: 84 }]]);
+  });
+});
+
+describe('a run of layers that couldn’t be shown', () => {
+  it('is tried again from its problem, with focus put in the stack’s tree as the problem goes', async () => {
+    const tab = showing(83, STACK);
+    const stackTree = document.createElement('div');
+    stackTree.dataset['loScope'] = 'stack';
+    stackTree.tabIndex = -1;
+    document.body.append(stackTree);
+    runTrouble.set(tab.id, {
+      title: 'Couldn’t show layers 1–2',
+      details: 'down',
+      layers: [82, 83],
+    });
+    runAgain(tab);
+    expect(document.activeElement).toBe(stackTree);
+    expect(runTrouble.get(tab.id)).toBeUndefined();
+    await answered();
+    expect(bridge.calls).toEqual([['stacks.run', { id: tab.id, bottom: 82, top: 83 }]]);
   });
 });
 

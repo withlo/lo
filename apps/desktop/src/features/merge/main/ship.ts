@@ -27,11 +27,13 @@
 // Electron.
 
 import {
+  GithubError,
   isFullSha,
   MERGE_FACTS,
   PullRef,
   rulesBase,
   type Cached,
+  type GithubErrorDetail,
   type MergeFacts,
   type PollEvent,
   type Poller,
@@ -527,7 +529,11 @@ export class Shipping {
     const cached = afresh
       ? await readAfresh(poller, pull, this.#options.readWait ?? 20_000, signal, () => this.#now())
       : (poller.cachedRead(pull, MERGE_FACTS) ?? (await poller.mergeFacts(pull)));
-    if (typeof cached === 'string') return refused(own('unread', cached));
+    if (cached && 'why' in cached) {
+      // Not read: Lo is still finding out, as it is with nothing read yet.
+      if (cached.why === '') return refused(own('unread', ''));
+      return refused(own('failed', cached.why, { details: cached.details }));
+    }
     if (!cached) return refused(own('unread', ''));
     return this.#planOf(id, login, pull, poller, cached.value, signal);
   }
@@ -954,8 +960,8 @@ export class Shipping {
         () => this.#now(),
       );
       if (this.#stopped) return false;
-      if (typeof read === 'string') {
-        this.#stopAt(run, own('unread', read));
+      if ('why' in read) {
+        this.#stopAt(run, own('unread', read.why, { details: read.details }));
         return false;
       }
       const snapshot = this.#snapshotOf(plan.id, pull, read.value, plan.head);
@@ -1182,8 +1188,11 @@ export class Shipping {
     const { number } = run.plan;
     // GitHub wouldn't turn on auto-merge, as it can merge now; where merging then didn't go either,
     // the reason is why that didn't. The button is "Merge panel".
-    const instead = (at: Run, why: string) =>
-      this.#stopAt(at, own('canMergeNow', why === '' ? `#${number} can merge now.` : why));
+    const instead = (at: Run, why: string, details?: string) =>
+      this.#stopAt(
+        at,
+        own('canMergeNow', why === '' ? `#${number} can merge now.` : why, { details }),
+      );
     const turn = this.#options.turns.take(run.pull.repo, [run.pull.number]);
     if ('busy' in turn) {
       instead(run, busyText(turn.busy, number));
@@ -1201,8 +1210,8 @@ export class Shipping {
         () => this.#now(),
       );
       if (this.#stopped) return;
-      if (typeof read === 'string') {
-        instead(next, read);
+      if ('why' in read) {
+        instead(next, read.why, read.details);
         return;
       }
       next.facts = read.value;
@@ -1323,6 +1332,12 @@ function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
+/** Why a read afresh didn't come: no cause to give for `why` of `''`; what GitHub said for Details. */
+export interface Unread {
+  readonly why: string;
+  readonly details?: string | undefined;
+}
+
 /**
  * What decides `pull`'s merge, read afresh now, whatever was read before, or why it couldn't be,
  * within `wait` milliseconds; given up on `signal`.
@@ -1333,7 +1348,7 @@ export async function readAfresh(
   wait: number,
   signal: AbortSignal,
   now: () => number,
-): Promise<Cached<MergeFacts> | string> {
+): Promise<Cached<MergeFacts> | Unread> {
   let mark = poller.readAfresh(pull, MERGE_FACTS);
   if (!mark) {
     // Not kept, as for a pull request no view shows: kept from now, and read.
@@ -1341,33 +1356,38 @@ export async function readAfresh(
     mark = poller.readAfresh(pull, MERGE_FACTS);
   }
   // Not kept, or let go of: no cause to give.
-  if (!mark) return '';
+  if (!mark) return { why: '' };
   const deadline = now() + wait;
   for (;;) {
     signal.throwIfAborted();
     const since = poller.readSince(pull, MERGE_FACTS, mark);
     if (since.kind === 'read') return since.read;
-    if (since.kind === 'stale') return '';
+    if (since.kind === 'stale') return { why: '' };
     const heard = await nextRead(poller, pull, deadline - now(), signal);
     signal.throwIfAborted();
-    if (heard === 'failed') return 'GitHub returned an error.';
-    if (heard === 'late') return 'GitHub didn’t respond.';
+    if (heard === 'late') return { why: 'GitHub didn’t respond.' };
+    if (heard !== 'read') {
+      return { why: 'GitHub returned an error.', details: rawOf(new GithubError(heard.failed)) };
+    }
   }
 }
 
-/** The next read of `pull`'s merge facts, or why there's none within `wait` milliseconds. */
+/**
+ * The next read of `pull`'s merge facts, or why there's none within `wait` milliseconds: what the
+ * read that failed said, or that none came.
+ */
 function nextRead(
   poller: Pick<Poller, 'onEvent'>,
   pull: PullRef,
   wait: number,
   signal: AbortSignal,
-): Promise<'read' | 'failed' | 'late'> {
+): Promise<'read' | 'late' | { readonly failed: GithubErrorDetail }> {
   return new Promise((resolve) => {
     if (wait <= 0 || signal.aborted) {
       resolve('late');
       return;
     }
-    const done = (how: 'read' | 'failed' | 'late') => {
+    const done = (how: 'read' | 'late' | { readonly failed: GithubErrorDetail }) => {
       clearTimeout(timer);
       stop();
       signal.removeEventListener('abort', given);
@@ -1381,7 +1401,7 @@ function nextRead(
         return;
       }
       if (!event.pull.equals(pull) || event.name !== MERGE_FACTS.name) return;
-      done(event.kind === 'readFailed' ? 'failed' : 'read');
+      done(event.kind === 'readFailed' ? { failed: event.error } : 'read');
     });
   });
 }

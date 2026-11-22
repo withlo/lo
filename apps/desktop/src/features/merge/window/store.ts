@@ -285,6 +285,8 @@ export type ShipDialog =
       readonly number: number;
       readonly plan: ShipPlan | undefined;
       readonly refusal: Refusal;
+      /** It was planned from GitHub read again, as asking again plans it. */
+      readonly afresh?: boolean | undefined;
     }
   | {
       readonly kind: 'running';

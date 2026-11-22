@@ -514,13 +514,13 @@ describe('a dialog that does something', () => {
     expect(document.activeElement).toBe(named('Waiting'));
   });
 
-  const ending = (state: DialogState) => (
+  const ending = (state: DialogState, again: string | null = null) => (
     <Dialog
       open
       onOpenChange={() => {}}
       title="Merge #264"
       state={state}
-      action={{ label: 'Merge #264', onRun: run, again: null, shortcut: 'Meta+Enter' }}
+      action={{ label: 'Merge #264', onRun: run, again, shortcut: 'Meta+Enter' }}
       problem={{ title: 'Can’t merge #264' }}
     />
   );
@@ -534,6 +534,16 @@ describe('a dialog that does something', () => {
     expect(main.getAttribute('aria-keyshortcuts')).toBe('Meta+Enter');
     rerender(host, ending('failed'));
     expect(named('Merge #264')).toBeUndefined();
+    expect(document.activeElement).toBe(named('Close'));
+  });
+
+  it('gives focus to the button that leaves when the main one goes in a failure that stays one', async () => {
+    const host = render(ending('failed', 'Check again'));
+    await settle();
+    expect(document.activeElement).toBe(named('Check again'));
+    // Still failed, with nothing to do again now.
+    rerender(host, ending('failed'));
+    expect(named('Check again')).toBeUndefined();
     expect(document.activeElement).toBe(named('Close'));
   });
 

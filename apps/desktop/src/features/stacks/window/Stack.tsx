@@ -33,7 +33,7 @@ import { makeStack } from './actions.ts';
 import { useLayerCount } from './counts.ts';
 import { catchUp, choosing, focused, keyboardLayer, runTrouble, stacks } from './layers.ts';
 import { chainIn, choiceLine, type Choice } from './runs.ts';
-import { openRun, showTarget, stackTarget, stopChoosing, takeRefocus } from './walk.ts';
+import { runAgain, showTarget, stackTarget, stopChoosing, takeRefocus } from './walk.ts';
 
 const REVIEWS: Readonly<Record<Review, StackReview>> = {
   approved: 'approved',
@@ -296,7 +296,7 @@ export function Stack({ tab }: { tab: PullTab }) {
           layout="inline"
           title={trouble.title}
           details={trouble.details}
-          action={{ label: 'Try again', onClick: () => openRun(tab, trouble.layers) }}
+          action={{ label: 'Try again', onClick: () => runAgain(tab) }}
         />
       ),
     });

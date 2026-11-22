@@ -289,10 +289,9 @@ function mergeStep(
         : { state: 'done', detail: 'Merged' };
     case 'refused':
       return { state: 'stopped', detail: 'Not merged' };
+    // While Lo still reads it, the reason says so: the step shows only where it stands.
     case 'unknown':
-      return progress.phase === 'waiting'
-        ? { state: 'now', detail: 'Checking…' }
-        : { state: 'stopped', detail: 'Not confirmed' };
+      return { state: 'stopped', detail: 'Not confirmed' };
     // Auto-merge's writes: a chain's merge is never one.
     case 'autoMergeOn':
     case 'autoMergeOff':

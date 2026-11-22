@@ -216,7 +216,7 @@ export class ChainRun {
           ? (this.#options.queueFor ?? 6 * 60 * 60_000)
           : (this.#options.lostFor ?? 15 * 60_000));
       this.#phase = 'waiting';
-      // After a lost answer, the step reads "Checking…".
+      // After a lost answer, the window says Lo keeps checking.
       this.#text =
         now === 'queue' ? 'The layers above move once it has merged, while Lo is open.' : null;
       this.#changed();

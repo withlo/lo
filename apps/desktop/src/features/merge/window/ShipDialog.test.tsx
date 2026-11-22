@@ -556,6 +556,37 @@ it('a stop where Lo can’t tell whether GitHub took the approval says it isn’
   expect(buttons()).toEqual(['Cancel', 'Approve and ship']);
 });
 
+it('plans from GitHub read again on Try again, where the plan that failed was read so', async () => {
+  const plan = planOf();
+  draw(<ShipDialog />);
+  act(() =>
+    shipping.setState({
+      dialog: {
+        kind: 'refused',
+        id: plan.id,
+        number: plan.number,
+        plan: undefined,
+        refusal: {
+          kind: 'failed',
+          text: 'GitHub returned an error.',
+          rules: [],
+          until: null,
+          newer: null,
+          details: 'Bad Gateway',
+        },
+        afresh: true,
+      },
+    }),
+  );
+  await until(() => problem() !== undefined);
+  expect(problem()).toEqual({ title: 'Couldn’t check #138', reason: 'GitHub returned an error.' });
+  click('Try again');
+  await until(() => shipping.getState().dialog?.kind === 'confirm');
+  expect(bridge.calls.filter(([channel]) => channel === 'merge.ship')).toEqual([
+    ['merge.ship', { id: plan.id, afresh: true }],
+  ]);
+});
+
 it('a newer push before approving says the revision is out of date, and offers the newer one once Lo has read it', async () => {
   const plan = planOf();
   draw(<ShipDialog />);
