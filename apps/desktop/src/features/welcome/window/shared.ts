@@ -1,12 +1,14 @@
-// What the welcome feature shares with other features' window code: the slot for the optional
-// steps under its sign-in, "Set up, if you like". A feature puts a step there with `SetupItem`
-// from `@lo/ui`; the steps go in `order`, lower first.
+// What the welcome feature shares with other features' window code: the slot for the rows of its
+// set-up step, "Use Lo with your other tools". A feature puts a row there with `SetupItem` from
+// `@lo/ui`; the rows go in `order`, lower first. What opens the welcome again is its command,
+// `welcome.show`, which a control anywhere can run.
 
 import { defineSlot } from '../../../window/slots.tsx';
 
 /**
- * The welcome screen's optional steps, one view each: a row that says what it does and has a
- * button of its own. Lo's own take 10 (the `lo` command) and 20 (sending pull request links to
- * Lo); later steps go after them. The screen draws the list and its label while any step is here.
+ * The rows of the welcome's set-up step, one view each: a row that says what it adds in a line,
+ * with one button, which gives way to the row's state once it's done (`done`). Lo's own take 10
+ * (the `lo` command) and 20 (sending pull request links to Lo); later rows go after them. A feature
+ * that needs set-up adds its row here and a row in Settings, never a banner.
  */
 export const setup = defineSlot('welcome.setup');

@@ -51,10 +51,11 @@ function grouped(...groups: MenuItemConstructorOptions[][]): MenuItemConstructor
 }
 
 /**
- * The macOS app menu: the app's menu, File, Edit, View, Go, Review and Window, with Lo's commands
- * in the menus they declare, in their order: `App` is the app's own, and `Update` a submenu of it,
- * after the others. Nothing reloads the page or closes the window by
- * key, and the developer tools appear only when `devTools` says.
+ * The macOS app menu: the app's menu, File, Edit, View, Go, Review, Window and Help, with Lo's
+ * commands in the menus they declare, in their order: `App` is the app's own, and `Update` a
+ * submenu of it, after the others. Help is there while a command is in it, and has the system's
+ * search. Nothing reloads the page or closes the window by key, and the developer tools appear only
+ * when `devTools` says.
  */
 export function macMenu(
   items: readonly BarItem[],
@@ -65,6 +66,7 @@ export function macMenu(
       .filter((item) => item.menu === name)
       .toSorted((a, b) => a.order - b.order)
       .map((item) => loItem(item, options.run));
+  const help = lo('Help');
   return [
     {
       label: options.name,
@@ -97,6 +99,7 @@ export function macMenu(
       role: 'windowMenu',
       submenu: grouped([{ role: 'minimize' }, { role: 'zoom' }], lo('Window'), [{ role: 'front' }]),
     },
+    ...(help.length > 0 ? [{ label: 'Help', role: 'help' as const, submenu: help }] : []),
   ];
 }
 

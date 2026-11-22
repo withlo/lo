@@ -7,18 +7,19 @@ import { defineView } from '../../../window/slots.tsx';
 import { contract as app } from '../../app/contract.ts';
 import { cover, dialogs } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
-import { enter } from './actions.ts';
+import { enter, loadState, show } from './actions.ts';
 import { Cover } from './Cover.tsx';
 import { Rules } from './Rules.tsx';
+import { CommandStep, LinksStep } from './Setup.tsx';
 import { setup } from './shared.ts';
-import { CommandStep, LinksStep } from './Steps.tsx';
 import { showGit, welcomeStore } from './store.ts';
 
 export default {
   commands: handlers(keys, {
-    signIn: {
+    show: { run: show },
+    continue: {
       run: enter,
-      enabled: () => (welcomeStore.getState().shown ? true : 'Lo is signed in to GitHub.'),
+      enabled: () => (welcomeStore.getState().shown ? true : 'The welcome isn’t open'),
     },
   }),
   views: [
@@ -32,6 +33,7 @@ export default {
     defineView(setup, { id: 'welcome.links', order: 20, render: () => createElement(LinksStep) }),
   ],
   start() {
+    void loadState();
     const git = client(app);
     // Subscribed first, so no change between the two is missed. Whatever main pushes is newer
     // than its answer, which it gave from what it knew when it was asked.

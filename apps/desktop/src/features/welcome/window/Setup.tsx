@@ -1,10 +1,13 @@
-// The optional steps Lo puts in the welcome screen's `welcome.setup` slot: installing the `lo`
-// command, and sending pull request links to Lo.
+// The welcome's third step: what Lo works with outside its window, one row each, with where each
+// stands. Lo's own rows are the `lo` command and sending pull request links to Lo; other features
+// add theirs through the `welcome.setup` slot.
 
-import { Button, SetupItem } from '@lo/ui';
-import { useEffect, useState } from 'react';
+import { Button, SetupItem, SetupList } from '@lo/ui';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 
+import { Slot } from '../../../window/slots.tsx';
 import { findCommand, installCommand, useCommand } from '../../open/window/shared.ts';
+import { setup } from './shared.ts';
 import { welcomeStore } from './store.ts';
 
 function TerminalIcon() {
@@ -23,7 +26,7 @@ function LinkIcon() {
   );
 }
 
-/** Installing the `lo` command, through the open feature, which says how it went in a notice. */
+/** Installing the `lo` command, through the open feature, which says in a notice when it can't. */
 export function CommandStep() {
   const command = useCommand();
   const [installing, setInstalling] = useState(false);
@@ -36,25 +39,27 @@ export function CommandStep() {
       icon={<TerminalIcon />}
       title={
         <>
-          Install the <span className="code-text">lo</span> command
+          <span className="code-text">lo</span> command
         </>
       }
       description={
         <>
-          Review a pull request from a terminal with{' '}
+          Opens a pull request from a terminal with{' '}
           <span className="text-fg code-small">lo &lt;link&gt;</span>.
         </>
       }
+      done={installed ? 'Installed' : undefined}
     >
       <Button
         size="sm"
-        disabled={installing || installed}
+        busy={installing}
+        working="Installing…"
         onClick={() => {
           setInstalling(true);
           void installCommand().finally(() => setInstalling(false));
         }}
       >
-        {installed ? 'Installed' : 'Install'}
+        Install
       </Button>
     </SetupItem>
   );
@@ -65,12 +70,31 @@ export function LinksStep() {
   return (
     <SetupItem
       icon={<LinkIcon />}
-      title="Send PR links to Lo"
-      description="Lets a link router such as Finicky hand GitHub PR links to Lo. Your browser stays the default."
+      title="Send pull request links to Lo"
+      description="Pull request links clicked in other apps open in Lo."
     >
       <Button size="sm" onClick={() => welcomeStore.setState({ rules: true })}>
-        Set up
+        Show rules
       </Button>
     </SetupItem>
+  );
+}
+
+export function SetupStep(): ReactNode {
+  const heading = useId();
+  return (
+    <>
+      <div className="flex flex-col gap-6">
+        <h1 id={heading} className="m-0 text-heading">
+          Use Lo with your other tools
+        </h1>
+        <p className="m-0 text-fg-muted text-ui">
+          Each of these is also in Settings › Integrations.
+        </p>
+      </div>
+      <SetupList labelledBy={heading}>
+        <Slot slot={setup} props={{}} />
+      </SetupList>
+    </>
   );
 }

@@ -144,9 +144,9 @@ The mark moves by melding. At rest, the L and the o are one rounded triangle. Wh
 
 | Animation | Use | Settles after | Preview |
 | --- | --- | --- | --- |
-| Unmeld | App launch | 1.4 s | [`motion/unmeld-chalk.svg`](motion/unmeld-chalk.svg), [`-ink`](motion/unmeld-ink.svg) |
+| Unmeld | The first step of the welcome | 1.4 s | [`motion/unmeld-chalk.svg`](motion/unmeld-chalk.svg), [`-ink`](motion/unmeld-ink.svg) |
 | Meld loop | Loading; repeats while the wait lasts | 2.8 s per loop | [`motion/meld-loop-chalk.svg`](motion/meld-loop-chalk.svg), [`-ink`](motion/meld-loop-ink.svg) |
-| Kiss | Approved, or another small confirmation | 1.2 s | [`motion/kiss-chalk.svg`](motion/kiss-chalk.svg), [`-ink`](motion/kiss-ink.svg) |
+| Kiss | Approved, or another small confirmation; the last step of the welcome | 1.2 s | [`motion/kiss-chalk.svg`](motion/kiss-chalk.svg), [`-ink`](motion/kiss-ink.svg) |
 | Unmeld, then the name | Lockup intro, the quiet one | 1.4 s | [`motion/lockup-unmeld-chalk.svg`](motion/lockup-unmeld-chalk.svg), [`-ink`](motion/lockup-unmeld-ink.svg) |
 | Echo | Lockup intro; the name repeats the move | 2.4 s | [`motion/lockup-echo-chalk.svg`](motion/lockup-echo-chalk.svg), [`-ink`](motion/lockup-echo-ink.svg) |
 | Hand-off | Splash screen and the getlo.dev hero | 3.3 s | [`motion/lockup-handoff-chalk.svg`](motion/lockup-handoff-chalk.svg), [`-ink`](motion/lockup-handoff-ink.svg) |

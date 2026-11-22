@@ -111,6 +111,7 @@ export {
 } from './Tooltip.tsx';
 export { Collapse, Swap, type CollapseProps, type SwapProps } from './Collapse.tsx';
 export { Problem, type ProblemAction, type ProblemProps } from './Problem.tsx';
+export { EmptyState, type EmptyAction, type EmptyStateProps } from './EmptyState.tsx';
 export {
   CopyButton,
   CopyRoute,
@@ -138,7 +139,15 @@ export {
 export { reveal, scrollPane, type RevealBlock, type RevealOptions } from './reveal.ts';
 export { Steps, type StepItem, type StepsProps, type StepState } from './Steps.tsx';
 export { Mark, type MarkProps } from './Mark.tsx';
-export { SetupItem, SetupList, type SetupItemProps, type SetupListProps } from './Setup.tsx';
+export {
+  SetupDone,
+  SetupItem,
+  SetupList,
+  type SetupDoneProps,
+  type SetupItemProps,
+  type SetupListProps,
+} from './Setup.tsx';
+export { useControl } from './useControl.ts';
 export { Switch, type SwitchProps } from './Switch.tsx';
 export { Tag, type TagTone } from './Tag.tsx';
 export {

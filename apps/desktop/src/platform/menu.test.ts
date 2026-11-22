@@ -95,6 +95,20 @@ describe('the macOS app menu', () => {
     ]);
   });
 
+  it('adds Help, the last menu, while a command is in it', () => {
+    const welcome: BarItem = {
+      id: 'welcome.show',
+      label: 'Welcome to Lo',
+      menu: 'Help',
+      order: 10,
+      enabled: true,
+    };
+    const withHelp = macMenu([welcome], { name: 'Lo', devTools: false, run: () => undefined });
+    expect(withHelp.at(-1)).toMatchObject({ label: 'Help', role: 'help' });
+    expect(menuOf(withHelp, 'Help')?.map((each) => each.label)).toEqual(['Welcome to Lo']);
+    expect(template.some((each) => each.label === 'Help')).toBe(false);
+  });
+
   it("puts commands for the app's own menu after About", () => {
     const install: BarItem = {
       id: 'open.installCommand',

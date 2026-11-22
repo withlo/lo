@@ -72,7 +72,7 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Delete your comment…            | `d d`                                          | In `timeline`                                                           | `timeline.deleteComment`  |
 | Show the hidden comment         | None: in its menu and the palette              | In `timeline`                                                           | `timeline.showComment`    |
 | Mark viewed                     | `e`                                            | In `tree`                                                               | `tree.markViewed`         |
-| Sign in with GitHub             | `⏎`                                            | In `welcome`                                                            | `welcome.signIn`          |
+| Continue                        | `⏎`                                            | In `welcome`                                                            | `welcome.continue`        |
 
 ## Code
 
@@ -338,6 +338,7 @@ mode. In the box's preview, or on its frame, `Esc` closes it at once, from any m
 | Download the update from its page | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.download`      |
 | Copy the Homebrew update command  | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.copy`          |
 | Go to the update                  | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.focus`         |
+| Welcome to Lo                     | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `welcome.show`          |
 
 ## Where keys apply
 

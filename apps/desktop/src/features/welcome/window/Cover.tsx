@@ -1,184 +1,113 @@
-// The welcome screen, over the Recent tab while no account is signed in: what Lo is, how to sign in
-// or import accounts from gh, a box to review a public pull request, the optional steps, and a
-// notice when Lo can't find git. It is a form like Settings, so `Tab` walks its controls.
+// The welcome, over a tab: four steps, one job each, that a first-time reader walks with
+// "Continue", "Back" and "Skip", by mouse or by key. It opens by itself over the Recent tab until
+// the reader has finished it or signed in, and "Welcome to Lo" opens it again over any tab. It's a
+// form like Settings, so `Tab` walks its controls.
 
-import { Button, Callout, Input, Key, Mark, SetupList, Spinner } from '@lo/ui';
-import {
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type FormEvent,
-  type ReactNode,
-} from 'react';
+import { Button, Key } from '@lo/ui';
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
 import { focusMiddle, setMiddle, useKeys } from '../../../window/commands/registry.ts';
-import { Slot, useViews } from '../../../window/slots.tsx';
-import { importFromGh, signIn, useAccounts } from '../../accounts/window/shared.ts';
-import type { GhListing } from '../../accounts/contract.ts';
-import type { Tab } from '../../tab/window/shared.ts';
-import { checkGit, loadGh, openPublic, setScreen } from './actions.ts';
+import { useAccounts } from '../../accounts/window/shared.ts';
+import { activeTab, useTabs, type Tab } from '../../tab/window/shared.ts';
+import { AccountStep } from './Account.tsx';
+import { back, leave, loadGh, next, openFirst, setScreen } from './actions.ts';
+import { KeysStep } from './Keys.tsx';
 import { keyOf } from './labels.ts';
-import { setup } from './shared.ts';
-import { gitProblem, welcomeStore } from './store.ts';
-import { Ticks } from './Ticks.tsx';
-
-/** What gh has, in a line under the sign-in: its version and how many accounts it's signed in to. */
-function ghNote(listing: Extract<GhListing, { kind: 'found' }>): string {
-  const gh = listing.version === null ? 'gh' : `gh ${listing.version}`;
-  const { length } = listing.accounts;
-  if (length === 0) return `${gh} isn't signed in to an account`;
-  return `${gh} is signed in to ${length} ${length === 1 ? 'account' : 'accounts'}`;
-}
-
-function PersonIcon() {
-  return (
-    <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-      <circle cx="8" cy="5.25" r="2.75" />
-      <path d="M3 13.5c.5-2.5 2.5-4 5-4s4.5 1.5 5 4" />
-    </svg>
-  );
-}
-
-function TerminalIcon() {
-  return (
-    <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M3 4.5 6 8l-3 3.5M8 12h5" />
-    </svg>
-  );
-}
-
-/** The box to review a public pull request without signing in. */
-function OpenField() {
-  const [text, setText] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string>();
-  const why = useId();
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    if (busy || text.trim() === '') return;
-    setBusy(true);
-    setProblem(undefined);
-    openPublic(text).then(
-      (refused) => {
-        setBusy(false);
-        setProblem(refused);
-        if (refused === undefined) setText('');
-      },
-      (error: unknown) => {
-        console.error("Lo couldn't open the link:", error);
-        setBusy(false);
-        setProblem("Lo couldn't open the link.");
-      },
-    );
-  };
-
-  return (
-    <form className="flex flex-col gap-6" onSubmit={submit}>
-      <div className="flex gap-8">
-        <Input
-          mono
-          aria-label="Pull request link"
-          aria-describedby={problem === undefined ? undefined : why}
-          placeholder="https://github.com/owner/repo/pull/123"
-          value={text}
-          invalid={problem !== undefined}
-          onChange={(event) => {
-            setText(event.target.value);
-            setProblem(undefined);
-          }}
-        />
-        <Button type="submit" disabled={busy || text.trim() === ''}>
-          Open
-        </Button>
-      </div>
-      {problem !== undefined && (
-        <p id={why} role="alert" className="m-0 text-danger text-small">
-          {problem}
-        </p>
-      )}
-    </form>
-  );
-}
-
-/** The optional steps, while any feature has put one in the slot. */
-function Steps() {
-  const steps = useViews(setup);
-  if (steps.length === 0) return null;
-  return (
-    <section className="flex flex-col gap-8" aria-label="Set up, if you like">
-      <h2 className="m-0 text-fg-muted text-label" aria-hidden="true">
-        Set up, if you like
-      </h2>
-      <SetupList label="Optional steps">
-        <Slot slot={setup} props={{}} />
-      </SetupList>
-    </section>
-  );
-}
-
-/** What Lo needs of git and how to get it, when it can't find one it can run. */
-function GitNotice() {
-  const { git, checking, checked } = useStore(welcomeStore);
-  if (!gitProblem(git)) return null;
-  return (
-    <Callout tone="warning">
-      <div className="flex items-center gap-12">
-        <div className="flex min-w-0 flex-1 flex-col gap-2">
-          <span>
-            <Ticks text={`${git.message} ${git.install}`} />
-          </span>
-          {checked && !checking && (
-            <span role="status" className="text-fg-muted">
-              Lo looked again and still can’t find a git it can use.
-            </span>
-          )}
-        </div>
-        <Button size="sm" disabled={checking} onClick={() => void checkGit()}>
-          {checking && <Spinner size="xs" />}
-          Check again
-        </Button>
-      </div>
-    </Callout>
-  );
-}
-
-/** Whether focus is nowhere in particular: on the window, or on the middle itself. */
-function lost(): boolean {
-  const now = document.activeElement;
-  return !now || now === document.body || now.hasAttribute('data-lo-middle');
-}
+import { OpenStep } from './Open.tsx';
+import { escapePractice } from './practice.ts';
+import { SetupStep } from './Setup.tsx';
+import { STEPS, welcomeStore, type Step } from './store.ts';
 
 /**
- * Gives focus to the view the screen covered, once the screen is gone, if focus was on it. A dialog
- * over the screen, such as the sign-in that just signed in, keeps focus until it closes, so this
- * waits for that.
+ * Whether focus is nowhere a reader put it: dropped, on the middle itself, or on something out of
+ * reach, as the view under the welcome is.
  */
-function giveFocusBack(): void {
-  if (document.querySelector('[data-lo-scope="dialog"]') === null) {
-    if (lost()) focusMiddle();
-    return;
-  }
-  const watch = new MutationObserver(() => {
-    if (document.querySelector('[data-lo-scope="dialog"]') !== null) return;
-    watch.disconnect();
-    if (lost()) focusMiddle();
-  });
-  watch.observe(document.body, { childList: true, subtree: true });
+function lost(): boolean {
+  const now = document.activeElement;
+  return (
+    !now ||
+    now === document.body ||
+    !now.isConnected ||
+    now.hasAttribute('data-lo-middle') ||
+    now.closest('[inert]') !== null
+  );
 }
 
-/** The screen. It covers what's under it, so nothing there is reached by key or by reader. */
+/** A dialog or the palette, over the window. */
+const OVER = '[role="dialog"]';
+
+/**
+ * Calls `then` once nothing is over the window: at once when nothing is, or else as the dialog or
+ * palette that is goes, which keeps focus until then. Returns what stops waiting.
+ */
+function onceClear(then: () => void): () => void {
+  if (document.querySelector(OVER) === null) {
+    then();
+    return () => undefined;
+  }
+  const watch = new MutationObserver(() => {
+    if (document.querySelector(OVER) !== null) return;
+    watch.disconnect();
+    then();
+  });
+  watch.observe(document.body, { childList: true, subtree: true });
+  return () => watch.disconnect();
+}
+
+/** Gives focus to the view the welcome covered, once it's gone, if focus was dropped with it. */
+function giveFocusBack(): void {
+  onceClear(() => {
+    if (lost()) focusMiddle();
+  });
+}
+
+// Every step is laid out in the same cell, so the welcome is as tall as its tallest step from the
+// start, and its foot never moves under the pointer. The one on screen fades in as `Swap` does.
+const STEP_BOX = 'col-start-1 row-start-1 flex min-w-0 flex-col gap-24';
+const BALL = 'size-8 rounded-pill move-tint';
+
+/** Where the walk is: a ball for each step, filled up to the one on screen. */
+function Progress({ step }: { step: Step }) {
+  const at = STEPS.indexOf(step);
+  return (
+    <div className="flex items-center gap-8">
+      {STEPS.map((each, index) => (
+        <span
+          key={each}
+          className={`${BALL} ${index <= at ? 'bg-fg' : 'text-border-strong hollow'}`}
+          aria-hidden="true"
+        />
+      ))}
+      <span role="status" className="sr-only">
+        Step {at + 1} of {STEPS.length}
+      </span>
+    </div>
+  );
+}
+
+/** A foot button that keeps its room while it has nothing to do on this step. */
+function Held({ away, children }: { away: boolean; children: ReactNode }) {
+  return <span className={away ? 'invisible' : undefined}>{children}</span>;
+}
+
+const STEP_VIEWS: Readonly<Record<Step, (props: { shown: boolean }) => ReactNode>> = {
+  account: AccountStep,
+  keys: KeysStep,
+  setup: SetupStep,
+  open: OpenStep,
+};
+
+/** The welcome. It covers what's under it, so nothing there is reached by key or by reader. */
 function Welcome(): ReactNode {
   useKeys();
   const root = useRef<HTMLDivElement>(null);
-  const primary = useRef<HTMLButtonElement>(null);
-  const gh = useStore(welcomeStore, (state) => state.gh);
+  const step = useStore(welcomeStore, (state) => state.step);
+  const accounts = useAccounts();
+  const signedIn = accounts?.some((account) => account.signedOut === null) ?? false;
 
-  // Under the screen sits the Recent list, which takes focus and keys of its own: put it out of
-  // reach while the screen is up.
+  // Under the welcome sits the tab's own view, which takes focus and keys of its own: put it out
+  // of reach while the welcome is up.
   useLayoutEffect(() => {
     const screen = root.current;
     const under = screen?.parentElement;
@@ -196,71 +125,148 @@ function Welcome(): ReactNode {
     };
   }, []);
 
+  /** Puts focus where the step starts: on what it marks, or else on the foot's main button. */
+  const focusStep = () => {
+    const screen = root.current;
+    const now = welcomeStore.getState().step;
+    const first =
+      screen?.querySelector<HTMLElement>(`[data-welcome-step="${now}"] [data-welcome-focus]`) ??
+      screen?.querySelector<HTMLElement>('[data-welcome-default]');
+    first?.focus();
+  };
+
   useEffect(() => {
-    // Focus starts on the default action, unless it's somewhere that matters already.
-    if (lost()) primary.current?.focus();
-    const takeBack = setMiddle({ focus: () => primary.current?.focus(), here: () => undefined });
+    const takeBack = setMiddle({
+      focus: focusStep,
+      here: () => undefined,
+      escape: escapePractice,
+    });
     void loadGh();
     return () => {
       takeBack();
       giveFocusBack();
+      // A pull request that opens while the welcome is up, from it or from anywhere else, is what
+      // the reader came for: the welcome is over.
+      const { open, over } = welcomeStore.getState();
+      const now = activeTab();
+      if (open && now !== undefined && now.id !== over && now.kind !== 'recent') {
+        if (now.kind !== 'settings') leave();
+      }
     };
   }, []);
 
-  const key = keyOf('welcome.signIn');
+  // Each step starts with focus on its own first control, once nothing is over the welcome.
+  useEffect(
+    () =>
+      onceClear(() => {
+        if (lost() || root.current?.contains(document.activeElement) === true) focusStep();
+      }),
+    [step],
+  );
+
+  // Signing in takes the button that had focus away: focus dropped with it goes to the step.
+  useEffect(
+    () =>
+      onceClear(() => {
+        if (lost()) focusStep();
+      }),
+    [signedIn],
+  );
+
+  const first = step === STEPS[0];
+  const last = step === STEPS.at(-1);
+  // The first step's own button, signing in, is its main one until an account is signed in.
+  const own = first && !signedIn;
+  const key = keyOf('welcome.continue');
   return (
     <div
       ref={root}
       tabIndex={-1}
       data-lo-scope="welcome"
       data-lo-tab="browser"
-      className="absolute inset-0 flex overflow-auto bg-bg px-24 py-40 focus-visible:shadow-none"
+      className="absolute inset-0 flex overflow-auto bg-bg px-24 py-32 focus-visible:shadow-none"
     >
-      <div className="m-auto flex w-palette-w max-w-full flex-col gap-24">
-        <Mark className="size-48" />
-        <div className="flex flex-col gap-8">
-          <h1 className="m-0 text-balance text-display">Review pull requests from the keyboard.</h1>
-          <p className="m-0 text-fg-muted read-lead">
-            Lo reads whole stacks, shows the overviews your coding agent writes, and has a key for
-            every action.
-          </p>
+      <div className="m-auto flex w-palette-w max-w-full flex-col gap-32">
+        <div className="grid">
+          {STEPS.map((each) => {
+            const View = STEP_VIEWS[each];
+            const shown = each === step;
+            return (
+              <section
+                key={each}
+                data-welcome-step={each}
+                aria-hidden={shown ? undefined : true}
+                inert={!shown}
+                className={`${STEP_BOX} ${shown ? 'move-swap' : 'invisible'}`}
+              >
+                <View shown={shown} />
+              </section>
+            );
+          })}
         </div>
-        <div className="flex flex-wrap items-center gap-12">
-          <Button ref={primary} variant="primary" data-welcome-default onClick={signIn}>
-            <PersonIcon />
-            Sign in with GitHub
-            {key && <Key keys={key} decorative className="text-on-accent" />}
-          </Button>
-          {gh?.kind === 'found' && (
-            <>
-              <Button onClick={importFromGh}>
-                <TerminalIcon />
-                Import from gh
+        <div className="flex items-center gap-8 border-t border-border-subtle pt-16">
+          <div className="flex flex-1 justify-start">
+            <Held away={first}>
+              <Button variant="ghost" disabled={first} onClick={back}>
+                Back
               </Button>
-              <span className="text-fg-muted text-small">{ghNote(gh)}</span>
-            </>
-          )}
+            </Held>
+          </div>
+          <Progress step={step} />
+          <div className="flex flex-1 items-center justify-end gap-8">
+            <Held away={last}>
+              <Button variant="ghost" disabled={last} onClick={leave}>
+                Skip
+              </Button>
+            </Held>
+            <Button
+              variant={own ? 'secondary' : 'primary'}
+              {...(own ? {} : { 'data-welcome-default': true })}
+              onClick={next}
+            >
+              {/* Both labels take the room of the longer, so the button holds still. */}
+              <span className="inline-grid justify-items-center">
+                <span className="col-start-1 row-start-1">{last ? 'Done' : 'Continue'}</span>
+                <span className="invisible col-start-1 row-start-1" aria-hidden="true">
+                  Continue
+                </span>
+              </span>
+              {!own && key && <Key keys={key} decorative className="text-on-accent" />}
+            </Button>
+          </div>
         </div>
-        <div className="flex items-center gap-12 text-fg-muted text-small">
-          <span className="h-0 flex-1 border-t border-border" aria-hidden="true" />
-          or review a public pull request without signing in
-          <span className="h-0 flex-1 border-t border-border" aria-hidden="true" />
-        </div>
-        <OpenField />
-        <Steps />
-        <GitNotice />
       </div>
     </div>
   );
 }
 
 /**
- * The welcome screen, for the Recent tab while no account is signed in: none is, or every one
- * GitHub refused. Other tabs, a pull request opened without signing in and Settings among them,
- * are drawn as they are.
+ * The welcome, over the tab it's open on. It opens by itself over the Recent tab for a reader who
+ * hasn't finished it and has no account signed in: none, or only ones GitHub refused. Until Lo
+ * knows both, the Recent tab is covered by plain ground, so its list never shows for a moment under
+ * a welcome that's about to open. Other tabs are drawn as they are unless the reader asked for the
+ * welcome there.
  */
 export function Cover({ tab }: { tab: Tab }): ReactNode {
   const accounts = useAccounts();
-  if (tab.kind !== 'recent' || accounts === undefined) return null;
-  return accounts.some((account) => account.signedOut === null) ? null : <Welcome />;
+  const { tabs } = useTabs();
+  const open = useStore(welcomeStore, (state) => state.open);
+  const over = useStore(welcomeStore, (state) => state.over);
+  const finished = useStore(welcomeStore, (state) => state.finished);
+  const known = accounts !== undefined && finished !== undefined;
+  const signedIn = accounts?.some((account) => account.signedOut === null) ?? false;
+  const recent = tab.kind === 'recent';
+  const first = known && recent && !open && !finished && !signedIn;
+  // The tab the reader asked for it over has closed: it's no longer open anywhere.
+  const gone = open && over !== undefined && !tabs.some((each) => each.id === over);
+
+  useLayoutEffect(() => {
+    if (first) openFirst();
+    else if (gone) welcomeStore.setState({ open: false, over: undefined });
+  }, [first, gone]);
+
+  if (open && !gone && (over === undefined ? recent : tab.id === over)) return <Welcome />;
+  // Not known yet, or about to open: the ground alone.
+  if (recent && (!known || first)) return <div className="absolute inset-0 bg-bg" />;
+  return null;
 }

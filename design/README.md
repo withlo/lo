@@ -28,7 +28,7 @@ code editor it started as.
   shadow.
 - Use the files in `brand/logo/`: `*-chalk.svg` on dark, `*-ink.svg` on light. Never redraw the mark
   in CSS or retype the wordmark.
-- Inside the app, the mark appears on the welcome screen and the sign-in screen, plus the places
+- Inside the app, the mark appears in the welcome and on the sign-in screen, plus the places
   `brand/README.md` lists. It never appears in the tab bar, the PR header or as an icon inside the
   interface. Window titles use the name as text.
 - Write the name **Lo**, capital L, wherever people read it. Lowercase `lo` only in code: the
@@ -133,14 +133,16 @@ Dark (Lo Glow Dark) is the default. Every color comes from `tokens.json` through
   size: the border stays, at `lo-border-subtle`, a main button keeps a flat fill, and the label is
   `lo-fg-disabled`. A row's layout doesn't change with its state.
 - A state that's a fact isn't a disabled button. "Installed" is an icon and the word in
-  `lo-fg-muted`.
+  `lo-fg-muted`: `SetupDone`, or `done` on a `SetupItem`.
 - A switch that's off keeps a ring, so its track shows on every surface in both themes.
 - A button at work is `busy`, not disabled: see [Waiting](#waiting).
 - A control whose face doesn't say what it is, such as an icon button, names itself and its key in a
   tooltip: `hint` and `hintKeys` on `Button`, or `Tooltip` around anything else. A tooltip shows
   after 500 ms, or at once when another was just showing (one `TooltipGroup` goes around the window,
   in `Window.tsx`). It never carries an error, a state or anything that's the only place to learn
-  something.
+  something. A button that takes focus by itself, as a dialog's main button does when the dialog
+  opens, shows its hint under the pointer only (`hintOn="hover"`, or `on="hover"` on `Tooltip`), so
+  nothing opens with a tooltip already over it.
 - A dimmed control says why in its tooltip, in a few words with no full stop: "Offline", "Write a
   comment first". Give `Button` the reason as its `hint` while it's off, and name the reason for a
   screen reader with `aria-describedby`, since a tooltip is never read. A reason with something to
@@ -245,13 +247,17 @@ keys in `lo-mark`, so chalk on dark and ink on light with nothing to set.
 
 | `play`   | When                                                 | Size                   | Length      |
 | -------- | ---------------------------------------------------- | ---------------------- | ----------- |
-| `unmeld` | The first screen of the welcome.                     | 96 px (`size-mark-lg`) | 1.4 s, once |
+| `unmeld` | The first step of the welcome.                       | 96 px (`size-mark-lg`) | 1.4 s, once |
 | `meld`   | A view with nothing to draw yet. `Loading` shows it. | 48 px                  | 2.8 s, loop |
 | `kiss`   | Something is done: an approval, a merge that landed. | 40 px                  | 1.2 s, once |
 
 It never holds anything up: what it marks has already happened, and what it waits for shows the
 moment it comes. Each plays once and rests as the mark, calling `onDone`. To play one again, give it
 a new `key`.
+
+The welcome is where the mark's moves live: Unmeld on its first step, and Kiss beside the heading of
+its last, as the step appears. Where one would play again on a step the reader comes back to, draw
+`Mark` instead.
 
 ## Waiting
 
@@ -282,6 +288,51 @@ Lo waits in three ways. Use the first that fits, and never two for one wait.
 - `Spinner` (the `spinner` utility) alone is for a wait inside a line, such as a status bar item.
   Never beside a button, which is `busy`, and never for a whole view.
 
+## Empty states
+
+A view or a list with nothing in it shows `EmptyState`, from `@lo/ui`. With `Loading` and `Problem`
+it's one of the three things a view shows in place of its content, and it's the only shape for this
+one: never a lone line of muted text, a paragraph, or an icon over one.
+
+```tsx
+<EmptyState
+  title="No pull requests yet"
+  line="Pull requests you open are listed here."
+  actions={['open.box', 'open.paste']}
+/>
+```
+
+- `title` is what's absent, in `text-heading`: six words at most, with no full stop.
+- `line` is one line in `lo-fg-muted`, and optional: what will be listed here, or why there's
+  nothing.
+- `actions` is two commands at most, by their ids. The first is drawn as the main button. Each is a
+  real button that takes its label, its key and whether it can run from the registry, as every
+  control does: it shows the key in a chip, follows the keymap file, and while its command can't run
+  it's dimmed with the reason as its tooltip. An action is the id alone, or
+  `{ command, target, label }`: `target` is what the command runs on, as a key pressed there would,
+  and `label` is other words where the command's label isn't what the view says.
+- It fills the box it's in and centres itself, so give that box the view's height. In a narrow panel
+  it wraps.
+- Offer the action here. A state never says where else an action lives ("from the status bar", "in
+  the command palette"), and never has a button that isn't a command.
+- A filter or a search with nothing left is the same shape: "No matches" with the command that
+  clears the filter, or `No commands match “queue”`.
+- [`writing.md`](writing.md#empty-state) has the words.
+
+## Set-up
+
+A feature that needs set-up adds a step to the welcome flow and a row in Settings, not a banner.
+
+- In the welcome, that's a `SetupItem` in the `welcome.setup` slot, inside the step's `SetupList`:
+  an `icon`, a `title` of six words at most, a `description` of one line, and one small button as
+  its child. Once it's done, pass what to say as `done` ("Installed"), and it takes the button's
+  place, so the row never changes height.
+- `figure` is a picture of what the row sets up, drawn under its line from Lo's own pieces. Use it
+  only where the words can't show it, such as what an overview looks like.
+- `SetupDone` is the same mark and word by itself, for a step that's done outside a row: "Signed in
+  as ravi-k".
+- The welcome's steps, its buttons and its keys are in `AGENTS.md`, under "The welcome flow".
+
 ## Floating pieces
 
 Everything that floats over the window is one of these, from `packages/desktop/ui`. Each comes and
@@ -302,11 +353,12 @@ that floats.
   from the window's top whatever its height, so it never jumps between steps: a taller step grows it
   downward in the Sheet move's time. While it grows (`data-growing`), its body is clipped at the
   top, not scrolled, so no scroll bar shows. It focuses its main button, or what `initialFocus`
-  names, as it mounts, without scrolling its body. With an `action` it draws its own foot and takes
-  a `state`: `ask`, `working`, `done` or `failed`. The body stays put through all four. The button
-  that leaves reads "Cancel" until something is sent, "Close" after a failure and "Done" once it has
-  worked; the main button reads its `label`, then `working`, then "Try again". What went wrong goes
-  in `problem`, above the foot. While it's `working`, nothing leaves it: Cancel, `Esc` and a click
+  names, as it mounts, without scrolling its body. When a state takes the control with focus out of
+  sight, focus goes to the main button. With an `action` it draws its own foot and takes a `state`:
+  `ask`, `working`, `done` or `failed`. The body stays put through all four. The button that leaves
+  reads "Cancel" until something is sent, "Close" after a failure and "Done" once it has worked; the
+  main button reads its `label`, then `working`, then "Try again". What went wrong goes in
+  `problem`, above the foot. While it's `working`, nothing leaves it: Cancel, `Esc` and a click
   outside all refuse.
 - **`Popover`** is a small panel beside what it's about: a status item's details, a picker. Give it
   its `trigger`, or an `anchor` when a key opens it.
@@ -400,10 +452,10 @@ tokens. Their code is the source for how each one looks.
 | Controls         | Button, HintButton, MoreButton, CopyButton, Key, SegmentedControl, Switch, Input |
 | Marks            | StatePill, Tag, Avatar, Marks                                                    |
 | Floating         | Dialog, Popover, ContextMenu, Palette, Tooltip, ToastStack                       |
-| Motion and waits | Collapse, Swap, Loading, Skeleton, Spinner, LogoMotion, Problem                  |
+| Motion and waits | Collapse, Swap, Loading, Skeleton, Spinner, LogoMotion, Problem, EmptyState      |
 | Review           | Thread, Diff, CodeView, CommentBox                                               |
 | Overview         | OverviewDocument, CodeBlock, Figure, Walkthrough, TabsAndFolds, Glossary         |
-| Flows            | Choice, Checklist, Composer, Peek, Timeline                                      |
+| Flows            | Choice, Checklist, Composer, Peek, Timeline, SetupList, SetupItem, SetupDone     |
 
 Build new screens from these. If something new is needed, make it from the same tokens and keep it
 to one job.

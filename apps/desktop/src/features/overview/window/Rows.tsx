@@ -2,7 +2,7 @@
 // for installing it and for the command that installs it from a terminal.
 
 import { Button, Key, keyAria, Setting, SetupItem } from '@lo/ui';
-import { useEffect } from 'react';
+import { Fragment, useEffect } from 'react';
 import { useStore } from 'zustand';
 
 import { useKeys } from '../../../window/commands/registry.ts';
@@ -38,14 +38,51 @@ function useSkill() {
   return useStore(skillStore);
 }
 
-/** Installing the overview skill for each agent that's set up, on the welcome screen. */
+const BOX = 'flex flex-col rounded-sm border border-border bg-bg-raised px-8 py-4';
+
+/**
+ * One picture of an overview, small: a sentence about the change, then a figure of the code it
+ * goes through, as an agent with the skill writes them. It's drawn, not a real overview, and a
+ * screen reader hears what it shows.
+ */
+function Picture() {
+  return (
+    <div
+      role="img"
+      aria-label="An overview: a sentence about the change, over a figure of three modules it goes through"
+      className="flex flex-col gap-8 rounded-md bg-bg-well px-12 py-8 select-none"
+    >
+      <span className="truncate text-fg-muted text-small">
+        Input becomes lines, then text. Wrap is passed on, not called.
+      </span>
+      <div className="flex min-w-0 items-center" aria-hidden="true">
+        {(['parse', 'format', 'wrap'] as const).map((name, index) => (
+          <Fragment key={name}>
+            {index > 0 && <span className="h-0 w-24 flex-none border-t border-border-strong" />}
+            <span className={BOX}>
+              <span className="text-small">{name}</span>
+              <span className="text-fg-muted code-small">src/{name}.ts</span>
+            </span>
+          </Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Installing the overview skill for each agent that's set up, a row of the welcome's set-up step. */
 export function SkillStep() {
   const { state, installing } = useSkill();
-  const installed = installedEverywhere(state);
   return (
-    <SetupItem icon={<SkillIcon />} title="Install the overview skill" description={ABOUT}>
-      <Button size="sm" disabled={installing || installed} onClick={() => void installSkill()}>
-        {installed ? 'Installed' : 'Install'}
+    <SetupItem
+      icon={<SkillIcon />}
+      title="Overview skill"
+      description={ABOUT}
+      done={installedEverywhere(state) ? 'Installed' : undefined}
+      figure={<Picture />}
+    >
+      <Button size="sm" busy={installing} working="Installing…" onClick={() => void installSkill()}>
+        Install
       </Button>
     </SetupItem>
   );

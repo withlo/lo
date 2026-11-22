@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-// The welcome screen in a window of its own, with main answered by a stand-in bridge: when it
-// covers the Recent tab, what it offers, and what each control asks of main and of other features.
+// The welcome in a window of its own, with main answered by a stand-in bridge: when it opens and
+// over which tab, how its steps are walked, and what each control asks of main and of other
+// features.
 
-import { handlers } from '@lo/ui/commands';
+import { CopyRoute } from '@lo/ui';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
@@ -12,17 +13,20 @@ import { Slot, Slots } from '../../../window/slots.tsx';
 import { installBridge as install, type FakeBridge } from '../../../window/test/bridge.ts';
 import type { AccountSummary, GhAccount } from '../../accounts/contract.ts';
 import type { GitInfo } from '../../app/contract.ts';
+import type * as TabShared from '../../tab/window/shared.ts';
 import { cover, dialogs, type Tab } from '../../tab/window/shared.ts';
-import keys from '../keys.ts';
-import { enter, setScreen } from './actions.ts';
+import { enter, setScreen, show } from './actions.ts';
 import feature from './index.ts';
+import { SAMPLE } from './Open.tsx';
+import { escapePractice } from './practice.ts';
 import { routers } from './routers.ts';
-import { welcomeStore } from './store.ts';
+import { welcomeStore, type Step } from './store.ts';
 
 const recent: Tab = { id: 'recent', kind: 'recent' };
+const pull: Tab = { id: 'one', kind: 'pull', owner: 'o', repo: 'r', number: 1 };
 
-// The accounts feature's window side is another feature's: the screen reads the accounts and opens
-// its dialogs only through `window/shared.ts`, which this stands in for.
+// The accounts feature's window side is another feature's: the welcome reads the accounts and
+// opens its dialogs only through `window/shared.ts`, which this stands in for.
 const accounts = vi.hoisted(() => {
   let value: readonly AccountSummary[] | undefined;
   const listeners = new Set<() => void>();
@@ -52,10 +56,44 @@ vi.mock('../../accounts/window/shared.ts', async () => {
   };
 });
 
-/** Tells the screen what accounts Lo has, as the accounts feature does. */
+// The strip is the tab feature's: the welcome asks it which tabs there are and which is on screen.
+const strip = vi.hoisted(() => {
+  let value: { tabs: readonly { id: string; kind: string }[]; active: string | undefined } = {
+    tabs: [],
+    active: undefined,
+  };
+  const listeners = new Set<() => void>();
+  return {
+    get: () => value,
+    set(tabs: readonly { id: string; kind: string }[], active: string | undefined) {
+      value = { tabs, active };
+      for (const listener of listeners) listener();
+    },
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+});
+
+vi.mock('../../tab/window/shared.ts', async (actual) => {
+  const { useSyncExternalStore } = await import('react');
+  return {
+    ...(await actual<typeof TabShared>()),
+    useTabs: () => useSyncExternalStore(strip.subscribe, () => strip.get()),
+    activeTab: () => strip.get().tabs.find((tab) => tab.id === strip.get().active),
+  };
+});
+
+/** Tells the welcome what accounts Lo has, as the accounts feature does. */
 function showAccounts(list: readonly AccountSummary[] | undefined): void {
   accounts.set(list);
 }
+
+/** What the window was asked to copy, as its `CopyRoute` hears it. */
+const copied: string[] = [];
 
 /** What main answers each channel with now: the bridge reads it as it is asked. */
 const answers: Record<string, (input: unknown) => unknown> = {};
@@ -63,7 +101,7 @@ let shared: FakeBridge;
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
-  createRegistry(handlers(keys, { signIn: { run: enter } }), 'mac');
+  createRegistry(feature.commands ?? [], 'mac');
   // The features' clients keep the bridge they were made with, so there is one for the file.
   shared = install(answers);
 });
@@ -72,11 +110,17 @@ afterEach(() => {
   accounts.set(undefined);
   accounts.signIn.mockClear();
   accounts.importFromGh.mockClear();
+  strip.set([], undefined);
   welcomeStore.setState({
     shown: false,
+    open: false,
+    over: undefined,
+    step: 'account',
+    finished: undefined,
     git: undefined,
     checking: false,
-    checked: false,
+    checkFailed: false,
+    checks: 0,
     gh: undefined,
     rules: false,
   });
@@ -104,14 +148,6 @@ const ghAccount = (login: string): GhAccount => ({
   inLo: false,
 });
 
-/** What gh has to import, without a version it would say. */
-const listing = (list: GhAccount[]) => ({
-  kind: 'found',
-  program: '/usr/bin/gh',
-  version: null,
-  accounts: list,
-});
-
 const missing: GitInfo = {
   status: 'missing',
   message: "Lo can't find git.",
@@ -119,12 +155,14 @@ const missing: GitInfo = {
     'Install or update the Xcode Command Line Tools: run `xcode-select --install` in Terminal.',
 };
 
-/** Main as the screen finds it: no gh, git found, nothing installed, and no account. */
+/** Main as the welcome finds it: not finished, no gh, git found, nothing installed. */
 function main(given: Readonly<Record<string, (input: unknown) => unknown>> = {}): FakeBridge {
   for (const channel of Object.keys(answers)) delete answers[channel];
   Object.assign(
     answers,
     {
+      'welcome.state': () => ({ finished: false }),
+      'welcome.finish': () => undefined,
       'accounts.ghAccounts': () => ({ kind: 'missing', message: 'Lo found no gh.' }),
       'open.command': () => ({ installed: [] }),
       'app.info': () => ({ git: { status: 'found', version: '2.54.0' } }),
@@ -132,6 +170,7 @@ function main(given: Readonly<Record<string, (input: unknown) => unknown>> = {})
     given,
   );
   shared.calls.length = 0;
+  copied.length = 0;
   return shared;
 }
 
@@ -143,14 +182,15 @@ async function settle(): Promise<void> {
 }
 
 interface Shown {
-  /** What the screen covers: the page under it. */
+  /** What the welcome covers: the page under it. */
   under: HTMLElement;
-  /** Draws the screen again over `tab`. */
+  /** Draws the page again, as `tab`'s. */
   show(tab: Tab): void;
 }
 
-/** The screen over a page, in the window's middle, with its dialog, once the feature has started. */
+/** The welcome's cover over a tab's page, with its dialog, once the feature has started. */
 function render(tab: Tab = recent): Shown {
+  strip.set([tab], tab.id);
   feature.start?.();
   const host = document.createElement('div');
   host.id = 'root';
@@ -160,15 +200,22 @@ function render(tab: Tab = recent): Shown {
   const draw = (current: Tab) =>
     act(() =>
       root.render(
-        <Slots views={feature.views ?? []}>
-          <main data-lo-middle tabIndex={-1}>
-            <div id="under" tabIndex={0}>
-              Recent pull requests
-            </div>
-            <Slot slot={cover} props={{ tab: current }} />
-          </main>
-          <Slot slot={dialogs} props={{}} />
-        </Slots>,
+        <CopyRoute
+          copy={(text) => {
+            copied.push(text);
+            return Promise.resolve();
+          }}
+        >
+          <Slots views={feature.views ?? []}>
+            <main data-lo-middle tabIndex={-1}>
+              <div id="under" tabIndex={0}>
+                Recent pull requests
+              </div>
+              <Slot slot={cover} props={{ tab: current }} />
+            </main>
+            <Slot slot={dialogs} props={{}} />
+          </Slots>
+        </CopyRoute>,
       ),
     );
   draw(tab);
@@ -179,10 +226,31 @@ function render(tab: Tab = recent): Shown {
   return { under: document.getElementById('under') ?? host, show: draw };
 }
 
+/** A first launch: no account, and the welcome over Recent once main has answered. */
+async function first(
+  given: Readonly<Record<string, (input: unknown) => unknown>> = {},
+): Promise<{ bridge: FakeBridge; shown: Shown }> {
+  const bridge = main(given);
+  act(() => showAccounts([]));
+  const shown = render();
+  await settle();
+  return { bridge, shown };
+}
+
 const screen = () => document.querySelector<HTMLElement>('[data-lo-scope="welcome"]');
 
-function button(text: string): HTMLButtonElement {
-  const found = [...document.querySelectorAll('button')].find((each) =>
+/** The step on screen: the one a reader and a key can reach. */
+function onScreen(): HTMLElement {
+  const steps = screen()?.querySelectorAll<HTMLElement>('[data-welcome-step]') ?? [];
+  const found = [...steps].find((each) => !each.hasAttribute('inert'));
+  if (!found) throw new Error('No step on screen.');
+  return found;
+}
+
+const stepOnScreen = () => onScreen().getAttribute('data-welcome-step');
+
+function button(text: string, within: ParentNode = document): HTMLButtonElement {
+  const found = [...within.querySelectorAll('button')].find((each) =>
     each.textContent.startsWith(text),
   );
   if (!found) throw new Error(`No button "${text}".`);
@@ -193,6 +261,11 @@ function click(element: Element): void {
   act(() => {
     element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
   });
+}
+
+async function goTo(step: Step): Promise<void> {
+  act(() => welcomeStore.setState({ step }));
+  await settle();
 }
 
 /** Types `text` in the link field, as a person does. */
@@ -206,108 +279,158 @@ function type(text: string): HTMLInputElement {
   return field;
 }
 
-describe('when it shows', () => {
-  it('covers the Recent tab while no account is signed in', async () => {
-    main();
-    act(() => showAccounts([]));
-    render();
-    await settle();
-    expect(screen()).not.toBeNull();
-    expect(document.querySelector('h1')?.textContent).toBe(
-      'Review pull requests from the keyboard.',
+describe('when it opens', () => {
+  it('opens by itself over Recent for a reader with no account, at its first step', async () => {
+    const { shown } = await first();
+    expect(stepOnScreen()).toBe('account');
+    expect(onScreen().querySelector('h1')?.textContent).toBe(
+      'Review pull requests from the keyboard',
     );
-    expect(screen()?.textContent).toContain(
-      'Lo reads whole stacks, shows the overviews your coding agent writes, and has a key for every action.',
-    );
-    expect(screen()?.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('Lo');
-  });
-
-  it('shows again when every account has been signed out', async () => {
-    main();
-    act(() => showAccounts([account('rozed-bot', { signedOut: 'refused' })]));
-    render();
-    await settle();
-    expect(screen()).not.toBeNull();
-  });
-
-  it('stays away while an account is signed in, before Lo has heard of its accounts, and from other tabs', async () => {
-    main();
-    const shown = render();
-    await settle();
-    expect(screen()).toBeNull();
-    act(() => showAccounts([account('rozed-bot')]));
-    expect(screen()).toBeNull();
-    act(() => showAccounts([]));
-    expect(screen()).not.toBeNull();
-    for (const tab of [
-      { id: 'settings', kind: 'settings' },
-      { id: 'one', kind: 'pull', owner: 'o', repo: 'r', number: 1 },
-    ] satisfies Tab[]) {
-      shown.show(tab);
-      expect(screen()).toBeNull();
-    }
-    expect(shown.under.hasAttribute('inert')).toBe(false);
-  });
-
-  it('goes once an account signs in, and gives the page under it back its keys', async () => {
-    main();
-    act(() => showAccounts([]));
-    const shown = render();
-    await settle();
+    expect(onScreen().textContent).toContain('Every action has a key.');
     expect(shown.under.hasAttribute('inert')).toBe(true);
     expect(welcomeStore.getState().shown).toBe(true);
+  });
+
+  it('covers Recent with plain ground until Lo knows its accounts and whether it was finished', async () => {
+    main();
+    render();
+    await settle();
+    expect(screen()).toBeNull();
+    expect(document.querySelector('main > .bg-bg')).not.toBeNull();
     act(() => showAccounts([account('rozed-bot')]));
+    expect(screen()).toBeNull();
+    expect(document.querySelector('main > .bg-bg')).toBeNull();
+  });
+
+  it('stays away once it was finished, and from other tabs', async () => {
+    main({ 'welcome.state': () => ({ finished: true }) });
+    act(() => showAccounts([]));
+    const shown = render();
     await settle();
     expect(screen()).toBeNull();
     expect(shown.under.hasAttribute('inert')).toBe(false);
-    expect(welcomeStore.getState().shown).toBe(false);
-    // Focus the screen had comes back to the page, which is the middle again.
-    expect(document.activeElement).toBe(document.querySelector('main'));
+    act(() => welcomeStore.setState({ finished: false }));
+    expect(screen()).not.toBeNull();
+    shown.show(pull);
+    expect(screen()).toBeNull();
+  });
+
+  it('stays through signing in, and says who signed in where the button was', async () => {
+    await first();
+    act(() => showAccounts([account('rozed-bot')]));
+    await settle();
+    expect(stepOnScreen()).toBe('account');
+    expect(onScreen().textContent).toContain('Signed in as rozed-bot');
+    expect(onScreen().textContent).not.toContain('Sign in with GitHub');
+    // With nothing left to do here, Continue is the step's main button.
+    expect(button('Continue').hasAttribute('data-welcome-default')).toBe(true);
+  });
+
+  it('opens again over the tab on screen when asked, and goes with that tab', async () => {
+    const bridge = main({ 'welcome.state': () => ({ finished: true }) });
+    act(() => showAccounts([account('rozed-bot')]));
+    const shown = render(pull);
+    await settle();
+    expect(screen()).toBeNull();
+    act(() => welcomeStore.setState({ step: 'setup' }));
+    act(() => show());
+    await settle();
+    expect(stepOnScreen()).toBe('account');
+    expect(welcomeStore.getState().over).toBe('one');
+    // Another tab comes to the front: the welcome is over, and isn't waiting under it.
+    const other: Tab = { ...pull, id: 'two', number: 2 };
+    strip.set([pull, other], 'two');
+    shown.show(other);
+    await settle();
+    expect(screen()).toBeNull();
+    expect(welcomeStore.getState().open).toBe(false);
+    expect(bridge.calls).toContainEqual(['welcome.finish', undefined]);
+  });
+
+  it('is a command to continue only while it is on screen', async () => {
+    main();
+    const go = feature.commands?.find((command) => command.id === 'welcome.continue');
+    expect(go?.handler?.enabled?.({ kind: 'none' })).toBe('The welcome isn’t open');
+    act(() => showAccounts([]));
+    render();
+    await settle();
+    expect(go?.handler?.enabled?.({ kind: 'none' })).toBe(true);
   });
 });
 
-describe('signing in', () => {
-  it('has focus on "Sign in with GitHub", with its key, and starts the device flow', async () => {
-    main();
-    act(() => showAccounts([]));
-    render();
+describe('walking it', () => {
+  it('goes on with Continue and back with Back, and says where it is to a screen reader', async () => {
+    await first();
+    expect(button('Back').disabled).toBe(true);
+    click(button('Continue'));
+    expect(stepOnScreen()).toBe('keys');
+    expect(screen()?.querySelector('[role="status"].sr-only')?.textContent).toBe('Step 2 of 4');
+    click(button('Back'));
+    expect(stepOnScreen()).toBe('account');
+  });
+
+  it('leaves with Skip, keeps that it was finished, and gives the page back its keys', async () => {
+    const { bridge, shown } = await first();
+    click(button('Skip'));
     await settle();
+    expect(screen()).toBeNull();
+    expect(bridge.calls).toContainEqual(['welcome.finish', undefined]);
+    expect(shown.under.hasAttribute('inert')).toBe(false);
+    expect(document.activeElement).toBe(document.querySelector('main'));
+  });
+
+  it('ends with Done, and no Skip, on the last step', async () => {
+    const { bridge } = await first();
+    await goTo('open');
+    expect(button('Skip').disabled).toBe(true);
+    click(button('Done'));
+    await settle();
+    expect(screen()).toBeNull();
+    expect(bridge.calls).toContainEqual(['welcome.finish', undefined]);
+  });
+
+  it('starts each step with focus on its own first control, where Esc brings it back', async () => {
+    await first();
     const signIn = button('Sign in with GitHub');
-    expect(signIn.textContent).toBe('Sign in with GitHub⏎');
+    expect(signIn.textContent).toBe('Sign in with GitHub…⏎');
     expect(document.activeElement).toBe(signIn);
-    click(signIn);
-    await settle();
-    expect(accounts.signIn).toHaveBeenCalledOnce();
-  });
-
-  it('is what ⏎ does with focus on the screen itself', async () => {
-    main();
-    act(() => showAccounts([]));
-    render();
-    await settle();
-    act(() => screen()?.focus());
-    act(() => enter());
-    await settle();
-    expect(accounts.signIn).toHaveBeenCalledOnce();
-  });
-
-  it('is a command only while the screen is up', async () => {
-    main();
-    const signIn = feature.commands?.find((command) => command.id === 'welcome.signIn');
-    expect(signIn?.handler?.enabled?.({ kind: 'none' })).toBe('Lo is signed in to GitHub.');
-    act(() => showAccounts([]));
-    render();
-    await settle();
-    expect(signIn?.handler?.enabled?.({ kind: 'none' })).toBe(true);
-    act(() => showAccounts([account('rozed-bot')]));
-    await settle();
-    expect(signIn?.handler?.enabled?.({ kind: 'none' })).toBe('Lo is signed in to GitHub.');
+    await goTo('keys');
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Practice diff');
+    await goTo('setup');
+    expect(document.activeElement).toBe(button('Continue'));
+    await goTo('open');
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Pull request link');
+    act(() => button('Back').focus());
+    act(() => focusMiddle());
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Pull request link');
   });
 });
 
 describe('⏎', () => {
-  it('presses the button with focus instead of signing in', async () => {
-    main({
+  it('signs in on the first step while no account is signed in', async () => {
+    await first();
+    act(() => screen()?.focus());
+    act(() => enter());
+    expect(accounts.signIn).toHaveBeenCalledOnce();
+    expect(stepOnScreen()).toBe('account');
+  });
+
+  it('continues from the steps after, and is Done on the last with the link field empty', async () => {
+    const { bridge } = await first();
+    await goTo('keys');
+    act(() => enter());
+    expect(stepOnScreen()).toBe('setup');
+    act(() => enter());
+    await settle();
+    expect(stepOnScreen()).toBe('open');
+    act(() => enter());
+    await settle();
+    expect(screen()).toBeNull();
+    expect(bridge.calls).toContainEqual(['welcome.finish', undefined]);
+  });
+
+  it('presses the button with focus instead', async () => {
+    await first({
       'accounts.ghAccounts': () => ({
         kind: 'found',
         program: '/usr/bin/gh',
@@ -315,222 +438,158 @@ describe('⏎', () => {
         accounts: [ghAccount('a'), ghAccount('b')],
       }),
     });
-    act(() => showAccounts([]));
-    render();
-    await settle();
-    const importing = button('Import from gh');
+    const importing = button('Import from GitHub CLI');
     act(() => importing.focus());
     act(() => enter());
-    await settle();
     expect(accounts.importFromGh).toHaveBeenCalledOnce();
     expect(accounts.signIn).not.toHaveBeenCalled();
   });
 
-  it('opens the link in the field, and signs in nowhere else', async () => {
-    const bridge = main({ 'open.open': () => ({ kind: 'tab', id: 't', choice: 'none' }) });
-    act(() => showAccounts([]));
-    render();
-    await settle();
-    const field = type('https://github.com/rozed-dev/e2e/pull/78');
-    act(() => field.focus());
+  it('opens the link in the field once it holds one', async () => {
+    const { bridge } = await first({
+      'open.open': () => ({ kind: 'tab', id: 't', choice: 'none' }),
+    });
+    await goTo('open');
+    type('https://github.com/rozed-dev/e2e/pull/78');
     act(() => enter());
     await settle();
     expect(bridge.calls).toContainEqual([
       'open.open',
       { text: 'https://github.com/rozed-dev/e2e/pull/78' },
     ]);
-    expect(accounts.signIn).not.toHaveBeenCalled();
   });
 });
 
-describe('importing from gh', () => {
-  it('is offered with gh’s account count when gh is found, and opens the import dialog', async () => {
-    main({
+describe('the first step', () => {
+  it('offers GitHub CLI’s accounts when it has some, and says why not when it has none', async () => {
+    await first({
       'accounts.ghAccounts': () => ({
         kind: 'found',
         program: '/usr/bin/gh',
-        version: '2.62.0',
-        accounts: [ghAccount('a'), ghAccount('b')],
+        version: null,
+        accounts: [],
       }),
     });
-    act(() => showAccounts([]));
-    render();
-    await settle();
-    expect(screen()?.textContent).toContain('gh 2.62.0 is signed in to 2 accounts');
-    click(button('Import from gh'));
-    expect(accounts.importFromGh).toHaveBeenCalledOnce();
+    const importing = button('Import from GitHub CLI');
+    expect(importing.getAttribute('aria-disabled')).toBe('true');
+    expect(importing.getAttribute('aria-description')).toBe('GitHub CLI isn’t signed in');
   });
 
-  it('says so when gh has one account, or none', async () => {
-    main({ 'accounts.ghAccounts': () => listing([ghAccount('a')]) });
-    act(() => showAccounts([]));
-    render();
-    await settle();
-    expect(screen()?.textContent).toContain('gh is signed in to 1 account');
-    expect(screen()?.textContent).not.toContain('1 accounts');
+  it('leaves GitHub CLI out when Lo finds none', async () => {
+    await first();
+    expect(onScreen().textContent).not.toContain('GitHub CLI');
   });
 
-  it('is left out when Lo finds no gh, or can’t run it', async () => {
-    main();
-    act(() => showAccounts([]));
-    render();
-    await settle();
-    expect([...document.querySelectorAll('button')].map((each) => each.textContent)).not.toContain(
-      'Import from gh',
-    );
-  });
-});
-
-describe('the public pull request box', () => {
-  it('opens a link through the open feature, and clears the box', async () => {
-    const bridge = main({ 'open.open': () => ({ kind: 'tab', id: 't', choice: 'none' }) });
-    act(() => showAccounts([]));
-    render();
-    await settle();
-    expect(button('Open').disabled).toBe(true);
-    const field = type('  https://github.com/rozed-dev/e2e/pull/78 ');
-    expect(button('Open').disabled).toBe(false);
-    click(button('Open'));
-    await settle();
-    expect(bridge.calls).toContainEqual([
-      'open.open',
-      { text: 'https://github.com/rozed-dev/e2e/pull/78' },
-    ]);
-    expect(field.value).toBe('');
+  it('goes straight to opening a pull request for a reader with no account', async () => {
+    await first();
+    click(button('Open public pull request'));
+    expect(stepOnScreen()).toBe('open');
   });
 
-  it('says why a link did not open, and keeps it', async () => {
-    main({ 'open.open': () => ({ kind: 'refused', message: 'That isn’t a link Lo opens.' }) });
-    act(() => showAccounts([]));
-    render();
-    await settle();
-    const field = type('owner/repo#1');
-    click(button('Open'));
-    await settle();
-    expect(screen()?.querySelector('[role="alert"]')?.textContent).toBe(
-      'That isn’t a link Lo opens.',
-    );
-    expect(field.getAttribute('aria-invalid')).toBe('true');
-    expect(field.value).toBe('owner/repo#1');
-    // Changing the text takes the note away.
-    type('owner/repo#12');
-    expect(screen()?.querySelector('[role="alert"]')).toBeNull();
-  });
-
-  it('says so when main could not be asked', async () => {
-    main();
-    act(() => showAccounts([]));
-    render();
-    await settle();
-    type('https://github.com/rozed-dev/e2e/pull/78');
-    click(button('Open'));
-    await settle();
-    expect(screen()?.querySelector('[role="alert"]')?.textContent).toBe(
-      "Lo couldn't open the link.",
-    );
-  });
-});
-
-describe('git’s notice', () => {
-  it('says what Lo needs and how to get it, with "Check again", when git is missing', async () => {
-    main({ 'app.info': () => ({ git: missing }) });
-    act(() => showAccounts([]));
-    render();
-    await settle();
-    const notice = screen()?.textContent ?? '';
-    expect(notice).toContain("Lo can't find git.");
-    expect(notice).toContain('xcode-select --install');
-    const code = [...(screen()?.querySelectorAll('.code-small') ?? [])].map(
-      (each) => each.textContent,
-    );
-    expect(code).toContain('xcode-select --install');
-    expect(button('Check again')).toBeDefined();
-  });
-
-  it('is left out while Lo looks, and when it has found git', async () => {
-    main({ 'app.info': () => ({ git: { status: 'checking' } }) });
-    act(() => showAccounts([]));
-    render();
-    await settle();
-    expect(screen()?.textContent).not.toContain('Check again');
-    act(() => welcomeStore.setState({ git: { status: 'found', version: '2.54.0' } }));
-    expect(screen()?.textContent).not.toContain('Check again');
-  });
-
-  it('is shown for a git that is too old, with what Lo said of it', async () => {
-    main({
-      'app.info': () => ({
-        git: {
-          status: 'tooOld',
-          version: '2.30.0',
-          check: 'version',
-          message: 'Lo needs git 2.41.0 or newer.',
-          install: 'Install a newer git.',
-        },
-      }),
-    });
-    act(() => showAccounts([]));
-    render();
-    await settle();
-    expect(screen()?.textContent).toContain('Lo needs git 2.41.0 or newer. Install a newer git.');
-  });
-
-  it('looks again through main, and goes once git is found', async () => {
-    let found = false;
-    const bridge = main({
+  it('says what Lo needs of Git and how to get it, and looks again when asked', async () => {
+    let looked = false;
+    const { bridge } = await first({
       'app.info': () => ({ git: missing }),
       'welcome.checkGit': () => {
-        found = true;
+        looked = true;
       },
     });
-    act(() => showAccounts([]));
-    render();
-    await settle();
+    expect(onScreen().textContent).toContain("Lo can't find git.");
+    const code = [...onScreen().querySelectorAll('.code-small')].map((each) => each.textContent);
+    expect(code).toContain('xcode-select --install');
     click(button('Check again'));
-    expect(button('Check again').disabled).toBe(true);
     await settle();
-    expect(found).toBe(true);
-    expect(bridge.calls).toContainEqual(['welcome.checkGit', undefined]);
-    expect(screen()?.querySelector('[role="status"]')?.textContent).toBe(
-      'Lo looked again and still can’t find a git it can use.',
-    );
-    expect(button('Check again').disabled).toBe(false);
-    // What Lo finds reaches the window on `app.git`.
+    expect(looked).toBe(true);
+    // Nothing new: a screen reader hears the notice again.
+    expect(onScreen().querySelector('[role="status"]')?.textContent).toBe("Lo can't find git.");
+    // What Lo finds reaches the window on `app.git`, and the notice goes.
     act(() => bridge.push('app.git', { status: 'found', version: '2.54.0' }));
-    expect(screen()?.textContent).not.toContain('Check again');
+    expect(onScreen().textContent).not.toContain('Check again');
   });
 
-  it('follows what Lo finds on its own', async () => {
-    const bridge = main({ 'app.info': () => ({ git: { status: 'checking' } }) });
-    act(() => showAccounts([]));
-    render();
+  it('says so by the button when it couldn’t look for Git', async () => {
+    await first({ 'app.info': () => ({ git: missing }) });
+    click(button('Check again'));
     await settle();
-    act(() => bridge.push('app.git', missing));
-    expect(screen()?.textContent).toContain("Lo can't find git.");
+    expect(onScreen().querySelector('[role="alert"]')?.textContent).toBe('Couldn’t check for Git');
   });
 });
 
-describe('the optional steps', () => {
-  it('lists installing the lo command, and sending PR links to Lo, in the slot', async () => {
-    main();
-    act(() => showAccounts([]));
-    render();
-    await settle();
-    const steps = [...document.querySelectorAll('[aria-label="Optional steps"] > li')];
-    expect(steps.map((each) => each.querySelector('.text-ui-strong')?.textContent)).toEqual([
-      'Install the lo command',
-      'Send PR links to Lo',
-    ]);
-    expect(steps[0]?.textContent).toContain(
-      'Review a pull request from a terminal with lo <link>.',
-    );
-    expect(steps[1]?.textContent).toContain('Your browser stays the default.');
-    expect(screen()?.textContent).not.toContain('overview skill');
+/** Presses `key` on the practice diff. */
+function press(key: string): void {
+  const lines = onScreen().querySelector('[role="listbox"]');
+  act(() => {
+    lines?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+  });
+}
+
+/** The practice diff's line the cursor is on. */
+const line = () => onScreen().querySelector('[role="option"][aria-selected="true"]')?.textContent;
+
+describe('the keys step', () => {
+  it('offers standard keys and Vim keys as cards, standard first', async () => {
+    await first();
+    await goTo('keys');
+    const cards = [...onScreen().querySelectorAll('[role="radio"]')];
+    expect(cards.map((card) => card.textContent.slice(0, 8))).toEqual(['Standard', 'Vim keys']);
+    expect(cards.map((card) => card.getAttribute('aria-checked'))).toEqual(['true', 'false']);
   });
 
-  it('installs the lo command through the open feature', async () => {
+  it('moves through a practice diff with j and k, and by a click', async () => {
+    await first();
+    await goTo('keys');
+    const start = line();
+    press('j');
+    expect(line()).not.toBe(start);
+    press('k');
+    expect(line()).toBe(start);
+    const rows = [...onScreen().querySelectorAll('[role="option"]')];
+    click(rows[0] ?? document.body);
+    expect(rows[0]?.getAttribute('aria-selected')).toBe('true');
+    click(button('Line down', onScreen()));
+    expect(rows[1]?.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('opens a comment box with c that sends nothing, and Esc closes it', async () => {
+    const { bridge } = await first();
+    await goTo('keys');
+    const before = bridge.calls.length;
+    press('c');
+    const box = onScreen().querySelector<HTMLInputElement>('input');
+    expect(box?.placeholder).toBe('Write a comment. Nothing here is sent.');
+    expect(document.activeElement).toBe(box);
+    // ⏎ in it is the box's own, not Continue.
+    act(() => enter());
+    expect(stepOnScreen()).toBe('keys');
+    let closed = false;
+    act(() => {
+      closed = escapePractice();
+    });
+    expect(closed).toBe(true);
+    expect(onScreen().querySelector('input')).toBeNull();
+    expect(document.activeElement?.getAttribute('role')).toBe('listbox');
+    expect(bridge.calls).toHaveLength(before);
+    // With no box open, Esc is the window's again.
+    expect(escapePractice()).toBe(false);
+  });
+});
+
+describe('the set-up step', () => {
+  it('lists the lo command and sending links to Lo, in the slot other features add rows to', async () => {
+    await first();
+    await goTo('setup');
+    const rows = [...onScreen().querySelectorAll('ul > li')];
+    expect(rows.map((each) => each.querySelector('.text-ui-strong')?.textContent)).toEqual([
+      'lo command',
+      'Send pull request links to Lo',
+    ]);
+    expect(rows[0]?.textContent).toContain('Opens a pull request from a terminal with lo <link>.');
+    expect(onScreen().textContent).toContain('Each of these is also in Settings › Integrations.');
+  });
+
+  it('installs the lo command through the open feature, and says so where the button was', async () => {
     let installed = false;
-    const bridge = main({
+    const { bridge } = await first({
       'open.command': () => ({
         installed: installed ? [{ path: '/usr/local/bin/lo', current: true }] : [],
       }),
@@ -539,56 +598,117 @@ describe('the optional steps', () => {
         return { kind: 'installed', path: '/usr/local/bin/lo', onPath: true };
       },
     });
-    act(() => showAccounts([]));
-    render();
-    await settle();
-    click(button('Install'));
+    await goTo('setup');
+    click(button('Install', onScreen()));
     await settle();
     expect(bridge.calls).toContainEqual(['open.installCommand', undefined]);
-    expect(button('Installed').disabled).toBe(true);
+    const row = onScreen().querySelector('ul > li');
+    expect(row?.textContent).toContain('Installed');
+    expect(row?.querySelector('button')).toBeNull();
   });
 
-  it('opens the rules for Finicky, Velja and Choosy, and copies one', async () => {
-    const bridge = main({ 'tab.copy': () => undefined, 'tab.openExternal': () => undefined });
-    act(() => showAccounts([]));
-    render();
-    await settle();
-    click(button('Set up'));
+  it('shows the rules for each app that opens links, copies one, and opens the documentation', async () => {
+    const { bridge } = await first({ 'tab.openExternal': () => undefined });
+    await goTo('setup');
+    click(button('Show rules'));
     await settle();
     const rules = document.querySelector('[data-testid="link-rules"]');
     expect(rules?.getAttribute('data-lo-scope')).toBe('dialog');
     expect(
       [...(rules?.querySelectorAll('section h3') ?? [])].map((each) => each.textContent),
-    ).toEqual(['Finicky', 'Velja', 'Choosy']);
-    expect(rules?.textContent).toContain('~/.finicky.js');
-    const copy = rules?.querySelector<HTMLButtonElement>('[aria-label="Copy the rule for Velja"]');
-    if (!copy) throw new Error('No copy button.');
-    click(copy);
+    ).toEqual(['Finicky 4', 'Velja', 'Choosy']);
+    expect(rules?.querySelector('section p .code-small')?.textContent).toBe('handlers');
+    expect(rules?.querySelectorAll('section ol > li')).toHaveLength(7);
+    const velja = rules?.querySelector('section[aria-label="Velja"]');
+    click(button('Copy', velja ?? document));
     await settle();
-    expect(bridge.calls).toContainEqual(['tab.copy', { text: routers[1]?.rule }]);
-    // The dialog says it, since a note under its scrim can't be seen or heard.
-    expect(copy.textContent).toBe('Copied');
-    expect(rules?.querySelector('[role="status"]')?.textContent).toBe('Copied the rule for Velja.');
-    click(button('Read the docs'));
+    expect(copied).toEqual([routers[1]?.rule]);
+    expect(velja?.querySelector('[role="status"]')?.textContent).toBe('Copied');
+    click(button('Open documentation'));
     await settle();
     expect(bridge.calls).toContainEqual([
       'tab.openExternal',
       { url: 'https://github.com/withlo/lo/blob/main/docs/link-routers.md' },
     ]);
-    click(button('Done'));
+    click(button('Done', rules ?? document));
     await settle();
     expect(document.querySelector('[data-testid="link-rules"]')).toBeNull();
   });
 });
 
-describe('Esc', () => {
-  it('gives focus back to the screen’s default action, not to the page under it', async () => {
-    main();
-    act(() => showAccounts([]));
-    render();
+describe('opening a pull request', () => {
+  it('opens the field’s link through the open feature, and the welcome is over', async () => {
+    const { bridge } = await first({
+      'open.open': () => ({ kind: 'tab', id: 't', choice: 'none' }),
+    });
+    await goTo('open');
+    expect(button('Open', onScreen()).disabled).toBe(true);
+    type('  https://github.com/rozed-dev/e2e/pull/78 ');
+    click(button('Open', onScreen()));
     await settle();
-    act(() => type('x').focus());
-    act(() => focusMiddle());
-    expect(document.activeElement).toBe(button('Sign in with GitHub'));
+    expect(bridge.calls).toContainEqual([
+      'open.open',
+      { text: 'https://github.com/rozed-dev/e2e/pull/78' },
+    ]);
+    expect(bridge.calls).toContainEqual(['welcome.finish', undefined]);
+    expect(welcomeStore.getState().open).toBe(false);
+  });
+
+  it('says why a link didn’t open, keeps it, and stays', async () => {
+    await first({
+      'open.open': () => ({ kind: 'refused', message: 'That isn’t a link Lo opens.' }),
+    });
+    await goTo('open');
+    const field = type('owner/repo#1');
+    click(button('Open', onScreen()));
+    await settle();
+    expect(onScreen().querySelector('[role="alert"]')?.textContent).toBe(
+      'That isn’t a link Lo opens.',
+    );
+    expect(field.getAttribute('aria-invalid')).toBe('true');
+    expect(field.value).toBe('owner/repo#1');
+    expect(stepOnScreen()).toBe('open');
+    // Changing the text takes the reason away.
+    type('owner/repo#12');
+    expect(onScreen().querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('says so when main couldn’t be asked', async () => {
+    await first();
+    await goTo('open');
+    type('https://github.com/rozed-dev/e2e/pull/78');
+    click(button('Open', onScreen()));
+    await settle();
+    expect(onScreen().querySelector('[role="alert"]')?.textContent).toBe('Couldn’t open the link');
+  });
+
+  it('pastes the pull request link on the clipboard and opens it, or says there’s none', async () => {
+    let held: string | null = null;
+    const { bridge } = await first({
+      'open.clipboard': () => held,
+      'open.open': () => ({ kind: 'tab', id: 't', choice: 'none' }),
+    });
+    await goTo('open');
+    click(button('Paste link'));
+    await settle();
+    expect(onScreen().querySelector('[role="alert"]')?.textContent).toBe(
+      'No pull request link on the clipboard',
+    );
+    held = 'https://github.com/rozed-dev/e2e/pull/78';
+    click(button('Paste link'));
+    await settle();
+    expect(bridge.calls).toContainEqual(['open.open', { text: held }]);
+  });
+
+  it('opens a sample pull request of Lo’s own', async () => {
+    const { bridge } = await first({
+      'open.open': () => ({ kind: 'tab', id: 't', choice: 'none' }),
+    });
+    await goTo('open');
+    const sample = onScreen().querySelector('ul[aria-label="Sample pull request"] > li');
+    expect(sample?.textContent).toContain('withlo/lo #182');
+    click(button('Open', sample ?? document));
+    await settle();
+    expect(bridge.calls).toContainEqual(['open.open', { text: SAMPLE.link }]);
   });
 });

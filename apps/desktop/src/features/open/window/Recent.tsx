@@ -1,7 +1,7 @@
 // Recent pull requests, the tab that stands in for an empty strip: the pull requests opened lately,
 // across every account, newest first, with a filter; or, before any, how to open one.
 
-import { Button, Input, Key } from '@lo/ui';
+import { Button, EmptyState, Input, Key } from '@lo/ui';
 import { keyLabels, NO_TARGET } from '@lo/ui/commands';
 import { useEffect, useRef } from 'react';
 import { useStore } from 'zustand';
@@ -9,7 +9,7 @@ import { useStore } from 'zustand';
 import { registry, setMiddle, useKeys } from '../../../window/commands/registry.ts';
 import { useAccounts } from '../../accounts/window/shared.ts';
 import type { RecentPull } from '../contract.ts';
-import { loadRecent, openRow, pasteLink, setFilterField } from './actions.ts';
+import { loadRecent, openRow, setFilterField } from './actions.ts';
 import {
   acrossAccounts,
   chosenRow,
@@ -33,13 +33,9 @@ function KeyFor({ id, className }: { id: string; className?: string }) {
 }
 
 /** The icon of a pull request, in no state's color: Lo keeps no state for the list. */
-function PullIcon({ large }: { large?: boolean }) {
+function PullIcon() {
   return (
-    <svg
-      className={large ? 'lo-i size-40 text-fg-subtle' : 'lo-i text-icon-muted'}
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-    >
+    <svg className="lo-i text-icon-muted" viewBox="0 0 16 16" aria-hidden="true">
       <circle cx="4.5" cy="3.75" r="1.5" />
       <circle cx="4.5" cy="12.25" r="1.5" />
       <circle cx="11.5" cy="12.25" r="1.5" />
@@ -80,38 +76,14 @@ function Row({ row, chosen, now }: { row: RecentPull; chosen: boolean; now: numb
 /** Before any pull request was opened: how to open one. */
 function FirstRun() {
   return (
-    <div className="grid h-full place-items-center p-32 text-center">
-      <div className="flex max-w-read-measure flex-col items-center gap-12">
-        <PullIcon large />
-        <h2 className="m-0 text-heading">No pull requests yet</h2>
-        <p className="m-0 text-fg-muted read-body">
-          Paste a link to a pull request. Every pull request you open, from any account, shows up
-          here, newest first.
-        </p>
-        <div className="mt-6 flex gap-8">
-          <Button variant="primary" onClick={() => registry().run('open.box', NO_TARGET)}>
-            Review a pull request
-            <KeyFor id="open.box" className="text-on-accent" />
-          </Button>
-          <Button onClick={() => void pasteLink()}>
-            Paste a link
-            <KeyFor id="open.paste" />
-          </Button>
-        </div>
-        <div className="mt-16 flex flex-wrap justify-center gap-12 text-fg-muted text-small">
-          {[
-            ['keys.palette', 'Every action'],
-            ['keys.help', 'Every key'],
-            ['settings.open', 'Settings'],
-          ].map(([id = '', label]) => (
-            <span key={id} className="inline-flex items-center gap-6 whitespace-nowrap">
-              <KeyFor id={id} />
-              {label}
-            </span>
-          ))}
-        </div>
-      </div>
-    </div>
+    <EmptyState
+      title="No pull requests yet"
+      line="Pull requests you open are listed here."
+      actions={[
+        { command: 'open.box', label: 'Open pull request…' },
+        { command: 'open.paste', label: 'Paste link' },
+      ]}
+    />
   );
 }
 
@@ -162,7 +134,7 @@ export function RecentTab() {
               <Input
                 ref={filter}
                 type="search"
-                aria-label="Filter recent pull requests"
+                aria-label="Filter pull requests"
                 placeholder="Filter by repo, number or title"
                 value={query}
                 onChange={(event) => recentStore.setState({ query: event.target.value })}
@@ -184,7 +156,7 @@ export function RecentTab() {
           variant={any ? 'primary' : 'secondary'}
           onClick={() => registry().run('open.box', NO_TARGET)}
         >
-          Review a pull request
+          Open pull request…
           <KeyFor id="open.box" className={any ? 'text-on-accent' : undefined} />
         </Button>
       </header>
