@@ -18,7 +18,6 @@ import {
   Facts,
   Key,
   LayerList,
-  Spinner,
   Steps,
   TypeToConfirm,
   type FactItem,
@@ -57,6 +56,7 @@ import { merging, panels, statuses, type MergeDialog } from './store.ts';
 import {
   chainSteps,
   confirmLabel,
+  confirmWorking,
   confirmTitle,
   doneLine,
   layerLine,
@@ -65,7 +65,6 @@ import {
   onceLine,
   outcomeDetail,
   outcomeTitle,
-  pendingLine,
   pushWarning,
   queueLine,
   saidOf,
@@ -89,13 +88,16 @@ interface Shown {
   readonly body: ReactNode;
   /**
    * Its main button, `⏎`, if it has one now: `danger` for one that skips rules, `off` until what
-   * it asks for is typed.
+   * it asks for is typed. While what it was pressed for runs it's `busy` and says `working`, and
+   * that's all that says so: no line in the body waits beside it.
    */
   readonly primary:
     | {
         readonly label: string;
         readonly run: () => void;
         readonly busy?: boolean;
+        /** What it says while busy, the verb of its label: "Merging…". */
+        readonly working?: string;
         readonly danger?: boolean;
         readonly off?: boolean;
       }
@@ -451,6 +453,7 @@ function confirmShown(
       label: confirmLabel(plan),
       run: confirmMerge,
       busy: dialog.sending,
+      working: confirmWorking(plan),
       ...(override && { danger: true, off: typed !== number }),
     },
     typing: override,
@@ -479,12 +482,6 @@ function confirmShown(
           <Callout tone="warning" role="status">
             {withoutBidi(dialog.note)}
           </Callout>
-        )}
-        {dialog.sending && (
-          <div role="status" className="flex items-center gap-8 text-fg-muted text-small">
-            <Spinner />
-            Checking #{plan.number} with GitHub before it’s sent. Cancel stops it.
-          </div>
         )}
         <Callout tone="info">Lo deletes no branches; the repo’s own setting applies.</Callout>
       </>
@@ -612,6 +609,22 @@ function chainShown(
   };
 }
 
+/** What the main button says while the merge is worked out, before it can be named. */
+const CHECKING = 'Checking…';
+
+/**
+ * The main button while the merge it sent runs: still there, busy, saying what it's doing, with its
+ * fill, its width and focus as they were. Nothing else in the dialog says the merge is running.
+ */
+function atWork(plan: MergePlan): Shown['primary'] {
+  return {
+    label: confirmLabel(plan),
+    run: () => undefined,
+    busy: true,
+    working: confirmWorking(plan),
+  };
+}
+
 function sentShown(plan: MergePlan, job: JobView | undefined, now: number): Shown {
   const title = confirmTitle(plan);
   const state = job?.state;
@@ -627,36 +640,17 @@ function sentShown(plan: MergePlan, job: JobView | undefined, now: number): Show
   switch (state?.kind) {
     case undefined:
     case 'sending':
-      return {
-        title,
-        step: 'sending',
-        close: 'Close',
-        primary: undefined,
-        body: (
-          <div role="status" className="flex items-center gap-8 text-fg-muted text-small">
-            <Spinner />
-            Sending
-          </div>
-        ),
-      };
+      return { title, step: 'sending', close: 'Close', primary: atWork(plan), body: undefined };
     case 'pending':
       return {
         title,
         step: 'pending',
         close: 'Close',
-        primary: undefined,
-        body: (
-          <>
-            <div role="status" className="flex items-center gap-8 text-fg-muted text-small">
-              <Spinner />
-              {pendingLine(plan)}
-            </div>
-            {state.trouble !== null && (
-              <p className="m-0 text-fg-muted text-small">
-                {withoutBidi(troubleLine(state.trouble))}
-              </p>
-            )}
-          </>
+        primary: atWork(plan),
+        body: state.trouble !== null && (
+          <p role="status" className="m-0 text-fg-muted text-small">
+            {withoutBidi(troubleLine(state.trouble))}
+          </p>
         ),
       };
     case 'refused':
@@ -704,13 +698,8 @@ function shownOf(
         step: 'planning',
         close: 'Cancel',
         // There from the start, so focus is on it, not on Cancel, when the plan comes.
-        primary: { label: dialog.label, run: () => undefined, busy: true },
-        body: (
-          <div role="status" className="flex items-center gap-8 text-fg-muted text-small">
-            <Spinner />
-            Checking #{dialog.number} with GitHub
-          </div>
-        ),
+        primary: { label: dialog.label, run: () => undefined, busy: true, working: CHECKING },
+        body: undefined,
       };
     case 'confirm':
       return confirmShown(dialog, field);
@@ -733,7 +722,10 @@ function shownOf(
   }
 }
 
-/** The dialog's main button, with `⏎`. */
+/**
+ * The dialog's main button, with `⏎`. It keeps one width from checking to sent: as wide as its
+ * label, what it says at work, or "Checking…", whichever is widest.
+ */
 function PrimaryButton({
   primary,
   button,
@@ -745,18 +737,33 @@ function PrimaryButton({
     <Button
       ref={button}
       variant={primary.danger ? 'danger' : 'primary'}
-      aria-disabled={primary.busy || primary.off || undefined}
+      busy={primary.busy === true}
+      working={primary.working}
+      aria-disabled={primary.off || undefined}
       onClick={(event) => {
         // Not a double click's second, which would press what came up in its place unseen.
         if (event.detail <= 1 && !primary.busy && !primary.off) primary.run();
       }}
     >
-      {primary.label}
-      <Key
-        keys={labels('enter')}
-        decorative
-        className={primary.danger ? undefined : 'text-on-accent'}
-      />
+      <span className="inline-grid">
+        <span className="col-start-1 row-start-1 inline-flex items-center justify-center gap-6">
+          {primary.label}
+          <Key
+            keys={labels('enter')}
+            decorative
+            className={primary.danger ? undefined : 'text-on-accent'}
+          />
+        </span>
+        {/* The room "Checking…" takes with its ring, kept once the plan has come too, so the
+            button is as wide while it asks as it was while it checked. */}
+        <span
+          aria-hidden="true"
+          className="invisible col-start-1 row-start-1 inline-flex items-center justify-center gap-6"
+        >
+          <span className="size-12 flex-none" />
+          {CHECKING}
+        </span>
+      </span>
     </Button>
   );
 }

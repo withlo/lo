@@ -77,6 +77,12 @@ function dialog(name: string): HTMLElement | null {
   return document.querySelector(`[data-testid="${name}"]`);
 }
 
+/** What the sign-in dialog's one line says of where the sign-in is. */
+function status(): string | undefined {
+  // The first in it: a button that copies has one of its own.
+  return dialog('sign-in')?.querySelector('div[role="status"]')?.textContent;
+}
+
 function button(within: Element | null, text: string): HTMLButtonElement {
   const found = [...(within?.querySelectorAll('button') ?? [])].find((each) =>
     each.textContent.startsWith(text),
@@ -125,6 +131,7 @@ describe('the sign-in dialog', () => {
     const bridge = installBridge({
       'accounts.signIn': () => waiting,
       'accounts.openGithub': () => undefined,
+      'accounts.copyCode': () => undefined,
     });
     render();
     act(() => openSignIn());
@@ -132,15 +139,24 @@ describe('the sign-in dialog', () => {
     const shown = dialog('sign-in');
     expect(shown?.textContent).toContain('FAKE-1234');
     expect(shown?.textContent).toContain('Enter this code at github.com/login/device');
-    expect(shown?.textContent).toContain('The code expires in 14:59.');
+    expect(status()).toBe('Waiting for approval…Code expires in 14 min');
     // The main button copies the code and opens GitHub's page, through main.
     expect(document.activeElement?.textContent).toContain('Copy and open GitHub');
     click(button(shown, 'Copy and open GitHub'));
     await settle();
     expect(bridge.calls).toContainEqual(['accounts.openGithub', { id: 7 }]);
-    expect(dialog('sign-in')?.textContent).toContain('Copied FAKE-1234.');
+    // Its own button copies the code alone, and says so itself.
+    click(button(shown, 'Copy'));
+    await settle();
+    expect(bridge.calls).toContainEqual(['accounts.copyCode', { id: 7 }]);
+    expect(
+      button(shown, 'Copy').querySelector('.inline-grid > span:not(.invisible)')?.textContent,
+    ).toBe('Copied');
+    // The body stays as the account is checked: the code keeps its place, and the button is busy.
     act(() => bridge.push('accounts.signingIn', { kind: 'checking', id: 7 }));
-    expect(dialog('sign-in')?.textContent).toContain('Checking your account');
+    expect(status()).toBe('Checking account…');
+    expect(dialog('sign-in')?.textContent).toContain('FAKE-1234');
+    expect(button(shown, 'Copy and open GitHub').getAttribute('aria-busy')).toBe('true');
     act(() =>
       bridge.push('accounts.signingIn', {
         kind: 'signedIn',
@@ -149,12 +165,41 @@ describe('the sign-in dialog', () => {
         name: null,
       }),
     );
-    expect(dialog('sign-in')?.textContent).toContain('Signed in as rozed-bot');
+    expect(status()).toBe('Signed in as rozed-bot');
+    expect(button(dialog('sign-in'), 'Done')).toBeDefined();
     // Another sign-in's news isn't this one's.
     act(() =>
       bridge.push('accounts.signingIn', { kind: 'failed', id: 6, why: 'denied', message: 'No.' }),
     );
-    expect(dialog('sign-in')?.textContent).toContain('Signed in as rozed-bot');
+    expect(status()).toBe('Signed in as rozed-bot');
+  });
+
+  it('waits for the code with its place kept, and `Esc` still stops it', async () => {
+    const answers: ((state: SignInState) => void)[] = [];
+    const bridge = installBridge({
+      'accounts.signIn': () => new Promise<SignInState>((resolve) => answers.push(resolve)),
+    });
+    render();
+    act(() => openSignIn());
+    await settle();
+    const shown = dialog('sign-in');
+    expect(status()).toBe('Getting code…');
+    // Nothing to run yet: the main button is dimmed, and says why to a screen reader.
+    const main = button(shown, 'Copy and open GitHub');
+    expect(main.getAttribute('aria-disabled')).toBe('true');
+    click(main);
+    await settle();
+    expect(bridge.calls).not.toContainEqual(['accounts.openGithub', { id: 7 }]);
+    await act(async () => {
+      answers[0]?.(waiting);
+      await Promise.resolve();
+    });
+    await settle();
+    expect(button(shown, 'Copy and open GitHub')).toBe(main);
+    expect(main.getAttribute('aria-disabled')).toBeNull();
+    press(shown ?? document.body, 'Escape');
+    await settle();
+    expect(dialog('sign-in')).toBeNull();
   });
 
   it('presses Done on ⏎ off its buttons, and says nothing of the keychain', async () => {
@@ -171,7 +216,7 @@ describe('the sign-in dialog', () => {
       }),
     );
     const shown = dialog('sign-in');
-    expect(shown?.textContent).toContain('Signed in as rozed-bot');
+    expect(status()).toBe('Signed in as rozed-bot');
     expect(shown?.textContent).not.toMatch(/keychain/i);
     // A button's own `⏎` is left to it.
     const key = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
@@ -180,7 +225,7 @@ describe('the sign-in dialog', () => {
     });
     expect(key.defaultPrevented).toBe(false);
     // On the dialog's text, which a click there left focus on, `⏎` presses Done.
-    press(shown?.querySelector('p') ?? document.body, 'Enter');
+    press(shown?.querySelector('div[role="status"]') ?? document.body, 'Enter');
     await settle();
     expect(dialog('sign-in')).toBeNull();
   });
@@ -224,11 +269,51 @@ describe('the sign-in dialog', () => {
     act(() => openSignIn());
     await settle();
     const shown = dialog('sign-in');
-    expect(shown?.textContent).toContain("Lo can't keep your token safely");
     expect(shown?.querySelector('[role="alert"]')?.textContent).toBe(
+      'Couldn’t sign in Sign-ins are kept in the Keychain, and it isn’t available.',
+    );
+    // What main said is behind Details, as it came.
+    click(button(shown, 'Details'));
+    expect(shown?.querySelector('pre')?.textContent).toBe(
       'Lo keeps your GitHub token in a keyring, and none answered.',
     );
     expect(button(shown, 'Quit Lo')).toBeDefined();
+    expect(button(shown, 'Close')).toBeDefined();
+  });
+
+  it('says why GitHub ended it, once, and offers the way on', async () => {
+    const bridge = installBridge({ 'accounts.signIn': () => waiting });
+    render();
+    act(() => openSignIn());
+    await settle();
+    const shown = dialog('sign-in');
+    const said = () => shown?.querySelector('[role="alert"]')?.textContent;
+    act(() =>
+      bridge.push('accounts.signingIn', {
+        kind: 'failed',
+        id: 7,
+        why: 'expired',
+        message: 'The code expired before it was entered on GitHub.',
+      }),
+    );
+    expect(said()).toBe('Couldn’t sign in The code expired.');
+    // The code is gone with the sign-in, and its place stays.
+    expect(shown?.querySelector('[role="img"]')).toBeNull();
+    expect(status()).toBe('');
+    expect(button(shown, 'Try again')).toBeDefined();
+    click(button(shown, 'Try again'));
+    await settle();
+    expect(shown?.querySelector('[role="alert"]')).toBeNull();
+    act(() =>
+      bridge.push('accounts.signingIn', {
+        kind: 'failed',
+        id: 7,
+        why: 'missingScopes',
+        message: 'The token is missing the workflow scope.',
+      }),
+    );
+    expect(said()).toBe('Couldn’t sign in GitHub granted less access than the sign-in asked for.');
+    expect(button(shown, 'Sign in again')).toBeDefined();
   });
 
   it('says why it ended, and tries again', async () => {
@@ -243,7 +328,11 @@ describe('the sign-in dialog', () => {
     render();
     act(() => openSignIn());
     await settle();
-    expect(dialog('sign-in')?.textContent).toContain('accounts.signIn failed.');
+    expect(dialog('sign-in')?.querySelector('[role="alert"]')?.textContent).toBe(
+      'Couldn’t sign in',
+    );
+    click(button(dialog('sign-in'), 'Details'));
+    expect(dialog('sign-in')?.querySelector('pre')?.textContent).toBe('accounts.signIn failed.');
     click(button(dialog('sign-in'), 'Try again'));
     await settle();
     expect(dialog('sign-in')?.textContent).toContain('FAKE-1234');

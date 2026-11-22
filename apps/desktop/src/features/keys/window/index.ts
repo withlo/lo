@@ -4,7 +4,7 @@ import { IpcError } from '../../../ipc/contract.ts';
 import { barItems, focusedTarget, onMenuStale, runFromBar } from '../../../window/commands/bar.ts';
 import { applyKeymapFile, keymapOpenable } from '../../../window/commands/keymap.ts';
 import { currentMenu, openMenuAtFocus } from '../../../window/commands/menus.tsx';
-import { notify } from '../../../window/commands/notices.tsx';
+import { notify, refuse } from '../../../window/commands/notices.tsx';
 import { showHighlighted, toggleHelp, togglePalette } from '../../../window/commands/overlays.tsx';
 import { escapeToMiddle, here, registry } from '../../../window/commands/registry.ts';
 import type { WindowFeature } from '../../../window/features.ts';
@@ -115,7 +115,7 @@ export default {
     menu.subscribe('run', ({ id }) => {
       // A right-click menu is open over the window, and nothing but its own commands runs under it.
       if (currentMenu() !== undefined) {
-        notify(registry().command(id)?.label ?? 'Menu', 'Close the menu first.');
+        refuse('Close the menu first');
         return;
       }
       runFromBar(registry(), id, focusedTarget());

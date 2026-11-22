@@ -1039,6 +1039,26 @@ export function confirmLabel(
   }
 }
 
+/**
+ * What the confirmation's main button says while what it was pressed for runs: the verb of
+ * {@link confirmLabel}, as a progress label.
+ */
+export function confirmWorking(plan: Pick<MergePlan, 'kind'>): string {
+  switch (plan.kind) {
+    case 'merge':
+    case 'override':
+      return 'Merging…';
+    case 'enqueue':
+      return 'Adding…';
+    case 'autoMerge':
+    case 'whenReady':
+      return 'Turning on…';
+    default:
+      plan.kind satisfies never;
+      return 'Merging…';
+  }
+}
+
 /** A method as GitHub doing it: "squashes". */
 function merges(method: Method | null): string {
   switch (method) {

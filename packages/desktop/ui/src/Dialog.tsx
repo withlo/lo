@@ -32,6 +32,11 @@ export interface DialogAction {
   tone?: 'primary' | 'danger' | undefined;
   /** Why it can't be run yet, said to a screen reader; the button is greyed and does nothing. */
   disabled?: string | undefined;
+  /**
+   * What the button says after a failure, where running it again isn't the way on: "Sign in
+   * again", "Quit Lo". "Try again" without one.
+   */
+  again?: string | undefined;
 }
 
 export interface DialogProps {
@@ -211,7 +216,7 @@ export function Dialog(props: DialogProps) {
                         if (action.disabled === undefined) action.onRun();
                       }}
                     >
-                      {state === 'failed' ? 'Try again' : action.label}
+                      {state === 'failed' ? (action.again ?? 'Try again') : action.label}
                       {action.keys && <Key keys={action.keys} decorative />}
                     </Button>
                   )}

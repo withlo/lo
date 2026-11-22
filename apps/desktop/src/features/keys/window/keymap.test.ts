@@ -157,7 +157,8 @@ describe('the keymap file in the window', () => {
     expect(keymapState()).toEqual({ problem: why, canOpen: false });
     expect(registry().enabled('keys.openKeymap', NO_TARGET)).toBe(why);
     expect(registry().run('keys.openKeymap', NO_TARGET)).toBe(why);
-    expect(notice()).toEqual({ title: 'Open the keymap file', body: why });
+    // The reason alone, not under the command's name.
+    expect(notice()).toEqual({ title: why, body: '' });
     expect(invoked('keys.openKeymap')).toBe(0);
     // Once the file can be opened, it is asked for again.
     push('keys.keymap', file(''));

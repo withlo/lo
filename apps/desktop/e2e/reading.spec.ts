@@ -1193,8 +1193,6 @@ async function watchOpening(page: Page): Promise<void> {
     const seenAs = { visibilityProperty: true };
     const shows = (element: Element | null | undefined) =>
       element?.checkVisibility(seenAs) === true;
-    const placeholder =
-      /^(Opening the pull request…|The diff and the threads will show here\.|Nothing to show yet\.)$/;
     const tick = () => {
       const now = performance.now();
       const view = document.querySelector('[data-lo-middle-view="overview.view"]');
@@ -1207,9 +1205,8 @@ async function watchOpening(page: Page): Promise<void> {
       for (const part of scroller?.children ?? []) {
         if (shows(part)) opening.early.push(part.className);
       }
-      const waiting = [...(view?.querySelectorAll('p') ?? [])].some(
-        (said) => shows(said) && placeholder.test(said.textContent ?? ''),
-      );
+      // The placeholder's box, which is empty for its first moments.
+      const waiting = [...(view?.querySelectorAll('[data-lo-placeholder]') ?? [])].some(shows);
       if (view && !waiting) opening.bare += 1;
       if (window.loOpening === opening) requestAnimationFrame(tick);
     };

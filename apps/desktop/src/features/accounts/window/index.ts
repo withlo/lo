@@ -1,6 +1,7 @@
 import { handlers } from '@lo/ui/commands';
 import { createElement } from 'react';
 
+import { announce, notify } from '../../../window/commands/notices.tsx';
 import type { WindowFeature } from '../../../window/features.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { dialogs } from '../../tab/window/shared.ts';
@@ -14,7 +15,15 @@ import { accountsStore, showAccounts } from './store.ts';
 export default {
   commands: handlers(keys, {
     copyCode: {
-      run: () => copyCode(),
+      // Its key has no button to say so for it.
+      run: () =>
+        copyCode().then(
+          () => announce('Copied sign-in code'),
+          (error: unknown) => {
+            console.error("Lo couldn't copy the code:", error);
+            notify('Couldn’t copy sign-in code', '');
+          },
+        ),
       enabled: () => (waitingSignIn() === undefined ? 'No sign-in is waiting for its code.' : true),
     },
     addAccount: { run: () => openSignIn() },

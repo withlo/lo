@@ -37,7 +37,7 @@ export function ServerItems({ tab }: { tab: PullTab }) {
             busy: busyLabel(status),
             failure: failure
               ? {
-                  message: `${failureTitle(status, failure)} ${failure.message}`,
+                  message: `${failureTitle(status, failure)}. ${failure.message}`,
                   fix: failure.file
                     ? { label: 'Open the settings file', onChoose: () => void openSettingsFile() }
                     : undefined,

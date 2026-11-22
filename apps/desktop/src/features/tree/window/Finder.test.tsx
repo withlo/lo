@@ -381,8 +381,8 @@ describe('going to a file', () => {
     await vi.waitFor(() => expect(dialog()).toBeNull());
     expect(focus.get(TAB.id)).toBe('src/format.ts');
     expect(notice()).toEqual({
-      title: 'Show the file',
-      body: 'There’s no diff on screen to show it in.',
+      title: 'There’s no diff on screen to show it in.',
+      body: '',
     });
   });
 
@@ -400,8 +400,8 @@ describe('going to a file', () => {
     choose('README.md');
     await vi.waitFor(() => expect(dialog()).toBeNull());
     expect(notice()).toEqual({
-      title: 'Show the file',
-      body: 'Lo has no whole-file view to open it in.',
+      title: 'Lo has no whole-file view to open it in.',
+      body: '',
     });
   });
 
@@ -446,8 +446,8 @@ describe('going to a file', () => {
     });
     await vi.waitFor(() => expect(dialog()).toBeNull());
     expect(notice()).toEqual({
-      title: 'Whole file',
-      body: 'Lo has no whole-file view to open it in.',
+      title: 'Lo has no whole-file view to open it in.',
+      body: '',
     });
   });
 

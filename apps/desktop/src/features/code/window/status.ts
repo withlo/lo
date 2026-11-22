@@ -67,8 +67,8 @@ export const TRUST_STARTS = 'Checking…';
 
 /**
  * What a trust button says while main trusts its view, or nothing while it doesn't. Nothing says
- * it's trusting until the reader said "Trust" in main's dialog. Each is no wider than "Trust this
- * repo", so the button keeps its width as it waits.
+ * it's trusting until the reader said "Trust" in main's dialog. Each is no wider than "Trust
+ * repo…", so the button keeps its width as it waits.
  */
 export function busyLabel(status: Status): string | undefined {
   const { trusting } = status;
@@ -87,9 +87,9 @@ export function busyLabel(status: Status): string | undefined {
   }
 }
 
-/** What a failure to trust `status`'s view says first: what didn't happen. */
+/** What a failure to trust `status`'s view says first: what didn't happen, as a title. */
 export function failureTitle(status: Status, failure: TrustFailure): string {
-  return failure.pull ? "Lo couldn't trust this PR." : `Lo couldn't trust ${status.repo}.`;
+  return failure.pull ? 'Couldn’t trust the pull request' : `Couldn’t trust ${status.repo}`;
 }
 
 const asked = new Set<string>();
@@ -107,12 +107,15 @@ function catchUp(view: string): void {
     .finally(() => asked.delete(view));
 }
 
-/** What the banner says of a view, in the design's words, with what it offers. */
+/**
+ * What the banner says of a view, with what it offers: one fact in a line, one button, and a
+ * dismiss. A second line only once trusting failed, for why.
+ */
 export interface TrustBannerText {
   /** `danger` once trusting it failed. */
   readonly tone: 'warn' | 'danger';
   readonly title: string;
-  readonly detail: string;
+  readonly detail?: string | undefined;
   /**
    * The button that asks main to ask the reader, if trusting can help, with what Lo is doing
    * while it does.
@@ -158,21 +161,16 @@ function offerOf(status: Status | null): Omit<TrustBannerText, 'tone'> | undefin
   switch (head?.kind) {
     case 'fork':
       return {
-        title: `This PR comes from a fork, ${head.repo}.`,
-        detail: 'Its code runs only if you trust it.',
-        action: { label: 'Trust this PR', pull: true },
+        title: `Language servers are off for the fork ${head.repo}`,
+        action: { label: 'Trust pull request…', pull: true },
       };
     case 'gone':
-      return {
-        title: 'This PR comes from a fork GitHub no longer has.',
-        detail: "Lo can't tell whose code it is, so language servers stay off.",
-      };
+      return { title: 'Language servers are off for a fork that no longer exists' };
     case 'base':
     case undefined:
       return {
-        title: `Language servers are off for ${repo}.`,
-        detail: 'Lo runs them only on repos you trust.',
-        action: { label: 'Trust this repo', pull: false },
+        title: `Language servers are off for ${repo}`,
+        action: { label: 'Trust repo…', pull: false },
       };
     default:
       head satisfies never;
@@ -180,12 +178,25 @@ function offerOf(status: Status | null): Omit<TrustBannerText, 'tone'> | undefin
   }
 }
 
-/** Whether a view's banner shows. A view drawn before main said anything asks as it comes on screen. */
+/**
+ * Whether each view's banner has been drawn: `on` while it's on screen, which holds its place in
+ * the tab until it has closed, and `off` once it has gone.
+ */
+export const drawn = tabState<'never' | 'on' | 'off'>(() => 'never');
+
+/**
+ * Whether a view's banner shows: while there's something to offer, and then until the banner has
+ * closed, so it leaves as it came. A view drawn before main said anything asks as it comes on
+ * screen.
+ */
 export const trustSwitch: BannerSwitch = {
-  shows: (tab) => bannerOf(statuses.get(tab.id)) !== undefined,
+  shows: (tab) => bannerOf(statuses.get(tab.id)) !== undefined || drawn.get(tab.id) === 'on',
   subscribe(tab, listener) {
     if (statuses.get(tab.id) === null) catchUp(tab.id);
-    return statuses.subscribe(listener);
+    const stops = [statuses.subscribe(listener), drawn.subscribe(listener)];
+    return () => {
+      for (const stop of stops) stop();
+    };
   },
 };
 

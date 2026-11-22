@@ -165,13 +165,14 @@ test('with nothing open, Recent pull requests is the only tab, and it can’t be
   await expect(page).toHaveTitle('Lo');
 
   await page.keyboard.press(`${cmd}+KeyW`);
-  await expect(said(page, "Recent pull requests can't be closed")).toBeVisible();
+  await expect(said(page, 'Recent pull requests can’t be closed')).toBeVisible();
   // Its right-click menu says so too.
   await shown(page).click({ button: 'right' });
   const close = page
     .getByRole('menu', { name: 'Tab actions' })
     .getByRole('menuitem', { name: 'Close tab' });
   await expect(close).toHaveAttribute('aria-disabled', 'true');
+  await expect(close).toContainText('Recent pull requests can’t be closed');
   await page.keyboard.press('Escape');
   await expect(tabs(page)).toHaveText(['Recent pull requests']);
 });
@@ -361,7 +362,7 @@ test('⌃⇧PageUp and ⌃⇧PageDown move the tab on screen a place, keeping it
   await expect(shown(page)).toBeFocused();
   // Not round the end.
   await page.keyboard.press('Control+Shift+PageDown');
-  await expect(said(page, 'The tab is last in the strip already.')).toBeVisible();
+  await expect(said(page, 'Already last')).toBeVisible();
   await expect(tabs(page)).toHaveText(['a #1', 'b #2', 'c #3']);
 
   // Two quick presses move it two places.
@@ -579,7 +580,7 @@ test('with a tab brought in from "N more", a drag and the keys move exactly what
   await expect(tabs(page)).toHaveText(last);
   await expect(said(page, `${chosen} is now tab ${count} of 16.`)).toBeAttached();
   await page.keyboard.press('Control+Shift+PageDown');
-  await expect(said(page, 'The tab is last in the strip already.')).toBeVisible();
+  await expect(said(page, 'Already last')).toBeVisible();
   await expect(tabs(page)).toHaveText(last);
   await expect(more(page)).toHaveAttribute('aria-label', folded ?? '');
 });
@@ -589,7 +590,7 @@ test('⌘⇧A opens the tabs that don’t fit, to choose one by key', async ({ a
   await open(page, pull('withlo', 'a', 1));
   // While every tab fits, the key says so.
   await page.keyboard.press(`${cmd}+Shift+KeyA`);
-  await expect(said(page, 'Every tab fits in the strip.')).toBeVisible();
+  await expect(said(page, 'Every tab fits')).toBeVisible();
 
   await open(page, ...many(16));
   await page.keyboard.press(`${cmd}+Digit1`);

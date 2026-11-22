@@ -122,6 +122,12 @@ function dialog(): HTMLElement | null {
   return document.querySelector<HTMLElement>('[role="dialog"]');
 }
 
+/** What the dialog's main button says it's doing, while it's busy. */
+function working(): string | undefined {
+  const face = dialog()?.querySelector('button[aria-busy="true"] > span > span:not([aria-hidden])');
+  return face?.textContent ?? undefined;
+}
+
 /** A key-down of `⏎`, made now, so stamped now. */
 function enter(init: KeyboardEventInit = {}): KeyboardEvent {
   return new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true, ...init });
@@ -208,12 +214,12 @@ it('confirms only on a fresh `⏎` once it shows, then follows the merge until a
   expect(bridge.calls.find(([channel]) => channel === 'merge.confirm')?.[1]).toEqual({
     key: plan.key,
   });
-  expect(dialog()?.textContent).toContain('Sending');
+  expect(working()).toBe('Merging…');
 
   act(() => heardJob(jobOf(plan, { kind: 'pending', trouble: null })));
-  expect(dialog()?.textContent).toContain(
-    'GitHub is merging it. You can close this; the tab shows how it ends.',
-  );
+  // The button says it, and no sentence beside it does.
+  expect(working()).toBe('Merging…');
+  expect(dialog()?.textContent).not.toContain('GitHub is merging it');
   // Nothing more is confirmed, however often `⏎` is pressed.
   act(() => {
     dialog()!.dispatchEvent(enter());
@@ -282,7 +288,7 @@ it('offers the newer push a refusal names, or one Lo read since a refusal that n
   });
 });
 
-it('says it’s checking once confirmed, and `Esc` then cancels it in main', async () => {
+it('is busy once confirmed, and `Esc` then cancels it in main', async () => {
   const plan = planOf();
   let answer: ((confirmed: unknown) => void) | undefined;
   confirming = () => new Promise((resolve) => (answer = resolve));
@@ -295,7 +301,7 @@ it('says it’s checking once confirmed, and `Esc` then cancels it in main', asy
   act(() => {
     dialog()!.dispatchEvent(enter());
   });
-  await until(() => dialog()?.textContent?.includes('Checking #138 with GitHub') === true);
+  await until(() => working() === 'Merging…');
 
   act(() => {
     dialog()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
