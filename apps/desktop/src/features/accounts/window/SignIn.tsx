@@ -35,7 +35,7 @@ import { contract as app } from '../../app/contract.ts';
 import type { SignInFailure } from '../contract.ts';
 import { closeDialog, copyCode, openGithub, openSignIn } from './dialogs.ts';
 import { enterOffControls } from './focus.ts';
-import { keyOf, labels } from './labels.ts';
+import { keyOf, labels, shortcut } from './labels.ts';
 import type { SignInDialog } from './store.ts';
 
 /** What the sign-in asks GitHub for, as GitHub's page names each, and what it's for. */
@@ -129,7 +129,12 @@ function failed(why: SignInFailure | 'cancelled', details: string | undefined): 
         { onRun: openSignIn };
   return {
     state: 'failed',
-    action: { label: 'Copy and open GitHub', keys: labels('enter'), ...way },
+    action: {
+      label: 'Copy and open GitHub',
+      keys: labels('enter'),
+      shortcut: shortcut('enter'),
+      ...way,
+    },
     problem: { title: 'Couldn’t sign in', reason: reasonOf(why), details },
   };
 }
@@ -140,6 +145,7 @@ function stepOf(dialog: SignInDialog): Step {
     label: 'Copy and open GitHub',
     working: 'Checking…',
     keys: labels('enter'),
+    shortcut: shortcut('enter'),
     onRun: () => void openGithub(),
   };
   if (error !== undefined) return failed('failed', error);

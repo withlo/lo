@@ -21,11 +21,10 @@ import {
 import { leftSince } from '@lo/review';
 import type { Stacks } from '@lo/stacks';
 
-import type { LeftEntry, QueueState } from '../contract.ts';
+import { QUEUE_EVERY, type LeftEntry, type QueueState } from '../contract.ts';
+import { causeOf } from './causes.ts';
 import { countOf, leftOf, readOf, stacksOf, switchBranches, timeOf, type Leaver } from './read.ts';
 
-/** How often the queue on screen is read while reads succeed. */
-export const QUEUE_EVERY = 20_000;
 /** The longest wait between reads of the queue on screen, while they fail. */
 export const QUEUE_MOST = 120_000;
 /**
@@ -195,6 +194,8 @@ export class QueueWatch {
   #queueRun: Run | undefined;
   /** Why the last read of the queue failed, while reads of it fail. */
   #failure: string | undefined;
+  /** Why the last read failed, in the reader's words, where its cause is known. */
+  #failureReason: string | undefined;
   #waiting: QueueWaiting | undefined;
   #waitingFailed = false;
   /** When the read that gave {@link #waiting} was asked for. */
@@ -263,7 +264,11 @@ export class QueueWatch {
           ? { message: this.#held, retryAt: null }
           : this.#failure === undefined
             ? null
-            : { message: this.#failure, retryAt: this.#queue.retryAt ?? null },
+            : {
+                message: this.#failure,
+                retryAt: this.#queue.retryAt ?? null,
+                ...(this.#failureReason !== undefined && { reason: this.#failureReason }),
+              },
       away: this.#held !== undefined,
     };
   }
@@ -334,7 +339,7 @@ export class QueueWatch {
       await awaited?.done;
       const after = this.#unreadable(branch);
       if (after !== undefined) return after;
-      if (this.#waitingFailed) return this.#waitingFailure ?? 'GitHub didn’t answer.';
+      if (this.#waitingFailed) return this.#waitingFailure ?? 'GitHub didn’t respond.';
       const read = this.#waitingFrom;
       if (
         this.#waiting !== undefined &&
@@ -531,6 +536,8 @@ export class QueueWatch {
       wait = this.#queue.succeeded(now);
     } else {
       this.#failure = messageOf(read.error);
+      const { why } = causeOf(read.error, this.#options.login);
+      this.#failureReason = why === '' ? undefined : why;
       wait = this.#queue.failed(now);
     }
     this.#publish();

@@ -35,6 +35,11 @@ export interface DialogAction {
   onRun: () => void;
   /** The key that runs it, as the system shows it: `['⏎']`. */
   keys?: readonly string[] | undefined;
+  /**
+   * That key as `aria-keyshortcuts` says it, `Meta+Enter` (`ariaShortcut` gives it), which a
+   * screen reader hears in place of the key caps.
+   */
+  shortcut?: string | undefined;
   /** `danger` for what destroys or refuses. */
   tone?: 'primary' | 'danger' | undefined;
   /**
@@ -45,12 +50,30 @@ export interface DialogAction {
   disabled?: string | undefined;
   /**
    * What the button says after a failure, where running it again isn't the way on: "Sign in
-   * again", "Quit Lo". "Try again" without one.
+   * again", "Quit Lo". "Try again" without one, and no button at all for `null`, where there's
+   * nothing to do but close.
    *
    * When what was sent may have gone through and its result isn't known, it's "Check again", and
    * `onRun` then only looks for the result: it never sends the action a second time.
    */
-  again?: string | undefined;
+  again?: string | null | undefined;
+  /**
+   * It's at work while nothing that can't be left is: before what it asks can be confirmed, as
+   * while it's checked, or while "Check again" looks. It's busy, saying `working`, and the button
+   * that leaves still leaves. While `state` is `working` it's busy whatever this says.
+   */
+  busy?: boolean | undefined;
+  /**
+   * The widest of what it may say, for a button whose label changes from step to step, "Merge #264"
+   * to "Check again": it holds that room from its first draw, so it never changes width.
+   */
+  widest?: string | undefined;
+}
+
+/** A button in a dialog's foot besides the main one, before the one that leaves: "Open #265". */
+export interface DialogOther {
+  label: string;
+  onRun: () => void;
 }
 
 export interface DialogProps {
@@ -84,10 +107,14 @@ export interface DialogProps {
   note?: ReactNode;
   /** The key on the button that leaves, as the system shows it: `['Esc']`. */
   leaveKeys?: readonly string[] | undefined;
+  /** Another button in the foot it draws, before the one that leaves: what comes next. */
+  other?: DialogOther | undefined;
+  /** The main button of the foot it draws, for a caller that gives it focus as it moves on. */
+  mainRef?: RefObject<HTMLButtonElement | null> | undefined;
   /**
    * Why it can't be left while its `state` is `working`, in a few words with no full stop: "The
    * account check can’t be stopped". It's the tooltip of Cancel, which is dimmed then. "Wait for
-   * it to finish" without one.
+   * GitHub to answer" without one, the same in every dialog that sends something.
    */
   stays?: string | undefined;
   /**
@@ -132,7 +159,8 @@ const popup = cva(
  * with the Sheet move, and gives focus back the moment it's asked to close.
  */
 export function Dialog(props: DialogProps) {
-  const { open, onOpenChange, initialFocus, onKeyDown, container, onClosed, testId } = props;
+  const { open, onOpenChange, initialFocus, onKeyDown, container, onClosed, testId, mainRef } =
+    props;
   // What it shows stays as it was while it leaves.
   const {
     title,
@@ -146,6 +174,7 @@ export function Dialog(props: DialogProps) {
     leaveKeys,
     stays,
     foot,
+    other,
   } = useHeld(open, props);
   const returnFocus = useReturnFocus(open);
   const panel = useRef<HTMLDivElement | null>(null);
@@ -154,6 +183,15 @@ export function Dialog(props: DialogProps) {
     onClosed?.();
   });
   const main = useRef<HTMLButtonElement>(null);
+  // The caller's ref follows the main button too.
+  const setMain = useCallback(
+    (element: HTMLButtonElement | null) => {
+      main.current = element;
+      if (mainRef) mainRef.current = element;
+    },
+    [mainRef],
+  );
+  const leave = useRef<HTMLButtonElement>(null);
   const body = useRef<HTMLDivElement>(null);
   const focus = initialFocus ?? (action !== undefined && foot === undefined ? main : undefined);
   // What `focus` names has focus as the dialog mounts, not a frame on, and without scrolling its
@@ -169,15 +207,24 @@ export function Dialog(props: DialogProps) {
     [grow, takeFocus, focus],
   );
   // A control that had focus can go with a step, as a Copy button does once there's nothing left
-  // to copy. The main button takes focus then, before the browser drops it on the panel: it's
+  // to copy, or the main button after a failure with nothing to do again. The main button takes
+  // focus then, or else the button that leaves, before the browser drops it on the panel: it's
   // what `⏎` presses next.
+  // The main button comes and goes with the state, or with `again` in a failure that stays one.
+  const drawn = action !== undefined && !(state === 'failed' && action.again === null);
   useLayoutEffect(() => {
-    const active = panel.current?.ownerDocument.activeElement;
-    if (!(active instanceof HTMLElement) || active === panel.current) return;
-    if (panel.current?.contains(active) !== true || !main.current) return;
-    const seen = active.checkVisibility?.({ visibilityProperty: true }) ?? true;
-    if (!seen) main.current.focus({ preventScroll: true });
-  }, [state]);
+    const at = panel.current;
+    const to = main.current ?? leave.current;
+    if (!open || !at || !to) return;
+    const active = at.ownerDocument.activeElement;
+    // Gone from the page with what had it, focus is on the page's body.
+    const gone = active === null || active === at || active === at.ownerDocument.body;
+    const hidden =
+      active instanceof HTMLElement &&
+      at.contains(active) &&
+      !(active.checkVisibility?.({ visibilityProperty: true }) ?? true);
+    if (gone || hidden) to.focus({ preventScroll: true });
+  }, [state, open, drawn]);
   return (
     <Base.Root
       open={open}
@@ -234,49 +281,25 @@ export function Dialog(props: DialogProps) {
                 <Foot>
                   {note}
                   <DialogSpacer />
+                  {other && <Button onClick={other.onRun}>{other.label}</Button>}
                   {state !== 'done' && (
                     <Button
+                      ref={leave}
                       // Dimmed while it works, with why as its tooltip.
                       disabled={state === 'working'}
-                      hint={state === 'working' ? (stays ?? 'Wait for it to finish') : null}
+                      hint={state === 'working' ? (stays ?? WAIT) : null}
                       onClick={() => onOpenChange(false)}
                     >
                       {state === 'failed' ? 'Close' : 'Cancel'}
                       {leaveKeys && <Key keys={leaveKeys} decorative />}
                     </Button>
                   )}
-                  {state === 'done' ? (
-                    // A hint that says nothing, as the button it follows has when it can run: the
-                    // same element, so focus stays on it.
-                    <Button
-                      ref={main}
-                      variant="primary"
-                      hint={null}
-                      hintOn="hover"
-                      onClick={() => onOpenChange(false)}
-                    >
-                      Done
-                      {action.keys && <Key keys={action.keys} decorative />}
-                    </Button>
-                  ) : (
-                    <Button
-                      ref={main}
-                      variant={action.tone ?? 'primary'}
-                      busy={state === 'working'}
-                      working={action.working}
-                      aria-disabled={action.disabled === undefined ? undefined : true}
-                      aria-description={action.disabled}
-                      hint={action.disabled ?? null}
-                      // Focus is put here as the dialog opens, and the reason isn't shown for that.
-                      hintOn="hover"
-                      onClick={() => {
-                        if (action.disabled === undefined) action.onRun();
-                      }}
-                    >
-                      {state === 'failed' ? (action.again ?? 'Try again') : action.label}
-                      {action.keys && <Key keys={action.keys} decorative />}
-                    </Button>
-                  )}
+                  <MainButton
+                    action={action}
+                    state={state}
+                    buttonRef={setMain}
+                    onDone={() => onOpenChange(false)}
+                  />
                 </Foot>
               )
             )}
@@ -287,6 +310,57 @@ export function Dialog(props: DialogProps) {
   );
 }
 
+/**
+ * The main button of the foot a dialog draws: the action, busy while it works, after a failure what
+ * it says to do again, if anything, and "Done" once it has worked, which closes it. It's one
+ * element through all of them, so focus stays on it. Its fill is its `tone` only while it can be
+ * pressed for its action or does it: "Try again" and "Done" are the main button's own.
+ */
+function MainButton({
+  action,
+  state,
+  buttonRef,
+  onDone,
+}: {
+  action: DialogAction;
+  state: DialogState | undefined;
+  buttonRef: (element: HTMLButtonElement | null) => void;
+  onDone: () => void;
+}) {
+  const failed = state === 'failed';
+  const done = state === 'done';
+  if (failed && action.again === null) return null;
+  // Done, a hint that says nothing, as the button had when it could run.
+  const off = done ? undefined : action.disabled;
+  return (
+    <Button
+      ref={buttonRef}
+      variant={failed || done ? 'primary' : (action.tone ?? 'primary')}
+      busy={done ? undefined : state === 'working' || action.busy === true}
+      working={done ? undefined : action.working}
+      widest={action.widest}
+      aria-disabled={off === undefined ? undefined : true}
+      aria-description={off}
+      aria-keyshortcuts={action.shortcut}
+      hint={off ?? null}
+      // Focus is put here as the dialog opens, and the reason isn't shown for that.
+      hintOn="hover"
+      onClick={(event) => {
+        if (done) {
+          onDone();
+          return;
+        }
+        // Not a double click's second, which would press what came up in its place unseen.
+        if (event.detail > 1 || state === 'working' || action.busy === true) return;
+        if (off === undefined) action.onRun();
+      }}
+    >
+      {done ? 'Done' : failed ? (action.again ?? 'Try again') : action.label}
+      {action.keys && <Key keys={action.keys} decorative />}
+    </Button>
+  );
+}
+
 function Foot({ children }: { children: ReactNode }) {
   return (
     <div className="flex flex-none flex-wrap items-center gap-8 border-t border-border-subtle bg-bg-chrome px-20 py-12 text-fg-muted text-small">
@@ -294,6 +368,9 @@ function Foot({ children }: { children: ReactNode }) {
     </div>
   );
 }
+
+/** Cancel's tooltip while what a dialog sent waits, unless it says why it can't be left. */
+const WAIT = 'Wait for GitHub to answer';
 
 /** Tells Base UI to focus nothing: the dialog has focused what it means to. */
 const skip = () => false;

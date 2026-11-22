@@ -361,6 +361,18 @@
   animation: lo-land var(--lo-dur-slow) var(--lo-ease-in-out);
 }
 
+/* Fill: a merge status dot fills as the merge it stands for lands with no dialog to say so: from a
+   ring of its color to the whole dot. `MergeStatus` draws it. */
+@keyframes lo-fill {
+  from {
+    background-color: transparent;
+    box-shadow: inset 0 0 0 1px currentColor;
+  }
+}
+@utility move-fill {
+  animation: lo-fill var(--lo-dur-slow) var(--lo-ease-out);
+}
+
 /* A switch's thumb, slid to the end of its track while it's on. */
 @utility switch-on {
   translate: calc(var(--lo-switch-w) - var(--lo-sp-16)) 0;
@@ -495,9 +507,17 @@
    each step it has given up, in its own order, in `data-gave-up`). Once a step is given up, what's
    marked `data-gives` with it goes, what's marked `data-takes` with it comes, as an icon comes for
    words, and a control marked `data-squares` with it is the small control's square. The key chips
-   go at `keys`. */
+   go at `keys`. A row whose items go one at a time, in an order it works out as it draws, as the
+   queue's hints go, marks each with its turn, `drop1` first. */
 @utility give-up {
   &[data-gave-up~='keys'] :is(kbd, .key-focus),
+  &[data-gave-up~='drop1'] [data-gives='drop1'],
+  &[data-gave-up~='drop2'] [data-gives='drop2'],
+  &[data-gave-up~='drop3'] [data-gives='drop3'],
+  &[data-gave-up~='drop4'] [data-gives='drop4'],
+  &[data-gave-up~='drop5'] [data-gives='drop5'],
+  &[data-gave-up~='drop6'] [data-gives='drop6'],
+  &[data-gave-up~='drop7'] [data-gives='drop7'],
   &[data-gave-up~='tag'] [data-gives='tag'],
   &[data-gave-up~='time'] [data-gives='time'],
   &[data-gave-up~='hint'] [data-gives='hint'],
@@ -608,15 +628,36 @@
 
 /* A row of the merge queue, and its head: its place, the pull request, its state, how long it's been
    queued, when it should merge, and what to do about it. The state takes a list's column of
-   people, the times a list's column of times, and the actions 120 px. */
+   people, the times a list's column of times, and the actions what two buttons and a ⋯ take with
+   their keys. The table is the container (`@container`): narrower, the actions give up their key
+   chips (`queue-chip`), then their labels (`queue-label`), leaving the ⋯, so a row never wraps or
+   clips, and the title keeps 320px. Every column but the title's takes 470px with the row's
+   padding and gaps, so the actions keep their chips (248px) from 1038px, and their labels (208px)
+   from 998px. */
 @utility queue-columns {
+  --queue-actions: calc(var(--lo-sp-64) * 3 + var(--lo-sp-48) + var(--lo-sp-8));
   display: grid;
   grid-template-columns:
     calc(var(--lo-sp-40) + var(--lo-sp-4)) minmax(0, 1fr) var(--lo-list-who-w)
-    var(--lo-list-when-w) var(--lo-list-when-w)
-    calc(var(--lo-sp-64) + var(--lo-sp-48) + var(--lo-sp-8));
+    var(--lo-list-when-w) var(--lo-list-when-w) var(--queue-actions);
   align-items: center;
   gap: var(--lo-sp-12);
+  @container (width < 1038px) {
+    --queue-actions: calc(var(--lo-sp-64) * 3 + var(--lo-sp-16));
+  }
+  @container (width < 998px) {
+    --queue-actions: var(--lo-sp-24);
+  }
+}
+@utility queue-chip {
+  @container (width < 1038px) {
+    display: none !important;
+  }
+}
+@utility queue-label {
+  @container (width < 998px) {
+    display: none !important;
+  }
 }
 
 /* A peek: its answers beside its code, with a head and a foot across both. A single answer has no

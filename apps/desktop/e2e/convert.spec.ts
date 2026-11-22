@@ -1,5 +1,5 @@
-// Making a chain a GitHub stack in the app: `g S` on a pull request's tab plans it in main, the
-// dialog shows the plan to confirm, and main sends each change once, in order. It replays
+// Converting a chain to a GitHub stack in the app: `g S` on a pull request's tab plans it in main,
+// the dialog shows the steps to confirm, and main sends each change once, in order. It replays
 // `app_stack_convert`, recorded from the app as it made #A, #B and #C GitHub stack #92 in
 // rozed-dev/e2e, and, for what GitHub can't be made to do on demand, the same with an answer
 // changed: a lost answer. What the dialog says of a refusal, and of a base branch changed
@@ -143,7 +143,7 @@ async function foundOf(page: Page, id: string): Promise<Found | null | 'unread'>
   return stack.rows.every((row) => row.viewed) ? stack.found : 'unread';
 }
 
-/** Presses `g S`, "Make this a GitHub stack", in the diff on screen, once it shows. */
+/** Presses `g S`, "Convert to GitHub stack…", in the diff on screen, once it shows. */
 async function makeStack(page: Page): Promise<void> {
   await expect
     .poll(() => page.evaluate(() => window.loDiff?.files.length ?? 0), { timeout: 20_000 })
@@ -155,12 +155,12 @@ async function makeStack(page: Page): Promise<void> {
 
 const said = (page: Page, text: string) => page.getByRole('status').filter({ hasText: text });
 
-/** Opens #C, and confirms making its chain a GitHub stack. */
+/** Opens #C, and confirms converting its chain to a GitHub stack. */
 async function confirmOnC(page: Page): Promise<void> {
   await open(page, STACK.c);
   await makeStack(page);
   const dialog = page.getByTestId('make-stack');
-  await expect(dialog).toContainText('Make these 3 PRs a GitHub stack?', { timeout: 20_000 });
+  await expect(dialog.getByRole('list', { name: 'Steps' })).toBeVisible({ timeout: 20_000 });
   await page.keyboard.press('Enter');
 }
 
@@ -169,7 +169,7 @@ const MADE = [
   `POST /repos/rozed-dev/e2e/stacks {"pull_requests":[${STACK.a},${STACK.b},${STACK.c}]}`,
 ];
 
-test('makes a chain a GitHub stack once the reader confirms it, and only then', async ({
+test('converts a chain to a GitHub stack once the reader confirms it, and only then', async ({
   page,
   github,
 }) => {
@@ -177,24 +177,27 @@ test('makes a chain a GitHub stack once the reader confirms it, and only then', 
   // #A has two layers on it, #B and #D, so which to stack is the reader's to say.
   await open(page, STACK.a);
   await makeStack(page);
-  await expect(said(page, `#${STACK.a} has 2 layers on it.`)).toHaveCount(1, { timeout: 20_000 });
+  await expect(said(page, `Show one of the layers above #${STACK.a} first`)).toHaveCount(1, {
+    timeout: 20_000,
+  });
 
   const c = await open(page, STACK.c);
   expect(await foundOf(page, c)).toEqual(['baseBranch', 'sharedCommits']);
   await makeStack(page);
   const dialog = page.getByTestId('make-stack');
-  await expect(dialog).toContainText('Make these 3 PRs a GitHub stack?', { timeout: 20_000 });
-  await expect(dialog).toContainText('1 · One base branch changes');
-  await expect(dialog.getByRole('row')).toHaveText([
-    new RegExp(`^#${STACK.a}\\s*Stack A: load per-plan limits\\s*stack/root\\s*no change$`),
-    new RegExp(`^#${STACK.b}.*stack/a\\s*no change$`),
-    new RegExp(`^#${STACK.c}\\s*Stack C: count a query's nodes\\s*stack/root → stack/b$`),
+  const steps = dialog.getByRole('list', { name: 'Steps' });
+  await expect(steps).toBeVisible({ timeout: 20_000 });
+  await expect(dialog).toContainText('Convert to GitHub stack?');
+  await expect(dialog).toContainText('e2e · 3 layers');
+  // Only what's sent: #A and #B already sit where they should.
+  await expect(steps.getByRole('listitem')).toHaveText([
+    new RegExp(`Move #${STACK.c} onto stack/b\\.\\s*From stack/root\\.$`),
+    new RegExp(`Create the GitHub stack from #${STACK.a}, #${STACK.b} and #${STACK.c}\\.$`),
   ]);
-  await expect(dialog).toContainText(`#${STACK.a} → #${STACK.b} → #${STACK.c}, through GitHub's`);
   await expect(dialog).toContainText(
-    `Base branches change for everyone, on GitHub too. rozed-bot will see #${STACK.c}'s diff shrink`,
+    'On GitHub, each moved pull request’s diff shows only its own commits.',
   );
-  await expect(dialog).toContainText('as rozed-bot');
+  await expect(dialog).toContainText('rozed-bot');
 
   // Cancelling sends nothing.
   await page.keyboard.press('Escape');
@@ -202,18 +205,21 @@ test('makes a chain a GitHub stack once the reader confirms it, and only then', 
   expect(writes(github)).toEqual([]);
 
   await makeStack(page);
-  await expect(dialog).toContainText('Make the stack', { timeout: 20_000 });
+  await expect(steps).toBeVisible({ timeout: 20_000 });
   await page.keyboard.press('Enter');
-  await expect(
-    said(page, `Made #${STACK.a}, #${STACK.b} and #${STACK.c} a GitHub stack`),
-  ).toHaveCount(1, { timeout: 30_000 });
-  await expect(dialog).toBeHidden();
+  await expect(dialog.getByRole('status')).toHaveText('Converted to GitHub stack', {
+    timeout: 30_000,
+  });
   expect(writes(github)).toEqual(MADE);
+  await dialog.getByRole('button', { name: /^Done/ }).click();
+  await expect(dialog).toBeHidden();
   // #A, #B and #C are a GitHub stack now. One can't branch, so #D still sits on #A by its base
   // branch, and the tree says which layers are the GitHub stack.
   await expect.poll(() => foundOf(page, c), { timeout: 30_000 }).toEqual(['github', 'baseBranch']);
   const stack = page.getByRole('region', { name: 'Stack' });
-  await expect(stack).toContainText('4 layers · by GitHub stack and base branch');
+  // Only some layers are the GitHub stack: the head says it's a stack, of neither kind.
+  await expect(stack).toContainText('Stack · 4 layers');
+  await expect(stack.getByTitle('By GitHub stack and base branch')).toHaveCount(1);
   await expect(stack.getByRole('note')).toContainText([
     `#${STACK.a}, #${STACK.b} and #${STACK.c} are a GitHub stack.`,
   ]);
@@ -223,25 +229,24 @@ test('makes a chain a GitHub stack once the reader confirms it, and only then', 
 test.describe('when GitHub’s answer is lost', () => {
   test.use({ answers: 'lost' });
 
-  test('says what may have changed, and puts the base branch back once asked', async ({
+  test('says the conversion isn’t confirmed, and undoes its changes once asked', async ({
     page,
     github,
   }) => {
     test.setTimeout(120_000);
     await confirmOnC(page);
     const dialog = page.getByTestId('make-stack');
-    await expect(dialog).toContainText("The stack wasn't created", { timeout: 30_000 });
-    await expect(dialog).toContainText(
-      "GitHub's answer was lost, so it may have been created. One base branch had already changed.",
-    );
-    await expect(dialog).toContainText('It may have gone through.');
-    await expect(dialog).toContainText(
-      'GitHub may have made the stack before its answer was lost.',
-    );
+    const problem = dialog.getByRole('alert');
+    await expect(problem).toContainText('Conversion not confirmed', { timeout: 30_000 });
+    await expect(problem).toContainText('GitHub didn’t respond.');
+    await expect(dialog.getByRole('list', { name: 'Steps' })).toContainText('Not confirmed');
+    // GitHub's page says whether it went.
+    await expect(dialog.getByRole('button', { name: /^Open on GitHub/ })).toBeVisible();
     expect(writes(github)).toEqual(MADE);
 
-    await page.keyboard.press('Enter');
-    await expect(dialog).toContainText('The base branch is back', { timeout: 30_000 });
+    await dialog.getByRole('button', { name: /^Undo changes/ }).click();
+    await expect(dialog.getByRole('status')).toHaveText('Changes undone', { timeout: 30_000 });
+    await expect(dialog.getByRole('list', { name: 'Undo' })).toBeVisible();
     expect(writes(github)).toEqual([...MADE, `${RETARGET}${STACK.c} {"base":"stack/root"}`]);
   });
 });

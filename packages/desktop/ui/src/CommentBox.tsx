@@ -44,6 +44,8 @@ export interface CommentBoxHead {
   account?: CommentBoxAccount | undefined;
   /** Closes the box, keeping its draft. A box that never closes has none. */
   close?: CommentBoxClose | undefined;
+  /** Write | Preview can't be changed now, as while the box's comment is sent: it's dimmed. */
+  held?: boolean | undefined;
 }
 
 /** The control that closes a box. */
@@ -602,6 +604,7 @@ export function CommentBoxHeadBar({
             value={previewing ? 'preview' : 'write'}
             onChange={(value) => head.onPreviewing?.(value === 'preview')}
             keys={head.previewKeys}
+            disabled={head.held}
             items={[
               // A pencil.
               segment(

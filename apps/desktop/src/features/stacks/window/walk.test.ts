@@ -9,7 +9,7 @@ import { installBridge } from '../../../window/test/bridge.ts';
 import type * as TabShared from '../../tab/window/shared.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
 import type { Row, StackView } from '../contract.ts';
-import { choosing, focused, stacks } from './layers.ts';
+import { choosing, focused, runTrouble, stacks } from './layers.ts';
 import {
   back,
   cancel,
@@ -17,8 +17,10 @@ import {
   goDown,
   goUp,
   moveFocus,
+  runAgain,
   showTarget,
   upTo,
+  upToNamed,
   upToReady,
   walking,
 } from './walk.ts';
@@ -35,11 +37,16 @@ const tree = vi.hoisted(() => ({ goToTree: vi.fn<(tab: string) => void>() }));
 vi.mock('../../tree/window/shared.ts', () => tree);
 const diff = vi.hoisted(() => ({ showDiff: vi.fn<(tab: string) => boolean>(() => true) }));
 vi.mock('../../diff/window/shared.ts', () => diff);
-const middle = vi.hoisted(() => ({
-  escapeInMiddle: vi.fn<() => boolean>(() => false),
-  focusMiddle: vi.fn<() => void>(),
-  escapeToMiddle: vi.fn<() => void>(),
-}));
+const middle = vi.hoisted(() => {
+  const run = vi.fn<(id: string, target: unknown) => void>();
+  return {
+    escapeInMiddle: vi.fn<() => boolean>(() => false),
+    focusMiddle: vi.fn<() => void>(),
+    escapeToMiddle: vi.fn<() => void>(),
+    run,
+    registry: () => ({ run }),
+  };
+});
 vi.mock('../../../window/commands/registry.ts', () => middle);
 
 const bridge = installBridge({
@@ -100,6 +107,10 @@ function showing(number: number, stack: StackView, run?: PullTab['run']): PullTa
 /** Lets the window hear main's answer. */
 const answered = () => new Promise((resolve) => setTimeout(resolve, 0));
 
+/** Waits two frames, as long as the left panel takes to show its tree. */
+const twoFrames = () =>
+  new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
 beforeEach(() => {
   bridge.calls.length = 0;
   vi.clearAllMocks();
@@ -137,12 +148,22 @@ describe('- in the file tree', () => {
 describe('+ in the stack’s tree', () => {
   it('goes down to the file tree, at the file on screen, while the tree is open', () => {
     const tab = showing(84, STACK);
-    expect(goDown.enabled()).toBe('The file tree isn’t open.');
     const files = document.createElement('div');
     files.dataset['loScope'] = 'tree';
     document.body.append(files);
     expect(goDown.enabled()).toBe(true);
     goDown.run();
+    expect(tree.goToTree).toHaveBeenCalledWith(tab.id);
+    expect(middle.run).not.toHaveBeenCalled();
+  });
+
+  it('shows the left panel first while it’s hidden', async () => {
+    const tab = showing(84, STACK);
+    expect(goDown.enabled()).toBe(true);
+    goDown.run();
+    expect(middle.run).toHaveBeenCalledWith('tab.leftPanel', { kind: 'none' });
+    expect(tree.goToTree).not.toHaveBeenCalled();
+    await twoFrames();
     expect(tree.goToTree).toHaveBeenCalledWith(tab.id);
   });
 });
@@ -203,14 +224,33 @@ describe('choosing a run of layers', () => {
     expect(bridge.calls).toEqual([['tab.layer', { id: tab.id, number: 83 }]]);
   });
 
-  it('views the stack up to a layer from its bottom, and not from the bottom layer itself', async () => {
+  it('shows the layers up to a layer from its bottom, and not from the bottom layer itself', async () => {
     const tab = showing(85, STACK);
-    expect(upToReady({ kind: 'layer', layer: 82 })).toBe(
-      "#82 is the stack's bottom layer, so the stack up to it is that layer alone.",
-    );
+    expect(upToReady({ kind: 'layer', layer: 82 })).toBe('#82 is the bottom layer');
+    expect(upToNamed({ kind: 'layer', layer: 84 })).toBe('Show layers 1–3');
     upTo({ kind: 'layer', layer: 84 });
     await answered();
     expect(bridge.calls).toEqual([['stacks.run', { id: tab.id, bottom: 82, top: 84 }]]);
+  });
+});
+
+describe('a run of layers that couldn’t be shown', () => {
+  it('is tried again from its problem, with focus put in the stack’s tree as the problem goes', async () => {
+    const tab = showing(83, STACK);
+    const stackTree = document.createElement('div');
+    stackTree.dataset['loScope'] = 'stack';
+    stackTree.tabIndex = -1;
+    document.body.append(stackTree);
+    runTrouble.set(tab.id, {
+      title: 'Couldn’t show layers 1–2',
+      details: 'down',
+      layers: [82, 83],
+    });
+    runAgain(tab);
+    expect(document.activeElement).toBe(stackTree);
+    expect(runTrouble.get(tab.id)).toBeUndefined();
+    await answered();
+    expect(bridge.calls).toEqual([['stacks.run', { id: tab.id, bottom: 82, top: 83 }]]);
   });
 });
 

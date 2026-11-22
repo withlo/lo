@@ -285,7 +285,7 @@ describe('the dialog', () => {
       setup({ view: info({ acting: { kind: 'anonymous' } }) }).made.dialog('t1'),
     ).rejects.toThrow('Sign in to submit a review');
     await expect(setup({ view: info({ run: [82, 83] }) }).made.dialog('t1')).rejects.toThrow(
-      'Submit a review in a layer',
+      'Show a single layer to submit a review',
     );
   });
 });
@@ -298,7 +298,7 @@ describe('submitting', () => {
     });
     made.draft('t1', 'Two small things inline.');
     expect(summary()?.text).toBe('Two small things inline.');
-    const outcome = await made.submit('t1', 'APPROVE', 'Two small things inline.', false);
+    const outcome = await made.submit('t1', 'APPROVE', 'Two small things inline.');
     expect(outcome).toEqual({ kind: 'submitted', event: 'APPROVE' });
     expect(sent).toEqual([
       {
@@ -314,6 +314,7 @@ describe('submitting', () => {
     expect(summary()).toBeUndefined();
     expect(published.at(-1)).toEqual({
       id: 't1',
+      repo: 'rozed-dev/e2e',
       number: 94,
       state: null,
       submitted: { event: 'APPROVE' },
@@ -322,7 +323,7 @@ describe('submitting', () => {
 
   test('with no pending review, a review of the revision on screen goes, with no comments', async () => {
     const { made, sent } = setup({ answers: [{ review: 'PRR_2' }] });
-    await made.submit('t1', 'COMMENT', 'Reads well.', false);
+    await made.submit('t1', 'COMMENT', 'Reads well.');
     expect(sent).toEqual([
       {
         kind: 'review',
@@ -340,34 +341,34 @@ describe('submitting', () => {
 
   test('what can’t go is refused before anything is sent, and the summary stays', async () => {
     const other = setup({ pending: pendingOn(OLDER) });
-    await expect(other.made.submit('t1', 'APPROVE', 'Fine', false)).resolves.toEqual({
+    await expect(other.made.submit('t1', 'APPROVE', 'Fine')).resolves.toEqual({
       kind: 'refused',
       refusal: { kind: 'otherRevision', reviewOn: OLDER },
     });
     expect(other.sent).toEqual([]);
     expect(other.summary()).toMatchObject({ text: 'Fine', sent: null });
     const nothing = setup();
-    await expect(nothing.made.submit('t1', 'COMMENT', ' ', false)).resolves.toEqual({
+    await expect(nothing.made.submit('t1', 'COMMENT', ' ')).resolves.toEqual({
       kind: 'refused',
       refusal: { kind: 'nothingToSubmit' },
     });
     const own = setup({ author: 'rozed-bot' });
-    await expect(own.made.submit('t1', 'APPROVE', 'Mine', false)).resolves.toEqual({
+    await expect(own.made.submit('t1', 'APPROVE', 'Mine')).resolves.toEqual({
       kind: 'refused',
       refusal: { kind: 'ownPullRequest' },
     });
     const unknown = setup({ pending: { kind: 'unknown', why: 'left out' } });
-    await expect(unknown.made.submit('t1', 'COMMENT', 'Hm', false)).resolves.toEqual({
+    await expect(unknown.made.submit('t1', 'COMMENT', 'Hm')).resolves.toEqual({
       kind: 'refused',
       refusal: { kind: 'pendingUnknown' },
     });
     const run = setup({ view: info({ run: [82, 83] }) });
-    await expect(run.made.submit('t1', 'COMMENT', 'Hm', false)).resolves.toEqual({
+    await expect(run.made.submit('t1', 'COMMENT', 'Hm')).resolves.toEqual({
       kind: 'refused',
       refusal: { kind: 'run' },
     });
     const nobody = setup({ view: info({ acting: { kind: 'anonymous' } }) });
-    await expect(nobody.made.submit('t1', 'COMMENT', 'Hm', false)).resolves.toEqual({
+    await expect(nobody.made.submit('t1', 'COMMENT', 'Hm')).resolves.toEqual({
       kind: 'refused',
       refusal: { kind: 'signIn' },
     });
@@ -378,14 +379,14 @@ describe('submitting', () => {
       pending: pendingOn(HEAD),
       answers: [{ refusal: 'gone' }, { refusal: 'paused', until: 1_000 }],
     });
-    await expect(made.submit('t1', 'COMMENT', 'Kept', false)).resolves.toEqual({
+    await expect(made.submit('t1', 'COMMENT', 'Kept')).resolves.toEqual({
       kind: 'refused',
       refusal: {
         kind: 'github',
         message: 'It was submitted or deleted elsewhere since Lo last looked.',
       },
     });
-    await expect(made.submit('t1', 'COMMENT', 'Kept', false)).resolves.toEqual({
+    await expect(made.submit('t1', 'COMMENT', 'Kept')).resolves.toEqual({
       kind: 'refused',
       refusal: { kind: 'paused', until: 1_000 },
     });
@@ -418,13 +419,13 @@ describe('a lost answer', () => {
         },
       ],
     });
-    await expect(made.submit('t1', 'REQUEST_CHANGES', 'Fix it.', false)).resolves.toEqual({
+    await expect(made.submit('t1', 'REQUEST_CHANGES', 'Fix it.')).resolves.toEqual({
       kind: 'lost',
     });
     expect(state()).toBe('checking');
     expect(summary()).toMatchObject({ sent: 'Fix it.', sentAt });
-    // Until Lo knows, nothing more goes, "anyway" or not.
-    await expect(made.submit('t1', 'REQUEST_CHANGES', 'Fix it.', true)).resolves.toEqual({
+    // Until Lo knows, nothing more goes.
+    await expect(made.submit('t1', 'REQUEST_CHANGES', 'Fix it.')).resolves.toEqual({
       kind: 'refused',
       refusal: { kind: 'busy', why: 'checking' },
     });
@@ -449,11 +450,11 @@ describe('a lost answer', () => {
       answers: [lost(), { review: 'PRR_9' }],
       reads: [{ reviews: [before], ahead: 60_000 }],
     });
-    await made.submit('t1', 'COMMENT', 'Reads well.', false);
+    await made.submit('t1', 'COMMENT', 'Reads well.');
     await vi.advanceTimersByTimeAsync(10_000);
     expect(state()).toBe('notSubmitted');
     expect(summary()).toMatchObject({ text: 'Reads well.', sent: null });
-    await expect(made.submit('t1', 'COMMENT', 'Reads well.', false)).resolves.toEqual({
+    await expect(made.submit('t1', 'COMMENT', 'Reads well.')).resolves.toEqual({
       kind: 'submitted',
       event: 'COMMENT',
     });
@@ -471,7 +472,7 @@ describe('a lost answer', () => {
         { reviews: [review({ id: 'PRR_1', state: 'PENDING', submittedAt: null })], ahead: 0 },
       ],
     });
-    await made.submit('t1', 'COMMENT', 'Reads well.', false);
+    await made.submit('t1', 'COMMENT', 'Reads well.');
     await vi.advanceTimersByTimeAsync(10_000);
     expect(state()).toBe('checking');
     await vi.advanceTimersByTimeAsync(30_000);
@@ -479,31 +480,75 @@ describe('a lost answer', () => {
     expect(state()).toBe('notSubmitted');
   });
 
-  test('when Lo can’t tell, only “Submit anyway” sends it', async () => {
+  test('a read that still can’t be made after three tries leaves it unknown, to check again', async () => {
+    vi.useFakeTimers();
+    const offline = new GithubError({ kind: 'network', failure: 'offline', message: 'offline' });
+    const { made, state, readAt } = setup({
+      answers: [lost()],
+      reads: [offline, offline, offline],
+    });
+    await made.submit('t1', 'COMMENT', 'Reads well.');
+    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(state()).toBe('checking');
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(readAt).toHaveLength(3);
+    expect(state()).toBe('unknown');
+  });
+
+  test('when Lo can’t tell, nothing is sent again, and “Check again” only looks', async () => {
     vi.useFakeTimers();
     const refused = new GithubError({ kind: 'notFound', message: 'gone' });
-    const { made, state, sent } = setup({
+    const { made, state, sent, readAt } = setup({
       answers: [lost(), { review: 'PRR_9' }],
-      reads: [refused],
+      reads: [refused, { reviews: [], ahead: 0 }],
     });
-    await made.submit('t1', 'COMMENT', 'Reads well.', false);
+    await made.submit('t1', 'COMMENT', 'Reads well.');
     await vi.advanceTimersByTimeAsync(10_000);
     expect(state()).toBe('unknown');
-    await expect(made.submit('t1', 'COMMENT', 'Reads well.', false)).resolves.toEqual({
+    await expect(made.submit('t1', 'COMMENT', 'Reads well.')).resolves.toEqual({
       kind: 'refused',
       refusal: { kind: 'busy', why: 'unknown' },
     });
-    await expect(made.submit('t1', 'COMMENT', 'Reads well.', true)).resolves.toMatchObject({
+    expect(sent).toHaveLength(1);
+    made.check('t1');
+    expect(state()).toBe('checking');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(readAt).toHaveLength(2);
+    expect(sent).toHaveLength(1);
+    // Not found, it wasn't submitted: now it can go again.
+    expect(state()).toBe('notSubmitted');
+    // A look asked for while nothing is unknown does nothing.
+    made.check('t1');
+    expect(readAt).toHaveLength(2);
+    await expect(made.submit('t1', 'COMMENT', 'Reads well.')).resolves.toMatchObject({
       kind: 'submitted',
     });
     expect(sent).toHaveLength(2);
+  });
+
+  test('“Check again” that finds the review settles it as submitted', async () => {
+    vi.useFakeTimers();
+    const refused = new GithubError({ kind: 'notFound', message: 'gone' });
+    const { made, state, published, summary } = setup({
+      answers: [lost()],
+      reads: [refused, { reviews: [review({ state: 'APPROVED', body: 'Ship it.' })], ahead: 0 }],
+    });
+    await made.submit('t1', 'APPROVE', 'Ship it.');
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(state()).toBe('unknown');
+    made.check('t1');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(state()).toBeNull();
+    expect(summary()).toBeUndefined();
+    expect(published.at(-1)).toMatchObject({ state: null, submitted: { event: 'APPROVE' } });
   });
 
   test('one sent before Lo quit is looked for as Lo starts again, and found by its summary', async () => {
     vi.useFakeTimers();
     const kept = new Map<string, SummaryDraft>();
     const first = setup({ answers: [lost()], kept });
-    await first.made.submit('t1', 'APPROVE', 'Ship it.', false);
+    await first.made.submit('t1', 'APPROVE', 'Ship it.');
     first.made.stop();
     const again = setup({
       kept,
@@ -620,7 +665,7 @@ describe('approving, as approve and ship does', () => {
     expect(heard).toBe(1);
     expect(approved).toBeUndefined();
     await expect(made.approve('t1', HEAD)).resolves.toMatchObject({ kind: 'refused' });
-    await expect(made.submit('t1', 'APPROVE', 'Ship it.', true)).resolves.toEqual({
+    await expect(made.submit('t1', 'APPROVE', 'Ship it.')).resolves.toEqual({
       kind: 'refused',
       refusal: { kind: 'busy', why: 'checking' },
     });

@@ -1,8 +1,9 @@
 // Submitting your review of a pull request: what the submit dialog shows, which main reads as the
 // dialog opens; its summary, kept on this computer as comment boxes' drafts are; and submitting,
 // which only the reader does, through the same one-at-a-time writes as comments. When GitHub's
-// answer is lost, main reads your reviews to find out whether it was submitted, and says how that
-// stands on `submitted`, as it says of every review submitted.
+// answer is lost, main reads your reviews to find out whether it was submitted, and looks again when
+// the reader asks (`check`), and says how that stands on `submitted`, as it says of every review
+// submitted. Nothing is ever sent again until Lo knows it wasn't submitted.
 
 import { z } from 'zod';
 
@@ -18,7 +19,7 @@ export type ReviewEventRow = z.output<typeof reviewEvent>;
  * Where submitting from a view stands, while it does: `sending`, while it waits its turn or for
  * GitHub's answer; `checking`, once GitHub's answer was lost, until a read of your reviews says
  * whether it was submitted; `notSubmitted`, when it found it wasn't; `unknown`, when it couldn't
- * tell.
+ * tell, until a look the reader asks for (`check`) does.
  */
 export const submitting = z.enum(['sending', 'checking', 'notSubmitted', 'unknown']);
 export type Submitting = z.output<typeof submitting>;
@@ -30,6 +31,8 @@ export type Submitting = z.output<typeof submitting>;
  */
 export const submission = z.strictObject({
   id: tabId,
+  /** The pull request's repository, `owner/repo`, which tells it from another with its number. */
+  repo: z.string().max(256),
   number: z
     .number()
     .int()
@@ -40,11 +43,11 @@ export const submission = z.strictObject({
 });
 export type Submission = z.output<typeof submission>;
 
-/** Why a view acting as nobody can't submit, as the dialog and the status bar say it. */
+/** Why a view acting as nobody can't submit, as the dialog and the header say it. */
 export const SIGN_IN = 'Sign in to submit a review';
 
 /** Why a run of a stack's layers can't take a review: each layer takes its own. */
-export const IN_A_LAYER = 'Submit a review in a layer';
+export const IN_A_LAYER = 'Show a single layer to submit a review';
 
 /** A comment of your pending review, as the dialog lists it. */
 export interface PendingCommentRow {
@@ -95,9 +98,10 @@ export interface DialogView {
  * - `ownPullRequest`: you opened it, and GitHub takes only comments from its author;
  * - `paused`: GitHub asked Lo to hold off writing until `until`;
  * - `busy`: one is being sent, Lo is checking whether one whose answer was lost was submitted, or
- *   couldn't tell (`unknown`), which only "Submit anyway" sends past;
+ *   couldn't tell (`unknown`), which only a look that finds it wasn't submitted moves on from;
  * - `signIn`: the view acts as nobody; `run`: it shows a run of a stack's layers;
- * - `github`: anything else GitHub refused, or that went wrong, in a sentence.
+ * - `github`: anything else GitHub refused, or that went wrong, as GitHub or the error said it,
+ *   for Details.
  */
 export type SubmitRefusal =
   | { kind: 'otherRevision'; reviewOn: string | null }
@@ -139,18 +143,19 @@ export const contract = defineContract('review', {
      * Submits your review of view `id`'s pull request, as its account: your pending review with
      * `event` and `body` as its summary, or a review with no comments. The summary is kept until
      * GitHub takes it. It goes once the last write to the pull request has its answer, and is never
-     * sent again by itself: once GitHub's answer is lost, it's refused until Lo knows whether it
-     * was submitted, and, when Lo can't tell, unless `anyway`.
+     * sent again by itself: once GitHub's answer is lost, it's refused until Lo knows it wasn't
+     * submitted.
      */
     submit: {
-      input: z.strictObject({
-        id: tabId,
-        event: reviewEvent,
-        body: z.string().max(BODY_LIMIT),
-        anyway: z.boolean(),
-      }),
+      input: z.strictObject({ id: tabId, event: reviewEvent, body: z.string().max(BODY_LIMIT) }),
       reply: reply<SubmitOutcome>(),
     },
+    /**
+     * Looks again whether the review sent from view `id`'s pull request, whose answer was lost, was
+     * submitted, once Lo couldn't tell (`unknown`): submitting is `checking` until a read of your
+     * reviews says, on `submitted`. Nothing is sent, and nothing happens while it stands otherwise.
+     */
+    check: { input: z.strictObject({ id: tabId }), reply: reply<void>() },
   },
   topics: {
     /** How submitting from a view stands, and each review submitted, as it changes. */

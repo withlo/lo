@@ -37,7 +37,7 @@ import {
   type Row,
   type StackView,
 } from '../contract.ts';
-import { calloutText, numbers } from './words.ts';
+import { calloutText, CHECKING_MERGED, numbers } from './words.ts';
 
 /** What a tab's stack is worked out from. */
 export interface ViewInput {
@@ -321,8 +321,8 @@ export function foundOf(rows: readonly Pick<ShownRow, 'rule'>[]): Found | null {
 
 /**
  * Which layers are a GitHub stack, a note for each GitHub stack in a stack that isn't one, bottom
- * first: "#82, #83 and #84 are a GitHub stack.", or "#2 is in a GitHub stack." for its one layer
- * here. The head says so when every layer is in one.
+ * first: "#82 and #83 are a GitHub stack.", or "#2 is in a GitHub stack." for its one layer here.
+ * The head says so when every layer is in one.
  */
 export function githubNotes(layers: readonly Pick<Layer, 'number' | 'nativeStack'>[]): Note[] {
   if (oneGithubStack(layers)) return [];
@@ -366,62 +366,43 @@ function calloutOf(input: ViewInput, forest: Stacks): string | null {
   if (conversion.kind !== 'plan') return null;
   const read = new Set(layers.layers.map((layer) => layer.number));
   if (!conversion.plan.path.every((number) => read.has(number))) return null;
-  return calloutText(conversion.plan, forest);
+  return calloutText(conversion.plan);
 }
 
-/** What the tree says under the rows of `stack`: what Lo couldn't read, cycles and rebases. */
+/** What the tree says under the rows of `stack`: what Lo couldn't read, and loops. */
 function notesOf(
   input: ViewInput,
   forest: Stacks,
   list: OpenPullRequestList,
   stack: Stack,
 ): Note[] {
-  const { repository } = input;
   const notes: Note[] = [];
   const gaps = new Set(forest.gaps.map((gap) => gap.kind));
   if (gaps.has('openPullRequests')) {
     notes.push({
       kind: 'busy',
-      text: `${repository} has ${counted(list.totalCount)} open PRs. Lo looks for stacks among the ${counted(MAX_OPEN_PULL_REQUESTS)} opened most recently.`,
+      text: `Stacks are found among the ${counted(MAX_OPEN_PULL_REQUESTS)} newest of ${counted(list.totalCount)} open pull requests.`,
     });
   }
-  if (gaps.has('mergedPullRequests') || input.layers?.lookupsFailed !== undefined) {
-    notes.push({
-      kind: 'merged',
-      text: "Some merged PRs weren't looked up yet, so a layer may show on its own.",
-    });
-  }
-  if (gaps.has('rulesets')) {
-    notes.push({
-      kind: 'rulesets',
-      text: `Lo couldn't read ${repository}'s rulesets, so it can't make a GitHub stack here yet.`,
-    });
+  if (input.layers?.lookupsFailed !== undefined) {
+    notes.push({ kind: 'mergedFailed', text: 'Couldn’t check merged pull requests' });
+  } else if (gaps.has('mergedPullRequests')) {
+    notes.push({ kind: 'merged', text: CHECKING_MERGED });
   }
   const inStack = new Set(stack.layers);
   for (const cycle of forest.cycles) {
     if (cycle.prs.some((pr) => inStack.has(pr)))
       notes.push({ kind: 'cycle', text: cycleText(cycle) });
   }
-  for (const number of stack.layers) {
-    const merged = layerOf(forest, number)?.needsRebase?.merged;
-    if (merged === undefined) continue;
-    notes.push({
-      kind: 'needsRebase',
-      text: `#${number} needs a rebase. #${merged} was squash-merged, so its changes are hidden here, and #${number} is compared with #${merged}'s last commit.`,
-    });
-  }
   return notes;
 }
 
-/** "#12 and #14 each sit on the other. Lo shows #12 on its own base." */
+/** "#12 and #14 are each based on the other." */
 function cycleText({ prs }: Cycle): string {
-  const [first] = prs;
   const named = prs.map((pr) => `#${pr}`);
-  const sit =
-    named.length === 2
-      ? `${named.join(' and ')} each sit on the other.`
-      : `${named.slice(0, -1).join(', ')} and ${named.at(-1) ?? ''} sit on each other in a loop.`;
-  return first === undefined ? sit : `${sit} Lo shows #${first} on its own base.`;
+  return named.length === 2
+    ? `${named.join(' and ')} are each based on the other.`
+    : `${named.slice(0, -1).join(', ')} and ${named.at(-1) ?? ''} are based on each other in a loop.`;
 }
 
 /** A count as the interface writes it: "1,342". */

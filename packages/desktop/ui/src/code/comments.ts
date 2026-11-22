@@ -41,7 +41,16 @@ import {
   type VimKey,
 } from '../commands/index.ts';
 import { reveal, scrollPane } from '../reveal.ts';
-import type { BoxFrame, BoxParts, Composer, ComposerEvents, KeptBox, Mode, Send } from './api.ts';
+import type {
+  BoxFrame,
+  BoxParts,
+  Composer,
+  ComposerEvents,
+  HeldText,
+  KeptBox,
+  Mode,
+  Send,
+} from './api.ts';
 import { mapJumps } from './jumps.ts';
 import {
   clearVim,
@@ -140,6 +149,8 @@ export class CommentBox implements BoxHost, KeySource {
   /** What makes the text read-only while the caller holds it. */
   readonly #held = new Compartment();
   #holding = false;
+  /** Held, it stays as it was written, its text read-only, rather than showing its `sent` part. */
+  #asText = false;
   /** Focus left the box as it moved into another widget, and is on its way back. */
   #refocusing = false;
   readonly #shown: ((box: CommentBox) => void) | undefined;
@@ -514,7 +525,7 @@ export class CommentBox implements BoxHost, KeySource {
 
   #takeFocus(): void {
     // Held, it's the comment it sent, and that has focus.
-    if (this.#holding) {
+    if (this.#holding && !this.#asText) {
       this.#parts.sent.focus({ preventScroll: true });
       return;
     }
@@ -587,23 +598,32 @@ export class CommentBox implements BoxHost, KeySource {
   /**
    * Holds the text as it is, leaving Vim's insert mode, or lets it go. Held, the box is the comment
    * it sent: its `sent` part shows in place of everything else, and the rest comes back, with the
-   * text and focus where they were, when it's let go, as after a send that failed.
+   * text and focus where they were, when it's let go, as after a send that failed. Held with
+   * `text`, it stays as it was written, head and foot too, its text read-only and muted, and
+   * `text.empty` where it has none.
    */
-  hold(on: boolean): void {
+  hold(on: boolean, text?: HeldText): void {
     if (on === this.#holding) return;
     const focused = this.dom.contains(this.dom.ownerDocument.activeElement);
+    if (on) this.#asText = text !== undefined;
+    const card = !this.#asText;
     this.#holding = on;
     // Held, it's as tall as it was written in, however short the comment is as a card: nothing
     // under it moves until the comment's own card takes its place.
-    this.dom.style.minHeight = on ? `${this.dom.getBoundingClientRect().height}px` : '';
+    if (card) this.dom.style.minHeight = on ? `${this.dom.getBoundingClientRect().height}px` : '';
     if (on) leaveToNormal(this.view);
-    this.view.dispatch({ effects: this.#held.reconfigure(on ? readOnly() : []) });
-    this.#parts.sent.hidden = !on;
-    this.dom.classList.toggle('is-sent', on);
+    const empty = on && text !== undefined ? placeholder(text.empty) : [];
+    this.view.dispatch({ effects: this.#held.reconfigure(on ? [readOnly(), empty] : []) });
+    if (card) {
+      this.#parts.sent.hidden = !on;
+      this.dom.classList.toggle('is-sent', on);
+    } else {
+      this.dom.classList.toggle('is-held', on);
+    }
     if (!focused) return;
     // Focus stays in the box, so its keys and the code's don't change hands while it's sent.
-    if (on) this.#parts.sent.focus({ preventScroll: true });
-    else this.focusShown();
+    if (on && card) this.#parts.sent.focus({ preventScroll: true });
+    else if (!on) this.focusShown();
   }
 
   /**
@@ -690,7 +710,7 @@ export class CommentBox implements BoxHost, KeySource {
         return previewing();
       },
       focus: () => this.focus(),
-      hold: (on) => this.hold(on),
+      hold: (on, text) => this.hold(on, text),
       insert: (text) => this.insert(text),
       replace: (from, to, text, record) => this.replace(from, to, text, record),
       preview: (on) => this.preview(on),

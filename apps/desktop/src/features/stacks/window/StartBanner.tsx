@@ -1,6 +1,6 @@
 // The banner that offers where a stack's layer's diff starts, when its stack said so only after the
-// diff was drawn: "#84's diff includes #83's changes." with "Show only #84's". Its button starts
-// the diff again from there, as loading a newer push does, so nothing moves under the reader
+// diff was drawn: "This diff includes #83’s changes" with "Hide #83’s changes". Its button starts
+// the diff again from there, as showing the latest revision does, so nothing moves under the reader
 // until they ask.
 
 import { Banner } from '@lo/ui';

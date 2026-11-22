@@ -1,6 +1,6 @@
 // The banner that says, once, that your pending review sits on another revision than the one on
-// screen, so it can only go as a comment from here, with "Show r3". Dismissed, or followed, it
-// doesn't come back for that review on that revision.
+// screen, with "Show r3" while GitHub still has it. Dismissed, or followed, it doesn't come back for
+// that review on that revision.
 
 import { Banner } from '@lo/ui';
 
@@ -35,7 +35,6 @@ export function OtherRevisionBanner({ tab }: { tab: PullTab }) {
     <Banner
       tone="info"
       title={said.title}
-      detail={said.detail}
       actions={
         show === undefined
           ? []

@@ -110,6 +110,8 @@ interface Setup {
   listWait?: number;
   /** What GitHub's Stacks API answers for the stacks holding #138: a 404 for `undefined`. */
   stacks?: unknown[] | undefined;
+  /** What reading GitHub's Stacks API fails with, when it fails other than as not found. */
+  stacksFail?: GithubError | undefined;
   /** The open pull requests' titles, by number. */
   titles?: Record<number, string>;
   /** What a base branch change answers, by the pull request moved. */
@@ -190,6 +192,7 @@ function setup(options: Setup = {}) {
     // GitHub's Stacks API.
     get: (path: string, parse: (json: unknown) => unknown) => {
       reads.push(path);
+      if (options.stacksFail) return Promise.reject(options.stacksFail);
       if (!('stacks' in options) || options.stacks === undefined) {
         return Promise.reject(new GithubError({ kind: 'notFound', message: 'Not Found' }));
       }
@@ -565,10 +568,8 @@ describe('a merge', () => {
         },
       ],
     });
-    expect(await below.merging.plan(ID, SQUASH)).toEqual({
-      kind: 'refused',
-      why: expect.stringContaining('#137 comes from merge/5/base'),
-    });
+    // The list is read again, and the primary reads "Checking…" meanwhile: nothing to say.
+    expect(await below.merging.plan(ID, SQUASH)).toEqual({ kind: 'refused', why: '', again: true });
   });
 });
 
@@ -644,7 +645,7 @@ describe('at the press', () => {
     if (confirmed.kind !== 'again') throw new Error(JSON.stringify(confirmed));
     expect(confirmed.plan.key).not.toBe(plan.key);
     expect(confirmed.plan.method).toBe('MERGE');
-    expect(confirmed.why).toContain('The method it merges with changed.');
+    expect(confirmed.why).toBe('The merge method has changed.');
     expect(run.sent).toEqual([]);
     expect(await run.merging.confirm(confirmed.plan.key)).toEqual({ kind: 'sent' });
   });
@@ -717,7 +718,8 @@ describe('at the press', () => {
     const unread = setup({ forest: undefined });
     expect(await unread.merging.plan(ID, SQUASH)).toEqual({
       kind: 'refused',
-      why: "Lo is still listing this repository's open pull requests.",
+      why: '',
+      again: true,
     });
     const above = setup({
       facts: factsOf({ base: 'merge/5/chain-1' }),
@@ -745,7 +747,8 @@ describe('at the press', () => {
     });
     expect(await above.merging.plan(ID, SQUASH)).toEqual({
       kind: 'refused',
-      why: 'Merge #137 first: it’s this chain’s bottom layer.',
+      why: 'Merge #137 first',
+      again: false,
     });
   });
 
@@ -757,7 +760,7 @@ describe('at the press', () => {
     expect(run.turns.take(PULL.repo, [138])).toEqual({ busy: 138 });
     const second = planOf(await run.merging.plan(ID, SQUASH));
     expect(await run.merging.confirm(second.key)).toMatchObject({
-      refusal: { kind: 'busy', text: 'Lo is already merging #138.' },
+      refusal: { kind: 'busy', text: '' },
     });
     expect(run.sent).toHaveLength(1);
   });
@@ -797,7 +800,7 @@ describe('how it ends', () => {
     expect(unknown.state).toMatchObject({
       why: 'noAnswer',
       askAgain: false,
-      text: expect.stringContaining('GitHub’s answer didn’t reach Lo: '),
+      text: 'GitHub didn’t respond.',
     });
 
     // Asked again, the pull request is read again; it's open, which settles nothing.
@@ -823,7 +826,7 @@ describe('how it ends', () => {
     expect(run.turns.busy(PULL.repo, [138])).toEqual([138]);
     const second = planOf(await run.merging.plan(ID, SQUASH));
     expect(await run.merging.confirm(second.key)).toMatchObject({
-      refusal: { kind: 'unsettled', text: 'Lo can’t tell whether #138 merged.' },
+      refusal: { kind: 'unsettled', text: 'Merge not confirmed' },
     });
 
     // "Ask GitHub again", which the refusal offers, is that read: once it's answered, the pull
@@ -888,7 +891,7 @@ describe('how it ends', () => {
     expect(run.sent).toHaveLength(1);
   });
 
-  it('says a proxy that asks to sign in sent nothing', async () => {
+  it('says why a proxy that asks to sign in kept it from being sent', async () => {
     const run = setup({
       submitted: () =>
         Promise.reject(
@@ -902,8 +905,13 @@ describe('how it ends', () => {
     const plan = planOf(await run.merging.plan(ID, SQUASH));
     await run.merging.confirm(plan.key);
     const done = await run.ended('refused');
+    // A proxy's refusal can't be told from a certificate's: what it said is behind Details.
     expect(done.state).toMatchObject({
-      refusal: { text: expect.stringContaining('Nothing was sent.') },
+      refusal: {
+        kind: 'network',
+        text: '',
+        details: "couldn't reach GitHub: Your proxy asks Lo to sign in (ERR_PROXY_AUTH_REQUESTED).",
+      },
     });
   });
 
@@ -919,7 +927,7 @@ describe('how it ends', () => {
       kind: 'refused',
       refusal: {
         kind: 'headMoved',
-        text: 'Someone pushed to the pull request since Lo showed it.',
+        text: 'This revision is out of date.',
         rules: [],
         until: null,
         newer: { from: HEAD, to: null },
@@ -974,7 +982,8 @@ describe('auto-merge', () => {
     const run = setup();
     expect(await run.merging.plan(ID, { ...SQUASH, asked: 'autoMerge' })).toEqual({
       kind: 'refused',
-      why: 'Nothing blocks #138 now, so it can merge as it is.',
+      why: '#138 can merge now',
+      again: false,
     });
   });
 
@@ -992,7 +1001,7 @@ describe('auto-merge', () => {
     expect(done.state).toMatchObject({
       refusal: {
         kind: 'canMergeNow',
-        text: 'Nothing blocks #138 now, so GitHub didn’t turn on auto-merge. It can merge as it is.',
+        text: '#138 can merge now.',
         offer: { kind: 'merge', method: 'SQUASH', head: HEAD, title: 'Typed' },
       },
     });
@@ -1015,7 +1024,7 @@ describe('auto-merge', () => {
     refuse!({ refusal: 'canMergeNow' });
     const done = await run.ended('refused');
     expect(done.state).toMatchObject({
-      refusal: { kind: 'canMergeNow', text: expect.stringContaining('Merge it from the panel.') },
+      refusal: { kind: 'canMergeNow', text: '#138 can merge now.' },
     });
     expect(done.state.kind === 'refused' && done.state.refusal.offer).toBeFalsy();
     // The reader's own plan is still there to confirm: as nothing blocks it now, the merge itself.
@@ -1035,7 +1044,7 @@ describe('auto-merge', () => {
     expect(plan.named?.blockers.map((blocker) => blocker.kind)).toEqual(['check']);
     const confirmed = await run.merging.confirm(plan.key);
     if (confirmed.kind !== 'again') throw new Error(JSON.stringify(confirmed));
-    expect(confirmed.why).toContain('What auto-merge waits for on #138 changed.');
+    expect(confirmed.why).toBe('What auto-merge waits for has changed.');
     expect(confirmed.plan.named?.blockers.map((blocker) => blocker.kind)).toEqual([
       'approvals',
       'check',
@@ -1054,7 +1063,7 @@ describe('auto-merge', () => {
     expect((await run.ended('refused')).state).toMatchObject({
       refusal: {
         kind: 'autoMergeNotAllowed',
-        text: 'This repository doesn’t allow auto-merge. A maintainer turns it on in its settings.',
+        text: 'rozed-dev/e2e doesn’t allow auto-merge.',
       },
     });
     expect(run.turns.busy(PULL.repo, [138])).toEqual([]);
@@ -1077,7 +1086,7 @@ describe('auto-merge', () => {
     expect((await run.ended('refused')).state).toMatchObject({
       refusal: {
         kind: 'queued',
-        text: expect.stringContaining('Take it out of the queue on GitHub to stop it.'),
+        text: '#138 is already in the merge queue.',
       },
     });
   });
@@ -1125,7 +1134,7 @@ describe('a merge past the rules', () => {
     );
     expect(plan).toMatchObject({ kind: 'override', method: 'SQUASH', title: 'Typed' });
     expect(await run.merging.confirm(plan.key)).toMatchObject({
-      refusal: { kind: 'typed', text: 'Type 138 to merge it past the rules.' },
+      refusal: { kind: 'typed', text: '' },
     });
     expect(await run.merging.confirm(plan.key, '13')).toMatchObject({ refusal: { kind: 'typed' } });
     // Not typed right, the plan stays.
@@ -1153,7 +1162,7 @@ describe('a merge past the rules', () => {
     expect(plan.named?.blockers.map((blocker) => blocker.kind)).toEqual(['approvals']);
     const confirmed = await run.merging.confirm(plan.key, '138');
     if (confirmed.kind !== 'again') throw new Error(JSON.stringify(confirmed));
-    expect(confirmed.why).toContain('What merging #138 past the rules skips changed.');
+    expect(confirmed.why).toBe('The rules it bypasses have changed.');
     expect(confirmed.plan.named?.blockers.map((blocker) => blocker.kind)).toEqual([
       'approvals',
       'check',
@@ -1196,8 +1205,7 @@ describe('auto-merge and a merge past the rules', () => {
       nativeStack: undefined,
     },
   ]);
-  const BOTTOM =
-    '#138 is the bottom layer of a chain that isn’t a GitHub stack: once it merged, the layers above would still sit on its branch.';
+  const BOTTOM = 'Layers above #138 would lose their base branch';
 
   it('go only once Lo knows where the pull request sits, and never from a chain’s bottom layer', async () => {
     for (const [asked, pull] of KINDS) {
@@ -1216,11 +1224,8 @@ describe('auto-merge and a merge past the rules', () => {
         sent: [...grew.sent, ...grew.auto],
       }).toEqual({
         asked,
-        unread: {
-          kind: 'refused',
-          why: "Lo is still listing this repository's open pull requests.",
-        },
-        bottom: { kind: 'refused', why: BOTTOM },
+        unread: { kind: 'refused', why: '', again: true },
+        bottom: { kind: 'refused', why: BOTTOM, again: false },
         grew: {
           kind: 'refused',
           refusal: expect.objectContaining({ kind: 'where', text: BOTTOM }),
@@ -1298,7 +1303,7 @@ describe('auto-merge and a merge past the rules', () => {
       kind: 'refused',
       refusal: {
         kind: 'changing',
-        text: 'What GitHub says of #138 kept changing while Lo checked it, so Lo sent nothing. Start again from the merge panel.',
+        text: '#138 changed while it was checked.',
       },
     });
     expect(run.auto).toEqual([]);
@@ -1431,7 +1436,7 @@ describe('a stack’s merge', () => {
     const confirmed = await run.merging.confirm(plan.key);
     expect(confirmed).toMatchObject({
       kind: 'again',
-      why: 'The layers above it changed. Check what it does now, then confirm.',
+      why: 'The layers above it have changed.',
       plan: { together: { above: [139] } },
     });
     expect(run.sent).toEqual([]);
@@ -1442,7 +1447,7 @@ describe('a stack’s merge', () => {
     pushed.api.stack.pull_requests[0] = pushed.api.layer(137, 'f'.repeat(40));
     expect(await pushed.merging.confirm(before.key)).toMatchObject({
       kind: 'again',
-      why: 'The layers that merge with it changed. Check what it does now, then confirm.',
+      why: 'The layers that merge have changed.',
       plan: { together: { below: [{ number: 137, head: 'f'.repeat(40) }] } },
     });
     expect(pushed.sent).toEqual([]);
@@ -1454,7 +1459,7 @@ describe('a stack’s merge', () => {
     const other = run.turns.take(PULL.repo, [137]);
     expect(await run.merging.confirm(plan.key)).toEqual({
       kind: 'refused',
-      refusal: expect.objectContaining({ kind: 'busy', text: 'Lo is already merging #137.' }),
+      refusal: expect.objectContaining({ kind: 'busy', text: '#137 is still merging' }),
     });
     if ('give' in other) other.give();
     expect(run.sent).toEqual([]);
@@ -1467,7 +1472,7 @@ describe('a stack’s merge', () => {
     run.set.converting([137]);
     expect(await run.merging.confirm(plan.key)).toEqual({
       kind: 'refused',
-      refusal: expect.objectContaining({ kind: 'busy', text: 'Lo is already merging #137.' }),
+      refusal: expect.objectContaining({ kind: 'busy', text: '#137 is still merging' }),
     });
     if ('give' in other) other.give();
     expect(run.sent).toEqual([]);
@@ -1493,7 +1498,7 @@ describe('a stack’s merge', () => {
       kind: 'refused',
       refusal: {
         kind: 'where',
-        text: 'GitHub stack #90 merges into release now, not main. Lo reads #138 again; merge once it has.',
+        text: 'The stack’s base branch is now release.',
       },
     });
     expect(run.sent).toEqual([]);
@@ -1683,12 +1688,12 @@ describe('a chain’s merge a layer at a time', () => {
     expect(run.moves).toEqual([{ pr: 139, from: 'merge/5/squash', to: 'main' }]);
     expect(run.published.at(-1)?.together).toMatchObject({
       moves: [{ status: 'done' }],
-      text: '#139 now points at main and needs a rebase.',
+      text: null,
     });
     expect(run.turns.busy(PULL.repo, [138, 139])).toEqual([]);
   });
 
-  it('after a merge commit, which lands its commits as they are, says no rebase, but holds the same layers', async () => {
+  it('after a merge commit, which lands its commits as they are, holds the same layers', async () => {
     const run = chained();
     const plan = planOf(await run.merging.plan(ID, { method: 'MERGE', title: '', message: '' }));
     // The layers on it take their turns, and hold off conversions, whatever the method.
@@ -1703,7 +1708,7 @@ describe('a chain’s merge a layer at a time', () => {
       expect(run.published.at(-1)?.together).toMatchObject({ kind: 'chain', phase: 'done' }),
     );
     expect(run.moves).toEqual([{ pr: 139, from: 'merge/5/squash', to: 'main' }]);
-    expect(run.published.at(-1)?.together).toMatchObject({ text: '#139 now points at main.' });
+    expect(run.published.at(-1)?.together).toMatchObject({ phase: 'done', text: null });
   });
 
   it('moves nothing after a merge GitHub refused', async () => {
@@ -1715,6 +1720,22 @@ describe('a chain’s merge a layer at a time', () => {
     );
     expect(run.moves).toEqual([]);
     expect(run.turns.busy(PULL.repo, [138, 139])).toEqual([]);
+  });
+
+  it('says nothing it can’t tell of why GitHub’s stacks couldn’t be read, and gives what came back for Details', async () => {
+    const run = chained({
+      stacksFail: new GithubError({
+        kind: 'network',
+        failure: 'unknown',
+        message: 'unable to verify the first certificate',
+      }),
+    });
+    expect(await run.merging.plan(ID, SQUASH)).toEqual({
+      kind: 'refused',
+      why: '',
+      again: false,
+      details: expect.stringContaining('unable to verify the first certificate'),
+    });
   });
 
   it('is made a GitHub stack first, when stacks could make it one, and nothing merges', async () => {
@@ -1732,7 +1753,8 @@ describe('a chain’s merge a layer at a time', () => {
     expect(await run.merging.place(ID)).toEqual({ kind: 'convert', offer });
     expect(await run.merging.plan(ID, SQUASH)).toEqual({
       kind: 'refused',
-      why: `${offer} Make this a GitHub stack, then merge it.`,
+      why: 'Convert to GitHub stack first',
+      again: false,
     });
   });
 
@@ -1742,7 +1764,7 @@ describe('a chain’s merge a layer at a time', () => {
     const other = run.turns.take(PULL.repo, [139]);
     expect(await run.merging.confirm(plan.key)).toEqual({
       kind: 'refused',
-      refusal: expect.objectContaining({ kind: 'busy', text: 'Lo is already merging #139.' }),
+      refusal: expect.objectContaining({ kind: 'busy', text: '#139 is still merging' }),
     });
     if ('give' in other) other.give();
 

@@ -65,8 +65,7 @@ test('the header says whether each pull request can merge, and why not', async (
   await expect(status(page)).toContainText(/about \d+ min/);
 
   await open(page, pulls.gatedPassing.number);
-  await expect(status(page)).toContainText('Merges when ready');
-  await expect(status(page)).toContainText('Auto-merge on');
+  await expect(status(page)).toContainText('Auto-merge is on');
 });
 
 test('`m` opens the panel on its reasons, `j` and `k` move, `o` opens a check’s run, `Esc` closes it, and right-click menus do the same', async ({
@@ -106,7 +105,7 @@ test('`m` opens the panel on its reasons, `j` and `k` move, `o` opens a check’
   await page.getByRole('menuitem', { name: /Merge panel/ }).click();
   await expect(panel(page)).toBeVisible();
   await reasons(page).first().click({ button: 'right' });
-  await page.getByRole('menuitem', { name: /^Open/ }).click();
+  await page.getByRole('menuitem', { name: /^Open in browser/ }).click();
   await expect.poll(() => browsed().length).toBe(2);
   // Choosing from a menu over the panel leaves it open.
   await expect(panel(page)).toBeVisible();
@@ -133,7 +132,10 @@ test('`Tab` steps through the methods, and a squash shows the commit GitHub woul
     'placeholder',
     `Fixture M6: squash and merge (#${pulls.squash.number})`,
   );
-  await expect(panel(page).getByRole('button', { name: /Squash and merge/ })).toBeVisible();
+  // The main button names the pull request, not the method.
+  await expect(
+    panel(page).getByRole('button', { name: new RegExp(`Merge #${pulls.squash.number}…`) }),
+  ).toBeVisible();
 
   // `Shift+Tab` steps back.
   await page.keyboard.press('Shift+Tab');
@@ -151,7 +153,7 @@ test.describe('acting as nobody', () => {
     await expect(header(page)).toContainText('Fixture M6: squash and merge');
     await expect(status(page)).toHaveCount(0);
     await page.keyboard.press('m');
-    await expect(said(page, 'Sign in to see whether it can merge')).toBeVisible();
+    await expect(said(page, 'Sign in to merge')).toBeVisible();
     await expect(panel(page)).toHaveCount(0);
   });
 });

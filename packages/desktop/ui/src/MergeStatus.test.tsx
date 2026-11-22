@@ -69,6 +69,13 @@ describe('MergeStatus', () => {
     expect(onClick).toHaveBeenCalledOnce();
   });
 
+  it('fills its dot once, as a merge lands with nothing else to say so', () => {
+    const still = render(<MergeStatus kind="merged" verdict="Merged" />);
+    expect(still.querySelector('span[aria-hidden="true"]')?.className).not.toContain('move-fill');
+    const landed = render(<MergeStatus kind="merged" verdict="Merged" landed />);
+    expect(landed.querySelector('span[aria-hidden="true"]')?.className).toContain('move-fill');
+  });
+
   it('is only a line once there is nothing to open, with no key', () => {
     const host = render(<MergeStatus kind="merged" verdict="Merged" keys={['m']} />);
     expect(host.querySelector('button')).toBeNull();

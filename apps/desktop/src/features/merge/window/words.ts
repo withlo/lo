@@ -20,7 +20,7 @@ import type {
   Off,
   Placement,
   PlanKind,
-  Progress,
+  Refusal,
   Reviewer,
   StackLayer,
   Together,
@@ -32,8 +32,6 @@ export interface HeaderLine {
   readonly kind: MergeKind;
   readonly verdict: string;
   readonly detail: string | undefined;
-  /** What it says on hover, when it says more than which key opens the panel. */
-  readonly title: string | undefined;
   /** Whether it opens the merge panel: not once the pull request has merged or closed. */
   readonly opens: boolean;
 }
@@ -73,23 +71,38 @@ export interface Row {
   readonly detail: string | undefined;
   readonly link: RowLink | undefined;
   readonly subs: readonly RowSub[];
-  /** Whether it offers the next unresolved conversation, `]t`. */
+  /** Whether it offers the next unresolved thread, `]t`. */
   readonly nextThread: boolean;
   /** Whether it's a reason the pull request can't merge, rather than something to know. */
   readonly inTheWay: boolean;
 }
 
-/** The merge panel's head: the verdict, and what it merges into and how it stands. */
+/**
+ * The merge panel's head: the verdict, then one line of facts, with the base branch in it as code:
+ * `before` it, the branch, then `after` it. A line without the branch has only `after`.
+ */
 export interface PanelHead {
   readonly kind: MergeKind;
   readonly verdict: string;
-  /** Before the base branch: "into". Nothing when the line doesn't start with it. */
-  readonly into: boolean;
-  /** After the base branch, or the whole line without it. */
+  readonly before: string | undefined;
+  readonly branch: string | undefined;
   readonly after: string | undefined;
 }
 
-const SEE_ON_GITHUB = 'See it on GitHub ↗';
+/**
+ * Who a merge acts as, and where, for the words that name them: the account's login, and the repo
+ * as owner/repo.
+ */
+export interface Who {
+  readonly login: string;
+  readonly repo: string;
+}
+
+/** Who, when the window can't say. */
+const SOMEONE: Who = { login: 'This account', repo: 'This repo' };
+
+const ON_GITHUB = 'Open on GitHub';
+const IN_BROWSER = 'Open in browser';
 
 /** `count` and `word`, with an s for any count but one: "2 checks". */
 export function counted(count: number, word: string): string {
@@ -148,19 +161,9 @@ export function methodLabel(method: Method): string {
   }
 }
 
-/** What the merge button says for `method`: "Squash and merge". */
-export function mergeLabel(method: Method): string {
-  switch (method) {
-    case 'SQUASH':
-      return 'Squash and merge';
-    case 'MERGE':
-      return 'Merge';
-    case 'REBASE':
-      return 'Rebase and merge';
-    default:
-      method satisfies never;
-      return 'Merge';
-  }
+/** What the dialog's merge button says, whatever the method: "Merge #264". */
+export function mergeLabel(number: number): string {
+  return `Merge #${number}`;
 }
 
 /** A reviewer as the panel names them: "@jun-park", "@fieldwork/api-platform". */
@@ -202,7 +205,7 @@ function shortOf(blocker: Blocker, checks: ReadonlyMap<CheckGroup, readonly Chec
     case 'conflicts':
       return 'conflicts';
     case 'outOfDate':
-      return 'out of date';
+      return 'branch out of date';
     case 'changesRequested':
       return 'changes requested';
     case 'approvals':
@@ -215,9 +218,9 @@ function shortOf(blocker: Blocker, checks: ReadonlyMap<CheckGroup, readonly Chec
         case 'failed':
           return `${counted(count, 'check')} failed`;
         case 'notReported':
-          return `${counted(count, 'check')} not reported`;
+          return `${counted(count, 'check')} not started`;
         case 'awaiting':
-          return `${counted(count, 'check')} awaiting approval`;
+          return `${counted(count, 'check')} waiting for approval`;
         case 'running':
           return `${counted(count, 'check')} running`;
         case 'yet':
@@ -232,12 +235,12 @@ function shortOf(blocker: Blocker, checks: ReadonlyMap<CheckGroup, readonly Chec
     case 'rule':
       return blocker.description;
     case 'checkingMergeability':
-      return 'GitHub is checking';
+      return 'checking for conflicts';
     case 'unexplained':
-      return 'GitHub says no';
+      return 'blocked by GitHub';
     default:
       blocker satisfies never;
-      return 'in the way';
+      return 'blocked';
   }
 }
 
@@ -282,15 +285,11 @@ function inTheWay(blockers: readonly Blocker[]): string {
   );
 }
 
-/** What the hover says of what may be missing from `state`, when something may be. */
+/** What the header says in place of the method when the read may be missing something. */
 function caveat(state: MergeState): string | undefined {
-  if (state.incomplete === 'checksCutShort') {
-    return 'GitHub has over 1,000 checks here, and Lo reads the first 1,000.';
-  }
-  if (state.incomplete === 'readAgain') {
-    return 'GitHub left part of this out, so Lo may not see all of it. Lo is reading it again.';
-  }
-  if (state.partial) return 'Lo may not see every rule';
+  if (state.incomplete === 'checksCutShort') return 'Over 1,000 checks';
+  if (state.incomplete === 'readAgain') return 'Checking…';
+  if (state.partial) return 'Some rules aren’t shown';
   return undefined;
 }
 
@@ -300,7 +299,7 @@ function readyDetail(action: Action, base: string): string {
     case 'merge':
       return `${methodLabel(action.method)} into ${base}`;
     case 'enqueue':
-      return `through the queue for ${base}`;
+      return `Merge queue for ${base}`;
     case 'notPossible':
       return `into ${base}`;
     default:
@@ -315,15 +314,17 @@ function readyDetail(action: Action, base: string): string {
  */
 export const STALE_AFTER = 10 * 60_000;
 
-/** How long ago `at` was, from `now`, in words: "a moment ago", "3 min ago", "2 hours ago". */
+/**
+ * How long ago `at` was, from `now`, in its largest whole unit: "just now", "12 min ago", "2 h
+ * ago", "3 d ago".
+ */
 export function ago(at: number, now: number): string {
   const minutes = Math.floor(Math.max(0, now - at) / 60_000);
-  if (minutes < 1) return 'a moment ago';
+  if (minutes < 1) return 'just now';
   if (minutes < 60) return `${minutes} min ago`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
-  const days = Math.floor(hours / 24);
-  return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+  if (hours < 24) return `${hours} h ago`;
+  return `${Math.floor(hours / 24)} d ago`;
 }
 
 /**
@@ -339,10 +340,13 @@ export function staleness(
   return { ago: ago(state.readAt, now), why: state.stale ?? undefined };
 }
 
+/** The verdict of a status that couldn't be read. */
+export const CANT_CHECK = 'Can’t check merge status';
+
 /**
  * The header's merge status for `view` at `now`, with its place in the merge queue as `queue` last
- * read it, or nothing while there's nothing to show: before the first read, and for a view that
- * reads none.
+ * read it, or nothing while there's nothing to show: before main says anything, and for a view
+ * that reads none.
  */
 export function headerLine(
   view: MergeView | undefined,
@@ -352,16 +356,13 @@ export function headerLine(
   if (view === undefined) return undefined;
   switch (view.kind) {
     case 'none':
-    case 'loading':
       return undefined;
+    case 'loading':
+      // The panel opens on it, saying the same.
+      return { kind: 'waiting', verdict: 'Checking…', detail: undefined, opens: true };
     case 'failed':
-      return {
-        kind: 'waiting',
-        verdict: 'Can’t tell whether it can merge',
-        detail: undefined,
-        title: view.why,
-        opens: false,
-      };
+      // The panel has the reason.
+      return { kind: 'waiting', verdict: CANT_CHECK, detail: undefined, opens: true };
     case 'known':
       return dated(queuedLine(knownLine(view.state), view.state, queue), view.state, now);
     default:
@@ -370,44 +371,36 @@ export function headerLine(
   }
 }
 
-/** `line`, saying how old `state` is when it may be out of date at `now`. */
+/** `line`, saying when `state` was read when it may be out of date at `now`. */
 function dated(line: HeaderLine, state: MergeState, now: number): HeaderLine {
   const old = staleness(state, now);
   if (!old) return line;
-  const said =
-    old.why === undefined
-      ? `Lo hasn’t read this since ${old.ago}.`
-      : `Lo couldn’t check again: ${old.why}`;
   return {
     ...line,
-    detail: [line.detail, `as of ${old.ago}`].filter((part) => part !== undefined).join(' · '),
-    title: line.title === undefined ? said : `${line.title}\n${said}`,
+    detail: [line.detail, `Checked ${old.ago}`].filter((part) => part !== undefined).join(' · '),
   };
 }
 
 function knownLine(state: MergeState): HeaderLine {
-  const title = caveat(state);
   switch (state.verdict) {
     case 'merged':
-      return { kind: 'merged', verdict: 'Merged', detail: undefined, title, opens: false };
+      return { kind: 'merged', verdict: 'Merged', detail: undefined, opens: false };
     case 'closed':
-      return { kind: 'closed', verdict: 'Closed', detail: undefined, title, opens: false };
+      return { kind: 'closed', verdict: 'Closed', detail: undefined, opens: false };
     case 'queued':
       return {
         kind: 'queued',
         verdict: state.position === null ? 'Queued' : `Queued, ${ordinal(state.position)}`,
         detail: undefined,
-        title,
         opens: true,
       };
     case 'ready': {
       // A read that may be missing something never looks clean at a glance.
-      const unsure = state.incomplete !== null || state.partial;
+      const unsure = caveat(state);
       return {
-        kind: unsure ? 'waiting' : 'ready',
-        verdict: state.action.kind === 'enqueue' ? 'Ready for the queue' : 'Ready to merge',
-        detail: unsure ? 'Lo may not see everything' : readyDetail(state.action, state.base),
-        title,
+        kind: unsure === undefined ? 'ready' : 'waiting',
+        verdict: state.action.kind === 'enqueue' ? 'Ready for merge queue' : 'Ready to merge',
+        detail: unsure ?? readyDetail(state.action, state.base),
         opens: true,
       };
     }
@@ -415,9 +408,9 @@ function knownLine(state: MergeState): HeaderLine {
       if (state.autoMerge) {
         return {
           kind: 'auto',
-          verdict: 'Merges when ready',
-          detail: 'Auto-merge on',
-          title,
+          verdict: 'Auto-merge is on',
+          // The verdict says the rest, but where it joins a merge queue first.
+          detail: state.queue.required ? 'waiting to join' : undefined,
           opens: true,
         };
       }
@@ -425,48 +418,36 @@ function knownLine(state: MergeState): HeaderLine {
         kind: 'waiting',
         verdict: 'Can’t merge yet',
         detail: inTheWay(state.blockers),
-        title,
         opens: true,
       };
     case 'blocked':
       return {
         kind: 'blocked',
         verdict: 'Can’t merge',
-        detail: `${inTheWay(state.blockers)}${state.autoMerge ? ' · auto-merge on' : ''}`,
-        title,
+        detail: `${inTheWay(state.blockers)}${state.autoMerge ? ' · auto-merge is on' : ''}`,
         opens: true,
       };
     default:
       state.verdict satisfies never;
-      return { kind: 'blocked', verdict: 'Can’t merge', detail: undefined, title, opens: true };
+      return { kind: 'blocked', verdict: 'Can’t merge', detail: undefined, opens: true };
   }
 }
 
-/** A length of time GitHub estimates, in seconds, in words: "12 min", "2 h", "1 h 5 min". */
+/**
+ * A length of time GitHub estimates, in seconds, in its largest whole unit: "12 min", "2 h", "3 d".
+ */
 export function duration(seconds: number): string {
   const minutes = Math.max(1, Math.round(seconds / 60));
   if (minutes < 60) return `${minutes} min`;
   const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  return rest === 0 ? `${hours} h` : `${hours} h ${rest} min`;
-}
-
-/** Why a queued pull request's place may be missing failed checks, on hover. */
-export const PARTIAL_CHECKS = 'GitHub left part of the queue out, so more checks may have failed.';
-
-/** Why the header no longer says a pull request's place, on hover, once the queue stops listing it. */
-export const LEFT_CHECKING = 'The merge queue no longer lists it. Lo is reading whether it merged.';
-
-/** `line`'s hover, with `more` after it. */
-function hover(line: HeaderLine, more: string): string {
-  return line.title === undefined ? more : `${line.title}\n${more}`;
+  return hours < 24 ? `${hours} h` : `${Math.floor(hours / 24)} d`;
 }
 
 /**
  * `line`, from GitHub's read of a queued pull request, with what Lo last read of its entry in the
  * queue: its place, which that read has fresher, and when it should merge; once it failed there,
- * that it will be removed, and which checks failed; and once the queue no longer lists it, that it
- * left, never the place it had, until a read of the pull request says how.
+ * that it's leaving, and which checks failed; and once the queue no longer lists it, that it left,
+ * never the place it had, until a read of the pull request says how.
  */
 function queuedLine(line: HeaderLine, state: MergeState, queue: InQueue | undefined): HeaderLine {
   const place = queue?.place;
@@ -474,91 +455,73 @@ function queuedLine(line: HeaderLine, state: MergeState, queue: InQueue | undefi
   if (place.kind === 'unlisted') {
     // Partly read, the queue may list it where Lo can't see: GitHub's place stands.
     if (place.partial) return line;
-    return {
-      ...line,
-      kind: 'waiting',
-      verdict: 'Left the queue',
-      detail: 'checking',
-      title: hover(line, LEFT_CHECKING),
-    };
+    return { ...line, kind: 'waiting', verdict: 'Left merge queue', detail: 'Checking…' };
   }
   if (place.state === 'UNMERGEABLE') {
     const names = place.failed.map((check) => check.name);
     return {
       ...line,
       kind: 'blocked',
-      verdict: 'Will be removed',
-      detail: names.length > 0 ? `${listed(names)} failed in the queue` : 'from the merge queue',
-      title: place.partial ? hover(line, PARTIAL_CHECKS) : line.title,
+      verdict: 'Leaving merge queue',
+      detail: names.length > 0 ? `${listed(names)} failed` : undefined,
     };
   }
   return {
     ...line,
     verdict: `Queued, ${ordinal(place.position)}`,
-    detail: place.timeToMerge === null ? line.detail : `about ${duration(place.timeToMerge)}`,
+    detail:
+      place.timeToMerge === null ? line.detail : `merges in about ${duration(place.timeToMerge)}`,
   };
 }
 
 /** The merge panel's head for `state`. */
-export function panelHead(state: MergeState): PanelHead {
+export function panelHead(state: MergeState, who: Who = SOMEONE): PanelHead {
   const line = knownLine(state);
-  const things = rowsOf(state).filter((row) => row.inTheWay).length;
+  const things = rowsOf(state, undefined, who).filter((row) => row.inTheWay).length;
+  const head = { kind: line.kind, verdict: line.verdict };
+  const into = (after: string | undefined): PanelHead => ({
+    ...head,
+    before: 'into',
+    branch: state.base,
+    after,
+  });
+  const count = things > 0 ? `· ${counted(things, 'reason')}` : undefined;
   switch (state.verdict) {
     case 'queued':
-      return {
-        kind: line.kind,
-        verdict: line.verdict,
-        into: false,
-        after: `In the merge queue for ${state.base}`,
-      };
+      return { ...head, before: 'In the merge queue for', branch: state.base, after: undefined };
     case 'ready': {
       if (state.action.kind === 'enqueue') {
-        return {
-          kind: line.kind,
-          verdict: line.verdict,
-          into: false,
-          after: `${state.base} merges through a queue`,
-        };
+        return { ...head, before: undefined, branch: state.base, after: 'has a merge queue' };
       }
       const said = [
         state.approvedBy.length > 0 ? `approved by ${listed(state.approvedBy)}` : undefined,
         state.checks.total > 0 ? `${counted(state.checks.passed, 'check')} passed` : undefined,
       ].filter((part) => part !== undefined);
-      return {
-        kind: line.kind,
-        verdict: line.verdict,
-        into: true,
-        after: said.length > 0 ? `· ${said.join(' · ')}` : undefined,
-      };
+      return into(said.length > 0 ? `· ${said.join(' · ')}` : undefined);
     }
     case 'waiting':
       if (state.autoMerge) {
         const { method, by } = state.autoMerge;
+        // The line starts at its first word, in sentence case: "Squash · turned on by rozed-bot".
         const said = [
-          'Auto-merge on',
-          method === null ? undefined : methodLabel(method).toLowerCase(),
-          by === null ? undefined : `turned on by ${by}`,
+          method === null ? undefined : methodLabel(method),
+          by === null ? undefined : `${method === null ? 'Turned' : 'turned'} on by ${by}`,
         ].filter((part) => part !== undefined);
-        return { kind: line.kind, verdict: line.verdict, into: false, after: said.join(' · ') };
+        return {
+          ...head,
+          before: undefined,
+          branch: undefined,
+          after: said.length > 0 ? said.join(' · ') : undefined,
+        };
       }
-      return {
-        kind: line.kind,
-        verdict: line.verdict,
-        into: true,
-        after: `· ${counted(things, 'thing')} in the way`,
-      };
+      return into(count);
     case 'merged':
     case 'closed':
     case 'blocked':
-      return {
-        kind: line.kind,
-        verdict: line.verdict,
-        into: true,
-        after: things > 0 ? `· ${counted(things, 'thing')} in the way` : undefined,
-      };
+      return into(count);
     default:
       state.verdict satisfies never;
-      return { kind: line.kind, verdict: line.verdict, into: true, after: undefined };
+      return into(undefined);
   }
 }
 
@@ -569,33 +532,36 @@ function subOf(check: Check, index: number, failed: boolean): RowSub {
     name: check.name,
     note: failed ? 'failed' : undefined,
     tone: failed ? 'fail' : 'quiet',
-    link: check.url === null ? undefined : { label: 'Open the run ↗', url: check.url },
+    link: check.url === null ? undefined : { label: IN_BROWSER, url: check.url },
   };
 }
 
 /**
- * What the review a pull request still needs says: "1 more approval, and one from a code owner: @a."
- * With no code owner asked, `base`'s rule is named, hedged: GitHub asks nobody when the only code
- * owner is the pull request's author, and drops its request once a code owner approved.
+ * What the review a pull request still needs says: "1 more approval, and 1 from a code owner: @a."
+ * With no code owner asked, `base`'s rule is named: GitHub asks nobody when the only code owner is
+ * the pull request's author, and drops its request once a code owner approved.
  */
 function approvalsDetail(
   { more, codeOwners, codeOwnerRule }: Extract<Blocker, { kind: 'approvals' }>,
   base: string,
-): string {
+): string | undefined {
   const names = listed(codeOwners.map(reviewerName));
   if (more > 0 && codeOwners.length > 0) {
-    return `${counted(more, 'more approval')}, and one from a code owner: ${names}.`;
+    return `${counted(more, 'more approval')}, and 1 from a code owner: ${names}.`;
   }
-  if (codeOwners.length > 0) return `An approval from a code owner: ${names}.`;
-  const rule = `${base} also requires a code owner’s approval for changed files that have an owner`;
+  if (codeOwners.length > 0) return `1 approval from a code owner: ${names}.`;
+  const rule = `${base} requires a code owner’s approval.`;
   if (more > 0) {
     return codeOwnerRule
-      ? `${counted(more, 'more approval')}. ${rule}, which may be one of them or given already.`
+      ? `${counted(more, 'more approval')}. ${rule}`
       : `${counted(more, 'more approval')}.`;
   }
-  return codeOwnerRule
-    ? `GitHub requires a review it doesn’t name. ${rule}, which may be it.`
-    : 'GitHub requires a review it doesn’t name, such as one of the latest push.';
+  return codeOwnerRule ? rule : undefined;
+}
+
+/** "1 required check", "2 required checks". */
+function required(count: number): string {
+  return `${count} required ${count === 1 ? 'check' : 'checks'}`;
 }
 
 /** The row for a group of checks. */
@@ -603,34 +569,30 @@ function checksRow(group: CheckGroup, checks: readonly Check[]): Row {
   const count = checks.length;
   const failed = group === 'failed';
   const subs = checks.map((check, index) => subOf(check, index, failed));
-  const base = { key: `checks-${group}`, subs, link: undefined, nextThread: false, inTheWay: true };
+  const base = {
+    key: `checks-${group}`,
+    subs,
+    link: undefined,
+    detail: undefined,
+    nextThread: false,
+    inTheWay: true,
+  };
   switch (group) {
     case 'failed':
-      return {
-        ...base,
-        kind: 'fail',
-        glyph: 'failed',
-        title: `${count} required ${count === 1 ? 'check' : 'checks'} failed`,
-        detail: undefined,
-      };
+      return { ...base, kind: 'fail', glyph: 'failed', title: `${required(count)} failed` };
     case 'notReported':
       return {
         ...base,
         kind: 'fail',
         glyph: 'pending',
-        title: `${counted(count, 'check')} ${count === 1 ? 'hasn’t' : 'haven’t'} reported`,
-        detail:
-          count === 1
-            ? `${checks[0]?.name ?? 'It'} is required by the branch rules but hasn’t started.`
-            : 'They’re required by the branch rules but haven’t started.',
+        title: `${required(count)} ${count === 1 ? 'hasn’t' : 'haven’t'} started`,
       };
     case 'awaiting':
       return {
         ...base,
         kind: 'wait',
         glyph: 'pending',
-        title: `${counted(count, 'check')} waiting for a deployment’s approval`,
-        detail: undefined,
+        title: `${counted(count, 'check')} waiting for deployment approval`,
       };
     case 'running':
       return {
@@ -638,7 +600,6 @@ function checksRow(group: CheckGroup, checks: readonly Check[]): Row {
         kind: 'wait',
         glyph: 'running',
         title: `${counted(count, 'check')} running`,
-        detail: undefined,
       };
     case 'yet':
       return {
@@ -646,12 +607,17 @@ function checksRow(group: CheckGroup, checks: readonly Check[]): Row {
         kind: 'wait',
         glyph: 'pending',
         title: `${counted(count, 'check')} yet to report`,
-        detail: 'Something on the head can still report them.',
       };
     default:
       group satisfies never;
-      return { ...base, kind: 'wait', glyph: 'pending', title: 'Checks', detail: undefined };
+      return { ...base, kind: 'wait', glyph: 'pending', title: 'Checks' };
   }
+}
+
+/** "2 unresolved threads", or "100+ unresolved threads" for a count cut short. */
+function threads(blocker: Extract<Blocker, { kind: 'conversations' }>): string {
+  const { unresolved, cutShort } = blocker;
+  return `${unresolved}${cutShort ? '+' : ''} unresolved ${unresolved === 1 && !cutShort ? 'thread' : 'threads'}`;
 }
 
 /** The row for a reason that isn't a check. */
@@ -663,48 +629,28 @@ function reasonRow(
     key: reasonKey(blocker),
     subs: [],
     link: undefined,
+    detail: undefined,
     nextThread: false,
     inTheWay: true,
   };
   switch (blocker.kind) {
     case 'merged':
-      return { ...row, kind: 'info', glyph: 'ok', title: 'It’s merged', detail: undefined };
+      return { ...row, kind: 'info', glyph: 'ok', title: 'Already merged' };
     case 'closed':
-      return { ...row, kind: 'info', glyph: 'failed', title: 'It’s closed', detail: undefined };
+      return { ...row, kind: 'info', glyph: 'failed', title: 'Closed' };
     case 'draft':
-      return {
-        ...row,
-        kind: 'fail',
-        glyph: 'draft',
-        title: 'This is a draft',
-        detail: 'The author marks it ready on GitHub.',
-      };
+      return { ...row, kind: 'fail', glyph: 'draft', title: 'Draft pull request' };
     case 'conflicts':
-      return {
-        ...row,
-        kind: 'fail',
-        glyph: 'conflict',
-        title: `Conflicts with ${base}`,
-        detail: 'The author resolves them on their branch; Lo doesn’t add commits to a PR.',
-      };
+      return { ...row, kind: 'fail', glyph: 'conflict', title: `Conflicts with ${base}` };
     case 'outOfDate':
-      return {
-        ...row,
-        kind: 'fail',
-        glyph: 'behind',
-        title: `Out of date with ${base}`,
-        detail: 'The author updates the branch; Lo doesn’t add commits to a PR.',
-      };
+      return { ...row, kind: 'fail', glyph: 'behind', title: `Out of date with ${base}` };
     case 'changesRequested':
       return {
         ...row,
         kind: 'fail',
         glyph: 'review',
         title: 'Changes requested',
-        detail:
-          blocker.by.length > 0
-            ? `By ${listed(blocker.by)}. Their approval, or their review dismissed, clears it.`
-            : 'By a reviewer Lo can’t see.',
+        detail: blocker.by.length > 0 ? `By ${listed(blocker.by)}.` : undefined,
       };
     case 'approvals':
       return {
@@ -719,8 +665,7 @@ function reasonRow(
         ...row,
         kind: 'fail',
         glyph: 'conversation',
-        title: `${blocker.cutShort ? 'At least ' : ''}${counted(blocker.unresolved, 'unresolved conversation')}`,
-        detail: 'The branch rules ask for every conversation to be resolved.',
+        title: threads(blocker),
         nextThread: true,
       };
     case 'rule':
@@ -729,41 +674,34 @@ function reasonRow(
         kind: blocker.waiting ? 'wait' : 'fail',
         glyph: 'rule',
         title: blocker.description,
-        detail: undefined,
-        link: blocker.url === null ? undefined : { label: SEE_ON_GITHUB, url: blocker.url },
+        link: blocker.url === null ? undefined : { label: ON_GITHUB, url: blocker.url },
       };
     case 'checkingMergeability':
-      return {
-        ...row,
-        kind: 'wait',
-        glyph: 'running',
-        title: 'GitHub is checking whether it merges cleanly',
-        detail: 'Lo reads it again.',
-      };
+      return { ...row, kind: 'wait', glyph: 'running', title: 'Checking for conflicts…' };
     case 'unexplained':
       return {
         ...row,
         kind: 'fail',
         glyph: 'unknown',
-        title: 'GitHub says no, and not why',
-        detail: 'Lo checked reviews, checks, conversations and rules.',
-        link: { label: SEE_ON_GITHUB, url: blocker.url },
+        title: 'Blocked by GitHub',
+        detail: 'GitHub gives no reason.',
+        link: { label: ON_GITHUB, url: blocker.url },
       };
     default:
       blocker satisfies never;
-      return { ...row, kind: 'fail', glyph: 'unknown', title: 'In the way', detail: undefined };
+      return { ...row, kind: 'fail', glyph: 'unknown', title: 'Blocked' };
   }
 }
 
-/** What a rule Lo doesn't check requires, in a few words. */
-function uncheckedTitle(rule: Unchecked): string {
+/** What a rule Lo doesn't check on `base` requires, in a few words. */
+function uncheckedTitle(rule: Unchecked, base: string): string {
   switch (rule.kind) {
     case 'signatures':
       return 'Commits must be signed';
     case 'deployments':
       return 'Deployments must succeed';
     case 'locked':
-      return 'The branch is locked';
+      return `${base} is locked`;
     case 'codeScanning':
       return 'Code scanning must report';
     case 'workflows':
@@ -771,22 +709,34 @@ function uncheckedTitle(rule: Unchecked): string {
     case 'reviewersByFile':
       return 'Some files need reviewers of their own';
     case 'copilotApproval':
-      return 'Copilot’s changes need one more approval';
+      return 'Copilot’s changes need 1 more approval';
     case 'other':
-      return `A rule Lo doesn’t know: ${rule.type}`;
+      return `Another rule on ${base}`;
     default:
       rule satisfies never;
-      return 'A rule Lo doesn’t know';
+      return `Another rule on ${base}`;
   }
+}
+
+/** A row of the panel's that says something to know, not a reason it can't merge. */
+function infoRow(row: Pick<Row, 'key' | 'title' | 'detail' | 'link'>): Row {
+  return {
+    ...row,
+    kind: 'info',
+    glyph: 'unknown',
+    subs: [],
+    nextThread: false,
+    inTheWay: false,
+  };
 }
 
 /**
  * The merge panel's rows for `state`: a row for each reason it can't merge, in `blockers`' order,
  * the checks of a state together, each a sub-row with its run; then what may be missing, as rules
- * Lo doesn't check, a read GitHub left part of out, or a block Lo may not see all of; and, at `now`,
- * how old it is when it may be out of date.
+ * Lo doesn't check, a read GitHub left part of out, or a block not all of whose rules are shown;
+ * and, at `now`, when it was read when it may be out of date. `who` names the account and repo.
  */
-export function rowsOf(state: MergeState, now: number = Date.now()): Row[] {
+export function rowsOf(state: MergeState, now: number = Date.now(), who: Who = SOMEONE): Row[] {
   const rows: Row[] = [];
   if (state.verdict === 'merged' || state.verdict === 'closed') return rows;
   const checks = checksOf(state.blockers);
@@ -800,29 +750,27 @@ export function rowsOf(state: MergeState, now: number = Date.now()): Row[] {
   }
   if (state.verdict === 'ready' && state.action.kind === 'notPossible') {
     const { reason } = state.action;
+    const rule = {
+      kind: 'fail',
+      glyph: 'rule',
+      link: undefined,
+      subs: [],
+      nextThread: false,
+      inTheWay: true,
+    } as const;
     if (reason === 'noPermission') {
       rows.push({
+        ...rule,
         key: 'noPermission',
-        kind: 'fail',
-        glyph: 'rule',
-        title: `You can’t merge into ${state.base}`,
-        detail: 'Merging takes write access to the repository.',
-        link: undefined,
-        subs: [],
-        nextThread: false,
-        inTheWay: true,
+        title: `${who.login} can’t merge into ${state.base}`,
+        detail: 'Merging requires write access.',
       });
     } else if (reason === 'noMethod') {
       rows.push({
+        ...rule,
         key: 'noMethod',
-        kind: 'fail',
-        glyph: 'rule',
-        title: 'The repository allows no merge method',
-        detail: 'A maintainer allows one in its settings.',
-        link: undefined,
-        subs: [],
-        nextThread: false,
-        inTheWay: true,
+        title: `${who.repo} allows no merge method`,
+        detail: undefined,
       });
     }
   }
@@ -830,65 +778,45 @@ export function rowsOf(state: MergeState, now: number = Date.now()): Row[] {
   if (state.verdict !== 'ready' && state.verdict !== 'queued') {
     for (const [index, rule] of state.unchecked.entries()) {
       rows.push({
-        key: `unchecked-${index}`,
-        kind: 'info',
+        ...infoRow({
+          key: `unchecked-${index}`,
+          title: uncheckedTitle(rule, state.base),
+          detail: 'Not checked.',
+          link: undefined,
+        }),
         glyph: 'rule',
-        title: uncheckedTitle(rule),
-        detail: `A rule on ${state.base}, which Lo doesn’t check.`,
-        link: undefined,
-        subs: [],
-        nextThread: false,
-        inTheWay: false,
       });
     }
   }
-  if (state.incomplete !== null) {
-    rows.push({
-      key: 'incomplete',
-      kind: 'info',
-      glyph: 'unknown',
-      title:
-        state.incomplete === 'checksCutShort'
-          ? 'GitHub has over 1,000 checks here'
-          : 'GitHub left part of this out',
-      detail:
-        state.incomplete === 'checksCutShort'
-          ? 'Lo reads the first 1,000, so what’s shown may not be all.'
-          : 'What’s shown may not be all of it. Lo is reading it again.',
-      link: { label: SEE_ON_GITHUB, url: state.url },
-      subs: [],
-      nextThread: false,
-      inTheWay: false,
-    });
+  if (state.incomplete === 'checksCutShort') {
+    rows.push(
+      infoRow({
+        key: 'incomplete',
+        title: 'Over 1,000 checks',
+        detail: 'The first 1,000 are shown.',
+        link: { label: ON_GITHUB, url: state.url },
+      }),
+    );
+  } else if (state.incomplete === 'readAgain') {
+    // It's read again.
+    rows.push(
+      infoRow({ key: 'incomplete', title: 'Checking…', detail: undefined, link: undefined }),
+    );
   } else if (state.partial) {
-    rows.push({
-      key: 'partial',
-      kind: 'info',
-      glyph: 'unknown',
-      title: 'Lo may not see every rule',
-      detail: 'GitHub may block it for more than what’s listed here.',
-      link: { label: SEE_ON_GITHUB, url: state.url },
-      subs: [],
-      nextThread: false,
-      inTheWay: false,
-    });
+    rows.push(
+      infoRow({
+        key: 'partial',
+        title: 'Some rules aren’t shown',
+        detail: undefined,
+        link: { label: ON_GITHUB, url: state.url },
+      }),
+    );
   }
   const old = staleness(state, now);
   if (old) {
-    rows.push({
-      key: 'stale',
-      kind: 'info',
-      glyph: 'unknown',
-      title: old.why === undefined ? `As of ${old.ago}` : 'Lo couldn’t check again',
-      detail:
-        old.why === undefined
-          ? 'Lo hasn’t read it again since.'
-          : `${old.why} What’s shown is as of ${old.ago}.`,
-      link: undefined,
-      subs: [],
-      nextThread: false,
-      inTheWay: false,
-    });
+    rows.push(
+      infoRow({ key: 'stale', title: `Checked ${old.ago}`, detail: old.why, link: undefined }),
+    );
   }
   return rows;
 }
@@ -902,15 +830,17 @@ export function rowPage(row: Row): string | undefined {
 export function methodNote(state: MergeState): string | undefined {
   const { methods, signedCommits } = state;
   const off = [
-    methods.merge ? undefined : 'Merge commits',
-    methods.squash ? undefined : 'Squashes',
-    methods.rebase ? undefined : 'Rebases',
+    methods.merge ? undefined : 'Merge commit',
+    methods.squash ? undefined : 'Squash',
+    methods.rebase ? undefined : 'Rebase',
   ].filter((name) => name !== undefined);
   const said: string[] = [];
-  if (off.length > 0) said.push(`${listed(off)} are off in this repo`);
-  if (methods.rebase && signedCommits)
-    said.push(`${state.base} needs signed commits, so no rebase`);
-  return said.length > 0 ? said.join('. ') : undefined;
+  if (off.length > 0)
+    said.push(`${listed(off)} ${off.length === 1 ? 'is' : 'are'} off in this repo.`);
+  if (methods.rebase && signedCommits) {
+    said.push(`${state.base} requires signed commits, so Rebase is off.`);
+  }
+  return said.length > 0 ? said.join(' ') : undefined;
 }
 
 /**
@@ -951,52 +881,66 @@ function clock(at: number): string {
   return `${twoDigits(time.getHours())}:${twoDigits(time.getMinutes())}`;
 }
 
-/** Why Lo merges nothing now, whatever the pull request's state. */
-export function offWords(off: Off): string {
+/** Why Lo merges nothing now, whatever the pull request's state, as a dimmed control's reason. */
+export function offWords(off: Off, who: Who = SOMEONE): string {
   switch (off.kind) {
     case 'offline':
-      return 'Offline. Merging waits until you’re back.';
+      return 'Offline';
     case 'paused':
-      return `GitHub asked Lo to hold off until ${clock(off.until)}. Merge then.`;
+      return `GitHub’s rate limit resets at ${clock(off.until)}`;
     case 'signedOut':
-      return 'The account is signed out of GitHub. Sign in again, then merge.';
+      return `${who.login} is signed out`;
     default:
       off satisfies never;
-      return 'Lo can’t merge now.';
+      return 'Offline';
   }
 }
 
-/** Why `⏎` in the panel can't merge now, or nothing when it can. */
-export function cantMerge(state: MergeState, number: number): string | undefined {
+/** The titles of the reasons in `rows` that `keep` keeps, a line each, as a dimmed control's reason. */
+function titlesOf(rows: readonly Row[], keep: (row: Row) => boolean): string {
+  return rows
+    .filter((row) => row.inTheWay && keep(row))
+    .map((row) => row.title)
+    .join('\n');
+}
+
+/**
+ * Why `⏎` in the panel can't merge now, or nothing when it can: a dimmed control's reason, in a
+ * few words. Blocked, it's the reasons' titles, a line each, which the panel lists above it.
+ */
+export function cantMerge(
+  state: MergeState,
+  number: number,
+  who: Who = SOMEONE,
+): string | undefined {
   const { action } = state;
   if (action.kind === 'notPossible') {
     switch (action.reason) {
       case 'merged':
-        return `#${number} is merged.`;
+        return `#${number} is already merged`;
       case 'closed':
-        return `#${number} is closed.`;
+        return `#${number} is closed`;
       case 'queued':
-        return `#${number} is in the merge queue already.`;
-      case 'blocked': {
-        const why = inTheWay(state.blockers) || 'GitHub says no';
-        return `#${number} can’t merge yet: ${why.charAt(0).toLowerCase()}${why.slice(1)}.`;
-      }
+        return `#${number} is already in the merge queue`;
+      case 'blocked':
+        return titlesOf(rowsOf(state, undefined, who), () => true) || 'Blocked by GitHub';
       case 'noPermission':
-        return `GitHub doesn’t let this account merge into ${state.base}.`;
+        return `${who.login} can’t merge into ${state.base}`;
       case 'noMethod':
-        return 'The repository allows no merge method.';
+        return `${who.repo} allows no merge method`;
       default:
         action.reason satisfies never;
-        return 'Lo can’t merge it now.';
+        return 'Blocked by GitHub';
     }
   }
-  return state.off === null ? undefined : offWords(state.off);
+  if (state.incomplete === 'checksCutShort') return `#${number} has over 1,000 checks`;
+  return state.off === null ? undefined : offWords(state.off, who);
 }
 
 /**
  * The dialog's title, the same from the check until the merge is done: "Merge #4821", "Add #4821
- * to merge queue", "Turn on auto-merge", "Merge #4821 without the rules", and for a stack's
- * `layers`, "Merge 3 layers".
+ * to merge queue", "Turn on auto-merge", "Bypass rules and merge", and for a stack's `layers`,
+ * "Merge 3 layers".
  */
 export function mergeTitle(kind: PlanKind, number: number, layers: number): string {
   const what = layers > 1 ? `${layers} layers` : `#${number}`;
@@ -1009,7 +953,7 @@ export function mergeTitle(kind: PlanKind, number: number, layers: number): stri
     case 'whenReady':
       return 'Turn on auto-merge';
     case 'override':
-      return `Merge #${number} without the rules`;
+      return 'Bypass rules and merge';
     default:
       kind satisfies never;
       return `Merge ${what}`;
@@ -1023,24 +967,27 @@ export function confirmTitle(
   return mergeTitle(plan.kind, plan.number, layersOf(plan.together ?? null));
 }
 
-/** What the confirmation's main button says: "Squash and merge", or "Merge 3 layers" for a stack. */
+/**
+ * What the confirmation's main button says, the same whatever the method: "Merge #264", or "Merge
+ * 3 layers" for a stack. The title has the count for the merge queue.
+ */
 export function confirmLabel(
-  plan: Pick<MergePlan, 'kind' | 'method'> & { readonly together?: Together | null },
+  plan: Pick<MergePlan, 'kind' | 'number'> & { readonly together?: Together | null },
 ): string {
   const layers = layersOf(plan.together ?? null);
   switch (plan.kind) {
     case 'merge':
-      return layers > 1 ? `Merge ${layers} layers` : mergeLabel(plan.method ?? 'MERGE');
+      return layers > 1 ? `Merge ${layers} layers` : mergeLabel(plan.number);
     case 'enqueue':
-      return layers > 1 ? `Add ${layers} layers to the merge queue` : 'Add to merge queue';
+      return 'Add to merge queue';
     case 'autoMerge':
     case 'whenReady':
-      return 'Merge when ready';
+      return 'Turn on auto-merge';
     case 'override':
-      return 'Merge anyway';
+      return 'Bypass rules and merge';
     default:
       plan.kind satisfies never;
-      return 'Merge';
+      return mergeLabel(plan.number);
   }
 }
 
@@ -1064,22 +1011,6 @@ export function confirmWorking(plan: Pick<MergePlan, 'kind'>): string {
   }
 }
 
-/** A method as GitHub doing it: "squashes". */
-function merges(method: Method | null): string {
-  switch (method) {
-    case 'SQUASH':
-      return 'squashes';
-    case 'REBASE':
-      return 'rebases';
-    case 'MERGE':
-    case null:
-      return 'merges';
-    default:
-      method satisfies never;
-      return 'merges';
-  }
-}
-
 /**
  * What a confirmation of auto-merge or of a merge past the rules names, and the branch it merges
  * into: as the plan carries it, or a view's status says it.
@@ -1093,7 +1024,7 @@ export function saidOf(plan: MergePlan): Said | undefined {
 
 /**
  * What auto-merge waits on, from `state`'s reasons: "it’s approved and e2e (chromium) and
- * typecheck pass". A block Lo can't see all of waits on the base branch's rules.
+ * typecheck pass". A block not all of whose rules are shown waits on the base branch's rules.
  */
 export function waitsFor(state: Said): string {
   const parts: string[] = [];
@@ -1110,37 +1041,37 @@ export function waitsFor(state: Said): string {
   ];
   if (checks.length > 0) parts.push(`${listed(checks)} ${checks.length === 1 ? 'passes' : 'pass'}`);
   if (state.blockers.some((blocker) => blocker.kind === 'checkingMergeability')) {
-    parts.push('GitHub finds it merges cleanly');
+    parts.push('it has no conflicts');
   }
   if (
     state.partial ||
     state.blockers.some((blocker) => blocker.kind === 'rule' || blocker.kind === 'unexplained')
   ) {
-    parts.push(`${state.base}’s other rules are met`);
+    parts.push(`the other rules for ${state.base} are met`);
   }
   return parts.length > 0 ? listed(parts) : 'nothing blocks it';
 }
 
 /**
- * What turning auto-merge on does, as its confirmation says: "GitHub squashes #4821 into main once
- * e2e (chromium) and typecheck pass.", or on a branch with a merge queue, "GitHub adds #4821 to the
- * merge queue for main once ci passes."
+ * What turning auto-merge on does, as its confirmation says: "GitHub merges #4821 into main once
+ * e2e (chromium) and typecheck pass.", or on a branch with a merge queue, "#4821 joins the merge
+ * queue for main once ci passes."
  */
 export function onceLine(plan: MergePlan): string {
   const said = saidOf(plan);
-  const once = said === undefined ? 'it’s ready' : waitsFor(said);
+  const once = said === undefined ? 'nothing blocks it' : waitsFor(said);
   return plan.kind === 'whenReady'
-    ? `GitHub adds #${plan.number} to the merge queue for ${plan.base} once ${once}.`
-    : `GitHub ${merges(plan.method)} #${plan.number} into ${plan.base} once ${once}.`;
+    ? `#${plan.number} joins the merge queue for ${plan.base} once ${once}.`
+    : `GitHub merges #${plan.number} into ${plan.base} once ${once}.`;
 }
 
-/** What turning auto-merge on warns of a push before it merges, if anything. */
+/** What turning auto-merge on warns of a commit pushed before it merges, if anything. */
 export function pushWarning(state: Pick<Said, 'afterPush' | 'base'>): string | undefined {
   switch (state.afterPush) {
     case 'keepsApprovals':
-      return 'A push before it merges would merge with the approvals already given.';
+      return 'A commit pushed before it merges will merge with the same approvals.';
     case 'noReview':
-      return `${state.base} requires no review, so a push before it merges would merge too.`;
+      return 'A commit pushed before it merges will merge without review.';
     case 'newApproval':
       return undefined;
     default:
@@ -1150,7 +1081,7 @@ export function pushWarning(state: Pick<Said, 'afterPush' | 'base'>): string | u
 }
 
 /**
- * What a merge past the rules skips, a line each: "1 required check that failed: test (node 20)".
+ * What a merge past the rules bypasses, a line each: "1 required check failed: test (node 20)".
  * It merges straight in, so past a merge queue too.
  */
 export function skipsOf(state: Said): string[] {
@@ -1162,39 +1093,22 @@ export function skipsOf(state: Said): string[] {
       case 'check':
       case 'notReported': {
         const group = groupOf(blocker);
-        const names = (checks.get(group) ?? []).map((check) => check.name);
-        const count = names.length;
-        const which = count === 1 ? 'check' : 'checks';
-        const that = {
-          failed: 'that failed',
-          notReported: count === 1 ? 'that hasn’t reported' : 'that haven’t reported',
-          awaiting: 'waiting for a deployment’s approval',
-          running: 'still running',
-          yet: 'yet to report',
-        }[group];
-        lines.push(`${count} required ${which} ${that}: ${listed(names)}`);
+        const names = listed((checks.get(group) ?? []).map((check) => check.name));
+        lines.push(`${checksRow(group, checks.get(group) ?? []).title}: ${names}`);
         break;
       }
       case 'approvals': {
         const owners = listed(blocker.codeOwners.map(reviewerName));
-        // A code owner's approval GitHub asked nobody for, which the rules still require.
-        const rule = blocker.codeOwners.length === 0 && blocker.codeOwnerRule;
         if (blocker.more > 0 && blocker.codeOwners.length > 0) {
           lines.push(
-            `${counted(blocker.more, 'more approval')}, and a code owner review from ${owners}`,
+            `${counted(blocker.more, 'more approval')}, and 1 from a code owner: ${owners}`,
           );
         } else if (blocker.more > 0) {
-          lines.push(
-            rule
-              ? `${counted(blocker.more, 'more approval')}, maybe a code owner’s`
-              : counted(blocker.more, 'more approval'),
-          );
+          lines.push(counted(blocker.more, 'more approval'));
         } else if (blocker.codeOwners.length > 0) {
-          lines.push(`A code owner review from ${owners}`);
+          lines.push(`1 approval from a code owner: ${owners}`);
         } else {
-          lines.push(
-            rule ? 'A review GitHub requires, maybe a code owner’s' : 'A review GitHub requires',
-          );
+          lines.push('Review required');
         }
         break;
       }
@@ -1206,20 +1120,18 @@ export function skipsOf(state: Said): string[] {
         );
         break;
       case 'conversations':
-        lines.push(
-          `${blocker.cutShort ? 'At least ' : ''}${counted(blocker.unresolved, 'unresolved conversation')}`,
-        );
+        lines.push(threads(blocker));
         break;
       case 'outOfDate':
-        lines.push(`Being up to date with ${state.base}`);
+        lines.push(`Out of date with ${state.base}`);
         break;
       case 'rule':
         lines.push(blocker.description);
         break;
       case 'unexplained':
-        lines.push(`What GitHub blocks it for, which Lo can’t see`);
+        lines.push('Blocked by GitHub');
         break;
-      // Not rules: GitHub still checks these, and merges past no rule for them.
+      // Not rules: GitHub still checks these, and bypasses no rule for them.
       case 'merged':
       case 'closed':
       case 'draft':
@@ -1230,90 +1142,114 @@ export function skipsOf(state: Said): string[] {
         blocker satisfies never;
     }
   }
-  for (const rule of state.unchecked) lines.push(uncheckedTitle(rule));
-  if (state.partial) lines.push(`Any rule on ${state.base} Lo doesn’t see`);
+  for (const rule of state.unchecked) lines.push(uncheckedTitle(rule, state.base));
+  if (state.partial) lines.push('Some rules aren’t shown');
   return lines;
 }
 
 /** Why `a` in the panel can't turn auto-merge on or off now, or nothing when it can. */
-export function cantAutoMerge(state: MergeState, number: number): string | undefined {
+export function cantAutoMerge(
+  state: MergeState,
+  number: number,
+  who: Who = SOMEONE,
+): string | undefined {
   const { auto } = state;
   if (auto.kind === 'notPossible') {
     switch (auto.reason) {
       case 'merged':
-        return `#${number} is merged.`;
+        return `#${number} is already merged`;
       case 'closed':
-        return `#${number} is closed.`;
+        return `#${number} is closed`;
       case 'queued':
-        return `#${number} is in the merge queue already.`;
+        return `#${number} is already in the merge queue`;
       case 'ready':
-        return `Nothing blocks #${number} now, so it can merge as it is.`;
-      case 'blocked': {
-        const why = inTheWay(state.blockers);
-        return `Something waiting won’t fix is in #${number}’s way: ${why.charAt(0).toLowerCase()}${why.slice(1)}.`;
-      }
+        return `#${number} can merge now`;
+      case 'blocked':
+        // What waiting won't clear.
+        return (
+          titlesOf(rowsOf(state, undefined, who), (row) => row.kind === 'fail') ||
+          'Blocked by GitHub'
+        );
       case 'noPermission':
-        return `GitHub doesn’t let this account add to the merge queue for ${state.base}.`;
+        return `${who.login} can’t add to the merge queue`;
       case 'notAllowed':
-        return `GitHub doesn’t let this account turn on auto-merge for #${number}. The repository may not allow it: a maintainer turns it on in its settings.`;
+        return `${who.repo} doesn’t allow auto-merge, or ${who.login} can’t merge`;
       case 'cantTurnOff':
-        return `GitHub doesn’t let this account turn off auto-merge for #${number}.`;
+        return `${who.login} can’t turn off auto-merge`;
       case 'noMethod':
-        return 'The repository allows no merge method.';
+        return `${who.repo} allows no merge method`;
       default:
         auto.reason satisfies never;
-        return 'Lo can’t turn on auto-merge now.';
+        return 'Blocked by GitHub';
     }
   }
-  return state.off === null ? undefined : offWords(state.off);
+  return state.off === null ? undefined : offWords(state.off, who);
 }
 
 /** Why `⌥⏎` in the panel can't merge past the rules now, or nothing when it can. */
-export function cantOverride(state: MergeState, number: number): string | undefined {
+export function cantOverride(
+  state: MergeState,
+  number: number,
+  who: Who = SOMEONE,
+): string | undefined {
   const { override } = state;
   if (override.kind === 'notPossible') {
     switch (override.reason) {
       case 'merged':
-        return `#${number} is merged.`;
+        return `#${number} is already merged`;
       case 'closed':
-        return `#${number} is closed.`;
+        return `#${number} is closed`;
       case 'queued':
-        return `#${number} is in the merge queue already.`;
+        return `#${number} is already in the merge queue`;
       case 'nothingToSkip':
-        return `Nothing blocks #${number}, so there’s no rule to skip.`;
+        return `No rule blocks #${number}`;
       case 'noPermission':
-        return `GitHub doesn’t let this account merge past ${state.base}’s rules.`;
+        return `${who.login} can’t bypass rules for ${state.base}`;
       case 'draft':
-        return `#${number} is a draft, which GitHub doesn’t merge, past the rules or not.`;
+        return 'Draft pull requests can’t merge';
       case 'conflicts':
-        return `#${number} conflicts with ${state.base}, which no rule skips.`;
+        return `#${number} conflicts with ${state.base}`;
       case 'stackLayer':
-        return `#${number} sits on another layer of its GitHub stack, and GitHub merges past the rules only a stack’s bottom layer.`;
+        return 'Only a GitHub stack’s bottom layer can bypass rules';
       case 'noMethod':
-        return 'The repository allows no merge method.';
+        return `${who.repo} allows no merge method`;
       default:
         override.reason satisfies never;
-        return 'Lo can’t merge it past the rules now.';
+        return 'Blocked by GitHub';
     }
   }
-  return state.off === null ? undefined : offWords(state.off);
+  return state.off === null ? undefined : offWords(state.off, who);
 }
 
 /**
- * The merge panel's main button for a pull request that sits as `placement` says: "Merge 3 layers"
- * for a stack's layer, else what merging alone would say, `alone`.
+ * The merge panel's main button for a pull request that sits as `placement` says, which opens the
+ * confirmation: "Merge #264…", "Add to merge queue…", and for a stack's layer, "Merge 3 layers…"
+ * or "Add 3 layers to merge queue…".
+ */
+export function panelLabel(
+  placement: Placement | undefined,
+  queued: boolean,
+  number: number,
+): string {
+  const layers = placement?.kind === 'stack' ? placement.below.length + 1 : 1;
+  if (queued) return layers > 1 ? `Add ${layers} layers to merge queue…` : 'Add to merge queue…';
+  return layers > 1 ? `Merge ${layers} layers…` : `${mergeLabel(number)}…`;
+}
+
+/**
+ * What the dialog's main button says for a pull request that sits as `placement` says: "Merge 3
+ * layers" for a stack's layer, else what merging alone would say, `alone`.
  */
 export function placedLabel(placement: Placement | undefined, queued: boolean, alone: string) {
-  if (placement?.kind !== 'stack') return alone;
-  const layers = placement.below.length + 1;
-  return queued ? `Add ${layers} layers to the merge queue` : `Merge ${layers} layers`;
+  if (placement?.kind !== 'stack' || queued) return alone;
+  return `Merge ${placement.below.length + 1} layers`;
 }
 
 /** Why `⏎` in the merge panel doesn't merge where the pull request sits, if it doesn't. */
 export function placedWhy(placement: Placement | undefined): string | undefined {
   switch (placement?.kind) {
     case 'convert':
-      return `${placement.offer} Make this a GitHub stack, then merge it.`;
+      return 'Convert to GitHub stack first';
     case 'refused':
       return placement.why;
     case undefined:
@@ -1327,42 +1263,59 @@ export function placedWhy(placement: Placement | undefined): string | undefined 
   }
 }
 
+/** A step of a chain's merge, in words. */
+export interface ChainStep {
+  readonly key: string;
+  readonly title: string;
+  /** The branch the title names, which it draws as a branch. */
+  readonly branch: string;
+  readonly detail: string | undefined;
+}
+
 /**
- * What a chain's confirmation says of its base branch moves, each on its own line: "Move #4818
- * onto main", then the merge, then "Move #4819 onto main", each layer on it marked "needs rebase"
- * when the merge leaves its commits out of the base, as a squash or a rebase does, or "may need a
- * rebase" into a merge queue whose method Lo can't read. After a merge commit, which lands them,
- * the layers on it it doesn't move aren't listed.
+ * What a chain's confirmation says of its base branch moves, each a step: "Move #4818 onto main.",
+ * then the merge, then "Move #4819 onto main.", each layer on it marked "Needs a rebase." when the
+ * merge leaves its commits out of the base, as a squash or a rebase does; nothing where the method
+ * isn't known, as into a merge queue whose method Lo can't read. After a merge commit, which lands
+ * them, the layers on it it doesn't move aren't listed.
  */
 export function chainSteps(
   plan: Pick<MergePlan, 'number' | 'base' | 'method'>,
   together: Extract<Together, { kind: 'chain' }>,
-): { readonly key: string; readonly title: string; readonly detail: string }[] {
-  const steps = [];
-  const rebase = plan.method === null ? 'may need a rebase' : 'needs rebase';
+): ChainStep[] {
+  const steps: ChainStep[] = [];
+  const known = plan.method !== null;
   const needsRebase = plan.method === 'MERGE' ? [] : together.needsRebase;
   if (together.before) {
     steps.push({
       key: 'before',
-      title: `Move #${together.before.pr} onto ${together.before.to}`,
-      detail: `From ${together.before.from}, so it merges under ${together.before.to}’s rules`,
+      title: `Move #${together.before.pr} onto ${together.before.to}.`,
+      branch: together.before.to,
+      detail: `From ${together.before.from}.`,
     });
   }
-  steps.push({ key: 'merge', title: `Merge #${plan.number} into ${plan.base}`, detail: 'Alone' });
+  steps.push({
+    key: 'merge',
+    title: `Merge #${plan.number} into ${plan.base}.`,
+    branch: plan.base,
+    detail: undefined,
+  });
   for (const move of together.after) {
-    const rebased = needsRebase.includes(move.pr);
+    const rebased = known && needsRebase.includes(move.pr);
     steps.push({
       key: `after-${move.pr}`,
-      title: `Move #${move.pr} onto ${move.to}`,
-      detail: rebased ? `From ${move.from} · ${rebase}` : `From ${move.from}`,
+      title: `Move #${move.pr} onto ${move.to}.`,
+      branch: move.to,
+      detail: rebased ? `From ${move.from}. Needs a rebase.` : `From ${move.from}.`,
     });
   }
   for (const pr of needsRebase) {
     if (together.after.some((move) => move.pr === pr)) continue;
     steps.push({
       key: `rebase-${pr}`,
-      title: `#${pr} stays on ${plan.base}`,
-      detail: capitalized(rebase),
+      title: `#${pr} stays on ${plan.base}.`,
+      branch: plan.base,
+      detail: known ? 'Needs a rebase.' : undefined,
     });
   }
   return steps;
@@ -1409,45 +1362,31 @@ export function layerLine(layer: Pick<StackLayer, 'review' | 'checks'>): string 
   return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(' · ');
 }
 
-/** How long ago `at` was, for a merge in progress: "40 s ago", or as {@link ago} says it. */
-export function secondsAgo(at: number, now: number): string {
-  const seconds = Math.floor(Math.max(0, now - at) / 1000);
-  return seconds < 60 ? `${seconds} s ago` : ago(at, now);
-}
-
-/** What a queue entry's confirmation says of the method: the queue's settings choose it. */
+/** What stands where the method control would for a merge queue: its settings choose it. */
 export function queueLine(method: Method | null): string {
-  const said = 'The queue’s settings choose the method and the message';
-  return method === null ? `${said}.` : `${said}: ${methodLabel(method).toLowerCase()}.`;
-}
-
-/** What a merge that went says while GitHub runs it. */
-export function pendingLine(job: Pick<JobView, 'kind'>): string {
-  const doing =
-    job.kind === 'enqueue' ? 'GitHub is adding it to the merge queue.' : 'GitHub is merging it.';
-  return `${doing} You can close this; the tab shows how it ends.`;
+  return method === null
+    ? 'Method set by the merge queue'
+    : `${methodLabel(method)}, set by the merge queue`;
 }
 
 /**
- * What the toast says once a merge is done: "Merged #4821 into main", "Merged 3 layers into main",
- * or, for a chain once it has moved the layers on it, "Merged #2260, one layer at a time". Nothing
+ * What a merge's result says once it's done, in its dialog or its toast: "Merged #4821", "Merged 3
+ * layers", "Added #4821 to merge queue". For a chain, once it has moved the layers on it. Nothing
  * before then.
  */
 export function doneLine(job: JobView): string | undefined {
   const { together } = job;
   if (together?.kind === 'chain') {
-    return together.phase === 'done' ? `Merged #${job.number}, one layer at a time` : undefined;
+    return together.phase === 'done' ? `Merged #${job.number}` : undefined;
   }
   const what = together?.kind === 'stack' ? `${together.layers.length} layers` : `#${job.number}`;
   switch (job.state.kind) {
     case 'merged':
-      return `Merged ${what} into ${job.base}`;
+      return `Merged ${what}`;
     case 'enqueued':
-      return `Added ${what} to the merge queue for ${job.base}`;
+      return `Added ${what} to merge queue`;
     case 'autoMergeOn':
-      return job.kind === 'whenReady'
-        ? `#${job.number} joins the merge queue for ${job.base} once it’s ready`
-        : `Turned on auto-merge for #${job.number}`;
+      return `Turned on auto-merge for #${job.number}`;
     case 'autoMergeOff':
       return `Turned off auto-merge for #${job.number}`;
     case 'sending':
@@ -1462,43 +1401,35 @@ export function doneLine(job: JobView): string | undefined {
 }
 
 /**
- * What follows {@link doneLine} in its toast: for a chain, where the layers on it went, "#2266 now
- * points at main and needs a rebase."
- */
-export function doneDetail(job: JobView): string {
-  return job.together?.kind === 'chain' ? (job.together.text ?? '') : '';
-}
-
-/**
- * What a merge that needs the reader says, first: it was refused, or Lo can't tell how it ended.
- * Nothing for one that doesn't.
+ * What a merge that needs the reader says, as the title of what went wrong: it was refused, or its
+ * end isn't confirmed. Nothing for one that doesn't.
  */
 export function outcomeTitle(job: JobView): string | undefined {
   const { together } = job;
   if (together?.kind === 'chain' && together.phase === 'stopped') {
     if (job.state.kind === 'merged' || job.state.kind === 'enqueued') {
-      return `Lo stopped moving the layers on #${job.number}.`;
+      return `Couldn’t move the layers above #${job.number}`;
     }
   }
   if (together?.kind === 'stack' && job.state.kind === 'refused' && job.kind === 'merge') {
     const { landed } = together;
-    if (landed === null) return 'Lo can’t tell which layers merged.';
-    return landed.length > 0 ? `Merged ${numbers(landed)} only.` : 'Nothing merged.';
+    if (landed === null) return 'Merge not confirmed';
+    return landed.length > 0
+      ? `Merged ${numbers(landed)} only`
+      : `Couldn’t merge ${together.layers.length} layers`;
   }
   const auto = job.kind === 'autoMerge' || job.kind === 'whenReady';
   switch (job.state.kind) {
     case 'refused':
-      if (auto) return `Couldn’t turn on auto-merge for #${job.number}.`;
-      if (job.kind === 'autoMergeOff') return `Couldn’t turn off auto-merge for #${job.number}.`;
+      if (auto) return 'Couldn’t turn on auto-merge';
+      if (job.kind === 'autoMergeOff') return 'Couldn’t turn off auto-merge';
       return job.kind === 'enqueue'
-        ? `Couldn’t add #${job.number} to the merge queue.`
-        : `Couldn’t merge #${job.number}.`;
+        ? `Couldn’t add #${job.number} to the merge queue`
+        : `Couldn’t merge #${job.number}`;
     case 'unknown':
-      if (auto) return `Lo can’t tell whether auto-merge is on for #${job.number}.`;
-      if (job.kind === 'autoMergeOff') {
-        return `Lo can’t tell whether auto-merge is off for #${job.number}.`;
-      }
-      return `Lo can’t tell whether #${job.number} merged.`;
+      return auto || job.kind === 'autoMergeOff'
+        ? 'Auto-merge not confirmed'
+        : 'Merge not confirmed';
     case 'sending':
     case 'pending':
     case 'merged':
@@ -1512,45 +1443,33 @@ export function outcomeTitle(job: JobView): string | undefined {
   }
 }
 
-/** What follows {@link outcomeTitle}: why, in the core's sentences, and what GitHub showed since. */
+/** The reason under {@link outcomeTitle}, in the core's words, and what GitHub showed since. */
 export function outcomeDetail(job: JobView): string {
   const said: string[] = [];
-  if (job.already) {
-    said.push('GitHub was already merging it, from Lo or elsewhere, so Lo followed that merge.');
-  }
   if (job.state.kind === 'refused') said.push(job.state.refusal.text);
   if (job.state.kind === 'unknown') {
     said.push(job.state.text);
-    if (job.state.shows === 'open') said.push('GitHub shows it open.');
+    if (job.state.shows === 'open') said.push(`#${job.number} is still open.`);
   }
   const { together } = job;
-  if (together?.kind === 'stack' && job.state.kind === 'refused' && job.kind === 'merge') {
-    const { landed } = together;
-    said.push(
-      landed === null
-        ? 'Lo couldn’t read which layers went in.'
-        : landed.length === 0
-          ? 'No layer went in.'
-          : `${numbers(landed)} went in all the same, and the layers above ${landed.length === 1 ? 'it' : 'them'} didn’t.`,
-    );
-  }
   if (together?.kind === 'chain' && together.text !== null && together.phase === 'stopped') {
     if (!said.includes(together.text)) said.push(together.text);
   }
-  return said.join(' ');
+  return said.filter((part) => part !== '').join(' ');
 }
 
-/** How a stack's merge goes, as its dialog says it: "Merging 3 layers into main". */
-export function stackLine(job: JobView, progress: Extract<Progress, { kind: 'stack' }>): string {
-  const layers = `${progress.layers.length} layers`;
-  return job.kind === 'enqueue'
-    ? `Adding ${layers} to the merge queue for ${job.base}`
-    : `Merging ${layers} into ${job.base}`;
+/** Why a merge of a revision that's no longer the pull request's head didn't go. */
+export const OUT_OF_DATE = 'This revision is out of date.';
+
+/** What a refusal has behind Details: GitHub's own text, or the rules it named, a line each. */
+export function detailsOf(refusal: Refusal): string | undefined {
+  if (refusal.details !== undefined && refusal.details !== '') return refusal.details;
+  return refusal.rules.length > 0 ? refusal.rules.join('\n') : undefined;
 }
 
-/** What a pending merge's trouble says: why Lo's last question got no answer. */
-export function troubleLine(trouble: string): string {
-  return `Lo couldn’t ask GitHub how it’s going: ${trouble} Lo asks again.`;
+/** The reason a merge still at work says when Lo's last question about it got no answer. */
+export function troubleLine(): string {
+  return 'GitHub didn’t respond.';
 }
 
 /**

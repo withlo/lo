@@ -76,6 +76,7 @@ export default defineFeature(contract, {
       acts?.cancel(key);
     },
     autoMergeOff: ({ id, number }) => acting().autoMergeOff(id, number),
+    look: ({ id }) => started().look(id),
   },
   start(context) {
     const access = context.use(github);
@@ -104,6 +105,7 @@ export default defineFeature(contract, {
           : poller.readOnce((client) => queueWaiting(client, repo, branch)));
       },
       log: (line) => console.error(`queue: ${line}`),
+      sent: (key) => context.publish('sent', { key }),
     });
     shown.start();
   },
