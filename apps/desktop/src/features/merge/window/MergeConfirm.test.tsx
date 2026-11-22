@@ -931,6 +931,40 @@ it('lists a chain’s merge a layer at a time, then each move as it goes, and sa
   expect(notices()).toEqual([]);
 });
 
+it('lets a chain’s merge whose answer was lost be left while Lo reads how it went, or checked now', async () => {
+  const plan = planOf({ key: '00000000-0000-4000-8000-000000000005', together: CHAIN });
+  draw(<MergeConfirm />);
+  act(() => merging.setState({ dialog: sentOf(plan) }));
+  act(() =>
+    heardJob({
+      ...jobOf(plan, {
+        kind: 'unknown',
+        why: 'noAnswer',
+        text: 'GitHub didn’t respond.',
+        askAgain: false,
+        shows: null,
+      }),
+      together: chainProgress('waiting', 'todo'),
+    }),
+  );
+  await until(() => problem() !== undefined);
+  expect(problem()).toEqual({
+    title: 'Merge not confirmed',
+    reason:
+      'GitHub didn’t respond. Lo keeps checking, and moves the layers above once it has merged.',
+  });
+  expect(foot()).toEqual(['Close', 'Check again']);
+  press('Check again');
+  expect(working()).toBe('Checking…');
+  await later();
+  expect(bridge.calls.find(([channel]) => channel === 'merge.askAgain')?.[1]).toEqual({
+    key: plan.key,
+  });
+  // Nothing it waits on keeps it open.
+  press('Close');
+  expect(merging.getState().dialog).toBeUndefined();
+});
+
 it('leaves a chain’s run that stopped after its merge to the tab’s banner, not a toast, with the dialog closed', () => {
   const plan = planOf({ key: '00000000-0000-4000-8000-000000000002', together: CHAIN });
   act(() =>

@@ -35,6 +35,11 @@ export interface DialogAction {
   onRun: () => void;
   /** The key that runs it, as the system shows it: `['⏎']`. */
   keys?: readonly string[] | undefined;
+  /**
+   * That key as `aria-keyshortcuts` says it, `Meta+Enter` (`ariaShortcut` gives it), which a
+   * screen reader hears in place of the key caps.
+   */
+  shortcut?: string | undefined;
   /** `danger` for what destroys or refuses. */
   tone?: 'primary' | 'danger' | undefined;
   /**
@@ -109,7 +114,7 @@ export interface DialogProps {
   /**
    * Why it can't be left while its `state` is `working`, in a few words with no full stop: "The
    * account check can’t be stopped". It's the tooltip of Cancel, which is dimmed then. "Wait for
-   * it to finish" without one.
+   * GitHub to answer" without one, the same in every dialog that sends something.
    */
   stays?: string | undefined;
   /**
@@ -186,6 +191,7 @@ export function Dialog(props: DialogProps) {
     },
     [mainRef],
   );
+  const leave = useRef<HTMLButtonElement>(null);
   const body = useRef<HTMLDivElement>(null);
   const focus = initialFocus ?? (action !== undefined && foot === undefined ? main : undefined);
   // What `focus` names has focus as the dialog mounts, not a frame on, and without scrolling its
@@ -201,15 +207,22 @@ export function Dialog(props: DialogProps) {
     [grow, takeFocus, focus],
   );
   // A control that had focus can go with a step, as a Copy button does once there's nothing left
-  // to copy. The main button takes focus then, before the browser drops it on the panel: it's
+  // to copy, or the main button after a failure with nothing to do again. The main button takes
+  // focus then, or else the button that leaves, before the browser drops it on the panel: it's
   // what `⏎` presses next.
   useLayoutEffect(() => {
-    const active = panel.current?.ownerDocument.activeElement;
-    if (!(active instanceof HTMLElement) || active === panel.current) return;
-    if (panel.current?.contains(active) !== true || !main.current) return;
-    const seen = active.checkVisibility?.({ visibilityProperty: true }) ?? true;
-    if (!seen) main.current.focus({ preventScroll: true });
-  }, [state]);
+    const at = panel.current;
+    const to = main.current ?? leave.current;
+    if (!open || !at || !to) return;
+    const active = at.ownerDocument.activeElement;
+    // Gone from the page with what had it, focus is on the page's body.
+    const gone = active === null || active === at || active === at.ownerDocument.body;
+    const hidden =
+      active instanceof HTMLElement &&
+      at.contains(active) &&
+      !(active.checkVisibility?.({ visibilityProperty: true }) ?? true);
+    if (gone || hidden) to.focus({ preventScroll: true });
+  }, [state, open]);
   return (
     <Base.Root
       open={open}
@@ -269,9 +282,10 @@ export function Dialog(props: DialogProps) {
                   {other && <Button onClick={other.onRun}>{other.label}</Button>}
                   {state !== 'done' && (
                     <Button
+                      ref={leave}
                       // Dimmed while it works, with why as its tooltip.
                       disabled={state === 'working'}
-                      hint={state === 'working' ? (stays ?? 'Wait for it to finish') : null}
+                      hint={state === 'working' ? (stays ?? WAIT) : null}
                       onClick={() => onOpenChange(false)}
                     >
                       {state === 'failed' ? 'Close' : 'Cancel'}
@@ -325,6 +339,7 @@ function MainButton({
       widest={action.widest}
       aria-disabled={off === undefined ? undefined : true}
       aria-description={off}
+      aria-keyshortcuts={action.shortcut}
       hint={off ?? null}
       // Focus is put here as the dialog opens, and the reason isn't shown for that.
       hintOn="hover"
@@ -351,6 +366,9 @@ function Foot({ children }: { children: ReactNode }) {
     </div>
   );
 }
+
+/** Cancel's tooltip while what a dialog sent waits, unless it says why it can't be left. */
+const WAIT = 'Wait for GitHub to answer';
 
 /** Tells Base UI to focus nothing: the dialog has focused what it means to. */
 const skip = () => false;

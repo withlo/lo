@@ -9,7 +9,7 @@
 // nothing more.
 
 import { Button, Choices, Dialog, LogoMotion, Problem, Spinner } from '@lo/ui';
-import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
+import { ariaShortcut, keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 
@@ -38,6 +38,11 @@ import { Summary } from './Summary.tsx';
 function labels(keys: string): string[] {
   const { system } = registry();
   return keyLabels(systemStrokes(parseKeys(keys), system), system);
+}
+
+/** A key written in Lo's notation as `aria-keyshortcuts` says it, for a screen reader. */
+function shortcut(keys: string): string | undefined {
+  return ariaShortcut(systemStrokes(parseKeys(keys), registry().system));
 }
 
 /** How tall the account's avatar is drawn in the summary's head, in pixels: `Avatar`'s small. */
@@ -152,6 +157,7 @@ export function SubmitDialog() {
           working: step.primary.working,
           onRun: runPrimary,
           keys,
+          shortcut: shortcut('cmd+enter'),
           disabled: off,
           again: step.state === 'failed' ? step.primary.label : undefined,
           busy: step.primary.busy,

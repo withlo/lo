@@ -19,7 +19,7 @@ import {
   type DialogState,
   type FactItem,
 } from '@lo/ui';
-import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
+import { ariaShortcut, keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
 import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
@@ -47,6 +47,11 @@ import {
 function labels(keys: string): string[] {
   const { system } = registry();
   return keyLabels(systemStrokes(parseKeys(keys), system), system);
+}
+
+/** A key written in Lo's notation as `aria-keyshortcuts` says it, for a screen reader. */
+function shortcut(keys: string): string | undefined {
+  return ariaShortcut(systemStrokes(parseKeys(keys), registry().system));
 }
 
 /** What the main button says while the change is checked, before it's sent. */
@@ -269,12 +274,12 @@ export function QueueConfirm() {
           // After a failure, what it does then, if anything: else Close alone.
           again: shown.state === 'failed' ? (shown.primary?.label ?? null) : undefined,
           keys: labels('enter'),
+          shortcut: shortcut('enter'),
           // As wide while it works as at rest.
           widest: working.length > CHECKING.length ? working : CHECKING,
         }
       }
       leaveKeys={labels('esc')}
-      stays="Wait for GitHub to answer"
       mainRef={button}
       initialFocus={button}
       onKeyDown={onKeyDown}

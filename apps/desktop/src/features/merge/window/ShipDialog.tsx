@@ -9,7 +9,7 @@
 // the plan shows.
 
 import { Callout, Dialog, LogoMotion, Problem, Steps, type DialogState } from '@lo/ui';
-import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
+import { ariaShortcut, keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
 import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
@@ -48,6 +48,11 @@ import { detailsOf } from './words.ts';
 function labels(keys: string): string[] {
   const { system } = registry();
   return keyLabels(systemStrokes(parseKeys(keys), system), system);
+}
+
+/** A key written in Lo's notation as `aria-keyshortcuts` says it, for a screen reader. */
+function shortcut(keys: string): string | undefined {
+  return ariaShortcut(systemStrokes(parseKeys(keys), registry().system));
 }
 
 /** The dialog's main button, as it is now. */
@@ -407,9 +412,9 @@ export function ShipDialog() {
         working: primary?.working,
         widest: widestOf([...WORDS, primary?.label]),
         keys: labels('enter'),
+        shortcut: shortcut('enter'),
       }}
       leaveKeys={labels('esc')}
-      stays="Wait for it to finish"
       mainRef={button}
       initialFocus={button}
       onKeyDown={onKeyDown}

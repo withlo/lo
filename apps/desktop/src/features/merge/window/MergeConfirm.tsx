@@ -31,7 +31,7 @@ import {
   type StepItem,
   type StepState,
 } from '@lo/ui';
-import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
+import { ariaShortcut, keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
 import { useEffect, useRef, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
 import { useStore } from 'zustand';
 
@@ -82,6 +82,11 @@ import {
 function labels(keys: string): string[] {
   const { system } = registry();
   return keyLabels(systemStrokes(parseKeys(keys), system), system);
+}
+
+/** A key written in Lo's notation as `aria-keyshortcuts` says it, for a screen reader. */
+function shortcut(keys: string): string | undefined {
+  return ariaShortcut(systemStrokes(parseKeys(keys), registry().system));
 }
 
 /** The dialog's main button, as it is now. */
@@ -545,6 +550,9 @@ function troubleOf(plan: MergePlan, refusal: Refusal, title: string, why: string
   };
 }
 
+/** What a chain whose merge isn't confirmed does while Lo is open, as it reads the merge. */
+const CHAIN_CHECKS = 'Lo keeps checking, and moves the layers above once it has merged.';
+
 /** "Check again" for the merge named `key`, busy while it looks: it only looks. */
 function checkAgain(key: string, run: () => void): Primary {
   return { label: 'Check again', run, busy: checking(key), working: CHECKING };
@@ -678,13 +686,15 @@ function sentShown(plan: MergePlan, job: JobView | undefined, note: string | und
         troubleOf(plan, state.refusal, outcomeTitle(job) ?? failedTitle(plan), reason),
         againAfter(plan, state.refusal),
       );
-    case 'unknown':
-      // A chain waits to hear how its merge went.
-      if (chain?.phase === 'waiting') return working;
+    case 'unknown': {
+      // A chain reads its merge for a while to hear how it went: the dialog can be left
+      // meanwhile, or check now.
+      const said = chain?.phase === 'waiting' ? [reason, CHAIN_CHECKS].join(' ').trim() : reason;
       return failed(
-        { title: outcomeTitle(job) ?? 'Merge not confirmed', reason: reason || undefined },
+        { title: outcomeTitle(job) ?? 'Merge not confirmed', reason: said || undefined },
         checkAgain(job.key, () => void askAgain(job.key)),
       );
+    }
     default:
       state satisfies never;
       return working;
@@ -915,10 +925,10 @@ export function MergeConfirm() {
         widest,
         disabled: primary?.off,
         keys: labels('enter'),
+        shortcut: shortcut('enter'),
         tone: kind === 'override' ? 'danger' : 'primary',
       }}
       leaveKeys={labels('esc')}
-      stays="Wait for GitHub to answer"
       other={shown?.next && { label: shown.next.label, onRun: shown.next.run }}
       mainRef={button}
       initialFocus={typing ? field : button}
@@ -956,9 +966,10 @@ function useReplan(dialog: MergeDialog | undefined): void {
   const shape = useTabState(shapes, waiting ?? '');
   useEffect(() => {
     if (waiting === undefined) return undefined;
+    // Each answer that it's still finding out is a dialog of its own, so the wait starts again.
     const timer = setTimeout(planAgain, REPLAN_AFTER);
     return () => clearTimeout(timer);
-  }, [waiting]);
+  }, [waiting, dialog]);
   const last = useRef(shape);
   useEffect(() => {
     if (waiting !== undefined && last.current !== shape) planAgain();
