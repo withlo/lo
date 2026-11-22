@@ -150,9 +150,21 @@ class Attaching {
     for (const listener of this.#listeners) listener();
   }
 
-  /** Says `text` of the files it didn't attach, under `title` where it names one. */
-  say(key: string, text: string, tone: 'info' | 'warning' = 'warning', title?: string): void {
-    this.said = [...this.said.filter((each) => each.key !== key), { key, tone, title, text }];
+  /**
+   * Says `text` of the files it didn't attach, under `title` where it names one, and with `attach`,
+   * offers "Attach files…".
+   */
+  say(
+    key: string,
+    text: string,
+    tone: BoxNote['tone'] = 'warning',
+    title?: string,
+    attach = false,
+  ): void {
+    this.said = [
+      ...this.said.filter((each) => each.key !== key),
+      { key, tone, title, text, attach },
+    ];
     this.changed();
   }
 
@@ -271,15 +283,18 @@ export function clearStranded(box: Attachable): void {
     const file = attaching?.files.find((each) => each.token === token);
     const markdown = file?.markdown;
     if (file && markdown !== undefined) {
-      file.unplaced = !edit(box, (text) => inPlaceOf(text, file.placeholder, markdown));
+      // Undo brought its placeholder back: its file goes back in, in no step of the history, or
+      // undo would stop here for good.
+      file.unplaced = !edit(box, (text) => inPlaceOf(text, file.placeholder, markdown), false);
       if (!file.unplaced) continue;
     }
-    edit(box, (text) => withoutLeftover(text, token));
+    edit(box, (text) => withoutLeftover(text, token), false);
     if (markdown === undefined && name !== undefined) lost.add(name);
   }
   attaching?.changed();
   for (const name of lost) {
-    attachingOf(box).say(`upload-lost-${name}`, 'Attach it again.', 'warning', couldntAttach(name));
+    // Nothing more is known of why: it offers the way to attach it again.
+    attachingOf(box).say(`upload-lost-${name}`, '', 'danger', couldntAttach(name), true);
   }
 }
 
@@ -441,14 +456,19 @@ export function inPlaceOf(
 
 /**
  * Changes `box`'s text as `change` works out from it: in its editor, or else in its draft. Says
- * whether there was anything to change.
+ * whether there was anything to change. Without `record`, it's no step of the editor's undo
+ * history.
  */
-function edit(box: Attachable, change: (text: string) => TextChange | undefined): boolean {
+function edit(
+  box: Attachable,
+  change: (text: string) => TextChange | undefined,
+  record = true,
+): boolean {
   const { composer } = box;
   const text = composer?.text ?? box.state.text;
   const made = change(text);
   if (!made) return false;
-  if (composer) composer.replace(made.from, made.to, made.insert);
+  if (composer) composer.replace(made.from, made.to, made.insert, record);
   else box.rewrite(text.slice(0, made.from) + made.insert + text.slice(made.to));
   return true;
 }
@@ -493,23 +513,32 @@ export function metadataNote(name: string, metadata: Metadata): string | undefin
   }
 }
 
-/** What the box says of file `name`, which main didn't upload, refused before anything was sent. */
-export function refusedText(name: string, refusal: UploadRefusal): string {
+/**
+ * What the box says of file `name`, which main didn't upload, refused before anything was sent:
+ * why, under a title where it says what failed.
+ */
+export function refusedNote(
+  name: string,
+  refusal: UploadRefusal,
+): { title?: string; text: string } {
   switch (refusal.kind) {
     case 'file':
-      return `Lo didn’t attach ${name}: ${refusal.why}.`;
+      return { text: `Lo didn’t attach ${name}: ${refusal.why}.` };
     case 'cantWrite':
     case 'needsGh':
-      return offNote(refusal).text;
+      return { text: offNote(refusal).text };
     case 'paused':
-      return `Lo didn’t attach ${name}: GitHub asked Lo to hold off until ${clockOf(refusal.until)}. Attach it again then.`;
+      return {
+        title: couldntAttach(name),
+        text: `GitHub’s rate limit resets at ${clockOf(refusal.until)}.`,
+      };
     case 'signIn':
-      return 'Sign in to attach files.';
+      return { text: 'Sign in to attach files.' };
     case 'run':
-      return 'Comment in a layer';
+      return { text: 'Comment in a layer' };
     default:
       refusal satisfies never;
-      return `Lo didn’t attach ${name}.`;
+      return { text: `Lo didn’t attach ${name}.` };
   }
 }
 
@@ -604,9 +633,14 @@ async function refuseUnread(attaching: Attaching, file: File): Promise<void> {
 async function attachOne(attaching: Attaching, file: File, attachment: Attachment): Promise<void> {
   const { box } = attaching;
   const { name } = attachment;
-  const failed = (text: string) => {
+  const failed = (text: string, title?: string) => {
     attaching.remove(attachment);
-    attaching.say(`upload-failed-${attachment.key}`, text);
+    attaching.say(
+      `upload-failed-${attachment.key}`,
+      text,
+      title === undefined ? 'warning' : 'danger',
+      title,
+    );
   };
   let prepared: Prepared;
   try {
@@ -687,7 +721,8 @@ async function attachOne(attaching: Attaching, file: File, attachment: Attachmen
         if (login !== undefined) setOff(box.view, login, refusal);
         return;
       }
-      failed(refusedText(name, refusal));
+      const { title, text } = refusedNote(name, refusal);
+      failed(text, title);
       return;
     }
     case 'cancelled':

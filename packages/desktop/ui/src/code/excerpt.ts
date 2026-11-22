@@ -68,7 +68,7 @@ import {
 } from './keys.ts';
 import { marking } from './marks.ts';
 import { type ThreadHost, Threads } from './threads.ts';
-import { type BoxHost, FileNoteWidget, ThreadSizes, ThreadWidget } from './widgets.ts';
+import { FileNoteWidget, ThreadSizes, ThreadWidget } from './widgets.ts';
 
 /** Opens an excerpt of `init`'s file in `parent`, which tells `on` what happens in it. */
 export function createExcerptView(
@@ -220,34 +220,6 @@ class NumberMarker extends GutterMarker {
   }
 }
 
-/** The room a box closed once its comment was sent keeps, as tall as the box was. */
-class Room implements BoxHost {
-  readonly dom: HTMLElement;
-  #height: number;
-
-  constructor(height: number) {
-    this.dom = document.createElement('div');
-    this.dom.className = 'lo-diffcomposer-room';
-    this.#height = height;
-    this.dom.style.height = `${height}px`;
-  }
-
-  attach(parent: HTMLElement): void {
-    parent.append(this.dom);
-  }
-
-  /**
-   * Gives `height` of itself to the thread right above it as it grows, or takes it back as it
-   * shrinks, so nothing below moves. Says whether it had that much.
-   */
-  give(height: number): boolean {
-    if (height > this.#height + 0.5) return false;
-    this.#height = Math.max(0, this.#height - height);
-    this.dom.style.height = `${this.#height}px`;
-    return true;
-  }
-}
-
 /** What may change now: what's off screen, or also what's on it that no scroll can take off it. */
 type Letting = 'off' | 'stuck' | 'all';
 
@@ -294,8 +266,12 @@ class Excerpt implements ExcerptView {
   #waiting: Map<number, ThreadView[]> | undefined;
   /** Threads that changed size on screen by themselves, held at the height they were drawn at. */
   readonly #held = new Set<ThreadHost>();
-  /** The rooms of boxes closed once their comments were sent, by the line they're under. */
-  readonly #rooms = new Map<number, Room>();
+  /**
+   * The boxes closed once their comments were sent, by the line they're under, each still drawn as
+   * it was, the comment it sent on it, as the room it took, until that comment's thread takes its
+   * place.
+   */
+  readonly #rooms = new Map<number, CommentBox>();
   /** Whether it's been on the page a frame: until then, what it's given is how it comes. */
   #drawn = false;
 
@@ -307,33 +283,40 @@ class Excerpt implements ExcerptView {
     // frame, which the editor measures. A change of size made now, as the page tells its observers
     // of sizes, would go untold to the editor's.
     // One on screen that changed by itself is held so until it's off screen, or the reader acts,
-    // unless a sent box's room is right after it, as when the reply sent there comes: then it takes
-    // the room, as far as there's enough.
+    // unless a sent box is still drawn right after it, as when the reply sent there comes: then it
+    // takes the box's place. So does a thread first drawn under a sent box's line: the comment is
+    // on screen in every frame, on the box and then in its thread, and what's under it moves once.
     this.#hosts = new Threads((entries) => {
       const changed = this.#hosts.resized(entries);
       if (changed.length === 0) return;
       const taking: ThreadHost[] = [];
-      const roomed: ThreadHost[] = [];
+      const landing = new Set<number>();
       for (const { host, fresh, reflowed } of changed) {
         host.hold();
+        const room = this.#roomAfter(host);
+        const line = fresh ? this.#lineUnder(host) : undefined;
+        if (line !== undefined && this.#rooms.has(line)) landing.add(line);
         if (!fresh && host.takeInput()) taking.push(host);
         else if (!fresh && !reflowed && this.#onScreen(host.dom)) {
-          if (this.#roomAfter(host)) roomed.push(host);
-          else this.#held.add(host);
+          if (room === undefined) this.#held.add(host);
+          else taking.push(host);
         } else taking.push(host);
+        if (!fresh && room !== undefined && !this.#held.has(host)) landing.add(room);
       }
-      if (taking.length === 0 && roomed.length === 0) return;
+      if (taking.length === 0) return;
       requestAnimationFrame(() => {
         for (const host of taking) if (!this.#held.has(host)) host.letGo();
-        for (const host of roomed) {
-          if (this.#held.has(host) || !host.held) continue;
-          const room = this.#roomAfter(host);
-          if (room?.give((host.height ?? 0) - (host.pinned ?? 0))) host.letGo();
-          else this.#held.add(host);
-        }
+        const gone = [...landing].flatMap((line) => this.#rooms.get(line) ?? []);
+        for (const line of landing) this.#rooms.delete(line);
+        if (gone.length > 0) this.#drawBlocks();
+        for (const box of gone) box.destroy();
         this.#view.requestMeasure();
       });
     });
+    this.#hosts.lands = (host) => {
+      const line = this.#lineUnder(host);
+      return line !== undefined && this.#rooms.has(line);
+    };
     this.#id = init.id;
     this.#side = init.range.side;
     this.#diff = init.diff;
@@ -478,7 +461,11 @@ class Excerpt implements ExcerptView {
     const next = this.#placed(threads);
     for (const placed of next.values()) for (const thread of placed) this.#hosts.take(thread);
     // Threads that would come, go or move on a line on screen wait for it to leave the screen.
-    const changes = changedLines(this.#threads, next);
+    // What comes under the line of a box, open or sent and still drawn, is what the reader sent:
+    // it comes now.
+    const changes = changedLines(this.#threads, next).filter(
+      (line) => !this.#boxes.has(line) && !this.#rooms.has(line),
+    );
     if (this.#drawn && changes.some((line) => this.#lineOnScreen(line))) {
       this.#waiting = next;
       this.#dropThreads();
@@ -570,10 +557,15 @@ class Excerpt implements ExcerptView {
         this.#closeBox(closed, 'escape');
         on.close(keep);
       },
-      close: (closed) => this.#closeBox(closed, 'sent'),
+      // Held, the box stays, and focus goes back to its line.
+      leave: (left) => {
+        if (left.dom.contains(document.activeElement)) this.#focusLine(line);
+      },
+      close: (closed, landed) => this.#closeBox(closed, landed ? 'landed' : 'sent'),
       dismiss: (closed) => this.#closeBox(closed, 'dismiss'),
     });
     // A box opened where one's room is kept takes its place.
+    this.#rooms.get(line)?.destroy();
     this.#rooms.delete(line);
     this.#boxes.set(line, box);
     // The lines `v` selected are the box's now.
@@ -603,25 +595,45 @@ class Excerpt implements ExcerptView {
 
   /**
    * Takes a box away: `Esc Esc`, the reader's, gives its line focus; once its comment was sent, or
-   * as its draft goes elsewhere, focus goes to its line only if it was in the box, and a box sent
-   * on screen leaves its room, which goes with what waits there.
+   * as its draft goes elsewhere, focus goes to its line only if it was in the box. A box sent on
+   * screen stays drawn as it is, as the room it took, until the thread that draws its comment takes
+   * its place, or it goes with what waits there. `landed`, that thread is drawn or about to be: the
+   * box goes with it if it's measured within two frames, and by itself then.
    */
-  #closeBox(box: CommentBox, how: 'escape' | 'sent' | 'dismiss'): void {
+  #closeBox(box: CommentBox, how: 'escape' | 'sent' | 'landed' | 'dismiss'): void {
     const found = [...this.#boxes].find(([, open]) => open === box);
     if (!found) return;
     const [line] = found;
     const focused = how === 'escape' || box.dom.contains(document.activeElement);
-    const height = box.dom.offsetHeight;
     this.#boxes.delete(line);
-    if (how === 'sent' && this.#drawn && this.#lineOnScreen(line)) {
-      this.#rooms.set(line, new Room(height));
+    const kept = (how === 'sent' || how === 'landed') && this.#drawn && this.#lineOnScreen(line);
+    if (kept) this.#rooms.set(line, box);
+    if (kept && how === 'landed') {
+      const go = (): void => {
+        if (this.#rooms.get(line) !== box) return;
+        this.#rooms.delete(line);
+        this.#drawBlocks();
+        box.destroy();
+      };
+      requestAnimationFrame(() => requestAnimationFrame(go));
     }
     this.#drawBlocks();
-    if (focused) {
-      this.#view.dispatch({ selection: { anchor: this.#view.state.doc.line(line).from } });
-      this.#view.focus();
+    if (focused) this.#focusLine(line);
+    if (!kept) box.destroy();
+  }
+
+  /** Gives focus to document line `line`, the cursor on it. */
+  #focusLine(line: number): void {
+    this.#view.dispatch({ selection: { anchor: this.#view.state.doc.line(line).from } });
+    this.#view.focus();
+  }
+
+  /** The document line thread `host` is drawn under. */
+  #lineUnder(host: ThreadHost): number | undefined {
+    for (const [line, threads] of this.#threads) {
+      if (threads.some((thread) => thread.id === host.id)) return line;
     }
-    box.destroy();
+    return undefined;
   }
 
   // Holding ---------------------------------------------------------------------------------
@@ -713,6 +725,7 @@ class Excerpt implements ExcerptView {
     const rooms = [...this.#rooms.keys()].filter((line) =>
       this.#mayGo(letting, this.#lineSpan(line)),
     );
+    const gone = rooms.flatMap((line) => this.#rooms.get(line) ?? []);
     for (const line of rooms) this.#rooms.delete(line);
     const next = this.#waiting;
     const changes = next ? changedLines(this.#threads, next) : [];
@@ -721,13 +734,14 @@ class Excerpt implements ExcerptView {
     } else if (rooms.length > 0) {
       this.#drawBlocks();
     }
+    for (const box of gone) box.destroy();
     if (held.length > 0) this.#view.requestMeasure();
   }
 
-  /** The room of a sent box right after thread `host`, the last under its line, if one's kept. */
-  #roomAfter(host: ThreadHost): Room | undefined {
+  /** The line of the sent box still drawn right after thread `host`, the last under its line. */
+  #roomAfter(host: ThreadHost): number | undefined {
     for (const [line, threads] of this.#threads) {
-      if (threads.at(-1)?.id === host.id) return this.#rooms.get(line);
+      if (threads.at(-1)?.id === host.id) return this.#rooms.has(line) ? line : undefined;
     }
     return undefined;
   }
@@ -866,6 +880,7 @@ class Excerpt implements ExcerptView {
       window.removeEventListener(type, this.#elsewhere, { capture: true });
     }
     this.#held.clear();
+    for (const box of this.#rooms.values()) box.destroy();
     this.#rooms.clear();
     for (const stop of this.#stops) stop();
     for (const box of this.#boxes.values()) box.destroy();
@@ -1007,7 +1022,11 @@ class Excerpt implements ExcerptView {
     const thread = this.#hosts.around(target);
     if (thread) {
       event.preventDefault();
-      this.#on.menu({ kind: 'thread', thread: thread.id }, event.clientX, event.clientY);
+      this.#on.menu(
+        { kind: 'thread', thread: thread.id, collapsed: !thread.open },
+        event.clientX,
+        event.clientY,
+      );
       return;
     }
     const pos = this.#view.posAtCoords({ x: event.clientX, y: event.clientY });

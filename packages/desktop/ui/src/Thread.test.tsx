@@ -83,8 +83,8 @@ describe('Thread', () => {
       expect(line?.textContent).toContain(part);
     }
     expect(line?.getAttribute('aria-expanded')).toBe('false');
-    // Only the line: none of the comments are drawn.
-    expect(host.querySelectorAll('button')).toHaveLength(1);
+    // Only the line, and the mouse's own way to open it: none of the comments are drawn.
+    expect(host.querySelectorAll('button:not([aria-hidden])')).toHaveLength(1);
     expect(host.querySelector('[data-comment]')).toBeNull();
     click(line!);
     expect(onToggle).toHaveBeenCalledOnce();
@@ -134,7 +134,7 @@ describe('Thread', () => {
 
   it('draws a sent comment as its card will, with what’s being done where its time will be', () => {
     const host = render(<SentPost author="tess-okafor" body={<p>On its way</p>} />);
-    const sent = host.querySelector('[role="status"]');
+    const sent = host.querySelector('[data-sent]');
     expect(sent?.textContent).toContain('tess-okafor (you)');
     expect(sent?.textContent).toContain('Sending…');
     expect(sent?.textContent).toContain('On its way');
@@ -203,8 +203,8 @@ describe('Thread', () => {
     expect(edits.map((each) => each.textContent)).toEqual(['Edit', 'Editi']);
     // Each also holds what it says while its delete is on its way.
     expect(deletes.map((each) => each.textContent)).toEqual([
-      'DeleteDeleting…',
-      'DeleteddDeleting…',
+      'Delete…Deleting…',
+      'Delete…ddDeleting…',
     ]);
     click(edits[0]!);
     click(deletes[1]!);

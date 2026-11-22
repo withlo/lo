@@ -201,6 +201,9 @@ const INPUT = ['wheel', KEY_EVENT, 'pointerdown'] as const;
 /** How long a line put back at the top stays there once it's settled, in milliseconds. */
 const HOLD_AFTER = 2_000;
 
+/** How far the card `]t` landed on keeps clear of its pane's foot, in pixels (`lo-sp-8`). */
+const CARD_CLEAR = 8;
+
 const setFile = StateEffect.define<{
   file: number;
   from: number;
@@ -274,11 +277,16 @@ interface InlineTop {
   own: number;
 }
 
-/** The room a comment box left where it was, under its line, and how tall it is now. */
+/**
+ * The room a comment box took where it was, under its line, and how tall it is now: the box itself,
+ * closed, still drawn there as it was, the comment it sent on it.
+ */
 interface KeptRoom {
   place: At;
   room: BoxHost;
   height: number;
+  /** The box, to take down as its room goes. */
+  box: CommentBox;
 }
 
 /** The view's threads in one file, by where they are (`side:line`). */
@@ -492,6 +500,7 @@ class View implements DiffView {
     this.#wanted = init.files.map(() => new Map());
     // Its observer comes before the spacer pass's, so a thread's change is set up for the pass.
     this.#hosts = new Threads((entries) => this.#resized(entries));
+    this.#hosts.lands = (host) => this.#lands(host);
     this.#keep = init.files.map(() => ({ old: new Set<number>(), new: new Set<number>() }));
     this.#boxLines = init.files.map(() => ({ old: new Set<number>(), new: new Set<number>() }));
     this.#noteLines = init.files.map(() => ({ old: new Set<number>(), new: new Set<number>() }));
@@ -568,6 +577,13 @@ class View implements DiffView {
     this.dom.append(this.#add);
     this.dom.addEventListener('click', this.#runControl);
     this.dom.addEventListener('mousemove', this.#followAdd, { passive: true });
+    // Focus coming to the code, or leaving it, changes whose the keys are.
+    const refocused = (): void =>
+      queueMicrotask(() => {
+        if (this.dom.isConnected) this.#markKeyed();
+      });
+    this.dom.addEventListener('focusin', refocused);
+    this.dom.addEventListener('focusout', refocused);
     this.dom.addEventListener('mouseleave', this.#hideAdd);
     for (const type of ['wheel', 'scroll', KEY_EVENT] as const) {
       this.dom.addEventListener(type, this.#hideAdd, { passive: true, capture: true });
@@ -973,6 +989,7 @@ class View implements DiffView {
     if (now[0]) this.#keepUnasked(() => this.#showLines(now));
     this.#letThreadsGo(options.now ? 'all' : 'off', true);
     this.#dropThreads();
+    this.#markKeyed();
   }
 
   /**
@@ -982,7 +999,7 @@ class View implements DiffView {
    */
   #readerLines(): Set<string> {
     const lines = new Set([...this.#boxClosed, ...this.#claimed.keys()]);
-    for (const { place } of this.#boxes.values()) {
+    for (const { place } of [...this.#boxes.values(), ...this.#rooms.values()]) {
       lines.add(waitKey(place.file, `${place.side}:${place.line}`));
     }
     return lines;
@@ -1001,10 +1018,12 @@ class View implements DiffView {
   readonly #claimed = new Map<string, Set<symbol>>();
 
   /**
-   * The room comment boxes took on screen, kept empty, by their keys, with how tall each is: boxes
-   * their callers closed with no input of the reader's, as their answers came. What's on screen
-   * stays as it was, and what comes under their lines waits, until the reader's next input, or
-   * until it's off screen. A reply's room is the thread's to grow into meanwhile.
+   * The room comment boxes took on screen, by their keys, with how tall each is: boxes their
+   * callers closed with no input of the reader's, as their answers came, each still drawn as it
+   * was, the comment it sent on it, so the comment never leaves the screen. What that comment's
+   * thread draws takes the box's place in one step, as it comes: a new thread under its line, or
+   * the thread a reply was written in, grown. Until then what's on screen stays as it was, until
+   * the reader's next input, or until it's off screen.
    */
   readonly #rooms = new Map<string, KeptRoom>();
 
@@ -1177,8 +1196,8 @@ class View implements DiffView {
   /**
    * What the caller drew in threads changed size. Each is still the height it was drawn at, what
    * changed in it cut off. One whose change no input asked for, drawn on screen, is held so until
-   * it's off screen or the reader's next input, unless the room its reply's box left right after it
-   * takes the change, as when the reply comes after GitHub's answer closed the box. The rest take
+   * it's off screen or the reader's next input, unless the box of a reply sent in it is still drawn
+   * right after it: then it's the reply come, and it takes the box's place (`#take`). The rest take
    * theirs in the next frame, what's at the top of the screen staying where it is, or for what the
    * reader did, as when they opened a thread, the line it's under: a change of size made now, as
    * the page tells its observers of sizes, would go untold to those watching the editors.
@@ -1189,19 +1208,18 @@ class View implements DiffView {
     const taking = this.#taking ?? {
       hosts: new Set<ThreadHost>(),
       kept: undefined,
-      roomed: new Set<ThreadHost>(),
+      fresh: new Set<ThreadHost>(),
     };
     for (const { host, fresh, reflowed } of threads) {
       host.hold();
-      taking.roomed.delete(host);
+      if (fresh) taking.fresh.add(host);
       if (!fresh && (host.takeInput() || this.#claimedAt(host))) {
         taking.kept ??= this.#threadPlace(host.id);
         taking.hosts.add(host);
       } else if (!fresh && !reflowed && this.#onScreen(host.dom)) {
-        if (this.#roomAfter(host)) {
-          taking.hosts.add(host);
-          taking.roomed.add(host);
-        } else this.#held.add(host);
+        // Grown where the box of a reply sent in it still shows the reply: it's the reply come.
+        if (this.#roomAfter(host)) taking.hosts.add(host);
+        else this.#held.add(host);
       } else {
         taking.hosts.add(host);
       }
@@ -1213,45 +1231,66 @@ class View implements DiffView {
 
   /**
    * Threads whose change of size the next frame takes, the line to keep while it does, and those
-   * whose change goes into the room after them.
+   * first drawn.
    */
-  #taking: { hosts: Set<ThreadHost>; kept: At | undefined; roomed: Set<ThreadHost> } | undefined;
+  #taking: { hosts: Set<ThreadHost>; kept: At | undefined; fresh: Set<ThreadHost> } | undefined;
   #takeFrame = 0;
 
   /**
-   * The threads `#resized` left for this frame take their content's height. A room after one
-   * changes by as much the other way, so nothing after it moves, where it has the room; where it
-   * hasn't, the thread is held as any change no input asked for.
+   * The threads `#resized` left for this frame take their content's height. The room of a box sent
+   * goes in the same step as the thread that draws its comment takes its height: the thread a reply
+   * was written in, grown, or a thread first drawn under the box's line. So the comment is on
+   * screen in every frame, on the box and then in its thread, and what's under it moves once.
    */
   readonly #take = (): void => {
     const taking = this.#taking;
     this.#taking = undefined;
     if (!taking) return;
-    const rooms = new Map<KeptRoom, number>();
-    const hosts = [...taking.hosts].filter((host) => {
-      if (!host.held || this.#held.has(host)) return false;
-      if (!taking.roomed.has(host)) return true;
-      const room = this.#roomAfter(host);
-      const grown = (host.height ?? 0) - (host.pinned ?? 0);
-      if (room && room.height >= grown) {
-        rooms.set(room, room.height - grown);
-        return true;
-      }
-      this.#held.add(host);
-      return false;
-    });
+    const hosts = [...taking.hosts].filter((host) => host.held && !this.#held.has(host));
     if (hosts.length === 0) return;
+    const going = new Set<string>();
+    for (const host of hosts) {
+      const place = taking.fresh.has(host) ? this.#threadPlace(host.id) : undefined;
+      for (const [key, { room, place: at }] of this.#rooms) {
+        const landed =
+          room.thread === undefined
+            ? place?.file === at.file && place.side === at.side && place.line === at.line
+            : room.thread === host.id;
+        if (landed) going.add(key);
+      }
+    }
     const change = (): void => {
       for (const host of hosts) host.letGo();
-      for (const [room, height] of rooms) {
-        room.height = height;
-        room.room.dom.style.height = `${height}px`;
-      }
+      this.#dropRooms(going);
       this.#aligner.schedule();
     };
     if (taking.kept) this.#keepLine(taking.kept, change);
     else this.#keepTop(change);
   };
+
+  /** Takes down the rooms with keys `keys`, and the boxes drawn in them. */
+  #dropRooms(keys: ReadonlySet<string>): void {
+    const gone = [...keys].flatMap((key) => this.#rooms.get(key) ?? []);
+    for (const key of keys) this.#rooms.delete(key);
+    for (const file of new Set(gone.map(({ place }) => place.file))) this.#refresh(file);
+    for (const { box } of gone) box.destroy();
+  }
+
+  /**
+   * Whether thread `host`, first drawn, comes where the room of a box sent on its line is: it's
+   * that box's comment, and takes the box's place in the next frame.
+   */
+  #lands(host: ThreadHost): boolean {
+    const place = this.#threadPlace(host.id);
+    if (!place) return false;
+    return [...this.#rooms.values()].some(
+      ({ room, place: at }) =>
+        room.thread === undefined &&
+        at.file === place.file &&
+        at.side === place.side &&
+        at.line === place.line,
+    );
+  }
 
   /**
    * Where on the page line `key` (`side:line`) of file `file` is drawn, which a change under it
@@ -1549,6 +1588,7 @@ class View implements DiffView {
       this.#letThreadsGo('all', false);
       this.#letHintsGo();
     });
+    this.#markKeyed();
   }
 
   /**
@@ -1617,13 +1657,10 @@ class View implements DiffView {
     const going = [...this.#rooms].filter(([, { room }]) => free(room.dom));
     if (going.length === 0) return;
     const keys = new Set<string>();
-    for (const [key, { place }] of going) {
-      this.#rooms.delete(key);
-      keys.add(waitKey(place.file, `${place.side}:${place.line}`));
-    }
+    for (const [, { place }] of going) keys.add(waitKey(place.file, `${place.side}:${place.line}`));
     const lines = this.#freeLines((file, key) => keys.has(waitKey(file, key)));
     this.#keepUnasked(() => {
-      for (const file of new Set(going.map(([, { place }]) => place.file))) this.#refresh(file);
+      this.#dropRooms(new Set(going.map(([key]) => key)));
       this.#showLines(lines);
     });
     this.#dropThreads();
@@ -2426,9 +2463,10 @@ class View implements DiffView {
     document.fonts.removeEventListener('loadingdone', this.#measure);
     for (const stop of this.#stops) stop();
     this.#aligner.destroy();
-    for (const { box } of this.#boxes.values()) box.destroy();
+    for (const { box } of [...this.#boxes.values(), ...this.#rooms.values()]) box.destroy();
     this.#peek?.block.destroy();
     cancelAnimationFrame(this.#takeFrame);
+    cancelAnimationFrame(this.#addFrame);
     this.#hosts.destroy();
     for (const sizes of [this.#sizes.old, this.#sizes.new, this.#inline?.sizes]) sizes?.destroy();
     for (const view of this.#editors()) view.destroy();
@@ -2624,7 +2662,11 @@ class View implements DiffView {
         this.#closeBox(closed, false);
         on.close(keep);
       },
-      close: (closed) => this.#closeBox(closed, true),
+      // Held, the box stays, and focus goes back to its line.
+      leave: (left) => {
+        if (left.hasFocus) this.#focusLine(place);
+      },
+      close: (closed, landed) => this.#closeBox(closed, landed ? 'landed' : 'sent'),
       dismiss: (closed) => this.#closeBox(closed, false),
       resized: (grown) => this.#boxResized(grown, place),
       // Where the box put itself is where things belong: nothing holds the line it left.
@@ -2707,41 +2749,51 @@ class View implements DiffView {
    * screen stays where it is, and focus too, unless it was in the box. Closed by the reader, its
    * line stays where it is. Focus in the box goes to its line, as does focus nowhere after the
    * reader closed it, as from its menu.
+   *
+   * One sent and closed on screen stays drawn as it is, as the room it took (`#rooms`), until the
+   * thread that draws its comment takes its place. `landed`, that thread is drawn or about to be:
+   * the box goes with it if it's measured within two frames, and by itself then.
    */
-  #closeBox(box: CommentBox, sent: boolean): void {
+  #closeBox(box: CommentBox, how: false | 'sent' | 'landed'): void {
     const found = [...this.#boxes].find(([, open]) => open.box === box);
     if (!found) return;
     const [key, { place, answered }] = found;
+    const sent = how !== false;
     this.#boxes.delete(key);
     if (sent && !answered) this.#boxClosed.add(waitKey(place.file, `${place.side}:${place.line}`));
     const document = box.dom.ownerDocument;
     const active = document.activeElement;
     const inBox = box.hasFocus;
     const nowhere = active === null || active === document.body;
-    if (sent && !this.#hearing && this.#onScreen(box.dom)) {
-      // Closed on screen as its answer came: its room stays, empty, and what it sent waits there,
-      // until the reader's next input. A reply grows into it meanwhile, as far as it has room.
-      const room = document.createElement('div');
-      room.className = 'lo-diffcomposer-room';
+    const kept = sent && !this.#hearing && this.#onScreen(box.dom);
+    if (kept) {
       const { height } = box.dom.getBoundingClientRect();
-      room.style.height = `${height}px`;
       this.#boxClosed.delete(waitKey(place.file, `${place.side}:${place.line}`));
-      const { thread } = box;
-      const attach = (parent: HTMLElement) => parent.append(room);
-      this.#rooms.set(key, { place, room: { dom: room, thread, attach }, height });
+      const room: KeptRoom = { place, room: box, height, box };
+      this.#rooms.set(key, room);
       this.#refresh(place.file);
+      if (how === 'landed') {
+        const go = (): void => {
+          if (this.#rooms.get(key) !== room) return;
+          this.#keepUnasked(() => this.#dropRooms(new Set([key])));
+        };
+        requestAnimationFrame(() => requestAnimationFrame(go));
+      }
     } else if (sent) this.#keepUnasked(() => this.#refresh(place.file));
     else this.#keepLine(place, () => this.#refresh(place.file));
-    if (inBox || (!sent && nowhere)) {
-      const pane: Pane = this.#pane === 'inline' ? 'inline' : place.side;
-      const view = this.#viewOf(pane);
-      const line = this.#docLine(pane, place);
-      // The key that closed the box didn't move the cursor: its line isn't brought on screen.
-      this.#aligner.unfollow();
-      view.dispatch({ selection: { anchor: view.state.doc.line(line).from } });
-      view.focus();
-    }
-    box.destroy();
+    // The key that closed the box didn't move the cursor: its line isn't brought on screen.
+    if (inBox || (!sent && nowhere)) this.#focusLine(place);
+    if (!kept) box.destroy();
+  }
+
+  /** Gives focus to the line a box is under, the cursor on it, bringing nothing on screen. */
+  #focusLine(place: At): void {
+    const pane: Pane = this.#pane === 'inline' ? 'inline' : place.side;
+    const view = this.#viewOf(pane);
+    const line = this.#docLine(pane, place);
+    this.#aligner.unfollow();
+    view.dispatch({ selection: { anchor: view.state.doc.line(line).from } });
+    view.focus();
   }
 
   // Peeks and words ---------------------------------------------------------------------------
@@ -3059,6 +3111,7 @@ class View implements DiffView {
     if (landed && (landed.file !== at.file || landed.side !== at.side || landed.line !== at.line)) {
       this.#land(undefined);
     }
+    this.#markKeyed(at);
     const spot = this.#spot(at, head - line.from);
     const said = JSON.stringify(spot);
     if (said !== this.#said.cursor) {
@@ -3096,7 +3149,6 @@ class View implements DiffView {
     });
   };
 
-  /** A right-click: the menu of the thread or the line under the pointer. */
   /**
    * What a control the view draws runs its command on: the `+`'s line, or the file whose header
    * the control is in.
@@ -3144,14 +3196,29 @@ class View implements DiffView {
    * on that line, and takes it away over anything else: a header, a thread, a box, a note.
    */
   #followAdd = (event: MouseEvent): void => {
-    const { target } = event;
+    // Read once a frame, however often the pointer moves: placing it reads the layout.
+    const waiting = this.#addOver !== undefined;
+    this.#addOver = { target: event.target, y: event.clientY, pressed: event.buttons !== 0 };
+    if (waiting) return;
+    this.#addFrame = requestAnimationFrame(() => {
+      const over = this.#addOver;
+      this.#addOver = undefined;
+      if (over) this.#placeAdd(over.target, over.y, over.pressed);
+    });
+  };
+
+  /** Where the pointer last moved, until the `+` is placed for it in the next frame. */
+  #addOver: { target: EventTarget | null; y: number; pressed: boolean } | undefined;
+  #addFrame = 0;
+
+  #placeAdd(target: EventTarget | null, y: number, pressed: boolean): void {
     if (target === this.#add) return;
     const pane =
-      target instanceof Element && event.buttons === 0
+      target instanceof Element && !pressed
         ? this.#panes().find((each) => this.#viewOf(each).dom.contains(target))
         : undefined;
     const view = pane && this.#viewOf(pane);
-    const height = view ? event.clientY - view.documentTop : 0;
+    const height = view ? y - view.documentTop : 0;
     const whole = view?.elementAtHeight(height);
     // A line with a thread or a box under it is several blocks: the `+` is for its text alone.
     const block =
@@ -3168,24 +3235,29 @@ class View implements DiffView {
     const numbers = (
       view.dom.querySelector('.cm-gutters .cm-lineNumbers') ?? view.dom.querySelector('.cm-gutters')
     )?.getBoundingClientRect();
-    const shown = at.line === 0 || !numbers ? undefined : controlOf(viewControls.comment);
+    const line = this.#lineTarget(at);
+    // On this line: one that takes no comment shows the `+` dimmed from the start.
+    const shown = at.line === 0 || !numbers ? undefined : controlOf(viewControls.comment, line);
     if (!shown || !numbers) {
       this.#hideAdd();
       return;
     }
-    this.#addAt = this.#lineTarget(at);
+    this.#addAt = line;
     const add = this.#add;
     add.setAttribute('aria-label', shown.label);
+    if (shown.off === undefined) add.removeAttribute('aria-disabled');
+    else add.setAttribute('aria-disabled', 'true');
     add.style.left = `${numbers.left}px`;
     add.style.top = `${view.documentTop + block.top + (view.defaultLineHeight - 16) / 2}px`;
     add.hidden = false;
-  };
+  }
 
   #hideAdd = (): void => {
     this.#add.hidden = true;
     this.#add.removeAttribute('aria-disabled');
   };
 
+  /** A right-click: the menu of the thread or the line under the pointer. */
   #contextMenu(event: MouseEvent): void {
     const { target } = event;
     if (event.defaultPrevented || !(target instanceof Element)) return;
@@ -3194,7 +3266,8 @@ class View implements DiffView {
     const card = target.closest<HTMLElement>('[data-thread-id]');
     let clicked: Target | undefined;
     if (card?.dataset.threadId) {
-      clicked = { kind: 'thread', thread: card.dataset.threadId };
+      const id = card.dataset.threadId;
+      clicked = { kind: 'thread', thread: id, collapsed: this.#hosts.get(id)?.open === false };
     } else {
       const pane = this.#panes().find((each) => this.#viewOf(each).dom.contains(target));
       if (!pane) return;
@@ -4115,13 +4188,63 @@ class View implements DiffView {
     return found.line;
   }
 
-  /** Lands on a thread, as `]t` does, or on none: its card shows the keyboard is on it. */
+  /**
+   * Lands on a thread, as `]t` does, or on none: of the threads under its line, it's the one the
+   * line's keys act on, and its card comes on screen whole.
+   */
   #land(next: (At & { thread: string; drawn: string }) | undefined): void {
     const was = this.#landed;
     this.#landed = next;
     if (was?.thread === next?.thread) return;
-    if (was) this.#hosts.get(was.thread)?.setFocused(false);
-    if (next) this.#hosts.get(next.thread)?.setFocused(true);
+    this.#markKeyed();
+    if (next) this.#showCard(next.thread);
+  }
+
+  /** The thread whose card shows the keyboard is on it. */
+  #keyed: string | undefined;
+
+  /**
+   * Shows which thread a key on the cursor's line `at` acts on, if any (`#threadAt`), on its card:
+   * the card's keys show there, wherever the cursor came from.
+   */
+  #markKeyed(at?: At): void {
+    let place = at;
+    if (!place) {
+      const pane = this.#activePane();
+      const view = this.#viewOf(pane);
+      place = this.#placeAt(pane, view.state.doc.lineAt(view.state.selection.main.head).number);
+    }
+    // Only while the keys are the code's: with focus elsewhere, as in a box, no card's keys work.
+    const focused = this.#panes().some((pane) => this.#viewOf(pane).hasFocus);
+    const next = focused ? this.#threadAt(place) : undefined;
+    if (this.#keyed !== undefined && this.#keyed !== next) {
+      this.#hosts.get(this.#keyed)?.setFocused(false);
+    }
+    this.#keyed = next;
+    if (next !== undefined) this.#hosts.get(next)?.setFocused(true);
+  }
+
+  /**
+   * Brings the card of thread `id`, which `]t` landed on, on screen whole, once the cursor's line
+   * is: by the least scroll that shows its foot, clear of the pane's, and never so far that its
+   * line leaves the screen.
+   */
+  #showCard(id: string): void {
+    const show = (): void => {
+      const card = this.#hosts.get(id)?.dom;
+      if (!card?.isConnected || this.#landed?.thread !== id) return;
+      const pane = this.dom.getBoundingClientRect();
+      const under =
+        card.getBoundingClientRect().bottom + CARD_CLEAR - (pane.top + this.dom.clientHeight);
+      if (under <= 0) return;
+      const { top } = this.#cursorReading();
+      // Its file's header stays at the top of the pane, over what scrolls under it.
+      const stuck = this.dom.querySelector<HTMLElement>('.lo-diffhead')?.offsetHeight ?? 0;
+      const by = Math.min(under, top - pane.top - stuck);
+      if (by > 0) this.#scrollBy(by);
+    };
+    // The frame after the one the editor brings the cursor's line on screen in.
+    requestAnimationFrame(() => requestAnimationFrame(show));
   }
 
   /** The document line `count` stops of `target` after (or before) line `line` of `pane`. */

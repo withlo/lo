@@ -36,7 +36,16 @@ import {
 import { fileCountsChanged, setFileCounts } from '../../tree/window/shared.ts';
 import keys from '../keys.ts';
 import { DiscardedToast } from './Discarded.tsx';
-import { edit, remove, reply, resolve, takeActs, type ThreadKeyTarget } from './acts.ts';
+import {
+  edit,
+  remove,
+  reply,
+  resolve,
+  settleActs,
+  takeActs,
+  threadFor,
+  type ThreadKeyTarget,
+} from './acts.ts';
 import { threadsOnBlock } from './blocks.ts';
 import {
   canWrite,
@@ -50,6 +59,7 @@ import {
   frameWith,
   keepBoxesOf,
   keptAway,
+  landBoxes,
   knowPull,
   restore,
   reopenAll,
@@ -65,6 +75,7 @@ import { frameOf } from './Frame.tsx';
 import { KeptStatus } from './KeptStatus.tsx';
 import { main, tabs } from './main.ts';
 import { inPanel, moveRow, onThread, showTarget, stepFilter } from './panel.ts';
+import { Said } from './Said.tsx';
 import { ThreadsPanel, UnresolvedCount, unresolvedOf } from './ThreadsPanel.tsx';
 import { renderThreads } from './render.ts';
 import { keepOnly } from './store.ts';
@@ -181,7 +192,17 @@ export default {
       },
     },
     reply: { run: actOn(reply), enabled: enabled(writable) },
-    resolve: { run: actOn(resolve), enabled: enabled(writable) },
+    resolve: {
+      run: actOn(resolve),
+      enabled: enabled(writable),
+      // A menu names it by what it would do to the thread it's on.
+      named: (target) => {
+        const tab = activeTab();
+        if (tab?.kind !== 'pull' || target.kind !== 'thread') return undefined;
+        const row = threadFor(tab.id, target);
+        return typeof row !== 'string' && row.resolved ? 'Unresolve' : undefined;
+      },
+    },
     edit: { run: actOn(edit), enabled: enabled(writable) },
     remove: { run: actOn(remove), enabled: enabled(writable) },
     discard: discarding,
@@ -233,6 +254,12 @@ export default {
       order: 10,
       render: () => createElement(DiscardedToast),
     }),
+    // Nothing to see: what the comments say to a screen reader as it happens.
+    defineView(toasts, {
+      id: 'comments.said',
+      order: 11,
+      render: () => createElement(Said),
+    }),
     // After the diff's.
     defineView(status, {
       id: 'comments.status',
@@ -265,7 +292,12 @@ export default {
     // What waits to be saved is saved as the window goes.
     window.addEventListener('pagehide', saveAll);
     main().subscribe('threads', (view) => {
-      if (takeThreads(view)) changed(view.id);
+      if (!takeThreads(view)) return;
+      // A change GitHub took that the threads now show is done with, in the same drawing.
+      settleActs(view.id);
+      changed(view.id);
+      // Once they're drawn: a box that showed its comment until its card came goes with it.
+      landBoxes(view.id);
     });
     main().subscribe('review', takeReview);
     main().subscribe('acts', takeActs);

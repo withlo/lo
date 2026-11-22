@@ -154,8 +154,9 @@ export interface ThreadView {
   /** Changes whenever what the thread shows changes, so the view has the caller draw it again. */
   version: number;
   /**
-   * The keyboard is on it: `]t` landed on it, and the cursor is still on its line. The view sets
-   * it; what the caller gives is taken as false.
+   * The keyboard is on it: the cursor is on its line, and it's the thread a key there acts on,
+   * the one `]t` landed on or the only one under the line. The view sets it; what the caller gives
+   * is taken as false.
    */
   focused?: boolean;
 }
@@ -240,9 +241,10 @@ export interface Composer {
   insert(text: string): void;
   /**
    * Puts `text` in place of the text from offset `from` to offset `to`, as an upload's link takes
-   * its placeholder's place, wherever the cursor is.
+   * its placeholder's place, wherever the cursor is. With `record` false it's no step of the box's
+   * undo history, as for a change Lo makes again each time it's undone: undo goes on past it.
    */
-  replace(from: number, to: number, text: string): void;
+  replace(from: number, to: number, text: string, record?: boolean): void;
   /**
    * Shows the preview in the editor's place, or the editor again. Focus in the box goes with it.
    * With Vim keys on, the preview leaves insert mode, and the editor comes back in it if it was.
@@ -251,17 +253,22 @@ export interface Composer {
   /**
    * Holds the text as it is, as while it's being sent, so that nothing typed then is lost as the
    * box closes once it's sent: no key changes it, and insert mode ends. While it's held the box
-   * shows only its `sent` part, the comment as a card. `false` lets it go, and the box is back as
-   * it was, with its text.
+   * shows only its `sent` part, the comment as a card, in the room it took: it's as tall as it
+   * was. `Esc` in it then leaves it where it is, and gives focus back to its line. `false` lets it
+   * go, and the box is back as it was, with its text.
    */
   hold(on: boolean): void;
   /**
    * Closes the box, as after it was sent: in a code view, taking what comes under its line next as
-   * what was sent, at once. That comes with no input of the reader's, so what's on screen stays
-   * where it is, and focus does too, unless it was in the box: then it goes to the box's line. A
-   * box `createComposer` made is taken away.
+   * what was sent, at once. On screen, the box stays as it is, held, the comment on it, until the
+   * comment's own card is drawn there, which takes its place in one step; or until the reader's
+   * next input. With `landed`, that card is drawn already, or about to be: the box goes with it
+   * if it's measured in the next two frames, and by itself then. All of it
+   * comes with no input of the reader's, so what's on screen stays where it is, and focus does too,
+   * unless it was in the box: then it goes to the box's line. A box `createComposer` made is taken
+   * away.
    */
-  close(): void;
+  close(landed?: boolean): void;
   /**
    * Closes the box with nothing sent, as a draft discarded or moved elsewhere is: as `Esc` closes
    * it, but without a word to the caller, and leaving its line no claim on what comes there.

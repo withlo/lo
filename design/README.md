@@ -451,7 +451,8 @@ copy its foot.
   Preview is at the right, then the control that closes the box (`close`), which keeps the draft.
   "as login" shows only when more than one account is signed in.
 - **Body.** The editor, or its preview. The box has one ring, which is its focus; nothing inside it
-  has another. An empty box says what it's for in a quiet hint (`hint`): "Reply", "Comment on #264".
+  has another. An empty box under the pull request says what it's for in a quiet hint (`hint`):
+  "Comment on #264"; one whose head says it, as a reply's does, has none.
 - **Foot.** "Attach files…" as an icon button at the left, then "Discard draft"; the actions at the
   right, the main one last, each with its key. The foot never runs past the box: as the box narrows
   it gives up its key chips (under 480px), then the labels of the controls that keep an icon (under
@@ -464,10 +465,11 @@ copy its foot.
   request, "Save" in an edit. While a review is pending GitHub adds every comment to it, so the box
   has "Add to review" alone. A dimmed action says why in its tooltip.
 - **Sending.** A comment is its card from the moment it's sent: the box draws the text as it will
-  read, with "Sending…" where its time will be (`SentPost`; "Saving…" for an edit), and the card
-  from GitHub takes its place. The text never leaves the screen. A send that fails turns back into
-  the open box with the text as it was, under a note that says what wasn't sent and why, with "Try
-  again".
+  read, with "Sending…" where its time will be (`SentPost`; "Saving…" for an edit), in the room the
+  box had. The box keeps that height, and the comment on it, until the card from GitHub is drawn,
+  and gives way to it in one frame: the text never leaves the screen, and what's under it moves
+  once. A send that fails turns back into the open box with the text as it was, under a note that
+  says what wasn't sent and why, with "Try again".
 - **Never a blind resend.** When GitHub's answer never came, nobody knows whether the comment
   posted, and sending it again could post it twice. The box then says "Comment not confirmed" and
   offers "Check again", which only looks. Its buttons are dimmed with "Check again first" until Lo

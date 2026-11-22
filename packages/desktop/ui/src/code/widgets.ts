@@ -40,8 +40,8 @@ function viewedBall(viewed: NonNullable<FileHeader['viewed']>): {
   ball.dataset.command = viewControls.viewed;
   if (viewed === 'viewed') ball.dataset.tip = UNMARK_VIEWED;
   if (viewed !== 'stale') return { ball, tag: undefined };
+  // The words beside it say why it isn't checked, to a screen reader too.
   const tag = element('span', 'lo-diffhead__changed', CHANGED_SINCE);
-  ball.setAttribute('aria-description', CHANGED_SINCE);
   return { ball, tag };
 }
 

@@ -158,10 +158,10 @@ function drawnNote(box: Box, note: BoxNote): CommentBoxNote {
     icon: note.icon,
     title: note.title,
     text: note.text,
-    actions: note.offers?.map((offer) => ({
-      label: offerLabels[offer],
-      onClick: () => act(box, offer),
-    })),
+    // The foot's own buttons send it again: one act has one button.
+    actions: note.offers
+      ?.filter((offer) => offer !== 'sendAgain')
+      .map((offer) => ({ label: offerLabels[offer], onClick: () => act(box, offer) })),
   };
 }
 

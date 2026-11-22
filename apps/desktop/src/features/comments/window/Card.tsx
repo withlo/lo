@@ -6,7 +6,7 @@
 
 import { Button, Callout, Thread, type ThreadComment } from '@lo/ui';
 import { keyLabels } from '@lo/ui/commands';
-import type { ReactNode } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 
 import { registry } from '../../../window/commands/registry.ts';
 import { avatarImage } from '../../../window/images.ts';
@@ -16,9 +16,11 @@ import {
   acting,
   actNote,
   type ActNote,
+  checkAgain,
   closeAct,
   closedActs,
   edit,
+  noteKey,
   remove,
   reply,
   resolveThread,
@@ -81,7 +83,11 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
   const newer = useTabState(landed, view, (ids) => ids.has(id));
   const replied = useTabState(replying, view, (ids) => ids.has(id));
   const asked = useTabState(acting, view, (acts) => acts.get(id));
-  const isClosed = useTabState(closedActs, view, (rows) => asked !== undefined && rows.has(asked));
+  const isClosed = useTabState(
+    closedActs,
+    view,
+    (keys) => asked !== undefined && keys.has(noteKey(asked)),
+  );
   const row = threads?.threads.find((each) => each.id === id);
   // Its first comment's opening, as plain words, which it shows while it's collapsed.
   const opening = useExcerpt(row?.comments[0]?.body, !open);
@@ -113,10 +119,10 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
         }}
       />
       {note && asked && (
-        <div className="mt-8 max-w-read-measure">
+        <div data-act-note="" className="mt-8 max-w-read-measure">
           <ActCallout
             note={note}
-            onAgain={() => tryAgain(tab, asked)}
+            onAgain={() => (note.again === 'check' ? checkAgain(tab, asked) : tryAgain(tab, asked))}
             onClose={() => closeAct(view, asked)}
           />
         </div>
@@ -126,8 +132,22 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
 }
 
 /**
+ * Gives focus to the card a note is under, at its first control: the note goes as its buttons are
+ * pressed, and focus goes nowhere with it otherwise.
+ */
+function focusCard(from: Element): void {
+  const card = from.closest('[data-act-note]')?.previousElementSibling;
+  const control =
+    card?.querySelector<HTMLElement>('button, [tabindex]') ??
+    // No card over it, as in the timeline: whatever holds it that takes focus.
+    from.parentElement?.closest<HTMLElement>('[tabindex]');
+  control?.focus({ preventScroll: true });
+}
+
+/**
  * What a card says of a change asked of it that didn't go, or may not have: what wasn't done, why,
- * and "Try again" and "Dismiss".
+ * and "Try again", or "Check again" where nobody knows whether it went, and "Dismiss". Whoever
+ * shows it says it to a screen reader: it's drawn with its words on it.
  */
 export function ActCallout({
   note,
@@ -138,17 +158,21 @@ export function ActCallout({
   onAgain: () => void;
   onClose: () => void;
 }): ReactNode {
+  const then = (act: () => void) => (event: MouseEvent<HTMLElement>) => {
+    focusCard(event.currentTarget);
+    act();
+  };
   return (
-    <Callout tone="warning" role="status">
+    <Callout tone="warning">
       <div className="flex flex-wrap items-center gap-8">
         <span className="min-w-0 flex-1">
           <b className="text-ui-strong">{note.title}</b> {note.text}
         </span>
         <span className="flex flex-none gap-4">
-          <Button size="sm" onClick={onAgain}>
-            Try again
+          <Button size="sm" onClick={then(onAgain)}>
+            {note.again === 'check' ? 'Check again' : 'Try again'}
           </Button>
-          <Button size="sm" variant="ghost" onClick={onClose}>
+          <Button size="sm" variant="ghost" onClick={then(onClose)}>
             Dismiss
           </Button>
         </span>

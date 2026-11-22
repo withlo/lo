@@ -297,18 +297,22 @@ describe('a box’s notes', () => {
     });
     expect(refusalNote({ kind: 'headMoved', head: null }).offers).toEqual(['loadNewer']);
     // Lines that take no comment: one line, one button, and no title.
-    expect(refusalNote({ kind: 'notInDiff' })).toMatchObject({
-      title: undefined,
+    const outside = refusalNote({ kind: 'notInDiff' });
+    expect(outside).toMatchObject({
+      tone: 'warning',
       text: 'Those lines aren’t in the diff.',
       offers: ['onFile'],
     });
+    expect(outside.title).toBeUndefined();
     const until = new Date(2026, 10, 13, 14, 5).getTime();
     expect(refusalNote({ kind: 'paused', until }).text).toMatch(
       /^GitHub’s rate limit resets at .+\.$/,
     );
-    // Nothing was sent, so it can go again.
+    // Nothing was sent, so it can go again: what failed was a read.
     expect(refusalNote({ kind: 'pendingUnknown' })).toMatchObject({
-      text: 'GitHub didn’t respond.',
+      tone: 'danger',
+      title: 'Couldn’t send the comment',
+      text: 'Couldn’t check for a pending review.',
       offers: ['sendAgain'],
     });
     expect(refusalNote({ kind: 'signIn' }).text).toBe('Sign in to comment');

@@ -661,7 +661,11 @@ describe('targets', () => {
     shown.setThreads([thread('right', at('a', 'new', 10))], plain().render);
     const card = parent!.querySelector('[data-thread-id="right"]')!;
     card.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
-    expect(on.menu).toHaveBeenCalledWith({ kind: 'thread', thread: 'right' }, 0, 0);
+    expect(on.menu).toHaveBeenCalledWith(
+      { kind: 'thread', thread: 'right', collapsed: false },
+      0,
+      0,
+    );
   });
 });
 
@@ -1536,7 +1540,8 @@ describe('threads', () => {
     expect(document.activeElement).toBe(vimIn('After').content);
   });
 
-  test('a box closed on screen as its answer came keeps its room, and what it sent waits there, until input', async () => {
+  test('a box sent and closed on screen stays drawn, its comment on it, until the comment’s thread takes its place in one frame', async () => {
+    const sizes = observers();
     const shown = open();
     const { render } = plain();
     const box = shown.compose(at('a', 'new', 4), 'Sent', composerEvents());
@@ -1552,16 +1557,82 @@ describe('threads', () => {
       if (this.classList.contains('lo-diffview')) return new DOMRect(0, 0, 800, 600);
       return boxOrThread(this) ? new DOMRect(0, 100, 400, 80) : new DOMRect();
     });
+    box.hold(true);
+    const drawn = parent!.querySelector<HTMLElement>('.lo-diffcomposer')!;
+    // Held, it's as tall as it was written in.
+    expect(drawn.style.minHeight).toBe('80px');
     box.close();
-    expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
-    expect(parent!.querySelector<HTMLElement>('.lo-diffcomposer-room')?.style.height).toBe('80px');
+    expect(parent!.querySelector('.lo-diffcomposer')).toBe(drawn);
+    expect(drawn.classList).toContain('is-sent');
+    // Its thread comes under its line at once, taking no room until it's measured and a frame on.
     shown.setThreads([thread('sent', at('a', 'new', 4))], render);
-    expect(drawnThreads()).toEqual([]);
-    // The reader's next key: the room goes, and what was sent comes.
+    expect(drawnThreads()).toEqual(['sent']);
+    const card = parent!.querySelector<HTMLElement>('[data-thread-id="sent"]')!;
+    sizes.resize(card.querySelector('.lo-diffthread__host')!, 60);
+    expect(card.style.height).toBe('0px');
+    expect(parent!.querySelector('.lo-diffcomposer')).toBe(drawn);
+    await nextFrame();
+    expect(card.style.height).toBe('60px');
+    expect(card.classList).not.toContain('is-held');
+    expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
+  });
+
+  test('a box sent and closed on screen whose thread hasn’t come goes at the reader’s next input', async () => {
+    const shown = open();
+    const box = shown.compose(at('a', 'new', 4), 'Sent', composerEvents());
+    shown.focus();
+    onScreen(['line 4']);
+    vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) {
+      return boxOrThread(this) ? oneRect(new DOMRect(0, 100, 400, 80)) : noRects();
+    });
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element,
+    ) {
+      if (this.classList.contains('lo-diffview')) return new DOMRect(0, 0, 800, 600);
+      return boxOrThread(this) ? new DOMRect(0, 100, 400, 80) : new DOMRect();
+    });
+    box.hold(true);
+    box.close();
+    expect(parent!.querySelector('.lo-diffcomposer')).not.toBeNull();
     press(scroller(), 'j');
     await new Promise((resolve) => setTimeout(resolve));
-    expect(parent!.querySelector('.lo-diffcomposer-room')).toBeNull();
-    expect(drawnThreads()).toEqual(['sent']);
+    expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
+  });
+
+  test('a box closed once what it sent is drawn goes by itself, two frames on', async () => {
+    const shown = open();
+    const box = shown.compose(at('a', 'new', 4), 'Sent', composerEvents());
+    shown.focus();
+    onScreen(['line 4']);
+    vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) {
+      return boxOrThread(this) ? oneRect(new DOMRect(0, 100, 400, 80)) : noRects();
+    });
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element,
+    ) {
+      if (this.classList.contains('lo-diffview')) return new DOMRect(0, 0, 800, 600);
+      return boxOrThread(this) ? new DOMRect(0, 100, 400, 80) : new DOMRect();
+    });
+    box.hold(true);
+    box.close(true);
+    // A card that's still to be measured has a frame to take the box's place in.
+    expect(parent!.querySelector('.lo-diffcomposer')).not.toBeNull();
+    await nextFrame();
+    await nextFrame();
+    expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
+  });
+
+  test('`Esc` in a box held, as while it’s sent, leaves the box and gives its line focus', () => {
+    const shown = open();
+    const on = composerEvents();
+    const box = shown.compose(at('a', 'new', 4), 'Sent', on);
+    box.focus();
+    box.hold(true);
+    const drawn = parent!.querySelector<HTMLElement>('.lo-diffcomposer')!;
+    press(drawn.querySelector<HTMLElement>('.lo-diffcomposer__sent')!, 'Escape');
+    expect(parent!.querySelector('.lo-diffcomposer')).toBe(drawn);
+    expect(drawn.contains(document.activeElement)).toBe(false);
+    expect(on.close).not.toHaveBeenCalled();
   });
 
   test('a box held, as while it’s sent, takes no change to its text until it’s let go', () => {
@@ -1642,6 +1713,31 @@ describe('threads', () => {
     expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 'two' });
     // Its card says the keyboard is on it.
     expect(landed).toEqual(['one', 'two', 'on b', 'also on b', 'two']);
+  });
+
+  test('the only thread under the cursor’s line shows the keyboard is on it, while the code has focus', async () => {
+    const shown = open();
+    const keyed: [string, boolean][] = [];
+    const render: RenderThread = () => ({
+      update(next) {
+        keyed.push([next.id, next.focused === true]);
+      },
+      destroy() {},
+    });
+    shown.setThreads([thread('one', at('a', 'new', 4))], render);
+    shown.focus();
+    shown.reveal(onLine('a', 'new', 4));
+    expect(keyed).toEqual([['one', true]]);
+    // On another line, or with focus elsewhere, no key acts on it.
+    shown.reveal(onLine('a', 'new', 5));
+    expect(keyed.at(-1)).toEqual(['one', false]);
+    shown.reveal(onLine('a', 'new', 4));
+    expect(keyed.at(-1)).toEqual(['one', true]);
+    const other = document.body.appendChild(document.createElement('button'));
+    other.focus();
+    await Promise.resolve();
+    expect(keyed.at(-1)).toEqual(['one', false]);
+    other.remove();
   });
 
   test('a thread ]t landed on that’s no longer drawn there is no key’s to act on', () => {
@@ -1739,13 +1835,13 @@ describe('threads', () => {
     },
   );
 
-  test('a reply that comes once its box closed on screen takes the room the box left', async () => {
+  test('a reply that comes once its box closed on screen takes the box’s place as its thread grows', async () => {
     const sizes = observers();
     const shown = open();
     const { render } = plain();
     shown.setThreads([thread('one', at('a', 'new', 4))], render);
     onScreen(['line 4'], ['one']);
-    // The box, the room it leaves and the thread are on screen, each 80 px tall as first drawn.
+    // The box and the thread are on screen, each 80 px tall as first drawn.
     vi.spyOn(Element.prototype, 'getClientRects').mockImplementation(function (this: Element) {
       return boxOrThread(this) ? oneRect(new DOMRect(0, 100, 400, 80)) : noRects();
     });
@@ -1760,22 +1856,20 @@ describe('threads', () => {
     sizes.resize(content, 40);
     const box = shown.compose({ thread: 'one' }, 'A reply', composerEvents());
     shown.focus();
-    // Closed as GitHub answered, before the reply is in the thread.
-    box.close();
-    const room = parent!.querySelector<HTMLElement>('.lo-diffcomposer-room')!;
-    expect(room.style.height).toBe('80px');
+    box.hold(true);
+    // Closed as the reply came in the thread's rows: the box stays, the reply on it.
     shown.setThreads([thread('one', at('a', 'new', 4), true, 2)], render);
+    box.close();
+    const drawn = parent!.querySelector<HTMLElement>('.lo-diffcomposer')!;
+    expect(drawn.classList).toContain('is-sent');
+    // The thread grows a frame after it's measured, and the box goes in the same step.
     sizes.resize(content, 90);
+    expect(card.style.height).toBe('40px');
+    expect(parent!.querySelector('.lo-diffcomposer')).toBe(drawn);
     await nextFrame();
     expect(card.style.height).toBe('90px');
     expect(card.classList).not.toContain('is-held');
-    expect(room.style.height).toBe('30px');
-    // More than the room has left waits for the reader's next input.
-    shown.setThreads([thread('one', at('a', 'new', 4), true, 3)], render);
-    sizes.resize(content, 150);
-    await nextFrame();
-    expect(card.style.height).toBe('90px');
-    expect(card.classList).toContain('is-held');
+    expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
   });
 });
 
@@ -1834,7 +1928,7 @@ function onScreen(lines: string[], threads: string[] = [], top = 100) {
 
 /** Whether `element` is in a comment box, the room one left, or a thread. */
 function boxOrThread(element: Element): boolean {
-  return element.closest('.lo-diffcomposer, .lo-diffcomposer-room, [data-thread-id]') !== null;
+  return element.closest('.lo-diffcomposer, [data-thread-id]') !== null;
 }
 
 /** The thread `element` is in, if it's in one. */
@@ -2042,7 +2136,7 @@ describe('headers and notes', () => {
     // Changed since it was viewed, it isn't viewed: unchecked, with words beside it that say why.
     shown.setHeader('b', { additions: 1, deletions: 0, viewed: 'stale' });
     expect(ballOf('h:1')?.getAttribute('aria-checked')).toBe('false');
-    expect(ballOf('h:1')?.getAttribute('aria-description')).toBe('Changed since viewed');
+    expect(ballOf('h:1')?.hasAttribute('aria-description')).toBe(false);
     expect(headerOf('h:1').querySelector('.lo-diffhead__changed')?.textContent).toBe(
       'Changed since viewed',
     );

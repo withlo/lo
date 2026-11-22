@@ -27,6 +27,7 @@ import {
   type Extension,
   findClusterBreak,
   Prec,
+  Transaction,
 } from '@codemirror/state';
 import { drawSelection, EditorView, keymap, placeholder, runScopeHandlers } from '@codemirror/view';
 import { classHighlighter } from '@lezer/highlight';
@@ -99,8 +100,13 @@ export interface BoxOptions {
    * closes it, or tells the caller.
    */
   escape: (box: CommentBox) => void;
-  /** `close()` on its handle. */
-  close: (box: CommentBox) => void;
+  /**
+   * `Esc` in the box while it's held, as while its comment is sent: focus goes back to where the
+   * box is, and the box stays, the comment on it. Unless it's given, `escape` hears it.
+   */
+  leave?: ((box: CommentBox) => void) | undefined;
+  /** `close()` on its handle: with `landed`, what it sent is drawn already. */
+  close: (box: CommentBox, landed: boolean) => void;
   /** `dismiss()` on its handle: as `close()`, unless it's given. */
   dismiss?: ((box: CommentBox) => void) | undefined;
   /** The box grew or shrank as it was typed in, or as its editor changed width. */
@@ -121,6 +127,7 @@ export class CommentBox implements BoxHost, KeySource {
   readonly #parts: BoxParts;
   readonly #on: ComposerEvents;
   readonly #escape: (box: CommentBox) => void;
+  readonly #leave: ((box: CommentBox) => void) | undefined;
   readonly #stops: (() => void)[] = [];
   #frame: { destroy(): void } | undefined;
   #previewing = false;
@@ -146,6 +153,7 @@ export class CommentBox implements BoxHost, KeySource {
     this.thread = options.thread;
     this.#on = on;
     this.#escape = options.escape;
+    this.#leave = options.leave;
     this.#shown = options.shown;
     this.dom = document.createElement('div');
     this.dom.className = 'lo-diffcomposer';
@@ -375,6 +383,11 @@ export class CommentBox implements BoxHost, KeySource {
   }
 
   #takeFocus(): void {
+    // Held, it's the comment it sent, and that has focus.
+    if (this.#holding) {
+      this.#parts.sent.focus({ preventScroll: true });
+      return;
+    }
     if (this.#previewing) {
       this.#parts.preview.focus();
       return;
@@ -430,12 +443,15 @@ export class CommentBox implements BoxHost, KeySource {
     this.view.dispatch({ changes: { from: at, insert: text }, selection: { anchor: last } });
   }
 
-  replace(from: number, to: number, text: string): void {
+  replace(from: number, to: number, text: string, record = true): void {
     const { length } = this.view.state.doc;
     const clamp = (offset: number): number => Math.max(0, Math.min(length, Math.round(offset)));
     const start = clamp(Math.min(from, to));
     const end = clamp(Math.max(from, to));
-    this.view.dispatch({ changes: { from: start, to: end, insert: text } });
+    this.view.dispatch({
+      changes: { from: start, to: end, insert: text },
+      annotations: record ? [] : Transaction.addToHistory.of(false),
+    });
   }
 
   /**
@@ -447,6 +463,9 @@ export class CommentBox implements BoxHost, KeySource {
     if (on === this.#holding) return;
     const focused = this.dom.contains(this.dom.ownerDocument.activeElement);
     this.#holding = on;
+    // Held, it's as tall as it was written in, however short the comment is as a card: nothing
+    // under it moves until the comment's own card takes its place.
+    this.dom.style.minHeight = on ? `${this.dom.getBoundingClientRect().height}px` : '';
     if (on) leaveToNormal(this.view);
     this.view.dispatch({ effects: this.#held.reconfigure(on ? readOnly() : []) });
     this.#parts.sent.hidden = !on;
@@ -543,10 +562,10 @@ export class CommentBox implements BoxHost, KeySource {
       focus: () => this.focus(),
       hold: (on) => this.hold(on),
       insert: (text) => this.insert(text),
-      replace: (from, to, text) => this.replace(from, to, text),
+      replace: (from, to, text, record) => this.replace(from, to, text, record),
       preview: (on) => this.preview(on),
-      close: () => options.close(this),
-      dismiss: () => (options.dismiss ?? options.close)(this),
+      close: (landed = false) => options.close(this, landed),
+      dismiss: () => (options.dismiss ? options.dismiss(this) : options.close(this, false)),
       leave: () => this.#escape(this),
       keep: () => this.keep(),
     };
@@ -604,7 +623,9 @@ export class CommentBox implements BoxHost, KeySource {
     if (event.key !== 'Escape' || event.metaKey || event.ctrlKey || event.altKey) return;
     if (event.shiftKey) return;
     event.preventDefault();
-    this.#escape(this);
+    // Held, as while its comment is sent, it stays, and says how that went: `Esc` only leaves it.
+    if (this.#holding && this.#leave) this.#leave(this);
+    else this.#escape(this);
   }
 
   /**

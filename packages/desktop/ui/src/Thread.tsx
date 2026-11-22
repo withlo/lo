@@ -155,7 +155,8 @@ export interface SentPostProps {
  */
 export function SentPost({ author, image, label = 'Sending…', body }: SentPostProps) {
   return (
-    <div role="status" data-sent="" className="flex gap-8 px-12 py-8">
+    // Whoever sends it says so to a screen reader: drawn with its words, this would say nothing.
+    <div data-sent="" className="flex gap-8 px-12 py-8">
       {author !== undefined && <Avatar login={author} image={image} size="sm" />}
       <div className="min-w-0 flex-1">
         <div className="flex min-h-24 flex-wrap items-center gap-x-8 gap-y-2 text-fg-muted text-small">
@@ -223,6 +224,13 @@ export function Thread({
 
   if (!open) {
     const said = replies(comments);
+    const working = resolving
+      ? resolved
+        ? 'Resolving…'
+        : 'Unresolving…'
+      : deleting !== undefined
+        ? 'Deleting…'
+        : undefined;
     return (
       <div
         role="group"
@@ -231,34 +239,56 @@ export function Thread({
         data-focused={focused ? '' : undefined}
         className={`${card({ view: 'collapsed', ground })} ${className}`}
       >
-        <button
-          type="button"
-          aria-expanded={false}
-          {...withKeys('Open the thread', keys.toggle)}
-          className="flex h-32 w-full items-center gap-8 px-12 text-start text-fg-muted text-small hover:bg-hover focus-visible:shadow-ring-inset"
-          onClick={onToggle}
-        >
-          {state === 'resolved' ? (
-            <svg
-              className="lo-i lo-i--sm flex-none text-success"
-              viewBox="0 0 16 16"
-              aria-hidden="true"
-            >
-              <circle cx="8" cy="8" r="6.25" />
-              <path d="M5.5 8.25 7.25 10l3.25-3.75" />
-            </svg>
-          ) : (
-            <CommentIcon />
-          )}
-          <span className="flex-none">{word}</span>
-          <Avatar login={first.author} image={first.image} size="sm" />
-          <span className="min-w-0 flex-1 truncate">
-            <span className="font-semibold text-fg">{first.author}</span>
-            {excerpt !== undefined && ` ${excerpt}`}
-          </span>
-          {said !== undefined && <span className="lo-num flex-none">{said}</span>}
-          <Chevron up={false} />
-        </button>
+        {/* The line opens the thread wherever it's clicked; `⋯` alone is a control of its own. */}
+        <div className="flex h-32 items-center gap-2 pe-6 text-fg-muted text-small hover:bg-hover">
+          <button
+            type="button"
+            aria-expanded={false}
+            {...withKeys('Open the thread', keys.toggle)}
+            className="flex h-full min-w-0 flex-1 items-center gap-8 ps-12 pe-6 text-start focus-visible:shadow-ring-inset"
+            onClick={onToggle}
+          >
+            {state === 'resolved' ? (
+              <svg
+                className="lo-i lo-i--sm flex-none text-success"
+                viewBox="0 0 16 16"
+                aria-hidden="true"
+              >
+                <circle cx="8" cy="8" r="6.25" />
+                <path d="M5.5 8.25 7.25 10l3.25-3.75" />
+              </svg>
+            ) : (
+              <CommentIcon />
+            )}
+            <span className="flex-none">{word}</span>
+            <Avatar login={first.author} image={first.image} size="sm" />
+            <span className="min-w-0 flex-1 truncate">
+              <span className="font-semibold text-fg">{first.author}</span>
+              {excerpt !== undefined && ` ${excerpt}`}
+            </span>
+            {working !== undefined ? (
+              // A change asked from its menu or by its key is at work, as its open card's control says.
+              <span className="inline-flex flex-none items-center gap-6">
+                <Spinner />
+                {working}
+              </span>
+            ) : (
+              said !== undefined && <span className="lo-num flex-none">{said}</span>
+            )}
+          </button>
+          {menu && <MoreButton />}
+          <Button
+            variant="ghost"
+            size="sm"
+            icon
+            // The line is the control a key or a screen reader opens it by.
+            tabIndex={-1}
+            aria-hidden="true"
+            onClick={onToggle}
+          >
+            <Chevron up={false} />
+          </Button>
+        </div>
       </div>
     );
   }
@@ -296,6 +326,7 @@ export function Thread({
               // Asked already, it shows what was asked for: the word is the one being done.
               busy={resolving}
               working={resolved ? 'Resolving…' : 'Unresolving…'}
+              align="end"
               hint={resolved ? 'Unresolve' : 'Resolve'}
               hintKeys={keys.resolve}
               onClick={onResolve}
@@ -355,11 +386,12 @@ export function Thread({
                     aria-label={`Delete your comment from ${comment.when}`}
                     busy={comment.id === deleting}
                     working="Deleting…"
+                    align="end"
                     hint="Delete…"
                     hintKeys={comment.id === newestMine ? keys.delete : undefined}
                     onClick={() => onDelete?.(comment.id)}
                   >
-                    Delete
+                    Delete…
                     {comment.id === newestMine && keys.delete && (
                       <Key keys={keys.delete} when="focus" decorative />
                     )}
@@ -375,6 +407,7 @@ export function Thread({
         <div className="border-t border-border-subtle py-8 ps-40 pe-12">
           <button
             type="button"
+            {...withKeys('Reply', keys.reply)}
             className="flex h-control-h w-full items-center gap-8 rounded-sm border border-border bg-bg-well px-8 text-start text-fg-subtle text-ui hover:border-border-strong focus-visible:shadow-ring"
             onClick={onReply}
           >

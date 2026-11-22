@@ -217,6 +217,21 @@ export class Registry {
     }
   }
 
+  /** What a right-click menu calls `id` on `target` now, where its handler's `named` says. */
+  named(id: string, target: Target): string | undefined {
+    const command = this.byId.get(id);
+    const handler = command?.handler;
+    if (!command || !handler?.named) return undefined;
+    const fitted = fit(command.targets ?? ['none'], target);
+    if (!fitted) return undefined;
+    try {
+      return handler.named(fitted);
+    } catch (error) {
+      this.onError(error, command);
+      return undefined;
+    }
+  }
+
   /**
    * Runs `id` on `target`, as a key, a menu or the palette asks, with the `count` typed before its
    * keys for a command that takes one: `true`, or why it didn't. A `jump` command records where the tab is in its

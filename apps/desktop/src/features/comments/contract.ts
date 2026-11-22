@@ -638,6 +638,13 @@ export const contract = defineContract('comments', {
       reply: reply<ActOutcome>(),
     },
     /**
+     * Looks again whether the change to the thread, or the comment on the pull request itself,
+     * `node` on view `id` went, for one whose answer was lost and that Lo couldn't tell of
+     * (`unknown`): its row in `acts` says how the look stands, and what it found. Nothing is sent,
+     * and nothing happens for a change that isn't `unknown`.
+     */
+    checkAct: { input: z.strictObject({ id: tabId, node: nodeId }), reply: reply<void>() },
+    /**
      * Deletes your comment `comment` in the thread `thread` on view `id`'s pull request, or, with no
      * thread, on the pull request itself, once the last write to the pull request has its answer,
      * and only if a read of it, made then, finds it as the question showed it (`asked`). Never sent

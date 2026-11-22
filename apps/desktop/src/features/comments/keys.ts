@@ -142,7 +142,8 @@ export default defineCommands(
       targets: ['line', 'header', 'thread'],
       overVim: true,
       when: onThread,
-      menu: { on: 'thread', order: 20, label: 'Resolve or unresolve' },
+      // Named by which it would do: the handler says "Unresolve" on one that's resolved.
+      menu: { on: 'thread', order: 20, label: 'Resolve' },
     },
     /** A box with your newest comment in the thread, to edit it and save it over GitHub's text. */
     edit: {
@@ -153,7 +154,7 @@ export default defineCommands(
       targets: ['line', 'header', 'thread'],
       overVim: true,
       when: onThread,
-      menu: { on: 'thread', order: 40 },
+      menu: { on: 'thread', order: 40, label: 'Edit' },
     },
     /** Deletes your newest comment in the thread, once you say so. */
     remove: {
@@ -164,7 +165,7 @@ export default defineCommands(
       targets: ['line', 'header', 'thread'],
       overVim: true,
       when: onThread,
-      menu: { on: 'thread', order: 50 },
+      menu: { on: 'thread', order: 50, label: 'Delete…' },
     },
     /** Drops the box's draft, and the box, as its "Discard draft" does. */
     discard: {

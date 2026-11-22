@@ -215,6 +215,11 @@ export class Threads {
   #observer: ResizeObserver | undefined;
   /** What draws a thread: the caller's, from its latest `setThreads`. */
   render: RenderThread | undefined;
+  /**
+   * Whether a thread first drawn comes in the next frame, with what the view takes away as it
+   * does, as the box that sent its comment: until then it takes no room. The view's to say.
+   */
+  lands: ((host: ThreadHost) => boolean) | undefined;
 
   /** `resized` hears of every change of size the observer sees. */
   constructor(resized: (entries: readonly ResizeObserverEntry[]) => void) {
@@ -270,8 +275,9 @@ export class Threads {
    * The threads whose content changed size while drawn, in `entries`, each kept at the height it
    * had until it's let go. A thread's content that's
    * just been drawn, after its line was off screen or in the other layout, isn't a change: its
-   * editor measures it as it draws it, and from then on it's kept at that height. One held stays
-   * as it is, and takes its content's height when it's let go.
+   * editor measures it as it draws it, and from then on it's kept at that height, unless it
+   * `lands`: then it's among those changed, taking no room yet. One held stays as it is, and takes
+   * its content's height when it's let go.
    */
   resized(entries: readonly ResizeObserverEntry[]): Resized[] {
     const threads: Resized[] = [];
@@ -293,7 +299,10 @@ export class Threads {
       host.measured(height, width);
       if (!host.drawn || pinned === undefined) {
         host.drawn = true;
-        host.pin(height);
+        if (height > 0 && this.lands?.(host)) {
+          host.pin(0);
+          threads.push({ host, fresh: true, reflowed: false });
+        } else host.pin(height);
         continue;
       }
       if (Math.abs(height - pinned) < 0.5 || host.held) continue;

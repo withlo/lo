@@ -378,7 +378,7 @@ describe('attaching', () => {
 
 describe('a placeholder whose upload isn’t under way', () => {
   const ONE = placeholderFor('retry-storm.png', '9f86d081884c7d65');
-  const LOST = [['Couldn’t attach retry-storm.png', 'Attach it again.']];
+  const LOST = [['Couldn’t attach retry-storm.png', '']];
 
   test('goes from the text by itself, with the file named to attach again', () => {
     // As after Lo restarts with a file on its way in: the draft comes back with its placeholder.
@@ -403,8 +403,8 @@ describe('a placeholder whose upload isn’t under way', () => {
     clearStranded(two);
     expect(two.text()).toBe(' ');
     expect(notes(two)).toEqual([
-      ['Couldn’t attach a.png', 'Attach it again.'],
-      ['Couldn’t attach b.gif', 'Attach it again.'],
+      ['Couldn’t attach a.png', ''],
+      ['Couldn’t attach b.gif', ''],
     ]);
   });
 

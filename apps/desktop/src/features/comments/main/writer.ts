@@ -974,6 +974,23 @@ export class Writer {
   }
 
   /**
+   * Looks again, when the reader asks, whether the change to the thread, or the comment on the pull
+   * request itself, `node` on view `id` went: one whose answer was lost, and that Lo couldn't tell
+   * of when it looked by itself (`unknown`). It's `checking` until a read says, as after it was
+   * sent. Nothing is sent.
+   */
+  checkAct(id: string, node: string): void {
+    const target = this.#targetOf(id);
+    if (!target) return;
+    const key = this.#actKey(target, node);
+    const row = this.#acts.get(key)?.row;
+    if (row?.stands !== 'unknown') return;
+    const { thread, comment, change } = row;
+    // Sent long enough ago that a read made now says.
+    this.#actLost(target, key, { thread, comment, change }, 0);
+  }
+
+  /**
    * GitHub's answer to `asked`, sent at `sentAt`, was lost: it's `checking` until a read made a
    * while after it was sent says whether it went. Done, the threads are read again; otherwise it's
    * `notDone`, or `unknown` when GitHub refuses the read. Nothing's sent again.

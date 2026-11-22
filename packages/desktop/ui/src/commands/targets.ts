@@ -64,6 +64,11 @@ export interface HeaderTarget {
 export interface ThreadTarget {
   kind: 'thread';
   thread: string;
+  /**
+   * It's drawn collapsed to one line, where what names it knows: what opens or collapses it is
+   * called by which it would do.
+   */
+  collapsed?: boolean;
 }
 
 /** A layer of a stack, by its pull request's number. */

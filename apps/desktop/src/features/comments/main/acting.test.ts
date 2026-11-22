@@ -388,6 +388,13 @@ describe('resolving', () => {
     await vi.advanceTimersByTimeAsync(10_000);
     expect(unknown.stands()).toMatchObject([{ stands: 'unknown' }]);
     expect([...fake.sent, ...notDone.sent, ...refusing.sent]).toHaveLength(3);
+    // Looked at again when the reader asks, it's checking until a read says, and nothing's sent.
+    unknown.made.checkAct('t1', THREAD);
+    expect(unknown.stands()).toMatchObject([{ stands: 'checking' }]);
+    refusing.threads.now = { nodes: [thread([])], missing: 0 };
+    await vi.advanceTimersByTimeAsync(0);
+    expect(unknown.stands()).toMatchObject([{ stands: 'notDone' }]);
+    expect(refusing.sent).toHaveLength(1);
     // Asked again, it goes, and how it stands is the new answer's.
     expect(await unknown.made.resolve('t1', THREAD, true)).toEqual({ kind: 'done' });
     expect(refusing.sent).toHaveLength(2);

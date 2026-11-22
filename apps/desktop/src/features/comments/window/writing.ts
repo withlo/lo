@@ -245,8 +245,8 @@ export function whereText(place: DraftPlaceRow): string {
 export type Offer = 'showLatest' | 'loadNewer' | 'onFile' | 'sendAgain' | 'checkAgain' | 'discard';
 
 /**
- * The words on an offer's button. Sending again is "Try again" there, under a title that says what
- * wasn't sent.
+ * The words on an offer's button. Sending again is "Try again" in the box's menu, under a title
+ * that says what wasn't sent; the note has no button for it, since the foot's own send it.
  */
 export const offerLabels: Readonly<Record<Offer, string>> = {
   showLatest: 'Show latest',
@@ -260,17 +260,22 @@ export const offerLabels: Readonly<Record<Offer, string>> = {
 /** A note in a box's frame, before it's drawn. */
 export interface BoxNote {
   readonly key: string;
-  readonly tone: 'info' | 'warning';
+  /** `danger` once a send failed; `warning` while nobody knows whether it went, or it's refused. */
+  readonly tone: 'info' | 'warning' | 'danger';
   readonly icon?: 'clock' | 'blocked' | undefined;
   /** What wasn't done, for a send that failed: `text` is then why. */
   readonly title?: string | undefined;
   readonly text: string;
   readonly offers?: readonly Offer[] | undefined;
+  /** It offers "Attach files…", as the box's foot does: a file's, which didn't attach. */
+  readonly attach?: boolean | undefined;
 }
 
-/** A refusal's note. */
+/** A refusal's note: under a title, it says a send failed, in the tone a `Problem` has. */
 function note(text: string, offers?: readonly Offer[], title?: string): BoxNote {
-  return { key: 'refusal', tone: 'warning', icon: 'blocked', title, text, offers };
+  return title === undefined
+    ? { key: 'refusal', tone: 'warning', icon: 'blocked', text, offers }
+    : { key: 'refusal', tone: 'danger', title, text, offers };
 }
 
 /** What a box's note is titled once its text, a comment or an edit, wasn't sent. */
@@ -287,6 +292,9 @@ const NOT_CONFIRMED: Readonly<Record<'comment' | 'edit', string>> = {
 
 /** Why a send failed, or isn't confirmed, when GitHub's answer never came. */
 const NO_ANSWER = 'GitHub didn’t respond.';
+
+/** Why nothing was sent, when Lo couldn't read whether a pending review would take the comment. */
+const NO_PENDING_READ = 'Couldn’t check for a pending review.';
 
 /**
  * Why a box's buttons don't send while nobody knows whether its text is on GitHub already: sending
@@ -380,7 +388,7 @@ export function refusalNote(refusal: Refusal, doing: 'comment' | 'edit' = 'comme
       );
     // Nothing was sent, so sending it again is safe.
     case 'pendingUnknown':
-      return note(NO_ANSWER, ['sendAgain'], COULDNT[doing]);
+      return note(NO_PENDING_READ, ['sendAgain'], COULDNT[doing]);
     // Sent before, and nobody knows whether it posted: only a look says whether it can go again.
     case 'unconfirmed':
       return unconfirmed(doing);
@@ -434,7 +442,7 @@ export function sendingNote(sending: Sending | null, edit = false): BoxNote | un
     case 'notPosted':
       return {
         key: 'sending',
-        tone: 'warning',
+        tone: 'danger',
         title: COULDNT[doing],
         text: NO_ANSWER,
         offers: ['sendAgain'],

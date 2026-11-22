@@ -143,7 +143,8 @@ export default defineCommands('diff', {
     when: normal,
     menu: [
       { on: 'header', order: 10, label: 'Load, close or open the file' },
-      { on: 'thread', order: 30, label: 'Collapse or open' },
+      // Named by which it would do: the handler says "Expand" on one that's collapsed.
+      { on: 'thread', order: 30, label: 'Collapse' },
     ],
   },
   /**

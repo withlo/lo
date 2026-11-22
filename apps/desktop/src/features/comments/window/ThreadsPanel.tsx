@@ -121,6 +121,10 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
   const filters = keysOf('comments.filterThreads');
   // What the foot's hints act on: the thread the keyboard is on, as their keys do.
   const target = panelTarget(view);
+  // Named by what it would do to that thread.
+  const onResolved =
+    target.kind === 'thread' &&
+    listable(threads).some((row) => row.id === target.thread && row.resolved);
   const panelKey = keysOf('tab.rightPanel');
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-lo-threads={view}>
@@ -147,16 +151,16 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
           data-lo-scope="threads"
         />
       </div>
-      <div className="flex flex-none flex-wrap items-center gap-2 border-t border-border-subtle px-8 py-4 text-fg-muted text-small">
+      {/* One line always: the filter's key is on the filter itself. */}
+      <div className="flex min-w-0 flex-none items-center gap-2 overflow-hidden border-t border-border-subtle px-8 py-4 whitespace-nowrap text-fg-muted text-small">
         <HintButton command="comments.nextThread">Next</HintButton>
         <HintButton command="comments.previousThread">Previous</HintButton>
         <HintButton command="comments.showThread" target={target}>
           Show
         </HintButton>
         <HintButton command="comments.resolveInPanel" target={target}>
-          Resolve
+          {onResolved ? 'Unresolve' : 'Resolve'}
         </HintButton>
-        <HintButton command="comments.filterThreads">Filter</HintButton>
       </div>
     </div>
   );
