@@ -133,7 +133,7 @@ describe('alignRows at the end of the last file', () => {
 
   test('catches up below the last row on both sides, as above the next file it would', () => {
     expect(alignRows(tail, 0, 0, undefined, undefined, true)).toEqual([
-      { side: 'old', row: 0, place: 'below', height: 60 },
+      { side: 'old', row: 0, place: 'below', height: 60, atEnd: true },
     ]);
   });
 

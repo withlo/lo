@@ -53,6 +53,7 @@ export type {
   Place,
   Probe,
   ProblemContent,
+  ReadFailure,
   RenderProblem,
   RenderThread,
   Rested,

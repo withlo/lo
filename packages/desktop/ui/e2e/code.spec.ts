@@ -62,15 +62,21 @@ async function open(
   return page;
 }
 
-/** The page with three files side by side, as `harness.openFiles` draws them, in a box `height` tall. */
-async function openFiles(height?: number): Promise<Page> {
+/**
+ * The page with three files side by side, as `harness.openFiles` draws them, in a box `height`
+ * tall; with `addedLast`, a fourth after them, added whole.
+ */
+async function openFiles(height?: number, addedLast = false): Promise<Page> {
   app = await launch(harness);
   const page = await app.firstWindow();
   await page.waitForFunction(() => 'harness' in window);
-  await page.evaluate((tall) => {
-    if (tall !== undefined) window.harness.setHeight(tall);
-    window.harness.openFiles();
-  }, height);
+  await page.evaluate(
+    ({ tall, last }) => {
+      if (tall !== undefined) window.harness.setHeight(tall);
+      window.harness.openFiles(last);
+    },
+    { tall: height, last: addedLast },
+  );
   await frames(page);
   return page;
 }
@@ -954,6 +960,24 @@ test('equal runs of empty space look equal, at the end of the last file too, and
     .toEqual({ a: ['hatched'], b: ['flat'], c: ['hatched'] });
   const { a, c } = await spacers();
   expect(Math.abs(a[0]!.height - c[0]!.height)).toBeLessThan(1);
+});
+
+test('an added file’s gap looks the same last in the diff as before another file, its gutter not filled in', async () => {
+  const page = await openFiles(undefined, true);
+  const spacers = async () => {
+    const all = await page.evaluate(() => window.harness.spacers());
+    const of = (path: string) => all.filter((each) => each.path === path && each.height > 1);
+    return { b: of('src/b.ts'), d: of('src/d.ts') };
+  };
+  // src/b.ts's gap is caught up above src/c.ts's header, and src/d.ts's below its own.
+  await expect
+    .poll(async () => {
+      const { b, d } = await spacers();
+      return { b: b.map(({ look }) => look), d: d.map(({ look }) => look) };
+    })
+    .toEqual({ b: ['flat'], d: ['flat'] });
+  const { b, d } = await spacers();
+  expect(Math.abs(b[0]!.height - d[0]!.height)).toBeLessThan(1);
 });
 
 test('the next file’s header pushes the pinned row up as it comes under it, and the row is that file’s once it reaches the top', async () => {

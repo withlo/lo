@@ -91,6 +91,14 @@ export interface FileProblem {
   readonly command: string;
 }
 
+/** Why a file's lines couldn't be read, for its `Problem`. */
+export interface ReadFailure {
+  /** The cause in plain words, where it's known. */
+  readonly reason?: string | undefined;
+  /** What was said of it, as it was said: behind Details. */
+  readonly details?: string | undefined;
+}
+
 /** What the caller drew for a file's `Problem`, which the view keeps up to date and takes down. */
 export interface ProblemContent {
   /** The problem changed: draw it again. */
@@ -99,14 +107,14 @@ export interface ProblemContent {
   destroy(): void;
 }
 
+/** What `za` does to a file now (`DiffView.foldOf`). */
+export type FileFold = 'collapse' | 'expand' | 'show';
+
 /**
  * Draws file `file`'s problem in `host`, an element the view made for it, which it keeps under the
  * file's header, as the shared `Problem`, its "Try again" running `problem.command` on the file.
  * What's in `host` is the caller's. Draw it at once: the view lays the header out as it's drawn.
  */
-/** What `za` does to a file now (`DiffView.foldOf`). */
-export type FileFold = 'collapse' | 'expand' | 'show';
-
 export type RenderProblem = (
   host: HTMLElement,
   problem: FileProblem,
@@ -518,8 +526,11 @@ export interface DiffView extends KeySource {
     lines: { old: readonly string[]; new: readonly string[] },
     diff: FileDiff,
   ): boolean;
-  /** Says a file asked for with `load` couldn't be loaded: its note says so, and `za` asks again. */
-  loadFailed(file: string): void;
+  /**
+   * Says a file asked for with `load` couldn't be loaded, and why, as `failure` has it: its
+   * `Problem` says so under its header, and `za` asks again.
+   */
+  loadFailed(file: string, failure?: ReadFailure): void;
   setHeader(file: string, header: FileHeader): void;
   /**
    * Lays the diff out again, keeping the cursor's line on screen: or, with focus in the peek, the

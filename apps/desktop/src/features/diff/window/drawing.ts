@@ -622,9 +622,9 @@ export function draw(options: DrawOptions): Drawing {
       pacer.run(() => {
         if (!held.has(id)) steady(() => view.setDiff(id, diff));
       }),
-    failed: (id) =>
+    failed: (id, failure) =>
       pacer.run(() => {
-        if (!held.has(id)) steady(() => view.loadFailed(id));
+        if (!held.has(id)) steady(() => view.loadFailed(id, failure));
       }),
     // Labels at moves' ends change the height of files above the screen too: `steady` keeps what's
     // on screen in place.

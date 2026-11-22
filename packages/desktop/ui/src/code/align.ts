@@ -27,6 +27,11 @@ export interface Spacer {
   row: number;
   place: 'above' | 'below';
   height: number;
+  /**
+   * It's only the catching up at the end of the last file, below the last row with lines on both
+   * sides, so it's that file's gap, not space beside something under its header.
+   */
+  atEnd?: boolean;
 }
 
 /** Less than this is rounding, not a gap. */
@@ -104,7 +109,7 @@ export function alignRows(
     const needed = (at === -1 ? 0 : spacers[at]!.height) + Math.abs(ahead);
     const kept = current(side, row, 'below');
     const height = kept !== undefined && Math.abs(kept - needed) < tolerance ? kept : needed;
-    if (at === -1) spacers.push({ side, row, place: 'below', height });
+    if (at === -1) spacers.push({ side, row, place: 'below', height, atEnd: true });
     else spacers[at] = { side, row, place: 'below', height };
   }
 

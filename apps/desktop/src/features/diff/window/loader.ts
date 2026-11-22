@@ -7,7 +7,9 @@
 // here touches the DOM: the view hears through a sink.
 
 import { splitLines, type FileDiff, type MovedBlock } from '@lo/diff';
+import type { ReadFailure } from '@lo/ui/code';
 
+import { IpcError } from '../../../ipc/contract.ts';
 import { type Changed, fileKey } from '../../tree/contract.ts';
 import type { DiffState, FileText, FileVersions, Source } from '../contract.ts';
 import {
@@ -87,8 +89,8 @@ export interface Sink {
   lines(id: string, shown: Shown): void;
   /** A file's diff alone, its lines unchanged, as after whitespace is hidden or shown. */
   diff(id: string, diff: FileDiff): void;
-  /** A file asked for couldn't be loaded. */
-  failed(id: string): void;
+  /** A file asked for couldn't be loaded, and why. */
+  failed(id: string, failure: ReadFailure): void;
   moves(moves: readonly Moved[]): void;
   /** A file's highlighting, which comes after its diff. */
   tokens(id: string, tokens: Shown['tokens']): void;
@@ -221,7 +223,8 @@ export class Loader {
   #ready: Ready | undefined;
   /** What's been worked out of each file at the head on screen, by id. */
   readonly #shown = new Map<string, Shown>();
-  readonly #failed = new Set<string>();
+  /** Files whose lines couldn't be read, and why. */
+  readonly #failed = new Map<string, ReadFailure>();
   #moves: readonly Moved[] = [];
   #whitespace = true;
   /** Whether the view has said whether to show whitespace, which loading waits for. */
@@ -267,6 +270,11 @@ export class Loader {
   /** Whether a file asked for couldn't be loaded. */
   failed(id: string): boolean {
     return this.#failed.has(id);
+  }
+
+  /** Why file `id`'s lines couldn't be read, if they couldn't. */
+  failure(id: string): ReadFailure | undefined {
+    return this.#failed.get(id);
   }
 
   /** The moves, once found. */
@@ -377,7 +385,7 @@ export class Loader {
     const run = this.#run;
     const entry = run?.entries.find((each) => each.id === id);
     if (!run || !entry) {
-      this.#sink?.failed(id);
+      this.#sink?.failed(id, { details: 'The diff on screen has no such file.' });
       this.#fileChanged(id);
       return;
     }
@@ -386,8 +394,10 @@ export class Loader {
       .then(async () => {
         if (run.stopped) return;
         if (this.#shown.get(id)?.from !== run.from) {
-          this.#failed.add(id);
-          this.#sink?.failed(id);
+          // Why, as the batch said, if it did.
+          const failure = this.#failed.get(id) ?? { details: 'Its lines didn’t come.' };
+          this.#failed.set(id, failure);
+          this.#sink?.failed(id, failure);
           this.#fileChanged(id);
           return;
         }
@@ -397,8 +407,9 @@ export class Loader {
       .catch((error: unknown) => {
         this.#work.log('Lo couldn’t load a file:', error);
         if (run.stopped) return;
-        this.#failed.add(id);
-        this.#sink?.failed(id);
+        const failure = failureOf(error);
+        this.#failed.set(id, failure);
+        this.#sink?.failed(id, failure);
         this.#fileChanged(id);
       });
   }
@@ -416,7 +427,7 @@ export class Loader {
     this.#run?.controller.abort();
     this.#run = undefined;
     this.#ready = undefined;
-    const gone = new Set([...this.#shown.keys(), ...this.#failed]);
+    const gone = new Set([...this.#shown.keys(), ...this.#failed.keys()]);
     this.#shown.clear();
     this.#failed.clear();
     this.#moves = [];
@@ -515,13 +526,13 @@ export class Loader {
     for (const entry of batch) {
       if (run.stopped) return;
       if (batch.length === 1) {
-        this.#fail(run, entry, describe(error));
+        this.#fail(run, entry, failureOf(error));
         continue;
       }
       try {
         await this.#batch(run, [entry], BUDGET, true);
       } catch (alone) {
-        if (!run.stopped) this.#fail(run, entry, describe(alone));
+        if (!run.stopped) this.#fail(run, entry, failureOf(alone));
       }
     }
     this.#readyIfDone(run);
@@ -589,7 +600,13 @@ export class Loader {
           lines: { old: splitLines(text.old ?? ''), new: splitLines(text.new ?? '') },
         });
       } else {
-        this.#fail(run, entry, text?.why ?? 'main sent nothing for it');
+        this.#fail(
+          run,
+          entry,
+          text
+            ? { reason: text.reason, details: text.why }
+            : { details: 'Main sent nothing for it.' },
+        );
       }
     });
     const whitespace = this.#whitespace;
@@ -618,12 +635,14 @@ export class Loader {
     jobs.forEach(({ entry, lines }, index) => {
       const result = results[index];
       if (!result?.ok) {
-        this.#fail(run, entry, result?.why ?? 'the background process sent nothing for it');
+        this.#fail(run, entry, {
+          details: result?.why ?? 'The background process sent nothing for it.',
+        });
         return;
       }
       const shownLines = result.lines ?? lines;
       if (!shownLines) {
-        this.#fail(run, entry, 'it came without its lines');
+        this.#fail(run, entry, { details: 'It came without its lines.' });
         return;
       }
       const shown: Shown = {
@@ -642,10 +661,13 @@ export class Loader {
     });
   }
 
-  #fail(run: Run, entry: Entry, why: string): void {
-    this.#work.log(`Lo couldn’t show ${entry.versions.path.text}:`, why);
-    this.#failed.add(entry.id);
-    if (this.#drawing(run)) this.#sink?.failed(entry.id);
+  #fail(run: Run, entry: Entry, failure: ReadFailure): void {
+    this.#work.log(
+      `Lo couldn’t show ${entry.versions.path.text}:`,
+      failure.details ?? failure.reason ?? '',
+    );
+    this.#failed.set(entry.id, failure);
+    if (this.#drawing(run)) this.#sink?.failed(entry.id, failure);
     this.#fileChanged(entry.id);
   }
 
@@ -851,6 +873,14 @@ function wants(run: Run, entry: Entry): boolean {
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Why a read that threw failed: main's own words for the window as the reason, or else what was
+ * said, behind Details, with no reason, since its cause isn't known.
+ */
+function failureOf(error: unknown): ReadFailure {
+  return error instanceof IpcError ? { reason: error.message } : { details: describe(error) };
 }
 
 /** Entries in batches of a few megabytes of lines to highlight, or as many files as a job takes. */

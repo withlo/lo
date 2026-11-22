@@ -1182,10 +1182,11 @@ export class Aligner {
               refs[spacer.row] !== end ||
               doc.line(lines(end, side).first).from <= viewport.to),
         )
-        .map(({ row, place, height }) => {
+        .map(({ row, place, height, atEnd }) => {
           const ref = refs[row]!;
           const { first, last } = lines(ref, side);
-          const under = ref.row === 0 && place === 'below';
+          // Below a header, beside what's under it, unless it's the last file's gap.
+          const under = ref.row === 0 && place === 'below' && !atEnd;
           // Above a header, it's the end of the file before.
           const owner = ref.row === 0 && place === 'above' ? ref.file - 1 : ref.file;
           // Beside folded lines, or on a side with none of its file's lines, as an added file's

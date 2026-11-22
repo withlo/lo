@@ -258,7 +258,7 @@ describe('a pull request’s diff', { timeout: 60_000 }, () => {
     });
     const numbers = find(github, 'data/numbers.txt');
     expect(await diff.texts(APP_PULL.head, null, null, null, 'github', [numbers.place])).toEqual([
-      { kind: 'missing', why: expect.any(String) },
+      { kind: 'missing', why: expect.any(String), reason: 'GitHub’s diff doesn’t show this file.' },
     ]);
 
     diff.update(e2eInfo(READY));

@@ -193,9 +193,10 @@ const harness = {
   },
   /**
    * Draws three files side by side: `src/a.ts` and `src/c.ts` each end with three lines added, the
-   * second last in the diff, and `src/b.ts` between them is added whole, three lines long.
+   * second last in the diff, and `src/b.ts` between them is added whole, three lines long. With
+   * `addedLast`, `src/d.ts`, added whole as `src/b.ts` is, comes last.
    */
-  openFiles(): void {
+  openFiles(addedLast = false): void {
     const ends = { old: ['one', 'two'], new: ['one', 'two', 'three', 'four', 'five'] };
     const added = { old: [], new: ['one', 'two', 'three'] };
     const header = { additions: 3, deletions: 0 };
@@ -203,6 +204,9 @@ const harness = {
       { id: 'a', path: 'src/a.ts', change: 'modified' as const, lines: ends, header },
       { id: 'b', path: 'src/b.ts', change: 'added' as const, lines: added, header },
       { id: 'c', path: 'src/c.ts', change: 'modified' as const, lines: ends, header },
+      ...(addedLast
+        ? [{ id: 'd', path: 'src/d.ts', change: 'added' as const, lines: added, header }]
+        : []),
     ];
     shown = createDiffView(
       root(),

@@ -76,6 +76,7 @@ import type {
   Place,
   Probe,
   ProblemContent,
+  ReadFailure,
   RenderProblem,
   RenderThread,
   Side,
@@ -451,8 +452,8 @@ class View implements DiffView {
   readonly #loading = new Set<number>();
   /** Of the files loading, those read again after a read that failed, not asked to show. */
   readonly #rereading = new Set<number>();
-  /** Files kept out whose lines couldn't be loaded, which `za` tries again. */
-  readonly #failed = new Set<number>();
+  /** Files kept out whose lines couldn't be loaded, and why, which `za` tries again. */
+  readonly #failed = new Map<number, ReadFailure>();
   readonly #loaded = new Set<number>();
   /** Each side's highlighting triples, and the same with where each line starts. */
   readonly #triples: { old?: Uint32Array | undefined; new?: Uint32Array | undefined }[];
@@ -968,11 +969,11 @@ class View implements DiffView {
     this.#bringIn(this.#fileOf(id), lines, diff);
   }
 
-  loadFailed(id: string): void {
+  loadFailed(id: string, failure: ReadFailure = {}): void {
     const file = this.#fileOf(id);
     if (!this.#loading.delete(file)) return;
     this.#rereading.delete(file);
-    this.#failed.add(file);
+    this.#failed.set(file, failure);
     this.#takeProblem(file);
     this.#refresh(file);
   }
@@ -3961,9 +3962,17 @@ class View implements DiffView {
    */
   #problemFor(file: number): FileProblem | undefined {
     const { path, header } = this.#files[file]!;
-    if (!this.#failed.has(file)) return header.problem;
+    const failed = this.#failed.get(file);
+    if (!failed) return header.problem;
     const name = path.slice(path.lastIndexOf('/') + 1);
-    return { title: `Couldn’t read ${name}`, command: viewControls.toggle };
+    // What was said goes behind Details, unless it's the reason itself.
+    const { reason, details } = failed;
+    return {
+      title: `Couldn’t read ${name}`,
+      reason,
+      details: details === reason ? undefined : details,
+      command: viewControls.toggle,
+    };
   }
 
   /**

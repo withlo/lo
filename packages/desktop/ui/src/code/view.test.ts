@@ -16,6 +16,7 @@ import type {
   DiffFile,
   DiffInit,
   DiffView,
+  FileProblem,
   Mark,
   OverviewMark,
   PeekFrame,
@@ -573,6 +574,34 @@ describe('folds', () => {
     shown.reveal(onLine('d', 'new', 5));
     expect(shown.probe.cursor()?.at).toMatchObject(onLine('d', 'new', 5));
     expect(shown.lines({ file: 'd', side: 'new', from: 5, to: 5 })).toEqual(['d 5']);
+  });
+
+  test('a file that couldn’t be read says why, and what was said behind Details', () => {
+    const drawn: FileProblem[] = [];
+    const on = events();
+    const shown = open(on, {
+      renderProblem: (host, problem) => {
+        drawn.push(problem);
+        return { update: (now) => void drawn.push(now), destroy() {} };
+      },
+    });
+    shown.fold(onHeader('d', 'new'), 'toggle');
+    shown.loadFailed('d', { reason: 'The local copy isn’t open.', details: 'ENOENT' });
+    expect(drawn.at(-1)).toMatchObject({
+      title: 'Couldn’t read big.json',
+      reason: 'The local copy isn’t open.',
+      details: 'ENOENT',
+    });
+    // Said as the reason, it isn't said again behind Details.
+    shown.fold(onHeader('d', 'new'), 'toggle');
+    shown.loadFailed('d', {
+      reason: 'GitHub’s diff doesn’t show this file.',
+      details: 'GitHub’s diff doesn’t show this file.',
+    });
+    expect(drawn.at(-1)).toMatchObject({
+      reason: 'GitHub’s diff doesn’t show this file.',
+      details: undefined,
+    });
   });
 });
 

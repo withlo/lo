@@ -174,7 +174,7 @@ function scopeSection(features: readonly Declarations[]): string[] {
   return [
     '## Where keys apply',
     '',
-    'A key applies in a scope: the nearest part of the window around the focused element that names one, or `window`. A key for a scope beats one for anywhere, so the same chord can mean one thing in a comment box and another elsewhere.',
+    "A key applies in a scope: the nearest part of the window around the focused element that names one, or `window`. A key for a scope beats one for anywhere, so the same chord can mean one thing in a comment box and another elsewhere. A key for one kind of thing, such as a review thread, applies only while it's on one: the thread `] t` landed on, or the only one under the cursor's line. There it beats the key for the scope, so `z a` collapses the thread it's on, and the file elsewhere.",
     '',
     ...table(['Scope', 'What it is'], rows),
     '',

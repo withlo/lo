@@ -212,7 +212,7 @@ function Code({
       loader.onFile((changed) => {
         if (changed !== id) return;
         if (loader.failed(id) && asked) {
-          made.loadFailed(id);
+          made.loadFailed(id, loader.failure(id));
           return;
         }
         take();
