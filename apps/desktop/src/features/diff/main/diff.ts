@@ -117,6 +117,9 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Why a file GitHub's diff leaves out has no text from it, said as the cause. */
+const GITHUB_LEAVES_OUT = 'GitHub’s diff doesn’t show this file.';
+
 /** How far into a file git looks for a NUL byte, which says it isn't text. */
 const BINARY_PROBE = 8000;
 
@@ -401,7 +404,7 @@ export class DiffTab {
       return asked.map(({ place }): FileText => {
         const patch = at.patches[place];
         return patch === undefined
-          ? { kind: 'missing', why: 'GitHub’s diff doesn’t show this file.' }
+          ? { kind: 'missing', why: GITHUB_LEAVES_OUT, reason: GITHUB_LEAVES_OUT }
           : { kind: 'patch', patch };
       });
     }

@@ -13,7 +13,7 @@ export interface ExplainedLines {
   /** The first and last line, from 1. */
   readonly from: number;
   readonly to: number;
-  /** The explainer's id for what explains them, which "Read it in the overview" gives back. */
+  /** The explainer's id for what explains them, which "Show in overview" gives back. */
   readonly block: string;
   /**
    * What the note says, as plain text, never HTML: a label, such as a section, and the words; and
@@ -33,7 +33,7 @@ export interface Explainer {
    * the explanation doesn't describe and can't place its lines on.
    */
   linesAt(tab: string, at: string): readonly ExplainedLines[];
-  /** "Read it in the overview": shows what `block` names in tab `tab`. Says whether it could. */
+  /** "Show in overview": shows what `block` names in tab `tab`. Says whether it could. */
   read(tab: string, block: string): boolean;
 }
 

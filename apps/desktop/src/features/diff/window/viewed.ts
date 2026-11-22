@@ -2,13 +2,19 @@
 // feature. Marking closes the file and goes on to the next one that isn't viewed, in the order the
 // diff shows them, round the end; clearing opens it again. With a count, `3e` marks three files
 // and clears none. A failed write takes back the mark alone, never where the cursor went or what's
-// on screen.
+// on screen, and its file's header says what failed. Where `e` can't mark a file, its viewed
+// control is dimmed, and says why.
 
 import type { HeaderTarget, LineTarget } from '@lo/ui/code';
 
-import { notify } from '../../../window/commands/notices.tsx';
 import type { FileVersions } from '../contract.ts';
-import { passedOver, toggleViewed, viewedMarksOf } from '../../revisions/window/shared.ts';
+import {
+  passedOver,
+  toggleViewed,
+  viewedMarkOf,
+  viewedMarksOf,
+  viewedRefusal,
+} from '../../revisions/window/shared.ts';
 import type { Drawn } from './tabs.ts';
 
 /**
@@ -31,6 +37,27 @@ export function nextUnviewed(
 }
 
 /**
+ * Whether `e` can mark or clear the file at `target` in the diff drawn as `drawn`, or why not: the
+ * reason its dimmed viewed control, and its menu row, say.
+ */
+export function viewedEnabled(drawn: Drawn, target: LineTarget | HeaderTarget): true | string {
+  const id = drawn.fileAt(target);
+  const entry = drawn.loader.snapshot().ready?.entries.find((each) => each.id === id);
+  if (!entry) return 'Reading changed files…';
+  const { path, previous } = entry.versions;
+  return viewedRefusal(drawn.tab, { path, previous }) ?? true;
+}
+
+/** Whether the file at `target` in the diff drawn as `drawn` shows as viewed, so `e` unmarks it. */
+export function viewedAt(drawn: Drawn, target: LineTarget | HeaderTarget): boolean {
+  const id = drawn.fileAt(target);
+  const entry = drawn.loader.snapshot().ready?.entries.find((each) => each.id === id);
+  if (!entry) return false;
+  const { path, previous } = entry.versions;
+  return viewedMarkOf(viewedMarksOf(drawn.tab), path, previous) === 'viewed';
+}
+
+/**
  * `e` on `target` in the diff drawn as `drawn`, which marks the file viewed or clears its mark; or
  * with a count, `3e` or `1e`, which only marks.
  */
@@ -40,10 +67,8 @@ export function markViewed(drawn: Drawn, target: LineTarget | HeaderTarget, coun
     (drawn.loader.snapshot().ready?.entries ?? []).map((entry) => [entry.id, entry]),
   );
   const entry = entries.get(id);
-  if (!entry) {
-    notify('Mark viewed', 'The diff is still loading, so there’s no file to mark viewed yet.');
-    return;
-  }
+  // Its control is dimmed meanwhile (`viewedEnabled`).
+  if (!entry) return;
   if (count !== undefined) {
     markMany(drawn, entries, id, count);
     return;
@@ -52,7 +77,6 @@ export function markViewed(drawn: Drawn, target: LineTarget | HeaderTarget, coun
   const toggled = toggleViewed(drawn.tab, { path, previous });
   switch (toggled.kind) {
     case 'refused':
-      notify('Mark viewed', toggled.why);
       return;
     case 'clearing':
       drawn.viewedHere(id, false, undefined);
@@ -109,10 +133,6 @@ function markMany(
     const versions = entries.get(each)?.versions;
     if (!versions) return;
     const toggled = toggleViewed(drawn.tab, { path: versions.path, previous: versions.previous });
-    if (toggled.kind === 'refused') {
-      notify('Mark viewed', toggled.why);
-      return;
-    }
     if (toggled.kind !== 'marking') return;
     drawn.viewedHere(each, true, marking[index + 1] ?? next);
   }

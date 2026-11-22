@@ -42,18 +42,23 @@ import {
 } from '@codemirror/view';
 
 import { KEY_EVENT } from '../commands/index.ts';
-import { alignRows, type RowHeights, type SideHeights } from './align.ts';
+import { alignRows, hatchedSpots, type RowHeights, type SideHeights } from './align.ts';
 import type { PassStats } from './api.ts';
+import { HEADER_HEIGHT } from './heads.ts';
 import type { Layout, Side } from './layout.ts';
 import type { FileRows } from './rows.ts';
 import { heldByScreenKey, screenKeyPin } from './screen.ts';
-import { SpacerWidget } from './widgets.ts';
+import { HATCHED, SpacerWidget, type SpacerLook } from './widgets.ts';
 
-/** A spacer as a decoration: a block widget at `pos`, before (-1) or after (2) what's there. */
+/**
+ * A spacer as a decoration: a block widget at `pos`, before (-1) or after (2) what's there, and
+ * how it's drawn.
+ */
 interface Placed {
   pos: number;
   side: -1 | 2;
   height: number;
+  look: SpacerLook;
 }
 
 /** Replaces the spacers between `from` and `to` with `spacers`. */
@@ -112,8 +117,10 @@ const spacerField = StateField.define<DecorationSet>({
         filterFrom: from,
         filterTo: to,
         filter: () => false,
-        add: effect.value.spacers.map(({ pos, side, height }) =>
-          Decoration.widget({ widget: new SpacerWidget(height), block: true, side }).range(pos),
+        add: effect.value.spacers.map(({ pos, side, height, look }) =>
+          Decoration.widget({ widget: new SpacerWidget(height, look), block: true, side }).range(
+            pos,
+          ),
         ),
         sort: true,
       });
@@ -645,10 +652,13 @@ export class Aligner {
     // The cursor's own row of text, as CodeMirror scrolls to it, not the whole of a line that
     // wraps: a cursor on screen is left where it is, as a key that scrolls, such as `zt`, put it.
     const cursor = cursorRow(view, head, line);
-    if (cursor.top >= screen.top - 1 && cursor.bottom <= screen.bottom + 1) return;
+    // Nothing is left under the file's header pinned over the scroll's top, while one is.
+    const pinned = this.#scroller.querySelector(':scope > .lo-diffpin:not([hidden])');
+    const top = screen.top + (pinned ? HEADER_HEIGHT : 0);
+    if (cursor.top >= top - 1 && cursor.bottom <= screen.bottom + 1) return;
     let shift = 0;
     if (cursor.bottom > screen.bottom) shift = cursor.bottom - screen.bottom + cursorMargin;
-    if (cursor.top - shift < screen.top) shift = cursor.top - screen.top - cursorMargin;
+    if (cursor.top - shift < top) shift = cursor.top - top - cursorMargin;
     this.#scroller.scrollTop += shift;
     const offset = drawnRect(view, head)!.top - screen.top;
     this.#anchor = {
@@ -1154,6 +1164,8 @@ export class Aligner {
         const to = state.doc.line(last).to;
         return to < viewport.from || to > viewport.to;
       },
+      // The region runs to the end of the last file.
+      !end && this.#step(refs.at(-1)!, 1) === undefined,
     );
 
     let changed = false;
@@ -1161,7 +1173,7 @@ export class Aligner {
       const view = this.#views[side];
       const doc = view.state.doc;
       const { viewport } = view;
-      const placed = spacers
+      const spots = spacers
         // The end row's spacer goes only where this side draws it.
         .filter(
           (spacer) =>
@@ -1170,12 +1182,29 @@ export class Aligner {
               refs[spacer.row] !== end ||
               doc.line(lines(end, side).first).from <= viewport.to),
         )
-        .map(({ row, place, height }): Placed => {
-          const { first, last } = lines(refs[row]!, side);
-          return place === 'above'
-            ? { pos: doc.line(first).from, side: -1, height: round(height) }
-            : { pos: doc.line(last).to, side: 2, height: round(height) };
+        .map(({ row, place, height, atEnd }) => {
+          const ref = refs[row]!;
+          const { first, last } = lines(ref, side);
+          // Below a header, beside what's under it, unless it's the last file's gap.
+          const under = ref.row === 0 && place === 'below' && !atEnd;
+          // Above a header, it's the end of the file before.
+          const owner = ref.row === 0 && place === 'above' ? ref.file - 1 : ref.file;
+          // Beside folded lines, or on a side with none of its file's lines, as an added file's
+          // old side: a missing file isn't a gap.
+          const flat =
+            under ||
+            this.#rows(ref.file).collapsed[ref.row] !== 0 ||
+            (owner >= 0 && this.#layout.files[owner]![side].count === 0);
+          return { line: place === 'above' ? first : last, place, height, flat, under };
         });
+      // Short gaps keep their hatch by the run they're in, not one by one.
+      const hatched = hatchedSpots(spots, HATCHED);
+      const placed = spots.map(({ line, place, height, under }, at): Placed => {
+        const look: SpacerLook = under ? 'under' : hatched[at] ? 'hatched' : 'flat';
+        return place === 'above'
+          ? { pos: doc.line(line).from, side: -1, height: round(height), look }
+          : { pos: doc.line(line).to, side: 2, height: round(height), look };
+      });
       const range = ranges[side];
       if (!range) continue;
       const { from, to } = range;
@@ -1584,11 +1613,13 @@ function sameSpacers(
   view.state.field(spacerField).between(from, to, (pos, _to, decoration) => {
     const widget: unknown = decoration.spec.widget;
     if (widget instanceof SpacerWidget) {
-      current.push({ pos, side: decoration.startSide < 0 ? -1 : 2, height: widget.height });
+      const side = decoration.startSide < 0 ? -1 : 2;
+      current.push({ pos, side, height: widget.height, look: widget.look });
     }
   });
   if (current.length !== placed.length) return false;
-  const key = (spacer: Placed): string => `${spacer.pos}:${spacer.side}:${spacer.height}`;
+  const key = (spacer: Placed): string =>
+    `${spacer.pos}:${spacer.side}:${spacer.height}:${spacer.look}`;
   const sorted = (list: Placed[]): string[] => list.map(key).toSorted();
   return sorted(current).join() === sorted([...placed]).join();
 }

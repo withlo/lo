@@ -300,7 +300,8 @@ function takesFrom(command: Command, owner: Command): boolean {
 
 /**
  * Whether two commands' keys meet at the same level of precedence somewhere: both for anywhere,
- * or both for a scope they share, in a mode they share. Vim's own keys are never Lo's to run. A
+ * or both for a scope they share, in a mode they share, and both or neither for what the key acts
+ * on. Vim's own keys are never Lo's to run. A
  * key an editor handles itself is met by any command that would take it in the editor's scope,
  * for anywhere or not, since matching leaves the editor's alone and the other takes it.
  */
@@ -308,6 +309,8 @@ function overlap(a: Command, b: Command): boolean {
   if (a.vim === 'own' || b.vim === 'own') return false;
   if (a.editor) return !b.editor && takesFrom(b, a);
   if (b.editor) return takesFrom(a, b);
+  // One for what the key acts on is a level of its own, over the scope's.
+  if ((a.when?.on === undefined) !== (b.when?.on === undefined)) return false;
   const scopesA = listOf(a.when?.scope);
   const scopesB = listOf(b.when?.scope);
   if ((scopesA.length === 0) !== (scopesB.length === 0)) return false;

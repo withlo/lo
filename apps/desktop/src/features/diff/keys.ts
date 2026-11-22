@@ -16,22 +16,29 @@ export default defineCommands('diff', {
   nextChange: {
     label: 'Next change',
     group: 'Jump',
+    control: 'Previous change and Next change in the diff bar',
+    bar: { menu: 'Go', order: 30 },
     keys: ['] c'],
-    targets: ['line'],
+    // From the line, as a key; from anywhere, as its button.
+    targets: ['line', 'none'],
     vim: 'motion',
     when: diff,
   },
   previousChange: {
     label: 'Previous change',
     group: 'Jump',
+    control: 'Previous change and Next change in the diff bar',
+    bar: { menu: 'Go', order: 40 },
     keys: ['[ c'],
-    targets: ['line'],
+    // From the line, as a key; from anywhere, as its button.
+    targets: ['line', 'none'],
     vim: 'motion',
     when: diff,
   },
   nextFile: {
     label: 'Next file',
     group: 'Jump',
+    bar: { menu: 'Go', order: 50 },
     keys: ['] f'],
     targets: ['line'],
     vim: 'motion',
@@ -40,6 +47,7 @@ export default defineCommands('diff', {
   previousFile: {
     label: 'Previous file',
     group: 'Jump',
+    bar: { menu: 'Go', order: 60 },
     keys: ['[ f'],
     targets: ['line'],
     vim: 'motion',
@@ -49,6 +57,7 @@ export default defineCommands('diff', {
   nextThread: {
     label: 'Next thread',
     group: 'Jump',
+    bar: { menu: 'Go', order: 70 },
     keys: ['] t'],
     targets: ['line'],
     vim: 'motion',
@@ -57,6 +66,7 @@ export default defineCommands('diff', {
   previousThread: {
     label: 'Previous thread',
     group: 'Jump',
+    bar: { menu: 'Go', order: 80 },
     keys: ['[ t'],
     targets: ['line'],
     vim: 'motion',
@@ -71,6 +81,7 @@ export default defineCommands('diff', {
   otherEnd: {
     label: 'The other end of moved code',
     group: 'Jump',
+    control: 'the place on a moved-code label',
     keys: ['g m'],
     targets: ['line'],
     jump: true,
@@ -84,6 +95,7 @@ export default defineCommands('diff', {
   markViewed: {
     label: 'Mark viewed',
     group: 'Act',
+    control: "the viewed ball in a file's header",
     keys: ['e'],
     targets: ['line', 'header'],
     overVim: true,
@@ -92,14 +104,30 @@ export default defineCommands('diff', {
     menu: { on: 'header', order: 5 },
   },
   /** The cursor's row on the other side. */
-  otherSide: { label: 'The other side', group: 'Diff view', keys: ['tab'], when: normal },
+  otherSide: {
+    label: 'The other side',
+    control: 'a line on the other side',
+    group: 'Diff view',
+    keys: ['tab'],
+    when: normal,
+  },
+  /** Sets the diff side by side, as the setting: with `diff.inline`, a choice of two. */
+  sideBySide: {
+    label: 'Side by side',
+    group: 'Diff view',
+    // `g i` is the switch's, which comes back side by side.
+    keys: [],
+    when: diff,
+    bar: { menu: 'View', order: 30 },
+  },
+  /** A switch, as the setting: draws the diff in one column, or side by side again. */
   inline: {
-    label: 'Inline or side by side',
+    label: 'Inline',
     group: 'Diff view',
     keys: ['g i'],
     overVim: true,
     when: normal,
-    bar: { menu: 'View', order: 30 },
+    bar: { menu: 'View', order: 35 },
   },
   whitespace: {
     label: 'Hide or show whitespace changes',
@@ -112,6 +140,7 @@ export default defineCommands('diff', {
   openRun: {
     label: 'Open unchanged lines',
     group: 'Diff view',
+    control: 'a fold of unchanged lines',
     keys: ['z o'],
     targets: ['line'],
     when: normal,
@@ -124,28 +153,40 @@ export default defineCommands('diff', {
     when: normal,
   },
   openFile: {
-    label: 'Open every unchanged line in the file',
+    label: 'Show all unchanged lines',
     group: 'Diff view',
     keys: ['z R'],
     targets: ['line', 'header'],
     when: normal,
+    menu: { on: 'header', order: 12 },
   },
   /**
-   * On a review thread, the one `]t` landed on or the only one on the cursor's line, opens it or
-   * collapses it. Anywhere else, loads a large file, or closes the file into one block, or opens it
-   * again. Each menu names what it does there.
+   * Collapses the file into its header, or expands it again; on a file too large to draw unasked,
+   * or whose lines couldn't be read, shows its lines. The header's menu names what it does there.
+   * On a thread, `z a` is the thread's (`diff.toggleThread`).
    */
   toggleFile: {
-    label: 'Open or close the thread, or the file',
+    label: 'Collapse file',
     group: 'Diff view',
+    control: "the row under a file's header",
     keys: ['z a'],
-    targets: ['line', 'header', 'thread'],
+    targets: ['line', 'header'],
     when: normal,
-    menu: [
-      { on: 'header', order: 10, label: 'Load, close or open the file' },
-      // Named by which it would do: the handler says "Expand" on one that's collapsed.
-      { on: 'thread', order: 30, label: 'Collapse' },
-    ],
+    // Named by what it would do: the handler says "Expand" on a file collapsed.
+    menu: { on: 'header', order: 10, label: 'Collapse' },
+  },
+  /**
+   * Collapses the review thread the key is on, the one `]t` landed on or the only one on the
+   * cursor's line, or expands it again.
+   */
+  toggleThread: {
+    label: 'Collapse thread',
+    group: 'Threads',
+    keys: ['z a'],
+    targets: ['thread'],
+    when: { scope: 'diff', mode: 'normal', on: 'thread' },
+    // Named by what it would do: the handler says "Expand" on a thread collapsed.
+    menu: { on: 'thread', order: 30, label: 'Collapse' },
   },
   /**
    * The file the cursor is in, whole and read-only, at the cursor's line, in the version on the
@@ -164,6 +205,7 @@ export default defineCommands('diff', {
   loadWhole: {
     label: 'Load a large file anyway',
     group: 'Diff view',
+    control: "the button in the whole file's note on a large file",
     keys: ['z a'],
     targets: ['header', 'line'],
     when: { scope: 'file', mode: 'normal' },

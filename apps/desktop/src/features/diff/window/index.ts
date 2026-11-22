@@ -3,7 +3,8 @@
 // as main says what changed, and is drawn while it's on screen; a file opens whole from the diff,
 // the tree and the file finder.
 
-import type { HeaderTarget, LineTarget, Place, Span, Target, ThreadTarget } from '@lo/ui/commands';
+import type { FileFold } from '@lo/ui/code';
+import type { HeaderTarget, LineTarget, Place, Span, Target } from '@lo/ui/commands';
 import { handlers } from '@lo/ui/commands';
 import { createElement } from 'react';
 
@@ -25,7 +26,7 @@ import { fromMoved, movedNow } from './moved.ts';
 import { keepPlaces, openWhole, showTreeFiles } from './places.ts';
 import { DiffStatus } from './Status.tsx';
 import { keepOnly, keysDiff, loaderOf, takeState, type Drawn } from './tabs.ts';
-import { markViewed } from './viewed.ts';
+import { markViewed, viewedAt, viewedEnabled } from './viewed.ts';
 import { spansOf } from './spans.ts';
 import { WholeFile } from './WholeFile.tsx';
 import {
@@ -47,9 +48,9 @@ const tabs = () => client(tabContract);
 /** The diff on screen, or the file of it beside another view that has focus, or why a key can't run. */
 function onScreen(): Drawn | string {
   const tab = activeTab();
-  if (tab?.kind !== 'pull') return 'There’s no pull request on screen.';
-  if (wholeDrawn(tab.id)) return 'A whole file is on screen, not the diff.';
-  return keysDiff(tab.id) ?? 'The diff isn’t drawn yet.';
+  if (tab?.kind !== 'pull') return 'Open a pull request first';
+  if (wholeDrawn(tab.id)) return 'Go to the diff first';
+  return keysDiff(tab.id) ?? 'Reading changed files…';
 }
 
 /** Runs `act` on the diff on screen. */
@@ -124,7 +125,7 @@ function inCode<T>(
 function codeNow(): true | string {
   const tab = activeTab();
   if (tab?.kind === 'pull' && wholeDrawn(tab.id)) {
-    return opened.get(tab.id) ? true : 'No file is open whole.';
+    return opened.get(tab.id) ? true : 'No whole file open';
   }
   return drawnNow();
 }
@@ -149,7 +150,7 @@ function hasNote(target: LineTarget): boolean {
 function noteNow(target: LineTarget): true | string {
   const drawn = onScreen();
   if (typeof drawn === 'string') return drawn;
-  return drawn.view.hasNote(placeOf(target.at)) || 'There’s no overview note on this line.';
+  return drawn.view.hasNote(placeOf(target.at)) || 'No overview note on this line';
 }
 
 /** Whether `gm` can go from the target's line, in moved code, to the other end, or why not. */
@@ -188,19 +189,24 @@ function fold(how: 'open' | 'close' | 'file' | 'toggle') {
   };
 }
 
-/**
- * `za`: opens or collapses the review thread a target names, the one `]t` landed on or the only
- * one on the cursor's line; on anything else, loads, closes or opens the file.
- */
-function toggle(drawn: Drawn, target: LineTarget | HeaderTarget | ThreadTarget): void {
-  if (target.kind === 'thread') {
-    drawn.view.openThread(target.thread, 'toggle');
-    return;
-  }
-  if (target.kind === 'line' && target.thread !== undefined) {
-    if (drawn.view.openThread(target.thread, 'toggle')) return;
-  }
-  fold('toggle')(drawn, target);
+/** What the header's menu calls `za` on a file, by what it would do there: "Collapse" by default. */
+const foldNames: Record<FileFold, string | undefined> = {
+  collapse: undefined,
+  expand: 'Expand',
+  show: 'Show large file',
+};
+
+/** The diff's layout, at once in the view on screen, then for every tab, as the setting. */
+async function setLayout({ view }: Drawn, next: 'split' | 'inline'): Promise<void> {
+  view.setLayout(next);
+  await changeSetting(layout, next);
+}
+
+/** Whether the diff on screen can change its layout: code beside another view can't. */
+function layoutNow(): true | string {
+  const drawn = onScreen();
+  if (typeof drawn === 'string') return drawn;
+  return !drawn.beside || 'Code beside is always inline';
 }
 
 async function copy(text: string): Promise<void> {
@@ -238,20 +244,25 @@ export default {
       run: withDiff((drawn, target: LineTarget) => fromMoved(drawn, placeOf(target.at))),
       enabled: otherEndNow,
     },
-    markViewed: { run: withDiff(markViewed), enabled: drawnNow },
-    otherSide: { run: withDiff(({ view }) => view.otherSide()), enabled: drawnNow },
-    inline: {
-      run: withDiff(async ({ view }) => {
-        const next = view.probe.layout === 'split' ? 'inline' : 'split';
-        // At once, then for every tab, as the setting.
-        view.setLayout(next);
-        await changeSetting(layout, next);
-      }),
-      enabled: () => {
+    markViewed: {
+      run: withDiff(markViewed),
+      enabled: (target) => {
         const drawn = onScreen();
-        if (typeof drawn === 'string') return drawn;
-        return !drawn.beside || 'Code beside the overview is always inline.';
+        return typeof drawn === 'string' ? drawn : viewedEnabled(drawn, target);
       },
+      // Named for what it does now: on a viewed file, its menu row unmarks it.
+      named: (target) => {
+        const drawn = onScreen();
+        return typeof drawn !== 'string' && viewedAt(drawn, target) ? 'Unmark viewed' : undefined;
+      },
+    },
+    otherSide: { run: withDiff(({ view }) => view.otherSide()), enabled: drawnNow },
+    sideBySide: { run: withDiff((drawn) => setLayout(drawn, 'split')), enabled: layoutNow },
+    inline: {
+      run: withDiff((drawn) =>
+        setLayout(drawn, drawn.view.probe.layout === 'split' ? 'inline' : 'split'),
+      ),
+      enabled: layoutNow,
     },
     whitespace: {
       run: withDiff(async ({ loader }) => {
@@ -263,9 +274,19 @@ export default {
     closeRun: { run: withDiff(fold('close')), enabled: drawnNow },
     openFile: { run: withDiff(fold('file')), enabled: drawnNow },
     toggleFile: {
-      run: withDiff(toggle),
+      run: withDiff(fold('toggle')),
       enabled: drawnNow,
-      named: (target) => (target.kind === 'thread' && target.collapsed ? 'Expand' : undefined),
+      named: (target) => {
+        const drawn = onScreen();
+        if (typeof drawn === 'string') return undefined;
+        const now = drawn.view.foldOf(target.kind === 'header' ? target.file : target.at.file);
+        return now === undefined ? undefined : foldNames[now];
+      },
+    },
+    toggleThread: {
+      run: withDiff(({ view }, target) => void view.openThread(target.thread, 'toggle')),
+      enabled: drawnNow,
+      named: (target) => (target.collapsed ? 'Expand' : undefined),
     },
     wholeFile: {
       run: withDiff((drawn, target) => {
@@ -290,8 +311,8 @@ export default {
       },
       enabled: () => {
         const whole = wholeOnScreen();
-        if (!whole) return 'There’s no whole file on screen.';
-        return whole.read?.content.kind === 'large' || 'The file on screen isn’t waiting to load.';
+        if (!whole) return 'No whole file open';
+        return whole.read?.content.kind === 'large' || 'This file is already shown';
       },
     },
     overviewNote: {

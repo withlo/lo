@@ -26,7 +26,7 @@ function onScreen() {
   if (!view) return 'Lo hasn’t read the revisions yet.';
   if (view.status === 'signIn') return 'Sign in to see revisions.';
   if (view.status === 'loading') return 'Lo is still reading the revisions.';
-  if (view.revisions.length === 0) return view.problem ?? 'Lo couldn’t read the revisions.';
+  if (view.revisions.length === 0) return view.problem ?? 'Can’t read the revisions';
   return { id: tab.id, view };
 }
 

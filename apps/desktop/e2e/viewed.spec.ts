@@ -291,32 +291,43 @@ const tree = (page: Page) => page.locator('[role="tree"][data-lo-scope="tree"]')
 const ball = (page: Page, path: string) =>
   tree(page)
     .locator(`[data-key="${path}"]`)
-    .locator('[title="Viewed"], [title="Not viewed"], [title="Changed since you viewed it"]');
+    .locator('[title="Viewed"], [title="Not viewed"], [title="Changed since viewed"]');
 /**
  * Whether `path`'s file shows closed, its lines in one block: in the new side's editor, its header
  * is followed by a note that says so.
  */
 function closed(page: Page, path: string): Promise<boolean> {
   return page.evaluate((file) => {
-    const after = document.querySelector('.lo-diffview .cm-content[aria-label="After"]');
-    const header = [...(after?.querySelectorAll('.lo-diffhead') ?? [])].find((each) =>
-      each.textContent?.includes(file),
+    // The left column says what the row under a header does; the right draws its ground.
+    const before = document.querySelector('.lo-diffview .cm-content[aria-label="Before"]');
+    const header = [...(before?.querySelectorAll('.lo-diffhead') ?? [])].find(
+      (each) => each instanceof HTMLElement && each.dataset.path === file,
     );
-    let next = header?.nextElementSibling;
-    // Past the spacers that keep the sides level.
+    // In the header's block, where the column has none of the file's lines; else after it, past
+    // the spacers that keep the sides level. A Problem drawn with the header isn't it.
+    const block = header?.closest('.cm-content > *');
+    let next =
+      block?.querySelector('.lo-filerow:not(.lo-fileproblem)') ?? block?.nextElementSibling;
     while (next?.classList.contains('lo-spacer')) next = next.nextElementSibling;
     return Boolean(
-      next?.classList.contains('lo-filenote') && next.textContent?.includes('Expand file'),
+      next?.classList.contains('lo-filerow') && next.textContent?.includes('Expand file'),
     );
   }, path);
 }
 
+/** The `Problem` under a file's header that says why its viewed mark didn't take, by its name. */
+const refusal = (page: Page, name: string) =>
+  page
+    .locator('.lo-diffview .lo-fileproblem')
+    .filter({ hasText: `Couldn’t mark ${name} viewed` })
+    .first();
+
 /** A file's viewed ball in its header. */
 const headerBall = (page: Page, path: string) =>
   page
-    .locator('.lo-diffview .lo-diffhead', { hasText: path })
-    .first()
-    .locator('.lo-diffhead__ball');
+    .locator(`.lo-diffview .cm-editor .lo-diffhead[data-path="${path}"]`)
+    .locator('.lo-diffhead__ball')
+    .first();
 
 /** How far down the page the diff's scrolling box starts, how tall it is, and its scroll. */
 function box(page: Page): Promise<{ top: number; height: number; scroll: number; end: number }> {
@@ -396,7 +407,11 @@ test('`e` marks the file viewed and closes it, and the next file’s header stay
       .toEqual(['MarkFileAsViewed src/text/wrap.ts', 'MarkFileAsViewed src/format.ts']);
     await expect(ball(page, 'src/format.ts')).toHaveAttribute('title', 'Not viewed');
     await expect(headerBall(page, 'src/format.ts')).not.toHaveClass(/is-viewed/);
-    await expect(page.getByText(/GitHub doesn't list src\/format.ts/).first()).toBeVisible();
+    // Why shows under the file's header, with a way to try again, and no toast says it.
+    const problem = refusal(page, 'format.ts');
+    await expect(problem).toContainText('GitHub doesn’t list this file in this pull request.');
+    await expect(problem.getByRole('button', { name: 'Try again' })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: 'format.ts' })).toHaveCount(0);
 
     // The file stays closed, and the cursor and what's at the top of the screen stay put.
     await expect.poll(() => closed(page, 'src/format.ts')).toBe(true);
@@ -419,14 +434,14 @@ test('`e` marks the file viewed and closes it, and the next file’s header stay
 
     await page.keyboard.press('e');
     await expect.poll(() => fake.writes).toEqual(WRITES);
-    // GitHub turned it away: the mark goes back, and Lo says why.
+    // GitHub turned it away: the mark goes back, and the file's header says why.
     await expect(ball(page, 'src/format.ts')).toHaveAttribute('title', 'Not viewed');
-    await expect(page.getByText('GitHub asked Lo to slow down').first()).toBeVisible();
+    await expect(refusal(page, 'format.ts')).toContainText('GitHub’s rate limit was reached.');
 
-    // Now nothing is sent until the pause ends, marking or clearing.
+    // Now nothing is sent until the pause ends, marking or clearing: `e` says why it can't.
     await cursorTo(page, 'src/format.ts');
     await page.keyboard.press('e');
-    await expect(page.getByText(/GitHub asked Lo to hold off until/).first()).toBeVisible();
+    await expect(page.getByText(/GitHub’s rate limit resets at/).first()).toBeVisible();
     await expect(ball(page, 'src/format.ts')).toHaveAttribute('title', 'Not viewed');
     await page.waitForTimeout(1000);
     expect(fake.writes).toEqual(WRITES);
@@ -494,8 +509,8 @@ async function watchHeader(page: Page, id: string): Promise<() => Promise<Header
 function headerHeight(page: Page, path: string): Promise<number | undefined> {
   return page.evaluate((file) => {
     const after = document.querySelector('.lo-diffview .cm-content[aria-label="After"]');
-    const header = [...(after?.querySelectorAll('.lo-diffhead') ?? [])].find((each) =>
-      each.textContent?.includes(file),
+    const header = [...(after?.querySelectorAll('.lo-diffhead') ?? [])].find(
+      (each) => each instanceof HTMLElement && each.dataset.path === file,
     );
     return header?.closest('.cm-content > *')?.getBoundingClientRect().height;
   }, path);
@@ -772,7 +787,9 @@ test('a file that comes to show what changed since after the diff is drawn moves
     expect(await page.evaluate(() => window.loDiff?.filesOnScreen())).toEqual(before.onScreen);
     expect(await page.evaluate(() => window.loDiff?.draws)).toBe(draws);
     // Its header says it changed since, in place.
-    const header = page.locator('.lo-diffview .lo-diffhead', { hasText: 'src/parser.ts' }).first();
+    const header = page
+      .locator('.lo-diffview .cm-editor .lo-diffhead--end[data-path="src/parser.ts"]')
+      .first();
     await expect(header).toContainText('since r1');
     await expect(header.locator('.lo-diffhead__ball')).toHaveClass(/is-stale/);
   } finally {

@@ -59,9 +59,67 @@ export interface FileHeader {
    * their number, which stands out while any is unresolved.
    */
   threads?: { readonly total: number; readonly unresolved: number };
-  /** Short labels after its counts, such as "generated". */
+  /** Short labels at the header's end, such as "generated", joined by ` · `. */
   tags?: readonly string[];
+  /**
+   * How the pull request changes the file, drawn as the file tree draws it: its letter, A, D, M, R
+   * or T. A deleted file's name is struck through. None draws no letter.
+   */
+  change?: 'added' | 'deleted' | 'modified' | 'renamed' | 'typeChanged';
+  /**
+   * Whether it has text changes to count. `false`, as for a binary file or a rename alone, draws no
+   * `+N −N`.
+   */
+  counted?: boolean;
+  /**
+   * Something done to the file that failed, such as marking it viewed: drawn under the header by
+   * the caller, in the element the view makes for it (`RenderProblem`).
+   */
+  problem?: FileProblem;
 }
+
+/**
+ * A failure that belongs to a file, not a line: what failed, why, what GitHub or the system said,
+ * and the command to try again.
+ */
+export interface FileProblem {
+  readonly title: string;
+  readonly reason?: string | undefined;
+  /** The raw text behind Details, as it was said. */
+  readonly details?: string | undefined;
+  /** The command "Try again" runs on the file, as its key would. */
+  readonly command: string;
+}
+
+/** Why a file's lines couldn't be read, for its `Problem`. */
+export interface ReadFailure {
+  /** The cause in plain words, where it's known. */
+  readonly reason?: string | undefined;
+  /** What was said of it, as it was said: behind Details. */
+  readonly details?: string | undefined;
+}
+
+/** What the caller drew for a file's `Problem`, which the view keeps up to date and takes down. */
+export interface ProblemContent {
+  /** The problem changed: draw it again. */
+  update(problem: FileProblem): void;
+  /** The file has no problem anymore: take down what was drawn. */
+  destroy(): void;
+}
+
+/** What `za` does to a file now (`DiffView.foldOf`). */
+export type FileFold = 'collapse' | 'expand' | 'show';
+
+/**
+ * Draws file `file`'s problem in `host`, an element the view made for it, which it keeps under the
+ * file's header, as the shared `Problem`, its "Try again" running `problem.command` on the file.
+ * What's in `host` is the caller's. Draw it at once: the view lays the header out as it's drawn.
+ */
+export type RenderProblem = (
+  host: HTMLElement,
+  problem: FileProblem,
+  file: string,
+) => ProblemContent;
 
 /** A changed file, as a diff view is given it. */
 export interface DiffFile {
@@ -127,6 +185,8 @@ export interface DiffInit {
    * first frame after `seen`. Otherwise, from its first frame.
    */
   hidden?: boolean | undefined;
+  /** What draws a file's `problem` under its header. Without it, none is drawn. */
+  renderProblem?: RenderProblem | undefined;
 }
 
 /**
@@ -356,6 +416,11 @@ export interface ComposeOptions {
    * line not drawn.
    */
   kept?: KeptBox;
+  /**
+   * The comment of the thread it's written in that it edits, by its id: it opens in the comment's
+   * place in the thread's card, which leaves the comment out while it's edited.
+   */
+  edits?: string;
 }
 
 /** A comment box outside a code view, as the timeline's and a review's summary are. */
@@ -470,8 +535,11 @@ export interface DiffView extends KeySource {
     lines: { old: readonly string[]; new: readonly string[] },
     diff: FileDiff,
   ): boolean;
-  /** Says a file asked for with `load` couldn't be loaded: its note says so, and `za` asks again. */
-  loadFailed(file: string): void;
+  /**
+   * Says a file asked for with `load` couldn't be loaded, and why, as `failure` has it: its
+   * `Problem` says so under its header, and `za` asks again.
+   */
+  loadFailed(file: string, failure?: ReadFailure): void;
   setHeader(file: string, header: FileHeader): void;
   /**
    * Lays the diff out again, keeping the cursor's line on screen: or, with focus in the peek, the
@@ -587,6 +655,12 @@ export interface DiffView extends KeySource {
   otherSide(): void;
   /** `open` and `close` act on a line; `file` and `toggle` on a line's file, a header's or a file. */
   fold(at: Target, how: Fold): void;
+  /**
+   * What `toggle` does to file `id` now: `collapse` a file drawn, `expand` one closed, `show` one
+   * too large to draw unasked, whose lines aren't read or couldn't be, or nothing, as to a binary
+   * file or one waited on.
+   */
+  foldOf(id: string): FileFold | undefined;
   /** The text of a span's lines, as `yy` copies them. */
   lines(span: Span): readonly string[];
   /**
@@ -679,7 +753,7 @@ export interface DiffEvents {
    */
   arrived?(): void;
   /**
-   * "Read it in the overview" in an overview marker's note: show the overview at the block that
+   * "Show in overview" in an overview marker's note: show the overview at the block that
    * explains the lines. `at` is the line the note is under, where the reader was. Without it, notes
    * have no such link.
    */
@@ -1022,8 +1096,8 @@ export const plainKeys = {
  */
 /**
  * The commands a diff view's own controls run, by id, on what they're drawn at: the viewed ball in
- * a file's header, the `+` that follows the pointer down the gutter, and the button under the
- * header of a file that's closed, or too large to draw unasked. They run through the
+ * a file's header, the `+` that follows the pointer down the gutter, the button under the header
+ * of a file that's closed, or too large to draw unasked, and collapsed lines. They run through the
  * registry the window's keys go through (`runControl` in `@lo/ui/commands`), so a control does
  * what its key does and says what its command says.
  */
@@ -1031,6 +1105,7 @@ export const viewControls = {
   viewed: 'diff.markViewed',
   comment: 'comments.comment',
   toggle: 'diff.toggleFile',
+  open: 'diff.openRun',
 } as const;
 
 export const diffMotions: Readonly<Record<string, { to: JumpTo; forward: boolean }>> = {

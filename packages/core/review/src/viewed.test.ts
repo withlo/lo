@@ -219,6 +219,9 @@ test('githubs list holds at its own head', () => {
   expect(viewed.lists('b', 'h2')).toBe(false);
 });
 
+/** rozed-bot, writing to a rozed-dev repo, on a Mac. */
+const WHO = { login: 'rozed-bot', owner: 'rozed-dev', keychain: 'the Keychain' };
+
 function toggled(path: string, mark: boolean): ViewedToggle {
   return { path, mark, id: 1 };
 }
@@ -237,50 +240,62 @@ function rateLimited(secondary: boolean): GithubError {
   });
 }
 
-test('the toast says what failed and why', () => {
+test('a failed write says why, as the reason under its title', () => {
   const marking = toggled('src/main.rs', true);
   const clearing = toggled('src/main.rs', false);
   const offline = new GithubError({ kind: 'network', failure: 'offline', message: 'offline' });
   const cases: [ViewedToggle, GithubError, string][] = [
-    [
-      marking,
-      offline,
-      "Couldn't mark src/main.rs viewed: Lo can't reach GitHub. It shows GitHub's mark again.",
-    ],
-    [
-      clearing,
-      offline,
-      "Couldn't clear the viewed mark on src/main.rs: Lo can't reach GitHub. It shows GitHub's mark again.",
-    ],
-    [
-      marking,
-      rateLimited(false),
-      "Couldn't mark src/main.rs viewed: rozed-bot has used up GitHub's rate limit. It shows GitHub's mark again.",
-    ],
-    [
-      marking,
-      rateLimited(true),
-      "Couldn't mark src/main.rs viewed: GitHub asked Lo to slow down. It shows GitHub's mark again.",
-    ],
+    [marking, offline, 'Offline.'],
+    [clearing, offline, 'Offline.'],
+    [marking, rateLimited(true), 'GitHub’s rate limit was reached.'],
     [
       marking,
       graphqlError('Resource not accessible by integration', 'FORBIDDEN'),
-      "Couldn't mark src/main.rs viewed: rozed-bot isn't allowed to (Resource not accessible by integration). It shows GitHub's mark again.",
+      'rozed-bot doesn’t have permission.',
     ],
     [
       marking,
       graphqlError('Filepath must be part of pull request', 'UNPROCESSABLE'),
-      "Couldn't mark src/main.rs viewed: GitHub doesn't list src/main.rs in this pull request (Filepath must be part of pull request). It shows GitHub's mark again.",
+      'GitHub doesn’t list this file in this pull request.',
     ],
     [
       marking,
       new GithubError({ kind: 'unauthorized', message: 'Bad credentials' }),
-      "Couldn't mark src/main.rs viewed: rozed-bot is signed out. It shows GitHub's mark again.",
+      'rozed-bot is signed out.',
     ],
   ];
   for (const [failed, error, expected] of cases) {
-    expect(writeFailed(failed, 'rozed-bot', error)).toBe(expected);
+    expect(writeFailed(failed, WHO, error)).toBe(expected);
   }
+  // The primary limit says when it resets, where GitHub said.
+  expect(writeFailed(marking, WHO, rateLimited(false))).toMatch(
+    /^GitHub’s rate limit (resets at .+|was reached)\.$/,
+  );
+});
+
+test('a failed write names the cause in plain words, never in GitHub’s or the system’s', () => {
+  const marking = toggled('src/main.rs', true);
+  const cases: [GithubError, string | undefined][] = [
+    [
+      new GithubError({ kind: 'tokenUnavailable', message: 'The keychain is locked' }),
+      'rozed-bot’s sign-in can’t be read from the Keychain.',
+    ],
+    [
+      new GithubError({ kind: 'ssoRequired', message: 'Resource protected by SAML enforcement' }),
+      'rozed-dev requires single sign-on.',
+    ],
+    [
+      new GithubError({ kind: 'oauthAppRestricted', message: 'restricted' }),
+      'rozed-dev hasn’t approved Lo.',
+    ],
+    [
+      new GithubError({ kind: 'network', failure: 'lost', message: 'timed out' }),
+      'GitHub didn’t respond.',
+    ],
+    [new GithubError({ kind: 'decode', message: 'Unexpected token' }), undefined],
+    [new GithubError({ kind: 'refusedUrl', host: 'example.com' }), undefined],
+  ];
+  for (const [error, expected] of cases) expect(writeFailed(marking, WHO, error)).toBe(expected);
 });
 
 /** A normal push from `before` to `after` at `minute`. */

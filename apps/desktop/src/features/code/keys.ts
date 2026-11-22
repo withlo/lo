@@ -82,6 +82,7 @@ export default defineCommands(
     nextAnswer: {
       label: 'Next answer in the peek',
       group: 'Code',
+      control: "an answer in a peek's list",
       keys: ['j', 'down'],
       overVim: true,
       when: peek,
@@ -90,6 +91,7 @@ export default defineCommands(
     previousAnswer: {
       label: 'Previous answer in the peek',
       group: 'Code',
+      control: "an answer in a peek's list",
       keys: ['k', 'up'],
       overVim: true,
       when: peek,
@@ -102,6 +104,7 @@ export default defineCommands(
     goAnswer: {
       label: 'Go to the answer',
       group: 'Code',
+      control: "the button in a peek's head that goes to the answer",
       keys: ['enter'],
       overVim: true,
       targets: ['line'],
@@ -111,6 +114,7 @@ export default defineCommands(
     closePeek: {
       label: 'Close the peek',
       group: 'Code',
+      control: "Close in a peek's head",
       keys: ['esc'],
       targets: ['line'],
       when: peek,
@@ -118,6 +122,7 @@ export default defineCommands(
     nextReference: {
       label: 'Next reference in the panel',
       group: 'Panels',
+      control: "Next in the references panel's foot",
       keys: ['j', 'down'],
       when: panel,
       repeat: true,
@@ -125,6 +130,7 @@ export default defineCommands(
     previousReference: {
       label: 'Previous reference in the panel',
       group: 'Panels',
+      control: "Previous in the references panel's foot",
       keys: ['k', 'up'],
       when: panel,
       repeat: true,
@@ -133,6 +139,7 @@ export default defineCommands(
     goReference: {
       label: 'Go to the reference',
       group: 'Panels',
+      control: "Go to reference in the references panel's foot, or a reference's row",
       keys: ['enter'],
       when: panel,
     },
@@ -143,6 +150,7 @@ export default defineCommands(
     closeReferences: {
       label: 'Close the references',
       group: 'Panels',
+      control: "Close in the references panel's foot",
       keys: ['esc'],
       when: panel,
     },

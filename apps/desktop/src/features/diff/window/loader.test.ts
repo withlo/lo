@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { DiffState, FileText, FileVersions, Source, Start } from '../contract.ts';
 import { type FileJob, type FileResult, JOB_LINES, patchReach } from '../jobs.ts';
+import { IpcError } from '../../../ipc/contract.ts';
 import { Loader, type LoaderWork, type Shown, type Sink } from './loader.ts';
 
 const HEAD = 'a'.repeat(40);
@@ -197,6 +198,8 @@ describe('a tab’s diff in the window', () => {
     expect(loader.shown('d0')).toBeDefined();
     expect(loader.shown('d2')).toBeDefined();
     expect(loader.failed('d1')).toBe(true);
+    // What was said, with no reason: its cause isn't known.
+    expect(loader.failure('d1')).toEqual({ details: 'huge.ts ran out of memory' });
     expect(loader.snapshot().ready).toBeDefined();
   });
 
@@ -588,6 +591,29 @@ describe('a tab’s diff in the window', () => {
     expect(heard).toContain('lines d0 local');
     expect(heard).toContain('failed d1');
     expect(loader.failed('d1')).toBe(true);
+    // Main's own words for why, as it said them.
+    expect(loader.failure('d1')).toEqual({ reason: undefined, details: 'gone' });
+  });
+
+  it('says main’s refusal of a read as the reason, in its own words', async () => {
+    const files = [versions('big.txt', 'large')];
+    const { done, list } = work();
+    list(files);
+    const { made } = sink();
+    const refusing = new Loader({
+      ...done,
+      texts: () =>
+        Promise.reject(new IpcError('tooLarge', 'That’s more text than Lo reads at once.')),
+    });
+    refusing.setWhitespace(true);
+    refusing.take(state(files));
+    await settle(refusing);
+    refusing.attach(made);
+
+    refusing.load('d0');
+    await settle(refusing);
+
+    expect(refusing.failure('d0')).toEqual({ reason: 'That’s more text than Lo reads at once.' });
   });
 
   it('diffs the local copy’s files again when whitespace is hidden, keeping their lines', async () => {

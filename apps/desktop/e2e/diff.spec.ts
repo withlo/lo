@@ -217,7 +217,7 @@ async function drawn(
     });
   }
   // The local copy's diff takes GitHub's place a file at a time, which the status bar counts.
-  await expect(page.getByText(/^Diffing \d+ of \d+$/)).toHaveCount(0, { timeout: 20_000 });
+  await expect(page.getByText(/^Diffing files · \d+ of \d+$/)).toHaveCount(0, { timeout: 20_000 });
   // Every file's diff is in once the moves are: they're found last. Inline, the sides' editors are
   // hidden, labels and all.
   if (moves) {
@@ -281,10 +281,11 @@ test('draws every changed file in the left panel’s order, each as it starts ou
     'pnpm-lock.yaml',
   ]);
   const view = page.locator('.lo-diffview');
-  // A binary file shows its two sizes; a large one waits for `za`; a lockfile starts closed.
-  await expect(view.locator('.lo-diffhead', { hasText: 'assets/mark.png' }).first()).toContainText(
-    /binary, \d+ B → \d+ B/,
-  );
+  // A binary file's header shows its two sizes and no counts; a large one waits for its button;
+  // a lockfile starts closed. The left column's half of a header names the file, the right's ends it.
+  const mark = view.locator('.cm-editor .lo-diffhead[data-path="assets/mark.png"]');
+  await expect(mark.last()).toContainText(/binary · \d+ B → \d+ B/);
+  await expect(mark.locator('.lo-stat')).toHaveCount(0);
   await expect(view.getByText(/^Show [0-9,]+ lines$/).first()).toBeVisible();
   // The code src/format.ts moves to src/text/wrap.ts, highlighted, under the window's content
   // security policy.
@@ -294,13 +295,13 @@ test('draws every changed file in the left panel’s order, each as it starts ou
   await focusDiff(page);
   await press(page, ']', 'f', ']', 'f', ']', 'f', ']', 'f', ']', 'f');
   await expect.poll(async () => (await cursor(page))?.path).toBe('src/parser.ts');
-  await expect(view.getByText('src/parse.ts', { exact: true }).first()).toBeVisible();
+  await expect(view.getByText('← src/parse.ts', { exact: true }).first()).toBeVisible();
   await expect(view.locator('.lo-word-add').first()).toBeVisible();
   // The lockfile, last, starts closed.
   await press(page, 'Shift+G');
-  await expect(view.locator('.lo-diffhead', { hasText: 'pnpm-lock.yaml' }).first()).toContainText(
-    'lockfile',
-  );
+  await expect(
+    view.locator('.cm-editor .lo-diffhead--end[data-path="pnpm-lock.yaml"]').first(),
+  ).toContainText('lockfile');
   await expect(view.getByText('Expand file').first()).toBeVisible();
   // What says so is a button, which opens the file as `za` does.
   await view.getByRole('button', { name: 'Expand file' }).first().click();
@@ -359,6 +360,14 @@ test('answers its keys: files, changes, sides, layout, whitespace and folds, Esc
     await press(page, 'Tab');
     await expect.poll(async () => (await cursor(page))?.pane).toBe('new');
 
+    // The diff bar's Previous change and Next change jump as `[c` and `]c` do, and leave focus in
+    // the diff.
+    const landed = await cursor(page);
+    await page.getByRole('button', { name: 'Previous change' }).click();
+    await expect.poll(() => cursor(page)).not.toEqual(landed);
+    await page.getByRole('button', { name: 'Next change' }).click();
+    await expect.poll(() => cursor(page)).toEqual(landed);
+
     // `zR` opens the file's unchanged lines: src/parser.ts is the sixth file.
     const collapsed = page.locator('.lo-diffview [data-row^="c:5:"]');
     await expect(collapsed.first()).toBeVisible();
@@ -374,10 +383,10 @@ test('answers its keys: files, changes, sides, layout, whitespace and folds, Esc
 
     // `gw` hides changes to whitespace alone.
     await press(page, 'g', 'w');
-    await expect(page.getByText('Whitespace hidden', { exact: true })).toBeVisible();
+    await expect(page.getByText('Whitespace changes hidden', { exact: true })).toBeVisible();
     await expect.poll(() => readSettings()).toMatchObject({ 'diff.whitespace': 'hide' });
     await press(page, 'g', 'w');
-    await expect(page.getByText('Whitespace hidden', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Whitespace changes hidden', { exact: true })).toHaveCount(0);
 
     // `gx` opens the line in the pull request's changes on GitHub.
     await press(page, 'g', 'x');
@@ -468,12 +477,14 @@ test.describe('with Vim keys on', () => {
     await expect(status).toContainText('V-LINE');
     await press(page, 'Escape');
     await expect(status).toContainText('NORMAL');
-    // Vim's block cursor on a file's header, where the diff starts, draws none of the path under it.
+    // Vim's block cursor on a file's header, where the diff starts, draws nothing over it: the
+    // ring around the header's band is the cursor there.
     await expect.poll(async () => (await cursor(page))?.header).toBe(true);
     const after = page.locator('.lo-diffview .cm-editor', {
       has: page.locator('.cm-content[aria-label="After"]'),
     });
-    await expect(after.locator('.cm-fat-cursor')).toHaveCSS('color', 'rgba(0, 0, 0, 0)');
+    await expect(after.locator('.cm-fat-cursor')).toBeHidden();
+    await expect(page.locator('.lo-diffview .lo-diffhead.is-keyed')).toHaveCount(2);
     await page.locator('[role="tree"][data-lo-scope="tree"]').focus();
     await expect(status).not.toContainText('NORMAL');
   });
@@ -534,7 +545,7 @@ test('the tree follows the file on screen, and shows the file it’s asked for',
   await page
     .locator('.lo-diffview .cm-editor')
     .nth(1)
-    .locator('.lo-diffhead', { hasText: 'src/legacy.ts' })
+    .locator('.lo-diffhead[data-path="src/legacy.ts"]')
     .evaluate((header) => {
       header.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -1 }));
       header.scrollIntoView({ block: 'start' });
@@ -839,9 +850,7 @@ test.describe('without git', () => {
     await focusDiff(page);
     await press(page, ']', 'f', ']', 'f', ']', 'f', ']', 'f', ']', 'f');
     await expect.poll(async () => (await cursor(page))?.path).toBe('src/parser.ts');
-    await expect(
-      page.locator('.lo-diffview .lo-collapsed', { hasText: 'not loaded yet' }).first(),
-    ).toBeVisible();
+    await expect(page.locator('.lo-diffview .lo-collapsed.is-missing').first()).toBeVisible();
     expect(await paths(page)).toContain('src/parser.ts');
   });
 });
@@ -886,7 +895,7 @@ test.describe('when the tree has the changed files after the diff does', () => {
       0,
       { timeout: 30_000 },
     );
-    await expect(page.locator('footer').getByText(/^Diffing \d+ of \d+$/)).toHaveCount(0, {
+    await expect(page.locator('footer').getByText(/^Diffing files · \d+ of \d+$/)).toHaveCount(0, {
       timeout: 20_000,
     });
     const tops = await page.evaluate(() => {
@@ -1016,7 +1025,7 @@ test.describe('while the local copy takes GitHub’s place', () => {
         await expect(status.getByText('GitHub’s diff', { exact: true })).toHaveCount(0, {
           timeout: 30_000,
         });
-        await expect(status.getByText(/^Diffing \d+ of \d+$/)).toHaveCount(0, {
+        await expect(status.getByText(/^Diffing files · \d+ of \d+$/)).toHaveCount(0, {
           timeout: 20_000,
         });
         await expect(tabBanners(page)).toHaveCount(0);
@@ -1219,12 +1228,12 @@ test.describe('when the local copy comes after GitHub’s diff', () => {
     await expect(status.getByText('GitHub’s diff', { exact: true })).toHaveCount(0, {
       timeout: 30_000,
     });
-    await expect(status.getByText(/^Diffing \d+ of \d+$/)).toHaveCount(0, { timeout: 20_000 });
+    await expect(status.getByText(/^Diffing files · \d+ of \d+$/)).toHaveCount(0, {
+      timeout: 20_000,
+    });
     // src/format.ts, off screen, came in; src/parser.ts, on screen, keeps GitHub's lines.
     await expect(formatNote).toHaveCount(0);
-    await expect(
-      page.locator('.lo-diffview .lo-collapsed', { hasText: 'not loaded yet' }).first(),
-    ).toBeAttached();
+    await expect(page.locator('.lo-diffview .lo-collapsed.is-missing').first()).toBeAttached();
     await page.waitForTimeout(500);
     const { frames, tops } = await page.evaluate(() => {
       const timed = { frames: window.loFrames ?? [], tops: window.loTops ?? [] };
@@ -1299,8 +1308,10 @@ test.describe('when the local copy comes after GitHub’s diff, on a file the re
   test('leaves the file as it was until it’s scrolled away', async ({ app, page }) => {
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(1100, 440));
     const id = await drawn(page, 'github', { moves: false });
-    // src/format.ts's note, on the side that follows the screen.
-    const keptOut = page.locator('.lo-diffview .cm-editor:last-of-type').getByText('Show 20 lines');
+    // src/format.ts's row under its header, whose words the left column draws.
+    const keptOut = page
+      .locator('.lo-diffview .cm-editor', { has: page.locator('.cm-content[aria-label="Before"]') })
+      .getByText('Show 20 lines');
     await expect(keptOut).toHaveCount(1);
     // Wheeled down until src/format.ts, which GitHub's diff keeps out, is on screen.
     const box = await page.locator('.lo-diffview').boundingBox();
@@ -1326,7 +1337,9 @@ test.describe('when the local copy comes after GitHub’s diff, on a file the re
     await expect(page.getByText('GitHub’s diff', { exact: true })).toHaveCount(0, {
       timeout: 30_000,
     });
-    await expect(page.getByText(/^Diffing \d+ of \d+$/)).toHaveCount(0, { timeout: 20_000 });
+    await expect(page.getByText(/^Diffing files · \d+ of \d+$/)).toHaveCount(0, {
+      timeout: 20_000,
+    });
     await page.waitForTimeout(500);
     // Still kept out, under the reader.
     expect(await onScreen()).toBe(true);
@@ -1450,7 +1463,9 @@ test.describe('when a banner over the diff goes', () => {
     await expect(status.getByText('GitHub’s diff', { exact: true })).toHaveCount(0, {
       timeout: 30_000,
     });
-    await expect(status.getByText(/^Diffing \d+ of \d+$/)).toHaveCount(0, { timeout: 20_000 });
+    await expect(status.getByText(/^Diffing files · \d+ of \d+$/)).toHaveCount(0, {
+      timeout: 20_000,
+    });
     await page.waitForTimeout(300);
     const moved = await page.evaluate(() => {
       window.loStill = true;

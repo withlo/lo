@@ -87,6 +87,7 @@ function where(command: Command): string {
   const modes = listOf(when?.mode);
   const inCode = scopes.length === 0 || scopes.some((scope) => modesOf(scope)[0] !== undefined);
   if (modes.length > 0 && inCode) text += `; in code views, only in ${listed(modes)} mode`;
+  if (when?.on !== undefined) text += `; only on a ${when.on}`;
   if (command.vim === 'motion') text += "; in code views with Vim keys on, Vim's motion";
   if (command.editor) text += "; the editor's own key, which the keymap file can't change";
   return text;
@@ -173,7 +174,7 @@ function scopeSection(features: readonly Declarations[]): string[] {
   return [
     '## Where keys apply',
     '',
-    'A key applies in a scope: the nearest part of the window around the focused element that names one, or `window`. A key for a scope beats one for anywhere, so the same chord can mean one thing in a comment box and another elsewhere.',
+    "A key applies in a scope: the nearest part of the window around the focused element that names one, or `window`. A key for a scope beats one for anywhere, so the same chord can mean one thing in a comment box and another elsewhere. A key for one kind of thing, such as a review thread, applies only while it's on one: the thread `] t` landed on, or the only one under the cursor's line. There it beats the key for the scope, so `z a` collapses the thread it's on, and the file elsewhere.",
     '',
     ...table(['Scope', 'What it is'], rows),
     '',

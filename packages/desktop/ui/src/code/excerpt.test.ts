@@ -309,7 +309,7 @@ describe('what it draws', () => {
     });
     // The editor draws the lines around the cursor: the excerpt's end.
     shown.reveal({ kind: 'line', at: at(2) });
-    const row = parent!.querySelector('.lo-filenote');
+    const row = parent!.querySelector('.lo-filerow');
     expect(row?.textContent).toBe('69 more lines in this change');
     expect(row?.previousElementSibling?.textContent).toBe('gone 51');
     expect(row?.nextElementSibling?.textContent).toBe('b');

@@ -19,6 +19,7 @@ import { whitespace as whitespaceSetting } from '../settings.ts';
 import { diffFileOf, headerOf, shownPath } from './files.ts';
 import { keyOf, type Entry, type Loader, type Shown } from './loader.ts';
 import { usePage } from './page.ts';
+import { renderProblem } from './problems.tsx';
 import { loaderOf, setBeside, useSnapshot } from './tabs.ts';
 import { changeAt } from './whole.ts';
 
@@ -165,6 +166,7 @@ function Code({
         layout: 'inline',
         vimKeys: keys.vimKeys(),
         nonce: page.nonce,
+        renderProblem,
       },
       {
         cursor() {},
@@ -210,7 +212,7 @@ function Code({
       loader.onFile((changed) => {
         if (changed !== id) return;
         if (loader.failed(id) && asked) {
-          made.loadFailed(id);
+          made.loadFailed(id, loader.failure(id));
           return;
         }
         take();

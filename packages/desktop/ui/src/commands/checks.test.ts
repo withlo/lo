@@ -329,6 +329,27 @@ describe('clashes', () => {
     ).toEqual(['`x` runs both diff.resolve and diff.remove, in tree, on macOS and Linux.']);
   });
 
+  test('pass one for what the key acts on beside one for the scope, on the same key', () => {
+    expect(
+      checkClashes([
+        feature(
+          {
+            file: { label: 'Collapse file', group: 'Act', keys: ['x'], when: { scope: 'tree' } },
+            thread: {
+              label: 'Collapse thread',
+              group: 'Threads',
+              keys: ['x'],
+              targets: ['thread'],
+              when: { scope: 'tree', on: 'thread' },
+            },
+          },
+          'diff',
+          ['tree'],
+        ),
+      ]),
+    ).toEqual([]);
+  });
+
   test('fail a key that starts another’s sequence', () => {
     expect(
       checkClashes([

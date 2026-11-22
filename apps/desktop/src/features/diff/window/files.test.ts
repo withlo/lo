@@ -75,9 +75,11 @@ describe('the files as the view gets them', () => {
   });
 
   it('show a binary file’s two sizes, and why a file starts as it does', () => {
-    expect(headerOf(entry('d0', 'logo.png', 'binary').versions).tags).toEqual([
-      'binary, 2.0 KiB → 3.0 MiB',
-    ]);
+    const binary = headerOf(entry('d0', 'logo.png', 'binary').versions);
+    expect(binary.tags).toEqual(['binary · 2.0 KiB → 3.0 MiB']);
+    // With no text to count, it draws no counts.
+    expect(binary.counted).toBe(false);
+    expect(headerOf(entry('d0', 'big.txt', 'large').versions)).not.toHaveProperty('tags');
     const lock = {
       ...entry('d0', 'pnpm-lock.yaml', 'collapsed').versions,
       generated: 'lockfile' as const,
@@ -86,11 +88,11 @@ describe('the files as the view gets them', () => {
     expect(headerOf(entry('d0', 'a.ts').versions).tags).toBe(undefined);
     // A file a rebase's replay conflicted on, in a comparison of revisions.
     const resolved = { ...entry('d0', 'a.ts').versions, conflicted: true };
-    expect(headerOf(resolved).tags).toEqual(['resolved a conflict']);
-    expect(headerOf({ ...resolved, start: 'unchanged' }).tags).toEqual([
-      'resolved a conflict',
-      'no change to its text',
-    ]);
+    expect(headerOf(resolved).tags).toEqual(['conflict resolved']);
+    expect(headerOf(resolved)).not.toHaveProperty('counted');
+    const unchanged = headerOf({ ...resolved, start: 'unchanged' });
+    expect(unchanged.tags).toEqual(['conflict resolved', 'no text changes']);
+    expect(unchanged.counted).toBe(false);
   });
 
   it('keep binary, unchanged and large files out, and give the rest their lines and gaps', () => {
@@ -116,7 +118,7 @@ describe('the files as the view gets them', () => {
     const narrowed = { ...since.versions, since: { label: 'r1', why: 'viewed' as const } };
     expect(headerOf(narrowed, 'dismissed')).toMatchObject({ viewed: 'stale', tags: ['since r1'] });
     expect(headerOf({ ...narrowed, since: { label: 'r1', why: 'review' } }).tags).toEqual([
-      'since your review in r1',
+      'since your review of r1',
     ]);
     expect(headerOf({ ...narrowed, start: 'unchanged' }).tags).toEqual(['no change since r1']);
   });
