@@ -10,6 +10,7 @@ import {
   Setting as SettingRow,
   SettingsList,
   Switch,
+  Ticks,
   Tooltip,
 } from '@lo/ui';
 import { keyLabels, NO_TARGET } from '@lo/ui/commands';
@@ -17,7 +18,6 @@ import { createElement, useId, useState, type ReactElement, type ReactNode } fro
 
 import { registry, useKeys } from '../../../window/commands/registry.ts';
 import type { Setting } from '../contract.ts';
-import { Ticks } from './Ticks.tsx';
 import { nameOf, refusalMark, setValue, useRefusalMark, useValue, type Refusal } from './values.ts';
 
 /** What a setting's own control gets: its value now, and how to change it. */

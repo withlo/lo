@@ -1,10 +1,11 @@
 import { cva } from 'class-variance-authority';
-import { useId, useSyncExternalStore, type ReactNode, type Ref, type UIEvent } from 'react';
+import { useId, type ReactNode, type Ref, type UIEvent } from 'react';
 
 import { Button, type ButtonProps } from './Button.tsx';
 import { Collapse } from './Collapse.tsx';
-import { controlOf, heldRegistry, runControl } from './commands/control.ts';
+import { runControl } from './commands/control.ts';
 import { NO_TARGET, type Target } from './commands/targets.ts';
+import { useControl } from './useControl.ts';
 
 /** One of Settings' groups, as the list beside it names it. */
 export interface SettingsNavItem {
@@ -245,7 +246,7 @@ export interface SettingsListProps {
   description?: ReactNode;
   /** The list's own controls, at the end of its row: adding to it. */
   actions?: ReactNode;
-  /** The list itself: a `role="list"` of `SettingsListItem`s, or a `SettingsEmpty`. */
+  /** The list itself: a `role="list"` of `SettingsListItem`s, or an `EmptyState`. */
   children?: ReactNode;
 }
 
@@ -328,35 +329,6 @@ export function SettingsListItem({
   );
 }
 
-export interface SettingsEmptyProps {
-  /** What's absent, in six words at most: "No accounts". */
-  heading: ReactNode;
-  /** One line, optional: what will be listed, or why there's nothing. */
-  line?: ReactNode;
-  /** Two buttons at most, each a real command. */
-  children?: ReactNode;
-}
-
-/** What a `SettingsList` with nothing in it shows in its box: a heading and a line. */
-export function SettingsEmpty({ heading, line, children }: SettingsEmptyProps) {
-  return (
-    <div className="flex flex-col items-start gap-4 px-12 py-12">
-      <div className="text-ui-strong">{heading}</div>
-      {line !== undefined && <div className="text-fg-muted text-small">{line}</div>}
-      {children !== undefined && <div className="mt-8 flex items-center gap-8">{children}</div>}
-    </div>
-  );
-}
-
-/** How many times the keys have changed, which draws each command's button again. */
-let keyChanges = 0;
-
-const onKeysChange = (listener: () => void): (() => void) =>
-  heldRegistry()?.subscribe(() => {
-    keyChanges += 1;
-    listener();
-  }) ?? (() => undefined);
-
 export interface SettingsCommandProps extends Omit<
   ButtonProps,
   'onClick' | 'hint' | 'hintKeys' | 'hintShortcut' | 'disabled'
@@ -380,13 +352,8 @@ export function SettingsCommand({
   children,
   ...button
 }: SettingsCommandProps) {
-  useSyncExternalStore(
-    onKeysChange,
-    () => keyChanges,
-    () => 0,
-  );
   const why = useId();
-  const control = controlOf(command, target);
+  const control = useControl(command, target);
   if (!control) return null;
   const { off } = control;
   return (

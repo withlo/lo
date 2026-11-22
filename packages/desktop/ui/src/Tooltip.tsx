@@ -38,6 +38,12 @@ export interface TooltipProps {
   keys?: readonly string[] | undefined;
   /** Which side of the control it shows on, unless there's no room. */
   side?: 'top' | 'bottom' | 'left' | 'right' | undefined;
+  /**
+   * With `'hover'`, it comes for the pointer alone and never for focus: for a control a view puts
+   * focus on by itself, such as a dialog's main button, where a tooltip nobody asked for would
+   * sit over the view as it opens.
+   */
+  on?: 'hover' | undefined;
   /** The control: one element, which takes the props that make it the trigger. */
   children: ReactElement<Record<string, unknown>>;
 }
@@ -52,10 +58,15 @@ export interface TooltipProps {
  * It isn't the control's accessible name: an icon button still has its `aria-label`, and gives its
  * key with `aria-keyshortcuts`, as `Button` does from its `hintShortcut`.
  */
-export function Tooltip({ label, keys, side = 'bottom', children }: TooltipProps) {
+export function Tooltip({ label, keys, side = 'bottom', on, children }: TooltipProps) {
   const container = useContext(Container);
   return (
-    <Base.Root disabled={label === null}>
+    <Base.Root
+      disabled={label === null}
+      onOpenChange={(open, details) => {
+        if (open && on === 'hover' && details.reason === 'trigger-focus') details.cancel();
+      }}
+    >
       <Base.Trigger render={children} delay={TOOLTIP_DELAY} />
       <Base.Portal container={container ?? globalThis.document?.querySelector('.lo-app')}>
         <Base.Positioner side={side} sideOffset={6} collisionPadding={8} className="z-tooltip">

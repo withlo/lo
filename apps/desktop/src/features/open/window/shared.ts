@@ -2,12 +2,14 @@
 // the box does, and the `lo` command, for the welcome screen's box and its row for the command;
 // and opening a web link another view follows.
 
+import { createElement, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
 import type { CommandState, Installed, Opened } from '../contract.ts';
 import { followLink as follow } from './actions.ts';
 import { openBox as openTheBox, openText } from './box.ts';
 import { checkCommand, commandStore, installCommand as install } from './command.ts';
+import { InstallResult as Result } from './InstallResult.tsx';
 
 export type { CommandState, Installed, Opened } from '../contract.ts';
 
@@ -39,12 +41,36 @@ export function useCommand(): CommandState | undefined {
   return useStore(commandStore, (state) => state.state);
 }
 
+/**
+ * Whether the `lo` command is being installed, and what the last install a row asked for did:
+ * `undefined` when main couldn't be asked, and `null` when there's nothing for a row to show.
+ */
+export function useCommandInstall(): {
+  installing: boolean;
+  done: Installed | null | undefined;
+} {
+  const installing = useStore(commandStore, (state) => state.installing);
+  const done = useStore(commandStore, (state) => state.done);
+  return { installing, done };
+}
+
 /** Looks again for where the `lo` command is. */
 export function findCommand(): Promise<void> {
   return checkCommand();
 }
 
-/** Installs the `lo` command, and says how it went in a notice. */
-export function installCommand(): Promise<Installed | undefined> {
-  return install();
+/**
+ * Installs the `lo` command, and says how it went once: in a notice, or, from a row (`row`), on
+ * the row, which reads it with `useCommandInstall`.
+ */
+export function installCommand(from?: 'command' | 'row'): Promise<Installed | undefined> {
+  return install(from);
+}
+
+/**
+ * What the last install a row asked for left to say under that row, from `useCommandInstall`'s
+ * `done`: the folder to add to `PATH`, or why it failed, with a way to try again.
+ */
+export function InstallResult(props: { done: Installed | undefined }): ReactNode {
+  return createElement(Result, props);
 }

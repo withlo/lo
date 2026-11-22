@@ -6,11 +6,11 @@ import { beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { buildCss, declarations, hasRule } from '../scripts/stylesheet.ts';
 import { Button } from './Button.tsx';
+import { EmptyState } from './EmptyState.tsx';
 import { Input } from './Input.tsx';
 import { Meter } from './Meter.tsx';
 import {
   Setting,
-  SettingsEmpty,
   SettingsGroup,
   SettingsList,
   SettingsListItem,
@@ -82,7 +82,7 @@ const page = (
         </div>
       </SettingsList>
       <SettingsList label="Empty">
-        <SettingsEmpty heading="Nothing here" line="Add one above." />
+        <EmptyState level={3} title="Nothing here" line="Add one above." />
       </SettingsList>
     </SettingsGroup>
   </SettingsPage>

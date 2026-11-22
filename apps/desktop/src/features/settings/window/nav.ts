@@ -1,5 +1,8 @@
-// Moving between Settings' groups, and to its search, by key. The page that's open says how; with
-// none open, the keys have nowhere to go.
+// Moving between Settings' groups, and to its search, by key, and what the search holds, which
+// "Clear search" empties. The page that's open says how; with none open, the keys have nowhere to
+// go.
+
+import { createStore } from 'zustand/vanilla';
 
 let mover: ((step: 1 | -1) => void) | undefined;
 let searcher: (() => void) | undefined;
@@ -32,5 +35,19 @@ export function onSearch(go: () => void): () => void {
 
 /** Goes to the search field, when a page is open. */
 export function search(): void {
+  searcher?.();
+}
+
+/** What Settings' search holds: what the page filters its rows by, while it's open. */
+export const searchStore = createStore<{ readonly query: string }>()(() => ({ query: '' }));
+
+/** Whether the search holds something to clear, or why not. */
+export function canClearSearch(): true | string {
+  return searchStore.getState().query.trim() === '' ? 'The search is empty' : true;
+}
+
+/** Empties the search, and goes to it, so what's typed next searches again. */
+export function clearSearch(): void {
+  searchStore.setState({ query: '' });
   searcher?.();
 }

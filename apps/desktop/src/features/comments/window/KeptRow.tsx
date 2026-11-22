@@ -1,7 +1,7 @@
 // Settings' Kept drafts row, in Storage: each open pull request with drafts the diff had nowhere to
 // open, how many, and "Show", which runs the command the palette has on that pull request's tab.
 
-import { SettingsCommand, SettingsEmpty, SettingsList, SettingsListItem } from '@lo/ui';
+import { EmptyState, SettingsCommand, SettingsList, SettingsListItem } from '@lo/ui';
 import { useSyncExternalStore } from 'react';
 
 import { defineRow } from '../../settings/window/shared.ts';
@@ -49,7 +49,7 @@ function KeptDrafts({ label, description }: { label: string; description: string
           {views.map((view) => (view.kind === 'pull' ? <Item key={view.id} view={view} /> : null))}
         </div>
       ) : (
-        <SettingsEmpty heading="No kept drafts" />
+        <EmptyState level={3} title="No kept drafts" />
       )}
     </SettingsList>
   );

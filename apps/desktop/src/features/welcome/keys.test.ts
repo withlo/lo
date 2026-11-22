@@ -32,10 +32,10 @@ function runs(event: Partial<KeyEventLike>, focus: Focus): string | undefined {
 
 const enter = { key: 'Enter', code: 'Enter' };
 
-describe('the welcome screen’s keys', () => {
-  it('⏎ signs in on the screen, in its link field too, where the command forwards it', () => {
-    expect(runs(enter, { scope: 'welcome', text: false })).toBe('welcome.signIn');
-    expect(runs(enter, { scope: 'welcome', text: true })).toBe('welcome.signIn');
+describe('the welcome’s keys', () => {
+  it('⏎ continues in the welcome, in its link field too, where the command forwards it', () => {
+    expect(runs(enter, { scope: 'welcome', text: false })).toBe('welcome.continue');
+    expect(runs(enter, { scope: 'welcome', text: true })).toBe('welcome.continue');
   });
 
   it('takes no key anywhere else, nor a letter typed in its field', () => {
@@ -45,8 +45,19 @@ describe('the welcome screen’s keys', () => {
     expect(runs({ key: 'j', code: 'KeyJ' }, { scope: 'welcome', text: true })).toBeUndefined();
   });
 
-  it('leaves Tab to the browser, which walks the screen’s controls', () => {
-    expect(runs({ key: 'Tab', code: 'Tab' }, { scope: 'welcome', text: false })).toBeUndefined();
+  it('leaves Tab to the browser, which walks its controls, and j, k and c to the practice diff', () => {
+    for (const [key, code] of [
+      ['Tab', 'Tab'],
+      ['j', 'KeyJ'],
+      ['k', 'KeyK'],
+      ['c', 'KeyC'],
+    ]) {
+      expect(runs({ key, code }, { scope: 'welcome', text: false })).toBeUndefined();
+    }
+  });
+
+  it('opens again with a command that has no key', () => {
+    expect(commands.find((command) => command.id === 'welcome.show')?.keys).toEqual([]);
   });
 
   it('names its scope', () => {

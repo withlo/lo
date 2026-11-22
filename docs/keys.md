@@ -72,7 +72,7 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Delete your comment…            | `d d`                                          | In `timeline`                                                           | `timeline.deleteComment`  |
 | Show the hidden comment         | None: in its menu and the palette              | In `timeline`                                                           | `timeline.showComment`    |
 | Mark viewed                     | `e`                                            | In `tree`                                                               | `tree.markViewed`         |
-| Sign in with GitHub             | `⏎`                                            | In `welcome`                                                            | `welcome.signIn`          |
+| Continue                        | `⏎`                                            | In `welcome`                                                            | `welcome.continue`        |
 
 ## Code
 
@@ -141,18 +141,20 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Find
 
-| Action                         | Keys                    | Where                               | Command              |
-| ------------------------------ | ----------------------- | ----------------------------------- | -------------------- |
-| Search                         | `/`                     | Vim's own key, in code views        | `diff.search`        |
-| Next match                     | `n`                     | Vim's own key, in code views        | `diff.nextMatch`     |
-| Previous match                 | `N`                     | Vim's own key, in code views        | `diff.previousMatch` |
-| Command palette                | `⌘⇧P`                   | Anywhere                            | `keys.palette`       |
-| Review a pull request          | `⌘L`, `⌘O` (macOS only) | Anywhere but `dialog` and `palette` | `open.box`           |
-| Open the link on the clipboard | `⌘V`                    | In `recent`                         | `open.paste`         |
-| Filter recent pull requests    | `/`                     | In `recent`                         | `open.filter`        |
-| Open the pull request          | `⏎`                     | In `recent`                         | `open.openRecent`    |
-| Search settings                | `/`, `⌘F`               | In `settings`                       | `settings.search`    |
-| Go to a file                   | `⌘P`                    | Anywhere but `dialog` and `palette` | `tree.find`          |
+| Action                         | Keys                    | Where                               | Command                |
+| ------------------------------ | ----------------------- | ----------------------------------- | ---------------------- |
+| Search                         | `/`                     | Vim's own key, in code views        | `diff.search`          |
+| Next match                     | `n`                     | Vim's own key, in code views        | `diff.nextMatch`       |
+| Previous match                 | `N`                     | Vim's own key, in code views        | `diff.previousMatch`   |
+| Command palette                | `⌘⇧P`                   | Anywhere                            | `keys.palette`         |
+| Review a pull request          | `⌘L`, `⌘O` (macOS only) | Anywhere but `dialog` and `palette` | `open.box`             |
+| Open the link on the clipboard | `⌘V`                    | In `recent`                         | `open.paste`           |
+| Filter recent pull requests    | `/`                     | In `recent`                         | `open.filter`          |
+| Clear filter                   | `⌘⌫`                    | In `recent`                         | `open.clearFilter`     |
+| Open the pull request          | `⏎`                     | In `recent`                         | `open.openRecent`      |
+| Search settings                | `/`, `⌘F`               | In `settings`                       | `settings.search`      |
+| Clear search                   | `⌘⌫`                    | In `settings`                       | `settings.clearSearch` |
+| Go to a file                   | `⌘P`                    | Anywhere but `dialog` and `palette` | `tree.find`            |
 
 ## View
 
@@ -341,6 +343,7 @@ mode. In the box's preview, or on its frame, `Esc` closes it at once, from any m
 | Download the update from its page | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.download`      |
 | Copy the Homebrew update command  | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.copy`          |
 | Go to the update                  | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.focus`         |
+| Welcome to Lo                     | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `welcome.show`          |
 
 ## Where keys apply
 
@@ -520,7 +523,7 @@ key help says why, and has no button. The editor is the app for text whatever th
 contents, even through a link to a file named like a launcher or a web page: on Linux, the app
 `xdg-mime query default text/plain` names, started with `gio launch`. Without one of those, Lo says
 so and opens nothing. A link to a file in a dotfiles folder is followed. Lo reads a file of up to 1
-MiB and lines of up to 1,000 characters; a longer line is reported and skipped, and a longer file
+MB and lines of up to 1,000 characters; a longer line is reported and skipped, and a longer file
 isn't read. Nothing in the file is ever run.
 
 ### Writing keys

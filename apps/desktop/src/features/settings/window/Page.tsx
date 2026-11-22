@@ -3,7 +3,7 @@
 // the settings file above them.
 
 import {
-  Button,
+  EmptyState,
   Input,
   Key,
   Problem,
@@ -11,16 +11,17 @@ import {
   SettingsCommand,
   SettingsGroup,
   SettingsPage,
+  Ticks,
 } from '@lo/ui';
 import { keyLabels, NO_TARGET } from '@lo/ui/commands';
 import { createElement, useCallback, useEffect, useRef, useState } from 'react';
+import { useStore } from 'zustand';
 
 import { registry, setMiddle, useKeys } from '../../../window/commands/registry.ts';
 import { useViews } from '../../../window/slots.tsx';
 import { groupNames, settingsGroups, type SettingsGroup as Group } from '../contract.ts';
-import { onMoveSection, onSearch } from './nav.ts';
+import { onMoveSection, onSearch, searchStore } from './nav.ts';
 import { rows, useProblems, type RowAbout } from './shared.ts';
-import { Ticks } from './Ticks.tsx';
 
 /** The id of a group's element, and what the list goes to. */
 const groupId = (group: Group) => `settings-${group}`;
@@ -91,13 +92,16 @@ function SearchKey() {
   return first ? <Key keys={keyLabels(first, registry().system)} quiet decorative /> : null;
 }
 
+/** Puts `text` in the search, which filters the rows by it. */
+const setQuery = (text: string) => searchStore.setState({ query: text });
+
 /** Settings, the page of the tab of that kind. */
 export function SettingsTab() {
   const views = useViews(rows);
   const root = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
-  const [query, setQuery] = useState('');
+  const query = useStore(searchStore, (state) => state.query);
   /** Whether the field has focus, when the key that goes to it isn't shown. */
   const [searching, setSearching] = useState(false);
   const [current, setCurrent] = useState<string>();
@@ -129,6 +133,9 @@ export function SettingsTab() {
       if (next !== undefined) go(next);
     });
   }, [ids, here, go]);
+
+  // The search is the page's: one opened later starts with none.
+  useEffect(() => () => searchStore.setState({ query: '' }), []);
 
   // `/` and `⌘F` go to the search, with what it holds selected.
   useEffect(
@@ -220,18 +227,12 @@ export function SettingsTab() {
       >
         <Problems />
         {searched !== '' && shown.length === 0 && (
-          // In the middle of the column, as a view with nothing in it is.
-          <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-16 p-32 text-center">
-            <h2 className="m-0 text-balance text-heading">No settings match “{searched}”</h2>
-            <Button
-              variant="primary"
-              onClick={() => {
-                setQuery('');
-                field.current?.focus();
-              }}
-            >
-              Clear search
-            </Button>
+          // The rest of the column, as a view with nothing in it fills its view.
+          <div className="grid min-w-0 flex-1">
+            <EmptyState
+              title={`No settings match “${searched}”`}
+              actions={['settings.clearSearch']}
+            />
           </div>
         )}
         {groups.map((group) => (

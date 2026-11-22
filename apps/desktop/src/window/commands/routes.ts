@@ -43,7 +43,6 @@ export const WITHOUT_ROUTE: readonly string[] = [
   'merge.override',
   'merge.close',
   'merge.leaveCommit',
-  'open.paste',
   'open.filter',
   'open.openRecent',
   'open.nextRecent',
@@ -116,5 +115,4 @@ export const WITHOUT_ROUTE: readonly string[] = [
   'tree.openAll',
   'tree.closeAll',
   'tree.show',
-  'welcome.signIn',
 ];

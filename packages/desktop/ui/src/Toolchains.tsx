@@ -1,7 +1,8 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
 
 import { Button } from './Button.tsx';
-import { SettingsEmpty, SettingsListItem } from './Settings.tsx';
+import { EmptyState } from './EmptyState.tsx';
+import { SettingsListItem } from './Settings.tsx';
 
 /** A toolchain language servers use, as Settings lists it: one Lo downloads, or the system's. */
 export type ToolchainEntry = DownloadedToolchain | SystemToolchain;
@@ -167,7 +168,7 @@ export function ToolchainList({ entries, onRemove }: ToolchainListProps) {
       tabIndex={-1}
       className="outline-none focus-visible:shadow-ring-inset"
     >
-      {entries.length === 0 && <SettingsEmpty heading="No toolchains for this computer" />}
+      {entries.length === 0 && <EmptyState level={3} title="No toolchains for this computer" />}
       {entries.map((entry) => (
         <ToolchainRow key={entry.id} entry={entry} onRemove={remove} />
       ))}

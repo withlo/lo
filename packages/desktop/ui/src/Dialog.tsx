@@ -1,6 +1,13 @@
 import { Dialog as Base } from '@base-ui/react/dialog';
 import { cva } from 'class-variance-authority';
-import { useCallback, useRef, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 
 import { Button } from './Button.tsx';
 import { useTakeFocus } from './focus.ts';
@@ -161,6 +168,16 @@ export function Dialog(props: DialogProps) {
     },
     [grow, takeFocus, focus],
   );
+  // A control that had focus can go with a step, as a Copy button does once there's nothing left
+  // to copy. The main button takes focus then, before the browser drops it on the panel: it's
+  // what `⏎` presses next.
+  useLayoutEffect(() => {
+    const active = panel.current?.ownerDocument.activeElement;
+    if (!(active instanceof HTMLElement) || active === panel.current) return;
+    if (panel.current?.contains(active) !== true || !main.current) return;
+    const seen = active.checkVisibility?.({ visibilityProperty: true }) ?? true;
+    if (!seen) main.current.focus({ preventScroll: true });
+  }, [state]);
   return (
     <Base.Root
       open={open}
@@ -235,6 +252,7 @@ export function Dialog(props: DialogProps) {
                       ref={main}
                       variant="primary"
                       hint={null}
+                      hintOn="hover"
                       onClick={() => onOpenChange(false)}
                     >
                       Done
@@ -249,6 +267,8 @@ export function Dialog(props: DialogProps) {
                       aria-disabled={action.disabled === undefined ? undefined : true}
                       aria-description={action.disabled}
                       hint={action.disabled ?? null}
+                      // Focus is put here as the dialog opens, and the reason isn't shown for that.
+                      hintOn="hover"
                       onClick={() => {
                         if (action.disabled === undefined) action.onRun();
                       }}

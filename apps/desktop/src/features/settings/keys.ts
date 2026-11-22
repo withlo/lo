@@ -39,6 +39,17 @@ export default defineCommands(
       keys: ['/', 'cmd+f'],
       when: { scope: 'settings' },
     },
+    /**
+     * Empties the search, so every row shows again: the button where it finds nothing. `⌘⌫` is
+     * what empties a line of text on macOS.
+     */
+    clearSearch: {
+      label: 'Clear search',
+      control: 'Clear search in Settings, where the search finds nothing',
+      group: 'Find',
+      keys: ['cmd+backspace'],
+      when: { scope: 'settings' },
+    },
     /** Opens the settings file in the system's text editor, so the person can fix it. */
     openFile: {
       label: 'Open settings.json',

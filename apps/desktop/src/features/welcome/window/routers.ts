@@ -21,20 +21,19 @@ const NAME = String.raw`[^/?#]+`;
 const NUMBER = String.raw`\d+`;
 
 export interface Router {
-  /** The router's name, as its own app writes it. */
+  /** The app's name, as it writes it, with the version the rule is for where that matters. */
   readonly name: string;
-  /** What to do with the rule, in a few sentences, with how it skips Lo's own links. */
-  readonly steps: string;
+  /** What to do with the rule, one step to a line. Between backticks is code. */
+  readonly steps: readonly string[];
   /** The rule to copy. */
   readonly rule: string;
 }
 
-/** The routers Lo has rules for, in the order the dialog lists them. */
+/** The apps Lo has rules for, in the order the dialog lists them. */
 export const routers: readonly Router[] = [
   {
-    name: 'Finicky',
-    steps:
-      'Add this handler to the handlers in ~/.finicky.js. It is for Finicky 4. It skips links that Lo opened, which it tells by Lo’s bundle ID.',
+    name: 'Finicky 4',
+    steps: ['Add this rule to `handlers` in `~/.finicky.js`.'],
     rule: String.raw`{
   match: (url, { opener }) =>
     opener?.bundleId !== "${BUNDLE_ID}" &&
@@ -45,14 +44,21 @@ export const routers: readonly Router[] = [
   },
   {
     name: 'Velja',
-    steps:
-      'This setup hasn’t been tried in Velja. In Velja’s settings, open Rules. Add a rule with a Source Apps matcher set to Lo that opens in your browser, so links Lo opens go to the browser. Add a rule that opens in Lo, with a URL Matchers matcher with this pattern. If Lo’s own GitHub links come back to Lo, the source-app rule must sit above the Lo rule.',
+    steps: [
+      'Open Velja › Settings › Rules.',
+      'Add a rule that opens your browser, with Source Apps set to Lo.',
+      'Below it, add a rule that opens Lo, with this pattern in URL Matchers.',
+    ],
     rule: String.raw`^(?:https://)?github\.com/${NAME}/${NAME}/pull/${NUMBER}(?:[/?#]|$)`,
   },
   {
     name: 'Choosy',
-    steps:
-      'In Choosy’s settings, open Rules and add a rule that opens in Lo when all of these hold: the URL matches this regular expression, and the Source application is not Lo.',
+    steps: [
+      'Open Choosy › Settings › Rules.',
+      'Add a rule that opens Lo when all of its conditions match.',
+      'Add the condition Source application is not Lo.',
+      'Add the condition URL matches this regular expression.',
+    ],
     rule: String.raw`^https://github\.com/${NAME}/${NAME}/pull/${NUMBER}(?:[/?#].*)?$`,
   },
 ];

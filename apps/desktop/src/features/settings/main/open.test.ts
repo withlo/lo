@@ -58,7 +58,7 @@ describe('opening the settings file', () => {
     expect(await open()).toMatchObject({ ok: false, reason: expect.stringMatching(/plain file/) });
     rmSync(path, { recursive: true });
     writeFileSync(path, 'x'.repeat(1024 * 1024 + 1));
-    expect(await open()).toMatchObject({ ok: false, reason: expect.stringMatching(/over 1 MiB/) });
+    expect(await open()).toEqual({ ok: false, reason: 'settings.json is over 1 MB' });
     writeFileSync(path, '{}');
     chmodSync(path, 0o755);
     expect(await open()).toMatchObject({ ok: false, reason: expect.stringMatching(/executable/) });

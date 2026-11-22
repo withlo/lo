@@ -78,7 +78,7 @@ const accounts = (page: Page) => page.getByRole('region', { name: 'Accounts' });
 async function openSettings(page: Page): Promise<void> {
   await page.locator('main[data-lo-middle]').focus();
   await page.keyboard.press(`${cmd}+Comma`);
-  await expect(page.getByRole('heading', { name: 'Accounts' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Accounts', exact: true })).toBeVisible();
 }
 
 /** The polls a sign-in sent the replay server. */

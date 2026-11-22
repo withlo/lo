@@ -48,7 +48,7 @@ list.
   change on top of your save.
 - **A link to a file is followed.** A settings file kept with other dotfiles stays a link, and the
   file it leads to is the one Lo reads, watches and replaces.
-- The file is read up to 1 MiB, with objects and lists nested up to 100 levels deep.
+- The file is read up to 1 MB, with objects and lists nested up to 100 levels deep.
 - **Which repos you trust changes only through Lo's own dialog.** Lo adds one to `code.trusted` once
   you say "Trust" there, and takes one out once you remove it in Settings. You can still edit the
   file. If the file has a problem when you say "Trust", Lo says so where you asked, and offers to

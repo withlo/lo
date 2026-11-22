@@ -1,0 +1,155 @@
+// The welcome's first step: what Lo is for, under the mark as it unmelds, and getting an account,
+// by signing in with GitHub or importing from GitHub CLI. A missing Git is said here too.
+
+import {
+  Button,
+  Callout,
+  Collapse,
+  Key,
+  LogoMotion,
+  Mark,
+  Problem,
+  SetupDone,
+  Ticks,
+} from '@lo/ui';
+import type { ReactNode } from 'react';
+import { useStore } from 'zustand';
+
+import { importFromGh, signIn, useAccounts } from '../../accounts/window/shared.ts';
+import { checkGit, goTo } from './actions.ts';
+import { keyOf } from './labels.ts';
+import { usePlayOnce } from './played.ts';
+import { gitProblem, welcomeStore } from './store.ts';
+
+function PersonIcon() {
+  return (
+    <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="8" cy="5.25" r="2.75" />
+      <path d="M3 13.5c.5-2.5 2.5-4 5-4s4.5 1.5 5 4" />
+    </svg>
+  );
+}
+
+function TerminalIcon() {
+  return (
+    <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M3 4.5 6 8l-3 3.5M8 12h5" />
+    </svg>
+  );
+}
+
+/** Looks for Git again. */
+function look(): void {
+  void checkGit();
+}
+
+/**
+ * What Lo needs of Git and how to get it, when it can't find one it can run: what's wrong on the
+ * line with "Check again", and how to get one under it, in room the step already holds, so the mark
+ * and the foot stay where they are. A look that failed says so under it, with main's words behind
+ * Details, and "Check again" looks once more.
+ */
+function GitNotice() {
+  const { git, checking, checkFailed, checks } = useStore(welcomeStore);
+  if (!gitProblem(git)) return null;
+  return (
+    <div className="flex flex-col gap-8">
+      <Callout tone="warning">
+        <div className="flex flex-col gap-2">
+          <div className="flex items-start gap-12">
+            <p className="m-0 min-w-0 flex-1 font-semibold text-fg">
+              <Ticks text={git.message} />
+            </p>
+            {/* On the first line, and no taller than it, so the box is as deep under its words
+                as over them. */}
+            <div className="flex h-1lh flex-none items-center">
+              <Button size="sm" busy={checking} working="Checking…" onClick={look}>
+                Check again
+              </Button>
+            </div>
+          </div>
+          <p className="m-0 text-fg-muted">
+            <Ticks text={git.install} />
+          </p>
+        </div>
+      </Callout>
+      <Collapse open={checkFailed !== undefined}>
+        {checkFailed !== undefined && (
+          <Problem title="Couldn’t check for Git" details={checkFailed} />
+        )}
+      </Collapse>
+      {/* A look that found nothing new says what the notice says again, to a screen reader. */}
+      <span key={checks} role="status" className="sr-only">
+        {checks > 0 && !checking && checkFailed === undefined ? git.message : ''}
+      </span>
+    </div>
+  );
+}
+
+/** Who is signed in, said where the sign-in button was. */
+function signedInAs(logins: readonly string[]): ReactNode {
+  const [first] = logins;
+  if (logins.length > 1) return `Signed in to ${logins.length} accounts`;
+  return `Signed in as ${first ?? ''}`;
+}
+
+export function AccountStep({ shown }: { shown: boolean }): ReactNode {
+  const accounts = useAccounts();
+  const gh = useStore(welcomeStore, (state) => state.gh);
+  const logins = (accounts ?? [])
+    .filter((account) => account.signedOut === null)
+    .map((account) => account.login);
+  const key = keyOf('welcome.continue');
+  const unmeld = usePlayOnce('unmeld', shown);
+  // GitHub CLI is there but has no account to import: the button says why it's dimmed.
+  const nothing = gh?.kind === 'found' && gh.accounts.length === 0;
+  return (
+    <>
+      {/* It unmelds as the welcome opens, and rests when the reader comes back to this step. */}
+      {unmeld ? (
+        <LogoMotion play="unmeld" className="size-mark-lg" decorative />
+      ) : (
+        <span className="flex" aria-hidden="true">
+          <Mark className="size-mark-lg" />
+        </span>
+      )}
+      <div className="flex flex-col gap-8">
+        <h1 className="m-0 text-balance text-display">Review pull requests from the keyboard</h1>
+        <p className="m-0 text-fg-muted read-lead">Every action has a key.</p>
+      </div>
+      <div className="flex min-h-control-h flex-wrap items-center gap-8">
+        {logins.length > 0 ? (
+          <SetupDone size="md">{signedInAs(logins)}</SetupDone>
+        ) : (
+          <>
+            {/* The step's main button only while the step is the one on screen. */}
+            <Button
+              variant="primary"
+              {...(shown ? { 'data-welcome-default': true } : {})}
+              data-welcome-focus
+              onClick={signIn}
+            >
+              <PersonIcon />
+              Sign in with GitHub…
+              {key && <Key keys={key} decorative className="text-on-accent" />}
+            </Button>
+            {gh?.kind === 'found' && (
+              <Button
+                disabled={nothing}
+                hint={nothing ? 'GitHub CLI isn’t signed in' : null}
+                onClick={importFromGh}
+              >
+                <TerminalIcon />
+                Import from GitHub CLI
+              </Button>
+            )}
+            <Button variant="ghost" onClick={() => goTo('open')}>
+              Open public pull request…
+            </Button>
+          </>
+        )}
+      </div>
+      <GitNotice />
+    </>
+  );
+}

@@ -6,7 +6,14 @@ import type { WindowFeature } from '../../../window/features.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { dialogs, header, kinds } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
-import { focusFilter, openRow, pasteLink, stepChosen } from './actions.ts';
+import {
+  canClearFilter,
+  clearFilter,
+  focusFilter,
+  openRow,
+  pasteLink,
+  stepChosen,
+} from './actions.ts';
 import { openBox } from './box.ts';
 import { installCommand } from './command.ts';
 import CommandLine from './CommandLine.tsx';
@@ -20,6 +27,7 @@ export default {
     box: { run: () => openBox() },
     paste: { run: pasteLink },
     filter: { run: focusFilter },
+    clearFilter: { run: clearFilter, enabled: canClearFilter },
     openRecent: { run: () => openRow() },
     nextRecent: { run: () => stepChosen(1) },
     previousRecent: { run: () => stepChosen(-1) },

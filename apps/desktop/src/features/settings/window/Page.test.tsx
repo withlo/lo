@@ -196,15 +196,16 @@ describe('the search', () => {
     expect(page.rows()).toEqual(['test.theme', 'test.keymap', 'test.cache']);
   });
 
-  it('says when nothing matches, and clears with its button', () => {
+  it('says when nothing matches, and clears with its button, which is the command', () => {
     const page = render();
     type(page.field, 'purple');
-    expect(page.container.textContent).toContain('No settings match “purple”');
-    click(
-      [...page.container.querySelectorAll('button')].find(
-        (each) => each.textContent === 'Clear search',
-      ),
+    expect(page.container.querySelector('h2')?.textContent).toBe('No settings match “purple”');
+    const clear = [...page.container.querySelectorAll('button')].find((each) =>
+      each.textContent.startsWith('Clear search'),
     );
+    // Its key is the command's.
+    expect(clear?.querySelector('kbd')).not.toBeNull();
+    click(clear);
     expect(page.rows()).toHaveLength(3);
     expect(document.activeElement).toBe(page.field);
   });

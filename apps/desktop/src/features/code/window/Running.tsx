@@ -2,13 +2,7 @@
 // server is, as its status bar item says it, and "Restart" and "Show log", which run the commands
 // the palette has on that pull request's tab.
 
-import {
-  ServerWords,
-  SettingsCommand,
-  SettingsEmpty,
-  SettingsList,
-  SettingsListItem,
-} from '@lo/ui';
+import { EmptyState, ServerWords, SettingsCommand, SettingsList, SettingsListItem } from '@lo/ui';
 import { Fragment, useEffect, useSyncExternalStore } from 'react';
 
 import { defineRow } from '../../settings/window/shared.ts';
@@ -75,8 +69,9 @@ function Servers({ label, description }: { label: string; description: string })
   return (
     <SettingsList label={label} description={description}>
       {running === '' ? (
-        <SettingsEmpty
-          heading="No language servers running"
+        <EmptyState
+          level={3}
+          title="No language servers running"
           line="Language servers for open pull requests are listed here."
         />
       ) : (

@@ -50,7 +50,7 @@ const test = base.extend<{ home: string }>({
 
 const welcome = (page: Page) => page.locator('[data-lo-scope="welcome"]');
 const step = (page: Page) =>
-  welcome(page).getByRole('listitem').filter({ hasText: 'Install the overview skill' });
+  welcome(page).getByRole('listitem').filter({ hasText: 'Overview skill' });
 const toast = (page: Page, text: string) =>
   page.getByRole('status').filter({ hasText: text }).first();
 
@@ -86,19 +86,26 @@ async function openSettings(page: Page): Promise<void> {
 }
 
 test.describe('on the welcome screen', () => {
-  test('the step installs the skill for the agent that is set up, and for no other', async ({
+  test('the step installs the skill for the agent that is set up, and for no other, and says so itself', async ({
     page,
     home,
   }) => {
     mkdirSync(join(home, '.claude'));
+    // The skill's row is on the welcome's set-up step, two on from the first.
+    await welcome(page)
+      .getByRole('button', { name: /^Continue/ })
+      .click();
+    await welcome(page)
+      .getByRole('button', { name: /^Continue/ })
+      .click();
     await expect(step(page)).toContainText(
       'Teaches Claude Code and Codex to write overviews that Lo shows.',
     );
     await step(page).getByRole('button', { name: 'Install', exact: true }).click();
-    await expect(step(page).getByRole('button', { name: 'Installed' })).toBeDisabled();
-    await expect(toast(page, 'Installed the overview skill')).toHaveText(
-      'Install overview skillInstalled the overview skill for Claude Code in ~/.claude/skills.',
-    );
+    // The step says so, and nothing else says it again.
+    await expect(step(page)).toContainText('Installed');
+    await expect(step(page).getByRole('button')).toHaveCount(0);
+    await expect(toast(page, 'Installed the overview skill')).toHaveCount(0);
     expect(isSkill(claudeSkill(home))).toBe(true);
     expect(existsSync(join(home, '.agents'))).toBe(false);
   });

@@ -170,20 +170,19 @@ function advance(ms: number): void {
 }
 
 describe('the welcome screen’s step', () => {
-  it('is "Install the overview skill", with what it is for', async () => {
+  it('is "Overview skill", with what it is for and a picture of an overview', async () => {
     main(state());
     render();
     await settle();
-    expect(step()?.querySelector('.text-ui-strong')?.textContent).toBe(
-      'Install the overview skill',
-    );
+    expect(step()?.querySelector('.text-ui-strong')?.textContent).toBe('Overview skill');
+    expect(step()?.querySelector('[role="img"]')?.textContent).toContain('parse');
     expect(step()?.textContent).toContain(
       'Teaches Claude Code and Codex to write overviews that Lo shows.',
     );
     expect(button(step(), 'Install').disabled).toBe(false);
   });
 
-  it('installs for each agent that is set up, and says so', async () => {
+  it('installs for each agent that is set up, and says so on the step alone', async () => {
     const asked = main(
       state({ setUp: true }, { setUp: false }),
       [{ kind: 'installed', agent: 'claude' }],
@@ -191,14 +190,36 @@ describe('the welcome screen’s step', () => {
     );
     render();
     await settle();
+    const before = notices();
     click(button(step(), 'Install'));
     await settle();
     expect(asked.asked()).toEqual([['overview.installSkill', { agents: ['claude'] }]]);
-    expect(button(step(), 'Installed').disabled).toBe(true);
-    expect(notice()).toEqual({
-      title: 'Install overview skill',
-      body: 'Installed the overview skill for Claude Code in ~/.claude/skills.',
-    });
+    expect(step()?.textContent).toContain('Installed');
+    expect(step()?.querySelector('button')).toBeNull();
+    expect(notices()).toEqual(before);
+  });
+
+  it('says on the step what stops an install, and that one failed, with a way to try again', async () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    onTestFinished(() => quiet.mockRestore());
+    const why = { kind: 'otherSkill', path: '~/.agents/skills/lo-overview', name: null } as const;
+    main(state({ installed: true }, { blocked: why }));
+    render();
+    await settle();
+    expect(step()?.textContent).toContain(
+      '~/.agents/skills/lo-overview holds another skill. Move it, then install again.',
+    );
+    answers['overview.installSkill'] = () => {
+      throw new IpcError('internal', 'overview.installSkill failed.');
+    };
+    const before = notices();
+    click(button(step(), 'Install'));
+    await settle();
+    expect(step()?.querySelector('[role="alert"]')?.textContent).toBe(
+      'Couldn’t install the overview skill',
+    );
+    expect(notices()).toEqual(before);
+    expect(button(step(), 'Try again')).toBeDefined();
   });
 
   it('says so in a notice when no agent is set up', async () => {
@@ -378,7 +399,8 @@ describe('Settings’ row', () => {
     click(button(step(), 'Install'));
     await settle();
     expect(asks).toBe(4);
-    expect(button(step(), 'Installed').disabled).toBe(true);
+    expect(step()?.textContent).toContain('Installed');
+    expect(step()?.querySelector('button')).toBeNull();
     expect(lines()).toEqual([
       'Claude Code · installed in ~/.claude/skills',
       'Codex · installed in ~/.agents/skills',
@@ -402,12 +424,15 @@ describe('Settings’ row', () => {
     click(button(step(), 'Install'));
     await settle();
     // The install is over, and the window hasn't heard where things stand: no button to press.
-    expect(button(step(), 'Install').disabled).toBe(true);
+    expect(step()?.querySelector('button')?.getAttribute('aria-busy')).toBe('true');
     expect(button(row(), 'Install').getAttribute('aria-disabled')).toBe('true');
+    // Pressed while it's busy, it asks for nothing more.
+    click(step()?.querySelector('button') ?? document.body);
     act(() => release?.());
     await settle();
     expect(bridge.calls.filter(([channel]) => channel === 'overview.installSkill')).toHaveLength(1);
-    expect(button(step(), 'Installed').disabled).toBe(true);
+    expect(step()?.textContent).toContain('Installed');
+    expect(step()?.querySelector('button')).toBeNull();
   });
 
   it('follows what main pushes', async () => {
@@ -425,7 +450,9 @@ describe('Settings’ row', () => {
     await settle();
     act(() => skillStore.setState({ installing: true }));
     expect(button(row(), 'Install').getAttribute('aria-busy')).toBe('true');
-    expect(button(step(), 'Install').disabled).toBe(true);
+    const inStep = step()?.querySelector('button');
+    expect(inStep?.getAttribute('aria-busy')).toBe('true');
+    expect(inStep?.textContent).toContain('Installing…');
   });
 });
 

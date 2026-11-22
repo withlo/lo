@@ -73,7 +73,7 @@ it('shows how an install the row asked for went on the row, and nowhere else', a
   await act(async () => {
     await installCommand('row');
   });
-  expect(host.textContent).toContain('Add /opt/bin to PATH.');
+  expect(host.textContent).toContain('Add /opt/bin to your PATH.');
   expect(notice()).toBeUndefined();
   main({ installed: [] }, { kind: 'taken', path: '/opt/bin/lo' });
   await act(async () => {

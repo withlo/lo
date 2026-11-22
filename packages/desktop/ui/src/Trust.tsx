@@ -2,7 +2,8 @@ import { useLayoutEffect, useRef, type ReactNode } from 'react';
 
 import { Button } from './Button.tsx';
 import { showFormat } from './controls.ts';
-import { SettingsEmpty, SettingsListItem } from './Settings.tsx';
+import { EmptyState } from './EmptyState.tsx';
+import { SettingsListItem } from './Settings.tsx';
 import { ShownText } from './ShownText.tsx';
 
 /** What a trust entry covers: every pull request of a repo, or one pull request from a fork. */
@@ -116,7 +117,7 @@ export function TrustList({ entries, onRemove }: TrustListProps) {
       tabIndex={-1}
       className="outline-none focus-visible:shadow-ring-inset"
     >
-      {entries.length === 0 && <SettingsEmpty heading="No trusted repos or pull requests" />}
+      {entries.length === 0 && <EmptyState level={3} title="No trusted repos or pull requests" />}
       {entries.map((entry) => (
         <TrustRow key={entry.key} entry={entry} onRemove={remove} />
       ))}

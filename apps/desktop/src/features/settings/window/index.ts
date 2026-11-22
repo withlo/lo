@@ -12,7 +12,7 @@ import Appearance, { followMotion } from './Appearance.tsx';
 import Cache from './Cache.tsx';
 import { Gear } from './Gear.tsx';
 import Keys from './Keys.tsx';
-import { canMoveSection, moveSection, search } from './nav.ts';
+import { canClearSearch, canMoveSection, clearSearch, moveSection, search } from './nav.ts';
 import { SettingsTab } from './Page.tsx';
 import { openSettingsFile } from './shared.ts';
 import { cacheShowable, showCache } from './storage.ts';
@@ -32,6 +32,7 @@ export default {
     nextSection: { run: () => moveSection(1), enabled: onPage },
     previousSection: { run: () => moveSection(-1), enabled: onPage },
     search: { run: search, enabled: onPage },
+    clearSearch: { run: clearSearch, enabled: canClearSearch },
     openFile: { run: openSettingsFile },
     showCache: { run: showCache, enabled: cacheShowable },
   }),
