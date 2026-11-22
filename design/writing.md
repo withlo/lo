@@ -75,7 +75,7 @@ GitHub’s own name for it.
 | merge method       | How a pull request merges, by its name: Squash, Merge commit, Rebase. Never in a button.                                                                                | strategy, merge type, “Squash and merge”              |
 | approval           | A review that approves: “2 more approvals”. The verb is “approve”. An organization also approves Lo: “Request approval on GitHub”.                                      | sign-off, stamp, LGTM                                 |
 | code owner         | Someone whose approval a changed file requires: “1 approval from a code owner”.                                                                                         | “owner” alone, CODEOWNERS, “code owner review”        |
-| viewed             | A file marked viewed.                                                                                                                                                   | seen, read, done                                      |
+| viewed             | A file marked viewed. Its mark is drawn as a ball and works as a checkbox. A file that changed after it was marked is “Changed since viewed”.                           | seen, read, done                                      |
 | account            | A GitHub account Lo is signed in to, by its name: ravi-k.                                                                                                               | login, user, token, credentials                       |
 | read only          | A pull request opened without an account: “Read only”.                                                                                                                  | anonymous, guest, “signed-out mode”                   |
 | sign-in code       | The code typed on GitHub to sign in: “Copy sign-in code”. In the sign-in dialog it’s “the code”: “The code expired.”                                                    | device code, one-time code, user code                 |
@@ -93,7 +93,7 @@ command that writes a suggested change is “Suggest change”, and a suggested 
 | overview skill           | What a coding agent installs to write overviews. In code: `lo-overview`.                                                                                                                                                                           | Lo skill, agent skill, “the skill” alone                  |
 | written for              | The revision an overview or a comment was written at: “Written for r3 · now r5”. After `·` it’s lower case: “ravi-k · 2 d ago · written for r3”.                                                                                                   | “from r3”, “made at r3”, “targets r3”                     |
 | code block, figure, link | What a block of an overview can hold: a code block, a figure, a link into the code. “Part of the figure”.                                                                                                                                          | snippet, diagram, embed                                   |
-| illustration             | A code block in an overview whose code isn’t the pull request’s, such as pseudo-code: “Illustration · not from this pull request”.                                                                                                                 | example, sample, sketch, mock-up                          |
+| illustration             | A code block in an overview whose code isn’t the pull request’s, such as pseudo-code: “Illustration · not from this pull request”. Always text, never a figure.                                                                                    | example, sample, sketch, mock-up                          |
 | link                     | A web address: “Copy link”, “Paste link”. One to a pull request is a “pull request link”. In an overview’s block, a link goes into the code instead: “No links in this block”.                                                                     | URL, web address, hyperlink                               |
 | walkthrough              | An overview block that goes through code in steps: “Next step”, “No steps in this block”.                                                                                                                                                          | tour, slideshow, guide                                    |
 | overview note            | An overview’s words under a line of the diff: “Show overview note”, “No overview note on this line”. Always both words.                                                                                                                            | annotation, “note” alone, remark                          |
@@ -119,7 +119,7 @@ command that writes a suggested change is “Suggest change”, and a suggested 
 | toolchain                | What a language server needs to read a language, by its name: Go, Temurin JDK.                                                                                                                                                                     | runtime, compiler, “SDK” alone                            |
 | trust                    | Letting language servers run on a repo or a pull request: “Trust repo…”, “Stop trusting”.                                                                                                                                                          | allow, approve, enable                                    |
 | update                   | A newer version of Lo: “Lo 0.2.0 is available”. Its buttons: “Update”, then “Restart to update”. Its notes: “What’s new”. A check that finds none: “No update available”.                                                                          | release, “is out”, upgrade, Install, changelog            |
-| damaged                  | A file whose contents fail a check: a download that doesn’t match its checksum, a figure whose image can’t be decoded. “The download was damaged.”                                                                                                 | corrupt, corrupted, invalid, broken, “checksum mismatch”  |
+| damaged                  | A file Lo downloads or decodes that fails a check: a download with the wrong checksum, a figure whose image can’t be decoded. “The download was damaged.”, “diagram.png is damaged.” Never a file the reader edits, such as `settings.json`.       | corrupt, corrupted, invalid, broken, “checksum mismatch”  |
 | welcome                  | The steps a new reader sees first. Its one command, in Help and the palette: “Welcome to Lo”.                                                                                                                                                      | onboarding, setup, tour, “Show welcome”                   |
 | Settings                 | Capital S. A place in it is a path: Settings › Storage. The file is `settings.json`.                                                                                                                                                               | preferences, options, config, “the settings file”         |
 | keyboard shortcuts       | The list of Lo’s keys. One of them is a key.                                                                                                                                                                                                       | key help, keybindings, hotkeys                            |
@@ -408,19 +408,19 @@ A command that can’t run now.
 
 ### Tooltip
 
-Names a control and gives its key.
+Names a control and gives its key, or names a mark.
 
-| Part  | Limit                                        | Example     |
-| ----- | -------------------------------------------- | ----------- |
-| Label | The control’s command label.                 | Merge panel |
-| Key   | A chip beside it, never typed into the text. | `m`         |
+| Part  | Limit                                            | Example     |
+| ----- | ------------------------------------------------ | ----------- |
+| Label | The control’s command label, or the mark’s name. | Merge panel |
+| Key   | A chip beside it, never typed into the text.     | `m`         |
 
 - **A dimmed control’s** tooltip is its refusal reason.
 - **A name cut short** shows whole: a path, a branch.
 - **A mark with no words** shows its name alone, with no key, since a mark isn’t a control: the
-  letter A beside a file is “Added”, its viewed mark is “Viewed”. A screen reader gets the same
-  name, so the tooltip is never the only place it exists.
-- **Never** a sentence, an error, or anything shown nowhere else.
+  letter A beside a file is “Added”, a layer’s checks mark is “Checks passed”.
+- **Never** a sentence, an error, or anything shown nowhere else. A mark’s name is the one
+  exception: it’s in the tooltip and in what a screen reader reads, and nowhere else.
 
 `packages/desktop/ui/src/MergeStatus.tsx`:
 
