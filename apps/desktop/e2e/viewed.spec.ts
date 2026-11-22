@@ -303,8 +303,11 @@ function closed(page: Page, path: string): Promise<boolean> {
     const header = [...(before?.querySelectorAll('.lo-diffhead') ?? [])].find(
       (each) => each instanceof HTMLElement && each.dataset.path === file,
     );
-    // Past a Problem drawn with the header, and the spacers that keep the sides level.
-    let next = header?.closest('.cm-content > *')?.nextElementSibling;
+    // In the header's block, where the column has none of the file's lines; else after it, past
+    // the spacers that keep the sides level. A Problem drawn with the header isn't it.
+    const block = header?.closest('.cm-content > *');
+    let next =
+      block?.querySelector('.lo-filerow:not(.lo-fileproblem)') ?? block?.nextElementSibling;
     while (next?.classList.contains('lo-spacer')) next = next.nextElementSibling;
     return Boolean(
       next?.classList.contains('lo-filerow') && next.textContent?.includes('Expand file'),

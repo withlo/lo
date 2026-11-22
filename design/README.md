@@ -417,7 +417,11 @@ first, so a card drawn again doesn't flash them.
   classes; CodeMirror's merge classes (`cm-changedLine`, `cm-changedText`, `cm-mergeSpacer`,
   `cm-collapsedLines`) share the same rules.
 - Side by side by default. Both sides stay on one row grid: a thread or a wrapped line on one side
-  leaves hatched space (`lo-spacer`) on the other.
+  leaves space (`lo-spacer`) on the other.
+- **Filler is quieter than code.** Everything in a diff that isn't code (that space, folds of
+  unchanged lines, the row under a file's header) sits on one flat ground, `lo-diff-filler`, in type
+  smaller and dimmer than code. Only a gap of three lines or less is hatched, so a line missing on
+  one side still reads as missing.
 - Long lines wrap. Wrapped lines continue four columns past the line's own indent (`--ind`).
 - Whitespace changes show by default; a re-indented line highlights only its new leading spaces.
 - Generated files, lockfiles and very large files start collapsed with a reason and a way to open
@@ -425,6 +429,8 @@ first, so a card drawn again doesn't flash them.
   "Show 18,000 lines", and runs what `za` runs there. Its tooltip gives the key.
 - Code is set as written: no ligatures. Every rule that sets the mono face turns them off with it.
 - A file's header reads once across both sides. The file you're in stays pinned under the diff bar.
+  What belongs to the file and not to a line (the button that shows its lines, a wait, a `Problem`
+  such as a refused "Mark viewed") is one row under its header, never a toast.
 - **The viewed ball is a checkbox drawn as the ball.** It has a checkbox's semantics
   (`role="checkbox"`, `aria-checked`, named "Viewed") and is never drawn as a box. A click marks or
   unmarks the file, as `e` does. Its tooltip is what a click does, with the key: "Mark viewed" or
