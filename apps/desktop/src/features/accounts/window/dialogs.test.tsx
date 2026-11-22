@@ -44,7 +44,7 @@ function render() {
     root.render(
       <Slots views={[Accounts]}>
         <AccountDialogs />
-        <AccountsSection />
+        <AccountsSection label="Accounts" description="" />
       </Slots>,
     ),
   );
@@ -666,8 +666,8 @@ describe('Accounts in Settings', () => {
       account('locked', { needsKeyring: true }),
     ]);
     const page = render();
-    const rows = [...page.querySelectorAll('ul[aria-label="Accounts"] > li')];
-    expect(rows.map((row) => row.querySelector('span span')?.textContent)).toEqual([
+    const rows = [...page.querySelectorAll('[role="list"][aria-label="Accounts"] > *')];
+    expect(rows.map((row) => row.querySelector('.text-ui-strong')?.textContent)).toEqual([
       'rozed-bot',
       'fieldwork-bot',
       'locked',
@@ -675,15 +675,15 @@ describe('Accounts in Settings', () => {
     expect(rows[0]?.textContent).toContain('Signed in');
     expect(rows[1]?.textContent).toContain('Signed out');
     expect(rows[1]?.textContent).toContain('Import again');
-    expect(rows[2]?.textContent).toContain('Needs a keyring');
-    expect(page.textContent).toContain('Install or unlock GNOME Keyring or KWallet');
+    expect(rows[2]?.textContent).toContain('Sign-in can’t be read');
+    expect(page.textContent).toContain('Can’t read the sign-ins');
   });
 
   it('signs an account out after the dialog asks', () => {
     installBridge({});
     showAccounts([account('rozed-bot'), account('tess-okafor')]);
     const page = render();
-    const rows = [...page.querySelectorAll('ul[aria-label="Accounts"] > li')];
+    const rows = [...page.querySelectorAll('[role="list"][aria-label="Accounts"] > *')];
     click(button(rows[1] ?? null, 'Sign out'));
     expect(dialog('sign-out')?.textContent).toContain('Sign out of tess-okafor?');
     expect(page.textContent).not.toContain('Remove');

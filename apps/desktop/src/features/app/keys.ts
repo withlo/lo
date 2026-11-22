@@ -16,18 +16,21 @@ export default defineCommands('app', {
   /** `cmd+plus` is ⌘ or Ctrl and the key that types `+`: Shift and `=` on a US keyboard. */
   zoomIn: {
     label: 'Zoom in',
+    control: 'the + on the Zoom row of Settings › Appearance',
     group: 'Tabs and window',
     keys: ['cmd+=', 'cmd+plus'],
     bar: { menu: 'View', order: 100 },
   },
   zoomOut: {
     label: 'Zoom out',
+    control: 'the − on the Zoom row of Settings › Appearance',
     group: 'Tabs and window',
     keys: ['cmd+-'],
     bar: { menu: 'View', order: 110 },
   },
   actualSize: {
-    label: 'Actual size',
+    label: 'Reset zoom',
+    control: 'Reset on the Zoom row of Settings › Appearance',
     group: 'Tabs and window',
     keys: ['cmd+0'],
     bar: { menu: 'View', order: 120 },
@@ -56,6 +59,7 @@ export default defineCommands('app', {
    */
   licenses: {
     label: 'Show licenses',
+    control: 'Show on the Licenses row of Settings › About',
     group: 'Tabs and window',
     keys: [],
     bar: { menu: 'App', order: 5 },

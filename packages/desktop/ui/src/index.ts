@@ -14,6 +14,7 @@ export {
   type ContextMenuProps,
 } from './ContextMenu.tsx';
 export { HintButton, type HintButtonProps } from './HintButton.tsx';
+export { HintRow, type HintRowProps } from './HintRow.tsx';
 export { Key, keyAria, type KeyAria, type KeyProps } from './Key.tsx';
 export {
   Toast,
@@ -81,14 +82,19 @@ export { Meter, type MeterProps } from './Meter.tsx';
 export { formatBytes } from './bytes.ts';
 export {
   Setting,
+  SettingsCommand,
+  SettingsGroup,
+  SettingsList,
+  SettingsListItem,
   SettingsPage,
-  SettingsSection,
   type SettingProps,
+  type SettingsCommandProps,
+  type SettingsGroupProps,
+  type SettingsListItemProps,
+  type SettingsListProps,
   type SettingsNavItem,
   type SettingsPageProps,
-  type SettingsSectionProps,
 } from './Settings.tsx';
-export { ThemeChoice, type ThemeChoiceProps, type ThemeName } from './ThemeChoice.tsx';
 export { Avatar, avatarHue, initials, type AvatarProps } from './Avatar.tsx';
 export { Callout, type CalloutProps, type CalloutTone } from './Callout.tsx';
 export { Choices, type ChoiceItem, type ChoicesProps } from './Choices.tsx';
@@ -295,6 +301,7 @@ export {
 } from './TypeHover.tsx';
 export {
   ServerStatus,
+  ServerWords,
   type ServerFailure,
   type ServerState,
   type ServerStatusProps,

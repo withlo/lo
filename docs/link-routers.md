@@ -6,8 +6,8 @@ itself as an app that can open web links, without becoming your default browser,
 offer it. [Finicky](https://github.com/johnste/finicky), [Velja](https://sindresorhus.com/velja) and
 [Choosy](https://choosy.app) are the ones Lo has rules for.
 
-"Show rules", beside "Send pull request links to Lo" in the welcome, opens a dialog with the rules
-below, each with a Copy button.
+"Show rules", beside "Send pull request links to Lo" in the welcome and on the Link routers row of
+Settings › Integrations, opens a dialog with the rules below, each with a Copy button.
 
 ## What a rule matches
 

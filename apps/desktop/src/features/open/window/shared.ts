@@ -1,24 +1,17 @@
 // What the open feature shares with other features' window code: the open box, opening a link as
 // the box does, and the `lo` command, for the welcome screen's box and its row for the command;
-// opening a web link another view follows; and the slot for other command-line tools' rows in
-// Settings.
+// and opening a web link another view follows.
 
+import { createElement, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
-import { defineSlot } from '../../../window/slots.tsx';
 import type { CommandState, Installed, Opened } from '../contract.ts';
 import { followLink as follow } from './actions.ts';
 import { openBox as openTheBox, openText } from './box.ts';
 import { checkCommand, commandStore, installCommand as install } from './command.ts';
+import { InstallResult as Result } from './InstallResult.tsx';
 
 export type { CommandState, Installed, Opened } from '../contract.ts';
-
-/**
- * The rows of Settings' Command line section after the `lo` command's, one `Setting` per view, in
- * `order`, lower first: another feature's tool for the command line or for the agents that run
- * there, such as installing a skill for them.
- */
-export const commandLine = defineSlot('open.commandLine');
 
 /** Opens the open box, with `text` in it, or else the pull request link on the clipboard, if any. */
 export function openBox(text?: string): void {
@@ -72,4 +65,12 @@ export function findCommand(): Promise<void> {
  */
 export function installCommand(from?: 'command' | 'row'): Promise<Installed | undefined> {
   return install(from);
+}
+
+/**
+ * What the last install a row asked for left to say under that row, from `useCommandInstall`'s
+ * `done`: the folder to add to `PATH`, or why it failed, with a way to try again.
+ */
+export function InstallResult(props: { done: Installed | undefined }): ReactNode {
+  return createElement(Result, props);
 }

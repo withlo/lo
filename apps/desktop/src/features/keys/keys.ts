@@ -7,6 +7,7 @@ export default defineCommands('keys', {
   /** Every key. `?` is Vim's backward search in code views; Lo searches with `/` alone. */
   help: {
     label: 'Every key',
+    control: 'Show on the Keyboard shortcuts row of Settings',
     group: 'Tabs and window',
     keys: ['?'],
     overVim: true,
@@ -70,6 +71,7 @@ export default defineCommands('keys', {
    */
   openKeymap: {
     label: 'Open the keymap file',
+    control: "Open keymap file at the foot of Settings' list",
     group: 'Tabs and window',
     keys: ['g ,'],
     when: { except: ['menu', 'dialog', 'palette', 'box'], mode: 'normal' },

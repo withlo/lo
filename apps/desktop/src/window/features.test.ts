@@ -1,7 +1,7 @@
 import { commandsOf, defineCommands } from '@lo/ui/commands';
 import { expect, it } from 'vitest';
 
-import { checkCommands, checkSlots, checkViews } from './features.ts';
+import { checkCommands, checkSlots, checkViews, featureViews } from './features.ts';
 import { defineSlot, defineView } from './slots.tsx';
 
 const keys = commandsOf(
@@ -55,4 +55,8 @@ it("collects the slots features share, each named for its own folder's feature",
   expect(() => checkSlots({ '../features/tree/window/shared.ts': { middle } })).toThrow(
     '../features/tree/window/shared.ts has the slot tab.middle, but its folder is "tree".',
   );
+});
+
+it("finds every feature's own views named for its folder, in slots a window/shared.ts exports", () => {
+  expect(featureViews().length).toBeGreaterThan(0);
 });

@@ -3,6 +3,7 @@ import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 
+import { installBridge } from '../../../window/test/bridge.ts';
 import type { Tab } from '../contract.ts';
 import { middleIds, panels } from './panels.ts';
 import {
@@ -10,6 +11,7 @@ import {
   onClosed,
   pullOf,
   showMiddle,
+  showTabOf,
   tabState,
   useActiveTab,
   useTabState,
@@ -114,6 +116,18 @@ describe('a stack’s tab on screen', () => {
     expect(closed).toEqual(['fd:2213']);
     showTabs({ tabs: [bat], active: 'bat' });
     expect(closed).toEqual(['fd:2213', 'fd']);
+  });
+});
+
+describe('showing another tab', () => {
+  it('asks main for the tab that holds a view, and for nothing where it’s on screen or gone', async () => {
+    const bridge = installBridge({ 'tab.select': () => undefined });
+    showTabs({ tabs: [fd, bat], active: 'fd' });
+    await showTabOf('fd');
+    await showTabOf('gone');
+    expect(bridge.calls).toEqual([]);
+    await showTabOf('bat');
+    expect(bridge.calls).toEqual([['tab.select', { id: 'bat' }]]);
   });
 });
 

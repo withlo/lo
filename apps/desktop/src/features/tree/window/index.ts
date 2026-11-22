@@ -4,9 +4,11 @@ import { createElement } from 'react';
 import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
 import { defineView } from '../../../window/slots.tsx';
+import { changeSetting, settingNow, settingRow } from '../../settings/window/shared.ts';
 import { contract as tabContract } from '../../tab/contract.ts';
 import { dialogs, left } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
+import { mode } from '../settings.ts';
 import {
   closeRow,
   focusedFile,
@@ -69,12 +71,9 @@ export default {
       },
     },
     mode: {
-      run: onTab((tab) =>
-        choices.update(tab, (current) => ({
-          ...current,
-          mode: current.mode === 'tree' ? 'review' : 'tree',
-        })),
-      ),
+      run: () => {
+        void changeSetting(mode, settingNow(mode) === 'tree' ? 'review' : 'tree');
+      },
       enabled: inPull,
     },
     changedOnly: {
@@ -149,6 +148,8 @@ export default {
   views: [
     // After the accounts' dialogs and the open box.
     defineView(dialogs, { id: 'tree.finder', order: 20, render: () => createElement(Finder) }),
+    // Settings › Pull requests, after how a pull request opens and the diff's rows.
+    settingRow(mode, { order: 40, command: 'tree.mode' }),
     defineView(left, {
       id: 'tree.files',
       order: 20,

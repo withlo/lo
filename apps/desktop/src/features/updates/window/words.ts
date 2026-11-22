@@ -3,7 +3,7 @@
 import { formatBytes } from '@lo/ui';
 
 /**
- * What names a build beside its version, as Settings says it: `Run from source` for a build run
+ * What names a build beside its version, as Settings says it: `Built from source` for a build run
  * from source, which has no release to name, else the commit a packaged Lo was built from. Nothing
  * for a packaged Lo built where no commit could be found.
  */
@@ -11,7 +11,7 @@ export function buildText(info: {
   packaged: boolean;
   commit?: string | undefined;
 }): string | undefined {
-  if (!info.packaged) return 'Run from source';
+  if (!info.packaged) return 'Built from source';
   return info.commit === undefined ? undefined : `Commit ${info.commit}`;
 }
 

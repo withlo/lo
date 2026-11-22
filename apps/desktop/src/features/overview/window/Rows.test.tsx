@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // The overview skill's rows in a window of their own, with main answered by a stand-in bridge: the
-// step on the welcome screen, the rows in Settings' Command line, and the command in the app menu.
+// step on the welcome screen, the rows in Settings › Integrations, and the command in the app menu.
 // What main installs, and in which folders, is tested beside it, in a temporary home.
 
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -13,11 +13,11 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { IpcError } from '../../../ipc/contract.ts';
-import { notice } from '../../../window/commands/notices.tsx';
+import { notice, notices } from '../../../window/commands/notices.tsx';
 import { createRegistry } from '../../../window/commands/registry.ts';
 import { Slot, Slots } from '../../../window/slots.tsx';
 import { installBridge, type FakeBridge } from '../../../window/test/bridge.ts';
-import { commandLine } from '../../open/window/shared.ts';
+import { rows } from '../../settings/window/shared.ts';
 import { setup } from '../../welcome/window/shared.ts';
 import type { SkillAgent, SkillResult, SkillState } from '../contract.ts';
 import feature from './index.ts';
@@ -65,7 +65,13 @@ beforeAll(() => {
 });
 
 afterEach(() => {
-  skillStore.setState({ state: undefined, installing: false, said: undefined, copied: false });
+  skillStore.setState({
+    state: undefined,
+    installing: false,
+    said: undefined,
+    failed: undefined,
+    copied: false,
+  });
 });
 
 /**
@@ -117,8 +123,8 @@ function render(): HTMLElement {
         <ul aria-label="Optional steps">
           <Slot slot={setup} props={{}} />
         </ul>
-        <section aria-label="Command line">
-          <Slot slot={commandLine} props={{}} />
+        <section aria-label="Integrations">
+          <Slot slot={rows} props={{}} />
         </section>
       </Slots>,
     ),
@@ -131,7 +137,16 @@ function render(): HTMLElement {
 }
 
 const step = () => document.querySelector<HTMLElement>('[aria-label="Optional steps"] > li');
-const row = () => document.querySelector<HTMLElement>('[aria-label="Command line"]');
+/** Settings' row called `label`. */
+const settingRow = (label: string) =>
+  [...document.querySelectorAll<HTMLElement>('.setting-row')].find(
+    (each) => each.querySelector('.text-ui-strong')?.textContent === label,
+  ) ?? null;
+const row = () => settingRow('Overview skill');
+
+/** What the row says of each agent, a line each. */
+const lines = () =>
+  [...(row()?.querySelectorAll('[role="status"] li') ?? [])].map((each) => each.textContent);
 
 function button(within: Element | null, text: string): HTMLButtonElement {
   const found = [...(within?.querySelectorAll('button') ?? [])].find((each) =>
@@ -167,7 +182,7 @@ describe('the welcome screen’s step', () => {
     expect(button(step(), 'Install').disabled).toBe(false);
   });
 
-  it('installs for each agent that is set up, and says so', async () => {
+  it('installs for each agent that is set up, and says so on the step alone', async () => {
     const asked = main(
       state({ setUp: true }, { setUp: false }),
       [{ kind: 'installed', agent: 'claude' }],
@@ -175,15 +190,36 @@ describe('the welcome screen’s step', () => {
     );
     render();
     await settle();
+    const before = notices();
     click(button(step(), 'Install'));
     await settle();
     expect(asked.asked()).toEqual([['overview.installSkill', { agents: ['claude'] }]]);
     expect(step()?.textContent).toContain('Installed');
     expect(step()?.querySelector('button')).toBeNull();
-    expect(notice()).toEqual({
-      title: 'Install overview skill',
-      body: 'Installed the overview skill for Claude Code in ~/.claude/skills.',
-    });
+    expect(notices()).toEqual(before);
+  });
+
+  it('says on the step what stops an install, and that one failed, with a way to try again', async () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    onTestFinished(() => quiet.mockRestore());
+    const why = { kind: 'otherSkill', path: '~/.agents/skills/lo-overview', name: null } as const;
+    main(state({ installed: true }, { blocked: why }));
+    render();
+    await settle();
+    expect(step()?.textContent).toContain(
+      '~/.agents/skills/lo-overview holds another skill. Move it, then install again.',
+    );
+    answers['overview.installSkill'] = () => {
+      throw new IpcError('internal', 'overview.installSkill failed.');
+    };
+    const before = notices();
+    click(button(step(), 'Install'));
+    await settle();
+    expect(step()?.querySelector('[role="alert"]')?.textContent).toBe(
+      'Couldn’t install the overview skill',
+    );
+    expect(notices()).toEqual(before);
+    expect(button(step(), 'Try again')).toBeDefined();
   });
 
   it('says so in a notice when no agent is set up', async () => {
@@ -208,10 +244,28 @@ describe('Settings’ row', () => {
     render();
     await settle();
     expect(row()?.querySelector('.text-ui-strong')?.textContent).toBe('Overview skill');
-    expect(row()?.querySelector('[role="status"]')?.textContent).toBe(
-      'Installed for Claude Code in ~/.claude/skills. Not installed for Codex, which reads ~/.agents/skills.',
+    expect(lines()).toEqual([
+      'Claude Code · installed in ~/.claude/skills',
+      'Codex · not installed',
+    ]);
+    expect(row()?.querySelector('[role="status"] .code-small')?.textContent).toBe(
+      '~/.claude/skills',
     );
     expect(button(row(), 'Install for Codex')).toBeDefined();
+  });
+
+  it('says in a notice why nothing happened when no agent is set up', async () => {
+    main(state({ setUp: false }, { setUp: false }), [
+      { kind: 'refused', agent: null, why: { kind: 'nothingSetUp' } },
+    ]);
+    render();
+    await settle();
+    expect(lines()).toEqual(['Claude Code · not set up', 'Codex · not set up']);
+    click(button(row(), 'Install'));
+    await settle();
+    expect(notice()?.body).toBe(
+      'Lo found neither Claude Code nor Codex set up on this computer. Set one up, then install the skill.',
+    );
   });
 
   it('installs for the rest, and then offers to install again', async () => {
@@ -225,9 +279,10 @@ describe('Settings’ row', () => {
     click(button(row(), 'Install for Codex'));
     await settle();
     expect(asked.asked()).toEqual([['overview.installSkill', { agents: ['codex'] }]]);
-    expect(row()?.querySelector('[role="status"]')?.textContent).toBe(
-      'Installed for Claude Code in ~/.claude/skills. Installed for Codex in ~/.agents/skills.',
-    );
+    expect(lines()).toEqual([
+      'Claude Code · installed in ~/.claude/skills',
+      'Codex · installed in ~/.agents/skills',
+    ]);
 
     click(button(row(), 'Install again'));
     await settle();
@@ -258,24 +313,28 @@ describe('Settings’ row', () => {
     );
     render();
     await settle();
+    const before = notices();
     click(button(row(), 'Install'));
     await settle();
-    const said =
-      'Installed for Claude Code in ~/.claude/skills. Not installed for Codex, which reads ~/.agents/skills. ~/.agents/skills/lo-overview holds another skill, "review". Move it, then install again.';
-    expect(row()?.querySelector('[role="status"]')?.textContent).toBe(said);
-    // The notice goes by itself; the row keeps saying it while it holds.
-    expect(notice()?.body).toContain('Not installed for Codex. ~/.agents/skills/lo-overview holds');
+    const said = [
+      'Claude Code · installed in ~/.claude/skills',
+      'Codex · not installed ~/.agents/skills/lo-overview holds another skill, "review". Move it, then install again.',
+    ];
+    expect(lines()).toEqual(said);
+    // Said on the row, which asked, and in no note besides.
+    expect(notices()).toEqual(before);
 
     // Fixed outside Lo, which finds out when it comes to the front again.
     leave(state({ installed: true }));
-    expect(row()?.querySelector('[role="status"]')?.textContent).toBe(said);
+    expect(lines()).toEqual(said);
     act(() => {
       window.dispatchEvent(new Event('focus'));
     });
     await settle();
-    expect(row()?.querySelector('[role="status"]')?.textContent).toBe(
-      'Installed for Claude Code in ~/.claude/skills. Not installed for Codex, which reads ~/.agents/skills.',
-    );
+    expect(lines()).toEqual([
+      'Claude Code · installed in ~/.claude/skills',
+      'Codex · not installed',
+    ]);
   });
 
   it('says a skill reached through a link is installed, and that Lo left it as it was', async () => {
@@ -289,18 +348,39 @@ describe('Settings’ row', () => {
     ]);
     render();
     await settle();
-    const text = () => row()?.querySelector('[role="status"]')?.textContent;
-    expect(text()).toContain(
-      "Installed for Claude Code in ~/.claude/skills, but Lo can't update it.",
+    expect(lines()[0]).toBe(
+      "Claude Code · installed, can’t update ~/.claude/skills/lo-overview is a link, and Lo doesn't install the skill through links. Remove it, then install again.",
     );
-    expect(text()).not.toContain('Not installed for Claude Code');
+    const before = notices();
     click(button(row(), 'Install again'));
     await settle();
     expect(asked.asked()).toEqual([['overview.installSkill', { agents: ['claude', 'codex'] }]]);
-    expect(notice()?.body).toBe(
-      "Installed the overview skill for Codex in ~/.agents/skills. Lo left the skill for Claude Code as it was. ~/.claude/skills/lo-overview is a link, and Lo doesn't install the skill through links. Remove it, then install again.",
+    expect(notices()).toEqual(before);
+    expect(lines()[0]).toContain('Claude Code · installed, can’t update');
+  });
+
+  it('says once, on the row, that it couldn’t install, with a way to try again', async () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    onTestFinished(() => quiet.mockRestore());
+    const asked = main(state());
+    answers['overview.installSkill'] = () => {
+      throw new IpcError('internal', 'overview.installSkill failed.');
+    };
+    render();
+    await settle();
+    const before = notices();
+    click(button(row(), 'Install'));
+    await settle();
+    expect(row()?.querySelector('[role="alert"]')?.textContent).toBe(
+      'Couldn’t install the overview skill',
     );
-    expect(text()).not.toContain('Not installed for Claude Code');
+    // What failed, in its own words, is behind Details.
+    click(button(row(), 'Details'));
+    expect(row()?.textContent).toContain('overview.installSkill failed.');
+    expect(notices()).toEqual(before);
+    click(button(row(), 'Try again'));
+    await settle();
+    expect(asked.asked()).toHaveLength(2);
   });
 
   it('keeps the state main pushed over an answer it gave from before', async () => {
@@ -321,9 +401,10 @@ describe('Settings’ row', () => {
     expect(asks).toBe(4);
     expect(step()?.textContent).toContain('Installed');
     expect(step()?.querySelector('button')).toBeNull();
-    expect(row()?.querySelector('[role="status"]')?.textContent).toBe(
-      'Installed for Claude Code in ~/.claude/skills. Installed for Codex in ~/.agents/skills.',
-    );
+    expect(lines()).toEqual([
+      'Claude Code · installed in ~/.claude/skills',
+      'Codex · installed in ~/.agents/skills',
+    ]);
   });
 
   it('offers nothing to install while it learns where things stand after an install', async () => {
@@ -344,7 +425,7 @@ describe('Settings’ row', () => {
     await settle();
     // The install is over, and the window hasn't heard where things stand: no button to press.
     expect(step()?.querySelector('button')?.getAttribute('aria-busy')).toBe('true');
-    expect(button(row(), 'Install').disabled).toBe(true);
+    expect(button(row(), 'Install').getAttribute('aria-disabled')).toBe('true');
     // Pressed while it's busy, it asks for nothing more.
     click(step()?.querySelector('button') ?? document.body);
     act(() => release?.());
@@ -359,18 +440,16 @@ describe('Settings’ row', () => {
     render();
     await settle();
     act(() => bridge.push('overview.skill', state({ installed: true }, { installed: true })));
-    expect(row()?.querySelector('[role="status"]')?.textContent).toContain(
-      'Installed for Codex in ~/.agents/skills.',
-    );
+    expect(lines()).toContain('Codex · installed in ~/.agents/skills');
     expect(button(row(), 'Install again')).toBeDefined();
   });
 
-  it('is disabled while an install is under way', async () => {
+  it('is busy while an install is under way', async () => {
     main(state());
     render();
     await settle();
     act(() => skillStore.setState({ installing: true }));
-    expect(button(row(), 'Install').disabled).toBe(true);
+    expect(button(row(), 'Install').getAttribute('aria-busy')).toBe('true');
     const inStep = step()?.querySelector('button');
     expect(inStep?.getAttribute('aria-busy')).toBe('true');
     expect(inStep?.textContent).toContain('Installing…');
@@ -392,10 +471,7 @@ describe('the command in the app menu', () => {
 });
 
 /** Settings' row for the command that installs the skill from a terminal. */
-const commandRow = () =>
-  [...(row()?.querySelectorAll<HTMLElement>('.setting-row') ?? [])].find((each) =>
-    each.textContent.startsWith('Install from a terminal'),
-  );
+const commandRow = () => settingRow('On another computer');
 /** What the window asked main to put on the clipboard. */
 const copies = () =>
   shared.calls.filter(([channel]) => channel === 'tab.copy').map(([, input]) => input);
@@ -420,7 +496,7 @@ describe('Settings’ row for the command that installs the skill', () => {
     await settle();
     expect(commandRow()?.querySelector('.code-small')?.textContent).toBe(command);
     expect(commandRow()?.querySelector('.text-fg-muted')?.textContent).toBe(
-      `${command} installs the skill Lo does, for each agent set up on the computer you run it on.`,
+      'The overview skill installs from a terminal.',
     );
     const copy = button(commandRow() ?? null, 'Copy');
     expect([...copy.querySelectorAll('kbd')].map((each) => each.textContent)).toEqual(['y', 'c']);

@@ -23,19 +23,23 @@ import {
   onOverviewChanged,
   setBlockThreads,
 } from '../../overview/window/shared.ts';
+import { settingRow } from '../../settings/window/shared.ts';
 import { setLayerCounts } from '../../stacks/window/shared.ts';
 import { viewIds } from '../../tab/contract.ts';
 import {
   activeTab,
   dialogs,
   right,
+  showTabOf,
   status,
   toasts,
   type PullTab,
 } from '../../tab/window/shared.ts';
 import { fileCountsChanged, setFileCounts } from '../../tree/window/shared.ts';
 import keys from '../keys.ts';
+import { vim } from '../settings.ts';
 import { DiscardedToast } from './Discarded.tsx';
+import KeptRow from './KeptRow.tsx';
 import {
   atWork,
   edit,
@@ -64,6 +68,7 @@ import {
   keptAway,
   landBoxes,
   knowPull,
+  noDiff,
   restore,
   reopenAll,
   restoreBlock,
@@ -77,8 +82,17 @@ import { DeleteDialog } from './DeleteDialog.tsx';
 import { frameOf } from './Frame.tsx';
 import { KeptStatus } from './KeptStatus.tsx';
 import { main, tabs } from './main.ts';
-import { inPanel, moveRow, onThread, showTarget, stepFilter } from './panel.ts';
-import { Said } from './Said.tsx';
+import {
+  canClearFilter,
+  clearFilter,
+  inPanel,
+  moveRow,
+  onThread,
+  rowsListed,
+  showTarget,
+  stepFilter,
+} from './panel.ts';
+import { Said, tell } from './Said.tsx';
 import { ThreadsPanel, UnresolvedCount, unresolvedOf } from './ThreadsPanel.tsx';
 import { renderThreads } from './render.ts';
 import { keepOnly } from './store.ts';
@@ -97,7 +111,7 @@ import { followVim, switchVim, vimDetail } from './vim.ts';
 /** The pull request's tab on screen, where a comment can be written, or why one can't. */
 function writable(): PullTab | string {
   const tab = activeTab();
-  if (tab?.kind !== 'pull') return 'There’s no pull request on screen.';
+  if (tab?.kind !== 'pull') return 'Open a pull request first';
   const can = canWrite(tab.id);
   if (can !== true) return can;
   return tab;
@@ -108,9 +122,7 @@ function inDiff(): PullTab | string {
   const tab = writable();
   if (typeof tab === 'string') return tab;
   if (writingDiff(tab.id, true)) return tab;
-  return writingDiff(tab.id)
-    ? 'Comments are written in the diff, not in the code beside another view.'
-    : 'The diff isn’t drawn yet.';
+  return noDiff(tab.id, 'Go to the diff to comment');
 }
 
 function enabled(check: () => PullTab | string) {
@@ -130,6 +142,14 @@ function free(target: ThreadKeyTarget): true | string {
   if (typeof tab === 'string') return tab;
   const row = threadFor(tab.id, target);
   return typeof row === 'string' ? true : (atWork(tab.id, row.id) ?? true);
+}
+
+/** Whether the thread on `target` shows as resolved now, a resolve or unresolve asked counted. */
+function onResolved(target: ThreadKeyTarget): boolean {
+  const tab = activeTab();
+  if (tab?.kind !== 'pull') return false;
+  const row = threadFor(tab.id, target);
+  return typeof row !== 'string' && resolvedNow(tab.id, row);
 }
 
 /** The pull request's tab on screen, where a comment can be written on `target`, a code block's. */
@@ -210,13 +230,10 @@ export default {
     resolve: {
       run: actOn(resolve),
       enabled: free,
-      // A menu names it by what it would do to the thread it's on, as its card shows it.
-      named: (target) => {
-        const tab = activeTab();
-        if (tab?.kind !== 'pull' || target.kind !== 'thread') return undefined;
-        const row = threadFor(tab.id, target);
-        return typeof row !== 'string' && resolvedNow(tab.id, row) ? 'Unresolve' : undefined;
-      },
+      // Named by what it would do to the thread it's on, as its card shows it: in the thread's own
+      // menu without the object.
+      named: (target) => (target.kind === 'thread' && onResolved(target) ? 'Unresolve' : undefined),
+      labelled: (target) => (onResolved(target) ? 'Unresolve thread' : undefined),
     },
     edit: { run: actOn(edit), enabled: enabled(writable) },
     remove: { run: actOn(remove), enabled: free },
@@ -228,21 +245,33 @@ export default {
     showLatest: offering('showLatest', 'loadNewer'),
     vim: { run: switchVim, detail: vimDetail },
     keptDrafts: {
-      run: () => {
-        const tab = activeTab();
-        if (tab) showKeptDrafts(tab.id);
+      run: (target) => {
+        if (target.kind !== 'tab') {
+          const tab = activeTab();
+          if (tab) showKeptDrafts(tab.id);
+          return;
+        }
+        // From Settings, for a pull request whose tab may not be on screen: its tab first, so the
+        // list opens over its status bar where it can be seen.
+        const view = target.tab;
+        showTabOf(view).then(
+          () => showKeptDrafts(view),
+          (error: unknown) => console.error("Lo couldn't show the tab:", error),
+        );
       },
-      enabled: () => {
-        const tab = activeTab();
-        return tab && keptAway.get(tab.id).length > 0 ? true : 'No draft is kept.';
+      enabled: (target) => {
+        const view = target.kind === 'tab' ? target.tab : activeTab()?.id;
+        return view !== undefined && keptAway.get(view).length > 0 ? true : 'No kept drafts';
       },
     },
-    nextThread: { run: () => moveRow(1), enabled: inPanel },
-    previousThread: { run: () => moveRow(-1), enabled: inPanel },
+    nextThread: { run: () => moveRow(1), enabled: rowsListed },
+    previousThread: { run: () => moveRow(-1), enabled: rowsListed },
     showThread: { run: showTarget, enabled: onThread },
     filterThreads: { run: stepFilter, enabled: inPanel },
+    clearFilter: { run: clearFilter, enabled: canClearFilter },
     resolveInPanel: {
       run: actOn(resolve),
+      labelled: (target) => (onResolved(target) ? 'Unresolve thread' : undefined),
       enabled: (target) => {
         const on = onThread(target);
         return on === true && target.kind === 'thread' ? free(target) : on;
@@ -250,6 +279,9 @@ export default {
     },
   }),
   views: [
+    // Settings › Keyboard, first.
+    settingRow(vim, { order: 10, id: 'comments.vim' }),
+    KeptRow,
     defineView(right, {
       id: 'comments.panel',
       order: 10,
@@ -332,6 +364,10 @@ export default {
         return renderThreads(tab, toggle);
       },
       settled,
+      // Only from the tab on screen, whose diff marked the line.
+      arrived(view) {
+        if (activeTab()?.id === view) tell('New thread');
+      },
     });
     setBlockThreads({
       threadsOn(block) {

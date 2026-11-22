@@ -1,20 +1,25 @@
 import { handlers } from '@lo/ui/commands';
+import { createElement } from 'react';
 
 import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
+import { defineView } from '../../../window/slots.tsx';
 import { contract as tabs } from '../../tab/contract.ts';
-import { kinds } from '../../tab/window/shared.ts';
+import { kinds, stripEnd } from '../../tab/window/shared.ts';
 import { contract } from '../contract.ts';
 import keys from '../keys.ts';
-import Appearance from './Appearance.tsx';
+import Appearance, { followMotion } from './Appearance.tsx';
 import Cache from './Cache.tsx';
+import { Gear } from './Gear.tsx';
 import Keys from './Keys.tsx';
-import Opening from './Opening.tsx';
-import { canMoveSection, moveSection } from './nav.ts';
+import { canClearSearch, canMoveSection, clearSearch, moveSection, search } from './nav.ts';
 import { SettingsTab } from './Page.tsx';
+import { openSettingsFile } from './shared.ts';
+import { cacheShowable, showCache } from './storage.ts';
 import { showSettings } from './store.ts';
-import { defineView } from '../../../window/slots.tsx';
-import { createElement } from 'react';
+
+/** Why a key for Settings' page can't run: the page isn't open. */
+const onPage = () => (canMoveSection() ? true : 'Settings isn’t open');
 
 export default {
   commands: handlers(keys, {
@@ -24,14 +29,12 @@ export default {
           .open({ kind: 'settings' })
           .then(() => undefined),
     },
-    nextSection: {
-      run: () => moveSection(1),
-      enabled: () => (canMoveSection() ? true : 'Settings is not open.'),
-    },
-    previousSection: {
-      run: () => moveSection(-1),
-      enabled: () => (canMoveSection() ? true : 'Settings is not open.'),
-    },
+    nextSection: { run: () => moveSection(1), enabled: onPage },
+    previousSection: { run: () => moveSection(-1), enabled: onPage },
+    search: { run: search, enabled: onPage },
+    clearSearch: { run: clearSearch, enabled: canClearSearch },
+    openFile: { run: openSettingsFile },
+    showCache: { run: showCache, enabled: cacheShowable },
   }),
   views: [
     // Settings is drawn in its tab, and in no other.
@@ -40,10 +43,10 @@ export default {
       order: 0,
       render: ({ tab }) => (tab.kind === 'settings' ? createElement(SettingsTab) : null),
     }),
-    Opening,
-    Appearance,
-    Cache,
-    Keys,
+    defineView(stripEnd, { id: 'settings.gear', order: 10, render: () => createElement(Gear) }),
+    ...Appearance,
+    ...Keys,
+    ...Cache,
   ],
   start() {
     const settings = client(contract);
@@ -60,5 +63,6 @@ export default {
         if (!pushed) showSettings(state);
       })
       .catch((error: unknown) => console.error("Lo couldn't read the settings:", error));
+    followMotion();
   },
 } satisfies WindowFeature;

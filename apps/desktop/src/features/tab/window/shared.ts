@@ -1,7 +1,8 @@
 // What the tab feature shares with other features' window code: the tabs and the one on screen,
-// state a feature keeps for each tab, and the slot each kind of tab draws what it holds in. A pull
-// request's tab holds a view of each layer of a stack the reader has shown; what's shared names it
-// by its view on screen, so what follows the tab on screen follows the layer on screen.
+// and a way to show another; state a feature keeps for each tab; and the slot each kind of tab
+// draws what it holds in. A pull request's tab holds a view of each layer of a stack the reader has
+// shown; what's shared names it by its view on screen, so what follows the tab on screen follows
+// the layer on screen.
 
 import { createElement, type ReactNode } from 'react';
 import { useStore } from 'zustand';
@@ -17,6 +18,7 @@ import {
   type Tab,
 } from '../contract.ts';
 import { makeTabState, type TabState, useKept } from './kept.ts';
+import { main } from './main.ts';
 import {
   keptRight,
   middleIds,
@@ -66,6 +68,9 @@ export const kinds = defineSlot<{ tab: Tab }>('tab.kinds');
  * signed in. A view here draws itself over the tab, or nothing when it doesn't apply.
  */
 export const cover = defineSlot<{ tab: Tab }>('tab.cover');
+
+/** What sits at the end of the strip of tabs, after the room the tabs take: the gear for Settings. */
+export const stripEnd = defineSlot('tab.stripEnd');
 
 /** What goes on a pull request's header's second row, after its branches: the revision picker. */
 export const header = defineSlot<{ tab: PullTab }>('tab.header');
@@ -304,6 +309,17 @@ export function runOf(id: string): Run | undefined {
 /** The run of a stack's layers view `id` shows as one diff, re-rendering when that changes. */
 export function useRun(id: string): Run | undefined {
   return useStore(tabsStore, (state) => runIn(state.tabs, id));
+}
+
+/**
+ * Shows the tab that holds view `id`, as a click on it in the strip does, for what opens in it to
+ * be seen: settled once main has done so, or at once where it's on screen or no tab holds it.
+ */
+export async function showTabOf(id: string): Promise<void> {
+  const { tabs, active } = tabsStore.getState();
+  const held = tabs.find((tab) => viewIds([tab]).includes(id));
+  if (!held || held.id === active) return;
+  await main().select({ id: held.id });
 }
 
 /**

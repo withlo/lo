@@ -45,6 +45,20 @@ const WRITING: CommentBoxProps = {
   },
 };
 
+/** Whether `element` is a box's foot row, which gives up what it draws as it narrows. */
+function isFoot(element: Element): boolean {
+  return (
+    element.classList.contains('give-up') &&
+    element.querySelector('[aria-label="Discard draft"]') !== null
+  );
+}
+
+/** How many steps the row `element` is in has given up. */
+function given(element: Element): number {
+  const row = element.closest('[data-gave-up]');
+  return (row?.getAttribute('data-gave-up') ?? '').split(' ').filter(Boolean).length;
+}
+
 /** What the mode chip under `host` says, if there's one. */
 function chip(host: HTMLElement): string | undefined {
   return host.querySelector('.mode-chip')?.textContent;
@@ -163,22 +177,48 @@ describe('CommentBox', () => {
     expect(onDiscard).toHaveBeenCalledOnce();
   });
 
-  it('gives up its key chips, then its labels, then its hint as it narrows', () => {
-    const host = render(
-      <CommentBox {...WRITING} foot={{ ...WRITING.foot, text: 'Summary · Markdown' }} />,
-    );
-    const foot = host.querySelector('[role="group"]')!.lastElementChild!;
-    // The foot's own box is what its parts measure.
-    expect(foot.className).toContain('@container');
-    const classes = (selector: string) =>
-      [...foot.querySelectorAll(selector)].map((each) => each.classList.contains('box-chip'));
-    expect(classes('kbd')).toEqual([true, true]);
-    const said = (text: string) =>
-      [...foot.querySelectorAll('span')].find((each) => each.textContent === text);
-    expect(said('Summary · Markdown')?.classList.contains('box-hint')).toBe(true);
-    expect(said('Discard draft')?.classList.contains('box-label')).toBe(true);
-    // The buttons keep their words at any width.
-    expect(labelled(host, 'Add to review')?.className).toContain('whitespace-nowrap');
+  it('gives up, as it narrows, its key chips, its labels, its hint, then its buttons’ words', () => {
+    // The foot's row is 200 px wide. It takes 420 with everything, and less with each step given
+    // up, fitting once the secondary button is its icon.
+    const room = [420, 380, 330, 290, 200, 160];
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return isFoot(this) ? 200 : 0;
+      },
+    });
+    Object.defineProperty(HTMLElement.prototype, 'scrollWidth', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return isFoot(this) ? room[given(this)] : 0;
+      },
+    });
+    try {
+      const actions = [
+        { ...ACTIONS[0]!, icon: 'send' as const },
+        { ...ACTIONS[1]!, icon: 'review' as const },
+      ];
+      const host = render(
+        <CommentBox {...WRITING} foot={{ ...WRITING.foot, actions, text: 'Summary · Markdown' }} />,
+      );
+      const foot = [...host.querySelectorAll('.give-up')].find(isFoot)!;
+      expect(foot.getAttribute('data-gave-up')).toBe('keys labels hint actions');
+      // What it gives up is marked for the stylesheet to hide, in its step's name.
+      const said = (text: string) =>
+        [...foot.querySelectorAll('span')].find((each) => each.textContent === text);
+      expect(said('Summary · Markdown')?.getAttribute('data-gives')).toBe('hint');
+      expect(said('Discard draft')?.getAttribute('data-gives')).toBe('labels');
+      // The secondary button is its icon, named and with a tooltip by its words; the filled one
+      // keeps its words.
+      const now = labelled(host, 'Send now')!;
+      expect(now.getAttribute('aria-label')).toBe('Send now');
+      expect(now.getAttribute('data-squares')).toBe('actions');
+      expect(now.querySelector('[data-takes="actions"] svg')).not.toBeNull();
+      expect(labelled(host, 'Add to review')?.getAttribute('data-squares')).toBe('fill');
+    } finally {
+      delete (HTMLElement.prototype as { clientWidth?: number }).clientWidth;
+      delete (HTMLElement.prototype as { scrollWidth?: number }).scrollWidth;
+    }
   });
 
   it('switches between Write and Preview, and keeps the editor in the box while it previews', () => {

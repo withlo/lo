@@ -6,8 +6,11 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { beforeAll, expect, onTestFinished, test, vi } from 'vitest';
 
-import type { ThreadCommentRow, ThreadRow } from '../contract.ts';
-import { ago, ThreadCard } from './Card.tsx';
+import { installBridge } from '../../../window/test/bridge.ts';
+import type { PullTab } from '../../tab/window/shared.ts';
+import type { ThreadCommentRow, ThreadRow, ThreadsView } from '../contract.ts';
+import { ago, Card, ThreadCard } from './Card.tsx';
+import { held } from './threads.ts';
 
 vi.mock('../../../window/commands/registry.ts', () => ({
   registry: () => ({ keysOf: () => [], system: 'mac' }),
@@ -136,7 +139,7 @@ test('a collapsed thread whose opening isn’t read yet shows its author alone',
   expect(line?.textContent).not.toContain('Fixture C');
 });
 
-test('a thread GitHub put on a newer push says so', () => {
+test('a thread GitHub put on a later revision says which', () => {
   const element = document.createElement('div');
   document.body.append(element);
   const root = createRoot(element);
@@ -148,15 +151,15 @@ test('a thread GitHub put on a newer push says so', () => {
         onToggle={() => undefined}
         author="rozed-bot"
         body={(each) => <p>{each.body}</p>}
-        landed
+        landed="r5"
         now={NOW}
       />,
     ),
   );
-  expect(element.textContent).toContain('On a newer push');
+  expect(element.textContent).toContain('On r5');
   act(() => root.unmount());
   element.remove();
-  expect(drawn(row(), true).textContent).not.toContain('On a newer push');
+  expect(drawn(row(), true).textContent).not.toContain('On r5');
 });
 
 /**
@@ -214,6 +217,44 @@ test('a resolve asked for shows at once, with the control at work, and goes back
     'Resolved thread by rozed-bot',
   );
   expect(taken.querySelector('button[aria-busy="true"]')).toBeNull();
+});
+
+test('a card drawn as its row goes, and comes back, draws nothing meanwhile', () => {
+  installBridge();
+  const tab: PullTab = {
+    id: 'view-card',
+    kind: 'pull',
+    owner: 'rozed-dev',
+    repo: 'e2e',
+    number: 94,
+  };
+  const shown = (rows: ThreadRow[]) => {
+    const threads: ThreadsView = {
+      id: tab.id,
+      status: 'ready',
+      threads: rows,
+      missing: 0,
+      compared: null,
+      problem: null,
+    };
+    held.set(tab.id, { threads });
+  };
+  shown([row()]);
+  const element = document.createElement('div');
+  document.body.append(element);
+  const root = createRoot(element);
+  onTestFinished(() => {
+    act(() => root.unmount());
+    element.remove();
+    held.set(tab.id, {});
+  });
+  act(() => root.render(<Card tab={tab} id="T1" open onToggle={() => undefined} />));
+  expect(element.querySelector('[data-comment="C1"]')).not.toBeNull();
+  // Its only comment deleted elsewhere: the thread goes from what main sent, while it's drawn.
+  act(() => shown([]));
+  expect(element.innerHTML).toBe('');
+  act(() => shown([row()]));
+  expect(element.querySelector('[data-comment="C1"]')).not.toBeNull();
 });
 
 test('when a comment was written, in words', () => {

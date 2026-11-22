@@ -4,12 +4,13 @@
 // and, under it, how a change asked of it stands while GitHub's answer was lost. A comment's text
 // is drawn as GitHub renders it, through `Post`.
 
-import { Button, Callout, Thread, type ThreadComment } from '@lo/ui';
+import { Button, Callout, Problem, Thread, type ThreadComment } from '@lo/ui';
 import { keyLabels } from '@lo/ui/commands';
-import type { MouseEvent, ReactNode } from 'react';
+import { useRef, type MouseEvent, type ReactNode } from 'react';
 
 import { registry } from '../../../window/commands/registry.ts';
 import { avatarImage } from '../../../window/images.ts';
+import { revisionLabel, useRevisions } from '../../revisions/window/shared.ts';
 import { usePull, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import type { ActRow, ThreadCommentRow, ThreadRow } from '../contract.ts';
 import {
@@ -24,11 +25,14 @@ import {
   remove,
   reply,
   resolveThread,
+  threw,
+  type Threw,
   tryAgain,
   underWay,
+  unfailed,
   unshown,
 } from './acts.ts';
-import { editing, replying } from './boxes.ts';
+import { editing, replacedIn, replying } from './boxes.ts';
 import { useExcerpt } from './excerpts.ts';
 import { landed } from './landed.ts';
 import { Post, type PostPull } from './Post.tsx';
@@ -82,6 +86,7 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
   const author = shown?.header?.author;
   const login = shown?.acting?.kind === 'account' ? shown.acting.login : undefined;
   const newer = useTabState(landed, view, (ids) => ids.has(id));
+  const revisions = useRevisions(view);
   const replied = useTabState(replying, view, (ids) => ids.has(id));
   const edited = useTabState(editing, view);
   const asked = useTabState(acting, view, (acts) => acts.get(id));
@@ -91,12 +96,23 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
     view,
     (keys) => asked !== undefined && keys.has(noteKey(asked)),
   );
+  // A write that failed before GitHub had it says so in the note's place: one note on a card.
+  const thrown = useTabState(threw, view, (all) => all.get(id));
   const row = threads?.threads.find((each) => each.id === id);
   // Its first comment's opening, as plain words, which it shows while it's collapsed.
   const opening = useExcerpt(row?.comments[0]?.body, !open);
+  // Every hook comes before this: a card's row comes and goes while the card is drawn.
   if (!row) return null;
+  // A suggested change shows the lines it replaces from the first frame, as the comment's box did.
+  const replaced = replacedIn(view, row);
   const body = (comment: ThreadCommentRow) => (
-    <Post view={view} post={{ kind: 'post', id: comment.id }} markdown={comment.body} pull={pull} />
+    <Post
+      view={view}
+      post={{ kind: 'post', id: comment.id }}
+      markdown={comment.body}
+      pull={pull}
+      replaced={replaced}
+    />
   );
   const thread = { kind: 'thread' as const, thread: id };
   const note = actNote(asked, row, isClosed);
@@ -112,7 +128,12 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
         author={author}
         body={body}
         excerpt={opening}
-        landed={newer}
+        landed={
+          newer
+            ? ((row.currentOn === null ? undefined : revisionLabel(revisions, row.currentOn)) ??
+              'a later revision')
+            : undefined
+        }
         login={login}
         replying={replied}
         editing={edited}
@@ -123,16 +144,59 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
           onDelete: (comment) => remove(tab, thread, comment),
         }}
       />
-      {note && asked && (
+      {thrown ? (
         <div data-act-note="" className="mt-8 max-w-read-measure">
-          <ActCallout
-            note={note}
-            onAgain={() => (note.again === 'check' ? checkAgain(tab, asked) : tryAgain(tab, asked))}
-            onClose={() => closeAct(view, asked)}
-          />
+          <ThrewProblem view={view} id={id} thrown={thrown} />
         </div>
+      ) : (
+        note &&
+        asked && (
+          <div data-act-note="" className="mt-8 max-w-read-measure">
+            <ActCallout
+              note={note}
+              onAgain={() =>
+                note.again === 'check' ? checkAgain(tab, asked) : tryAgain(tab, asked)
+              }
+              onClose={() => closeAct(view, asked)}
+            />
+          </div>
+        )
       )}
     </>
+  );
+}
+
+/**
+ * What the card of view `view`'s thread or comment `id` says of a change whose write failed before
+ * GitHub had it: what wasn't done, what came back behind Details, and "Try again", or "Check again"
+ * where it may have gone.
+ */
+export function ThrewProblem({
+  view,
+  id,
+  thrown,
+}: {
+  view: string;
+  id: string;
+  thrown: Threw;
+}): ReactNode {
+  const at = useRef<HTMLDivElement | null>(null);
+  return (
+    <div ref={at}>
+      <Problem
+        title={thrown.title}
+        details={thrown.details}
+        action={{
+          label: thrown.again === 'check' ? 'Check again' : 'Try again',
+          // Focus goes to the card first: the button goes with the problem.
+          onClick: () => {
+            if (at.current) focusCard(at.current);
+            unfailed(view, id);
+            thrown.run();
+          },
+        }}
+      />
+    </div>
   );
 }
 
@@ -149,11 +213,6 @@ function focusCard(from: Element): void {
   control?.focus({ preventScroll: true });
 }
 
-/**
- * What a card says of a change asked of it that didn't go, or may not have: what wasn't done, why,
- * and "Try again", or "Check again" where nobody knows whether it went, and "Dismiss". Whoever
- * shows it says it to a screen reader: it's drawn with its words on it.
- */
 /** Runs a note's button, focus going to its card first: the button goes with the note. */
 function then(act: () => void) {
   return (event: MouseEvent<HTMLElement>): void => {
@@ -162,6 +221,11 @@ function then(act: () => void) {
   };
 }
 
+/**
+ * What a card says of a change asked of it that didn't go, or may not have: what wasn't done, why,
+ * and "Try again", or "Check again" where nobody knows whether it went, and "Dismiss". Whoever
+ * shows it says it to a screen reader: it's drawn with its words on it.
+ */
 export function ActCallout({
   note,
   onAgain,
@@ -172,10 +236,12 @@ export function ActCallout({
   onClose: () => void;
 }): ReactNode {
   return (
-    <Callout tone="warning">
+    // Known not to have gone, it's a failure; nobody knowing whether it went, a wait.
+    <Callout tone={note.again === 'try' ? 'danger' : 'warning'}>
       <div className="flex flex-wrap items-center gap-8">
-        <span className="min-w-0 flex-1">
-          <b className="text-ui-strong">{note.title}</b> {note.text}
+        <span className="flex min-w-0 flex-1 flex-col">
+          <b className="text-ui-strong">{note.title}</b>
+          <span>{note.text}</span>
         </span>
         <span className="flex flex-none gap-4">
           <Button size="sm" onClick={then(onAgain)}>
@@ -210,7 +276,7 @@ export function ThreadCard({
   author,
   body,
   excerpt,
-  landed: newer = false,
+  landed: newer,
   login,
   replying: replied = false,
   editing: edited,
@@ -239,10 +305,10 @@ export function ThreadCard({
   /** The first comment's opening as one line of plain text, which the collapsed line shows. */
   excerpt?: string | undefined;
   /**
-   * You wrote it on a revision, and GitHub put it on a newer push, where its lines may hold other
-   * code.
+   * You wrote it on a revision, and GitHub put it on a later one, where its lines may hold other
+   * code: that revision, as "r5".
    */
-  landed?: boolean;
+  landed?: string | undefined;
   /** The account the view writes as, whose comments are yours: nobody's while it writes as none. */
   login?: string | undefined;
   /** A reply box is open in it, right after it, in place of its own row that offers one. */
@@ -290,7 +356,7 @@ export function ThreadCard({
       open={open}
       focused={focused}
       outdated={row.outdated}
-      tags={newer ? [{ label: 'On a newer push', tone: 'warning' }] : undefined}
+      tags={newer === undefined ? undefined : [{ label: `On ${newer}`, tone: 'warning' }]}
       excerpt={excerpt === '' ? undefined : excerpt}
       canResolve={
         actions !== undefined &&

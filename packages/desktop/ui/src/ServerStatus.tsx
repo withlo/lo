@@ -121,8 +121,11 @@ function percentOf(percent: number): number {
   return Math.min(100, Math.max(0, Math.round(percent)));
 }
 
-/** The word or words beside the language's name in the status bar. */
-function Words({ name: raw, state }: { name: string; state: ServerState }): ReactNode {
+/**
+ * The word or words beside the language's name in the status bar, which Settings' list of
+ * language servers says too.
+ */
+export function ServerWords({ name: raw, state }: { name: string; state: ServerState }): ReactNode {
   const name = <ShownText text={raw} />;
   switch (state.kind) {
     case 'downloading':
@@ -436,7 +439,7 @@ export function ServerStatus({
           <button type="button" ref={trigger} className={item({ failed })}>
             <Mark state={state} />
             <span className="min-w-0 truncate">
-              <Words name={name} state={state} />
+              <ServerWords name={name} state={state} />
             </span>
           </button>
         }

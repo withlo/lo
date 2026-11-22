@@ -1,50 +1,114 @@
-// What the settings feature shares with other features' window code: the slot they put their
-// sections of Settings in, the settings themselves, read, changed and followed, and the file, to
-// open.
+// What the settings feature shares with other features' window code: the slot they put their rows
+// of Settings in, the settings themselves, read, changed and followed, and the file, to open.
 
-import type { ReactNode } from 'react';
+import { createElement, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
 import { IpcError } from '../../../ipc/contract.ts';
-import { notify } from '../../../window/commands/notices.tsx';
+import { refuse } from '../../../window/commands/notices.tsx';
 import { client } from '../../../window/ipc.ts';
 import { defineSlot, defineView, type View } from '../../../window/slots.tsx';
-import { contract, settingValue, type Problem, type Setting } from '../contract.ts';
-import { sectionInfo, type SectionInfo } from './sections.ts';
+import {
+  checkRowWords,
+  contract,
+  type Problem,
+  type Setting,
+  type SettingsGroup,
+} from '../contract.ts';
+import { SettingRowView, type ControlProps } from './Row.tsx';
 import { settingsStore } from './store.ts';
+import { refusalLine, setValue, useValue, valueIn, valueNow } from './values.ts';
+
+export type { ControlProps } from './Row.tsx';
+
+/** What Settings knows of a row besides how to draw it: where it goes, and the words it's found by. */
+export interface RowAbout {
+  readonly group: SettingsGroup;
+  /** The row's label, in four words at most. */
+  readonly label: string;
+  /** Its one line, with a full stop. */
+  readonly description: string;
+  /** The setting's key, for a row that's one setting, which a search finds it by too. */
+  readonly settingKey?: string;
+  /** More words a search finds it by, such as the names a list holds. */
+  readonly words?: () => readonly string[];
+}
 
 /**
- * Where features put their sections of Settings. Each view is a section's settings, one `Setting`
- * after another; Settings draws its title, the line under it and its place in the list beside the
- * page. Make one with {@link defineSection}. Sections go in `order`, lower first: Accounts 10,
- * Trust 20, Pull requests 30, Appearance 40, Cache 50, Toolchains 55, Keys 60, Command line 70,
- * Updates 80.
+ * Settings' rows, one view each, which Settings sorts into its groups by `order`, lower first, and
+ * filters by what's typed in its search. Make one with {@link settingRow} for a setting, which
+ * Settings draws from the setting itself, or with {@link defineRow} for anything else.
  */
-export const sections = defineSlot('settings.sections');
+export const rows = defineSlot<object, RowAbout>('settings.rows');
 
 /**
- * The rows of Settings' Pull requests section, one `Setting` per view, in `order`, lower first: how
- * a pull request's tab opens, such as on its overview or its diff (10), and how its diff is laid
- * out (20).
+ * A row of Settings for `setting`, drawn from what the setting says of itself: its label, its
+ * description and its key, "Reset" while it isn't its default, and its control: a switch for one
+ * that's on or off, a segmented control for a choice of its `options`, or `control` for any other.
+ * A setting that's a list, as the trusted repos are, sets `list`, and its control is drawn as the
+ * list under the row's words. A setting a command changes from a view, as `gi` does the diff's
+ * layout, names it in `command`, and the row shows its key. The view's `id` is the setting's key
+ * unless given, and like any view's it's named for the feature: `settings.theme` for `theme`.
  */
-export const opening = defineSlot('settings.opening');
-
-/** Defines a section of Settings, for a feature's `views`. `id` is `<feature>.<name>`. */
-export function defineSection(
-  section: SectionInfo & { id: string; order: number; render: () => ReactNode },
+export function settingRow<T>(
+  setting: Setting<T>,
+  row: {
+    readonly order: number;
+    readonly id?: string;
+    readonly control?: (props: ControlProps<T>) => ReactNode;
+    readonly list?: boolean;
+    readonly command?: string;
+  },
 ): View {
-  const { id, order, render, ...info } = section;
-  const view = defineView(sections, { id, order, render });
-  sectionInfo.set(id, info);
-  return view;
+  const { group } = setting;
+  if (group === 'file') {
+    throw new Error(`The setting ${setting.key} is only in the settings file, and has no row.`);
+  }
+  const plain = typeof setting.fallback === 'boolean' || setting.options !== undefined;
+  if (!plain && row.control === undefined) {
+    throw new Error(`The setting ${setting.key} needs a control of its own for its row.`);
+  }
+  return defineView(rows, {
+    id: row.id ?? setting.key,
+    order: row.order,
+    group,
+    label: setting.label,
+    description: setting.description,
+    settingKey: setting.key,
+    render: () =>
+      createElement(SettingRowView<T>, {
+        setting,
+        control: row.control,
+        list: row.list,
+        command: row.command,
+      }),
+  });
+}
+
+/**
+ * A row of Settings that isn't one setting: a list, as the accounts are, or an action, as clearing
+ * the cache is. Settings files it under `group`, and finds it by its label, its description and
+ * `words`. `render` draws the row whole, given its words: a `Setting` with its controls, or a
+ * `SettingsList`, from `@lo/ui`, so every row has the same anatomy. Its description is one line,
+ * as a setting's is, and a row that breaks that fails as it's defined.
+ */
+export function defineRow(row: {
+  readonly id: string;
+  readonly group: SettingsGroup;
+  readonly order: number;
+  readonly label: string;
+  readonly description: string;
+  readonly words?: () => readonly string[];
+  readonly render: (about: { label: string; description: string }) => ReactNode;
+}): View {
+  const { render, label, description } = row;
+  checkRowWords(`The row ${row.id}`, label, description);
+  return defineView(rows, { ...row, render: () => createElement(render, { label, description }) });
 }
 
 /** The value of a setting, once main has said, and its default until then; it follows changes. */
 export function useSetting<T>(setting: Setting<T>): T {
-  const settings = useStore(settingsStore, (state) => state.settings);
-  const found = settings?.values[setting.key];
-  const parsed = setting.schema.safeParse(found);
-  return parsed.success ? parsed.data : setting.fallback;
+  return useValue(setting);
 }
 
 /**
@@ -53,49 +117,59 @@ export function useSetting<T>(setting: Setting<T>): T {
  */
 export function useKnownSetting<T>(setting: Setting<T>): T | undefined {
   const settings = useStore(settingsStore, (state) => state.settings);
-  if (settings === undefined) return undefined;
-  const parsed = setting.schema.safeParse(settings.values[setting.key]);
-  return parsed.success ? parsed.data : setting.fallback;
+  return settings === undefined ? undefined : valueIn(setting, settings.values);
+}
+
+/** The value of a setting now, read once: main's, or its default until main has said. */
+export function settingNow<T>(setting: Setting<T>): T {
+  return valueNow(setting);
 }
 
 /**
- * Changes a setting. Main checks the value again and writes the file; the setting then follows
- * through {@link useSetting}. When it can't be changed, Lo says why in a note, and this resolves
- * `false`.
+ * Calls `listener` with a setting's value once main has said what the file holds, and again each
+ * time the value changes, however it was changed: by a key, the menu, Settings or the file. Returns
+ * a function that stops it.
+ */
+export function watchSetting<T>(setting: Setting<T>, listener: (value: T) => void): () => void {
+  let last: string | undefined;
+  const hear = () => {
+    const settings = settingsStore.getState().settings;
+    if (settings === undefined) return;
+    const value = valueIn(setting, settings.values);
+    const said = JSON.stringify(value);
+    if (said === last) return;
+    last = said;
+    listener(value);
+  };
+  hear();
+  return settingsStore.subscribe(hear);
+}
+
+/**
+ * Changes a setting from a key, the palette or the menu, where there's no row to say it on. Main
+ * checks the value again and writes the file; the setting then follows through
+ * {@link useSetting}. When it can't be changed, a toast says why nothing happened, and this
+ * resolves `false`.
  */
 export async function changeSetting<T>(setting: Setting<T>, value: T): Promise<boolean> {
-  try {
-    await client(contract).set({
-      key: setting.key,
-      value: settingValue.parse(setting.schema.parse(value)),
-    });
-    return true;
-  } catch (error) {
-    console.error(`Lo couldn't change the setting ${setting.key}:`, error);
-    notify(
-      'Settings',
-      error instanceof IpcError && (error.code === 'invalid' || error.code === 'unwritable')
-        ? error.message
-        : `Lo couldn't change ${setting.key}.`,
-    );
-    return false;
-  }
+  const refusal = await setValue(setting, value);
+  if (refusal !== undefined) refuse(refusalLine(refusal, setting));
+  return refusal === undefined;
 }
 
 /**
  * Opens the settings file in the system's text editor, so the person can fix what's wrong in it,
- * and says why in a note when Lo can't.
+ * as "Open `settings.json`" does. When it can't be opened, a toast says why.
  */
 export async function openSettingsFile(): Promise<void> {
   try {
     await client(contract).openFile();
   } catch (error) {
     console.error("Lo couldn't open the settings file:", error);
-    notify(
-      'Open the settings file',
+    refuse(
       error instanceof IpcError && error.code === 'unopened'
         ? error.message
-        : "Lo couldn't open the settings file.",
+        : 'Couldn’t open settings.json',
     );
   }
 }
@@ -116,4 +190,28 @@ export function useProblems(): readonly Problem[] {
 /** Where the settings file is, as a person would write it, once main has said. */
 export function useSettingsFile(): string | undefined {
   return useStore(settingsStore, (state) => state.settings?.file);
+}
+
+const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
+/**
+ * How long before `now` the time `at` was, both in milliseconds, as a row of Settings says it:
+ * "just now", "5 min ago", "2 h ago", "12 d ago", and past 30 days the date, "Nov 12", with its
+ * year when that isn't this one. A time that isn't one is "just now".
+ */
+export function ago(at: number, now: number): string {
+  const gone = Number.isFinite(at) ? Math.max(0, now - at) : 0;
+  if (gone < MINUTE) return 'just now';
+  if (gone < HOUR) return `${Math.floor(gone / MINUTE)} min ago`;
+  if (gone < DAY) return `${Math.floor(gone / HOUR)} h ago`;
+  if (gone <= 30 * DAY) return `${Math.floor(gone / DAY)} d ago`;
+  const date = new Date(at);
+  const sameYear = date.getFullYear() === new Date(now).getFullYear();
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
 }

@@ -72,9 +72,25 @@ export const trusted = defineSetting(
   'code.trusted',
   z.array(z.json()).max(TRUSTED_MAX),
   [],
-  'a list of trusted repos and PRs',
-  { window: 'read', problems: (value) => readTrusted(value).problems },
+  'a list of trusted repos and pull requests',
+  {
+    group: 'code',
+    label: 'Trusted',
+    description: 'Language servers run only on these repos and pull requests.',
+    window: 'read',
+    problems: (value) => readTrusted(value).problems,
+  },
 );
+
+/**
+ * Whether code views show the types a language server gives beside names, as inline hints: off
+ * unless the reader turns them on, with `gh`, the View menu or Settings, and then on at every start.
+ */
+export const hints = defineSetting('code.hints', z.boolean(), false, 'true or false', {
+  group: 'code',
+  label: 'Type hints',
+  description: 'Shows types beside names in code, where a language server gives them.',
+});
 
 /** The most of the ignored entries {@link readTrusted} names one by one. */
 const NAMED = 5;

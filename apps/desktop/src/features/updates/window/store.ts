@@ -20,6 +20,10 @@ export interface UpdatesWindowState {
   readonly build: string | undefined;
   /** A check the reader asked for is going. */
   readonly checking: boolean;
+  /** When a check the reader asked for last answered, in milliseconds. */
+  readonly checkedAt: number | undefined;
+  /** Why the last check the reader asked for failed, when it did, and its reason when known. */
+  readonly failed: { readonly reason: string | undefined } | undefined;
 }
 
 export const updatesStore = createStore<UpdatesWindowState>()(() => ({
@@ -28,6 +32,8 @@ export const updatesStore = createStore<UpdatesWindowState>()(() => ({
   version: undefined,
   build: undefined,
   checking: false,
+  checkedAt: undefined,
+  failed: undefined,
 }));
 
 /** Shows where updates stand, as main says. */

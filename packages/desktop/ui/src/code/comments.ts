@@ -163,6 +163,12 @@ export class CommentBox implements BoxHost, KeySource {
    * there. Unknown once they act anywhere else, as when they scroll.
    */
   #whole: boolean | undefined;
+  /**
+   * How wide the box's pane was as the reader last acted in it, or as it last put itself on screen:
+   * what's around the box moves it by itself only once the pane is another width, as the window
+   * narrows and the code over it wraps again.
+   */
+  #width: number | undefined;
 
   constructor(options: BoxOptions) {
     installVim();
@@ -385,13 +391,23 @@ export class CommentBox implements BoxHost, KeySource {
       reveal(this.dom);
       if (pane && pane.scrollTop !== before) this.#shown?.(this);
     };
-    // Once what opening it moved is back in place, and then as it's laid out.
+    // Once what opening it moved is back in place, and then as it's laid out; and as what's around
+    // it is, once the pane is another width: the code over it wraps anew as the window narrows, a
+    // frame or two after the box did. Anything else around an open box, such as a peek opening
+    // above it, moves it as it moves the lines. Held, it's the card of what it sent, being looked
+    // for, which nobody types in: it stays whole on screen as what's around it settles.
     queueMicrotask(show);
     const watch = new ResizeObserver(show);
     watch.observe(this.dom);
+    const width = this.#paneWidth();
+    const around = new ResizeObserver(() => {
+      if (this.#holding || this.#paneWidth() !== width) show();
+    });
+    for (const each of scrollPane(this.dom)?.children ?? []) around.observe(each);
     const page = this.dom.ownerDocument;
     const settle = (): void => {
       watch.disconnect();
+      around.disconnect();
       for (const type of INPUTS) page.removeEventListener(type, settle, { capture: true });
       this.#settle = undefined;
     };
@@ -409,24 +425,62 @@ export class CommentBox implements BoxHost, KeySource {
    */
   #followGrowth(): void {
     if (typeof ResizeObserver === 'undefined') return;
-    const watch = new ResizeObserver(() => this.#grew());
+    // What's around it, which moves it as it's laid out anew: the code over it wraps again as the
+    // window narrows, a frame or two after the box itself did.
+    const around = new ResizeObserver(() => this.#moved());
+    let pane: HTMLElement | null = null;
+    const watchAround = (): void => {
+      const now = this.dom.isConnected ? scrollPane(this.dom) : null;
+      if (now === pane) return;
+      around.disconnect();
+      pane = now;
+      for (const each of pane?.children ?? []) around.observe(each);
+    };
+    const watch = new ResizeObserver(() => {
+      watchAround();
+      this.#grew();
+    });
     watch.observe(this.dom);
     const page = this.dom.ownerDocument;
     // Before what the input changes is laid out: where the foot is now is where the reader has it.
     const acted = (event: Event): void => {
+      watchAround();
       const { target } = event;
       const inBox = event.type !== 'wheel' && target instanceof Node && this.dom.contains(target);
       // What the last input grew, if no frame has laid it out since, is followed first.
       if (inBox) this.#grew();
       this.#whole = inBox ? this.#footShows() : undefined;
+      this.#width = this.#paneWidth();
     };
     for (const type of INPUTS) {
       page.addEventListener(type, acted, { capture: true, passive: true });
     }
     this.#stops.push(() => {
       watch.disconnect();
+      around.disconnect();
       for (const type of INPUTS) page.removeEventListener(type, acted, { capture: true });
     });
+  }
+
+  /**
+   * What's around the box was laid out anew in a pane of another width and moved it: with focus in
+   * it and its foot on screen as the reader last acted in it, its foot comes back on screen, by the
+   * least scroll that does. What moves it in a pane as wide, such as a peek opening above it, moves
+   * it as it moves the lines.
+   */
+  #moved(): void {
+    if (this.#settle || this.#whole !== true || !this.hasFocus) return;
+    if (this.#paneWidth() === this.#width) return;
+    const at = this.#foot();
+    if (!at) return;
+    const { pane, box, foot, below } = at;
+    // Taller than its pane, it shows from its top.
+    if (box.height + below > pane.clientHeight) return;
+    const over = box.bottom + below - foot;
+    if (over < 0.5) return;
+    const before = pane.scrollTop;
+    pane.scrollTop = before + over;
+    if (pane.scrollTop !== before) this.#shown?.(this);
   }
 
   /** Where the box's foot is, and its pane's, with the room the box keeps clear under it. */
@@ -460,7 +514,13 @@ export class CommentBox implements BoxHost, KeySource {
     const before = pane.scrollTop;
     pane.scrollTop = before + over;
     this.#whole = true;
+    this.#width ??= pane.clientWidth;
     if (pane.scrollTop !== before) this.#shown?.(this);
+  }
+
+  /** How wide the box's pane is inside its edges, while the box is in one. */
+  #paneWidth(): number | undefined {
+    return this.dom.isConnected ? scrollPane(this.dom)?.clientWidth : undefined;
   }
 
   #takeFocus(): void {

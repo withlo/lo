@@ -19,21 +19,36 @@
 // while one is on its way in, nor while its text holds a placeholder whose upload isn't, and its
 // uploads are given up as its draft goes.
 
-import { Lines, Screen, suggestionBlock, takesSuggestion } from '@lo/review';
+import {
+  lineRefText,
+  Lines,
+  Screen,
+  suggestionBlock,
+  takesSuggestion,
+  type LineRef,
+} from '@lo/review';
 import type { Composer, ComposerEvents, KeptBox, Mode, Send } from '@lo/ui/code';
 import {
   type BoxTarget,
+  controlOf,
   type Handler,
   type HeaderTarget,
   KEY_EVENT,
   type LineTarget,
+  runControl,
   type Target,
 } from '@lo/ui/commands';
 
-import { announce, notice, notify, withdraw } from '../../../window/commands/notices.tsx';
+import { announce, notice, refuse, withdraw } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
 import { client } from '../../../window/ipc.ts';
-import { diffStateOf, showDiff, writingDiff, type WritingDiff } from '../../diff/window/shared.ts';
+import {
+  diffStateOf,
+  onDiffDrawn,
+  showDiff,
+  writingDiff,
+  type WritingDiff,
+} from '../../diff/window/shared.ts';
 import {
   blockInOverview,
   blockKey,
@@ -86,7 +101,6 @@ import {
   NO_LINES,
   NOT_IN_DIFF,
   notesOf,
-  offerLabels,
   offersOf,
   type Offer,
   ON_FILE_NOT_IN_DIFF,
@@ -712,7 +726,7 @@ let inputs = 0;
 let counting = false;
 
 /** How many keys, clicks, wheel turns and app menu commands the reader has made, from now on. */
-function inputsSoFar(): number {
+export function inputsSoFar(): number {
   if (!counting) {
     counting = true;
     const count = () => {
@@ -775,85 +789,61 @@ function showKept(
   }
 }
 
-/**
- * A draft the diff, drawn again, had nowhere to open, as the status bar says it: its box, that it's
- * kept, what it is or where, and when it opens again; on hover, with its file's whole path; and in
- * the note for several, where and when alone.
- */
+/** A draft the diff had nowhere to open, as the kept drafts' list names it: "retry.ts · line 41 · r2". */
 export interface KeptAway {
   readonly box: string;
-  readonly note: string;
-  readonly title: string;
   readonly where: string;
 }
 
 /**
  * Each view's drafts the diff, drawn again, took down open and had nowhere to open: neither their
- * lines, nor their file's header, nor their code block. The status bar says so, until each opens
- * again or goes.
+ * lines, nor their file's header, nor their code block. The status bar counts them, until each opens
+ * again or goes, and its item opens their list.
  */
 export const keptAway = tabState<readonly KeptAway[]>(() => []);
+
+/** Whether each view's list of kept drafts is open, over the status bar's item for them. */
+export const keptOpen = tabState<boolean>(() => false);
 
 /** Says in view `view`'s status bar that the diff drawn anew had nowhere to open `boxes`. */
 function say(view: string, boxes: readonly Box[]): void {
   const ids = new Set(boxes.map((box) => box.id));
   keptAway.update(view, (was) => [
     ...was.filter((each) => !ids.has(each.box)),
-    ...boxes.map((box) => ({ box: box.id, ...keptNote(box) })),
+    ...boxes.map((box) => ({ box: box.id, where: keptWhere(box) })),
   ]);
 }
 
-/** Box `box` opened again, or went: the status bar no longer says it's kept. */
+/** Box `box` opened again, or went: the status bar no longer counts it. */
 function unsay(box: Box): void {
   const was = keptAway.get(box.view);
   if (!was.some((each) => each.box === box.id)) return;
-  keptAway.set(
-    box.view,
-    was.filter((each) => each.box !== box.id),
-  );
+  const left = was.filter((each) => each.box !== box.id);
+  keptAway.set(box.view, left);
+  if (left.length === 0) keptOpen.set(box.view, false);
 }
 
 /**
- * What the status bar says of a draft the diff had nowhere to open: "Draft kept · line 41 of
- * retry.ts at r2 · opens when that line shows", or its code block, where it has one; for a reply or
- * an edit, "Draft kept · your reply on line 41 of retry.ts · opens when its thread shows", where its
- * thread is, as the view's threads have it.
+ * Where a draft the diff had nowhere to open is, as the list of kept drafts names it: its file and
+ * lines at its revision, "retry.ts · line 41 · r2"; for a reply or an edit, what it is first, and
+ * where its thread is, "Reply · retry.ts · line 41"; and "Comment · pull request" for the pull
+ * request's own.
  */
-function keptNote(box: Box): Omit<KeptAway, 'box'> {
+function keptWhere(box: Box): string {
   const { place } = box.state;
-  const block = box.home.kind === 'block' ? ' or its code block' : '';
+  if (place.kind === 'conversation') return 'Comment · pull request';
   if (place.kind !== 'thread') {
-    const what = place.kind === 'reply' ? 'reply' : place.kind === 'edit' ? 'edit' : 'comment';
-    const id = place.kind === 'conversation' ? null : place.thread;
-    const row = held.get(box.view).threads?.threads.find((each) => each.id === id);
-    const on = (path: string) => (row ? ` on ${threadSpan(row)}${path}` : '');
-    const when = `opens when its thread${block} shows`;
-    return {
-      note: `Draft kept · your ${what}${on(baseName(row?.path ?? ''))} · ${when}`,
-      title: `Draft kept · your ${what}${on(row?.path ?? '')} · ${when}`,
-      where: `Your ${what}${on(row?.path ?? '')} · ${when}`,
-    };
+    const what = place.kind === 'reply' ? 'Reply' : 'Edit';
+    const row = held.get(box.view).threads?.threads.find((each) => each.id === place.thread);
+    if (!row) return what;
+    const lines = threadLines(row);
+    const name = baseName(row.path);
+    return lines === undefined
+      ? `${what} · ${name}`
+      : `${what} · ${name} · ${lineRefText({ lines }, true)}`;
   }
-  const at = revisionName(box.view, place.commit);
-  const { lines } = place;
-  const name = baseName(place.path);
-  let span = '';
-  let what = 'file';
-  if (lines) {
-    const { start, end } = lines;
-    const one = !start || start.number === end.number;
-    span = one ? `line ${end.number} of ` : `lines ${start.number}–${end.number} of `;
-    what = one ? 'line' : 'lines';
-  }
-  let when = `opens when that ${what}${block} shows`;
-  if (what === 'lines') when = `opens when those lines${block} ${block ? 'shows' : 'show'}`;
-  const where = `${span}${place.path} at ${at} · ${when}`;
-  return {
-    note: `Draft kept · ${span}${name} at ${at} · ${when}`,
-    title: `Draft kept · ${where}`,
-    // A path starts as it's written.
-    where: span ? `${where.charAt(0).toUpperCase()}${where.slice(1)}` : where,
-  };
+  const revision = revisionName(box.view, place.commit);
+  return `${baseName(place.path)} · ${lineRefText({ lines: place.lines, revision }, true)}`;
 }
 
 /** The file's name in `path`, without its folders. */
@@ -861,40 +851,29 @@ function baseName(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1);
 }
 
-/** The lines thread `row` is on, as "line 41 of " or "lines 39–41 of ", or none for one on a file. */
-function threadSpan(row: ThreadRow): string {
+/** The lines thread `row` is on, as a line reference has them: `null` for one on a file. */
+function threadLines(row: ThreadRow): LineRef['lines'] {
   const end = row.line ?? row.originalLine;
-  if (row.subject === 'FILE' || end === null) return '';
+  if (row.subject === 'FILE') return null;
+  if (end === null) return undefined;
   const start = row.line === null ? row.originalStartLine : row.startLine;
-  return start === null || start === end ? `line ${end} of ` : `lines ${start}–${end} of `;
+  const side = row.side === 'LEFT' ? 'LEFT' : 'RIGHT';
+  const startSide = row.startSide === 'LEFT' ? 'LEFT' : side;
+  return {
+    start: start === null ? null : { side: startSide, number: start },
+    end: { side, number: end },
+  };
 }
 
-/**
- * The status bar's one note for a view's kept drafts, `kept`: a draft's own, or "2 drafts kept"
- * and, on hover, where each is and when it opens, a line each. None while none is kept.
- */
-export function keptSummary(
-  kept: readonly KeptAway[],
-): { note: string; title: string } | undefined {
-  const [only] = kept;
-  if (!only) return undefined;
-  if (kept.length === 1) return { note: only.note, title: only.title };
-  return { note: `${kept.length} drafts kept`, title: wheres(kept) };
+/** What the status bar's item for view `view`'s kept drafts says: "2 kept drafts". */
+export function keptCount(kept: readonly KeptAway[]): string | undefined {
+  if (kept.length === 0) return undefined;
+  return kept.length === 1 ? '1 kept draft' : `${kept.length} kept drafts`;
 }
 
-/**
- * Says in a note where each of view `view`'s kept drafts is and when it opens, a line each, as the
- * status bar's note for them does on hover: for its click, and for its command.
- */
+/** Opens the list of view `view`'s kept drafts, over the status bar's item for them. */
 export function showKeptDrafts(view: string): void {
-  const kept = keptAway.get(view);
-  if (kept.length === 0) return;
-  notify(kept.length === 1 ? 'Draft kept' : `${kept.length} drafts kept`, wheres(kept));
-}
-
-/** Where each of `kept` is and when it opens, a line each. */
-function wheres(kept: readonly KeptAway[]): string {
-  return kept.map(({ where }) => where).join('\n');
+  if (keptAway.get(view).length > 0) keptOpen.set(view, true);
 }
 
 const retrying = new Map<string, ReturnType<typeof setTimeout>>();
@@ -1177,6 +1156,66 @@ function previousOf(file: { path: string | null; old: string | null }): string |
   return file.path !== null && file.old !== null && file.old !== file.path ? file.old : null;
 }
 
+/** Why GitHub takes no comment on a file in the revision on screen. */
+const UNCHANGED_FILE = 'This revision doesn’t change this file';
+
+/**
+ * The lines a suggested change in a comment on thread `row` of view `view` replaces, as its diff
+ * shows them: the lines the thread is on, where they're the newer side's in the revision on
+ * screen. Nothing elsewhere, as for an outdated thread, whose card has GitHub's own.
+ */
+export function replacedIn(view: string, row: ThreadRow): string | undefined {
+  const { line, startLine, startSide, side, currentOn } = row;
+  if (row.subject !== 'LINE' || row.outdated || line === null || side !== 'RIGHT') return undefined;
+  if (startLine !== null && startSide !== null && startSide !== 'RIGHT') return undefined;
+  const diff = writingDiff(view);
+  const at = shownAt(view, row.id);
+  if (!diff || !at || currentOn?.toLowerCase() !== diff.drawn().at.toLowerCase()) return undefined;
+  return linesOf(diff, at.file, startLine ?? line, line);
+}
+
+/**
+ * The lines a suggested change in box `box`'s text replaces: those it's on, as its diff shows them,
+ * for a box on the newer side's lines in the revision on screen, or in a thread that is.
+ */
+export function replacedOf(box: Box): string | undefined {
+  const { view } = box;
+  const { place } = box.state;
+  if (place.kind === 'reply' || (place.kind === 'edit' && place.thread !== null)) {
+    const row = held.get(view).threads?.threads.find((each) => each.id === place.thread);
+    return row && replacedIn(view, row);
+  }
+  if (place.kind !== 'thread' || place.lines === null) return undefined;
+  const { start, end } = place.lines;
+  if (end.side !== 'RIGHT' || (start !== null && start.side !== 'RIGHT')) return undefined;
+  const diff = writingDiff(view);
+  if (!diff) return undefined;
+  const drawn = diff.drawn();
+  if (place.commit.toLowerCase() !== drawn.at.toLowerCase()) return undefined;
+  const file = drawn.files.find((each) => githubPath(each) === place.path);
+  return file && linesOf(diff, file.id, start?.number ?? end.number, end.number);
+}
+
+/** File `file`'s newer lines `from` to `to` in `diff`, as one text: nothing where it has none. */
+function linesOf(diff: WritingDiff, file: string, from: number, to: number): string | undefined {
+  const lines = diff.lines({ file, side: 'new', from: Math.min(from, to), to: Math.max(from, to) });
+  return lines.length === 0 ? undefined : lines.join('\n');
+}
+
+/** Why a key does nothing while the pull request it's in is still opening. */
+export const OPENING = 'Opening pull request…';
+
+/**
+ * Why a key that acts in view `view`'s diff does nothing while the diff isn't drawn: the pull
+ * request is still opening, or else `then`, what to do, as the diff isn't on screen.
+ */
+export function noDiff(view: string, then = 'Go to the diff first'): string {
+  return (pullOf(view)?.shown ?? undefined) === undefined ? OPENING : then;
+}
+
+/** The command that comments on a line's file once the line took no comment. */
+const ON_FILE_INSTEAD = 'comments.onFileInstead';
+
 /** A line a comment was refused on, whose file `⏎` comments on while the note says so, `said`. */
 let offered: { view: string; file: string; how: Send; said: string } | undefined;
 
@@ -1200,17 +1239,13 @@ export async function comment(
   const file = drawn.files.find((each) => each.id === id);
   const path = file && githubPath(file);
   if (!file || path === undefined) return;
-  const title = suggest ? 'Suggest a change' : 'Comment';
   const commentable = await commentableOf(view, drawn.at, path, previousOf(file));
   // The reader moved on meanwhile: to another tab, or the diff drawn again.
   if (writingDiff(view, true)?.drawn().at !== drawn.at) return;
   const takes = commentableOn(screenFor(view, diff, file.since), commentable);
   if (target.kind === 'header') {
     if (takes && !takes.takesFileComment()) {
-      notify(
-        title,
-        'GitHub takes no comment on this file here: the pull request doesn’t change it at this revision.',
-      );
+      refuse(UNCHANGED_FILE);
       return;
     }
     openAt(view, diff, IN_DIFF, placeOf(drawn.at, path, undefined), how);
@@ -1219,20 +1254,26 @@ export async function comment(
   const on = linesAt(takes, target.at);
   if (!on) {
     if (takes && !takes.takesFileComment()) {
-      notify(
-        title,
-        'GitHub takes no comment on this file here: the pull request doesn’t change it at this revision.',
-      );
+      refuse(UNCHANGED_FILE);
       return;
     }
     // Where main couldn't read the file's patch, it takes a comment on the file only.
     const said = takes ? NOT_IN_DIFF : NO_LINES;
     offered = { view, file: file.id, how, said };
-    notify(title, said);
+    // Its button is the command's control, as `⏎` runs it.
+    const instead = controlOf(ON_FILE_INSTEAD, target);
+    refuse(
+      said,
+      instead && {
+        label: instead.label,
+        keys: instead.keys,
+        onClick: () => void runControl(ON_FILE_INSTEAD, target),
+      },
+    );
     return;
   }
   if (suggest && !takesSuggestion(on)) {
-    notify(title, NEW_SIDE_ONLY);
+    refuse(NEW_SIDE_ONLY);
     return;
   }
   const place = placeOf(drawn.at, path, on);
@@ -1269,8 +1310,8 @@ export async function comment(
 export function takeOffer(tab: PullTab): boolean {
   const offer = offered;
   offered = undefined;
-  if (offer?.view !== tab.id || notice()?.body !== offer.said) return false;
-  withdraw(notice()!.title, offer.said);
+  if (offer?.view !== tab.id || notice()?.title !== offer.said) return false;
+  withdraw(offer.said, '');
   void comment(tab, { kind: 'header', file: offer.file, side: 'new' }, offer.how);
   return true;
 }
@@ -1284,12 +1325,24 @@ export async function commentOnFile(tab: PullTab, key: string): Promise<void> {
   showDiff(view);
   const diff = writingDiff(view);
   if (!diff) {
-    notify('Comment on the file', 'The diff isn’t drawn yet.');
+    // The diff comes on screen, and takes the comment once it's drawn, if the reader has done
+    // nothing since.
+    const opening = noDiff(view, '');
+    if (opening !== '') {
+      refuse(opening);
+      return;
+    }
+    const asked = inputsSoFar();
+    const stop = onDiffDrawn((drawn) => {
+      if (drawn !== view) return;
+      stop();
+      if (inputsSoFar() === asked) void commentOnFile(tab, key);
+    });
     return;
   }
   const file = diff.drawn().files.find((each) => each.key === key);
   if (!file) {
-    notify('Comment on the file', 'The diff on screen doesn’t show this file.');
+    refuse('This file isn’t in this diff');
     return;
   }
   diff.toTop(file.id);
@@ -1372,9 +1425,11 @@ function wentFrom(
   place: DraftPlaceRow,
   outcome: { readonly pending: boolean },
 ): { readonly title: string; readonly body: string } | undefined {
+  const pull = pullIn(view);
   return sentFromBlock(place, home.commit, outcome.pending, {
     written: revisionName(view, home.commit),
     now: place.kind === 'thread' ? revisionName(view, place.commit) : '',
+    pull: pull === undefined ? 'the pull request' : `#${pull.number}`,
   });
 }
 
@@ -2148,9 +2203,9 @@ export function offering(...among: readonly Offer[]): Handler<BoxTarget> {
       const offer = offerIn(target);
       if (box && offer !== undefined) act(box, offer);
     },
-    enabled: (target) =>
-      offerIn(target) !== undefined ||
-      `“${among[0] === undefined ? '' : offerLabels[among[0]]}” isn’t offered in this box now.`,
+    // Listed only where its note offers it. Elsewhere it has no reason to give: a key bound to it
+    // does nothing, and says nothing.
+    enabled: (target) => offerIn(target) !== undefined || '',
     listed: (target) => offerIn(target) !== undefined,
   };
 }
@@ -2174,14 +2229,14 @@ export async function commentOnBlock(tab: PullTab, target: Target, how: Send): P
   const view = tab.id;
   const found = blockLines(view, target);
   if (typeof found === 'string') {
-    notify('Comment', found);
+    refuse(found);
     return;
   }
   const { writing, at } = found;
   const { block } = writing;
   const head = pullOf(view)?.shown ?? undefined;
   if (head === undefined) {
-    notify('Comment', 'Lo hasn’t read the pull request from GitHub yet.');
+    refuse(OPENING);
     return;
   }
   knowPull(tab);

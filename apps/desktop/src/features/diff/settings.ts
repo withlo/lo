@@ -11,6 +11,12 @@ export const layout = defineSetting(
   z.enum(['split', 'inline']),
   'split',
   'split or inline',
+  {
+    group: 'pullRequests',
+    label: 'Diff layout',
+    description: 'How a diff shows its old and new sides.',
+    options: { split: 'Side by side', inline: 'Inline' },
+  },
 );
 
 /**
@@ -22,4 +28,11 @@ export const whitespace = defineSetting(
   z.enum(['show', 'hide']),
   'show',
   'show or hide',
+  {
+    group: 'pullRequests',
+    label: 'Whitespace changes',
+    named: 'the whitespace setting',
+    description: 'Lines that differ only in spacing or indentation.',
+    options: { show: 'Show', hide: 'Hide' },
+  },
 );

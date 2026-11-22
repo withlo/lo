@@ -68,7 +68,7 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
   // The panel's order, worked out from the diff's own files as the tree works it out from its
   // own, so the first view is drawn in it: the tree has its files a while after. It stays until
   // the reader orders the files another way.
-  const mode = useOrderMode(tab.id);
+  const mode = useOrderMode();
   const order = useMemo(() => {
     if (!ready) return undefined;
     const kept = keptOrder(
