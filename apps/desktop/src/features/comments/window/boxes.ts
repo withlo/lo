@@ -605,7 +605,12 @@ function show(box: Box, diff: WritingDiff | undefined): boolean {
     box.focusOnOpen = false;
     return true;
   }
-  const options = { focus: box.focusOnOpen, name: box.id, hint: hintOf(box.state.place) };
+  const options = {
+    focus: box.focusOnOpen,
+    name: box.id,
+    hint: hintOf(box.state.place),
+    ...editsOf(box.state.place),
+  };
   try {
     const opens = opensAt(box);
     if (opens.kind === 'block') {
@@ -638,6 +643,11 @@ function show(box: Box, diff: WritingDiff | undefined): boolean {
 /** What a box at `place` says while it's empty, where its place has a name of its own. */
 export function hintOf(place: DraftPlaceRow, pull?: number): string | undefined {
   return place.kind === 'conversation' && pull !== undefined ? `Comment on #${pull}` : undefined;
+}
+
+/** The comment a box at `place` edits in a thread's card, where the code view opens it. */
+function editsOf(place: DraftPlaceRow): { edits?: string } {
+  return place.kind === 'edit' && place.thread !== null ? { edits: place.comment } : {};
 }
 
 /** Box `box` is drawn, as `composer`, in `where`. */
@@ -765,7 +775,13 @@ function showKept(
   const free = !focused || focused === document.body || diff.hasFocus();
   // Keys held for a sequence count once it ends, and focus moved now would end it in the box.
   const focus = kept.focused && kept.inputs === inputs && free && !registry().isPending();
-  const options = { focus, name: box.id, kept: kept.box, hint: hintOf(box.state.place) };
+  const options = {
+    focus,
+    name: box.id,
+    kept: kept.box,
+    hint: hintOf(box.state.place),
+    ...editsOf(box.state.place),
+  };
   try {
     drew(box, diff.compose(at, box.state.text, eventsOf(box), framer?.(box), options), 'diff');
     return true;

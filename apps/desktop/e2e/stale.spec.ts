@@ -398,7 +398,7 @@ test('marks the lines it explains in the diff at r2, opens what it says of them,
     await expect
       .poll(() => current(page, id), { timeout: 30_000 })
       .toMatchObject({ code: 'ready' });
-    // Seen, once its first blocks have drawn. "Read it in the overview" asks for a block's focus
+    // Seen, once its first blocks have drawn. "Show in overview" asks for a block's focus
     // once, and a block can't take it while the overview is hidden for its first draw, which ends at
     // the bound on what a tab holds back if it doesn't end sooner: left for the diff before then,
     // the ask would race that bound.
@@ -476,14 +476,14 @@ test('marks the lines it explains in the diff at r2, opens what it says of them,
     );
     // As the overview draws its words: its code as code.
     await expect(note.locator('.lo-ovnote__text p code')).toHaveText(['Line', 'wrap']);
-    await expect(note.getByRole('button', { name: 'Read it in the overview' })).toBeVisible();
+    await expect(note.getByRole('button', { name: 'Show in overview' })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(note).toHaveCount(0);
 
-    // "Read it in the overview" goes to the block, with focus, and `⌃o` comes back to the line the
+    // "Show in overview" goes to the block, with focus, and `⌃o` comes back to the line the
     // note is under, the mark's last, with the screen where it was.
     await page.mouse.click(ball.x, ball.y);
-    await note.getByRole('button', { name: 'Read it in the overview' }).click();
+    await note.getByRole('button', { name: 'Show in overview' }).click();
     await expect(shown(page)).toBeVisible();
     await expect
       .poll(() =>

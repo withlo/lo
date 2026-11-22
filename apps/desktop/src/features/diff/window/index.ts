@@ -26,7 +26,7 @@ import { keepPlaces, openWhole, showTreeFiles } from './places.ts';
 import { LayoutRow } from './LayoutRow.tsx';
 import { DiffStatus } from './Status.tsx';
 import { keepOnly, keysDiff, loaderOf, takeState, type Drawn } from './tabs.ts';
-import { markViewed } from './viewed.ts';
+import { markViewed, viewedEnabled } from './viewed.ts';
 import { spansOf } from './spans.ts';
 import { WholeFile } from './WholeFile.tsx';
 import {
@@ -48,9 +48,9 @@ const tabs = () => client(tabContract);
 /** The diff on screen, or the file of it beside another view that has focus, or why a key can't run. */
 function onScreen(): Drawn | string {
   const tab = activeTab();
-  if (tab?.kind !== 'pull') return 'There’s no pull request on screen.';
-  if (wholeDrawn(tab.id)) return 'A whole file is on screen, not the diff.';
-  return keysDiff(tab.id) ?? 'The diff isn’t drawn yet.';
+  if (tab?.kind !== 'pull') return 'Open a pull request first';
+  if (wholeDrawn(tab.id)) return 'Go to the diff first';
+  return keysDiff(tab.id) ?? 'Reading changed files…';
 }
 
 /** Runs `act` on the diff on screen. */
@@ -125,7 +125,7 @@ function inCode<T>(
 function codeNow(): true | string {
   const tab = activeTab();
   if (tab?.kind === 'pull' && wholeDrawn(tab.id)) {
-    return opened.get(tab.id) ? true : 'No file is open whole.';
+    return opened.get(tab.id) ? true : 'No whole file open';
   }
   return drawnNow();
 }
@@ -150,7 +150,7 @@ function hasNote(target: LineTarget): boolean {
 function noteNow(target: LineTarget): true | string {
   const drawn = onScreen();
   if (typeof drawn === 'string') return drawn;
-  return drawn.view.hasNote(placeOf(target.at)) || 'There’s no overview note on this line.';
+  return drawn.view.hasNote(placeOf(target.at)) || 'No overview note on this line';
 }
 
 /** Whether `gm` can go from the target's line, in moved code, to the other end, or why not. */
@@ -239,7 +239,13 @@ export default {
       run: withDiff((drawn, target: LineTarget) => fromMoved(drawn, placeOf(target.at))),
       enabled: otherEndNow,
     },
-    markViewed: { run: withDiff(markViewed), enabled: drawnNow },
+    markViewed: {
+      run: withDiff(markViewed),
+      enabled: (target) => {
+        const drawn = onScreen();
+        return typeof drawn === 'string' ? drawn : viewedEnabled(drawn, target);
+      },
+    },
     otherSide: { run: withDiff(({ view }) => view.otherSide()), enabled: drawnNow },
     inline: {
       run: withDiff(async ({ view }) => {
@@ -251,7 +257,7 @@ export default {
       enabled: () => {
         const drawn = onScreen();
         if (typeof drawn === 'string') return drawn;
-        return !drawn.beside || 'Code beside the overview is always inline.';
+        return !drawn.beside || 'Code beside is always inline';
       },
     },
     whitespace: {
@@ -291,8 +297,8 @@ export default {
       },
       enabled: () => {
         const whole = wholeOnScreen();
-        if (!whole) return 'There’s no whole file on screen.';
-        return whole.read?.content.kind === 'large' || 'The file on screen isn’t waiting to load.';
+        if (!whole) return 'No whole file open';
+        return whole.read?.content.kind === 'large' || 'This file is already shown';
       },
     },
     overviewNote: {

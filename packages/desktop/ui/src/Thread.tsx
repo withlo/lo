@@ -7,6 +7,7 @@ import { Key, keyAria } from './Key.tsx';
 import { MoreButton } from './MoreButton.tsx';
 import { Spinner } from './Spinner.tsx';
 import { Tag, type TagTone } from './Tag.tsx';
+import { EDIT_SLOT, EDIT_SLOT_EVENT } from './edits.ts';
 import { CommentIcon } from './ThreadCount.tsx';
 
 /** One comment of a thread, as its card shows it. */
@@ -301,7 +302,6 @@ export function Thread({
 
   const tone: TagTone = state === 'resolved' ? 'ok' : 'warning';
   const showReply = reply === undefined && canReply;
-  const drawn = editing ? comments.filter((each) => !editing.has(each.id)) : comments;
   return (
     <div
       role="group"
@@ -356,60 +356,64 @@ export function Thread({
           </Button>
         </span>
       </div>
-      {drawn.map((comment, index) => (
-        <div
-          key={comment.id}
-          data-comment={comment.id}
-          className={`flex gap-8 px-12 py-8 ${index === 0 ? '' : 'border-t border-border-subtle'}`}
-        >
-          <Avatar login={comment.author} image={comment.image} size="sm" />
-          <div className="min-w-0 flex-1">
-            <div className="flex min-h-24 flex-wrap items-center gap-x-8 gap-y-2 text-fg-muted text-small">
-              <span className="font-semibold whitespace-nowrap text-fg">
-                {comment.author}
-                {comment.mine && <span className="font-normal text-fg-muted"> (you)</span>}
-              </span>
-              <span className="lo-num whitespace-nowrap">{comment.when}</span>
-              {comment.byAuthor && <Tag>Author</Tag>}
-              {comment.pending && !pendingAll && <Tag tone="warning">Pending</Tag>}
-              {comment.mine && (
-                <span className="ms-auto flex flex-none items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    aria-label={`Edit your comment from ${comment.when}`}
-                    hint="Edit"
-                    hintKeys={comment.id === newestMine ? keys.edit : undefined}
-                    onClick={() => onEdit?.(comment.id)}
-                  >
-                    Edit
-                    {comment.id === newestMine && keys.edit && (
-                      <Key keys={keys.edit} when="focus" decorative />
-                    )}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    aria-label={`Delete your comment from ${comment.when}`}
-                    busy={comment.id === deleting}
-                    working="Deleting…"
-                    align="end"
-                    hint="Delete…"
-                    hintKeys={comment.id === newestMine ? keys.delete : undefined}
-                    onClick={() => onDelete?.(comment.id)}
-                  >
-                    Delete…
-                    {comment.id === newestMine && keys.delete && (
-                      <Key keys={keys.delete} when="focus" decorative />
-                    )}
-                  </Button>
+      {comments.map((comment, index) =>
+        editing?.has(comment.id) ? (
+          <EditSlot key={comment.id} comment={comment.id} first={index === 0} />
+        ) : (
+          <div
+            key={comment.id}
+            data-comment={comment.id}
+            className={`flex gap-8 px-12 py-8 ${index === 0 ? '' : 'border-t border-border-subtle'}`}
+          >
+            <Avatar login={comment.author} image={comment.image} size="sm" />
+            <div className="min-w-0 flex-1">
+              <div className="flex min-h-24 flex-wrap items-center gap-x-8 gap-y-2 text-fg-muted text-small">
+                <span className="font-semibold whitespace-nowrap text-fg">
+                  {comment.author}
+                  {comment.mine && <span className="font-normal text-fg-muted"> (you)</span>}
                 </span>
-              )}
+                <span className="lo-num whitespace-nowrap">{comment.when}</span>
+                {comment.byAuthor && <Tag>Author</Tag>}
+                {comment.pending && !pendingAll && <Tag tone="warning">Pending</Tag>}
+                {comment.mine && (
+                  <span className="ms-auto flex flex-none items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`Edit your comment from ${comment.when}`}
+                      hint="Edit"
+                      hintKeys={comment.id === newestMine ? keys.edit : undefined}
+                      onClick={() => onEdit?.(comment.id)}
+                    >
+                      Edit
+                      {comment.id === newestMine && keys.edit && (
+                        <Key keys={keys.edit} when="focus" decorative />
+                      )}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      aria-label={`Delete your comment from ${comment.when}`}
+                      busy={comment.id === deleting}
+                      working="Deleting…"
+                      align="end"
+                      hint="Delete…"
+                      hintKeys={comment.id === newestMine ? keys.delete : undefined}
+                      onClick={() => onDelete?.(comment.id)}
+                    >
+                      Delete…
+                      {comment.id === newestMine && keys.delete && (
+                        <Key keys={keys.delete} when="focus" decorative />
+                      )}
+                    </Button>
+                  </span>
+                )}
+              </div>
+              <div className="lo-selectable mt-2 text-fg read-comment">{comment.body}</div>
             </div>
-            <div className="lo-selectable mt-2 text-fg read-comment">{comment.body}</div>
           </div>
-        </div>
-      ))}
+        ),
+      )}
       {showReply && (
         <div className="border-t border-border-subtle py-8 ps-40 pe-12">
           <button
@@ -432,4 +436,24 @@ export function Thread({
       )}
     </div>
   );
+}
+
+/**
+ * The place in the card of `comment`, which a box is editing: the code view moves the box into it
+ * as it's drawn, so the box opens where the comment was and its text shows once. Empty, as where
+ * nothing moves a box in, it takes no room.
+ */
+function EditSlot({ comment, first }: { comment: string; first: boolean }) {
+  return (
+    <div
+      ref={announceSlot}
+      {...{ [EDIT_SLOT]: comment }}
+      className={`px-12 py-8 empty:hidden ${first ? '' : 'border-t border-border-subtle'}`}
+    />
+  );
+}
+
+/** Tells the code view a slot was drawn, so it moves the box in. */
+function announceSlot(slot: HTMLDivElement | null): void {
+  slot?.dispatchEvent(new Event(EDIT_SLOT_EVENT, { bubbles: true }));
 }

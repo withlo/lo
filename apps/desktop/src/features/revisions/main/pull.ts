@@ -388,11 +388,14 @@ export class RevisionsTab {
         },
       );
     } catch (error) {
+      // Why, as the reason under the window's title for the failure.
       const message =
         error instanceof GithubError
           ? writeFailed({ path, mark: viewed, id: 0 }, login, error)
-          : `Couldn’t ${viewed ? `mark ${path} viewed` : `clear the viewed mark on ${path}`}: ${describe(error)}.`;
-      this.#options.log(message);
+          : `${describe(error)}.`;
+      this.#options.log(
+        `Couldn’t ${viewed ? `mark ${path} viewed` : `clear the viewed mark on ${path}`}: ${message}`,
+      );
       throw new IpcError('failed', message);
     }
     if (marked.kind !== 'done') return marked;

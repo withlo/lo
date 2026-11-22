@@ -8,7 +8,13 @@ import type * as TabShared from '../../tab/window/shared.ts';
 import type { Files, PullView } from '../../tab/window/shared.ts';
 import { PATH_LIMIT } from '../../tree/contract.ts';
 import type { ComparisonView } from '../contract.ts';
-import { passedOver, toggleViewed, viewedMarkOf, viewedMarksOf } from './shared.ts';
+import {
+  passedOver,
+  toggleViewed,
+  viewedFailureOf,
+  viewedMarkOf,
+  viewedMarksOf,
+} from './shared.ts';
 import { showView } from './store.ts';
 import { takeFiles } from './viewed.ts';
 
@@ -149,32 +155,38 @@ describe('e on a file', () => {
     expect(mark('src/a.ts')).toBe('unviewed');
   });
 
-  it('a failed write shows GitHub’s mark again, and says why', async () => {
+  it('a failed write shows GitHub’s mark again, and keeps why on the file, not in a toast', async () => {
+    const failure = () => viewedFailureOf(viewedMarksOf(TAB), { text: 'src/a.ts' });
     answers['revisions.markViewed'] = () => {
-      throw new IpcError('failed', 'Couldn’t mark src/a.ts viewed: Lo can’t reach GitHub.');
+      throw new IpcError('failed', 'Offline.');
     };
     toggleViewed(TAB, file('src/a.ts'));
     expect(mark('src/a.ts')).toBe('viewed');
     await answered();
     expect(mark('src/a.ts')).toBe('unviewed');
-    expect(notice()).toEqual({
-      title: 'Mark viewed',
-      body: 'Couldn’t mark src/a.ts viewed: Lo can’t reach GitHub.',
-    });
+    expect(failure()).toEqual({ title: 'Couldn’t mark a.ts viewed', reason: 'Offline.' });
+    expect(notice()).toBeUndefined();
+    // The next mark takes its place.
+    answers['revisions.markViewed'] = () => ({ kind: 'done' });
+    toggleViewed(TAB, file('src/a.ts'));
+    expect(failure()).toBeUndefined();
+    await answered();
+    expect(failure()).toBeUndefined();
   });
 
   it('main’s refusals in a pause or after a push show GitHub’s mark again', async () => {
+    const failure = () => viewedFailureOf(viewedMarksOf(TAB), { text: 'src/a.ts' });
     answers['revisions.markViewed'] = () => ({ kind: 'paused', until: Date.now() + 60_000 });
     toggleViewed(TAB, file('src/a.ts'));
     await answered();
     expect(mark('src/a.ts')).toBe('unviewed');
-    expect(notice()?.body).toContain('GitHub asked Lo to hold off until');
+    expect(failure()?.reason).toMatch(/^GitHub’s rate limit resets at /);
 
     answers['revisions.markViewed'] = () => ({ kind: 'moved', latest: NEWER });
     toggleViewed(TAB, file('src/a.ts'));
     await answered();
     expect(mark('src/a.ts')).toBe('unviewed');
-    expect(notice()?.body).toContain('There’s a newer push');
+    expect(failure()?.reason).toBe('This revision is out of date.');
   });
 });
 
@@ -192,11 +204,11 @@ async function refused(path: string): Promise<string> {
 describe('what e refuses before anything is sent', () => {
   it('marking while there’s a newer push, or a diff of an older revision, but not clearing', async () => {
     said.pull = pull({ newer: NEWER });
-    expect(await refused('src/a.ts')).toContain('There’s a newer push');
+    expect(await refused('src/a.ts')).toBe('This revision is out of date');
 
     said.pull = pull();
     showView(comparing(null, OLDER));
-    expect(await refused('src/a.ts')).toContain('older revision than the newest push');
+    expect(await refused('src/a.ts')).toBe('This revision is out of date');
 
     said.pull = pull({ newer: NEWER });
     expect(toggleViewed(TAB, file('src/b.ts'))).toEqual({ kind: 'clearing' });
@@ -207,32 +219,28 @@ describe('what e refuses before anything is sent', () => {
     said.pull = pull({
       connection: { kind: 'rateLimited', login: 'rozed-bot', until, secondary: true },
     });
-    expect(await refused('src/a.ts')).toContain('GitHub asked Lo to hold off until');
-    expect(await refused('src/b.ts')).toContain('GitHub asked Lo to hold off until');
+    expect(await refused('src/a.ts')).toMatch(/^GitHub’s rate limit resets at /);
+    expect(await refused('src/b.ts')).toMatch(/^GitHub’s rate limit resets at /);
 
     said.pull = pull({
       connection: { kind: 'offline', savedAt: null, retryAt: null, error: 'offline' },
     });
-    expect(await refused('src/a.ts')).toContain('Lo can’t reach GitHub');
+    expect(await refused('src/a.ts')).toBe('Offline');
   });
 
   it('a run of a stack’s layers on screen as one diff, which has no marks to set or clear', async () => {
     said.run = { layers: [83, 84], start: OLDER, from: 84 };
-    expect(await refused('src/a.ts')).toBe(
-      'A run of layers has no viewed marks. Mark files viewed in a layer.',
-    );
-    expect(await refused('src/b.ts')).toBe(
-      'A run of layers has no viewed marks. Mark files viewed in a layer.',
-    );
+    expect(await refused('src/a.ts')).toBe('Layers shown together have no viewed marks');
+    expect(await refused('src/b.ts')).toBe('Layers shown together have no viewed marks');
   });
 
   it('a tab that acts as nobody, a file GitHub doesn’t list, and a path too long', async () => {
     said.pull = pull({ acting: { kind: 'anonymous' } });
-    expect(await refused('src/a.ts')).toContain('Sign in to mark files viewed');
+    expect(await refused('src/a.ts')).toBe('Sign in to mark files viewed');
 
     said.pull = pull();
-    expect(await refused('src/c.ts')).toContain('GitHub doesn’t list src/c.ts');
-    expect(await refused('x'.repeat(PATH_LIMIT + 1))).toContain('paths of up to 1,024 bytes');
+    expect(await refused('src/c.ts')).toBe('GitHub doesn’t list this file in this pull request');
+    expect(await refused('x'.repeat(PATH_LIMIT + 1))).toBe('This file’s path is too long to mark');
   });
 
   it('moving on passes over files viewed, and files e can’t mark', () => {

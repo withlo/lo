@@ -34,7 +34,7 @@ const registry = new Registry({
           ...command,
           handler: {
             run() {},
-            enabled: (target: Target) => noted(target) || 'There’s no overview note on this line.',
+            enabled: (target: Target) => noted(target) || 'No overview note on this line',
             listed: noted,
           },
         }
@@ -56,9 +56,7 @@ describe('Overview note', () => {
   });
 
   it('says why it can’t run on a line with no note, and is on that line’s menu only', () => {
-    expect(registry.enabled('diff.overviewNote', line(5))).toBe(
-      'There’s no overview note on this line.',
-    );
+    expect(registry.enabled('diff.overviewNote', line(5))).toBe('No overview note on this line');
     const menu = (target: LineTarget) =>
       menuSections(registry, target)
         .flat()

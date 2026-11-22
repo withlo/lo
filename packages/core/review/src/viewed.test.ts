@@ -237,50 +237,37 @@ function rateLimited(secondary: boolean): GithubError {
   });
 }
 
-test('the toast says what failed and why', () => {
+test('a failed write says why, as the reason under its title', () => {
   const marking = toggled('src/main.rs', true);
   const clearing = toggled('src/main.rs', false);
   const offline = new GithubError({ kind: 'network', failure: 'offline', message: 'offline' });
   const cases: [ViewedToggle, GithubError, string][] = [
-    [
-      marking,
-      offline,
-      "Couldn't mark src/main.rs viewed: Lo can't reach GitHub. It shows GitHub's mark again.",
-    ],
-    [
-      clearing,
-      offline,
-      "Couldn't clear the viewed mark on src/main.rs: Lo can't reach GitHub. It shows GitHub's mark again.",
-    ],
-    [
-      marking,
-      rateLimited(false),
-      "Couldn't mark src/main.rs viewed: rozed-bot has used up GitHub's rate limit. It shows GitHub's mark again.",
-    ],
-    [
-      marking,
-      rateLimited(true),
-      "Couldn't mark src/main.rs viewed: GitHub asked Lo to slow down. It shows GitHub's mark again.",
-    ],
+    [marking, offline, 'Offline.'],
+    [clearing, offline, 'Offline.'],
+    [marking, rateLimited(true), 'GitHub’s rate limit was reached.'],
     [
       marking,
       graphqlError('Resource not accessible by integration', 'FORBIDDEN'),
-      "Couldn't mark src/main.rs viewed: rozed-bot isn't allowed to (Resource not accessible by integration). It shows GitHub's mark again.",
+      'rozed-bot doesn’t have permission.',
     ],
     [
       marking,
       graphqlError('Filepath must be part of pull request', 'UNPROCESSABLE'),
-      "Couldn't mark src/main.rs viewed: GitHub doesn't list src/main.rs in this pull request (Filepath must be part of pull request). It shows GitHub's mark again.",
+      'GitHub doesn’t list this file in this pull request.',
     ],
     [
       marking,
       new GithubError({ kind: 'unauthorized', message: 'Bad credentials' }),
-      "Couldn't mark src/main.rs viewed: rozed-bot is signed out. It shows GitHub's mark again.",
+      'rozed-bot is signed out.',
     ],
   ];
   for (const [failed, error, expected] of cases) {
     expect(writeFailed(failed, 'rozed-bot', error)).toBe(expected);
   }
+  // The primary limit says when it resets, where GitHub said.
+  expect(writeFailed(marking, 'rozed-bot', rateLimited(false))).toMatch(
+    /^GitHub’s rate limit (resets at .+|was reached)\.$/,
+  );
 });
 
 /** A normal push from `before` to `after` at `minute`. */

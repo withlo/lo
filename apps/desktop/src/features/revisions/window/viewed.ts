@@ -6,7 +6,6 @@
 
 import { type ViewedToggle, ViewedMarks } from '@lo/review';
 
-import { notify } from '../../../window/commands/notices.tsx';
 import {
   changedFiles,
   pullOf,
@@ -23,15 +22,23 @@ import { views } from './store.ts';
 /** A changed file's viewed mark: viewed, not yet, or changed since it was viewed. */
 export type Mark = 'viewed' | 'unviewed' | 'dismissed';
 
+/** A mark GitHub didn't take: what failed, and why, which the file's header shows. */
+export interface MarkFailure {
+  readonly title: string;
+  readonly reason: string | undefined;
+}
+
 /** A tab's viewed marks, as they show. */
 export interface ShownMarks {
   /** Each file's mark, by the path GitHub lists it at: only paths short enough to key a map by. */
   readonly byPath: ReadonlyMap<string, Mark>;
+  /** Each file whose last mark or clear GitHub didn't take, by the same path, until the next. */
+  readonly failed?: ReadonlyMap<string, MarkFailure> | undefined;
   /** How many files show as viewed, of how many the pull request changes, once GitHub has said. */
   readonly count: { readonly viewed: number; readonly total: number } | undefined;
 }
 
-const NONE: ShownMarks = { byPath: new Map(), count: undefined };
+const NONE: ShownMarks = { byPath: new Map(), failed: new Map(), count: undefined };
 
 /** Each mark as GitHub's API names it. */
 const GITHUB = { viewed: 'VIEWED', unviewed: 'UNVIEWED', dismissed: 'DISMISSED' } as const;
@@ -39,10 +46,14 @@ const GITHUB = { viewed: 'VIEWED', unviewed: 'UNVIEWED', dismissed: 'DISMISSED' 
 /** What each tab's marks show, re-rendering what reads them as they change. */
 export const shownMarks = tabState<ShownMarks>(() => NONE);
 
-/** Each tab's marks: GitHub's and Lo's writes, and the files GitHub last listed. */
-const models = tabState<{ marks: ViewedMarks; files: Files | undefined } | undefined>(
-  () => undefined,
-);
+/** A tab's marks, the files GitHub last listed, and the writes GitHub didn't take. */
+interface Model {
+  marks: ViewedMarks;
+  files: Files | undefined;
+  readonly failed: Map<string, MarkFailure>;
+}
+
+const models = tabState<Model | undefined>(() => undefined);
 
 /** Whether GitHub's mark on `path` is kept: its path is short enough to key a map by. */
 function keyable(path: string): boolean {
@@ -50,10 +61,10 @@ function keyable(path: string): boolean {
 }
 
 /** `tab`'s marks, made the first time, from the files main last listed. */
-function modelOf(tab: string): { marks: ViewedMarks; files: Files | undefined } {
+function modelOf(tab: string): Model {
   let model = models.get(tab);
   if (!model) {
-    model = { marks: new ViewedMarks(), files: undefined };
+    model = { marks: new ViewedMarks(), files: undefined, failed: new Map() };
     models.set(tab, model);
     const files = changedFiles(tab);
     if (files) take(tab, model, files);
@@ -62,11 +73,7 @@ function modelOf(tab: string): { marks: ViewedMarks; files: Files | undefined } 
 }
 
 /** Takes the files GitHub listed, with its marks, as they reached the window just now. */
-function take(
-  tab: string,
-  model: { marks: ViewedMarks; files: Files | undefined },
-  files: Files,
-): void {
+function take(tab: string, model: Model, files: Files): void {
   model.files = files;
   const listed = files.files.filter((file) => keyable(file.path));
   const marks = new Map(listed.map((file) => [file.path, GITHUB[file.viewed]] as const));
@@ -79,7 +86,7 @@ function take(
 }
 
 /** Puts what `tab`'s marks show where the views read it. */
-function show(tab: string, model: { marks: ViewedMarks; files: Files | undefined }): void {
+function show(tab: string, model: Model): void {
   const byPath = new Map<string, Mark>();
   let viewed = 0;
   for (const [path, state] of model.marks.shown()) {
@@ -89,7 +96,11 @@ function show(tab: string, model: { marks: ViewedMarks; files: Files | undefined
     if (mark === 'viewed') viewed += 1;
   }
   const total = model.files?.total;
-  shownMarks.set(tab, { byPath, count: total === undefined ? undefined : { viewed, total } });
+  shownMarks.set(tab, {
+    byPath,
+    failed: new Map(model.failed),
+    count: total === undefined ? undefined : { viewed, total },
+  });
 }
 
 /** Main said `tab`'s changed files anew. */
@@ -148,27 +159,27 @@ export type Toggled =
   | { readonly kind: 'clearing' }
   | { readonly kind: 'refused'; readonly why: string };
 
-const refused = (why: string): Toggled => ({ kind: 'refused', why });
+const refused = (why: string): { kind: 'refused'; why: string } => ({ kind: 'refused', why });
 
-/** A time later today, or on another day, as a note says when a pause ends. */
+/** A time later today, or on another day, as the system writes one, for when a pause ends. */
 function timeOf(at: number): string {
   const when = new Date(at);
-  const time = when.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const time = when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   return when.toDateString() === new Date().toDateString()
     ? time
-    : `${when.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${time}`;
+    : `${when.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;
 }
 
-/** Why marks can't be written as `pull` stands with GitHub, if they can't. */
-function connectionRefusal(pull: PullView, what: string): string | undefined {
+/** Why marks can't be written as `pull` stands with GitHub, if they can't: the dimmed ball's tip. */
+function connectionRefusal(pull: PullView): string | undefined {
   const { connection } = pull;
   switch (connection.kind) {
     case 'signedOut':
-      return `${connection.login} is signed out, so Lo can’t ${what}. Sign in again from Settings.`;
+      return `${connection.login} is signed out`;
     case 'offline':
-      return `Lo can’t reach GitHub, so it can’t ${what} until it’s back.`;
+      return 'Offline';
     case 'rateLimited':
-      return `GitHub asked Lo to hold off until ${timeOf(connection.until)}, so it can’t ${what} until then.`;
+      return `GitHub’s rate limit resets at ${timeOf(connection.until)}`;
     case 'live':
     case 'limitLow':
       return undefined;
@@ -196,63 +207,79 @@ export function toggle(
   tab: string,
   file: { readonly path: TreePath; readonly previous: TreePath | null },
 ): Toggled {
+  const can = writable(tab, file);
+  if (can.kind === 'refused') return can;
+  const { model, path, marking, at } = can;
+  const name = file.path.text.slice(file.path.text.lastIndexOf('/') + 1);
+  const title = marking
+    ? `Couldn’t mark ${name} viewed`
+    : `Couldn’t clear the viewed mark on ${name}`;
+  const made = model.marks.toggle(path);
+  // A new mark or clear on the file takes the place of one that failed.
+  model.failed.delete(path);
+  show(tab, model);
+  void write(tab, model, made, at, title);
+  return { kind: marking ? 'marking' : 'clearing' };
+}
+
+/**
+ * Why `e` can't mark or clear the changed file of `tab`'s at `path`, or `previous` for a rename,
+ * now, if it can't: what its dimmed control's tooltip says. It changes nothing.
+ */
+export function markRefusal(
+  tab: string,
+  file: { readonly path: TreePath; readonly previous: TreePath | null },
+): string | undefined {
+  const can = writable(tab, file);
+  return can.kind === 'refused' ? can.why : undefined;
+}
+
+/** Whether a mark or clear on `file` can be sent now, and what it needs to be, or why not. */
+function writable(
+  tab: string,
+  file: { readonly path: TreePath; readonly previous: TreePath | null },
+):
+  | { kind: 'refused'; why: string }
+  | { kind: 'can'; model: Model; path: string; marking: boolean; at: string } {
   // A run shows its layers' changes combined, and a mark says which layer's version was seen.
-  if (runOf(tab)) {
-    return refused('A run of layers has no viewed marks. Mark files viewed in a layer.');
-  }
+  if (runOf(tab)) return refused('Layers shown together have no viewed marks');
   const pull = pullOf(tab);
-  if (pull?.acting?.kind !== 'account') {
-    return refused('Sign in to mark files viewed: this pull request opened without an account.');
-  }
-  const name = file.path.text;
+  if (pull?.acting?.kind !== 'account') return refused('Sign in to mark files viewed');
   const own = textOf(file.path);
   if (own === undefined) {
     return refused(
       file.path.hex === undefined
-        ? `Lo marks files viewed by paths of up to ${PATH_LIMIT.toLocaleString('en-US')} bytes, and this one’s is longer.`
-        : `${name}’s path isn’t UTF-8, so GitHub can’t name it, and Lo can’t mark it viewed.`,
+        ? 'This file’s path is too long to mark'
+        : 'GitHub can’t name this file’s path',
     );
   }
   const model = modelOf(tab);
-  if (!model.files) {
-    return refused('GitHub hasn’t listed this pull request’s files yet. Try again in a moment.');
-  }
+  if (!model.files) return refused('Reading changed files…');
   const old = file.previous ? textOf(file.previous) : undefined;
   const path = model.marks.githubPath(own, old);
-  if (path === undefined) {
-    return refused(
-      `GitHub doesn’t list ${name} in this pull request, so Lo can’t mark it viewed. GitHub and the local copy see its change differently.`,
-    );
-  }
+  if (path === undefined) return refused('GitHub doesn’t list this file in this pull request');
   const marking = model.marks.state(path) !== 'VIEWED';
-  const what = marking ? `mark ${name} viewed` : `clear the viewed mark on ${name}`;
-  const unwritable = connectionRefusal(pull, what);
+  const unwritable = connectionRefusal(pull);
   if (unwritable !== undefined) return refused(unwritable);
   const at = headOf(tab, pull);
-  if (at === undefined) return refused('The pull request hasn’t opened yet.');
-  if (marking && pull.newer !== null) {
-    return refused(
-      `There’s a newer push, and GitHub marks a file viewed as of the newest one, so Lo can’t ${what} until it’s loaded.`,
-    );
+  if (at === undefined) return refused('Opening pull request…');
+  // GitHub marks a file viewed as of the newest push, so only a diff up to it can.
+  if (marking && (pull.newer !== null || at !== pull.shown)) {
+    return refused('This revision is out of date');
   }
-  if (marking && at !== pull.shown) {
-    return refused(
-      `This diff goes up to an older revision than the newest push, and GitHub marks a file viewed as of the newest one, so Lo can’t ${what} here. Compare up to the newest with g v.`,
-    );
-  }
-  const made = model.marks.toggle(path);
-  show(tab, model);
-  void write(tab, model, made, at, what);
-  return { kind: marking ? 'marking' : 'clearing' };
+  return { kind: 'can', model, path, marking, at };
 }
 
-/** Sends a toggle to main, and takes its answer: GitHub's mark again, with a note, if it failed. */
+/**
+ * Sends a toggle to main, and takes its answer: if GitHub didn't take it, GitHub's mark again, and
+ * the failure, `title` and why, kept on the file for its header to show until the next toggle.
+ */
 async function write(
   tab: string,
-  model: { marks: ViewedMarks; files: Files | undefined },
+  model: Model,
   made: ViewedToggle,
   at: string,
-  what: string,
+  title: string,
 ): Promise<void> {
   let why: string | undefined;
   try {
@@ -266,20 +293,38 @@ async function write(
       case 'done':
         break;
       case 'paused':
-        why = `GitHub asked Lo to hold off until ${timeOf(marked.until)}, so it didn’t ${what}.`;
+        why = `GitHub’s rate limit resets at ${timeOf(marked.until)}.`;
         break;
       case 'moved':
-        why = `There’s a newer push, and GitHub marks a file viewed as of the newest one, so Lo didn’t ${what}.`;
+        why = 'This revision is out of date.';
         break;
       default:
         marked satisfies never;
-        why = `Lo didn’t ${what}.`;
+        why = '';
     }
   } catch (error) {
     why = error instanceof Error ? error.message : String(error);
   }
   model.marks.finish(made, why === undefined, Date.now());
+  if (why === undefined) model.failed.delete(made.path);
+  else model.failed.set(made.path, { title, reason: why === '' ? undefined : why });
   // Unless the tab closed meanwhile.
   if (models.get(tab) === model) show(tab, model);
-  if (why !== undefined) notify(made.mark ? 'Mark viewed' : 'Clear the viewed mark', why);
+}
+
+/**
+ * The failure on the changed file at `path`, or `previous` for a rename GitHub lists by its old
+ * path, from the last mark or clear GitHub didn't take: none once a later one is sent.
+ */
+export function failureIn(
+  marks: ShownMarks,
+  path: TreePath,
+  previous: TreePath | null | undefined,
+): MarkFailure | undefined {
+  const own = textOf(path);
+  const old = previous ? textOf(previous) : undefined;
+  return (
+    (own === undefined ? undefined : marks.failed?.get(own)) ??
+    (old === undefined ? undefined : marks.failed?.get(old))
+  );
 }

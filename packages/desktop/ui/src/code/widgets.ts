@@ -177,6 +177,8 @@ export function drawHeader(
   if (header.change === 'deleted') head.classList.add('is-deleted');
   if (!pinned) head.dataset.row = headerRow(file);
   head.dataset.file = String(file);
+  // Each half names its file, though only the left draws the path.
+  head.dataset.path = info.path;
   if (part !== 'end') {
     const start = element('span', 'lo-diffhead__start');
     start.append(...headerStart(info));

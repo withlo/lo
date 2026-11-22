@@ -242,7 +242,7 @@ describe('marking files viewed', { timeout: 10_000 }, () => {
 
     await expect(tab.markViewed(FILE, true, HEAD)).rejects.toMatchObject({
       code: 'failed',
-      message: expect.stringContaining('GitHub asked Lo to slow down'),
+      message: 'GitHub’s rate limit was reached.',
     });
     const now = Date.now();
     const paused = await tab.markViewed(FILE, true, HEAD);
@@ -260,9 +260,7 @@ describe('marking files viewed', { timeout: 10_000 }, () => {
     );
     await expect(tab.markViewed('not-in-this-pull-request.md', true, HEAD)).rejects.toMatchObject({
       code: 'failed',
-      message: expect.stringContaining(
-        "GitHub doesn't list not-in-this-pull-request.md in this pull request",
-      ),
+      message: 'GitHub doesn’t list this file in this pull request.',
     });
     expect(marks.viewed(LOGIN, PULL)).toEqual([]);
     expect(logged.join('\n')).toContain('not-in-this-pull-request.md');

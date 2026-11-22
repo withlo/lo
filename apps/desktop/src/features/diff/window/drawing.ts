@@ -24,7 +24,12 @@ import { plainTarget, type Entry as HistoryEntry } from '@lo/ui/commands';
 
 import { openMenu } from '../../../window/commands/menus.tsx';
 import { registry, setMiddle } from '../../../window/commands/registry.ts';
-import { comparisonHere, type ShownMarks, viewedMarkOf } from '../../revisions/window/shared.ts';
+import {
+  comparisonHere,
+  type ShownMarks,
+  viewedFailureOf,
+  viewedMarkOf,
+} from '../../revisions/window/shared.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
 import { followFile } from '../../tree/window/shared.ts';
 import type { Start } from '../contract.ts';
@@ -268,9 +273,16 @@ export function draw(options: DrawOptions): Drawing {
     viewedMarkOf(marks, entry.versions.path, entry.versions.previous);
   /** The review threads under the lines, and what each file's hold, as the threader last said. */
   let placed: DiffThreads = NO_THREADS;
-  /** A file's header: its counts, tags and viewed mark, and its threads counted. */
-  const headerFor = (entry: Entry) =>
-    headerOf(entry.versions, markOf(entry), placed.counts.get(entry.id));
+  /**
+   * A file's header: its counts, tags and viewed mark, its threads counted, and a viewed mark
+   * GitHub didn't take, with "Try again", which marks it again as `e` does.
+   */
+  const headerFor = (entry: Entry) => {
+    const header = headerOf(entry.versions, markOf(entry), placed.counts.get(entry.id));
+    const failed = viewedFailureOf(marks, entry.versions.path, entry.versions.previous);
+    if (failed) header.problem = { ...failed, command: 'diff.markViewed' };
+    return header;
+  };
   /**
    * Files the reader marked viewed, or cleared, here: how they show is theirs to say now, so a
    * mark that changes again, as when GitHub didn't take it, doesn't open or close them.
@@ -489,7 +501,7 @@ export function draw(options: DrawOptions): Drawing {
       menu: (target, x, y) => {
         openMenu(target, { x, y });
       },
-      // "Read it in the overview": a jump, from the line the note is under.
+      // "Show in overview": a jump, from the line the note is under.
       explained(block, line) {
         if (explainer()?.read(tab.id, block)) {
           keys.history.record(entryAt({ kind: 'line', at: line }));

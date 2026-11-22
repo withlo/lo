@@ -189,44 +189,37 @@ function samePaths(
   return a.size === b.size && [...a].every((path) => b.has(path));
 }
 
-/** The toast for a toggle whose write failed, as `login`: what couldn't be done and why. */
+/**
+ * Why a toggle's write failed, as `login`: the reason under the title the window gives it, such as
+ * "Couldn’t mark wrap.ts viewed". The window shows GitHub's mark again.
+ */
 export function writeFailed(toggle: ViewedToggle, login: string, error: GithubError): string {
-  const what = toggle.mark
-    ? `mark ${toggle.path} viewed`
-    : `clear the viewed mark on ${toggle.path}`;
-  return `Couldn't ${what}: ${whyWriteFailed(toggle, login, error)}. It shows GitHub's mark again.`;
-}
-
-function whyWriteFailed(toggle: ViewedToggle, login: string, error: GithubError): string {
   const { detail } = error;
   switch (detail.kind) {
     case 'network':
-      return "Lo can't reach GitHub";
-    case 'rateLimited':
-      return detail.secondary
-        ? 'GitHub asked Lo to slow down'
-        : `${login} has used up GitHub's rate limit`;
+      return 'Offline.';
+    case 'rateLimited': {
+      const reset = detail.secondary ? undefined : detail.reset;
+      return reset === undefined
+        ? 'GitHub’s rate limit was reached.'
+        : `GitHub’s rate limit resets at ${timeOfDay(reset * 1000)}.`;
+    }
     case 'unauthorized':
-      return `${login} is signed out`;
+      return `${login} is signed out.`;
     case 'tokenUnavailable':
-      return `${login}'s token couldn't be read`;
+      return `${login}’s token couldn’t be read.`;
     case 'notFound':
-      return `${login} can't see this pull request`;
+      return `${login} can’t see this pull request.`;
     case 'graphql': {
-      const messages = detail.errors.map((graphqlError) => graphqlError.message).join('; ');
       const typed = (type: string): boolean =>
         detail.errors.some((graphqlError) => graphqlError.type === type);
       // GitHub's answer for a path the pull request doesn't list.
-      if (typed('UNPROCESSABLE')) {
-        return `GitHub doesn't list ${toggle.path} in this pull request (${messages})`;
-      }
-      if (typed('FORBIDDEN')) return `${login} isn't allowed to (${messages})`;
-      return `GitHub said: ${messages}`;
+      if (typed('UNPROCESSABLE')) return 'GitHub doesn’t list this file in this pull request.';
+      if (typed('FORBIDDEN')) return `${login} doesn’t have permission.`;
+      return 'GitHub returned an error.';
     }
     case 'api':
-      return detail.status === 403
-        ? `${login} isn't allowed to (${detail.message})`
-        : error.message;
+      return detail.status === 403 ? `${login} doesn’t have permission.` : error.message;
     case 'ssoRequired':
     case 'oauthAppRestricted':
     case 'inconsistent':
@@ -234,8 +227,15 @@ function whyWriteFailed(toggle: ViewedToggle, login: string, error: GithubError)
     case 'decode':
       return error.message;
     default:
-      throw new Error(`a GitHub error Lo doesn't know: ${JSON.stringify(detail satisfies never)}`);
+      throw new Error(
+        `a GitHub error Lo doesn't know: ${JSON.stringify(detail satisfies never)} (${toggle.path})`,
+      );
   }
+}
+
+/** A time of day, as the system writes one. */
+function timeOfDay(at: number): string {
+  return new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
 /**

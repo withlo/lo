@@ -298,15 +298,16 @@ const ball = (page: Page, path: string) =>
  */
 function closed(page: Page, path: string): Promise<boolean> {
   return page.evaluate((file) => {
-    const after = document.querySelector('.lo-diffview .cm-content[aria-label="After"]');
-    const header = [...(after?.querySelectorAll('.lo-diffhead') ?? [])].find((each) =>
-      each.textContent?.includes(file),
+    // The left column says what the row under a header does; the right draws its ground.
+    const before = document.querySelector('.lo-diffview .cm-content[aria-label="Before"]');
+    const header = [...(before?.querySelectorAll('.lo-diffhead') ?? [])].find(
+      (each) => each instanceof HTMLElement && each.dataset.path === file,
     );
     let next = header?.nextElementSibling;
     // Past the spacers that keep the sides level.
     while (next?.classList.contains('lo-spacer')) next = next.nextElementSibling;
     return Boolean(
-      next?.classList.contains('lo-filenote') && next.textContent?.includes('Expand file'),
+      next?.classList.contains('lo-filerow') && next.textContent?.includes('Expand file'),
     );
   }, path);
 }
@@ -314,9 +315,9 @@ function closed(page: Page, path: string): Promise<boolean> {
 /** A file's viewed ball in its header. */
 const headerBall = (page: Page, path: string) =>
   page
-    .locator('.lo-diffview .lo-diffhead', { hasText: path })
-    .first()
-    .locator('.lo-diffhead__ball');
+    .locator(`.lo-diffview .cm-editor .lo-diffhead[data-path="${path}"]`)
+    .locator('.lo-diffhead__ball')
+    .first();
 
 /** How far down the page the diff's scrolling box starts, how tall it is, and its scroll. */
 function box(page: Page): Promise<{ top: number; height: number; scroll: number; end: number }> {
@@ -494,8 +495,8 @@ async function watchHeader(page: Page, id: string): Promise<() => Promise<Header
 function headerHeight(page: Page, path: string): Promise<number | undefined> {
   return page.evaluate((file) => {
     const after = document.querySelector('.lo-diffview .cm-content[aria-label="After"]');
-    const header = [...(after?.querySelectorAll('.lo-diffhead') ?? [])].find((each) =>
-      each.textContent?.includes(file),
+    const header = [...(after?.querySelectorAll('.lo-diffhead') ?? [])].find(
+      (each) => each instanceof HTMLElement && each.dataset.path === file,
     );
     return header?.closest('.cm-content > *')?.getBoundingClientRect().height;
   }, path);
@@ -772,7 +773,9 @@ test('a file that comes to show what changed since after the diff is drawn moves
     expect(await page.evaluate(() => window.loDiff?.filesOnScreen())).toEqual(before.onScreen);
     expect(await page.evaluate(() => window.loDiff?.draws)).toBe(draws);
     // Its header says it changed since, in place.
-    const header = page.locator('.lo-diffview .lo-diffhead', { hasText: 'src/parser.ts' }).first();
+    const header = page
+      .locator('.lo-diffview .cm-editor .lo-diffhead--end[data-path="src/parser.ts"]')
+      .first();
     await expect(header).toContainText('since r1');
     await expect(header.locator('.lo-diffhead__ball')).toHaveClass(/is-stale/);
   } finally {
