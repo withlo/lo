@@ -113,12 +113,7 @@ export function notices(): readonly Note[] {
  * name. Several reasons are a line each.
  */
 export function refuse(reason: string): void {
-  // A reason written as one sentence, for where it shows under something else, loses its full
-  // stop here, where it stands alone. One of several sentences keeps them all.
-  const said = reason
-    .split('\n')
-    .map((line) => (/[.!?…] /.test(line) ? line : line.replace(/\.$/, '')));
-  show({ title: said.join('\n'), body: '' });
+  show({ title: reason, body: '' });
 }
 
 /**

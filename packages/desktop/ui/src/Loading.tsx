@@ -1,3 +1,4 @@
+import { cva } from 'class-variance-authority';
 import { useEffect, useState } from 'react';
 
 import { Button } from './Button.tsx';
@@ -26,12 +27,17 @@ export interface LoadingProps {
    * When the wait began, as `Date.now()` gives it, where that was before this was drawn. A wait
    * that one view after another draws, as a tab's does while it opens, counts from here in each of
    * them, so the mark doesn't go and come back, and what's slow is said eight seconds into the
-   * wait, not into its last view. Without it the wait begins as this is drawn.
+   * wait, not into its last view. The mark is where it would be had it gone round since then, and
+   * what the wait already showed is there at once. Without it the wait begins as this is drawn.
    */
   since?: number | undefined;
 }
 
 type Stage = 'early' | 'waiting' | 'slow';
+
+const lineOf = cva('m-0 min-h-1lh text-center text-fg-muted text-ui', {
+  variants: { swaps: { true: 'move-swap', false: '' } },
+});
 
 /** How far a wait has got, `waited` milliseconds in. */
 function stageAfter(waited: number): Stage {
@@ -70,6 +76,10 @@ export function Loading({ status, slow, onCancel, cancelKeys, since }: LoadingPr
 
   const stage = stageAfter(wait.waited);
   const late = stage === 'slow';
+  const line = late && slow !== undefined ? slow : status;
+  // What was already showing as this was drawn, in a wait another view drew before: it's there at
+  // once, with nothing coming in again.
+  const [found] = useState(() => ({ stage: stageAfter(Date.now() - began), line }));
   return (
     <div
       role="status"
@@ -77,17 +87,25 @@ export function Loading({ status, slow, onCancel, cancelKeys, since }: LoadingPr
     >
       {stage !== 'early' && (
         <>
-          <LogoMotion play="meld" className="size-48 move-swap" decorative />
+          <LogoMotion
+            play="meld"
+            since={began + LOADING_DELAY_MS}
+            className={found.stage === 'early' ? 'size-48 move-swap' : 'size-48'}
+            decorative
+          />
           <div className="flex flex-col items-center gap-12">
+            {/* A new line swaps in under the mark, which keeps going round. */}
             <p
-              key={late && slow !== undefined ? 'slow' : 'status'}
-              className="m-0 min-h-1lh move-swap text-center text-fg-muted text-ui"
+              key={line}
+              className={lineOf({ swaps: found.stage === 'early' || found.line !== line })}
             >
-              {late && slow !== undefined ? slow : status}
+              {line}
             </p>
             {/* Its room is kept from the start, so nothing shifts when it comes. */}
             {onCancel !== undefined && (
-              <div className={late ? 'move-swap' : 'invisible'}>
+              <div
+                className={late ? (found.stage === 'slow' ? undefined : 'move-swap') : 'invisible'}
+              >
                 <Button size="sm" onClick={onCancel} tabIndex={late ? undefined : -1}>
                   Cancel
                   {cancelKeys && <Key keys={cancelKeys} decorative />}

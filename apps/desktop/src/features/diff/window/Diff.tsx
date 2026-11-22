@@ -212,9 +212,10 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
 }
 
 /**
- * What the middle says until the diff is drawn. With the files ready, it says nothing unless
- * `threads` says the view has waited a while for its threads; otherwise all that's left is the
- * page's nonce, a moment on each switch back to the tab.
+ * What the middle shows until the diff is drawn. While the tab opens and its files are read, it's
+ * the tab's own wait, which this view carries on from whichever drew it before: one mark from the
+ * tab opening until the diff is there, over what's read now. A diff with nothing to draw says why.
+ * `threads` says the view has waited a while for its threads.
  */
 function Waiting({
   tab,
@@ -226,31 +227,29 @@ function Waiting({
   threads: boolean;
 }) {
   const pull = usePull(tab.id);
-  const { ready, state, progress } = snapshot;
-  // Until the tab knows its head, it's still opening: the tab's own wait, which this view carries
-  // on from whichever drew it before.
-  if (!pull?.shown && !pull?.problem) {
-    return (
-      <div className="min-h-0 flex-1">
-        <MiddlePlaceholder tab={tab} />
-      </div>
-    );
-  }
-  let text: string | undefined = 'Reading what the pull request changes…';
+  const { state } = snapshot;
+  let said: string | undefined;
   // It can't open, and the tab's banner says why.
-  if (!pull?.shown) text = 'Nothing to show yet.';
-  else if (state?.waiting) text = state.waiting;
+  if (!pull?.shown) said = pull?.problem ? 'Nothing to show yet.' : undefined;
+  else if (state?.waiting) said = state.waiting;
   else if (state?.files?.length === 0) {
-    text =
+    said =
       state.comparison === null
         ? 'The pull request changes no files.'
         : 'No file changed between these revisions.';
-  } else if (state?.problem && state.files === null) text = state.problem;
-  else if (ready) text = threads ? 'Reading the review threads…' : undefined;
-  else if (progress.of > 0) text = `Diffing the files: ${progress.done} of ${progress.of}…`;
+  } else if (state?.problem && state.files === null) said = state.problem;
+  if (said !== undefined) {
+    return (
+      <div className="grid min-h-0 flex-1 place-items-center p-32 text-center text-fg-muted text-ui">
+        <p className="max-w-read-measure">{said}</p>
+      </div>
+    );
+  }
+  let status: string | undefined;
+  if (pull?.shown) status = threads ? 'Reading review threads…' : 'Reading changed files…';
   return (
-    <div className="grid min-h-0 flex-1 place-items-center p-32 text-center text-fg-muted text-ui">
-      {text === undefined ? null : <p className="max-w-read-measure">{text}</p>}
+    <div className="min-h-0 flex-1">
+      <MiddlePlaceholder tab={tab} status={status} />
     </div>
   );
 }

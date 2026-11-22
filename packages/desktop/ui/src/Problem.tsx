@@ -44,8 +44,7 @@ const problem = cva('min-w-0 text-ui', {
   variants: {
     layout: {
       view: 'flex h-full flex-col items-center justify-center gap-12 p-32 text-center',
-      inline:
-        'flex flex-col gap-8 rounded-md border border-danger-border bg-danger-bg px-12 py-8 text-small',
+      inline: 'flex flex-col rounded-md border border-danger-border bg-danger-bg p-12 text-small',
     },
   },
 });
@@ -109,12 +108,17 @@ export function Problem({ title, reason, action, details, layout = 'inline' }: P
             <path d="M7.13 2.5a1 1 0 0 1 1.74 0l5.2 9.5a1 1 0 0 1-.87 1.5H2.8a1 1 0 0 1-.87-1.5Z" />
             <path d="M8 6.25v3M8 11.25v.01" />
           </svg>
-          <p role="alert" className="m-0 min-w-0 flex-1">
-            <strong className="font-semibold">{title}</strong>
-            {reason !== undefined && <span className="text-fg-muted"> {reason}</span>}
-          </p>
+          {/* What failed on a line of its own, and why under it. */}
+          <div role="alert" className="flex min-w-0 flex-1 flex-col">
+            <p className="m-0 font-semibold text-fg">{title}</p>
+            {/* The space is for what reads the alert as one run of text; it takes no room. */}
+            {reason !== undefined && ' '}
+            {reason !== undefined && <p className="m-0 text-fg-muted">{reason}</p>}
+          </div>
+          {/* On the title's line, and no taller than it, so the box is as deep under its words
+              as over them. */}
           {(act || more) && (
-            <div className="flex flex-none items-center gap-6">
+            <div className="flex h-1lh flex-none items-center gap-6">
               {more}
               {act}
             </div>
@@ -124,11 +128,14 @@ export function Problem({ title, reason, action, details, layout = 'inline' }: P
       {details !== undefined && (
         <div id={detailsId} className={view ? 'w-full max-w-read-measure' : undefined}>
           <Collapse open={detailed}>
-            <div className="flex items-start gap-8 rounded-sm bg-bg-well p-8 text-start">
-              <pre className="m-0 problem-details min-w-0 flex-1 overflow-auto wrap-anywhere whitespace-pre-wrap text-fg-muted code-small">
-                {details}
-              </pre>
-              <CopyButton size="sm" onCopy={() => copy(details)} />
+            {/* Its gap is inside what opens, so a closed one takes no room. */}
+            <div className={view ? undefined : 'pt-8'}>
+              <div className="flex items-start gap-8 rounded-sm bg-bg-well p-8 text-start">
+                <pre className="m-0 problem-details min-w-0 flex-1 overflow-auto wrap-anywhere whitespace-pre-wrap text-fg-muted code-small">
+                  {details}
+                </pre>
+                <CopyButton size="sm" onCopy={() => copy(details)} />
+              </div>
             </div>
           </Collapse>
         </div>

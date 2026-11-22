@@ -63,7 +63,7 @@ export type ServerState =
 /** What the details offer to do about trust. */
 export interface ServerTrust {
   /**
-   * "Trust this repo…" and "Trust this PR…" ask in a dialog of main's, so they end in an ellipsis,
+   * "Trust repo…" and "Trust this PR…" ask in a dialog of main's, so they end in an ellipsis,
    * and the details stay open while Lo asks; "Stop trusting this repo" takes it away at once, and
    * closes them.
    */
@@ -336,7 +336,7 @@ function detail(raw: string, state: ServerState): ReactNode {
 function trustLabel(action: ServerTrust['action']): string {
   switch (action) {
     case 'repo':
-      return 'Trust this repo…';
+      return 'Trust repo…';
     case 'pr':
       return 'Trust this PR…';
     case 'stop':

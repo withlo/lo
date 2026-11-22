@@ -84,6 +84,17 @@ const panel = (page: Page) => page.locator('[data-lo-scope="merge"]');
 /** The merge's dialog. */
 const dialog = (page: Page) => page.getByTestId('merge-confirm');
 
+/**
+ * Waits for the merge's dialog to ask under `title`: the title is there while Lo still checks, so
+ * this waits for its main button to stop being busy too.
+ */
+async function asks(page: Page, title: string, options: { timeout?: number } = {}): Promise<void> {
+  await expect(dialog(page).getByRole('heading', { name: title, exact: true })).toBeVisible(
+    options,
+  );
+  await expect(dialog(page).locator('button[aria-busy="true"]')).toHaveCount(0);
+}
+
 /** The note Lo says at the bottom of the window. */
 const said = (page: Page, text: string) => page.getByRole('status').filter({ hasText: text });
 
@@ -126,7 +137,7 @@ test('`⏎` confirms a squash with the title typed, never on a held key, and a t
 
   // Held down, `⏎` opens the confirmation, and its repeats confirm nothing.
   await page.keyboard.down('Enter');
-  await expect(dialog(page)).toContainText(`Merge #${number} into merge/5/base?`);
+  await asks(page, `Merge #${number}`);
   await expect(panel(page)).toBeHidden();
   await page.keyboard.down('Enter');
   await page.keyboard.down('Enter');
@@ -153,7 +164,7 @@ for (const [{ number }, method, button] of [
     await panelOf(page, number);
     await roundTo(page, method);
     await page.keyboard.press('Enter');
-    await expect(dialog(page)).toContainText(`Merge #${number} into merge/5/base?`);
+    await asks(page, `Merge #${number}`);
     expect(await facts(page)).toMatchObject({ Method: method, Into: 'merge/5/base' });
     await expect(dialog(page).getByRole('button', { name: button })).toBeVisible();
     await page.keyboard.press('Enter');
@@ -173,7 +184,7 @@ test.describe('with its head moved just before the press', () => {
     const { number } = pulls.moved;
     await panelOf(page, number);
     await page.keyboard.press('Enter');
-    await expect(dialog(page)).toContainText(`Merge #${number} into merge/5/base?`);
+    await asks(page, `Merge #${number}`);
     await page.keyboard.press('Enter');
     const alert = dialog(page).getByRole('alert');
     await expect(alert).toContainText(`Couldn’t merge #${number}.`);
@@ -197,7 +208,7 @@ test.describe('with GitHub’s answer to the merge lost', () => {
     const { number } = pulls.moved;
     await panelOf(page, number);
     await page.keyboard.press('Enter');
-    await expect(dialog(page)).toContainText(`Merge #${number} into merge/5/base?`);
+    await asks(page, `Merge #${number}`);
     await page.keyboard.press('Enter');
     const alert = dialog(page).getByRole('alert');
     await expect(alert).toContainText(`Lo can’t tell whether #${number} merged.`);
@@ -226,7 +237,7 @@ test.describe('into a branch with a merge queue', () => {
     await panelOf(page, number, 'Ready for the queue');
     await expect(panel(page)).toContainText('none ahead');
     await page.keyboard.press('Enter');
-    await expect(dialog(page)).toContainText(`Add #${number} to the merge queue for e4/queued?`);
+    await asks(page, `Add #${number} to merge queue`);
     await expect(dialog(page)).toContainText('The queue’s settings choose the method');
     expect(await facts(page)).toMatchObject({ Into: 'e4/queued' });
     await page.keyboard.press('Enter');

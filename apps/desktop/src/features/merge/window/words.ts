@@ -19,6 +19,7 @@ import type {
   Named,
   Off,
   Placement,
+  PlanKind,
   Progress,
   Reviewer,
   StackLayer,
@@ -993,29 +994,33 @@ export function cantMerge(state: MergeState, number: number): string | undefined
 }
 
 /**
- * The confirmation's title: "Merge #4821 into main?", "Add #4821 to the merge queue for main?",
- * "Merge #4821 when it’s ready?", "Merge #4821 without the rules?", and for a stack's layer, "Merge
- * 3 layers into main?"
+ * The dialog's title, the same from the check until the merge is done: "Merge #4821", "Add #4821
+ * to merge queue", "Turn on auto-merge", "Merge #4821 without the rules", and for a stack's
+ * `layers`, "Merge 3 layers".
  */
-export function confirmTitle(
-  plan: Pick<MergePlan, 'kind' | 'number' | 'base'> & { readonly together?: Together | null },
-): string {
-  const layers = layersOf(plan.together ?? null);
-  const what = layers > 1 ? `${layers} layers` : `#${plan.number}`;
-  switch (plan.kind) {
+export function mergeTitle(kind: PlanKind, number: number, layers: number): string {
+  const what = layers > 1 ? `${layers} layers` : `#${number}`;
+  switch (kind) {
     case 'merge':
-      return `Merge ${what} into ${plan.base}?`;
+      return `Merge ${what}`;
     case 'enqueue':
-      return `Add ${what} to the merge queue for ${plan.base}?`;
+      return `Add ${what} to merge queue`;
     case 'autoMerge':
     case 'whenReady':
-      return `Merge #${plan.number} when it’s ready?`;
+      return 'Turn on auto-merge';
     case 'override':
-      return `Merge #${plan.number} without the rules?`;
+      return `Merge #${number} without the rules`;
     default:
-      plan.kind satisfies never;
-      return `Merge #${plan.number} into ${plan.base}?`;
+      kind satisfies never;
+      return `Merge ${what}`;
   }
+}
+
+/** A plan's {@link mergeTitle}. */
+export function confirmTitle(
+  plan: Pick<MergePlan, 'kind' | 'number'> & { readonly together?: Together | null },
+): string {
+  return mergeTitle(plan.kind, plan.number, layersOf(plan.together ?? null));
 }
 
 /** What the confirmation's main button says: "Squash and merge", or "Merge 3 layers" for a stack. */

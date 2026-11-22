@@ -30,7 +30,11 @@ export interface DialogAction {
   keys?: readonly string[] | undefined;
   /** `danger` for what destroys or refuses. */
   tone?: 'primary' | 'danger' | undefined;
-  /** Why it can't be run yet, said to a screen reader; the button is greyed and does nothing. */
+  /**
+   * Why it can't be run yet, in a few words with no full stop: "Getting code". The button is
+   * greyed and does nothing, with the reason as its tooltip and said to a screen reader. It keeps
+   * focus, so `⏎` runs it the moment it can.
+   */
   disabled?: string | undefined;
   /**
    * What the button says after a failure, where running it again isn't the way on: "Sign in
@@ -74,6 +78,12 @@ export interface DialogProps {
   /** The key on the button that leaves, as the system shows it: `['Esc']`. */
   leaveKeys?: readonly string[] | undefined;
   /**
+   * Why it can't be left while its `state` is `working`, in a few words with no full stop: "The
+   * account check can’t be stopped". It's the tooltip of Cancel, which is dimmed then. "Wait for
+   * it to finish" without one.
+   */
+  stays?: string | undefined;
+  /**
    * A foot of its own, in place of the one `action` draws, for a dialog that only shows something:
    * what it acts as on the left, then a {@link DialogSpacer}, then its buttons, each with its key.
    */
@@ -116,8 +126,19 @@ const popup = cva(
 export function Dialog(props: DialogProps) {
   const { open, onOpenChange, initialFocus, onKeyDown, container, onClosed, testId } = props;
   // What it shows stays as it was while it leaves.
-  const { title, description, children, size, state, action, problem, note, leaveKeys, foot } =
-    useHeld(open, props);
+  const {
+    title,
+    description,
+    children,
+    size,
+    state,
+    action,
+    problem,
+    note,
+    leaveKeys,
+    stays,
+    foot,
+  } = useHeld(open, props);
   const returnFocus = useReturnFocus(open);
   useOnClose(open, () => {
     returnFocus();
@@ -175,9 +196,11 @@ export function Dialog(props: DialogProps) {
                 )}
               </div>
             </div>
+            {/* It takes what height the panel has to spare, so while the panel moves to a new
+                height the foot stays on its bottom edge. */}
             <div
               ref={body}
-              className="flex min-h-0 flex-col gap-12 overflow-auto px-20 pt-12 pb-16"
+              className="flex min-h-0 flex-auto flex-col gap-12 overflow-auto px-20 pt-12 pb-16"
             >
               {children}
               {foot === undefined && state === 'failed' && problem !== undefined && (
@@ -193,10 +216,10 @@ export function Dialog(props: DialogProps) {
                   <DialogSpacer />
                   {state !== 'done' && (
                     <Button
-                      aria-disabled={state === 'working' ? true : undefined}
-                      onClick={() => {
-                        if (state !== 'working') onOpenChange(false);
-                      }}
+                      // Dimmed while it works, with why as its tooltip.
+                      disabled={state === 'working'}
+                      hint={state === 'working' ? (stays ?? 'Wait for it to finish') : null}
+                      onClick={() => onOpenChange(false)}
                     >
                       {state === 'failed' ? 'Close' : 'Cancel'}
                       {leaveKeys && <Key keys={leaveKeys} decorative />}
@@ -215,6 +238,7 @@ export function Dialog(props: DialogProps) {
                       working={action.working}
                       aria-disabled={action.disabled === undefined ? undefined : true}
                       aria-description={action.disabled}
+                      hint={action.disabled ?? null}
                       onClick={() => {
                         if (action.disabled === undefined) action.onRun();
                       }}

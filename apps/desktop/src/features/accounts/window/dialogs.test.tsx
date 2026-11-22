@@ -159,6 +159,11 @@ describe('the sign-in dialog', () => {
     act(() => bridge.push('accounts.signingIn', { kind: 'checking', id: 7 }));
     expect(dialog('sign-in')?.textContent).toContain('FAKE-1234');
     expect(button(shown, 'Copy and open GitHub').getAttribute('aria-busy')).toBe('true');
+    // The check can't be stopped, and Cancel says so.
+    expect(button(shown, 'Cancel').getAttribute('aria-description')).toBe(
+      'The account check can’t be stopped',
+    );
+    expect(shown?.textContent).not.toContain('Enter this code');
     // The busy button is the one thing that shows the wait: no line with a ring of its own.
     expect(status()).toBe('');
     expect(shown?.querySelectorAll('.spinner')).toHaveLength(1);
@@ -189,13 +194,18 @@ describe('the sign-in dialog', () => {
     act(() => openSignIn());
     await settle();
     const shown = dialog('sign-in');
-    // The code's box waits as a skeleton, and nothing else shows the wait.
-    expect(shown?.querySelector('[aria-busy="true"] .skeleton')).not.toBeNull();
-    expect(status()).toBe('');
-    expect(shown?.querySelectorAll('.spinner')).toHaveLength(0);
+    // The line says the code is coming, and is the one thing that shows the wait: the code's box
+    // is empty, and the line under the title has nowhere to send the reader yet.
+    expect(status()).toBe('Getting code…');
+    expect(shown?.querySelectorAll('.spinner')).toHaveLength(1);
+    expect(shown?.querySelector('[aria-busy="true"] .device-code')).not.toBeNull();
+    expect(shown?.querySelector('[role="img"]')).toBeNull();
+    expect(shown?.querySelector('.skeleton')).toBeNull();
+    expect(shown?.textContent).not.toContain('Enter this code');
     // Nothing to run yet: the main button is dimmed, and says why to a screen reader.
     const main = button(shown, 'Copy and open GitHub');
     expect(main.getAttribute('aria-disabled')).toBe('true');
+    expect(main.getAttribute('aria-description')).toBe('Getting code');
     click(main);
     await settle();
     expect(bridge.calls).not.toContainEqual(['accounts.openGithub', { id: 7 }]);
@@ -207,6 +217,7 @@ describe('the sign-in dialog', () => {
     expect(button(shown, 'Copy and open GitHub')).toBe(main);
     expect(main.getAttribute('aria-disabled')).toBeNull();
     expect(shown?.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(shown?.textContent).toContain('Enter this code at github.com/login/device');
     // The key for the code presses its Copy button, which says so itself, in the dialog.
     act(() => pressCopyCode());
     await settle();
@@ -296,6 +307,9 @@ describe('the sign-in dialog', () => {
     );
     expect(button(shown, 'Quit Lo')).toBeDefined();
     expect(button(shown, 'Close')).toBeDefined();
+    // No code came, so there's no box for one, and no line saying where to type it.
+    expect(shown?.querySelector('.device-code')?.closest('[inert]')).not.toBeNull();
+    expect(shown?.textContent).not.toContain('Enter this code');
   });
 
   it('says why GitHub ended it, once, and offers the way on', async () => {
@@ -314,8 +328,11 @@ describe('the sign-in dialog', () => {
       }),
     );
     expect(said()).toBe('Couldn’t sign in The code expired.');
-    // The code is gone with the sign-in, and its place stays.
-    expect(shown?.querySelector('[role="img"]')).toBeNull();
+    // The code stays where it was, dimmed, with nothing left to do with it: no Copy, and no line
+    // saying where to type it.
+    expect(shown?.querySelector('[role="img"]')?.className).toContain('text-fg-disabled');
+    expect(button(shown, 'Copy').closest('.invisible')).not.toBeNull();
+    expect(shown?.textContent).not.toContain('Enter this code');
     expect(status()).toBe('');
     expect(button(shown, 'Try again')).toBeDefined();
     click(button(shown, 'Try again'));
@@ -330,7 +347,8 @@ describe('the sign-in dialog', () => {
       }),
     );
     expect(said()).toBe('Couldn’t sign in GitHub granted less access than the sign-in asked for.');
-    expect(button(shown, 'Sign in again')).toBeDefined();
+    // The sign-in is what failed, so the way on is to try it again.
+    expect(button(shown, 'Try again')).toBeDefined();
   });
 
   it('says why it ended, and tries again', async () => {

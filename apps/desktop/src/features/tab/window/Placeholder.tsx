@@ -3,13 +3,16 @@
 // A view whose shape is known waits as a skeleton instead, and a control at work is busy.
 //
 // A tab that's opening is one wait, whichever view draws it: the tab before it has a view, the
-// overview while it chooses what to open on, the diff until the pull request is read. Each draws
-// this, and each takes the wait up where the last left it.
+// overview while it chooses what to open on, the diff until its files are drawn. Each draws this,
+// and each takes the wait up where the last left it: the mark keeps going round, and only its line
+// changes, to what the view reads.
 
 import { Loading, LOADING_DELAY_MS } from '@lo/ui';
+import { keyLabels } from '@lo/ui/commands';
 import { useEffect, useState } from 'react';
 import { useStore } from 'zustand';
 
+import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { main } from './main.ts';
 import { pullsStore } from './store.ts';
 
@@ -50,34 +53,40 @@ function useWaitSince(tab: string): number {
   return since;
 }
 
+/** The key that closes a tab now, as this system shows it, if it has one. */
+function closeKeys(): string[] | undefined {
+  const [first] = registry().keysOf('tab.close');
+  return first && keyLabels(first, registry().system);
+}
+
 /**
  * What the middle shows until a middle view is there, or has something to draw. Nothing for the
- * wait's first moments, so a pull request that opens at once shows no wait at all. One GitHub
- * hasn't answered for after eight seconds says so, and offers to give up, which closes its tab. A
- * tab that can't open draws nothing here: its banner says why, once.
+ * wait's first moments, so a pull request that opens at once shows no wait at all. Its line is
+ * "Opening pull request…" unless the view that draws it gives its own `status`, for what it reads
+ * once the pull request is there. One GitHub hasn't answered for after eight seconds says so. From
+ * then it offers to give up, which closes its tab. A tab that can't open draws nothing here: its
+ * banner says why, once.
  */
-export function Placeholder({ tab }: { tab: string }) {
+export function Placeholder({ tab, status }: { tab: string; status?: string | undefined }) {
   const view = useStore(pullsStore, (state) => state.views.get(tab));
   const since = useWaitSince(tab);
+  useKeys();
   const waiting = !view?.problem;
-  // With its header there, GitHub has answered, and what's left is Lo's own work.
-  const unanswered = !view?.header;
   return (
     <div className="h-full" data-lo-placeholder aria-busy={waiting || undefined}>
       {waiting && (
         <Loading
           since={since}
-          status="Opening pull request…"
-          slow={unanswered ? 'Waiting for GitHub…' : undefined}
-          onCancel={
-            unanswered
-              ? () => {
-                  main()
-                    .close({ id: tab })
-                    .catch((error: unknown) => console.error("The tab didn't close:", error));
-                }
-              : undefined
-          }
+          status={status ?? 'Opening pull request…'}
+          // With its header there, or a view reading what came with it, GitHub has answered, and
+          // what's left is Lo's own work.
+          slow={view?.header || status !== undefined ? undefined : 'Waiting for GitHub…'}
+          onCancel={() => {
+            main()
+              .close({ id: tab })
+              .catch((error: unknown) => console.error("The tab didn't close:", error));
+          }}
+          cancelKeys={closeKeys()}
         />
       )}
     </div>

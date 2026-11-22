@@ -19,6 +19,7 @@ import { Popover } from './Popover.tsx';
 import { Problem } from './Problem.tsx';
 import { Switch } from './Switch.tsx';
 import { TOAST_MAX, TOAST_MS, ToastStack, type StackedToast } from './Toast.tsx';
+import { TOOLTIP_DELAY, TooltipGroup } from './Tooltip.tsx';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -168,6 +169,49 @@ describe('a control that can’t be used', () => {
   });
 });
 
+describe('a button that can’t be pressed now', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('is dimmed and out of the tab order, and says why in its tooltip and to a screen reader', () => {
+    const run = vi.fn<() => void>();
+    const host = render(
+      <div className="lo-app">
+        <TooltipGroup>
+          <Button disabled hint="Sign in to comment" hintKeys={['c']} onClick={run}>
+            Comment
+          </Button>
+        </TooltipGroup>
+      </div>,
+    );
+    const button = host.querySelector('button')!;
+    // Said to be disabled, not made so: a `disabled` button gets no pointer, and so no tooltip.
+    expect(button.disabled).toBe(false);
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.tabIndex).toBe(-1);
+    expect(button.getAttribute('aria-description')).toBe('Sign in to comment');
+    expect(button.className).toContain('not-aria-busy:aria-disabled:text-fg-disabled');
+    click(button);
+    expect(run).not.toHaveBeenCalled();
+    // The pointer resting on it brings the reason, alone: not its key, which does nothing now.
+    act(() => {
+      button.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: host }));
+      button.dispatchEvent(new MouseEvent('mouseenter', { relatedTarget: host }));
+      button.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+      vi.advanceTimersByTime(TOOLTIP_DELAY);
+    });
+    expect(host.querySelector('.tooltip')?.textContent).toBe('Sign in to comment');
+  });
+
+  it('is plainly disabled with no reason to give', () => {
+    const host = render(<Button disabled>Open</Button>);
+    const button = host.querySelector('button')!;
+    expect(button.disabled).toBe(true);
+    expect(button.hasAttribute('aria-disabled')).toBe(false);
+    expect(button.hasAttribute('aria-description')).toBe(false);
+  });
+});
+
 describe('Problem', () => {
   it('says what failed, why and what to do, and keeps what came back behind Details', async () => {
     const again = vi.fn<() => void>();
@@ -184,7 +228,10 @@ describe('Problem', () => {
     );
     // The alert is what failed and why, and not the buttons after it.
     const alert = host.querySelector('[role="alert"]')!;
-    expect(alert.textContent).toBe('Couldn’t fetch the diff GitHub didn’t answer.');
+    expect([...alert.children].map((line) => line.textContent)).toEqual([
+      'Couldn’t fetch the diff',
+      'GitHub didn’t answer.',
+    ]);
     expect(alert.querySelector('button')).toBeNull();
     expect(host.querySelector('pre')).toBeNull();
     const details = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Details')!;
@@ -288,7 +335,13 @@ describe('a dialog that does something', () => {
     rerender(host, dialog('working'));
     const merging = named('Merging')!;
     expect(merging.getAttribute('aria-busy')).toBe('true');
-    expect(named('Cancel')?.getAttribute('aria-disabled')).toBe('true');
+    // Cancel is dimmed, and says why to a screen reader and in its tooltip. It's the button it
+    // was, and so is the main one, which keeps focus.
+    const cancel = named('Cancel');
+    expect(cancel?.getAttribute('aria-disabled')).toBe('true');
+    expect(cancel?.getAttribute('aria-description')).toBe('Wait for it to finish');
+    expect(cancel?.tabIndex).toBe(-1);
+    expect(document.activeElement).toBe(merging);
     click(merging);
     expect(run).toHaveBeenCalledTimes(1);
 
@@ -303,6 +356,33 @@ describe('a dialog that does something', () => {
     rerender(host, dialog('done'));
     expect(buttons(popup())).toEqual(['Done']);
     expect(await missingRules(document.body)).toEqual([]);
+  });
+
+  it('keeps focus on a main button that can’t run yet, which says why, until it can', async () => {
+    const waiting = (disabled?: string) => (
+      <Dialog
+        open
+        onOpenChange={() => {}}
+        title="Sign in to GitHub"
+        state="ask"
+        action={{ label: 'Open GitHub', onRun: run, disabled }}
+      />
+    );
+    const host = render(waiting('Getting code'));
+    await settle();
+    const main = named('Open GitHub')!;
+    expect(document.activeElement).toBe(main);
+    expect(main.getAttribute('aria-disabled')).toBe('true');
+    expect(main.getAttribute('aria-description')).toBe('Getting code');
+    click(main);
+    expect(run).not.toHaveBeenCalled();
+    rerender(host, waiting());
+    // The same button, still with focus, so `⏎` runs it now.
+    expect(named('Open GitHub')).toBe(main);
+    expect(document.activeElement).toBe(main);
+    expect(main.hasAttribute('aria-disabled')).toBe(false);
+    click(main);
+    expect(run).toHaveBeenCalledTimes(1);
   });
 
   it('can’t be left while it works: Esc asks nothing until the work is done', async () => {

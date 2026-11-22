@@ -137,6 +137,51 @@ function confirms(): number {
   return bridge.calls.filter(([channel]) => channel === 'merge.confirm').length;
 }
 
+it('states the merge under one title from the check on, with only its button waiting', async () => {
+  const plan = planOf();
+  const { id, number, login, kind, method, base, head, title } = plan;
+  draw(<MergeConfirm />);
+  act(() =>
+    merging.setState({
+      dialog: {
+        kind: 'planning',
+        id,
+        number,
+        label: 'Squash and merge',
+        title: 'Merge #138',
+        sketch: { id, number, login, kind, method, base, head, title, stack: false },
+      },
+    }),
+  );
+  await until(() => dialog() !== null);
+  const box = dialog()!;
+  const stated = () => ({
+    title: box.querySelector('h2')?.textContent,
+    facts: [...box.querySelectorAll('dt, dd')].map((each) => each.textContent),
+  });
+  const checking = stated();
+  expect(checking.title).toBe('Merge #138');
+  expect(checking.facts).toEqual([
+    'As',
+    expect.stringContaining('rozed-bot'),
+    'Method',
+    'Squash',
+    'Into',
+    'main',
+    'Revision',
+    'aaaaaaa of #138, the one on screen',
+    'Commit',
+    'Rate limit by cost',
+  ]);
+  expect(working()).toBe('Checking…');
+  // The plan comes: the same title over the same rows, and the button can be pressed.
+  act(() =>
+    merging.setState({ dialog: { kind: 'confirm', plan, note: undefined, sending: false } }),
+  );
+  expect(stated()).toEqual(checking);
+  expect(working()).toBeUndefined();
+});
+
 it('states who merges, how, into what and which revision, and nothing of what it won’t do', async () => {
   draw(<MergeConfirm />);
   act(() =>
@@ -146,7 +191,7 @@ it('states who merges, how, into what and which revision, and nothing of what it
   );
   await until(() => dialog() !== null);
   const box = dialog()!;
-  expect(box.textContent).toContain('Merge #138 into main?');
+  expect(box.textContent).toContain('Merge #138');
   expect([...box.querySelectorAll('dt')].map((each) => each.textContent)).toEqual([
     'As',
     'Method',
@@ -175,7 +220,7 @@ it('states who merges, how, into what and which revision, and nothing of what it
       },
     }),
   );
-  expect(box.textContent).toContain('Add #138 to the merge queue for e4/queued?');
+  expect(box.textContent).toContain('Add #138 to merge queue');
   expect(box.textContent).toContain('The queue’s settings choose the method and the message.');
   expect(box.textContent).not.toContain('Method');
   expect(box.textContent).toContain('Add to merge queue');
@@ -425,7 +470,7 @@ it('turning on auto-merge says what GitHub waits for, and what a push before the
   );
   await until(() => dialog() !== null);
   const box = dialog()!;
-  expect(box.textContent).toContain('Merge #138 when it’s ready?');
+  expect(box.textContent).toContain('Turn on auto-merge');
   expect(box.textContent).toContain(
     'GitHub squashes #138 into main once e2e (chromium) and typecheck pass.',
   );
@@ -471,7 +516,7 @@ it('merges past the rules only with the number typed, which it asks for afresh w
   );
   await until(() => dialog() !== null);
   const box = dialog()!;
-  expect(box.textContent).toContain('Merge #138 without the rules?');
+  expect(box.textContent).toContain('Merge #138 without the rules');
   expect(box.textContent).toContain('You can bypass main’s rules in rozed-dev/e2e.');
   expect(box.textContent).toContain('This skips:');
   expect(box.textContent).toContain('2 required checks');
@@ -541,7 +586,7 @@ it('shows the merge main planned in auto-merge’s place when GitHub says it can
     ),
   );
   await until(() => merging.getState().dialog?.kind === 'confirm');
-  expect(dialog()?.textContent).toContain('Merge #138 into main?');
+  expect(dialog()?.textContent).toContain('Merge #138');
   expect(dialog()?.textContent).toContain('It can merge as it is.');
   // Seen here, it needs no banner.
   expect(bridge.calls.find(([channel]) => channel === 'merge.dismiss')?.[1]).toEqual({
@@ -611,7 +656,7 @@ it('lists a GitHub stack’s layers that merge as one, and the one above that st
   );
   await until(() => dialog() !== null);
   const box = dialog()!;
-  expect(box.textContent).toContain('Merge 3 layers into main?');
+  expect(box.textContent).toContain('Merge 3 layers');
   expect(box.textContent).toContain('A GitHub stack merges as one.');
   // Each layer keeps its own commit.
   expect([...box.querySelectorAll('dt')].map((each) => each.textContent)).not.toContain('Commit');

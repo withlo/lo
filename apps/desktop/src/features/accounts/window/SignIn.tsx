@@ -7,16 +7,20 @@
 // the account is checked, and "Done" once it's signed in. What went wrong shows once, above the
 // foot, with GitHub's own words behind Details.
 //
-// Each wait shows once, where it is: the code's box holds a skeleton until there's a code, the line
-// says the sign-in waits for GitHub's page, and the button is busy while the account is checked.
-// No line says a wait that the box or the button already shows.
+// Each wait shows once: the line says the code is coming, then that the sign-in waits for GitHub's
+// page, and the button is busy while the account is checked. No line says a wait that the button
+// already shows, and the code's box is empty until there's a code, with nothing else turning in it.
+//
+// The line under the title says where to type the code only while there's a code to type. A
+// sign-in that ended keeps its code in the box, dimmed; one that ended before any code came has
+// no box.
 
 import {
+  Collapse,
   CopyButton,
   Dialog,
   Key,
   Problem,
-  Skeleton,
   Spinner,
   Swap,
   type DialogAction,
@@ -121,9 +125,8 @@ function failed(why: SignInFailure | 'cancelled', details: string | undefined): 
     why === 'noKeyring'
       ? // Lo looks for one as it starts, so it's started again once one answers.
         { again: 'Quit Lo', onRun: quit }
-      : why === 'missingScopes'
-        ? { again: 'Sign in again', onRun: openSignIn }
-        : { onRun: openSignIn };
+      : // The sign-in is what failed, and starting it over repeats it: "Try again".
+        { onRun: openSignIn };
   return {
     state: 'failed',
     action: { label: 'Copy and open GitHub', keys: labels('enter'), ...way },
@@ -176,6 +179,11 @@ export function SignInView({
     else if (step.state !== 'working' && step.action.disabled === undefined) step.action.onRun();
   };
   const page = dialog?.code?.page;
+  // Where to type the code, while there's one to type. Its line stays, empty, at the other steps,
+  // so nothing moves, and goes with the code's box when the sign-in ended before a code came.
+  let where: string | undefined = '\u00a0';
+  if (dialog?.state?.kind === 'waiting') where = `Enter this code at ${page ?? 'GitHub'}`;
+  else if (dialog !== undefined && endedOf(dialog) && dialog.code === undefined) where = undefined;
   return (
     <Dialog
       open={dialog !== undefined}
@@ -183,11 +191,12 @@ export function SignInView({
         if (!open) closeDialog();
       }}
       title="Sign in with GitHub"
-      description={page === undefined ? 'Enter this code on GitHub' : `Enter this code at ${page}`}
+      description={where}
       state={step?.state}
       action={step?.action}
       problem={step?.problem}
       leaveKeys={labels('esc')}
+      stays="The account check can’t be stopped"
       onKeyDown={onKeyDown}
       container={container}
       testId="sign-in"
@@ -197,54 +206,57 @@ export function SignInView({
   );
 }
 
+/** Whether the sign-in ended without an account. */
+function endedOf({ state, error }: SignInDialog): boolean {
+  return error !== undefined || state?.kind === 'failed' || state?.kind === 'cancelled';
+}
+
 /** The dialog's body, the same at every step: the code, where the sign-in is, what it asks for. */
 function Body({ dialog }: { dialog: SignInDialog }) {
-  const { state, code, unopened, error } = dialog;
+  const { state, code, unopened } = dialog;
   const copy = keyOf('accounts.copyCode');
   const waiting = state?.kind === 'waiting';
-  // The code is of no more use once the sign-in ended without an account.
-  const ended = error !== undefined || state?.kind === 'failed' || state?.kind === 'cancelled';
-  const shown = ended ? undefined : code?.userCode;
+  const ended = endedOf(dialog);
+  // A code stays where it was once it's of no more use, dimmed. With none there's nothing to
+  // keep, and an empty box would read as a field to fill in.
+  const shown = code?.userCode;
   return (
     <>
-      <div
-        className="flex items-center gap-8 rounded-md border border-border bg-bg-well py-12 ps-16 pe-12"
-        // The skeleton in it is how the wait for a code shows, and this is how it's heard.
-        aria-busy={shown === undefined && !ended ? true : undefined}
-      >
-        <Swap id={shown === undefined ? 'none' : 'code'} className="grid min-w-0 flex-1">
-          {/* The room a code takes, before there's one and after it's gone. */}
-          <span aria-hidden="true" className="invisible col-start-1 row-start-1 device-code">
-            XXXX-XXXX
-          </span>
-          {shown !== undefined ? (
-            <span
-              role="img"
-              aria-label={`Code ${shown.split('').join(' ')}`}
-              className={
-                waiting
-                  ? 'col-start-1 row-start-1 device-code text-fg select-all'
-                  : 'col-start-1 row-start-1 device-code text-fg-muted select-all'
-              }
-            >
-              {shown}
+      <Collapse open={shown !== undefined || !ended}>
+        <div
+          className="flex items-center gap-8 rounded-md border border-border bg-bg-well py-12 ps-16 pe-12"
+          // The line under it says the code is coming, and this is how the box is heard meanwhile.
+          aria-busy={shown === undefined && !ended ? true : undefined}
+        >
+          <Swap id={shown === undefined ? 'none' : 'code'} className="grid min-w-0 flex-1">
+            {/* The room a code takes, before there's one. */}
+            <span aria-hidden="true" className="invisible col-start-1 row-start-1 device-code">
+              XXXX-XXXX
             </span>
-          ) : (
-            !ended && (
-              <span className="col-start-1 row-start-1 flex items-center">
-                <Skeleton className="w-1/2" />
+            {shown !== undefined && (
+              <span
+                role="img"
+                aria-label={`Code ${shown.split('').join(' ')}`}
+                // To be typed while the sign-in waits for it, and dimmed once it's of no more use.
+                className={
+                  waiting
+                    ? 'col-start-1 row-start-1 device-code text-fg select-all'
+                    : 'col-start-1 row-start-1 device-code text-fg-disabled select-all'
+                }
+              >
+                {shown}
               </span>
-            )
-          )}
-        </Swap>
-        {/* Its room is kept while there's nothing to copy. */}
-        <span className={waiting ? 'flex-none' : 'invisible flex-none'} {...{ [COPY]: '' }}>
-          <CopyButton variant="secondary" onCopy={copyCode}>
-            Copy
-            {copy !== undefined && <Key keys={copy} decorative />}
-          </CopyButton>
-        </span>
-      </div>
+            )}
+          </Swap>
+          {/* Its room is kept while there's nothing to copy. */}
+          <span className={waiting ? 'flex-none' : 'invisible flex-none'} {...{ [COPY]: '' }}>
+            <CopyButton variant="secondary" onCopy={copyCode}>
+              Copy
+              {copy !== undefined && <Key keys={copy} decorative />}
+            </CopyButton>
+          </span>
+        </div>
+      </Collapse>
       <Status dialog={dialog} />
       {waiting && unopened !== undefined && (
         <Problem title="Couldn’t open GitHub" details={unopened} />
@@ -284,8 +296,8 @@ function Status({ dialog }: { dialog: SignInDialog }) {
 }
 
 function statusOf({ state, error }: SignInDialog, expired: boolean): ReactNode {
-  // Before there's a code, its box waits as a skeleton, and that's the wait shown.
-  if (error !== undefined || state === undefined) return null;
+  if (error !== undefined) return null;
+  if (state === undefined) return <Wait>Getting code…</Wait>;
   switch (state.kind) {
     case 'waiting':
       return expired ? 'The code expired.' : <Wait>Waiting for approval…</Wait>;

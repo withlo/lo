@@ -502,7 +502,7 @@ describe('ServerStatus', () => {
       'Lo runs language servers only on repos you trust. Until then, peek, references and hovers use the syntax index.',
     );
     const buttons = [...open.querySelectorAll('button')];
-    expect(buttons.map(says)).toEqual(['Trust this repo…']);
+    expect(buttons.map(says)).toEqual(['Trust repo…']);
     // The one thing to do has focus, though it has no Restart, and isn't the main button: it asks.
     expect(document.activeElement).toBe(buttons[0]);
     expect(buttons[0]?.className).not.toContain('bg-accent');
@@ -542,10 +542,9 @@ describe('ServerStatus', () => {
     const open = details()!;
     // What failed, then why, said once as an alert, and the button that helps after the reason.
     const alert = open.querySelector('[role="alert"]');
-    expect(alert?.querySelector('strong')?.textContent).toBe(title);
-    expect(alert?.textContent).toBe(`${title} ${message}`);
+    expect([...(alert?.children ?? [])].map((line) => line.textContent)).toEqual([title, message]);
     const buttons = [...open.querySelectorAll('button')];
-    expect(buttons.map(says)).toEqual(['Open settings.json', 'Trust this repo…']);
+    expect(buttons.map(says)).toEqual(['Open settings.json', 'Trust repo…']);
     // The button is back, and still has focus.
     expect(buttons[1]).toBe(button);
     expect(document.activeElement).toBe(button);

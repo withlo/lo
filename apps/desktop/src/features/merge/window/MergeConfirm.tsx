@@ -1,6 +1,6 @@
 // The merge's dialog, in the tab feature's `tab.dialogs` slot, in the merge panel's place: the plan
-// to confirm, with the account, the method, the branch and the revision it merges, then the merge
-// as it goes, and why it didn't, when it didn't. A GitHub stack's merge lists every layer that
+// to confirm, with the account, the method, the branch and the revision it merges, under one title
+// from the moment it opens, then the merge as it goes, and why it didn't, when it didn't. A GitHub stack's merge lists every layer that
 // merges, with where each stands, and then how far GitHub got with each; a chain's, each base
 // branch Lo moves, in order. `⏎` confirms and `Esc` goes back to the panel. A held key confirms
 // nothing, and nor does the press that opened it: only a fresh press of `⏎` once the plan shows.
@@ -52,7 +52,7 @@ import {
   staysShown,
   typeNumber,
 } from './merging.ts';
-import { merging, panels, statuses, type MergeDialog } from './store.ts';
+import { merging, panels, statuses, type MergeDialog, type Sketch } from './store.ts';
 import {
   chainSteps,
   confirmLabel,
@@ -110,28 +110,38 @@ interface Shown {
   readonly step: string;
 }
 
+/** What `plan` names, as the dialog states it. */
+function sketchOf(plan: MergePlan): Sketch {
+  const { id, number, login, kind, method, base, head, title } = plan;
+  const stack = plan.together?.kind === 'stack';
+  return { id, number, login, kind, method, base, head, title, stack };
+}
+
 /** "r5 of #4821, the one on screen", or the commit's short ID when Lo has no revision for it. */
-function revisionOf(plan: MergePlan): string {
+function revisionOf(plan: Pick<Sketch, 'id' | 'number' | 'head'>): string {
   const label = revisionLabel(revisionsOf(plan.id), plan.head) ?? plan.head.slice(0, 7);
   return `${label} of #${plan.number}, the one on screen`;
 }
 
 /** The squash commit's title: as typed, else GitHub's own, when Lo read it. */
-function commitTitle(plan: MergePlan): string | undefined {
+function commitTitle(plan: Pick<Sketch, 'id' | 'title'>): string | undefined {
   if (plan.title !== '') return plan.title;
   const squash = panels.get(plan.id).squash;
   return squash.kind === 'read' ? squash.title : undefined;
 }
 
 /** Whether `plan` sends the squash commit's title and message typed: a merge's write does. */
-function sendsText(plan: MergePlan): boolean {
+function sendsText(plan: Pick<Sketch, 'kind' | 'method'>): boolean {
   return (plan.kind === 'merge' || plan.kind === 'override') && plan.method === 'SQUASH';
 }
 
-/** What the plan will do, as facts: who, how, into what, and which revision. */
-function factsOf(plan: MergePlan): FactItem[] {
+/**
+ * What the merge will do, as facts: who, how, into what, and which revision. The panel knows them
+ * before main has planned anything, so they're the same rows from the check to done.
+ */
+function factsOf(plan: Sketch): FactItem[] {
   const items: FactItem[] = [{ label: 'As', value: <FactPerson login={plan.login} /> }];
-  const stack = plan.together?.kind === 'stack';
+  const { stack } = plan;
   // A queue's settings choose its method.
   if (plan.kind !== 'enqueue' && plan.kind !== 'whenReady' && plan.method !== null) {
     const method = methodLabel(plan.method);
@@ -455,7 +465,7 @@ function planBody(
       {plan.together?.kind === 'stack' && (
         <p className="m-0 text-fg-muted text-small">A GitHub stack merges as one.</p>
       )}
-      <Facts items={factsOf(plan)} />
+      <Facts items={factsOf(sketchOf(plan))} />
       {plan.kind === 'enqueue' && (
         <p className="m-0 text-fg-muted text-small">{queueLine(plan.method)}</p>
       )}
@@ -744,12 +754,13 @@ function shownOf(
   switch (dialog.kind) {
     case 'planning':
       return {
-        title: dialog.title ?? `Merge #${dialog.number}`,
+        title: dialog.title,
         step: 'planning',
         close: 'Cancel',
         // There from the start, so focus is on it, not on Cancel, when the plan comes.
         primary: { label: dialog.label, run: () => undefined, busy: true, working: CHECKING },
-        body: undefined,
+        // Only the button waits on the check: what the merge names is known already.
+        body: dialog.sketch && <Facts items={factsOf(dialog.sketch)} />,
       };
     case 'confirm':
       return confirmShown(dialog, field);
@@ -832,7 +843,7 @@ export function MergeConfirm() {
   // Read for their changes: the dialog follows the merge it sent, and a newer push read since.
   useStore(merging, (state) => state.jobs);
   useStore(statuses);
-  usePull(dialog && dialog.kind !== 'planning' ? dialog.plan.id : '');
+  usePull(dialog ? (dialog.kind === 'planning' ? dialog.id : dialog.plan.id) : '');
   const button = useRef<HTMLButtonElement>(null);
   // Where a merge past the rules asks for its number.
   const field = useRef<HTMLInputElement>(null);
