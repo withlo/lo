@@ -733,7 +733,7 @@ describe('drafts', () => {
     expect(discard.listed?.(target)).toBe(true);
     expect(discard.enabled?.(target)).toBe(true);
     expect(sendAgain.listed?.(target)).toBe(false);
-    expect(sendAgain.enabled?.(target)).toBe('Try again isn’t in this box');
+    expect(sendAgain.enabled?.(target)).toBe('');
     void discard.run(target);
     expect(drawn[0]!.composer.closed).toBe('dismiss');
     expect(asked('comments.discard')).toEqual([{ id: VIEW, place: onLines(null, 5) }]);

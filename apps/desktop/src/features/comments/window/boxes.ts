@@ -94,7 +94,6 @@ import {
   NO_LINES,
   NOT_IN_DIFF,
   notesOf,
-  offerLabels,
   offersOf,
   type Offer,
   ON_FILE_NOT_IN_DIFF,
@@ -2127,10 +2126,9 @@ export function offering(...among: readonly Offer[]): Handler<BoxTarget> {
       const offer = offerIn(target);
       if (box && offer !== undefined) act(box, offer);
     },
-    // Listed only where its note offers it, so its reason shows only to a key bound to it.
-    enabled: (target) =>
-      offerIn(target) !== undefined ||
-      `${among[0] === undefined ? 'It' : offerLabels[among[0]]} isn’t in this box`,
+    // Listed only where its note offers it. Elsewhere it has no reason to give: a key bound to it
+    // does nothing, and says nothing.
+    enabled: (target) => offerIn(target) !== undefined || '',
     listed: (target) => offerIn(target) !== undefined,
   };
 }
