@@ -476,16 +476,13 @@
 
 /*
  * The header of the file at the top of a diff's scroll, pinned under the diff bar while that
- * file's own header is above the top edge. It takes no room: the code scrolls under it.
+ * file's own header is above the top edge. Where it sits, taking no room, is the view's
+ * (`code/view.css`).
  */
 .lo-diffpin {
-  position: sticky; top: 0; z-index: var(--lo-z-sticky);
-  flex: 1 0 100%;
-  height: var(--lo-file-header-h);
-  margin-bottom: calc(var(--lo-file-header-h) * -1);
+  z-index: var(--lo-z-sticky);
   box-shadow: var(--lo-shadow-sticky);
 }
-.lo-diffpin[hidden] { display: none; }
 .lo-diffpin > .lo-diffhead { padding-left: calc(var(--lo-pin-start, 0px) + 8px); }
 
 /* The viewed toggle in a file header */

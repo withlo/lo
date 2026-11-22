@@ -19,7 +19,7 @@ export interface PeekPlace {
   note?: string | undefined;
   /**
    * The module the word is imported from, when this answer is the asking file's import of it and
-   * the language server found no definition: its row says Lo doesn't install it. The path and line
+   * the language server found no definition: its row says it isn't installed. The path and line
    * are the import's own.
    */
   from?: string | undefined;

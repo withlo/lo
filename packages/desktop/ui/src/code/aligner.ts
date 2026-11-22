@@ -652,9 +652,9 @@ export class Aligner {
     // The cursor's own row of text, as CodeMirror scrolls to it, not the whole of a line that
     // wraps: a cursor on screen is left where it is, as a key that scrolls, such as `zt`, put it.
     const cursor = cursorRow(view, head, line);
-    // Nothing is left under the file's header pinned over the scroll's top.
-    const top =
-      screen.top + (this.#scroller.querySelector(':scope > .lo-diffpin') ? HEADER_HEIGHT : 0);
+    // Nothing is left under the file's header pinned over the scroll's top, while one is.
+    const pinned = this.#scroller.querySelector(':scope > .lo-diffpin:not([hidden])');
+    const top = screen.top + (pinned ? HEADER_HEIGHT : 0);
     if (cursor.top >= top - 1 && cursor.bottom <= screen.bottom + 1) return;
     let shift = 0;
     if (cursor.bottom > screen.bottom) shift = cursor.bottom - screen.bottom + cursorMargin;

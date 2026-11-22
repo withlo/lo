@@ -2882,10 +2882,10 @@ class View implements DiffView {
 
   /**
    * Brings `opened`, under a line on screen, on screen whole, once what it moved is lined up: the
-   * least scroll that ends it at the screen's foot, its line going no higher than the top, where a
-   * peek taller than the room under it puts it. It's a jump the reader asked for, as `reveal`'s:
-   * the editor scrolls to the line, the cursor on it where the peek has it. A peek on screen whole
-   * moves nothing.
+   * least scroll that ends it at the screen's foot, its line going no higher than under the header
+   * pinned over the top, where a peek taller than the room under it puts it. It's a jump the reader
+   * asked for, as `reveal`'s: the editor scrolls to the line, the cursor on it where the peek has
+   * it. A peek on screen whole moves nothing.
    */
   #showPeek(opened: { place: At; block: PeekBlock }): void {
     // After the pass that keeps the line where it is, which the change scheduled first.
@@ -2903,8 +2903,11 @@ class View implements DiffView {
       const span = this.#spanOf(block.dom);
       if (top === undefined || !text || !span) return;
       const screen = this.dom.getBoundingClientRect().top;
-      const to = peekShownAt(top - screen, span.bottom - top, this.dom.clientHeight);
-      if (to === undefined) return;
+      const shown = peekShownAt(top - screen, span.bottom - top, this.dom.clientHeight);
+      if (shown === undefined) return;
+      // The editor scrolls the line clear of the header pinned over the top, so it goes no higher
+      // than under it.
+      const to = Math.max(shown, HEADER_HEIGHT);
       this.#holding = undefined;
       this.#jumped = undefined;
       this.#lastPane = pane;
@@ -2912,7 +2915,10 @@ class View implements DiffView {
       this.#aligner.follow(pane === 'inline' ? undefined : pane);
       view.dispatch({
         selection: { anchor: line.from + Math.min(block.at.column ?? 0, line.length) },
-        effects: EditorView.scrollIntoView(line.from, { y: 'start', yMargin: to + text.top - top }),
+        effects: EditorView.scrollIntoView(line.from, {
+          y: 'start',
+          yMargin: to - HEADER_HEIGHT + text.top - top,
+        }),
       });
     });
   }
@@ -3453,8 +3459,11 @@ class View implements DiffView {
         this.#onHeader(pane, view) ? { class: 'lo-onheader' } : null,
       ),
       // Nothing lands under the header pinned over the top of the scroll: what's brought into
-      // view comes clear of it.
-      EditorView.scrollMargins.of(() => ({ top: HEADER_HEIGHT })),
+      // view comes clear of it. A header brought to the top is itself what's there, and none is
+      // pinned over it.
+      EditorView.scrollMargins.of((view) =>
+        this.#onHeader(pane, view) ? null : { top: HEADER_HEIGHT },
+      ),
     ];
   }
 

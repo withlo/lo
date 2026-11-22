@@ -469,12 +469,14 @@ test.describe('with Vim keys on', () => {
     await expect(status).toContainText('V-LINE');
     await press(page, 'Escape');
     await expect(status).toContainText('NORMAL');
-    // Vim's block cursor on a file's header, where the diff starts, draws none of the path under it.
+    // Vim's block cursor on a file's header, where the diff starts, draws nothing over it: the
+    // ring around the header's band is the cursor there.
     await expect.poll(async () => (await cursor(page))?.header).toBe(true);
     const after = page.locator('.lo-diffview .cm-editor', {
       has: page.locator('.cm-content[aria-label="After"]'),
     });
-    await expect(after.locator('.cm-fat-cursor')).toHaveCSS('color', 'rgba(0, 0, 0, 0)');
+    await expect(after.locator('.cm-fat-cursor')).toBeHidden();
+    await expect(page.locator('.lo-diffview .lo-diffhead.is-keyed')).toHaveCount(2);
     await page.locator('[role="tree"][data-lo-scope="tree"]').focus();
     await expect(status).not.toContainText('NORMAL');
   });
@@ -1298,8 +1300,10 @@ test.describe('when the local copy comes after GitHub’s diff, on a file the re
   test('leaves the file as it was until it’s scrolled away', async ({ app, page }) => {
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(1100, 440));
     const id = await drawn(page, 'github', { moves: false });
-    // src/format.ts's note, on the side that follows the screen.
-    const keptOut = page.locator('.lo-diffview .cm-editor:last-of-type').getByText('Show 20 lines');
+    // src/format.ts's row under its header, whose words the left column draws.
+    const keptOut = page
+      .locator('.lo-diffview .cm-editor', { has: page.locator('.cm-content[aria-label="Before"]') })
+      .getByText('Show 20 lines');
     await expect(keptOut).toHaveCount(1);
     // Wheeled down until src/format.ts, which GitHub's diff keeps out, is on screen.
     const box = await page.locator('.lo-diffview').boundingBox();

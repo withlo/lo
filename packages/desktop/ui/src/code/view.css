@@ -25,6 +25,25 @@
 .lo-diffview > .lo-diffslack {
   flex: 1 0 100%;
 }
+/*
+ * A file's header is as tall in both columns, whatever each draws of it, and as tall as the one
+ * pinned over the top of the scroll, which takes no room: the code scrolls under it, as the view's
+ * measures have it.
+ */
+.lo-diffview .lo-diffhead {
+  box-sizing: border-box;
+  height: var(--lo-file-header-h);
+}
+.lo-diffview > .lo-diffpin {
+  position: sticky;
+  top: 0;
+  flex: 1 0 100%;
+  height: var(--lo-file-header-h);
+  margin-bottom: calc(var(--lo-file-header-h) * -1);
+}
+.lo-diffview > .lo-diffpin[hidden] {
+  display: none;
+}
 .lo-diffview > .cm-editor + .cm-editor {
   box-shadow: inset 1px 0 0 var(--lo-border);
 }

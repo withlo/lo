@@ -14,10 +14,14 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import type { DiffLayout } from '../src/code/index.ts';
 import { buildPage, launch } from './electron.ts';
 
+/** How tall the file's header pinned over the top of the diff is, as `--lo-file-header-h` has it. */
+const PINNED = 38;
+
 const STYLE = [
   readFileSync(new URL('../src/code/view.css', import.meta.url), 'utf8'),
-  // The one token the page's own measures need: the room a box brought on screen keeps under it.
-  ':root { --lo-sp-8: 8px; }',
+  // The tokens the page's own measures need: the room a box brought on screen keeps under it, and
+  // the height of the file's header pinned over the top.
+  `:root { --lo-sp-8: 8px; --lo-file-header-h: ${PINNED}px; }`,
   'body { margin: 0; } #root { width: 1000px; height: 600px; } .card { background: #ddd; }',
 ].join('\n');
 
@@ -333,7 +337,7 @@ for (const layout of ['split', 'inline'] as const) {
       near([await peekEnd(page)], [end]);
     });
 
-    test('a peek taller than the room under its line puts the line at the very top', async () => {
+    test('a peek taller than the room under its line puts the line at the top, under the file’s pinned header', async () => {
       const page = await open(layout, { height: 300 });
       const below = 300 - (await rowHeight(page));
       await page.evaluate((at) => {
@@ -344,8 +348,8 @@ for (const layout of ['split', 'inline'] as const) {
 
       expect(await page.evaluate(() => window.harness.peek(40, 15))).toBe(true);
       await frames(page);
-      // At the top, within the pixel the scroll rounds to.
-      expect(Math.abs((await lineTop(page, 40))!)).toBeLessThan(1);
+      // At the top, under the header pinned there, within the pixel the scroll rounds to.
+      expect(Math.abs((await lineTop(page, 40))! - PINNED)).toBeLessThan(1);
       expect(await peekEnd(page)).toBeGreaterThan(300);
       const shown = await onScreen(page);
       await page.evaluate(() => window.harness.frames(10));
