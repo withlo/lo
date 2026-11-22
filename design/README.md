@@ -384,9 +384,15 @@ to one job.
 ## Comments
 
 **Every place you write is the same box.** A new comment on lines, on a file or on the pull request,
-a reply, an edit and a review's summary are all `CommentBox` (`packages/desktop/ui`), around the one
-editor the code view makes (`compose` on a code view, or `createComposer` outside one). A feature
-never draws its own.
+a reply and an edit are all `CommentBox` (`packages/desktop/ui`), around the one editor the code
+view makes (`compose` on a code view, or `createComposer` outside one). A feature never draws its
+own.
+
+The review's summary, in the submit dialog, is the same editor in the same frame, with the same
+notes, upload rows and foot bar (`CommentBoxFootBar`), but it isn't the whole box yet: it has no
+head, so "Summary" and Preview are in its foot, as a hint and a button, and it has no "Discard
+draft". Bring it onto the head (`CommentBoxHeadBar`) when the submit dialog is next changed; don't
+copy its foot.
 
 - **Head.** What the comment is on, at the left, in the words a line is named everywhere: "Line 3",
   "Lines 39–41", "Line 3, removed", "File", "Pull request", "Reply", "Edit", "Summary". Why it's on
