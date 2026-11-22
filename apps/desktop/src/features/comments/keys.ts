@@ -170,14 +170,29 @@ export default defineCommands(
       when: box,
       menu: { on: 'box', order: 0 },
     },
-    /** After Lo couldn't tell whether a comment posted: sends it again, as "Send it anyway" does. */
+    /**
+     * After a comment was sent and didn't post: sends it again, as the box's "Try again" does. Never
+     * while nobody knows whether it posted, which "Check again" finds out first.
+     */
     sendAnyway: {
-      label: 'Send it anyway',
+      label: 'Send again',
       group: 'Act',
       keys: [],
       targets: ['box'],
       when: box,
       menu: { on: 'box', order: 10 },
+    },
+    /**
+     * After a comment was sent and GitHub's answer never came: looks whether it posted, as the box's
+     * "Check again" does. Found, the box goes; not there, it can be sent again.
+     */
+    checkAgain: {
+      label: 'Check again',
+      group: 'Act',
+      keys: [],
+      targets: ['box'],
+      when: box,
+      menu: { on: 'box', order: 11 },
     },
     /**
      * After GitHub took no comment on the box's lines: moves its text to a box on the file, as

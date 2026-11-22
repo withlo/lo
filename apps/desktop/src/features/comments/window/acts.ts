@@ -3,9 +3,9 @@
 // GitHub's text) and deleting it, after a dialog asks. Each acts on the thread `]t` landed on, the
 // only one the diff draws on the cursor's line or under the header, or the card that was pressed or
 // right-clicked: never on one placed there that hasn't come on screen yet.
-// A write main sends claims its thread in the diff, so what it changes there comes at once. How a
-// change main sent stands, while Lo checks whether it went after GitHub's answer was lost, shows
-// on its thread's card.
+// A write main sends claims its thread in the diff, so what it changes there comes at once. A
+// change shows on its thread's card from the moment it's asked for, with its control at work until
+// GitHub answers; one that didn't go, or may not have, puts the card back and says so on it.
 
 import { deleteFacts, newestYours, changeRefusal, type ThreadComment } from '@lo/review';
 import type { HeaderTarget, LineTarget, ThreadTarget } from '@lo/ui/commands';
@@ -60,17 +60,17 @@ export function closeAct(view: string, row: ActRow): void {
   closedActs.update(view, (was) => new Set([...was, row]));
 }
 
-/** What a card says of a change asked of it, while it says anything. */
+/** What a card says of a change asked of it that didn't go, or may not have. */
 export interface ActNote {
+  /** What wasn't done: "Couldn’t resolve the thread", "Delete not confirmed". */
+  readonly title: string;
+  /** Why, in one line. */
   readonly text: string;
-  readonly again: boolean;
-  readonly checking: boolean;
 }
 
 /**
- * What a thread's card says of the change asked of it, if anything: that Lo is checking whether it
- * went, or that it didn't, or may not have, until the reader closes the note. Nothing once the
- * thread shows what was asked anyway.
+ * What a thread's card says of the change asked of it, if anything: that it didn't go, or may not
+ * have, until the reader dismisses the note. Nothing once the thread shows what was asked anyway.
  */
 export function actNote(
   row: ActRow | undefined,
@@ -85,47 +85,35 @@ export function actNote(
   return noteOf(row, asked, isClosed);
 }
 
+/** Whether a change asked for is still on its way, or Lo is looking whether it went. */
+export function underWay(row: ActRow | undefined): row is ActRow {
+  return row?.stands === 'waiting' || row?.stands === 'sending' || row?.stands === 'checking';
+}
+
+/** What a note is titled once a change is known not to have gone. */
+const NOT_DONE: Readonly<Record<ActRow['change'], string>> = {
+  resolve: 'Couldn’t resolve the thread',
+  unresolve: 'Couldn’t unresolve the thread',
+  delete: 'Couldn’t delete the comment',
+};
+
+/** What a note is titled while nobody knows whether a change went. */
+const NOT_CONFIRMED: Readonly<Record<ActRow['change'], string>> = {
+  resolve: 'Resolve not confirmed',
+  unresolve: 'Unresolve not confirmed',
+  delete: 'Delete not confirmed',
+};
+
 /**
- * What a card says of the change `row` asked of it, if anything: nothing once the card shows it
- * done (`asked`), or the reader closed the note.
+ * What a card says of the change `row` asked of it, if anything: nothing while it's on its way,
+ * when its control says so itself, nor once the card shows it done (`asked`), or the reader
+ * dismissed the note. Asking again is safe either way: main reads the thread first, and sends
+ * nothing for a change GitHub already has.
  */
 export function noteOf(row: ActRow, asked: boolean, isClosed: boolean): ActNote | undefined {
-  if (isClosed) return undefined;
-  if (row.stands === 'waiting' || row.stands === 'sending') return undefined;
-  const what = {
-    resolve: 'resolved the thread',
-    unresolve: 'unresolved the thread',
-    delete: 'deleted your comment',
-  }[row.change];
-  switch (row.stands) {
-    case 'checking':
-      return asked
-        ? undefined
-        : {
-            text: `GitHub’s answer was lost. Lo is checking whether it ${what}.`,
-            again: false,
-            checking: true,
-          };
-    case 'notDone':
-      return asked
-        ? undefined
-        : {
-            text: `GitHub’s answer was lost, and it hadn’t ${what}. Try again?`,
-            again: true,
-            checking: false,
-          };
-    case 'unknown':
-      return asked
-        ? undefined
-        : {
-            text: `GitHub’s answer was lost, and Lo can’t tell whether it ${what}.`,
-            again: true,
-            checking: false,
-          };
-    default:
-      row.stands satisfies never;
-      return undefined;
-  }
+  if (isClosed || asked || underWay(row)) return undefined;
+  const titles = row.stands === 'notDone' ? NOT_DONE : NOT_CONFIRMED;
+  return { title: titles[row.change], text: 'GitHub didn’t respond.' };
 }
 
 /** A key's target that names a thread, or may, as `]t` or the cursor's line does. */

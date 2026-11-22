@@ -6,7 +6,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { cleanUp, click, render } from '../test/dom.ts';
 import { missingRules } from '../test/classes.ts';
-import { Thread, type ThreadComment, type ThreadProps } from './Thread.tsx';
+import { SentPost, Thread, type ThreadComment, type ThreadProps } from './Thread.tsx';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -99,10 +99,46 @@ describe('Thread', () => {
       'Resolved thread by mira-chen',
     );
     const [unresolve] = buttons(host, 'Unresolve');
-    expect(unresolve?.textContent).toBe('Unresolvex');
+    // Its key's chip, and what it says while GitHub hasn't answered.
+    expect(unresolve?.textContent).toBe('UnresolvexResolving…');
+    expect(unresolve?.getAttribute('aria-busy')).toBeNull();
     click(unresolve!);
     expect(onResolve).toHaveBeenCalledOnce();
     expect(buttons(host, 'Resolve')).toHaveLength(0);
+  });
+
+  it('shows what was asked for at once, with the control at work until GitHub answers', () => {
+    const onResolve = vi.fn<() => void>();
+    const host = render(
+      <Thread
+        {...PROPS}
+        resolved
+        resolving
+        canResolve
+        keys={{ resolve: ['x'] }}
+        onResolve={onResolve}
+      />,
+    );
+    const [unresolve] = buttons(host, 'Unresolve');
+    expect(unresolve?.getAttribute('aria-busy')).toBe('true');
+    click(unresolve!);
+    expect(onResolve).not.toHaveBeenCalled();
+  });
+
+  it('marks the open card as the scope its repeated controls’ key chips show in', () => {
+    const host = render(<Thread {...PROPS} focused canResolve keys={{ resolve: ['x'] }} />);
+    const card = host.querySelector('[data-key-scope]');
+    expect(card?.hasAttribute('data-focused')).toBe(true);
+    expect(card?.querySelector('.key-focus kbd')?.textContent).toBe('x');
+  });
+
+  it('draws a sent comment as its card will, with what’s being done where its time will be', () => {
+    const host = render(<SentPost author="tess-okafor" body={<p>On its way</p>} />);
+    const sent = host.querySelector('[role="status"]');
+    expect(sent?.textContent).toContain('tess-okafor (you)');
+    expect(sent?.textContent).toContain('Sending…');
+    expect(sent?.textContent).toContain('On its way');
+    expect(render(<SentPost label="Saving…" body="x" />).textContent).toContain('Saving…');
   });
 
   it('draws a thread in your pending review by its Pending tag alone', () => {
@@ -165,7 +201,11 @@ describe('Thread', () => {
     expect(host.querySelector('[data-comment="c2"]')?.textContent).not.toContain('Delete');
     // The keys act on the newest of yours, so only its buttons show them.
     expect(edits.map((each) => each.textContent)).toEqual(['Edit', 'Editi']);
-    expect(deletes.map((each) => each.textContent)).toEqual(['Delete', 'Deletedd']);
+    // Each also holds what it says while its delete is on its way.
+    expect(deletes.map((each) => each.textContent)).toEqual([
+      'DeleteDeleting…',
+      'DeleteddDeleting…',
+    ]);
     click(edits[0]!);
     click(deletes[1]!);
     expect(onEdit).toHaveBeenCalledWith('m1');

@@ -180,6 +180,14 @@ interface At {
 const COMING: ReadonlySet<FileNote> = new Set(['loading', 'pending']);
 
 /**
+ * How many frames in a row a view's box must be where it was before the view, first seen while the
+ * box moved, keeps its place against the next move.
+ */
+const STILL_FRAMES = 2;
+/** How far a box may be from where it was the frame before and count as still, in pixels. */
+const STILL_WITHIN = 0.01;
+
+/**
  * The reader's input in the view, which lets go of the line held at the top: the wheel, a pointer
  * down, and keys as the key listener's event says they're input, a sequence's only as it ends.
  */
@@ -635,6 +643,11 @@ class View implements DiffView {
 
   /** The reader moves: what's at the top is theirs to choose again. */
   readonly #letGo = (): void => {
+    // What they act on is where it is now, wherever its box was going.
+    if (this.#seen === 'settling') {
+      this.#seen = 'yes';
+      this.#takePlace();
+    }
     // The input acts on what they see: what the text changing width moved goes back first.
     this.#unwrap();
     this.#holding = undefined;
@@ -668,9 +681,12 @@ class View implements DiffView {
 
   /**
    * Whether the view has been seen, from the first frame it's on screen in, or that frame is to
-   * come: until then a box that moves, as a banner over it goes, moves nothing anyone saw.
+   * come: until then a box that moves, as a banner over it goes, moves nothing anyone saw. First
+   * seen while its box is on the move, as under a banner still opening, it's `settling` until the
+   * box is still or the reader does something: its place is where the move ends, not where one
+   * frame of it showed it, which a scroll of a pixel or two would otherwise hold it to.
    */
-  #seen: 'no' | 'next' | 'yes' = 'no';
+  #seen: 'no' | 'next' | 'settling' | 'yes' = 'no';
   #seenFrame = 0;
 
   seen(): void {
@@ -679,10 +695,33 @@ class View implements DiffView {
     // Where the content is in that frame is its place, taken before the frame's resizes are told,
     // so a box that moved before then isn't made up for.
     this.#seenFrame = requestAnimationFrame(() => {
-      this.#seen = 'yes';
-      this.#placed = this.#contentTop();
-      this.#scrolled = this.dom.scrollTop;
-      this.#boxHeight = this.dom.clientHeight;
+      this.#seen = 'settling';
+      this.#takePlace();
+      this.#followBox(this.dom.getBoundingClientRect(), 0);
+    });
+  }
+
+  /** The content's place is where it is now. */
+  #takePlace(): void {
+    this.#placed = this.#contentTop();
+    this.#scrolled = this.dom.scrollTop;
+    this.#boxHeight = this.dom.clientHeight;
+  }
+
+  /**
+   * Follows the box frame by frame from where it was `last`, until it's been where it is for
+   * {@link STILL_FRAMES} frames: from then its place is kept.
+   */
+  #followBox(last: DOMRect, still: number): void {
+    this.#seenFrame = requestAnimationFrame(() => {
+      if (this.#seen !== 'settling') return;
+      const now = this.dom.getBoundingClientRect();
+      const same =
+        Math.abs(now.top - last.top) < STILL_WITHIN &&
+        Math.abs(now.height - last.height) < STILL_WITHIN;
+      this.#takePlace();
+      if (same && still + 1 >= STILL_FRAMES) this.#seen = 'yes';
+      else this.#followBox(now, same ? still + 1 : 0);
     });
   }
 
@@ -717,7 +756,7 @@ class View implements DiffView {
     // A scroll whose event hasn't come yet is the reader's, or the view's, not the box's.
     this.#placeChosen();
     this.#boxHeight = this.dom.clientHeight;
-    // Not seen yet, it's where it's laid out.
+    // Not seen yet, or seen on a box still on the move, it's where it's laid out.
     if (this.#seen !== 'yes') this.#placed = this.#contentTop();
     const moved = this.#contentTop() - this.#placed;
     const kept = Math.abs(moved) >= 0.5;

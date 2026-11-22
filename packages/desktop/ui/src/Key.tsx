@@ -29,8 +29,8 @@ export interface KeyProps {
   decorative?: boolean | undefined;
   /**
    * `focus` for a control repeated on every card or row: the chip shows only on the one the
-   * keyboard is on or the pointer is over, the nearest element marked `data-key-scope` that has
-   * `data-focused`, focus inside it or the pointer on it. The others give the key in their tooltip.
+   * keyboard is on, the nearest element marked `data-key-scope` that has `data-focused` or keyboard
+   * focus in it. The others give the key in their tooltip (`hint` and `hintKeys` on `Button`).
    * Scopes don't nest.
    */
   when?: 'always' | 'focus' | undefined;

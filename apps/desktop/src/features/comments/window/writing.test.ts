@@ -22,6 +22,7 @@ import {
   refusalNote,
   sendingNote,
   sentFromBlock,
+  sentLabel,
   whereText,
   whyOf,
 } from './writing.ts';
@@ -288,17 +289,34 @@ describe('where a draft’s box goes', () => {
 });
 
 describe('a box’s notes', () => {
-  test('a refusal says why, with what to do', () => {
-    expect(refusalNote({ kind: 'notLatest', head: HEAD }).offers).toEqual(['showLatest']);
+  test('a refusal says what wasn’t sent and why, with what to do', () => {
+    expect(refusalNote({ kind: 'notLatest', head: HEAD })).toMatchObject({
+      title: 'Couldn’t send the comment',
+      text: 'This revision is out of date.',
+      offers: ['showLatest'],
+    });
     expect(refusalNote({ kind: 'headMoved', head: null }).offers).toEqual(['loadNewer']);
-    expect(refusalNote({ kind: 'notInDiff' }).offers).toEqual(['onFile']);
+    // Lines that take no comment: one line, one button, and no title.
+    expect(refusalNote({ kind: 'notInDiff' })).toMatchObject({
+      title: undefined,
+      text: 'Those lines aren’t in the diff.',
+      offers: ['onFile'],
+    });
     const until = new Date(2026, 10, 13, 14, 5).getTime();
     expect(refusalNote({ kind: 'paused', until }).text).toMatch(
-      /^GitHub asked Lo to hold off until .+\. Send it then\.$/,
+      /^GitHub’s rate limit resets at .+\.$/,
     );
+    // Nothing was sent, so it can go again.
+    expect(refusalNote({ kind: 'pendingUnknown' })).toMatchObject({
+      text: 'GitHub didn’t respond.',
+      offers: ['sendAgain'],
+    });
     expect(refusalNote({ kind: 'signIn' }).text).toBe('Sign in to comment');
     expect(refusalNote({ kind: 'run' }).text).toBe('Show a single layer to comment');
-    expect(refusalNote({ kind: 'github', message: 'Nope.' }).text).toBe('Nope.');
+    expect(refusalNote({ kind: 'github', message: 'Nope.' })).toMatchObject({
+      title: 'Couldn’t send the comment',
+      text: 'Nope.',
+    });
   });
 
   test('what the notes offer, in their order, is what the box’s menu has', () => {
@@ -307,7 +325,7 @@ describe('a box’s notes', () => {
     // A draft restored has no note: the foot says so, beside "Discard draft".
     expect(offersOf({ refusal: { kind: 'headMoved', head: null }, sending: 'unknown' })).toEqual([
       'loadNewer',
-      'sendAnyway',
+      'checkAgain',
     ]);
     expect(offersOf({ ...none, refusal: { kind: 'paused', until: 0 } })).toEqual([]);
   });
@@ -316,16 +334,18 @@ describe('a box’s notes', () => {
     const edit = { kind: 'edit', thread: 'T1', comment: 'C1' } as const;
     expect(notesOf({ place: edit, refusal: { kind: 'changed' }, sending: null })).toMatchObject([
       {
-        text: 'It was edited on GitHub since you started. Your text is kept here; copy it, then edit again.',
+        title: 'Couldn’t save the comment',
+        text: 'It was edited elsewhere.',
         offers: ['discard'],
       },
     ]);
-    expect(sendingNote('checking', true)?.text).toBe(
-      'GitHub’s answer was lost. Lo is checking whether it saved the edit.',
+    expect(sendingNote('gone', true)).toMatchObject({
+      text: 'It was deleted elsewhere.',
+      offers: ['discard'],
+    });
+    expect(refusalNote({ kind: 'paused', until: 0 }, 'edit').title).toBe(
+      'Couldn’t save the comment',
     );
-    expect(sendingNote('gone', true)?.offers).toEqual(['discard']);
-    const until = new Date(2026, 10, 13, 14, 5).getTime();
-    expect(refusalNote({ kind: 'paused', until }, 'edit').text).toMatch(/ Save it then\.$/);
   });
 
   test('a change to a thread that wasn’t made says why, in Lo’s words', () => {
@@ -343,13 +363,31 @@ describe('a box’s notes', () => {
     );
   });
 
-  test('sending says it waits, or what came of an answer that was lost', () => {
+  test('while it’s on its way the box is its card, which says so: no note', () => {
     expect(sendingNote(null)).toBeUndefined();
-    expect(sendingNote('waiting')?.text).toBe('Waiting for your last comment');
-    expect(sendingNote('notPosted')?.text).toBe('It didn’t post. Send it again.');
-    expect(sendingNote('unknown')).toMatchObject({
-      text: 'Lo can’t tell whether it posted.',
-      offers: ['sendAnyway'],
+    for (const sending of ['waiting', 'sending', 'checking'] as const) {
+      expect(sendingNote(sending)).toBeUndefined();
+    }
+    expect(sentLabel('sending', false)).toBe('Sending…');
+    expect(sentLabel('waiting', true)).toBe('Saving…');
+    expect(sentLabel('checking', false)).toBe('Checking…');
+  });
+
+  test('known not to have posted, it offers to send it again; not known, only to check again', () => {
+    expect(sendingNote('notPosted')).toMatchObject({
+      title: 'Couldn’t send the comment',
+      text: 'GitHub didn’t respond.',
+      offers: ['sendAgain'],
     });
+    expect(sendingNote('notPosted', true)?.title).toBe('Couldn’t save the comment');
+    expect(sendingNote('unknown')).toMatchObject({
+      title: 'Comment not confirmed',
+      text: 'GitHub didn’t respond.',
+      offers: ['checkAgain'],
+    });
+    expect(sendingNote('unknown', true)?.title).toBe('Edit not confirmed');
+    // A send refused for the same reason says it once.
+    const notes = notesOf({ refusal: { kind: 'unconfirmed' }, sending: 'unknown' });
+    expect(notes.map((each) => each.offers)).toEqual([['checkAgain']]);
   });
 });

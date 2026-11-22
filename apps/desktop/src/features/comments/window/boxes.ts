@@ -245,7 +245,7 @@ export class Box {
   open = false;
   /** Whether it takes focus once it opens. */
   focusOnOpen = false;
-  /** How the last send was asked for, for "Send it anyway". */
+  /** How the last send was asked for, for one sent again once it's known not to have gone. */
   lastHow: Send;
   /** Whether main marked its draft sent, as after GitHub's answer to it was lost. */
   sentMark = false;
@@ -923,8 +923,8 @@ function sameLines(a: DraftPlaceRow, b: DraftPlaceRow): boolean {
   return a.path === b.path && JSON.stringify(a.lines) === JSON.stringify(b.lines);
 }
 
-/** What a box says when its comment joined your pending review, after what it says that was. */
-const JOINED = 'GitHub posts nothing else from you while you have one.';
+/** What's said when a comment sent to post at once went into your pending review instead. */
+const JOINED = 'Added to pending review';
 
 /**
  * A comment sent to post at once, whose answer was lost, was found in your pending review: says so,
@@ -932,7 +932,7 @@ const JOINED = 'GitHub posts nothing else from you while you have one.';
  */
 export function takeJoined({ id: view, place }: JoinedView): void {
   if (!boxesOf(view).get(placeKey(place))?.sentMark) return;
-  announce('Added to your pending review', JOINED);
+  announce(JOINED);
 }
 
 /**
@@ -1225,6 +1225,8 @@ export async function send(box: Box, how: Send): Promise<void> {
   const { view } = box;
   const { place, text } = box.state;
   if (sendingNow(box.state) || uploadsHold(box) !== undefined) return;
+  // Sent before, and nobody knows whether it posted: it's looked up first ("Check again").
+  if (box.state.sending === 'unknown') return;
   if (text.trim() === '' || offline(view) || canWrite(view) !== true) return;
   box.dropSave();
   box.lastHow = how;
@@ -1248,12 +1250,13 @@ export async function send(box: Box, how: Send): Promise<void> {
           const thread = outcome.thread;
           landed.update(view, (was) => new Set([...was, thread]));
         }
-        const joined = outcome.joined ? JOINED : undefined;
         // A comment from a block that won't show under it says where it went.
         const { home } = box;
         const went = home.kind === 'block' ? wentFrom(view, home.block, place, outcome) : undefined;
-        if (went) announce(went.title, joined ? `${went.body} ${joined}` : went.body);
-        else if (joined) announce('Added to your pending review', joined);
+        if (went) announce(went.title, went.body);
+        // "Send now" that went into the pending review says so: its card's "Pending" tag shows
+        // the rest.
+        else if (outcome.joined) announce(JOINED);
         break;
       }
       case 'refused':
@@ -1321,8 +1324,15 @@ export function act(box: Box, offer: Offer): void {
     case 'discard':
       drop(box);
       return;
-    case 'sendAnyway':
+    case 'sendAgain':
       void send(box, box.lastHow);
+      return;
+    // Main looks whether it posted, and the box is its card again meanwhile: found, it goes;
+    // not there, it can be sent again.
+    case 'checkAgain':
+      main()
+        .check({ id: view, place: box.state.place })
+        .catch((error: unknown) => console.error("Lo couldn't check a comment:", error));
       return;
     case 'loadNewer':
       tabs()

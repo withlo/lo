@@ -75,6 +75,8 @@ export interface ThreadProps {
    * for, and the control says it's working.
    */
   resolving?: boolean | undefined;
+  /** The comment of yours whose delete was asked and GitHub hasn't answered for, by its `id`. */
+  deleting?: string | undefined;
   /** You can reply to it. */
   canReply?: boolean | undefined;
   keys?: ThreadKeys | undefined;
@@ -131,11 +133,11 @@ function Chevron({ up }: { up: boolean }) {
 }
 
 export interface SentPostProps {
-  /** Who it's from: the account that wrote it. */
-  author: string;
+  /** Who it's from: the account that wrote it, where that's known. */
+  author?: string | undefined;
   image?: string | undefined;
-  /** An edit being saved, not a comment being sent. */
-  saving?: boolean | undefined;
+  /** What's being done with it, where its time will be: "Sending…", or "Saving…" for an edit. */
+  label?: string | undefined;
   /** The text as it will read, already drawn. */
   body: ReactNode;
 }
@@ -145,19 +147,21 @@ export interface SentPostProps {
  * card, with "Sending…" where its time will be. The comment box draws it in its own place from the
  * moment it's sent, so the text never leaves the screen; the card takes its place when it arrives.
  */
-export function SentPost({ author, image, saving = false, body }: SentPostProps) {
+export function SentPost({ author, image, label = 'Sending…', body }: SentPostProps) {
   return (
     <div role="status" data-sent="" className="flex gap-8 px-12 py-8">
-      <Avatar login={author} image={image} size="sm" />
+      {author !== undefined && <Avatar login={author} image={image} size="sm" />}
       <div className="min-w-0 flex-1">
         <div className="flex min-h-24 flex-wrap items-center gap-x-8 gap-y-2 text-fg-muted text-small">
-          <span className="font-semibold whitespace-nowrap text-fg">
-            {author}
-            <span className="font-normal text-fg-muted"> (you)</span>
-          </span>
+          {author !== undefined && (
+            <span className="font-semibold whitespace-nowrap text-fg">
+              {author}
+              <span className="font-normal text-fg-muted"> (you)</span>
+            </span>
+          )}
           <span className="inline-flex items-center gap-6 whitespace-nowrap">
             <Spinner />
-            {saving ? 'Saving…' : 'Sending…'}
+            {label}
           </span>
         </div>
         <div className="lo-selectable mt-2 text-fg read-comment">{body}</div>
@@ -191,6 +195,7 @@ export function Thread({
   canResolve = false,
   canReply = false,
   resolving = false,
+  deleting,
   keys = {},
   reply,
   onToggle,
@@ -340,6 +345,8 @@ export function Thread({
                     variant="ghost"
                     size="sm"
                     aria-label={`Delete your comment from ${comment.when}`}
+                    busy={comment.id === deleting}
+                    working="Deleting…"
                     hint="Delete…"
                     hintKeys={comment.id === newestMine ? keys.delete : undefined}
                     onClick={() => onDelete?.(comment.id)}

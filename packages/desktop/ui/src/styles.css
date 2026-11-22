@@ -452,12 +452,13 @@
   font-weight: 500;
 }
 
-/* A key chip on a control that every card or row repeats (`Key` with `when="focus"`): there only
-   on the card or row the keyboard is on, or the pointer is over. A scope is whatever is marked
-   `data-key-scope`, and it's the keyboard's while it has `data-focused` or focus inside it. */
+/* A key chip on a control that every card or row repeats (`Key`'s `when="focus"`): it shows only
+   on the card or row the keyboard is on. A scope is whatever is marked `data-key-scope`, and it's
+   the keyboard's while it has `data-focused`, or focus the keyboard put there. Never on hover:
+   a chip that came under the pointer would move the buttons beside it. */
 @utility key-focus {
   display: none;
-  [data-key-scope]:is([data-focused], :hover, :focus-within) & {
+  [data-key-scope]:is([data-focused], :focus-visible, :has(:focus-visible)) & {
     display: inline-flex;
   }
 }

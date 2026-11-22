@@ -4,14 +4,14 @@
 // and, under it, how a change asked of it stands while GitHub's answer was lost. A comment's text
 // is drawn as GitHub renders it, through `Post`.
 
-import { Button, Callout, Spinner, Thread, type ThreadComment } from '@lo/ui';
+import { Button, Callout, Thread, type ThreadComment } from '@lo/ui';
 import { keyLabels } from '@lo/ui/commands';
 import type { ReactNode } from 'react';
 
 import { registry } from '../../../window/commands/registry.ts';
 import { avatarImage } from '../../../window/images.ts';
 import { usePull, useTabState, type PullTab } from '../../tab/window/shared.ts';
-import type { ThreadCommentRow, ThreadRow } from '../contract.ts';
+import type { ActRow, ThreadCommentRow, ThreadRow } from '../contract.ts';
 import {
   acting,
   actNote,
@@ -23,6 +23,7 @@ import {
   reply,
   resolveThread,
   tryAgain,
+  underWay,
 } from './acts.ts';
 import { replying } from './boxes.ts';
 import { useExcerpt } from './excerpts.ts';
@@ -94,6 +95,7 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
     <>
       <ThreadCard
         row={row}
+        asked={asked}
         open={open}
         focused={focused}
         onToggle={onToggle}
@@ -124,8 +126,8 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
 }
 
 /**
- * What a card says of a change asked of it while GitHub's answer was lost, with "Try again" and
- * "Close" once Lo found it didn't go, or can't tell.
+ * What a card says of a change asked of it that didn't go, or may not have: what wasn't done, why,
+ * and "Try again" and "Dismiss".
  */
 export function ActCallout({
   note,
@@ -137,20 +139,19 @@ export function ActCallout({
   onClose: () => void;
 }): ReactNode {
   return (
-    <Callout tone={note.checking ? 'info' : 'warning'} role="status">
+    <Callout tone="warning" role="status">
       <div className="flex flex-wrap items-center gap-8">
-        {note.checking && <Spinner />}
-        <span className="min-w-0 flex-1">{note.text}</span>
-        {note.again && (
-          <span className="flex flex-none gap-4">
-            <Button size="sm" onClick={onAgain}>
-              Try again
-            </Button>
-            <Button size="sm" variant="ghost" onClick={onClose}>
-              Close
-            </Button>
-          </span>
-        )}
+        <span className="min-w-0 flex-1">
+          <b className="text-ui-strong">{note.title}</b> {note.text}
+        </span>
+        <span className="flex flex-none gap-4">
+          <Button size="sm" onClick={onAgain}>
+            Try again
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onClose}>
+            Dismiss
+          </Button>
+        </span>
       </div>
     </Callout>
   );
@@ -168,6 +169,7 @@ export interface CardActions {
 /** A thread's card, from what main sent of it. */
 export function ThreadCard({
   row,
+  asked,
   open,
   focused = false,
   onToggle,
@@ -181,6 +183,11 @@ export function ThreadCard({
   now = Date.now(),
 }: {
   row: ThreadRow;
+  /**
+   * The change asked of it that GitHub hasn't answered for: the card shows it done already, with
+   * its control at work, and goes back to what `row` says if it doesn't go.
+   */
+  asked?: ActRow | undefined;
   open: boolean;
   /** The keyboard is on it: `]t` landed on it. */
   focused?: boolean;
@@ -218,10 +225,15 @@ export function ThreadCard({
     mine: actions !== undefined && login !== undefined && same(comment.author, login),
     body: body(comment),
   }));
+  const resolving = underWay(asked) && asked.change !== 'delete';
+  const resolved = resolving ? asked.change === 'resolve' : row.resolved;
+  const deleting = underWay(asked) && asked.change === 'delete' ? asked.comment : null;
   return (
     <Thread
       comments={comments}
-      resolved={row.resolved}
+      resolved={resolved}
+      resolving={resolving}
+      deleting={deleting ?? undefined}
       open={open}
       focused={focused}
       outdated={row.outdated}
@@ -230,7 +242,8 @@ export function ThreadCard({
       canResolve={
         actions !== undefined &&
         login !== undefined &&
-        (row.resolved ? row.viewerCanUnresolve : row.viewerCanResolve)
+        // At work, it's the control that was pressed, whatever the thread takes next.
+        (resolving || (row.resolved ? row.viewerCanUnresolve : row.viewerCanResolve))
       }
       canReply={actions !== undefined && login !== undefined && row.viewerCanReply && !replied}
       keys={{

@@ -866,6 +866,7 @@ describe('comment boxes', () => {
     expect(frame).toHaveBeenCalledWith(expect.anything(), box);
     const drawn = parent!.querySelector('.lo-diffcomposer')!;
     expect([...drawn.children].map((part) => part.className)).toEqual([
+      'lo-diffcomposer__sent',
       'lo-diffcomposer__head',
       'lo-diffcomposer__note',
       'lo-diffcomposer__body',
@@ -1574,6 +1575,26 @@ describe('threads', () => {
     box.hold(false);
     comment.keys('0', 'x');
     expect(box.text).toBe('ent as it is');
+  });
+
+  test('held, the box shows only its sent part, with focus, and is the open box again once let go', () => {
+    const shown = open();
+    const box = shown.compose(at('a', 'new', 4), 'Sent as it is', composerEvents());
+    box.focus();
+    const drawn = parent!.querySelector<HTMLElement>('.lo-diffcomposer')!;
+    const sent = drawn.querySelector<HTMLElement>('.lo-diffcomposer__sent')!;
+    expect(sent.hidden).toBe(true);
+    box.hold(true);
+    expect(sent.hidden).toBe(false);
+    expect(drawn.classList.contains('is-sent')).toBe(true);
+    expect(document.activeElement).toBe(sent);
+    // A send that failed: the editor is back, with its text and focus.
+    box.hold(false);
+    expect(sent.hidden).toBe(true);
+    expect(drawn.classList.contains('is-sent')).toBe(false);
+    expect(drawn.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).not.toBe(sent);
+    expect(box.text).toBe('Sent as it is');
   });
 
   test(']t lands on each thread drawn, of a line or a file, and keys act on the one it landed on', () => {
@@ -3308,10 +3329,45 @@ describe('its place on the page', () => {
     page.frame();
     watch.resize(page.dom(), 600, 800);
     expect(page.room()).toBe(0);
-    // From there, a banner coming leaves the diff where it was seen, by the scroll.
+    // From there, once the box has been still, a banner coming leaves the diff where it was seen,
+    // by the scroll.
+    page.frame();
+    page.frame();
     page.box.top = 30;
     watch.resize(page.dom(), 570, 800);
     expect(page.dom().scrollTop).toBe(30);
+  });
+
+  test('first seen under a banner still opening, follows its box until it’s still, with no scroll', () => {
+    const watch = observers();
+    const page = boxed(26);
+    open();
+    // The view's first frame is one of the banner's move, which goes on for two more.
+    page.frame();
+    for (const top of [28, 30]) {
+      page.box.top = top;
+      page.frame();
+      watch.resize(page.dom(), 600 - top, 800);
+      expect(page.dom().scrollTop).toBe(0);
+      expect(page.room()).toBe(0);
+    }
+    // Still for two frames, its place is kept from there.
+    page.frame();
+    page.frame();
+    page.box.top = 60;
+    watch.resize(page.dom(), 540, 800);
+    expect(page.dom().scrollTop).toBe(30);
+  });
+
+  test('the reader’s input ends that: what they act on stays where it is as the box moves on', () => {
+    const watch = observers();
+    const page = boxed(26);
+    open();
+    page.frame();
+    page.dom().dispatchEvent(new Event('wheel'));
+    page.box.top = 30;
+    watch.resize(page.dom(), 570, 800);
+    expect(page.dom().scrollTop).toBe(4);
   });
 
   test('drawn hidden, starts where it’s first shown: a banner that goes meanwhile leaves no room above the first file', () => {
@@ -3331,6 +3387,8 @@ describe('its place on the page', () => {
     page.frame();
     watch.resize(page.dom(), 600, 800);
     expect(page.room()).toBe(0);
+    page.frame();
+    page.frame();
     page.box.top = 30;
     watch.resize(page.dom(), 570, 800);
     expect(page.dom().scrollTop).toBe(30);

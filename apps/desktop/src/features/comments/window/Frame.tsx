@@ -1,7 +1,8 @@
 // A comment box's frame, the same wherever a comment is written, drawn in the parts the code view
 // makes around its editor: the head, which says what the comment is on, with Write and Preview and
 // the control that closes the box; the notes, of a refusal with what to do about it, or how sending
-// stands; the preview, the text as GitHub would render it; the files attached to it
+// stands; the preview, the text as GitHub would render it; the comment as a card, in the box's place
+// from the moment it's sent until GitHub answers; the files attached to it
 // (`./Attached.tsx`); and the foot, with "Attach files…", "Discard draft" and the buttons that
 // send, each dimmed with its reason as its tooltip while it can't. Each part is a React root of its
 // own, drawn from the box's state, and drawn at once as the box is made, so it's as tall as it'll
@@ -11,6 +12,7 @@ import {
   CommentBoxFootBar,
   CommentBoxHeadBar,
   CommentBoxNotes,
+  SentPost,
   type CommentBoxAction,
   type CommentBoxFoot,
   type CommentBoxNote,
@@ -33,10 +35,12 @@ import { holdText, takeAddresses, UPLOADING } from './uploads.ts';
 import { held } from './threads.ts';
 import {
   BLANK,
+  CHECK_FIRST,
   IN_A_LAYER,
   notesOf,
   OFFLINE,
   offerLabels,
+  sentLabel,
   SIGN_IN,
   whereText,
   type BoxNote,
@@ -85,7 +89,9 @@ function footOf(
 ): CommentBoxFoot {
   const waiting = sendingNow(state);
   const blank = state.text.trim() === '';
-  const reason = why ?? (blank ? BLANK : undefined);
+  // Sent before, with no word of whether it posted: nothing sends it again until that's known.
+  const unconfirmed = state.sending === 'unknown' ? CHECK_FIRST : undefined;
+  const reason = why ?? (blank ? BLANK : unconfirmed);
   const disabled = reason !== undefined || waiting;
   const { kind } = state.place;
   const alone = (label: string, how: 'review' | 'now', working: string): CommentBoxAction => ({
@@ -139,6 +145,7 @@ function drawnNote(box: Box, note: BoxNote): CommentBoxNote {
     key: note.key,
     tone: note.tone,
     icon: note.icon,
+    title: note.title,
     text: note.text,
     actions: note.offers?.map((offer) => ({
       label: offerLabels[offer],
@@ -202,6 +209,33 @@ function Preview({ box }: { box: Box }): ReactNode {
 }
 
 /**
+ * The comment as its card will draw it, from the moment it's sent until GitHub answers: the text
+ * rendered, under who sent it, with "Sending…" where its time will be. The box shows only this
+ * meanwhile (`Composer.hold`), and is the open box again, with its text, if the send fails.
+ */
+function Sent({ box }: { box: Box }): ReactNode {
+  const state = useBox(box);
+  const acting = usePull(box.view)?.acting;
+  const pull = pullIn(box.view);
+  if (!sendingNow(state)) return null;
+  const login = acting?.kind === 'account' ? acting.login : undefined;
+  return (
+    <SentPost
+      author={login}
+      image={login === undefined ? undefined : avatarImage({ login, type: 'User' }, AVATAR)}
+      label={sentLabel(state.sending, state.place.kind === 'edit')}
+      body={
+        pull ? (
+          <Rendering view={box.view} text={state.text} pull={pull} flush />
+        ) : (
+          <p className="whitespace-pre-wrap">{state.text}</p>
+        )
+      }
+    />
+  );
+}
+
+/**
  * A part of the frame whose right-click opens the box's menu: what its notes' buttons do. The
  * editor keeps the system's Edit menu.
  */
@@ -226,6 +260,7 @@ export function frameOf(box: Box): BoxFrame {
         </OnMenu>,
       ],
       [parts.preview, <Preview key="preview" box={box} />],
+      [parts.sent, <Sent key="sent" box={box} />],
       [parts.dropzone, <Dropzone key="dropzone" box={box} />],
       [parts.uploads, <UploadRows key="uploads" box={box} />],
       [

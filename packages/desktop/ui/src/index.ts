@@ -176,6 +176,8 @@ export {
 export { Label, labelColor, type LabelProps } from './Label.tsx';
 export { CommentIcon, ThreadCount, type ThreadCountProps } from './ThreadCount.tsx';
 export {
+  SentPost,
+  type SentPostProps,
   Thread,
   type ThreadComment,
   type ThreadKeys,

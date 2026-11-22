@@ -18,6 +18,8 @@ export interface PreviewProps {
   readonly text: string;
   /** The pull request it's on, which its references and relative links are read against. */
   readonly pull: PostPull;
+  /** With no padding of its own, as inside a card. */
+  readonly flush?: boolean | undefined;
 }
 
 /** Opens a link followed in the preview: an `https` page, through main. */
@@ -27,7 +29,7 @@ function follow(target: Followed): void {
   if (url !== undefined) void followLink(url);
 }
 
-export function Preview({ view, text, pull }: PreviewProps): ReactNode {
+export function Preview({ view, text, pull, flush = false }: PreviewProps): ReactNode {
   const [rendered, setRendered] = useState<{ text: string; rendered: Rendered }>();
   const { owner, repo, number } = pull;
   useEffect(() => {
@@ -48,7 +50,7 @@ export function Preview({ view, text, pull }: PreviewProps): ReactNode {
   }, [text, owner, repo, number]);
   if (text.trim() === '') return <p className="px-12 py-8 text-fg-muted">Nothing to preview</p>;
   return (
-    <div className="px-12 py-8">
+    <div className={flush ? undefined : 'px-12 py-8'}>
       {rendered?.text === text ? (
         <Markdown
           tree={rendered.rendered.tree}

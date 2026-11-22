@@ -71,7 +71,7 @@ import {
 import { landed } from './landed.ts';
 import type * as Main from './main.ts';
 import * as threads from './threads.ts';
-import { NEW_SIDE_ONLY, NO_LINES, NOT_IN_DIFF } from './writing.ts';
+import { NEW_SIDE_ONLY, NO_LINES, NOT_IN_DIFF, offersOf } from './writing.ts';
 
 const HEAD = 'a'.repeat(40);
 const OLDER = 'b'.repeat(40);
@@ -649,11 +649,11 @@ describe('drafts', () => {
     });
     const target = { kind: 'box', box: boxIn(drawn[0]!).id } as const;
     const discard = discarding;
-    const sendAnyway = offering('sendAnyway');
+    const sendAgain = offering('sendAgain');
     expect(discard.listed?.(target)).toBe(true);
     expect(discard.enabled?.(target)).toBe(true);
-    expect(sendAnyway.listed?.(target)).toBe(false);
-    expect(sendAnyway.enabled?.(target)).toBe('“Send it anyway” isn’t offered in this box now.');
+    expect(sendAgain.listed?.(target)).toBe(false);
+    expect(sendAgain.enabled?.(target)).toBe('“Try again” isn’t offered in this box now.');
     void discard.run(target);
     expect(drawn[0]!.composer.closed).toBe('dismiss');
     expect(asked('comments.discard')).toEqual([{ id: VIEW, place: onLines(null, 5) }]);
@@ -1335,10 +1335,7 @@ describe('sending', () => {
     });
     await send(box, 'now');
     expect(drawn[0]!.composer.closed).toBe('close');
-    expect(notice()).toMatchObject({
-      title: 'Added to your pending review',
-      body: 'GitHub posts nothing else from you while you have one.',
-    });
+    expect(notice()).toMatchObject({ title: 'Added to pending review', body: '' });
   });
 
   test('while it’s sent, and until Lo knows whether it posted, its text is held', async () => {
@@ -1358,6 +1355,37 @@ describe('sending', () => {
       drafts: [row(onLines(null, 5), 'Ship it?', { sending: 'checking', sent: 'Ship it?' })],
     });
     expect(drawn[0]!.composer.held).toBe(true);
+  });
+
+  test('not confirmed, nothing sends it again: “Check again” asks main to look, and sends nothing', async () => {
+    const { drawn, box } = await opened();
+    takeDrafts({
+      id: VIEW,
+      drafts: [row(onLines(null, 5), 'Ship it?', { sending: 'unknown', sent: 'Ship it?' })],
+    });
+    // The open box again, with its text.
+    expect(drawn[0]!.composer.held).toBe(false);
+    expect(offersOf(box.state)).toEqual(['checkAgain']);
+    await send(box, 'now');
+    act(box, 'sendAgain');
+    expect(asked('comments.send')).toEqual([]);
+    act(box, 'checkAgain');
+    expect(asked('comments.check')).toEqual([{ id: VIEW, place: onLines(null, 5) }]);
+    // Main looks: the box is the comment's card meanwhile.
+    takeDrafts({
+      id: VIEW,
+      drafts: [row(onLines(null, 5), 'Ship it?', { sending: 'checking', sent: 'Ship it?' })],
+    });
+    expect(drawn[0]!.composer.held).toBe(true);
+    // It didn't post: now it can go again.
+    takeDrafts({
+      id: VIEW,
+      drafts: [row(onLines(null, 5), 'Ship it?', { sending: 'notPosted' })],
+    });
+    expect(drawn[0]!.composer.held).toBe(false);
+    expect(offersOf(box.state)).toEqual(['sendAgain']);
+    act(box, 'sendAgain');
+    expect(asked('comments.send')).toHaveLength(1);
   });
 
   test('refused, the box stays with why; offline, nothing sends', async () => {
@@ -1397,10 +1425,7 @@ describe('sending', () => {
       drafts: [row(onLines(null, 5), 'Ship it?', { sending: 'checking', sent: 'Ship it?' })],
     });
     takeJoined({ id: VIEW, place: onLines(null, 5) });
-    expect(notice()).toMatchObject({
-      title: 'Added to your pending review',
-      body: 'GitHub posts nothing else from you while you have one.',
-    });
+    expect(notice()).toMatchObject({ title: 'Added to pending review', body: '' });
   });
 
   test('a comment main says joined it that no box here sent says nothing', async () => {
@@ -1768,17 +1793,19 @@ describe('acting on a thread', () => {
     expect(notice()?.body).toBe('Offline. Try again once GitHub can be reached.');
   });
 
-  test('a change whose answer was lost says Lo is checking, or that it didn’t go, until the thread shows it', () => {
+  test('a change on its way says nothing on the card, whose control is at work; one that didn’t go, or may not have, says so until the thread shows it', () => {
     const unresolved = threadRow('T2', 2);
-    expect(acts.actNote(standing('sending'), unresolved, false)).toBeUndefined();
-    expect(acts.actNote(standing('checking'), unresolved, false)).toEqual({
-      text: 'GitHub’s answer was lost. Lo is checking whether it resolved the thread.',
-      again: false,
-      checking: true,
+    for (const stands of ['waiting', 'sending', 'checking'] as const) {
+      expect(acts.underWay(standing(stands))).toBe(true);
+      expect(acts.actNote(standing(stands), unresolved, false)).toBeUndefined();
+    }
+    expect(acts.actNote(standing('notDone'), unresolved, false)).toEqual({
+      title: 'Couldn’t resolve the thread',
+      text: 'GitHub didn’t respond.',
     });
-    expect(acts.actNote(standing('notDone'), unresolved, false)).toMatchObject({ again: true });
-    expect(acts.actNote(standing('unknown'), unresolved, false)?.text).toBe(
-      'GitHub’s answer was lost, and Lo can’t tell whether it resolved the thread.',
+    expect(acts.underWay(standing('notDone'))).toBe(false);
+    expect(acts.actNote(standing('unknown'), unresolved, false)?.title).toBe(
+      'Resolve not confirmed',
     );
     expect(
       acts.actNote(standing('unknown'), { ...unresolved, resolved: true }, false),
