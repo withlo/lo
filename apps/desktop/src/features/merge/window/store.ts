@@ -16,6 +16,7 @@ import type {
   MergeView,
   Method,
   Placement,
+  PlanKind,
   Refusal,
   ShipPlan,
   ShipView,
@@ -131,10 +132,29 @@ export function placeUnknown(place: Place): boolean {
 }
 
 /**
+ * What a merge names, as its dialog states it: the view `id` of pull request `number`, the account
+ * it merges as, how, into what, the head on screen, the squash commit's title as typed, and
+ * whether a GitHub stack's layers merge with it. A plan has it all, and so does the panel before
+ * there's a plan, which is how the dialog states it from the moment it opens.
+ */
+export interface Sketch {
+  readonly id: string;
+  readonly number: number;
+  readonly login: string;
+  readonly kind: PlanKind;
+  readonly method: Method | null;
+  readonly base: string;
+  readonly head: string;
+  readonly title: string;
+  readonly stack: boolean;
+}
+
+/**
  * The merge's dialog, in the panel's place:
  *
  * - `planning`: main is planning the merge view `id` offers, for pull request `number`, which the
- *   panel's main button named `label`, or what `a` or `⌥⏎` asked for, which `title` says;
+ *   panel's main button named `label`, under the `title` its plan will have, with what the panel
+ *   knows of it already, `sketch`;
  * - `confirm`: the plan, for the reader to confirm, with `note`, what changed since one before it,
  *   while `sending` the confirmation to main; for a merge past the rules, with the number `typed`;
  * - `sent`: the plan went, and the merge from it goes as `jobs` says;
@@ -146,7 +166,8 @@ export type MergeDialog =
       readonly id: string;
       readonly number: number;
       readonly label: string;
-      readonly title?: string | undefined;
+      readonly title: string;
+      readonly sketch?: Sketch | undefined;
     }
   | {
       readonly kind: 'confirm';

@@ -16,6 +16,7 @@ import { AccountDialogs } from './AccountDialogs.tsx';
 import Accounts, { AccountsSection } from './Accounts.tsx';
 import { closeDialog, openImport, openSignIn, openSignOut, pickAccount } from './dialogs.ts';
 import feature from './index.ts';
+import { pressCopyCode } from './SignIn.tsx';
 import { accountsStore, showAccounts } from './store.ts';
 
 beforeAll(() => {
@@ -77,6 +78,12 @@ function dialog(name: string): HTMLElement | null {
   return document.querySelector(`[data-testid="${name}"]`);
 }
 
+/** What the sign-in dialog's one line says of where the sign-in is. */
+function status(): string | undefined {
+  // The first in it: a button that copies has one of its own.
+  return dialog('sign-in')?.querySelector('div[role="status"]')?.textContent;
+}
+
 function button(within: Element | null, text: string): HTMLButtonElement {
   const found = [...(within?.querySelectorAll('button') ?? [])].find((each) =>
     each.textContent.startsWith(text),
@@ -125,6 +132,7 @@ describe('the sign-in dialog', () => {
     const bridge = installBridge({
       'accounts.signIn': () => waiting,
       'accounts.openGithub': () => undefined,
+      'accounts.copyCode': () => undefined,
     });
     render();
     act(() => openSignIn());
@@ -132,15 +140,33 @@ describe('the sign-in dialog', () => {
     const shown = dialog('sign-in');
     expect(shown?.textContent).toContain('FAKE-1234');
     expect(shown?.textContent).toContain('Enter this code at github.com/login/device');
-    expect(shown?.textContent).toContain('The code expires in 14:59.');
+    // How long the code has left is beside the line, not in what a screen reader has read out.
+    expect(status()).toBe('Waiting for approval…');
+    expect(shown?.textContent).toContain('Code expires in 14 min');
     // The main button copies the code and opens GitHub's page, through main.
     expect(document.activeElement?.textContent).toContain('Copy and open GitHub');
     click(button(shown, 'Copy and open GitHub'));
     await settle();
     expect(bridge.calls).toContainEqual(['accounts.openGithub', { id: 7 }]);
-    expect(dialog('sign-in')?.textContent).toContain('Copied FAKE-1234.');
+    // Its own button copies the code alone, and says so itself.
+    click(button(shown, 'Copy'));
+    await settle();
+    expect(bridge.calls).toContainEqual(['accounts.copyCode', { id: 7 }]);
+    expect(
+      button(shown, 'Copy').querySelector('.inline-grid > span:not(.invisible)')?.textContent,
+    ).toBe('Copied');
+    // The body stays as the account is checked: the code keeps its place, and the button is busy.
     act(() => bridge.push('accounts.signingIn', { kind: 'checking', id: 7 }));
-    expect(dialog('sign-in')?.textContent).toContain('Checking your account');
+    expect(dialog('sign-in')?.textContent).toContain('FAKE-1234');
+    expect(button(shown, 'Copy and open GitHub').getAttribute('aria-busy')).toBe('true');
+    // The check can't be stopped, and Cancel says so.
+    expect(button(shown, 'Cancel').getAttribute('aria-description')).toBe(
+      'The account check can’t be stopped',
+    );
+    expect(shown?.textContent).not.toContain('Enter this code');
+    // The busy button is the one thing that shows the wait: no line with a ring of its own.
+    expect(status()).toBe('');
+    expect(shown?.querySelectorAll('.spinner')).toHaveLength(1);
     act(() =>
       bridge.push('accounts.signingIn', {
         kind: 'signedIn',
@@ -149,12 +175,59 @@ describe('the sign-in dialog', () => {
         name: null,
       }),
     );
-    expect(dialog('sign-in')?.textContent).toContain('Signed in as rozed-bot');
+    expect(status()).toBe('Signed in as rozed-bot');
+    expect(button(dialog('sign-in'), 'Done')).toBeDefined();
     // Another sign-in's news isn't this one's.
     act(() =>
       bridge.push('accounts.signingIn', { kind: 'failed', id: 6, why: 'denied', message: 'No.' }),
     );
-    expect(dialog('sign-in')?.textContent).toContain('Signed in as rozed-bot');
+    expect(status()).toBe('Signed in as rozed-bot');
+  });
+
+  it('waits for the code with its place kept, and `Esc` still stops it', async () => {
+    const answers: ((state: SignInState) => void)[] = [];
+    const bridge = installBridge({
+      'accounts.signIn': () => new Promise<SignInState>((resolve) => answers.push(resolve)),
+      'accounts.copyCode': () => undefined,
+    });
+    render();
+    act(() => openSignIn());
+    await settle();
+    const shown = dialog('sign-in');
+    // The line says the code is coming, and is the one thing that shows the wait: the code's box
+    // is empty, and the line under the title has nowhere to send the reader yet.
+    expect(status()).toBe('Getting code…');
+    expect(shown?.querySelectorAll('.spinner')).toHaveLength(1);
+    expect(shown?.querySelector('[aria-busy="true"] .device-code')).not.toBeNull();
+    expect(shown?.querySelector('[role="img"]')).toBeNull();
+    expect(shown?.querySelector('.skeleton')).toBeNull();
+    expect(shown?.textContent).not.toContain('Enter this code');
+    // Nothing to run yet: the main button is dimmed, and says why to a screen reader.
+    const main = button(shown, 'Copy and open GitHub');
+    expect(main.getAttribute('aria-disabled')).toBe('true');
+    expect(main.getAttribute('aria-description')).toBe('Getting code');
+    click(main);
+    await settle();
+    expect(bridge.calls).not.toContainEqual(['accounts.openGithub', { id: 7 }]);
+    await act(async () => {
+      answers[0]?.(waiting);
+      await Promise.resolve();
+    });
+    await settle();
+    expect(button(shown, 'Copy and open GitHub')).toBe(main);
+    expect(main.getAttribute('aria-disabled')).toBeNull();
+    expect(shown?.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(shown?.textContent).toContain('Enter this code at github.com/login/device');
+    // The key for the code presses its Copy button, which says so itself, in the dialog.
+    act(() => pressCopyCode());
+    await settle();
+    expect(bridge.calls).toContainEqual(['accounts.copyCode', { id: 7 }]);
+    expect(
+      button(shown, 'Copy').querySelector('.inline-grid > span:not(.invisible)')?.textContent,
+    ).toBe('Copied');
+    press(shown ?? document.body, 'Escape');
+    await settle();
+    expect(dialog('sign-in')).toBeNull();
   });
 
   it('presses Done on ⏎ off its buttons, and says nothing of the keychain', async () => {
@@ -171,7 +244,7 @@ describe('the sign-in dialog', () => {
       }),
     );
     const shown = dialog('sign-in');
-    expect(shown?.textContent).toContain('Signed in as rozed-bot');
+    expect(status()).toBe('Signed in as rozed-bot');
     expect(shown?.textContent).not.toMatch(/keychain/i);
     // A button's own `⏎` is left to it.
     const key = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
@@ -180,7 +253,7 @@ describe('the sign-in dialog', () => {
     });
     expect(key.defaultPrevented).toBe(false);
     // On the dialog's text, which a click there left focus on, `⏎` presses Done.
-    press(shown?.querySelector('p') ?? document.body, 'Enter');
+    press(shown?.querySelector('div[role="status"]') ?? document.body, 'Enter');
     await settle();
     expect(dialog('sign-in')).toBeNull();
   });
@@ -224,11 +297,58 @@ describe('the sign-in dialog', () => {
     act(() => openSignIn());
     await settle();
     const shown = dialog('sign-in');
-    expect(shown?.textContent).toContain("Lo can't keep your token safely");
     expect(shown?.querySelector('[role="alert"]')?.textContent).toBe(
+      'Couldn’t sign in Sign-ins are kept in the Keychain, and it isn’t available.',
+    );
+    // What main said is behind Details, as it came.
+    click(button(shown, 'Details'));
+    expect(shown?.querySelector('pre')?.textContent).toBe(
       'Lo keeps your GitHub token in a keyring, and none answered.',
     );
     expect(button(shown, 'Quit Lo')).toBeDefined();
+    expect(button(shown, 'Close')).toBeDefined();
+    // No code came, so there's no box for one, and no line saying where to type it.
+    expect(shown?.querySelector('.device-code')?.closest('[inert]')).not.toBeNull();
+    expect(shown?.textContent).not.toContain('Enter this code');
+  });
+
+  it('says why GitHub ended it, once, and offers the way on', async () => {
+    const bridge = installBridge({ 'accounts.signIn': () => waiting });
+    render();
+    act(() => openSignIn());
+    await settle();
+    const shown = dialog('sign-in');
+    const said = () => shown?.querySelector('[role="alert"]')?.textContent;
+    act(() =>
+      bridge.push('accounts.signingIn', {
+        kind: 'failed',
+        id: 7,
+        why: 'expired',
+        message: 'The code expired before it was entered on GitHub.',
+      }),
+    );
+    expect(said()).toBe('Couldn’t sign in The code expired.');
+    // The code stays where it was, dimmed, with nothing left to do with it: no Copy, and no line
+    // saying where to type it.
+    expect(shown?.querySelector('[role="img"]')?.className).toContain('text-fg-disabled');
+    expect(button(shown, 'Copy').closest('.invisible')).not.toBeNull();
+    expect(shown?.textContent).not.toContain('Enter this code');
+    expect(status()).toBe('');
+    expect(button(shown, 'Try again')).toBeDefined();
+    click(button(shown, 'Try again'));
+    await settle();
+    expect(shown?.querySelector('[role="alert"]')).toBeNull();
+    act(() =>
+      bridge.push('accounts.signingIn', {
+        kind: 'failed',
+        id: 7,
+        why: 'missingScopes',
+        message: 'The token is missing the workflow scope.',
+      }),
+    );
+    expect(said()).toBe('Couldn’t sign in GitHub granted less access than the sign-in asked for.');
+    // The sign-in is what failed, so the way on is to try it again.
+    expect(button(shown, 'Try again')).toBeDefined();
   });
 
   it('says why it ended, and tries again', async () => {
@@ -243,7 +363,11 @@ describe('the sign-in dialog', () => {
     render();
     act(() => openSignIn());
     await settle();
-    expect(dialog('sign-in')?.textContent).toContain('accounts.signIn failed.');
+    expect(dialog('sign-in')?.querySelector('[role="alert"]')?.textContent).toBe(
+      'Couldn’t sign in',
+    );
+    click(button(dialog('sign-in'), 'Details'));
+    expect(dialog('sign-in')?.querySelector('pre')?.textContent).toBe('accounts.signIn failed.');
     click(button(dialog('sign-in'), 'Try again'));
     await settle();
     expect(dialog('sign-in')?.textContent).toContain('FAKE-1234');

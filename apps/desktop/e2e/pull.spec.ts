@@ -216,7 +216,9 @@ test('shows a spinner and a placeholder on a tab still opening, until GitHub ans
     await expect(tab.locator('.skeleton')).toBeVisible();
     // The header holds the places of what hasn't arrived, and the middle says it's opening.
     await expect(page.getByRole('heading', { level: 1 })).toHaveCount(0);
-    await expect(page.getByText('Opening the pull request…')).toBeVisible();
+    await expect(
+      page.getByRole('status').filter({ hasText: 'Opening pull request…' }),
+    ).toBeVisible();
   } finally {
     await app.close();
     for (const socket of sockets) socket.destroy();

@@ -6,6 +6,7 @@
 // so nothing on screen moves without the reader, and otherwise wait until it's drawn again. While it
 // has focus, the diff's keys act on it.
 
+import { Loading } from '@lo/ui';
 import { createDiffView, type DiffFile, type DiffView, type Place } from '@lo/ui/code';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
@@ -78,14 +79,16 @@ export function Beside({ tab, path, line, end, note }: BesideProps) {
           }}
           line={line}
         />
-      ) : (
+      ) : files ? (
         <Said>
-          {!files
-            ? 'Reading what the pull request changes…'
-            : state?.comparison === null
-              ? `This pull request doesn’t change ${shownPath(path)}.`
-              : `${shownPath(path)} didn’t change between these revisions.`}
+          {state?.comparison === null
+            ? `This pull request doesn’t change ${shownPath(path)}.`
+            : `${shownPath(path)} didn’t change between these revisions.`}
         </Said>
+      ) : (
+        <div className="min-h-0 flex-1 bg-bg">
+          <Loading status="Reading changed files…" />
+        </div>
       )}
     </div>
   );

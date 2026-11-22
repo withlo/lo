@@ -11,7 +11,13 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { IpcError } from '../../../ipc/contract.ts';
-import { notice, Notices, NOTICE_TIME, withdraw } from '../../../window/commands/notices.tsx';
+import {
+  notice,
+  notices,
+  Notices,
+  NOTICE_TIME,
+  withdraw,
+} from '../../../window/commands/notices.tsx';
 import { createRegistry, registry } from '../../../window/commands/registry.ts';
 import { Slots } from '../../../window/slots.tsx';
 import { installBridge } from '../../../window/test/bridge.ts';
@@ -66,8 +72,7 @@ afterEach(() => {
   vi.useRealTimers();
   document.body.replaceChildren();
   // A note from the test goes with it, as its timer would take it.
-  const note = notice();
-  if (note) withdraw(note.title, note.body);
+  for (const note of notices()) withdraw(note.title, note.body);
 });
 
 const LINE = 'Reads overview format 3 and shows merge queue groups.';

@@ -9,7 +9,6 @@ import {
   type AccountQuestion,
   type OpenDialog,
   type SignInDialog,
-  type SignInNote,
 } from './store.ts';
 
 let attempts = 0;
@@ -61,6 +60,13 @@ function updateSignIn(attempt: number, change: (dialog: SignInDialog) => SignInD
   if (dialog?.attempt === attempt) accountsStore.setState({ dialog: change(dialog) });
 }
 
+/** `dialog` with its sign-in at `state`. The code it waited for stays, so its place does. */
+function at(dialog: SignInDialog, state: SignInState): SignInDialog {
+  const code =
+    state.kind === 'waiting' ? { userCode: state.userCode, page: state.page } : dialog.code;
+  return { ...dialog, state, code, unopened: undefined };
+}
+
 /**
  * Opens the sign-in dialog and starts signing in with GitHub's device flow, stopping any other
  * sign-in. Closing the dialog stops it.
@@ -74,7 +80,7 @@ export function openSignIn(): void {
     .then(
       (state) => {
         if (signInDialog()?.attempt === attempt) {
-          updateSignIn(attempt, (dialog) => ({ ...dialog, state: newer(dialog.state, state) }));
+          updateSignIn(attempt, (dialog) => at(dialog, newer(dialog.state, state)));
         } else if (state.kind === 'waiting') {
           // Closed while main asked GitHub: it stops, as if it had been open.
           main().cancelSignIn({ id: state.id }).catch(log('stop signing in'));
@@ -84,7 +90,7 @@ export function openSignIn(): void {
         log('start signing in')(error);
         updateSignIn(attempt, (dialog) => ({
           ...dialog,
-          error: error instanceof IpcError ? error.message : "Lo couldn't start signing in.",
+          error: said(error),
         }));
       },
     );
@@ -100,7 +106,7 @@ function newer(known: SignInState | undefined, told: SignInState): SignInState {
 export function heardSignIn(state: SignInState): void {
   const dialog = signInDialog();
   if (dialog?.state?.id !== state.id) return;
-  accountsStore.setState({ dialog: { ...dialog, state, note: undefined } });
+  accountsStore.setState({ dialog: at(dialog, state) });
 }
 
 /** The sign-in the dialog shows waiting for its code, if any. */
@@ -109,41 +115,36 @@ export function waitingSignIn(): Extract<SignInState, { kind: 'waiting' }> | und
   return state?.kind === 'waiting' ? state : undefined;
 }
 
-/** Copies the code the sign-in waits for, and says so in the dialog. */
-export async function copyCode(): Promise<void> {
-  const dialog = signInDialog();
-  const waiting = waitingSignIn();
-  if (dialog === undefined || waiting === undefined) return;
-  const note = await main()
-    .copyCode({ id: waiting.id })
-    .then(
-      (): SignInNote => ({ tone: 'info', text: `Copied ${waiting.userCode}.` }),
-      (error: unknown): SignInNote => ({
-        tone: 'danger',
-        text: error instanceof IpcError ? error.message : "Lo couldn't copy the code.",
-      }),
-    );
-  updateSignIn(dialog.attempt, (open) => ({ ...open, note }));
+/** What main said went wrong, as it came. */
+function said(error: unknown): string {
+  return error instanceof IpcError ? error.message : String(error);
 }
 
-/** Copies the code and opens GitHub's page to enter it on. */
+/**
+ * Copies the code the sign-in waits for. Rejects when it couldn't, with what main said: its button
+ * says so itself.
+ */
+export async function copyCode(): Promise<void> {
+  const waiting = waitingSignIn();
+  if (waiting === undefined) throw new Error('No sign-in is waiting for its code.');
+  await main().copyCode({ id: waiting.id });
+}
+
+/**
+ * Copies the code and opens GitHub's page to enter it on. The page opening is what shows it
+ * worked; when it didn't, the dialog says so.
+ */
 export async function openGithub(): Promise<void> {
   const dialog = signInDialog();
   const waiting = waitingSignIn();
   if (dialog === undefined || waiting === undefined) return;
-  const note = await main()
+  const unopened = await main()
     .openGithub({ id: waiting.id })
     .then(
-      (): SignInNote => ({
-        tone: 'info',
-        text: `Copied ${waiting.userCode}. Paste it on GitHub's page, then approve Lo.`,
-      }),
-      (error: unknown): SignInNote => ({
-        tone: 'danger',
-        text: error instanceof IpcError ? error.message : "Lo couldn't open GitHub's page.",
-      }),
+      () => undefined,
+      (error: unknown) => said(error),
     );
-  updateSignIn(dialog.attempt, (open) => ({ ...open, note }));
+  updateSignIn(dialog.attempt, (open) => ({ ...open, unopened }));
 }
 
 /** Opens the dialog for importing accounts from `gh`. */

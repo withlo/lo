@@ -88,6 +88,17 @@ const panel = (page: Page) => page.locator('[data-lo-scope="merge"]');
 /** The merge's dialog. */
 const dialog = (page: Page) => page.getByTestId('merge-confirm');
 
+/**
+ * Waits for the merge's dialog to ask under `title`: the title is there while Lo still checks, so
+ * this waits for its main button to stop being busy too.
+ */
+async function asks(page: Page, title: string, options: { timeout?: number } = {}): Promise<void> {
+  await expect(dialog(page).getByRole('heading', { name: title, exact: true })).toBeVisible(
+    options,
+  );
+  await expect(dialog(page).locator('button[aria-busy="true"]')).toHaveCount(0);
+}
+
 /** The note Lo says at the bottom of the window. */
 const said = (page: Page, text: string) => page.getByRole('status').filter({ hasText: text });
 
@@ -103,7 +114,7 @@ async function turnOn(page: Page): Promise<void> {
   const { number } = pulls.gatedPassing;
   await panelOf(page, number, 'Can’t merge yet');
   await page.keyboard.press('a');
-  await expect(dialog(page)).toContainText(`Merge #${number} when it’s ready?`);
+  await asks(page, 'Turn on auto-merge');
   await page.keyboard.press('Enter');
 }
 
@@ -114,7 +125,7 @@ test('`a` turns on auto-merge once confirmed, saying what GitHub waits for', asy
   const { number } = pulls.gatedPassing;
   await panelOf(page, number, 'Can’t merge yet');
   await page.keyboard.press('a');
-  await expect(dialog(page)).toContainText(`Merge #${number} when it’s ready?`);
+  await asks(page, 'Turn on auto-merge');
   await expect(dialog(page)).toContainText(`GitHub merges #${number} into e4/gated once`);
   await expect(dialog(page).getByRole('button', { name: /Merge when ready/ })).toBeVisible();
   expect(autoWrites(github, 'EnablePullRequestAutoMerge')).toBe(0);
@@ -156,7 +167,7 @@ test.describe('past the rules', () => {
       panel(page).getByRole('button', { name: /Merge without the rules/ }),
     ).toBeVisible();
     await page.keyboard.press('Alt+Enter');
-    await expect(dialog(page)).toContainText(`Merge #${number} without the rules?`);
+    await asks(page, `Merge #${number} without the rules`);
     await expect(dialog(page)).toContainText('This skips:');
     await expect(dialog(page)).toContainText(`Type ${number} to confirm`);
     const button = dialog(page).getByRole('button', { name: /Merge anyway/ });
@@ -211,9 +222,7 @@ test.describe('when GitHub finds nothing blocks it', () => {
     const { number } = pulls.gatedPassing;
     await turnOn(page);
     // The merge, to confirm as any merge; nothing merged it, so no answer to it was recorded.
-    await expect(dialog(page)).toContainText(`Merge #${number} into e4/gated?`, {
-      timeout: MERGING,
-    });
+    await asks(page, `Merge #${number}`, { timeout: MERGING });
     await expect(dialog(page)).toContainText(
       `Nothing blocks #${number} now, so GitHub didn’t turn on auto-merge. It can merge as it is.`,
     );

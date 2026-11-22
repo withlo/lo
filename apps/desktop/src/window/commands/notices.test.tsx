@@ -5,7 +5,16 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import keys from '../../features/keys/window/index.ts';
-import { announce, notice, notify, NOTICE_TIME, Notices } from './notices.tsx';
+import {
+  announce,
+  notice,
+  notices,
+  notify,
+  NOTICE_TIME,
+  Notices,
+  refuse,
+  withdraw,
+} from './notices.tsx';
 import { createRegistry, registry } from './registry.ts';
 
 beforeAll(() => {
@@ -35,42 +44,130 @@ afterEach(() => {
 const status = () => document.querySelector('[role="status"]');
 const region = () => document.querySelector('.toast-floating');
 
-/** The toast's parts, as a screen reader hears them in order. */
-function toast(): { title: string | null; body: string | null; icon: boolean } | undefined {
-  const card = status()?.querySelector('.toast');
-  if (!card) return undefined;
-  const [title, body] = [...card.querySelectorAll('div')].map((each) => each.textContent);
-  return {
-    title: title ?? null,
-    body: body ?? null,
-    icon: card.querySelector('svg.lo-i[aria-hidden="true"]') !== null,
-  };
+/** A toast's parts, as a screen reader hears them in order. */
+interface Said {
+  readonly title: string | null;
+  readonly body: string | null;
+  readonly icon: boolean;
 }
+
+/** The toasts on screen, oldest first: each one's line, and what's under it. */
+function toasts(): Said[] {
+  return [...(status()?.querySelectorAll('.toast') ?? [])].map((card) => {
+    const line = card.querySelector('div');
+    const under = line?.querySelector(':scope > .text-fg-muted');
+    const title = [...(line?.childNodes ?? [])]
+      .filter((node) => node !== under)
+      .map((node) => node.textContent)
+      .join('');
+    return {
+      title: line ? title : null,
+      body: under?.textContent ?? null,
+      icon: card.querySelector('svg.lo-i[aria-hidden="true"]') !== null,
+    };
+  });
+}
+
+/** The newest toast. */
+const toast = () => toasts().at(-1);
 
 describe('notices', () => {
   it('keep a live region that says each note as a toast, and take it away after a few seconds', () => {
     expect(status()?.textContent).toBe('');
     expect(toast()).toBeUndefined();
     act(() => notify('Back', "There's nowhere to go back to."));
-    expect(toast()).toEqual({
-      title: 'Back',
-      body: "There's nowhere to go back to.",
-      icon: true,
-    });
-    // A newer note takes the older one's place, and its time starts again.
+    expect(toasts()).toEqual([
+      { title: 'Back', body: "There's nowhere to go back to.", icon: true },
+    ]);
     act(() => {
-      vi.advanceTimersByTime(NOTICE_TIME - 1);
-      notify('Forward', 'Another.');
-    });
-    act(() => {
-      vi.advanceTimersByTime(NOTICE_TIME - 1);
-    });
-    expect(toast()).toMatchObject({ title: 'Forward', body: 'Another.' });
-    act(() => {
-      vi.advanceTimersByTime(1);
+      vi.advanceTimersByTime(NOTICE_TIME);
     });
     expect(status()?.textContent).toBe('');
     expect(notice()).toBeUndefined();
+  });
+
+  it('stack a second note under the first, each with its own time', () => {
+    act(() => announce('Copied path'));
+    act(() => {
+      vi.advanceTimersByTime(NOTICE_TIME - 1);
+      announce('Copied link');
+    });
+    // Two things done show two toasts: the newer one doesn't take the older one's place.
+    expect(toasts().map((each) => each.title)).toEqual(['Copied path', 'Copied link']);
+    expect(notice()).toMatchObject({ title: 'Copied link' });
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(toasts().map((each) => each.title)).toEqual(['Copied link']);
+    act(() => {
+      vi.advanceTimersByTime(NOTICE_TIME - 1);
+    });
+    expect(status()?.textContent).toBe('');
+    expect(notices()).toEqual([]);
+  });
+
+  it('show three at most: a fourth sends the oldest away', () => {
+    act(() => {
+      for (const each of ['One', 'Two', 'Three', 'Four']) announce(each);
+    });
+    expect(toasts().map((each) => each.title)).toEqual(['Two', 'Three', 'Four']);
+  });
+
+  it('say a note once, however often it’s asked for while it shows', () => {
+    act(() => {
+      refuse('Sign in to comment');
+      announce('Copied path');
+      refuse('Sign in to comment');
+    });
+    // The one said again is the newest, and isn't there twice.
+    expect(notices().map((each) => each.title)).toEqual(['Copied path', 'Sign in to comment']);
+    expect(toasts()).toHaveLength(2);
+  });
+
+  it('keep a note’s time as the window draws again, and as other notes come and go', () => {
+    act(() => announce('Copied path'));
+    act(() => {
+      vi.advanceTimersByTime(NOTICE_TIME / 2);
+    });
+    // Drawn again with nothing new to say, then with a note that comes and is taken back: neither
+    // gives the first note more time.
+    act(() => root?.render(<Notices waiting={<span />} />));
+    act(() => notify('Offline', ''));
+    act(() => withdraw('Offline', ''));
+    act(() => root?.render(<Notices />));
+    act(() => {
+      vi.advanceTimersByTime(NOTICE_TIME / 2 - 1);
+    });
+    expect(toasts().map((each) => each.title)).toEqual(['Copied path']);
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(notices()).toEqual([]);
+  });
+
+  it('start a note’s time over when it’s said again', () => {
+    act(() => announce('Copied path'));
+    act(() => {
+      vi.advanceTimersByTime(NOTICE_TIME - 1);
+    });
+    act(() => announce('Copied path'));
+    act(() => {
+      vi.advanceTimersByTime(NOTICE_TIME - 1);
+    });
+    expect(toasts().map((each) => each.title)).toEqual(['Copied path']);
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
+    expect(notices()).toEqual([]);
+  });
+
+  it('take back a note that’s over, and leave the others', () => {
+    act(() => {
+      notify('Compare r1 → r2', 'Fetching.');
+      announce('Copied path');
+    });
+    act(() => withdraw('Compare r1 → r2', 'Fetching.'));
+    expect(toasts().map((each) => each.title)).toEqual(['Copied path']);
   });
 
   it('float at the bottom right, above the status bar, as the design’s toast does', () => {
@@ -81,11 +178,11 @@ describe('notices', () => {
 
   it('put each reason on a line of its own', () => {
     act(() => notify('Make this a GitHub stack', 'One reason.\nAnother reason.'));
-    const lines = [...(status()?.querySelectorAll('.toast span.block') ?? [])];
+    const lines = [...(status()?.querySelectorAll('.toast span.block span.block') ?? [])];
     expect(lines.map((line) => line.textContent)).toEqual(['One reason.', 'Another reason.']);
   });
 
-  it('say what’s done with a tick, and with nothing under it when there’s nothing more', () => {
+  it('say what’s done with a tick, in one line', () => {
     act(() => announce('Made #82, #83 and #84 a GitHub stack'));
     expect(toast()).toEqual({
       title: 'Made #82, #83 and #84 a GitHub stack',
@@ -93,6 +190,16 @@ describe('notices', () => {
       icon: true,
     });
     expect(status()?.querySelector('.toast .text-success')).not.toBeNull();
+  });
+
+  it('go after their time with no window drawing them', () => {
+    act(() => root?.unmount());
+    root = undefined;
+    notify('Back', 'Nowhere.');
+    vi.advanceTimersByTime(NOTICE_TIME - 1);
+    expect(notice()).toMatchObject({ title: 'Back' });
+    vi.advanceTimersByTime(1);
+    expect(notice()).toBeUndefined();
   });
 });
 
@@ -102,7 +209,7 @@ describe('toasts that wait', () => {
     const waiting = () => region()?.querySelector('[data-testid="waiting"]');
     expect(waiting()?.textContent).toBe('Lo 0.2.0 is out');
     act(() => notify('Back', 'Nowhere.'));
-    // Not inside the note's atomic region, which a screen reader reads whole as a note comes.
+    // Not inside the notes' region, which says each note as it comes.
     expect(status()?.contains(waiting() ?? null)).toBe(false);
     expect(waiting()?.closest('[role="status"]')).not.toBe(status());
     const [note, held] = [...(region()?.children ?? [])];
@@ -131,8 +238,8 @@ describe('a command that did nothing', () => {
     act(() => {
       registry().run('keys.help', NO_TARGET);
     });
-    // Titled by what was asked for.
-    expect(toast()).toMatchObject({ title: 'Every key', body: 'Key help is busy.' });
+    // The reason alone: never under the name of what was asked for.
+    expect(toasts()).toEqual([{ title: 'Key help is busy.', body: null, icon: true }]);
   });
 
   it('says nothing when it ran', () => {

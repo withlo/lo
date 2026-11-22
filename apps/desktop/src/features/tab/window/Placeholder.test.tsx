@@ -1,0 +1,141 @@
+// @vitest-environment jsdom
+import { LOADING_DELAY_MS, LOADING_SLOW_MS } from '@lo/ui';
+import { commandsOf } from '@lo/ui/commands';
+import { act } from 'react';
+import { createRoot } from 'react-dom/client';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { createRegistry } from '../../../window/commands/registry.ts';
+import keys from '../keys.ts';
+import { Placeholder } from './Placeholder.tsx';
+
+const close = vi.hoisted(() => vi.fn<(tab: { id: string }) => Promise<void>>());
+vi.mock('./main.ts', () => ({ main: () => ({ close }) }));
+
+beforeAll(() => {
+  Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
+  createRegistry(commandsOf(keys), 'mac');
+});
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  close.mockReset().mockResolvedValue();
+});
+
+/** What takes each placeholder drawn off the page again. */
+const drawn: (() => void)[] = [];
+
+afterEach(() => {
+  for (const gone of drawn.splice(0)) gone();
+  // Long enough for every wait to be over before the next test.
+  wait(LOADING_DELAY_MS);
+  vi.useRealTimers();
+});
+
+/** Draws tab `tab`'s placeholder, as one of the tab's views would, over `status` if it gives one. */
+function draw(tab: string, status?: string) {
+  const box = document.createElement('div');
+  document.body.append(box);
+  const root = createRoot(box);
+  const say = (line?: string) => act(() => root.render(<Placeholder tab={tab} status={line} />));
+  say(status);
+  let there = true;
+  const gone = () => {
+    if (!there) return;
+    there = false;
+    act(() => root.unmount());
+    box.remove();
+  };
+  drawn.push(gone);
+  return { box, gone, say };
+}
+
+function wait(ms: number): void {
+  act(() => {
+    vi.advanceTimersByTime(ms);
+  });
+}
+const cancel = (box: HTMLElement) => box.querySelector('button');
+
+describe('a tab’s placeholder', () => {
+  it('shows nothing at first, then the mark over what it waits for', () => {
+    const { box } = draw('fd');
+    expect(box.querySelector('[data-lo-placeholder]')?.getAttribute('aria-busy')).toBe('true');
+    expect(box.textContent).toBe('');
+    wait(LOADING_DELAY_MS);
+    expect(box.querySelector('[role="status"] p')?.textContent).toBe('Opening pull request…');
+    // Cancel has its room, and isn't offered yet.
+    expect(cancel(box)?.parentElement?.className).toContain('invisible');
+    expect(cancel(box)?.tabIndex).toBe(-1);
+  });
+
+  it('says GitHub is slow after eight seconds, and offers Cancel, which closes the tab', () => {
+    const { box } = draw('fd');
+    wait(LOADING_SLOW_MS - 1);
+    expect(box.textContent).toContain('Opening pull request…');
+    wait(1);
+    expect(box.querySelector('[role="status"] p')?.textContent).toBe('Waiting for GitHub…');
+    expect(cancel(box)?.parentElement?.className).not.toContain('invisible');
+    // Cancel closes the tab, so it shows the key that does.
+    expect(cancel(box)?.textContent).toBe('Cancel⌘W');
+    expect(close).not.toHaveBeenCalled();
+    act(() => cancel(box)?.click());
+    expect(close).toHaveBeenCalledExactlyOnceWith({ id: 'fd' });
+  });
+
+  it('carries one wait from view to view: the mark stays, and slow counts from the start', () => {
+    const first = draw('fd');
+    wait(500);
+    expect(first.box.textContent).toContain('Opening pull request…');
+    // The overview gives way to the diff, which draws the same wait.
+    first.gone();
+    const second = draw('fd');
+    expect(second.box.textContent).toContain('Opening pull request…');
+    wait(200);
+    second.gone();
+    const third = draw('fd');
+    expect(third.box.textContent).toContain('Opening pull request…');
+    wait(LOADING_SLOW_MS - 700);
+    expect(third.box.textContent).toContain('Waiting for GitHub…');
+  });
+
+  it('swaps only its line for what the view reads next, the mark and the wait carrying on', () => {
+    const first = draw('fd');
+    wait(500);
+    first.gone();
+    // The next view finds the mark and the line as they were, with nothing coming in again.
+    const second = draw('fd');
+    const mark = second.box.querySelector('svg');
+    const line = () => second.box.querySelector('[role="status"] p');
+    expect(mark?.getAttribute('class')).not.toContain('move-swap');
+    expect(line()?.className).not.toContain('move-swap');
+    // With the pull request there, it says what it reads now: a new line under the same mark.
+    second.say('Reading changed files…');
+    expect(line()?.textContent).toBe('Reading changed files…');
+    expect(line()?.className).toContain('move-swap');
+    expect(second.box.querySelector('svg')).toBe(mark);
+    // Cancel's room is there through the whole wait, so nothing shifts under the mark, and it
+    // comes eight seconds after the tab began to wait.
+    expect(cancel(second.box)?.parentElement?.className).toContain('invisible');
+    wait(LOADING_SLOW_MS - 500);
+    expect(cancel(second.box)?.parentElement?.className).not.toContain('invisible');
+    expect(line()?.textContent).toBe('Reading changed files…');
+  });
+
+  it('keeps each tab’s wait to itself', () => {
+    draw('fd');
+    wait(500);
+    expect(draw('bat').box.textContent).toBe('');
+  });
+
+  it('begins a new wait once the last has been gone a moment', () => {
+    const first = draw('fd');
+    wait(500);
+    first.gone();
+    wait(LOADING_DELAY_MS);
+    const again = draw('fd');
+    expect(again.box.textContent).toBe('');
+    wait(LOADING_DELAY_MS);
+    expect(again.box.textContent).toContain('Opening pull request…');
+  });
+});

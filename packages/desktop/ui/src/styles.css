@@ -368,6 +368,12 @@
   min-height: 1lh;
 }
 
+/* A box for a control beside one line of text, as tall as that line: the control is centred on
+   the line and adds nothing to its height. */
+@utility h-1lh {
+  height: 1lh;
+}
+
 /* The PR header: the title row, then the row of what's on screen, in the header's height. */
 @utility pr-header {
   display: grid;

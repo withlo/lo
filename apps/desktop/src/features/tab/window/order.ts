@@ -48,7 +48,7 @@ export function inStrip(): number {
 /**
  * Why the tab `target` names, or the one on screen, can't move a place by `by` among `state`'s
  * tabs, or `true` when it can. It goes no further than the first `shown`, those the strip shows,
- * and not round the ends.
+ * and not round the ends. The reason is the fact alone, as its menu row and its key's toast say it.
  */
 export function movable(
   { tabs, active }: TabsState,
@@ -59,12 +59,12 @@ export function movable(
   const id = target.kind === 'tab' ? target.tab : active;
   const at = tabs.findIndex((tab) => tab.id === id);
   const tab = tabs[at];
-  if (!tab) return "That tab isn't open.";
+  if (!tab) return 'Tab isn’t open';
   if (tab.kind === 'recent') {
-    return "Recent pull requests can't move: it shows while no other tab is open.";
+    return 'Recent pull requests can’t move';
   }
-  if (at + by < 0) return 'The tab is first in the strip already.';
-  if (at + by >= Math.min(shown, tabs.length)) return 'The tab is last in the strip already.';
+  if (at + by < 0) return 'Already first';
+  if (at + by >= Math.min(shown, tabs.length)) return 'Already last';
   return true;
 }
 
