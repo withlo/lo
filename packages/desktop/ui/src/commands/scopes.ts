@@ -162,6 +162,19 @@ export function isTextField(element: Element | null | undefined): boolean {
 }
 
 /**
+ * Whether `element` is an editable field, whose text the keys that edit text change: an input that
+ * takes text, or a text area, that isn't read-only, or editable content, as `isContentEditable`
+ * has it, such as a comment box's text. Content that says it's read-only (`aria-readonly`) isn't
+ * one, so a code view's own text, which CodeMirror marks so, isn't.
+ */
+export function isEditable(element: Element | null | undefined): boolean {
+  const kind = textKind(element);
+  if (!element || kind === undefined) return false;
+  if (kind === 'field') return !element.hasAttribute('readonly');
+  return element.closest('[contenteditable]')?.getAttribute('aria-readonly') !== 'true';
+}
+
+/**
  * Whether the system's Edit menu (cut, copy, paste, spelling) is `element`'s right-click menu,
  * rather than Lo's: a form field (an input that takes text, or a text area), and editable content
  * outside a code view, such as a comment box's text. A code view's own text is editable content

@@ -66,6 +66,11 @@ export interface KeyPlace {
    * focus. Unsaid, it's somewhere.
    */
   readonly nowhere?: boolean;
+  /**
+   * The focused element is an editable field, as `isEditable` says, which keeps the keys that edit
+   * its text. Unsaid, it isn't.
+   */
+  readonly editable?: boolean;
 }
 
 /** What the listener does with the event. */
@@ -474,17 +479,18 @@ export class Registry {
 
   private focus(place: KeyPlace): Focus {
     const { source, name } = place.scope;
+    const editable = place.editable === true;
     if (isKeySource(source)) {
       // A field inside a code view, such as Vim's prompt, is typed into as insert mode is.
       if (place.text === 'field')
-        return { scope: name, text: true, view: { mode: 'insert', pending: false } };
+        return { scope: name, text: true, view: { mode: 'insert', pending: false }, editable };
       const { mode, pending, count, plain, target } = source.keyState();
       const on = (kind: TargetKind) => isOn(target, kind);
-      return { scope: name, text: false, view: { mode, pending, count, plain }, on };
+      return { scope: name, text: false, view: { mode, pending, count, plain }, on, editable };
     }
     // Asked only of a command that names what it acts on.
     const on = (kind: TargetKind) => isOn(scopeTarget(place.scope), kind);
-    return { scope: name, text: place.text !== undefined, on };
+    return { scope: name, text: place.text !== undefined, on, editable };
   }
 
   /**

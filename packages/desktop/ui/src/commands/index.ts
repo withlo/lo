@@ -4,6 +4,7 @@
 
 export {
   checkClashes,
+  checkEditingKeys,
   checkHandlers,
   checkIds,
   checkKeys,
@@ -74,16 +75,19 @@ export {
   type KeymapError,
   type KeymapLine,
 } from './keymap.ts';
+export { CAUGHT_ATTRIBUTE, catchFocus } from './focus.ts';
 export { KEY_EVENT, listen } from './listener.ts';
 export {
   Bindings,
   declaredBindings,
   holds,
   linuxEditingKeys,
+  isTextEditing,
   match,
   matchAny,
   SEQUENCE_TIMEOUT,
   startsWith,
+  textEditingKeys,
   type Binding,
   type Focus,
   type Outcome,
@@ -127,6 +131,7 @@ export {
   engineScopes,
   findScope,
   hasEditMenu,
+  isEditable,
   isKeySource,
   isTextField,
   endsTab,

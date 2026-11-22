@@ -88,6 +88,7 @@ describe('a key the editor handles itself', () => {
     expect(declare({ ...base, when: inBox, vim: 'motion' })).toThrow('has no vim');
     expect(declare({ ...base, when: inBox, menu: { on: 'box', order: 1 } })).toThrow('has no menu');
     expect(declare({ ...base, when: inBox, repeat: true })).toThrow('has no repeat');
+    expect(declare({ ...base, when: inBox, editsField: true })).toThrow('has no editsField');
   });
 
   test('is one the registry never runs, like Vim’s own, and has no handler', () => {

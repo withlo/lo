@@ -8,7 +8,7 @@
 import { holdRegistry } from './control.ts';
 import { contradicts, eventStrokes, type KeyEventLike, type Layout } from './notation.ts';
 import type { Registry } from './registry.ts';
-import { endsTab, findScope, isNowhere, textKind } from './scopes.ts';
+import { endsTab, findScope, isEditable, isNowhere, textKind } from './scopes.ts';
 
 type Win = Window & typeof globalThis;
 
@@ -97,7 +97,12 @@ export function listen(win: Win, registry: Registry): () => void {
     const reading = { system: registry.system, layout };
     const handled = registry.handle(
       { strokes: eventStrokes(event, reading), repeat: event.repeat, composing: composing(event) },
-      { scope, text: textKind(element), nowhere: isNowhere(element) },
+      {
+        scope,
+        text: textKind(element),
+        nowhere: isNowhere(element),
+        editable: isEditable(element),
+      },
       () =>
         (element ?? win.document.body).dispatchEvent(new win.Event(KEY_EVENT, { bubbles: true })),
     );

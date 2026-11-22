@@ -2,7 +2,14 @@
 
 import { beforeEach, expect, test } from 'vitest';
 
-import { findScope, hasEditMenu, isTextField, scopeTarget, setScopeSource } from './scopes.ts';
+import {
+  findScope,
+  hasEditMenu,
+  isEditable,
+  isTextField,
+  scopeTarget,
+  setScopeSource,
+} from './scopes.ts';
 
 beforeEach(() => {
   document.body.innerHTML = `
@@ -53,6 +60,34 @@ test('text fields are the inputs that take text, text areas and editable content
   expect(isTextField(at('fixed'))).toBe(false);
   expect(isTextField(at('line'))).toBe(false);
   expect(isTextField(null)).toBe(false);
+});
+
+test('editable fields are the text fields that aren’t read-only, and not a code view’s text', () => {
+  document.body.innerHTML = `
+    <input id="input"><input id="search" type="search"><textarea id="area"></textarea>
+    <input id="fixed-input" readonly><textarea id="fixed-area" readonly></textarea>
+    <input id="check" type="checkbox"><button id="button">OK</button>
+    <div class="cm-content" contenteditable="true" id="box-text"><b id="bold"></b></div>
+    <div class="cm-content" contenteditable="true" aria-readonly="true" id="code"><span id="word"></span></div>
+    <div contenteditable="true"><span contenteditable="false" id="kept"></span></div>
+    <div tabindex="-1" id="list"></div>
+  `;
+  for (const id of ['input', 'search', 'area', 'box-text', 'bold']) {
+    expect({ id, editable: isEditable(at(id)) }).toEqual({ id, editable: true });
+  }
+  for (const id of [
+    'fixed-input',
+    'fixed-area',
+    'check',
+    'button',
+    'code',
+    'word',
+    'kept',
+    'list',
+  ]) {
+    expect({ id, editable: isEditable(at(id)) }).toEqual({ id, editable: false });
+  }
+  expect(isEditable(null)).toBe(false);
 });
 
 test('the Edit menu is for form fields and editable content that is not code', () => {

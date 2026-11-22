@@ -49,6 +49,18 @@ code view and comment box follows at once.
   there, with the reason. `Menu` or `⇧F10` opens the menu of what has focus; `j`/`k` or the arrows
   move, `⏎` runs, and `Esc` closes it and gives focus back where it was. A menu runs the same
   command a key does, on what was clicked.
+- **A key that edits text never runs a command in a field that can be edited.** The keys are those
+  that delete a word or to the line's start (`⌥⌫`, `⌘⌫`, `⌥⌦`; Ctrl+Backspace and Ctrl+Delete on
+  Linux), select all, undo and redo, and move the caret or the selection by word, line and document
+  (`⌥←` `⌥→`, `⌘←` `⌘→`, `⌘↑` `⌘↓`, Home and End, with and without `⇧`; Ctrl with the arrows, Home
+  and End on Linux). `textEditingKeys` in the command engine lists each system's. A field that can
+  be edited is an input or text area that isn't read-only, or editable content, such as a comment
+  box's text, in any mode; a code view's read-only text isn't one. There the keys are the field's,
+  whatever the scope. A command on one of them goes in a scope that holds no field, as Clear
+  filter's `⌘⌫` works in Recent's list and not in the filter field above it. Only a command that
+  changes the text of the field it's pressed in says `editsField`, which gives it the keys there.
+  `checkEditingKeys` fails on any other, naming it; the app lists the scopes that hold no field in
+  `window/commands/fieldless.ts`.
 
 ## Focus
 
@@ -62,6 +74,20 @@ code view and comment box follows at once.
 - The mode (`NORMAL`, `V-LINE`, `INSERT`) shows only with Vim keys on, and then once in the status
   bar and in the focused box.
 - `Esc` always returns focus to the middle view and closes the nearest popover.
+- **Focus never falls to the page with what had it.** When the focused element leaves the page, as a
+  Try again does that goes once pressed, the browser drops focus on the body, where none of the
+  view's keys work. Instead focus goes to the nearest part of the view still there: the nearest
+  scope (`data-lo-scope`) around that element that's still on the page, but never the window's own,
+  so the view's keys work at once. One handler on the window does it (`catchFocus` in the command
+  engine), a frame after the element goes, once React, Base UI and a closing popup have done their
+  own focus work, and only while focus is still on the body. Focus that went anywhere by then, as a
+  dialog giving it back to its trigger, stays there, and so does focus that left an element still on
+  the page, by a click on nothing or the window losing focus. A scope that can't take focus is made
+  to (`tabIndex = -1`) only while it holds what it caught, and draws no ring then.
+- **A better place than the scope is the view's to give.** Where one exists, such as the field a
+  button was beside, the stack's tree above the note that held a Try again, or a dialog's main
+  button, the view moves focus there itself as the element goes, and the window's handler finds
+  focus taken.
 
 ## Linux
 

@@ -1,5 +1,6 @@
 import {
   checkClashes,
+  checkEditingKeys,
   checkHandlers,
   checkIds,
   checkKeys,
@@ -13,6 +14,7 @@ import { describe, expect, it } from 'vitest';
 
 import { featureCommands } from '../features.ts';
 import { checkDeclarations } from './declarations.ts';
+import { FIELDLESS } from './fieldless.ts';
 import { WITHOUT_ROUTE } from './routes.ts';
 
 // Every feature's keys.ts, found as the script that writes docs/keys.md finds them, and the
@@ -37,6 +39,10 @@ describe("every feature's commands", () => {
 
   it('have a default key on each system they’re on', () => {
     expect(checkKeys(features)).toEqual([]);
+  });
+
+  it('leave the keys that edit text to fields, but where no field is or they edit it', () => {
+    expect(checkEditingKeys(features, FIELDLESS)).toEqual([]);
   });
 
   it('have a key for every menu item', () => {

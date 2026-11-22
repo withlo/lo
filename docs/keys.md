@@ -397,6 +397,14 @@ other keys go to Vim, but for the keys of Lo's commands that take a count, after
 normal mode (see [Counts](#counts)). In a text field, typing and moving through the text are the
 field's.
 
+In a field that can be edited, a comment box's text among them, so are the keys that edit text,
+chords too, and they run no command there but one that edits that field itself: `⌥⌫`, `⌘⌫`, `⌥⌦`,
+`⌘A`, `⌘Z`, `⌘⇧Z`, `⌥←`, `⌥⇧←`, `⌥→`, `⌥⇧→`, `⌘←`, `⌘⇧←`, `⌘→`, `⌘⇧→`, `⌘↑`, `⌘⇧↑`, `⌘↓`, `⌘⇧↓`,
+`Home`, `⇧Home`, `End` and `⇧End` on macOS, and `Ctrl+Backspace`, `Ctrl+Delete`, `Ctrl+A`, `Ctrl+Z`,
+`Ctrl+Shift+Z`, `Ctrl+Y`, `Ctrl+←`, `Ctrl+Shift+←`, `Ctrl+→`, `Ctrl+Shift+→`, `Ctrl+Home`,
+`Ctrl+Shift+Home`, `Ctrl+End`, `Ctrl+Shift+End`, `Home`, `Shift+Home`, `End` and `Shift+End` on
+Linux. A read-only field, and a code view's own text, edit nothing, so Lo's keys run there.
+
 A key that starts one of Lo's sequences waits for the rest. In a code view it waits however long it
 takes, as Vim's own `y` and `g` do, and a key that doesn't go on with it goes to the code view after
 it, so with Vim keys on `y w` still yanks a word. Anywhere else it waits up to 1 s, and if the rest

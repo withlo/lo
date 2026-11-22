@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { FakeView, queue, testCommands, type Ran } from '../../test/commands.ts';
+import { defineCommands } from './declare.ts';
 import { KEY_EVENT, listen } from './listener.ts';
 import { Registry } from './registry.ts';
 import { setScopeSource } from './scopes.ts';
@@ -219,6 +220,33 @@ describe('the listener', () => {
     expect(press('query', '?').defaultPrevented).toBe(false);
     expect(press('query', 'Enter').defaultPrevented).toBe(true);
     expect(ids()).toEqual(['palette.run']);
+  });
+
+  test('leaves the keys that edit text to an editable field, and runs them where none is', () => {
+    const erase = defineCommands('erase', {
+      line: { label: 'Erase the line', group: 'Find', keys: ['cmd+backspace'] },
+    });
+    stop();
+    registry = new Registry({ system: 'mac', commands: testCommands(ran, [erase]) });
+    stop = listen(window, registry);
+    const held = { metaKey: true };
+    // The palette's field, a box's text and Vim's prompt in a code view edit their text.
+    for (const id of ['query', 'text', 'prompt']) {
+      expect({ id, taken: press(id, 'Backspace', held).defaultPrevented }).toEqual({
+        id,
+        taken: false,
+      });
+    }
+    // A code view's own text is read-only, as is a field marked so, and a button has none.
+    element('editor').setAttribute('aria-readonly', 'true');
+    element('loose').setAttribute('readonly', '');
+    for (const id of ['editor', 'loose', 'row']) {
+      expect({ id, taken: press(id, 'Backspace', held).defaultPrevented }).toEqual({
+        id,
+        taken: true,
+      });
+    }
+    expect(ids()).toEqual(['erase.line', 'erase.line', 'erase.line']);
   });
 
   test('sends ↓ and ↑ for j and k in a menu', () => {

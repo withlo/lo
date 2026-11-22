@@ -352,6 +352,80 @@ describe('text', () => {
     expect(type(['backspace'], anywhere).said).toEqual(['run keys.erase']);
   });
 
+  describe('the keys that edit text', () => {
+    // Commands on them: for anywhere, for scopes, after another key, and one that edits its field.
+    const editing = defineCommands('editing', {
+      clear: { label: 'Clear', group: 'Find', keys: ['cmd+backspace'] },
+      word: { label: 'Word', group: 'Find', keys: ['alt+backspace'], when: { scope: 'tree' } },
+      all: { label: 'All', group: 'Find', keys: ['cmd+a'], when: { scope: 'palette' } },
+      top: { label: 'Top', group: 'Move', keys: ['shift+home', 'cmd+up'] },
+      later: { label: 'Later', group: 'Move', keys: ['g cmd+z'], when: { scope: 'box' } },
+      erase: {
+        label: 'Erase the query',
+        group: 'Palettes',
+        keys: ['alt+delete', { keys: 'ctrl+delete', on: 'linux' }],
+        when: { scope: 'palette' },
+        editsField: true,
+      },
+      submit: { label: 'Submit', group: 'Review', keys: ['cmd+enter'] },
+    });
+    const editingTables = {
+      mac: new Bindings('mac', declaredBindings(commandsOf(editing), 'mac')),
+      linux: new Bindings('linux', declaredBindings(commandsOf(editing), 'linux')),
+    };
+    const typed = (keys: string[], focus: Focus, system: System = 'mac') =>
+      type(keys, focus, { system, bindings: editingTables[system] }).said;
+    const field: Focus = { scope: 'palette', text: true, editable: true };
+    const box: Focus = { ...view('box', 'insert'), editable: true };
+
+    test('an editable field keeps them, chords and all, on both systems', () => {
+      for (const system of ['mac', 'linux'] as const) {
+        expect(typed(['cmd+backspace'], field, system), `on ${system}`).toEqual(['pass']);
+        expect(typed(['cmd+a'], field, system), `on ${system}`).toEqual(['pass']);
+        expect(typed(['cmd+backspace'], box, system), `on ${system}`).toEqual(['pass']);
+      }
+      expect(typed(['cmd+up'], field)).toEqual(['pass']);
+      expect(typed(['alt+backspace'], { scope: 'tree', text: true, editable: true })).toEqual([
+        'pass',
+      ]);
+      // A box in Vim's normal mode is still the box's text.
+      const normal: Focus = { ...view('box'), editable: true };
+      expect(typed(['cmd+backspace'], normal)).toEqual(['pass']);
+      expect(typed(['shift+home'], normal)).toEqual(['pass']);
+      expect(typed(['shift+home'], view('box'))).toEqual(['run editing.top']);
+    });
+
+    test('elsewhere they run, and in a field so does every other key', () => {
+      expect(typed(['cmd+enter'], field)).toEqual(['run editing.submit']);
+      expect(typed(['cmd+enter'], box)).toEqual(['run editing.submit']);
+      for (const system of ['mac', 'linux'] as const) {
+        expect(typed(['cmd+backspace'], anywhere, system), `on ${system}`).toEqual([
+          'run editing.clear',
+        ]);
+        expect(typed(['cmd+a'], { scope: 'palette', text: false }, system), `on ${system}`).toEqual(
+          ['run editing.all'],
+        );
+      }
+      // Nothing is edited in a read-only field, or in a code view's own text.
+      expect(typed(['cmd+backspace'], { scope: 'palette', text: true })).toEqual([
+        'run editing.clear',
+      ]);
+      expect(typed(['cmd+up'], diff)).toEqual(['run editing.top']);
+      // Each system has its own: ⌘↑ is the document's top on macOS, and no text key on Linux.
+      expect(typed(['cmd+up'], field, 'linux')).toEqual(['run editing.top']);
+    });
+
+    test('one later in a sequence counts too', () => {
+      expect(typed(['g', 'cmd+z'], view('box'))).toEqual(['hold', 'run editing.later']);
+      expect(typed(['g'], { ...view('box'), editable: true })).toEqual(['pass']);
+    });
+
+    test('a command that edits the field itself takes them there', () => {
+      expect(typed(['alt+delete'], field)).toEqual(['run editing.erase']);
+      expect(typed(['ctrl+delete'], field, 'linux')).toEqual(['run editing.erase']);
+    });
+  });
+
   test('in a menu, j and k move as ↓ and ↑', () => {
     const menu: Focus = { scope: 'menu', text: false };
     expect(type(['j', 'k'], menu).said).toEqual(['ArrowDown', 'ArrowUp']);
