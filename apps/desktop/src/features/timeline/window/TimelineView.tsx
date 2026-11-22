@@ -59,6 +59,7 @@ import {
   withoutBidi,
   type PullTab,
 } from '../../tab/window/shared.ts';
+import type { TimelineCause, TimelineView } from '../contract.ts';
 import {
   compare,
   focusRow,
@@ -69,7 +70,7 @@ import {
   setDrawn,
   stillHidden,
 } from './actions.ts';
-import { tabs } from './main.ts';
+import { main, tabs } from './main.ts';
 import { keepPlace, readingPlace, type ReadingPlace } from './place.ts';
 import { rowsOf, type Part, type Person, type Row } from './rows.ts';
 import {
@@ -163,6 +164,42 @@ function NoneInRun({ tab }: { tab: PullTab }) {
   );
 }
 
+/** Why a timeline couldn't be read, in the causes every error is worded by. */
+const CAUSES = {
+  offline: 'Offline.',
+  noAnswer: 'GitHub didn’t respond.',
+  failed: 'GitHub returned an error.',
+} as const satisfies Record<TimelineCause, string>;
+
+/**
+ * A timeline that couldn't be read, with nothing read before: why, with GitHub's own words behind
+ * Details, and Try again, busy until main's read has answered. Main reads it again as time goes on
+ * too, and draws it once it's read.
+ */
+function Failed({ tab, view }: { tab: PullTab; view: TimelineView | undefined }) {
+  const [trying, setTrying] = useState(false);
+  return (
+    <Problem
+      layout="view"
+      title="Can’t show the timeline"
+      reason={view?.cause ? CAUSES[view.cause] : undefined}
+      action={{
+        label: 'Try again',
+        busy: trying,
+        working: 'Trying…',
+        onClick: () => {
+          setTrying(true);
+          main()
+            .retry({ id: tab.id })
+            .catch((error: unknown) => console.error("Lo couldn't read the timeline again:", error))
+            .finally(() => setTrying(false));
+        },
+      }}
+      details={view?.problem ? withoutBidi(view.problem) : undefined}
+    />
+  );
+}
+
 /** A timeline read as no one, which shows only to an account. */
 function SignIn() {
   useKeys();
@@ -203,14 +240,9 @@ function TimelineOf({ tab, shown }: { tab: PullTab; shown: boolean }) {
         </Note>
       );
     case 'failed':
-      // GitHub's own words go behind Details. Main reads it again as time goes on.
       return (
         <Note shown={shown}>
-          <Problem
-            layout="view"
-            title="Can’t show the timeline"
-            details={view?.problem ? withoutBidi(view.problem) : undefined}
-          />
+          <Failed tab={tab} view={view} />
         </Note>
       );
     case 'loading':

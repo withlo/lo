@@ -196,14 +196,23 @@ export const timeline = z.strictObject({
 export type Timeline = z.output<typeof timeline>;
 
 /**
+ * Why a timeline couldn't be read: GitHub couldn't be reached (`offline`), didn't respond
+ * (`noAnswer`), or answered with an error (`failed`), as anything else is.
+ */
+export const timelineCause = z.enum(['offline', 'noAnswer', 'failed']);
+export type TimelineCause = z.output<typeof timelineCause>;
+
+/**
  * A view's timeline, as main has it: `loading` until it's read; `signIn` for a tab that acts as
  * nobody, which reads no timeline; `run` for a run of a stack's layers, which has none of its own;
- * `ready`; or `failed`, with why in `problem`, when it couldn't be read and nothing was read before.
+ * `ready`; or `failed`, with why in `cause` and the error's words in `problem`, when it couldn't be
+ * read and nothing was read before.
  */
 export const timelineView = z.strictObject({
   id: tabId,
   status: z.enum(['loading', 'signIn', 'run', 'ready', 'failed']),
   timeline: timeline.nullable(),
+  cause: timelineCause.nullable(),
   problem: z.string().nullable(),
 });
 export type TimelineView = z.output<typeof timelineView>;
@@ -238,6 +247,11 @@ export const contract = defineContract('timeline', {
       input: z.strictObject({ id: tabId }),
       reply: reply<{ timeline: TimelineView; sidebar: SidebarView }>(),
     },
+    /**
+     * Reads view `id`'s timeline again at once, after it failed, and answers once that read has,
+     * however it went.
+     */
+    retry: { input: z.strictObject({ id: tabId }), reply: reply<void>() },
   },
   topics: {
     /** A view's timeline, each time it changes. */

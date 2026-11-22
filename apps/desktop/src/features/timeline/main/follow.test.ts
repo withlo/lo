@@ -4,6 +4,7 @@ import {
   type ReadKind,
   TIMELINE,
   type Cached,
+  type GithubErrorDetail,
   type PollEvent,
   type PullRequestSidebar,
   type PullRequestTimeline,
@@ -76,6 +77,7 @@ function pollerOf(first: PullRequestTimeline | Error) {
   function cachedRead(_: PullRef, kind: { name: string }) {
     return cached(kind.name === PULL_REQUEST_SIDEBAR.name ? kept.sidebar : kept.timeline);
   }
+  const readAfresh = vi.fn<TimelinePoller['readAfresh']>(() => ({ read: 1, generation: 1 }));
   const poller: TimelinePoller = {
     timeline: vi.fn<TimelinePoller['timeline']>(() =>
       first instanceof Error ? Promise.reject(first) : Promise.resolve(cached(kept.timeline)),
@@ -88,23 +90,20 @@ function pollerOf(first: PullRequestTimeline | Error) {
       return () => listeners.delete(listener);
     },
     cachedRead,
+    readAfresh,
   };
   return {
     poller,
     listeners,
+    readAfresh,
     /** A poll read the timeline again, as `next`. */
     read(next: PullRequestTimeline) {
       kept.timeline = next;
       for (const listener of listeners) listener({ kind: 'read', pull: PULL, name: TIMELINE.name });
     },
-    failed() {
+    failed(error: GithubErrorDetail = { kind: 'notFound', message: 'Not Found' }) {
       for (const listener of listeners) {
-        listener({
-          kind: 'readFailed',
-          pull: PULL,
-          name: TIMELINE.name,
-          error: { kind: 'notFound', message: 'Not Found' },
-        });
+        listener({ kind: 'readFailed', pull: PULL, name: TIMELINE.name, error });
       }
     },
   };
@@ -160,12 +159,42 @@ describe('TimelineTab', () => {
     tab.update(info());
     tab.show();
     await vi.waitFor(() => expect(timelines.at(-1)?.status).toBe('failed'));
-    expect(timelines.at(-1)?.problem).toBe('Lo couldn’t read the timeline: GitHub is down');
+    expect(timelines.at(-1)).toMatchObject({
+      cause: 'failed',
+      problem: 'Lo couldn’t read the timeline: GitHub is down',
+    });
+    polled.failed({ kind: 'network', failure: 'offline', message: 'getaddrinfo ENOTFOUND' });
+    expect(timelines.at(-1)?.cause).toBe('offline');
+    polled.failed({ kind: 'network', failure: 'lost', message: 'socket hang up' });
+    expect(timelines.at(-1)?.cause).toBe('noAnswer');
 
     polled.read(timeline('At last'));
-    expect(timelines.at(-1)).toMatchObject({ status: 'ready', problem: null });
+    expect(timelines.at(-1)).toMatchObject({ status: 'ready', cause: null, problem: null });
     polled.failed();
-    expect(timelines.at(-1)).toMatchObject({ status: 'ready', problem: null });
+    expect(timelines.at(-1)).toMatchObject({ status: 'ready', cause: null, problem: null });
+  });
+
+  it('reads a failed timeline again at once when asked, answering once the read has', async () => {
+    const polled = pollerOf(new Error('GitHub is down'));
+    const { tab, timelines } = tabOf(polled.poller);
+    tab.update(info());
+    tab.show();
+    await vi.waitFor(() => expect(timelines.at(-1)?.status).toBe('failed'));
+    let answered = false;
+    const retried = tab.retry().then(() => {
+      answered = true;
+    });
+    expect(polled.readAfresh).toHaveBeenCalledWith(PULL, TIMELINE);
+    await Promise.resolve();
+    expect(answered).toBe(false);
+    // Failing again answers too: Try again rests, and the reason stays.
+    polled.failed();
+    await retried;
+    expect(timelines.at(-1)?.status).toBe('failed');
+    const again = tab.retry();
+    polled.read(timeline('At last'));
+    await again;
+    expect(timelines.at(-1)?.status).toBe('ready');
   });
 
   it('reads anew as another account', async () => {
