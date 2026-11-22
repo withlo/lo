@@ -69,41 +69,41 @@ GitHub’s own name for it.
 
 ### Lo’s things
 
-| Write              | For                                                                                                                       | Never                                             |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| overview           | The document that explains a pull request.                                                                                | summary, artifact, write-up                       |
-| overview skill     | What a coding agent installs to write overviews. In code: `lo-overview`.                                                  | Lo skill, agent skill, “the skill” alone          |
-| stack              | Pull requests that each build on the one before.                                                                          | chain, train                                      |
-| layer              | One pull request in a stack.                                                                                              | level, node                                       |
-| GitHub stack       | A stack GitHub itself tracks.                                                                                             | native stack                                      |
-| layers 2–4         | Several layers shown as one diff, named by their span.                                                                    | run, range                                        |
-| local copy         | Lo’s copy of a repo on this computer.                                                                                     | clone, checkout, working copy                     |
-| cache              | Everything Lo stores to open pull requests fast: local copies and saved data.                                             | saved answers, store                              |
-| language server    | The program behind definitions, references and types. Name a server as its makers write it: Pyright, gopls.               | LSP, “server” alone                               |
-| code intelligence  | What language servers give: definitions, references, types.                                                               | code answers, smart features                      |
-| code index         | Lo’s own index of names, used when no language server runs.                                                               | syntax index, symbol index, fallback              |
-| trust              | Letting language servers run on a repo or a pull request: “Trust repo…”, “Stop trusting”.                                 | allow, approve, enable                            |
-| update             | A newer version of Lo: “Lo 0.2.0 is available”. Its buttons: “Update”, then “Restart to update”. Its notes: “What’s new”. | release, “is out”, upgrade, Install, changelog    |
-| welcome            | The steps a new reader sees first. Its one command, in Help and the palette: “Welcome to Lo”.                             | onboarding, setup, tour, “Show welcome”           |
-| Settings           | Capital S. A place in it is a path: Settings › Storage. The file is `settings.json`.                                      | preferences, options, config, “the settings file” |
-| keyboard shortcuts | The list of Lo’s keys. One of them is a key.                                                                              | key help, keybindings, hotkeys                    |
-| Vim keys           | The setting for Vim’s modal editing. Its modes are written as Vim writes them: NORMAL, INSERT, V-LINE.                    | Vim mode, Vim-style keys                          |
-| command            | A row in the command palette.                                                                                             | action                                            |
-| comment box        | Where a comment is written: “Close comment box”.                                                                          | composer, editor, input, “the box” alone          |
-| preview            | The comment as it will read once sent. Its switch in the comment box: “Preview”.                                          | “Write or preview”, rendered                      |
-| whole file         | A file in full, not only its changed lines: “Open whole file”.                                                            | full file, entire file, file view                 |
-| definitions        | What “Show definition” brings up under the line: “Next definition”, “Close definitions”.                                  | peek, answers, popup                              |
-| rule               | What an app such as Finicky uses to send pull request links to Lo: “Show rules”, “Copy rule”.                             | handler, setup, config                            |
+| Write              | For                                                                                                                                                                                                               | Never                                             |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| overview           | The document that explains a pull request.                                                                                                                                                                        | summary, artifact, write-up                       |
+| overview skill     | What a coding agent installs to write overviews. In code: `lo-overview`.                                                                                                                                          | Lo skill, agent skill, “the skill” alone          |
+| stack              | Pull requests that each build on the one before.                                                                                                                                                                  | chain, train                                      |
+| layer              | One pull request in a stack.                                                                                                                                                                                      | level, node                                       |
+| GitHub stack       | A stack GitHub itself tracks.                                                                                                                                                                                     | native stack                                      |
+| layers 2–4         | Several layers shown as one diff, named by their span.                                                                                                                                                            | run, range                                        |
+| local copy         | Lo’s copy of a repo on this computer.                                                                                                                                                                             | clone, checkout, working copy                     |
+| cache              | Everything Lo stores to open pull requests fast: local copies and saved data.                                                                                                                                     | saved answers, store                              |
+| language server    | The program behind definitions, references and types. Name a server as its makers write it: Pyright, gopls.                                                                                                       | LSP, “server” alone                               |
+| code intelligence  | What language servers give: definitions, references, types.                                                                                                                                                       | code answers, smart features                      |
+| code index         | Lo’s own index of names, used when no language server runs.                                                                                                                                                       | syntax index, symbol index, fallback              |
+| trust              | Letting language servers run on a repo or a pull request: “Trust repo…”, “Stop trusting”.                                                                                                                         | allow, approve, enable                            |
+| update             | A newer version of Lo: “Lo 0.2.0 is available”. Its buttons: “Update”, then “Restart to update”. Its notes: “What’s new”.                                                                                         | release, “is out”, upgrade, Install, changelog    |
+| welcome            | The steps a new reader sees first. Its one command, in Help and the palette: “Welcome to Lo”.                                                                                                                     | onboarding, setup, tour, “Show welcome”           |
+| Settings           | Capital S. A place in it is a path: Settings › Storage. The file is `settings.json`.                                                                                                                              | preferences, options, config, “the settings file” |
+| keyboard shortcuts | The list of Lo’s keys. One of them is a key.                                                                                                                                                                      | key help, keybindings, hotkeys                    |
+| Vim keys           | The setting for Vim’s modal editing. Its modes are written as Vim writes them: NORMAL, INSERT, V-LINE.                                                                                                            | Vim mode, Vim-style keys                          |
+| command            | A row in the command palette.                                                                                                                                                                                     | action                                            |
+| comment box        | Where a comment is written: “Close comment box”.                                                                                                                                                                  | composer, editor, input, “the box” alone          |
+| preview            | The comment as it will read once sent. A choice in the comment box: “Write”, “Preview”.                                                                                                                           | “Write or preview”, rendered                      |
+| whole file         | A file in full, not only its changed lines: “Open whole file”.                                                                                                                                                    | full file, entire file, file view                 |
+| definitions        | What “Show definition” brings up under the line: “Next definition”, “Close definitions”.                                                                                                                          | peek, answers, popup                              |
+| rule               | What an app such as Finicky uses to send pull request links to Lo: “Show rules”, “Copy rule”. The steps for an app keep its own word, in code: Finicky’s `handlers`. On a merge, rules are GitHub’s branch rules. | handler, setup, config                            |
 
 ### The window
 
-| Write | For                                                                                 | Never                             |
-| ----- | ----------------------------------------------------------------------------------- | --------------------------------- |
-| tab   | One pull request or stack, the Recent tab, a merge queue.                           | page, window                      |
-| view  | What fills the middle of a tab: Overview, Diff or Timeline.                         | middle view, mode, pane, screen   |
-| panel | The left panel, the threads panel, the merge panel.                                 | sidebar, pane, drawer             |
-| files | The list of files in the left panel, as a tree or in review order.                  | “the tree”, explorer, file finder |
-| area  | Where a key works: Diff, Files, Comment box. Keyboard shortcuts has a tab for each. | scope, context, mode              |
+| Write | For                                                                                                           | Never                             |
+| ----- | ------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| tab   | One pull request or stack, the Recent tab, a merge queue. In keyboard shortcuts, a tab holds one area’s keys. | page, window                      |
+| view  | What fills the middle of a tab: Overview, Diff or Timeline.                                                   | middle view, mode, pane, screen   |
+| panel | The left panel, the threads panel, the merge panel.                                                           | sidebar, pane, drawer             |
+| files | The list of files in the left panel, as a tree or in review order.                                            | “the tree”, explorer, file finder |
+| area  | Where a key works: Diff, Files, Comment box. Keyboard shortcuts has a tab for each.                           | scope, context, mode              |
 
 What a list holds has one noun, and stepping uses it: a block in the overview, an event on the
 timeline, a row in the files, a group in Settings, a reason in the merge panel. “Next block”,
@@ -114,33 +114,34 @@ item. Nor does “on screen”: write “this revision”, not “the revision o
 
 ### Verbs
 
-| Write                     | For                                                                                                                                                    | Never                                                |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
-| Open                      | Bring a pull request, a file or a link into Lo: “Open pull request…”. “Open on GitHub” goes to the browser. A page off GitHub: “Open in browser”.      | Load, Launch, View, Review                           |
-| Show, Hide                | Bring something into view, or put it out of view until it’s shown again: “Show r5”, “Hide whitespace changes”.                                         | Load, Display, See, Toggle                           |
-| Collapse, Expand          | Fold a folder, a file or a thread, and unfold it: “Collapse file”, then “Expand file”.                                                                 | Open, Close, Fold, Toggle                            |
-| Go to                     | Move to a place in the code or the window: “Go to file…”, “Go to definition”.                                                                          | Jump to, Navigate to                                 |
-| Next, Previous            | Step through one kind of thing: “Next change”. Back and Forward are for history alone.                                                                 | Prev                                                 |
-| Send                      | A comment or a reply: “Sending…”.                                                                                                                      | Post, Publish                                        |
-| Save                      | An edit to a comment.                                                                                                                                  | Update, Apply                                        |
-| Submit                    | A review: “Submit review…”.                                                                                                                            | Send, Finish                                         |
-| Merge                     | Merging, by any method.                                                                                                                                | Ship, Land                                           |
-| Approve and ship          | The one command that approves, then merges, queues or turns on auto-merge. Its result says which: “Approved and merged #264”.                          | “Ship” alone                                         |
-| Remove                    | Take a thing out of a list. It still exists: “Remove from merge queue”.                                                                                | Take out, Drop                                       |
-| Delete                    | Destroy something for good: “Delete comment…”.                                                                                                         | Remove, Erase                                        |
-| Discard                   | Throw away text not yet sent: “Discard draft”.                                                                                                         | Delete, Drop                                         |
-| Clear                     | Empty a store or a field: “Clear cache”.                                                                                                               | Purge, Wipe                                          |
-| Reset                     | Put a setting back to its default: “Reset zoom”.                                                                                                       | Restore, Revert, Actual size                         |
-| Dismiss                   | Put away a banner or a toast for good.                                                                                                                 | Hide, Close                                          |
-| Copy                      | To the clipboard: “Copy link”. The button reads “Copied” for 2 s.                                                                                      | Yank                                                 |
-| Install                   | Put something on this computer: the `lo` command, the overview skill, a language server.                                                               | Set up, Add                                          |
-| Sign in, Sign out         | “Sign in with GitHub…” is the one command, for any account. “Sign in again” after a sign-out. The noun is “sign-in”.                                   | Log in, Add an account, Connect, Authorize           |
-| Try again                 | Repeat what failed. A retry that’s counting down reads “Retrying in 20 s”, with the button “Try now”. That countdown is the one place “retry” appears. | “Retry” on a button, Reload, “tries again by itself” |
-| Check again               | Look again for something missing or not known: Git, a merge’s result. It only looks, and repeats nothing.                                              | Recheck, Look again                                  |
-| Paste                     | Open the pull request link on the clipboard: “Paste link”.                                                                                             | “Open the link on the clipboard”                     |
-| Turn on, Turn off         | Something of GitHub’s that’s on or off: “Turn on auto-merge”.                                                                                          | Enable, Disable, Toggle                              |
-| Continue, Skip            | A welcome step’s buttons. See [Welcome step](#welcome-step).                                                                                           | Next, Not now, Later, Get started                    |
-| Cancel, Close, Done, Back | A dialog’s other button. See [Confirmation](#confirmation).                                                                                            | OK, Got it, Not now                                  |
+| Write                     | For                                                                                                                                                                                   | Never                                                |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| Open                      | Bring a pull request, a file or a link into Lo: “Open pull request…”. “Open on GitHub” goes to the browser. A page off GitHub: “Open in browser”.                                     | Load, Launch, View, Review                           |
+| Show, Hide                | Bring something into view, or put it out of view until it’s shown again: “Show r5”, “Hide whitespace changes”.                                                                        | Load, Display, See, Toggle                           |
+| Collapse, Expand          | Fold a folder, a file or a thread, and unfold it: “Collapse file”, then “Expand file”.                                                                                                | Open, Close, Fold, Toggle                            |
+| Close                     | Put away what was opened, until it’s opened again: a tab, a comment box, definitions. “Close tab”.                                                                                    | Dismiss, Hide, Exit                                  |
+| Go to                     | Move to a place in the code or the window: “Go to file…”, “Go to definition”.                                                                                                         | Jump to, Navigate to                                 |
+| Next, Previous            | Step through one kind of thing: “Next change”. Back and Forward are for history alone.                                                                                                | Prev                                                 |
+| Send                      | A comment or a reply: “Sending…”.                                                                                                                                                     | Post, Publish                                        |
+| Save                      | An edit to a comment.                                                                                                                                                                 | Update, Apply                                        |
+| Submit                    | A review: “Submit review…”.                                                                                                                                                           | Send, Finish                                         |
+| Merge                     | Merging, by any method.                                                                                                                                                               | Ship, Land                                           |
+| Approve and ship          | The one command that approves, then merges, queues or turns on auto-merge. Its result says which: “Approved and merged #264”.                                                         | “Ship” alone                                         |
+| Remove                    | Take a thing out of a list. It still exists: “Remove from merge queue”.                                                                                                               | Take out, Drop                                       |
+| Delete                    | Destroy something for good: “Delete comment…”.                                                                                                                                        | Remove, Erase                                        |
+| Discard                   | Throw away text not yet sent: “Discard draft”.                                                                                                                                        | Delete, Drop                                         |
+| Clear                     | Empty a store or a field: “Clear cache”.                                                                                                                                              | Purge, Wipe                                          |
+| Reset                     | Put a setting back to its default: “Reset zoom”.                                                                                                                                      | Restore, Revert, Actual size                         |
+| Dismiss                   | Put away a banner or a toast for good.                                                                                                                                                | Hide, Close                                          |
+| Copy                      | To the clipboard: “Copy link”. The button reads “Copied” for 2 s.                                                                                                                     | Yank                                                 |
+| Install                   | Put something on this computer: the `lo` command, the overview skill, a language server.                                                                                              | Set up, Add                                          |
+| Sign in, Sign out         | “Sign in with GitHub…” is the one command, for any account. “Sign in again” after a sign-out. The noun is “sign-in”. Single sign-on alone keeps GitHub’s word: “Authorize on GitHub”. | Log in, Add an account, Connect, Authorize           |
+| Try again                 | Repeat what failed. A retry that’s counting down reads “Retrying in 20 s”, with the button “Try now”. That countdown is the one place “retry” appears.                                | “Retry” on a button, Reload, “tries again by itself” |
+| Check again               | Look again for something missing or not known: Git, a merge’s result. It only looks, and repeats nothing.                                                                             | Recheck, Look again                                  |
+| Paste                     | Open the pull request link on the clipboard: “Paste link”.                                                                                                                            | “Open the link on the clipboard”                     |
+| Turn on, Turn off         | Something of GitHub’s that’s on or off: “Turn on auto-merge”.                                                                                                                         | Enable, Disable, Toggle                              |
+| Continue, Skip            | A welcome step’s buttons. See [Welcome step](#welcome-step).                                                                                                                          | Next, Not now, Later, Get started                    |
+| Cancel, Close, Done, Back | A dialog’s other button. See [Confirmation](#confirmation).                                                                                                                           | OK, Got it, Not now                                  |
 
 A state is “on” or “off”: “Auto-merge is on”. Never “enabled”, “disabled” or “active”.
 
@@ -190,7 +191,7 @@ One wording per cause:
 | Signed out             | ravi-k is signed out.                             | Sign in again              |
 | Sign-in can’t be read  | ravi-k’s sign-in can’t be read from the Keychain. | Try again                  |
 | Missing or hidden      | It doesn’t exist, or ravi-k can’t see it.         | Sign in with GitHub…       |
-| Newer revision         | #264 has a newer revision.                        | Show latest                |
+| Out of date            | This revision is out of date.                     | Show latest                |
 | Single sign-on         | rozed-dev requires single sign-on.                | Authorize on GitHub        |
 | Lo not approved        | rozed-dev hasn’t approved Lo.                     | Request approval on GitHub |
 | Certificate            | GitHub’s certificate couldn’t be verified.        | Try again                  |
@@ -201,6 +202,9 @@ One wording per cause:
 | Took too long          | It took too long.                                 | Try again                  |
 | Out of memory          | It ran out of memory.                             | None                       |
 | Unknown                | No reason line.                                   | Try again                  |
+
+“The Keychain” reads “the keyring” on Linux. “Took too long” and “Out of memory” are for work on
+this computer. GitHub not answering is “No answer in time”.
 
 “Try again” repeats the action. Where repeating could do it twice, as with a merge that was sent and
 never answered, the button is “Check again”, which only looks.
@@ -336,8 +340,7 @@ Names a control and gives its key.
 
 ### Command label
 
-One label per command: the same in the palette, the menus, the keyboard shortcuts, its button and
-its tooltip.
+One label per command, the same everywhere. Only a control on the thing may fill it in, as below.
 
 | Part   | Limit                                                                                                                 | Example     |
 | ------ | --------------------------------------------------------------------------------------------------------------------- | ----------- |
@@ -357,11 +360,13 @@ its tooltip.
 - **Nor is a fold.** It takes the name of what it does now: “Collapse file”, then “Expand file”.
 - **Stepping names the thing, not the place:** “Next thread”. Not “Next thread in the panel”.
 - **A key that steps through three or more options** is named the same way: “Next merge method”,
-  “Next thread filter”. The control lists the options by name.
+  “Next thread filter”. It stands in place of a command per option, not beside one. The control
+  lists the options by name.
 - **A menu on the thing itself** may drop the object: “Reply”, “Resolve”.
 - **A label can be filled in.** The palette, the menus and the keyboard shortcuts show it plain:
   “Show latest”, “Merge…”, “Compare”. A control on the thing names what it acts on: “Show r5”,
-  “Merge #264”, “Compare r2 → r5”.
+  “Merge #264”, “Compare r2 → r5”. `…` follows its own rule on each: “Merge…” asks for more, and the
+  merge panel’s button acts at once, so it reads “Merge #264”.
 - **A name that’s code stays code inside a label:** “Install `lo` command”.
 - **A description,** where a command has one, is one line that adds what the label can’t.
 - **Never** “OK”, “Yes” or a bare “Submit”.
