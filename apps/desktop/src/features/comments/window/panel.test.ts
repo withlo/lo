@@ -168,16 +168,24 @@ describe('the panel with nothing to list', () => {
     });
   });
 
-  it('says what the filter found none of, as a heading', () => {
-    expect(emptyOf(emptyView('ready'), 'unresolved')).toEqual({
-      kind: 'none',
-      heading: 'No unresolved threads',
-    });
-    expect(emptyOf(emptyView('ready'), 'all')).toEqual({ kind: 'none', heading: 'No threads yet' });
-    expect(emptyOf(emptyView('ready'), 'yours')).toEqual({
-      kind: 'none',
-      heading: 'No threads of yours',
-    });
+  it('says there are no threads yet, whatever the filter, where there are none', () => {
+    for (const filter of ['unresolved', 'all', 'yours'] as const) {
+      expect(emptyOf(emptyView('ready'), filter)).toEqual({
+        kind: 'none',
+        heading: 'No threads yet',
+      });
+    }
+  });
+
+  it('says the filter matches none of the threads there are, with Clear filter', () => {
+    const resolved = { ...emptyView('ready'), threads: [row({ resolved: true })] };
+    for (const filter of ['unresolved', 'yours'] as const) {
+      expect(emptyOf(resolved, filter)).toEqual({
+        kind: 'none',
+        heading: 'No matches',
+        action: 'comments.clearFilter',
+      });
+    }
   });
 });
 

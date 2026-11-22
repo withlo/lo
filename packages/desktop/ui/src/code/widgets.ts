@@ -690,10 +690,15 @@ export class HintWidget extends WidgetType {
   }
 }
 
+/** What the marker says on a line where someone else's new thread waits. */
+export const NEW_THREAD = 'New thread';
+/** What a click on the marker does, as its name and its tooltip. */
+export const SHOW_NEW_THREAD = 'Show new thread';
+
 /**
- * Someone else's new comment on a line on screen, which waits there so nothing moves under the
+ * Someone else's new thread on a line on screen, which waits there so nothing moves under the
  * reader: the line says so at its end, over the code, taking no room. A click on it is a click on
- * the line, which lets what waits in, as any input of the reader's does.
+ * the line, which lets what waits in, as any input of the reader's does, so it's named for that.
  */
 export class ArrivedWidget extends WidgetType {
   override eq(): boolean {
@@ -701,8 +706,10 @@ export class ArrivedWidget extends WidgetType {
   }
 
   toDOM(): HTMLElement {
-    const marker = element('span', 'lo-arrived', 'New comment');
-    marker.setAttribute('aria-hidden', 'true');
+    const marker = element('span', 'lo-arrived', NEW_THREAD);
+    marker.setAttribute('role', 'button');
+    marker.setAttribute('aria-label', SHOW_NEW_THREAD);
+    marker.dataset.tip = SHOW_NEW_THREAD;
     return marker;
   }
 }

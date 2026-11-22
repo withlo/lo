@@ -3222,10 +3222,13 @@ class View implements DiffView {
   /**
    * What a control's tooltip says: its command's label and key, or why the command can't run on
    * its target now, which also dims it. A control names its own words in `data-tip` where its
-   * state changes what a click does, as the viewed ball's "Unmark viewed" does.
+   * state changes what a click does, as the viewed ball's "Unmark viewed" does. One with no command,
+   * as the marker of a new thread, whose click is the line's, has its words alone.
    */
   #tipOf(control: HTMLElement): Tip | undefined {
     const id = control.dataset.command;
+    if (id === undefined)
+      return control.dataset.tip === undefined ? undefined : { label: control.dataset.tip };
     const target = this.#controlTarget(control);
     const shown = id === undefined || !target ? undefined : controlOf(id, target);
     if (!shown) return undefined;

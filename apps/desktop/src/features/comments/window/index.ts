@@ -78,7 +78,16 @@ import { DeleteDialog } from './DeleteDialog.tsx';
 import { frameOf } from './Frame.tsx';
 import { KeptStatus } from './KeptStatus.tsx';
 import { main, tabs } from './main.ts';
-import { inPanel, moveRow, onThread, rowsListed, showTarget, stepFilter } from './panel.ts';
+import {
+  canClearFilter,
+  clearFilter,
+  inPanel,
+  moveRow,
+  onThread,
+  rowsListed,
+  showTarget,
+  stepFilter,
+} from './panel.ts';
 import { Said, tell } from './Said.tsx';
 import { ThreadsPanel, UnresolvedCount, unresolvedOf } from './ThreadsPanel.tsx';
 import { renderThreads } from './render.ts';
@@ -245,6 +254,7 @@ export default {
     previousThread: { run: () => moveRow(-1), enabled: rowsListed },
     showThread: { run: showTarget, enabled: onThread },
     filterThreads: { run: stepFilter, enabled: inPanel },
+    clearFilter: { run: clearFilter, enabled: canClearFilter },
     resolveInPanel: {
       run: actOn(resolve),
       labelled: (target) => (onResolved(target) ? 'Unresolve thread' : undefined),
@@ -339,7 +349,7 @@ export default {
       settled,
       // Only from the tab on screen, whose diff marked the line.
       arrived(view) {
-        if (activeTab()?.id === view) tell('New comment');
+        if (activeTab()?.id === view) tell('New thread');
       },
     });
     setBlockThreads({

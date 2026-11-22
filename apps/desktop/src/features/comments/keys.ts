@@ -29,8 +29,9 @@
 //
 // In the threads panel, the `threads` scope: `j` and `k` move between its threads, `⏎` shows the
 // one the keyboard is on in the diff, and `f` steps through what it lists: the unresolved threads,
-// every thread, or yours. `x` resolves or unresolves the thread the keyboard is on, as in the diff.
-// `Esc` goes back to the middle view, as it does anywhere.
+// every thread, or yours. `⌘⌫` clears the filter, listing every thread. `x` resolves or
+// unresolves the thread the keyboard is on, as in the diff. `Esc` goes back to the middle view, as
+// it does anywhere.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -366,6 +367,17 @@ export default defineCommands(
       control: "the filter over the threads panel's list",
       group: 'Panels',
       keys: ['f'],
+      when: panel,
+    },
+    /**
+     * Lists every thread again: the button where the panel's filter lists none of them. `⌘⌫`, as
+     * Recent's Clear filter.
+     */
+    clearFilter: {
+      label: 'Clear filter',
+      control: 'Clear filter in the threads panel, where its filter lists none of the threads',
+      group: 'Panels',
+      keys: ['cmd+backspace'],
       when: panel,
     },
   },

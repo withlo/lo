@@ -217,6 +217,7 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Show in diff                                    | `⏎`                               | In `threads`                        | `comments.showThread`     |
 | Resolve thread                                  | `x`                               | In `threads`                        | `comments.resolveInPanel` |
 | Next thread filter                              | `f`                               | In `threads`                        | `comments.filterThreads`  |
+| Clear filter                                    | `⌘⌫`                              | In `threads`                        | `comments.clearFilter`    |
 | Next layer in the stack                         | `j`, `↓`                          | In `stack`                          | `stacks.down`             |
 | Previous layer in the stack                     | `k`, `↑`                          | In `stack`                          | `stacks.up`               |
 | Show this layer                                 | `⏎`                               | In `stack`                          | `stacks.show`             |

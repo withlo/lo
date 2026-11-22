@@ -387,7 +387,7 @@ onStacks(
       .toEqual(['src/plans.ts']);
     // #A, the layer below, has none of its own, and #B's row, off screen now, still counts its one,
     // as read with the layers.
-    await expect(panel(page)).toContainText('No unresolved threads');
+    await expect(panel(page)).toContainText('No threads yet');
     // With nothing listed, there's nothing for Next and Previous to go to.
     const foot = page.locator('[data-lo-threads-foot]');
     for (const name of ['Next', 'Previous']) {

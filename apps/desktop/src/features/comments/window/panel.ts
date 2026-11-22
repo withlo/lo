@@ -77,9 +77,14 @@ export type PanelEmpty =
       readonly heading: string;
       readonly line?: string | undefined;
       /** The command its button runs. */
-      readonly action?: 'stacks.back' | 'accounts.addAccount' | undefined;
+      readonly action?: 'stacks.back' | 'accounts.addAccount' | 'comments.clearFilter' | undefined;
     }
   | { readonly kind: 'failed'; readonly reason: string | undefined };
+
+/** What the panel says where the pull request has no threads. */
+const NO_THREADS = 'No threads yet';
+/** What the panel says where it has threads its filter lists none of. */
+const NO_MATCHES = 'No matches';
 
 /** What view `view`'s panel shows when it lists nothing, for what main last sent of its threads. */
 export function emptyOf(
@@ -108,17 +113,10 @@ export function emptyOf(
     case 'failed':
       return { kind: 'failed', reason: threads?.problem ?? undefined };
     case 'ready':
-      switch (filter) {
-        case 'unresolved':
-          return { kind: 'none', heading: 'No unresolved threads' };
-        case 'all':
-          return { kind: 'none', heading: 'No threads yet' };
-        case 'yours':
-          return { kind: 'none', heading: 'No threads of yours' };
-        default:
-          filter satisfies never;
-          return { kind: 'none', heading: 'No threads yet' };
-      }
+      // Where there are threads, the filter hides them all, and its button lists them again.
+      return threads !== undefined && threads.threads.length > 0 && filter !== 'all'
+        ? { kind: 'none', heading: NO_MATCHES, action: 'comments.clearFilter' }
+        : { kind: 'none', heading: NO_THREADS };
     default:
       status satisfies never;
       return { kind: 'reading' };
@@ -168,7 +166,29 @@ export function rowsListed(): true | string {
   const tab = pullOnScreen();
   if (typeof tab === 'string') return tab;
   const keys = rowKeys(groupsIn(tab.id, filterStore.getState().filter));
-  return keys.length > 0 ? true : 'No threads listed';
+  if (keys.length > 0) return true;
+  return listable(listed.get(tab.id)).length > 0 ? NO_MATCHES : NO_THREADS;
+}
+
+/** Whether the panel lists through a filter, for Clear filter to take off, or why not. */
+export function canClearFilter(): true | string {
+  const on = inPanel();
+  if (on !== true) return on;
+  return filterStore.getState().filter === 'all' ? 'No filter to clear' : true;
+}
+
+/** The panel's list, the `threads` scope, which holds its empty state. */
+const PANEL_LIST = '[data-lo-scope="threads"]';
+
+/**
+ * Clear filter: the panel lists every thread. Pressed in the panel, as its empty state's button,
+ * focus stays in the list, which the button leaves with the empty state.
+ */
+export function clearFilter(): void {
+  const active = document.activeElement;
+  const list = active instanceof HTMLElement ? active.closest<HTMLElement>(PANEL_LIST) : null;
+  setFilter('all');
+  list?.focus();
 }
 
 /** `j` (1) and `k` (-1): the keyboard moves a thread on, stopping at the ends. */

@@ -1188,13 +1188,28 @@ describe('threads', () => {
     const below = thread('below', at('a', 'new', 22));
     shown.setThreads([thread('here', at('a', 'new', 4)), below], render);
     expect(drawnThreads()).toEqual(['below']);
-    // Its line says a new comment has come, until it does.
+    // Its line says a new thread has come, until it does.
     const marked = () =>
       [...scroller().querySelectorAll('.lo-arrived')].map(
-        (each) => each.closest('.cm-line')?.textContent?.replace('New comment', '') ?? '',
+        (each) => each.closest('.cm-line')?.textContent?.replace('New thread', '') ?? '',
       );
     expect(marked()).toEqual(['line 4']);
-    // And the caller is told, for a screen reader, which sees no mark.
+    // Named for what a click on it does, which is the line's: it lets the thread in.
+    const marker = scroller().querySelector<HTMLElement>('.lo-arrived');
+    expect(marker?.getAttribute('role')).toBe('button');
+    expect(marker?.getAttribute('aria-label')).toBe('Show new thread');
+    expect(marker?.dataset['tip']).toBe('Show new thread');
+    expect(marker?.dataset['command']).toBeUndefined();
+    vi.useFakeTimers();
+    try {
+      marker!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      vi.advanceTimersByTime(TIP_DELAY);
+      expect(document.querySelector('.lo-tip')?.textContent).toBe('Show new thread');
+      marker!.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+    } finally {
+      vi.useRealTimers();
+    }
+    // And the caller is told, for a screen reader, which isn't reading where the mark is.
     expect(told).toBe(1);
     screen.lines.clear();
     scroller().dispatchEvent(new Event('scroll'));
@@ -1206,7 +1221,7 @@ describe('threads', () => {
     expect(asked.at(-1)).toBe('update here');
     shown.setThreads([below], render);
     expect(drawnThreads()).toEqual(['here', 'below']);
-    // A thread going is no new comment.
+    // A thread going is no new thread.
     expect(marked()).toEqual([]);
     expect(told).toBe(1);
     screen.lines.clear();

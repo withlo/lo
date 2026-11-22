@@ -18,7 +18,7 @@ const GAP = 6;
 const EDGE = 8;
 
 /** What marks an element as a control with a tip: the command it runs, or a tip of its own. */
-export const TIPPED = '[data-command]';
+export const TIPPED = '[data-command], [data-tip]';
 
 /**
  * Shows a tip under each control in `root` the pointer rests on, as `tipOf` says it, and takes it
