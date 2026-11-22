@@ -25,9 +25,17 @@ import {
 } from '../../overview/window/shared.ts';
 import { setLayerCounts } from '../../stacks/window/shared.ts';
 import { viewIds } from '../../tab/contract.ts';
-import { activeTab, dialogs, right, status, type PullTab } from '../../tab/window/shared.ts';
+import {
+  activeTab,
+  dialogs,
+  right,
+  status,
+  toasts,
+  type PullTab,
+} from '../../tab/window/shared.ts';
 import { fileCountsChanged, setFileCounts } from '../../tree/window/shared.ts';
 import keys from '../keys.ts';
+import { DiscardedToast } from './Discarded.tsx';
 import { edit, remove, reply, resolve, takeActs, type ThreadKeyTarget } from './acts.ts';
 import { threadsOnBlock } from './blocks.ts';
 import {
@@ -37,6 +45,7 @@ import {
   commentOnBlock,
   commentOnFile,
   discarding,
+  undiscarding,
   offering,
   frameWith,
   keepBoxesOf,
@@ -69,7 +78,7 @@ import {
   takeReview,
   takeThreads,
 } from './threads.ts';
-import { followVim, switchVim } from './vim.ts';
+import { followVim, switchVim, vimDetail } from './vim.ts';
 
 /** The pull request's tab on screen, where a comment can be written, or why one can't. */
 function writable(): PullTab | string {
@@ -176,12 +185,12 @@ export default {
     edit: { run: actOn(edit), enabled: enabled(writable) },
     remove: { run: actOn(remove), enabled: enabled(writable) },
     discard: discarding,
+    undiscard: undiscarding,
     sendAnyway: offering('sendAgain'),
     checkAgain: offering('checkAgain'),
     moveToFile: offering('onFile'),
-    loadNewer: offering('loadNewer'),
-    showLatest: offering('showLatest'),
-    vim: { run: switchVim },
+    showLatest: offering('showLatest', 'loadNewer'),
+    vim: { run: switchVim, detail: vimDetail },
     keptDrafts: {
       run: () => {
         const tab = activeTab();
@@ -217,6 +226,12 @@ export default {
       id: 'comments.delete',
       order: 40,
       render: () => createElement(DeleteDialog),
+    }),
+    // Under the updates' offer.
+    defineView(toasts, {
+      id: 'comments.discarded',
+      order: 10,
+      render: () => createElement(DiscardedToast),
     }),
     // After the diff's.
     defineView(status, {

@@ -384,9 +384,15 @@ to one job.
 ## Comments
 
 **Every place you write is the same box.** A new comment on lines, on a file or on the pull request,
-a reply, an edit and a review's summary are all `CommentBox` (`packages/desktop/ui`), around the one
-editor the code view makes (`compose` on a code view, or `createComposer` outside one). A feature
-never draws its own.
+a reply and an edit are all `CommentBox` (`packages/desktop/ui`), around the one editor the code
+view makes (`compose` on a code view, or `createComposer` outside one). A feature never draws its
+own.
+
+The review's summary, in the submit dialog, is the same editor in the same frame, with the same
+notes, upload rows and foot bar (`CommentBoxFootBar`), but it isn't the whole box yet: it has no
+head, so "Summary" and Preview are in its foot, as a hint and a button, and it has no "Discard
+draft". Bring it onto the head (`CommentBoxHeadBar`) when the submit dialog is next changed; don't
+copy its foot.
 
 - **Head.** What the comment is on, at the left, in the words a line is named everywhere: "Line 3",
   "Lines 39–41", "Line 3, removed", "File", "Pull request", "Reply", "Edit", "Summary". Why it's on
@@ -396,12 +402,13 @@ never draws its own.
 - **Body.** The editor, or its preview. The box has one ring, which is its focus; nothing inside it
   has another. An empty box says what it's for in a quiet hint (`hint`): "Reply", "Comment on #264".
 - **Foot.** "Attach files…" as an icon button at the left, then "Discard draft"; the actions at the
-  right, the main one last, each with its key. The foot is one line and never runs past the box: as
-  the box narrows it gives up its key chips, then its hint, then the labels of the controls that
-  keep an icon, and the actions keep their words (`box-chip`, `box-hint`, `box-label` in
-  `styles.css`, on the foot's own `@container`). A box too narrow for those words, as one beside the
-  code is in the smallest window, wraps its head and its foot (`box-row`): it's the one place a foot
-  wraps. In a box taller than its pane, the foot stays at the pane's foot.
+  right, the main one last, each with its key. The foot never runs past the box: as the box narrows
+  it gives up its key chips (under 480px), then the labels of the controls that keep an icon (under
+  410px, the width a foot with every control and Vim's mode needs), then its hint, and the actions
+  keep their words (`box-chip`, `box-label`, `box-hint` in `styles.css`, on the foot's own
+  `@container`). Whatever still doesn't fit wraps: the actions go to a row of their own, at its end,
+  as in a box beside the code in a small window. It's the one place a foot wraps. The head wraps
+  under 320px (`box-row`). In a box taller than its pane, the foot stays at the pane's foot.
 - **Actions.** "Add to review" and "Send now" under a line or a thread, "Send" under the pull
   request, "Save" in an edit. While a review is pending GitHub adds every comment to it, so the box
   has "Add to review" alone. A dimmed action says why in its tooltip, and the one pressed is `busy`

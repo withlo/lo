@@ -611,9 +611,15 @@ interface Jump {
   go(page: Page): Promise<void>;
   /**
    * The event the jump lands in, heard after whatever handles it, in the editor or the window.
-   * The finder gives focus back to the diff, then shows the file, in the same task.
+   * The finder gives focus back to the diff, then shows the file, in the same task. A key of Lo's
+   * own never reaches the editor: it's heard as `lo-key`, which Lo sends as the key's command is
+   * about to run, in the key's task.
    */
-  heard: { type: 'keydown' | 'click' | 'focusin'; key?: string; on: 'editor' | 'window' };
+  heard: {
+    type: 'keydown' | 'click' | 'focusin' | 'lo-key';
+    key?: string;
+    on: 'editor' | 'window';
+  };
   to: { path: string; header: boolean };
 }
 
@@ -674,7 +680,7 @@ const JUMPS: Jump[] = [
         .toEqual(['assets/mark.png', 'data/numbers.txt']);
     },
     go: (page) => press(page, ']', 'f'),
-    heard: { type: 'keydown', key: 'f', on: 'editor' },
+    heard: { type: 'lo-key', on: 'window' },
     to: { path: 'src/text/wrap.ts', header: true },
   },
 ];
@@ -759,15 +765,8 @@ async function watchJumps(page: Page, landing: Landing, heard: Jump['heard']): P
 
 for (const layout of ['inline', 'split'] as const) {
   test.describe(`${layout === 'inline' ? 'Inline' : 'Side by side'}, a change as a jump lands`, () => {
-    // On the diff first, as `DIFF_FIRST` has it, in this layout, with Vim keys on: the jumps by key
-    // are heard in the editor, where Vim runs them.
-    test.use({
-      settings: JSON.stringify({
-        'overview.open': 'diff',
-        'diff.layout': layout,
-        'editor.vim': true,
-      }),
-    });
+    // On the diff first, as `DIFF_FIRST` has it, in this layout.
+    test.use({ settings: JSON.stringify({ 'overview.open': 'diff', 'diff.layout': layout }) });
 
     for (const landing of ['in its task', 'just after it', 'all along'] as const) {
       test(`leaves the screen where each jump takes it, with the change ${landing}`, async ({

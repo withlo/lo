@@ -146,6 +146,7 @@
   background: var(--lo-accent);
   color: var(--lo-on-accent);
   font: 600 13px/1 var(--lo-font-mono);
+  font-variant-ligatures: none;
   cursor: default;
 }
 .lo-gutteradd[hidden] {

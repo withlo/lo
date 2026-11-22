@@ -217,15 +217,13 @@ const mode = cva('flex-none', {
 });
 
 /**
- * How wide the foot is when it starts giving things up, each narrower than the last: its key chips,
- * then its hint, then the labels of the controls that aren't its buttons, where its row may wrap
- * too. The foot's own box is the container.
+ * What the foot gives up as it narrows, each narrower than the last: its key chips, then the labels
+ * of the controls that aren't its buttons, then its hint. The foot's own box is the container.
  */
 const NARROW = {
   chips: 'box-chip',
   hint: 'box-hint',
   labels: 'box-label',
-  row: 'box-row',
 } as const;
 
 /** The icons a note takes, on the 16 grid. */
@@ -355,8 +353,18 @@ function Attach({ attach }: { attach: CommentBoxAttach }) {
   );
 }
 
-/** "Discard draft": its label beside its icon, and the icon alone, with a tooltip, in a narrow foot. */
-function Discard({ discard }: { discard: CommentBoxDiscard }) {
+/**
+ * "Discard draft": its label beside its icon, and the icon alone, with a tooltip, in a narrow foot.
+ * Off, as in a box with no text, its tooltip says why, and that text describes it.
+ */
+function Discard({
+  discard,
+  reason,
+}: {
+  discard: CommentBoxDiscard;
+  /** The id of the text that says why it's off. */
+  reason?: string | undefined;
+}) {
   const off = discard.disabled === true;
   return (
     <Button
@@ -364,6 +372,7 @@ function Discard({ discard }: { discard: CommentBoxDiscard }) {
       size="sm"
       aria-label="Discard draft"
       aria-disabled={off || undefined}
+      aria-describedby={off ? reason : undefined}
       hint={off && discard.why !== undefined ? discard.why : 'Discard draft'}
       onClick={() => {
         if (!off) discard.onClick?.();
@@ -416,12 +425,12 @@ function firstEditable(within: HTMLElement | null): HTMLElement | undefined {
   );
 }
 
-/** Why each of a foot's buttons that's off is off, once for each reason, in order. */
+/** Why each of a foot's controls that's off is off, once for each reason, in order. */
 function reasonsOf(foot: CommentBoxFoot | undefined): string[] {
   return [
     ...new Set(
-      (foot?.actions ?? []).flatMap((each) =>
-        each.disabled === true && each.why !== undefined ? [each.why] : [],
+      [foot?.discard, ...(foot?.actions ?? [])].flatMap((each) =>
+        each?.disabled === true && each.why !== undefined ? [each.why] : [],
       ),
     ),
   ];
@@ -543,10 +552,10 @@ export function CommentBoxUploads({ uploads }: { uploads: readonly CommentBoxUpl
 /**
  * A box's foot, on one line: "Attach files…" and "Discard draft" at one end, the Vim mode with Vim
  * keys on, a hint, and the buttons at the other end, the main one last. It never runs past the box:
- * narrow, it gives up its key chips, then its hint, then the labels of the controls that aren't its
- * buttons, which stay icons with tooltips. Only a box too narrow for its buttons' words wraps, with
- * the buttons on a row of their own. A button that's off says why in its tooltip, and names that
- * text as what describes it: `id` is the box's.
+ * narrow, it gives up its key chips, then the labels of the controls that aren't its buttons, which
+ * stay icons with tooltips, then its hint. Whatever still doesn't fit wraps: the buttons go to a
+ * row of their own, at its end, and under that one under the other. A button that's off says why in
+ * its tooltip, and names that text as what describes it: `id` is the box's.
  */
 export function CommentBoxFootBar({
   id,
@@ -572,17 +581,18 @@ export function CommentBoxFootBar({
           )}
         </p>
       ))}
-      <div className={`${NARROW.row} flex items-center gap-4 p-6 text-fg-muted text-small`}>
+      <div className="flex flex-wrap items-center gap-4 p-6 text-fg-muted text-small">
         {foot.attach !== undefined && <Attach attach={foot.attach} />}
-        {foot.discard !== undefined && <Discard discard={foot.discard} />}
+        {foot.discard !== undefined && (
+          <Discard discard={foot.discard} reason={reasonId(id, reasons, foot.discard.why)} />
+        )}
         {vim && focused && foot.mode !== undefined && (
           <span className={`ms-4 ${mode({ kind: foot.mode.kind })}`}>{foot.mode.name}</span>
         )}
         {foot.text !== undefined && (
-          <span className={`ms-4 min-w-0 truncate ${NARROW.hint}`}>{foot.text}</span>
+          <span className={`ms-4 min-w-0 flex-1 basis-0 truncate ${NARROW.hint}`}>{foot.text}</span>
         )}
-        <span className="flex-1" />
-        <span className={`${NARROW.row} flex flex-none items-center gap-6`}>
+        <span className="ms-auto flex min-w-0 flex-wrap items-center justify-end gap-6">
           {foot.actions?.map((action) => (
             <ActionButton
               key={action.label}

@@ -26,7 +26,16 @@ import { useMenuTarget } from '../../../window/commands/menus.tsx';
 import { avatarImage } from '../../../window/images.ts';
 import { useAccounts } from '../../accounts/window/shared.ts';
 import { usePull, useRun, useTabState } from '../../tab/window/shared.ts';
-import { act, type Box, type BoxState, pullIn, send, sendingNow, takenDown } from './boxes.ts';
+import {
+  act,
+  type Box,
+  type BoxState,
+  discardable,
+  pullIn,
+  send,
+  sendingNow,
+  takenDown,
+} from './boxes.ts';
 import { boxKeys } from './boxkeys.ts';
 import { ago } from './Card.tsx';
 import { Preview as Rendering } from './Preview.tsx';
@@ -94,6 +103,7 @@ function footOf(
   const reason = why ?? (blank ? BLANK : unconfirmed);
   const disabled = reason !== undefined || waiting;
   const { kind } = state.place;
+  const canDiscard = discardable(state);
   const alone = (label: string, how: 'review' | 'now', working: string): CommentBoxAction => ({
     label,
     keys: boxKeys('addToReview'),
@@ -126,9 +136,10 @@ function footOf(
             : [button('review'), button('now')];
   return {
     mode: modes[state.mode],
-    // The pull request's own box never closes: with no text, it has nothing to discard.
+    // With no text there's nothing to discard: the head's control closes the box.
     discard: {
-      disabled: waiting || (blank && kind === 'conversation'),
+      disabled: canDiscard !== true,
+      why: canDiscard === true ? undefined : canDiscard,
       onClick: () => act(box, 'discard'),
     },
     lines:

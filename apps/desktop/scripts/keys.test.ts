@@ -187,7 +187,9 @@ describe('docs/keys.md', () => {
       '| `Ctrl+P` (Linux) | Files | `Ctrl+P` | `diff`, `file`, `peek` and `box` (normal and visual) | `diff.files` |',
     );
     expect(lines).toContain('| `⌃o` | Back | `⌃o` | `diff`, `file` and `peek` | `keys.back` |');
-    expect(lines.join('\n')).toContain("Vim runs Lo's motions (next file) under Lo's keys");
+    expect(lines.join('\n')).toContain(
+      "Vim runs Lo's motions in code views (next file) under Lo's keys",
+    );
   });
 
   it('describes the keymap file, with an example that applies', () => {

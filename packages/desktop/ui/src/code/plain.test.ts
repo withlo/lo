@@ -45,6 +45,8 @@ const file: DiffFile = {
 
 let view: DiffView | undefined;
 let parent: HTMLElement | undefined;
+/** What the view drawn last says its jumps with. */
+let jumped = vi.fn<DiffEvents['jumped']>();
 
 afterEach(() => {
   view?.destroy();
@@ -78,10 +80,11 @@ function open(): { shown: DiffView; editor: EditorView; content: HTMLElement } {
   parent = document.createElement('div');
   parent.className = 'lo-app';
   document.body.append(parent);
+  jumped = vi.fn<DiffEvents['jumped']>();
   view = createDiffView(
     parent,
     { files: [file], layout: 'split', vimKeys: [], nonce: 'n' },
-    events(),
+    { ...events(), jumped },
   );
   view.setDiff('a', diffText(undefined, `${lines.join('\n')}\n`));
   return { shown: view, ...editorOf('After') };
@@ -174,6 +177,8 @@ describe('a code view with Vim keys off', () => {
     content.focus();
     expect(press(content, 'G').defaultPrevented).toBe(true);
     expect(editor.state.selection.main.head).toBe(editor.state.doc.length);
+    // It's a jump, as Vim's is, so `⌃o` comes back from it.
+    expect(jumped).toHaveBeenCalledOnce();
     if (!isKeySource(shown)) throw new Error('A diff view takes keys handed back.');
     // A `g` alone is nothing of the editor's.
     expect(press(content, 'g').defaultPrevented).toBe(false);
@@ -184,6 +189,7 @@ describe('a code view with Vim keys off', () => {
     expect(press(content, 'g').defaultPrevented).toBe(true);
     expect(keyState(shown).pending).toBe(false);
     expect(editor.state.selection.main.head).toBe(0);
+    expect(jumped).toHaveBeenCalledTimes(2);
   });
 
   test('gets Vim as Vim keys go on, and loses it as they go off', () => {
@@ -216,8 +222,18 @@ describe('a comment box with Vim keys off', () => {
     made.close();
   });
 
-  test('one Esc closes it, keeping the draft', () => {
+  test('one Esc closes it, keeping the draft, but an Esc that cancels a composition', () => {
     const { made, on, content } = box();
+    // An input method's `Esc` is its own: the text being composed goes, and the box stays.
+    content.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Escape',
+        isComposing: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    expect(on.close).not.toHaveBeenCalled();
     press(content, 'Escape');
     expect(on.close).toHaveBeenCalledExactlyOnceWith(true);
     made.close();

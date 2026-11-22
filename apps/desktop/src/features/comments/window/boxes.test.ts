@@ -13,7 +13,14 @@ import type {
   Place,
   Span,
 } from '@lo/ui/code';
-import { commandsOf, defineCommands, type LineTarget, listen, Registry } from '@lo/ui/commands';
+import {
+  commandsOf,
+  defineCommands,
+  type LineTarget,
+  listen,
+  NO_TARGET,
+  Registry,
+} from '@lo/ui/commands';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { runFromBar } from '../../../window/commands/bar.ts';
@@ -52,7 +59,12 @@ import {
   keepBoxesOf,
   keptAway,
   keptSummary,
+  discardable,
   discarding,
+  lastDiscarded,
+  undiscard,
+  undiscarding,
+  UNDO_TIME,
   offering,
   restore,
   SAVE_AFTER,
@@ -619,6 +631,55 @@ describe('drafts', () => {
     });
     expect(drawn).toHaveLength(2);
     expect(drawn[1]!.composer.text).toBe('New');
+  });
+
+  test('“Undo” brings a discarded draft back, in its box where it was, and saves it again', () => {
+    vi.useFakeTimers();
+    try {
+      const { drawn } = fakeDiff();
+      takeDrafts({
+        id: VIEW,
+        drafts: [row(onLines(4, 6), 'Old', { restored: true, savedAt: 1 })],
+      });
+      act(boxIn(drawn[0]!), 'discard');
+      expect(lastDiscarded()).toMatchObject({ view: VIEW, place: onLines(4, 6), text: 'Old' });
+      expect(undiscarding.enabled?.(NO_TARGET)).toBe(true);
+      undiscard();
+      // The box is open again on its lines, focused, with the text, and nothing more to undo.
+      expect(drawn).toHaveLength(2);
+      expect(drawn[1]).toMatchObject({
+        at: { file: 'f0', side: 'new', from: 4, to: 6 },
+        options: { focus: true },
+      });
+      expect(drawn[1]!.composer.text).toBe('Old');
+      expect(lastDiscarded()).toBeUndefined();
+      expect(undiscarding.enabled?.(NO_TARGET)).toBe('Nothing to undo');
+      // Main's drafts from before it heard of either leave the box be, and then it's saved again.
+      takeDrafts({ id: VIEW, drafts: [] });
+      expect(drawn[1]!.composer.closed).toBeUndefined();
+      vi.advanceTimersByTime(SAVE_AFTER);
+      expect(asked('comments.draft').at(-1)).toMatchObject({ place: onLines(4, 6), text: 'Old' });
+
+      // The offer runs out by itself, and a box with no text has nothing to discard.
+      act(boxIn(drawn[1]!), 'discard');
+      expect(lastDiscarded()?.text).toBe('Old');
+      vi.advanceTimersByTime(UNDO_TIME);
+      expect(lastDiscarded()).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('a box with no text has nothing to discard, and one being sent is held', async () => {
+    const { drawn, box } = await opened();
+    const target = { kind: 'box', box: box.id } as const;
+    expect(discardable(box.state)).toBe(true);
+    drawn[0]!.on.change(' ');
+    expect(discardable(box.state)).toBe('Nothing to discard');
+    expect(discarding.enabled?.(target)).toBe('Nothing to discard');
+    void discarding.run(target);
+    expect(drawn[0]!.composer.closed).toBeUndefined();
+    expect(discardable({ ...box.state, text: 'Text', busy: true })).toBe('Sending…');
   });
 
   test('after the window loads again, each draft’s box comes back, unfocused, saying so', () => {

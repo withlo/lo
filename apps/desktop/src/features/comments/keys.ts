@@ -170,6 +170,13 @@ export default defineCommands(
       when: box,
       menu: { on: 'box', order: 0 },
     },
+    /** Brings back the draft "Discard draft" last took, as the "Undo" on its toast does. */
+    undiscard: {
+      label: 'Undo discard',
+      group: 'Act',
+      keys: [],
+      bar: { menu: 'Review', order: 30 },
+    },
     /**
      * After a comment was sent and didn't post: sends it again, as the box's "Try again" does. Never
      * while nobody knows whether it posted, which "Check again" finds out first.
@@ -206,18 +213,9 @@ export default defineCommands(
       when: box,
       menu: { on: 'box', order: 20 },
     },
-    /** After someone pushed since: shows the newer push, as "Show latest" does. */
-    loadNewer: {
-      label: 'Show latest',
-      group: 'View',
-      keys: [],
-      targets: ['box'],
-      when: box,
-      menu: { on: 'box', order: 30 },
-    },
     /**
-     * After a comment that would join your pending review, which is on the latest push: shows that
-     * push, as "Show latest" does.
+     * After someone pushed since, or after a comment that would join your pending review, which is
+     * on the latest push: shows that push, as the note's "Show latest" does.
      */
     showLatest: {
       label: 'Show latest',
@@ -225,7 +223,7 @@ export default defineCommands(
       keys: [],
       targets: ['box'],
       when: box,
-      menu: { on: 'box', order: 40 },
+      menu: { on: 'box', order: 30 },
     },
     /**
      * In the box's editor: adds the comment to your review. In the pull request's own box, which
