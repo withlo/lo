@@ -139,7 +139,8 @@ function Selecting({
   const line = choiceLine(rows, root, choice);
   const from = line.code ? <span className="code-small">{line.from}</span> : line.from;
   return (
-    <div className="flex flex-col gap-6">
+    // A note, as the tree's notes are, though it stands in the offer's place.
+    <div role="note" className="flex flex-col gap-6">
       <p className="m-0">
         {line.name === undefined ? (
           <>Selecting layers from {from}</>
