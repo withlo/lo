@@ -15,6 +15,7 @@ import { createStore } from 'zustand/vanilla';
 import { announce } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
 import { askAutoMerge } from '../../merge/window/shared.ts';
+import type { QueueTab } from '../../tab/contract.ts';
 import { withoutBidi } from '../../tab/window/shared.ts';
 import type {
   Acted,
@@ -113,8 +114,8 @@ export interface RowProblem extends Failure {
 
 interface Acting {
   readonly dialog: QueueDialog | undefined;
-  /** The pull requests with a write at work, by number. */
-  readonly working: ReadonlyMap<number, Working>;
+  /** The pull requests with a write at work, by {@link workKey}. */
+  readonly working: ReadonlyMap<string, Working>;
   /** The problems under rows, by {@link problemKey}. */
   readonly problems: ReadonlyMap<string, RowProblem>;
 }
@@ -159,11 +160,19 @@ function clearProblem(id: string, number: number): void {
   });
 }
 
-function setWorking(number: number, working: Working | undefined): void {
+/**
+ * What names pull request `number` of `owner/repo` among the writes at work: by its repository
+ * too, since another repository's queue may have its number.
+ */
+export function workKey(owner: string, repo: string, number: number): string {
+  return `${owner}/${repo}#${number}`.toLowerCase();
+}
+
+function setWorking(key: string, working: Working | undefined): void {
   acting.setState(({ working: was }) => {
     const next = new Map(was);
-    if (working === undefined) next.delete(number);
-    else next.set(number, working);
+    if (working === undefined) next.delete(key);
+    else next.set(key, working);
     return { working: next };
   });
 }
@@ -362,15 +371,23 @@ export function autoMergeSettledBy(number: number, read: QueueRead | undefined):
 }
 
 /** The row `target` names in the merge queue's tab on screen, with its tab, or why there's none. */
-function rowAt(
-  target: RowTarget,
-): { id: string; branch: string; login: string; row: Row; read: QueueRead | undefined } | string {
+function rowAt(target: RowTarget):
+  | {
+      id: string;
+      tab: QueueTab;
+      branch: string;
+      login: string;
+      row: Row;
+      read: QueueRead | undefined;
+    }
+  | string {
   const tab = queueOnScreen();
   if (typeof tab === 'string') return tab;
   const row = rowsIn(tab.id).find((each) => each.key === target.row);
   if (!row) return `#${numberOf(target.row)} left the queue`;
   return {
     id: tab.id,
+    tab,
     branch: tab.branch,
     login: tab.login,
     row,
@@ -398,9 +415,9 @@ export function atFront(read: QueueRead | undefined, number: number): boolean {
   );
 }
 
-/** What's at work on pull request `number`, as a dimmed control's reason, if something is. */
-function atWork(number: number): string | undefined {
-  const working = acting.getState().working.get(number);
+/** What's at work on pull request `number` of `tab`'s queue, as a dimmed control's reason, if anything. */
+function atWork(tab: QueueTab, number: number): string | undefined {
+  const working = acting.getState().working.get(workKey(tab.owner, tab.repo, number));
   return working === undefined ? undefined : workingWord(working);
 }
 
@@ -408,7 +425,7 @@ function atWork(number: number): string | undefined {
 export function canAct(asked: ActKind, target: RowTarget): true | string {
   const at = rowAt(target);
   if (typeof at === 'string') return at;
-  return atWork(at.row.number) ?? actOn(asked, at.row, at.read);
+  return atWork(at.tab, at.row.number) ?? actOn(asked, at.row, at.read);
 }
 
 /**
@@ -533,7 +550,7 @@ const confirmed = new Map<string, ActPlan>();
 export function sentPlan({ key }: { key: string }): void {
   const plan = confirmed.get(key);
   if (plan === undefined) return;
-  setWorking(plan.number, plan.kind);
+  setWorking(workKey(plan.owner, plan.repo, plan.number), plan.kind);
   const dialog = acting.getState().dialog;
   if (dialog?.step.kind === 'checking' && dialog.step.plan.key === key) {
     setDialog({ sketch: dialog.sketch, step: { kind: 'sent', plan } });
@@ -554,10 +571,12 @@ export function confirmAct(): void {
   confirmed.set(plan.key, plan);
   void main()
     .confirm({ key: plan.key })
-    .catch((error: unknown): Acted => ({ kind: 'refused', why: '', details: messageOf(error) }))
+    // Main may have sent it before its answer was lost: what it did isn't known, and "Check
+    // again" only looks.
+    .catch((error: unknown): Acted => ({ kind: 'unknown', why: '', details: messageOf(error) }))
     .then((acted) => {
       confirmed.delete(plan.key);
-      setWorking(plan.number, undefined);
+      setWorking(workKey(plan.owner, plan.repo, plan.number), undefined);
       answered(sketch, plan, acted);
     });
 }
@@ -775,9 +794,12 @@ export function problemAction(id: string, number: number): void {
     return;
   }
   switch (problem.asked) {
-    case 'autoMergeOff':
-      turnOff(id, number);
+    case 'autoMergeOff': {
+      // The problem's button is on screen, in its queue's tab.
+      const tab = queueOnScreen();
+      if (typeof tab !== 'string' && tab.id === id) turnOff(id, number, tab);
       return;
+    }
     case 'open':
       openPull(id, number);
       return;
@@ -909,7 +931,7 @@ export function autoMergeOn(row: Row, read: QueueRead | undefined): true | strin
 export function canAutoMerge(target: RowTarget): true | string {
   const at = rowAt(target);
   if (typeof at === 'string') return at;
-  return atWork(at.row.number) ?? autoMergeOn(at.row, at.read);
+  return atWork(at.tab, at.row.number) ?? autoMergeOn(at.row, at.read);
 }
 
 /** What `a` is called on the row `target` names, where it turns auto-merge on, not off. */
@@ -930,7 +952,7 @@ export function autoMerge(target: RowTarget): void {
   if (typeof at === 'string') return;
   const { id, row } = at;
   if (row.kind === 'waiting') {
-    turnOff(id, row.number);
+    turnOff(id, row.number, at.tab);
     return;
   }
   clearProblem(id, row.number);
@@ -943,14 +965,16 @@ export function autoMerge(target: RowTarget): void {
 }
 
 /** Turns off auto-merge for pull request `number`, waiting to join merge queue tab `id`'s queue. */
-function turnOff(id: string, number: number): void {
+function turnOff(id: string, number: number, tab: QueueTab): void {
   clearProblem(id, number);
-  setWorking(number, 'autoMergeOff');
+  const key = workKey(tab.owner, tab.repo, number);
+  setWorking(key, 'autoMergeOff');
   void main()
     .autoMergeOff({ id, number })
-    .catch((error: unknown): Acted => ({ kind: 'refused', why: '', details: messageOf(error) }))
+    // As for a confirmation: it may have gone.
+    .catch((error: unknown): Acted => ({ kind: 'unknown', why: '', details: messageOf(error) }))
     .then((acted) => {
-      setWorking(number, undefined);
+      setWorking(key, undefined);
       autoMergeAnswered(id, number, acted);
     });
 }

@@ -355,7 +355,7 @@ test('the panel’s head says what it merges into and how it stands', () => {
     verdict: 'Auto-merge is on',
     before: undefined,
     branch: undefined,
-    after: 'squash · turned on by tess-okafor',
+    after: 'Squash · turned on by tess-okafor',
   });
   expect(
     panelHead(

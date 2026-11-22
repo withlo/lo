@@ -12,6 +12,7 @@ import { createRoot } from 'react-dom/client';
 import { beforeAll, beforeEach, describe, expect, it, onTestFinished } from 'vitest';
 
 import { notice } from '../../../window/commands/notices.tsx';
+import { IpcError } from '../../../ipc/contract.ts';
 import { createRegistry } from '../../../window/commands/registry.ts';
 import { installBridge } from '../../../window/test/bridge.ts';
 import type { Acted, ActPlan, ActPlanned, Entry, QueueRead, QueueState } from '../contract.ts';
@@ -268,11 +269,11 @@ describe('the question', () => {
       expect(dialog()!.textContent).toContain('Remove #260 from merge queue?');
       expect(facts()).toEqual(before);
     }
-    // Sent, it's at work, and leaving lets it go on.
+    // Sent, it's at work, and nothing leaves it until GitHub answers: Cancel is dimmed.
     expect(button('Remove from merge queue')?.getAttribute('aria-busy')).toBe('true');
     expect(button('Remove from merge queue')?.textContent).toContain('Removing…');
-    expect(button('Close')).toBeDefined();
-    expect(button('Cancel')).toBeUndefined();
+    expect(button('Cancel')?.getAttribute('aria-disabled')).toBe('true');
+    expect(button('Close')).toBeUndefined();
   });
 
   it('says what each change does, and what it did', () => {
@@ -391,6 +392,22 @@ describe('confirming', () => {
     await until(() => calls('queue.confirm') === 2);
   });
 
+  it('takes a confirmation whose answer never came back as not known, not as refused', async () => {
+    confirming = () => {
+      throw new IpcError('unavailable', 'Main stopped answering.');
+    };
+    draw(<QueueConfirm />);
+    ask();
+    await until(() => dialog() !== null);
+    await later();
+    act(() => {
+      dialog()!.dispatchEvent(enter());
+    });
+    await until(() => stepKind() === 'unknown');
+    expect(button('Check again')).toBeDefined();
+    expect(button('Try again')).toBeUndefined();
+  });
+
   it('says GitHub’s answer was lost, and "Check again" only looks', async () => {
     confirming = () => ({ kind: 'unknown', why: 'GitHub didn’t respond.' });
     showQueue(stateOf([entry(1, 259), entry(2, 260)]));
@@ -460,7 +477,7 @@ describe('confirming', () => {
     expect(calls('queue.confirm')).toBe(0);
   });
 
-  it('stops a change while it’s checked, and lets one sent go on', async () => {
+  it('stops a change while it’s checked, and stays while one sent waits for GitHub', async () => {
     const plan = planOf();
     draw(<QueueConfirm />);
     open({ kind: 'checking', plan });
@@ -470,8 +487,13 @@ describe('confirming', () => {
     bridge.calls.length = 0;
     open({ kind: 'sent', plan });
     await until(() => dialog() !== null);
-    act(() => button('Close')!.click());
-    expect(acting.getState().dialog).toBeUndefined();
+    act(() => button('Cancel')!.click());
+    act(() => {
+      dialog()!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+      );
+    });
+    expect(acting.getState().dialog?.step.kind).toBe('sent');
     expect(calls('queue.cancel')).toBe(0);
   });
 });

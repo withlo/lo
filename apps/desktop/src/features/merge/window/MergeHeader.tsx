@@ -52,6 +52,7 @@ import {
   togglePanel,
   whoOf,
 } from './actions.ts';
+import { withBranch } from './chips.tsx';
 import { main } from './main.ts';
 import { turningOff } from './merging.ts';
 import { panelRows, queueHead } from './places.ts';
@@ -63,6 +64,7 @@ import {
   panels,
   placementOf,
   placeUnknown,
+  shipping,
   statuses,
   takeStatus,
   type Panel,
@@ -238,14 +240,15 @@ function placeOf(tab: PullTab, state: MergeState, placement: Placement | undefin
 }
 
 /** A row of the reasons, as the checklist draws it, its links opening through main. */
-function itemOf(id: string, row: Row): CheckItem {
+function itemOf(id: string, row: Row, base: string): CheckItem {
   const open = (url: string) => () => openPage(id, url);
   return {
     key: row.key,
     kind: row.kind,
     glyph: row.glyph,
     title: row.title,
-    detail: row.detail,
+    // The base branch a reason names is drawn as one: "`e4/gated` requires a code owner's approval."
+    detail: typeof row.detail === 'string' ? withBranch(row.detail, base) : row.detail,
     link: row.link && { label: row.link.label, onOpen: open(row.link.url) },
     subs: row.subs.map((sub) => ({
       key: sub.key,
@@ -259,6 +262,26 @@ function itemOf(id: string, row: Row): CheckItem {
       <HintButton command="merge.nextThread">Next thread</HintButton>
     ) : undefined,
   };
+}
+
+/**
+ * Whether the pull request the header stands for has just merged, from a status drawn before, with
+ * neither the merge's dialog nor approve and ship's open to end on the mark's kiss: then the
+ * header's dot fills instead.
+ */
+function useLanded(kind: string | undefined): boolean {
+  const [seen, setSeen] = useState(kind);
+  const [landed, setLanded] = useState(false);
+  if (seen !== kind) {
+    setSeen(kind);
+    setLanded(
+      kind === 'merged' &&
+        seen !== undefined &&
+        merging.getState().dialog === undefined &&
+        shipping.getState().dialog === undefined,
+    );
+  }
+  return landed;
 }
 
 /** What the main button says until Lo knows where the pull request sits, and so what merges. */
@@ -295,7 +318,7 @@ function bodyOf(
         <Checklist
           label="Reasons"
           id={list.id}
-          rows={rows.map((row) => itemOf(tab.id, row))}
+          rows={rows.map((row) => itemOf(tab.id, row, state.base))}
           focused={panel.focused}
           listRef={list.ref}
         />
@@ -569,6 +592,7 @@ export function MergeHeader({ tab }: { tab: PullTab }) {
         ? 'closed'
         : undefined;
   const line = lineOf(view, now, queue, ended);
+  const landed = useLanded(line?.kind);
   if (!line) return null;
   const keys = keyOf('merge.panel');
   const who = whoOf(tab);
@@ -583,6 +607,7 @@ export function MergeHeader({ tab }: { tab: PullTab }) {
           onClick={line.opens ? () => togglePanel(tab.id, tab.number) : undefined}
           expanded={line.opens ? panel.open : undefined}
           ref={setButton}
+          landed={landed}
         />
       </span>
       {known && line.opens && (

@@ -422,7 +422,7 @@ it('turns auto-merge off from its button, busy until main answers, and says in t
   );
   act(() => page.querySelector('button')?.click());
   await until(() => panel() !== null);
-  expect(panel()?.textContent).toContain('squash · turned on by rozed-bot');
+  expect(panel()?.textContent).toContain('Squash · turned on by rozed-bot');
   const off = () => buttonSaying('Turn off auto-merge', panel() ?? undefined);
   expect(off()?.getAttribute('aria-disabled')).toBeNull();
   const answer = Promise.withResolvers<void>();

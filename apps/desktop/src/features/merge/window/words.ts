@@ -502,9 +502,10 @@ export function panelHead(state: MergeState, who: Who = SOMEONE): PanelHead {
     case 'waiting':
       if (state.autoMerge) {
         const { method, by } = state.autoMerge;
+        // The line starts at its first word, in sentence case: "Squash · turned on by rozed-bot".
         const said = [
-          method === null ? undefined : methodLabel(method).toLowerCase(),
-          by === null ? undefined : `turned on by ${by}`,
+          method === null ? undefined : methodLabel(method),
+          by === null ? undefined : `${method === null ? 'Turned' : 'turned'} on by ${by}`,
         ].filter((part) => part !== undefined);
         return {
           ...head,

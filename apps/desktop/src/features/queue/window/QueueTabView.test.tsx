@@ -18,7 +18,7 @@ import type * as TabShared from '../../tab/window/shared.ts';
 import type { Acted, Entry, QueueRead, QueueState } from '../contract.ts';
 import { acting } from './acting.ts';
 import feature from './index.ts';
-import { QueueTabView } from './QueueTabView.tsx';
+import { givenUp, QueueTabView } from './QueueTabView.tsx';
 import { focusedRows, forgetQueue, showQueue } from './store.ts';
 
 // The tab on screen, as the tab feature names it: the queue's, unless a test says.
@@ -459,6 +459,13 @@ function hints(host: HTMLElement): [string, string | null][] {
 }
 
 describe('the status bar’s hints', () => {
+  it('give up hints from the right where they don’t fit, the dimmed ones first', () => {
+    const off = [false, false, true, false, true, false];
+    expect([...givenUp(off, 0)]).toEqual([]);
+    expect([...givenUp(off, 3)]).toEqual([4, 2, 5]);
+    expect([...givenUp(off, 9)]).toEqual([4, 2, 5, 3, 1, 0]);
+  });
+
   it('names the keys for the row the keyboard is on, each dimmed with why it can’t run', () => {
     act(() => showQueue(stateOf(QUEUE)));
     act(() => focusedRows.set(TAB.id, 'waiting-153'));

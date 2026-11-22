@@ -4,24 +4,23 @@
 // foot change. The main button is busy while main checks the change and while it's sent, and after
 // a failure reads "Try again", or what the reason offers, with the failure above the foot and
 // GitHub's own words behind Details; when GitHub's answer was lost it reads "Check again", which
-// only looks. Cancel stops the change until it's sent, and Close leaves it going. The dialog closes
-// once the change went, and a toast says so. `⏎` presses the main button and `Esc` leaves. A held
+// only looks. The foot is the shared dialog foot: Cancel stops the change until it's sent; once it's
+// sent nothing leaves it until GitHub answers; Close leaves after a failure. The dialog closes once
+// the change went, and a toast says so. `⏎` presses the main button and `Esc` leaves. A held
 // key presses nothing, and nor does the press that opened it: only a fresh press of `⏎` once what
 // it would press shows.
 
 import {
   Branch,
-  Button,
   Dialog,
-  DialogSpacer,
   FactPerson,
   Facts,
-  Key,
   Problem,
+  type DialogState,
   type FactItem,
 } from '@lo/ui';
 import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
-import { useEffect, useRef, type KeyboardEvent, type ReactNode, type RefObject } from 'react';
+import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
 import { registry } from '../../../window/commands/registry.ts';
@@ -69,8 +68,12 @@ interface Shown {
         readonly working?: string;
       }
     | undefined;
-  /** What the other button, `Esc`, says: "Cancel" until the change is sent, then "Close". */
-  readonly close: string;
+  /**
+   * Where it has got to, as the foot shows it: `ask` until the change is sent, when Cancel stops
+   * it; `working` while it's sent, when nothing leaves it; `failed` once it didn't go, or isn't
+   * known to have, or the question no longer stands, when Close leaves.
+   */
+  readonly state: DialogState;
   /** What focus follows: the main button moves to it when this changes. */
   readonly step: string;
 }
@@ -147,7 +150,7 @@ function shownOf(dialog: QueueDialog): Shown {
     case 'planning':
       return {
         step: 'planning',
-        close: 'Cancel',
+        state: 'ask',
         // There from the start, so focus is on it, not on Cancel, when the plan comes.
         primary: { label, run: () => undefined, busy: true, working: CHECKING },
         line: step.note !== undefined && <Line>{step.note}</Line>,
@@ -155,31 +158,32 @@ function shownOf(dialog: QueueDialog): Shown {
     case 'ask':
       return {
         step: `ask ${step.plan.key}`,
-        close: 'Cancel',
+        state: 'ask',
         primary: { label, run: confirmAct, busy: false, working: CHECKING },
         line: step.note !== undefined && <Line>{step.note}</Line>,
       };
     case 'checking':
       return {
         step: `ask ${step.plan.key}`,
-        close: 'Cancel',
+        // Main checks it again before it's sent: Cancel still stops it.
+        state: 'ask',
         primary: { label, run: () => undefined, busy: true, working: CHECKING },
         line: undefined,
       };
     case 'sent':
       return {
         step: `ask ${step.plan.key}`,
-        close: 'Close',
+        state: 'working',
         primary: { label, run: () => undefined, busy: true, working: workingWord(sketch.kind) },
         line: undefined,
       };
     case 'gone':
-      return { step: 'gone', close: 'Close', primary: undefined, line: <Line>{step.why}</Line> };
+      return { step: 'gone', state: 'failed', primary: undefined, line: <Line>{step.why}</Line> };
     case 'failed': {
       const again = nextLabel(step.failure.next);
       return {
         step: `failed ${step.failure.title}`,
-        close: 'Close',
+        state: 'failed',
         primary: again === undefined ? undefined : { label: again, run: tryAgain, busy: false },
         line: <FailureLine failure={step.failure} />,
       };
@@ -187,7 +191,7 @@ function shownOf(dialog: QueueDialog): Shown {
     case 'unknown':
       return {
         step: 'unknown',
-        close: 'Close',
+        state: 'failed',
         primary: { label: 'Check again', run: checkAgain, busy: step.looking, working: CHECKING },
         line: <FailureLine failure={step.failure} />,
       };
@@ -195,34 +199,6 @@ function shownOf(dialog: QueueDialog): Shown {
       step satisfies never;
       throw new Error(`a step Lo doesn't know: ${JSON.stringify(step)}`);
   }
-}
-
-/** The dialog's main button, with `⏎`, as wide while it works as at rest. */
-function PrimaryButton({
-  primary,
-  widest,
-  button,
-}: {
-  primary: NonNullable<Shown['primary']>;
-  widest: string;
-  button: RefObject<HTMLButtonElement | null>;
-}) {
-  return (
-    <Button
-      ref={button}
-      variant="primary"
-      busy={primary.busy}
-      working={primary.working}
-      widest={widest}
-      onClick={(event) => {
-        // Not a double click's second, which would press what came up in its place unseen.
-        if (event.detail <= 1 && !primary.busy) primary.run();
-      }}
-    >
-      {primary.label}
-      <Key keys={labels('enter')} decorative />
-    </Button>
-  );
 }
 
 /** What takes `⏎` for itself: a button, a link or a field. */
@@ -283,24 +259,23 @@ export function QueueConfirm() {
       }}
       title={dialog && withoutBidi(confirmTitle(dialog.sketch))}
       size="sm"
-      foot={
-        shown && (
-          <>
-            <DialogSpacer />
-            <Button onClick={leaveAct}>
-              {shown.close}
-              <Key keys={labels('esc')} decorative />
-            </Button>
-            {shown.primary && (
-              <PrimaryButton
-                primary={shown.primary}
-                widest={working.length > CHECKING.length ? working : CHECKING}
-                button={button}
-              />
-            )}
-          </>
-        )
+      state={shown?.state}
+      action={
+        shown && {
+          label: shown.primary?.label ?? confirmLabel(dialog.sketch.kind),
+          working: shown.primary?.working,
+          onRun: () => shown.primary?.run(),
+          busy: shown.primary?.busy === true,
+          // After a failure, what it does then, if anything: else Close alone.
+          again: shown.state === 'failed' ? (shown.primary?.label ?? null) : undefined,
+          keys: labels('enter'),
+          // As wide while it works as at rest.
+          widest: working.length > CHECKING.length ? working : CHECKING,
+        }
       }
+      leaveKeys={labels('esc')}
+      stays="Wait for GitHub to answer"
+      mainRef={button}
       initialFocus={button}
       onKeyDown={onKeyDown}
       container={document.getElementById('root')}
