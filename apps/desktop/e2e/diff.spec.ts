@@ -285,7 +285,7 @@ test('draws every changed file in the left panel’s order, each as it starts ou
   await expect(view.locator('.lo-diffhead', { hasText: 'assets/mark.png' }).first()).toContainText(
     /binary, \d+ B → \d+ B/,
   );
-  await expect(view.getByText(/changed lines: za loads them/).first()).toBeVisible();
+  await expect(view.getByText(/^Show [0-9,]+ lines$/).first()).toBeVisible();
   // The code src/format.ts moves to src/text/wrap.ts, highlighted, under the window's content
   // security policy.
   await expect(view.locator('.lo-movedlabel').first()).toContainText(/moved/i);
@@ -301,7 +301,7 @@ test('draws every changed file in the left panel’s order, each as it starts ou
   await expect(view.locator('.lo-diffhead', { hasText: 'pnpm-lock.yaml' }).first()).toContainText(
     'lockfile',
   );
-  await expect(view.getByText(/closed: za opens it/).first()).toBeVisible();
+  await expect(view.getByText('Expand file').first()).toBeVisible();
   expect(refused).toEqual([]);
 });
 
@@ -338,7 +338,7 @@ test('answers its keys: files, changes, sides, layout, whitespace and folds, Esc
 
     // `za` loads the large file kept out.
     await press(page, 'z', 'a');
-    await expect(page.locator('.lo-diffview').getByText(/za loads them/)).toHaveCount(0, {
+    await expect(page.locator('.lo-diffview').getByText(/^Show [0-9,]+ lines$/)).toHaveCount(0, {
       timeout: 20_000,
     });
 
@@ -662,7 +662,7 @@ const JUMPS: Jump[] = [
     name: '`]f`',
     ready: async (page) => {
       await press(page, ']', 'f', 'z', 'a');
-      await expect(page.locator('.lo-diffview').getByText(/za loads them/)).toHaveCount(0, {
+      await expect(page.locator('.lo-diffview').getByText(/^Show [0-9,]+ lines$/)).toHaveCount(0, {
         timeout: 20_000,
       });
       await expect
@@ -1131,7 +1131,7 @@ test.describe('when the local copy comes after GitHub’s diff', () => {
     // Without src/format.ts's patch, there's no move to find.
     const id = await drawn(page, 'github', { moves: false });
     // GitHub's list has no patch of src/format.ts, so GitHub's diff keeps it out.
-    const formatNote = page.locator('.lo-diffview').getByText('20 changed lines: za loads them');
+    const formatNote = page.locator('.lo-diffview').getByText('Show 20 lines');
     await expect(formatNote.first()).toBeAttached();
     await page.evaluate(() => Object.assign(window.loDiff ?? {}, { first: true }));
     // Wheeled down until src/format.ts is above the screen.
@@ -1297,9 +1297,7 @@ test.describe('when the local copy comes after GitHub’s diff, on a file the re
     await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(1100, 440));
     const id = await drawn(page, 'github', { moves: false });
     // src/format.ts's note, on the side that follows the screen.
-    const keptOut = page
-      .locator('.lo-diffview .cm-editor:last-of-type')
-      .getByText('20 changed lines: za loads them');
+    const keptOut = page.locator('.lo-diffview .cm-editor:last-of-type').getByText('Show 20 lines');
     await expect(keptOut).toHaveCount(1);
     // Wheeled down until src/format.ts, which GitHub's diff keeps out, is on screen.
     const box = await page.locator('.lo-diffview').boundingBox();

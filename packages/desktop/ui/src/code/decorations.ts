@@ -81,16 +81,21 @@ export interface Common {
   note?: FileNote | undefined;
 }
 
+/** Whether a file's note is a button, which shows its lines: one closed, or too large unasked. */
+function noteActs(note: FileNote | undefined): boolean {
+  return note === 'too-large' || note === 'closed';
+}
+
 function noteText(file: ViewFile, note: FileNote): string {
   const { additions, deletions } = file.header;
   const texts: Record<FileNote, string> = {
-    'too-large': `${additions + deletions} changed lines: za loads them`,
+    'too-large': `Show ${(additions + deletions).toLocaleString('en-US')} lines`,
     loading: 'Loading the file…',
     failed: 'The file couldn’t be loaded: za tries again',
     binary: 'A binary file',
     empty: 'No lines changed',
     pending: 'Working out the diff…',
-    closed: `+${additions} −${deletions}, closed: za opens it`,
+    closed: 'Expand file',
   };
   return texts[note];
 }
@@ -111,12 +116,19 @@ export function fileBlocks(
   const text = input.note && noteText(file, input.note);
   // A side without lines beside one with them gets a spacer, not a note.
   const onFile = threads.find((thread) => thread.line === 0 && thread.side === side);
+  const act = noteActs(input.note);
   const out = [
-    header(input, headerLine, lines.count === 0 && !input.otherLines ? text : undefined, onFile),
+    header(
+      input,
+      headerLine,
+      lines.count === 0 && !input.otherLines ? text : undefined,
+      onFile,
+      act,
+    ),
   ];
   if (text) {
     if (lines.count > 0) {
-      const widget = new FileNoteWidget(index, text, input.otherLines);
+      const widget = new FileNoteWidget(index, text, input.otherLines, act);
       out.push(
         Decoration.replace({ widget, block: true, ...tag }).range(
           line(1).from,
@@ -153,10 +165,11 @@ export function inlineBlocks(
   const note = input.note ?? (diff && inline ? undefined : 'pending');
   const text = note && noteText(file, note);
   const onFile = threads.find((thread) => thread.line === 0);
-  const out = [header(input, headerLine, lines.count === 0 ? text : undefined, onFile)];
+  const act = noteActs(note);
+  const out = [header(input, headerLine, lines.count === 0 ? text : undefined, onFile, act)];
   if (text) {
     if (lines.count > 0) {
-      const widget = new FileNoteWidget(index, text, true);
+      const widget = new FileNoteWidget(index, text, true, act);
       out.push(
         Decoration.replace({ widget, block: true, ...tag }).range(
           doc.line(lines.header + 1).from,
@@ -199,6 +212,7 @@ function header(
   line: { from: number; to: number },
   note?: string,
   onFile?: ViewThread,
+  act = false,
 ): Range<Decoration> {
   const under = onFile && {
     threads: onFile.threads,
@@ -206,7 +220,7 @@ function header(
     drawing: onFile.drawing ?? 0,
     draw: input.draw,
   };
-  const widget = new HeaderWidget(input.index, input.file, note, under);
+  const widget = new HeaderWidget(input.index, input.file, note, under, act);
   return Decoration.replace({ widget, block: true, file: input.index }).range(line.from, line.to);
 }
 

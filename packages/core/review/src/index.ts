@@ -23,5 +23,6 @@ export * from './threads.ts';
 export * from './threads/commentable.ts';
 export * from './threads/panel.ts';
 export * from './threads/place.ts';
+export * from './threads/refs.ts';
 export * from './threads/suggestion.ts';
 export * from './viewed.ts';

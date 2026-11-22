@@ -530,7 +530,7 @@ describe('folds', () => {
     shown.fold(onLine('a', 'new', 1), 'file');
     expect(collapsed()).toBe(0);
     shown.fold(onHeader('a', 'new'), 'toggle');
-    expect(notes()).toEqual(['+3 −2, closed: za opens it']);
+    expect(notes()).toEqual(['Expand file']);
     shown.fold(onLine('a', 'new', 3), 'toggle');
     expect(notes()).toEqual([]);
   });
@@ -541,7 +541,7 @@ describe('folds', () => {
     const lines = { old: numbered(4, 'd'), new: [...numbered(4, 'd'), 'd 5'] };
     // Drawn, at the end of the documents.
     shown.reveal({ kind: 'file', file: 'd' });
-    expect(notes()).toEqual(['18000 changed lines: za loads them']);
+    expect(notes()).toEqual(['Show 18,000 lines']);
     shown.fold(onHeader('d', 'new'), 'toggle');
     expect(on.load).toHaveBeenCalledWith('d');
     expect(notes()).toEqual(['Loading the file…']);

@@ -288,6 +288,14 @@
   background: var(--lo-diff-collapsed-bg);
   color: var(--lo-fg-muted);
 }
+/* Unless it's a button, which shows the file's lines. */
+.lo-filenote.is-act {
+  cursor: pointer;
+}
+.lo-filenote.is-act:hover {
+  background: var(--lo-bg-element);
+  color: var(--lo-fg);
+}
 .lo-diffhead .lo-path,
 .lo-movedlabel__to {
   min-width: 0;

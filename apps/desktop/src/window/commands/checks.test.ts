@@ -47,6 +47,12 @@ describe("every feature's commands", () => {
     expect(checkRoutes(features, WITHOUT_ROUTE)).toEqual([]);
   });
 
+  it('wait for a control no more than before: the list only shrinks', () => {
+    // Lowered as commands come off the list, so that none can join it.
+    expect(WITHOUT_ROUTE.length).toBeLessThanOrEqual(120);
+    expect(new Set(WITHOUT_ROUTE).size).toBe(WITHOUT_ROUTE.length);
+  });
+
   it('claim no key or start of a sequence twice, in any scope, mode or system', () => {
     expect(checkClashes(features)).toEqual([]);
   });

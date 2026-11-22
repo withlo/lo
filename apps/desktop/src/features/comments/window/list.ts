@@ -3,13 +3,12 @@
 // first, then by line, every row saying who started the thread, where it is, its replies, its state
 // and the opening of what was said, in plain words.
 
-import { panelShows, type PanelFilter } from '@lo/review';
+import { type LineRef, lineRefText, panelShows, type PanelFilter } from '@lo/review';
 import type { ThreadListGroup, ThreadListRow } from '@lo/ui';
 
 import { avatarImage } from '../../../window/images.ts';
 import type { CommentLinesRow, ThreadRow } from '../contract.ts';
 import { threadOf } from './placing.ts';
-import { type LineRef, lineRefText } from './writing.ts';
 
 /** The panel's filters, in the order `f` steps through them. */
 export const FILTERS: readonly PanelFilter[] = ['unresolved', 'all', 'yours'];

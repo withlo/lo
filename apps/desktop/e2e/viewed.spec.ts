@@ -306,7 +306,7 @@ function closed(page: Page, path: string): Promise<boolean> {
     // Past the spacers that keep the sides level.
     while (next?.classList.contains('lo-spacer')) next = next.nextElementSibling;
     return Boolean(
-      next?.classList.contains('lo-filenote') && next.textContent?.includes('closed: za opens it'),
+      next?.classList.contains('lo-filenote') && next.textContent?.includes('Expand file'),
     );
   }, path);
 }

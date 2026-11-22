@@ -1007,13 +1007,15 @@ export const plainKeys = {
  */
 /**
  * The commands a diff view's own controls run, by id, on what they're drawn at: the viewed ball in
- * a file's header, and the `+` that follows the pointer down the gutter. They run through the
+ * a file's header, the `+` that follows the pointer down the gutter, and the button under the
+ * header of a file that's closed, or too large to draw unasked. They run through the
  * registry the window's keys go through (`runControl` in `@lo/ui/commands`), so a control does
  * what its key does and says what its command says.
  */
 export const viewControls = {
   viewed: 'diff.markViewed',
   comment: 'comments.comment',
+  toggle: 'diff.toggleFile',
 } as const;
 
 export const diffMotions: Readonly<Record<string, { to: JumpTo; forward: boolean }>> = {

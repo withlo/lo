@@ -196,7 +196,7 @@ async function openSubmit(page: Page): Promise<Locator> {
   const dialog = page.getByTestId('submit-review');
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText('1 pending comment goes with it');
-  await expect(dialog).toContainText(`backoff.ts · new 2${COMMENT}`);
+  await expect(dialog).toContainText(`backoff.ts · line 2${COMMENT}`);
   // The summary's editor takes focus once it's made, in insert mode.
   await expect(dialog.getByRole('textbox', { name: 'Summary' })).toBeFocused();
   return dialog;

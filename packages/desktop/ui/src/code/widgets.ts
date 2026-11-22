@@ -79,19 +79,23 @@ export class HeaderWidget extends WidgetType {
   readonly info: HeaderInfo;
   readonly note: string | undefined;
   readonly under: UnderHeader | undefined;
+  readonly act: boolean;
 
-  constructor(file: number, info: HeaderInfo, note?: string, under?: UnderHeader) {
+  /** With `act`, its note is a button, which shows the file's lines. */
+  constructor(file: number, info: HeaderInfo, note?: string, under?: UnderHeader, act = false) {
     super();
     this.file = file;
     this.info = info;
     this.note = note;
     this.under = under;
+    this.act = act;
   }
 
   override eq(other: HeaderWidget): boolean {
     return (
       other.file === this.file &&
       other.note === this.note &&
+      other.act === this.act &&
       other.info === this.info &&
       sameUnder(other.under, this.under)
     );
@@ -103,7 +107,7 @@ export class HeaderWidget extends WidgetType {
     const block = element('div', 'lo-fileblock');
     block.append(head);
     if (this.note !== undefined) {
-      const note = element('div', 'lo-collapsed lo-filenote', this.note);
+      const note = fileNote(this.note, this.act);
       note.dataset.row = `n:${this.file}`;
       block.append(note);
     }
@@ -575,6 +579,21 @@ function noteElement(note: NoteDraw): HTMLElement {
 }
 
 /**
+ * What's under the header of a file whose lines aren't drawn: a label, or with `act`, a button that
+ * shows them, as `za` there does.
+ */
+function fileNote(text: string, act: boolean): HTMLElement {
+  const note = element('div', 'lo-collapsed lo-filenote', text);
+  if (!act) return note;
+  note.classList.add('is-act');
+  note.setAttribute('role', 'button');
+  note.dataset.command = viewControls.toggle;
+  // Its tooltip names what a click does here, with the command's key.
+  note.dataset.tip = text;
+  return note;
+}
+
+/**
  * A note in place of a file's lines: too many to show, while they load or its diff is worked out,
  * or while it's closed. Where a file has no lines, its header holds the note.
  */
@@ -582,21 +601,31 @@ export class FileNoteWidget extends WidgetType {
   readonly file: number;
   readonly text: string;
   readonly paired: boolean;
+  readonly act: boolean;
 
-  /** `paired` when both sides draw it, so it's a row to check the alignment of. */
-  constructor(file: number, text: string, paired: boolean) {
+  /**
+   * `paired` when both sides draw it, so it's a row to check the alignment of. With `act`, it's a
+   * button, which shows the file's lines.
+   */
+  constructor(file: number, text: string, paired: boolean, act = false) {
     super();
     this.file = file;
     this.text = text;
     this.paired = paired;
+    this.act = act;
   }
 
   override eq(other: FileNoteWidget): boolean {
-    return other.file === this.file && other.text === this.text && other.paired === this.paired;
+    return (
+      other.file === this.file &&
+      other.text === this.text &&
+      other.paired === this.paired &&
+      other.act === this.act
+    );
   }
 
   toDOM(): HTMLElement {
-    const note = element('div', 'lo-collapsed lo-filenote', this.text);
+    const note = fileNote(this.text, this.act);
     if (this.paired) note.dataset.row = `n:${this.file}`;
     return note;
   }
