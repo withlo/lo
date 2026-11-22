@@ -45,17 +45,15 @@ import { onStep, setStep, stepOf } from './blocks.ts';
 import type { CodeRead } from './checking.ts';
 import { drawnLines } from './copying.ts';
 import { useFirstDraw, type FirstDraw } from './drawing.ts';
-import { revisionAt } from './facts.ts';
 import { holdFile, type FileCode, type FileHold } from './files.ts';
 import { keyOf } from './labels.ts';
 import { blockChange, linesIn, type BlockChange } from './mapping.ts';
 import { CompareButton } from './OutOfDate.tsx';
 import { usePage } from './page.ts';
-import { shortId } from './says.ts';
 import { fileSince } from './since.ts';
 import { flagWords, labelOf } from './stale.ts';
 import { revisions } from './store.ts';
-import { nameOf, showsOf, type Shows, type Target, type Words } from './targets.ts';
+import { CANT_SHOW, showsOf, type Shows, type Target, type Words } from './targets.ts';
 import {
   blockIdOf,
   blockKey,
@@ -87,6 +85,8 @@ export interface CodeContext {
   /** The number Lo gave the overview's tree, which its blocks' ids carry. */
   readonly tree: number;
   readonly commit: string;
+  /** The commit the overview describes as Lo names it: `r3`, or its short id. */
+  readonly written: string;
   readonly head?: string | undefined;
   readonly read: CodeRead;
   readonly target: (target: CodeRange) => Target;
@@ -117,7 +117,7 @@ function rowsOf(target: CodeRange): number {
 /** A `:::code` block: the lines it names, at the commit the overview describes. */
 export function ExcerptBlock({ node, context }: { node: Excerpt; context: CodeContext }) {
   const { target } = node;
-  const shows = showsOf(target, context.target(target), context.read, context.commit);
+  const shows = showsOf(target, context.target(target), context.read, context.written);
   // Why main couldn't read the code, until the code is read again.
   const [failed, setFailed] = useState<{ read: CodeRead; why: string } | undefined>(undefined);
   const { read } = context;
@@ -163,7 +163,7 @@ export function ExcerptBlock({ node, context }: { node: Excerpt; context: CodeCo
               <Said words={shows.words} />
             </CodeNote>
           ) : unread !== undefined ? (
-            <CodeNote title="Lo couldn’t read this code.">{unread}</CodeNote>
+            <CodeNote title={CANT_SHOW}>{unread}</CodeNote>
           ) : (
             <ExcerptCode
               tab={context.tab}
@@ -432,11 +432,7 @@ function Flag({
   const known = useTabState(revisions, tab);
   const words = flagWords(change, { written: labelOf(known, commit), now: labelOf(known, head) });
   if (words === undefined) return null;
-  return (
-    <CodeFlag action={<CompareButton tab={tab} from={commit} to={head} variant="ghost" />}>
-      {words}
-    </CodeFlag>
-  );
+  return <CodeFlag action={<CompareButton tab={tab} from={commit} to={head} />}>{words}</CodeFlag>;
 }
 
 /** A `:::walkthrough` block: its steps beside the current one's file, its lines marked. */
@@ -453,7 +449,7 @@ export function WalkthroughBlock({
   const goTo = useCallback((next: number) => setStep(node, next), [node]);
   const step = node.steps[at];
   const shows =
-    step && showsOf(step.target, context.target(step.target), context.read, context.commit);
+    step && showsOf(step.target, context.target(step.target), context.read, context.written);
   return (
     <Held>
       <Walkthrough
@@ -561,7 +557,7 @@ function StepCode({ tab, commit, target }: { tab: string; commit: string; target
   }, [lines, path, id, start, end]);
 
   if (file && 'unread' in file) {
-    return <CodeNote title="Lo couldn’t read this code.">{file.unread}</CodeNote>;
+    return <CodeNote title={CANT_SHOW}>{file.unread}</CodeNote>;
   }
   return <div ref={box} className="h-full" data-lo-code={lines ? 'drawn' : 'waiting'} />;
 }
@@ -613,27 +609,24 @@ function Action({
   return null;
 }
 
-/** "Find a file named cache.ts": the file finder, with the name typed. */
+/** "Go to file…": the file finder, with the name the block gave typed. */
 function FindButton({ name }: { name: string }) {
   const keys = keyOf('tree.find');
   return (
     <Button size="sm" onClick={() => findFile(name)}>
-      Find a file named {name}
+      Go to file…
       {keys !== undefined && <Key keys={keys} quiet decorative />}
     </Button>
   );
 }
 
-/** "Open cache.ts at r5": the file whole, at the newest push the tab shows. */
+/** "Open whole file": the file whole, at the newest push the tab shows. */
 function LatestButton({ tab, path }: { tab: string; path: string }) {
   const pull = usePull(tab);
-  const known = useTabState(revisions, tab);
-  const head = pull?.shown ?? undefined;
-  if (head === undefined) return null;
-  const number = revisionAt(known, head)?.number;
+  if ((pull?.shown ?? undefined) === undefined) return null;
   return (
     <Button size="sm" onClick={() => showFile('whole', tab, path)}>
-      Open {nameOf(path)} at {number === undefined ? shortId(head) : `r${number}`}
+      Open whole file
     </Button>
   );
 }

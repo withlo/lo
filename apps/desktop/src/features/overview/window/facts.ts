@@ -75,13 +75,13 @@ export function standingOf(
     case 'shown':
       // A shown overview was parsed: its text is what was checked.
       if (!result.parsed) {
-        return { kind: 'unchecked', commit, why: "Lo couldn't read artifact.md." };
+        return { kind: 'unchecked', commit, why: 'GitHub returned an error.' };
       }
       return { kind: 'shown', commit, header: outcome.header, parsed: result.parsed, result };
     default:
       // From the background process: say so, rather than show what Lo doesn't know.
       outcome satisfies never;
-      return { kind: 'unchecked', commit, why: "Lo couldn't tell what the check found." };
+      return { kind: 'unchecked', commit, why: '' };
   }
 }
 
@@ -154,9 +154,9 @@ export function markWords(mark: MarkKind): string {
     case 'current':
       return 'Overview';
     case 'stale':
-      return 'Overview, out of date';
+      return 'Overview · out of date';
     case 'error':
-      return "Overview, can't be shown";
+      return 'Overview · can’t show';
     default:
       mark satisfies never;
       throw new Error(`A mark Lo doesn't know: ${String(mark)}.`);

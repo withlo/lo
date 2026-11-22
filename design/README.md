@@ -311,6 +311,8 @@ one: never a lone line of muted text, a paragraph, or an icon over one.
   it's dimmed with the reason as its tooltip. An action is the id alone, or
   `{ command, target, label }`: `target` is what the command runs on, as a key pressed there would,
   and `label` is other words where the command's label isn't what the view says.
+- `children` is what the state holds for its actions to act on, between the line and the buttons:
+  the prompt that Copy prompt copies, as code. Never more words.
 - It fills the box it's in and centres itself, so give that box the view's height. In a narrow panel
   it wraps.
 - Offer the action here. A state never says where else an action lives ("from the status bar", "in

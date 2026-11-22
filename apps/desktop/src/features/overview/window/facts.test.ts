@@ -189,7 +189,8 @@ describe('the view switch’s mark', () => {
     expect(markOf(standing, newestHead(pull(HEAD, null)))).toBe('current');
     expect(markOf(standing, newestHead(pull(HEAD, NEWER)))).toBe('stale');
     expect(markOf(standing, newestHead(pull(NEWER, null)))).toBe('stale');
-    expect(markWords('stale')).toBe('Overview, out of date');
+    expect(markWords('stale')).toBe('Overview · out of date');
+    expect(markWords('error')).toBe('Overview · can’t show');
     expect(markWords('none')).toBe('No overview yet');
   });
 });

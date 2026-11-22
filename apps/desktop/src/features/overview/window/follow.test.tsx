@@ -105,9 +105,9 @@ describe('the block keys', () => {
     stops[0]!.focus();
     expect(focusedBlock(overview)).toBe(stops[0]);
     expect(kindOf(tree, nextBlock(overview, 1))).toBe('excerpt');
-    expect(nextBlock(overview, -1)).toBe('This is the first block.');
+    expect(nextBlock(overview, -1)).toBe('First block');
     stops.at(-1)!.focus();
-    expect(nextBlock(overview, 1)).toBe('This is the last block.');
+    expect(nextBlock(overview, 1)).toBe('Last block');
     expect(kindOf(tree, nextBlock(overview, -1))).toBe('details');
   });
 
@@ -179,7 +179,7 @@ describe('Tab', () => {
     const { overview, stops, tree } = drawn();
     const code = stops.find((stop) => kindOf(tree, stop) === 'excerpt')!;
     code.focus();
-    expect(nextLink(overview, 1)).toBe('This block has no links or parts.');
+    expect(nextLink(overview, 1)).toBe('No links in this block');
   });
 
   it('goes from the overview itself through the outline to the first block, and back', () => {
@@ -195,7 +195,7 @@ describe('Tab', () => {
     sections[1]!.focus();
     expect(nextLink(overview, -1)).toBe(sections[0]);
     sections[0]!.focus();
-    expect(nextLink(overview, -1)).toBe('There’s nothing before this in the overview.');
+    expect(nextLink(overview, -1)).toBe('First link');
   });
 });
 
@@ -234,8 +234,8 @@ describe('following a block', () => {
   it('says so for tabs, which point at no code and have nothing to follow', () => {
     const { overview, stops, tree } = drawn();
     const tabs = stops.find((stop) => kindOf(tree, stop) === 'tabs')!;
-    expect(followOf(overview, tabs)).toBe('This block has nothing to follow.');
-    expect(besideFor(overview, tabs)).toBe('This block shows no code.');
+    expect(followOf(overview, tabs)).toBe('No code or link in this block');
+    expect(besideFor(overview, tabs)).toBe('No code in this block');
     const code = stops.find((stop) => kindOf(tree, stop) === 'excerpt')!;
     expect(besideFor(overview, code)).toBe(blockNumber(code));
   });

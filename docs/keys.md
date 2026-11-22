@@ -12,25 +12,25 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Move
 
-| Action                               | Keys          | Where                        | Command                    |
-| ------------------------------------ | ------------- | ---------------------------- | -------------------------- |
-| Line down                            | `j`           | Vim's own key, in code views | `diff.down`                |
-| Line up                              | `k`           | Vim's own key, in code views | `diff.up`                  |
-| Select lines                         | `v`           | Vim's own key, in code views | `diff.select`              |
-| Next pull request                    | `j`, `↓`      | In `recent`                  | `open.nextRecent`          |
-| Previous pull request                | `k`, `↑`      | In `recent`                  | `open.previousRecent`      |
-| Scroll down                          | `j`, `↓`      | In `overview`                | `overview.scrollDown`      |
-| Scroll up                            | `k`, `↑`      | In `overview`                | `overview.scrollUp`        |
-| Top of the overview                  | `g g`, `Home` | In `overview`                | `overview.top`             |
-| End of the overview                  | `G`, `End`    | In `overview`                | `overview.bottom`          |
-| Page down                            | `PgDn`        | In `overview`                | `overview.pageDown`        |
-| Page up                              | `PgUp`        | In `overview`                | `overview.pageUp`          |
-| Next section of Settings             | `j`           | In `settings`                | `settings.nextSection`     |
-| Previous section of Settings         | `k`           | In `settings`                | `settings.previousSection` |
-| Next event in the timeline           | `j`, `↓`      | In `timeline`                | `timeline.down`            |
-| Previous event in the timeline       | `k`, `↑`      | In `timeline`                | `timeline.up`              |
-| Next link or button in the event     | `Tab`         | In `timeline`                | `timeline.nextLink`        |
-| Previous link or button in the event | `⇧Tab`        | In `timeline`                | `timeline.previousLink`    |
+| Action                       | Keys          | Where                        | Command                    |
+| ---------------------------- | ------------- | ---------------------------- | -------------------------- |
+| Line down                    | `j`           | Vim's own key, in code views | `diff.down`                |
+| Line up                      | `k`           | Vim's own key, in code views | `diff.up`                  |
+| Select lines                 | `v`           | Vim's own key, in code views | `diff.select`              |
+| Next pull request            | `j`, `↓`      | In `recent`                  | `open.nextRecent`          |
+| Previous pull request        | `k`, `↑`      | In `recent`                  | `open.previousRecent`      |
+| Scroll down                  | `j`, `↓`      | In `overview`                | `overview.scrollDown`      |
+| Scroll up                    | `k`, `↑`      | In `overview`                | `overview.scrollUp`        |
+| Go to top                    | `g g`, `Home` | In `overview`                | `overview.top`             |
+| Go to bottom                 | `G`, `End`    | In `overview`                | `overview.bottom`          |
+| Page down                    | `PgDn`        | In `overview`                | `overview.pageDown`        |
+| Page up                      | `PgUp`        | In `overview`                | `overview.pageUp`          |
+| Next section of Settings     | `j`           | In `settings`                | `settings.nextSection`     |
+| Previous section of Settings | `k`           | In `settings`                | `settings.previousSection` |
+| Next event                   | `j`, `↓`      | In `timeline`                | `timeline.down`            |
+| Previous event               | `k`, `↑`      | In `timeline`                | `timeline.up`              |
+| Next link                    | `Tab`         | In `timeline`                | `timeline.nextLink`        |
+| Previous link                | `⇧Tab`        | In `timeline`                | `timeline.previousLink`    |
 
 ## Jump
 
@@ -67,10 +67,10 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Check again                     | None: in its menu and the palette              | In `box`                                                                | `comments.checkAgain`     |
 | Move comment to file            | None: in its menu and the palette              | In `box`                                                                | `comments.moveToFile`     |
 | Mark viewed                     | `e`                                            | In `diff`; in code views, only in normal mode                           | `diff.markViewed`         |
-| Comment on the pull request     | `c`                                            | In `timeline`                                                           | `timeline.comment`        |
-| Edit your comment               | `i`                                            | In `timeline`                                                           | `timeline.editComment`    |
-| Delete your comment…            | `d d`                                          | In `timeline`                                                           | `timeline.deleteComment`  |
-| Show the hidden comment         | None: in its menu and the palette              | In `timeline`                                                           | `timeline.showComment`    |
+| Comment on pull request         | `c`                                            | In `timeline`                                                           | `timeline.comment`        |
+| Edit comment                    | `i`                                            | In `timeline`                                                           | `timeline.editComment`    |
+| Delete comment…                 | `d d`                                          | In `timeline`                                                           | `timeline.deleteComment`  |
+| Show comment                    | None: in its menu and the palette              | In `timeline`                                                           | `timeline.showComment`    |
 | Mark viewed                     | `e`                                            | In `tree`                                                               | `tree.markViewed`         |
 | Continue                        | `⏎`                                            | In `welcome`                                                            | `welcome.continue`        |
 
@@ -110,7 +110,6 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 | Copy the overview skill’s install command | `y c`                             | In `settings`                                                       | `overview.copyInstallCommand` |
 | Open on GitHub                            | `g x`                             | In `queue`                                                          | `queue.openOnGithub`          |
 | Open on GitHub                            | `g x`                             | In `stack`                                                          | `stacks.openOnGithub`         |
-| See the older events on GitHub            | None: in its menu and the palette | In `timeline`                                                       | `timeline.seeOlder`           |
 | Open on GitHub                            | `g x`                             | In `timeline`                                                       | `timeline.openOnGithub`       |
 | Whole file                                | `g f`                             | In `tree`                                                           | `tree.wholeFile`              |
 | Copy path                                 | `y p`                             | In `tree`                                                           | `tree.copyPath`               |
@@ -156,16 +155,16 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## View
 
-| Action                                 | Keys                                           | Where                                                                                               | Command               |
-| -------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------- |
-| Show latest                            | None: in its menu and the palette              | In `box`                                                                                            | `comments.showLatest` |
-| Vim keys                               | None: in the app menu on macOS and the palette | Anywhere                                                                                            | `comments.vim`        |
-| Show where kept drafts are             | None: in the app menu on macOS and the palette | Anywhere                                                                                            | `comments.keptDrafts` |
-| Compare revisions                      | `g v`                                          | Anywhere but `menu`, `dialog`, `palette`, `box` and `revisions`; in code views, only in normal mode | `revisions.picker`    |
-| Next middle view                       | `` ` ``                                        | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.nextView`        |
-| Previous middle view                   | `~`                                            | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.previousView`    |
-| Show the review’s comments in the diff | None: in its menu and the palette              | In `timeline`                                                                                       | `timeline.showInDiff` |
-| Compare the force-push’s revisions     | None: in its menu and the palette              | In `timeline`                                                                                       | `timeline.compare`    |
+| Action                     | Keys                                           | Where                                                                                               | Command               |
+| -------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------- |
+| Show latest                | None: in its menu and the palette              | In `box`                                                                                            | `comments.showLatest` |
+| Vim keys                   | None: in the app menu on macOS and the palette | Anywhere                                                                                            | `comments.vim`        |
+| Show where kept drafts are | None: in the app menu on macOS and the palette | Anywhere                                                                                            | `comments.keptDrafts` |
+| Compare revisions          | `g v`                                          | Anywhere but `menu`, `dialog`, `palette`, `box` and `revisions`; in code views, only in normal mode | `revisions.picker`    |
+| Next middle view           | `` ` ``                                        | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.nextView`        |
+| Previous middle view       | `~`                                            | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.previousView`    |
+| Show in diff               | None: in its menu and the palette              | In `timeline`                                                                                       | `timeline.showInDiff` |
+| Compare                    | None: in its menu and the palette              | In `timeline`                                                                                       | `timeline.compare`    |
 
 ## Files
 
@@ -190,20 +189,20 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Overview
 
-| Action                         | Keys                              | Where                                                                                  | Command                  |
-| ------------------------------ | --------------------------------- | -------------------------------------------------------------------------------------- | ------------------------ |
-| Next block                     | `] b`                             | In `overview`                                                                          | `overview.nextBlock`     |
-| Previous block                 | `[ b`                             | In `overview`                                                                          | `overview.previousBlock` |
-| Go to code                     | `⏎`                               | In `overview`                                                                          | `overview.follow`        |
-| Open or close code beside      | `o`                               | In `overview`                                                                          | `overview.beside`        |
-| Close code beside              | `Esc`                             | In `overview`                                                                          | `overview.closeBeside`   |
-| Next link, part or section     | `Tab`                             | In `overview`                                                                          | `overview.nextLink`      |
-| Previous link, part or section | `⇧Tab`                            | In `overview`                                                                          | `overview.previousLink`  |
-| Next step or tab               | `→`                               | In `overview`                                                                          | `overview.nextStep`      |
-| Previous step or tab           | `←`                               | In `overview`                                                                          | `overview.previousStep`  |
-| Load the newer overview        | None: in its menu and the palette | Anywhere                                                                               | `overview.loadNewer`     |
-| Retry                          | None: in its menu and the palette | Anywhere                                                                               | `overview.retry`         |
-| Copy prompt for an agent       | `y a`                             | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `overview.copyPrompt`    |
+| Action               | Keys                              | Where                                                                                  | Command                  |
+| -------------------- | --------------------------------- | -------------------------------------------------------------------------------------- | ------------------------ |
+| Next block           | `] b`                             | In `overview`                                                                          | `overview.nextBlock`     |
+| Previous block       | `[ b`                             | In `overview`                                                                          | `overview.previousBlock` |
+| Go to code           | `⏎`                               | In `overview`                                                                          | `overview.follow`        |
+| Code beside          | `o`                               | In `overview`                                                                          | `overview.beside`        |
+| Close code beside    | `Esc`                             | In `overview`                                                                          | `overview.closeBeside`   |
+| Next link            | `Tab`                             | In `overview`                                                                          | `overview.nextLink`      |
+| Previous link        | `⇧Tab`                            | In `overview`                                                                          | `overview.previousLink`  |
+| Next step            | `→`                               | In `overview`                                                                          | `overview.nextStep`      |
+| Previous step        | `←`                               | In `overview`                                                                          | `overview.previousStep`  |
+| Show latest overview | None: in its menu and the palette | Anywhere                                                                               | `overview.loadNewer`     |
+| Try again            | None: in its menu and the palette | Anywhere                                                                               | `overview.retry`         |
+| Copy prompt          | `y a`                             | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `overview.copyPrompt`    |
 
 ## Panels
 
@@ -462,7 +461,7 @@ how Lo starts, they run Lo's command too:
 | `⌃o`             | Back                            | `⌃o`      | `diff`, `file` and `peek`                                            | `keys.back`               |
 | `⌃i`             | Forward                         | `⌃i`      | `diff`, `file` and `peek`                                            | `keys.forward`            |
 | `m`              | Merge panel                     | `m`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `merge.panel`             |
-| `y a`            | Copy prompt for an agent        | `y`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `overview.copyPrompt`     |
+| `y a`            | Copy prompt                     | `y`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `overview.copyPrompt`     |
 | `g q`            | Merge queue                     | `g q`     | `diff` (normal), `file` (normal) and `peek` (normal)                 | `queue.show`              |
 | `g v`            | Compare revisions               | `g v`     | `diff` (normal), `file` (normal) and `peek` (normal)                 | `revisions.picker`        |
 | `` ` ``          | Next middle view                | `` ` ``   | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.nextView`            |

@@ -46,6 +46,7 @@ import {
   looseControl,
   nextBlock,
   nextLink,
+  NOT_DRAWN,
   scroll,
   step,
   stepsIn,
@@ -61,15 +62,15 @@ import { catchUp, keepOnly, states, takeRevisions, takeState } from './store.ts'
 /** The prompt the overview of the pull request on screen offers, or why there's none. */
 function promptOnScreen(): string | { why: string } {
   const tab = activeTab();
-  if (tab?.kind !== 'pull') return { why: 'There’s no pull request on screen.' };
-  return promptNow(tab) ?? { why: 'There’s no prompt for this pull request’s overview now.' };
+  if (tab?.kind !== 'pull') return { why: 'Open a pull request first' };
+  return promptNow(tab) ?? { why: 'This overview is up to date' };
 }
 
 /** The overview drawn in the tab on screen, or why a key for it can't run. */
 function onScreen(): DrawnOverview | string {
   const tab = activeTab();
-  if (tab?.kind !== 'pull') return 'There’s no pull request on screen.';
-  return drawnIn(tab.id) ?? 'There’s no overview on screen.';
+  if (tab?.kind !== 'pull') return 'Open a pull request first';
+  return drawnIn(tab.id) ?? 'Go to the overview first';
 }
 
 /**
@@ -102,9 +103,9 @@ function withOverview(act: (overview: DrawnOverview) => void) {
 function blockOf(target: Target): { overview: DrawnOverview; block: HTMLElement } | string {
   const overview = onScreen();
   if (typeof overview === 'string') return overview;
-  if (target.kind === 'none') return 'No block has focus. ] b goes to the next one.';
+  if (target.kind === 'none') return 'Go to a block first';
   const block = blockAt(overview, target);
-  return block ? { overview, block } : 'That block isn’t in the overview on screen.';
+  return block ? { overview, block } : 'That block isn’t in this overview';
 }
 
 /** Whether a block's command can run on `target`, as `check` says of it. */
@@ -145,7 +146,7 @@ function moving(by: 1 | -1) {
       const overview = onScreen();
       if (typeof overview === 'string') return overview;
       const next = nextBlock(overview, by);
-      return typeof next === 'string' ? next : true;
+      return typeof next === 'string' && next !== NOT_DRAWN ? next : true;
     },
   };
 }
@@ -166,7 +167,7 @@ function linking(by: 1 | -1) {
       const overview = onScreen();
       if (typeof overview === 'string') return overview;
       const next = nextLink(overview, by);
-      return typeof next === 'string' ? next : true;
+      return typeof next === 'string' && next !== NOT_DRAWN ? next : true;
     },
   };
 }
@@ -183,6 +184,11 @@ function stepping(by: 1 | -1) {
 function stateNow() {
   const tab = activeTab();
   return tab?.kind === 'pull' ? states.get(tab.id) : undefined;
+}
+
+/** Whether reading the ref again could find more: its last read failed, or it's read only once. */
+function lookAgain(state: ReturnType<typeof stateNow>): boolean {
+  return Boolean(state?.problem) || state?.watching === false;
 }
 
 export default {
@@ -238,7 +244,7 @@ export default {
         if (tab?.kind === 'pull' && besides.get(tab.id) !== undefined) return true;
         // From the palette or key help, it only closes the code beside. Its key, which reaches it
         // only in the overview, still closes a term's card or gives the overview focus.
-        return overlay() === undefined ? true : 'There’s no code beside the overview.';
+        return overlay() === undefined ? true : 'Code beside is closed';
       },
     },
     scrollDown: scrolling('down'),
@@ -252,7 +258,7 @@ export default {
         const tab = activeTab();
         if (tab?.kind === 'pull') loadNewer(tab.id);
       },
-      enabled: () => (stateNow()?.newer ? true : 'No newer overview was pushed.'),
+      enabled: () => (stateNow()?.newer ? true : 'This is the latest overview'),
       listed: () => Boolean(stateNow()?.newer),
     },
     retry: {
@@ -263,8 +269,9 @@ export default {
           .retry({ id: tab.id })
           .catch((error: unknown) => console.error("Lo couldn't read the overview again:", error));
       },
-      enabled: () => (stateNow()?.problem ? true : 'The overview was read without a problem.'),
-      listed: () => Boolean(stateNow()?.problem),
+      // After a failed read, or where main reads the ref once and doesn't watch it: a look again.
+      enabled: () => (lookAgain(stateNow()) ? true : 'Nothing to try again'),
+      listed: () => lookAgain(stateNow()),
     },
     copyPrompt: {
       run: async () => {

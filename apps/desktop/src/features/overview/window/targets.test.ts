@@ -81,91 +81,80 @@ describe('showsOf', () => {
   const target = range('src/cache.ts', 3, 9);
 
   it('shows the code when it resolves', () => {
-    expect(showsOf(target, resolved, READ, COMMIT)).toEqual({ kind: 'code' });
+    expect(showsOf(target, resolved, READ, 'r3')).toEqual({ kind: 'code' });
   });
 
   it('offers to find a file of the name a missing one gave', () => {
-    expect(showsOf(target, broken('missing'), READ, COMMIT)).toEqual({
+    expect(showsOf(target, broken('missing'), READ, 'r3')).toEqual({
       kind: 'note',
       variant: 'unresolved',
-      title: 'This reference doesn’t resolve.',
-      words: [
-        'There’s no ',
-        { code: 'src/cache.ts' },
-        ' at abc1234, so Lo can’t show the code it names. It may have been renamed, or never pushed.',
-      ],
+      title: 'Can’t show this code',
+      words: [{ code: 'src/cache.ts' }, ' isn’t in r3.'],
       action: { kind: 'find', name: 'cache.ts' },
     });
   });
 
   it('offers the file at the newest push when the commit is gone', () => {
-    expect(showsOf(target, broken('commit'), READ, COMMIT)).toMatchObject({
+    expect(showsOf(target, broken('commit'), READ, 'r3')).toMatchObject({
       variant: 'missing',
-      title: 'The commit this overview describes is gone.',
+      title: 'Can’t show this code',
+      words: ['r3’s commit is no longer on GitHub.'],
       action: { kind: 'latest' },
     });
   });
 
   it('says why lines, folders, links, binary and large files show nothing', () => {
     const words = (found: Target) => {
-      const shows = showsOf(target, found, READ, COMMIT);
+      const shows = showsOf(target, found, READ, 'r3');
       if (shows.kind !== 'note') throw new Error('no note');
       expect(shows.variant).toBe('unresolved');
+      expect(shows.title).toBe('Can’t show this code');
       expect(shows.action).toBe(undefined);
       return shows.words.map((part) => (typeof part === 'string' ? part : part.code)).join('');
     };
-    expect(words(broken('lines'))).toBe(
-      'src/cache.ts at abc1234 has no lines 3–9, so Lo can’t show them.',
-    );
+    expect(words(broken('lines'))).toBe('src/cache.ts has no lines 3–9 in r3.');
     expect(
       words({
         code: { state: 'broken', why: 'notFile' },
         answer: { kind: 'notFile', is: 'folder' },
       }),
-    ).toBe('src/cache.ts at abc1234 is a folder, so it has no lines to show.');
+    ).toBe('src/cache.ts is a folder in r3.');
     expect(
       words({ code: { state: 'broken', why: 'notFile' }, answer: { kind: 'notFile', is: 'link' } }),
-    ).toBe('src/cache.ts at abc1234 is a symbolic link, so it has no lines to show.');
-    expect(words(broken('binary'))).toBe(
-      'src/cache.ts at abc1234 isn’t text, so it has no lines to show.',
+    ).toBe('src/cache.ts is a symbolic link in r3.');
+    expect(words(broken('binary'))).toBe('src/cache.ts isn’t text.');
+    expect(words(broken('tooLarge'))).toBe(
+      `src/cache.ts is over the ${LIMITS.file / 2 ** 20} MB limit.`,
     );
-    expect(words(broken('tooLarge'))).toContain(`larger than ${LIMITS.file / 2 ** 20} MB`);
-    expect(showsOf(range('a.ts', 7), broken('lines'), READ, COMMIT)).toMatchObject({
-      words: [{ code: 'a.ts' }, ' at abc1234 has no line 7, so Lo can’t show them.'],
+    expect(showsOf(range('a.ts', 7), broken('lines'), READ, 'abc1234')).toMatchObject({
+      words: [{ code: 'a.ts' }, ' has no line 7 in abc1234.'],
     });
   });
 
-  it('says which it is when the code wasn’t read', () => {
+  it('says which it is when the code wasn’t read, and nothing where the cause isn’t known', () => {
     const unread: Target = { code: { state: 'unread', why: 'failed' }, answer: undefined };
     const title = (read: CodeRead, found = unread) => {
-      const shows = showsOf(target, found, read, COMMIT);
+      const shows = showsOf(target, found, read, 'r3');
       return shows.kind === 'note' ? [shows.variant, shows.title, ...shows.words] : [];
     };
-    expect(title({ kind: 'waiting' })).toEqual([
-      'code',
-      'Waiting for the local copy.',
-      'Lo shows this code once it has fetched the pull request.',
-    ]);
-    expect(title({ kind: 'noGit' })).toEqual([
-      'code',
-      'Lo needs git to show this code.',
-      'Code comes from the pull request’s local copy, which git fetches.',
-    ]);
+    expect(title({ kind: 'waiting' })).toEqual(['code', 'Fetching local copy…']);
+    expect(title({ kind: 'noGit' })).toEqual(['code', 'Can’t show this code', 'Git wasn’t found.']);
     expect(title({ kind: 'failed', why: 'It broke.' })).toEqual([
       'code',
-      'Lo couldn’t read this code.',
+      'Can’t show this code',
       'It broke.',
     ]);
     expect(title(READ, { ...unread, answer: { kind: 'unread', why: 'Git failed.' } })).toEqual([
       'code',
-      'Lo couldn’t read this code.',
+      'Can’t show this code',
       'Git failed.',
     ]);
     expect(title(READ, { code: { state: 'unread', why: 'stopped' }, answer: undefined })).toEqual([
       'code',
-      'Lo couldn’t read this code.',
-      'Reading the overview’s code took too long.',
+      'Can’t show this code',
+      'It took too long.',
     ]);
+    expect(title(READ)).toEqual(['code', 'Can’t show this code']);
   });
 
   it('names a file by what’s past its last slash', () => {

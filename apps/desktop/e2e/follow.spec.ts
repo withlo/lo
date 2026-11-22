@@ -261,10 +261,10 @@ test(']b and [b go between the blocks, Tab between a block’s links, and ← an
     parts.push((await focused(page)).text);
   }
   expect(parts).toEqual([
-    'src/parser.ts, L8–10',
-    'The term line',
-    'src/format.ts, L6–8',
-    'src/text/wrap.ts, L2–15',
+    'src/parser.ts · lines 8–10',
+    'Term: line',
+    'src/format.ts · lines 6–8',
+    'src/text/wrap.ts · lines 2–15',
   ]);
   await press(page, 'Tab');
   expect(await focused(page)).toMatchObject({ block: BLOCK.figure, own: true });
@@ -300,7 +300,7 @@ test(']b and [b go between the blocks, Tab between a block’s links, and ← an
   await expect(chosen).toHaveText('After');
   // ⏎ on tabs has nowhere to go.
   await press(page, 'Enter');
-  await expect(said(page, 'This block has nothing to follow.')).toBeVisible();
+  await expect(said(page, 'No code or link in this block')).toBeVisible();
 
   // ⏎ opens and closes a fold.
   await toBlock(page, BLOCK.fold);
@@ -313,7 +313,7 @@ test(']b and [b go between the blocks, Tab between a block’s links, and ← an
 
   // At the last block, ]b says so.
   await press(page, ']', 'b');
-  await expect(said(page, 'This is the last block.')).toBeVisible();
+  await expect(said(page, 'Last block')).toBeVisible();
   expect((await focused(page)).block).toBe(BLOCK.fold);
 });
 
@@ -330,8 +330,8 @@ test('from the overview itself, Tab goes through the outline to the first block,
       (text) => text.trim().slice(0, 40),
     );
     expect(sections.length).toBeGreaterThan(1);
-    // The banner's actions, by their labels, which their keys' caps follow.
-    const banner = [/^Compare r1 → r2/, /^Copy prompt for an agent/];
+    // The banner's one action.
+    const banner = [/^Compare r1 → r2/];
     const itself = shown(page).locator('.lo-ov');
 
     // As Esc leaves it, from a block.
@@ -375,7 +375,7 @@ test('from the overview itself, Tab goes through the outline to the first block,
       expect(await focused(page)).toMatchObject({ block: undefined, text: section });
     }
     await press(page, 'Shift+Tab');
-    await expect(said(page, 'There’s nothing before this in the overview.')).toBeVisible();
+    await expect(said(page, 'First link')).toBeVisible();
     expect(await focused(page)).toMatchObject({ text: sections[0] });
   });
 
@@ -384,22 +384,22 @@ test('from the overview itself, Tab goes through the outline to the first block,
     await block(page, BLOCK.parser).click(CORNER);
     await expect(menu).toBeVisible();
     await expect(menu.getByRole('menuitem', { name: /^Go to code/ })).toBeVisible();
-    await expect(menu.getByRole('menuitem', { name: /^Copy prompt for an agent/ })).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: /^Copy prompt/ })).toBeVisible();
     // Nothing newer was pushed, and nothing failed.
-    await expect(menu.getByRole('menuitem', { name: /Load the newer overview/ })).toHaveCount(0);
-    await expect(menu.getByRole('menuitem', { name: /^Retry/ })).toHaveCount(0);
-    await menu.getByRole('menuitem', { name: /^Open or close code beside/ }).click();
+    await expect(menu.getByRole('menuitem', { name: /Show latest overview/ })).toHaveCount(0);
+    await expect(menu.getByRole('menuitem', { name: /^Try again/ })).toHaveCount(0);
+    await menu.getByRole('menuitem', { name: /^Code beside/ }).click();
     await expect(beside(page).locator('.lo-split__bar .lo-path')).toHaveText('src/parser.ts');
     await block(page, BLOCK.parser).click(CORNER);
-    await menu.getByRole('menuitem', { name: /^Open or close code beside/ }).click();
+    await menu.getByRole('menuitem', { name: /^Code beside/ }).click();
     await expect(beside(page)).toHaveCount(0);
 
     // A block with no code lists neither.
     await block(page, BLOCK.tabs).scrollIntoViewIfNeeded();
     await block(page, BLOCK.tabs).click(CORNER);
-    await expect(menu.getByRole('menuitem', { name: /^Copy prompt for an agent/ })).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: /^Copy prompt/ })).toBeVisible();
     await expect(menu.getByRole('menuitem', { name: /^Go to code/ })).toHaveCount(0);
-    await expect(menu.getByRole('menuitem', { name: /^Open or close code beside/ })).toHaveCount(0);
+    await expect(menu.getByRole('menuitem', { name: /^Code beside/ })).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(menu).toHaveCount(0);
 
@@ -433,7 +433,7 @@ test('from the overview itself, Tab goes through the outline to the first block,
     await block(page, BLOCK.parser).scrollIntoViewIfNeeded();
     await block(page, BLOCK.parser).click(CORNER);
     await expect(menu).toBeVisible();
-    await menu.getByRole('menuitem', { name: /^Open or close code beside/ }).click();
+    await menu.getByRole('menuitem', { name: /^Code beside/ }).click();
     await expect(beside(page)).toBeVisible();
     expect(await focused(page)).toMatchObject({ block: BLOCK.parser, own: true });
     await block(page, BLOCK.parser).click(CORNER);
@@ -449,7 +449,7 @@ test('from the overview itself, Tab goes through the outline to the first block,
     // A figure's part, a drawing's element, gets focus back, by ⇧F10 and by a right-click.
     await toBlock(page, BLOCK.figure);
     await press(page, 'Tab');
-    const part = { block: BLOCK.figure, text: 'src/parser.ts, L8–10' };
+    const part = { block: BLOCK.figure, text: 'src/parser.ts · lines 8–10' };
     expect(await focused(page)).toMatchObject(part);
     await press(page, 'Shift+F10');
     await expect(menu).toBeVisible();
@@ -550,7 +550,7 @@ test('⏎ follows a block, a part or a link to its code, and ⌃o comes back to 
   await toBlock(page, BLOCK.figure);
   top = await topOf(page, BLOCK.figure);
   await press(page, 'Tab', 'Tab', 'Tab');
-  expect(await focused(page)).toMatchObject({ text: 'src/format.ts, L6–8' });
+  expect(await focused(page)).toMatchObject({ text: 'src/format.ts · lines 6–8' });
   await press(page, 'Enter');
   await expect
     .poll(() => diffCursor(page))
@@ -581,9 +581,7 @@ test('⏎ goes where the block’s lines are in r2, on an overview written for r
   test.setTimeout(120_000);
   await sizeWindow(app, 1200, 900);
   await open(page);
-  await expect(shown(page).locator('.lo-ov-stale__title')).toHaveText(
-    'Written for r1. The PR is at r2.',
-  );
+  await expect(shown(page).locator('.lo-ov-stale__title')).toHaveText('Written for r1 · now r2');
   // Once Lo knows what changed since r1, which it fetches into the local copy first: the overview
   // shows from its text alone, and a ⏎ before then waits only up to the bound to place its lines.
   // The parser block's flag says it knows, which the banner's "touching" doesn't: that comes first,
@@ -712,7 +710,7 @@ test('o puts a block’s code beside the overview, which follows the blocks, and
     expect(Math.abs((await topOf(page, BLOCK.parser)) - top)).toBeLessThanOrEqual(1);
     expect(await focused(page)).toMatchObject({ block: BLOCK.parser, own: true });
     await expect(block(page, BLOCK.parser).locator('.lo-block__hints')).toContainText(
-      'Close beside',
+      'Code beside',
     );
     // The block's first line, on screen in the code, inline.
     const code = beside(page).locator('[data-lo-beside-code]');
@@ -777,7 +775,10 @@ test('o puts a block’s code beside the overview, which follows the blocks, and
     const path = beside(page).locator('.lo-split__bar .lo-path');
     await expect(path).toHaveText('src/parser.ts');
     await press(page, 'Tab', 'Tab', 'Tab');
-    expect(await focused(page)).toMatchObject({ block: BLOCK.figure, text: 'src/format.ts, L6–8' });
+    expect(await focused(page)).toMatchObject({
+      block: BLOCK.figure,
+      text: 'src/format.ts · lines 6–8',
+    });
     await expect(path).toHaveText('src/parser.ts');
     await press(page, 'o');
     await expect(beside(page)).toHaveCount(0);
@@ -785,7 +786,7 @@ test('o puts a block’s code beside the overview, which follows the blocks, and
     // A block with no code has none to show.
     await toBlock(page, BLOCK.tabs);
     await press(page, 'o');
-    await expect(said(page, 'This block shows no code.')).toBeVisible();
+    await expect(said(page, 'No code in this block')).toBeVisible();
     await expect(beside(page)).toHaveCount(0);
 
     // A file the pull request doesn't change says so.
@@ -801,7 +802,8 @@ test('o puts a block’s code beside the overview, which follows the blocks, and
     const openPalette = async () => {
       await press(page, process.platform === 'darwin' ? 'Meta+Shift+P' : 'Control+Shift+P');
       await expect(input).toBeFocused();
-      await input.fill('Close code beside');
+      // Code beside matches as well, so the palette has something to list either way.
+      await input.fill('code beside');
     };
 
     // The README's block, where the step before left code beside, is closed first.

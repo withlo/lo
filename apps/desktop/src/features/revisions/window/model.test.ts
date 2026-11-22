@@ -198,7 +198,7 @@ describe('the note over the diff', () => {
   it('says when nothing is new, and what a comparison across a rebase shows', () => {
     expect(
       noteOf(view({ comparison: { from: null, to: head('5') }, nothingNewSince: head('5') })),
-    ).toEqual({ tone: 'info', text: 'Every change, base → r5 · Nothing new since r5' });
+    ).toEqual({ tone: 'info', text: 'Every change, base → r5 · no change since r5' });
     expect(noteOf(view({ replay: 'clean' })).text).toBe(
       'r4 → r5, since you last looked · across a rebase: only what the author changed',
     );

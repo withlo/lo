@@ -478,7 +478,7 @@ describe('Checking', () => {
     failing.take(stateOf(commit, 'ready'));
     await vi.waitFor(() => expect(published).toHaveLength(1));
     // In Lo's words: what main said goes to the log.
-    expect(last()).toMatchObject({ kind: 'failed', why: 'Lo couldn’t read artifact.md.' });
+    expect(last()).toMatchObject({ kind: 'failed', why: 'GitHub returned an error.' });
     fail = false;
     failing.take({ ...stateOf(commit, 'ready'), problem: null, saved: true });
     await vi.waitFor(() => expect(published).toHaveLength(3));
@@ -509,16 +509,15 @@ function readOf(size: number): CodeRead {
 }
 
 describe('failedWhy', () => {
-  it('says why a check failed in Lo’s words, never the error’s own', () => {
+  it('says why a check failed where the cause is known, never the error’s own words', () => {
     expect(failedWhy(new IpcError('timeout', 'overview.check ran past 10000 ms.'))).toBe(
-      'Checking it took longer than Lo allows.',
+      'It took too long.',
     );
-    expect(failedWhy(new IpcError('internal', 'SQLITE_BUSY: database is locked'))).toBe(
-      'Lo can’t tell why.',
+    expect(failedWhy(new IpcError('memory', 'overview.check ran out of memory.'))).toBe(
+      'It ran out of memory.',
     );
-    expect(failedWhy(new TypeError("Cannot read properties of undefined (reading 'x')"))).toBe(
-      'Lo can’t tell why.',
-    );
+    expect(failedWhy(new IpcError('internal', 'SQLITE_BUSY: database is locked'))).toBe('');
+    expect(failedWhy(new TypeError("Cannot read properties of undefined (reading 'x')"))).toBe('');
   });
 });
 

@@ -91,7 +91,7 @@ test('` steps from the diff to the timeline, read as it’s first shown; j, k an
   await expect(rows.nth(1)).toContainText('pushed 1 commit');
   await expect(rows.nth(1)).toContainText('5a48d22');
   await expect(rows.nth(1)).toContainText('test(e11): change lines in three places');
-  await expect(rows.nth(2)).toContainText('left a review on r1');
+  await expect(rows.nth(2)).toContainText('left a review · r1');
   await expect(rows.nth(2)).toContainText(
     "Fixture E11: the pending review's summary, submitted as a comment.",
   );
@@ -105,7 +105,7 @@ test('` steps from the diff to the timeline, read as it’s first shown; j, k an
   await page.keyboard.press('j');
   await expect.poll(on).toContain('pushed 1 commit');
   await page.keyboard.press('j');
-  await expect.poll(on).toContain('left a review on r1');
+  await expect.poll(on).toContain('left a review · r1');
   await page.keyboard.press('k');
   await expect.poll(on).toContain('pushed 1 commit');
   await expect(rows.nth(1)).toHaveAttribute('aria-selected', 'true');
@@ -120,11 +120,11 @@ test('` steps from the diff to the timeline, read as it’s first shown; j, k an
     await review.click();
     await expect(timeline).toBeFocused();
     await page.keyboard.press('Tab');
-    await expect(review.getByRole('button', { name: 'Show in the diff' })).toBeFocused();
+    await expect(review.getByRole('button', { name: 'Show in diff' })).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(timeline).toBeFocused();
     await page.keyboard.press('Shift+Tab');
-    await expect(review.getByRole('button', { name: 'Show in the diff' })).toBeFocused();
+    await expect(review.getByRole('button', { name: 'Show in diff' })).toBeFocused();
     await page.keyboard.press('Escape');
     await expect(timeline).toBeFocused();
     await expect.poll(on).toContain('1 comment');
@@ -142,7 +142,7 @@ test('` steps from the diff to the timeline, read as it’s first shown; j, k an
     // A right-click on the push: the keyboard moves to it, and its menu has no review's actions.
     await rows.nth(1).click({ button: 'right' });
     await expect(menu.getByRole('menuitem', { name: /Open on GitHub/ })).toBeVisible();
-    await expect(menu.getByRole('menuitem', { name: /comments in the diff/ })).toHaveCount(0);
+    await expect(menu.getByRole('menuitem', { name: /^Show in diff/ })).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(menu).toBeHidden();
     await expect.poll(on).toContain('pushed 1 commit');
@@ -150,7 +150,7 @@ test('` steps from the diff to the timeline, read as it’s first shown; j, k an
     for (let step = 0; step < 5; step += 1) await page.keyboard.press('j');
     await expect.poll(on).toContain('1 comment');
     await page.keyboard.press('Shift+F10');
-    await menu.getByRole('menuitem', { name: /Show the review’s comments in the diff/ }).click();
+    await menu.getByRole('menuitem', { name: /^Show in diff/ }).click();
     await focusedOn(page, 'diff.view');
   });
 });

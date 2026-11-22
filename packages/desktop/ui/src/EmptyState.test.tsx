@@ -78,3 +78,14 @@ test('with no commands, or one the registry doesn’t have, it draws no button',
     draw(<EmptyState title="No matches" actions={['diff.nothing']} />).querySelector('button'),
   ).toBeNull();
 });
+
+test('what its actions act on sits between its line and its buttons', () => {
+  held();
+  const host = draw(
+    <EmptyState title="No overview yet" line="One line." actions={['diff.comment']}>
+      <pre>The prompt</pre>
+    </EmptyState>,
+  );
+  const order = [...host.querySelectorAll('p, pre, button')].map((element) => element.localName);
+  expect(order).toEqual(['p', 'pre', 'button']);
+});

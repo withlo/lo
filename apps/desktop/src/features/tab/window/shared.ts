@@ -307,6 +307,22 @@ export function useRun(id: string): Run | undefined {
 }
 
 /**
+ * The layers the run `tab` shows as one diff spans, by their places in its stack, bottom first:
+ * "layers 3–5". By their count where the stack doesn't say. A view the empty states of other views
+ * name, which each layer has its own of.
+ */
+export function runLayersOf(tab: PullTab): string {
+  const layers = tab.run?.layers ?? [];
+  const stack = tab.stack?.layers ?? [];
+  const [bottom] = layers;
+  const top = layers.at(-1);
+  const first = bottom === undefined ? -1 : stack.indexOf(bottom);
+  const last = top === undefined ? -1 : stack.indexOf(top);
+  if (first < 0 || last < 0) return `${layers.length} layers`;
+  return `layers ${first + 1}–${last + 1}`;
+}
+
+/**
  * The id the view of a run of `layers`, bottom first, would have in the pull request's tab that
  * holds view `id`, before main has made it: nothing when no tab holds that view.
  */

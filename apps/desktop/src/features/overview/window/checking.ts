@@ -87,21 +87,24 @@ export type CheckedOverview =
 /** `artifact.md` couldn't be read, as main says why, which the log keeps. */
 class Unread extends Error {}
 
-/** Why a check failed of the background process's own failures, where Lo can say why. */
+/**
+ * Why a check failed of the background process's own failures, where the reader can know why. A
+ * restart is no cause the reader knows of, so it has no reason.
+ */
 const JOB_FAILURES = new Map([
-  ['timeout', 'Checking it took longer than Lo allows.'],
-  ['memory', 'Checking it took more memory than Lo allows.'],
-  ['restarted', 'Lo’s background process stopped while checking it.'],
+  ['timeout', 'It took too long.'],
+  ['memory', 'It ran out of memory.'],
+  ['restarted', ''],
 ]);
 
 /**
- * Why a check failed, as the overview says it: in Lo's words, naming the cause where Lo knows it,
- * and saying so where it doesn't. What the error itself said goes only to the log.
+ * Why a check failed, as the overview says it: the cause where Lo knows it, and nothing (`''`)
+ * where it doesn't. What the error itself said goes only to the log.
  */
 export function failedWhy(error: unknown): string {
-  if (error instanceof Unread) return 'Lo couldn’t read artifact.md.';
+  if (error instanceof Unread) return 'GitHub returned an error.';
   const known = error instanceof IpcError ? JOB_FAILURES.get(error.code) : undefined;
-  return known ?? 'Lo can’t tell why.';
+  return known ?? '';
 }
 
 /** What a tab's checking reads with, and where it sends what it found. */
@@ -466,7 +469,7 @@ export class Checking {
       case 'noGit':
         return { kind: 'noGit' };
       case 'failed':
-        return { kind: 'failed', why: "The pull request's local copy couldn't be fetched." };
+        return { kind: 'failed', why: 'The local copy couldn’t be fetched.' };
       default:
         this.#access satisfies never;
         return { kind: 'waiting' };
@@ -526,7 +529,7 @@ export class Checking {
         return { code: { kind: 'noGit' }, answers: undefined };
       case 'failed':
         return {
-          code: { kind: 'failed', why: "The pull request's local copy couldn't be fetched." },
+          code: { kind: 'failed', why: 'The local copy couldn’t be fetched.' },
           answers: undefined,
         };
       case 'ready':

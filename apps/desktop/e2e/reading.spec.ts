@@ -94,7 +94,7 @@ const BOT: Writer = { name: 'rozed-bot', login: 'rozed-bot' };
  * to no account.
  */
 const SPOOF: Writer = {
-  name: `rozed-bot wrote this overview just now · describes r2 ${APP_PULL.head.slice(0, 7)} · From the base repository ${'x'.repeat(160)}`,
+  name: `rozed-bot wrote this overview just now · written for r2 · from fork ${'x'.repeat(160)}`,
   login: null,
 };
 
@@ -404,7 +404,7 @@ async function current(page: Page, id: string): Promise<unknown> {
   return reply.ok ? reply.value : reply;
 }
 
-/** Has main read the ref again now, as `Retry now` does. */
+/** Has main read the ref again now, as `Try now` does. */
 async function readAgain(page: Page, id: string): Promise<void> {
   await page.evaluate((tab) => window.lo.invoke('overview.retry', { id: tab }), id);
 }
@@ -559,10 +559,10 @@ test.describe('as a pull request opens', () => {
     await expect(middleView(page, 'diff.view')).toHaveCount(0);
     await expect(overviewTab(page)).toHaveAttribute('aria-selected', 'true');
     // Written for the first push, which the second force-pushed over.
-    await expect(overviewTab(page).getByRole('img')).toHaveAccessibleName('Overview, out of date');
+    await expect(overviewTab(page).getByRole('img')).toHaveAccessibleName('Overview · out of date');
     const byline = page.locator('[data-lo-byline]');
-    await expect(byline).toContainText('rozed-bot wrote this overview');
-    await expect(byline).toContainText(`describes r1 ${APP_PULL.firstHead.slice(0, 7)}`);
+    await expect(byline).toContainText('rozed-bot · ');
+    await expect(byline.locator('.lo-ov-byline__said')).toHaveText('written for r1');
     await expect(
       middleView(page, 'overview.view').locator('figure.lo-figure:not(.lo-figure--broken)'),
     ).toBeVisible();
@@ -603,7 +603,6 @@ test.describe('as a pull request opens', () => {
       await overviewTab(page).click();
       await expect(overview(page, 'none')).toBeVisible();
       await expect(page.getByRole('heading', { name: 'No overview yet' })).toBeVisible();
-      await expect(page.locator('footer')).toContainText(`Watching refs/lo/pr/${APP_PULL.number}`);
       await expect(overview(page, 'none').locator('pre')).toHaveText(WRITE);
       expect(await current(page, id)).toMatchObject({ found: 'none', watching: true });
     });
@@ -611,8 +610,8 @@ test.describe('as a pull request opens', () => {
     // Writing the clipboard only where it's the test's own: not on a Mac someone works on.
     if (process.platform !== 'darwin') {
       await test.step('copies the prompts, by their buttons and ya, with nothing an overview says', async () => {
-        await none.getByRole('button', { name: /^Copy/ }).click();
-        await expect(none.getByRole('button', { name: /^Copied/ })).toBeVisible();
+        await none.getByRole('button', { name: /^Copy prompt/ }).click();
+        await expect(page.getByRole('status').filter({ hasText: 'Copied prompt' })).toBeVisible();
         expect(await clipboard(app)).toBe(WRITE);
         await app.evaluate(({ clipboard: board }) => board.writeText(''));
         await page.keyboard.press('y');
@@ -628,9 +627,7 @@ test.describe('as a pull request opens', () => {
         };
         await readAgain(page, id);
         const invalid = overview(page, 'invalid');
-        await invalid
-          .getByRole('button', { name: /^Copy a prompt to fix it/ })
-          .click({ timeout: 20_000 });
+        await invalid.getByRole('button', { name: /^Copy prompt/ }).click({ timeout: 20_000 });
         await expect
           .poll(() => clipboard(app))
           .toMatch(/^Fix the Lo overview for this pull request:/);
@@ -705,7 +702,7 @@ test('offers a newer overview pushed while one is read, and loads it only when a
     };
     await readAgain(page, id);
     const byline = page.locator('[data-lo-byline]');
-    await expect(byline).toContainText('A newer overview was pushed', { timeout: 20_000 });
+    await expect(byline).toContainText('Overview updated', { timeout: 20_000 });
     // The one on screen stays as the reader left it.
     await expect(shown.locator('.lo-ov__article[data-seen="yes"]')).toContainText('The first one.');
     await expect(fold).toHaveAttribute('open', '');
@@ -716,10 +713,10 @@ test('offers a newer overview pushed while one is read, and loads it only when a
     await page.keyboard.press('Escape');
     await expect(shown.locator('.lo-ov')).toBeFocused();
     await page.keyboard.press('Shift+Tab');
-    await expect(byline.getByRole('button', { name: 'Load it' })).toBeFocused();
+    await expect(byline.getByRole('button', { name: 'Show latest' })).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(shown).toContainText('The second one.');
-    await expect(byline).not.toContainText('A newer overview was pushed');
+    await expect(byline).not.toContainText('Overview updated');
     // Its blocks took the place of those that had focus: the overview itself has it, for ]b.
     await expect(shown.locator('.lo-ov')).toBeFocused();
     await page.keyboard.press(']');
@@ -734,13 +731,13 @@ test('offers a newer overview pushed while one is read, and loads it only when a
 
     // Nothing newer and nothing failed: neither is on it.
     await fold.click({ button: 'right' });
-    await expect(item(/^Copy prompt for an agent/)).toBeVisible();
-    await expect(item(/^Load the newer overview/)).toHaveCount(0);
-    await expect(item(/^Retry/)).toHaveCount(0);
+    await expect(item(/^Copy prompt/)).toBeVisible();
+    await expect(item(/^Show latest overview/)).toHaveCount(0);
+    await expect(item(/^Try again/)).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(menu).toHaveCount(0);
 
-    // A read that failed: Retry reads the ref again, which finds a newer one, offered.
+    // A read that failed: Try again reads the ref again, which finds a newer one, offered.
     ref.holds = { kind: 'failing' };
     await readAgain(page, id);
     await expect
@@ -751,16 +748,16 @@ test('offers a newer overview pushed while one is read, and loads it only when a
       overview: overviewOf({ 'artifact.md': longText('The third one.') }),
     };
     await fold.click({ button: 'right' });
-    await item(/^Retry/).click();
+    await item(/^Try again/).click();
     const byline = page.locator('[data-lo-byline]');
-    await expect(byline).toContainText('A newer overview was pushed', { timeout: 20_000 });
+    await expect(byline).toContainText('Overview updated', { timeout: 20_000 });
     await expect(shown).toContainText('The second one.');
 
     await fold.click({ button: 'right' });
-    await expect(item(/^Retry/)).toHaveCount(0);
-    await item(/^Load the newer overview/).click();
+    await expect(item(/^Try again/)).toHaveCount(0);
+    await item(/^Show latest overview/).click();
     await expect(shown).toContainText('The third one.');
-    await expect(byline).not.toContainText('A newer overview was pushed');
+    await expect(byline).not.toContainText('Overview updated');
     // Its blocks took the place of the block that had focus: the overview itself has it, for ]b.
     await expect(shown.locator('.lo-ov')).toBeFocused();
     await page.keyboard.press(']');
@@ -788,15 +785,15 @@ test('keeps its byline as it is at any width, the commit’s name quoted and cli
   const byline = shown.locator('[data-lo-byline]');
   const name = byline.locator('[data-lo-commit-name]');
   // Wide; too narrow for the offer beside the rest; for what it describes beside who wrote it;
-  // zoomed in, to as narrow; and narrower than what it describes, where only the way to load a
-  // newer one is kept whole.
+  // zoomed in, to as narrow; and narrower still, where only the way to show the latest is kept
+  // whole.
   const sizes = [
     { width: 1280, zoom: 1, whole: true },
     { width: 960, zoom: 1, whole: true },
     { width: 800, zoom: 1, whole: true },
     { width: 720, zoom: 1, whole: true },
     { width: 1280, zoom: 1.5, whole: true },
-    { width: 1280, zoom: 2, whole: false },
+    { width: 1360, zoom: 2, whole: false },
   ];
   for (const [at, { width, zoom, whole }] of sizes.entries()) {
     await sizeWindow(app, width, 700);
@@ -811,8 +808,8 @@ test('keeps its byline as it is at any width, the commit’s name quoted and cli
     });
     await page.waitForTimeout(500);
 
-    // Lo's words first, and the commit's name in quotes, cut short, and not a login.
-    await expect(byline).toContainText(/^Written .* by the commit author “rozed-bot wrote/);
+    // The commit's name in quotes, cut short, and not a login.
+    await expect(byline).toContainText(/^“rozed-bot wrote/);
     expect(
       (await byline.locator('strong').allTextContents()).filter((bold) => bold.includes('rozed')),
     ).toEqual([]);
@@ -822,7 +819,7 @@ test('keeps its byline as it is at any width, the commit’s name quoted and cli
     if (whole) {
       expect((await byline.locator('.lo-ov-byline__who').boundingBox())?.width).toBeGreaterThan(40);
       const said = byline.locator('.lo-ov-byline__said');
-      await expect(said).toHaveText(/^describes r\d+ [0-9a-f]{7}$/);
+      await expect(said).toHaveText(/^written for (r\d+|[0-9a-f]{7})$/);
       expect(await said.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
         true,
       );
@@ -835,11 +832,11 @@ test('keeps its byline as it is at any width, the commit’s name quoted and cli
       overview: overviewOf({ 'artifact.md': longText(`Overview ${at + 1}.`) }, SPOOF),
     };
     await readAgain(page, id);
-    await expect(byline).toContainText('A newer overview was pushed', { timeout: 20_000 });
+    await expect(byline).toContainText('Overview updated', { timeout: 20_000 });
     await page.waitForTimeout(300);
     expect(await stillMoved(page)).toEqual([]);
     expect(await byline.boundingBox()).toEqual(line);
-    const load = byline.getByRole('button', { name: 'Load it' });
+    const load = byline.getByRole('button', { name: 'Show latest' });
     const button = await load.boundingBox();
     expect(button?.x).toBeGreaterThanOrEqual(line?.x ?? 0);
     expect((button?.x ?? 0) + (button?.width ?? 0)).toBeLessThanOrEqual(
@@ -877,7 +874,7 @@ test('keeps the line being read in place as what’s above it changes size', asy
   expect(await stillMoved(page)).toEqual([]);
 });
 
-test('says when the overview couldn’t be fetched, and reads it again on Retry now; says why an overview can’t be shown, offering each newer one; and opens a link to a web page in the browser, on a click or ⏎', async ({
+test('says when the overview couldn’t be fetched, and reads it again on Try now; says why an overview can’t be shown, offering each newer one; and opens a link to a web page in the browser, on a click or ⏎', async ({
   page,
   ref,
 }) => {
@@ -885,21 +882,18 @@ test('says when the overview couldn’t be fetched, and reads it again on Retry 
   ref.holds = { kind: 'failing' };
   const id = await open(page);
 
-  await test.step('says when the overview couldn’t be fetched, and reads it again on Retry now', async () => {
+  await test.step('says when the overview couldn’t be fetched, and reads it again on Try now', async () => {
     await expect
       .poll(() => current(page, id), { timeout: 20_000 })
       .toMatchObject({ problem: { kind: 'failed' } });
     await expect(middleView(page, 'diff.view')).toBeVisible();
     await overviewTab(page).click();
     const failed = overview(page, 'failed');
-    await expect(
-      failed.getByRole('heading', { name: 'Couldn’t fetch the overview' }),
-    ).toBeVisible();
-    await expect(failed).toContainText(`Lo couldn't read refs/lo/pr/${APP_PULL.number}`);
-    await expect(failed).toContainText(/Trying again in \d+ s\./);
+    await expect(failed.getByRole('alert')).toContainText('Couldn’t fetch the overview');
+    await expect(failed).toContainText(/GitHub returned an error\. Retrying in \d+ (s|min)\./);
 
     ref.holds = { kind: 'cassette' };
-    await failed.getByRole('button', { name: 'Retry now' }).click();
+    await failed.getByRole('button', { name: 'Try now' }).click();
     await expect(overview(page, 'shown')).toBeVisible({ timeout: 20_000 });
   });
 
@@ -914,21 +908,16 @@ test('says when the overview couldn’t be fetched, and reads it again on Retry 
     await readAgain(page, id);
     await page
       .locator('[data-lo-byline]')
-      .getByRole('button', { name: 'Load it' })
+      .getByRole('button', { name: 'Show latest' })
       .click({ timeout: 20_000 });
-    await expect(overviewTab(page).getByRole('img')).toHaveAccessibleName(
-      "Overview, can't be shown",
-      { timeout: 20_000 },
-    );
+    await expect(overviewTab(page).getByRole('img')).toHaveAccessibleName('Overview · can’t show', {
+      timeout: 20_000,
+    });
     const invalid = overview(page, 'invalid');
-    await expect(
-      invalid.getByRole('heading', { name: 'This overview can’t be read' }),
-    ).toBeVisible();
-    const problem = invalid
-      .getByRole('list', { name: 'Problems' })
-      .getByRole('listitem')
-      .filter({ hasText: 'chart' });
-    await expect(problem).toContainText('line 11');
+    await expect(invalid.getByRole('alert')).toContainText('Can’t show this overview');
+    await expect(invalid.getByRole('alert')).toContainText('It has 1 problem.');
+    await invalid.getByRole('button', { name: 'Details' }).click();
+    await expect(invalid.locator('pre')).toContainText(/Line 11 · .*chart/);
 
     // Too large: its figures are past what Lo shows.
     ref.holds = {
@@ -939,12 +928,12 @@ test('says when the overview couldn’t be fetched, and reads it again on Retry 
       }),
     };
     await readAgain(page, id);
-    await invalid.getByRole('button', { name: 'Load it' }).click({ timeout: 20_000 });
+    await invalid.getByRole('button', { name: 'Show latest' }).click({ timeout: 20_000 });
     const large = overview(page, 'tooLarge');
-    await expect(
-      large.getByRole('heading', { name: 'This overview is too large to show' }),
-    ).toBeVisible();
-    await expect(large.getByRole('list', { name: 'Sizes' })).toContainText('PNG figures');
+    await expect(large.getByRole('alert')).toContainText('Can’t show this overview');
+    await expect(large.getByRole('alert')).toContainText('over the 50 MB limit.');
+    await large.getByRole('button', { name: 'Details' }).click();
+    await expect(large.locator('pre')).toContainText('PNG figures');
 
     // In a format this Lo doesn't read.
     ref.holds = {
@@ -952,22 +941,19 @@ test('says when the overview couldn’t be fetched, and reads it again on Retry 
       overview: overviewOf({ 'artifact.md': textOf('## tl;dr\n\nIt reads.\n', 2) }),
     };
     await readAgain(page, id);
-    await large.getByRole('button', { name: 'Load it' }).click({ timeout: 20_000 });
+    await large.getByRole('button', { name: 'Show latest' }).click({ timeout: 20_000 });
     const newer = overview(page, 'newer');
-    await expect(
-      newer.getByRole('heading', { name: 'This overview needs a newer Lo' }),
-    ).toBeVisible();
-    await expect(newer).toContainText('format 2');
+    await expect(newer.getByRole('alert')).toContainText('Can’t show this overview');
+    await expect(newer.getByRole('alert')).toContainText('It needs a newer version of Lo.');
+    await newer.getByRole('button', { name: 'Details' }).click();
+    await expect(newer.locator('pre')).toContainText('Format 2.');
     // ⏎ presses the button that has focus, with no overview drawn for it to follow. It checks for a
     // newer Lo, and this one, built from source with no feed, says it doesn't check.
-    await newer.getByRole('button', { name: 'Get a newer Lo' }).focus();
+    await newer.getByRole('button', { name: 'Check for updates' }).focus();
     await page.keyboard.press('Enter');
     const checked = page.getByRole('status').filter({ hasText: 'Lo couldn’t check for updates' });
     await expect(checked).toContainText('built from source, so it doesn’t check for updates');
     expect(browsed()).toEqual([]);
-    // The way on for a Lo that doesn't check: the releases page.
-    await newer.getByRole('button', { name: 'Open the releases page' }).click();
-    await expect.poll(browsed).toEqual(['https://github.com/withlo/lo/releases']);
   });
 
   await test.step('opens a link to a web page in the browser, on a click or ⏎', async () => {
@@ -982,13 +968,11 @@ test('says when the overview couldn’t be fetched, and reads it again on Retry 
     };
     await readAgain(page, id);
     await overview(page, 'newer')
-      .getByRole('button', { name: 'Load it' })
+      .getByRole('button', { name: 'Show latest' })
       .click({ timeout: 20_000 });
     const link = overview(page, 'shown').getByRole('link', { name: 'design notes' });
     await link.click();
-    await expect
-      .poll(browsed)
-      .toEqual(['https://github.com/withlo/lo/releases', 'https://example.com/design']);
+    await expect.poll(browsed).toEqual(['https://example.com/design']);
     // The overview stays on screen.
     await expect(overview(page, 'shown')).toBeVisible();
 
@@ -1000,11 +984,7 @@ test('says when the overview couldn’t be fetched, and reads it again on Retry 
     await page.keyboard.press('Enter');
     await expect
       .poll(browsed)
-      .toEqual([
-        'https://github.com/withlo/lo/releases',
-        'https://example.com/design',
-        'https://example.com/design',
-      ]);
+      .toEqual(['https://example.com/design', 'https://example.com/design']);
   });
 });
 
@@ -1502,8 +1482,9 @@ test('fills in its code from the local copy, at the commit it describes, as the 
   const cache = codeBlock(page, 'src/cache.ts', 'L1–4');
   await cache.scrollIntoViewIfNeeded();
   await expect(cache).toHaveClass(/lo-codeblock--unresolved/);
-  await expect(cache).toContainText('This reference doesn’t resolve.');
-  await cache.getByRole('button', { name: /Find a file named cache\.ts/ }).click();
+  await expect(cache).toContainText('Can’t show this code');
+  await expect(cache).toContainText('src/cache.ts isn’t in');
+  await cache.getByRole('button', { name: /^Go to file…/ }).click();
   const finder = page.getByRole('dialog', { name: 'Go to a file' });
   await expect(finder).toBeVisible();
   await expect(finder.getByRole('combobox', { name: 'Go to a file' })).toHaveValue('cache.ts');
@@ -1513,7 +1494,7 @@ test('fills in its code from the local copy, at the commit it describes, as the 
   // A plain fence is an illustration, never code from the pull request.
   const illustration = shown.locator('.lo-codeblock--illustration');
   await illustration.scrollIntoViewIfNeeded();
-  await expect(illustration).toContainText('Illustration · not code from this PR');
+  await expect(illustration).toContainText('Illustration · not from this pull request');
   await expect(illustration.locator('pre')).toContainText("format(parse('first\\r\\nsecond'));");
   await expect(illustration.locator('.cm-gutters')).toHaveCount(0);
 
@@ -1688,7 +1669,7 @@ test.describe('while the local copy comes late', () => {
       // of its own: what the reader can do about a block is in its head, never under that row.
       expect(await cutElsewhere(page)).toEqual([]);
       await codeBlock(page, 'src/cache.ts', 'L1–4')
-        .getByRole('button', { name: /Find a file named cache\.ts/ })
+        .getByRole('button', { name: /^Go to file…/ })
         .click();
       const finder = page.getByRole('dialog', { name: 'Go to a file' });
       await expect(finder.getByRole('combobox', { name: 'Go to a file' })).toHaveValue('cache.ts');

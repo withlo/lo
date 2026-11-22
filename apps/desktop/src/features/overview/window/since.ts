@@ -9,8 +9,6 @@
 // worked out, for whatever goes to it or marks it there; `placing` works it out first, for
 // following.
 
-import type { CodeRange } from '@lo/artifact';
-
 import { diffTexts } from '../../diff/window/shared.ts';
 import type { LocalState } from '../../tab/contract.ts';
 import { localCopyOf, onLocalCopy, pullOf } from '../../tab/window/shared.ts';
@@ -19,7 +17,6 @@ import { standingOf } from './facts.ts';
 import { QUICK_LIMIT, quickDiff } from './files.ts';
 import { main } from './main.ts';
 import {
-  blockChange,
   commentOnHead,
   fileSinceOf,
   onHead,
@@ -27,8 +24,8 @@ import {
   type FileSince,
   type OnHead,
 } from './mapping.ts';
-import { staleAgainst } from './stale.ts';
-import { checked, states } from './store.ts';
+import { labelOf, staleAgainst } from './stale.ts';
+import { checked, revisions, states } from './store.ts';
 
 /** How many files are read and diffed at once for one tab. */
 const AT_ONCE = 2;
@@ -247,30 +244,6 @@ async function read(entry: Entry, path: string, quick: boolean): Promise<FileSin
 }
 
 /**
- * How many of `targets`, the lines code blocks show at `commit`, point at lines that changed by
- * `head`, in tab `tab`, as each block's flag says; or none while how any of their files changed
- * isn't known.
- */
-export async function blocksChanged(
-  tab: string,
-  commit: string,
-  head: string,
-  targets: readonly CodeRange[],
-  { quick = true }: Pick<Asking, 'quick'> = {},
-): Promise<number | undefined> {
-  const changes = await Promise.all(
-    targets.map(async (target) => {
-      const since = await fileSince(tab, commit, head, target.path, { quick });
-      return since.kind === 'unknown'
-        ? undefined
-        : blockChange(since, target.lines).kind !== 'none';
-    }),
-  );
-  if (changes.includes(undefined)) return undefined;
-  return changes.filter(Boolean).length;
-}
-
-/**
  * The commit tab `tab`'s overview on screen describes, and the head on screen, when it's another:
  * what there's anything to work out between.
  */
@@ -279,6 +252,12 @@ function comparedIn(tab: string): { readonly commit: string; readonly head: stri
   const commit = standing.kind === 'shown' ? standing.header.commit : undefined;
   const head = commit === undefined ? undefined : staleAgainst(commit, pullOf(tab));
   return commit === undefined || head === undefined ? undefined : { commit, head };
+}
+
+/** The commit tab `tab`'s overview on screen describes, as Lo names it: `r3`, or its short id. */
+export function writtenIn(tab: string): string | undefined {
+  const compared = comparedIn(tab);
+  return compared && labelOf(revisions.get(tab), compared.commit);
 }
 
 /** How the file at `path` is at the head on screen in tab `tab`, once that's worked out. */

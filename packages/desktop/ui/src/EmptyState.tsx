@@ -28,6 +28,11 @@ export interface EmptyStateProps {
    * label, its key and whether it can run from the registry, as every control does.
    */
   actions?: readonly [] | readonly [EmptyAction] | readonly [EmptyAction, EmptyAction] | undefined;
+  /**
+   * What its actions act on, between the line and the buttons: the prompt Copy prompt copies, as
+   * code. Never more words.
+   */
+  children?: ReactNode;
 }
 
 function EmptyButton({ action, primary }: { action: EmptyAction; primary: boolean }) {
@@ -74,7 +79,7 @@ function EmptyButton({ action, primary }: { action: EmptyAction; primary: boolea
  * each shows its key and follows the keymap file; a state never says where else an action lives.
  * It fills the view it's in.
  */
-export function EmptyState({ title, line, actions }: EmptyStateProps) {
+export function EmptyState({ title, line, actions, children }: EmptyStateProps) {
   const shown: readonly EmptyAction[] = actions ?? [];
   return (
     <div className="flex h-full min-w-0 flex-col items-center justify-center gap-16 p-32 text-center">
@@ -82,6 +87,7 @@ export function EmptyState({ title, line, actions }: EmptyStateProps) {
         <h2 className="m-0 text-balance text-heading">{title}</h2>
         {line !== undefined && <p className="m-0 text-fg-muted text-ui">{line}</p>}
       </div>
+      {children}
       {shown.length > 0 && (
         <div className="flex flex-wrap items-center justify-center gap-8">
           {shown.map((action, index) => (

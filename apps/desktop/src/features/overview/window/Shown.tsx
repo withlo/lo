@@ -16,16 +16,14 @@ import type {
   Overview,
   Walkthrough as WalkthroughNode,
 } from '@lo/artifact';
-import { Button } from '@lo/ui';
+import { Button, HintButton } from '@lo/ui';
 import { Figure, type PartLink } from '@lo/ui/figures';
 import { generationOf, MarkdownBlocks, secureLink, useRendering } from '@lo/ui/markdown';
 import {
   Held,
   OverviewDocument,
   blockHints,
-  lineRange,
   useNearness,
-  type BlockHint,
   type OverviewTarget,
   type OverviewViews,
 } from '@lo/ui/overview';
@@ -44,7 +42,7 @@ import { afterHold } from '../../revisions/window/shared.ts';
 import { MiddlePlaceholder, usePull, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import type { OverviewCommit, OverviewFile } from '../contract.ts';
 import { targetsOf } from './targets.ts';
-import { codeAt } from './blocks.ts';
+import { blockId, codeAt } from './blocks.ts';
 import { ExcerptBlock, WalkthroughBlock, type CodeContext } from './Code.tsx';
 import { drawing as firstDraw, FirstDrawContext, useFirstDraw } from './drawing.ts';
 import { revisionAt, type Standing } from './facts.ts';
@@ -53,8 +51,8 @@ import { useNow } from './hooks.ts';
 import { openings } from './opening.ts';
 import { OutOfDateBanner } from './OutOfDate.tsx';
 import { AuthorPicture, WhoWrote } from './Author.tsx';
-import { ago, authorOf, shortId } from './says.ts';
-import { codeBlocksIn, staleAgainst } from './stale.ts';
+import { ago, authorOf, linesOf, shortId } from './says.ts';
+import { labelOf, staleAgainst } from './stale.ts';
 import { revisions, states } from './store.ts';
 
 type ShownStanding = Extract<Standing, { kind: 'shown' }>;
@@ -112,20 +110,20 @@ function isFigure(value: object): value is FigureNode {
   );
 }
 
-/** Where a figure's part goes, in words, for its link's name. */
+/** Where a figure's part goes, in words, for its link's name: "src/a.ts · lines 3–9". */
 function partLabel(target: FigurePart['target']): string {
   switch (target.kind) {
     case 'code':
-      return target.lines ? `${target.path}, ${lineRange(target.lines)}` : target.path;
+      return target.lines ? `${target.path} · ${linesOf(target.lines)}` : target.path;
     case 'term':
-      return `The term ${target.key}`;
+      return `Term: ${target.key}`;
     case 'anchor':
-      return `The section ${target.name}`;
+      return `Section: ${target.name}`;
     case 'web':
       return target.url;
     default:
       target satisfies never;
-      return 'A part of the figure';
+      return 'Part of the figure';
   }
 }
 
@@ -207,10 +205,14 @@ function partTarget(target: FigurePart['target']): OverviewTarget | undefined {
   return url === undefined ? undefined : { kind: 'web', url };
 }
 
-/** What a focused block's chip says: while the code is beside, `o` closes it. */
-function besideHints(block: Parameters<typeof blockHints>[0]): readonly BlockHint[] {
-  return blockHints(block).map((hint) =>
-    hint.label === 'Open beside' ? { ...hint, label: 'Close beside' } : hint,
+/** The buttons under the outline: the block keys, which step from block to block. */
+function OutlineFoot() {
+  return (
+    // Buttons for the mouse: the keys they show are the keyboard's way, so `Tab` passes them.
+    <div className="flex flex-col items-start" data-lo-hints="">
+      <HintButton command="overview.nextBlock" />
+      <HintButton command="overview.previousBlock" />
+    </div>
   );
 }
 
@@ -256,16 +258,18 @@ function Byline({
           <span className="size-20" aria-hidden="true" />
         )}
         <span className="lo-ov-byline__said">
-          describes {revision !== undefined && <strong>r{revision}</strong>}{' '}
-          <span className="lo-commit" title={described}>
-            {shortId(described)}
-          </span>
+          written for{' '}
+          {revision === undefined ? (
+            <span className="lo-commit">{shortId(described)}</span>
+          ) : (
+            <strong>r{revision}</strong>
+          )}
           {commit.source === 'fork' && (
             <>
               <span className="lo-ov-byline__dot" aria-hidden="true">
                 ·
               </span>
-              From the fork
+              from fork
             </>
           )}
         </span>
@@ -275,18 +279,18 @@ function Byline({
   );
 }
 
-/** "A newer overview was pushed · Load it": the newer one goes on screen only when asked. */
+/** "Overview updated · Show latest": the latest goes on screen only when asked. */
 export function NewerOffer({ tab }: { tab: string }) {
   return (
     <span className="lo-ov-byline__end lo-ov-offer items-center" role="status">
       <span className="lo-ov-offer__text">
-        A newer overview was pushed
+        Overview updated
         <span className="lo-ov-offer__dot" aria-hidden="true">
           ·
         </span>
       </span>
       <Button size="sm" variant="ghost" onClick={() => loadNewer(tab)}>
-        Load it
+        Show latest
       </Button>
     </span>
   );
@@ -330,6 +334,7 @@ export function Shown({
   );
   // The head on screen, when the overview was written for another commit.
   const head = staleAgainst(header.commit, usePull(tab.id));
+  const written = labelOf(useTabState(revisions, tab.id), header.commit);
   // How each block's code stands, the same object for as long as the check's result is.
   const context = useMemo<CodeContext>(
     () => ({
@@ -337,17 +342,22 @@ export function Shown({
       pull: tab,
       tree: generationOf(parsed.tree),
       commit: header.commit,
+      written,
       head,
       read: result.code,
       target: targetsOf(code, result.code),
     }),
-    [tab, parsed.tree, header.commit, head, result.code, code],
+    [tab, parsed.tree, header.commit, written, head, result.code, code],
   );
-  // The lines the code blocks show that the check found, which the banner counts the changed of.
-  const blocks = useMemo(() => codeBlocksIn(parsed.tree), [parsed.tree]);
-  const targets = useMemo(
-    () => blocks.filter((target) => context.target(target).code.state === 'resolved'),
-    [blocks, context],
+  // What each focused block's chip offers, run on that block.
+  const generation = context.tree;
+  const hints = useCallback(
+    (block: Parameters<typeof blockHints>[0], number: number) =>
+      blockHints(block).map((hint) => ({
+        ...hint,
+        target: { kind: 'block' as const, block: blockId(generation, number) },
+      })),
+    [generation],
   );
   const excerpt = useCallback(
     (node: Excerpt) => <ExcerptBlock node={node} context={context} />,
@@ -416,16 +426,15 @@ export function Shown({
           tree={parsed.tree}
           byline={<Byline tab={tab} commit={commit} described={header.commit} />}
           banner={
-            head !== undefined && (
-              <OutOfDateBanner tab={tab} standing={standing} head={head} targets={targets} />
-            )
+            head !== undefined && <OutOfDateBanner tab={tab} commit={header.commit} head={head} />
           }
           views={views}
           drawing={drawing}
           seen={seen}
           focused={focused}
           outline={!beside}
-          hints={beside ? besideHints : undefined}
+          outlineFoot={<OutlineFoot />}
+          hints={hints}
           onFollow={follow}
         />
         {drawing && (

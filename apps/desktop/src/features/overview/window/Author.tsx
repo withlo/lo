@@ -1,14 +1,12 @@
-// Who wrote an overview, as the byline and the reports draw it. A login GitHub matched to the
-// commit is drawn as a login; the name a commit gives its author, which anyone can write, is drawn
-// after Lo's own words, quoted, plain and clipped to one short line, so no name can pass for the
-// rest of the byline.
+// Who wrote an overview, as its byline draws it. A login GitHub matched to the commit is drawn as a
+// login; the name a commit gives its author, which anyone can write, is drawn quoted, plain and
+// clipped to one short line, so no name can pass for the rest of the byline.
 
 import { Avatar } from '@lo/ui';
 import type { ReactNode } from 'react';
 
 import { withoutBidi } from '../../tab/window/shared.ts';
-import type { OverviewCommit } from '../contract.ts';
-import { ago, authorOf, shortId, type Author } from './says.ts';
+import type { Author } from './says.ts';
 
 /** The most of a commit's name drawn, in characters as people count them: past it, it's cut. */
 const NAME_LIMIT = 24;
@@ -45,53 +43,25 @@ export function AuthorPicture({ author }: { author: Author }) {
   );
 }
 
-/** Who wrote it and when, as the byline says it: "ravi-k wrote this overview 2 days ago". */
+/** Who wrote it and when, as the byline says it: "ravi-k · 2 d ago". */
 export function WhoWrote({ author, when }: { author: Author; when: string }): ReactNode {
   switch (author.kind) {
     case 'login':
       return (
         <>
-          <strong>{author.login}</strong> wrote this overview {when}
+          <strong>{author.login}</strong> · {when}
         </>
       );
     case 'name':
       return (
         <>
-          Written {when} by the commit author <CommitName name={author.name} />
+          <CommitName name={author.name} /> · {when}
         </>
       );
     case 'unknown':
-      return <>Written {when}</>;
+      return <>{when}</>;
     default:
       author satisfies never;
       return null;
   }
-}
-
-/**
- * The commit an overview is at, and who wrote it when, for the reports: "a91c4e2, written 2 days
- * ago by ravi-k", or the commit alone until main has read who wrote it.
- */
-export function WrittenBy({ commit, now }: { commit: OverviewCommit; now: number }) {
-  const { byline } = commit;
-  if (byline === null) return <span className="code-text">{shortId(commit.id)}</span>;
-  const author = authorOf(byline);
-  const when = ago(byline.at, now);
-  return (
-    <>
-      <span className="code-text">{shortId(commit.id)}</span>, written {when}
-      {author.kind === 'login' && (
-        <>
-          {' '}
-          by <strong>{author.login}</strong>
-        </>
-      )}
-      {author.kind === 'name' && (
-        <>
-          {' '}
-          by the commit author <CommitName name={author.name} />
-        </>
-      )}
-    </>
-  );
 }

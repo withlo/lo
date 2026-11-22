@@ -220,10 +220,8 @@ describe('what i and dd act on', () => {
         'delete',
       ),
     ).toBe('It’s ravi-k’s comment. You can edit and delete only your own.');
-    expect(changeTarget(row(), true, 'rozed-bot', 'edit')).toBe(
-      'This comment is hidden. Show it first.',
-    );
+    expect(changeTarget(row(), true, 'rozed-bot', 'edit')).toBe('Show this comment first');
     const older: Row = { kind: 'older', key: 'older', count: 3 };
-    expect(commentIn(older, false)).toBe('This event isn’t a comment.');
+    expect(commentIn(older, false)).toBe('This event isn’t a comment');
   });
 });

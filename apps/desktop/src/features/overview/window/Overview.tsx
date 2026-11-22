@@ -6,7 +6,7 @@
 // it's on screen the overview's keys act on it (`follow.ts`), and the code of one of its blocks can
 // sit beside it, which `o` and `Esc` take away again, the block the reader is at staying put.
 
-import { Button, Key } from '@lo/ui';
+import { HintButton } from '@lo/ui';
 import { NO_TARGET, setScopeSource } from '@lo/ui/commands';
 import { generationOf } from '@lo/ui/markdown';
 import { blockNumber, blockOf as blockAround, closeCards } from '@lo/ui/overview';
@@ -21,7 +21,7 @@ import {
 } from 'react';
 
 import { useMenuTarget } from '../../../window/commands/menus.tsx';
-import { setMiddle, useKeys } from '../../../window/commands/registry.ts';
+import { setMiddle } from '../../../window/commands/registry.ts';
 import { DiffBeside, showDiff } from '../../diff/window/shared.ts';
 import { afterHold } from '../../revisions/window/shared.ts';
 import { useKnownSetting } from '../../settings/window/shared.ts';
@@ -32,7 +32,6 @@ import { knownOf, type Known, type Standing } from './facts.ts';
 import {
   besides,
   blockElement,
-  closeBeside,
   closeBesideAt,
   drawnIn,
   focusedBlock,
@@ -48,11 +47,10 @@ import {
   type DrawnOverview,
 } from './follow.ts';
 import { useStanding } from './hooks.ts';
-import { keyOf } from './labels.ts';
 import { openingOf, openings, type Opening } from './opening.ts';
 import { placeOnHead, placing } from './since.ts';
 import { Shown } from './Shown.tsx';
-import { CantShow, NoneInRun, NoOverview, Quiet, ReadFailed } from './States.tsx';
+import { CantShow, NoneInRun, NoOverview, ReadFailed } from './States.tsx';
 
 /**
  * What tab `tab` opens on, chosen once, once Settings is known: until then, `waiting`, which wakes
@@ -119,9 +117,9 @@ function Body({
 }) {
   switch (standing.kind) {
     case 'reading':
-      return <Quiet>Looking for an overview…</Quiet>;
+      return <MiddlePlaceholder tab={tab} status="Fetching overview…" />;
     case 'checking':
-      return <Quiet>Checking the overview…</Quiet>;
+      return <MiddlePlaceholder tab={tab} status="Checking overview…" />;
     case 'none':
       return <NoOverview tab={tab} standing={standing} />;
     case 'failed':
@@ -380,12 +378,7 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
         </section>
         {beside && (
           <section className="lo-split__pane" aria-label="Code beside">
-            <DiffBeside
-              tab={tab}
-              path={beside.path}
-              line={beside.line}
-              end={<CloseBeside tab={tab.id} />}
-            />
+            <DiffBeside tab={tab} path={beside.path} line={beside.line} end={<CloseBeside />} />
           </section>
         )}
       </div>
@@ -393,41 +386,18 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
   );
 }
 
-/** A key's caps for command `id`, as this system shows its first key, if it has one. */
-function KeyFor({ id }: { id: string }) {
-  useKeys();
-  const keys = keyOf(id);
-  return keys ? <Key keys={keys} quiet decorative /> : null;
-}
-
-/** Over the overview while its code is beside it: what it is, and how the code follows. */
+/** Over the overview while its code is beside it: what it is, and Next block, which it follows. */
 function OverviewBar() {
   return (
     <div className="lo-split__bar">
       <span className="text-fg">Overview</span>
       <span className="min-w-8 flex-1" />
-      <span className="flex items-center gap-6">
-        <KeyFor id="overview.nextBlock" />
-        Next block; the code follows
-      </span>
+      <HintButton command="overview.nextBlock" />
     </div>
   );
 }
 
 /** Back to the overview alone, as `Esc` and `o` go. */
-function CloseBeside({ tab }: { tab: string }) {
-  return (
-    <Button
-      variant="ghost"
-      size="sm"
-      onClick={() => {
-        const drawn = drawnIn(tab);
-        if (drawn) closeBesideAt(drawn);
-        else closeBeside(tab);
-      }}
-    >
-      Close code beside
-      <KeyFor id="keys.escape" />
-    </Button>
-  );
+function CloseBeside() {
+  return <HintButton command="overview.closeBeside" />;
 }

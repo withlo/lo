@@ -105,7 +105,10 @@ export function CodeBody({
   );
 }
 
-/** What a code block says in its code's place: why, and what the reader can do about it. */
+/**
+ * What a code block says in its code's place: what's wrong, `title`, on its own line; why, in
+ * `children`, under it; and what the reader can do about it, `action`.
+ */
 export function CodeNote({
   title,
   children,
@@ -121,8 +124,9 @@ export function CodeNote({
         <path d="M7.13 2.5a1 1 0 0 1 1.74 0l5.2 9.5a1 1 0 0 1-.87 1.5H2.8a1 1 0 0 1-.87-1.5Z" />
         <path d="M8 6.25v3M8 11.25v.01" />
       </svg>
-      <div className="min-w-0">
-        <strong>{title}</strong> {children}
+      <div className="lo-codeblock__said min-w-0">
+        <strong className="block">{title}</strong>
+        {children}
         {action !== undefined && <div>{action}</div>}
       </div>
     </div>
@@ -142,7 +146,7 @@ export function Illustration({ node }: { node: Code }) {
           <path d="M8 7.25V11M8 5v.01" />
         </svg>
         <span>
-          <strong>Illustration</strong> · not code from this PR
+          <strong>Illustration</strong> · not from this pull request
         </span>
       </div>
       <pre>{node.text}</pre>

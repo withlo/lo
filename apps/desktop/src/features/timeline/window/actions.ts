@@ -31,8 +31,8 @@ export function setDrawn(timeline: DrawnTimeline): () => void {
 /** The timeline on screen, or why a key for it can't run. */
 export function onScreen(): DrawnTimeline | string {
   const tab = activeTab();
-  if (tab?.kind !== 'pull') return 'There’s no pull request on screen.';
-  return drawn.get(tab.id) ?? 'There’s no timeline on screen.';
+  if (tab?.kind !== 'pull') return 'Open a pull request first';
+  return drawn.get(tab.id) ?? 'Go to the timeline first';
 }
 
 /** The row the keyboard is on in `timeline`: the first, until the reader moves. */
@@ -88,7 +88,7 @@ function rowAt(target: RowTarget): { timeline: DrawnTimeline; row: Row } | strin
   const timeline = onScreen();
   if (typeof timeline === 'string') return timeline;
   const row = timeline.rows.find((each) => each.key === target.row);
-  return row ? { timeline, row } : 'That event isn’t in the timeline any more.';
+  return row ? { timeline, row } : 'That event is no longer on the timeline';
 }
 
 /**
@@ -218,13 +218,6 @@ export function linkOf(tab: PullTab, row: Row): string {
 /** Opens `row` of `tab` on GitHub, as `gx` does. */
 export async function openOnGithub(tab: PullTab, row: Row): Promise<void> {
   await tabs().openExternal({ url: linkOf(tab, row) });
-}
-
-/** Opens `tab`'s pull request on GitHub, for the older events Lo didn't read. */
-export function seeOlder(tab: PullTab): void {
-  tabs()
-    .openExternal({ url: pullPage(tab) })
-    .catch((error: unknown) => console.error("Lo couldn't open GitHub:", error));
 }
 
 /** Shows the hidden comment or review `key` in tab `tab`, and its images with it. */

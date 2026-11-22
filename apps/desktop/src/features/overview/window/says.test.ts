@@ -1,5 +1,5 @@
 // What the overview's view says: who wrote it and when, its findings by line, its sizes by kind,
-// the format it's in, and why its ref couldn't be read, with when Lo tries again.
+// the format it's in, and why its ref couldn't be fetched, with when it's fetched again.
 
 import { describe, expect, it } from 'vitest';
 
@@ -9,12 +9,13 @@ import {
   bytes,
   findingPlace,
   invalidSummary,
-  newerWords,
-  problemWords,
+  newerDetails,
+  problemReason,
   shortId,
   sizeRows,
   tooLargeWords,
   until,
+  writtenText,
 } from './says.ts';
 
 const MINUTE = 60_000;
@@ -54,10 +55,31 @@ describe('the byline', () => {
 
   it('says when, and the commit by its short ID', () => {
     expect(ago(0, 30_000)).toBe('just now');
-    expect(ago(0, 5 * MINUTE)).toBe('5 minutes ago');
-    expect(ago(0, 2 * DAY + MINUTE)).toBe('2 days ago');
-    expect(ago(0, 60 * MINUTE)).toBe('an hour ago');
+    expect(ago(0, 5 * MINUTE)).toBe('5 min ago');
+    expect(ago(0, 60 * MINUTE)).toBe('1 h ago');
+    expect(ago(0, 2 * DAY + MINUTE)).toBe('2 d ago');
+    const now = Date.parse('2026-11-22T12:00:00Z');
+    expect(ago(Date.parse('2026-10-12T12:00:00Z'), now)).toBe('Oct 12');
+    expect(ago(Date.parse('2025-11-12T12:00:00Z'), now)).toBe('Nov 12, 2025');
     expect(shortId('a91c4e2ffffffffffffffffffffffffffffffff')).toBe('a91c4e2');
+  });
+
+  it('starts Details with the commit, who wrote it and when', () => {
+    const commit = {
+      id: 'a91c4e2'.padEnd(40, 'f'),
+      source: 'base' as const,
+      repository: { owner: 'rozed-dev', name: 'e2e' },
+      entries: [],
+      truncated: false,
+      read: true,
+    };
+    expect(writtenText({ ...commit, byline: { login: 'ravi-k', name: '', at: 0 } }, 2 * DAY)).toBe(
+      'a91c4e2 · ravi-k · 2 d ago',
+    );
+    expect(
+      writtenText({ ...commit, byline: { login: null, name: 'Ravi K', at: 0 } }, 2 * DAY),
+    ).toBe('a91c4e2 · “Ravi K” · 2 d ago');
+    expect(writtenText({ ...commit, byline: null }, 0)).toBe('a91c4e2');
   });
 });
 
@@ -69,7 +91,7 @@ describe('an overview that can’t be read', () => {
         { code: 'header-missing', severity: 'error', file: 'artifact.md', line: 1, message: 'y' },
         { code: 'term-unused', severity: 'warning', file: 'artifact.md', line: 3, message: 'z' },
       ]),
-    ).toBe('Lo found 2 problems in the overview.');
+    ).toBe('It has 2 problems.');
     expect(
       findingPlace({
         code: 'block-unknown',
@@ -78,7 +100,7 @@ describe('an overview that can’t be read', () => {
         line: 118,
         message: '',
       }),
-    ).toBe('line 118');
+    ).toBe('Line 118');
     expect(
       findingPlace({
         code: 'artifact-missing',
@@ -104,60 +126,45 @@ describe('an overview too large to show', () => {
     ],
   };
 
-  it('gives its size against Lo’s limit, and what most of it is', () => {
-    expect(tooLargeWords('bytes', sizes)).toBe(
-      "It's 74 MB, and Lo shows overviews up to 50 MB. Most of it is PNG figures: 31 files, 71 MB in all.",
-    );
-    expect(tooLargeWords('entries', sizes)).toBe(
-      'It holds more than 500 files and folders, and Lo shows overviews of up to 500.',
-    );
-    expect(tooLargeWords('text', sizes)).toBe(
-      'Its artifact.md is larger than 256 KB, the most Lo reads.',
-    );
+  it('gives its size against the limit it’s past', () => {
+    expect(tooLargeWords('bytes', sizes)).toBe('It’s 74 MB, over the 50 MB limit.');
+    expect(tooLargeWords('entries', sizes)).toBe('It has more than 500 files and folders.');
+    expect(tooLargeWords('text', sizes)).toBe('Its text is over the 256 KB limit.');
   });
 
   it('lists the sizes of each kind of file', () => {
     expect(sizeRows(sizes)).toEqual([
       { kind: 'PNG figures', size: '31 files · 71 MB' },
       { kind: 'artifact.md', size: '1 file · 20 KB' },
-      { kind: 'Other files', size: '1 file · 300 bytes' },
+      { kind: 'Other files', size: '1 file · 300 B' },
     ]);
-    expect(bytes(1)).toBe('1 byte');
+    expect(bytes(1)).toBe('1 B');
     expect(bytes(1.5 * 1024 * 1024)).toBe('1.5 MB');
   });
 });
 
 describe('an overview in a newer format', () => {
-  it('names the format, and what this Lo reads', () => {
-    expect(newerWords(3)).toBe("It's written in format 3, and this Lo reads format 1.");
+  it('names the format, and what this version reads, behind Details', () => {
+    expect(newerDetails(3)).toBe('Format 3. This version reads format 1.');
   });
 });
 
-describe('a ref that couldn’t be read', () => {
-  it('says why, and when Lo tries again', () => {
+describe('a ref that couldn’t be fetched', () => {
+  it('says why, and when it’s fetched again, with GitHub’s words left for Details', () => {
     const now = 1_000_000;
-    expect(until(now + 7_200, now)).toBe('in 8 s');
-    expect(until(now + 2 * MINUTE, now)).toBe('in 2 minutes');
+    expect(until(now + 7_200, now)).toBe('8 s');
+    expect(until(now + 2 * MINUTE, now)).toBe('2 min');
     expect(
-      problemWords(
-        { kind: 'offline', message: 'ECONNRESET', retryAt: now + 8_000 },
-        'refs/lo/pr/80',
-        now,
-      ),
-    ).toBe("GitHub couldn't be reached while Lo read refs/lo/pr/80. Trying again in 8 s.");
+      problemReason({ kind: 'offline', message: 'ECONNRESET', retryAt: now + 8_000 }, now),
+    ).toBe('Offline. Retrying in 8 s.');
     expect(
-      problemWords(
-        { kind: 'failed', message: 'GitHub answered 502.', retryAt: now + 5_000 },
-        'refs/lo/pr/80',
-        now,
-      ),
-    ).toBe("Lo couldn't read refs/lo/pr/80: GitHub answered 502. Trying again in 5 s.");
+      problemReason({ kind: 'failed', message: 'GitHub answered 502.', retryAt: now + 5_000 }, now),
+    ).toBe('GitHub returned an error. Retrying in 5 s.');
+    expect(problemReason({ kind: 'signedOut', login: 'tess', retryAt: now + 5_000 }, now)).toBe(
+      'tess is signed out.',
+    );
     expect(
-      problemWords(
-        { kind: 'signedOut', login: 'tess', retryAt: now + 5_000 },
-        'refs/lo/pr/80',
-        now,
-      ),
-    ).toContain('tess is signed out');
+      problemReason({ kind: 'rateLimited', secondary: true, retryAt: now + 60_000 }, now),
+    ).toBe('GitHub’s rate limit was reached. Retrying in 1 min.');
   });
 });

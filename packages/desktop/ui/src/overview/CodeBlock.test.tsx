@@ -105,8 +105,8 @@ describe('a code block', () => {
     const page = render(
       <CodeBlock target={TARGET} variant="unresolved">
         <CodeBody rows={1}>
-          <CodeNote title="This reference doesn’t resolve." action={<button>Find</button>}>
-            There’s no file.
+          <CodeNote title="Can’t show this code" action={<button>Find</button>}>
+            It isn’t in r3.
           </CodeNote>
         </CodeBody>
       </CodeBlock>,
@@ -115,8 +115,8 @@ describe('a code block', () => {
       'lo-codeblock lo-codeblock--unresolved',
     );
     const note = page.querySelector('.lo-codeblock__msg')!;
-    expect(note.querySelector('strong')?.textContent).toBe('This reference doesn’t resolve.');
-    expect(note.textContent).toContain('There’s no file.');
+    expect(note.querySelector('strong')?.textContent).toBe('Can’t show this code');
+    expect(note.textContent).toContain('It isn’t in r3.');
     expect(note.querySelector('button')?.textContent).toBe('Find');
     rerender(
       page,
@@ -135,7 +135,7 @@ describe('a plain fenced block', () => {
     );
     const block = page.querySelector('.lo-codeblock--illustration')!;
     expect(block.querySelector('.lo-codeblock__head')?.textContent).toBe(
-      'Illustration · not code from this PR',
+      'Illustration · not from this pull request',
     );
     expect(block.querySelector('pre')?.textContent).toBe('const a = 1;\n  indented();');
     expect(block.querySelector('.lo-codeblock__lines, .cm-gutters')).toBeNull();
@@ -272,7 +272,7 @@ describe('a held block', () => {
       'lo-held__more',
     ]);
     const more = page.querySelector('.lo-held__more button')!;
-    expect(more.textContent).toBe('Show the whole block');
+    expect(more.textContent).toBe('Show whole block');
     click(more);
     expect(box.className).toBe('lo-held');
     expect(box.style.height).toBe('300px');

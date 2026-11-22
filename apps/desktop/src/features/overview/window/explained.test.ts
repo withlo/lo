@@ -63,7 +63,7 @@ How a **line** is written out hasn't changed.
       '4 src/parser.ts#7-10 [How it works] The parser now splits on either line ending:',
       '5 src/format.ts#1-3 [How it works] The parser now splits on either line ending:',
       "7 src/format.ts#5-8 [Where to look] How a line is written out hasn't changed.",
-      '10 README.md#1-4 [Alone] A code block in the overview shows these lines.',
+      '10 README.md#1-4 [Alone] A code block shows these lines.',
     ]);
   });
 
@@ -177,7 +177,7 @@ Splits **each** line on \`\\n\`.
       },
     ]);
     expect(words(code?.content ?? [])).toBe(code?.text);
-    expect(code?.text).toBe('A code block in the overview shows these lines.');
+    expect(code?.text).toBe('A code block shows these lines.');
   });
 });
 

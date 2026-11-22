@@ -8,6 +8,10 @@ import { PathName } from './CodeBlock.tsx';
 import { setStepper } from './moving.ts';
 import { lineRange } from './placeholders.tsx';
 
+/** The keys that step a walkthrough back and on, which its buttons' tooltips show. */
+const STEP_BACK = ['←'];
+const STEP_ON = ['→'];
+
 /**
  * A walkthrough: its numbered steps beside a code view that follows the current one, `code`, which
  * whoever has the code draws. Its height comes from its steps' words alone, since the code view's
@@ -53,11 +57,19 @@ export function Walkthrough({
             variant="ghost"
             size="sm"
             disabled={current === 0}
+            hint={current === 0 ? null : 'Previous step'}
+            hintKeys={STEP_BACK}
             onClick={() => step(current - 1)}
           >
             Previous
           </Button>
-          <Button size="sm" disabled={current >= count - 1} onClick={() => step(current + 1)}>
+          <Button
+            size="sm"
+            disabled={current >= count - 1}
+            hint={current >= count - 1 ? null : 'Next step'}
+            hintKeys={STEP_ON}
+            onClick={() => step(current + 1)}
+          >
             Next
           </Button>
         </span>

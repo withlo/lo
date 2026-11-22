@@ -8,8 +8,9 @@
 // own comments have Edit and Delete, and an edit's box is drawn in the comment's card.
 
 import {
-  Button,
+  EmptyState,
   Label,
+  Problem,
   Timeline,
   TimelineChecks,
   TimelineComment,
@@ -36,9 +37,8 @@ import {
 } from 'react';
 
 import { useMenuTarget } from '../../../window/commands/menus.tsx';
-import { registry, setMiddle } from '../../../window/commands/registry.ts';
+import { registry, setMiddle, useKeys } from '../../../window/commands/registry.ts';
 import { avatarImage } from '../../../window/images.ts';
-import { signIn } from '../../accounts/window/shared.ts';
 import {
   deletePullComment,
   editPullComment,
@@ -51,7 +51,14 @@ import {
   useEditsOnPull,
 } from '../../comments/window/shared.ts';
 import { showDiff } from '../../diff/window/shared.ts';
-import { usePull, useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
+import {
+  MiddlePlaceholder,
+  runLayersOf,
+  usePull,
+  useTabState,
+  withoutBidi,
+  type PullTab,
+} from '../../tab/window/shared.ts';
 import {
   compare,
   focusRow,
@@ -121,14 +128,14 @@ export function TimelineMiddle({ tab, shown }: { tab: PullTab; shown: boolean })
   if (tab.run) {
     return (
       <Note shown={shown}>
-        A run of layers has no timeline. Show one of its layers to see its timeline.
+        <NoneInRun tab={tab} />
       </Note>
     );
   }
   return <TimelineOf tab={tab} shown={shown} />;
 }
 
-/** What the middle says in place of the timeline, which `Esc` gives focus to. */
+/** What the middle shows in place of the timeline, which `Esc` gives focus to. */
 function Note({ shown, children }: { shown: boolean; children: ReactNode }) {
   const root = useRef<HTMLDivElement>(null);
   useMiddle(
@@ -137,14 +144,32 @@ function Note({ shown, children }: { shown: boolean; children: ReactNode }) {
     () => root.current?.focus({ preventScroll: true }),
   );
   return (
-    <div
-      ref={root}
-      tabIndex={-1}
-      className="grid h-full place-items-center p-32 text-center text-fg-muted outline-none text-ui"
-      data-lo-timeline="note"
-    >
-      <div className="flex max-w-read-measure flex-col items-center gap-12">{children}</div>
+    <div ref={root} tabIndex={-1} className="h-full outline-none" data-lo-timeline="note">
+      {children}
     </div>
+  );
+}
+
+/** A run of a stack's layers on screen as one diff has no timeline: each layer has its own. */
+function NoneInRun({ tab }: { tab: PullTab }) {
+  useKeys();
+  return (
+    <EmptyState
+      title={`No timeline for ${runLayersOf(tab)}`}
+      line="Each layer has its own."
+      actions={[{ command: 'stacks.back', label: 'Show single layer' }]}
+    />
+  );
+}
+
+/** A timeline read as no one, which shows only to an account. */
+function SignIn() {
+  useKeys();
+  return (
+    <EmptyState
+      title="Sign in to see comments"
+      actions={[{ command: 'accounts.addAccount', label: 'Sign in with GitHub…' }]}
+    />
   );
 }
 
@@ -167,25 +192,35 @@ function TimelineOf({ tab, shown }: { tab: PullTab; shown: boolean }) {
     case 'signIn':
       return (
         <Note shown={shown}>
-          <p>Sign in to see comments.</p>
-          <Button onClick={signIn}>Sign in</Button>
+          <SignIn />
         </Note>
       );
     case 'run':
       return (
         <Note shown={shown}>
-          A run of layers has no timeline. Show one of its layers to see its timeline.
+          <NoneInRun tab={tab} />
         </Note>
       );
     case 'failed':
-      return <Note shown={shown}>{view?.problem ?? 'Lo couldn’t read the timeline.'}</Note>;
+      // GitHub's own words go behind Details. Main reads it again as time goes on.
+      return (
+        <Note shown={shown}>
+          <Problem
+            layout="view"
+            title="Can’t show the timeline"
+            details={view?.problem ? withoutBidi(view.problem) : undefined}
+          />
+        </Note>
+      );
     case 'loading':
     case 'ready':
     case undefined:
       return rows ? (
         <Rows tab={tab} shown={shown} rows={rows} />
       ) : (
-        <Note shown={shown}>Reading the timeline…</Note>
+        <Note shown={shown}>
+          <MiddlePlaceholder tab={tab} status="Reading timeline…" />
+        </Note>
       );
     default:
       status satisfies never;

@@ -212,16 +212,15 @@ export interface BlockLines {
 export function blockLinesOf(tab: string, target: Target): BlockLines | string {
   if (target.kind === 'line') {
     const drawn = drawnBlocks.get(target.at.file);
-    if (drawn?.writing.block.tab !== tab)
-      return 'Comments are written in the diff or on a code block.';
+    if (drawn?.writing.block.tab !== tab) return 'Comment in the diff or on a code block';
     return { writing: drawn.writing, at: target.at };
   }
-  if (target.kind !== 'block') return 'No code block has focus. ] b goes to the next one.';
+  if (target.kind !== 'block') return 'Go to a code block first';
   for (const { writing } of drawnBlocks.values()) {
     const { block } = writing;
     if (block.tab !== tab || block.block !== target.block) continue;
     const { file, lines } = block;
     return { writing, at: { file, side: 'new', from: lines.start, to: lines.end } };
   }
-  return 'There’s no code drawn in this block to comment on.';
+  return 'No code in this block';
 }
