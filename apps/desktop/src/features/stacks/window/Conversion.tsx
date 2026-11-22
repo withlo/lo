@@ -117,11 +117,18 @@ function changeDetail(row: ChangeRow, waitingUntil: number | null): ReactNode {
       ) : (
         withoutBidi(row.detail ?? '')
       );
+    case 'skipped':
+      // A stack step undoing found wasn't made says so.
+      if (change.kind !== 'retarget' && row.detail !== null) return withoutBidi(row.detail);
+      return change.kind === 'retarget' ? (
+        <>
+          From <Branch name={change.from} />.
+        </>
+      ) : undefined;
     case 'todo':
     case 'now':
     case 'done':
     case 'failed':
-    case 'skipped':
       return change.kind === 'retarget' ? (
         <>
           From <Branch name={change.from} />.

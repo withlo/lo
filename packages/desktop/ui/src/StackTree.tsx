@@ -15,6 +15,7 @@ import { Avatar } from './Avatar.tsx';
 import { StateIcon, type PullRequestState } from './StatePill.tsx';
 import { Tag } from './Tag.tsx';
 import { CommentIcon } from './ThreadCount.tsx';
+import { Tooltip } from './Tooltip.tsx';
 
 /** What a layer's reviews say. */
 export type StackReview = 'approved' | 'changes' | 'required';
@@ -103,6 +104,11 @@ export interface StackTreeProps extends Omit<HTMLAttributes<HTMLDivElement>, 'ch
    */
   githubStack?: boolean | undefined;
   /**
+   * Some of the layers, not all, are a GitHub stack, as the notes under the rows say: the head
+   * says "Stack", neither a GitHub stack nor a branch stack.
+   */
+  githubPartly?: boolean | undefined;
+  /**
    * How Lo found the layers to sit on each other, each kind of link once, which the head's tooltip
    * says. Nothing for a layer alone, which none sits on.
    */
@@ -172,10 +178,14 @@ const LINK_WORDS: Readonly<Record<StackTreeLink, string>> = {
 /** The kinds of link, in the order the head names them. */
 const LINK_ORDER: readonly StackTreeLink[] = ['github', 'base', 'commits'];
 
-/** "GitHub stack · 4 layers" when every layer is in one GitHub stack, else "Branch stack · 4 layers". */
-function headText(count: number, githubStack: boolean): string {
+/**
+ * "GitHub stack · 4 layers" when every layer is in one GitHub stack, "Stack · 4 layers" when only
+ * some are, and "Branch stack · 4 layers" when none is.
+ */
+function headText(count: number, githubStack: boolean, partly: boolean): string {
   const layers = `${count} ${count === 1 ? 'layer' : 'layers'}`;
-  return `${githubStack ? 'GitHub stack' : 'Branch stack'} · ${layers}`;
+  const kind = githubStack ? 'GitHub stack' : partly ? 'Stack' : 'Branch stack';
+  return `${kind} · ${layers}`;
 }
 
 /**
@@ -306,14 +316,12 @@ function Item({
   title?: string;
   children: ReactNode;
 }) {
-  return (
-    <span
-      className={`inline-flex max-w-full min-w-0 items-center gap-4 whitespace-nowrap ${tone}`}
-      title={hint}
-    >
+  const item = (
+    <span className={`inline-flex max-w-full min-w-0 items-center gap-4 whitespace-nowrap ${tone}`}>
       {children}
     </span>
   );
+  return hint === undefined ? item : <Tooltip label={hint}>{item}</Tooltip>;
 }
 
 /** What a layer's state says in place of a review: a finished layer's, or a draft's. */
@@ -332,17 +340,18 @@ function Unresolved({ threads }: { threads: StackTreeLayer['threads'] }) {
   const more = threads.partial === true;
   const said = `${threads.unresolved}${more ? '+' : ''} unresolved ${threads.unresolved === 1 && !more ? 'thread' : 'threads'}`;
   return (
-    <span
-      role="img"
-      aria-label={said}
-      title={said}
-      data-open=""
-      className="lo-num inline-flex flex-none items-center gap-2 text-fg"
-    >
-      <CommentIcon />
-      {threads.unresolved}
-      {more ? '+' : ''}
-    </span>
+    <Tooltip label={said}>
+      <span
+        role="img"
+        aria-label={said}
+        data-open=""
+        className="lo-num inline-flex flex-none items-center gap-2 text-fg"
+      >
+        <CommentIcon />
+        {threads.unresolved}
+        {more ? '+' : ''}
+      </span>
+    </Tooltip>
   );
 }
 
@@ -351,18 +360,19 @@ function Viewed({ viewed }: { viewed: NonNullable<StackTreeLayer['viewed']> }) {
   const count = `${viewed.viewed}${viewed.partial === true ? '+' : ''} / ${viewed.total}`;
   const said = `${count} files viewed`;
   return (
-    <span
-      role="img"
-      aria-label={said}
-      title={said}
-      className="inline-flex max-w-full min-w-0 items-center gap-4 whitespace-nowrap text-fg-muted"
-    >
-      <Icon>
-        <circle cx="8" cy="8" r="5.75" />
-        <circle cx="8" cy="8" r="2.5" fill="currentColor" stroke="none" />
-      </Icon>
-      <span className="lo-num">{count}</span>
-    </span>
+    <Tooltip label={said}>
+      <span
+        role="img"
+        aria-label={said}
+        className="inline-flex max-w-full min-w-0 items-center gap-4 whitespace-nowrap text-fg-muted"
+      >
+        <Icon>
+          <circle cx="8" cy="8" r="5.75" />
+          <circle cx="8" cy="8" r="2.5" fill="currentColor" stroke="none" />
+        </Icon>
+        <span className="lo-num">{count}</span>
+      </span>
+    </Tooltip>
   );
 }
 
@@ -392,15 +402,16 @@ function Meta({ layer }: { layer: StackTreeLayer }) {
       )}
       {reviewed !== undefined && <Item tone={reviewed.tone}>{reviewed.word}</Item>}
       {checked !== undefined && (
-        <span
-          className={`inline-flex ${checked.tone}`}
-          role="img"
-          aria-label={checked.words}
-          title={checked.words}
-          data-checks={checks}
-        >
-          <Icon>{checked.icon}</Icon>
-        </span>
+        <Tooltip label={checked.words}>
+          <span
+            className={`inline-flex ${checked.tone}`}
+            role="img"
+            aria-label={checked.words}
+            data-checks={checks}
+          >
+            <Icon>{checked.icon}</Icon>
+          </span>
+        </Tooltip>
       )}
       {queue !== undefined && (
         <Item tone="text-queue">
@@ -409,13 +420,14 @@ function Meta({ layer }: { layer: StackTreeLayer }) {
         </Item>
       )}
       {mark !== undefined && (
-        <span
-          className={mark.className}
-          role="img"
-          aria-label={mark.words}
-          title={mark.words}
-          data-overview={overview}
-        />
+        <Tooltip label={mark.words}>
+          <span
+            className={mark.className}
+            role="img"
+            aria-label={mark.words}
+            data-overview={overview}
+          />
+        </Tooltip>
       )}
       {viewed !== undefined && <Viewed viewed={viewed} />}
       <Unresolved threads={layer.threads} />
@@ -521,6 +533,7 @@ export function StackTree({
   layers,
   root,
   githubStack = false,
+  githubPartly = false,
   found,
   actions,
   focused,
@@ -568,7 +581,7 @@ export function StackTree({
           {choosing ? (
             <span className="mode-chip">V-LINE</span>
           ) : (
-            <span className="lo-num">{headText(layers.length, githubStack)}</span>
+            <span className="lo-num">{headText(layers.length, githubStack, githubPartly)}</span>
           )}
         </span>
         {actions !== undefined && actions !== null && (

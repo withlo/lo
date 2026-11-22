@@ -31,7 +31,7 @@ import { useViewedCount } from '../../tree/window/shared.ts';
 import type { Checks, Link, Note, Review, Row } from '../contract.ts';
 import { makeStack } from './actions.ts';
 import { useLayerCount } from './counts.ts';
-import { catchUp, choosing, focused, keyboardLayer, stacks } from './layers.ts';
+import { catchUp, choosing, focused, keyboardLayer, runTrouble, stacks } from './layers.ts';
 import { chainIn, choiceLine, type Choice } from './runs.ts';
 import { showTarget, stackTarget, stopChoosing, takeRefocus } from './walk.ts';
 
@@ -149,7 +149,7 @@ function Selecting({
           </>
         )}
       </p>
-      <div className="-ms-8 flex flex-nowrap items-center gap-4 overflow-hidden">
+      <div className="-ms-8 flex min-w-0 flex-nowrap items-center gap-4">
         {line.name === undefined ? (
           <>
             <HintButton command="stacks.down">Next</HintButton>
@@ -238,6 +238,7 @@ export function Stack({ tab }: { tab: PullTab }) {
   const view = useTabState(stacks, tab.id);
   const keyboard = useTabState(focused, tab.id);
   const choice = useTabState(choosing, tab.id);
+  const trouble = useTabState(runTrouble, tab.id);
   const overview = useOverviewMark(tab.id);
   const count = useViewedCount(tab.id);
   const threads = useLayerCount(tab.id);
@@ -285,17 +286,25 @@ export function Stack({ tab }: { tab: PullTab }) {
   const current = tab.run ? undefined : view.rows.find((row) => row.current);
   const on = keyboardLayer(view, keyboard, tab.number);
   const notes = view.notes.map(noteOf);
-  if (choice) {
-    const text: ReactNode = (
-      <Selecting
-        rows={view.rows}
-        root={withoutBidi(view.root)}
-        choice={choice}
-        target={on === undefined ? { kind: 'none' } : { kind: 'layer', layer: on }}
-      />
-    );
-    notes.unshift({ key: 'choosing', text });
+  if (trouble !== undefined) {
+    notes.unshift({
+      key: 'run',
+      bare: true,
+      text: <Problem layout="inline" title={trouble.title} details={trouble.details} />,
+    });
   }
+  // While layers are selected, the bar saying so takes the offer's place, which can't be used
+  // then: the two are as tall, so the layers under them stay where they are.
+  const callout = choice ? (
+    <Selecting
+      rows={view.rows}
+      root={withoutBidi(view.root)}
+      choice={choice}
+      target={on === undefined ? { kind: 'none' } : { kind: 'layer', layer: on }}
+    />
+  ) : view.callout === null ? undefined : (
+    <Offer line={view.callout} tab={tab} />
+  );
   return (
     <div className="flex max-h-1/2 min-h-0 flex-none flex-col" data-lo-stack={tab.id}>
       <StackTree
@@ -306,6 +315,8 @@ export function Stack({ tab }: { tab: PullTab }) {
         })}
         root={withoutBidi(view.root)}
         githubStack={view.githubStack}
+        // The notes say which layers are a GitHub stack where only some are: the head agrees.
+        githubPartly={view.notes.some((note) => note.kind === 'github')}
         found={view.found?.map((link) => LINKS[link])}
         actions={
           <>
@@ -334,7 +345,7 @@ export function Stack({ tab }: { tab: PullTab }) {
             event.preventDefault();
           }
         }}
-        callout={view.callout === null ? undefined : <Offer line={view.callout} tab={tab} />}
+        callout={callout}
         notes={notes}
         treeRef={treeRef}
         onBlur={() => {

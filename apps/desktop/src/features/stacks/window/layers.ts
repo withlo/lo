@@ -20,6 +20,14 @@ export const focused = tabState<number | undefined>(() => undefined);
 /** The layers being selected in each view's stack tree, while some are. */
 export const choosing = tabState<Choice | undefined>(() => undefined);
 
+/**
+ * What went wrong showing layers as one diff, and what the error said, under the stack's tree
+ * until they're shown again.
+ */
+export const runTrouble = tabState<
+  { readonly title: string; readonly details: string } | undefined
+>(() => undefined);
+
 /** Takes what main sent of a view's stack. */
 export function takeStack({ id, stack }: StackState): void {
   if (JSON.stringify(stacks.get(id)) !== JSON.stringify(stack)) stacks.set(id, stack);

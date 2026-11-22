@@ -211,7 +211,8 @@ export type Change = z.output<typeof change>;
  * - `failed`: GitHub refused it, or it failed, and it wasn't done;
  * - `unknown`: GitHub's answer was lost, so it may have been done;
  * - `left`: it was changed elsewhere since, so Lo left it;
- * - `skipped`: never sent, since what came before it stopped.
+ * - `skipped`: never sent, since what came before it stopped; or, for a stack step whose answer
+ *   was lost, found by undoing not to have been made, as its `detail` says.
  */
 export const changeStatus = z.enum([
   'todo',
@@ -228,7 +229,8 @@ export type ChangeStatus = z.output<typeof changeStatus>;
 /**
  * A change, as the dialog lists it: how it stands, and `detail`: for one that failed, or whose
  * answer was lost, what GitHub said; for one `left`, the base branch its pull request is on now,
- * or, for an unstack, why it was left.
+ * or, for an unstack, why it was left; for a stack step `skipped` once undoing found it wasn't
+ * made, that it wasn't: "Not created.".
  */
 export const changeRow = z.strictObject({
   change,

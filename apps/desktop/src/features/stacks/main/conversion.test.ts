@@ -654,11 +654,15 @@ describe('undoing', () => {
       reason: 'The GitHub stack now has other layers.',
     });
 
+    // GitHub made no stack: the step whose answer was lost says so, and everything was undone.
     const none = await failed(BAD_GATEWAY);
     none.poller.holding = [];
     none.conversions.putBack(none.key);
     await until(() => none.last()?.phase === 'putBack');
     expect(none.poller.sent).toEqual(['#6 e2/c -> main', '#3 e2/a -> main']);
+    const created = none.last()?.changes.find((row) => row.change.kind === 'create');
+    expect(created).toMatchObject({ status: 'skipped', detail: 'Not created.' });
+    expect(none.last()?.line).toBe('Changes undone');
   });
 
   it('reads a stack again when its unstack’s answer was lost, before sending it again', async () => {

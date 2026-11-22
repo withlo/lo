@@ -36,6 +36,7 @@ import {
   focused,
   keyboardLayer,
   layersOf,
+  runTrouble,
   STACK_CHANGED,
   stacks,
   stepFrom,
@@ -232,14 +233,22 @@ export function showTarget(target: Target): void {
 }
 
 /**
- * Why `layers` don't show as one diff: main's reason, which may name a branch, GitHub's text that
- * may carry bidi controls; or, for anything else, that they couldn't be shown.
+ * Says why `layers` don't show as one diff: main's reason, which may name a branch, in a toast, as
+ * why nothing happened; or, for anything else, that they couldn't be shown, under the tree.
  */
-function whyNot(error: unknown, tab: PullTab, layers: readonly number[]): string {
-  if (error instanceof IpcError) return withoutBidi(error.message);
+function failed(error: unknown, tab: PullTab, layers: readonly number[]): void {
+  // Main said why it showed nothing: a refusal, said once in a toast.
+  if (error instanceof IpcError) {
+    refuse(withoutBidi(error.message));
+    return;
+  }
+  // Something went wrong on the way: a problem under the tree, with what the error said.
   const view = stacks.get(tab.id);
   const rows = view?.kind === 'stack' ? view.rows : [];
-  return `Couldn’t show ${layersName(rows, layers).toLowerCase()}`;
+  runTrouble.set(tab.id, {
+    title: `Couldn’t show ${layersName(rows, layers).toLowerCase()}`,
+    details: error instanceof Error ? error.message : String(error),
+  });
 }
 
 /** Shows the layers `choice` selected: as one diff, or, while it's one layer, that layer. */
@@ -265,9 +274,10 @@ export function openRun(tab: PullTab, layers: readonly number[]): void {
   // The view opens on its diff: it has no overview, and the diff is what it's for.
   const view = runViewOf(tab.id, layers);
   if (view !== undefined) showDiff(view);
+  runTrouble.set(tab.id, undefined);
   main()
     .run({ id: tab.id, bottom, top })
-    .catch((error: unknown) => refuse(whyNot(error, tab, layers)));
+    .catch((error: unknown) => failed(error, tab, layers));
 }
 
 /** The row of layer `number` in the stack of `tab`, if it has one. */

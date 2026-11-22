@@ -257,6 +257,11 @@ describe('StackTree', () => {
     );
     // A layer alone, such as one that needs a rebase, was found by nothing.
     expect(heads(undefined, LAYERS.slice(0, 1))).toEqual(['Branch stack · 1 layer', null]);
+    // Some layers are a GitHub stack, as the notes under the rows say: it's a stack, of neither kind.
+    const partly = render(
+      <StackTree {...props({ found: ['github', 'base'], githubPartly: true })} />,
+    ).querySelector('section > div');
+    expect(partly?.textContent?.replace('Stack', '')).toBe('Stack · 5 layers');
   });
 
   it('keeps its head to one line, cutting its words before its controls', () => {
@@ -309,7 +314,8 @@ describe('StackTree', () => {
       // The checks are an icon alone, so a row keeps to two lines; its name says what it shows.
       const checks = (key: string) => row(host, key).querySelector('[data-checks]');
       expect(checks('a')?.getAttribute('aria-label')).toBe('Checks passed');
-      expect(checks('a')?.getAttribute('title')).toBe('Checks passed');
+      // Its tooltip is the shared one, not the browser's.
+      expect(checks('a')?.getAttribute('title')).toBeNull();
       expect(checks('c')?.getAttribute('aria-label')).toBe('Checks running');
       expect(checks('e')?.getAttribute('aria-label')).toBe('Checks failed');
       expect(checks('a')?.getAttribute('role')).toBe('img');
@@ -399,11 +405,13 @@ describe('StackTree', () => {
     it('counts the files viewed, with a plus when only some were counted', () => {
       const host = render(<StackTree {...props()} />);
       expect(said(row(host, 'c'))).toContain('41+ / 214');
-      const some = row(host, 'c').querySelector('[role="img"][title="41+ / 214 files viewed"]');
-      expect(some?.getAttribute('aria-label')).toBe('41+ / 214 files viewed');
+      const some = row(host, 'c').querySelector(
+        '[role="img"][aria-label="41+ / 214 files viewed"]',
+      );
+      expect(some).toBeTruthy();
       expect(said(row(host, 'a'))).toContain('12 / 12');
       expect(said(row(host, 'a'))).not.toContain('12+');
-      expect(row(host, 'a').querySelector('[title="12 / 12 files viewed"]')).toBeTruthy();
+      expect(row(host, 'a').querySelector('[aria-label="12 / 12 files viewed"]')).toBeTruthy();
     });
 
     it('counts its unresolved threads while it has any, with a plus when only some were read', () => {

@@ -437,9 +437,10 @@ export class Conversions {
     const rows = putBackOf(run);
     run.putBack = rows;
     this.#publish(run);
-    const unsure = run.changes.find(
+    const unsureAt = run.changes.findIndex(
       (row) => row.change.kind !== 'retarget' && row.status === 'unknown',
-    )?.change;
+    );
+    const unsure = run.changes[unsureAt]?.change;
     // Asked again, it goes on from where it stopped, with what it found then.
     const decided = rows.some((row) => row.change.kind === 'unstack');
     if (unsure && (unsure.kind === 'create' || unsure.kind === 'add') && !decided) {
@@ -467,6 +468,8 @@ export class Conversions {
           });
           return this.#putBackOver(run, 'left');
         }
+        // GitHub didn't add them: the step says so, in place of "Not confirmed".
+        this.#mark(run.changes, unsureAt, 'skipped', NOT_ADDED);
       } else {
         const exact = open.find((stack) => sameNumbers(stackNumbers(stack), unsure.prs));
         const other = open.find((stack) => stack !== exact);
@@ -479,8 +482,12 @@ export class Conversions {
         } else if (other) {
           run.problem = failure(UNDO_FAILED, { reason: OTHER_LAYERS, details: null });
           return this.#putBackOver(run, 'left');
+        } else {
+          // GitHub didn't make it: the step says so, in place of "Not confirmed".
+          this.#mark(run.changes, unsureAt, 'skipped', NOT_CREATED);
         }
       }
+      this.#publish(run);
     }
     // An unstack whose answer was lost: whether GitHub took it decides whether it's sent again.
     for (const [index, row] of rows.entries()) {
@@ -699,6 +706,12 @@ function unchecked(cause: Cause): Planned {
 
 /** What a conversion that failed says above its buttons. */
 const CONVERT_FAILED = 'Couldn’t convert to GitHub stack';
+
+/** A stack step whose answer was lost, once undoing found GitHub didn't make the stack. */
+const NOT_CREATED = 'Not created.';
+
+/** A stack step whose answer was lost, once undoing found GitHub didn't add to the stack. */
+const NOT_ADDED = 'Not added.';
 
 /** What undoing a conversion says when it couldn't read what to undo, or left it. */
 const UNDO_FAILED = 'Couldn’t undo the changes';
