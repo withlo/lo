@@ -179,21 +179,28 @@ The title’s three forms:
 
 One wording per cause:
 
-| Cause                  | Reason                                    | Button                     |
-| ---------------------- | ----------------------------------------- | -------------------------- |
-| No connection          | Offline.                                  | Try again                  |
-| GitHub failed          | GitHub returned an error.                 | Try again                  |
-| No answer in time      | GitHub didn’t respond.                    | Try again                  |
-| Sent, result not known | GitHub didn’t respond.                    | Check again                |
-| Rate limit             | GitHub’s rate limit resets at 14:05.      | None                       |
-| Signed out             | ravi-k is signed out.                     | Sign in again              |
-| Missing or hidden      | It doesn’t exist, or ravi-k can’t see it. | Sign in with GitHub…       |
-| Newer revision         | #264 has a newer revision.                | Show latest                |
-| Single sign-on         | rozed-dev requires single sign-on.        | Authorize on GitHub        |
-| Lo not approved        | rozed-dev hasn’t approved Lo.             | Request approval on GitHub |
-| Proxy                  | The proxy couldn’t connect to GitHub.     | Try again                  |
-| Disk full              | The disk is full.                         | Clear cache                |
-| Unknown                | No reason line.                           | Try again                  |
+| Cause                  | Reason                                            | Button                     |
+| ---------------------- | ------------------------------------------------- | -------------------------- |
+| No connection          | Offline.                                          | Try again                  |
+| GitHub failed          | GitHub returned an error.                         | Try again                  |
+| No answer in time      | GitHub didn’t respond.                            | Try again                  |
+| Sent, result not known | GitHub didn’t respond.                            | Check again                |
+| Rate limit             | GitHub’s rate limit resets at 14:05.              | None                       |
+| Rate limit, no time    | GitHub’s rate limit was reached.                  | Try again                  |
+| Signed out             | ravi-k is signed out.                             | Sign in again              |
+| Sign-in can’t be read  | ravi-k’s sign-in can’t be read from the Keychain. | Try again                  |
+| Missing or hidden      | It doesn’t exist, or ravi-k can’t see it.         | Sign in with GitHub…       |
+| Newer revision         | #264 has a newer revision.                        | Show latest                |
+| Single sign-on         | rozed-dev requires single sign-on.                | Authorize on GitHub        |
+| Lo not approved        | rozed-dev hasn’t approved Lo.                     | Request approval on GitHub |
+| Certificate            | GitHub’s certificate couldn’t be verified.        | Try again                  |
+| Proxy                  | The proxy couldn’t connect to GitHub.             | Try again                  |
+| Proxy needs a sign-in  | The proxy requires a sign-in.                     | None                       |
+| Proxy of another kind  | The proxy isn’t HTTP, HTTPS or SOCKS5.            | None                       |
+| Disk full              | The disk is full.                                 | Clear cache                |
+| Took too long          | It took too long.                                 | Try again                  |
+| Out of memory          | It ran out of memory.                             | None                       |
+| Unknown                | No reason line.                                   | Try again                  |
 
 “Try again” repeats the action. Where repeating could do it twice, as with a merge that was sent and
 never answered, the button is “Check again”, which only looks.
