@@ -365,8 +365,8 @@ One label per command, the same everywhere. Only a control on the thing may fill
 - **A menu on the thing itself** may drop the object: “Reply”, “Resolve”.
 - **A label can be filled in.** The palette, the menus and the keyboard shortcuts show it plain:
   “Show latest”, “Merge…”, “Compare”. A control on the thing names what it acts on: “Show r5”,
-  “Merge #264”, “Compare r2 → r5”. `…` follows its own rule on each: “Merge…” asks for more, and the
-  merge panel’s button acts at once, so it reads “Merge #264”.
+  “Merge #264”, “Compare r2 → r5”. `…` follows its own rule on each: the merge panel’s button opens
+  the confirmation, so it reads “Merge #264…”. The dialog’s primary acts, so it reads “Merge #264”.
 - **A name that’s code stays code inside a label:** “Install `lo` command”.
 - **A description,** where a command has one, is one line that adds what the label can’t.
 - **Never** “OK”, “Yes” or a bare “Submit”.
