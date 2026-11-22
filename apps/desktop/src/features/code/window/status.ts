@@ -69,10 +69,14 @@ export function takeStatus(status: Status): void {
 export const TRUST_STARTS = 'Waiting…';
 
 /**
+ * What a trust button says once the reader said "Trust" in main's dialog, while main saves it. It's
+ * the widest thing the button says while busy, so a button that holds its width holds this one's.
+ */
+export const TRUSTING = 'Trusting…';
+
+/**
  * What a trust button says while main trusts its view, or nothing while it doesn't. Nothing says
- * the trust is being saved until the reader said "Trust" in main's dialog. With its ring, each is
- * narrower than the shortest label, "Trust repo…", so the button is one width from before its
- * press until it's done: a word any wider, "Checking…" or "Trusting…", would widen it.
+ * the repository is being trusted until the reader said "Trust" in main's dialog.
  */
 export function busyLabel(status: Status): string | undefined {
   const { trusting } = status;
@@ -81,12 +85,12 @@ export function busyLabel(status: Status): string | undefined {
     case 'asking':
       return TRUST_STARTS;
     case 'saving':
-      return 'Saving…';
+      return TRUSTING;
     case undefined:
       return undefined;
     default:
       trusting satisfies never;
-      return 'Saving…';
+      return TRUSTING;
   }
 }
 

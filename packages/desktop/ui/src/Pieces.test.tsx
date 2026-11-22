@@ -120,6 +120,30 @@ describe('a button at work', () => {
     expect(button.querySelector('span > span:not([aria-hidden]) .spinner')).not.toBeNull();
   });
 
+  it('holds the room of the widest thing it says, unseen, whatever it says now', () => {
+    const stage = (busy: boolean, working: string) => (
+      <Button size="sm" busy={busy} working={working} widest="Trusting…">
+        Trust repo…
+      </Button>
+    );
+    const host = render(stage(false, 'Waiting…'));
+    const button = host.querySelector('button')!;
+    const held = () => button.querySelector('.inline-grid > span:last-child')!;
+    for (const [busy, working] of [
+      [false, 'Waiting…'],
+      [true, 'Waiting…'],
+      [true, 'Trusting…'],
+    ] as const) {
+      rerender(host, stage(busy, working));
+      expect(says(button)).toBe(busy ? working : 'Trust repo…');
+      expect(held().textContent).toBe('Trusting…');
+      expect(held().className).toContain('invisible');
+      expect(held().getAttribute('aria-hidden')).toBe('true');
+      // Beside the ring's room, as the words are while the ring turns.
+      expect(held().firstElementChild?.className).toContain('size-8');
+    }
+  });
+
   it('gives a screen reader the key its tooltip shows, never the key caps', () => {
     const host = render(
       <>

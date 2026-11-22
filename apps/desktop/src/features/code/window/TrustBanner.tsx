@@ -22,6 +22,7 @@ import {
   failures,
   statuses,
   TRUST_STARTS,
+  TRUSTING,
 } from './status.ts';
 
 /** Says view `view`'s banner is on screen, or that the one that was has gone, if that's news. */
@@ -52,9 +53,10 @@ export function TrustBanner({ tab }: { tab: PullTab }) {
     actions.push({
       label: action.label,
       busy: action.busy !== undefined,
-      // Said before it's pressed too, unseen. Its words fit inside the label, so the button is
-      // as wide pressed as before.
+      // Said before it's pressed too, unseen, with room kept for the widest thing it comes to say:
+      // the button is one width from before its press until it's done.
       working: action.busy ?? TRUST_STARTS,
+      widest: TRUSTING,
       onClick: () => void askToTrust(status, action.pull),
     });
   }

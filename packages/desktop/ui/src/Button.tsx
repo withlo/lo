@@ -71,6 +71,12 @@ export interface ButtonProps
    */
   working?: string | undefined;
   /**
+   * The widest thing it says while busy, for a button whose `working` changes as its work goes on,
+   * or whose label does: "Trusting…" for one that says "Waiting…" first. It holds that room, with
+   * the ring's, from before its press, so nothing it comes to say changes its width.
+   */
+  widest?: string | undefined;
+  /**
    * Its tooltip: what it is or does, for a button whose face doesn't say, such as an icon's. On a
    * `disabled` button it's the reason it can't be pressed now, in a few words with no full stop:
    * "Sign in to comment". The button is then dimmed and out of the tab order as any disabled one
@@ -103,6 +109,7 @@ export function Button({
   type = 'button',
   busy,
   working,
+  widest,
   hint,
   hintKeys,
   hintShortcut,
@@ -111,7 +118,7 @@ export function Button({
   children,
   ...props
 }: ButtonProps) {
-  const works = busy !== undefined || working !== undefined;
+  const works = busy !== undefined || working !== undefined || widest !== undefined;
   // Dimmed, with why: said to be disabled, not made so, since a `disabled` button gets no pointer
   // and so no tooltip.
   const hinted = hint !== undefined && hint !== null;
@@ -160,6 +167,12 @@ export function Button({
             {/* Without words of its own for the wait, it keeps its label, and so its name. */}
             {working ?? children}
           </span>
+          {widest !== undefined && (
+            <span className={face({ size: size ?? 'md', shown: false })} aria-hidden="true">
+              <span className={size === 'sm' ? 'size-8 flex-none' : 'size-12 flex-none'} />
+              {widest}
+            </span>
+          )}
         </span>
       ) : (
         children

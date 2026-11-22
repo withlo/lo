@@ -190,7 +190,9 @@ describe('asking to trust', () => {
     // What it will say waits unseen beside its label, so pressing it keeps its width.
     const idle = trustButton(page);
     expect(says(idle)).toBe('Trust repo…');
-    expect(idle?.querySelector('[aria-hidden="true"]')?.textContent).toBe('Waiting…');
+    const unseen = () =>
+      [...(idle?.querySelectorAll('.invisible') ?? [])].map((it) => it.textContent);
+    expect(unseen()).toEqual(['Waiting…', 'Trusting…']);
     act(() => bridge.push('code.status', statusOf('t4', { trusting: 'reading' })));
     const trust = trustButton(page);
     expect(trust).toBe(idle);
@@ -210,7 +212,9 @@ describe('asking to trust', () => {
     act(() => bridge.push('code.status', statusOf('t4', { trusting: 'saving' })));
     // The same button, which keeps focus, says what Lo does now.
     expect(trustButton(page)).toBe(trust);
-    expect(says(trust)).toBe('Saving…');
+    expect(says(trust)).toBe('Trusting…');
+    // Its widest words keep their room through every stage, so it's one width throughout.
+    expect(unseen()).toEqual(['Trust repo…', 'Trusting…']);
     // Trusted: the banner goes, and the status item shows the servers starting.
     act(() =>
       bridge.push('code.status', statusOf('t4', { trust: { kind: 'trusted', by: 'repo' } })),

@@ -800,31 +800,21 @@ function PrimaryButton({
       variant={primary.danger ? 'danger' : 'primary'}
       busy={primary.busy === true}
       working={primary.working}
+      // The room "Checking…" takes with its ring, kept once the plan has come too, so the button is
+      // as wide while it asks as it was while it checked.
+      widest={CHECKING}
       aria-disabled={primary.off || undefined}
       onClick={(event) => {
         // Not a double click's second, which would press what came up in its place unseen.
         if (event.detail <= 1 && !primary.busy && !primary.off) primary.run();
       }}
     >
-      <span className="inline-grid">
-        <span className="col-start-1 row-start-1 inline-flex items-center justify-center gap-6">
-          {primary.label}
-          <Key
-            keys={labels('enter')}
-            decorative
-            className={primary.danger ? undefined : 'text-on-accent'}
-          />
-        </span>
-        {/* The room "Checking…" takes with its ring, kept once the plan has come too, so the
-            button is as wide while it asks as it was while it checked. */}
-        <span
-          aria-hidden="true"
-          className="invisible col-start-1 row-start-1 inline-flex items-center justify-center gap-6"
-        >
-          <span className="size-12 flex-none" />
-          {CHECKING}
-        </span>
-      </span>
+      {primary.label}
+      <Key
+        keys={labels('enter')}
+        decorative
+        className={primary.danger ? undefined : 'text-on-accent'}
+      />
     </Button>
   );
 }
