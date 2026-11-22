@@ -196,22 +196,49 @@ function lineWords(line: CommentLinesRow['end']): string {
 }
 
 /**
- * What a box's comment is on, as its head says, and as a line is named everywhere: "Line 41",
- * "Lines 39–41", "Line 41, removed", "Line 3, removed, to line 5", "File", "Pull request", "Reply",
+ * A line reference, as data: what a comment or thread is on. Whatever names lines to the reader
+ * holds one, and `lineRefText` is the only place it's put into words.
+ *
+ * - `lines`: the lines, each with its side, a span from `start` to `end`; `null` for the file
+ *   itself; `undefined` where GitHub no longer gives a line.
+ * - `revision`: the revision the lines are on, as its label names it, `r2`, where that isn't the
+ *   revision on screen.
+ */
+export interface LineRef {
+  readonly lines: CommentLinesRow | null | undefined;
+  readonly revision?: string | undefined;
+}
+
+/**
+ * A line reference in words, the one form a line is named in everywhere: "Line 41", "Lines 39–41",
+ * "Line 41, removed", "Line 3, removed, to line 5", "File"; with the revision last where it's
+ * given, "Line 9 · r1"; and the revision alone, "r1", where there's no line to name.
+ */
+export function lineRefText({ lines, revision }: LineRef): string {
+  const on = lines === undefined ? undefined : linesText(lines);
+  if (on === undefined) return revision ?? '';
+  return revision === undefined ? on : `${on} · ${revision}`;
+}
+
+function linesText(lines: CommentLinesRow | null): string {
+  if (!lines) return 'File';
+  const { start, end } = lines;
+  if (!start || (start.side === end.side && start.number === end.number)) {
+    return `Line ${lineWords(end)}`;
+  }
+  if (start.side === end.side) return `Lines ${start.number}–${lineWords(end)}`;
+  return `Line ${lineWords(start)}, to line ${lineWords(end)}`;
+}
+
+/**
+ * What a box's comment is on, as its head says: its line reference, or "Pull request", "Reply",
  * "Edit".
  */
 export function whereText(place: DraftPlaceRow): string {
   if (place.kind === 'conversation') return 'Pull request';
   if (place.kind === 'reply') return 'Reply';
   if (place.kind === 'edit') return 'Edit';
-  const { lines } = place;
-  if (!lines) return 'File';
-  const { start, end } = lines;
-  if (!start) return `Line ${lineWords(end)}`;
-  if (start.side === end.side) {
-    return `Lines ${start.number}–${lineWords(end)}`;
-  }
-  return `Line ${lineWords(start)}, to line ${lineWords(end)}`;
+  return lineRefText({ lines: place.lines });
 }
 
 /** What a box's note offers to do about what it says. */
@@ -578,7 +605,7 @@ export function blockWhere(
     const onLines = place.kind === 'thread' && place.lines !== null;
     return !onLines || names.written === names.now
       ? undefined
-      : { head: `${whereText(place)} · ${names.now}` };
+      : { head: lineRefText({ lines: place.lines, revision: names.now }) };
   }
   return whyWords(why, names);
 }

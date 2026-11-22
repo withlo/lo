@@ -453,16 +453,16 @@ test('the threads panel lists the threads and shows one in the diff', async ({ p
     await expect
       .poll(() => rows(page))
       .toEqual([
-        'docs/usage.md On the file',
-        'src/backoff.ts new 2',
-        'src/backoff.ts new 8',
-        'src/backoff.ts r1 · line 9',
-        'src/backoff.ts new 15',
-        'src/backoff.ts new 17',
-        'src/queue.ts new 10',
-        'src/queue.ts new 10–35',
-        'src/retry.ts old 2',
-        'src/retry.ts new 16',
+        'docs/usage.md File',
+        'src/backoff.ts Line 2',
+        'src/backoff.ts Line 8',
+        'src/backoff.ts Line 9 · r1',
+        'src/backoff.ts Line 15',
+        'src/backoff.ts Line 17',
+        'src/queue.ts Line 10',
+        'src/queue.ts Lines 10–35',
+        'src/retry.ts Line 2, removed',
+        'src/retry.ts Line 16',
       ]);
     await expect(filter(page, 'Unresolved 10')).toHaveAttribute('aria-selected', 'true');
     await expect(filter(page, 'All 11')).toBeVisible();
@@ -475,7 +475,7 @@ test('the threads panel lists the threads and shows one in the diff', async ({ p
   await test.step('shows the thread the keyboard is on in the diff, keeping focus', async () => {
     await page.keyboard.press('j');
     await page.keyboard.press('j');
-    await expect(focusedRow(page)).toContainText('new 8');
+    await expect(focusedRow(page)).toContainText('Line 8');
     await page.keyboard.press('Enter');
     await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 8');
     await expect(focusedRow(page)).toHaveAttribute('aria-current', 'true');
@@ -484,7 +484,7 @@ test('the threads panel lists the threads and shows one in the diff', async ({ p
 
   await test.step('shows an outdated thread in the whole diff of the revision it was written on', async () => {
     await page.keyboard.press('j');
-    await expect(focusedRow(page)).toContainText('r1 · line 9');
+    await expect(focusedRow(page)).toContainText('Line 9 · r1');
     await page.keyboard.press('Enter');
     await expect.poll(() => cursor(page), { timeout: 20_000 }).toBe('src/backoff.ts new 9');
     expect(await placed(page)).toContain('src/backoff.ts new 9');
@@ -597,7 +597,7 @@ test.describe('while the local copy is still coming', () => {
     await page.keyboard.press(PANEL);
     await expect.poll(() => rows(page)).toHaveLength(10);
     for (let step = 0; step < 3; step++) await page.keyboard.press('j');
-    await expect(focusedRow(page)).toContainText('r1 · line 9');
+    await expect(focusedRow(page)).toContainText('Line 9 · r1');
     // The outdated thread asks for r1's whole diff; before it comes, a thread the diff on screen
     // shows is asked for, and stays.
     await page.keyboard.press('Enter');
@@ -637,7 +637,7 @@ test.describe('while the local copy is still coming', () => {
     await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 15');
     // The outdated thread asks for r1's whole diff, which needs the local copy, so it's coming.
     await page.keyboard.press('k');
-    await expect(focusedRow(page)).toContainText('r1 · line 9');
+    await expect(focusedRow(page)).toContainText('Line 9 · r1');
     await page.keyboard.press('Enter');
     await expect.poll(() => compared(page, id)).toBe('coming');
     const note = page.getByRole('status').filter({ hasText: 'Comparing base → r1' });

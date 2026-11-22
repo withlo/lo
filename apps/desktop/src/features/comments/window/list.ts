@@ -7,8 +7,9 @@ import { panelShows, type PanelFilter } from '@lo/review';
 import type { ThreadListGroup, ThreadListRow } from '@lo/ui';
 
 import { avatarImage } from '../../../window/images.ts';
-import type { ThreadRow } from '../contract.ts';
+import type { CommentLinesRow, ThreadRow } from '../contract.ts';
 import { threadOf } from './placing.ts';
+import { type LineRef, lineRefText } from './writing.ts';
 
 /** The panel's filters, in the order `f` steps through them. */
 export const FILTERS: readonly PanelFilter[] = ['unresolved', 'all', 'yours'];
@@ -34,28 +35,34 @@ export function filterCounts(
   return { unresolved: count('unresolved'), all: count('all'), yours: count('yours') };
 }
 
-/** Lines `from` to `to`, as a row says them: `41`, or `39–41`. */
-function lines(from: number | null, to: number): string {
-  return from === null || from === to ? String(to) : `${from}–${to}`;
+/** Thread `row`'s lines `from` to `to`, each with its side, as a line reference holds them. */
+function span(row: ThreadRow, from: number | null, to: number): CommentLinesRow {
+  return {
+    start: from === null ? null : { side: row.startSide ?? row.side, number: from },
+    end: { side: row.side, number: to },
+  };
 }
 
 /**
- * Where a thread is, as its row says it: "On the file"; its side and line on the revision it's on,
- * "new 41" or "old 30"; or for an outdated one, the revision it was written on and its line there,
- * "r2 · line 22", as `label` names that revision.
+ * What a thread is on, as a line reference: its file; its lines and their side on the revision
+ * it's on; or for an outdated one, its lines on the revision it was written on, as `label` names
+ * that revision, with no lines where GitHub no longer gives them.
  */
-export function whereOf(row: ThreadRow, label: (head: string) => string | undefined): string {
-  if (row.subject === 'FILE') return 'On the file';
+export function refOf(row: ThreadRow, label: (head: string) => string | undefined): LineRef {
+  if (row.subject === 'FILE') return { lines: null };
   if (!row.outdated && row.line !== null) {
-    return `${row.side === 'LEFT' ? 'old' : 'new'} ${lines(row.startLine, row.line)}`;
+    return { lines: span(row, row.startLine, row.line) };
   }
   const line = row.originalLine ?? row.line;
-  const at =
-    line === null
-      ? 'line ?'
-      : `${row.originalStartLine !== null && row.originalStartLine !== line ? 'lines' : 'line'} ${lines(row.originalStartLine, line)}`;
-  const revision = row.writtenOn === null ? undefined : label(row.writtenOn);
-  return revision === undefined ? at : `${revision} · ${at}`;
+  return {
+    lines: line === null ? undefined : span(row, row.originalStartLine, line),
+    revision: row.writtenOn === null ? undefined : label(row.writtenOn),
+  };
+}
+
+/** Where a thread is, as its row says it: "Line 41", "Line 30, removed", "Line 22 · r2", "File". */
+export function whereOf(row: ThreadRow, label: (head: string) => string | undefined): string {
+  return lineRefText(refOf(row, label));
 }
 
 /** The line a thread sorts by in its file's group: its own threads first, at line 0. */

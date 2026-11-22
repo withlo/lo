@@ -12,6 +12,7 @@ import {
   rowKeys,
   stepRow,
   threadGroups,
+  refOf,
   whereOf,
   type ListOptions,
 } from './list.ts';
@@ -93,23 +94,44 @@ describe('the filter', () => {
 });
 
 describe('where a row says its thread is', () => {
-  it('names the side and line, or the lines of a range', () => {
-    expect(whereOf(row('a'), label)).toBe('new 5');
-    expect(whereOf(row('a', { side: 'LEFT', line: 30 }), label)).toBe('old 30');
-    expect(whereOf(row('a', { startLine: 39, line: 41 }), label)).toBe('new 39–41');
-    expect(whereOf(row('a', { startLine: 41, line: 41 }), label)).toBe('new 41');
+  it('names the line, or the lines of a range, and says which were removed', () => {
+    expect(whereOf(row('a'), label)).toBe('Line 5');
+    expect(whereOf(row('a', { side: 'LEFT', line: 30 }), label)).toBe('Line 30, removed');
+    expect(whereOf(row('a', { startLine: 39, line: 41 }), label)).toBe('Lines 39–41');
+    expect(whereOf(row('a', { startLine: 41, line: 41 }), label)).toBe('Line 41');
+    expect(whereOf(row('a', { startSide: 'LEFT', startLine: 3, line: 5 }), label)).toBe(
+      'Line 3, removed, to line 5',
+    );
   });
 
   it('says a file’s own thread is on the file', () => {
-    expect(whereOf(row('a', { subject: 'FILE', line: null }), label)).toBe('On the file');
+    expect(whereOf(row('a', { subject: 'FILE', line: null }), label)).toBe('File');
   });
 
-  it('names the revision an outdated thread was written on, and its line there', () => {
+  it('names an outdated thread’s line where it was written, then that revision', () => {
     const outdated = row('a', { outdated: true, line: null, originalLine: 22, writtenOn: FIRST });
-    expect(whereOf(outdated, label)).toBe('r1 · line 22');
-    expect(whereOf({ ...outdated, originalStartLine: 20 }, label)).toBe('r1 · lines 20–22');
+    expect(whereOf(outdated, label)).toBe('Line 22 · r1');
+    expect(whereOf({ ...outdated, originalStartLine: 20 }, label)).toBe('Lines 20–22 · r1');
     // A commit that's no revision Lo knows of.
-    expect(whereOf({ ...outdated, writtenOn: 'c'.repeat(40) }, label)).toBe('line 22');
+    expect(whereOf({ ...outdated, writtenOn: 'c'.repeat(40) }, label)).toBe('Line 22');
+    // A line GitHub no longer gives: the revision alone.
+    expect(whereOf({ ...outdated, originalLine: null }, label)).toBe('r1');
+  });
+
+  it('holds the side, lines and revision as data', () => {
+    const outdated = row('a', {
+      outdated: true,
+      side: 'LEFT',
+      line: null,
+      originalStartLine: 20,
+      originalLine: 22,
+      writtenOn: FIRST,
+    });
+    expect(refOf(outdated, label)).toEqual({
+      lines: { start: { side: 'LEFT', number: 20 }, end: { side: 'LEFT', number: 22 } },
+      revision: 'r1',
+    });
+    expect(refOf(row('a', { subject: 'FILE', line: null }), label)).toEqual({ lines: null });
   });
 });
 
@@ -183,7 +205,7 @@ describe('the groups', () => {
       key: 'a',
       author: 'mira-chen',
       image: expect.stringContaining('mira-chen'),
-      where: 'r1 · line 22',
+      where: 'Line 22 · r1',
       replies: 2,
       resolved: true,
       pending: false,
