@@ -8,6 +8,7 @@ export {
   checkIds,
   checkKeys,
   checkMenus,
+  checkRoutes,
   checkVim,
   codeModes,
   keyless,

@@ -5,7 +5,8 @@ import { diffPullRequest, diffText } from '@lo/diff';
 import { getCM, Vim } from '@replit/codemirror-vim';
 import { afterEach, beforeAll, describe, expect, type Mock, test, vi } from 'vitest';
 
-import { findScope, isKeySource, KEY_EVENT } from '../commands/index.ts';
+import { testCommands, type Ran } from '../../test/commands.ts';
+import { findScope, holdRegistry, isKeySource, KEY_EVENT, Registry } from '../commands/index.ts';
 import type {
   BoxFrame,
   ComposeOptions,
@@ -30,6 +31,7 @@ import { createComposer } from './composer.ts';
 import { editsText, setVim } from './keys.ts';
 import { focusedMode } from './mode.ts';
 import { swapping } from './lines.ts';
+import { TIP_DELAY } from './tip.ts';
 import { createDiffView } from './view.ts';
 
 const noRects = (): DOMRectList => Object.assign([], { item: () => null });
@@ -2014,9 +2016,6 @@ describe('headers and notes', () => {
     );
     expect(resolved?.getAttribute('aria-label')).toBe('1 thread, resolved');
     expect(resolved?.classList.contains('is-open')).toBe(false);
-    expect(header.querySelector('.lo-diffhead__ball.is-viewed')?.getAttribute('title')).toBe(
-      'Viewed',
-    );
   });
 
   test('a header draws its viewed mark as a ball', () => {
@@ -2028,7 +2027,63 @@ describe('headers and notes', () => {
     expect(headerOf('h:1').classList.contains('is-viewed')).toBe(false);
     shown.setHeader('b', { additions: 1, deletions: 0, viewed: 'stale' });
     expect(ballOf('h:1')?.className).toBe('lo-diffhead__ball is-stale');
-    expect(ballOf('h:1')?.getAttribute('aria-label')).toBe('Changed since you viewed it');
+  });
+
+  test('the viewed ball is a checkbox named "Viewed", and a file changed since says so', () => {
+    const shown = open();
+    shown.reveal({ kind: 'file', file: 'b' });
+    shown.setHeader('b', { additions: 1, deletions: 0, viewed: 'unviewed' });
+    expect(ballOf('h:1')?.getAttribute('role')).toBe('checkbox');
+    expect(ballOf('h:1')?.getAttribute('aria-label')).toBe('Viewed');
+    expect(ballOf('h:1')?.getAttribute('aria-checked')).toBe('false');
+    expect(headerOf('h:1').querySelector('.lo-diffhead__changed')).toBeNull();
+    shown.setHeader('b', { additions: 1, deletions: 0, viewed: 'viewed' });
+    expect(ballOf('h:1')?.getAttribute('aria-checked')).toBe('true');
+    // Changed since it was viewed, it isn't viewed: unchecked, with words beside it that say why.
+    shown.setHeader('b', { additions: 1, deletions: 0, viewed: 'stale' });
+    expect(ballOf('h:1')?.getAttribute('aria-checked')).toBe('false');
+    expect(ballOf('h:1')?.getAttribute('aria-description')).toBe('Changed since viewed');
+    expect(headerOf('h:1').querySelector('.lo-diffhead__changed')?.textContent).toBe(
+      'Changed since viewed',
+    );
+  });
+
+  test('a click on the ball runs "Mark viewed" on its file, and its tip is the command’s', () => {
+    const ran: Ran[] = [];
+    let offline = false;
+    const commands = testCommands(ran).map((command) =>
+      command.id === 'diff.markViewed' && command.handler
+        ? { ...command, handler: { ...command.handler, enabled: () => !offline || 'Offline' } }
+        : command,
+    );
+    const release = holdRegistry(new Registry({ system: 'mac', commands }));
+    vi.useFakeTimers();
+    try {
+      const shown = open();
+      shown.reveal({ kind: 'file', file: 'b' });
+      shown.setHeader('b', { additions: 1, deletions: 0, viewed: 'unviewed' });
+      const tipOn = (): string | undefined => {
+        ballOf('h:1')!.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+        vi.advanceTimersByTime(TIP_DELAY);
+        const said = document.querySelector('.lo-tip')?.textContent;
+        ballOf('h:1')!.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+        return said ?? undefined;
+      };
+      expect(tipOn()).toBe('Mark viewede');
+      expect(document.querySelector('.lo-tip')).toBeNull();
+      ballOf('h:1')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      expect(ran).toEqual([['diff.markViewed', expect.objectContaining({ kind: 'file' })]]);
+      // Viewed, a click unmarks it, and the tip says so.
+      shown.setHeader('b', { additions: 1, deletions: 0, viewed: 'viewed' });
+      expect(tipOn()).toBe('Unmark viewede');
+      // Where the command can't run, the ball is dimmed and its tip is the reason.
+      offline = true;
+      expect(tipOn()).toBe('Offline');
+      expect(ballOf('h:1')?.getAttribute('aria-disabled')).toBe('true');
+    } finally {
+      vi.useRealTimers();
+      release();
+    }
   });
 
   test('a note on the comparison sits above the sides', () => {

@@ -4,7 +4,7 @@
 // as the panel opens. And the count the header's toggle shows: the unresolved threads, yours not
 // yet sent among them.
 
-import { Key, PaletteHint, ThreadFilter, ThreadList } from '@lo/ui';
+import { HintButton, Key, ThreadFilter, ThreadList } from '@lo/ui';
 import { keyLabels, setScopeSource } from '@lo/ui/commands';
 import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 
@@ -118,11 +118,9 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
     if (typeof row?.scrollIntoView === 'function') row.scrollIntoView({ block: 'nearest' });
   }, [view, moved, on]);
 
-  const show = keysOf('comments.showThread');
-  const next = keysOf('comments.nextThread');
-  const previous = keysOf('comments.previousThread');
   const filters = keysOf('comments.filterThreads');
-  const resolving = keysOf('comments.resolveInPanel');
+  // What the foot's hints act on: the thread the keyboard is on, as their keys do.
+  const target = panelTarget(view);
   const panelKey = keysOf('tab.rightPanel');
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-lo-threads={view}>
@@ -149,12 +147,16 @@ export function ThreadsPanel({ tab }: { tab: PullTab }): ReactNode {
           data-lo-scope="threads"
         />
       </div>
-      <div className="flex flex-none flex-wrap items-center gap-12 border-t border-border-subtle px-16 py-8 text-fg-muted text-small">
-        {next && <PaletteHint keys={next}>Next</PaletteHint>}
-        {previous && <PaletteHint keys={previous}>Previous</PaletteHint>}
-        {show && <PaletteHint keys={show}>Show</PaletteHint>}
-        {resolving && <PaletteHint keys={resolving}>Resolve</PaletteHint>}
-        {filters && <PaletteHint keys={filters}>Filter</PaletteHint>}
+      <div className="flex flex-none flex-wrap items-center gap-2 border-t border-border-subtle px-8 py-4 text-fg-muted text-small">
+        <HintButton command="comments.nextThread">Next</HintButton>
+        <HintButton command="comments.previousThread">Previous</HintButton>
+        <HintButton command="comments.showThread" target={target}>
+          Show
+        </HintButton>
+        <HintButton command="comments.resolveInPanel" target={target}>
+          Resolve
+        </HintButton>
+        <HintButton command="comments.filterThreads">Filter</HintButton>
       </div>
     </div>
   );

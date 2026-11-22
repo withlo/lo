@@ -36,12 +36,12 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 | Action                       | Keys  | Where                                                                                  | Command                |
 | ---------------------------- | ----- | -------------------------------------------------------------------------------------- | ---------------------- |
-| Next change                  | `] c` | In `diff`; in code views, Vim's motion                                                 | `diff.nextChange`      |
-| Previous change              | `[ c` | In `diff`; in code views, Vim's motion                                                 | `diff.previousChange`  |
-| Next file                    | `] f` | In `diff`; in code views, Vim's motion                                                 | `diff.nextFile`        |
-| Previous file                | `[ f` | In `diff`; in code views, Vim's motion                                                 | `diff.previousFile`    |
-| Next thread                  | `] t` | In `diff`; in code views, Vim's motion                                                 | `diff.nextThread`      |
-| Previous thread              | `[ t` | In `diff`; in code views, Vim's motion                                                 | `diff.previousThread`  |
+| Next change                  | `] c` | In `diff`; in code views with Vim keys on, Vim's motion                                | `diff.nextChange`      |
+| Previous change              | `[ c` | In `diff`; in code views with Vim keys on, Vim's motion                                | `diff.previousChange`  |
+| Next file                    | `] f` | In `diff`; in code views with Vim keys on, Vim's motion                                | `diff.nextFile`        |
+| Previous file                | `[ f` | In `diff`; in code views with Vim keys on, Vim's motion                                | `diff.previousFile`    |
+| Next thread                  | `] t` | In `diff`; in code views with Vim keys on, Vim's motion                                | `diff.nextThread`      |
+| Previous thread              | `[ t` | In `diff`; in code views with Vim keys on, Vim's motion                                | `diff.previousThread`  |
 | The other end of moved code  | `g m` | In `diff`; in code views, only in normal mode                                          | `diff.otherEnd`        |
 | Next layer                   | `] s` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.nextLayer`     |
 | Previous layer               | `[ s` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.previousLayer` |

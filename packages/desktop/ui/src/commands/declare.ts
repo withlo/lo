@@ -120,6 +120,13 @@ export interface Declaration {
   readonly menu?: MenuPlace | readonly MenuPlace[];
   /** It's in this menu of the macOS app menu. */
   readonly bar?: { readonly menu: BarMenu; readonly order: number };
+  /**
+   * The control that runs it, drawn where its target is, in a few words: "the viewed ball in a
+   * file's header". Every action has a key and a visible control, so every command names how the
+   * mouse reaches it: its `control`, a right-click `menu`, or the app menu (`bar`). The route check
+   * (`checkRoutes`) fails on a command with none.
+   */
+  readonly control?: string;
 }
 
 /** A feature's declarations, as `keys.ts` exports them. */

@@ -4,6 +4,7 @@ import {
   checkIds,
   checkKeys,
   checkMenus,
+  checkRoutes,
   checkVim,
   defineCommands,
   type Declarations,
@@ -12,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 
 import { featureCommands } from '../features.ts';
 import { checkDeclarations } from './declarations.ts';
+import { WITHOUT_ROUTE } from './routes.ts';
 
 // Every feature's keys.ts, found as the script that writes docs/keys.md finds them, and the
 // commands the window's features give the registry.
@@ -39,6 +41,10 @@ describe("every feature's commands", () => {
 
   it('have a key for every menu item', () => {
     expect(checkMenus(features)).toEqual([]);
+  });
+
+  it('each name how the mouse reaches them, but those listed as waiting for a control', () => {
+    expect(checkRoutes(features, WITHOUT_ROUTE)).toEqual([]);
   });
 
   it('claim no key or start of a sequence twice, in any scope, mode or system', () => {

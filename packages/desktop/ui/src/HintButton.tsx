@@ -1,4 +1,4 @@
-import { useId, useSyncExternalStore, type ReactNode } from 'react';
+import { useId, useSyncExternalStore, type MouseEvent, type ReactNode } from 'react';
 
 import { Button } from './Button.tsx';
 import { controlOf, heldRegistry, runControl } from './commands/control.ts';
@@ -28,7 +28,8 @@ const subscribe = (listener: () => void): (() => void) =>
  * Every row of key hints is made of these, so no hint is only text and every key shown can be
  * clicked. The label, the key and whether it can run come from the registry, so a hint never
  * shows a key the keymap file has moved. While its command can't run it's dimmed, with the reason
- * as its tooltip. It draws nothing for a command that isn't there.
+ * as its tooltip. A click leaves focus where it was, on what the key acts on. It draws nothing for a
+ * command that isn't there.
  */
 export function HintButton({ command, target, children }: HintButtonProps) {
   // Drawn again when the keymap changes.
@@ -50,6 +51,8 @@ export function HintButton({ command, target, children }: HintButtonProps) {
         aria-describedby={off ? why : undefined}
         hint={control.off}
         {...keyAria(control.keys, control.shortcut)}
+        // A click leaves focus where the key works, so the keys beside it go on working.
+        onMouseDown={(event: MouseEvent) => event.preventDefault()}
         onClick={() => {
           if (!off) runControl(command, target);
         }}
