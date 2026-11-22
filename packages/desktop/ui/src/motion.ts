@@ -109,7 +109,19 @@ export function useHeld<T>(open: boolean, value: T): T {
 }
 
 /**
- * Gives focus back to `to` as a popup closes, when focus is still in the popup or has been dropped,
+ * Whether focus is still `popup`'s to give back as it closes: inside it, or dropped, on the page's
+ * body, on an element that has left the page, or inside one that's inert, as a popup that's leaving
+ * is. Focus anywhere else went there by itself, such as into a dialog or popup that opened in its
+ * place, and stays.
+ */
+export function focusStillIn(popup: Element | null | undefined): boolean {
+  const active = document.activeElement;
+  if (active === null || active === document.body || !active.isConnected) return true;
+  return active.closest('[inert]') !== null || (popup?.contains(active) ?? false);
+}
+
+/**
+ * Gives focus back to `to` as a popup closes, when focus is still the popup's (`focusStillIn`),
  * and leaves focus that went somewhere else by itself where it is. A press outside a popup can
  * close it before the press has moved focus, and then drops what was just given back, so it looks
  * again a frame on.
@@ -119,10 +131,7 @@ export function giveFocusBack(
   popup: Element | null,
 ): void {
   const give = () => {
-    if (!to?.isConnected) return;
-    const active = document.activeElement;
-    const lost = active === null || active === document.body || !active.isConnected;
-    if (lost || popup?.contains(active)) to.focus({ preventScroll: true });
+    if (to?.isConnected && focusStillIn(popup)) to.focus({ preventScroll: true });
   };
   give();
   if (typeof requestAnimationFrame === 'function') requestAnimationFrame(give);
