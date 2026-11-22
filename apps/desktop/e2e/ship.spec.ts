@@ -114,30 +114,20 @@ async function open(page: Page, number: number, shown: string): Promise<void> {
  * `⌘⇧⏎`, until Lo plans it. Lo places a pull request on a branch other than a trunk only once it
  * has looked up every merged pull request its stacks may link through, and rozed-dev/e2e has more
  * branches than one listing looks up: the rest are looked up a while later, as recorded. Until
- * then the dialog says it couldn't check, with "Try again", which this presses a while later. Its
- * title stays the same throughout.
+ * then the dialog says how far it has got, with "Checking…" at work, and asks again by itself as
+ * they're looked up: that's progress, never a failure. Its title stays the same throughout.
  */
 async function ship(page: Page, number: number): Promise<void> {
   await page.keyboard.press(SHIP);
   await expect(dialog(page)).toContainText(`Approve and ship #${number}?`);
-  const again = dialog(page).getByRole('button', { name: /^Try again/ });
   const busy = dialog(page).locator('button[aria-busy="true"]');
-  const deadline = Date.now() + LOOKUPS;
-  for (;;) {
-    // Planned, with its steps and nothing busy, or not, with "Try again".
-    await expect
-      .poll(
-        async () =>
-          (await again.isVisible()) ||
-          ((await steps(page).count()) > 0 && (await busy.count()) === 0),
-        { timeout: 30_000 },
-      )
-      .toBe(true);
-    if (!(await again.isVisible()) || Date.now() > deadline) break;
-    await page.waitForTimeout(5_000);
-    await again.click();
-  }
-  await expect(again).toHaveCount(0);
+  // Planned, with its steps and nothing busy.
+  await expect
+    .poll(async () => (await steps(page).count()) > 0 && (await busy.count()) === 0, {
+      timeout: LOOKUPS,
+    })
+    .toBe(true);
+  await expect(dialog(page).getByRole('alert')).toHaveCount(0);
 }
 
 /** Lo's GraphQL writes so far, by operation. */
