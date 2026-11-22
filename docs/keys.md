@@ -234,17 +234,17 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Diff view
 
-| Action                                | Keys                                           | Where                                         | Command           |
-| ------------------------------------- | ---------------------------------------------- | --------------------------------------------- | ----------------- |
-| The other side                        | `Tab`                                          | In `diff`; in code views, only in normal mode | `diff.otherSide`  |
-| Side by side                          | None: in the app menu on macOS and the palette | In `diff`                                     | `diff.sideBySide` |
-| Inline                                | `g i`                                          | In `diff`; in code views, only in normal mode | `diff.inline`     |
-| Hide or show whitespace changes       | `g w`                                          | In `diff`; in code views, only in normal mode | `diff.whitespace` |
-| Open unchanged lines                  | `z o`                                          | In `diff`; in code views, only in normal mode | `diff.openRun`    |
-| Close unchanged lines                 | `z c`                                          | In `diff`; in code views, only in normal mode | `diff.closeRun`   |
-| Open every unchanged line in the file | `z R`                                          | In `diff`; in code views, only in normal mode | `diff.openFile`   |
-| Collapse file                         | `z a`                                          | In `diff`; in code views, only in normal mode | `diff.toggleFile` |
-| Load a large file anyway              | `z a`                                          | In `file`; in code views, only in normal mode | `diff.loadWhole`  |
+| Action                          | Keys                                           | Where                                         | Command           |
+| ------------------------------- | ---------------------------------------------- | --------------------------------------------- | ----------------- |
+| The other side                  | `Tab`                                          | In `diff`; in code views, only in normal mode | `diff.otherSide`  |
+| Side by side                    | None: in the app menu on macOS and the palette | In `diff`                                     | `diff.sideBySide` |
+| Inline                          | `g i`                                          | In `diff`; in code views, only in normal mode | `diff.inline`     |
+| Hide or show whitespace changes | `g w`                                          | In `diff`; in code views, only in normal mode | `diff.whitespace` |
+| Open unchanged lines            | `z o`                                          | In `diff`; in code views, only in normal mode | `diff.openRun`    |
+| Close unchanged lines           | `z c`                                          | In `diff`; in code views, only in normal mode | `diff.closeRun`   |
+| Show all unchanged lines        | `z R`                                          | In `diff`; in code views, only in normal mode | `diff.openFile`   |
+| Collapse file                   | `z a`                                          | In `diff`; in code views, only in normal mode | `diff.toggleFile` |
+| Load a large file anyway        | `z a`                                          | In `file`; in code views, only in normal mode | `diff.loadWhole`  |
 
 ## Comment box
 

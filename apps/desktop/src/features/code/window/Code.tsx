@@ -204,7 +204,7 @@ export function ReferencesPanel({ tab }: { tab: PullTab }): ReactNode {
       <div className="flex min-w-0 flex-none items-center gap-2 overflow-hidden border-t border-border-subtle px-8 py-4 whitespace-nowrap text-fg-muted text-small">
         <HintButton command="code.nextReference">Next</HintButton>
         <HintButton command="code.previousReference">Previous</HintButton>
-        <HintButton command="code.goReference">Show</HintButton>
+        <HintButton command="code.goReference">Go to reference</HintButton>
         <HintButton command="code.closeReferences">Close</HintButton>
       </div>
     </div>

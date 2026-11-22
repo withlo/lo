@@ -153,7 +153,7 @@ export default defineCommands('diff', {
     when: normal,
   },
   openFile: {
-    label: 'Open every unchanged line in the file',
+    label: 'Show all unchanged lines',
     group: 'Diff view',
     keys: ['z R'],
     targets: ['line', 'header'],

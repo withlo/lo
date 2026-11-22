@@ -507,6 +507,9 @@ export function FileTreePanel({
 }: FileTreePanelProps) {
   // Dimmed, with why: said to be disabled, not made so, so focus and the tooltip still reach it.
   const dimmed = waiting ? { 'aria-disabled': true, 'aria-description': WAITING } : {};
+  // A switch's words are on it: its tooltip is there for its key, or why it's dimmed.
+  const modeTip = (words: string) =>
+    waiting ? WAITING : modeKeys !== undefined && modeKeys.length > 0 ? words : null;
   return (
     <section aria-label="Files" className="flex min-h-0 flex-1 flex-col bg-bg-chrome">
       <div className="flex flex-none items-center gap-6 ps-16 pe-8 pt-12 pb-8">
@@ -529,7 +532,7 @@ export function FileTreePanel({
             aria-label="File list"
             className="inline-flex flex-none items-center gap-2 rounded-pill bg-bg-well p-2 inset-ring inset-ring-border"
           >
-            <Tooltip label={waiting ? WAITING : 'Tree'} keys={waiting ? undefined : modeKeys}>
+            <Tooltip label={modeTip('Tree')} keys={waiting ? undefined : modeKeys}>
               <button
                 type="button"
                 aria-pressed={mode === 'tree'}
@@ -540,10 +543,7 @@ export function FileTreePanel({
                 Tree
               </button>
             </Tooltip>
-            <Tooltip
-              label={waiting ? WAITING : 'Review order'}
-              keys={waiting ? undefined : modeKeys}
-            >
+            <Tooltip label={modeTip('Review order')} keys={waiting ? undefined : modeKeys}>
               <button
                 type="button"
                 aria-pressed={mode === 'review'}

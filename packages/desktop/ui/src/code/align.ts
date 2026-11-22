@@ -56,7 +56,9 @@ export type HeldBelow = (side: 'old' | 'new', row: number) => boolean;
  * side catches up above the next row with lines on both. Where `current` has a spacer within
  * `tolerance` of the height needed, it stays, and what it leaves over is caught up at the next
  * place. Where `held` says the spacer below a row's lines stays, it does, and that side catches up
- * at the next place.
+ * at the next place. With `last`, the rows run to the end of both documents, and rows on one side
+ * after the last with lines on both are caught up with below that one, so the end of the last
+ * file leaves the same space as the end of any other.
  */
 export function alignRows(
   rows: readonly RowHeights[],
@@ -64,6 +66,7 @@ export function alignRows(
   newTop: number,
   current: CurrentSpacer = () => undefined,
   held: HeldBelow = () => false,
+  last = false,
 ): Spacer[] {
   const spacers: Spacer[] = [];
   let oldAt = oldTop;
@@ -84,7 +87,26 @@ export function alignRows(
       newAt += row.new.above + row.new.body;
     }
   });
+  if (last) catchUpAtEnd();
   return spacers;
+
+  /** Catches up below the last row with lines on both sides, with what's on one side after it. */
+  function catchUpAtEnd(): void {
+    const row = rows.findLastIndex((each) => each.old && each.new && !each.end);
+    const ahead = oldAt - newAt;
+    if (row === -1 || Math.abs(ahead) < epsilon) return;
+    const side = ahead > 0 ? 'new' : 'old';
+    if (held(side, row)) return;
+    // Added to the one already there, where the row's own catching up put one.
+    const at = spacers.findIndex(
+      (spacer) => spacer.side === side && spacer.row === row && spacer.place === 'below',
+    );
+    const needed = (at === -1 ? 0 : spacers[at]!.height) + Math.abs(ahead);
+    const kept = current(side, row, 'below');
+    const height = kept !== undefined && Math.abs(kept - needed) < tolerance ? kept : needed;
+    if (at === -1) spacers.push({ side, row, place: 'below', height });
+    else spacers[at] = { side, row, place: 'below', height };
+  }
 
   function catchUp(row: number, place: 'above' | 'below'): void {
     if (place === 'below') {

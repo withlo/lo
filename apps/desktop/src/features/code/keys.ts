@@ -139,7 +139,7 @@ export default defineCommands(
     goReference: {
       label: 'Go to the reference',
       group: 'Panels',
-      control: "Show in the references panel's foot, or a reference's row",
+      control: "Go to reference in the references panel's foot, or a reference's row",
       keys: ['enter'],
       when: panel,
     },

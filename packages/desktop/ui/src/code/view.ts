@@ -3214,29 +3214,41 @@ class View implements DiffView {
   }
 
   /**
-   * Says which file is at the top of the screen when it changes: read as the editor next reads the
-   * layout, with what else it reads, once a frame at most.
+   * Says which file is at the top of the screen when it changes, and pins its header: read as the
+   * editor next reads the layout, with what else it reads, once a frame at most. It's asked after
+   * every scroll, the reader's or one set from code, and whenever what an editor drew moves, which
+   * no scroll event follows.
    */
   readonly #watchFile = (): void => {
     const pane: Pane = this.#pane === 'inline' ? 'inline' : 'new';
+    // Asked by an editor's update while the inline one is still being made.
+    if (pane === 'inline' && !this.#inline) return;
     const view = this.#viewOf(pane);
     view.requestMeasure({
       key: this.#watchFile,
       read: () => {
         const top = this.dom.getBoundingClientRect().top - view.documentTop;
         const block = view.lineBlockAtHeight(Math.max(0, top + 1));
-        const file = this.#fileAt(pane, view.state.doc.lineAt(block.from).number);
-        // Its header is pinned while it's above the top edge: scrolled into the file. The header's
-        // own top, not that of what the editor draws before it, such as the room that lines up the
-        // file above.
-        const header = this.#docLine(pane, { file, side: 'new', line: 0 });
-        const pinned = ownTop(view.lineBlockAt(view.state.doc.line(header).from)) < top - 0.5;
+        // A file's header's own top, below the top edge or above it: not that of what the editor
+        // draws before it, such as the room that lines up the file above.
+        const headerTop = (file: number): number => {
+          const header = this.#docLine(pane, { file, side: 'new', line: 0 });
+          return ownTop(view.lineBlockAt(view.state.doc.line(header).from)) - top;
+        };
+        let file = this.#fileAt(pane, view.state.doc.lineAt(block.from).number);
+        // The room over a header that's still below the top edge is the file above's.
+        if (file > 0 && headerTop(file) > 0.5) file -= 1;
+        // Its header is pinned while it's above the top edge: scrolled into the file.
+        const pinned = headerTop(file) < -0.5;
+        // The next file's header pushes it up as it comes under it.
+        const next = file + 1 < this.#files.length ? headerTop(file + 1) : Infinity;
+        const shift = Math.min(0, next - HEADER_HEIGHT);
         // The path starts where the left column's code does.
         const start = gutterWidth(pane === 'inline' ? view : this.views.old);
-        return { file, pinned, start };
+        return { file, pinned, shift, start };
       },
-      write: ({ file, pinned, start }) => {
-        this.#pin.show(pinned ? { file, info: this.#files[file]! } : undefined, start);
+      write: ({ file, pinned, shift, start }) => {
+        this.#pin.show(pinned ? { file, info: this.#files[file]!, shift } : undefined, start);
         if (file === this.#said.file) return;
         this.#said.file = file;
         this.#on.file(this.#ids[file]!);
@@ -3520,6 +3532,13 @@ class View implements DiffView {
       EditorView.scrollMargins.of((view) =>
         this.#onHeader(pane, view) ? null : { top: HEADER_HEIGHT },
       ),
+      // What's at the top of the screen moves with what the editor drew, as the room the spacer
+      // pass adds, or the lines it measures once a scroll set from code brings them in.
+      EditorView.updateListener.of((update) => {
+        if (update.heightChanged || update.viewportChanged || update.geometryChanged) {
+          this.#watchFile();
+        }
+      }),
     ];
   }
 

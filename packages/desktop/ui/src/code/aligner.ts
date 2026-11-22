@@ -1164,6 +1164,8 @@ export class Aligner {
         const to = state.doc.line(last).to;
         return to < viewport.from || to > viewport.to;
       },
+      // The region runs to the end of the last file.
+      !end && this.#step(refs.at(-1)!, 1) === undefined,
     );
 
     let changed = false;
@@ -1184,7 +1186,14 @@ export class Aligner {
           const ref = refs[row]!;
           const { first, last } = lines(ref, side);
           const under = ref.row === 0 && place === 'below';
-          const flat = under || this.#rows(ref.file).collapsed[ref.row] !== 0;
+          // Above a header, it's the end of the file before.
+          const owner = ref.row === 0 && place === 'above' ? ref.file - 1 : ref.file;
+          // Beside folded lines, or on a side with none of its file's lines, as an added file's
+          // old side: a missing file isn't a gap.
+          const flat =
+            under ||
+            this.#rows(ref.file).collapsed[ref.row] !== 0 ||
+            (owner >= 0 && this.#layout.files[owner]![side].count === 0);
           return { line: place === 'above' ? first : last, place, height, flat, under };
         });
       // Short gaps keep their hatch by the run they're in, not one by one.

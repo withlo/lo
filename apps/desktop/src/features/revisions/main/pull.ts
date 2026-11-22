@@ -400,9 +400,7 @@ export class RevisionsTab {
         error instanceof GithubError
           ? writeFailed({ path, mark: viewed, id: 0 }, who, error)
           : undefined;
-      this.#options.log(
-        `Couldn’t ${viewed ? `mark ${path} viewed` : `clear the viewed mark on ${path}`}: ${said}`,
-      );
+      this.#options.log(`Couldn’t ${viewed ? `mark ${path} viewed` : `unmark ${path}`}: ${said}`);
       return { kind: 'failed', reason: reason ?? null, details: said };
     }
     if (marked.kind !== 'done') return marked;

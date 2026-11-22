@@ -62,6 +62,19 @@ async function open(
   return page;
 }
 
+/** The page with three files side by side, as `harness.openFiles` draws them, in a box `height` tall. */
+async function openFiles(height?: number): Promise<Page> {
+  app = await launch(harness);
+  const page = await app.firstWindow();
+  await page.waitForFunction(() => 'harness' in window);
+  await page.evaluate((tall) => {
+    if (tall !== undefined) window.harness.setHeight(tall);
+    window.harness.openFiles();
+  }, height);
+  await frames(page);
+  return page;
+}
+
 /** The page, the file's new version whole, line 20 at the top; with `height`, in a box that tall. */
 async function openWhole(height?: number): Promise<Page> {
   app = await launch(harness);
@@ -918,4 +931,43 @@ test('a comment box that grows as lines are typed in it keeps its foot 8 px clea
     return foot - each.getBoundingClientRect().bottom;
   });
   expect(Math.abs(under - 8)).toBeLessThan(1);
+});
+
+test('equal runs of empty space look equal, at the end of the last file too, and a side with none of a file’s lines is never hatched', async () => {
+  const page = await openFiles();
+  const spacers = async () => {
+    const all = await page.evaluate(() => window.harness.spacers());
+    const of = (path: string) => all.filter((each) => each.path === path && each.height > 1);
+    return { a: of('src/a.ts'), b: of('src/b.ts'), c: of('src/c.ts') };
+  };
+  // src/a.ts and src/c.ts each end with three lines the old side doesn't have; src/b.ts has no old
+  // side at all.
+  await expect
+    .poll(async () => {
+      const { a, b, c } = await spacers();
+      return {
+        a: a.map(({ look }) => look),
+        b: b.map(({ look }) => look),
+        c: c.map(({ look }) => look),
+      };
+    })
+    .toEqual({ a: ['hatched'], b: ['flat'], c: ['hatched'] });
+  const { a, c } = await spacers();
+  expect(Math.abs(a[0]!.height - c[0]!.height)).toBeLessThan(1);
+});
+
+test('the next file’s header pushes the pinned row up as it comes under it, and the row is that file’s once it reaches the top', async () => {
+  const page = await openFiles(100);
+  const pinned = () => page.evaluate(() => window.harness.pinned());
+  // src/c.ts's header 20 px below the top edge: src/b.ts's row, pushed up by the rest of its height.
+  await page.evaluate(() => window.harness.headerAt('src/c.ts', 20));
+  await frames(page);
+  const pushed = await pinned();
+  expect(pushed?.path).toBe('src/b.ts');
+  const shift = Number(/translateY\((-?[\d.]+)px\)/.exec(pushed?.transform ?? '')?.[1]);
+  expect(Math.abs(shift + (PINNED - 20))).toBeLessThan(1);
+  // Past the top edge, it's src/c.ts's, in place.
+  await page.evaluate(() => window.harness.headerAt('src/c.ts', -10));
+  await frames(page);
+  expect(await pinned()).toEqual({ path: 'src/c.ts', transform: '' });
 });

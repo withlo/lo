@@ -215,9 +215,7 @@ export function toggle(
   if (can.kind === 'refused') return can;
   const { model, path, marking, at } = can;
   const name = file.path.text.slice(file.path.text.lastIndexOf('/') + 1);
-  const title = marking
-    ? `Couldn’t mark ${name} viewed`
-    : `Couldn’t clear the viewed mark on ${name}`;
+  const title = marking ? `Couldn’t mark ${name} viewed` : `Couldn’t unmark ${name}`;
   const made = model.marks.toggle(path);
   // A new mark or clear on the file takes the place of one that failed.
   model.failed.delete(path);
