@@ -45,89 +45,89 @@ GitHub’s own name for it.
 
 ### GitHub’s things
 
-| Write              | For                                                                                                          | Never                                                 |
-| ------------------ | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------- |
-| pull request       | What’s under review. A specific one is its number: #264, or owner/repo#264 outside its tab.                  | PR, pull, “pull request #264”                         |
-| repo               | A GitHub repository, written owner/repo.                                                                     | repository, project                                   |
-| revision           | The pull request as of one push, written r3. “Pushed” is only a verb: “ravi-k pushed r5”.                    | push as a noun, version, head, snapshot               |
-| latest             | The newest revision: “Show latest”.                                                                          | newest, newer, current, tip                           |
-| out of date        | Behind the latest revision: “Written for r3 · now r5”.                                                       | stale, outdated, old                                  |
-| branch out of date | A branch behind its base branch. Always with “branch”: “out of date” alone is a revision.                    | behind, stale, “needs update”                         |
-| commit             | One Git commit, named by its short ID in code.                                                               | SHA, hash, ref, object                                |
-| base branch        | The branch a pull request merges into, in code: `main`.                                                      | target, base ref, upstream                            |
-| thread             | A comment on the diff with its replies.                                                                      | conversation, discussion                              |
-| comment            | One message, in a thread or on the timeline.                                                                 | post, note, message                                   |
-| review             | Your verdict with its comments. A pending review holds comments not yet submitted.                           | draft review                                          |
-| summary            | The text written with a review.                                                                              | review body, review note                              |
-| description        | The pull request’s own text.                                                                                 | body                                                  |
-| draft              | A comment written and not yet sent. The pull request state is “draft pull request”.                          | unsent comment                                        |
-| checks             | GitHub’s checks.                                                                                             | CI, statuses, builds                                  |
-| merge queue        | GitHub’s merge queue. “Queue” alone only inside its own tab. What it holds are pull requests.                | train, entry                                          |
-| place              | Where a pull request stands in a merge queue, as an ordinal: “Queued, 2nd”. Not known: “place not known”.    | position, spot, rank                                  |
-| ahead              | How many pull requests are before one in a merge queue: “3 ahead”, “0 ahead”. A count cut short: “3+ ahead”. | “none ahead”, “at least 3”                            |
-| front              | 1st place in a merge queue: “Move to front…”.                                                                | top, head, “jump the queue”                           |
-| group              | Pull requests a merge queue tests and merges together: “Groups of up to 5”.                                  | batch, train                                          |
-| waiting to join    | Auto-merge is on, and GitHub hasn’t added the pull request to the merge queue yet.                           | pending, “not yet”, “not queued”                      |
-| auto-merge         | GitHub merging by itself once its requirements are met.                                                      | Merge when ready, automerge                           |
-| bypass rules       | Merging though a branch rule blocks it: “Bypass rules and merge…”.                                           | Merge anyway, past the rules, without the rules, skip |
-| merge method       | How a pull request merges, by its name: Squash, Merge commit, Rebase. Never in a button.                     | strategy, merge type, “Squash and merge”              |
-| approval           | A review that approves: “2 more approvals”. The verb is “approve”.                                           | sign-off, stamp, LGTM                                 |
-| code owner         | Someone whose approval a changed file requires: “1 approval from a code owner”.                              | “owner” alone, CODEOWNERS, “code owner review”        |
-| viewed             | A file marked viewed.                                                                                        | seen, read, done                                      |
-| account            | A GitHub account Lo is signed in to, by its name: ravi-k.                                                    | login, user, token, credentials                       |
+| Write              | For                                                                                                                                                                 | Never                                                 |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| pull request       | What’s under review. A specific one is its number: #264, or owner/repo#264 outside its tab.                                                                         | PR, pull, “pull request #264”                         |
+| repo               | A GitHub repository, written owner/repo.                                                                                                                            | repository, project                                   |
+| revision           | The pull request as of one push, written r3. “Pushed” is only a verb: “ravi-k pushed r5”.                                                                           | push as a noun, version, head, snapshot               |
+| latest             | The newest revision: “Show latest”.                                                                                                                                 | newest, newer, current, tip                           |
+| out of date        | Behind the latest revision: “Written for r3 · now r5”.                                                                                                              | stale, outdated, old                                  |
+| branch out of date | A branch behind its base branch. Always with “branch”: “out of date” alone is a revision.                                                                           | behind, stale, “needs update”                         |
+| commit             | One Git commit, named by its short ID in code.                                                                                                                      | SHA, hash, ref, object                                |
+| base branch        | The branch a pull request merges into, in code: `main`.                                                                                                             | target, base ref, upstream                            |
+| thread             | A comment on the diff with its replies.                                                                                                                             | conversation, discussion                              |
+| comment            | One message, in a thread or on the timeline.                                                                                                                        | post, note, message                                   |
+| review             | Your verdict with its comments. A pending review holds comments not yet submitted.                                                                                  | draft review                                          |
+| summary            | The text written with a review.                                                                                                                                     | review body, review note                              |
+| description        | The pull request’s own text.                                                                                                                                        | body                                                  |
+| draft              | A comment written and not yet sent. The pull request state is “draft pull request”.                                                                                 | unsent comment                                        |
+| checks             | GitHub’s checks.                                                                                                                                                    | CI, statuses, builds                                  |
+| merge queue        | GitHub’s merge queue. “Queue” alone only inside its own tab. What it holds are pull requests.                                                                       | train, entry                                          |
+| place              | Where a pull request stands in a merge queue, as an ordinal: “Queued, 2nd”. Not known: “place not known”.                                                           | position, spot, rank                                  |
+| ahead              | How many pull requests are before one in a merge queue: “3 ahead”, “0 ahead”. A count cut short: “3+ ahead”.                                                        | “none ahead”, “at least 3”                            |
+| front              | 1st place in a merge queue: “Move to front…”.                                                                                                                       | top, head, “jump the queue”                           |
+| group              | Pull requests a merge queue tests and merges together: “Groups of up to 5”. In Settings, a group is the settings under one name.                                    | batch, train                                          |
+| waiting to join    | Auto-merge is on, and the pull request hasn’t joined the merge queue yet. In the merge status it’s a detail, never a verdict: “Auto-merge is on · waiting to join”. | pending, “not yet”, “not queued”                      |
+| auto-merge         | GitHub merging by itself once nothing blocks it.                                                                                                                    | Merge when ready, automerge                           |
+| bypass rules       | Merging though a branch rule blocks it: “Bypass rules and merge…”.                                                                                                  | Merge anyway, past the rules, without the rules, skip |
+| merge method       | How a pull request merges, by its name: Squash, Merge commit, Rebase. Never in a button.                                                                            | strategy, merge type, “Squash and merge”              |
+| approval           | A review that approves: “2 more approvals”. The verb is “approve”. An organization also approves Lo: “Request approval on GitHub”.                                  | sign-off, stamp, LGTM                                 |
+| code owner         | Someone whose approval a changed file requires: “1 approval from a code owner”.                                                                                     | “owner” alone, CODEOWNERS, “code owner review”        |
+| viewed             | A file marked viewed.                                                                                                                                               | seen, read, done                                      |
+| account            | A GitHub account Lo is signed in to, by its name: ravi-k.                                                                                                           | login, user, token, credentials                       |
 
 ### Lo’s things
 
-| Write                   | For                                                                                                                                                                                                               | Never                                                     |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| overview                | The document that explains a pull request.                                                                                                                                                                        | summary, artifact, write-up                               |
-| overview skill          | What a coding agent installs to write overviews. In code: `lo-overview`.                                                                                                                                          | Lo skill, agent skill, “the skill” alone                  |
-| stack                   | Pull requests that each build on the one before.                                                                                                                                                                  | chain, train                                              |
-| layer                   | One pull request in a stack.                                                                                                                                                                                      | level, node                                               |
-| GitHub stack            | A stack GitHub itself tracks.                                                                                                                                                                                     | native stack                                              |
-| branch stack            | A stack GitHub doesn’t track, held together only by its branches. Named only where the difference from a GitHub stack matters. Elsewhere it’s a stack.                                                            | chain, plain stack, implicit stack, detected stack        |
-| bottom layer, top layer | The two ends of a stack. The bottom layer merges first.                                                                                                                                                           | first, last, root, base, tip                              |
-| above, below            | Where one layer is from another: “Layers above #264”. A layer is “based on” the one below it.                                                                                                                     | upstack, downstack, parent, child, “sits on”, “on top of” |
-| needs a rebase          | A layer whose branch still holds commits already merged below it: “Needs a rebase”.                                                                                                                               | restack, “needs rebase”, “may need a rebase”, out of date |
-| layers 2–4              | Several layers shown as one diff, named by their span.                                                                                                                                                            | run, range                                                |
-| merge status            | The verdict in a pull request’s header. It reads as one of the lines under [Merge status](#merge-status).                                                                                                         | merge state, mergeability, merge box                      |
-| reason                  | One thing that blocks a merge, as a row in the merge panel: “3 reasons”, “Next reason”. The Reason under an error’s title is the name of a part in this guide, and never reaches the screen.                      | blocker, issue, requirement, problem                      |
-| blocked                 | Stopped from merging by one or more reasons. The merge panel’s list of them is “Blocked”. With no reason from GitHub: “Blocked by GitHub”.                                                                        | in the way, held up, stuck, “GitHub says no”              |
-| local copy              | Lo’s copy of a repo on this computer.                                                                                                                                                                             | clone, checkout, working copy                             |
-| cache                   | Everything Lo stores to open pull requests fast: local copies and saved data.                                                                                                                                     | saved answers, store                                      |
-| language server         | The program behind definitions, references and types. Name a server as its makers write it: Pyright, gopls.                                                                                                       | LSP, “server” alone                                       |
-| code intelligence       | What language servers give: definitions, references, types.                                                                                                                                                       | code answers, smart features                              |
-| code index              | Lo’s own index of names, used when no language server runs.                                                                                                                                                       | syntax index, symbol index, fallback                      |
-| trust                   | Letting language servers run on a repo or a pull request: “Trust repo…”, “Stop trusting”.                                                                                                                         | allow, approve, enable                                    |
-| update                  | A newer version of Lo: “Lo 0.2.0 is available”. Its buttons: “Update”, then “Restart to update”. Its notes: “What’s new”.                                                                                         | release, “is out”, upgrade, Install, changelog            |
-| welcome                 | The steps a new reader sees first. Its one command, in Help and the palette: “Welcome to Lo”.                                                                                                                     | onboarding, setup, tour, “Show welcome”                   |
-| Settings                | Capital S. A place in it is a path: Settings › Storage. The file is `settings.json`.                                                                                                                              | preferences, options, config, “the settings file”         |
-| keyboard shortcuts      | The list of Lo’s keys. One of them is a key.                                                                                                                                                                      | key help, keybindings, hotkeys                            |
-| Vim keys                | The setting for Vim’s modal editing. Its modes are written as Vim writes them: NORMAL, INSERT, V-LINE.                                                                                                            | Vim mode, Vim-style keys                                  |
-| command                 | A row in the command palette.                                                                                                                                                                                     | action                                                    |
-| comment box             | Where a comment is written: “Close comment box”.                                                                                                                                                                  | composer, editor, input, “the box” alone                  |
-| preview                 | The comment as it will read once sent. A choice in the comment box: “Write”, “Preview”.                                                                                                                           | “Write or preview”, rendered                              |
-| whole file              | A file in full, not only its changed lines: “Open whole file”.                                                                                                                                                    | full file, entire file, file view                         |
-| definitions             | What “Show definition” brings up under the line: “Next definition”, “Close definitions”.                                                                                                                          | peek, answers, popup                                      |
-| rule                    | What an app such as Finicky uses to send pull request links to Lo: “Show rules”, “Copy rule”. The steps for an app keep its own word, in code: Finicky’s `handlers`. On a merge, rules are GitHub’s branch rules. | handler, setup, config                                    |
+| Write                   | For                                                                                                                                                                                                                                   | Never                                                     |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| overview                | The document that explains a pull request.                                                                                                                                                                                            | summary, artifact, write-up                               |
+| overview skill          | What a coding agent installs to write overviews. In code: `lo-overview`.                                                                                                                                                              | Lo skill, agent skill, “the skill” alone                  |
+| stack                   | Pull requests that each build on the one before.                                                                                                                                                                                      | chain, train                                              |
+| layer                   | One pull request in a stack.                                                                                                                                                                                                          | level, node                                               |
+| GitHub stack            | A stack GitHub itself tracks.                                                                                                                                                                                                         | native stack                                              |
+| branch stack            | A stack GitHub doesn’t track, held together only by its branches. Named only where the difference from a GitHub stack matters. Elsewhere it’s a stack.                                                                                | chain, plain stack, implicit stack, detected stack        |
+| bottom layer, top layer | The two ends of a stack. The bottom layer merges first.                                                                                                                                                                               | first, last, root, base, tip                              |
+| above, below            | Where one layer is from another: “Layers above #264”. A layer is “based on” the one below it.                                                                                                                                         | upstack, downstack, parent, child, “sits on”, “on top of” |
+| needs a rebase          | A layer whose branch still holds commits already merged below it: “Needs a rebase”.                                                                                                                                                   | restack, “needs rebase”, “may need a rebase”, out of date |
+| layers 2–4              | Several layers shown as one diff, named by their span.                                                                                                                                                                                | run, range                                                |
+| merge status            | The verdict in a pull request’s header. It reads as one of the lines under [Merge status](#merge-status).                                                                                                                             | merge state, mergeability, merge box                      |
+| reason                  | One thing that blocks a merge, as a row in the merge panel: “3 reasons”, “Next reason”. The Reason under an error’s title is the name of a part in this guide, and never reaches the screen.                                          | blocker, issue, requirement, problem                      |
+| blocked                 | Stopped from merging by one or more reasons. The merge panel’s list of them is “Blocked”. A reason GitHub doesn’t give is “Blocked by GitHub”. In the merge status it’s a detail, never a verdict: “Can’t merge · blocked by GitHub”. | in the way, held up, stuck, “GitHub says no”              |
+| local copy              | Lo’s copy of a repo on this computer.                                                                                                                                                                                                 | clone, checkout, working copy                             |
+| cache                   | Everything Lo stores to open pull requests fast: local copies and saved data.                                                                                                                                                         | saved answers, store                                      |
+| language server         | The program behind definitions, references and types. Name a server as its makers write it: Pyright, gopls.                                                                                                                           | LSP, “server” alone                                       |
+| code intelligence       | What language servers give: definitions, references, types.                                                                                                                                                                           | code answers, smart features                              |
+| code index              | Lo’s own index of names, used when no language server runs.                                                                                                                                                                           | syntax index, symbol index, fallback                      |
+| trust                   | Letting language servers run on a repo or a pull request: “Trust repo…”, “Stop trusting”.                                                                                                                                             | allow, approve, enable                                    |
+| update                  | A newer version of Lo: “Lo 0.2.0 is available”. Its buttons: “Update”, then “Restart to update”. Its notes: “What’s new”.                                                                                                             | release, “is out”, upgrade, Install, changelog            |
+| welcome                 | The steps a new reader sees first. Its one command, in Help and the palette: “Welcome to Lo”.                                                                                                                                         | onboarding, setup, tour, “Show welcome”                   |
+| Settings                | Capital S. A place in it is a path: Settings › Storage. The file is `settings.json`.                                                                                                                                                  | preferences, options, config, “the settings file”         |
+| keyboard shortcuts      | The list of Lo’s keys. One of them is a key.                                                                                                                                                                                          | key help, keybindings, hotkeys                            |
+| Vim keys                | The setting for Vim’s modal editing. Its modes are written as Vim writes them: NORMAL, INSERT, V-LINE.                                                                                                                                | Vim mode, Vim-style keys                                  |
+| command                 | A row in the command palette.                                                                                                                                                                                                         | action                                                    |
+| comment box             | Where a comment is written: “Close comment box”.                                                                                                                                                                                      | composer, editor, input, “the box” alone                  |
+| preview                 | The comment as it will read once sent. A choice in the comment box: “Write”, “Preview”.                                                                                                                                               | “Write or preview”, rendered                              |
+| whole file              | A file in full, not only its changed lines: “Open whole file”.                                                                                                                                                                        | full file, entire file, file view                         |
+| definitions             | What “Show definition” brings up under the line: “Next definition”, “Close definitions”.                                                                                                                                              | peek, answers, popup                                      |
+| rule                    | What an app such as Finicky uses to send pull request links to Lo: “Show rules”, “Copy rule”. The steps for an app keep its own word, in code: Finicky’s `handlers`. On a merge, rules are GitHub’s branch rules.                     | handler, setup, config                                    |
 
 ### Merge status
 
-The merge status is a verdict, then one detail: “Queued, 2nd · about 12 min”. Each verdict has one
-wording.
+The merge status is a verdict, then one detail: “Queued, 2nd · merges in about 12 min”. Each verdict
+has one wording.
 
-| Write                 | When                                                        |
-| --------------------- | ----------------------------------------------------------- |
-| Checking…             | GitHub hasn’t answered yet.                                 |
-| Ready to merge        | It can merge now.                                           |
-| Ready for merge queue | It can be added to the merge queue.                         |
-| Can’t merge yet       | Something is still to come: a review, running checks.       |
-| Can’t merge           | Something has to change first: conflicts, a failed check.   |
-| Auto-merge is on      | GitHub merges it once its requirements are met.             |
-| Queued                | It’s in the merge queue. With its place: “Queued, 2nd”.     |
-| Will be removed       | It’s in the merge queue, and GitHub is about to remove it.  |
-| Left the merge queue  | It was in the merge queue, and is neither there nor merged. |
-| Merged, Closed        | GitHub’s own words for its state.                           |
+| Write                 | When                                                         |
+| --------------------- | ------------------------------------------------------------ |
+| Checking…             | GitHub hasn’t answered yet.                                  |
+| Ready to merge        | It can merge now.                                            |
+| Ready for merge queue | It can be added to the merge queue.                          |
+| Can’t merge yet       | Something is still to come: a review, running checks.        |
+| Can’t merge           | Something has to change first: conflicts, a failed check.    |
+| Auto-merge is on      | GitHub merges it once nothing blocks it.                     |
+| Queued                | It’s in the merge queue. With its place: “Queued, 2nd”.      |
+| Leaving merge queue   | It’s in the merge queue, and about to leave without merging. |
+| Left merge queue      | It was in the merge queue, and is neither there nor merged.  |
+| Merged, Closed        | GitHub’s own words for its state.                            |
 
 Never “mergeable”, “pending”, “dequeued” or “clean”.
 
@@ -528,18 +528,18 @@ What an action did.
 
 ### Times
 
-| Write                 | For                                                                        |
-| --------------------- | -------------------------------------------------------------------------- |
-| 20 s, 5 min, 2 h, 3 d | The units, after a space. The largest whole unit only: never “2 h 14 min”. |
-| just now              | Under a minute ago.                                                        |
-| 5 min ago, 2 h ago    | The past.                                                                  |
-| Checked 5 min ago     | When something was last read from GitHub. Never “Updated” or “Refreshed”.  |
-| Nov 12                | More than 30 days ago: the date.                                           |
-| Nov 12, 2025          | A date in another year.                                                    |
-| in 5 min              | Ahead.                                                                     |
-| Retrying in 20 s      | A countdown, which says what it’s waiting for.                             |
-| about 5 min           | An estimate. Never `~`.                                                    |
-| 14:05                 | A time of day, in the system’s own format.                                 |
+| Write                 | For                                                                                                     |
+| --------------------- | ------------------------------------------------------------------------------------------------------- |
+| 20 s, 5 min, 2 h, 3 d | The units, after a space. The largest whole unit only: never “2 h 14 min”.                              |
+| just now              | Under a minute ago.                                                                                     |
+| 5 min ago, 2 h ago    | The past.                                                                                               |
+| Checked 5 min ago     | When something was last read from GitHub. Never “Updated” or “Refreshed”.                               |
+| Nov 12                | More than 30 days ago: the date.                                                                        |
+| Nov 12, 2025          | A date in another year.                                                                                 |
+| in 5 min              | Ahead.                                                                                                  |
+| Retrying in 20 s      | A countdown, which says what it’s waiting for.                                                          |
+| about 5 min           | An estimate. Never `~`. Outside a column that names it, it says what it’s of: “merges in about 12 min”. |
+| 14:05                 | A time of day, in the system’s own format.                                                              |
 
 Never milliseconds. Never “a moment”, “a while” or “soon”.
 
@@ -623,7 +623,7 @@ The short ones:
 | `code/keys.ts`                  | Trust this PR…                                                         | Trust pull request…                          |
 | `open/keys.ts`                  | Review a pull request                                                  | Open pull request…                           |
 | `open/keys.ts`                  | Open the link on the clipboard                                         | Paste link                                   |
-| `stacks/window/actions.ts`      | Make this a GitHub stack…                                              | Convert to GitHub stack…                     |
+| `stacks/window/Stack.tsx`       | Make this a GitHub stack…                                              | Convert to GitHub stack…                     |
 | `queue/window/acting.ts`        | Take #264 out of the merge queue for main?                             | Remove #264 from merge queue?                |
 | `queue/window/rows.ts`          | 1 h 5 min                                                              | 1 h                                          |
 
