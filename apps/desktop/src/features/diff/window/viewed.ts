@@ -11,6 +11,7 @@ import type { FileVersions } from '../contract.ts';
 import {
   passedOver,
   toggleViewed,
+  viewedMarkOf,
   viewedMarksOf,
   viewedRefusal,
 } from '../../revisions/window/shared.ts';
@@ -45,6 +46,15 @@ export function viewedEnabled(drawn: Drawn, target: LineTarget | HeaderTarget): 
   if (!entry) return 'Reading changed files…';
   const { path, previous } = entry.versions;
   return viewedRefusal(drawn.tab, { path, previous }) ?? true;
+}
+
+/** Whether the file at `target` in the diff drawn as `drawn` shows as viewed, so `e` unmarks it. */
+export function viewedAt(drawn: Drawn, target: LineTarget | HeaderTarget): boolean {
+  const id = drawn.fileAt(target);
+  const entry = drawn.loader.snapshot().ready?.entries.find((each) => each.id === id);
+  if (!entry) return false;
+  const { path, previous } = entry.versions;
+  return viewedMarkOf(viewedMarksOf(drawn.tab), path, previous) === 'viewed';
 }
 
 /**

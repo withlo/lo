@@ -72,7 +72,7 @@ describe('FileTree', () => {
     expect(html).toContain('title="2 changed files"');
     expect(html).not.toContain('title="3 changed files"');
     expect(html).toContain('← b.ts');
-    expect(html).toContain('title="Changed since you viewed it"');
+    expect(html).toContain('title="Changed since viewed"');
     expect(html).toContain('>gen<');
     expect(html).toContain('aria-current="true"');
     expect(html).toContain('1 / 3');

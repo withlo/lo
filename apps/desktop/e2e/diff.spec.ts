@@ -217,7 +217,7 @@ async function drawn(
     });
   }
   // The local copy's diff takes GitHub's place a file at a time, which the status bar counts.
-  await expect(page.getByText(/^Diffing \d+ of \d+$/)).toHaveCount(0, { timeout: 20_000 });
+  await expect(page.getByText(/^Diffing files · \d+ of \d+$/)).toHaveCount(0, { timeout: 20_000 });
   // Every file's diff is in once the moves are: they're found last. Inline, the sides' editors are
   // hidden, labels and all.
   if (moves) {
@@ -375,10 +375,10 @@ test('answers its keys: files, changes, sides, layout, whitespace and folds, Esc
 
     // `gw` hides changes to whitespace alone.
     await press(page, 'g', 'w');
-    await expect(page.getByText('Whitespace hidden', { exact: true })).toBeVisible();
+    await expect(page.getByText('Whitespace changes hidden', { exact: true })).toBeVisible();
     await expect.poll(() => readSettings()).toMatchObject({ 'diff.whitespace': 'hide' });
     await press(page, 'g', 'w');
-    await expect(page.getByText('Whitespace hidden', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Whitespace changes hidden', { exact: true })).toHaveCount(0);
 
     // `gx` opens the line in the pull request's changes on GitHub.
     await press(page, 'g', 'x');
@@ -885,7 +885,7 @@ test.describe('when the tree has the changed files after the diff does', () => {
       0,
       { timeout: 30_000 },
     );
-    await expect(page.locator('footer').getByText(/^Diffing \d+ of \d+$/)).toHaveCount(0, {
+    await expect(page.locator('footer').getByText(/^Diffing files · \d+ of \d+$/)).toHaveCount(0, {
       timeout: 20_000,
     });
     const tops = await page.evaluate(() => {
@@ -1015,7 +1015,7 @@ test.describe('while the local copy takes GitHub’s place', () => {
         await expect(status.getByText('GitHub’s diff', { exact: true })).toHaveCount(0, {
           timeout: 30_000,
         });
-        await expect(status.getByText(/^Diffing \d+ of \d+$/)).toHaveCount(0, {
+        await expect(status.getByText(/^Diffing files · \d+ of \d+$/)).toHaveCount(0, {
           timeout: 20_000,
         });
         await expect(tabBanners(page)).toHaveCount(0);
@@ -1218,7 +1218,9 @@ test.describe('when the local copy comes after GitHub’s diff', () => {
     await expect(status.getByText('GitHub’s diff', { exact: true })).toHaveCount(0, {
       timeout: 30_000,
     });
-    await expect(status.getByText(/^Diffing \d+ of \d+$/)).toHaveCount(0, { timeout: 20_000 });
+    await expect(status.getByText(/^Diffing files · \d+ of \d+$/)).toHaveCount(0, {
+      timeout: 20_000,
+    });
     // src/format.ts, off screen, came in; src/parser.ts, on screen, keeps GitHub's lines.
     await expect(formatNote).toHaveCount(0);
     await expect(page.locator('.lo-diffview .lo-collapsed.is-missing').first()).toBeAttached();
@@ -1323,7 +1325,9 @@ test.describe('when the local copy comes after GitHub’s diff, on a file the re
     await expect(page.getByText('GitHub’s diff', { exact: true })).toHaveCount(0, {
       timeout: 30_000,
     });
-    await expect(page.getByText(/^Diffing \d+ of \d+$/)).toHaveCount(0, { timeout: 20_000 });
+    await expect(page.getByText(/^Diffing files · \d+ of \d+$/)).toHaveCount(0, {
+      timeout: 20_000,
+    });
     await page.waitForTimeout(500);
     // Still kept out, under the reader.
     expect(await onScreen()).toBe(true);
@@ -1447,7 +1451,9 @@ test.describe('when a banner over the diff goes', () => {
     await expect(status.getByText('GitHub’s diff', { exact: true })).toHaveCount(0, {
       timeout: 30_000,
     });
-    await expect(status.getByText(/^Diffing \d+ of \d+$/)).toHaveCount(0, { timeout: 20_000 });
+    await expect(status.getByText(/^Diffing files · \d+ of \d+$/)).toHaveCount(0, {
+      timeout: 20_000,
+    });
     await page.waitForTimeout(300);
     const moved = await page.evaluate(() => {
       window.loStill = true;

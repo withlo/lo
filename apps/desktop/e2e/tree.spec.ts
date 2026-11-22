@@ -158,7 +158,7 @@ test('answers its keys: moving, opening and closing folders, review order and ch
     // Only the changed files, then all of them again.
     await page.keyboard.press('f');
     await expect(row(page, 'README.md')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Changed only' })).toHaveAttribute(
+    await expect(page.getByRole('button', { name: 'Changed files only' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );

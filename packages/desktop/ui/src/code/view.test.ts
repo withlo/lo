@@ -2204,11 +2204,9 @@ describe('headers and notes', () => {
       tags: ['generated', 'lockfile'],
       viewed: 'unviewed',
     });
-    const left = (): Element =>
-      document.querySelector('.cm-content[aria-label="Before"] [data-row="h:0"]')!;
-    expect(left().querySelector('.lo-path')?.textContent).toBe('src/a.ts');
-    expect(left().querySelector('.lo-stat')?.textContent).toBe('+5,001−0');
-    expect(left().querySelector('.lo-filehead__end')).toBeNull();
+    expect(leftHeader().querySelector('.lo-path')?.textContent).toBe('src/a.ts');
+    expect(leftHeader().querySelector('.lo-stat')?.textContent).toBe('+5,001−0');
+    expect(leftHeader().querySelector('.lo-filehead__end')).toBeNull();
     const right = headerOf('h:0');
     expect(right.querySelector('.lo-path, .lo-stat')).toBeNull();
     expect(right.querySelector('.lo-diffhead__tags')?.textContent).toBe('generated · lockfile');
@@ -2226,17 +2224,16 @@ describe('headers and notes', () => {
     );
     // A file with no text changes draws no counts.
     shown.setHeader('a', { additions: 0, deletions: 0, counted: false, tags: ['binary'] });
-    expect(left().querySelector('.lo-stat')).toBeNull();
+    expect(leftHeader().querySelector('.lo-stat')).toBeNull();
   });
 
   test('the keyboard on a header rings its band in both columns, and on a line in neither', () => {
     const shown = open();
     shown.reveal(onHeader('a', 'new'));
     shown.focus();
-    const rung = (): number => document.querySelectorAll('[data-row="h:0"].is-keyed').length;
-    expect(rung()).toBe(2);
+    expect(rungHeaders()).toBe(2);
     shown.reveal(onLine('a', 'new', 3));
-    expect(rung()).toBe(0);
+    expect(rungHeaders()).toBe(0);
   });
 
   test('a note on the comparison sits above the sides', () => {
@@ -3613,3 +3610,13 @@ describe('its place on the page', () => {
     expect(page.dom().scrollTop).toBe(30);
   });
 });
+
+/** The first file's header, as the left column draws it. */
+function leftHeader(): Element {
+  return document.querySelector('.cm-content[aria-label="Before"] [data-row="h:0"]')!;
+}
+
+/** How many columns ring the first file's header. */
+function rungHeaders(): number {
+  return document.querySelectorAll('[data-row="h:0"].is-keyed').length;
+}

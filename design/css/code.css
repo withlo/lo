@@ -25,6 +25,12 @@
 .lo-app .cm-editor .cm-scroller { font-family: inherit; line-height: var(--lo-code-line); }
 .lo-app .cm-editor .cm-content { padding: 4px 0; caret-color: var(--lo-code-cursor); }
 .lo-app .cm-editor .cm-line { padding: 0 16px 0 8px; }
+/* A code view's line that wraps continues four columns past its own indent (`--ind`, in columns). */
+.lo-app .cm-editor .cm-line.lo-hang {
+  --hang: calc((var(--ind, 0) + 4) * 1ch);
+  padding-left: calc(8px + var(--hang));
+  text-indent: calc(var(--hang) * -1);
+}
 .lo-app .cm-editor .cm-gutters {
   background: var(--lo-code-bg);
   color: var(--lo-code-gutter);
@@ -526,8 +532,8 @@
 }
 .lo-ln.is-active { color: var(--lo-code-gutter-active); }
 /* Wrapped lines continue four columns past the line's own indent. --ind is
-   the count of leading spaces; in CodeMirror, set it with a line decoration
-   (attributes: { style: "--ind: 6" }) on lines that wrap. */
+   the count of leading spaces; in CodeMirror, the code views' editors set it
+   on every line they draw (`hang.ts`, with .lo-hang, under "Editor"). */
 .lo-sbs .lo-line,
 .lo-uni .lo-line {
   --hang: calc((var(--ind, 0) + 4) * 1ch);

@@ -291,7 +291,7 @@ const tree = (page: Page) => page.locator('[role="tree"][data-lo-scope="tree"]')
 const ball = (page: Page, path: string) =>
   tree(page)
     .locator(`[data-key="${path}"]`)
-    .locator('[title="Viewed"], [title="Not viewed"], [title="Changed since you viewed it"]');
+    .locator('[title="Viewed"], [title="Not viewed"], [title="Changed since viewed"]');
 /**
  * Whether `path`'s file shows closed, its lines in one block: in the new side's editor, its header
  * is followed by a note that says so.

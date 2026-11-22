@@ -10,10 +10,10 @@ import {
   type Ref,
 } from 'react';
 
-import { Key } from './Key.tsx';
 import { Spinner } from './Spinner.tsx';
 import { Tag } from './Tag.tsx';
 import { ThreadCount } from './ThreadCount.tsx';
+import { Tooltip } from './Tooltip.tsx';
 
 declare module 'react' {
   interface CSSProperties {
@@ -86,7 +86,7 @@ const LETTERS: Record<FileTreeChange, { letter: string; tone: string; word: stri
 const BALLS: Record<FileTreeViewed, { className: string; title: string }> = {
   viewed: { className: 'ball ball-viewed', title: 'Viewed' },
   unviewed: { className: 'ball', title: 'Not viewed' },
-  dismissed: { className: 'ball ball-stale', title: 'Changed since you viewed it' },
+  dismissed: { className: 'ball ball-stale', title: 'Changed since viewed' },
 };
 
 const row = cva(
@@ -476,9 +476,13 @@ const segment = cva(
   },
 );
 
+/** What the switch that shows only the changed files is named. */
+const CHANGED_ONLY = 'Changed files only';
+
 /**
  * The left panel's files: its head with the viewed count, the switch between the tree and review
- * order and the "Changed only" chip, each with its key, then any note, then the tree.
+ * order and the "Changed files only" switch, each with its key in its tooltip, then any note, then
+ * the tree.
  */
 export function FileTreePanel({
   viewed,
@@ -504,43 +508,52 @@ export function FileTreePanel({
           </span>
         )}
       </div>
-      <div className="flex flex-none items-center gap-6 ps-12 pe-8 pb-8">
-        <div
-          role="group"
-          aria-label="File list"
-          className="inline-flex items-center gap-2 rounded-pill bg-bg-well p-2 inset-ring inset-ring-border"
-        >
-          <button
-            type="button"
-            aria-pressed={mode === 'tree'}
-            className={segment({ pressed: mode === 'tree' })}
-            onClick={() => onMode?.('tree')}
+      {/* It never wraps or clips: narrow, the switch gives up its words for its icon, and the
+          keys are in the tooltips. The row is the container. */}
+      <div className="@container flex-none ps-12 pe-8 pb-8">
+        <div className="flex items-center gap-6">
+          <div
+            role="group"
+            aria-label="File list"
+            className="inline-flex flex-none items-center gap-2 rounded-pill bg-bg-well p-2 inset-ring inset-ring-border"
           >
-            Tree
-          </button>
-          <button
-            type="button"
-            aria-pressed={mode === 'review'}
-            className={segment({ pressed: mode === 'review' })}
-            onClick={() => onMode?.('review')}
-          >
-            Review order
-          </button>
+            <Tooltip label="Tree" keys={modeKeys}>
+              <button
+                type="button"
+                aria-pressed={mode === 'tree'}
+                className={segment({ pressed: mode === 'tree' })}
+                onClick={() => onMode?.('tree')}
+              >
+                Tree
+              </button>
+            </Tooltip>
+            <Tooltip label="Review order" keys={modeKeys}>
+              <button
+                type="button"
+                aria-pressed={mode === 'review'}
+                className={segment({ pressed: mode === 'review' })}
+                onClick={() => onMode?.('review')}
+              >
+                Review order
+              </button>
+            </Tooltip>
+          </div>
+          <span className="flex-1" />
+          <Tooltip label={CHANGED_ONLY} keys={changedOnlyKeys}>
+            <button
+              type="button"
+              aria-pressed={changedOnly}
+              aria-label={CHANGED_ONLY}
+              className={`inline-flex h-control-h-sm flex-none items-center gap-4 rounded-pill px-8 text-small-medium whitespace-nowrap focus-visible:shadow-ring ${changedOnly ? 'bg-accent-soft text-fg-accent inset-ring inset-ring-accent-line' : 'text-fg-muted inset-ring inset-ring-border hover:bg-hover hover:text-fg'}`}
+              onClick={() => onChangedOnly?.(!changedOnly)}
+            >
+              <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M2.5 3.5h11l-4.25 5v3.75L6.75 13.5V8.5Z" />
+              </svg>
+              <span className="panel-label">{CHANGED_ONLY}</span>
+            </button>
+          </Tooltip>
         </div>
-        {modeKeys && <Key keys={modeKeys} decorative />}
-        <span className="flex-1" />
-        <button
-          type="button"
-          aria-pressed={changedOnly}
-          className={`inline-flex h-control-h-sm items-center gap-4 rounded-pill px-8 text-small-medium whitespace-nowrap focus-visible:shadow-ring ${changedOnly ? 'bg-accent-soft text-fg-accent inset-ring inset-ring-accent-line' : 'text-fg-muted inset-ring inset-ring-border hover:bg-hover hover:text-fg'}`}
-          onClick={() => onChangedOnly?.(!changedOnly)}
-        >
-          <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M2.5 3.5h11l-4.25 5v3.75L6.75 13.5V8.5Z" />
-          </svg>
-          Changed only
-        </button>
-        {changedOnlyKeys && <Key keys={changedOnlyKeys} decorative />}
       </div>
       {note !== undefined && note !== null && (
         <div

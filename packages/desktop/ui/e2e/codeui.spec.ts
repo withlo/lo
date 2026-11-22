@@ -238,9 +238,9 @@ test('a peek says an answer is outside the repository, and has nothing to go to 
   const page = await open();
   await fit(page, 'peek-syntax', 'dark', 720);
   const dialog = page.getByRole('dialog');
-  await expect(dialog.getByRole('option', { name: /Outside this repository/ })).toBeVisible();
+  await expect(dialog.getByRole('option', { name: /Outside this repo/ })).toBeVisible();
   await expect(dialog.getByRole('option', { name: /zod, which Lo doesn't install/ })).toBeVisible();
-  await expect(dialog.getByRole('button', { name: /Open the whole file/ })).toBeDisabled();
+  await expect(dialog.getByRole('button', { name: /Open whole file/ })).toBeDisabled();
 });
 
 test('Tab goes past a hover whose docs hold links, code and a long signature', async () => {

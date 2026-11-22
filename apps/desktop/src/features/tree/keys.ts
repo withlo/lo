@@ -51,15 +51,28 @@ export default defineCommands(
      */
     focus: {
       label: 'Go to the file tree',
+      control: 'a click in the files tree',
       group: 'Files',
       keys: ['-'],
       overVim: true,
       when: { except: ['menu', 'dialog', 'palette', 'box', 'tree', 'stack'], mode: 'normal' },
     },
     /** Switches between the tree and the changed files in review order. */
-    mode: { label: 'Tree or review order', group: 'Files', keys: ['t'], when: tree },
+    mode: {
+      label: 'Tree or review order',
+      control: 'Tree and Review order in the Files toolbar',
+      group: 'Files',
+      keys: ['t'],
+      when: tree,
+    },
     /** Shows only the changed files, still as a tree, or every file again. */
-    changedOnly: { label: 'Changed files only', group: 'Files', keys: ['f'], when: tree },
+    changedOnly: {
+      label: 'Changed files only',
+      control: 'Changed files only in the Files toolbar',
+      group: 'Files',
+      keys: ['f'],
+      when: tree,
+    },
     down: {
       label: 'Next row of the tree',
       group: 'Files',
@@ -96,6 +109,7 @@ export default defineCommands(
     /** Opens a folder, or on an open one goes to what's in it. */
     open: {
       label: 'Open the folder',
+      control: "a closed folder's row in the files tree",
       group: 'Files',
       keys: ['l', 'right'],
       when: tree,
@@ -104,6 +118,7 @@ export default defineCommands(
     /** Closes a folder, or goes to the folder a row is in. */
     close: {
       label: 'Close the folder',
+      control: "an open folder's row in the files tree",
       group: 'Files',
       keys: ['h', 'left'],
       when: tree,
@@ -118,6 +133,7 @@ export default defineCommands(
      */
     show: {
       label: 'Show the file',
+      control: "a file's row in the files tree",
       group: 'Files',
       keys: ['enter'],
       targets: ['file', 'none'],

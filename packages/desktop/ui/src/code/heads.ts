@@ -3,7 +3,7 @@
 // right, and the copy of it pinned under the diff bar while the file is scrolled into.
 
 import { type Extension } from '@codemirror/state';
-import { EditorView, ViewPlugin, type ViewUpdate } from '@codemirror/view';
+import { type EditorView, ViewPlugin, type ViewUpdate } from '@codemirror/view';
 
 import { drawHeader, type HeaderInfo } from './widgets.ts';
 

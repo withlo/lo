@@ -11,7 +11,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 
 import { Slot } from '../../../window/slots.tsx';
-import { useViewedMarks } from '../../revisions/window/shared.ts';
+import {
+  comparedIn,
+  revisionLabel,
+  useRevisions,
+  useViewedMarks,
+} from '../../revisions/window/shared.ts';
 import { useSetting } from '../../settings/window/shared.ts';
 import { MiddlePlaceholder, tabState, usePull, type PullTab } from '../../tab/window/shared.ts';
 import { orderIn, useOrderMode } from '../../tree/window/shared.ts';
@@ -227,16 +232,17 @@ function Waiting({
   threads: boolean;
 }) {
   const pull = usePull(tab.id);
+  const revisions = useRevisions(tab.id);
   const { state } = snapshot;
   let said: string | undefined;
-  // It can't open, and the tab's banner says why.
-  if (!pull?.shown) said = pull?.problem ? 'Nothing to show yet.' : undefined;
+  // Until it opens, the wait goes on; one that can't open, the tab's banner says why.
+  if (!pull?.shown) said = undefined;
   else if (state?.waiting) said = state.waiting;
   else if (state?.files?.length === 0) {
-    said =
-      state.comparison === null
-        ? 'The pull request changes no files.'
-        : 'No file changed between these revisions.';
+    const ends = state.comparison === null ? undefined : comparedIn(revisions);
+    const from = ends && (ends.from === null ? 'base' : revisionLabel(revisions, ends.from));
+    const to = ends && revisionLabel(revisions, ends.to);
+    said = from && to ? `No files changed in ${from} → ${to}` : 'No files changed';
   } else if (state?.problem && state.files === null) said = state.problem;
   if (said !== undefined) {
     return (

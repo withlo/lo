@@ -4352,10 +4352,10 @@ class View implements DiffView {
       const head = view.state.selection.main.head;
       const line = view.lineBlockAt(head);
       const blocks = Array.isArray(line.type) ? (line.type as readonly BlockInfo[]) : [line];
-      const block = blocks.find(
+      const widget = blocks.find(
         (each) => each.from <= head && head <= each.to && each.widget instanceof CollapsedWidget,
-      );
-      const row = block && (block.widget as CollapsedWidget).row;
+      )?.widget;
+      const row = widget instanceof CollapsedWidget ? widget.row : undefined;
       if (row !== undefined) {
         fold =
           view.contentDOM.querySelector<HTMLElement>(`.lo-collapsed[data-row="${row}"]`) ??

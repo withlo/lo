@@ -16,6 +16,7 @@ export default defineCommands('diff', {
   nextChange: {
     label: 'Next change',
     group: 'Jump',
+    bar: { menu: 'Go', order: 30 },
     keys: ['] c'],
     targets: ['line'],
     vim: 'motion',
@@ -24,6 +25,7 @@ export default defineCommands('diff', {
   previousChange: {
     label: 'Previous change',
     group: 'Jump',
+    bar: { menu: 'Go', order: 40 },
     keys: ['[ c'],
     targets: ['line'],
     vim: 'motion',
@@ -32,6 +34,7 @@ export default defineCommands('diff', {
   nextFile: {
     label: 'Next file',
     group: 'Jump',
+    bar: { menu: 'Go', order: 50 },
     keys: ['] f'],
     targets: ['line'],
     vim: 'motion',
@@ -40,6 +43,7 @@ export default defineCommands('diff', {
   previousFile: {
     label: 'Previous file',
     group: 'Jump',
+    bar: { menu: 'Go', order: 60 },
     keys: ['[ f'],
     targets: ['line'],
     vim: 'motion',
@@ -49,6 +53,7 @@ export default defineCommands('diff', {
   nextThread: {
     label: 'Next thread',
     group: 'Jump',
+    bar: { menu: 'Go', order: 70 },
     keys: ['] t'],
     targets: ['line'],
     vim: 'motion',
@@ -57,6 +62,7 @@ export default defineCommands('diff', {
   previousThread: {
     label: 'Previous thread',
     group: 'Jump',
+    bar: { menu: 'Go', order: 80 },
     keys: ['[ t'],
     targets: ['line'],
     vim: 'motion',
@@ -71,6 +77,7 @@ export default defineCommands('diff', {
   otherEnd: {
     label: 'The other end of moved code',
     group: 'Jump',
+    control: 'the place on a moved-code label',
     keys: ['g m'],
     targets: ['line'],
     jump: true,
@@ -84,6 +91,7 @@ export default defineCommands('diff', {
   markViewed: {
     label: 'Mark viewed',
     group: 'Act',
+    control: "the viewed ball in a file's header",
     keys: ['e'],
     targets: ['line', 'header'],
     overVim: true,
@@ -92,7 +100,13 @@ export default defineCommands('diff', {
     menu: { on: 'header', order: 5 },
   },
   /** The cursor's row on the other side. */
-  otherSide: { label: 'The other side', group: 'Diff view', keys: ['tab'], when: normal },
+  otherSide: {
+    label: 'The other side',
+    control: 'a line on the other side',
+    group: 'Diff view',
+    keys: ['tab'],
+    when: normal,
+  },
   inline: {
     label: 'Inline or side by side',
     group: 'Diff view',
@@ -112,6 +126,7 @@ export default defineCommands('diff', {
   openRun: {
     label: 'Open unchanged lines',
     group: 'Diff view',
+    control: 'a fold of unchanged lines',
     keys: ['z o'],
     targets: ['line'],
     when: normal,
@@ -129,6 +144,7 @@ export default defineCommands('diff', {
     keys: ['z R'],
     targets: ['line', 'header'],
     when: normal,
+    menu: { on: 'header', order: 12 },
   },
   /**
    * On a review thread, the one `]t` landed on or the only one on the cursor's line, opens it or
@@ -164,6 +180,7 @@ export default defineCommands('diff', {
   loadWhole: {
     label: 'Load a large file anyway',
     group: 'Diff view',
+    control: "the button in the whole file's note on a large file",
     keys: ['z a'],
     targets: ['header', 'line'],
     when: { scope: 'file', mode: 'normal' },

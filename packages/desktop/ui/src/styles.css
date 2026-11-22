@@ -484,6 +484,14 @@
   }
 }
 
+/* A side panel's toolbar narrower than its one step gives up the words of a control that keeps an
+   icon; the icon and its tooltip stay. The toolbar is the container (`@container`). */
+@utility panel-label {
+  @container (width < 320px) {
+    display: none !important;
+  }
+}
+
 /* What a comment box's head and foot give up as the box narrows, each narrower than the last: the
    key chips, then the labels of the controls that keep an icon, then the hints. A foot with every
    control and Vim's mode needs just over 400px with those labels, so they go under 410px. Its

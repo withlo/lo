@@ -26,7 +26,7 @@ import { keepPlaces, openWhole, showTreeFiles } from './places.ts';
 import { LayoutRow } from './LayoutRow.tsx';
 import { DiffStatus } from './Status.tsx';
 import { keepOnly, keysDiff, loaderOf, takeState, type Drawn } from './tabs.ts';
-import { markViewed, viewedEnabled } from './viewed.ts';
+import { markViewed, viewedAt, viewedEnabled } from './viewed.ts';
 import { spansOf } from './spans.ts';
 import { WholeFile } from './WholeFile.tsx';
 import {
@@ -244,6 +244,11 @@ export default {
       enabled: (target) => {
         const drawn = onScreen();
         return typeof drawn === 'string' ? drawn : viewedEnabled(drawn, target);
+      },
+      // Named for what it does now: on a viewed file, its menu row unmarks it.
+      named: (target) => {
+        const drawn = onScreen();
+        return typeof drawn !== 'string' && viewedAt(drawn, target) ? 'Unmark viewed' : undefined;
       },
     },
     otherSide: { run: withDiff(({ view }) => view.otherSide()), enabled: drawnNow },
