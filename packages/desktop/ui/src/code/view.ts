@@ -2464,6 +2464,8 @@ class View implements DiffView {
     for (const stop of this.#stops) stop();
     this.#aligner.destroy();
     for (const { box } of [...this.#boxes.values(), ...this.#rooms.values()]) box.destroy();
+    // A room about to go finds nothing to take down.
+    this.#rooms.clear();
     this.#peek?.block.destroy();
     cancelAnimationFrame(this.#takeFrame);
     cancelAnimationFrame(this.#addFrame);
@@ -3253,6 +3255,9 @@ class View implements DiffView {
   }
 
   #hideAdd = (): void => {
+    // Nor does a move of the pointer still waiting for its frame bring it back.
+    cancelAnimationFrame(this.#addFrame);
+    this.#addOver = undefined;
     this.#add.hidden = true;
     this.#add.removeAttribute('aria-disabled');
   };

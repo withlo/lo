@@ -414,6 +414,16 @@
 .lo-diffthread__thread.is-held {
   overflow: clip;
 }
+/*
+ * A thread that comes where the box that sent its comment still is takes no room until it takes
+ * the box's: no height, and no space between it and what's around it.
+ */
+.lo-diffthread > .lo-diffthread__thread.is-landing {
+  margin-top: 0;
+}
+.lo-diffthread > .lo-diffthread__thread.is-landing:first-child + * {
+  margin-top: 0;
+}
 
 /* CodeMirror shows its editor as a flex box, importantly, over the hidden attribute's own rule. */
 .lo-diffview > .cm-editor[hidden] {

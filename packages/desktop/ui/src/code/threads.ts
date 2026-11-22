@@ -171,6 +171,16 @@ export class ThreadHost {
   unpin(): void {
     this.pinned = undefined;
     this.dom.style.height = '';
+    this.dom.classList.remove('is-landing');
+  }
+
+  /**
+   * Has it take no room until it's let go, nor any space between it and what's around it: what's
+   * under it stays where it is until then.
+   */
+  land(): void {
+    this.pin(0);
+    this.dom.classList.add('is-landing');
   }
 
   /** Holds it as it was on screen: what changed in it since is cut off. */
@@ -182,7 +192,7 @@ export class ThreadHost {
   /** Lets it take the height its content was last measured at. */
   letGo(): void {
     this.held = false;
-    this.dom.classList.remove('is-held');
+    this.dom.classList.remove('is-held', 'is-landing');
     if (this.pinned !== undefined && this.height !== undefined) this.pin(this.height);
   }
 
@@ -300,7 +310,7 @@ export class Threads {
       if (!host.drawn || pinned === undefined) {
         host.drawn = true;
         if (height > 0 && this.lands?.(host)) {
-          host.pin(0);
+          host.land();
           threads.push({ host, fresh: true, reflowed: false });
         } else host.pin(height);
         continue;

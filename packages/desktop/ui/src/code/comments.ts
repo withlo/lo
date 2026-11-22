@@ -145,6 +145,13 @@ export class CommentBox implements BoxHost, KeySource {
   readonly #shown: ((box: CommentBox) => void) | undefined;
   /** Stops keeping the box on screen whole, while it's kept there. */
   #settle: (() => void) | undefined;
+  /** How tall the box was when it was last laid out, which tells that it grew. */
+  #tall: number | undefined;
+  /**
+   * Whether the box's foot was on screen as the reader last acted in it, or as it last put itself
+   * there. Unknown once they act anywhere else, as when they scroll.
+   */
+  #whole: boolean | undefined;
 
   constructor(options: BoxOptions) {
     installVim();
@@ -157,6 +164,7 @@ export class CommentBox implements BoxHost, KeySource {
     this.#shown = options.shown;
     this.dom = document.createElement('div');
     this.dom.className = 'lo-diffcomposer';
+    this.#followGrowth();
     this.dom.setAttribute(SCOPE_ATTRIBUTE, 'box');
     this.#parts = {
       head: part('head'),
@@ -354,8 +362,8 @@ export class CommentBox implements BoxHost, KeySource {
   /**
    * Brings the box on screen whole, by the least scroll of its pane that does, and keeps it there
    * as its frame draws and it grows, until the reader's next key, press or wheel: where it is from
-   * then on is theirs. A box taller than its pane shows from its top, its foot at the pane's
-   * (`view.css`).
+   * then on is theirs, but for its foot as it grows (`#followGrowth`). A box taller than its pane
+   * shows from its top, its foot at the pane's (`view.css`).
    */
   #show(): void {
     this.#settle?.();
@@ -380,6 +388,68 @@ export class CommentBox implements BoxHost, KeySource {
       page.addEventListener(type, settle, { capture: true, passive: true });
     }
     this.#settle = settle;
+  }
+
+  /**
+   * Keeps the box's foot clear of its pane's as the box grows with focus in it: as a line is typed,
+   * its preview is drawn, or its text wraps again in less width. It's the least scroll that does,
+   * as an editor keeps its caret on screen, and only for a foot that was on screen, so a box the
+   * reader scrolled away from stays where they left it. One that shrinks moves nothing.
+   */
+  #followGrowth(): void {
+    if (typeof ResizeObserver === 'undefined') return;
+    const watch = new ResizeObserver(() => this.#grew());
+    watch.observe(this.dom);
+    const page = this.dom.ownerDocument;
+    // Before what the input changes is laid out: where the foot is now is where the reader has it.
+    const acted = (event: Event): void => {
+      const { target } = event;
+      const inBox = event.type !== 'wheel' && target instanceof Node && this.dom.contains(target);
+      // What the last input grew, if no frame has laid it out since, is followed first.
+      if (inBox) this.#grew();
+      this.#whole = inBox ? this.#footShows() : undefined;
+    };
+    for (const type of INPUTS) {
+      page.addEventListener(type, acted, { capture: true, passive: true });
+    }
+    this.#stops.push(() => {
+      watch.disconnect();
+      for (const type of INPUTS) page.removeEventListener(type, acted, { capture: true });
+    });
+  }
+
+  /** Where the box's foot is, and its pane's, with the room the box keeps clear under it. */
+  #foot(): { pane: HTMLElement; box: DOMRect; foot: number; below: number } | undefined {
+    const pane = this.dom.isConnected ? scrollPane(this.dom) : null;
+    if (!pane) return undefined;
+    const box = this.dom.getBoundingClientRect();
+    const foot = pane.getBoundingClientRect().top + pane.clientTop + pane.clientHeight;
+    const below = Number.parseFloat(getComputedStyle(this.dom).scrollMarginBottom) || 0;
+    return { pane, box, foot, below };
+  }
+
+  #footShows(): boolean | undefined {
+    const at = this.#foot();
+    return at && at.box.bottom <= at.foot + 0.5;
+  }
+
+  #grew(): void {
+    const at = this.#foot();
+    if (!at) return;
+    const { pane, box, foot, below } = at;
+    const grew = this.#tall === undefined ? 0 : box.height - this.#tall;
+    this.#tall = box.height;
+    // While it's kept on screen whole as it opens, that's what moves it.
+    if (this.#settle || grew < 0.5 || !this.hasFocus) return;
+    const whole = this.#whole ?? box.bottom - grew <= foot + 0.5;
+    // Taller than its pane, it shows from its top.
+    if (!whole || box.height + below > pane.clientHeight) return;
+    const over = box.bottom + below - foot;
+    if (over < 0.5) return;
+    const before = pane.scrollTop;
+    pane.scrollTop = before + over;
+    this.#whole = true;
+    if (pane.scrollTop !== before) this.#shown?.(this);
   }
 
   #takeFocus(): void {

@@ -161,6 +161,18 @@ describe('sizes', () => {
     ]);
   });
 
+  test('a thread that lands takes no room, nor any space around it, until it’s let go', () => {
+    const { made, take } = threads();
+    const one = take(thread('one'));
+    made.lands = () => true;
+    expect(made.resized([measure(one, 80)])).toEqual([{ host: one, fresh: true, reflowed: false }]);
+    expect(one.dom.style.height).toBe('0px');
+    expect(one.dom.classList.contains('is-landing')).toBe(true);
+    one.letGo();
+    expect(one.dom.style.height).toBe('80px');
+    expect(one.dom.classList.contains('is-landing')).toBe(false);
+  });
+
   test('a host out of the page takes its content’s height, and is measured afresh once back', () => {
     const { made, take } = threads();
     const one = take(thread('one'));
