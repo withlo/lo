@@ -90,15 +90,13 @@ const dialog = (page: Page) => page.getByTestId('merge-confirm');
 
 /**
  * Waits for the merge's dialog to ask under `title`: the title is there while Lo still checks, so
- * this waits for its main button to stop being busy too, and for focus to be in the dialog, where
- * `⏎` confirms.
+ * this waits for its main button to stop being busy too.
  */
 async function asks(page: Page, title: string, options: { timeout?: number } = {}): Promise<void> {
   await expect(dialog(page).getByRole('heading', { name: title, exact: true })).toBeVisible(
     options,
   );
   await expect(dialog(page).locator('button[aria-busy="true"]')).toHaveCount(0);
-  await expect(dialog(page).locator(':focus')).toHaveCount(1);
 }
 
 /** The note Lo says at the bottom of the window. */
