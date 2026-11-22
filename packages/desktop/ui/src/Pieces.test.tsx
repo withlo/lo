@@ -10,7 +10,7 @@ import { buildCss, declarations } from '../scripts/stylesheet.ts';
 import { missingRules } from '../test/classes.ts';
 import { cleanUp, click, render, rerender } from '../test/dom.ts';
 import { Button } from './Button.tsx';
-import { COPIED_MS, CopyButton } from './CopyButton.tsx';
+import { COPIED_MS, CopyButton, CopyRoute } from './CopyButton.tsx';
 import { Dialog, type DialogState } from './Dialog.tsx';
 import { Loading, LOADING_DELAY_MS, LOADING_SLOW_MS } from './Loading.tsx';
 import { LogoMotion } from './LogoMotion.tsx';
@@ -36,6 +36,37 @@ const buttons = (root: ParentNode) =>
 /** What a button that does work says now: the face of it that shows. */
 const says = (button: Element | null | undefined) =>
   button?.querySelector('span > span:not([aria-hidden])')?.textContent;
+
+/** What a copy button's face reads now, and what the live region beside it says. */
+const reading = (host: HTMLElement) => ({
+  face: [...host.querySelectorAll('button .inline-grid > span')].find(
+    (face) => !face.classList.contains('invisible'),
+  )?.textContent,
+  said: host.querySelector('[role="status"]')?.textContent,
+});
+
+/** Presses the first button in `host`, and lets what it started settle. */
+async function press(host: HTMLElement): Promise<void> {
+  await act(async () => {
+    host.querySelector('button')!.click();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+/** Presses `Esc` in the dialog that's open. */
+function escape(): void {
+  act(() => {
+    popup().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  });
+}
+
+/** Lets `ms` pass on the fake clock. */
+function later(ms: number): void {
+  act(() => {
+    vi.advanceTimersByTime(ms);
+  });
+}
 
 /** Lets a popup take focus, which it does as it mounts. */
 async function settle(): Promise<void> {
@@ -80,6 +111,36 @@ describe('a button at work', () => {
     const host = render(<Button>Close</Button>);
     expect(host.querySelector('button')?.innerHTML).toBe('Close');
   });
+
+  it('keeps its label, and so its name, when it has no words of its own for the wait', () => {
+    const host = render(<Button busy>Fetch</Button>);
+    const button = host.querySelector('button')!;
+    expect(says(button)).toBe('Fetch');
+    expect(button.querySelector('span > span:not([aria-hidden]) .spinner')).not.toBeNull();
+  });
+
+  it('gives a screen reader the key its tooltip shows, never the key caps', () => {
+    const host = render(
+      <>
+        <Button
+          icon
+          aria-label="Command palette"
+          hint="Command palette"
+          hintKeys={['⌘⇧P']}
+          hintShortcut="Meta+Shift+P"
+        >
+          P
+        </Button>
+        <Button icon aria-label="Next unread file" hint="Next unread file" hintKeys={[']', 'f']}>
+          F
+        </Button>
+      </>,
+    );
+    const [chord, sequence] = [...host.querySelectorAll('button')];
+    expect(chord?.getAttribute('aria-keyshortcuts')).toBe('Meta+Shift+P');
+    expect(sequence?.hasAttribute('aria-keyshortcuts')).toBe(false);
+    expect(sequence?.getAttribute('aria-description')).toBe('Keys ] then f');
+  });
 });
 
 describe('a control that can’t be used', () => {
@@ -110,24 +171,28 @@ describe('a control that can’t be used', () => {
 describe('Problem', () => {
   it('says what failed, why and what to do, and keeps what came back behind Details', async () => {
     const again = vi.fn<() => void>();
-    const copy = vi.fn<(text: string) => boolean>(() => true);
+    const copy = vi.fn<(text: string) => Promise<void>>(() => Promise.resolve());
     const host = render(
-      <Problem
-        title="Couldn’t fetch the diff"
-        reason="GitHub didn’t answer."
-        action={{ label: 'Try again', onClick: again }}
-        details="GET /repos/withlo/lo/pulls/264 502"
-        onCopy={copy}
-      />,
+      <CopyRoute copy={copy}>
+        <Problem
+          title="Couldn’t fetch the diff"
+          reason="GitHub didn’t answer."
+          action={{ label: 'Try again', onClick: again }}
+          details="GET /repos/withlo/lo/pulls/264 502"
+        />
+      </CopyRoute>,
     );
-    expect(host.querySelector('[role="alert"]')?.textContent).toContain('GitHub didn’t answer.');
+    // The alert is what failed and why, and not the buttons after it.
+    const alert = host.querySelector('[role="alert"]')!;
+    expect(alert.textContent).toBe('Couldn’t fetch the diff GitHub didn’t answer.');
+    expect(alert.querySelector('button')).toBeNull();
     expect(host.querySelector('pre')).toBeNull();
     const details = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Details')!;
     expect(details.getAttribute('aria-expanded')).toBe('false');
     click(details);
     expect(details.getAttribute('aria-expanded')).toBe('true');
     expect(host.querySelector('pre')?.textContent).toBe('GET /repos/withlo/lo/pulls/264 502');
-    click([...host.querySelectorAll('button')].find((b) => says(b) === 'Try again')!);
+    click([...host.querySelectorAll('button')].find((b) => b.textContent === 'Try again')!);
     expect(again).toHaveBeenCalledTimes(1);
     const copyButton = [...host.querySelectorAll('button')].find((b) =>
       b.textContent?.startsWith('Copy'),
@@ -136,8 +201,9 @@ describe('Problem', () => {
       copyButton.click();
       await Promise.resolve();
     });
+    // Through the window's own way to copy.
     expect(copy).toHaveBeenCalledWith('GET /repos/withlo/lo/pulls/264 502');
-    expect(copyButton.querySelector('[role="status"]')?.textContent).toBe('Copied');
+    expect(host.querySelector('[role="status"]')?.textContent).toBe('Copied');
     expect(await missingRules(host)).toEqual([]);
     cleanUp();
     const whole = render(<Problem layout="view" title="Can’t open #264" />);
@@ -150,23 +216,34 @@ describe('CopyButton', () => {
     vi.useFakeTimers();
     let copies = true;
     const host = render(<CopyButton onCopy={() => copies}>Copy the log</CopyButton>);
-    const button = host.querySelector('button')!;
-    const said = () => button.querySelector('[role="status"]')?.textContent;
-    await act(async () => {
-      button.click();
-      await Promise.resolve();
-    });
-    expect(said()).toBe('Copied');
+    // The live region is beside the button, not in it.
+    expect(host.querySelector('button [role="status"]')).toBeNull();
+    await press(host);
+    expect(reading(host)).toEqual({ face: 'Copied', said: 'Copied' });
     act(() => {
       vi.advanceTimersByTime(COPIED_MS);
     });
-    expect(said()).toBe('');
+    expect(reading(host)).toEqual({ face: 'Copy the log', said: '' });
     copies = false;
-    await act(async () => {
-      button.click();
-      await Promise.resolve();
-    });
-    expect(said()).toBe('');
+    await press(host);
+    expect(reading(host)).toEqual({ face: 'Copy the log', said: '' });
+  });
+
+  it('says it couldn’t copy when copying fails, and when nothing gives it a way to', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const host = render(
+      <CopyButton onCopy={() => Promise.reject(new Error('refused'))}>Copy the log</CopyButton>,
+    );
+    await press(host);
+    expect(reading(host)).toEqual({ face: 'Couldn’t copy', said: 'Couldn’t copy' });
+    cleanUp();
+    // A problem drawn with no `CopyRoute` around it.
+    const alone = render(<Problem title="Couldn’t merge #264" details="405" />);
+    click([...alone.querySelectorAll('button')].find((b) => b.textContent === 'Details')!);
+    await press(alone.querySelector('pre')!.parentElement!);
+    expect(reading(alone).said).toBe('Couldn’t copy');
+    expect(logged).toHaveBeenCalledTimes(2);
+    logged.mockRestore();
   });
 });
 
@@ -226,6 +303,28 @@ describe('a dialog that does something', () => {
     rerender(host, dialog('done'));
     expect(buttons(popup())).toEqual(['Done']);
     expect(await missingRules(document.body)).toEqual([]);
+  });
+
+  it('can’t be left while it works: Esc asks nothing until the work is done', async () => {
+    const change = vi.fn<(open: boolean) => void>();
+    const asking = (state: DialogState) => (
+      <Dialog
+        open
+        onOpenChange={change}
+        title="Merge #264"
+        state={state}
+        action={{ label: 'Merge #264', working: 'Merging', onRun: run }}
+      >
+        <p>Squash and merge into main.</p>
+      </Dialog>
+    );
+    const host = render(asking('working'));
+    await settle();
+    escape();
+    expect(change).not.toHaveBeenCalled();
+    rerender(host, asking('failed'));
+    escape();
+    expect(change).toHaveBeenCalledWith(false);
   });
 
   it('says it has closed the moment it’s asked to, and keeps its words while it leaves', () => {
@@ -299,6 +398,26 @@ describe('ToastStack', () => {
     // Taken out by the caller, it leaves.
     rerender(host, <ToastStack toasts={[]} onDismiss={dismiss} />);
     expect(host.querySelector('[role="status"]')?.textContent).toBe('');
+  });
+
+  it('starts a toast’s four seconds again when it’s shown again, and not when it’s drawn again', () => {
+    vi.useFakeTimers();
+    const dismiss = vi.fn<(id: string) => void>();
+    // Drawn again with the same toast, it keeps its time.
+    const first = toast('1');
+    const host = render(<ToastStack toasts={[first]} onDismiss={dismiss} />);
+    later(TOAST_MS - 500);
+    rerender(host, <ToastStack toasts={[first]} onDismiss={dismiss} />);
+    later(500);
+    expect(dismiss.mock.calls).toEqual([['1']]);
+    // Shown again, as a new toast with the same id, as a second "Copied" is, it starts over.
+    rerender(host, <ToastStack toasts={[toast('2')]} onDismiss={dismiss} />);
+    later(TOAST_MS - 500);
+    rerender(host, <ToastStack toasts={[toast('2')]} onDismiss={dismiss} />);
+    later(1000);
+    expect(dismiss.mock.calls).toEqual([['1']]);
+    later(TOAST_MS - 1000);
+    expect(dismiss.mock.calls).toEqual([['1'], ['2']]);
   });
 
   it('shows three at most: one more sends the oldest away', async () => {

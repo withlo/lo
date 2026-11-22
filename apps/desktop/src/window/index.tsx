@@ -1,6 +1,5 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { setMotion } from '@lo/ui';
 import { z } from 'zod';
 
 import { contract as app } from '../features/app/contract.ts';
@@ -22,14 +21,10 @@ if (navigator.platform.startsWith('Linux')) {
   document.documentElement.dataset.loFrame = 'custom';
 }
 
-// In a build run from source, a view that fails stops the window too, so its tests can't miss it,
-// and a test can ask for every move off.
+// In a build run from source, a view that fails stops the window too, so its tests can't miss it.
 client(app)
   .info()
-  .then(({ packaged, motion }) => {
-    failViewsLoudly(!packaged);
-    if (motion !== undefined) setMotion(motion);
-  })
+  .then(({ packaged }) => failViewsLoudly(!packaged))
   .catch((error: unknown) => console.error("Lo couldn't ask how it was built:", error));
 
 // Main hands the window a port to the background process as soon as the page loads.

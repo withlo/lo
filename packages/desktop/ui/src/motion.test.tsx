@@ -19,7 +19,8 @@ import {
   useMotionReduced,
   useOnClose,
 } from './motion.ts';
-import { reveal } from './reveal.ts';
+import { reveal, scrollPane } from './reveal.ts';
+import { SegmentedControl } from './SegmentedControl.tsx';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -98,14 +99,14 @@ describe('a popup asked to close', () => {
 
 function Reply() {
   const [open, setOpen] = useState(false);
-  const [closed, setClosed] = useState(0);
+  const [gone, setGone] = useState(0);
   return (
     <>
       <button onClick={() => setOpen((was) => !was)}>Reply</button>
-      <Collapse open={open} onClosed={() => setClosed((count) => count + 1)}>
+      <Collapse open={open} onGone={() => setGone((count) => count + 1)}>
         {open && <p>Write a reply</p>}
       </Collapse>
-      <output>{closed}</output>
+      <output>{gone}</output>
     </>
   );
 }
@@ -173,29 +174,43 @@ describe('land', () => {
   });
 });
 
-/** A pane 100 high inside a page that scrolls too, with a row 20 high, 300 down the pane. */
+/**
+ * A pane 100 high, holding 1000, inside a page that scrolls too, with a row 20 high, 300 down the
+ * pane. The row is in a box that scrolls only sideways: one whose `overflow-x` is `auto` computes
+ * `overflow-y: auto` as well, but holds no more than its height.
+ */
 function panes() {
   const host = render(
     <div id="page" style={{ overflowY: 'auto' }}>
       <div id="pane" style={{ overflowY: 'auto' }}>
-        <p id="row">Row</p>
+        <div id="wide" style={{ overflowX: 'auto', overflowY: 'auto' }}>
+          <p id="row">Row</p>
+        </div>
       </div>
     </div>,
   );
   const page = host.querySelector<HTMLElement>('#page')!;
   const pane = host.querySelector<HTMLElement>('#pane')!;
+  const wide = host.querySelector<HTMLElement>('#wide')!;
   const row = host.querySelector<HTMLElement>('#row')!;
+  Object.defineProperty(page, 'clientHeight', { value: 200 });
+  Object.defineProperty(page, 'scrollHeight', { value: 1200 });
   Object.defineProperty(pane, 'clientHeight', { value: 100 });
+  Object.defineProperty(pane, 'scrollHeight', { value: 1000 });
+  Object.defineProperty(wide, 'clientHeight', { value: 20 });
+  Object.defineProperty(wide, 'scrollHeight', { value: 20 });
   pane.getBoundingClientRect = () => new DOMRect(0, 50, 200, 100);
   row.getBoundingClientRect = () => new DOMRect(0, 50 + 300 - pane.scrollTop, 200, 20);
-  return { page, pane, row };
+  return { page, pane, wide, row };
 }
 
 describe('reveal', () => {
   it('scrolls the pane the element is in, and nothing around it', () => {
-    const { page, pane, row } = panes();
+    const { page, pane, wide, row } = panes();
+    expect(scrollPane(row)).toBe(pane);
     reveal(row, { block: 'start' });
     expect(pane.scrollTop).toBe(300);
+    expect(wide.scrollTop).toBe(0);
     expect(page.scrollTop).toBe(0);
     expect(document.documentElement.scrollTop).toBe(0);
     // A jump marks where it landed.
@@ -213,6 +228,43 @@ describe('reveal', () => {
     expect(pane.scrollTop).toBe(220);
     reveal(row, { block: 'center' });
     expect(pane.scrollTop).toBe(260);
+  });
+});
+
+/** The middle view's switch, with a new array of its segments each time it's drawn. */
+const views = (value: 'overview' | 'diff') => (
+  <SegmentedControl
+    label="View"
+    kind="views"
+    items={[
+      { value: 'overview', label: 'Overview' },
+      { value: 'diff', label: 'Diff' },
+    ]}
+    value={value}
+    onChange={() => {}}
+  />
+);
+
+describe('a thumb', () => {
+  it('watches its segments once, however often its caller draws them anew', () => {
+    let watchers = 0;
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor() {
+          watchers += 1;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const host = render(views('overview'));
+    rerender(host, views('overview'));
+    rerender(host, views('overview'));
+    expect(watchers).toBe(1);
+    // Another segment chosen is measured afresh.
+    rerender(host, views('diff'));
+    expect(watchers).toBe(2);
   });
 });
 

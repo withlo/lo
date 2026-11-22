@@ -94,6 +94,11 @@ export function ContextMenu({
   const shown = open && at !== undefined;
   // What it shows, and where, stay as they were while it leaves.
   const held = useHeld(shown, { at, sections, label });
+  // Each opening starts with nothing chosen: an action pressed as the last one faded ran nothing,
+  // and isn't this one's.
+  useLayoutEffect(() => {
+    if (shown) chosen.current = undefined;
+  }, [shown]);
   useOnClose(shown, () => {
     // Focus goes back to the element itself. Base UI would give it to the element's first
     // tabbable child when the element is focusable only from a script, such as a block of
@@ -140,7 +145,8 @@ export function ContextMenu({
                     disabled={item.disabled !== undefined}
                     {...keyAria(item.keys, item.shortcut)}
                     onClick={() => {
-                      chosen.current = item.id;
+                      // Leaving, it has said what was chosen already.
+                      if (shown) chosen.current = item.id;
                     }}
                     className="group flex min-h-menu-item-h cursor-default items-center gap-8 rounded-sm px-8 py-2 text-fg outline-none select-none focus-visible:shadow-none data-disabled:text-fg-disabled data-highlighted:bg-accent data-highlighted:text-on-accent data-highlighted:data-disabled:bg-hover data-highlighted:data-disabled:text-fg-disabled"
                   >

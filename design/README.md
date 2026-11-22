@@ -86,8 +86,9 @@ Dark (Lo Glow Dark) is the default. Every color comes from `tokens.json` through
   status color never appears without a word or icon that says the same thing.
 - Diff: whole lines use `lo-diff-add-bg` / `lo-diff-del-bg`; changed words inside them
   `lo-diff-add-word` / `lo-diff-del-word`; signs and gutters `lo-diff-add-fg` / `lo-diff-del-fg`.
-  Moved code uses the `lo-diff-moved-*` tokens, never green or red: a near-neutral ground, with its
-  label and rail carrying the meaning, so it never reads as a selection.
+  Moved code uses the `lo-diff-moved-*` tokens, never green or red: a near-neutral ground, with the
+  label over the block and the `⇄` in its gutter carrying the meaning, so it never reads as a
+  selection.
 - Syntax uses the `lo-syn-*` tokens only, named after tree-sitter captures. Parameters, comments and
   `this` are italic; nothing else is.
 
@@ -136,8 +137,13 @@ Dark (Lo Glow Dark) is the default. Every color comes from `tokens.json` through
 - A button at work is `busy`, not disabled: see [Waiting](#waiting).
 - A control whose face doesn't say what it is, such as an icon button, names itself and its key in a
   tooltip: `hint` and `hintKeys` on `Button`, or `Tooltip` around anything else. A tooltip shows
-  after 500 ms, or at once when another was just showing (one `TooltipGroup` goes around the
-  window). It never carries an error, a state or anything that's the only place to learn something.
+  after 500 ms, or at once when another was just showing (one `TooltipGroup` goes around the window,
+  in `Window.tsx`). It never carries an error, a state or anything that's the only place to learn
+  something.
+- A screen reader never hears a tooltip's key caps. Give `Button` the key as `aria-keyshortcuts`
+  says it, in `hintShortcut` (`liveShortcut` gives it), and it sets the attribute; a sequence, which
+  the attribute can't say, is described from `hintKeys`. Anything else in a `Tooltip` sets
+  `aria-keyshortcuts` itself.
 
 ## Motion
 
@@ -150,15 +156,15 @@ time.
   runs what was chosen, as it starts to leave, not once it has faded. A key pressed again cancels
   the last move and never queues behind it.
 
-| Move  | What it's for                                                                                      | Runs                 | How to use it                                                         |
-| ----- | -------------------------------------------------------------------------------------------------- | -------------------- | --------------------------------------------------------------------- |
-| Tint  | Hover, press and selection: a color changes, and nothing else.                                     | 90 ms                | `move-tint`. `Button`, `Switch`, `SegmentedControl` and rows have it. |
-| Pop   | A menu, popover, tooltip or palette fades in over 4 px from its anchor's side.                     | 90 ms in, 90 ms out  | `Popover`, `ContextMenu`, `Tooltip`, `Palette`.                       |
-| Sheet | A dialog fades in and rises 8 px, as its scrim fades in.                                           | 160 ms in, 90 ms out | `Dialog`.                                                             |
-| Open  | Something in the flow takes its height and fades in: a thread, a reply, a banner, a fold, a toast. | 160 ms in, 90 ms out | `Collapse`.                                                           |
-| Slide | Something that stays on screen goes from one place to another: a thumb.                            | 160 ms               | `move-slide`. `SegmentedControl` and `Switch` have it.                |
-| Swap  | What replaces something in the same box fades in over it: a skeleton's content, Overview to Diff.  | 90 ms                | `Swap`.                                                               |
-| Land  | Where a jump ended. The scroll is instant, and the target takes a tint that fades.                 | 260 ms               | `reveal()`, or `land()` for a target already in view.                 |
+| Move  | What it's for                                                                                      | Runs                 | How to use it                                                   |
+| ----- | -------------------------------------------------------------------------------------------------- | -------------------- | --------------------------------------------------------------- |
+| Tint  | Hover, press and selection: a color changes, and nothing else.                                     | 90 ms                | `move-tint`. `Button`, `Switch` and `SegmentedControl` have it. |
+| Pop   | A menu, popover, tooltip or palette fades in over 4 px from its anchor's side.                     | 90 ms in, 90 ms out  | `Popover`, `ContextMenu`, `Tooltip`, `Palette`.                 |
+| Sheet | A dialog fades in and rises 8 px, as its scrim fades in.                                           | 160 ms in, 90 ms out | `Dialog`.                                                       |
+| Open  | Something in the flow takes its height and fades in: a thread, a reply, a banner, a fold, a toast. | 160 ms in, 90 ms out | `Collapse`.                                                     |
+| Slide | Something that stays on screen goes from one place to another: a thumb.                            | 160 ms               | `move-slide`. `SegmentedControl` and `Switch` have it.          |
+| Swap  | What replaces something in the same box fades in over it: a skeleton's content, Overview to Diff.  | 90 ms                | `Swap`.                                                         |
+| Land  | Where a jump ended. The scroll is instant, and the target takes a tint that fades.                 | 260 ms               | `reveal()`, or `land()` for a target already in view.           |
 
 - Three durations: `--lo-dur-fast` (90 ms), `--lo-dur` (160 ms), `--lo-dur-slow` (260 ms). Nothing
   in the interface runs longer.
@@ -169,11 +175,12 @@ time.
 
 ### Using the moves
 
-- **`Collapse`** (`open`, `appear`, `onClosed`, `className`) draws nothing while closed and keeps
-  what it held until it has gone, so render
+- **`Collapse`** (`open`, `appear`, `onGone`, `className`) draws nothing while closed and keeps what
+  it held until it has gone, so render
   `<Collapse open={error !== undefined}>{error && <Callout … />}</Collapse>` and nothing more.
   What's already open when its view first draws doesn't move unless `appear` is set. Opened again
-  before it has gone, it turns back from where it is.
+  before it has gone, it turns back from where it is. `onGone` fires once it has left the page,
+  after its move, unlike a popup's `onClosed`, which fires as the popup starts to leave.
 - **`Swap`** (`id`, `className`) is one box whose content fades in when `id` changes:
   `<Swap id={loaded ? 'diff' : 'loading'}>…</Swap>`. What's there when it first draws doesn't move.
 - **`reveal(element, { block })`** brings an element into view by scrolling its own pane and nothing
@@ -224,8 +231,13 @@ Lo waits in three ways. Use the first that fits, and never two for one wait.
 - `Loading` takes `status` ("Fetching diff…"), and optionally `slow`, `onCancel` and `cancelKeys`.
   It fills the view it's in.
 - `Skeleton` is the `skeleton` utility on a block. Give each the size of what it stands for.
+- A view that shows `Loading` or skeletons sets `aria-busy` on its own box until its content is in,
+  so a screen reader waits for the content rather than reading the wait.
 - Pass `busy={false}` to a button that can be busy, not nothing, so it holds room for both labels
-  and doesn't change width. A busy button is `aria-busy`, takes no press and isn't greyed.
+  and doesn't change width. A busy button is `aria-busy`, takes no press and isn't greyed. Without a
+  `working`, it shows its label beside the ring, so it keeps its name.
+- What takes a button's props does the same: a `Banner`'s and a `Problem`'s action each take `busy`
+  and `working` as `Button` does.
 - `Spinner` (the `spinner` utility) alone is for a wait inside a line, such as a status bar item.
   Never beside a button, which is `busy`, and never for a whole view.
 
@@ -236,13 +248,19 @@ goes with its move, takes focus as it mounts, and gives it back as it's asked to
 fires then, while it fades, and it keeps what it showed until it's gone, so a caller can clear its
 state at once.
 
+They sit in layers, lowest first: a dialog or the palette (`z-dialog`), then a popover or menu
+(`z-popover`), which can open from a dialog, then toasts (`z-toast`), then tooltips (`z-tooltip`),
+which name a control wherever it is. Each piece takes its layer's utility, and so does anything else
+that floats.
+
 - **`Dialog`** asks or shows one thing, over a scrim. Three widths: `size="sm"` (420 px, one
   question), `md` (540 px, the default) and `lg` (720 px, a list or code). Its top edge stays 96 px
   from the window's top whatever its height, so it never jumps between steps. With an `action` it
   draws its own foot and takes a `state`: `ask`, `working`, `done` or `failed`. The body stays put
   through all four. The button that leaves reads "Cancel" until something is sent, "Close" after a
   failure and "Done" once it has worked; the main button reads its `label`, then `working`, then
-  "Try again". What went wrong goes in `problem`, above the foot.
+  "Try again". What went wrong goes in `problem`, above the foot. While it's `working`, nothing
+  leaves it: Cancel, `Esc` and a click outside all refuse.
 - **`Popover`** is a small panel beside what it's about: a status item's details, a picker. Give it
   its `trigger`, or an `anchor` when a key opens it.
 - **`ContextMenu`** is the menu at a point: what can be done to what was right-clicked, each with
@@ -251,14 +269,25 @@ state at once.
 - **`Tooltip`** names a control and its key: see [Controls](#controls).
 - **`ToastStack`** shows results at the bottom right, above the status bar: three at most, four
   seconds each, paused under the pointer or focus. A toast is one line, clamped to three, and one
-  action at most. A toast never reports a failure: that's a `Problem` where it happened.
+  action at most. A toast never reports a failure: that's a `Problem` where it happened. Keep each
+  toast the same object while it shows. To show one again, as a second "Copied path", put a new
+  object with the same `id` in `toasts`: it stays in its place and its four seconds start over.
 - **`Problem`** is something that went wrong, in one shape: what failed, why, the one thing to do,
   and the raw text behind Details with Copy. `layout="view"` takes a failed view's place;
-  `layout="inline"` sits by the control whose action failed. It's said once: no toast repeats it.
+  `layout="inline"` sits by the control whose action failed. It's said once: no toast repeats it. A
+  screen reader hears what failed and why as an alert, and not the buttons.
 - **`CopyButton`** copies and says so itself: it reads "Copied" for two seconds, and no toast says
-  it again.
+  it again. When copying throws or rejects, it reads "Couldn’t copy" instead. A live region beside
+  it says the same to a screen reader.
+- **`CopyRoute`** gives everything inside it the window's way to copy. The window is refused every
+  permission, so it can't use the browser's clipboard: it copies through main's `tab.copy`, and one
+  `CopyRoute` around the window (`Window.tsx`) says so. `Problem`'s Copy goes through it, and a
+  feature's `CopyButton` does too, with `const copy = useCopy()` and
+  `<CopyButton onCopy={() => copy(text)} />`. Without a `CopyRoute`, as in a test that draws a piece
+  alone, copying rejects and the button reads "Couldn’t copy".
 - **`Banner`** is a full-width message under the PR header about the whole tab. One that comes or
-  goes while the tab is open does it inside a `Collapse`.
+  goes while the tab is open does it inside a `Collapse`. An action that can be busy takes `busy`
+  (`false` at rest) and `working`, as a `Button` does.
 
 Base UI's popup parts (dialog, menu, popover, tooltip, toast and the like) are imported only by
 these pieces. `ui:lint` runs `scripts/check-popups.ts`, which fails on an import anywhere else, so a

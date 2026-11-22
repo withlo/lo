@@ -69,8 +69,9 @@ export interface ServerTrust {
   action: 'repo' | 'pr' | 'stop';
   onChoose: () => void;
   /**
-   * What Lo is doing about it, while it does: "Checking with GitHub", "Trusting". The button says
-   * so, with a ring turning, in place of its label, and pressing it does nothing until it's done.
+   * What Lo is doing about it, while it does: "Checking with GitHub", "Trusting". The button is
+   * busy and says so, with a ring turning, in place of its label, and pressing it does nothing
+   * until it's done.
    */
   busy?: string | undefined;
   /** Why trusting didn't happen, which the details say under what they said, until it's asked again. */
@@ -496,23 +497,15 @@ export function ServerStatus({
                 ref={again || onShowLog ? undefined : first}
                 variant={state.kind === 'off' ? 'secondary' : 'ghost'}
                 size="sm"
-                // Not `disabled`, which would drop focus from it.
-                aria-disabled={trust.busy === undefined ? undefined : true}
+                busy={trust.busy !== undefined}
+                working={trust.busy}
                 onClick={() => {
-                  if (trust.busy !== undefined) return;
                   // Trusting asks first, and says here how that goes.
                   if (trust.action === 'stop') change(false);
                   trust.onChoose();
                 }}
               >
-                {trust.busy === undefined ? (
-                  trustLabel(trust.action)
-                ) : (
-                  <span className="inline-flex items-center gap-6">
-                    <Spinner size="xs" />
-                    <ShownText text={trust.busy} />
-                  </span>
-                )}
+                {trustLabel(trust.action)}
               </Button>
             )}
             {trust?.failure?.fix && (

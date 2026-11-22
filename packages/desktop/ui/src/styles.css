@@ -82,14 +82,20 @@
   min-height: 2lh;
 }
 
-/* Menus sit over the window's content, and under its dialogs. */
+/* Popovers and menus sit over the window's content and its dialogs, since one can open from a
+   dialog. */
 @utility z-popover {
   z-index: var(--lo-z-popover);
 }
 
-/* Toasts sit over everything but the window's own controls. */
+/* Toasts sit over dialogs, popovers and menus. */
 @utility z-toast {
   z-index: var(--lo-z-toast);
+}
+
+/* Tooltips sit over everything: the control they name can be in a dialog, a popover or a toast. */
+@utility z-tooltip {
+  z-index: var(--lo-z-tooltip);
 }
 
 /* A toast's grid: the icon, then the title, body and buttons in a column of their own, with room
@@ -646,7 +652,7 @@
   }
 }
 
-/* Dialogs and palettes sit over the window. */
+/* Dialogs and palettes sit over the window, and under its popovers, menus, toasts and tooltips. */
 @utility z-dialog {
   z-index: var(--lo-z-dialog);
 }

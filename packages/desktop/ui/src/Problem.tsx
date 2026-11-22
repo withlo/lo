@@ -3,7 +3,7 @@ import { useId, useState, type ReactNode } from 'react';
 
 import { Button } from './Button.tsx';
 import { Collapse } from './Collapse.tsx';
-import { CopyButton } from './CopyButton.tsx';
+import { CopyButton, useCopy } from './CopyButton.tsx';
 import { Key } from './Key.tsx';
 
 /** The one thing to do about a problem. Its label starts with a verb: "Try again". */
@@ -12,7 +12,10 @@ export interface ProblemAction {
   onClick: () => void;
   /** Its key, as the system shows each key of it. */
   keys?: readonly string[] | undefined;
-  /** It's being done: the button is busy, and says `working`. */
+  /**
+   * It's being done: the button is busy, and says `working`. Pass `false` while it rests, for an
+   * action that can be busy, as to a `Button`.
+   */
   busy?: boolean | undefined;
   /** What the button says while busy: "Trying again…". */
   working?: string | undefined;
@@ -26,7 +29,8 @@ export interface ProblemProps {
   action?: ProblemAction | undefined;
   /**
    * What came back, as it came: the status, GitHub's own words, a path. It stays behind a Details
-   * button, with a Copy button, and is the only place raw text shows.
+   * button, with a Copy button, and is the only place raw text shows. Copy goes through the window's
+   * `CopyRoute`.
    */
   details?: string | undefined;
   /**
@@ -34,8 +38,6 @@ export interface ProblemProps {
    * `inline` when an action failed, shown by its control: above a dialog's foot, in a panel.
    */
   layout?: 'view' | 'inline' | undefined;
-  /** Copies the details. Without it they go to the clipboard. */
-  onCopy?: ((details: string) => boolean | void | Promise<boolean | void>) | undefined;
 }
 
 const problem = cva('min-w-0 text-ui', {
@@ -51,16 +53,11 @@ const problem = cva('min-w-0 text-ui', {
 /**
  * Something that went wrong, in one shape wherever it shows: what failed, why, the one
  * thing to do about it, and the raw text behind Details. It's said once, here: no toast or second
- * line repeats it. A screen reader hears it at once.
+ * line repeats it. A screen reader hears what failed and why at once, as an alert, and not its
+ * buttons.
  */
-export function Problem({
-  title,
-  reason,
-  action,
-  details,
-  layout = 'inline',
-  onCopy = (text) => navigator.clipboard.writeText(text),
-}: ProblemProps) {
+export function Problem({ title, reason, action, details, layout = 'inline' }: ProblemProps) {
+  const copy = useCopy();
   const [detailed, setDetailed] = useState(false);
   const detailsId = useId();
   const view = layout === 'view';
@@ -68,7 +65,7 @@ export function Problem({
     <Button
       variant={view ? 'primary' : 'secondary'}
       size={view ? 'md' : 'sm'}
-      busy={action.busy ?? false}
+      busy={action.busy}
       working={action.working}
       onClick={action.onClick}
     >
@@ -88,10 +85,10 @@ export function Problem({
     </Button>
   );
   return (
-    <div role="alert" className={problem({ layout })}>
+    <div className={problem({ layout })}>
       {view ? (
         <>
-          <div className="flex max-w-read-measure flex-col gap-4">
+          <div role="alert" className="flex max-w-read-measure flex-col gap-4">
             <p className="m-0 text-title">{title}</p>
             {reason !== undefined && <p className="m-0 text-fg-muted">{reason}</p>}
           </div>
@@ -112,7 +109,7 @@ export function Problem({
             <path d="M7.13 2.5a1 1 0 0 1 1.74 0l5.2 9.5a1 1 0 0 1-.87 1.5H2.8a1 1 0 0 1-.87-1.5Z" />
             <path d="M8 6.25v3M8 11.25v.01" />
           </svg>
-          <p className="m-0 min-w-0 flex-1">
+          <p role="alert" className="m-0 min-w-0 flex-1">
             <strong className="font-semibold">{title}</strong>
             {reason !== undefined && <span className="text-fg-muted"> {reason}</span>}
           </p>
@@ -131,7 +128,7 @@ export function Problem({
               <pre className="m-0 problem-details min-w-0 flex-1 overflow-auto wrap-anywhere whitespace-pre-wrap text-fg-muted code-small">
                 {details}
               </pre>
-              <CopyButton size="sm" onCopy={() => onCopy(details)} />
+              <CopyButton size="sm" onCopy={() => copy(details)} />
             </div>
           </Collapse>
         </div>

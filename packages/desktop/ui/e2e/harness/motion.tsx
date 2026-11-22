@@ -235,7 +235,23 @@ function Scene() {
         problem={{ title: 'GitHub didn’t answer.', details: 'POST /login/device/code 502' }}
         leaveKeys={['Esc']}
       >
-        <p className="m-0">GitHub opens in your browser, where you enter a code.</p>
+        <div className="flex items-center gap-8">
+          <p className="m-0 flex-1">GitHub opens in your browser, where you enter a code.</p>
+          <Button
+            id="copy-code"
+            variant="ghost"
+            icon
+            aria-label="Copy the code"
+            hint="Copy the code"
+            hintKeys={['y']}
+            hintShortcut="y"
+          >
+            <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="5.25" y="5.25" width="8" height="8" rx="1.5" />
+              <path d="M10.75 3.25V3a1.25 1.25 0 0 0-1.25-1.25h-6A1.25 1.25 0 0 0 2.25 3v6.5A1.25 1.25 0 0 0 3.5 10.75h.25" />
+            </svg>
+          </Button>
+        </div>
       </Dialog>
       <ToastStack
         toasts={toasts}

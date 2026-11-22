@@ -75,6 +75,9 @@ export function SegmentedControl<T extends string>({
   const buttons = useRef(new Map<T, HTMLButtonElement>());
   // Where the thumb is: under the chosen segment, measured, so it can slide from one to the next.
   const [thumb, setThumb] = useState<{ left: number; width: number } | undefined>();
+  // The segments there are, which a caller's new array of the same ones doesn't change: a label
+  // that changes is the observer's to see.
+  const segments = JSON.stringify(items.map((item) => item.value));
   useLayoutEffect(() => {
     const chosen = value === undefined ? undefined : buttons.current.get(value);
     const measure = () => {
@@ -90,7 +93,7 @@ export function SegmentedControl<T extends string>({
     const watch = new ResizeObserver(measure);
     for (const button of buttons.current.values()) watch.observe(button);
     return () => watch.disconnect();
-  }, [value, items, size]);
+  }, [value, segments, size]);
   // It's put in place, not slid there, the first time.
   const placed = thumb !== undefined;
   const [slides, setSlides] = useState(false);

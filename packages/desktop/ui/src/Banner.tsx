@@ -25,10 +25,13 @@ export interface BannerAction {
   label: string;
   onClick: () => void;
   /**
-   * What Lo is doing about it, while it does: "Trusting". The button is busy and says so, and
-   * pressing it does nothing until it's done. It keeps focus, its fill and its width.
+   * It's being done: the button is busy and says `working`, and pressing it does nothing until it's
+   * done. It keeps focus, its fill and its width. Pass `false` while it rests, for an action that
+   * can be busy, as to a `Button`.
    */
-  busy?: string | undefined;
+  busy?: boolean | undefined;
+  /** What the button says while busy, the verb of its label: "Trusting". */
+  working?: string | undefined;
   /** The key that does the same from anywhere in the tab, as the system shows it: `['m']`. */
   keys?: readonly string[] | undefined;
 }
@@ -63,8 +66,8 @@ export function Banner({ tone, title, detail, actions = [], onDismiss }: BannerP
             <Button
               key={action.label}
               size="sm"
-              busy={action.busy === undefined ? undefined : true}
-              working={action.busy}
+              busy={action.busy}
+              working={action.working}
               onClick={action.onClick}
             >
               {action.label}

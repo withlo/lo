@@ -30,11 +30,14 @@
   --lo-track-wordmark: -0.02em;  /* only where the name is set as a word */
   --lo-track-label: 0.06em;      /* uppercase labels */
 
-  /* Layers */
+  /* Layers, lowest first. A popover or menu can open from inside a dialog, so it sits over
+     dialogs; a toast floats over both; and a tooltip, which names a control wherever it is, over
+     everything. */
   --lo-z-sticky: 10;
-  --lo-z-popover: 50;
   --lo-z-dialog: 100;
-  --lo-z-toast: 200;
+  --lo-z-popover: 200;
+  --lo-z-toast: 300;
+  --lo-z-tooltip: 400;
 }
 
 /* Platforms. Set data-lo-platform="linux" on <html> on Linux, and

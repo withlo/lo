@@ -24,7 +24,8 @@ export function TrustBanner({ tab }: { tab: PullTab }) {
   if (action) {
     actions.push({
       label: action.label,
-      busy: action.busy,
+      busy: action.busy !== undefined,
+      working: action.busy,
       onClick: () => void askToTrust(status, action.pull),
     });
   }

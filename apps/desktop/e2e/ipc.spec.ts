@@ -75,8 +75,6 @@ test('app.info answers', async ({ page }) => {
       ...(found ? { commit: expect.stringMatching(/^[0-9a-f]{7}$/) } : {}),
       // What the suite asks for, so its tests aren't racing the bound on what a tab holds back.
       holdLimit: HELD_LONG,
-      // And for every move off, so no test waits on one.
-      motion: 'reduce',
       nonce: expect.stringMatching(/^[A-Za-z0-9+/]{24}$/),
     },
   });

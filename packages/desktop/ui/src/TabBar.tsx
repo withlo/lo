@@ -12,7 +12,7 @@ import {
 } from 'react';
 
 import { withoutBidi } from './controls.ts';
-import { motionReduced } from './motion.ts';
+import { motionReduced, whenSettled } from './motion.ts';
 import { Skeleton, Spinner } from './Spinner.tsx';
 
 /** A tab in the strip: a pull request's (or a whole stack's), or one of Lo's own. */
@@ -410,6 +410,8 @@ const DRAG_START = 4;
 /** A tab being dragged, or sliding back after `Esc`. */
 interface Drag {
   readonly id: string;
+  /** The dragged tab's element. */
+  readonly element: HTMLElement;
   /** The tabs shown as it started, in order, and the dragged one's index among them. */
   readonly slots: readonly Slot[];
   readonly from: number;
@@ -437,7 +439,6 @@ interface TabDrag {
     | 'onKeyDown'
     | 'onKeyUp'
     | 'onBlur'
-    | 'onTransitionEnd'
   >;
   readonly dragged: boolean;
   readonly className: string | undefined;
@@ -486,6 +487,16 @@ function useDrag(
     );
   };
 
+  // Put back, it's home once its slide has run, and only then: a new press starts over at once.
+  useEffect(() => {
+    if (!drag?.back) return undefined;
+    return whenSettled(drag.element, () => {
+      if (live.current !== drag) return;
+      live.current = undefined;
+      setDrag(undefined);
+    });
+  }, [drag]);
+
   const order = orderOf(shown);
   useEffect(() => {
     if (live.current && live.current.order !== order) {
@@ -506,7 +517,17 @@ function useDrag(
     if (!self) return undefined;
     const gap = parseFloat(getComputedStyle(strip).columnGap) || 0;
     if (element.ownerDocument.activeElement !== element) element.focus({ preventScroll: true });
-    return { id, slots, from, order, space: self.width + gap, offset: 0, place: from, back: false };
+    return {
+      id,
+      element,
+      slots,
+      from,
+      order,
+      space: self.width + gap,
+      offset: 0,
+      place: from,
+      back: false,
+    };
   };
 
   /**
@@ -566,11 +587,6 @@ function useDrag(
       onKeyUp: escape,
       onBlur() {
         if (live.current?.id === item.id) putBack();
-      },
-      onTransitionEnd(event) {
-        const current = live.current;
-        if (event.target !== event.currentTarget || event.propertyName !== 'transform') return;
-        if (current?.back && current.id === item.id) set(undefined);
       },
     };
     if (!drag) {

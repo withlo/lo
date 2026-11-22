@@ -277,12 +277,13 @@ pnpm nx run desktop:release  # build it, then make a release's DMGs and zips (ne
   `page` fixture or, for a copy of Lo it starts itself, `drawnWindow`: the page runs before
   Electron's GPU process has started, which in CI has taken up to half a minute, and until it has,
   nothing that waits on a frame happens, such as a closed dialog leaving. Tests start Lo with every
-  move off: `appEnvironment` sets `LO_MOTION=reduce`, which a build run from source hands its window
-  to set the motion switch with (a packaged build ignores it), so no test waits on a popup fading or
-  meets one still leaving. A run that's there to watch Lo move sets `LO_MOTION=system`. Its specs
-  are `e2e/*.spec.ts`, and a `*.test.ts` beside them is a unit test of what they use. A run on
-  GitHub itself, with the system's keychain, is a `*.live.ts` spec, which only `nx run desktop:live`
-  runs, one at a time, as `testing/README.md` describes.
+  move off: `appEnvironment` sets `LO_MOTION=reduce`, which a build run from source passes to its
+  window's preload, on the window's command line, and the preload sets the motion switch before the
+  page's code runs (a packaged build ignores it), so no test waits on a popup fading or meets one
+  still leaving. A run that's there to watch Lo move sets `LO_MOTION=system`. Its specs are
+  `e2e/*.spec.ts`, and a `*.test.ts` beside them is a unit test of what they use. A run on GitHub
+  itself, with the system's keychain, is a `*.live.ts` spec, which only `nx run desktop:live` runs,
+  one at a time, as `testing/README.md` describes.
 
 The window shows untrusted content, so it's locked down, and the smoke test shows each guard
 holding:

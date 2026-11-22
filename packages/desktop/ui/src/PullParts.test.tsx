@@ -93,6 +93,16 @@ describe('StatePill', () => {
   });
 });
 
+/** A banner whose action can be busy, and is now or isn't. */
+const trusting = (busy: boolean) =>
+  renderToStaticMarkup(
+    <Banner
+      tone="warn"
+      title="Language servers are off for withlo/lo."
+      actions={[{ label: 'Trust this repo', busy, working: 'Trusting', onClick: () => {} }]}
+    />,
+  );
+
 describe('Banner', () => {
   it('leads with what happened, then what to do, with its buttons', () => {
     const retry = vi.fn<() => void>();
@@ -111,6 +121,13 @@ describe('Banner', () => {
     expect(markup).toContain('Showing what Lo saved 2 hours ago.');
     expect(markup).toMatch(/<button type="button" class="[^"]*">Try again<\/button>/);
     expect(markup).toContain('aria-label="Dismiss"');
+  });
+
+  it('holds room for an action’s wait while it rests, and says the wait while busy', () => {
+    // Both faces are there at rest, so the button is as wide then as while it works.
+    expect(trusting(false)).toContain('Trusting');
+    expect(trusting(false)).not.toContain('aria-busy="true"');
+    expect(trusting(true)).toContain('aria-busy="true"');
   });
 
   it('is an alert when it’s about danger, and has no buttons when it offers nothing', () => {

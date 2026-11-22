@@ -1,6 +1,7 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 import type { ComponentProps, MouseEvent, ReactNode } from 'react';
 
+import { keyAria } from './Key.tsx';
 import { Spinner } from './Spinner.tsx';
 import { Tooltip } from './Tooltip.tsx';
 
@@ -64,12 +65,20 @@ export interface ButtonProps
    * it's done. Pass `false` while it rests, not nothing, so the button holds room for both.
    */
   busy?: boolean | undefined;
-  /** What it says while busy, the verb of its label: "Merging…" for "Merge #264". */
+  /**
+   * What it says while busy, the verb of its label: "Merging…" for "Merge #264". Without one, it
+   * says its label beside the ring.
+   */
   working?: string | undefined;
   /** Its tooltip: what it is or does, for a button whose face doesn't say, such as an icon's. */
   hint?: ReactNode;
   /** Its key, shown in the tooltip, as the system shows each key of it. */
   hintKeys?: readonly string[] | undefined;
+  /**
+   * That key as `aria-keyshortcuts` says it (`liveShortcut` gives it), which a screen reader hears
+   * in place of the tooltip's key caps. A sequence has none, and is described from `hintKeys`.
+   */
+  hintShortcut?: string | undefined;
 }
 
 /**
@@ -86,6 +95,7 @@ export function Button({
   working,
   hint,
   hintKeys,
+  hintShortcut,
   onClick,
   children,
   ...props
@@ -99,6 +109,8 @@ export function Button({
         if (busy === true) event.preventDefault();
         else onClick?.(event);
       }}
+      // The tooltip's key, said to a screen reader, which never hears the tooltip's key caps.
+      {...(hint === undefined ? {} : keyAria(hintKeys, hintShortcut))}
       {...props}
       // Not `disabled`, which would drop focus from it. It's said to be unavailable while it works,
       // and doesn't look it: only a button that isn't busy greys out.
@@ -122,7 +134,8 @@ export function Button({
               // The ring's room, kept while nothing turns in it.
               <span className={size === 'sm' ? 'size-8 flex-none' : 'size-12 flex-none'} />
             )}
-            {working}
+            {/* Without words of its own for the wait, it keeps its label, and so its name. */}
+            {working ?? children}
           </span>
         </span>
       ) : (

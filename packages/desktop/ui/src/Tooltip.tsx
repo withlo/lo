@@ -44,7 +44,7 @@ export interface TooltipProps {
  * the only place to learn something. `Button` takes one through its `hint`.
  *
  * It isn't the control's accessible name: an icon button still has its `aria-label`, and gives its
- * key with `aria-keyshortcuts`.
+ * key with `aria-keyshortcuts`, as `Button` does from its `hintShortcut`.
  */
 export function Tooltip({ label, keys, side = 'bottom', children }: TooltipProps) {
   const container = useContext(Container);
@@ -52,7 +52,7 @@ export function Tooltip({ label, keys, side = 'bottom', children }: TooltipProps
     <Base.Root>
       <Base.Trigger render={children} delay={TOOLTIP_DELAY} />
       <Base.Portal container={container ?? globalThis.document?.querySelector('.lo-app')}>
-        <Base.Positioner side={side} sideOffset={6} collisionPadding={8} className="z-popover">
+        <Base.Positioner side={side} sideOffset={6} collisionPadding={8} className="z-tooltip">
           <Base.Popup className="tooltip move-pop flex items-center gap-8 rounded-sm bg-bg-overlay px-8 py-4 text-fg shadow-pop text-small">
             {label}
             {keys !== undefined && keys.length > 0 && <Key keys={keys} quiet decorative />}

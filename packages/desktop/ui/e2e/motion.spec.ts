@@ -111,6 +111,26 @@ test('a tooltip names a control under the pointer, with its key', async () => {
   await expect(tooltip).toHaveCount(0);
 });
 
+test('a tooltip for a control in a dialog shows over the dialog and its scrim', async () => {
+  const page = await open();
+  await page.locator('#open-dialog').click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  const control = page.locator('#copy-code');
+  await expect(control).toHaveAttribute('aria-keyshortcuts', 'y');
+  await control.hover();
+  const tooltip = page.locator('.tooltip');
+  await expect(tooltip).toContainText('Copy the code');
+  // What's drawn on top at its middle is the tooltip. It never takes the pointer, so it's asked
+  // to here, where the page is asked what's on top.
+  const onTop = await tooltip.evaluate((element) => {
+    if (element instanceof HTMLElement) element.style.pointerEvents = 'auto';
+    const box = element.getBoundingClientRect();
+    const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    return element.contains(top);
+  });
+  expect(onTop).toBe(true);
+});
+
 test('something in the flow opens, closes, and turns back when asked again before it has gone', async () => {
   const page = await open();
   const reply = page.locator('#reply');

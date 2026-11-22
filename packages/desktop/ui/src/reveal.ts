@@ -13,11 +13,17 @@ export interface RevealOptions {
   land?: boolean | undefined;
 }
 
-/** The nearest box around `element` that scrolls up and down: its pane. */
+/**
+ * The nearest box around `element` that scrolls up and down: its pane. A box that scrolls only
+ * sideways, such as a wide table or a code block, computes `overflow-y: auto` too, since one axis
+ * can't be visible while the other isn't, so a box counts only when it holds more than its height.
+ */
 export function scrollPane(element: Element): HTMLElement | null {
   for (let at = element.parentElement; at; at = at.parentElement) {
     const { overflowY } = getComputedStyle(at);
-    if (overflowY === 'auto' || overflowY === 'scroll') return at;
+    if ((overflowY === 'auto' || overflowY === 'scroll') && at.scrollHeight > at.clientHeight) {
+      return at;
+    }
   }
   return null;
 }

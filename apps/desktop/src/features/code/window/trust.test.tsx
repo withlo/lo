@@ -76,9 +76,13 @@ async function until(done: () => boolean): Promise<void> {
   expect(done()).toBe(true);
 }
 
+/** What a button says now: for one that can be busy, the face of it that shows. */
+const shown = (control: Element) =>
+  (control.querySelector('span > span:not([aria-hidden])') ?? control).textContent;
+
 const button = (page: HTMLElement, name: string) =>
   [...page.querySelectorAll('button')].find(
-    (each) => each.textContent === name || each.getAttribute('aria-label') === name,
+    (each) => shown(each) === name || each.getAttribute('aria-label') === name,
   );
 
 describe('the banner', () => {
@@ -207,7 +211,7 @@ describe('asking to trust', () => {
     expect(page.querySelector('[role="alert"] p')?.textContent).toBe(
       `Lo couldn't trust rozed-dev/e2e. ${why}`,
     );
-    expect([...page.querySelectorAll('button')].map((each) => each.textContent)).toEqual([
+    expect([...page.querySelectorAll('button')].map(shown)).toEqual([
       'Open the settings file',
       'Trust this repo',
       '',

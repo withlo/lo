@@ -124,9 +124,16 @@ export const TOAST_MS = 4000;
 /** How many toasts a stack shows at once. */
 export const TOAST_MAX = 3;
 
-/** One toast in a stack: a line, and one action at most. */
+/**
+ * One toast in a stack: a line, and one action at most. Keep the same object while it shows: a new
+ * one with the same id shows that toast again.
+ */
 export interface StackedToast {
-  /** Tells it from the others. A toast shown again with the same id is the same toast. */
+  /**
+   * Tells it from the others. A toast shown again with the same id, as a new object, is the same
+   * toast: it stays where it is, says its new words, and its four seconds start again. A second
+   * "Copied path" never leaves early on the first one's time.
+   */
   readonly id: string;
   readonly tone: ToastTone;
   /** The result, in a few words: "Merged #264". */
@@ -165,6 +172,17 @@ export function ToastStack({ toasts, onDismiss, waiting }: ToastStackProps) {
     ...drawn.current.map((toast) => asked.get(toast.id) ?? toast),
     ...toasts.filter((toast) => !before.has(toast.id)),
   ];
+  // How many times each toast drawn has been shown. Asked for as a new object, or again after it
+  // was let go, it's shown again.
+  const shown = useRef(new Map<string, { asked: StackedToast | undefined; times: number }>());
+  for (const { id } of drawn.current) {
+    const now = asked.get(id);
+    const was = shown.current.get(id);
+    if (was === undefined) shown.current.set(id, { asked: now, times: 1 });
+    else if (now !== was.asked) {
+      shown.current.set(id, { asked: now, times: now === undefined ? was.times : was.times + 1 });
+    }
+  }
   const dismiss = useRef(onDismiss);
   dismiss.current = onDismiss;
   const over = toasts.slice(0, Math.max(0, toasts.length - TOAST_MAX));
@@ -182,14 +200,15 @@ export function ToastStack({ toasts, onDismiss, waiting }: ToastStackProps) {
             key={toast.id}
             open={asked.has(toast.id) && !hidden.has(toast.id)}
             appear
-            onClosed={() => {
+            onGone={() => {
               // Still asked for: it's hidden, not gone, and its place is kept.
               if (asked.has(toast.id)) return;
               drawn.current = drawn.current.filter((each) => each.id !== toast.id);
+              shown.current.delete(toast.id);
               redraw();
             }}
           >
-            <Timed id={toast.id} onDone={dismiss}>
+            <Timed id={toast.id} times={shown.current.get(toast.id)?.times ?? 1} onDone={dismiss}>
               <Toast tone={toast.tone} title={toast.title} action={toast.action} />
             </Timed>
           </Collapse>
@@ -204,28 +223,40 @@ export function ToastStack({ toasts, onDismiss, waiting }: ToastStackProps) {
   );
 }
 
-/** A toast's place in the stack, which counts its time while the pointer and focus are off it. */
+/**
+ * A toast's place in the stack, which counts its time while the pointer and focus are off it, and
+ * starts it again each time the toast is shown again (`times`).
+ */
 function Timed({
   id,
+  times,
   onDone,
   children,
 }: {
   id: string;
+  times: number;
   onDone: { readonly current: (id: string) => void };
   children: ReactNode;
 }) {
   const [held, setHeld] = useState({ pointer: false, focus: false });
   const paused = held.pointer || held.focus;
   const left = useRef(TOAST_MS);
+  const counted = useRef(times);
   useEffect(() => {
     if (paused) return undefined;
+    // Shown again: its time starts over. This runs after the last count stopped, which took off
+    // what it had used.
+    if (counted.current !== times) {
+      counted.current = times;
+      left.current = TOAST_MS;
+    }
     const started = Date.now();
     const timer = setTimeout(() => onDone.current(id), left.current);
     return () => {
       clearTimeout(timer);
       left.current = Math.max(0, left.current - (Date.now() - started));
     };
-  }, [paused, id, onDone]);
+  }, [paused, id, times, onDone]);
   return (
     <div
       className="move-pop pt-8"

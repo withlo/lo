@@ -27,7 +27,7 @@ test('the window opens on a fresh data folder, on Recent pull requests alone, in
     });
   });
 
-  await test.step('the shell puts itself back when a script scrolls it', async () => {
+  await test.step('the shell and the page put themselves back when a script scrolls them', async () => {
     // Something taller than the shell, past its edge, as a view that overflows would be.
     const scrolled = await page.evaluate(() => {
       const shell = document.querySelector('[data-lo-scope="window"]');
@@ -46,6 +46,21 @@ test('the window opens on a fresh data folder, on Recent pull requests alone, in
       )
       .toBe(0);
     await page.evaluate(() => document.getElementById('tall')?.remove());
+
+    // The page itself hides what overflows it too, and puts itself back the same way.
+    const pageScrolled = await page.evaluate(() => {
+      const root = document.scrollingElement;
+      if (!root) throw new Error('The page has no scrolling element.');
+      const tall = document.createElement('div');
+      tall.id = 'tall-page';
+      tall.style.cssText = 'height: 200vh';
+      document.body.append(tall);
+      root.scrollTop = 80;
+      return root.scrollTop;
+    });
+    expect(pageScrolled).toBe(80);
+    await expect.poll(() => page.evaluate(() => document.scrollingElement?.scrollTop)).toBe(0);
+    await page.evaluate(() => document.getElementById('tall-page')?.remove());
   });
 
   await test.step("the tab strip's row clears the window's controls", async () => {

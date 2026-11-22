@@ -12,8 +12,11 @@ export interface CollapseProps {
   appear?: boolean | undefined;
   /** What comes and goes. It may go to nothing the moment `open` turns false. */
   children?: ReactNode;
-  /** It has closed and is gone from the page. */
-  onClosed?: (() => void) | undefined;
+  /**
+   * It has closed and is gone from the page, once its move has run. Unlike a popup's `onClosed`,
+   * which comes as the popup starts to leave, this comes once what it held has left.
+   */
+  onGone?: (() => void) | undefined;
   /** Classes for the box that grows, such as where it sits in a grid. Its gaps go inside it. */
   className?: string | undefined;
 }
@@ -28,7 +31,7 @@ export interface CollapseProps {
  * more. What's leaving takes no focus and no clicks. Opened again before it has gone, it turns back
  * from where it is.
  */
-export function Collapse({ open, appear = false, children, onClosed, className }: CollapseProps) {
+export function Collapse({ open, appear = false, children, onGone, className }: CollapseProps) {
   const [shown, setShown] = useState(open);
   if (open && !shown) setShown(true);
   const held = useHeld(open, children);
@@ -38,8 +41,8 @@ export function Collapse({ open, appear = false, children, onClosed, className }
   if (!open) still.current = false;
 
   const element = useRef<HTMLDivElement>(null);
-  const closed = useRef(onClosed);
-  closed.current = onClosed;
+  const gone = useRef(onGone);
+  gone.current = onGone;
   useLayoutEffect(() => {
     const box = element.current;
     if (!box) return undefined;
@@ -49,7 +52,7 @@ export function Collapse({ open, appear = false, children, onClosed, className }
       box.removeAttribute('data-moving');
       if (open) return;
       setShown(false);
-      closed.current?.();
+      gone.current?.();
     });
   }, [open, shown]);
 

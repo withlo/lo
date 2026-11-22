@@ -36,7 +36,10 @@ export interface DialogAction {
 
 export interface DialogProps {
   open: boolean;
-  /** `Esc`, or a click outside it, asks for it to close. */
+  /**
+   * `Esc`, or a click outside it, asks for it to close. While its `state` is `working` it isn't
+   * asked: what's being done can't be left, as its Cancel says.
+   */
   onOpenChange: (open: boolean) => void;
   title: ReactNode;
   /** A line under the title. */
@@ -126,7 +129,17 @@ export function Dialog(props: DialogProps) {
     [grow, takeFocus, focus],
   );
   return (
-    <Base.Root open={open} onOpenChange={(next) => onOpenChange(next)}>
+    <Base.Root
+      open={open}
+      onOpenChange={(next, details) => {
+        // Esc and a click outside refuse while it works, as its Cancel does.
+        if (!next && open && props.state === 'working') {
+          details.cancel();
+          return;
+        }
+        onOpenChange(next);
+      }}
+    >
       <Base.Portal container={container}>
         <Base.Backdrop className="move-scrim fixed inset-0 z-dialog bg-scrim" />
         <Base.Viewport className="fixed inset-0 z-dialog flex items-start justify-center px-16 pt-dialog-top pb-16">

@@ -109,7 +109,15 @@ export {
 } from './Tooltip.tsx';
 export { Collapse, Swap, type CollapseProps, type SwapProps } from './Collapse.tsx';
 export { Problem, type ProblemAction, type ProblemProps } from './Problem.tsx';
-export { CopyButton, COPIED_MS, type CopyButtonProps } from './CopyButton.tsx';
+export {
+  CopyButton,
+  CopyRoute,
+  COPIED_MS,
+  useCopy,
+  type Copy,
+  type CopyButtonProps,
+  type CopyRouteProps,
+} from './CopyButton.tsx';
 export { Loading, LOADING_DELAY_MS, LOADING_SLOW_MS, type LoadingProps } from './Loading.tsx';
 export { LogoMotion, type LogoMotionProps, type LogoPlay } from './LogoMotion.tsx';
 export {

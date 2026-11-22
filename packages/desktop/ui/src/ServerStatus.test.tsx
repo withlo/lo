@@ -30,6 +30,12 @@ function words(host: HTMLElement): string {
 }
 
 /** The details, once open: Base UI draws them into the page's body. */
+/** What a button says now: the face that shows, for one that can be busy. */
+function says(button: Element | null | undefined): string {
+  const face = button?.querySelector('span > span:not([aria-hidden])') ?? button;
+  return face?.textContent ?? '';
+}
+
 function details(): HTMLElement | null {
   return document.body.querySelector<HTMLElement>('[role="dialog"]');
 }
@@ -124,7 +130,7 @@ async function labels(trust: ServerTrust, state: ServerState): Promise<string[]>
   );
   click(item(host));
   await settle();
-  const found = [...details()!.querySelectorAll('button')].map((button) => button.textContent);
+  const found = [...details()!.querySelectorAll('button')].map(says);
   cleanUp();
   return found;
 }
@@ -496,7 +502,7 @@ describe('ServerStatus', () => {
       'Lo runs language servers only on repos you trust. Until then, peek, references and hovers use the syntax index.',
     );
     const buttons = [...open.querySelectorAll('button')];
-    expect(buttons.map((button) => button.textContent)).toEqual(['Trust this repo…']);
+    expect(buttons.map(says)).toEqual(['Trust this repo…']);
     // The one thing to do has focus, though it has no Restart, and isn't the main button: it asks.
     expect(document.activeElement).toBe(buttons[0]);
     expect(buttons[0]?.className).not.toContain('bg-accent');
@@ -514,7 +520,8 @@ describe('ServerStatus', () => {
     click(item(host));
     await settle();
     const [button] = details()!.querySelectorAll('button');
-    expect(button?.textContent).toBe('Trusting');
+    expect(says(button)).toBe('Trusting');
+    expect(button?.getAttribute('aria-busy')).toBe('true');
     expect(button?.getAttribute('aria-disabled')).toBe('true');
     expect(button?.querySelector('.spinner')).not.toBeNull();
     expect(document.activeElement).toBe(button);
@@ -534,10 +541,7 @@ describe('ServerStatus', () => {
     const open = details()!;
     expect(open.querySelector('[role="alert"]')?.textContent).toBe(message);
     const buttons = [...open.querySelectorAll('button')];
-    expect(buttons.map((each) => each.textContent)).toEqual([
-      'Trust this repo…',
-      'Open the settings file',
-    ]);
+    expect(buttons.map(says)).toEqual(['Trust this repo…', 'Open the settings file']);
     // The button is back, and still has focus.
     expect(buttons[0]).toBe(button);
     expect(document.activeElement).toBe(button);
@@ -575,7 +579,7 @@ describe('ServerStatus', () => {
     await settle();
     // With only this to press, it has focus as the details open.
     const only = details()!.querySelector('button')!;
-    expect(only.textContent).toBe('Stop trusting this repo');
+    expect(says(only)).toBe('Stop trusting this repo');
     expect(document.activeElement).toBe(only);
     click(only);
     expect(onChoose).toHaveBeenCalledTimes(1);
