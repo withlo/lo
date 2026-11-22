@@ -2,6 +2,7 @@ import { Popover } from '@base-ui/react/popover';
 import {
   useCallback,
   useId,
+  useRef,
   type KeyboardEvent,
   type ReactNode,
   type Ref,
@@ -77,9 +78,11 @@ export function MergePanel({
 }: MergePanelProps) {
   const returnFocus = useReturnFocus(open);
   const takeFocus = useTakeFocus(focusRef);
+  const panel = useRef<HTMLDivElement | null>(null);
   // One ref for as long as the panel's own do not change, or each draw would take focus again.
   const popup = useCallback(
     (element: HTMLDivElement | null) => {
+      panel.current = element;
       takeFocus(element);
       if (typeof panelRef === 'function') panelRef(element);
       else if (panelRef) panelRef.current = element;
@@ -91,7 +94,7 @@ export function MergePanel({
       open={open}
       onOpenChange={(next) => onOpenChange(next)}
       onOpenChangeComplete={(next) => {
-        if (!next) returnFocus();
+        if (!next) returnFocus(panel.current);
       }}
     >
       <Popover.Portal container={container}>

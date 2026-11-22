@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { act, type ReactNode } from 'react';
+import { act, createRef, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Dialog } from './Dialog.tsx';
 import { KeyHelp } from './KeyHelp.tsx';
+import { MergePanel } from './MergePanel.tsx';
 import { Palette } from './Palette.tsx';
 
 beforeAll(() => {
@@ -89,5 +90,83 @@ describe('closing a dialog', () => {
     show(true);
     await vi.waitFor(() => expect(document.activeElement?.tagName).toBe('INPUT'));
     expect(document.activeElement).not.toBe(container);
+  });
+});
+
+const mergePanel = (open: boolean) => (
+  <MergePanel
+    open={open}
+    onOpenChange={() => {}}
+    anchor={null}
+    scope="merge"
+    kind="ready"
+    verdict="Ready to merge"
+  />
+);
+
+const confirm = createRef<HTMLButtonElement>();
+
+/** `popup`, open until `closed`, and with `into`, the dialog that opens in its place then. */
+const closing = (popup: (open: boolean) => ReactNode, into: boolean) => (closed: boolean) => (
+  <>
+    {popup(!closed)}
+    {into && (
+      <Dialog open={closed} onOpenChange={() => {}} title="Merge" initialFocus={confirm}>
+        <button ref={confirm}>Merge #1</button>
+      </Dialog>
+    )}
+  </>
+);
+
+/** Lets what's waiting run: a popup takes focus two microtasks after it mounts. */
+const settle = () => act(async () => {});
+
+/** The next animation frame, and what it leaves waiting. */
+const nextFrame = () =>
+  act(async () => {
+    vi.advanceTimersToNextFrame();
+  });
+
+describe('closing a popup that gives focus back a frame on, once its close is complete', () => {
+  // Base UI completes a close a frame on, once the popup's animations have finished. jsdom has
+  // none to read, and without them Base UI completes it at once, so the page has an empty list of
+  // them, and the frame comes when the test says.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame'] });
+    Object.defineProperty(Element.prototype, 'getAnimations', {
+      configurable: true,
+      value: () => [],
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    Reflect.deleteProperty(Element.prototype, 'getAnimations');
+  });
+
+  const late = [
+    ['the merge panel', mergePanel],
+    ['key help', keyHelp],
+  ] as const;
+
+  it.each(late)('gives it back to where it was when nothing opened: %s', async (_, popup) => {
+    const { container, show } = page(closing(popup, false));
+    await settle();
+    expect(document.activeElement).not.toBe(container);
+    show(true);
+    await settle();
+    expect(document.activeElement).not.toBe(container);
+    await nextFrame();
+    expect(document.activeElement).toBe(container);
+  });
+
+  it.each(late)('leaves focus in a dialog that opened in its place: %s', async (_, popup) => {
+    const { show } = page(closing(popup, true));
+    await settle();
+    show(true);
+    await settle();
+    expect(document.activeElement).toBe(confirm.current);
+    await nextFrame();
+    expect(document.activeElement).toBe(confirm.current);
   });
 });

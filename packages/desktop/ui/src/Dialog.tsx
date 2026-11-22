@@ -111,8 +111,9 @@ export function Dialog(props: DialogProps) {
   const { title, description, children, size, state, action, problem, note, leaveKeys, foot } =
     useHeld(open, props);
   const returnFocus = useReturnFocus(open);
+  const panel = useRef<HTMLDivElement | null>(null);
   useOnClose(open, () => {
-    returnFocus();
+    returnFocus(panel.current);
     onClosed?.();
   });
   const main = useRef<HTMLButtonElement>(null);
@@ -124,6 +125,7 @@ export function Dialog(props: DialogProps) {
   const grow = useGrow(body);
   const mounted = useCallback(
     (element: HTMLDivElement | null) => {
+      panel.current = element;
       grow(element);
       if (focus) takeFocus(element);
     },
