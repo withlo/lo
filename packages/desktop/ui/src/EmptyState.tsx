@@ -2,8 +2,8 @@ import { useId, type ReactNode } from 'react';
 
 import { Button } from './Button.tsx';
 import { runControl } from './commands/control.ts';
-import { CopyFaces, CopyStatus, type CopySaid } from './CopyButton.tsx';
 import type { Target } from './commands/targets.ts';
+import { CopyFaces, CopyStatus, type CopySaid } from './CopyButton.tsx';
 import { Key, keyAria } from './Key.tsx';
 import { useControl } from './useControl.ts';
 

@@ -611,7 +611,9 @@ test.describe('as a pull request opens', () => {
     if (process.platform !== 'darwin') {
       await test.step('copies the prompts, by their buttons and ya, with nothing an overview says', async () => {
         await none.getByRole('button', { name: /^Copy prompt/ }).click();
-        await expect(page.getByRole('status').filter({ hasText: 'Copied prompt' })).toBeVisible();
+        // The button says so itself, and no toast says it again.
+        await expect(none.getByRole('status').filter({ hasText: 'Copied' })).toHaveCount(1);
+        await expect(page.getByRole('status').filter({ hasText: 'Copied prompt' })).toHaveCount(0);
         expect(await clipboard(app)).toBe(WRITE);
         await app.evaluate(({ clipboard: board }) => board.writeText(''));
         await page.keyboard.press('y');
@@ -890,7 +892,7 @@ test('says when the overview couldn’t be fetched, and reads it again on Try no
     await overviewTab(page).click();
     const failed = overview(page, 'failed');
     await expect(failed.getByRole('alert')).toContainText('Can’t fetch the overview');
-    // The count is for the eye; a screen reader hears "soon".
+    // The count is for the eye; a screen reader hears it once, as it stood, spelled out.
     await expect(failed).toContainText(/GitHub returned an error\. Retrying in \d+ (s|min)/);
 
     ref.holds = { kind: 'cassette' };
