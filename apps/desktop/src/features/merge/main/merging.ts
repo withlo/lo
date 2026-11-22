@@ -640,10 +640,6 @@ export class Merging {
    * reader to confirm, in place of the view's last plan; or says why there's none.
    */
   async plan(id: string, choice: Choice): Promise<Planned> {
-    const refuse = (why: string, again = false, details?: string): Planned =>
-      details === undefined
-        ? { kind: 'refused', why, again }
-        : { kind: 'refused', why, again, details };
     // Never read: the window is closing.
     if (this.#stopped) return refuse('');
     const view = this.#options.view(id);
@@ -2086,6 +2082,11 @@ export function busyText(busy: number, number: number): string {
 
 function refused(refusal: Refusal): Extract<Confirmed, { kind: 'refused' }> {
   return { kind: 'refused', refusal };
+}
+
+/** No plan, for `why`: `again` where asking again may plan it, as while Lo finds out where it sits. */
+function refuse(why: string, again = false): Planned {
+  return { kind: 'refused', why, again };
 }
 
 /** Its tab is closed: nothing is left to show why on. */

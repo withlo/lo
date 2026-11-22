@@ -510,8 +510,8 @@ function Hints({ tab, read }: { tab: QueueTab; read: QueueRead | undefined }) {
 /** The hints given up to drop `count` of them, by their place: from the right, dimmed ones first. */
 export function givenUp(off: readonly boolean[], count: number): ReadonlySet<number> {
   const order = [
-    ...off.flatMap((dimmed, index) => (dimmed ? [index] : [])).reverse(),
-    ...off.flatMap((dimmed, index) => (dimmed ? [] : [index])).reverse(),
+    ...off.flatMap((dimmed, index) => (dimmed ? [index] : [])).toReversed(),
+    ...off.flatMap((dimmed, index) => (dimmed ? [] : [index])).toReversed(),
   ];
   return new Set(order.slice(0, Math.max(0, count)));
 }

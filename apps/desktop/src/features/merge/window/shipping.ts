@@ -140,9 +140,9 @@ export function checkApproval(): void {
   looking(true);
   const reviews = client(reviewContract);
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let stop = (): void => undefined;
+  let stop: (() => void) | undefined;
   const end = (known: boolean) => {
-    stop();
+    stop?.();
     clearTimeout(timer);
     if (!still()) return;
     if (known) shipAgain();

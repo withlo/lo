@@ -278,23 +278,12 @@ export function Dialog(props: DialogProps) {
                       {leaveKeys && <Key keys={leaveKeys} decorative />}
                     </Button>
                   )}
-                  {state === 'done' ? (
-                    // A hint that says nothing, as the button it follows has when it can run: the
-                    // same element, so focus stays on it.
-                    <Button
-                      ref={setMain}
-                      variant="primary"
-                      widest={action.widest}
-                      hint={null}
-                      hintOn="hover"
-                      onClick={() => onOpenChange(false)}
-                    >
-                      Done
-                      {action.keys && <Key keys={action.keys} decorative />}
-                    </Button>
-                  ) : (
-                    <MainButton action={action} state={state} buttonRef={setMain} />
-                  )}
+                  <MainButton
+                    action={action}
+                    state={state}
+                    buttonRef={setMain}
+                    onDone={() => onOpenChange(false)}
+                  />
                 </Foot>
               )
             )}
@@ -306,40 +295,50 @@ export function Dialog(props: DialogProps) {
 }
 
 /**
- * The main button of the foot a dialog draws: the action, busy while it works, and after a failure
- * what it says to do again, if anything. Its fill is its `tone` only while it can be pressed for its
- * action or does it: "Try again" and "Done" are the main button's own.
+ * The main button of the foot a dialog draws: the action, busy while it works, after a failure what
+ * it says to do again, if anything, and "Done" once it has worked, which closes it. It's one
+ * element through all of them, so focus stays on it. Its fill is its `tone` only while it can be
+ * pressed for its action or does it: "Try again" and "Done" are the main button's own.
  */
 function MainButton({
   action,
   state,
   buttonRef,
+  onDone,
 }: {
   action: DialogAction;
   state: DialogState | undefined;
   buttonRef: (element: HTMLButtonElement | null) => void;
+  onDone: () => void;
 }) {
   const failed = state === 'failed';
+  const done = state === 'done';
   if (failed && action.again === null) return null;
+  // Done, a hint that says nothing, as the button had when it could run.
+  const off = done ? undefined : action.disabled;
   return (
     <Button
       ref={buttonRef}
-      variant={failed ? 'primary' : (action.tone ?? 'primary')}
-      busy={state === 'working' || action.busy === true}
-      working={action.working}
+      variant={failed || done ? 'primary' : (action.tone ?? 'primary')}
+      busy={done ? undefined : state === 'working' || action.busy === true}
+      working={done ? undefined : action.working}
       widest={action.widest}
-      aria-disabled={action.disabled === undefined ? undefined : true}
-      aria-description={action.disabled}
-      hint={action.disabled ?? null}
+      aria-disabled={off === undefined ? undefined : true}
+      aria-description={off}
+      hint={off ?? null}
       // Focus is put here as the dialog opens, and the reason isn't shown for that.
       hintOn="hover"
       onClick={(event) => {
+        if (done) {
+          onDone();
+          return;
+        }
         // Not a double click's second, which would press what came up in its place unseen.
         if (event.detail > 1 || state === 'working' || action.busy === true) return;
-        if (action.disabled === undefined) action.onRun();
+        if (off === undefined) action.onRun();
       }}
     >
-      {failed ? (action.again ?? 'Try again') : action.label}
+      {done ? 'Done' : failed ? (action.again ?? 'Try again') : action.label}
       {action.keys && <Key keys={action.keys} decorative />}
     </Button>
   );

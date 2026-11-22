@@ -5,7 +5,6 @@
 import { runControl, type Target } from '@lo/ui/commands';
 
 import { focusedTarget } from '../../../window/commands/bar.ts';
-import { refuse } from '../../../window/commands/notices.tsx';
 import { focusMiddle, registry } from '../../../window/commands/registry.ts';
 import { activeTab, pullOf, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
 import type { MergeState } from '../contract.ts';

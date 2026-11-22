@@ -355,8 +355,7 @@ function plan(planning: Planning): void {
       if (planned.kind === 'refused') {
         // Still finding out, Lo says only how far it has got.
         const why = planned.why === '' && !planned.again ? statusWhy(planning) : planned.why;
-        const { again, details } = planned;
-        if (still()) setDialog({ ...planning, failed: { why, again, details } });
+        if (still()) setDialog({ ...planning, failed: { why, again: planned.again } });
         return;
       }
       // Cancelled while it was planned.
@@ -560,21 +559,21 @@ export function askAgain(key: string): Promise<void> {
 const LOOK_FOR = 30_000;
 
 /**
- * "Check again" in the dialog, where main refused `plan` since the last merge of its pull request
+ * "Check again" in the dialog, where main refused `asked` since the last merge of its pull request
  * hasn't a known end: asks GitHub how that one went, its button busy until what the look found
  * comes, then goes back to the panel, from where it may merge again. Found not to be known still,
  * the dialog stays, to check again.
  */
-export function askAgainBack(plan: MergePlan): void {
-  const { key } = plan;
+export function askAgainBack(asked: MergePlan): void {
+  const { key } = asked;
   if (checking(key)) return;
-  const pull = pullKey(plan.owner, plan.repo, plan.number);
+  const pull = pullKey(asked.owner, asked.repo, asked.number);
   const before = merging.getState().jobs.get(pull);
   markChecking(key, true);
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let stop = (): void => undefined;
+  let stop: (() => void) | undefined;
   const end = (leave: boolean) => {
-    stop();
+    stop?.();
     clearTimeout(timer);
     markChecking(key, false);
     const dialog = merging.getState().dialog;

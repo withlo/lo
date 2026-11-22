@@ -485,13 +485,7 @@ export const placement = z.discriminatedUnion('kind', [
     above: z.array(number),
     reasons: z.array(words),
   }),
-  z.strictObject({
-    kind: z.literal('refused'),
-    why: words,
-    again: z.boolean(),
-    /** What GitHub, or the error, said, for Details. */
-    details: words.optional(),
-  }),
+  z.strictObject({ kind: z.literal('refused'), why: words, again: z.boolean() }),
 ]);
 export type Placement = z.output<typeof placement>;
 

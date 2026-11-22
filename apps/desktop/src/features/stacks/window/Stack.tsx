@@ -21,7 +21,7 @@ import {
   type StackTreeNote,
 } from '@lo/ui';
 import { controlOf, runControl, setScopeSource, type Target } from '@lo/ui/commands';
-import { useCallback, useEffect, useRef, type MouseEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, type MouseEvent } from 'react';
 
 import { currentMenu, openMenu } from '../../../window/commands/menus.tsx';
 import { useKeys } from '../../../window/commands/registry.ts';
