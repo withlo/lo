@@ -451,8 +451,8 @@ describe('where the layer on screen starts', () => {
     expect(starts).toEqual([]);
     const b = headIn(list, 83);
     expect(finder.state('t84')?.offer).toEqual({
-      title: "#84's diff includes #83's changes.",
-      action: "Show only #84's",
+      title: 'This diff includes #83’s changes',
+      action: 'Hide #83’s changes',
       commit: b,
     });
     // Only what's offered is taken.
@@ -464,7 +464,7 @@ describe('where the layer on screen starts', () => {
     finder.follow([tab(84, { ...c, compareFrom: b })]);
     expect(finder.state('t84')?.offer).toBeNull();
     // #87 needs a rebase, but its base branch still sits at #86's head, where GitHub's diff of it
-    // already starts: its stack shows, with the note, and nothing is set or offered.
+    // already starts: its stack shows, and nothing is set or offered.
     for (const drawn of [false, true]) {
       finder.follow([
         tab(84, { ...c, compareFrom: b }),
@@ -472,7 +472,7 @@ describe('where the layer on screen starts', () => {
       ]);
       expect(starts).toEqual([['t84', b]]);
       expect(finder.state('t87')).toMatchObject({
-        stack: { kind: 'stack', rows: [{ number: 87 }], notes: [{ kind: 'needsRebase' }] },
+        stack: { kind: 'stack', rows: [{ number: 87 }], notes: [] },
         offer: null,
       });
     }
@@ -491,7 +491,7 @@ describe('where the layer on screen starts', () => {
     const stack = finder.state('t84')?.stack;
     expect(stack?.kind === 'stack' && stack.notes.at(-1)).toEqual({
       kind: 'start',
-      text: "Lo couldn't fetch #83's head, so #84's diff includes #83's changes.",
+      text: 'This diff includes #83’s changes.',
     });
   });
 });
@@ -504,7 +504,7 @@ describe('a run of layers', () => {
     finder.follow([tab(84, { onScreen: true, head: headIn(found.list, 84) })]);
     await settle();
     expect(finder.run('t84', 83, 84)).toEqual({
-      why: 'Lo doesn’t know this pull request’s stack yet.',
+      why: 'Checking stack…',
     });
     poller.set(E2E, { list: found.list, rules: found.rules });
     await settle();
@@ -585,7 +585,7 @@ describe("a repository's stacks, for the features that merge", () => {
     });
   });
 
-  it("say what making a layer's chain a GitHub stack would do, or why it can't, in words", async () => {
+  it("say what converting a layer's chain to a GitHub stack would do, or why it can't, in words", async () => {
     const found = await recorded('stacks_e2e', E2E);
     const poller = new FakePoller();
     const { finder } = started(poller);
@@ -596,12 +596,11 @@ describe("a repository's stacks, for the features that merge", () => {
     expect(forest?.conversion(6, { stacksApi: true, queued: [] })).toMatchObject({
       kind: 'plan',
       plan: { path: [2, 3, 4, 6] },
-      offer:
-        "These PRs sit on each other's branches and share commits but aren't a GitHub stack. As one, they'd merge together.",
+      offer: 'This branch stack merges one layer at a time.',
     });
     expect(forest?.conversion(6, { stacksApi: false, queued: [3] })).toMatchObject({
       kind: 'notOffered',
-      words: ["GitHub's Stacks API isn't available for e2e.", '#3 is in a merge queue.'],
+      words: ['GitHub stacks aren’t available for e2e', '#3 is in the merge queue'],
     });
   });
 });

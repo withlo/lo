@@ -1402,27 +1402,33 @@ your comment there edit and delete it (`window/conversation.ts`, `window/Timelin
 ### Submitting a review
 
 The `review` feature submits your review of the pull request on screen: `⌘⏎` anywhere in its tab but
-a comment box, a dialog, the palette or a menu, or the status bar's "3 pending · ⌘⏎", opens the
-submit dialog (`tab.dialogs`). The palette says the count too, "Submit review · 3 pending": a
-command's handler may say something after its label (`detail`).
+a comment box, a dialog, the palette or a menu, "Submit review…" in the header beside the merge
+status (`tab.headerStatus`), or the status bar's "3 pending comments", opens the submit dialog
+(`tab.dialogs`). The palette says the count too, "Submit review… · 3 pending": a command's handler
+may say something after its label (`detail`).
 
 - The dialog asks main what it shows as it opens (`review.dialog`): your pending review and its
-  comments, the revision on screen, and whether you opened the pull request, in which case only
-  Comment is offered. `window/model.ts` words the verdicts, the refusals and the notes, as plain
-  functions tested alone, and plans the review with `@lo/review`'s `YourReview`, so what can't go
-  says so before anything is sent. A banner says once when your pending review sits on another
-  revision than the one on screen.
-- The summary box is the comment box's editor (`createComposer`). Main keeps its text with the
-  comments' drafts (`comments.drafts`, as a `summary` place), saved as it's typed. Files are
-  attached to it as to any comment box, through the comments' `window/shared.ts`.
+  comments, the revision on screen, and whether you opened the pull request, in which case Approve
+  and Request changes are dimmed with why. `window/model.ts` words the verdicts and the refusals,
+  and works out where the dialog has got to (`stepOf`: its main button, the button that leaves and
+  what went wrong), as plain functions tested alone, and plans the review with `@lo/review`'s
+  `YourReview`, so what can't go dims the button or the verdict before anything is sent. A banner
+  says once when your pending review sits on another revision than the one on screen.
+- The summary box is the comment box's editor (`createComposer`), in the comment box's frame: headed
+  "Summary", with Write | Preview. Main keeps its text with the comments' drafts (`comments.drafts`,
+  as a `summary` place), saved as it's typed. Files are attached to it as to any comment box,
+  through the comments' `window/shared.ts`.
 - `review.submit` sends in its turn among the comments' writes to the pull request
   (`comments.reviews`' `inTurn`), with the poller's `sendReview`. The summary is marked sent, with
   when, as a comment's draft is. When GitHub's answer is lost, nothing more is sent until a fresh
   read of your reviews (`YourReviews`), made 10 s or more after the send, says whether it was
-  submitted, by GitHub's clock, even after a restart; when GitHub refuses that read, only "Submit
-  anyway" sends. Once it's submitted, the summary goes, a toast names the verdict, and the threads
-  and the timeline read again. A tab acting as nobody or showing a run of layers can't submit, nor
-  can one offline, or while GitHub asked Lo to hold off.
+  submitted, by GitHub's clock, even after a restart; when GitHub refuses that read, the dialog says
+  "Review not confirmed" and offers "Check again" (`review.check`), which only reads again. Only a
+  read that finds it wasn't submitted lets it go again. Once it's submitted, the summary goes, and
+  the threads and the timeline read again: an approval's dialog stays open, done, with the mark's
+  kiss, and any other review's closes, with a toast that names the verdict, as an approval's does
+  once its dialog was closed before the end. A tab acting as nobody or showing a run of layers can't
+  submit, nor can one offline, or while GitHub asked Lo to hold off.
 
 ### Whether it can merge
 

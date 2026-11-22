@@ -1,15 +1,15 @@
 // Approve and ship: Lo, started on the replay server as rozed-bot, on generation 10 of
 // `testing/fixtures/merge.sh`'s pull requests in rozed-dev/e2e, as recorded from the app with
 // writes. `⌘⇧⏎` on a pull request rozed-bot opened approves nothing and merges it from one
-// confirmation (`app_merge_ship`, served a stage at a time, so however long Lo takes to look up the
-// merged pull requests, it reads the pull request as it was until it merges it); into `e4/queued`,
-// while its `ci` runs, it turns on "Merge when ready" (`app_merge_ship_queued`). From derived
-// answers, as GitHub takes no approval from a pull request's author: on one someone else opened it
-// approves the revision on screen, then turns on "Merge when ready"
-// (`app_merge_ship_queued_others`), or stops after approving, saying so, when GitHub then reads it
-// as conflicting (`app_merge_ship_queued_conflict`); a push after the plan stops it before
-// approving (`app_merge_ship_queued_moved`); and a push once "Merge when ready" is on has the watch
-// turn auto-merge off (`app_merge_ship_watched`).
+// confirmation, which then says it's done (`app_merge_ship`, served a stage at a time, so however
+// long Lo takes to look up the merged pull requests, it reads the pull request as it was until it
+// merges it); into `e4/queued`, while its `ci` runs, it turns on auto-merge
+// (`app_merge_ship_queued`). From derived answers, as GitHub takes no approval from a pull
+// request's author: on one someone else opened it approves the revision on screen, then turns on
+// auto-merge (`app_merge_ship_queued_others`), or stops after approving, saying so, when GitHub then
+// reads it as conflicting (`app_merge_ship_queued_conflict`); a push after the plan stops it before
+// approving (`app_merge_ship_queued_moved`); and a push once auto-merge is on has the watch turn
+// auto-merge off (`app_merge_ship_watched`).
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -89,6 +89,10 @@ const dialog = (page: Page) => page.getByTestId('ship-confirm');
 /** The note Lo says at the bottom of the window. */
 const said = (page: Page, text: string) => page.getByRole('status').filter({ hasText: text });
 
+/** What the dialog says it did, once it's done, beside "Done". */
+const done = (page: Page, line: string) =>
+  dialog(page).getByRole('status').filter({ hasText: line });
+
 /** Its steps, a line each. */
 const steps = (page: Page) => dialog(page).getByRole('listitem');
 
@@ -110,35 +114,20 @@ async function open(page: Page, number: number, shown: string): Promise<void> {
  * `⌘⇧⏎`, until Lo plans it. Lo places a pull request on a branch other than a trunk only once it
  * has looked up every merged pull request its stacks may link through, and rozed-dev/e2e has more
  * branches than one listing looks up: the rest are looked up a while later, as recorded. Until
- * then each press is refused, saying so, which can close the dialog before it's seen, and it
- * presses again once that note goes, so the next note is the next press's own. Anything else
- * fails.
+ * then the dialog says how far it has got, with "Checking…" at work, and asks again by itself as
+ * they're looked up: that's progress, never a failure. Its title stays the same throughout.
  */
 async function ship(page: Page, number: number): Promise<void> {
-  const planned = `Approve and ship #${number}?`;
-  const refused = said(page, 'looked up yet');
-  const deadline = Date.now() + LOOKUPS;
-  for (;;) {
-    await page.keyboard.press(SHIP);
-    await expect
-      .poll(async () => (await dialog(page).isVisible()) || (await refused.isVisible()))
-      .toBe(true);
-    if (await dialog(page).isVisible()) {
-      // Planned, or refused, which closes the dialog and says why. Its text is read in one call
-      // that doesn't wait: a dialog that closed after a check that it's open would leave
-      // `textContent` waiting for one to come back, past the poll's own time.
-      await expect
-        .poll(async () => (await dialog(page).allTextContents())[0] ?? 'closed', {
-          timeout: 30_000,
-        })
-        .toMatch(new RegExp(`${planned.replace('?', '\\?')}|^closed$`));
-      if (await dialog(page).isVisible()) break;
-    }
-    await expect(refused).toBeVisible();
-    if (Date.now() > deadline) break;
-    await expect(refused).toBeHidden({ timeout: 10_000 });
-  }
-  await expect(dialog(page)).toContainText(planned);
+  await page.keyboard.press(SHIP);
+  await expect(dialog(page)).toContainText(`Approve and ship #${number}?`);
+  const busy = dialog(page).locator('button[aria-busy="true"]');
+  // Planned, with its steps and nothing busy.
+  await expect
+    .poll(async () => (await steps(page).count()) > 0 && (await busy.count()) === 0, {
+      timeout: LOOKUPS,
+    })
+    .toBe(true);
+  await expect(dialog(page).getByRole('alert')).toHaveCount(0);
 }
 
 /** Lo's GraphQL writes so far, by operation. */
@@ -163,18 +152,18 @@ test.describe('on your own pull request', () => {
     const { number } = pulls.squash;
     await open(page, number, 'Ready to merge');
     await ship(page, number);
-    await expect(steps(page).nth(0)).toContainText('Check that r1 is still the newest push');
-    await expect(steps(page).nth(1)).toContainText(
-      'It’s your pull request, so GitHub takes no approval from you.',
-    );
-    await expect(steps(page).nth(2)).toContainText('into merge/10/base');
-    await expect(dialog(page).getByRole('button', { name: /^Ship/ })).toBeVisible();
+    // Two steps: the approval, skipped, then the merge.
+    await expect(steps(page)).toHaveCount(2);
+    await expect(steps(page).nth(0)).toContainText('Authors can’t approve their own pull request.');
+    await expect(steps(page).nth(1)).toContainText('into merge/10/base with a merge commit.');
+    await expect(dialog(page).getByRole('button', { name: /^Approve and ship/ })).toBeVisible();
     expect(merges(github, number)).toBe(0);
 
     await page.keyboard.press('Enter');
-    await expect(said(page, `Merged #${number} into merge/10/base`)).toBeVisible({
-      timeout: MERGING,
-    });
+    // The dialog says it's done, and no toast does.
+    await expect(done(page, `Merged #${number}`)).toBeVisible({ timeout: MERGING });
+    await expect(said(page, `Merged #${number}`)).toHaveCount(1);
+    await page.keyboard.press('Enter');
     await expect(dialog(page)).toBeHidden();
     expect(merges(github, number)).toBe(1);
     expect(writes(github, 'AddPullRequestReview')).toBe(0);
@@ -184,18 +173,17 @@ test.describe('on your own pull request', () => {
 test.describe('into a branch with a merge queue, while its checks run', () => {
   test.use({ cassette: 'app_merge_ship_queued' });
 
-  test('`⌘⇧⏎` turns on “Merge when ready”', async ({ page, github }) => {
+  test('`⌘⇧⏎` turns on auto-merge', async ({ page, github }) => {
     const { number } = pulls.queuedSlow1;
     await open(page, number, 'Can’t merge yet');
     await ship(page, number);
-    await expect(steps(page).nth(2)).toContainText(
-      'Merge when ready, through the merge queue for e4/queued',
-    );
+    await expect(steps(page).nth(1)).toContainText('Turn on auto-merge.');
+    await expect(steps(page).nth(1)).toContainText('It joins the merge queue for e4/queued once');
     await page.keyboard.press('Enter');
-    await expect(
-      said(page, `#${number} joins the merge queue for e4/queued once it’s ready`),
-    ).toBeVisible({ timeout: MERGING });
-    await expect(status(page)).toContainText('Merges when ready');
+    await expect(done(page, `Turned on auto-merge for #${number}`)).toBeVisible({
+      timeout: MERGING,
+    });
+    await expect(status(page)).toContainText('Auto-merge is on');
     expect(writes(github, 'EnablePullRequestAutoMerge')).toBe(1);
     expect(writes(github, 'AddPullRequestReview')).toBe(0);
   });
@@ -204,28 +192,32 @@ test.describe('into a branch with a merge queue, while its checks run', () => {
 test.describe('on a pull request someone else opened', () => {
   test.use({ cassette: 'app_merge_ship_queued_others' });
 
-  test('`⌘⇧⏎` approves the revision on screen, then turns on “Merge when ready”', async ({
+  test('`⌘⇧⏎` approves the revision on screen, then turns on auto-merge', async ({
     page,
     github,
   }) => {
     const { number } = pulls.queuedSlow1;
     await open(page, number, 'Can’t merge yet');
     await ship(page, number);
-    await expect(steps(page).nth(1)).toContainText('Approve as rozed-bot');
+    await expect(steps(page).nth(0)).toContainText(`Approve #${number} as rozed-bot.`);
     // Your approval outlives a push: the confirmation says so, and that Lo watches for one.
-    await expect(dialog(page)).toContainText('turns auto-merge off if someone pushes');
-    await expect(dialog(page).getByRole('button', { name: /Approve and ship/ })).toBeVisible();
+    await expect(dialog(page)).toContainText(
+      'auto-merge turns off if a commit is pushed after your approval',
+    );
+    await expect(dialog(page).getByRole('button', { name: /^Approve and ship/ })).toBeVisible();
     expect(writes(github, 'AddPullRequestReview')).toBe(0);
 
     await page.keyboard.press('Enter');
-    await expect(said(page, `Approved #${number}.`)).toBeVisible({ timeout: MERGING });
+    await expect(done(page, `Approved #${number} and turned on auto-merge`)).toBeVisible({
+      timeout: MERGING,
+    });
     expect(writes(github, 'AddPullRequestReview')).toBe(1);
     expect(writes(github, 'EnablePullRequestAutoMerge')).toBe(1);
-    await expect(status(page)).toContainText('Merges when ready');
+    await expect(status(page)).toContainText('Auto-merge is on');
   });
 });
 
-test.describe('when someone pushes once “Merge when ready” is on', () => {
+test.describe('when someone pushes once auto-merge is on', () => {
   test.use({ cassette: 'app_merge_ship_watched' });
 
   test('Lo turns auto-merge off, so the push doesn’t merge with your approval', async ({
@@ -236,7 +228,10 @@ test.describe('when someone pushes once “Merge when ready” is on', () => {
     await open(page, number, 'Can’t merge yet');
     await ship(page, number);
     await page.keyboard.press('Enter');
-    await expect(page.getByText(/^Lo turned off auto-merge: /)).toBeVisible({ timeout: MERGING });
+    // The tab's banner says it in one line, and offers the push.
+    await expect(page.getByText(/after your approval · Auto-merge is off/)).toBeVisible({
+      timeout: MERGING,
+    });
     expect(writes(github, 'AddPullRequestReview')).toBe(1);
     expect(writes(github, 'EnablePullRequestAutoMerge')).toBe(1);
     expect(writes(github, 'DisablePullRequestAutoMerge')).toBe(1);
@@ -246,16 +241,19 @@ test.describe('when someone pushes once “Merge when ready” is on', () => {
 test.describe('when GitHub reads it as conflicting once approved', () => {
   test.use({ cassette: 'app_merge_ship_queued_conflict' });
 
-  test('it stops after approving, and says the approval stays', async ({ page, github }) => {
+  test('it stops after approving, and says it approved', async ({ page, github }) => {
     const { number } = pulls.queuedSlow1;
     await open(page, number, 'Can’t merge yet');
     await ship(page, number);
     await page.keyboard.press('Enter');
-    await expect(dialog(page)).toContainText('Approved, but not merged', { timeout: MERGING });
-    await expect(dialog(page)).toContainText('your approval stays');
-    await expect(steps(page).nth(1)).toContainText('Approved as rozed-bot');
-    await expect(steps(page).nth(2)).toContainText('Can’t merge');
-    await expect(dialog(page).getByRole('button', { name: /Merge panel/ })).toBeVisible();
+    const alert = dialog(page).getByRole('alert');
+    await expect(alert).toContainText(`Couldn’t merge #${number}`, { timeout: MERGING });
+    await expect(alert).toContainText('Can’t merge');
+    // The approval step keeps the words it was asked with, marked done.
+    await expect(steps(page).nth(0)).toContainText(`Approve #${number} as rozed-bot.`);
+    // The title stays, and so does each step as it was asked.
+    await expect(dialog(page)).toContainText(`Approve and ship #${number}?`);
+    await expect(dialog(page).getByRole('button', { name: /^Merge panel/ })).toBeVisible();
     expect(writes(github, 'AddPullRequestReview')).toBe(1);
     expect(writes(github, 'EnablePullRequestAutoMerge')).toBe(0);
 
@@ -267,19 +265,19 @@ test.describe('when GitHub reads it as conflicting once approved', () => {
 test.describe('when someone pushed after the plan', () => {
   test.use({ cassette: 'app_merge_ship_queued_moved' });
 
-  test('it stops before approving, says so, and offers the newer push', async ({
+  test('it stops before approving, says so, and offers the newer revision', async ({
     page,
     github,
   }) => {
     const { number } = pulls.queuedSlow1;
     await open(page, number, 'Can’t merge yet');
     await ship(page, number);
-    await expect(steps(page).nth(1)).toContainText('Approve as rozed-bot');
+    await expect(steps(page).nth(0)).toContainText(`Approve #${number} as rozed-bot.`);
     await page.keyboard.press('Enter');
-    await expect(dialog(page)).toContainText('A newer push arrived', { timeout: MERGING });
-    await expect(dialog(page)).toContainText('nothing was approved');
-    await expect(steps(page).nth(0)).toContainText('You reviewed r1.');
-    await expect(dialog(page).getByRole('button', { name: /^See/ })).toBeVisible();
+    const alert = dialog(page).getByRole('alert');
+    await expect(alert).toContainText(`Couldn’t approve #${number}`, { timeout: MERGING });
+    await expect(alert).toContainText('This revision is out of date.');
+    await expect(dialog(page).getByRole('button', { name: /^Show/ })).toBeVisible();
     expect(writes(github, 'AddPullRequestReview')).toBe(0);
     expect(writes(github, 'EnablePullRequestAutoMerge')).toBe(0);
   });

@@ -30,14 +30,14 @@ describe('a run of layers', () => {
     const prs = stackPullRequests(list);
     // #85 is on #82, apart from #83 and #84.
     expect(runOf(stacks, prs, 84, 85)).toEqual({
-      why: "#84 and #85 aren't on one branch of the stack, so no one diff shows them.",
+      why: '#85 isn’t above or below #84',
     });
-    expect(runOf(stacks, prs, 83, 83)).toEqual({ why: 'A run of layers is two layers or more.' });
+    expect(runOf(stacks, prs, 83, 83)).toEqual({ why: 'Select 2 layers or more' });
     expect(runOf(stacks, prs, 83, 9999)).toMatchObject({ why: expect.stringContaining('#9999') });
     // A base branch that's gone has no tip to start from.
     const gone = changePull(list, 82, (pr) => ({ ...pr, baseRef: null }));
     expect(runOf(stacksOf(gone, rules), stackPullRequests(gone), 82, 83)).toEqual({
-      why: "Lo can't tell where #82's changes start: its base branch is gone.",
+      why: '#82’s base branch no longer exists',
     });
   });
 });

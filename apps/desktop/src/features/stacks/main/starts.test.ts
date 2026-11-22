@@ -72,8 +72,8 @@ describe('where a layer’s diff starts', () => {
     const shared = planStart(view(list, 84, { drawn: true }), forest, undefined);
     expect(shared.set).toBeUndefined();
     expect(offerSchema.parse(shared.offer)).toEqual({
-      title: "#84's diff includes #83's changes.",
-      action: "Show only #84's",
+      title: 'This diff includes #83’s changes',
+      action: 'Hide #83’s changes',
       commit: headOf(list, 83),
     });
   });
@@ -95,8 +95,8 @@ describe('where a layer’s diff starts', () => {
       set: M,
     });
     expect(planStart(view(moved, 87, { drawn: true }), forest, undefined).offer).toEqual({
-      title: "#87's diff includes #86's, which was squash-merged.",
-      action: 'Hide them',
+      title: 'This diff includes #86’s merged changes',
+      action: 'Hide #86’s changes',
       commit: M,
     });
   });
@@ -116,7 +116,7 @@ describe('where a layer’s diff starts', () => {
     expect(planStart(layer, forest, undefined)).toMatchObject({
       set: undefined,
       offer: {
-        title: '#84 no longer sits on #83.',
+        title: '#84 is no longer based on #83',
         action: 'Compare with stack/root',
         commit: null,
       },
@@ -170,7 +170,7 @@ describe('where a layer’s diff starts', () => {
     const layer = view(list, 84, { compareFrom: headOf(list, 83), missing: true });
     expect(planStart(layer, forest, undefined).note).toEqual({
       kind: 'start',
-      text: "Lo couldn't fetch #83's head, so #84's diff includes #83's changes.",
+      text: 'This diff includes #83’s changes.',
     });
   });
 });

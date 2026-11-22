@@ -1,17 +1,25 @@
-// What making a chain a GitHub stack does in the window: `gS` asks main for a plan for the pull
-// request on screen, then shows it to confirm, or says every reason there's none. The dialog's
-// buttons confirm the plan by its key, stop it, put its base branches back or plan again. Main
-// sends every change; the window never names one.
+// What converting a chain to a GitHub stack does in the window: `gS` asks main for a plan for the
+// pull request on screen, then shows it to confirm, or says every reason there's none. The dialog's
+// buttons confirm the plan by its key, stop it, undo its changes or plan again. Main sends every
+// change; the window never names one.
 
 import { IpcError } from '../../../ipc/contract.ts';
-import { announce, notify } from '../../../window/commands/notices.tsx';
+import { announce, refuse } from '../../../window/commands/notices.tsx';
+import { client } from '../../../window/ipc.ts';
+import { contract as tabs } from '../../tab/contract.ts';
 import { withoutBidi } from '../../tab/window/shared.ts';
 import type { ConversionView } from '../contract.ts';
 import { main } from './main.ts';
-import { stacksStore, type Dialog } from './store.ts';
+import { stacksStore, type Dialog, type Failure } from './store.ts';
 
-/** What `gS` is called, as notes about it say. */
-export const TITLE = 'Make this a GitHub stack';
+/** The dialog's title, in every state. */
+export const TITLE = 'Convert to GitHub stack?';
+
+/** Its main button, which converts. */
+export const CONVERT = 'Convert to GitHub stack';
+
+/** What's said once a conversion is done: the dialog's line, or a toast once it has closed. */
+export const CONVERTED = 'Converted to GitHub stack';
 
 /** How long planning goes before the dialog opens to say it's waiting, in milliseconds. */
 export const PLANNING_SHOWS_AFTER = 400;
@@ -31,26 +39,42 @@ function log(error: unknown): void {
   console.error('stacks:', error);
 }
 
-/** What went wrong asking main, in words to show: GitHub's, too, which may carry bidi controls. */
-function whyNot(error: unknown): string {
-  return error instanceof IpcError
-    ? withoutBidi(error.message)
-    : 'Lo couldn’t ask for it. Try again.';
+/**
+ * Why asking main failed: main's own reason, which may name a branch, GitHub's text that may carry
+ * bidi controls; for anything else, no reason, and the error's words.
+ */
+function failureOf(error: unknown): Failure {
+  if (error instanceof IpcError) return { reason: withoutBidi(error.message), details: null };
+  return { reason: null, details: error instanceof Error ? error.message : String(error) };
 }
 
 /**
- * Asks main to plan making the chain pull request `number`, in tab `tab`, is in a GitHub stack,
- * then shows the plan to confirm, or says every reason there's none. Nothing changes on GitHub
- * until the reader confirms. While the dialog is open, it does nothing.
+ * Asks main to plan converting the chain pull request `number`, in tab `tab`, is in to a GitHub
+ * stack, then shows the plan to confirm, or says every reason there's none. Nothing changes on
+ * GitHub until the reader confirms. While the dialog is open, it does nothing.
  */
 export function makeStack(tab: string, number: number): void {
   if (dialogNow() !== undefined) return;
+  planAgain(tab, number, false);
+}
+
+/**
+ * Plans for pull request `number` in tab `tab`, the dialog showing it's checking at once when
+ * `shown`, or once planning takes a moment.
+ */
+function planAgain(tab: string, number: number, shown: boolean): void {
   const turn = ++asked;
-  setDialog({ kind: 'planning', tab, number, shown: false });
-  const timer = setTimeout(() => {
+  setDialog({ kind: 'planning', tab, number, shown, problem: undefined });
+  const timer = shown
+    ? undefined
+    : setTimeout(() => {
+        const now = dialogNow();
+        if (turn === asked && now?.kind === 'planning') setDialog({ ...now, shown: true });
+      }, PLANNING_SHOWS_AFTER);
+  const failed = (problem: Failure) => {
     const now = dialogNow();
-    if (turn === asked && now?.kind === 'planning') setDialog({ ...now, shown: true });
-  }, PLANNING_SHOWS_AFTER);
+    if (now?.kind === 'planning') setDialog({ ...now, shown: true, problem });
+  };
   main()
     .plan({ id: tab })
     .then(
@@ -61,26 +85,36 @@ export function makeStack(tab: string, number: number): void {
           if (planned.kind === 'plan') main().stop({ key: planned.key }).catch(log);
           return;
         }
-        if (planned.kind === 'notOffered') {
-          setDialog(undefined);
-          // Reasons name branches, GitHub's text, which may carry bidi controls.
-          notify(TITLE, withoutBidi(planned.reasons.join('\n')));
-          return;
+        switch (planned.kind) {
+          case 'notOffered':
+            setDialog(undefined);
+            // Reasons name branches, GitHub's text, which may carry bidi controls.
+            refuse(withoutBidi(planned.reasons.join('\n')));
+            return;
+          case 'unchecked':
+            failed({
+              reason: planned.reason === null ? null : withoutBidi(planned.reason),
+              details: planned.details,
+            });
+            return;
+          case 'plan':
+            setDialog({
+              kind: 'confirm',
+              tab,
+              number,
+              plan: planned,
+              sending: false,
+              problem: undefined,
+            });
+            return;
+          default:
+            throw new Error(`a plan Lo doesn't know: ${JSON.stringify(planned satisfies never)}`);
         }
-        setDialog({
-          kind: 'confirm',
-          tab,
-          number,
-          plan: planned,
-          sending: false,
-          problem: undefined,
-        });
       },
       (error: unknown) => {
         clearTimeout(timer);
-        if (turn !== asked || dialogNow()?.kind !== 'planning') return;
-        setDialog(undefined);
-        notify(TITLE, whyNot(error));
+        if (turn !== asked) return;
+        failed(failureOf(error));
       },
     );
 }
@@ -89,7 +123,8 @@ export function makeStack(tab: string, number: number): void {
 export function confirm(): void {
   const now = dialogNow();
   if (now?.kind !== 'confirm' || now.sending) return;
-  const { key } = now.plan;
+  const { plan } = now;
+  const { key } = plan;
   setDialog({ ...now, sending: true, problem: undefined });
   main()
     .convert({ key })
@@ -97,14 +132,22 @@ export function confirm(): void {
       (view) => {
         const at = dialogNow();
         if (at?.kind === 'confirm' && at.plan.key === key) {
-          setDialog({ kind: 'conversion', tab: at.tab, number: at.number, key, asking: false });
+          setDialog({
+            kind: 'conversion',
+            tab: at.tab,
+            number: at.number,
+            key,
+            plan,
+            asking: false,
+            problem: undefined,
+          });
         }
         take(view);
       },
       (error: unknown) => {
         const at = dialogNow();
         if (at?.kind === 'confirm' && at.plan.key === key) {
-          setDialog({ ...at, sending: false, problem: whyNot(error) });
+          setDialog({ ...at, sending: false, problem: failureOf(error) });
         }
       },
     );
@@ -116,9 +159,9 @@ function sending(view: ConversionView | undefined): boolean {
 }
 
 /**
- * `Esc`, Cancel and Close: closes the dialog, and main forgets what it kept for it. While changes
- * are being sent, it stops them before the next one instead, and the dialog stays to say how far
- * they went.
+ * `Esc`, Cancel, Close and Done: closes the dialog, and main forgets what it kept for it. While
+ * changes are being sent, Cancel stops them before the next one instead, and the dialog stays to
+ * say how far they went.
  */
 export function dismiss(): void {
   const now = dialogNow();
@@ -139,6 +182,7 @@ export function dismiss(): void {
         if (!view?.stopping) main().stop({ key: now.key }).catch(log);
         return;
       }
+      if (now.asking) return;
       setDialog(undefined);
       forget(now.key);
       return;
@@ -148,16 +192,16 @@ export function dismiss(): void {
   }
 }
 
-/** Puts back the base branches the conversion on screen changed, asking main once. */
+/** Undoes the changes the conversion on screen made, asking main once. */
 export function putBack(): void {
   const now = dialogNow();
   if (now?.kind !== 'conversion' || now.asking) return;
   if (sending(stacksStore.getState().conversions.get(now.key))) return;
   const { key } = now;
-  setDialog({ ...now, asking: true });
-  const answered = () => {
+  setDialog({ ...now, asking: true, problem: undefined });
+  const answered = (problem?: Failure) => {
     const at = dialogNow();
-    if (at?.kind === 'conversion' && at.key === key) setDialog({ ...at, asking: false });
+    if (at?.kind === 'conversion' && at.key === key) setDialog({ ...at, asking: false, problem });
   };
   main()
     .putBack({ key })
@@ -166,21 +210,34 @@ export function putBack(): void {
         answered();
         take(view);
       },
-      (error: unknown) => {
-        answered();
-        notify('Put the base branches back', whyNot(error));
-      },
+      (error: unknown) => answered(failureOf(error)),
     );
 }
 
-/** Plans again, from what GitHub says now, and asks again. */
+/** Plans again, from what GitHub says now, and asks again, in the dialog as it is. */
 export function tryAgain(): void {
   const now = dialogNow();
-  if (now?.kind !== 'conversion') return;
-  if (sending(stacksStore.getState().conversions.get(now.key))) return;
-  setDialog(undefined);
-  forget(now.key);
-  makeStack(now.tab, now.number);
+  if (!now) return;
+  switch (now.kind) {
+    case 'planning':
+      break;
+    case 'confirm':
+      if (now.sending) return;
+      main().stop({ key: now.plan.key }).catch(log);
+      break;
+    case 'conversion':
+      if (now.asking || sending(stacksStore.getState().conversions.get(now.key))) return;
+      forget(now.key);
+      break;
+    default:
+      throw new Error(`a dialog Lo doesn't know: ${JSON.stringify(now satisfies never)}`);
+  }
+  planAgain(now.tab, now.number, true);
+}
+
+/** Opens `url`, GitHub's page for what isn't confirmed, in the browser. */
+export function openOnGithub(url: string): void {
+  client(tabs).openExternal({ url }).catch(log);
 }
 
 /** Forgets the conversion named `key`, here and in main. */
@@ -192,8 +249,8 @@ function forget(key: string): void {
 }
 
 /**
- * Takes what main says of a conversion. Once it's done, the dialog showing it closes, and a toast
- * says what was made.
+ * Takes what main says of a conversion. Once it's done, the dialog showing it says so; one done
+ * after its dialog closed is a toast.
  */
 export function take(view: ConversionView): void {
   const kept = stacksStore.getState().conversions.get(view.key);
@@ -205,8 +262,7 @@ export function take(view: ConversionView): void {
     stacksStore.setState({ conversions });
   }
   const now = dialogNow();
-  if (latest.phase !== 'done' || now?.kind !== 'conversion' || now.key !== latest.key) return;
-  setDialog(undefined);
+  if (latest.phase !== 'done' || (now?.kind === 'conversion' && now.key === latest.key)) return;
   forget(latest.key);
-  announce(latest.made ?? 'Made the GitHub stack');
+  announce(CONVERTED);
 }

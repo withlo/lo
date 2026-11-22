@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 // The merge queue's table: entries in order, those tested together boxed as a group, the account's
-// own marked, the pull requests waiting to join, and those that left, each with why.
+// own tagged, the pull requests waiting to join, and those that left, each with why; each row's
+// actions on the keyboard's row and under the pointer, a line under a row, and a double click that
+// opens it.
 
-import { createRef } from 'react';
+import { act, createRef } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { missingRules } from '../test/classes.ts';
@@ -16,7 +18,6 @@ import {
   type QueueItem,
   type WaitingEntry,
 } from './QueueTable.tsx';
-import { Switch } from './Switch.tsx';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -34,7 +35,7 @@ const first: QueueEntry = {
   author: 'dee-adeyemi',
   state: 'running',
   inQueue: '14 min',
-  merges: '~2 min',
+  merges: 'about 2 min',
 };
 const mine: QueueEntry = {
   key: '4810',
@@ -70,7 +71,7 @@ const waiting: QueueEntry = {
   author: 'ravi-k',
   state: 'waiting',
   inQueue: '6 min',
-  merges: '~8 min',
+  merges: 'about 8 min',
 };
 const stack: QueueEntry = {
   key: '4821',
@@ -107,8 +108,12 @@ const joining: WaitingEntry = {
   title: 'Cache plan lookups per request',
   number: 4826,
   author: 'ravi-k',
-  until: 'when approved',
-  actions: <Switch checked onCheckedChange={() => undefined} aria-label="Auto-merge" />,
+  until: 'needs approval',
+  actions: (
+    <Button variant="ghost" size="sm">
+      Turn off auto-merge
+    </Button>
+  ),
 };
 
 const left = (key: string, reason: LeftReason, extra: Partial<LeftEntry> = {}): LeftEntry => ({
@@ -130,6 +135,13 @@ function row(host: HTMLElement, key: string): HTMLElement {
   const found = host.querySelector<HTMLElement>(`[role="row"][data-key="${key}"]`);
   if (found === null) throw new Error(`No row ${key}.`);
   return found;
+}
+
+/** Double-clicks `target`. */
+function twice(target: Element): void {
+  act(() => {
+    target.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+  });
 }
 
 describe('QueueTable', () => {
@@ -156,7 +168,7 @@ describe('QueueTable', () => {
       'Pin the Node image to 20.18.1#4806DAdee-adeyemi',
       'Checks running',
       '14 min',
-      '~2 min',
+      'about 2 min',
       '',
     ]);
   });
@@ -166,8 +178,8 @@ describe('QueueTable', () => {
     const groups = host.querySelectorAll('[role="rowgroup"]');
     expect(groups).toHaveLength(1);
     const group = groups[0];
-    expect(group?.getAttribute('aria-label')).toBe('Testing together, 3 PRs');
-    expect(group?.textContent).toContain('Testing together · 3 PRs');
+    expect(group?.getAttribute('aria-label')).toBe('Testing together, 3 pull requests');
+    expect(group?.textContent).toContain('Testing together · 3 pull requests');
     expect(
       [...(group?.querySelectorAll('[role="row"][data-key]') ?? [])].map((each) =>
         each.getAttribute('data-key'),
@@ -175,7 +187,7 @@ describe('QueueTable', () => {
     ).toEqual(['4806', '4810', '4797']);
     // The label is a row of its own, with a cell across the table, so nothing in the grid is loose.
     const label = group?.querySelector('[role="row"]:not([data-key])');
-    expect(label?.textContent).toBe('Testing together · 3 PRs');
+    expect(label?.textContent).toBe('Testing together · 3 pull requests');
     expect(label?.querySelector('[role="rowheader"]')?.getAttribute('aria-colspan')).toBe('6');
     // The group has the queue color's edge, and a ring turning while it tests.
     expect(group?.className).toContain('inset-ring-state-merged-border');
@@ -184,23 +196,43 @@ describe('QueueTable', () => {
     expect(group?.contains(row(host, '4774'))).toBe(false);
   });
 
-  it('marks the account’s own entries, and a stack queued as one', () => {
+  it('tags the account’s own entries by their author, and marks a stack queued as one', () => {
     const host = render(<QueueTable label="Merge queue for main" items={items} />);
+    const tagged = (key: string) =>
+      [...row(host, key).querySelectorAll('span')].some((each) => each.textContent === 'you');
     expect(row(host, '4806').hasAttribute('data-yours')).toBe(false);
+    expect(tagged('4806')).toBe(false);
     const own = row(host, '4810');
     expect(own.hasAttribute('data-yours')).toBe(true);
-    expect(own.className).toContain('bg-on-screen');
-    expect(own.querySelector('.font-semibold')?.textContent).toBe('Return 429 bodies as JSON');
-    expect(own.textContent).toContain('tess-okafor · yours');
+    expect(tagged('4810')).toBe(true);
+    expect(own.textContent).toContain('tess-okaforyou');
+    // Yours is tagged, not tinted, and its title and place are as the others'.
+    expect(own.className).not.toContain('bg-on-screen');
+    expect(own.querySelector('.font-semibold')).toBeNull();
+    expect(own.querySelector('[role="gridcell"]')?.className).toContain('text-fg-muted');
     expect(own.querySelector('button')?.textContent).toBe('Remove');
     const layers = row(host, '4821');
     expect(layers.textContent).toContain('3 layers');
-    expect(layers.textContent).toContain('tess-okafor · queued by you · stack #4818–#4821');
-    // The place of what's yours is in the accent; the others' is quiet.
-    expect(own.querySelector('[role="gridcell"]')?.className).toContain('text-fg-accent');
-    expect(row(host, '4806').querySelector('[role="gridcell"]')?.className).toContain(
-      'text-fg-muted',
-    );
+    expect(layers.textContent).toContain('· stack #4818–#4821');
+  });
+
+  it('tints only the row the keyboard is on', () => {
+    const host = render(<QueueTable label="Merge queue for main" items={items} focused="4806" />);
+    expect(row(host, '4806').className).toContain('bg-selected');
+    expect(row(host, '4810').className).not.toContain('bg-selected');
+    expect(row(host, '4806').hasAttribute('data-focused')).toBe(true);
+    expect(row(host, '4810').hasAttribute('data-focused')).toBe(false);
+  });
+
+  it('shows a row’s actions on the keyboard’s row, and on one under the pointer or with focus in it', () => {
+    const host = render(<QueueTable label="Merge queue for main" items={items} />);
+    const actions = row(host, '4810').querySelectorAll('[role="gridcell"]')[5];
+    expect(actions?.className).toContain('invisible');
+    expect(actions?.className).toContain('group-hover/row:visible');
+    expect(actions?.className).toContain('group-focus-within/row:visible');
+    expect(actions?.className).toContain('group-data-focused/row:visible');
+    // A key chip in it shows on the keyboard's row alone.
+    expect(row(host, '4810').hasAttribute('data-key-scope')).toBe(true);
   });
 
   it('says how each entry stands, in words and in its color', () => {
@@ -210,7 +242,7 @@ describe('QueueTable', () => {
     expect(state('4806')?.className).toContain('text-queue');
     expect(state('4774')?.textContent).toBe('Waiting');
     expect(state('4774')?.className).toContain('text-fg-muted');
-    expect(state('4815')?.textContent).toBe('Will be removed');
+    expect(state('4815')?.textContent).toBe('Leaving');
     expect(state('4815')?.className).toContain('text-danger');
   });
 
@@ -226,13 +258,11 @@ describe('QueueTable', () => {
       [
         '—',
         'Cache plan lookups per request#4826RKravi-k',
-        'Auto-merge on',
-        'not yet',
-        'when approved',
-        '',
+        'Auto-merge is on',
+        'needs approval',
+        'Turn off auto-merge',
       ],
     );
-    expect(only.querySelector('[role="switch"]')?.getAttribute('aria-checked')).toBe('true');
     // It sits after the whole queue.
     const keys = rows(host).map((each) => each.dataset.key);
     expect(keys.at(-1)).toBe('4826');
@@ -244,7 +274,7 @@ describe('QueueTable', () => {
       left('4821', { kind: 'failed', check: { name: 'test (node 20)', onOpen: check } }),
       left('4780', { kind: 'conflict' }, { when: '2 h ago', inQueue: '8 min' }),
       left('4799', { kind: 'removed', by: 'dee-adeyemi' }, { when: '1 h ago', inQueue: '31 min' }),
-      left('4792', { kind: 'timedOut' }, { when: 'this morning', inQueue: '60 min' }),
+      left('4792', { kind: 'timedOut' }, { when: '8 h ago', inQueue: '1 h' }),
       left('4750', { kind: 'merged' }, { when: '3 h ago' }),
       left('4760', { kind: 'failed' }, { when: '4 h ago' }),
       left('4761', { kind: 'removed' }, { when: '6 h ago' }),
@@ -253,40 +283,34 @@ describe('QueueTable', () => {
 
     it('says why each left, in the words for its reason', () => {
       const host = render(<QueueTable label="Merge queue for main" items={[]} left={entries} />);
-      const group = host.querySelector('[role="rowgroup"][aria-label="Left the queue"]');
-      expect(group?.querySelector('[role="rowheader"]')?.textContent).toBe('Left the queue');
+      const group = host.querySelector('[role="rowgroup"][aria-label="Left"]');
+      expect(group?.querySelector('[role="rowheader"]')?.textContent).toBe('Left');
       const said = (key: string) =>
         [...row(host, key).querySelectorAll('[role="gridcell"]')].map((each) => each.textContent);
       expect(said('4821')).toEqual([
         '',
-        'Pull request 4821#4821removed 5 h ago: test (node 20) failed with its group',
+        'Pull request 4821#4821Left 5 h ago · test (node 20) failed',
         'Checks failed',
         '23 min',
         '',
         '',
       ]);
-      expect(said('4780')[1]).toContain(
-        'removed 2 h ago: it conflicts with the branch or an entry ahead of it',
-      );
+      expect(said('4780')[1]).toContain('Left 2 h ago · conflict');
       expect(said('4780')[2]).toBe('Conflict');
-      expect(said('4799')[1]).toContain('removed 1 h ago by dee-adeyemi');
+      expect(said('4799')[1]).toContain('Removed 1 h ago by dee-adeyemi');
       expect(said('4799')[2]).toBe('Removed');
-      expect(said('4792')[1]).toContain(
-        "removed this morning: its checks ran past the queue's time limit",
-      );
+      expect(said('4792')[1]).toContain('Left 8 h ago · checks timed out');
       expect(said('4792')[2]).toBe('Timed out');
-      expect(said('4750')[1]).toContain('merged 3 h ago');
+      expect(said('4750')[1]).toContain('Merged 3 h ago');
       expect(said('4750')[2]).toBe('Merged');
-      expect(said('4760')[1]).toContain('removed 4 h ago: its checks failed');
-      expect(said('4761')[1]).toContain('removed 6 h ago');
+      expect(said('4760')[1]).toContain('Left 4 h ago · checks failed');
+      expect(said('4761')[1]).toContain('Removed 6 h ago');
       expect(said('4761')[1]).not.toContain(' by ');
-      expect(said('4762')[1]).toContain(
-        'removed 5 h ago: The pull request was converted to a draft',
-      );
-      expect(said('4762')[2]).toBe('Removed');
+      expect(said('4762')[1]).toContain('Left 5 h ago · The pull request was converted to a draft');
+      expect(said('4762')[2]).toBe('Left');
     });
 
-    it('says Lo can’t tell why, and that GitHub left part of why out, never that it stayed', () => {
+    it('says only when one left when why isn’t known, never that it stayed', () => {
       const host = render(
         <QueueTable
           label="Merge queue for main"
@@ -299,11 +323,9 @@ describe('QueueTable', () => {
       );
       const said = (key: string) =>
         [...row(host, key).querySelectorAll('[role="gridcell"]')].map((each) => each.textContent);
-      expect(said('4763')[1]).toContain('left 5 h ago: Lo can’t tell why');
+      expect(said('4763')[1]).toBe('Pull request 4763#4763Left 5 h ago');
       expect(said('4763')[2]).toBe('Left');
-      expect(said('4764')[1]).toContain(
-        'it conflicts with the branch or an entry ahead of it · GitHub left part of why out',
-      );
+      expect(said('4764')[1]).toBe('Pull request 4764#4764Left 5 h ago · conflict');
     });
 
     it('links the check that failed, to its run', () => {
@@ -351,9 +373,9 @@ describe('QueueTable', () => {
     const host = render(
       <QueueTable label="Merge queue for main" items={items} more={{ count: 120, onOpen }} />,
     );
-    expect(host.textContent).toContain("120 more aren't shown.");
+    expect(host.textContent).toContain('120 more pull requests');
     const link = [...host.querySelectorAll('button')].find(
-      (each) => each.textContent === 'See the queue on GitHub.',
+      (each) => each.textContent === 'Open on GitHub',
     );
     // The note and its link are a cell of a row of the grid.
     expect(link?.closest('[role="gridcell"]')?.getAttribute('aria-colspan')).toBe('6');
@@ -365,16 +387,14 @@ describe('QueueTable', () => {
 
   it('says when nothing is in the queue', () => {
     const host = render(<QueueTable label="Merge queue for main" items={[]} />);
-    expect(host.textContent).toContain('Nothing is in the merge queue.');
+    expect(host.textContent).toContain('No pull requests in the queue');
     expect(rows(host)).toHaveLength(0);
   });
 
-  it('says what it’s given in place of an empty queue, when the entries couldn’t all be read', () => {
-    const host = render(
-      <QueueTable label="Merge queue for main" items={[]} empty="Lo couldn’t read the entries." />,
-    );
-    expect(host.textContent).toContain('Lo couldn’t read the entries.');
-    expect(host.textContent).not.toContain('Nothing is in the merge queue.');
+  it('says nothing of an empty queue when told to, where what’s above it says why', () => {
+    const host = render(<QueueTable label="Merge queue for main" items={[]} empty={null} />);
+    expect(host.textContent).not.toContain('No pull requests in the queue');
+    expect(host.querySelectorAll('[role="row"]')).toHaveLength(1);
   });
 
   it('is one focusable element, whose active descendant is the row the keyboard is on', () => {
@@ -441,6 +461,31 @@ describe('QueueTable', () => {
     expect(onRowClick).toHaveBeenCalledWith('4797');
   });
 
+  it('opens a row on a double click, but not one on a control in it', () => {
+    const onRowOpen = vi.fn<(key: string) => void>();
+    const host = render(
+      <QueueTable label="Merge queue for main" items={items} onRowOpen={onRowOpen} />,
+    );
+    twice(row(host, '4797').querySelector('[role="gridcell"]')!);
+    expect(onRowOpen).toHaveBeenCalledExactlyOnceWith('4797');
+    twice(row(host, '4810').querySelector('button')!);
+    expect(onRowOpen).toHaveBeenCalledOnce();
+  });
+
+  it('draws a line under a row, across it, as a row of the grid', () => {
+    const host = render(
+      <QueueTable
+        label="Merge queue for main"
+        items={[{ kind: 'entry', entry: { ...first, note: <span>Couldn’t remove #4806</span> } }]}
+      />,
+    );
+    const under = row(host, '4806').nextElementSibling;
+    expect(under?.getAttribute('role')).toBe('row');
+    expect(under?.hasAttribute('data-key')).toBe(false);
+    expect(under?.querySelector('[role="gridcell"]')?.getAttribute('aria-colspan')).toBe('6');
+    expect(under?.textContent).toBe('Couldn’t remove #4806');
+  });
+
   it('draws a pull request’s text as text, without the characters that turn it around', () => {
     const odd: QueueEntry = {
       ...first,
@@ -468,7 +513,7 @@ describe('QueueTable', () => {
     const host = render(
       <QueueTable
         label="Merge queue for main"
-        items={items}
+        items={[...items, { kind: 'entry', entry: { ...removal, key: 'n', note: 'Note' } }]}
         waiting={[joining]}
         left={[
           left('1', { kind: 'failed', check: { name: 'test', onOpen: () => undefined } }),

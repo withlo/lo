@@ -92,13 +92,6 @@ export function afterPushOf(snapshot: MergeSnapshot): AfterPush {
   return pushNeedsNewApproval(rules) ? 'newApproval' : 'keepsApprovals';
 }
 
-/** Pull requests' numbers as a sentence names them: "#45", "#45 and #46", "#45, #46 and #47". */
-function numbers(prs: readonly number[]): string {
-  const named = prs.map((pr) => `#${pr}`);
-  const last = named.pop() ?? '';
-  return named.length === 0 ? last : `${named.join(', ')} and ${last}`;
-}
-
 /**
  * Why auto-merge, or a merge past the rules (`override`), doesn't go for pull request `number`
  * where `placed` says it sits: anywhere but alone or a GitHub stack's bottom layer. Nothing where it
@@ -117,13 +110,13 @@ export function aloneOrBottom(
       const [bottom] = placed.below;
       if (bottom === undefined) return undefined;
       return override
-        ? `GitHub merges past the rules only a stack’s bottom layer, and ${numbers(placed.below)} ${placed.below.length === 1 ? 'is' : 'are'} below #${number} in GitHub stack #${placed.stack}.`
-        : `${numbers(placed.below)}, below #${number} in GitHub stack #${placed.stack}, would merge with it when auto-merge merges it. Merge #${bottom} first.`;
+        ? 'Only a GitHub stack’s bottom layer can bypass rules'
+        : `Merge #${bottom} first`;
     }
     case 'chainBottom':
-      return `#${number} is the bottom layer of a chain that isn’t a GitHub stack: once it merged, the layers above would still sit on its branch.`;
+      return `Layers above #${number} would lose their base branch`;
     case 'chainAbove':
-      return `Merge #${placed.bottom} first: it’s this chain’s bottom layer.`;
+      return `Merge #${placed.bottom} first`;
     case 'unknown':
       return placed.text;
     default:

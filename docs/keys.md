@@ -34,18 +34,18 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Jump
 
-| Action                       | Keys  | Where                                                                                  | Command                |
-| ---------------------------- | ----- | -------------------------------------------------------------------------------------- | ---------------------- |
-| Next change                  | `] c` | In `diff`; in code views with Vim keys on, Vim's motion                                | `diff.nextChange`      |
-| Previous change              | `[ c` | In `diff`; in code views with Vim keys on, Vim's motion                                | `diff.previousChange`  |
-| Next file                    | `] f` | In `diff`; in code views with Vim keys on, Vim's motion                                | `diff.nextFile`        |
-| Previous file                | `[ f` | In `diff`; in code views with Vim keys on, Vim's motion                                | `diff.previousFile`    |
-| Next thread                  | `] t` | In `diff`; in code views with Vim keys on, Vim's motion                                | `diff.nextThread`      |
-| Previous thread              | `[ t` | In `diff`; in code views with Vim keys on, Vim's motion                                | `diff.previousThread`  |
-| The other end of moved code  | `g m` | In `diff`; in code views, only in normal mode                                          | `diff.otherEnd`        |
-| Next layer                   | `] s` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.nextLayer`     |
-| Previous layer               | `[ s` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.previousLayer` |
-| Back from a run to its layer | `Esc` | In `diff`; in code views, only in normal mode                                          | `stacks.back`          |
+| Action                      | Keys  | Where                                                                                  | Command                |
+| --------------------------- | ----- | -------------------------------------------------------------------------------------- | ---------------------- |
+| Next change                 | `] c` | In `diff`; in code views with Vim keys on, Vim's motion                                | `diff.nextChange`      |
+| Previous change             | `[ c` | In `diff`; in code views with Vim keys on, Vim's motion                                | `diff.previousChange`  |
+| Next file                   | `] f` | In `diff`; in code views with Vim keys on, Vim's motion                                | `diff.nextFile`        |
+| Previous file               | `[ f` | In `diff`; in code views with Vim keys on, Vim's motion                                | `diff.previousFile`    |
+| Next thread                 | `] t` | In `diff`; in code views with Vim keys on, Vim's motion                                | `diff.nextThread`      |
+| Previous thread             | `[ t` | In `diff`; in code views with Vim keys on, Vim's motion                                | `diff.previousThread`  |
+| The other end of moved code | `g m` | In `diff`; in code views, only in normal mode                                          | `diff.otherEnd`        |
+| Next layer                  | `] s` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.nextLayer`     |
+| Previous layer              | `[ s` | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `stacks.previousLayer` |
+| Show single layer           | `Esc` | In `diff`; in code views, only in normal mode                                          | `stacks.back`          |
 
 ## Act
 
@@ -124,26 +124,26 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Review
 
-| Action                              | Keys                              | Where                                                                                                     | Command                |
-| ----------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------- |
-| Merge panel                         | `m`                               | Anywhere but `menu`, `dialog`, `palette`, `box`, `merge` and `commit`; in code views, only in normal mode | `merge.panel`          |
-| Next reason                         | `j`, `↓`                          | In `merge`                                                                                                | `merge.down`           |
-| Previous reason                     | `k`, `↑`                          | In `merge`                                                                                                | `merge.up`             |
-| Open the reason’s page              | `o`                               | In `merge`                                                                                                | `merge.open`           |
-| Next merge method                   | `Tab`                             | In `merge`                                                                                                | `merge.nextMethod`     |
-| Previous merge method               | `⇧Tab`                            | In `merge`                                                                                                | `merge.previousMethod` |
-| Edit the commit’s title and message | `e`                               | In `merge`                                                                                                | `merge.edit`           |
-| Next unresolved conversation        | `] t`                             | In `merge`                                                                                                | `merge.nextThread`     |
-| Merge or add to the merge queue     | `⏎`                               | In `merge`                                                                                                | `merge.merge`          |
-| Turn auto-merge on or off           | `a`                               | In `merge`                                                                                                | `merge.autoMerge`      |
-| Merge without the rules             | `⌥⏎`                              | In `merge`                                                                                                | `merge.override`       |
-| Ask GitHub whether it merged        | None: in its menu and the palette | Anywhere but `menu`, `dialog`, `palette` and `box`                                                        | `merge.askAgain`       |
-| Approve and ship                    | `⌘⇧⏎`                             | Anywhere but `box`, `dialog`, `palette` and `menu`                                                        | `merge.ship`           |
-| Close the merge panel               | `Esc`                             | In `merge`                                                                                                | `merge.close`          |
-| Back to the merge panel             | `Esc`                             | In `commit`                                                                                               | `merge.leaveCommit`    |
-| Merge queue                         | `g q`                             | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode                    | `queue.show`           |
-| Submit review                       | `⌘⏎`                              | Anywhere but `box`, `dialog`, `palette` and `menu`                                                        | `review.submit`        |
-| Make this a GitHub stack            | `g S`                             | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode                    | `stacks.convert`       |
+| Action                   | Keys                              | Where                                                                                                     | Command                |
+| ------------------------ | --------------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------- |
+| Merge panel              | `m`                               | Anywhere but `menu`, `dialog`, `palette`, `box`, `merge` and `commit`; in code views, only in normal mode | `merge.panel`          |
+| Next reason              | `j`, `↓`                          | In `merge`                                                                                                | `merge.down`           |
+| Previous reason          | `k`, `↑`                          | In `merge`                                                                                                | `merge.up`             |
+| Open in browser          | `o`                               | In `merge`                                                                                                | `merge.open`           |
+| Next merge method        | `Tab`                             | In `merge`                                                                                                | `merge.nextMethod`     |
+| Previous merge method    | `⇧Tab`                            | In `merge`                                                                                                | `merge.previousMethod` |
+| Edit commit message      | `e`                               | In `merge`                                                                                                | `merge.edit`           |
+| Next unresolved thread   | `] t`                             | In `merge`                                                                                                | `merge.nextThread`     |
+| Merge…                   | `⏎`                               | In `merge`                                                                                                | `merge.merge`          |
+| Turn on auto-merge…      | `a`                               | In `merge`                                                                                                | `merge.autoMerge`      |
+| Bypass rules and merge…  | `⌥⏎`                              | In `merge`                                                                                                | `merge.override`       |
+| Check merge again        | None: in its menu and the palette | Anywhere but `menu`, `dialog`, `palette` and `box`                                                        | `merge.askAgain`       |
+| Approve and ship…        | `⌘⇧⏎`                             | Anywhere but `box`, `dialog`, `palette` and `menu`                                                        | `merge.ship`           |
+| Close merge panel        | `Esc`                             | In `merge`                                                                                                | `merge.close`          |
+| Go to merge panel        | `Esc`                             | In `commit`                                                                                               | `merge.leaveCommit`    |
+| Merge queue              | `g q`                             | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode                    | `queue.show`           |
+| Submit review…           | `⌘⏎`                              | Anywhere but `box`, `dialog`, `palette` and `menu`                                                        | `review.submit`        |
+| Convert to GitHub stack… | `g S`                             | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode                    | `stacks.convert`       |
 
 ## Find
 
@@ -177,25 +177,25 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Files
 
-| Action                                 | Keys                                           | Where                                                                                                   | Command            |
-| -------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------ |
-| Go to the stack, or the file on screen | `-`                                            | In `tree`                                                                                               | `stacks.focus`     |
-| Go to the file tree                    | `+`                                            | In `stack`                                                                                              | `stacks.files`     |
-| Go to the file tree                    | `-`                                            | Anywhere but `menu`, `dialog`, `palette`, `box`, `tree` and `stack`; in code views, only in normal mode | `tree.focus`       |
-| Tree                                   | None: in the app menu on macOS and the palette | In `tree`                                                                                               | `tree.asTree`      |
-| Review order                           | `t`                                            | In `tree`                                                                                               | `tree.reviewOrder` |
-| Changed files only                     | `f`                                            | In `tree`                                                                                               | `tree.changedOnly` |
-| Next row of the tree                   | `j`, `↓`                                       | In `tree`                                                                                               | `tree.down`        |
-| Previous row of the tree               | `k`, `↑`                                       | In `tree`                                                                                               | `tree.up`          |
-| First row of the tree                  | `g g`, `Home`                                  | In `tree`                                                                                               | `tree.top`         |
-| Last row of the tree                   | `G`, `End`                                     | In `tree`                                                                                               | `tree.bottom`      |
-| Page down the tree                     | `PgDn`                                         | In `tree`                                                                                               | `tree.pageDown`    |
-| Page up the tree                       | `PgUp`                                         | In `tree`                                                                                               | `tree.pageUp`      |
-| Open the folder                        | `l`, `→`                                       | In `tree`                                                                                               | `tree.open`        |
-| Close the folder                       | `h`, `←`                                       | In `tree`                                                                                               | `tree.close`       |
-| Open every folder                      | `z R`                                          | In `tree`                                                                                               | `tree.openAll`     |
-| Close every folder                     | `z M`                                          | In `tree`                                                                                               | `tree.closeAll`    |
-| Show the file                          | `⏎`                                            | In `tree`                                                                                               | `tree.show`        |
+| Action                   | Keys                                           | Where                                                                                                   | Command            |
+| ------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------ |
+| Go to stack              | `-`                                            | In `tree`                                                                                               | `stacks.focus`     |
+| Go to files              | `+`                                            | In `stack`                                                                                              | `stacks.files`     |
+| Go to the file tree      | `-`                                            | Anywhere but `menu`, `dialog`, `palette`, `box`, `tree` and `stack`; in code views, only in normal mode | `tree.focus`       |
+| Tree                     | None: in the app menu on macOS and the palette | In `tree`                                                                                               | `tree.asTree`      |
+| Review order             | `t`                                            | In `tree`                                                                                               | `tree.reviewOrder` |
+| Changed files only       | `f`                                            | In `tree`                                                                                               | `tree.changedOnly` |
+| Next row of the tree     | `j`, `↓`                                       | In `tree`                                                                                               | `tree.down`        |
+| Previous row of the tree | `k`, `↑`                                       | In `tree`                                                                                               | `tree.up`          |
+| First row of the tree    | `g g`, `Home`                                  | In `tree`                                                                                               | `tree.top`         |
+| Last row of the tree     | `G`, `End`                                     | In `tree`                                                                                               | `tree.bottom`      |
+| Page down the tree       | `PgDn`                                         | In `tree`                                                                                               | `tree.pageDown`    |
+| Page up the tree         | `PgUp`                                         | In `tree`                                                                                               | `tree.pageUp`      |
+| Open the folder          | `l`, `→`                                       | In `tree`                                                                                               | `tree.open`        |
+| Close the folder         | `h`, `←`                                       | In `tree`                                                                                               | `tree.close`       |
+| Open every folder        | `z R`                                          | In `tree`                                                                                               | `tree.openAll`     |
+| Close every folder       | `z M`                                          | In `tree`                                                                                               | `tree.closeAll`    |
+| Show the file            | `⏎`                                            | In `tree`                                                                                               | `tree.show`        |
 
 ## Overview
 
@@ -216,26 +216,26 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Panels
 
-| Action                                          | Keys                              | Where                               | Command                   |
-| ----------------------------------------------- | --------------------------------- | ----------------------------------- | ------------------------- |
-| Next reference in the panel                     | `j`, `↓`                          | In `references`                     | `code.nextReference`      |
-| Previous reference in the panel                 | `k`, `↑`                          | In `references`                     | `code.previousReference`  |
-| Go to the reference                             | `⏎`                               | In `references`                     | `code.goReference`        |
-| Close the references                            | `Esc`                             | In `references`                     | `code.closeReferences`    |
-| Next thread                                     | `j`, `↓`                          | In `threads`                        | `comments.nextThread`     |
-| Previous thread                                 | `k`, `↑`                          | In `threads`                        | `comments.previousThread` |
-| Show in diff                                    | `⏎`                               | In `threads`                        | `comments.showThread`     |
-| Resolve thread                                  | `x`                               | In `threads`                        | `comments.resolveInPanel` |
-| Next thread filter                              | `f`                               | In `threads`                        | `comments.filterThreads`  |
-| Clear filter                                    | `⌘⌫`                              | In `threads`                        | `comments.clearFilter`    |
-| Next layer in the stack                         | `j`, `↓`                          | In `stack`                          | `stacks.down`             |
-| Previous layer in the stack                     | `k`, `↑`                          | In `stack`                          | `stacks.up`               |
-| Show this layer                                 | `⏎`                               | In `stack`                          | `stacks.show`             |
-| Choose a run from here                          | `v`                               | In `stack`                          | `stacks.choose`           |
-| View the stack up to here as one diff           | None: in its menu and the palette | Anywhere                            | `stacks.upTo`             |
-| Stop choosing a run, or back to the middle view | `Esc`                             | In `stack`                          | `stacks.cancel`           |
-| Left panel                                      | `⌘\`                              | Anywhere but `dialog` and `palette` | `tab.leftPanel`           |
-| Threads panel                                   | `⌘⇧\`                             | Anywhere but `dialog` and `palette` | `tab.rightPanel`          |
+| Action                          | Keys                              | Where                               | Command                   |
+| ------------------------------- | --------------------------------- | ----------------------------------- | ------------------------- |
+| Next reference in the panel     | `j`, `↓`                          | In `references`                     | `code.nextReference`      |
+| Previous reference in the panel | `k`, `↑`                          | In `references`                     | `code.previousReference`  |
+| Go to the reference             | `⏎`                               | In `references`                     | `code.goReference`        |
+| Close the references            | `Esc`                             | In `references`                     | `code.closeReferences`    |
+| Next thread                     | `j`, `↓`                          | In `threads`                        | `comments.nextThread`     |
+| Previous thread                 | `k`, `↑`                          | In `threads`                        | `comments.previousThread` |
+| Show in diff                    | `⏎`                               | In `threads`                        | `comments.showThread`     |
+| Resolve thread                  | `x`                               | In `threads`                        | `comments.resolveInPanel` |
+| Next thread filter              | `f`                               | In `threads`                        | `comments.filterThreads`  |
+| Clear filter                    | `⌘⌫`                              | In `threads`                        | `comments.clearFilter`    |
+| Next layer                      | `j`, `↓`                          | In `stack`                          | `stacks.down`             |
+| Previous layer                  | `k`, `↑`                          | In `stack`                          | `stacks.up`               |
+| Show layer                      | `⏎`                               | In `stack`                          | `stacks.show`             |
+| Select layers                   | `v`                               | In `stack`                          | `stacks.choose`           |
+| Show layers to here             | None: in its menu and the palette | Anywhere                            | `stacks.upTo`             |
+| Stop selecting layers           | `Esc`                             | In `stack`                          | `stacks.cancel`           |
+| Left panel                      | `⌘\`                              | Anywhere but `dialog` and `palette` | `tab.leftPanel`           |
+| Threads panel                   | `⌘⇧\`                             | Anywhere but `dialog` and `palette` | `tab.rightPanel`          |
 
 ## Diff view
 
@@ -277,16 +277,16 @@ mode. In the box's preview, or on its frame, `Esc` closes it at once, from any m
 
 ## Merge queue
 
-| Action                             | Keys     | Where      | Command                |
-| ---------------------------------- | -------- | ---------- | ---------------------- |
-| Next pull request in the queue     | `j`, `↓` | In `queue` | `queue.down`           |
-| Previous pull request in the queue | `k`, `↑` | In `queue` | `queue.up`             |
-| Open the pull request              | `⏎`      | In `queue` | `queue.open`           |
-| Remove from the queue              | `x`      | In `queue` | `queue.remove`         |
-| Move to the front of the queue     | `J`      | In `queue` | `queue.jump`           |
-| Turn auto-merge on or off          | `a`      | In `queue` | `queue.autoMerge`      |
-| Next branch’s queue                | `Tab`    | In `queue` | `queue.nextBranch`     |
-| Previous branch’s queue            | `⇧Tab`   | In `queue` | `queue.previousBranch` |
+| Action                   | Keys     | Where      | Command                |
+| ------------------------ | -------- | ---------- | ---------------------- |
+| Next pull request        | `j`, `↓` | In `queue` | `queue.down`           |
+| Previous pull request    | `k`, `↑` | In `queue` | `queue.up`             |
+| Open pull request        | `⏎`      | In `queue` | `queue.open`           |
+| Remove from merge queue… | `x`      | In `queue` | `queue.remove`         |
+| Move to front…           | `J`      | In `queue` | `queue.jump`           |
+| Turn off auto-merge      | `a`      | In `queue` | `queue.autoMerge`      |
+| Next branch              | `Tab`    | In `queue` | `queue.nextBranch`     |
+| Previous branch          | `⇧Tab`   | In `queue` | `queue.previousBranch` |
 
 ## Revision picker
 

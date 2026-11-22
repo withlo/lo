@@ -1,12 +1,15 @@
 // The stack each view of a pull request's tab is in, as main last said, the layer the keyboard is
-// on in its tree, and the run of layers being chosen there: kept with the view, and gone when its
-// tab closes. And where `]s` and `[s` go
-// from a layer: main sends the rows in the core's walk, so the next row is the next layer.
+// on in its tree, and the layers being selected there: kept with the view, and gone when its tab
+// closes. And where `]s` and `[s` go from a layer: main sends the rows in the core's walk, so the
+// next row is the next layer.
 
 import { tabState } from '../../tab/window/shared.ts';
 import type { StackState, StackView } from '../contract.ts';
 import { main } from './main.ts';
 import type { Choice } from './runs.ts';
+
+/** Why a layer can't be acted on: it isn't in the stack any more. */
+export const STACK_CHANGED = 'The stack has changed';
 
 /** Each view's stack, as main last said: nothing until it has. */
 export const stacks = tabState<StackView | undefined>(() => undefined);
@@ -14,8 +17,17 @@ export const stacks = tabState<StackView | undefined>(() => undefined);
 /** The layer the keyboard is on in each view's stack tree, by number, once it's been on one. */
 export const focused = tabState<number | undefined>(() => undefined);
 
-/** The run of layers being chosen in each view's stack tree, while one is. */
+/** The layers being selected in each view's stack tree, while some are. */
 export const choosing = tabState<Choice | undefined>(() => undefined);
+
+/**
+ * What went wrong showing `layers` as one diff, and what the error said, under the stack's tree
+ * until they're shown again.
+ */
+export const runTrouble = tabState<
+  | { readonly title: string; readonly details: string; readonly layers: readonly number[] }
+  | undefined
+>(() => undefined);
 
 /** Takes what main sent of a view's stack. */
 export function takeStack({ id, stack }: StackState): void {
@@ -69,16 +81,16 @@ export function stepFrom(
   switch (view?.kind) {
     case undefined:
     case 'unknown':
-      return { why: `Lo is still looking for the stack #${number} is in.` };
+      return { why: 'Checking stack…' };
     case 'none':
-      return { why: `#${number} isn't in a stack.` };
+      return { why: `#${number} isn’t in a stack` };
     case 'stack': {
       const layers = layersOf(view);
       const at = layers.indexOf(number);
-      if (at < 0) return { why: `#${number} isn't in its stack now.` };
+      if (at < 0) return { why: STACK_CHANGED };
       const layer = layers[at + by];
       if (layer !== undefined) return { layer };
-      return { why: `#${number} is the ${by > 0 ? 'last' : 'first'} layer.` };
+      return { why: `#${number} is the ${by > 0 ? 'top' : 'bottom'} layer` };
     }
     default:
       view satisfies never;

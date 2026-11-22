@@ -23,8 +23,10 @@ const choice = cva(
   'flex w-full cursor-default items-start gap-8 rounded-md border px-12 py-8 text-start focus-visible:shadow-ring',
   {
     variants: {
+      // The chosen one keeps the hairline: its tint and filled ball mark it, and the accent's edge
+      // is focus's alone.
       checked: {
-        true: 'border-accent bg-accent-soft',
+        true: 'border-border bg-accent-soft',
         false: 'border-border hover:bg-hover',
       },
       disabled: { true: 'hover:bg-transparent', false: '' },

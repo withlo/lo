@@ -3,7 +3,6 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { untilLocalCopy } from '../../diff/window/shared.ts';
 import type { Row, StackView } from '../contract.ts';
 import { barOf } from './RunOnScreen.tsx';
 import { bandOf } from './Stack.tsx';
@@ -42,13 +41,15 @@ const VIEW: StackView = {
 const START = 'a'.repeat(40);
 
 describe('the bar over a run of layers', () => {
-  it('names its layers, and goes from the head of the layer below to its top layer’s', () => {
+  it('names its layers by their span, and goes from the head of the layer below to its top layer’s', () => {
     expect(barOf({ layers: [83, 84], start: START, from: 84 }, VIEW)).toEqual({
       layers: [
         { number: 83, title: 'Layer 83' },
         { number: 84, title: 'Layer 84' },
       ],
+      name: 'Layers 2–3',
       branches: { from: 'stack/82', to: 'stack/c' },
+      problem: undefined,
     });
     // From the stack's bottom, it starts at the branch the stack sits on.
     expect(barOf({ layers: [82, 85], start: START, from: 85 }, VIEW).branches).toEqual({
@@ -57,34 +58,24 @@ describe('the bar over a run of layers', () => {
     });
   });
 
-  it('says only the top layer’s pull request shows while GitHub couldn’t compare the run', () => {
+  it('says the layers can’t show as one diff, and the top one shows alone, while GitHub couldn’t compare them', () => {
     const run = { layers: [83, 84], start: START, from: 84 };
-    expect(barOf(run, VIEW).instead).toBeUndefined();
-    expect(barOf(run, VIEW, true).instead).toBe(
-      'Showing only #84’s pull request: GitHub couldn’t compare the run as one diff',
-    );
+    expect(barOf(run, VIEW).problem).toBeUndefined();
+    expect(barOf(run, VIEW, true).problem).toEqual({
+      title: 'Can’t show layers 2–3 as one diff',
+      reason: 'Showing #84 alone.',
+    });
   });
 
-  it('says the local copy replaces it with the run, as the status bar does, where it will', () => {
-    const run = { layers: [83, 84], start: START, from: 84 };
-    expect(barOf(run, VIEW, true, untilLocalCopy(undefined)).instead).toBe(
-      'Showing only #84’s pull request until the local copy is ready: GitHub couldn’t compare the run as one diff',
-    );
-    // Without git, nothing will.
-    expect(
-      barOf(run, VIEW, true, untilLocalCopy({ kind: 'noGit', message: '', install: '' })).instead,
-    ).toBe('Showing only #84’s pull request: GitHub couldn’t compare the run as one diff');
-    // Nothing is said instead of a run that was compared.
-    expect(barOf(run, VIEW, false, untilLocalCopy(undefined)).instead).toBeUndefined();
-  });
-
-  it('names its layers by number until the stack is known', () => {
+  it('names its layers by number, and counts them, until the stack is known', () => {
     expect(barOf({ layers: [83, 84], start: START, from: 84 }, undefined)).toEqual({
       layers: [
         { number: 83, title: undefined },
         { number: 84, title: undefined },
       ],
+      name: '2 layers',
       branches: undefined,
+      problem: undefined,
     });
   });
 

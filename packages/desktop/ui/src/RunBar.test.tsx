@@ -22,7 +22,7 @@ const PROPS: RunBarProps = {
   ],
   branches: { from: 'ravi/token-bucket', to: 'ravi/graphql-cost' },
   files: { count: 245 },
-  back: 4821,
+  name: 'Layers 3–4',
   backKeys: ['Esc'],
   onBack: () => undefined,
 };
@@ -32,33 +32,34 @@ function said(host: HTMLElement): string {
 }
 
 describe('RunBar', () => {
-  it('says how many layers and which, the branches, the file count and the way back', () => {
+  it('says which layers, the branches, the file count and the way back', () => {
     const host = render(<RunBar {...PROPS} />);
-    expect(host.querySelector('[role="region"]')?.getAttribute('aria-label')).toBe('Run of layers');
+    expect(host.querySelector('[role="region"]')?.getAttribute('aria-label')).toBe('Layers 3–4');
     expect(said(host)).toBe(
-      '2 layers as one diff · #4819 Load per-plan limits and #4821 Rate limit GraphQL queries by cost' +
+      'Layers 3–4 · #4819 Load per-plan limits and #4821 Rate limit GraphQL queries by cost' +
         'ravi/token-bucket → ravi/graphql-cost · 245 files' +
-        'Back to #4821Esc',
+        'Show single layerEsc',
     );
   });
 
-  it('says what shows instead when the run couldn’t be compared, and no longer the branches or the files', () => {
+  it('says why the layers can’t show as one diff, and no longer the branches or the files', () => {
     const host = render(
       <RunBar
         {...PROPS}
-        instead="Showing only #4821’s pull request: GitHub couldn’t compare the run as one diff"
+        problem={{ title: 'Can’t show layers 3–4 as one diff', reason: 'Showing #4821 alone.' }}
       />,
     );
     expect(said(host)).toBe(
-      'Showing only #4821’s pull request: GitHub couldn’t compare the run as one diff · #4819 Load per-plan limits and #4821 Rate limit GraphQL queries by cost' +
-        'Back to #4821Esc',
+      'Can’t show layers 3–4 as one diff Showing #4821 alone.Show single layerEsc',
+    );
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe(
+      'Can’t show layers 3–4 as one diff Showing #4821 alone.',
     );
     // The line may be cut, so its title says all of it.
     expect(host.querySelector('p')?.getAttribute('title')).toBe(
-      'Showing only #4821’s pull request: GitHub couldn’t compare the run as one diff · #4819 Load per-plan limits and #4821 Rate limit GraphQL queries by cost',
+      'Can’t show layers 3–4 as one diff · Showing #4821 alone.',
     );
-    // Neither how many layers it holds, nor where its diff goes between, nor how many files.
-    expect(said(host)).not.toContain('layers as one diff');
+    // Neither where its diff goes between, nor how many files.
     expect(said(host)).not.toContain('→');
     expect(said(host)).not.toContain('245');
   });
@@ -90,9 +91,7 @@ describe('RunBar', () => {
         backKeys={undefined}
       />,
     );
-    expect(said(host)).toBe(
-      '3 layers as one diff · #82 Root, #83 and #84 Top300+ filesBack to #4821',
-    );
+    expect(said(host)).toBe('Layers 3–4 · #82 Root, #83 and #84 Top300+ filesShow single layer');
     const one = render(<RunBar {...PROPS} files={{ count: 1 }} branches={undefined} />);
     expect(said(one)).toContain('1 file');
     expect(said(one)).not.toContain('1 files');

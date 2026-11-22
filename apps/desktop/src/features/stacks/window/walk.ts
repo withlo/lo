@@ -1,17 +1,24 @@
 // What the stack's keys and clicks do: `]s` and `[s` show the next and previous layer, `-` in the
 // file tree goes up to the stack's tree, and `+` back down, and there the keyboard moves from layer
-// to layer, shows one, opens one on GitHub, or makes the chain through one a GitHub stack. A layer shows in its
-// tab, which keeps a view of each layer shown, so each keeps its place; showing one isn't a jump.
+// to layer, shows one, opens one on GitHub, or converts the chain through one to a GitHub stack. A
+// layer shows in its tab, which keeps a view of each layer shown, so each keeps its place; showing
+// one isn't a jump.
 //
-// And runs of layers: `v` starts choosing one, `j` and `k` move its end along its branch, and `⏎`
-// asks main for a view of it, which opens on its diff. `Esc`, or the bar over it, goes back to the
-// layer it was chosen from, and `]s` and `[s` go on from that layer.
+// And several layers as one diff: `v` starts selecting them, `j` and `k` move the selection's end
+// along its branch, and `⏎` asks main for a view of them, which opens on its diff. `Esc`, or the
+// bar over it, goes back to the layer they were selected from, and `]s` and `[s` go on from that
+// layer.
 
 import type { Target } from '@lo/ui/commands';
 
 import { IpcError } from '../../../ipc/contract.ts';
-import { notify } from '../../../window/commands/notices.tsx';
-import { escapeInMiddle, escapeToMiddle, focusMiddle } from '../../../window/commands/registry.ts';
+import { refuse } from '../../../window/commands/notices.tsx';
+import {
+  escapeInMiddle,
+  escapeToMiddle,
+  focusMiddle,
+  registry,
+} from '../../../window/commands/registry.ts';
 import { client } from '../../../window/ipc.ts';
 import { showDiff } from '../../diff/window/shared.ts';
 import { contract as tabContract } from '../../tab/contract.ts';
@@ -24,9 +31,18 @@ import {
 } from '../../tab/window/shared.ts';
 import { goToTree } from '../../tree/window/shared.ts';
 import { makeStack } from './actions.ts';
-import { choosing, focused, keyboardLayer, layersOf, stacks, stepFrom } from './layers.ts';
+import {
+  choosing,
+  focused,
+  keyboardLayer,
+  layersOf,
+  runTrouble,
+  STACK_CHANGED,
+  stacks,
+  stepFrom,
+} from './layers.ts';
 import { main } from './main.ts';
-import { chainIn, stepChoice, type Choice } from './runs.ts';
+import { chainIn, layersName, stepChoice, type Choice } from './runs.ts';
 
 const tabs = () => client(tabContract);
 
@@ -36,7 +52,7 @@ const TREE = '[data-lo-scope="stack"]';
 /** The pull request's tab on screen, as its view on screen, or why a key for it can't run. */
 export function pullOnScreen(): PullTab | string {
   const tab = activeTab();
-  return tab?.kind === 'pull' ? tab : 'There’s no pull request on screen.';
+  return tab?.kind === 'pull' ? tab : 'Open a pull request first';
 }
 
 /** The stack's tree on screen, if it's drawn. */
@@ -85,7 +101,7 @@ function stepOnScreen(by: 1 | -1, count = 1): { tab: PullTab; layer: number } | 
   if (typeof tab === 'string') return tab;
   const view = stacks.get(tab.id);
   if (view?.kind !== 'stack' && pullOf(tab.id)?.acting?.kind === 'anonymous') {
-    return `Sign in to see the stack #${tab.number} is in.`;
+    return 'Sign in to see the stack';
   }
   const step = stepFrom(view, tab.run?.from ?? tab.number, by);
   if ('why' in step) return step.why;
@@ -126,21 +142,30 @@ export function stackTarget(tab: PullTab): Target {
   return layer === undefined ? { kind: 'none' } : { kind: 'layer', layer };
 }
 
+/** The file tree on screen, if it's drawn. */
+function filesOnScreen(): boolean {
+  return document.querySelector('[data-lo-scope="tree"]') !== null;
+}
+
 /**
- * `+` in the stack's tree: goes down to the file tree, at the file on screen, as `-` goes up, or
- * why it can't.
+ * `+` in the stack's tree: goes down to the file tree, at the file on screen, as `-` goes up. With
+ * the left panel hidden, it shows the panel first, and goes there once it's drawn.
  */
 export const goDown = {
   run(): void {
     const tab = pullOnScreen();
-    if (typeof tab !== 'string') goToTree(tab.id);
+    if (typeof tab === 'string') return;
+    if (filesOnScreen() || treeOnScreen()) {
+      goToTree(tab.id);
+      return;
+    }
+    registry().run('tab.leftPanel', { kind: 'none' });
+    // Two frames: the panel is drawn on the first, and its tree on the next.
+    requestAnimationFrame(() => requestAnimationFrame(() => goToTree(tab.id)));
   },
   enabled(): true | string {
     const tab = pullOnScreen();
-    if (typeof tab === 'string') return tab;
-    return document.querySelector('[data-lo-scope="tree"]') !== null
-      ? true
-      : 'The file tree isn’t open.';
+    return typeof tab === 'string' ? tab : true;
   },
 };
 
@@ -186,15 +211,13 @@ export function moveFocus(by: 1 | -1): void {
 export function onLayer(target: Target): true | string {
   const tab = pullOnScreen();
   if (typeof tab === 'string') return tab;
-  if (target.kind !== 'layer') return 'No layer has focus.';
-  return layersOf(stacks.get(tab.id)).includes(target.layer)
-    ? true
-    : `#${target.layer} isn't in the stack on screen.`;
+  if (target.kind !== 'layer') return 'Go to the stack first';
+  return layersOf(stacks.get(tab.id)).includes(target.layer) ? true : STACK_CHANGED;
 }
 
 /**
- * `⏎` in the stack's tree, a click, or Show on a layer's menu: shows the layer. While a run is
- * being chosen, `⏎` shows it instead.
+ * `⏎` in the stack's tree, a click, or Show on a layer's menu: shows the layer. While layers are
+ * selected, `⏎` shows them instead.
  */
 export function showTarget(target: Target): void {
   const tab = pullOnScreen();
@@ -209,17 +232,27 @@ export function showTarget(target: Target): void {
   void showLayer(tab, target.layer);
 }
 
-/** What notes about showing a run say they're about. */
-export const RUN = 'View as one diff';
-
-/** What went wrong asking main, in words to show: a branch's name may carry bidi controls. */
-function whyNot(error: unknown): string {
-  return error instanceof IpcError
-    ? withoutBidi(error.message)
-    : 'Lo couldn’t ask for it. Try again.';
+/**
+ * Says why `layers` don't show as one diff: main's reason, which may name a branch, in a toast, as
+ * why nothing happened; or, for anything else, that they couldn't be shown, under the tree.
+ */
+function failed(error: unknown, tab: PullTab, layers: readonly number[]): void {
+  // Main said why it showed nothing: a refusal, said once in a toast.
+  if (error instanceof IpcError) {
+    refuse(withoutBidi(error.message));
+    return;
+  }
+  // Something went wrong on the way: a problem under the tree, with what the error said.
+  const view = stacks.get(tab.id);
+  const rows = view?.kind === 'stack' ? view.rows : [];
+  runTrouble.set(tab.id, {
+    title: `Couldn’t show ${layersName(rows, layers).toLowerCase()}`,
+    details: error instanceof Error ? error.message : String(error),
+    layers,
+  });
 }
 
-/** Shows the run `choice` chose: as one diff, or, while it's one layer, that layer. */
+/** Shows the layers `choice` selected: as one diff, or, while it's one layer, that layer. */
 function showChoice(tab: PullTab, choice: Choice): void {
   const view = stacks.get(tab.id);
   const layers = view?.kind === 'stack' ? chainIn(view.rows, choice.anchor, choice.end) : undefined;
@@ -232,7 +265,7 @@ function showChoice(tab: PullTab, choice: Choice): void {
 }
 
 /**
- * Asks main for a view of the run of `layers`, bottom first, in `tab`, which opens on its diff, or
+ * Asks main for a view of `layers` as one diff, bottom first, in `tab`, which opens on its diff, or
  * says why there's none.
  */
 export function openRun(tab: PullTab, layers: readonly number[]): void {
@@ -242,9 +275,21 @@ export function openRun(tab: PullTab, layers: readonly number[]): void {
   // The view opens on its diff: it has no overview, and the diff is what it's for.
   const view = runViewOf(tab.id, layers);
   if (view !== undefined) showDiff(view);
+  runTrouble.set(tab.id, undefined);
   main()
     .run({ id: tab.id, bottom, top })
-    .catch((error: unknown) => notify(RUN, whyNot(error)));
+    .catch((error: unknown) => failed(error, tab, layers));
+}
+
+/**
+ * Try again under the stack's tree: shows the layers that couldn't be shown as one diff again. The
+ * tree takes focus first, as the button goes with what went wrong.
+ */
+export function runAgain(tab: PullTab): void {
+  const trouble = runTrouble.get(tab.id);
+  if (!trouble) return;
+  treeOnScreen()?.focus();
+  openRun(tab, trouble.layers);
 }
 
 /** The row of layer `number` in the stack of `tab`, if it has one. */
@@ -253,20 +298,18 @@ function rowOf(tab: PullTab, number: number) {
   return view?.kind === 'stack' ? view.rows.find((row) => row.number === number) : undefined;
 }
 
-/** Whether a run can start at `target`, a layer of the stack on screen, or why not. */
+/** Whether selecting layers can start at `target`, a layer of the stack on screen, or why not. */
 export function choosable(target: Target): true | string {
   const on = onLayer(target);
   if (on !== true || target.kind !== 'layer') return on;
   const tab = pullOnScreen();
   if (typeof tab === 'string') return tab;
-  return (rowOf(tab, target.layer)?.path.length ?? 0) > 0
-    ? true
-    : `#${target.layer} isn't a layer of the stack now, so no run can hold it.`;
+  return (rowOf(tab, target.layer)?.path.length ?? 0) > 0 ? true : STACK_CHANGED;
 }
 
 /**
- * `v` on a layer, or Choose a run from here on its menu: starts choosing a run there, in the
- * stack's tree, which has the keys.
+ * `v` on a layer, or Select layers on its menu: starts selecting layers there, in the stack's tree,
+ * which has the keys.
  */
 export function choose(target: Target): void {
   const tab = pullOnScreen();
@@ -276,7 +319,7 @@ export function choose(target: Target): void {
   treeOnScreen()?.focus();
 }
 
-/** `Esc` in the stack's tree: stops choosing a run, or else goes back to the middle view. */
+/** `Esc` in the stack's tree: stops selecting layers, or else goes back to the middle view. */
 export function cancel(): void {
   const tab = pullOnScreen();
   if (typeof tab !== 'string' && choosing.get(tab.id) !== undefined) {
@@ -286,26 +329,30 @@ export function cancel(): void {
   escapeToMiddle();
 }
 
-/** Stops choosing a run in view `id`'s stack tree, as leaving the tree does. */
+/** Stops selecting layers in view `id`'s stack tree, as leaving the tree does. */
 export function stopChoosing(id: string): void {
   if (choosing.get(id) !== undefined) choosing.set(id, undefined);
 }
 
-/** The layers from the stack's bottom up to `target`, in the tab on screen, or why there's no run. */
+/** The layers from the stack's bottom up to `target`, in the tab on screen, or why there are none. */
 function stackUpTo(target: Target): { tab: PullTab; layers: readonly number[] } | string {
   const tab = pullOnScreen();
   if (typeof tab === 'string') return tab;
-  if (target.kind !== 'layer') return 'No layer has focus.';
+  if (target.kind !== 'layer') return 'Go to the stack first';
   const row = rowOf(tab, target.layer);
-  if (!row) return `#${target.layer} isn't in the stack on screen.`;
-  if (row.path.length === 0) return `#${target.layer} isn't a layer of the stack now.`;
-  if (row.path.length < 2) {
-    return `#${target.layer} is the stack's bottom layer, so the stack up to it is that layer alone.`;
-  }
+  if (!row || row.path.length === 0) return STACK_CHANGED;
+  if (row.path.length < 2) return `#${target.layer} is the bottom layer`;
   return { tab, layers: row.path };
 }
 
-/** View the stack up to here as one diff, on a layer's menu. */
+/** What Show layers to here reads on `target`'s menu: "Show layers 1–3". */
+export function upToNamed(target: Target): string | undefined {
+  const found = stackUpTo(target);
+  if (typeof found === 'string') return undefined;
+  return `Show layers 1–${found.layers.length}`;
+}
+
+/** Show layers to here, on a layer's menu. */
 export function upTo(target: Target): void {
   const found = stackUpTo(target);
   if (typeof found === 'string') return;
@@ -313,13 +360,16 @@ export function upTo(target: Target): void {
   openRun(found.tab, found.layers);
 }
 
-/** Whether the stack up to `target` can show as one diff, or why not. */
+/** Whether the layers up to `target` can show as one diff, or why not. */
 export function upToReady(target: Target): true | string {
   const found = stackUpTo(target);
   return typeof found === 'string' ? found : true;
 }
 
-/** Goes back from the run on screen to the layer it was chosen from, as the bar's button does. */
+/**
+ * Goes back from the layers shown as one diff to the layer they were selected from, as the bar's
+ * button does.
+ */
 export function leaveRun(): void {
   const tab = pullOnScreen();
   if (typeof tab === 'string' || !tab.run) return;
@@ -329,8 +379,9 @@ export function leaveRun(): void {
 }
 
 /**
- * `Esc` in the diff: what the diff has open closes first; then, in a run on screen, back to the
- * layer it was chosen from, and anywhere else, focus to the middle view, as `Esc` gives it anywhere.
+ * `Esc` in the diff: what the diff has open closes first; then, with layers shown as one diff, back
+ * to the layer they were selected from, and anywhere else, focus to the middle view, as `Esc` gives
+ * it anywhere.
  */
 export function back(): void {
   if (escapeInMiddle()) return;
@@ -349,8 +400,9 @@ export async function openOnGithub(target: Target): Promise<void> {
 }
 
 /**
- * `gS`: makes the chain through the layer on screen a GitHub stack, or, on a layer of the stack's
- * tree, the chain through that layer, which shows first, so the dialog is over the layer it's for.
+ * `gS`: converts the chain through the layer on screen to a GitHub stack, or, on a layer of the
+ * stack's tree, the chain through that layer, which shows first, so the dialog is over the layer
+ * it's for.
  */
 export async function convertTarget(target: Target): Promise<void> {
   const tab = pullOnScreen();

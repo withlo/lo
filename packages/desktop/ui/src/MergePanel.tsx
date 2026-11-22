@@ -17,7 +17,6 @@ import { Key } from './Key.tsx';
 import { MergeDot, type MergeKind } from './MergeStatus.tsx';
 import { useReturnFocus } from './returnFocus.ts';
 import { SegmentedControl } from './SegmentedControl.tsx';
-import { Switch } from './Switch.tsx';
 
 export interface MergePanelProps {
   open: boolean;
@@ -35,7 +34,7 @@ export interface MergePanelProps {
   verdict: string;
   /** What it merges into and how much is in the way: "into main · 6 things in the way". */
   sub?: ReactNode;
-  /** The key that closes it, shown on its close button. */
+  /** The key that closes it, shown in its close button's tooltip. */
   closeKeys?: readonly string[] | undefined;
   /** The reasons, or the form for the merge: what the panel is about. */
   children?: ReactNode;
@@ -110,7 +109,7 @@ export function MergePanel({
             ref={popup}
             initialFocus={false}
             finalFocus={false}
-            aria-label="Merge"
+            aria-label="Merge panel"
             data-lo-scope={scope}
             data-kind={kind}
             onKeyDown={onKeyDown}
@@ -130,7 +129,9 @@ export function MergePanel({
                 variant="ghost"
                 size="sm"
                 icon
-                aria-label={closeKeys === undefined ? 'Close' : `Close (${closeKeys.join(' ')})`}
+                aria-label="Close merge panel"
+                hint="Close merge panel"
+                hintKeys={closeKeys}
                 onClick={() => onOpenChange(false)}
               >
                 <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
@@ -157,11 +158,16 @@ export function MergePanel({
 
 /** The primary button of the panel's foot: what the merge is called, with its key. */
 export interface MergePrimary {
-  /** Named for the action: "Squash and merge", "Add to merge queue", "Merge 3 layers". */
+  /** Named for the action and the pull request: "Merge #264…", "Add to merge queue…". */
   label: string;
   keys?: readonly string[] | undefined;
   /** It can't be pressed now, as while something is in the way. */
   disabled?: boolean | undefined;
+  /**
+   * Why it can't be pressed now, in a few words, as its tooltip: "Offline". It's dimmed, with the
+   * same words, whatever the reason.
+   */
+  reason?: string | undefined;
   /** `quiet` where merging isn't the next thing, as while auto-merge waits. */
   quiet?: boolean | undefined;
   /**
@@ -178,17 +184,26 @@ export interface MergePrimary {
   onClick?: (() => void) | undefined;
 }
 
+/**
+ * The foot's auto-merge button, named for what it does now: "Turn on auto-merge…", which a dialog
+ * confirms, or "Turn off auto-merge", at once. A change on GitHub, so never a switch.
+ */
+export interface MergeAuto {
+  label: string;
+  keys?: readonly string[] | undefined;
+  /** Why it can't be pressed now, as its tooltip: it's dimmed. */
+  reason?: string | undefined;
+  /** It's being done: the button says `working`, and takes no press until it's done. */
+  busy?: boolean | undefined;
+  /** What it says while busy: "Turning off…". */
+  working?: string | undefined;
+  onClick: () => void;
+}
+
 export interface MergeFootProps {
-  /** "Merge when ready" and its switch, where the pull request can wait for what blocks it. */
-  auto?:
-    | {
-        on: boolean;
-        onChange: (on: boolean) => void;
-        disabled?: boolean | undefined;
-        keys?: readonly string[] | undefined;
-      }
-    | undefined;
-  /** Another button, before the primary: "See the queue". */
+  /** The auto-merge button, where the pull request can wait for what blocks it. */
+  auto?: MergeAuto | undefined;
+  /** Another button, before the primary: "Merge queue". */
   start?: ReactNode;
   /** The method, as a word, where it can't be chosen here: "Squash". */
   method?: ReactNode;
@@ -196,23 +211,28 @@ export interface MergeFootProps {
 }
 
 /**
- * The foot of the merge panel: the switch that merges when ready, with its key, then at the end
- * the method and the one main button, named for what it does.
+ * The foot of the merge panel: the auto-merge button, with its key, then at the end the method and
+ * the one main button, named for what it does. A button that can't be pressed now is dimmed, with
+ * why as its tooltip.
  */
 export function MergeFoot({ auto, start, method, primary }: MergeFootProps) {
+  const off = primary.disabled === true || primary.reason !== undefined;
   return (
     <>
       {auto !== undefined && (
-        <>
-          <Switch
-            checked={auto.on}
-            onCheckedChange={auto.onChange}
-            disabled={auto.disabled}
-            aria-label="Merge when ready"
-          />
-          <span className={auto.on ? 'text-fg' : undefined}>Merge when ready</span>
+        <Button
+          variant="secondary"
+          busy={auto.busy ?? false}
+          working={auto.working}
+          disabled={auto.reason !== undefined}
+          hint={auto.reason ?? null}
+          onClick={() => {
+            if (auto.reason === undefined) auto.onClick();
+          }}
+        >
+          {auto.label}
           {auto.keys && <Key keys={auto.keys} decorative />}
-        </>
+        </Button>
       )}
       {start}
       <span className="flex-1" />
@@ -221,9 +241,11 @@ export function MergeFoot({ auto, start, method, primary }: MergeFootProps) {
         variant={primary.quiet ? 'secondary' : 'primary'}
         busy={primary.busy}
         working={primary.working}
-        aria-disabled={primary.disabled || undefined}
+        disabled={primary.reason !== undefined}
+        hint={primary.reason ?? null}
+        aria-disabled={off || undefined}
         onClick={() => {
-          if (!primary.disabled) primary.onClick?.();
+          if (!off) primary.onClick?.();
         }}
       >
         {primary.label}
@@ -231,7 +253,7 @@ export function MergeFoot({ auto, start, method, primary }: MergeFootProps) {
           <Key
             keys={primary.keys}
             decorative
-            className={primary.quiet || primary.disabled ? undefined : 'text-on-accent'}
+            className={primary.quiet || off ? undefined : 'text-on-accent'}
           />
         )}
       </Button>

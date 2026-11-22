@@ -282,6 +282,12 @@ export interface ComposerEvents {
 }
 
 /** A comment box's handle. */
+/** How a box held as text, not as a card, shows. */
+export interface HeldText {
+  /** What it says where it has no text: "No summary". */
+  readonly empty: string;
+}
+
 export interface Composer {
   /** The text so far. */
   readonly text: string;
@@ -316,8 +322,11 @@ export interface Composer {
    * shows only its `sent` part, the comment as a card, in the room it took: it's as tall as it
    * was. `Esc` in it then leaves it where it is, and gives focus back to its line. `false` lets it
    * go, and the box is back as it was, with its text.
+   *
+   * Held with `text`, as a review's summary is while the review is sent, the box stays as it was
+   * written, in the room it took, head and foot too: only its text is held, read-only and muted.
    */
-  hold(on: boolean): void;
+  hold(on: boolean, text?: HeldText): void;
   /**
    * Closes the box, as after it was sent: in a code view, taking what comes under its line next as
    * what was sent, at once. On screen, the box stays as it is, held, the comment on it, until the

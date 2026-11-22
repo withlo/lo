@@ -1,6 +1,7 @@
 // The review feature in the window: `⌘⏎`, which opens the submit dialog on the pull request on
-// screen, the dialog, the status bar's item for your pending review, and the banner that says when
-// it sits on another revision than the one on screen. What it knows of each view comes from main:
+// screen, the dialog, the header's "Submit review…" beside the merge status, the status bar's item
+// for your pending review, and the banner that says when it sits on another revision than the one
+// on screen. What it knows of each view comes from main:
 // your pending review from the comments feature, its revisions from the revisions feature, and how
 // submitting stands from this one.
 
@@ -9,13 +10,13 @@ import { createElement } from 'react';
 
 import type { WindowFeature } from '../../../window/features.ts';
 import { defineView } from '../../../window/slots.tsx';
-import { banners, dialogs, status } from '../../tab/window/shared.ts';
+import { banners, dialogs, headerStatus, status } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
 import { heard, openDialog, pullOnScreen, saveNow } from './actions.ts';
 import { comments, main, revisions } from './main.ts';
 import { pendingDetail } from './model.ts';
 import { OtherRevisionBanner, otherRevisionSwitch } from './OtherRevision.tsx';
-import { PendingItem } from './Status.tsx';
+import { PendingItem, SubmitButton } from './Status.tsx';
 import { pendings, takeReview, takeRevisions } from './store.ts';
 import { SubmitDialog } from './SubmitDialog.tsx';
 
@@ -43,6 +44,12 @@ export default {
       id: 'review.submit',
       order: 40,
       render: () => createElement(SubmitDialog),
+    }),
+    // After the merge status.
+    defineView(headerStatus, {
+      id: 'review.button',
+      order: 20,
+      render: ({ tab }) => createElement(SubmitButton, { tab }),
     }),
     defineView(status, {
       id: 'review.pending',

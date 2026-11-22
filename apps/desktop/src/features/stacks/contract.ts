@@ -6,8 +6,8 @@
 // run of layers, each sitting on the one before, shows as one diff in a view of its own, which main
 // makes once the window has chosen it.
 //
-// And making a chain a GitHub stack: main plans it and keeps the plan under a key, the window shows
-// it and confirms the key, and main sends the changes, saying how they go on `conversion`.
+// And converting a chain to a GitHub stack: main plans it and keeps the plan under a key, the window
+// shows it and confirms the key, and main sends the changes, saying how they go on `conversion`.
 
 import { z } from 'zod';
 
@@ -105,21 +105,12 @@ export type Row = z.output<typeof row>;
  *
  * - `github`: which layers are a GitHub stack, in a stack that isn't one GitHub stack;
  * - `busy`: the repository has more open pull requests than Lo reads;
- * - `merged`: some merged pull requests weren't looked up yet;
- * - `rulesets`: the repository's rulesets couldn't be read;
- * - `cycle`: pull requests sat on each other, and Lo put one on its own base;
- * - `needsRebase`: a layer sits on a squash-merged pull request;
+ * - `merged`: some merged pull requests are still being looked up;
+ * - `mergedFailed`: looking up merged pull requests failed;
+ * - `cycle`: pull requests are based on each other, and Lo put one on its own base;
  * - `start`: the layer on screen couldn't be compared with the layer below it.
  */
-export const noteKind = z.enum([
-  'github',
-  'busy',
-  'merged',
-  'rulesets',
-  'cycle',
-  'needsRebase',
-  'start',
-]);
+export const noteKind = z.enum(['github', 'busy', 'merged', 'mergedFailed', 'cycle', 'start']);
 export type NoteKind = z.output<typeof noteKind>;
 
 export const note = z.strictObject({ kind: noteKind, text: z.string() });
@@ -149,8 +140,8 @@ export type Found = z.output<typeof found>;
  *   when the pull request is in a GitHub stack, or when it needs a rebase;
  * - `stack`: the root branch its bottom layer sits on; whether every layer is in one GitHub stack
  *   (`githubStack`), which its head then says in place of how its layers were found (`found`,
- *   `null` for a layer alone); its rows and its notes; and `callout`, what the offer to make it a
- *   GitHub stack says, while Lo could make the chain through the layer on screen one.
+ *   `null` for a layer alone); its rows and its notes; and `callout`, the line the offer to convert
+ *   it to a GitHub stack says, while Lo could convert the chain through the layer on screen.
  */
 export const stackView = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('unknown') }),
@@ -169,9 +160,9 @@ export type StackView = z.output<typeof stackView>;
 
 /**
  * Where the layer on screen's diff starts, worked out after its diff was drawn, which a banner
- * offers rather than moving what's on screen: what's so ("#84's diff includes #83's changes"), the
- * button's words ("Show only #84's"), and the commit the button compares the layer with, `null` for
- * its base branch.
+ * offers rather than moving what's on screen: what's so ("This diff includes #83’s changes"), the
+ * button's words ("Hide #83’s changes"), and the commit the button compares the layer with, `null`
+ * for its base branch.
  */
 export const offer = z.strictObject({
   title: z.string(),
@@ -220,7 +211,8 @@ export type Change = z.output<typeof change>;
  * - `failed`: GitHub refused it, or it failed, and it wasn't done;
  * - `unknown`: GitHub's answer was lost, so it may have been done;
  * - `left`: it was changed elsewhere since, so Lo left it;
- * - `skipped`: never sent, since what came before it stopped.
+ * - `skipped`: never sent, since what came before it stopped; or, for a stack step whose answer
+ *   was lost, found by undoing not to have been made, as its `detail` says.
  */
 export const changeStatus = z.enum([
   'todo',
@@ -235,8 +227,10 @@ export const changeStatus = z.enum([
 export type ChangeStatus = z.output<typeof changeStatus>;
 
 /**
- * A change, as the dialog lists it: how it stands, and `detail`, what GitHub said of one that
- * failed, or, for one `left`, the base branch its pull request is on now.
+ * A change, as the dialog lists it: how it stands, and `detail`: for one that failed, or whose
+ * answer was lost, what GitHub said; for one `left`, the base branch its pull request is on now,
+ * or, for an unstack, why it was left; for a stack step `skipped` once undoing found it wasn't
+ * made, that it wasn't: "Not created.".
  */
 export const changeRow = z.strictObject({
   change,
@@ -246,52 +240,45 @@ export const changeRow = z.strictObject({
 export type ChangeRow = z.output<typeof changeRow>;
 
 /**
- * A pull request in a plan: its title as GitHub gives it, its base branch now, and the base branch
- * the plan gives it, or `null` when that doesn't change.
- */
-export const planRow = z.strictObject({
-  number,
-  title: z.string(),
-  base: branch,
-  to: branch.nullable(),
-});
-export type PlanRow = z.output<typeof planRow>;
-
-/**
- * What making a chain a GitHub stack will do, for the reader to confirm before anything is sent:
+ * What converting a chain to a GitHub stack will do, for the reader to confirm before anything is
+ * sent:
  *
  * - `key`: what names the plan, which the window confirms;
- * - `title`, `description`: "Make these 3 PRs a GitHub stack?", the repository and how they were
- *   found;
- * - `heading` and `rows`: "1 · One base branch changes", then each pull request in the path, or
- *   only those added to a GitHub stack, with its base branch and the one it gets;
- * - `stack`: "#4790 → #4797 → #4803, through GitHub's Stacks API.";
- * - `warning`: who sees a diff change, when a base branch changes;
- * - `login`: the account it's done as; `confirm`: its button's label.
+ * - `description`: the repository and how many layers it converts: "e2e · 3 layers";
+ * - `changes`: what it sends, in order, the steps the dialog lists;
+ * - `warning`: what GitHub will show once a layer moves, when one does;
+ * - `login`: the account it's done as.
  */
 export const plan = z.strictObject({
   kind: z.literal('plan'),
   key: planKey,
-  title: z.string(),
   description: z.string(),
-  heading: z.string(),
-  rows: z.array(planRow).min(1),
-  stack: z.string(),
+  changes: z.array(change).min(1),
   warning: z.string().nullable(),
   login: z.string(),
-  confirm: z.string(),
 });
 export type Plan = z.output<typeof plan>;
 
-/** Why a chain can't be made a GitHub stack now: every reason, in words, Lo's own first. */
+/** Why a chain can't be converted to a GitHub stack now: every reason, Lo's own first. */
 export const notOffered = z.strictObject({
   kind: z.literal('notOffered'),
   reasons: z.array(z.string()).min(1),
 });
 export type NotOffered = z.output<typeof notOffered>;
 
-/** A plan for the reader to confirm, or why there's none. */
-export const planned = z.discriminatedUnion('kind', [plan, notOffered]);
+/**
+ * The stack couldn't be checked, so there's no plan: why, in a line, when that's known, and
+ * GitHub's own words.
+ */
+export const unchecked = z.strictObject({
+  kind: z.literal('unchecked'),
+  reason: z.string().nullable(),
+  details: z.string().nullable(),
+});
+export type Unchecked = z.output<typeof unchecked>;
+
+/** A plan for the reader to confirm, why there's none, or why the stack couldn't be checked. */
+export const planned = z.discriminatedUnion('kind', [plan, notOffered, unchecked]);
 export type Planned = z.output<typeof planned>;
 
 /**
@@ -301,26 +288,34 @@ export type Planned = z.output<typeof planned>;
  * - `done`: every change was made;
  * - `failed`: GitHub refused a change, or it failed, and nothing after it was sent;
  * - `stopped`: the reader stopped it, and nothing after the change being sent was sent;
- * - `puttingBack`: putting back the base branches it changed, last first;
+ * - `puttingBack`: undoing the changes it made, last first;
  * - `putBack`: that's over, as its changes say.
  */
 export const phase = z.enum(['running', 'done', 'failed', 'stopped', 'puttingBack', 'putBack']);
 export type Phase = z.output<typeof phase>;
 
-/** Something the dialog says under the changes, with GitHub's page for it, if there is one. */
-export const conversionNote = z.strictObject({ text: z.string(), link: z.string().nullable() });
-export type ConversionNote = z.output<typeof conversionNote>;
+/**
+ * What went wrong, shown above the dialog's buttons: what failed or isn't confirmed, why in a line
+ * when that's known, GitHub's own words, and GitHub's page for what isn't confirmed.
+ */
+export const conversionProblem = z.strictObject({
+  title: z.string(),
+  reason: z.string().nullable(),
+  details: z.string().nullable(),
+  link: z.string().nullable(),
+});
+export type ConversionProblem = z.output<typeof conversionProblem>;
 
 /**
- * Making a chain a GitHub stack, as it goes, for the plan named `key`, asked for from tab `tab`:
+ * Converting a chain to a GitHub stack, as it goes, for the plan named `key`, asked for from tab
+ * `tab`:
  *
- * - `title`, `description`: what's happening, or what happened;
  * - `waitingUntil`: while GitHub has asked Lo to hold off writing, until when;
  * - `stopping`: the reader stopped it, and the change being sent finishes first;
- * - `changes`: the plan's, in order; `putBack`: putting back's, once asked for;
- * - `putBackLabel`: "Put the base branch back", while there's something to put back, else `null`;
- * - `notes`: what Lo left, and why;
- * - `made`: once it's done, what was made, for the toast;
+ * - `changes`: the plan's, in order; `putBack`: undoing's, once asked for;
+ * - `line`: what the dialog says above its buttons once it's over: "Converted to GitHub stack";
+ * - `problem`: what went wrong, if something did;
+ * - `undo`: whether its changes can be undone now;
  * - `version`: higher each time main says it anew, so an older answer never replaces a newer one.
  */
 export const conversion = z.strictObject({
@@ -328,15 +323,13 @@ export const conversion = z.strictObject({
   tab: tabId,
   version: z.number().int().nonnegative(),
   phase,
-  title: z.string(),
-  description: z.string(),
   waitingUntil: time.nullable(),
   stopping: z.boolean(),
   changes: z.array(changeRow),
   putBack: z.array(changeRow),
-  putBackLabel: z.string().nullable(),
-  notes: z.array(conversionNote),
-  made: z.string().nullable(),
+  line: z.string().nullable(),
+  problem: conversionProblem.nullable(),
+  undo: z.boolean(),
 });
 export type ConversionView = z.output<typeof conversion>;
 
@@ -359,9 +352,9 @@ export const contract = defineContract('stacks', {
       reply: reply<void>(),
     },
     /**
-     * Plans making the chain the pull request in tab `id` is in a GitHub stack, from what GitHub
-     * says now, and keeps the plan for the reader to confirm, in place of the tab's last one; or
-     * says why it can't.
+     * Plans converting the chain the pull request in tab `id` is in to a GitHub stack, from what
+     * GitHub says now, and keeps the plan for the reader to confirm, in place of the tab's last
+     * one; or says why it can't.
      */
     plan: { input: z.strictObject({ id: tabId }), reply: reply<Planned>() },
     /**
@@ -376,8 +369,8 @@ export const contract = defineContract('stacks', {
      */
     stop: { input: byKey, reply: reply<void>() },
     /**
-     * Puts back the base branches a conversion that failed or stopped changed, last first, as
-     * `conversion` says.
+     * Undoes the changes a conversion that failed or stopped made, last first, as `conversion`
+     * says.
      */
     putBack: { input: byKey, reply: reply<ConversionView>() },
     /**

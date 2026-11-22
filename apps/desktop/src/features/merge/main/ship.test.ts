@@ -12,6 +12,7 @@ import {
   MergeJobs,
   PullRef,
   type Cached,
+  type GithubErrorDetail,
   type MergeFacts,
   type PollEvent,
   type PollStatus,
@@ -67,6 +68,8 @@ interface Setup {
   facts?: MergeFacts;
   /** What each read afresh gets, in turn; the last again. */
   reads?: MergeFacts[];
+  /** What each read afresh fails with, in place of what it gets. */
+  readFails?: GithubErrorDetail;
   /** Approves, and calls `heard` when GitHub's answer is lost. */
   approve?: (id: string, head: string, heard: () => void) => Promise<Approved>;
   /** How long Lo waits for an approval whose answer was lost to settle: a minute. */
@@ -94,7 +97,7 @@ const RUNNING: Partial<MergeFacts['pullRequest']> = {
 /** #138 sits above #137 in a chain that isn't a GitHub stack, which the panel merges from #137. */
 const CHAIN_ABOVE: Goes = {
   kind: 'where',
-  why: 'Merge #137 first: it’s this chain’s bottom layer.',
+  why: 'Merge #137 first',
   unknown: false,
 };
 
@@ -131,16 +134,24 @@ function setup(options: Setup = {}) {
     },
     readAfresh() {
       marks += 1;
-      const next = reads.length > 1 ? reads.shift()! : reads[0]!;
-      cached = { value: next, fetchedAt: NOW };
+      const failed = options.readFails;
+      if (!failed) {
+        const next = reads.length > 1 ? reads.shift()! : reads[0]!;
+        cached = { value: next, fetchedAt: NOW };
+      }
       queueMicrotask(() => {
         for (const listener of listeners) {
-          listener({ kind: 'read', pull, name: MERGE_FACTS.name });
+          listener(
+            failed
+              ? { kind: 'readFailed', pull, name: MERGE_FACTS.name, error: failed }
+              : { kind: 'read', pull, name: MERGE_FACTS.name },
+          );
         }
       });
       return { read: 1, generation: marks };
     },
     readSince<T>(): SinceMark<Cached<T>> {
+      if (options.readFails) return { kind: 'waiting' };
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- what MERGE_FACTS reads.
       return { kind: 'read', read: cached as Cached<T> };
     },
@@ -293,13 +304,13 @@ function setup(options: Setup = {}) {
 }
 
 describe('the plan', () => {
-  it('says Lo couldn’t check when GitHub takes too long to answer what it asks, and plans nothing', async () => {
+  it('says GitHub didn’t respond when it takes too long to answer what it asks, and plans nothing', async () => {
     const { shipping } = setup({ planWait: 20, goes: () => new Promise(() => undefined) });
     await expect(shipping.plan(ID)).resolves.toEqual({
       kind: 'refused',
       refusal: expect.objectContaining({
         kind: 'late',
-        text: 'GitHub took too long to answer, so Lo couldn’t check #138. Try again.',
+        text: 'GitHub didn’t respond.',
       }),
     });
   });
@@ -314,6 +325,35 @@ describe('the plan', () => {
       summary: true,
       likely: { kind: 'merge', method: 'SQUASH' },
       base: 'main',
+    });
+  });
+
+  it('plans from GitHub read again when asked to, as once a lost approval’s end is known', async () => {
+    const { shipping, marks } = setup({ reads: [approved()] });
+    // From what it read last, your approval is still to go.
+    await expect(shipping.plan(ID)).resolves.toMatchObject({
+      kind: 'plan',
+      plan: { approval: { kind: 'approve' } },
+    });
+    expect(marks()).toBe(0);
+    await expect(shipping.plan(ID, true)).resolves.toMatchObject({
+      kind: 'plan',
+      plan: { approval: { kind: 'alreadyApproved' } },
+    });
+    expect(marks()).toBe(1);
+  });
+
+  it('says GitHub returned an error when a read afresh for the plan fails, with what it said for Details', async () => {
+    const { shipping } = setup({
+      readFails: { kind: 'api', status: 502, message: 'Bad Gateway', errors: [] },
+    });
+    await expect(shipping.plan(ID, true)).resolves.toEqual({
+      kind: 'refused',
+      refusal: expect.objectContaining({
+        kind: 'failed',
+        text: 'GitHub returned an error.',
+        details: expect.stringContaining('Bad Gateway'),
+      }),
     });
   });
 
@@ -368,7 +408,7 @@ describe('the plan', () => {
         kind: 'stop',
         stop: {
           kind: 'where',
-          text: '#137, below #138 in GitHub stack #7, would merge with it. Merge the 2 layers from the merge panel.',
+          text: '#137 would merge too, below it in the GitHub stack.',
         },
       },
       warning: false,
@@ -383,7 +423,7 @@ describe('the plan', () => {
       await expect(setup({ goes: { ...ALONE, together: chain } }).plan()).resolves.toMatchObject({
         likely: {
           kind: 'stop',
-          stop: { kind: 'where', text: expect.stringContaining('layers above it onto main') },
+          stop: { kind: 'where', text: 'The layers above it move once it merges.' },
         },
       });
     }
@@ -436,7 +476,7 @@ describe('the press', () => {
     await expect(shipping.confirm((await plan()).key)).resolves.toMatchObject({
       kind: 'again',
       plan: { likely: { kind: 'stop', stop: { kind: 'where' } } },
-      why: expect.stringContaining('What follows the approval changed.'),
+      why: 'What follows the approval has changed.',
     });
     expect(approvals).toEqual([]);
   });
@@ -575,7 +615,7 @@ describe('running', () => {
         at: 'unsure',
         refusal: {
           kind: 'unknown',
-          text: 'GitHub’s answer to your approval of #138 was lost, and Lo couldn’t tell within a minute whether GitHub took it, so Lo merged nothing. Look at its reviews before you approve it again.',
+          text: 'GitHub didn’t respond.',
         },
       },
     });
@@ -602,7 +642,7 @@ describe('running', () => {
       phase: {
         kind: 'stopped',
         at: 'unsure',
-        refusal: { text: expect.stringContaining('its tab closed') },
+        refusal: { kind: 'unknown', text: 'GitHub didn’t respond.' },
       },
     });
     expect(turns.busy(new PullRef('rozed-dev', 'e2e', 138).repo, [138])).toEqual([]);
@@ -624,7 +664,7 @@ describe('running', () => {
       phase: {
         kind: 'stopped',
         at: 'unsure',
-        refusal: { text: expect.stringContaining('its tab closed') },
+        refusal: { kind: 'unknown', text: 'GitHub didn’t respond.' },
       },
     });
     expect(run.sent).toEqual([]);
@@ -716,7 +756,7 @@ describe('running', () => {
         at: 'ship',
         refusal: {
           kind: 'base',
-          text: '#138 merges into release now, not main, so Lo merged nothing. Merge it from the panel.',
+          text: '#138’s base branch is now release.',
         },
       },
     });
@@ -841,7 +881,7 @@ describe('auto-merge', () => {
         kind: 'stopped',
         refusal: {
           kind: 'base',
-          text: '#138 merges into release now, not main, so Lo merged nothing. Merge it from the panel.',
+          text: '#138’s base branch is now release.',
         },
       }),
     );

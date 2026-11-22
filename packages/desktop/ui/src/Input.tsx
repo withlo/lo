@@ -1,8 +1,10 @@
 import { cva } from 'class-variance-authority';
 import type { ComponentProps } from 'react';
 
+// Read-only, it holds what it was given in the quieter colour, with no hover and no ring: it isn't
+// a field to type in any more.
 const input = cva(
-  'h-control-h w-full min-w-0 rounded-sm border bg-bg-well px-8 text-fg placeholder:text-fg-subtle hover:border-border-strong focus-visible:shadow-ring',
+  'h-control-h w-full min-w-0 rounded-sm border bg-bg-well px-8 text-fg placeholder:text-fg-subtle read-only:text-fg-muted hover:border-border-strong read-only:hover:border-border focus-visible:shadow-ring read-only:focus-visible:shadow-none',
   {
     variants: {
       mono: { true: 'code-text', false: 'text-ui' },

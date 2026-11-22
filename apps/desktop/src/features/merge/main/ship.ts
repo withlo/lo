@@ -27,11 +27,13 @@
 // Electron.
 
 import {
+  GithubError,
   isFullSha,
   MERGE_FACTS,
   PullRef,
   rulesBase,
   type Cached,
+  type GithubErrorDetail,
   type MergeFacts,
   type PollEvent,
   type Poller,
@@ -71,8 +73,10 @@ import type {
 } from '../contract.ts';
 import type { MergeTurn, MergeWrites } from '../service.ts';
 import { afterPushOf } from './auto.ts';
+import { explained, rawOf, type Asker } from './causes.ts';
 import {
   anotherRound,
+  busyText,
   LOOKS,
   offOf,
   offText,
@@ -233,19 +237,28 @@ function refused(refusal: Refusal): { kind: 'refused'; refusal: Refusal } {
 /** A full commit ID, as the contract takes it. */
 const FULL = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
-/** A push after `from`, to `to` when Lo knows it: "See r2 → r3" compares them. */
-function moved(number: number, from: string, to: string | undefined, text: string): Refusal {
-  return own('headMoved', text, {
+/** A push after `from`, to `to` when Lo knows it: "Show r3" shows it. */
+function moved(from: string, to: string | undefined): Refusal {
+  return own('headMoved', 'This revision is out of date.', {
     newer: FULL.test(from) ? { from, to: to !== undefined && FULL.test(to) ? to : null } : null,
   });
 }
 
-/** The account `view` acts as, or why approve and ship can't run from it. */
+/** Who approves and merges for `plan`, as the causes of a failure name them. */
+function askerOf(plan: Pick<ShipPlan, 'login' | 'owner'>): Asker {
+  return { login: plan.login, owner: plan.owner };
+}
+
+/**
+ * The account `view` acts as, or why approve and ship can't run from it: nothing to say where the
+ * command isn't offered, for no pull request, or where the control is busy while the tab works out
+ * its account.
+ */
 function actingOf(view: PullTabInfo | undefined): { login: string } | string {
-  if (!view) return 'There’s no pull request in that tab.';
-  if (view.run) return 'Show a layer to approve and ship it.';
-  if (view.acting === undefined) return 'Lo is still working out which account this tab acts as.';
-  if (view.acting.kind === 'anonymous') return 'Sign in to approve and ship.';
+  if (!view) return '';
+  if (view.run) return 'Show a single layer first';
+  if (view.acting === undefined) return '';
+  if (view.acting.kind === 'anonymous') return 'Sign in to approve and ship';
   return { login: view.acting.login };
 }
 
@@ -258,45 +271,26 @@ function planRefusal(
   switch (planned.kind) {
     case 'incomplete':
       return planned.incomplete === 'checksCutShort'
-        ? own(
-            'checks',
-            `GitHub has over 1,000 checks on #${number}, so Lo can’t tell what they say. Approve and merge it on GitHub.`,
-          )
-        : own(
-            'incomplete',
-            `GitHub left part of what decides #${number}’s merge out of its answer. Lo reads it again; try once it has.`,
-          );
+        ? own('checks', `#${number} has over 1,000 checks`)
+        : own('incomplete', 'GitHub returned an error.');
     case 'headMoved':
-      return moved(
-        number,
-        planned.onScreen,
-        planned.head,
-        `Someone pushed to #${number} since the revision on screen, so Lo approved nothing. See what changed first.`,
-      );
+      return moved(planned.onScreen, planned.head);
     case 'headUnknown':
-      return own(
-        'headUnknown',
-        `GitHub didn’t say which commit #${number} is at, so Lo can’t tell an approval would be of what’s on screen.`,
-      );
+      return own('headUnknown', 'GitHub returned an error.');
     case 'merged':
-      return own('merged', `#${number} is merged.`);
+      return own('merged', `#${number} is already merged`);
     case 'closed':
-      return own('closed', `#${number} is closed.`);
+      return own('closed', `#${number} is closed`);
     case 'draft':
-      return own(
-        'draft',
-        `#${number} is a draft: its author hasn’t said it’s ready. Submit a review if you mean to approve it.`,
-      );
+      return own('draft', 'Draft pull requests can’t merge');
     case 'cannotApprove':
-      return own('cannotApprove', `GitHub doesn’t let ${login} approve #${number}.`);
+      return own('cannotApprove', `${login} can’t approve #${number}`);
     case 'pendingReviewElsewhere':
-      return own(
-        'pendingReviewElsewhere',
-        'Your pending review is on another revision, so it can’t approve the one on screen. Submit it, or show its revision, first.',
-      );
+      return own('pendingReviewElsewhere', 'Submit your pending review first');
+    // Why isn't known: "Try again".
     default:
       planned satisfies never;
-      return own('unknown', 'Lo can’t approve and ship that now.');
+      return own('unknown', '');
   }
 }
 
@@ -366,33 +360,6 @@ function stopOf(stop: Stop, snapshot: MergeSnapshot, facts: MergeFacts, pull: Pu
   }
 }
 
-/** What Lo says of a step that stopped, as the window's fallback. */
-function stopText(stop: ShipStop, number: number, base: string): string {
-  switch (stop.kind) {
-    case 'headMoved':
-      return `Someone pushed to #${number} after the approval, so Lo merged nothing.`;
-    case 'headUnknown':
-      return `GitHub didn’t say which commit #${number} is at, so Lo merged nothing.`;
-    case 'blocked':
-      return `Something waiting won’t fix is in #${number}’s way. The merge panel says what.`;
-    case 'noAutoMerge':
-      return `#${number} waits on something, and GitHub doesn’t let this account turn on auto-merge for it.`;
-    case 'noPermission':
-      return `GitHub doesn’t let this account merge into ${base}.`;
-    case 'noMethod':
-      return 'The repository allows no merge method.';
-    case 'incomplete':
-      return stop.incomplete === 'checksCutShort'
-        ? `GitHub has over 1,000 checks on #${number}, so Lo merged nothing. Merge it on GitHub.`
-        : `GitHub left part of what decides #${number}’s merge out of its answer, so Lo merged nothing.`;
-    case 'where':
-      return stop.text;
-    default:
-      stop satisfies never;
-      return 'Lo stopped.';
-  }
-}
-
 /** The merge write a step sends, if it sends one. */
 function kindOf(step: Ship | ShipStep): PlanKind | undefined {
   switch (step.kind) {
@@ -409,27 +376,6 @@ function kindOf(step: Ship | ShipStep): PlanKind | undefined {
     default:
       step satisfies never;
       return undefined;
-  }
-}
-
-/** What a step does, in a few words: "merge with a squash", "join the merge queue". */
-function stepWords(step: Ship): string {
-  switch (step.kind) {
-    case 'merge':
-      return `a ${step.method === 'MERGE' ? 'merge commit' : step.method.toLowerCase()}`;
-    case 'enqueue':
-      return 'joining the merge queue';
-    case 'autoMerge':
-      return 'auto-merge';
-    case 'enqueueWhenReady':
-      return 'merging when ready';
-    case 'autoMergeAlreadyOn':
-    case 'alreadyQueued':
-    case 'stop':
-      return 'nothing more';
-    default:
-      step satisfies never;
-      return 'something else';
   }
 }
 
@@ -461,51 +407,44 @@ function approvalShape(approval: ShipApproval): string {
  * with it, and leaves the merge to the panel: you approve only what's on screen, so it merges a
  * pull request alone or a GitHub stack's bottom layer, and nothing with it. Nothing for one alone.
  */
-function notAlone(together: Together | null, number: number): string | undefined {
+function notAlone(together: Together | null): string | undefined {
   switch (together?.kind) {
     case undefined:
       return undefined;
-    case 'stack': {
-      const { below } = together;
-      return `${numbers(below.map((layer) => layer.number))}, below #${number} in GitHub stack #${together.stack}, would merge with it. Merge the ${below.length + 1} layers from the merge panel.`;
-    }
-    case 'chain': {
-      const root = together.before?.to ?? together.after[0]?.to;
-      const moves =
-        root === undefined
-          ? 'Lo moves the layers above it once it has merged'
-          : `Lo moves the layers above it onto ${root} once it has merged`;
-      return `#${number} is the bottom layer of a chain that isn’t a GitHub stack, and ${moves}. Merge it from the merge panel.`;
-    }
+    case 'stack':
+      return `${numbers(together.below.map((layer) => layer.number))} would merge too, below it in the GitHub stack.`;
+    case 'chain':
+      return 'The layers above it move once it merges.';
+    // The button is "Merge panel".
     default:
       together satisfies never;
-      return 'Merge it from the merge panel.';
+      return '';
   }
 }
 
 /** What changed between two plans the confirmation would name, in words, or nothing. */
 function changed(was: ShipPlan, now: ShipPlan): string | undefined {
-  if (was.head !== now.head) return 'The revision on screen changed.';
+  if (was.head !== now.head) return 'The revision has changed.';
   if (approvalShape(was.approval) !== approvalShape(now.approval)) {
     switch (now.approval.kind) {
       case 'alreadyApproved':
-        return 'Your latest review approves it already.';
+        return 'Your latest review already approves it.';
       case 'reapproveDismissed':
-        return 'Your approval of it was dismissed.';
+        return 'Your approval was dismissed.';
       case 'submitPending':
-        return 'Your pending review changed.';
+        return 'Your pending review has changed.';
       case 'approve':
       case 'ownPullRequest':
-        return 'What Lo approves changed.';
+        return 'What’s approved has changed.';
       default:
         now.approval satisfies never;
-        return 'What Lo approves changed.';
+        return 'What’s approved has changed.';
     }
   }
-  if (was.summary !== now.summary) return 'Your summary changed.';
-  if (was.base !== now.base) return `#${now.number} merges into ${now.base} now.`;
-  if (shape(was.likely) !== shape(now.likely)) return 'What follows the approval changed.';
-  if (was.warning !== now.warning) return 'What a push before it merges would do changed.';
+  if (was.summary !== now.summary) return 'Your summary has changed.';
+  if (was.base !== now.base) return `#${now.number}’s base branch is now ${now.base}.`;
+  if (shape(was.likely) !== shape(now.likely)) return 'What follows the approval has changed.';
+  if (was.warning !== now.warning) return 'What a pushed commit would do has changed.';
   return undefined;
 }
 
@@ -532,16 +471,18 @@ export class Shipping {
   }
 
   /**
-   * Plans approve and ship for view `id`, from what GitHub said last, and keeps it for the reader
-   * to confirm, in place of the view's last plan; or says why there's none. What it asks GitHub
-   * takes {@link ShippingOptions.planWait} at most, as a read does: then Lo says it couldn't check.
+   * Plans approve and ship for view `id`, from what GitHub said last, or with `afresh`, from what
+   * it says now, read again, and keeps it for the reader to confirm, in place of the view's last
+   * plan; or says why there's none. What it asks GitHub takes {@link ShippingOptions.planWait} at
+   * most, as a read does: then Lo says it couldn't check.
    */
-  async plan(id: string): Promise<ShipPlanned> {
-    if (this.#stopped) return refused(own('stopped', 'Lo is quitting.'));
+  async plan(id: string, afresh = false): Promise<ShipPlanned> {
+    // Never read: the window is closing.
+    if (this.#stopped) return refused(own('stopped', ''));
     const view = this.#options.view(id);
     const acting = actingOf(view);
     if (typeof acting === 'string' || !view) {
-      return refused(own('account', typeof acting === 'string' ? acting : 'No tab.'));
+      return refused(own('account', typeof acting === 'string' ? acting : ''));
     }
     const pull = new PullRef(view.repository.owner, view.repository.name, view.number);
     const checking = new AbortController();
@@ -549,17 +490,12 @@ export class Shipping {
     let planned: PressPlan<Kept> | { kind: 'refused'; refusal: Refusal };
     try {
       planned = await untilAborted(
-        this.#planFor(id, acting.login, pull, checking.signal),
+        this.#planFor(id, acting.login, pull, afresh, checking.signal),
         checking.signal,
       );
     } catch (error) {
       if (!checking.signal.aborted) throw error;
-      return refused(
-        own(
-          'late',
-          `GitHub took too long to answer, so Lo couldn’t check #${view.number}. Try again.`,
-        ),
-      );
+      return refused(own('late', 'GitHub didn’t respond.'));
     } finally {
       clearTimeout(timer);
     }
@@ -568,11 +504,15 @@ export class Shipping {
     return { kind: 'plan', plan: planned.plan.plan };
   }
 
-  /** What `plan` plans for view `id`'s pull request `pull`, as `login`; given up on `signal`. */
+  /**
+   * What `plan` plans for view `id`'s pull request `pull`, as `login`, read again with `afresh`;
+   * given up on `signal`.
+   */
   async #planFor(
     id: string,
     login: string,
     pull: PullRef,
+    afresh: boolean,
     signal: AbortSignal,
   ): Promise<PressPlan<Kept> | { kind: 'refused'; refusal: Refusal }> {
     let poller: MergingPoller;
@@ -582,14 +522,19 @@ export class Shipping {
       return refused(own('account', describe(error)));
     }
     const off = offOf(poller);
-    if (off) return refused(own(off.kind, offText(off)));
+    if (off) return refused(own(off.kind, offText(off, login)));
+    // The control is busy until the head is on screen, and its merge status read.
     const head = this.#options.headOnScreen(id) ?? '';
-    if (!FULL.test(head))
-      return refused(own('unread', `Lo hasn’t shown #${pull.number}’s head yet.`));
-    const cached = poller.cachedRead(pull, MERGE_FACTS) ?? (await poller.mergeFacts(pull));
-    if (!cached) {
-      return refused(own('unread', `Lo hasn’t read whether #${pull.number} can merge yet.`));
+    if (!FULL.test(head)) return refused(own('unread', ''));
+    const cached = afresh
+      ? await readAfresh(poller, pull, this.#options.readWait ?? 20_000, signal, () => this.#now())
+      : (poller.cachedRead(pull, MERGE_FACTS) ?? (await poller.mergeFacts(pull)));
+    if (cached && 'why' in cached) {
+      // Not read: Lo is still finding out, as it is with nothing read yet.
+      if (cached.why === '') return refused(own('unread', ''));
+      return refused(own('failed', cached.why, { details: cached.details }));
     }
+    if (!cached) return refused(own('unread', ''));
     return this.#planOf(id, login, pull, poller, cached.value, signal);
   }
 
@@ -601,16 +546,13 @@ export class Shipping {
   async confirm(key: string): Promise<ShipConfirmed> {
     const kept = this.#kept.get(key);
     if (!kept) {
-      return refused(
-        this.#used.has(key)
-          ? own('used', 'That was confirmed already.')
-          : own('gone', 'Lo no longer has that plan. Approve and ship it again.'),
-      );
+      // Confirmed already, the primary is busy; a plan Lo no longer has has no known cause.
+      return refused(this.#used.has(key) ? own('used', '') : own('gone', ''));
     }
     // A plan runs once, whatever comes of it.
     this.#kept.delete(key);
     this.#used.add(key);
-    if (this.#stopped) return refused(own('stopped', 'Lo is quitting.'));
+    if (this.#stopped) return refused(own('stopped', ''));
     const checking = new AbortController();
     this.#checking.set(key, checking);
     try {
@@ -618,22 +560,18 @@ export class Shipping {
       try {
         checked = await this.#guard(kept, checking.signal);
       } catch (error) {
-        if (checking.signal.aborted)
-          return refused(own('cancelled', 'Cancelled. Nothing was sent.'));
+        // Cancelled, the dialog closes.
+        if (checking.signal.aborted) return refused(own('cancelled', ''));
         this.#options.log(`${kept.pull.toString()}: ${describe(error)}`);
         return refused(
-          own('failed', `Lo couldn’t check it, so it sent nothing: ${describe(error)}`),
+          own('failed', explained(error, askerOf(kept.plan)), { details: rawOf(error) }),
         );
       }
       if (checked.kind !== 'run') return checked;
       const { run } = checked;
       if (checking.signal.aborted || this.#stopped) {
         run.turn?.give();
-        return refused(
-          this.#stopped
-            ? own('stopped', 'Lo is quitting.')
-            : own('cancelled', 'Cancelled. Nothing was sent.'),
-        );
+        return refused(this.#stopped ? own('stopped', '') : own('cancelled', ''));
       }
       this.#runs.add(run);
       void this.#run(run);
@@ -696,7 +634,7 @@ export class Shipping {
         : await this.#options.merging.goesAs(kind, poller, login, pull, facts, signal);
     // Where Lo can't tell yet, it approves nothing: a read again may settle it.
     if (goes?.kind === 'unread' || (goes?.kind === 'where' && goes.unknown)) {
-      return refused(own(goes.kind, goes.why));
+      return refused(own(goes.kind, goes.why, { details: goes.details }));
     }
     return {
       kind: 'plan',
@@ -727,12 +665,7 @@ export class Shipping {
     }
     const summary = this.#options.summary(id);
     if (summary === 'uploading' && approves(planned.plan.approval)) {
-      return refused(
-        own(
-          'uploading',
-          'Your summary holds a file that may not be in yet. Submit your review from its dialog.',
-        ),
-      );
+      return refused(own('uploading', 'A file in your summary is still uploading.'));
     }
     return { kind: 'core', core: planned.plan, snapshot, summary };
   }
@@ -753,7 +686,7 @@ export class Shipping {
       goes?.kind === 'where'
         ? goes.why
         : goes?.kind === 'goes'
-          ? notAlone(goes.together, pull.number)
+          ? notAlone(goes.together)
           : undefined;
     if (where !== undefined) likely = { kind: 'stop', stop: { kind: 'where', text: where } };
     const plan: ShipPlan = {
@@ -832,19 +765,16 @@ export class Shipping {
     const why = changed(plan, now.plan);
     if (why !== undefined) {
       this.#keep(now);
-      return {
-        kind: 'again',
-        plan: now.plan,
-        why: `${why} Check what it does now, then confirm.`,
-      };
+      return { kind: 'again', plan: now.plan, why };
     }
+    // Its button reads "Merging…".
     if (this.#options.turns.busy(pull.repo, [pull.number]).length > 0) {
-      return refused(own('busy', `Lo is already merging #${plan.number}.`));
+      return refused(own('busy', ''));
     }
     const converting = this.#converting(pull);
     if (converting) return refused(converting);
     const turn = this.#options.turns.take(pull.repo, [pull.number]);
-    if ('busy' in turn) return refused(own('busy', `Lo is already merging #${turn.busy}.`));
+    if ('busy' in turn) return refused(own('busy', busyText(turn.busy, plan.number)));
     // What the checks found at their start, once more, right before it runs.
     const still = this.#holds(plan, pull, poller);
     if (still) {
@@ -872,18 +802,16 @@ export class Shipping {
   /** Why the plan can't go from its tab now: it's closed, or acts as another account, or as none. */
   #tabHolds(plan: ShipPlan, pull: PullRef): Refusal | undefined {
     const view = this.#options.view(plan.id);
+    // Its tab is closed: nothing is left to show why on.
     if (
       !view ||
       !new PullRef(view.repository.owner, view.repository.name, view.number).equals(pull)
     ) {
-      return own(
-        'closed',
-        `#${plan.number}’s tab is closed. Approve and ship it from there again.`,
-      );
+      return own('closed', '');
     }
     const acting = actingOf(view);
     if (typeof acting === 'string' || !sameLogin(acting.login, plan.login)) {
-      return own('account', `The tab no longer acts as ${plan.login}. Approve and ship it again.`);
+      return own('account', 'This tab’s account has changed.');
     }
     return undefined;
   }
@@ -897,24 +825,16 @@ export class Shipping {
     if (tab) return tab;
     const off = offOf(poller);
     if (off) {
-      return own(off.kind, offText(off), { until: off.kind === 'paused' ? off.until : null });
+      return own(off.kind, offText(off, plan.login), {
+        until: off.kind === 'paused' ? off.until : null,
+      });
     }
     const head = this.#options.headOnScreen(plan.id) ?? '';
-    if (!sameCommit(head, plan.head)) {
-      return own(
-        'screen',
-        'The revision on screen changed since you asked, so Lo approved nothing. Approve and ship it again.',
-      );
-    }
+    if (!sameCommit(head, plan.head)) return own('screen', 'The revision has changed.');
     // The tab knows of a newer push than the one on screen.
     const latest = this.#options.view(plan.id)?.latest;
     if (latest !== undefined && !sameCommit(latest, plan.head)) {
-      return moved(
-        plan.number,
-        plan.head,
-        latest.toLowerCase(),
-        `#${plan.number} has a newer push than the one on screen, so Lo approved nothing. See what changed first.`,
-      );
+      return moved(plan.head, latest.toLowerCase());
     }
     return undefined;
   }
@@ -923,10 +843,7 @@ export class Shipping {
   #converting(pull: PullRef): Refusal | undefined {
     const converting = this.#options.converting(pull.repo);
     if (!converting?.prs.includes(pull.number)) return undefined;
-    return own(
-      'converting',
-      `Lo is making ${numbers(converting.prs)} a GitHub stack. Approve and ship once that’s done.`,
-    );
+    return own('converting', 'GitHub is still changing this stack');
   }
 
   /** Runs `run` from its approval on, then gives back its turn, unless it handed it on. */
@@ -940,7 +857,7 @@ export class Shipping {
       this.#options.log(`${run.pull.toString()}: ${describe(error)}`);
       this.#stopAt(
         run,
-        own('failed', `Lo couldn’t go on: ${describe(error)} Nothing more was sent.`),
+        own('failed', explained(error, askerOf(run.plan)), { details: rawOf(error) }),
       );
     } finally {
       run.turn?.give();
@@ -960,38 +877,23 @@ export class Shipping {
     if (!approves(run.core.approval)) return 'go';
     this.#phase(run, { kind: 'approving' });
     const answer = await this.#approval(run);
-    const { number } = run.plan;
     if (this.#stopped) return 'stopped';
     switch (answer.kind) {
       case 'unsettled':
-        run.unsure = 'GitHub’s answer was lost.';
-        this.#stopAt(
-          run,
-          own(
-            'unknown',
-            answer.why === 'closed'
-              ? `GitHub’s answer to your approval of #${number} was lost, and its tab closed before Lo could tell whether GitHub took it, so Lo merged nothing. Look at its reviews before you approve it again.`
-              : `GitHub’s answer to your approval of #${number} was lost, and Lo couldn’t tell within a minute whether GitHub took it, so Lo merged nothing. Look at its reviews before you approve it again.`,
-          ),
-        );
+        // Under "Approval not confirmed", whether its tab closed or a minute went by.
+        run.unsure = '';
+        this.#stopAt(run, own('unknown', 'GitHub didn’t respond.'));
         return 'stopped';
       case 'approved':
         run.approved = true;
         this.#publish(run);
         return 'go';
       case 'moved':
-        this.#stopAt(
-          run,
-          moved(
-            number,
-            run.plan.head,
-            answer.head,
-            `Someone pushed to #${number} since the revision on screen, so Lo approved nothing. See what changed first.`,
-          ),
-        );
+        this.#stopAt(run, moved(run.plan.head, answer.head));
         return 'stopped';
+      // The review refusal's reason, alone.
       case 'refused':
-        this.#stopAt(run, own('notApproved', `${answer.why} Nothing was approved or merged.`));
+        this.#stopAt(run, own('notApproved', answer.why));
         return 'stopped';
       case 'unknown':
         // It may be on GitHub: what the pull request shows settles it.
@@ -1058,14 +960,8 @@ export class Shipping {
         () => this.#now(),
       );
       if (this.#stopped) return false;
-      if (typeof read === 'string') {
-        this.#stopAt(
-          run,
-          own(
-            'unread',
-            `Lo couldn’t read #${plan.number} again after approving, so it merged nothing: ${read}`,
-          ),
-        );
+      if ('why' in read) {
+        this.#stopAt(run, own('unread', read.why, { details: read.details }));
         return false;
       }
       const snapshot = this.#snapshotOf(plan.id, pull, read.value, plan.head);
@@ -1087,14 +983,8 @@ export class Shipping {
         this.#stopAt(
           run,
           run.unsure === undefined
-            ? own(
-                'notShown',
-                `GitHub doesn’t show your approval of #${plan.number} yet, so Lo merged nothing. Merge it from the panel once it does.`,
-              )
-            : own(
-                'unknown',
-                `Lo can’t tell whether GitHub took your approval: ${run.unsure} #${plan.number} doesn’t show it yet, so Lo merged nothing. Look at its reviews before you approve it again.`,
-              ),
+            ? own('notShown', 'GitHub doesn’t show your approval yet.')
+            : own('unknown', 'GitHub didn’t respond.'),
         );
         return false;
       }
@@ -1141,13 +1031,7 @@ export class Shipping {
         return after;
       }
       if (round === LOOKS) {
-        this.#stopAt(
-          run,
-          own(
-            'changing',
-            `What GitHub says of #${run.plan.number} kept changing while Lo checked it, so Lo merged nothing. Merge it from the panel.`,
-          ),
-        );
+        this.#stopAt(run, own('changing', `#${run.plan.number} changed while it was checked.`));
         return undefined;
       }
       run.facts = latest;
@@ -1169,18 +1053,15 @@ export class Shipping {
     }
     if (!asAsked(core, now)) {
       const text = unwarnedAutoMerge(core, now)
-        ? `#${plan.number} can’t merge yet, so Lo would turn on auto-merge, and the confirmation didn’t say a push could then merge with your approval. Turn it on from the merge panel if you mean to.`
-        : `GitHub now allows ${stepWords(now)} for #${plan.number}, which isn’t what you confirmed. Merge it from the panel.`;
+        ? `#${plan.number} can’t merge yet.`
+        : 'What follows the approval has changed.';
       this.#stopAt(run, own('notAsked', text));
       return;
     }
     switch (step.kind) {
+      // The stop's kind says why, which the window words.
       case 'stop':
-        this.#stopAt(
-          run,
-          own(step.stop.kind, stopText(step.stop, plan.number, plan.base)),
-          step.stop,
-        );
+        this.#stopAt(run, own(step.stop.kind, ''), step.stop);
         return;
       case 'alreadyQueued':
       case 'autoMergeAlreadyOn':
@@ -1215,20 +1096,14 @@ export class Shipping {
     // whichever way the write comes to be sent.
     const base = rulesBase(facts);
     if (base !== plan.base) {
-      this.#stopAt(
-        run,
-        own(
-          'base',
-          `#${plan.number} merges into ${base} now, not ${plan.base}, so Lo merged nothing. Merge it from the panel.`,
-        ),
-      );
+      this.#stopAt(run, own('base', `#${plan.number}’s base branch is now ${base}.`));
       return;
     }
     if (goes.kind === 'unread') {
-      this.#stopAt(run, own('unread', goes.why));
+      this.#stopAt(run, own('unread', goes.why, { details: goes.details }));
       return;
     }
-    const where = goes.kind === 'where' ? goes.why : notAlone(goes.together, plan.number);
+    const where = goes.kind === 'where' ? goes.why : notAlone(goes.together);
     if (where !== undefined) {
       this.#stopAt(run, own('where', where), { kind: 'where', text: where });
       return;
@@ -1237,7 +1112,9 @@ export class Shipping {
     if (off) {
       this.#stopAt(
         run,
-        own(off.kind, offText(off), { until: off.kind === 'paused' ? off.until : null }),
+        own(off.kind, offText(off, plan.login), {
+          until: off.kind === 'paused' ? off.until : null,
+        }),
       );
       return;
     }
@@ -1248,7 +1125,7 @@ export class Shipping {
     }
     const turn = run.turn;
     if (!turn || this.#stopped) {
-      this.#stopAt(run, own('stopped', 'Lo is quitting.'));
+      this.#stopAt(run, own('stopped', ''));
       return;
     }
     const merge: MergePlan = {
@@ -1309,17 +1186,16 @@ export class Shipping {
     if (run.again || this.#stopped) return;
     run.again = true;
     const { number } = run.plan;
-    const instead = (at: Run, why: string) =>
+    // GitHub wouldn't turn on auto-merge, as it can merge now; where merging then didn't go either,
+    // the reason is why that didn't. The button is "Merge panel".
+    const instead = (at: Run, why: string, details?: string) =>
       this.#stopAt(
         at,
-        own(
-          'canMergeNow',
-          `GitHub wouldn’t turn on auto-merge, as #${number} can merge now. ${why}`,
-        ),
+        own('canMergeNow', why === '' ? `#${number} can merge now.` : why, { details }),
       );
     const turn = this.#options.turns.take(run.pull.repo, [run.pull.number]);
     if ('busy' in turn) {
-      instead(run, 'Lo is already merging it. Merge it from the panel.');
+      instead(run, busyText(turn.busy, number));
       return;
     }
     // A run of its own, holding its own turn: the first may not have given back its own yet.
@@ -1334,8 +1210,8 @@ export class Shipping {
         () => this.#now(),
       );
       if (this.#stopped) return;
-      if (typeof read === 'string') {
-        instead(next, `Lo couldn’t read it again: ${read} Merge it from the panel.`);
+      if ('why' in read) {
+        instead(next, read.why, read.details);
         return;
       }
       next.facts = read.value;
@@ -1345,13 +1221,13 @@ export class Shipping {
       // Only the merge itself, as it was confirmed.
       const { step } = after;
       if (!asAsked(next.core, after.now) || (step.kind !== 'merge' && step.kind !== 'enqueue')) {
-        instead(next, 'It changed since, so Lo merged nothing. Merge it from the panel.');
+        instead(next, `#${number} changed while it was checked.`);
         return;
       }
       this.#send(next, step, after);
     } catch (error) {
       this.#options.log(`${next.pull.toString()}: ${describe(error)}`);
-      instead(next, `Lo couldn’t go on: ${describe(error)} Merge it from the panel.`);
+      instead(next, explained(error, askerOf(next.plan)));
     } finally {
       next.turn?.give();
       next.turn = undefined;
@@ -1408,25 +1284,19 @@ function unweighed(plan: ShipPlan, weighed: Exclude<Weighed<Kept>, { kind: 'plan
   switch (weighed.kind) {
     case 'refused':
       return weighed.refusal;
+    // Its tab is closed: nothing is left to show why on.
     case 'closed':
-      return own('closed', `#${number}’s tab is closed. Approve and ship it from there again.`);
+      return own('closed', '');
     case 'unread':
-      return own('unread', `Lo couldn’t read #${number} again, so it sent nothing: ${weighed.why}`);
+      return own('unread', weighed.why);
     case 'moved':
-      return moved(
-        number,
-        weighed.from,
-        weighed.to.toLowerCase(),
-        `Someone pushed to #${number} since the revision on screen, so Lo approved nothing. See what changed first.`,
-      );
+      return moved(weighed.from, weighed.to.toLowerCase());
     case 'changing':
-      return own(
-        'changing',
-        `What GitHub says of #${number} kept changing while Lo checked it, so Lo sent nothing. Approve and ship it again.`,
-      );
+      return own('changing', `#${number} changed while it was checked.`);
+    // Why isn't known: "Try again".
     default:
       weighed satisfies never;
-      return own('unknown', 'Lo can’t approve and ship that now.');
+      return own('unknown', '');
   }
 }
 
@@ -1462,6 +1332,12 @@ function untilAborted<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
+/** Why a read afresh didn't come: no cause to give for `why` of `''`; what GitHub said for Details. */
+export interface Unread {
+  readonly why: string;
+  readonly details?: string | undefined;
+}
+
 /**
  * What decides `pull`'s merge, read afresh now, whatever was read before, or why it couldn't be,
  * within `wait` milliseconds; given up on `signal`.
@@ -1472,40 +1348,46 @@ export async function readAfresh(
   wait: number,
   signal: AbortSignal,
   now: () => number,
-): Promise<Cached<MergeFacts> | string> {
+): Promise<Cached<MergeFacts> | Unread> {
   let mark = poller.readAfresh(pull, MERGE_FACTS);
   if (!mark) {
     // Not kept, as for a pull request no view shows: kept from now, and read.
     await untilAborted(poller.mergeFacts(pull), signal);
     mark = poller.readAfresh(pull, MERGE_FACTS);
   }
-  if (!mark) return 'the read isn’t kept.';
+  // Not kept, or let go of: no cause to give.
+  if (!mark) return { why: '' };
   const deadline = now() + wait;
   for (;;) {
     signal.throwIfAborted();
     const since = poller.readSince(pull, MERGE_FACTS, mark);
     if (since.kind === 'read') return since.read;
-    if (since.kind === 'stale') return 'the read was let go of.';
+    if (since.kind === 'stale') return { why: '' };
     const heard = await nextRead(poller, pull, deadline - now(), signal);
     signal.throwIfAborted();
-    if (heard === 'failed') return 'GitHub didn’t answer it.';
-    if (heard === 'late') return 'GitHub took too long to answer.';
+    if (heard === 'late') return { why: 'GitHub didn’t respond.' };
+    if (heard !== 'read') {
+      return { why: 'GitHub returned an error.', details: rawOf(new GithubError(heard.failed)) };
+    }
   }
 }
 
-/** The next read of `pull`'s merge facts, or why there's none within `wait` milliseconds. */
+/**
+ * The next read of `pull`'s merge facts, or why there's none within `wait` milliseconds: what the
+ * read that failed said, or that none came.
+ */
 function nextRead(
   poller: Pick<Poller, 'onEvent'>,
   pull: PullRef,
   wait: number,
   signal: AbortSignal,
-): Promise<'read' | 'failed' | 'late'> {
+): Promise<'read' | 'late' | { readonly failed: GithubErrorDetail }> {
   return new Promise((resolve) => {
     if (wait <= 0 || signal.aborted) {
       resolve('late');
       return;
     }
-    const done = (how: 'read' | 'failed' | 'late') => {
+    const done = (how: 'read' | 'late' | { readonly failed: GithubErrorDetail }) => {
       clearTimeout(timer);
       stop();
       signal.removeEventListener('abort', given);
@@ -1519,7 +1401,7 @@ function nextRead(
         return;
       }
       if (!event.pull.equals(pull) || event.name !== MERGE_FACTS.name) return;
-      done(event.kind === 'readFailed' ? 'failed' : 'read');
+      done(event.kind === 'readFailed' ? { failed: event.error } : 'read');
     });
   });
 }

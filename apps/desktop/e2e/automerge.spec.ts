@@ -1,9 +1,10 @@
 // Auto-merge and a merge past the rules: Lo, started on the replay server as rozed-bot, on
 // generation 7 of `testing/fixtures/merge.sh`'s pull requests in rozed-dev/e2e, as recorded from the
 // app with writes. `a` in the merge panel opens a confirmation that says what GitHub waits for, and
-// turns auto-merge on once it's confirmed (`app_merge_auto`); with it on, `a` turns it off at once,
-// asking nothing (`app_merge_auto_off`). `⌥⏎` merges past the base branch's rules, which its
-// confirmation lists, only once the pull request's number is typed (`app_merge_override`). GitHub's
+// turns auto-merge on once it's confirmed, saying so in the dialog (`app_merge_auto`); with it on,
+// `a` turns it off at once, asking nothing (`app_merge_auto_off`). `⌥⏎` merges past the base
+// branch's rules, which its confirmation lists, only once the pull request's number is typed
+// (`app_merge_override`). GitHub's
 // refusals are said in the dialog, from derived answers: a repository that doesn't allow auto-merge
 // (`app_merge_auto_not_allowed`), and a pull request its code owner approved since, which nothing
 // blocks then, whose merge the dialog offers in auto-merge's place (`app_merge_auto_now`). An
@@ -102,6 +103,19 @@ async function asks(page: Page, title: string, options: { timeout?: number } = {
 /** The note Lo says at the bottom of the window. */
 const said = (page: Page, text: string) => page.getByRole('status').filter({ hasText: text });
 
+/**
+ * Waits for the dialog to say it's done, `line`, beside "Done", which closes it; no toast says it
+ * while the dialog does.
+ */
+async function done(page: Page, line: string): Promise<void> {
+  await expect(dialog(page).getByRole('status').filter({ hasText: line })).toBeVisible({
+    timeout: MERGING,
+  });
+  await expect(said(page, line)).toHaveCount(1);
+  await page.keyboard.press('Enter');
+  await expect(dialog(page)).toBeHidden();
+}
+
 /** Lo's writes of auto-merge so far, by operation. */
 function autoWrites(github: ReplayServer, operation: string): number {
   return github.replay.seen.filter(({ body }) =>
@@ -127,14 +141,12 @@ test('`a` turns on auto-merge once confirmed, saying what GitHub waits for', asy
   await page.keyboard.press('a');
   await asks(page, 'Turn on auto-merge');
   await expect(dialog(page)).toContainText(`GitHub merges #${number} into e4/gated once`);
-  await expect(dialog(page).getByRole('button', { name: /Merge when ready/ })).toBeVisible();
+  await expect(dialog(page).getByRole('button', { name: /^Turn on auto-merge/ })).toBeVisible();
   expect(autoWrites(github, 'EnablePullRequestAutoMerge')).toBe(0);
 
   await page.keyboard.press('Enter');
-  await expect(said(page, `Turned on auto-merge for #${number}`)).toBeVisible({
-    timeout: MERGING,
-  });
-  await expect(status(page)).toContainText('Merges when ready');
+  await done(page, `Turned on auto-merge for #${number}`);
+  await expect(status(page)).toContainText('Auto-merge is on');
   expect(autoWrites(github, 'EnablePullRequestAutoMerge')).toBe(1);
 });
 
@@ -143,7 +155,8 @@ test.describe('with auto-merge on', () => {
 
   test('`a` turns it off at once, asking nothing', async ({ page, github }) => {
     const { number } = pulls.queuedSlow1;
-    await panelOf(page, number, 'Merges when ready');
+    await panelOf(page, number, 'Auto-merge is on');
+    await expect(panel(page).getByRole('button', { name: /^Turn off auto-merge/ })).toBeVisible();
     await page.keyboard.press('a');
     await expect(said(page, `Turned off auto-merge for #${number}`)).toBeVisible({
       timeout: MERGING,
@@ -164,13 +177,13 @@ test.describe('past the rules', () => {
     const { number } = pulls.overridden;
     await panelOf(page, number, 'Can’t merge yet');
     await expect(
-      panel(page).getByRole('button', { name: /Merge without the rules/ }),
+      panel(page).getByRole('button', { name: /Bypass rules and merge…/ }),
     ).toBeVisible();
     await page.keyboard.press('Alt+Enter');
-    await asks(page, `Merge #${number} without the rules`);
-    await expect(dialog(page)).toContainText('This skips:');
+    await asks(page, 'Bypass rules and merge');
+    await expect(dialog(page)).toContainText('Rules to bypass');
     await expect(dialog(page)).toContainText(`Type ${number} to confirm`);
-    const button = dialog(page).getByRole('button', { name: /Merge anyway/ });
+    const button = dialog(page).getByRole('button', { name: /^Bypass rules and merge/ });
     await expect(button).toHaveAttribute('aria-disabled', 'true');
 
     // Neither nothing typed nor a part of the number merges it.
@@ -187,9 +200,11 @@ test.describe('past the rules', () => {
     await page.keyboard.type(String(number).slice(2));
     await expect(button).not.toHaveAttribute('aria-disabled', 'true');
     await page.keyboard.press('Enter');
-    await expect(said(page, `Merged #${number} into merge/7/override`)).toBeVisible({
-      timeout: MERGING,
-    });
+    await expect(
+      dialog(page)
+        .getByRole('status')
+        .filter({ hasText: `Merged #${number}` }),
+    ).toBeVisible({ timeout: MERGING });
     expect(merges()).toBe(1);
   });
 });
@@ -200,18 +215,15 @@ test.describe('where the repository doesn’t allow auto-merge', () => {
   test('the dialog says so in Lo’s words, and auto-merge stays off', async ({ page }) => {
     await turnOn(page);
     const alert = dialog(page).getByRole('alert');
-    await expect(alert).toContainText(
-      `Couldn’t turn on auto-merge for #${pulls.gatedPassing.number}.`,
-    );
-    await expect(alert).toContainText(
-      'This repository doesn’t allow auto-merge. A maintainer turns it on in its settings.',
-    );
+    await expect(alert).toContainText('Couldn’t turn on auto-merge');
+    await expect(alert).toContainText('rozed-dev/e2e');
     await page.keyboard.press('Escape');
     await expect(dialog(page)).toBeHidden();
     await expect(status(page)).toContainText('Can’t merge yet');
-    await expect(status(page)).not.toContainText('Merges when ready');
+    await expect(status(page)).not.toContainText('Auto-merge is on');
     await page.keyboard.press('m');
-    await expect(panel(page).getByRole('switch', { name: 'Merge when ready' })).not.toBeChecked();
+    // A button, never a switch, named for what it does now.
+    await expect(panel(page).getByRole('button', { name: /^Turn on auto-merge…/ })).toBeVisible();
   });
 });
 
@@ -223,12 +235,9 @@ test.describe('when GitHub finds nothing blocks it', () => {
     await turnOn(page);
     // The merge, to confirm as any merge; nothing merged it, so no answer to it was recorded.
     await asks(page, `Merge #${number}`, { timeout: MERGING });
-    await expect(dialog(page)).toContainText(
-      `Nothing blocks #${number} now, so GitHub didn’t turn on auto-merge. It can merge as it is.`,
-    );
-    await expect(dialog(page).getByRole('button', { name: /^Merge\b/ })).toBeVisible();
+    await expect(dialog(page).getByRole('button', { name: `Merge #${number}` })).toBeVisible();
     await expect(status(page)).toContainText('Ready to merge');
-    await expect(status(page)).not.toContainText('Merges when ready');
+    await expect(status(page)).not.toContainText('Auto-merge is on');
   });
 });
 
@@ -237,7 +246,7 @@ test.describe('as an account below admin', () => {
 
   test('`⌥⏎` isn’t offered', async ({ page }) => {
     await panelOf(page, pulls.overridden.number, 'Can’t merge yet');
-    await expect(panel(page).getByRole('button', { name: /Merge without the rules/ })).toHaveCount(
+    await expect(panel(page).getByRole('button', { name: /Bypass rules and merge…/ })).toHaveCount(
       0,
     );
     await page.keyboard.press('Alt+Enter');
@@ -251,11 +260,12 @@ test.describe('as an account GitHub won’t let merge', () => {
   test('no merge is offered, and the panel says why', async ({ page, github }) => {
     const { number } = MERGE_PULLS[5].pulls.squash;
     await panelOf(page, number, 'Can’t merge');
-    await expect(status(page)).toContainText('GitHub says no');
+    await expect(status(page)).toContainText(/blocked by GitHub/i);
     // GitHub doesn't say why; Lo names the rule on the branch it doesn't check.
-    await expect(panel(page)).toContainText('GitHub says no, and not why');
-    await expect(panel(page)).toContainText('The branch is locked');
-    await expect(panel(page).getByRole('button', { name: 'Merge', exact: true })).toBeDisabled();
+    await expect(panel(page)).toContainText('Blocked by GitHub');
+    await expect(panel(page)).toContainText('is locked');
+    // The same words as when it can merge, dimmed: the reasons above say why.
+    await expect(panel(page).getByRole('button', { name: `Merge #${number}…` })).toBeDisabled();
     await page.keyboard.press('Enter');
     await expect(dialog(page)).toBeHidden();
     expect(github.replay.seen.filter(({ method }) => method === 'PUT')).toEqual([]);
