@@ -14,7 +14,7 @@ export const theme = defineSetting(
   {
     group: 'appearance',
     label: 'Theme',
-    description: 'System follows the computer’s light or dark appearance.',
+    description: 'Follows the computer’s appearance.',
     options: { dark: 'Dark', light: 'Light', system: 'System' },
   },
 );
@@ -33,6 +33,7 @@ export const motion = defineSetting(
   {
     group: 'appearance',
     label: 'Reduce motion',
+    named: 'reduced motion',
     description: 'Menus, dialogs and panels appear at once, without moving.',
     options: { system: 'System', on: 'On', off: 'Off' },
   },

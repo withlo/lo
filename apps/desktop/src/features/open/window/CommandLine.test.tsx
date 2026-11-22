@@ -6,6 +6,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { beforeAll, expect, it, onTestFinished } from 'vitest';
 
+import { notice } from '../../../window/commands/notices.tsx';
 import { Slot, Slots } from '../../../window/slots.tsx';
 import { installBridge } from '../../../window/test/bridge.ts';
 import { rows } from '../../settings/window/shared.ts';
@@ -65,17 +66,29 @@ it('says what the command does, then where it is and whose it is', async () => {
   expect(host.querySelector('button')?.textContent).toContain('Install again');
 });
 
-it('shows how the last install went on the row', async () => {
+it('shows how an install the row asked for went on the row, and nowhere else', async () => {
   main({ installed: [] }, { kind: 'installed', path: '/opt/bin/lo', onPath: false });
+  const host = await render();
+  await act(async () => {
+    await installCommand('row');
+  });
+  expect(host.textContent).toContain('Add /opt/bin to PATH.');
+  expect(notice()).toBeUndefined();
+  main({ installed: [] }, { kind: 'taken', path: '/opt/bin/lo' });
+  await act(async () => {
+    await installCommand('row');
+  });
+  expect(host.textContent).toContain('Couldn’t install the lo command');
+  expect(host.textContent).toContain('Another lo file is already there.');
+  expect(notice()).toBeUndefined();
+});
+
+it('says how an install a command asked for went in a note, and not on the row too', async () => {
+  main({ installed: [] }, { kind: 'taken', path: '/opt/bin/lo' });
   const host = await render();
   await act(async () => {
     await installCommand();
   });
-  expect(host.textContent).toContain('Add /opt/bin to PATH.');
-  main({ installed: [] }, { kind: 'taken', path: '/opt/bin/lo' });
-  await act(async () => {
-    await installCommand();
-  });
-  expect(host.textContent).toContain('Couldn’t install the lo command');
-  expect(host.textContent).toContain('Another lo file is already there.');
+  expect(notice()?.body).toContain('/opt/bin/lo');
+  expect(host.textContent).not.toContain('Couldn’t install the lo command');
 });

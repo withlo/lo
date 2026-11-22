@@ -57,6 +57,9 @@ const toast = (page: Page, text: string) =>
 /** The skill's row, in Settings › Integrations. */
 const row = (page: Page) => page.locator('[data-settings-row="overview.skillRow"]');
 
+/** What Settings' row says of each agent, a line each. */
+const lines = (page: Page) => row(page).getByRole('status').locator('li');
+
 /** Where an agent's copy of the skill's `SKILL.md` goes in `home`. */
 const claudeSkill = (home: string) => join(home, '.claude', 'skills', 'lo-overview', 'SKILL.md');
 const codexSkill = (home: string) => join(home, '.agents', 'skills', 'lo-overview', 'SKILL.md');
@@ -114,18 +117,20 @@ test.describe('in Settings', () => {
     writeFileSync(claudeSkill(home), `${readFileSync(claudeSkill(home), 'utf8')}\nMine.\n`);
 
     await openSettings(page);
-    await expect(row(page).getByRole('status')).toHaveText(
-      'Installed for Claude Code in ~/.claude/skills. Not installed for Codex, which reads ~/.agents/skills.',
-    );
+    await expect(lines(page)).toHaveText([
+      'Claude Code · installed in ~/.claude/skills',
+      'Codex · not installed',
+    ]);
     await row(page).getByRole('button', { name: 'Install for Codex' }).click();
-    await expect(row(page).getByRole('status')).toHaveText(
-      'Installed for Claude Code in ~/.claude/skills. Installed for Codex in ~/.agents/skills.',
-    );
+    await expect(lines(page)).toHaveText([
+      'Claude Code · installed in ~/.claude/skills',
+      'Codex · installed in ~/.agents/skills',
+    ]);
     expect(isSkill(codexSkill(home))).toBe(true);
     expect(readFileSync(claudeSkill(home), 'utf8')).toContain('Mine.');
 
+    // The row says where the skill stands, and nothing else says it again.
     await row(page).getByRole('button', { name: 'Install again' }).click();
-    await expect(toast(page, 'Installed the overview skill for Claude Code')).toBeVisible();
     await expect.poll(() => readFileSync(claudeSkill(home), 'utf8')).not.toContain('Mine.');
     expect(isSkill(claudeSkill(home))).toBe(true);
   });
@@ -147,17 +152,16 @@ test.describe('in Settings', () => {
 
     await openSettings(page);
     // What would stop the install is said before it's tried.
-    await expect(row(page).getByRole('status')).toHaveText(
-      `Not installed for Claude Code, which reads ~/.claude/skills. Not installed for Codex, which reads ~/.agents/skills. ${link}`,
-    );
+    await expect(lines(page)).toHaveText([
+      'Claude Code · not installed',
+      `Codex · not installed ${link}`,
+    ]);
     await row(page).getByRole('button', { name: 'Install', exact: true }).click();
-    await expect(toast(page, 'Installed the overview skill')).toHaveText(
-      `Install overview skillInstalled the overview skill for Claude Code in ~/.claude/skills. Not installed for Codex. ${link}`,
-    );
     // It stays said, since the link is still there, and it isn't in the way of Claude Code's.
-    await expect(row(page).getByRole('status')).toHaveText(
-      `Installed for Claude Code in ~/.claude/skills. Not installed for Codex, which reads ~/.agents/skills. ${link}`,
-    );
+    await expect(lines(page)).toHaveText([
+      'Claude Code · installed in ~/.claude/skills',
+      `Codex · not installed ${link}`,
+    ]);
     expect(isSkill(claudeSkill(home))).toBe(true);
     expect(lstatSync(join(skills, 'lo-overview')).isSymbolicLink()).toBe(true);
     expect(readdirSync(outside)).toEqual([]);
@@ -179,7 +183,9 @@ test.describe('in Settings, from a terminal', () => {
 
     await openSettings(page);
     const terminal = page.locator('[data-settings-row="overview.installCommand"]');
-    await expect(terminal).toContainText(`On another computer${command}`);
+    await expect(terminal).toContainText(
+      `On another computerInstalls the overview skill from a terminal.${command}`,
+    );
     // Writing the clipboard only where it's the test's own: not on a Mac someone works on.
     test.skip(mac, "The Mac's clipboard is its user's.");
     await page.keyboard.press('y');

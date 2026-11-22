@@ -17,6 +17,7 @@ export const open = defineSetting(
   {
     group: 'pullRequests',
     label: 'Open pull requests on',
+    named: 'where pull requests open',
     description: 'A pull request with no overview opens on the diff.',
     options: { overview: 'Overview', diff: 'Diff' },
   },

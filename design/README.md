@@ -393,9 +393,12 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
 
 Settings is a page in a tab of its own (`⌘,`, the gear at the end of the tab strip, or the palette):
 a list of its groups on the left, and the rows in a 720 px column beside it, under a search field
-(`/` or `⌘F`) that filters them by label, line and key. The groups are Accounts, Appearance,
-Keyboard, Pull requests, Code intelligence, Storage, Integrations and About, in that order. At the
-foot of the list, "Open `settings.json`" and "Open keymap file".
+(`/` or `⌘F`) that filters them by label, line and key. The field spans the column, with its key's
+chip at its end until it has focus or holds text, and room is kept for the scrollbar under it as
+beside the rows, so the two line up. A search that finds nothing is a heading and "Clear search" in
+the middle of the column. The groups are Accounts, Appearance, Keyboard, Pull requests, Code
+intelligence, Storage, Integrations and About, in that order. At the foot of the list, "Open
+`settings.json`" and "Open keymap file".
 
 A preference is a setting with a row. The menu bar and the palette may toggle it, and never own it.
 
@@ -403,19 +406,24 @@ A preference is a setting with a row. The menu bar and the palette may toggle it
   its control at the end. Its key (`diff.layout`) shows beside the label under the pointer or focus.
   "Reset" shows beside the control while the setting isn't its default. What's wrong with a value is
   a line under the row's own line, and the result of something the row did goes under it, as a
-  `Problem` when it failed.
+  `Problem` when it failed. A change the settings file refused is that `Problem`: "Couldn’t change
+  the theme", the file's reason, and "Open `settings.json`" or "Try again", with main's own words
+  behind Details. It stays until the value or the file changes.
 - **The line is at most 90 characters,** ending with a full stop, on what the setting does. It never
-  says "Lo", "This setting" or what the default is: the row's Reset says that. `defineSetting`
-  refuses a longer one.
+  says "Lo", "This setting" or what the default is: the row's Reset says that. `defineSetting` and
+  `defineRow` refuse a missing or longer one. A path or a command goes under the line, not in its
+  place.
 - **The control is drawn from the setting.** A setting on or off is a `Switch`; one with a few
-  options is a `SegmentedControl` of them. Anything else has a control of its own, and a setting a
-  key also changes shows the key's chip beside its control.
+  options is a `SegmentedControl` of them. Anything else has a control of its own. A setting a key
+  also changes elsewhere gives that key in its control's tooltip, not as a chip on the row, since
+  the key doesn't work in Settings.
 - **A list is a `SettingsList`:** the row's label, line and controls for adding to it, then the list
   in a box under them, each item a `SettingsListItem` with its own lead, label, line and buttons.
   Accounts, trusted repos and toolchains share it. An empty list is a heading and a line in the box,
   with what to do about it.
 - **A row's button for a command is `SettingsCommand`,** which takes the command's label, key and
-  reason as any control does.
+  reason as any control does. A row that stands for one thing, such as a pull request's language
+  servers, gives it the `target` the command runs on.
 - **A feature adds its own rows.** `settingRow(setting, { order })` in its `window/index.ts` draws a
   setting's row from what `defineSetting` says of it (group, label, line, options), and search reads
   the same. `defineRow` makes any other row, given its group, label and line.

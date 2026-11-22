@@ -73,11 +73,11 @@ describe('TrustList', () => {
     );
   });
 
-  it('sets a name in the code font, since it is one', () => {
+  it('sets a name as plain text, as a repo’s name is', () => {
     const host = render(<TrustList entries={ENTRIES} />);
     const name = host.querySelector('[role="listitem"] span');
     expect(name?.textContent).toBe('fieldwork/atlas-api');
-    expect(name?.className).toContain('code-small');
+    expect(name?.className).not.toContain('code');
   });
 
   it('removes the row whose button was pressed, naming it by key', () => {

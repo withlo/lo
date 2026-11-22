@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 // This feature's rows of Settings: the theme and motion, the cache and its limit, and the keymap
 // file and every key.
-import { handlers, holdRegistry, NO_TARGET, type Registry } from '@lo/ui/commands';
+import { defineCommands, handlers, holdRegistry, NO_TARGET, type Registry } from '@lo/ui/commands';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { z } from 'zod';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { applyKeymapFile, keymapState } from '../../../window/commands/keymap.ts';
@@ -12,11 +13,12 @@ import { notice } from '../../../window/commands/notices.tsx';
 import { createRegistry } from '../../../window/commands/registry.ts';
 import { Slot, Slots, type View } from '../../../window/slots.tsx';
 import keysFeature from '../../keys/keys.ts';
-import type { CacheUsage, SettingsState } from '../contract.ts';
+import { defineSetting, type CacheUsage, type SettingsState } from '../contract.ts';
 import Appearance from './Appearance.tsx';
 import Cache from './Cache.tsx';
 import Keys from './Keys.tsx';
-import { rows } from './shared.ts';
+import { rows, settingRow } from './shared.ts';
+import { cacheStore } from './storage.ts';
 import { showSettings } from './store.ts';
 import { installBridge } from '../../../window/test/bridge.ts';
 
@@ -29,6 +31,8 @@ const settings = (values: SettingsState['values'] = {}) =>
 
 beforeEach(() => {
   showSettings(settings());
+  // Each test's cache is measured afresh.
+  cacheStore.setState({ usage: undefined });
 });
 
 afterEach(() => {
@@ -157,19 +161,100 @@ describe('Appearance', () => {
     expect(bridge.calls).toEqual([['settings.set', { key: 'theme', value: 'system' }]]);
   });
 
-  it('says on the row why main refused a change, and keeps the value the file has', async () => {
-    installBridge({
+  it('says a change main couldn’t save as a problem under the row, which tries it again, and keeps the value the file has', async () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    onTestFinished(() => quiet.mockRestore());
+    const bridge = installBridge({
       'settings.set': () => {
-        throw new IpcError('unwritable', 'settings.json can’t be saved.');
+        throw new IpcError('unsaved', '\nEACCES');
       },
     });
     const container = render(Appearance);
     click(container.querySelector('[role="radiogroup"][aria-label="Theme"] [role="radio"]'));
     await settle();
     expect(container.querySelector('[role="alert"]')?.textContent).toBe(
-      'settings.json can’t be saved.',
+      'Couldn’t change the theme settings.json couldn’t be saved.',
     );
+    // What failed, in its own words, is behind Details.
+    expect(container.textContent).not.toContain('EACCES');
+    click([...container.querySelectorAll('button')].find((each) => each.textContent === 'Details'));
+    expect(container.textContent).toContain('EACCES');
     expect(themes(container).find(([, checked]) => checked === 'true')?.[0]).toBe('System');
+    click(
+      [...container.querySelectorAll('button')].find((each) => each.textContent === 'Try again'),
+    );
+    await settle();
+    expect(sets(bridge.calls)).toEqual([
+      ['settings.set', { key: 'theme', value: 'dark' }],
+      ['settings.set', { key: 'theme', value: 'dark' }],
+    ]);
+  });
+
+  it('says a change the file’s error kept from being made, with the way to the file, until the file changes', async () => {
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    onTestFinished(() => quiet.mockRestore());
+    const broken = {
+      ...settings(),
+      problems: [{ message: 'Line 2, column 1 isn’t valid JSON.' }],
+    } satisfies SettingsState;
+    showSettings(broken);
+    installBridge({
+      'settings.set': () => {
+        throw new IpcError(
+          'settingsFile',
+          '`settings.json` isn’t valid JSON.\nPropertyNameExpected at line 2, column 1',
+        );
+      },
+    });
+    const container = render(Appearance);
+    click(container.querySelector('[role="radiogroup"][aria-label="Theme"] [role="radio"]'));
+    await settle();
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      'Couldn’t change the theme settings.json isn’t valid JSON.',
+    );
+    expect(container.querySelector('[role="alert"] .code-small')?.textContent).toBe(
+      'settings.json',
+    );
+    click([...container.querySelectorAll('button')].find((each) => each.textContent === 'Details'));
+    expect(container.textContent).toContain('PropertyNameExpected at line 2, column 1');
+    expect(
+      [...container.querySelectorAll('button')].some(
+        (each) => each.textContent === 'Open settings.json',
+      ),
+    ).toBe(true);
+    // Fixed, the file says so, and the problem goes: it may have been what kept the change.
+    act(() => showSettings(settings()));
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('gives a setting’s key from a view in its control’s tooltip, not on the row', () => {
+    const registry = createRegistry(
+      [
+        ...handlers(
+          defineCommands('settings', {
+            layout: { label: 'Inline or side by side', group: 'Diff view', keys: ['g i'] },
+          }),
+          { layout: { run: () => undefined } },
+        ),
+      ],
+      'mac',
+    );
+    onTestFinished(holdRegistry(registry));
+    const layout = defineSetting(
+      'test.layout',
+      z.enum(['split', 'inline']),
+      'split',
+      'split or inline',
+      {
+        group: 'pullRequests',
+        label: 'Diff layout',
+        description: 'How a diff shows its two sides.',
+        options: { split: 'Side by side', inline: 'Inline' },
+      },
+    );
+    const container = render([settingRow(layout, { order: 10, command: 'settings.layout' })]);
+    expect(container.querySelector('kbd')).toBeNull();
+    expect(container.querySelector('[role="radiogroup"]')).not.toBeNull();
   });
 });
 
@@ -240,9 +325,9 @@ describe('Cache', () => {
     expect(bridge.calls).toHaveLength(asked);
   });
 
-  it('gives up waiting for the cache to open, and says so', async () => {
+  it('gives up waiting for the cache to open, and says so, with a way to look again', async () => {
     vi.useFakeTimers();
-    installBridge({ 'settings.cacheUsage': usage({ status: 'checking' }) });
+    const bridge = installBridge({ 'settings.cacheUsage': usage({ status: 'checking' }) });
     const container = render(Cache);
     // A second at a time, each asked about and drawn before the next.
     for (let second = 0; second < 32; second++) {
@@ -250,9 +335,18 @@ describe('Cache', () => {
         await vi.advanceTimersByTimeAsync(1000);
       });
     }
-    expect(container.textContent).toContain(
-      'Can’t open the cache folder. Restart Lo to try again.',
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      'Can’t open the cache folder',
     );
+    // Asked to look again, it asks main again.
+    const asked = bridge.calls.length;
+    click(
+      [...container.querySelectorAll('button')].find((each) => each.textContent === 'Check again'),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(bridge.calls.length).toBeGreaterThan(asked);
   });
 
   it('says there are no local copies without git, though the answers saved from GitHub can still be cleared', async () => {

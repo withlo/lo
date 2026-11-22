@@ -14,6 +14,8 @@ import { Gear } from './Gear.tsx';
 import Keys from './Keys.tsx';
 import { canMoveSection, moveSection, search } from './nav.ts';
 import { SettingsTab } from './Page.tsx';
+import { openSettingsFile } from './shared.ts';
+import { cacheShowable, showCache } from './storage.ts';
 import { showSettings } from './store.ts';
 
 /** Why a key for Settings' page can't run: the page isn't open. */
@@ -30,6 +32,8 @@ export default {
     nextSection: { run: () => moveSection(1), enabled: onPage },
     previousSection: { run: () => moveSection(-1), enabled: onPage },
     search: { run: search, enabled: onPage },
+    openFile: { run: openSettingsFile },
+    showCache: { run: showCache, enabled: cacheShowable },
   }),
   views: [
     // Settings is drawn in its tab, and in no other.

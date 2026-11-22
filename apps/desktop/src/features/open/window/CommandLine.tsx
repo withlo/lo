@@ -47,7 +47,7 @@ function Result({ done }: { done: Installed | undefined }) {
     <Problem
       title={title}
       details={done?.message}
-      action={{ label: 'Try again', onClick: () => void installCommand() }}
+      action={{ label: 'Try again', onClick: () => void installCommand('row') }}
     />
   );
 }
@@ -86,7 +86,8 @@ function CommandRow() {
       }
       below={done === null ? undefined : <Result done={done} />}
     >
-      <Button busy={installing} working="Installing…" onClick={() => void installCommand()}>
+      {/* Not the command's button: an install from here says how it went here, not in a note. */}
+      <Button busy={installing} working="Installing…" onClick={() => void installCommand('row')}>
         {first === undefined ? 'Install' : 'Install again'}
       </Button>
     </Setting>

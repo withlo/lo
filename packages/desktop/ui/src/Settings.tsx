@@ -2,7 +2,9 @@ import { cva } from 'class-variance-authority';
 import { useId, useSyncExternalStore, type ReactNode, type Ref, type UIEvent } from 'react';
 
 import { Button, type ButtonProps } from './Button.tsx';
+import { Collapse } from './Collapse.tsx';
 import { controlOf, heldRegistry, runControl } from './commands/control.ts';
+import { NO_TARGET, type Target } from './commands/targets.ts';
 
 /** One of Settings' groups, as the list beside it names it. */
 export interface SettingsNavItem {
@@ -43,8 +45,10 @@ export interface SettingsPageProps {
 
 /**
  * Settings: a list of groups beside one column of rows, which scrolls under a search field. The
- * column is `settings-w` at most, in the middle of the room right of the list. The page fills the
- * middle of the window and is its own sheet.
+ * column is `settings-w` at most, in the middle of the room right of the list, and at least as tall
+ * as the room, so what fills it can sit in its middle. Room is kept for the scrollbar under the
+ * field as beside the rows, so the two line up and nothing moves as the scrollbar comes and goes.
+ * The page fills the middle of the window and is its own sheet.
  */
 export function SettingsPage({
   items,
@@ -78,12 +82,16 @@ export function SettingsPage({
       </nav>
       <div className="flex min-h-0 min-w-0 flex-col bg-bg">
         {search !== undefined && (
-          <div className="flex-none px-40 pt-24 pb-12">
+          <div className="flex-none gutter-stable overflow-hidden px-40 pt-24 pb-12">
             <div className="mx-auto w-full max-w-settings-w">{search}</div>
           </div>
         )}
-        <div ref={bodyRef} onScroll={onBodyScroll} className="min-h-0 flex-1 overflow-auto px-40">
-          <div className="mx-auto flex w-full max-w-settings-w flex-col gap-32 pt-12 pb-64">
+        <div
+          ref={bodyRef}
+          onScroll={onBodyScroll}
+          className="min-h-0 flex-1 gutter-stable overflow-auto px-40"
+        >
+          <div className="mx-auto flex min-h-full w-full max-w-settings-w flex-col gap-32 pt-12 pb-64">
             {children}
           </div>
         </div>
@@ -128,8 +136,10 @@ export interface SettingProps {
    * focus, for the people who edit the file.
    */
   settingKey?: string | undefined;
-  /** What's wrong on the row, in a line under its description: a change that wasn't made, say. */
+  /** What's wrong on the row, in a line under its description: what was typed, say. */
   note?: ReactNode;
+  /** The note's id, for the control it's about to name in its `aria-describedby`. */
+  noteId?: string | undefined;
   /** What the row shows under itself, across its width: a meter, or a `Problem` with its button. */
   below?: ReactNode;
   /**
@@ -144,25 +154,34 @@ export interface SettingProps {
 
 /**
  * One row of Settings: what it's called, one line on what it does, and its control at the end of
- * the row. Every row has this shape, whatever its control.
+ * the row. Every row has this shape, whatever its control. The row is a group named by its label
+ * and described by its line, so a screen reader says both as focus comes to its control. What's
+ * said under it, a note or a `Problem`, comes and goes with the Open move.
  */
 export function Setting({
   label,
   description,
   settingKey,
   note,
+  noteId,
   below,
   onReset,
   resetName,
   children,
 }: SettingProps) {
+  const id = useId();
   return (
     <div
+      role="group"
+      aria-labelledby={`${id}-label`}
+      aria-describedby={description === undefined ? undefined : `${id}-line`}
       className="group setting-row border-t border-border-subtle py-12"
       data-setting={settingKey}
     >
       <div className="flex min-w-0 items-baseline gap-8">
-        <span className="text-ui-strong">{label}</span>
+        <span id={`${id}-label`} className="text-ui-strong">
+          {label}
+        </span>
         {settingKey !== undefined && (
           <span
             aria-hidden="true"
@@ -173,14 +192,23 @@ export function Setting({
         )}
       </div>
       {description !== undefined && (
-        <div className="col-start-1 min-w-0 text-fg-muted text-small">{description}</div>
-      )}
-      {note !== undefined && (
-        <div className="col-start-1 min-w-0 text-danger text-small" role="alert">
-          {note}
+        <div id={`${id}-line`} className="col-start-1 min-w-0 text-fg-muted text-small">
+          {description}
         </div>
       )}
-      {below !== undefined && <div className="col-span-2 col-start-1 min-w-0 pt-4">{below}</div>}
+      <Collapse open={note !== undefined && note !== null} className="col-start-1 min-w-0">
+        {note !== undefined && note !== null && (
+          <div id={noteId} className="text-danger text-small" role="alert">
+            {note}
+          </div>
+        )}
+      </Collapse>
+      <Collapse
+        open={below !== undefined && below !== null}
+        className="col-span-2 col-start-1 min-w-0"
+      >
+        {below !== undefined && below !== null && <div className="pt-4">{below}</div>}
+      </Collapse>
       {(children !== undefined || onReset !== undefined) && (
         <div className="col-start-2 row-span-2 row-start-1 flex items-center justify-end gap-8">
           {onReset !== undefined && (
@@ -227,12 +255,22 @@ export interface SettingsListProps {
  * a `SettingsListItem`.
  */
 export function SettingsList({ label, description, actions, children }: SettingsListProps) {
+  const id = useId();
   return (
-    <div className="flex flex-col border-t border-border-subtle pb-12">
+    <div
+      role="group"
+      aria-labelledby={`${id}-label`}
+      aria-describedby={description === undefined ? undefined : `${id}-line`}
+      className="flex flex-col border-t border-border-subtle pb-12"
+    >
       <div className="setting-row py-12">
-        <div className="text-ui-strong">{label}</div>
+        <div id={`${id}-label`} className="text-ui-strong">
+          {label}
+        </div>
         {description !== undefined && (
-          <div className="col-start-1 min-w-0 text-fg-muted text-small">{description}</div>
+          <div id={`${id}-line`} className="col-start-1 min-w-0 text-fg-muted text-small">
+            {description}
+          </div>
         )}
         {actions !== undefined && (
           <div className="col-start-2 row-span-2 row-start-1 flex items-center justify-end gap-8">
@@ -325,6 +363,8 @@ export interface SettingsCommandProps extends Omit<
 > {
   /** The command it runs, by its id: `keys.help`. */
   command: string;
+  /** What it runs the command on, where the row stands for one thing: a tab's servers, say. */
+  target?: Target | undefined;
   /** Its words, where the row says it shorter than the command's label: "Open". */
   children?: ReactNode;
 }
@@ -334,14 +374,19 @@ export interface SettingsCommandProps extends Omit<
  * key in its tooltip, and while the command can't run it's dimmed with the reason. It follows the
  * keymap file, and draws nothing for a command that isn't there.
  */
-export function SettingsCommand({ command, children, ...button }: SettingsCommandProps) {
+export function SettingsCommand({
+  command,
+  target = NO_TARGET,
+  children,
+  ...button
+}: SettingsCommandProps) {
   useSyncExternalStore(
     onKeysChange,
     () => keyChanges,
     () => 0,
   );
   const why = useId();
-  const control = controlOf(command);
+  const control = controlOf(command, target);
   if (!control) return null;
   const { off } = control;
   return (
@@ -353,7 +398,7 @@ export function SettingsCommand({ command, children, ...button }: SettingsComman
         hint={off ?? control.label}
         hintKeys={off === undefined ? control.keys : undefined}
         hintShortcut={off === undefined ? control.shortcut : undefined}
-        onClick={() => runControl(command)}
+        onClick={() => runControl(command, target)}
       >
         {children ?? control.label}
       </Button>

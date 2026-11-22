@@ -1,7 +1,7 @@
 // The overview skill's rows: the step on the welcome screen, and the rows in Settings ›
 // Integrations, for installing it and for the command that installs it from a terminal.
 
-import { Button, Key, keyAria, Setting, SetupItem } from '@lo/ui';
+import { Button, Key, keyAria, Problem, Setting, SetupItem } from '@lo/ui';
 import { useEffect } from 'react';
 import { useStore } from 'zustand';
 
@@ -52,21 +52,50 @@ export function SkillStep() {
   );
 }
 
+/** Installs the skill from Settings' row, which says how it went, and nothing else does. */
+const install = () => void installSkill(undefined, 'row');
+
 /** The skill's row in Settings: what it's for, where it stands for each agent, and installing it. */
 function Skill({ label, description }: { label: string; description: string }) {
-  const { state, installing, said } = useSkill();
-  const standsAt = said ?? (state === undefined ? undefined : standing(state));
+  const { state, installing, failed } = useSkill();
   return (
     <Setting
       label={label}
       description={description}
       below={
-        <p role="status" className="text-fg-muted text-small">
-          {standsAt}
-        </p>
+        failed ? (
+          <Problem
+            title="Couldn’t install the overview skill"
+            action={{ label: 'Try again', onClick: install }}
+          />
+        ) : (
+          <div role="status" className="text-fg-muted text-small">
+            {state !== undefined && (
+              <ul>
+                {standing(state).map((each) => (
+                  <li key={each.line}>
+                    {each.line}
+                    {each.folder !== undefined && (
+                      <>
+                        {' '}
+                        <span className="code-small">{each.folder}</span>
+                      </>
+                    )}
+                    {each.why !== undefined && (
+                      <>
+                        {' '}
+                        <span className="block">{each.why}</span>
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )
       }
     >
-      <Button busy={installing} working="Installing…" onClick={() => void installSkill()}>
+      <Button busy={installing} working="Installing…" onClick={install}>
         {installLabel(state)}
       </Button>
     </Setting>
@@ -87,7 +116,7 @@ export const SkillRow = defineRow({
  * The command that installs the skill from a terminal, by the version of the checker Lo's own skill
  * runs, with a button that copies it, as `yc` does.
  */
-function InstallCommand({ label }: { label: string; description: string }) {
+function InstallCommand({ label, description }: { label: string; description: string }) {
   useKeys();
   const copied = useStore(skillStore, (state) => state.copied);
   useEffect(() => {
@@ -97,7 +126,8 @@ function InstallCommand({ label }: { label: string; description: string }) {
   return (
     <Setting
       label={label}
-      description={<span className="text-fg code-small select-all">{INSTALL_COMMAND}</span>}
+      description={description}
+      below={<span className="break-all text-fg code-small select-all">{INSTALL_COMMAND}</span>}
     >
       <Button {...keyAria(keys, undefined)} onClick={() => void copyInstallCommand()}>
         {/* Both labels take the room of the longer, so the button and the row hold still. */}
@@ -121,8 +151,8 @@ export const InstallCommandRow = defineRow({
   group: 'integrations',
   order: 30,
   label: 'On another computer',
-  // The row's line is the command itself.
-  description: INSTALL_COMMAND,
-  words: () => ['overview skill', 'terminal', 'install', 'copy'],
+  // The command itself is under the row's line.
+  description: 'Installs the overview skill from a terminal.',
+  words: () => ['overview skill', 'terminal', 'install', 'copy', INSTALL_COMMAND],
   render: InstallCommand,
 });

@@ -17,6 +17,7 @@ export const mode = defineSetting(
   {
     group: 'pullRequests',
     label: 'Files',
+    named: 'how files are listed',
     description: 'How the left panel lists a pull request’s files.',
     options: { tree: 'Tree', review: 'Review order' },
   },

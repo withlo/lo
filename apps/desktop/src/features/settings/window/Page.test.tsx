@@ -2,6 +2,7 @@
 // Settings' page: the rows features put in the slot, in their groups, with the list of groups
 // beside them, the search that filters them, what's wrong in the settings file, and focus.
 
+import { holdRegistry } from '@lo/ui/commands';
 import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
@@ -17,7 +18,8 @@ import { showSettings } from './store.ts';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
-  createRegistry(feature.commands, 'mac');
+  // The window's controls run their commands through it, as Settings' buttons do.
+  holdRegistry(createRegistry(feature.commands, 'mac'));
 });
 
 const settings = (problems: SettingsState['problems'] = []) =>

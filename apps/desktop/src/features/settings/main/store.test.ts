@@ -18,7 +18,7 @@ import { IpcError } from '../../../ipc/contract.ts';
 import { defineSetting, type Setting, type SettingsState } from '../contract.ts';
 import { Unwritten } from '../service.ts';
 import type * as file from './file.ts';
-import { createSettings, type Settings } from './store.ts';
+import { createSettings, forWindow, type Settings } from './store.ts';
 
 /** What a test does as each write of the file starts, as when a person saves it meanwhile. */
 const writing = vi.hoisted(() => ({ starts: undefined as (() => void) | undefined }));
@@ -74,6 +74,9 @@ afterEach(() => {
 });
 
 const stops: (() => Promise<void>)[] = [];
+
+/** An error's code and message, as the window hears them, when it's an `IpcError`. */
+const codeAndMessage = (error: unknown) => error instanceof IpcError && [error.code, error.message];
 
 /** Writes `text` as the settings file, folder and all. */
 function write(text: string, at = path): void {
@@ -161,11 +164,11 @@ describe('reading', () => {
       problems: [
         {
           key: 'theme',
-          message: 'theme is "purple", but it must be dark, light or system. Lo uses "system".',
+          message: '`theme` is `"purple"`. It must be dark, light or system.',
         },
         {
           key: 'cache.cap',
-          message: 'cache.cap is 2.5, but it must be a whole number from 1 to 100. Lo uses 10.',
+          message: '`cache.cap` is `2.5`. It must be a whole number from 1 to 100.',
         },
       ],
     });
@@ -181,7 +184,7 @@ describe('reading', () => {
     expect(problems[0]?.message.length).toBeLessThan(150);
     expect(problems[0]?.message).toContain('…');
     expect(problems[1]?.message).toContain(
-      'diff.layout is {"a":[1]}, but it must be split or inline.',
+      '`diff.layout` is `{"a":[1]}`. It must be split or inline.',
     );
   });
 
@@ -196,7 +199,7 @@ describe('reading', () => {
     expect(state.values).toEqual({ theme: 'light' });
     expect(state.problems).toHaveLength(1);
     expect(state.problems[0]?.key).toBeUndefined();
-    expect(state.problems[0]?.message).toContain("isn't valid JSON");
+    expect(state.problems[0]?.message).toContain('isn’t valid JSON');
     expect(changes.at(-1)).toEqual(state);
     // Fixed, it applies, and the problem goes.
     write('{ "theme": "dark" }');
@@ -500,8 +503,7 @@ describe('changing a setting', () => {
     expect(state.values).toEqual({ theme: 'system' });
     expect(state.problems).toEqual([
       {
-        message:
-          "The settings file nests objects and lists over 100 levels deep, so Lo didn't read it.",
+        message: '`settings.json` nests over 100 levels deep.',
       },
     ]);
     const refused = await refusal(settings.set('theme', 'light'));
@@ -533,8 +535,7 @@ describe('changing a setting', () => {
       problems: [
         {
           key: 'theme',
-          message:
-            "theme is in the settings file more than once. Lo uses the last, and won't change it until the file has one.",
+          message: '`theme` is in `settings.json` more than once.',
         },
       ],
     });
@@ -610,6 +611,27 @@ describe('changing a setting', () => {
     expect((await settings.state()).problems).toEqual([]);
   });
 
+  it('tells the window whether what the file holds kept a change from being made, or saving it did', async () => {
+    write('{ "theme": "light", ');
+    const { settings } = open();
+    settings.declare(theme);
+    const inFile = forWindow(await refusal(settings.set('theme', 'dark')));
+    expect(inFile).toBeInstanceOf(IpcError);
+    // The reason, then on the next line the parser's own words.
+    expect(codeAndMessage(inFile)).toEqual([
+      'settingsFile',
+      '`settings.json` isn’t valid JSON.\nPropertyNameExpected at line 1, column 21',
+    ]);
+    // With no reason of its own, a refusal's details are main's words for it.
+    const unsaved = forWindow(new Unwritten('Not saved.', 'Not saved here.', false));
+    expect(codeAndMessage(unsaved)).toEqual(['unsaved', '\nNot saved here.']);
+    const coded = forWindow(new Unwritten('Not saved.', 'Not saved.', false, { details: 'EIO' }));
+    expect(codeAndMessage(coded)).toEqual(['unsaved', '\nEIO']);
+    // Anything else is as it was.
+    const other = new IpcError('invalid', 'theme must be dark, light or system.');
+    expect(forWindow(other)).toBe(other);
+  });
+
   it('writes nothing over a file with comments and a real syntax error, and says where it is', async () => {
     const text = '// Mine.\n{\n  "theme": "light"\n  "diff.layout": "inline"\n}\n';
     write(text);
@@ -618,8 +640,12 @@ describe('changing a setting', () => {
     const refused = await refusal(settings.set('theme', 'dark'));
     expect(refused?.code).toBe('unwritable');
     expect(refused?.message).toBe(
-      "Lo didn't change theme, since the settings file has a problem. The settings file isn't valid JSON (Lo expected a comma at line 4, column 3). Fix it, and Lo applies it as soon as you save.",
+      "Lo didn't change theme, since the settings file has a problem. The settings file isn't valid JSON (Lo expected a comma at line 4, column 3).",
     );
+    expect(refused instanceof Unwritten && refused.said).toEqual({
+      reason: '`settings.json` isn’t valid JSON.',
+      details: 'CommaExpected at line 4, column 3',
+    });
     expect(contents()).toBe(text);
     expect((await settings.state()).values).toEqual({ theme: 'system' });
   });

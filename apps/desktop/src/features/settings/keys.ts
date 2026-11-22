@@ -1,4 +1,5 @@
-// Settings' keys: opening its tab, moving between its groups, and searching it.
+// Settings' keys: opening its tab, moving between its groups, and searching it; and opening the
+// settings file, beside the keymap file's key, and showing the cache's folder, in Settings.
 
 import { defineCommands } from '@lo/ui/commands';
 
@@ -36,6 +37,22 @@ export default defineCommands(
       control: "the search field over Settings' rows",
       group: 'Find',
       keys: ['/', 'cmd+f'],
+      when: { scope: 'settings' },
+    },
+    /** Opens the settings file in the system's text editor, so the person can fix it. */
+    openFile: {
+      label: 'Open settings.json',
+      control: "Open settings.json at the foot of Settings' list",
+      group: 'Tabs and window',
+      keys: ['g .'],
+      when: { except: ['menu', 'dialog', 'palette', 'box'], mode: 'normal' },
+    },
+    /** Shows the cache's folder in Finder, or in the system's file manager. */
+    showCache: {
+      label: 'Show cache folder',
+      control: 'Show in Finder on the Cache row of Settings › Storage',
+      group: 'Tabs and window',
+      keys: ['g c'],
       when: { scope: 'settings' },
     },
   },

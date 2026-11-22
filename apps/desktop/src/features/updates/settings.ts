@@ -9,5 +9,6 @@ import { defineSetting } from '../settings/contract.ts';
 export const check = defineSetting('updates.check', z.boolean(), true, 'true or false', {
   group: 'about',
   label: 'Check for updates automatically',
+  named: 'automatic update checks',
   description: 'Checks at startup, then every 6 h.',
 });

@@ -2,14 +2,14 @@
 // with it, and the list of every key. Vim keys' row is the comments feature's.
 
 import { Setting, SettingsCommand } from '@lo/ui';
-import { useSyncExternalStore } from 'react';
+import { Fragment, useSyncExternalStore } from 'react';
 
 import { keymapState, subscribeKeymap } from '../../../window/commands/keymap.ts';
 import { useKeys } from '../../../window/commands/registry.ts';
 import { defineRow, useSettingsFile } from './shared.ts';
 
-/** The keymap file's row: where it is, beside the settings file, and what's wrong in it. */
-function KeymapFile({ label }: { label: string; description: string }) {
+/** The keymap file's row: what it holds, where it is, beside the settings file, and what's wrong. */
+function KeymapFile({ label, description }: { label: string; description: string }) {
   // The keys follow the keymap file, and so does what's wrong with it.
   useKeys();
   const keymap = useSyncExternalStore(subscribeKeymap, keymapState);
@@ -18,10 +18,25 @@ function KeymapFile({ label }: { label: string; description: string }) {
   return (
     <Setting
       label={label}
-      description={
-        path === undefined ? undefined : <span className="break-all code-small">{path}</span>
-      }
+      description={description}
       note={keymap.problem}
+      below={
+        path === undefined ? undefined : (
+          // It wraps after a slash, and mid-name only where a name is longer than the line.
+          <span className="break-words text-fg-muted code-small">
+            {path.split('/').map((part, index) => (
+              <Fragment key={index}>
+                {index > 0 && (
+                  <>
+                    /<wbr />
+                  </>
+                )}
+                {part}
+              </Fragment>
+            ))}
+          </span>
+        )
+      }
     >
       <SettingsCommand command="keys.openKeymap">Open</SettingsCommand>
     </Setting>

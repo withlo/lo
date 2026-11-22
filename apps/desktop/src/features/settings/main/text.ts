@@ -39,17 +39,24 @@ export type Parsed =
       readonly text: string;
       readonly repeated: readonly string[];
     }
-  /**
-   * The file can't be used, and why, for the person who wrote it: in Settings' words, with what to
-   * do, and what's wrong alone (`cause`), for what says what to do in its own words.
-   */
-  | { readonly kind: 'problem'; readonly problem: string; readonly cause: string };
+  /** The file can't be used, and why. */
+  | ({ readonly kind: 'problem' } & FileProblem);
+
+/**
+ * What's wrong with the file, for the person who wrote it, each part in a sentence, where what's
+ * between backticks is code: `problem`, the line Settings gives it among the file's problems;
+ * `reason`, why a change to a setting wasn't made; `details`, the parser's own words, when it has
+ * some; and `cause`, what's wrong in plain words, for what says what to do in its own words.
+ */
+export interface FileProblem {
+  readonly problem: string;
+  readonly reason: string;
+  readonly details?: string;
+  readonly cause: string;
+}
 
 /** How the file is read: as JSON, with comments and a comma after the last entry allowed. */
 const OPTIONS = { allowTrailingComma: true, disallowComments: false, allowEmptyContent: true };
-
-/** What Lo says after a problem with the file as a whole that the person can fix. */
-const FIX = 'Fix it, and Lo applies it as soon as you save.';
 
 /**
  * The most levels of objects and lists Lo reads, the file's own object among them: far more than
@@ -102,31 +109,39 @@ type Tree =
       readonly values: Readonly<Record<string, unknown>>;
       readonly repeated: readonly string[];
     }
-  | { readonly ok: false; readonly problem: string; readonly cause: string };
+  | ({ readonly ok: false } & FileProblem);
 
-/** A problem with the file: what's wrong, then, when the person can fix it, what to do. */
-function wrong(cause: string, advice?: string): Tree {
-  return { ok: false, problem: advice === undefined ? cause : `${cause} ${advice}`, cause };
+/** A problem with the file, said the same way as a line and as a reason. */
+function wrong(problem: string, cause: string): Tree {
+  return { ok: false, problem, reason: problem, cause };
 }
 
 /** Reads `text`, a file's without its byte order mark, as the settings file. */
 function read(text: string): Tree {
   if (tooDeep(text)) {
     return wrong(
-      `The settings file nests objects and lists over ${SETTINGS_DEPTH_LIMIT} levels deep, so Lo didn't read it.`,
+      `\`settings.json\` nests over ${SETTINGS_DEPTH_LIMIT} levels deep.`,
+      `The settings file nests objects and lists over ${SETTINGS_DEPTH_LIMIT} levels deep.`,
     );
   }
   const errors: ParseError[] = [];
   const root = parseTree(text, errors, OPTIONS);
   const first = errors[0];
   if (first) {
-    return wrong(`The settings file isn't valid JSON (${said(first, text)}).`, FIX);
+    const { line, column } = place(first, text);
+    return {
+      ok: false,
+      problem: `Line ${line}, column ${column} isn’t valid JSON.`,
+      reason: '`settings.json` isn’t valid JSON.',
+      details: `${printParseErrorCode(first.error)} at line ${line}, column ${column}`,
+      cause: `The settings file isn't valid JSON (${what(first)} at line ${line}, column ${column}).`,
+    };
   }
   if (root === undefined) return { ok: true, root, values: {}, repeated: [] };
   if (root.type !== 'object') {
     return wrong(
+      '`settings.json` isn’t one JSON object.',
       'The settings file should hold one JSON object, such as { "theme": "dark" }.',
-      FIX,
     );
   }
   const pairs = entries(root);
@@ -193,14 +208,14 @@ function valueOf(node: Node): unknown {
   }
 }
 
-/** Where `error` is in `text`, and what it is, in words: "Lo expected a comma at line 4, column 3". */
-function said(error: ParseError, text: string): string {
+/** Where `error` is in `text`, by line and column, each counted from 1. */
+function place(error: ParseError, text: string): { line: number; column: number } {
   const before = text.slice(0, error.offset);
   const line = (before.match(/\n/g)?.length ?? 0) + 1;
-  const column = before.length - before.lastIndexOf('\n');
-  return `${what(error)} at line ${line}, column ${column}`;
+  return { line, column: before.length - before.lastIndexOf('\n') };
 }
 
+/** What `error` is, in words: "Lo expected a comma". */
 function what(error: ParseError): string {
   const code = printParseErrorCode(error.error);
   switch (code) {
@@ -250,7 +265,16 @@ function what(error: ParseError): string {
  */
 export function parseSettings(text: string): Parsed {
   const tree = read(text.startsWith(BOM) ? text.slice(1) : text);
-  if (!tree.ok) return { kind: 'problem', problem: tree.problem, cause: tree.cause };
+  if (!tree.ok) {
+    const { problem, reason, details, cause } = tree;
+    return {
+      kind: 'problem',
+      problem,
+      reason,
+      cause,
+      ...(details === undefined ? {} : { details }),
+    };
+  }
   return { kind: 'ok', values: tree.values, text, repeated: tree.repeated };
 }
 

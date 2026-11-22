@@ -174,18 +174,28 @@ export default defineCommands(
       keys: [],
       bar: { menu: 'Review', order: 43 },
     },
-    /** Starts the language servers of the pull request on screen again. */
+    /**
+     * Starts the language servers of the pull request on screen again, or of the tab Settings'
+     * list of language servers names.
+     */
     restart: {
       label: 'Restart language servers',
+      control: 'Restart on a pull request in Settings › Code intelligence › Language servers',
       group: 'Code',
       keys: [],
+      targets: ['none', 'tab'],
       bar: { menu: 'Review', order: 44 },
     },
-    /** Shows the log of the pull request on screen's language server. */
+    /**
+     * Shows the log of the pull request on screen's language server, or of the tab Settings' list
+     * of language servers names.
+     */
     log: {
       label: 'Show the language server’s log',
+      control: 'Show log on a pull request in Settings › Code intelligence › Language servers',
       group: 'Code',
       keys: [],
+      targets: ['none', 'tab'],
       bar: { menu: 'Review', order: 45 },
     },
   },

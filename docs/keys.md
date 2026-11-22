@@ -302,7 +302,7 @@ mode. In the box's preview, or on its frame, `Esc` closes it at once, from any m
 
 | Action                            | Keys                                                     | Where                                                                                  | Command                 |
 | --------------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------- |
-| Add an account                    | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `accounts.addAccount`   |
+| Sign in with GitHub…              | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `accounts.addAccount`   |
 | Sign out…                         | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `accounts.signOut`      |
 | Zoom in                           | `⌘=`, `⌘⇧=`                                              | Anywhere                                                                               | `app.zoomIn`            |
 | Zoom out                          | `⌘-`                                                     | Anywhere                                                                               | `app.zoomOut`           |
@@ -315,6 +315,8 @@ mode. In the box's preview, or on its frame, `Esc` closes it at once, from any m
 | Install command-line tool         | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `open.installCommand`   |
 | Install overview skill            | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `overview.installSkill` |
 | Settings                          | `⌘,`                                                     | Anywhere but `dialog` and `palette`                                                    | `settings.open`         |
+| Open settings.json                | `g .`                                                    | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode | `settings.openFile`     |
+| Show cache folder                 | `g c`                                                    | In `settings`                                                                          | `settings.showCache`    |
 | Tab 1                             | `⌘1`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show1`             |
 | Tab 2                             | `⌘2`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show2`             |
 | Tab 3                             | `⌘3`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.show3`             |

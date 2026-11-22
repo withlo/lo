@@ -227,9 +227,7 @@ test.describe('with a hand-edited bad value', () => {
       await openSettings(page);
       const alert = problems(page);
       await expect(alert).toContainText('Can’t use 1 setting');
-      await expect(alert).toContainText(
-        'theme is "purple", but it must be dark, light or system. Lo uses "system".',
-      );
+      await expect(alert).toContainText('theme is "purple". It must be dark, light or system.');
       // The bad value is ignored: the default stands, and the good ones apply.
       await expect(theme(page, 'System')).toBeChecked();
       await expect(sizeLimit(page)).toHaveValue('12');
@@ -244,7 +242,7 @@ test.describe('with a hand-edited bad value', () => {
 
       // Bad again, in another way, and live.
       edit('{ "theme": "dark", "cache.cap": "big" }\n');
-      await expect(alert).toContainText('cache.cap is "big", but it must be a whole number of GB');
+      await expect(alert).toContainText('cache.cap is "big". It must be a whole number of GB');
       await expect(alert).not.toContainText('theme is');
       await wears(page, 'dark');
     });
@@ -277,9 +275,7 @@ test.describe('with app.gpu off', () => {
     expect(file()).toBe('{ "app.gpu": false }\n');
     edit('{ "app.gpu": "off" }\n');
     await openSettings(page);
-    await expect(problems(page)).toContainText(
-      'app.gpu is "off", but it must be true or false. Lo uses true.',
-    );
+    await expect(problems(page)).toContainText('app.gpu is "off". It must be true or false.');
   });
 });
 
@@ -291,11 +287,11 @@ test.describe('with a settings file that is not JSON', () => {
     page,
   }) => {
     await openSettings(page);
-    await expect(problems(page)).toContainText("The settings file isn't valid JSON");
+    await expect(problems(page)).toContainText('Line 2, column 1 isn’t valid JSON.');
     await theme(page, 'Light').click();
-    // Lo says why it didn't, and the file is as the person left it.
-    await expect(row(page, 'settings.theme').getByRole('alert')).toContainText(
-      "Lo didn't change theme",
+    // The row says why it didn't, and the file is as the person left it.
+    await expect(row(page, 'settings.theme').getByRole('alert')).toHaveText(
+      'Couldn’t change the theme settings.json isn’t valid JSON.',
     );
     expect(file()).toBe(broken);
     await expect(theme(page, 'Light')).not.toBeChecked();

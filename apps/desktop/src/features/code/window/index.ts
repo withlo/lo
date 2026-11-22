@@ -21,7 +21,8 @@ import { IndexStatus } from './IndexStatus.tsx';
 import { main } from './main.ts';
 import { ServerItems } from './ServerItems.tsx';
 import { ServerLog } from './ServerLog.tsx';
-import { restartServer, serversOnScreen, showLog, takeServers } from './servers.ts';
+import { restartServer, serversFor, showLog, takeServers } from './servers.ts';
+import Running from './Running.tsx';
 import {
   closePeek,
   closeReferences,
@@ -104,28 +105,28 @@ export default {
       },
     },
     restart: {
-      async run() {
-        const shown = serversOnScreen();
+      async run(target) {
+        const shown = serversFor(target);
         if (typeof shown === 'string') return;
         await Promise.all(
           shown.servers.map((server) => restartServer(shown.view, server.id, server.name)),
         );
       },
-      enabled: () => {
-        const shown = serversOnScreen();
+      enabled: (target) => {
+        const shown = serversFor(target);
         return typeof shown === 'string' ? shown : true;
       },
     },
     log: {
-      run() {
-        const shown = serversOnScreen();
+      run(target) {
+        const shown = serversFor(target);
         const [first] = typeof shown === 'string' ? [] : shown.servers;
         if (typeof shown !== 'string' && first) {
           showLog({ view: shown.view, server: first.id, name: first.name });
         }
       },
-      enabled: () => {
-        const shown = serversOnScreen();
+      enabled: (target) => {
+        const shown = serversFor(target);
         return typeof shown === 'string' ? shown : true;
       },
     },
@@ -140,6 +141,7 @@ export default {
     }),
     settingRow(hints, { order: 10, command: 'code.hints' }),
     Trusted,
+    Running,
     Toolchains,
     // After the diff's (20) and the overview's (30).
     defineView(statusBar, {

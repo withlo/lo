@@ -48,6 +48,20 @@ export const groupNames: Readonly<Record<SettingsGroup, string>> = {
 /** The most a setting's description may run to: one line of Settings. */
 export const DESCRIPTION_MAX = 90;
 
+/**
+ * Checks a row's words, a setting's or any other row's: a label, and one line of
+ * {@link DESCRIPTION_MAX} characters at most that ends with a full stop. `what` names the row in
+ * the error: "The setting theme".
+ */
+export function checkRowWords(what: string, label: string, description: string): void {
+  if (label.trim() === '') throw new Error(`${what} has no label.`);
+  if (description.length > DESCRIPTION_MAX || !description.endsWith('.')) {
+    throw new Error(
+      `The description of ${what.charAt(0).toLowerCase()}${what.slice(1)} is one line of ${DESCRIPTION_MAX} characters at most, ending with a full stop.`,
+    );
+  }
+}
+
 /** A setting a feature has: its key, what its value may be, and the value when the file has none. */
 export interface Setting<T> {
   readonly key: string;
@@ -58,6 +72,11 @@ export interface Setting<T> {
   readonly group: SettingsGroup | 'file';
   /** What its row calls it: the thing set, in four words at most. A switch reads true when on. */
   readonly label: string;
+  /**
+   * What a sentence calls it, as in "Couldn’t change the theme", when its label, lower-cased after
+   * "the", doesn't read as the thing: "Vim keys", "where pull requests open".
+   */
+  readonly named?: string;
   /** One line under the label, with a full stop: what it changes that the label doesn't say. */
   readonly description: string;
   /**
@@ -92,6 +111,7 @@ export interface Setting<T> {
 export interface SettingAbout<T> {
   readonly group: SettingsGroup | 'file';
   readonly label: string;
+  readonly named?: string;
   readonly description: string;
   readonly options?: [T] extends [string] ? Readonly<Record<T, string>> : never;
   readonly window?: 'read' | 'write';
@@ -121,13 +141,8 @@ export function defineSetting<T>(
   if (!settingValue.safeParse(fallback).success) {
     throw new Error(`The default of the setting ${key} isn't JSON, which the settings file holds.`);
   }
-  const { group, label, description, options, window = 'write', problems } = about;
-  if (label.trim() === '') throw new Error(`The setting ${key} has no label.`);
-  if (description.length > DESCRIPTION_MAX || !description.endsWith('.')) {
-    throw new Error(
-      `The description of the setting ${key} is one line of ${DESCRIPTION_MAX} characters at most, ending with a full stop.`,
-    );
-  }
+  const { group, label, named, description, options, window = 'write', problems } = about;
+  checkRowWords(`The setting ${key}`, label, description);
   if (options !== undefined) {
     const values: readonly unknown[] = Object.keys(options);
     if (!values.includes(fallback) || values.some((value) => !schema.safeParse(value).success)) {
@@ -137,6 +152,7 @@ export function defineSetting<T>(
   const setting: Setting<T> = { key, schema, fallback, accepts, group, label, description, window };
   return {
     ...setting,
+    ...(named === undefined ? {} : { named }),
     ...(options === undefined ? {} : { options }),
     ...(problems === undefined ? {} : { problems }),
   };
@@ -188,9 +204,10 @@ export const contract = defineContract('settings', {
     read: { input: z.undefined(), reply: reply<SettingsState>() },
     /**
      * Changes a setting. Main refuses a key no feature declared, and a value its schema refuses
-     * (`invalid`), a setting the window may only read, and a change the file can't take
-     * (`unwritable`): the file has a problem that writing over would lose, or can't be written.
-     * Other settings, and what Lo doesn't know of, stay in the file as they are.
+     * (`invalid`), a setting the window may only read (`unwritable`), a change what the file holds
+     * keeps it from making, which editing the file fixes (`settingsFile`), and a change it couldn't
+     * write (`unsaved`): each with what's wrong in its message. Other settings, and what Lo
+     * doesn't know of, stay in the file as they are.
      */
     set: {
       input: z.strictObject({ key: settingKey, value: settingValue }),
@@ -210,6 +227,11 @@ export const contract = defineContract('settings', {
      * requests opened lately or marks.
      */
     clearCache: { input: z.undefined(), reply: reply<CacheCleared>() },
+    /**
+     * Shows the cache's folder in Finder, or in the system's file manager. Refused while the cache
+     * isn't open (`noCache`): before Git is found, and without it.
+     */
+    showCache: { input: z.undefined(), reply: reply<void>() },
   },
   topics: {
     /** The settings, each time they change. */

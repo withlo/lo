@@ -2,7 +2,7 @@
 // two settings this feature applies itself: the theme, and how much room the local copies may
 // take.
 
-import { app, nativeTheme } from 'electron';
+import { app, nativeTheme, shell } from 'electron';
 
 import { launch, query } from '../../../main/editor.ts';
 import { keymapEditor, settingsFile } from '../../../main/environment.ts';
@@ -17,7 +17,7 @@ import { applySettings } from './apply.ts';
 import { clear, measure } from './cache.ts';
 import { written } from './file.ts';
 import { openSettingsFile } from './open.ts';
-import { createSettings, type Settings } from './store.ts';
+import { createSettings, forWindow, type Settings } from './store.ts';
 
 /** The settings file's path, in the folder Lo keeps the files people edit in. */
 function settingsPath(): string {
@@ -67,7 +67,13 @@ export default defineFeature(contract, {
   },
   handlers: {
     read: () => settings().state(),
-    set: ({ key, value }) => settings().set(key, value),
+    set: async ({ key, value }) => {
+      try {
+        await settings().set(key, value);
+      } catch (error) {
+        throw forWindow(error);
+      }
+    },
     async openFile() {
       // The only file it opens is the settings file. It is checked and opened as text, never run.
       const result = await openSettingsFile(settingsPath(), {
@@ -80,6 +86,12 @@ export default defineFeature(contract, {
     },
     cacheUsage: (_input, { git }) => measure(git),
     clearCache: (_input, { git, use }) => clear(git, use(github), [...clearers]),
+    showCache(_input, { git }) {
+      // Lo's own folder, shown in its folder and never opened, so nothing in it runs.
+      const root = git.cache?.root;
+      if (root === undefined) throw new IpcError('noCache', 'The cache isn’t open.');
+      shell.showItemInFolder(root);
+    },
   },
   start({ git }) {
     // The window applies motion itself, so main only declares it, for Settings to change.

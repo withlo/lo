@@ -9,21 +9,24 @@ import {
   Problem,
   reveal,
   SettingsCommand,
-  SettingsEmpty,
   SettingsGroup,
   SettingsPage,
 } from '@lo/ui';
-import { keyLabels } from '@lo/ui/commands';
+import { keyLabels, NO_TARGET } from '@lo/ui/commands';
 import { createElement, useCallback, useEffect, useRef, useState } from 'react';
 
 import { registry, setMiddle, useKeys } from '../../../window/commands/registry.ts';
 import { useViews } from '../../../window/slots.tsx';
 import { groupNames, settingsGroups, type SettingsGroup as Group } from '../contract.ts';
 import { onMoveSection, onSearch } from './nav.ts';
-import { openSettingsFile, rows, useProblems, type RowAbout } from './shared.ts';
+import { rows, useProblems, type RowAbout } from './shared.ts';
+import { Ticks } from './Ticks.tsx';
 
 /** The id of a group's element, and what the list goes to. */
 const groupId = (group: Group) => `settings-${group}`;
+
+/** `settings.json`, as code. */
+const FILE = <span className="code-small">settings.json</span>;
 
 /** What is wrong in the settings file, above the rows, where the person who edited it looks. */
 function Problems() {
@@ -34,17 +37,22 @@ function Problems() {
   return (
     <Problem
       title={
-        whole
-          ? 'Can’t read settings.json'
-          : `Can’t use ${settings === 1 ? '1 setting' : `${settings} settings`}`
+        whole ? (
+          <>Can’t read {FILE}</>
+        ) : (
+          `Can’t use ${settings === 1 ? '1 setting' : `${settings} settings`}`
+        )
       }
       reason={problems.map(({ key, message }) => (
         // A line each, inside the reason's paragraph.
         <span key={`${key ?? ''} ${message}`} className="block" data-problem="">
-          {message}
+          <Ticks text={message} />
         </span>
       ))}
-      action={{ label: 'Open settings.json', onClick: () => void openSettingsFile() }}
+      action={{
+        label: <>Open {FILE}</>,
+        onClick: () => void registry().run('settings.openFile', NO_TARGET),
+      }}
     />
   );
 }
@@ -76,7 +84,7 @@ function groupOnScreen(body: HTMLElement): string | undefined {
   return found?.dataset.settingsSection;
 }
 
-/** The key that goes to the search, as this system shows it now, after the field. */
+/** The key that goes to the search, as this system shows it now, at the field's end. */
 function SearchKey() {
   useKeys();
   const [first] = registry().keysOf('settings.search');
@@ -90,6 +98,8 @@ export function SettingsTab() {
   const body = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
+  /** Whether the field has focus, when the key that goes to it isn't shown. */
+  const [searching, setSearching] = useState(false);
   const [current, setCurrent] = useState<string>();
   /**
    * The group last gone to by the list or a key, which stays the one on screen while the body
@@ -165,38 +175,43 @@ export function SettingsTab() {
           setCurrent(groupOnScreen(scrolled));
         }}
         search={
-          <div className="flex items-center gap-8">
-            <div className="min-w-0 flex-1">
-              <Input
-                ref={field}
-                type="search"
-                aria-label="Search settings"
-                placeholder="Search settings"
-                value={query}
-                onChange={(event) => {
-                  setQuery(event.target.value);
-                  body.current?.scrollTo?.({ top: 0 });
-                }}
-                onKeyDown={(event) => {
-                  // Down from the field, to the first control of the rows it found.
-                  if (event.key !== 'ArrowDown') return;
-                  event.preventDefault();
-                  body.current
-                    ?.querySelector<HTMLElement>(
-                      'button:not([tabindex="-1"]), input, [role="switch"]',
-                    )
-                    ?.focus();
-                }}
-              />
-            </div>
-            <SearchKey />
+          // The key that goes to the field is at its end while it would do something there.
+          <div className="relative">
+            <Input
+              ref={field}
+              type="search"
+              aria-label="Search settings"
+              placeholder="Search settings"
+              value={query}
+              onFocus={() => setSearching(true)}
+              onBlur={() => setSearching(false)}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                body.current?.scrollTo?.({ top: 0 });
+              }}
+              onKeyDown={(event) => {
+                // Down from the field, to the first control of the rows it found.
+                if (event.key !== 'ArrowDown') return;
+                event.preventDefault();
+                body.current
+                  ?.querySelector<HTMLElement>(
+                    'button:not([tabindex="-1"]), input, [role="switch"]',
+                  )
+                  ?.focus();
+              }}
+            />
+            {!searching && query === '' && (
+              <span className="pointer-events-none absolute inset-y-0 end-8 flex items-center">
+                <SearchKey />
+              </span>
+            )}
           </div>
         }
         footer={
           <>
-            <Button variant="ghost" size="sm" onClick={() => void openSettingsFile()}>
-              Open <span className="code-small">settings.json</span>
-            </Button>
+            <SettingsCommand command="settings.openFile" variant="ghost" size="sm">
+              Open {FILE}
+            </SettingsCommand>
             <SettingsCommand command="keys.openKeymap" variant="ghost" size="sm">
               Open keymap file
             </SettingsCommand>
@@ -205,8 +220,11 @@ export function SettingsTab() {
       >
         <Problems />
         {searched !== '' && shown.length === 0 && (
-          <SettingsEmpty heading={`No settings match “${searched}”`}>
+          // In the middle of the column, as a view with nothing in it is.
+          <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-16 p-32 text-center">
+            <h2 className="m-0 text-balance text-heading">No settings match “{searched}”</h2>
             <Button
+              variant="primary"
               onClick={() => {
                 setQuery('');
                 field.current?.focus();
@@ -214,7 +232,7 @@ export function SettingsTab() {
             >
               Clear search
             </Button>
-          </SettingsEmpty>
+          </div>
         )}
         {groups.map((group) => (
           <SettingsGroup key={group} id={groupId(group)} title={groupNames[group]}>

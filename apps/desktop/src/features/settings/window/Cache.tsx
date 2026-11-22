@@ -1,17 +1,20 @@
-// Settings' Storage rows: how much room the cache takes against its limit, with "Clear cache", and
-// the limit itself.
+// Settings' Storage rows: how much room the cache takes against its limit, with "Clear cache" and
+// the button that shows its folder, and the limit itself.
 
-import { Button, formatBytes, Input, Meter, Problem, Setting } from '@lo/ui';
-import { useCallback, useEffect, useState } from 'react';
+import { Button, formatBytes, Input, Meter, Problem, Setting, SettingsCommand } from '@lo/ui';
+import { useEffect, useState } from 'react';
+import { useStore } from 'zustand';
 
+import { systemOf } from '../../../window/commands/registry.ts';
 import { client } from '../../../window/ipc.ts';
 import { contract, type CacheUsage } from '../contract.ts';
 import { cacheCap, CACHE_CAP_MAX, GB } from '../settings.ts';
 import { wholeNumber } from './format.ts';
 import { defineRow, settingRow, useSetting, type ControlProps } from './shared.ts';
+import { cacheStore, measureCache } from './storage.ts';
 
 /** The size limit, in GB, as a field: what's typed counts when the field is left or `⏎` is pressed. */
-function SizeLimit({ value, change, note }: ControlProps<number>) {
+function SizeLimit({ value, change, note, noteId }: ControlProps<number>) {
   const [draft, setDraft] = useState<string>();
   const [invalid, setInvalid] = useState(false);
 
@@ -35,6 +38,7 @@ function SizeLimit({ value, change, note }: ControlProps<number>) {
           mono
           inputMode="numeric"
           aria-label="Size limit in GB"
+          aria-describedby={noteId}
           invalid={invalid}
           value={draft ?? String(value)}
           onChange={(event) => setDraft(event.target.value)}
@@ -59,17 +63,22 @@ function Usage({
   usage,
   cap,
   gaveUp,
+  again,
 }: {
   usage: CacheUsage | undefined;
   cap: number;
   gaveUp: boolean;
+  again: () => void;
 }) {
   if (usage === undefined) return <span className="text-fg-muted text-small">Measuring…</span>;
   if (usage.status === 'checking') {
-    return (
-      <span className="text-fg-muted text-small">
-        {gaveUp ? 'Can’t open the cache folder. Restart Lo to try again.' : 'Looking for Git…'}
-      </span>
+    return gaveUp ? (
+      <Problem
+        title="Can’t open the cache folder"
+        action={{ label: 'Check again', onClick: again }}
+      />
+    ) : (
+      <span className="text-fg-muted text-small">Looking for Git…</span>
     );
   }
   if (usage.status === 'unavailable') {
@@ -88,23 +97,15 @@ function Usage({
   );
 }
 
-/** The cache's row: what it holds, how full it is, and "Clear cache". */
+/** The cache's row: what it holds, how full it is, "Clear cache", and its folder in Finder. */
 function Cache({ label, description }: { label: string; description: string }) {
   const cap = useSetting(cacheCap);
-  const [usage, setUsage] = useState<CacheUsage>();
+  const usage = useStore(cacheStore, (state) => state.usage);
   const [tries, setTries] = useState(0);
   const [clearing, setClearing] = useState(false);
   const [kept, setKept] = useState(0);
   const [failed, setFailed] = useState(false);
-  const refresh = useCallback(() => {
-    client(contract)
-      .cacheUsage()
-      .then(setUsage, (error: unknown) => {
-        console.error("Lo couldn't measure the cache:", error);
-        // Better to say there are no copies to show than to go on saying it's measuring them.
-        setUsage({ status: 'unavailable' });
-      });
-  }, []);
+  const refresh = measureCache;
   useEffect(refresh, [refresh]);
   // Lo looks for git once its window is up and opens the cache after, so Settings may be first.
   useEffect(() => {
@@ -136,7 +137,15 @@ function Cache({ label, description }: { label: string; description: string }) {
       description={description}
       below={
         <div className="flex flex-col gap-8">
-          <Usage usage={usage} cap={cap} gaveUp={tries >= OPENING_TRIES} />
+          <Usage
+            usage={usage}
+            cap={cap}
+            gaveUp={tries >= OPENING_TRIES}
+            again={() => {
+              setTries(0);
+              refresh();
+            }}
+          />
           {kept > 0 && !failed && (
             <span role="status" className="text-fg-muted text-small">
               {kept === 1
@@ -153,6 +162,9 @@ function Cache({ label, description }: { label: string; description: string }) {
         </div>
       }
     >
+      <SettingsCommand command="settings.showCache">
+        {systemOf(navigator.platform) === 'mac' ? 'Show in Finder' : 'Show in file manager'}
+      </SettingsCommand>
       <Button busy={clearing} working="Clearing…" align="end" onClick={() => void clear()}>
         Clear cache
       </Button>
@@ -167,7 +179,7 @@ export default [
     order: 10,
     label: 'Cache',
     description: 'Local copies of repos and data saved from GitHub, so pull requests open fast.',
-    words: () => ['clear', 'local copies', 'git'],
+    words: () => ['clear', 'local copies', 'git', 'folder', 'Finder', 'file manager'],
     render: Cache,
   }),
   settingRow(cacheCap, { order: 20, id: 'settings.cacheCap', control: SizeLimit }),

@@ -13,5 +13,6 @@ import { defineSetting } from '../settings/contract.ts';
 export const vim = defineSetting('editor.vim', z.boolean(), false, 'true or false', {
   group: 'keyboard',
   label: 'Vim keys',
+  named: 'Vim keys',
   description: 'Modal editing in code views and comment boxes.',
 });

@@ -5,13 +5,19 @@ import { createElement, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
 import { IpcError } from '../../../ipc/contract.ts';
-import { notify } from '../../../window/commands/notices.tsx';
+import { refuse } from '../../../window/commands/notices.tsx';
 import { client } from '../../../window/ipc.ts';
 import { defineSlot, defineView, type View } from '../../../window/slots.tsx';
-import { contract, type Problem, type Setting, type SettingsGroup } from '../contract.ts';
+import {
+  checkRowWords,
+  contract,
+  type Problem,
+  type Setting,
+  type SettingsGroup,
+} from '../contract.ts';
 import { SettingRowView, type ControlProps } from './Row.tsx';
 import { settingsStore } from './store.ts';
-import { setValue, useValue, valueIn, valueNow } from './values.ts';
+import { refusalLine, setValue, useValue, valueIn, valueNow } from './values.ts';
 
 export type { ControlProps } from './Row.tsx';
 
@@ -83,7 +89,8 @@ export function settingRow<T>(
  * A row of Settings that isn't one setting: a list, as the accounts are, or an action, as clearing
  * the cache is. Settings files it under `group`, and finds it by its label, its description and
  * `words`. `render` draws the row whole, given its words: a `Setting` with its controls, or a
- * `SettingsList`, from `@lo/ui`, so every row has the same anatomy.
+ * `SettingsList`, from `@lo/ui`, so every row has the same anatomy. Its description is one line,
+ * as a setting's is, and a row that breaks that fails as it's defined.
  */
 export function defineRow(row: {
   readonly id: string;
@@ -95,6 +102,7 @@ export function defineRow(row: {
   readonly render: (about: { label: string; description: string }) => ReactNode;
 }): View {
   const { render, label, description } = row;
+  checkRowWords(`The row ${row.id}`, label, description);
   return defineView(rows, { ...row, render: () => createElement(render, { label, description }) });
 }
 
@@ -140,28 +148,28 @@ export function watchSetting<T>(setting: Setting<T>, listener: (value: T) => voi
 /**
  * Changes a setting from a key, the palette or the menu, where there's no row to say it on. Main
  * checks the value again and writes the file; the setting then follows through
- * {@link useSetting}. When it can't be changed, a note says why, and this resolves `false`.
+ * {@link useSetting}. When it can't be changed, a toast says why nothing happened, and this
+ * resolves `false`.
  */
 export async function changeSetting<T>(setting: Setting<T>, value: T): Promise<boolean> {
-  const why = await setValue(setting, value);
-  if (why !== undefined) notify('Settings', why);
-  return why === undefined;
+  const refusal = await setValue(setting, value);
+  if (refusal !== undefined) refuse(refusalLine(refusal, setting));
+  return refusal === undefined;
 }
 
 /**
  * Opens the settings file in the system's text editor, so the person can fix what's wrong in it,
- * and says why in a note when Lo can't.
+ * as "Open `settings.json`" does. When it can't be opened, a toast says why.
  */
 export async function openSettingsFile(): Promise<void> {
   try {
     await client(contract).openFile();
   } catch (error) {
     console.error("Lo couldn't open the settings file:", error);
-    notify(
-      'Open settings.json',
+    refuse(
       error instanceof IpcError && error.code === 'unopened'
         ? error.message
-        : "Lo couldn't open the settings file.",
+        : 'Couldn’t open settings.json',
     );
   }
 }

@@ -33,15 +33,16 @@ const KIND: Record<TrustKind, string> = {
 };
 
 /**
- * One trusted repo, or one trusted pull request from a fork, as an item of Settings' list: its name
- * in the code font, what it covers and since when, and the button that stops trusting it.
+ * One trusted repo, or one trusted pull request from a fork, as an item of Settings' list: its name,
+ * as plain text as a repo's name is, what it covers and since when, and the button that stops
+ * trusting it.
  */
 export function TrustRow({ entry, onRemove }: TrustRowProps) {
   return (
     <SettingsListItem
       data={{ 'data-key': entry.key }}
       label={
-        <span className="min-w-0 truncate text-fg code-small">
+        <span className="min-w-0 truncate text-fg">
           <ShownText text={entry.name} />
         </span>
       }

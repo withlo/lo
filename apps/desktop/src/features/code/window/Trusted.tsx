@@ -66,7 +66,13 @@ function Trusted({ value }: ControlProps<typeof trusted.fallback>) {
           problem: (
             <Problem
               title={`Couldn’t stop trusting ${row.name}`}
-              reason={failed.unsaved ? 'settings.json couldn’t be saved.' : undefined}
+              reason={
+                failed.unsaved ? (
+                  <>
+                    <span className="code-small">settings.json</span> couldn’t be saved.
+                  </>
+                ) : undefined
+              }
               action={{ label: 'Try again', onClick: () => remove(row.key) }}
             />
           ),

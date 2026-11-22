@@ -31,6 +31,12 @@ function applyZoom(contents: WebContents): void {
   contents.setZoomFactor(drawnAt / 100);
 }
 
+/** Draws every window at `percent`. */
+function drawAt(percent: number): void {
+  drawnAt = percent;
+  for (const window of BrowserWindow.getAllWindows()) applyZoom(window.webContents);
+}
+
 // Lo follows the system's appearance.
 const currentTheme = (): Theme => (nativeTheme.shouldUseDarkColors ? 'dark' : 'light');
 
@@ -68,9 +74,19 @@ export default defineFeature(contract, {
     quit() {
       app.quit();
     },
-    // The setting is the zoom: written here, it's applied as it's read back, as a change in
-    // Settings or the file is.
-    zoom: ({ step }, { use }) => use(settings).update(zoom, (percent) => zoomed(percent, step)),
+    // The setting is the zoom, so a step is written there to last. The window zooms at once all
+    // the same, from where it's drawn, as it always has: a settings file Lo can't write keeps the
+    // step from lasting, not from happening.
+    async zoom({ step }, { use }) {
+      const next = zoomed(drawnAt, step);
+      drawAt(next);
+      try {
+        await use(settings).update(zoom, () => next);
+      } catch (error) {
+        if (!(error instanceof IpcError)) throw error;
+        console.error(`Lo couldn't save the zoom: ${error.message}`);
+      }
+    },
     fullScreen() {
       const window = loWindow();
       window?.setFullScreen(!window.isFullScreen());
@@ -102,10 +118,7 @@ export default defineFeature(contract, {
     app.on('browser-window-created', (_event, window) => {
       window.webContents.on('did-navigate', () => applyZoom(window.webContents));
     });
-    use(settings).watch(zoom, (percent) => {
-      drawnAt = percent;
-      for (const window of BrowserWindow.getAllWindows()) applyZoom(window.webContents);
-    });
+    use(settings).watch(zoom, drawAt);
     app.setAboutPanelOptions(
       aboutOptions({
         platform: process.platform,

@@ -5,6 +5,7 @@ import {
   Avatar,
   Button,
   Problem,
+  SettingsCommand,
   SettingsEmpty,
   SettingsList,
   SettingsListItem,
@@ -88,9 +89,7 @@ export function AccountsSection({ label, description }: { label: string; descrip
           <Button size="sm" variant="ghost" onClick={openImport}>
             Import from GitHub CLI
           </Button>
-          <Button size="sm" onClick={openSignIn}>
-            Sign in with GitHub…
-          </Button>
+          <SettingsCommand command="accounts.addAccount" size="sm" />
         </>
       }
     >
@@ -120,9 +119,11 @@ export default defineRow({
   id: 'accounts.settings',
   group: 'accounts',
   order: 10,
-  label: 'Accounts',
+  // The group is Accounts: the row names where they're from.
+  label: 'GitHub',
   description: 'Each pull request opens with an account that can see its repo.',
   words: () => [
+    'accounts',
     'sign in',
     'sign out',
     'GitHub CLI',

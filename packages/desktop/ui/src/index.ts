@@ -292,6 +292,7 @@ export {
 } from './TypeHover.tsx';
 export {
   ServerStatus,
+  ServerWords,
   type ServerFailure,
   type ServerState,
   type ServerStatusProps,

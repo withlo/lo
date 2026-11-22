@@ -82,8 +82,11 @@ function OnOffer({ state }: { state: UpdateState }) {
   );
 }
 
-/** This Lo's version and build, with the button that asks GitHub for a newer one. */
-function Version() {
+/**
+ * This Lo's version, with what names its build beside it, and its line, with the button that asks
+ * GitHub for a newer one.
+ */
+function Version({ description }: { label: string; description: string }) {
   const version = useStore(updatesStore, (state) => state.version);
   const build = useStore(updatesStore, (state) => state.build);
   const checking = useStore(updatesStore, (state) => state.checking);
@@ -102,8 +105,13 @@ function Version() {
   );
   return (
     <Setting
-      label={version === undefined ? 'Lo' : `Lo ${version}`}
-      description={build}
+      label={
+        <>
+          {version === undefined ? 'Lo' : `Lo ${version}`}
+          {build !== undefined && <span className="ms-8 text-fg-muted text-small">{build}</span>}
+        </>
+      }
+      description={description}
       below={below}
     >
       {checkedAt !== undefined && !checking && (
@@ -125,7 +133,7 @@ export default [
     group: 'about',
     order: 10,
     label: 'Lo',
-    description: '',
+    description: 'The version in use, and any update on offer.',
     words: () => [
       'version',
       'updates',

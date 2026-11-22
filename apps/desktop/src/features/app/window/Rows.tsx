@@ -6,18 +6,30 @@ import { Setting, SettingsCommand } from '@lo/ui';
 import { defineRow, settingRow, type ControlProps } from '../../settings/window/shared.ts';
 import { zoom } from '../settings.ts';
 
-/** The zoom, between the buttons that step it down and up, as `⌘-` and `⌘+` do. */
+/**
+ * The zoom, between the buttons that step it down and up, as `⌘-` and `⌘+` do. The number takes
+ * the room of the widest, so the buttons hold still as it changes.
+ */
 function Zoom({ value }: ControlProps<number>) {
   return (
     <div className="flex items-center gap-4">
-      <SettingsCommand command="app.zoomOut" size="sm" variant="ghost" icon aria-label="Zoom out">
-        −
+      <SettingsCommand command="app.zoomOut" size="sm" icon aria-label="Zoom out">
+        <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M4 8h8" />
+        </svg>
       </SettingsCommand>
-      <span className="text-center tabular-nums" aria-live="polite">
-        {value}%
+      <span className="inline-grid justify-items-center tabular-nums">
+        <span className="col-start-1 row-start-1" aria-live="polite">
+          {value}%
+        </span>
+        <span className="invisible col-start-1 row-start-1" aria-hidden="true">
+          000%
+        </span>
       </span>
-      <SettingsCommand command="app.zoomIn" size="sm" variant="ghost" icon aria-label="Zoom in">
-        +
+      <SettingsCommand command="app.zoomIn" size="sm" icon aria-label="Zoom in">
+        <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M8 4v8M4 8h8" />
+        </svg>
       </SettingsCommand>
     </div>
   );

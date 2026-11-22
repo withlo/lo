@@ -352,10 +352,12 @@ the window find them with `import.meta.glob`.
   declares the setting), the window through its `window/shared.ts` (`useSetting`, `changeSetting`,
   `watchSetting`), where a feature puts its rows of Settings in the `settings.rows` slot:
   `settingRow(setting, { order })` draws a setting's row from the setting itself, and `defineRow`
-  makes any other, such as a list. A setting declared with `{ window: 'read' }`, such as which
-  repositories are trusted, the window shows but can't change: `settings.set` refuses it as
-  `unwritable`, and only main writes it, with `use(settings).update(setting, change)`.
-  `docs/settings.md` lists every setting; a test fails when one is missing.
+  makes any other, such as a list, with the same one line. A change main refuses comes back as
+  `settingsFile` or `unsaved`, with main's reason and its details, and the row says it as a
+  `Problem`. A setting declared with `{ window: 'read' }`, such as which repositories are trusted,
+  the window shows but can't change: `settings.set` refuses it as `unwritable`, and only main writes
+  it, with `use(settings).update(setting, change)`. `docs/settings.md` lists every setting; a test
+  fails when one is missing.
 - `migrations/001-<name>.sql`, `002-<name>.sql` and on create and change the feature's tables. At
   startup, before any handler can be asked anything, each feature's new migrations run in order,
   each in a transaction, and are recorded with their SHA-256.

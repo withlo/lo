@@ -23,9 +23,9 @@ list.
 ```
 
 - **Lo applies a change as soon as you save the file,** whether you edited it or Settings did.
-- **A value Lo can't use is reported and ignored.** Settings says which setting, what it takes and
-  what Lo uses instead, and the rest of the file applies as it is. The value stays in the file for
-  you to fix.
+- **A value Lo can't use is reported and ignored.** Settings says which setting and what it takes,
+  its row shows the default Lo uses instead, and the rest of the file applies as it is. The value
+  stays in the file for you to fix.
 - **A file Lo can't read as JSON** (a missing comma, say, or a comment that isn't closed) is
   reported, with the line and column where Lo found the problem, and Lo goes on with the settings it
   had. It changes nothing in the file until it's fixed, so Settings never writes over what you

@@ -128,32 +128,53 @@ describe('changeSetting', () => {
     expect(notice()).toBeUndefined();
   });
 
-  it('says why in a note when main refuses, and resolves false', async () => {
+  it('says why nothing happened in a toast when main refuses, and resolves false', async () => {
     installBridge({
       'settings.set': () => {
-        throw new IpcError(
-          'unwritable',
-          "Lo didn't change diff.layout, since the file has a problem.",
-        );
+        // No reason of main's, only what failed, on the line after it.
+        throw new IpcError('settingsFile', '\nsomething');
       },
     });
     expect(await changeSetting(layout, 'inline')).toBe(false);
-    expect(notice()).toEqual({
-      title: 'Settings',
-      body: "Lo didn't change diff.layout, since the file has a problem.",
+    expect(notice()).toEqual({ title: 'settings.json has an error', body: '' });
+    installBridge({
+      'settings.set': () => {
+        throw new IpcError('unsaved', '\nEIO');
+      },
     });
+    expect(await changeSetting(layout, 'split')).toBe(false);
+    expect(notice()).toEqual({ title: 'settings.json couldn’t be saved', body: '' });
+    // Main's reason, when it gives one, in plain words.
+    installBridge({
+      'settings.set': () => {
+        throw new IpcError('settingsFile', '`settings.json` isn’t valid JSON.\nValueExpected');
+      },
+    });
+    expect(await changeSetting(layout, 'split')).toBe(false);
+    expect(notice()).toEqual({ title: 'settings.json isn’t valid JSON', body: '' });
   });
 
-  it('says only what Lo can safely say when something else went wrong', async () => {
+  it('says what couldn’t change when something else went wrong', async () => {
     installBridge({
       'settings.set': () => {
         throw new IpcError('internal', 'settings.set failed.');
       },
     });
     expect(await changeSetting(layout, 'inline')).toBe(false);
-    expect(notice()?.body).toBe("Lo couldn't change diff.layout.");
+    expect(notice()).toEqual({ title: 'Couldn’t change the diff layout', body: '' });
   });
 });
+
+/** Defining the row test.version with `description` as its line. */
+const versionRow = (description: string) => () =>
+  defineRow({
+    id: 'test.version',
+    group: 'about',
+    order: 1,
+    label: 'Lo',
+    description,
+    render: () => 'a',
+  });
 
 describe('settingRow and defineRow', () => {
   it('make views of the slot, in their order, with what search reads of each', () => {
@@ -194,6 +215,14 @@ describe('settingRow and defineRow', () => {
       description: 'A name.',
     });
     expect(() => settingRow(name, { order: 1 })).toThrow('needs a control of its own');
+  });
+
+  it('refuse a row with no line, one past 90 characters, or one without a full stop', () => {
+    const said = 'The description of the row test.version is one line of 90 characters at most';
+    expect(versionRow('')).toThrow(said);
+    expect(versionRow(`${'x'.repeat(90)}.`)).toThrow(said);
+    expect(versionRow('No full stop')).toThrow(said);
+    expect(versionRow('The version in use.')).not.toThrow();
   });
 });
 
