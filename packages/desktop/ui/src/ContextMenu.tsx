@@ -1,5 +1,6 @@
 import { Menu } from '@base-ui/react/menu';
 import { Separator } from '@base-ui/react/separator';
+import { cva } from 'class-variance-authority';
 import { Fragment, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 
 import { useTakeFocus } from './focus.ts';
@@ -61,6 +62,14 @@ export interface ContextMenuProps {
   /** Where the menu is put in the page: an element inside `.lo-app`. */
   container?: HTMLElement | null | undefined;
 }
+
+/**
+ * The box a row's key sits in: as tall as the label's line, and at the row's top when a reason
+ * makes the row two lines, so the keys of a menu line up with their labels in every row.
+ */
+const keyBox = cva('flex h-1lh flex-none items-center', {
+  variants: { reason: { true: 'self-start', false: '' } },
+});
 
 /**
  * A menu at a point: the actions that can be done to what was right-clicked, each with its key,
@@ -160,11 +169,14 @@ export function ContextMenu({
                       )}
                     </span>
                     {item.keys && item.keys.length > 0 && (
-                      <Key
-                        keys={item.keys}
-                        decorative
-                        className="group-data-highlighted:border-current group-data-highlighted:text-inherit group-data-highlighted:opacity-70 group-data-highlighted:shadow-none"
-                      />
+                      // On the label's line, where it is in a row with no reason under it.
+                      <span className={keyBox({ reason: item.disabled !== undefined })}>
+                        <Key
+                          keys={item.keys}
+                          decorative
+                          className="group-data-highlighted:border-current group-data-highlighted:text-inherit group-data-highlighted:opacity-70 group-data-highlighted:shadow-none"
+                        />
+                      </span>
                     )}
                   </Menu.Item>
                 ))}

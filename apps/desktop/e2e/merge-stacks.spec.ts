@@ -84,6 +84,17 @@ const panel = (page: Page) => page.locator('[data-lo-scope="merge"]');
 /** The merge's dialog. */
 const dialog = (page: Page) => page.getByTestId('merge-confirm');
 
+/**
+ * Waits for the merge's dialog to ask under `title`: the title is there while Lo still checks, so
+ * this waits for its main button to stop being busy too.
+ */
+async function asks(page: Page, title: string, options: { timeout?: number } = {}): Promise<void> {
+  await expect(dialog(page).getByRole('heading', { name: title, exact: true })).toBeVisible(
+    options,
+  );
+  await expect(dialog(page).locator('button[aria-busy="true"]')).toHaveCount(0);
+}
+
 /** The note Lo says at the bottom of the window. */
 const said = (page: Page, text: string) => page.getByRole('status').filter({ hasText: text });
 
@@ -104,7 +115,7 @@ test('a GitHub stack’s top layer merges with the layer below it as one, showin
   await expect(panel(page).getByRole('button', { name: /Merge 2 layers/ })).toBeVisible();
 
   await page.keyboard.press('Enter');
-  await expect(dialog(page)).toContainText('Merge 2 layers into merge/8/base?');
+  await asks(page, 'Merge 2 layers');
   await expect(dialog(page)).toContainText('A GitHub stack merges as one.');
   await expect(rows(page)).toHaveText([
     new RegExp(`#${stack1.number} Fixture M8: stack, first layer`),
@@ -150,7 +161,7 @@ test.describe('a chain that can’t be a GitHub stack', () => {
     );
 
     await page.keyboard.press('Enter');
-    await expect(dialog(page)).toContainText(`Merge #${chain1.number} into merge/8/base?`);
+    await asks(page, `Merge #${chain1.number}`);
     // With a merge commit, GitHub's default here, the layers moved need no rebase.
     await expect(dialog(page)).toContainText('Merge commit');
     await expect(rows(page)).toHaveText([

@@ -182,9 +182,9 @@ function nextIn(
 /** Why the file `key` can't be shown, or `true`: a changed file in the diff, any whole. */
 export function showable(tab: string, key: string): true | string {
   if (changeOf(tab, key)) {
-    return canShow('diff') || 'There’s no diff on screen to show it in.';
+    return canShow('diff') || 'No diff to show it in';
   }
-  return canShow('whole') || 'Lo has no whole-file view to open it in.';
+  return canShow('whole') || 'Whole files can’t be opened here';
 }
 
 /**
@@ -204,7 +204,7 @@ export function show(tab: string, key: string): void {
 
 /** Why `key` can't be opened whole, or `true`. */
 export function wholeShowable(): true | string {
-  return canShow('whole') || 'Lo has no whole-file view to open it in.';
+  return canShow('whole') || 'Whole files can’t be opened here';
 }
 
 /** The key of the row the keyboard is on, if it's a file's. */

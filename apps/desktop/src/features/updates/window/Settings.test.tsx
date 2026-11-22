@@ -7,7 +7,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
-import { notice, withdraw } from '../../../window/commands/notices.tsx';
+import { notice, notices, withdraw } from '../../../window/commands/notices.tsx';
 import { Slots, useViews } from '../../../window/slots.tsx';
 import { installBridge } from '../../../window/test/bridge.ts';
 import type { Setting } from '../../settings/contract.ts';
@@ -54,8 +54,7 @@ beforeEach(() => {
 
 afterEach(() => {
   document.body.replaceChildren();
-  const note = notice();
-  if (note) withdraw(note.title, note.body);
+  for (const note of notices()) withdraw(note.title, note.body);
 });
 
 /** The sections of Settings that features put in its slot, as the Settings page draws them. */

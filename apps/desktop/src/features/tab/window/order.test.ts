@@ -15,26 +15,20 @@ describe('moving a tab a place', () => {
   it('moves the tab on screen, or the one right-clicked, but not round the ends', () => {
     expect(movable(state, NO_TARGET, -1)).toBe(true);
     expect(movable(state, NO_TARGET, 1)).toBe(true);
-    expect(movable(state, { kind: 'tab', tab: 'fd' }, -1)).toBe(
-      'The tab is first in the strip already.',
-    );
-    expect(movable(state, { kind: 'tab', tab: 'settings' }, 1)).toBe(
-      'The tab is last in the strip already.',
-    );
-    expect(movable(state, { kind: 'tab', tab: 'gone' }, 1)).toBe("That tab isn't open.");
+    expect(movable(state, { kind: 'tab', tab: 'fd' }, -1)).toBe('Already first');
+    expect(movable(state, { kind: 'tab', tab: 'settings' }, 1)).toBe('Already last');
+    expect(movable(state, { kind: 'tab', tab: 'gone' }, 1)).toBe('Tab isn’t open');
   });
 
   it('goes no further than the tabs the strip shows', () => {
-    expect(movable(state, NO_TARGET, 1, 2)).toBe('The tab is last in the strip already.');
+    expect(movable(state, NO_TARGET, 1, 2)).toBe('Already last');
     expect(movable(state, NO_TARGET, -1, 2)).toBe(true);
   });
 
   it('leaves Recent pull requests where it is', () => {
     const alone = { tabs: [recent], active: 'recent' };
     for (const by of [1, -1] as const) {
-      expect(movable(alone, NO_TARGET, by)).toBe(
-        "Recent pull requests can't move: it shows while no other tab is open.",
-      );
+      expect(movable(alone, NO_TARGET, by)).toBe('Recent pull requests can’t move');
     }
   });
 

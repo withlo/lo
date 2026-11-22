@@ -16,6 +16,8 @@ import { buildPage, launch } from './electron.ts';
 
 const STYLE = [
   readFileSync(new URL('../src/code/view.css', import.meta.url), 'utf8'),
+  // The one token the page's own measures need: the room a box brought on screen keeps under it.
+  ':root { --lo-sp-8: 8px; }',
   'body { margin: 0; } #root { width: 1000px; height: 600px; } .card { background: #ddd; }',
 ].join('\n');
 
@@ -867,4 +869,28 @@ test('closing a comment box with `Esc` leaves its line where it is, above the sc
   await expect(page.locator('.lo-diffcomposer')).toHaveCount(0);
   await frames(page);
   expect(Math.abs((await lineTop(page, line))! - before!)).toBeLessThan(1);
+});
+
+test('with Vim keys off, the cursor line’s number is marked and the caret doesn’t blink', async () => {
+  const page = await open('split');
+  await page.evaluate(() => window.harness.cursor(25));
+  await frames(page);
+  await expect(page.locator('.cm-lineNumbers .cm-activeLineGutter').first()).toBeVisible();
+  const blink = await page
+    .locator('.cm-cursorLayer')
+    .first()
+    .evaluate((layer) => getComputedStyle(layer).animationDuration);
+  expect(blink).toBe('0s');
+});
+
+test('a comment box opened under the last line on screen comes on screen whole, 8 px clear of the foot', async () => {
+  const page = await open('split');
+  const lines = await onScreen(page);
+  await page.evaluate((at) => window.harness.compose(at), lines.at(-1)!.line);
+  await frames(page);
+  const under = await page.locator('.lo-diffcomposer').evaluate((box) => {
+    const foot = document.querySelector('#root')!.getBoundingClientRect().bottom;
+    return foot - box.getBoundingClientRect().bottom;
+  });
+  expect(Math.abs(under - 8)).toBeLessThan(1);
 });

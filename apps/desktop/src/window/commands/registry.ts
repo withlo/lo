@@ -4,7 +4,7 @@
 import { Registry, type Command, type Entry, type System } from '@lo/ui/commands';
 import { useSyncExternalStore } from 'react';
 
-import { notify } from './notices.tsx';
+import { refuse } from './notices.tsx';
 
 /** The view in the middle of the window, as keys see it. */
 export interface Middle {
@@ -35,7 +35,8 @@ export function createRegistry(commands: readonly Command[], system: System): Re
     commands,
     here: () => middle()?.here(),
     // A command asked for that can't run says why, whoever asked: a key, a menu or the palette.
-    onRefused: (reason, id) => notify(created.command(id)?.label ?? 'Not now', reason),
+    // The reason alone, never under the command's name.
+    onRefused: (reason) => refuse(reason),
   });
   current = created;
   return current;

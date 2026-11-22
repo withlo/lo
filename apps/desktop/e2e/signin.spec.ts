@@ -113,7 +113,6 @@ test('signs in with GitHub: the code, GitHub’s page, and the account, never it
   // `⏎` copies the code and opens GitHub's page for codes, and only that page.
   await page.keyboard.press('Enter');
   await expect.poll(browsed).toEqual([`${origin}/web/login/device`]);
-  await expect(dialog).toContainText('Copied FAKE-1234.');
   expect(await app.evaluate(({ clipboard }) => clipboard.readText())).toBe('FAKE-1234');
   await app.evaluate(({ clipboard }) => clipboard.writeText(''));
   // `y y` copies it again.
@@ -127,7 +126,7 @@ test('signs in with GitHub: the code, GitHub’s page, and the account, never it
   await expect(dialog.getByRole('button', { name: /Done/ })).toBeFocused();
   // Coming back to the window with a click on the dialog's text takes focus off Done, and `⏎`
   // still presses it.
-  await dialog.getByText(/Lo is signed in to GitHub as/).click();
+  await dialog.getByText(/^Signed in as/).click();
   await expect(dialog.getByRole('button', { name: /Done/ })).not.toBeFocused();
   await page.keyboard.press('Enter');
   await expect(dialog).toBeHidden();
@@ -185,7 +184,7 @@ test.describe('a sign-in that is cancelled', () => {
     await openSettings(page);
     await page.getByRole('button', { name: 'Add an account' }).click();
     const dialog = page.getByTestId('sign-in');
-    await expect(dialog).toContainText('Waiting for you to approve.');
+    await expect(dialog).toContainText('Waiting for approval…');
     await expect.poll(() => polls(github)).toBeGreaterThan(0);
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
@@ -210,13 +209,12 @@ test.describe('a system with no keychain Lo keeps tokens with', () => {
     await openSettings(page);
     await page.getByRole('button', { name: 'Add an account' }).click();
     const dialog = page.getByTestId('sign-in');
-    await expect(dialog).toContainText("Lo can't keep your token safely");
+    await expect(dialog.getByRole('alert')).toContainText('Couldn’t sign in');
+    await expect(dialog.getByRole('button', { name: /Quit Lo/ })).toBeFocused();
     // Playwright starts Electron with Chromium's stand-in keychain on every system, which Lo
     // names first; without it, Linux's fallback key would be refused for want of a keyring.
-    await expect(dialog.getByRole('alert')).toContainText(
-      /stand-in keychain|GNOME Keyring or KWallet/,
-    );
-    await expect(dialog.getByRole('button', { name: /Quit Lo/ })).toBeFocused();
+    await dialog.getByRole('button', { name: 'Details' }).click();
+    await expect(dialog).toContainText(/stand-in keychain|GNOME Keyring or KWallet/);
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
 

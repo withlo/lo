@@ -505,10 +505,10 @@ function stacked(landed: number[] | null): Progress {
 
 test('a GitHub stack’s merge names its layers', () => {
   const plan = { kind: 'merge', number: 138, base: 'main', method: 'SQUASH' } as const;
-  expect(confirmTitle({ ...plan, together: STACK })).toBe('Merge 3 layers into main?');
+  expect(confirmTitle({ ...plan, together: STACK })).toBe('Merge 3 layers');
   expect(confirmLabel({ ...plan, together: STACK })).toBe('Merge 3 layers');
   expect(confirmTitle({ ...plan, kind: 'enqueue', together: STACK })).toBe(
-    'Add 3 layers to the merge queue for main?',
+    'Add 3 layers to merge queue',
   );
   expect(confirmLabel({ ...plan, together: null })).toBe('Squash and merge');
   const placed: Placement = { kind: 'stack', stack: 90, below: [136, 137] };

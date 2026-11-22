@@ -125,11 +125,17 @@ export const middle = defineSlot<{ tab: PullTab; shown: boolean }, MiddleSwitch>
 
 /**
  * What the middle says while there's nothing to show yet: that the pull request is opening, or
- * what will show. A middle view that waits before it knows what to draw draws this meanwhile, so
- * the tab looks as it does with no view at all.
+ * `status`, what the view reads once it's there. A middle view that waits before it has anything
+ * to draw draws this meanwhile, so the tab looks as it does with no view at all, and waits once.
  */
-export function MiddlePlaceholder({ tab }: { tab: PullTab }): ReactNode {
-  return createElement(Placeholder, { tab: tab.id });
+export function MiddlePlaceholder({
+  tab,
+  status,
+}: {
+  tab: PullTab;
+  status?: string | undefined;
+}): ReactNode {
+  return createElement(Placeholder, { tab: tab.id, status });
 }
 
 /**

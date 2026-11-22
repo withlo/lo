@@ -70,7 +70,22 @@ export interface ButtonProps
    * says its label beside the ring.
    */
   working?: string | undefined;
-  /** Its tooltip: what it is or does, for a button whose face doesn't say, such as an icon's. */
+  /**
+   * The widest thing it says while busy, for a button whose `working` changes as its work goes on,
+   * or whose label does: "Trusting…" for one that says "Waiting…" first. It holds that room, with
+   * the ring's, from before its press, so nothing it comes to say changes its width.
+   */
+  widest?: string | undefined;
+  /**
+   * Its tooltip: what it is or does, for a button whose face doesn't say, such as an icon's. On a
+   * `disabled` button it's the reason it can't be pressed now, in a few words with no full stop:
+   * "Sign in to comment". The button is then dimmed and out of the tab order as any disabled one
+   * is, and still shows its tooltip under the pointer, which a `disabled` element wouldn't. A screen
+   * reader hears the reason as its description, so give it as text.
+   *
+   * A button that has one only some of the time, as a reason comes and goes, passes `null`
+   * meanwhile, not nothing: it's then the same element throughout, and keeps focus.
+   */
   hint?: ReactNode;
   /** Its key, shown in the tooltip, as the system shows each key of it. */
   hintKeys?: readonly string[] | undefined;
@@ -85,6 +100,7 @@ export interface ButtonProps
  * A control that does one thing. Its label starts with a verb that says exactly what happens, and
  * a key it has goes inside it (`<Key keys={['⌘⏎']} />`). One `primary` button in a view at most.
  * While its work runs it's `busy`; a spinner beside it, or a button greyed out, isn't how it waits.
+ * One that can't be pressed now is `disabled`, with the reason as its `hint`.
  */
 export function Button({
   variant,
@@ -93,27 +109,41 @@ export function Button({
   type = 'button',
   busy,
   working,
+  widest,
   hint,
   hintKeys,
   hintShortcut,
+  disabled,
   onClick,
   children,
   ...props
 }: ButtonProps) {
-  const works = busy !== undefined || working !== undefined;
+  const works = busy !== undefined || working !== undefined || widest !== undefined;
+  // Dimmed, with why: said to be disabled, not made so, since a `disabled` button gets no pointer
+  // and so no tooltip.
+  const hinted = hint !== undefined && hint !== null;
+  const refused = disabled === true && hinted;
   const control = (
     <button
       type={type}
       className={button({ variant, size, icon })}
       // A key cap on its fill is drawn in the fill's text colour (`key-cap`).
       data-fill={variant === 'primary' ? '' : undefined}
+      disabled={refused ? undefined : disabled}
       onClick={(event: MouseEvent<HTMLButtonElement>) => {
-        if (busy === true) event.preventDefault();
+        if (busy === true || refused) event.preventDefault();
         else onClick?.(event);
       }}
       // The tooltip's key, said to a screen reader, which never hears the tooltip's key caps.
-      {...(hint === undefined ? {} : keyAria(hintKeys, hintShortcut))}
+      {...(hinted && !refused ? keyAria(hintKeys, hintShortcut) : {})}
       {...props}
+      {...(refused
+        ? {
+            'aria-disabled': true,
+            tabIndex: -1,
+            'aria-description': typeof hint === 'string' ? hint : undefined,
+          }
+        : {})}
       // Not `disabled`, which would drop focus from it. It's said to be unavailable while it works,
       // and doesn't look it: only a button that isn't busy greys out.
       {...(busy === true ? { 'aria-busy': true, 'aria-disabled': true } : {})}
@@ -139,6 +169,12 @@ export function Button({
             {/* Without words of its own for the wait, it keeps its label, and so its name. */}
             {working ?? children}
           </span>
+          {widest !== undefined && (
+            <span className={face({ size: size ?? 'md', shown: false })} aria-hidden="true">
+              <span className={size === 'sm' ? 'size-8 flex-none' : 'size-12 flex-none'} />
+              {widest}
+            </span>
+          )}
         </span>
       ) : (
         children
@@ -147,7 +183,7 @@ export function Button({
   );
   if (hint === undefined) return control;
   return (
-    <Tooltip label={hint} keys={hintKeys}>
+    <Tooltip label={hint} keys={refused ? undefined : hintKeys}>
       {control}
     </Tooltip>
   );

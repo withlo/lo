@@ -222,11 +222,22 @@ function render(tab: PullTab) {
   return Object.assign(container, { shown: draw });
 }
 
+/**
+ * Whether the view draws the tab's placeholder and nothing of the overview. The placeholder says
+ * nothing for its first moments, so it's told by its box, not its words.
+ */
+function waits(view: HTMLElement): boolean {
+  return (
+    view.querySelector('[data-lo-placeholder]') !== null &&
+    view.querySelector('[data-lo-overview]') === null
+  );
+}
+
 describe('as the tab opens', () => {
   it('draws the tab’s placeholder while it doesn’t know, then the overview once it shows', async () => {
     const tab = tabOf();
     const view = render(tab);
-    expect(view.textContent).toBe('Opening the pull request…');
+    expect(waits(view)).toBe(true);
     // The mark's room is kept while Lo finds out.
     expect(view.querySelector('.lo-ovmark--pending')).not.toBeNull();
     const checking = checkingFor(tab);
@@ -291,7 +302,7 @@ describe('as the tab opens', () => {
     checking.take(stateOf(tab));
     await until(() => checked.get(tab.id)?.kind === 'failed');
     // Refused, it's not yet known whether it shows.
-    expect(view.textContent).toBe('Opening the pull request…');
+    expect(waits(view)).toBe(true);
     // Main speaks again, as it does once it knows the tab's account.
     act(() => states.set(tab.id, stateOf(tab, { saved: true })));
     checking.take(stateOf(tab, { saved: true }));
@@ -312,7 +323,7 @@ describe('as the tab opens', () => {
     act(() => {
       vi.advanceTimersByTime(HOLD_LIMIT - 1);
     });
-    expect(view.textContent).toBe('Opening the pull request…');
+    expect(waits(view)).toBe(true);
     act(() => {
       vi.advanceTimersByTime(1);
     });
@@ -340,7 +351,7 @@ describe('as the tab opens', () => {
       vi.advanceTimersByTime(HOLD_LIMIT - 1);
     });
     expect(openings.get(tab.id).on).toBeUndefined();
-    expect(view.textContent).toBe('Opening the pull request…');
+    expect(waits(view)).toBe(true);
     act(() => {
       vi.advanceTimersByTime(1);
     });
@@ -374,7 +385,7 @@ describe('as the tab opens', () => {
       vi.advanceTimersByTime(HOLD_LIMIT - 1);
     });
     expect(openings.get(tab.id).on).toBeUndefined();
-    expect(view.textContent).toBe('Opening the pull request…');
+    expect(waits(view)).toBe(true);
     settings.open = 'diff';
     view.shown(true);
     expect(openings.get(tab.id)).toMatchObject({ on: 'diff', late: false });

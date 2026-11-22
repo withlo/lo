@@ -359,7 +359,9 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
 - A chip takes its control's state by itself: on a main button's fill it's drawn in the fill's text
   colour, and on a dimmed control or menu row it dims with the label. Don't colour a chip by hand.
 - Code has a caret, in `lo-code-cursor`. With Vim keys on it's Vim's block cursor, with a halo,
-  which goes hollow when the view loses focus.
+  which goes hollow when the view loses focus. In a code view the caret doesn't blink, and the
+  cursor line's number takes `lo-code-gutter-active`, so where the cursor is shows in every frame. A
+  caret in a comment box blinks.
 - Vim's mode shows only with Vim keys on: once in the status bar (`StatusMode`), and in the comment
   box that has focus. Nothing else names a mode.
 
@@ -427,7 +429,8 @@ to one job.
   its pane the least that shows all of it, at once, with `reveal` (`block: 'nearest'`), and never
   with `scrollIntoView`. One taller than its pane shows from its top. A comment box does this itself
   whenever it takes focus (`Composer.focus()`), and keeps itself in view as it's laid out, until the
-  reader's next key, press or scroll.
+  reader's next key, press or scroll. It keeps `lo-sp-8` under it (its `scroll-margin-bottom`, which
+  `reveal` honours), so its ring shows whole above the pane's foot.
 
 ## Comments
 

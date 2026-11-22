@@ -1,6 +1,10 @@
 // Right-click menus: the menu of what was clicked, or of what has focus when its key asks, read
 // live from the registry. A menu runs a command through `registry().run`, the handler a key uses,
 // on the target it was opened for.
+//
+// A command that can't run on the target stays in its menu, dimmed, with the reason under its
+// label: what to do first, or the fact, in a few words with no full stop, as a tab's menu has
+// "Already first". The same words are the toast its key gives where no control shows them.
 
 import { ContextMenu, type ContextMenuAnchor } from '@lo/ui';
 import { hasEditMenu, menuSections, textKind, type Target, type TargetKind } from '@lo/ui/commands';

@@ -418,8 +418,10 @@
  * One ring goes round the box, over what's in it, so no part's fill hides it: the border at rest,
  * and the focus ring while focus is anywhere in the box. Nothing inside draws a ring of its own.
  */
+/* Brought on screen, a box keeps clear of its pane's foot, so its ring shows whole. */
 .lo-diffcomposer {
   position: relative;
+  scroll-margin-bottom: var(--lo-sp-8);
   border-radius: var(--lo-r-md);
   background: var(--lo-bg-raised);
   color: var(--lo-fg);

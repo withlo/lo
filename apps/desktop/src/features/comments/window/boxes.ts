@@ -571,7 +571,6 @@ function show(box: Box, diff: WritingDiff | undefined): boolean {
 
 /** What a box at `place` says while it's empty, where its place has a name of its own. */
 export function hintOf(place: DraftPlaceRow, pull?: number): string | undefined {
-  if (place.kind === 'reply') return 'Reply';
   return place.kind === 'conversation' && pull !== undefined ? `Comment on #${pull}` : undefined;
 }
 

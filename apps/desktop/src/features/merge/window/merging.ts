@@ -16,7 +16,7 @@ import { contract as revisionsContract } from '../../revisions/contract.ts';
 import { contract as tabContract } from '../../tab/contract.ts';
 import { revisionLabel, revisionsOf } from '../../revisions/window/shared.ts';
 import { activeTab, pullOf, withoutBidi } from '../../tab/window/shared.ts';
-import type { Asked, JobView, MergePlan, Refusal } from '../contract.ts';
+import type { Asked, JobView, MergePlan, MergeState, PlanKind, Refusal } from '../contract.ts';
 import { closePanel, openPanel, opened } from './actions.ts';
 import { main } from './main.ts';
 import { placeNow } from './placing.ts';
@@ -36,6 +36,7 @@ import {
   doneDetail,
   doneLine,
   mergeLabel,
+  mergeTitle,
   outcomeDetail,
   outcomeTitle,
   placedLabel,
@@ -147,22 +148,33 @@ export function overrideFromPanel(): void {
   planFromPanel('override');
 }
 
-/** What the panel's planning says as `asked`, while main plans it. */
-function planningOf(
-  asked: Asked,
-  number: number,
-  label: string,
-): Pick<Extract<MergeDialog, { kind: 'planning' }>, 'label' | 'title'> {
+/** What main will plan for `asked` of a panel at `state`, as far as the panel can tell. */
+function kindAsked(asked: Asked, state: MergeState): PlanKind {
   switch (asked) {
     case 'merge':
-      return { label, title: undefined };
+      return state.action.kind === 'enqueue' ? 'enqueue' : 'merge';
     case 'autoMerge':
-      return { label: 'Merge when ready', title: `Merge #${number} when it’s ready` };
+      return state.queue.required ? 'whenReady' : 'autoMerge';
     case 'override':
-      return { label: 'Merge anyway', title: `Merge #${number} without the rules` };
+      return 'override';
     default:
       asked satisfies never;
-      return { label, title: undefined };
+      return 'merge';
+  }
+}
+
+/** What the dialog's main button says while main plans `asked`: what it will say once planned. */
+function labelAsked(asked: Asked, label: string): string {
+  switch (asked) {
+    case 'merge':
+      return label;
+    case 'autoMerge':
+      return 'Merge when ready';
+    case 'override':
+      return 'Merge anyway';
+    default:
+      asked satisfies never;
+      return label;
   }
 }
 
@@ -180,19 +192,41 @@ function planFromPanel(asked: Asked): void {
   const panel = panels.get(open.id);
   const { action } = open.state;
   const method = shownMethod(open.state, panel.method);
+  const kind = kindAsked(asked, open.state);
+  const placement = placementOf(open.id);
+  // Auto-merge and a merge past the rules take nothing with them.
+  const layers = asked === 'merge' && placement?.kind === 'stack' ? placement.below.length + 1 : 1;
+  const pull = pullOf(open.id);
+  const login = pull?.acting?.kind === 'account' ? pull.acting.login : undefined;
+  const head = pull?.shown ?? undefined;
   const planning: MergeDialog = {
     kind: 'planning',
     id: open.id,
     number: tab.number,
-    ...planningOf(
+    label: labelAsked(
       asked,
-      tab.number,
       placedLabel(
-        placementOf(open.id),
+        placement,
         action.kind !== 'merge',
         action.kind === 'merge' ? mergeLabel(method ?? action.method) : 'Add to merge queue',
       ),
     ),
+    title: mergeTitle(kind, tab.number, layers),
+    // What the dialog states is known here already, so it says it while main checks.
+    ...(login !== undefined &&
+      head !== undefined && {
+        sketch: {
+          id: open.id,
+          number: tab.number,
+          login,
+          kind,
+          method: method ?? null,
+          base: open.state.base,
+          head,
+          title: panel.title,
+          stack: layers > 1,
+        },
+      }),
   };
   closePanel(open.id);
   setDialog(planning);

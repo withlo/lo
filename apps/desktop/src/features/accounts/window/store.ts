@@ -21,21 +21,18 @@ export interface AccountQuestion {
   readonly remember: 'owner' | 'repo';
 }
 
-/** What the sign-in dialog says besides how the sign-in goes: that the code was copied, say. */
-export interface SignInNote {
-  readonly tone: 'info' | 'danger';
-  readonly text: string;
-}
-
 /** The sign-in dialog: how the sign-in is going, once main has said, and what else it says. */
 export interface SignInDialog {
   readonly kind: 'signIn';
   /** Which opening of the dialog it is, so an answer for an earlier one is told apart. */
   readonly attempt: number;
   readonly state: SignInState | undefined;
+  /** The code this sign-in waits for, or waited for, and GitHub's page for it. */
+  readonly code?: { readonly userCode: string; readonly page: string } | undefined;
   /** Why main couldn't be asked to sign in at all. */
   readonly error?: string | undefined;
-  readonly note?: SignInNote | undefined;
+  /** What main said when it couldn't open GitHub's page, as it came. */
+  readonly unopened?: string | undefined;
 }
 
 /** The dialog open. Lo never stacks two. */

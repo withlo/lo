@@ -83,7 +83,7 @@ function closable(target: TabTarget | NoTarget): true | string {
   const { tabs, active } = tabsStore.getState();
   const id = target.kind === 'tab' ? target.tab : active;
   return tabs.find((tab) => tab.id === id)?.kind === 'recent'
-    ? "Recent pull requests can't be closed: it shows while no other tab is open."
+    ? 'Recent pull requests can’t be closed'
     : true;
 }
 
@@ -110,7 +110,7 @@ export default {
     },
     more: {
       run: () => setMoreOpen(true),
-      enabled: () => moreStore.getState().folded.length > 0 || 'Every tab fits in the strip.',
+      enabled: () => moreStore.getState().folded.length > 0 || 'Every tab fits',
     },
     leftPanel: {
       run: () => {

@@ -381,7 +381,7 @@ export async function sizeWindow(
 export function tabBanners(page: Page): Locator {
   return page
     .locator('[data-lo-banners] > *')
-    .filter({ hasNotText: /^Language servers are off for|^This PR comes from a fork/ });
+    .filter({ hasNotText: /^Language servers are off for/ });
 }
 
 /**
