@@ -157,7 +157,11 @@ function texts(): string[] {
   return [...parent!.querySelectorAll('.cm-line')].map((line) => line.textContent ?? '');
 }
 
-/** A side's gutter's numbers, top to bottom, of the lines on that side; `marked`, with that class. */
+/**
+ * A side's gutter's numbers, top to bottom, of the lines on that side; `marked`, with that class.
+ * The cursor's line has an element in each gutter, which marks it, with no number where the line
+ * isn't on that side.
+ */
 function numbers(side: 'old' | 'new', marked = ''): string[] {
   return [
     ...parent!.querySelectorAll<HTMLElement>(
@@ -165,7 +169,8 @@ function numbers(side: 'old' | 'new', marked = ''): string[] {
     ),
   ]
     .filter((element) => element.style.visibility !== 'hidden')
-    .map((element) => element.textContent ?? '');
+    .map((element) => element.textContent ?? '')
+    .filter((text) => text !== '');
 }
 
 /** The numbers marked as changed since, on a side. */
