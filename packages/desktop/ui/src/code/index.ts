@@ -27,6 +27,7 @@ export type {
   FileView,
   Fold,
   HeaderTarget,
+  HeldText,
   HintMark,
   JumpTo,
   KeptBox,

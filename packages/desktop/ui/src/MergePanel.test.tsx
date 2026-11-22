@@ -86,6 +86,7 @@ function Squash({ onMerge = vi.fn<() => void>() }: { onMerge?: () => void }) {
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
   const [auto, setAuto] = useState(false);
+  const turn = () => setAuto((on) => !on);
   return (
     <MergePanel
       open
@@ -101,7 +102,11 @@ function Squash({ onMerge = vi.fn<() => void>() }: { onMerge?: () => void }) {
       }
       foot={
         <MergeFoot
-          auto={{ on: auto, onChange: setAuto, keys: ['a'] }}
+          auto={{
+            label: auto ? 'Turn off auto-merge' : 'Turn on auto-merge…',
+            keys: ['a'],
+            onClick: turn,
+          }}
           primary={{
             label: method === 'squash' ? 'Squash and merge' : 'Rebase and merge',
             keys: ['⏎'],
@@ -173,7 +178,7 @@ const keyOf = (label: string) =>
     ?.querySelector('kbd');
 
 describe('MergePanel', () => {
-  it('opens as a dialog named Merge, in the scope its keys apply in, with a head, body and foot', () => {
+  it('opens as a dialog named Merge panel, in the scope its keys apply in, with a head, body and foot', () => {
     frame({
       kind: 'waiting',
       verdict: "Can't merge yet",
@@ -185,14 +190,14 @@ describe('MergePanel', () => {
       children: <Checklist id="reasons" label="Why it can't merge" rows={unmet} />,
       foot: (
         <MergeFoot
-          auto={{ on: false, onChange: () => undefined, keys: ['a'] }}
+          auto={{ label: 'Turn on auto-merge…', keys: ['a'], onClick: () => undefined }}
           method="Squash"
-          primary={{ label: 'Merge', keys: ['⏎'], disabled: true }}
+          primary={{ label: 'Merge #264…', keys: ['⏎'], reason: '2 unresolved threads' }}
         />
       ),
     });
     const dialog = panel();
-    expect(dialog.getAttribute('aria-label')).toBe('Merge');
+    expect(dialog.getAttribute('aria-label')).toBe('Merge panel');
     expect(dialog.getAttribute('data-lo-scope')).toBe('merge');
     expect(dialog.getAttribute('data-kind')).toBe('waiting');
     expect(dialog.children).toHaveLength(3);
@@ -201,10 +206,15 @@ describe('MergePanel', () => {
     expect(head.textContent).toContain('into ravi/plan-limits · 6 things in the way');
     // The dot is the verdict's color, and there's a way to close it by key.
     expect(head.querySelector('.bg-warning')).not.toBeNull();
-    expect(head.querySelector('button')?.getAttribute('aria-label')).toBe('Close (Esc)');
+    // The key is in its tooltip, not its name.
+    expect(head.querySelector('button')?.getAttribute('aria-label')).toBe('Close merge panel');
     expect(body?.querySelectorAll('li[data-key]')).toHaveLength(2);
-    expect(foot.textContent).toContain('Merge when ready');
+    expect(foot.textContent).toContain('Turn on auto-merge…');
     expect(foot.textContent).toContain('Squash');
+    // A main button that can't be pressed says why, in its description.
+    const primary = [...foot.querySelectorAll('button')].at(-1);
+    expect(primary?.getAttribute('aria-disabled')).toBe('true');
+    expect(primary?.getAttribute('aria-description')).toBe('2 unresolved threads');
   });
 
   it('takes focus as it opens, so its keys apply, and gives it back when it closes', async () => {
@@ -436,24 +446,62 @@ describe('MergePanel', () => {
       expect(message?.placeholder).toBe('* Batch label lookups');
     });
 
-    it('presses merge, and turns on merge when ready', () => {
+    it('presses merge, and turns auto-merge on with a button, never a switch', () => {
       const onMerge = vi.fn<() => void>();
       open(onMerge);
       const { foot } = parts();
-      const primary = [...foot.querySelectorAll('button')].find(
-        (each) => each.getAttribute('role') !== 'switch',
-      );
+      const primary = [...foot.querySelectorAll('button')].at(-1);
       expect(primary?.textContent).toContain('Squash and merge');
       expect(primary?.className).toContain('bg-accent');
       click(primary!);
       expect(onMerge).toHaveBeenCalledOnce();
-      const switchEl = foot.querySelector('[role="switch"]');
-      expect(switchEl?.getAttribute('aria-checked')).toBe('false');
-      expect(switchEl?.getAttribute('aria-label')).toBe('Merge when ready');
-      click(switchEl!);
-      expect(parts().foot.querySelector('[role="switch"]')?.getAttribute('aria-checked')).toBe(
-        'true',
+      expect(foot.querySelector('[role="switch"]')).toBeNull();
+      const auto = [...foot.querySelectorAll('button')].find((each) =>
+        each.textContent?.startsWith('Turn on auto-merge…'),
       );
+      expect(auto).toBeDefined();
+      click(auto!);
+      expect(parts().foot.textContent).toContain('Turn off auto-merge');
+    });
+
+    it('keeps the auto-merge button busy while it works, and dims it with why it can’t', () => {
+      const onClick = vi.fn<() => void>();
+      frame({
+        kind: 'auto',
+        verdict: 'Auto-merge is on',
+        foot: (
+          <MergeFoot
+            auto={{
+              label: 'Turn off auto-merge',
+              keys: ['a'],
+              busy: true,
+              working: 'Turning off…',
+              onClick,
+            }}
+            primary={{ label: 'Merge #264…', keys: ['⏎'], quiet: true, reason: 'Offline' }}
+          />
+        ),
+      });
+      const [auto] = parts().foot.querySelectorAll('button');
+      expect(auto?.getAttribute('aria-busy')).toBe('true');
+      click(auto!);
+      expect(onClick).not.toHaveBeenCalled();
+      cleanUp();
+      frame({
+        kind: 'auto',
+        verdict: 'Auto-merge is on',
+        foot: (
+          <MergeFoot
+            auto={{ label: 'Turn off auto-merge', reason: 'Offline', onClick }}
+            primary={{ label: 'Merge #264…', quiet: true, reason: 'Offline' }}
+          />
+        ),
+      });
+      const [dimmed] = parts().foot.querySelectorAll('button');
+      expect(dimmed?.getAttribute('aria-disabled')).toBe('true');
+      expect(dimmed?.getAttribute('aria-description')).toBe('Offline');
+      click(dimmed!);
+      expect(onClick).not.toHaveBeenCalled();
     });
   });
 
@@ -485,8 +533,8 @@ describe('MergePanel', () => {
       expect(head.querySelector('.bg-queue')).not.toBeNull();
       expect(head.textContent).toContain('4 ahead, about 18 min');
       expect(body?.textContent).toContain("The queue's settings choose the method");
-      // No switch here: the queue does the waiting.
-      expect(foot.querySelector('[role="switch"]')).toBeNull();
+      // No auto-merge button here: the queue does the waiting.
+      expect(foot.textContent).not.toContain('auto-merge');
       expect(foot.textContent).toContain('See the queue');
       const primary = [...foot.querySelectorAll('button')].at(-1);
       expect(primary?.textContent).toContain('Add to merge queue');
@@ -496,7 +544,7 @@ describe('MergePanel', () => {
   });
 
   describe('auto-merge is on', () => {
-    it('lists what it waits for, with the switch on and merging not the next thing', () => {
+    it('lists what it waits for, with auto-merge to turn off and merging not the next thing', () => {
       const onMerge = vi.fn<() => void>();
       const rows: CheckItem[] = [
         {
@@ -521,14 +569,14 @@ describe('MergePanel', () => {
         children: <Checklist id="reasons" label="What it waits for" rows={rows} />,
         foot: (
           <MergeFoot
-            auto={{ on: true, onChange: () => undefined, keys: ['a'] }}
+            auto={{ label: 'Turn off auto-merge', keys: ['a'], onClick: () => undefined }}
             primary={{ label: 'Merge', keys: ['⏎'], disabled: true, quiet: true, onClick: onMerge }}
           />
         ),
       });
       const { head, foot } = parts();
       expect(head.querySelector('.bg-accent')).not.toBeNull();
-      expect(foot.querySelector('[role="switch"]')?.getAttribute('aria-checked')).toBe('true');
+      expect(foot.textContent).toContain('Turn off auto-merge');
       const primary = [...foot.querySelectorAll('button')].at(-1);
       // Not the main button, and it can't be pressed: it still shows why by being there.
       expect(primary?.className).not.toContain('bg-accent');
@@ -584,8 +632,9 @@ describe('MergePanel', () => {
       ]);
       click(body!.querySelector('li[data-key="unknown"] button')!);
       expect(onGitHub).toHaveBeenCalledOnce();
-      // With nothing to switch, the foot is the method and a main button that can't be pressed.
-      expect(foot.querySelector('[role="switch"]')).toBeNull();
+      // With no auto-merge to turn on, the foot is the method and a main button that can't be
+      // pressed.
+      expect(foot.textContent).not.toContain('auto-merge');
       expect(foot.textContent).toContain('Merge commit');
       expect(foot.querySelector('button')?.getAttribute('aria-disabled')).toBe('true');
     });
@@ -613,7 +662,7 @@ describe('MergePanel', () => {
       ),
       foot: (
         <MergeFoot
-          auto={{ on: false, onChange: () => undefined, keys: ['a'] }}
+          auto={{ label: 'Turn on auto-merge…', keys: ['a'], onClick: () => undefined }}
           start={<span>start</span>}
           method="Squash"
           primary={{ label: 'Merge', keys: ['⏎'], busy: true, working: 'Checking…' }}

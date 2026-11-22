@@ -258,7 +258,12 @@ export type MergeState = z.output<typeof mergeState>;
 export const mergeView = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('none'), why: z.string().max(4096) }),
   z.strictObject({ kind: z.literal('loading') }),
-  z.strictObject({ kind: z.literal('failed'), why: z.string().max(4096) }),
+  z.strictObject({
+    kind: z.literal('failed'),
+    why: z.string().max(4096),
+    /** What GitHub, or the error, said, for Details. */
+    details: z.string().max(4096).optional(),
+  }),
   z.strictObject({ kind: z.literal('known'), state: mergeState }),
 ]);
 export type MergeView = z.output<typeof mergeView>;
@@ -519,10 +524,19 @@ export const plan = z.strictObject({
 });
 export type MergePlan = z.output<typeof plan>;
 
-/** A plan to confirm, or why there's none: in Lo's words, with GitHub's text in them. */
+/**
+ * A plan to confirm, or why there's none, in Lo's words. `again` when Lo is still finding out what
+ * the merge takes, as while it looks up a stack's branches: asking again soon may plan it.
+ */
 export const planned = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('plan'), plan }),
-  z.strictObject({ kind: z.literal('refused'), why: words }),
+  z.strictObject({
+    kind: z.literal('refused'),
+    why: words,
+    again: z.boolean(),
+    /** What GitHub, or the error, said, for Details. */
+    details: words.optional(),
+  }),
 ]);
 export type Planned = z.output<typeof planned>;
 
@@ -533,6 +547,7 @@ export type Planned = z.output<typeof planned>;
  *   Lo's own at the press, such as `offline`, `busy` or `unread`;
  * - `text`: what happened, and what to do, in sentences;
  * - `rules`: each rule GitHub named, for `rules`;
+ * - `details`: GitHub's own text, or the error's, as it came, which only Details shows;
  * - `until`: when GitHub allows writes again, for `paused`;
  * - `newer`: for a newer push than the one on screen, `from` the head on screen, `to` the newer
  *   one when Lo knows it, which "See r5 → r6" compares;
@@ -543,6 +558,7 @@ export const refusal = z.strictObject({
   kind: z.string().max(64),
   text: words,
   rules: z.array(words),
+  details: words.optional(),
   until: time.nullable(),
   newer: z.strictObject({ from: oid, to: oid.nullable() }).nullable(),
   offer: plan.optional(),
@@ -937,11 +953,15 @@ export const contract = defineContract('merge', {
      */
     place: { input: z.strictObject({ id: tabId }), reply: reply<Placement>() },
     /**
-     * Plans approve and ship for view `id`, from what GitHub said last: what it approves and what
-     * Lo expects to follow. Keeps it for the reader to confirm, in place of the view's last one, or
-     * says why there's none, before anything is sent.
+     * Plans approve and ship for view `id`, from what GitHub said last, or with `afresh`, from what
+     * it says now, read again: what it approves and what Lo expects to follow. Keeps it for the
+     * reader to confirm, in place of the view's last one, or says why there's none, before
+     * anything is sent.
      */
-    ship: { input: z.strictObject({ id: tabId }), reply: reply<ShipPlanned>() },
+    ship: {
+      input: z.strictObject({ id: tabId, afresh: z.boolean().optional() }),
+      reply: reply<ShipPlanned>(),
+    },
     /**
      * Runs approve and ship from the plan named `key`, once, if it still holds as GitHub says now,
      * read again: else asks again with a new plan, when something it named changed, or refuses.

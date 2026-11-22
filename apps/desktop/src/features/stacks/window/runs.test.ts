@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Row } from '../contract.ts';
-import { chainIn, choiceNote, numbered, stepChoice, type Choice } from './runs.ts';
+import { chainIn, choiceLine, layersName, spanOf, stepChoice, type Choice } from './runs.ts';
 
 /** A row of layer `number`, on the layers in `below`, as main sends it. */
 function row(number: number, below: number[]): Row {
@@ -30,8 +30,6 @@ function row(number: number, below: number[]): Row {
 
 /** #82, #83 on it, #84 on #83, and #85, a second layer on #82, in the tree's order. */
 const ROWS: Row[] = [row(82, []), row(83, [82]), row(84, [82, 83]), row(85, [82])];
-
-const KEYS = { show: '⏎', cancel: 'Esc', down: 'j', up: 'k' };
 
 /** A run started at `anchor`, its other end at `end`. */
 function from(anchor: number, end = anchor): Choice {
@@ -78,16 +76,26 @@ describe('a run of layers being chosen', () => {
     expect(stepChoice(ROWS, from(84, 82), 1)).toEqual(from(84, 83));
   });
 
-  it('says which layers, what they’re compared with, and what the keys do', () => {
-    expect(choiceNote(ROWS, 'stack/root', { anchor: 83, end: 84 }, KEYS)).toBe(
-      '#83 and #84, compared with the top of #82. ⏎ shows them as one diff; Esc goes back to one layer.',
-    );
-    expect(choiceNote(ROWS, 'stack/root', { anchor: 84, end: 82 }, KEYS)).toBe(
-      '#82, #83 and #84, compared with the tip of stack/root. ⏎ shows them as one diff; Esc goes back to one layer.',
-    );
-    expect(choiceNote(ROWS, 'stack/root', { anchor: 85, end: 85 }, KEYS)).toBe(
-      'A run from #85: j and k add the layers above or below it on its branch, and Esc stops.',
-    );
-    expect(numbered([4819])).toBe('#4819');
+  it('says which layers, by their places in the stack, and what they’re compared with', () => {
+    expect(choiceLine(ROWS, 'stack/root', { anchor: 83, end: 84 })).toEqual({
+      name: 'Layers 2–3',
+      from: '#82',
+      code: false,
+    });
+    expect(choiceLine(ROWS, 'stack/root', { anchor: 84, end: 82 })).toEqual({
+      name: 'Layers 1–3',
+      from: 'stack/root',
+      code: true,
+    });
+    expect(choiceLine(ROWS, 'stack/root', { anchor: 85, end: 85 })).toEqual({
+      name: undefined,
+      from: '#85',
+      code: false,
+    });
+    expect(spanOf(ROWS, [82, 85])).toBe('1–2');
+    expect(spanOf(ROWS, [83])).toBe('2');
+    expect(layersName(ROWS, [82, 83, 84])).toBe('Layers 1–3');
+    // Layers the rows don't hold are only counted.
+    expect(layersName(ROWS, [90, 91])).toBe('2 layers');
   });
 });

@@ -44,6 +44,11 @@ export interface SegmentedControlProps<T extends string> {
   size?: 'md' | 'sm' | undefined;
   /** The key that steps through the segments, as this system shows it, after the control. */
   keys?: readonly string[] | undefined;
+  /**
+   * It can't be changed now, as a comment box's Write | Preview while its comment is sent: dimmed,
+   * the chosen segment still marked.
+   */
+  disabled?: boolean | undefined;
 }
 
 const segment = cva(
@@ -52,10 +57,12 @@ const segment = cva(
     variants: {
       chosen: {
         // Drawn on the segment itself until the thumb has been measured, and where it can't be.
-        true: 'bg-bg-element text-fg ring-1 ring-border-strong',
-        thumb: 'text-fg',
-        false: 'text-fg-muted hover:text-fg',
+        true: 'bg-bg-element ring-1 ring-border-strong',
+        thumb: '',
+        false: '',
       },
+      // Dimmed, as the control is when it can't be changed, the chosen segment too.
+      tone: { chosen: 'text-fg', rest: 'text-fg-muted hover:text-fg', off: 'text-fg-disabled' },
       size: {
         md: 'h-24 gap-6 px-12 text-small-medium',
         sm: 'h-20 gap-6 px-8 text-small-medium',
@@ -82,6 +89,7 @@ export function SegmentedControl<T extends string>({
   onChange,
   size = 'md',
   keys,
+  disabled = false,
 }: SegmentedControlProps<T>) {
   const buttons = useRef(new Map<T, HTMLButtonElement>());
   // Where the thumb is: under the chosen segment, measured, so it can slide from one to the next.
@@ -120,7 +128,7 @@ export function SegmentedControl<T extends string>({
   const tabbable = items.some((item) => item.value === value) ? value : items[0]?.value;
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (event.metaKey || event.ctrlKey || event.altKey || disabled) return;
     const step = NEXT.has(event.key) ? 1 : PREVIOUS.has(event.key) ? -1 : 0;
     if (step === 0 || items.length === 0) return;
     event.preventDefault();
@@ -136,6 +144,7 @@ export function SegmentedControl<T extends string>({
       <div
         role={kind === 'views' ? 'tablist' : 'radiogroup'}
         aria-label={label}
+        aria-disabled={disabled || undefined}
         className="relative inline-flex items-center gap-2 rounded-pill bg-bg-well p-2 inset-ring inset-ring-border"
         onKeyDown={onKeyDown}
       >
@@ -160,10 +169,15 @@ export function SegmentedControl<T extends string>({
               aria-selected={kind === 'views' ? chosen : undefined}
               aria-checked={kind === 'choice' ? chosen : undefined}
               tabIndex={item.value === tabbable ? 0 : -1}
+              aria-disabled={disabled || undefined}
               aria-label={item.name}
-              className={segment({ chosen: chosen ? (thumb ? 'thumb' : true) : false, size })}
+              className={segment({
+                chosen: chosen ? (thumb ? 'thumb' : true) : false,
+                tone: disabled ? 'off' : chosen ? 'chosen' : 'rest',
+                size,
+              })}
               onClick={() => {
-                if (!chosen) onChange(item.value);
+                if (!chosen && !disabled) onChange(item.value);
               }}
             >
               {item.label}

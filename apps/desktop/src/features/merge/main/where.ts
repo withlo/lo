@@ -7,7 +7,6 @@
 // those branches are asked about afresh. Nothing here calls Electron or GitHub.
 
 import {
-  MAX_BRANCH_LOOKUPS,
   MAX_OPEN_PULL_REQUESTS,
   type BranchLookup,
   type MergeFacts,
@@ -88,6 +87,8 @@ export interface OpenFromHead {
 export interface WhereView {
   /** The pull request on screen. */
   readonly number: number;
+  /** Its repo, written owner/repo. */
+  readonly repo: string;
   /** Where GitHub's latest merge facts put it ({@link placedBy}). */
   readonly facts: Placed;
   /**
@@ -365,34 +366,32 @@ function settlesByListing(why: Unsure): boolean {
   }
 }
 
-/** Why Lo can't tell where the pull request `view` shows sits, as the merge panel says it. */
-function unsureText(why: Unsure, { number, facts, now, toLookUp }: WhereView): string {
-  const again = 'Lo is listing the open pull requests again.';
+/**
+ * Why Lo can't tell where the pull request `view` shows sits, as the merge panel says it: nothing
+ * while the open pull requests are listed or asked about again, where the primary reads "Checking…".
+ */
+function unsureText(why: Unsure, { number, repo, facts, toLookUp }: WhereView): string {
   switch (why.kind) {
     case 'unread':
-      return "Lo is still listing this repository's open pull requests.";
-    case 'tooMany':
-      return `This repository has over ${counted(MAX_OPEN_PULL_REQUESTS)} open pull requests, so Lo can't tell what this one sits on. Merge it on GitHub.`;
     case 'stale':
-      return `Lo's list of this repository's open pull requests is ${age(now - why.listedAt)} old. ${again}`;
     case 'missing':
-      return `#${number} isn't in Lo's list of this repository's open pull requests yet. ${again}`;
+    case 'unconfirmed':
+    case 'unlistedBelow':
+      return '';
+    case 'tooMany':
+      return `${repo} has over ${counted(MAX_OPEN_PULL_REQUESTS)} open pull requests.`;
     case 'moved':
-      return `${movedText(number, facts, why.listed)} ${again}`;
+      return movedText(number, facts, why.listed);
     case 'cycle':
-      return `${loopText(why.prs)}, so Lo can't tell what this one sits on. Merge it on GitHub.`;
+      return loopText(why.prs);
     case 'lookups': {
       // Listing again looks up more only once the list changes, or a while after the last lookups.
       const count = toLookUp?.();
-      const left = count === undefined || count === 0 ? '' : `, and has ${counted(count)} to go`;
-      return `Some merged pull requests weren't looked up yet, so Lo can't tell what #${number} sits on. Lo looks them up ${MAX_BRANCH_LOOKUPS} branches at a time, minutes apart${left}.`;
+      if (count === undefined || count === 0) return 'Checking stack…';
+      return `Checking stack · ${counted(count)} ${count === 1 ? 'branch' : 'branches'} left`;
     }
-    case 'unconfirmed':
-      return `Lo hasn't asked GitHub yet which open pull requests come from ${why.branch}.`;
     case 'cutShort':
-      return `GitHub gave only some of the open pull requests from ${why.branch}, so Lo can't tell what this one sits on. Merge it on GitHub.`;
-    case 'unlistedBelow':
-      return `#${why.pr} comes from ${why.branch} but isn't in Lo's list yet, so Lo can't tell what #${number} sits on. ${again}`;
+      return `GitHub lists only some pull requests from ${why.branch}.`;
     default:
       throw new Error(`a reason Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
   }
@@ -400,40 +399,20 @@ function unsureText(why: Unsure, { number, facts, now, toLookUp }: WhereView): s
 
 /** How GitHub's merge facts and Lo's list place pull request `number` differently. */
 function movedText(number: number, facts: Placed, listed: Placed): string {
-  if (facts.base !== listed.base) {
-    return `GitHub says #${number} merges into ${facts.base}, but Lo's list says ${listed.base}.`;
-  }
-  const said = facts.stack;
-  const has = listed.stack;
-  if (said && has && said.number === has.number && said.position !== has.position) {
-    return `GitHub says #${number} is layer ${said.position} of GitHub stack #${said.number}, but Lo's list has it as layer ${has.position}.`;
-  }
-  if (said && has && said.number === has.number) {
-    return `GitHub says GitHub stack #${said.number} merges into ${said.base}, but Lo's list says ${has.base}.`;
-  }
-  const github = said === undefined ? 'no GitHub stack' : `GitHub stack #${said.number}`;
-  const list = has === undefined ? 'none' : `#${has.number}`;
-  return `GitHub says #${number} is in ${github}, but Lo's list has it in ${list}.`;
+  if (facts.base !== listed.base) return `#${number}’s base branch is now ${facts.base}.`;
+  return 'The stack has changed.';
 }
 
-/** Pull requests in a loop: "#12 and #14 each sit on the other". */
+/** Pull requests in a loop: "#12 and #14 are each based on the other." */
 function loopText(prs: readonly number[]): string {
   const named = prs.map((pr) => `#${pr}`);
   const last = named.pop() ?? '';
   return named.length === 1
-    ? `${named[0]} and ${last} each sit on the other`
-    : `${named.join(', ')} and ${last} sit on each other in a loop`;
+    ? `${named[0]} and ${last} are each based on the other.`
+    : `${named.join(', ')} and ${last} are based on each other in a loop.`;
 }
 
 /** A count as the interface writes it: "1,000". */
 function counted(value: number): string {
   return value.toLocaleString('en-US');
-}
-
-/** How long `ms` milliseconds is, in its largest whole unit: "a minute", "6 minutes", "2 hours". */
-function age(ms: number): string {
-  const minutes = Math.max(1, Math.floor(ms / 60_000));
-  if (minutes < 60) return minutes === 1 ? 'a minute' : `${minutes} minutes`;
-  const hours = Math.floor(minutes / 60);
-  return hours === 1 ? 'an hour' : `${hours} hours`;
 }

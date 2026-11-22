@@ -1,12 +1,12 @@
-// Choosing a run of a stack's layers in its tree, to view as one diff: `v` starts one at the layer
-// the keyboard is on, and `j` and `k` move its other end along the branch it's on, never onto
-// another, since only a chain, each layer sitting on the one before, is one diff. Each row
-// main sends has its path from the stack's bottom, which is all a chain needs. Nothing here touches
-// the DOM or main.
+// Selecting a stack's layers in its tree, to show as one diff: `v` starts at the layer the keyboard
+// is on, and `j` and `k` move the selection's other end along the branch it's on, never onto
+// another, since only a chain, each layer based on the one before, is one diff. Each row main sends
+// has its path from the stack's bottom, which is all a chain needs, and which places each layer in
+// the stack: layers 3–5. Nothing here touches the DOM or main.
 
 import type { Row } from '../contract.ts';
 
-/** A run being chosen: the layer it started at, and the one its other end is at now. */
+/** Layers being selected: the layer it started at, and the one its other end is at now. */
 export interface Choice {
   readonly anchor: number;
   readonly end: number;
@@ -54,41 +54,42 @@ export function stepChoice(rows: readonly Row[], choice: Choice, by: 1 | -1): Ch
   return end === undefined ? choice : { ...choice, end };
 }
 
-/** "#83", "#83 and #84", "#82, #83 and #84". */
-export function numbered(layers: readonly number[]): string {
-  const names = layers.map((number) => `#${number}`);
-  if (names.length < 2) return names.join('');
-  return `${names.slice(0, -1).join(', ')} and ${names.at(-1) ?? ''}`;
+/**
+ * The span of `layers`, bottom first, as their places in the stack count them from its bottom:
+ * "3–5". Nothing while a layer isn't in the stack's rows.
+ */
+export function spanOf(rows: readonly Row[], layers: readonly number[]): string | undefined {
+  const placeOf = (number: number | undefined) =>
+    rows.find((row) => row.number === number)?.path.length ?? 0;
+  const bottom = placeOf(layers[0]);
+  const top = placeOf(layers.at(-1));
+  if (bottom === 0 || top === 0) return undefined;
+  return bottom === top ? String(bottom) : `${bottom}–${top}`;
 }
 
-/** The keys the note names, as this system shows them. */
-export interface NoteKeys {
-  /** `⏎`, which shows the run. */
-  readonly show: string;
-  /** `Esc`, which stops choosing. */
-  readonly cancel: string;
-  /** `j` and `k`, which move its end. */
-  readonly down: string;
-  readonly up: string;
+/** "Layers 3–5", or "3 layers" while their places aren't known. */
+export function layersName(rows: readonly Row[], layers: readonly number[]): string {
+  const span = spanOf(rows, layers);
+  return span === undefined ? `${layers.length} layers` : `Layers ${span}`;
 }
 
 /**
- * What the stack's tree says while `choice` is being chosen: which layers, what they're compared
- * with (the top of the layer below the bottom one, or the tip of `root`, the branch the stack sits
- * on), and what the keys do.
+ * What the stack's tree says while `choice` is selected: the layer it started from, while it's one
+ * layer; then which layers, and what they're compared with: the layer below the bottom one, or
+ * `root`, the branch the stack sits on.
  */
-export function choiceNote(
+export function choiceLine(
   rows: readonly Row[],
   root: string,
   choice: Choice,
-  keys: NoteKeys,
-): string {
+): { readonly name: string | undefined; readonly from: string; readonly code: boolean } {
   const layers = chainIn(rows, choice.anchor, choice.end) ?? [choice.anchor];
-  if (layers.length < 2) {
-    return `A run from #${choice.anchor}: ${keys.down} and ${keys.up} add the layers above or below it on its branch, and ${keys.cancel} stops.`;
-  }
+  if (layers.length < 2) return { name: undefined, from: `#${choice.anchor}`, code: false };
   const bottom = rows.find((row) => row.number === layers[0])?.path ?? [];
   const below = bottom.at(-2);
-  const from = below === undefined ? `the tip of ${root}` : `the top of #${below}`;
-  return `${numbered(layers)}, compared with ${from}. ${keys.show} shows them as one diff; ${keys.cancel} goes back to one layer.`;
+  return {
+    name: layersName(rows, layers),
+    from: below === undefined ? root : `#${below}`,
+    code: below === undefined,
+  };
 }

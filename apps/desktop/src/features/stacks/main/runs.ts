@@ -27,16 +27,16 @@ export function runOf(
 ): Run | { readonly why: string } {
   const layers = chain(stacks, a, b);
   if (!layers) {
-    return { why: `#${a} and #${b} aren't on one branch of the stack, so no one diff shows them.` };
+    return { why: `#${b} isn’t above or below #${a}` };
   }
   const [bottom] = layers;
   if (bottom === undefined || layers.length < 2) {
-    return { why: 'A run of layers is two layers or more.' };
+    return { why: 'Select 2 layers or more' };
   }
   const start = layerStart(stacks, prs, bottom);
   const commit = start?.kind === 'baseBranch' ? start.tip : start?.commit;
   if (commit === undefined) {
-    return { why: `Lo can't tell where #${bottom}'s changes start: its base branch is gone.` };
+    return { why: `#${bottom}’s base branch no longer exists` };
   }
   return { layers, start: commit };
 }

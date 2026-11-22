@@ -355,13 +355,17 @@ describe('planning a change to the queue', () => {
 
   it('asks nothing while the account is away, offline, signed out or held off', async () => {
     const { acts, watch, poller } = setup();
-    watch.away = 'rozed-bot is signed out. Lo reads the queue again once you sign in to it.';
-    expect(await acts.plan(TAB.id, 260, 'remove')).toEqual({ kind: 'refused', why: watch.away });
+    watch.away = 'rozed-bot is signed out.';
+    expect(await acts.plan(TAB.id, 260, 'remove')).toEqual({
+      kind: 'refused',
+      why: watch.away,
+      next: 'signIn',
+    });
     watch.away = undefined;
     poller.offline = true;
     expect(await acts.plan(TAB.id, 260, 'remove')).toMatchObject({
       kind: 'refused',
-      why: 'Offline. Change the queue once you’re back.',
+      why: 'Offline.',
     });
     poller.offline = false;
     poller.signedOut = true;
@@ -371,17 +375,20 @@ describe('planning a change to the queue', () => {
     poller.signedOut = false;
     poller.heldUntil = new Date(2026, 10, 19, 14, 5).getTime();
     expect(await acts.plan(TAB.id, 260, 'jump')).toMatchObject({
-      why: 'GitHub asked Lo to hold off until 14:05. Change the queue then.',
+      why: 'GitHub’s rate limit resets at 14:05.',
+      next: 'none',
     });
     expect(watch.asked).toEqual([]);
   });
 
-  it('asks nothing on a read of the queue that failed', async () => {
+  it('asks nothing on a read of the queue that failed, with what failed behind Details', async () => {
     const { acts, watch } = setup();
     watch.view = 'GitHub couldn’t be reached';
     expect(await acts.plan(TAB.id, 260, 'remove')).toEqual({
       kind: 'refused',
-      why: 'Lo couldn’t read the merge queue for e4/queued again: GitHub couldn’t be reached.',
+      why: '',
+      details: 'GitHub couldn’t be reached',
+      checking: true,
     });
   });
 
@@ -389,11 +396,12 @@ describe('planning a change to the queue', () => {
     const { acts, watch } = setup();
     expect(await acts.plan(TAB.id, 261, 'remove')).toEqual({
       kind: 'refused',
-      why: '#261 isn’t in the merge queue for e4/queued any more.',
+      why: '#261 left the merge queue.',
+      next: 'gone',
     });
     watch.view = viewOf([entry(1, 259)], { total: 150 });
     expect(await acts.plan(TAB.id, 261, 'remove')).toMatchObject({
-      why: 'Lo can’t see #261 in the merge queue for e4/queued: GitHub didn’t list all of it.',
+      why: 'GitHub left part of the queue out.',
     });
   });
 
@@ -402,7 +410,8 @@ describe('planning a change to the queue', () => {
     watch.view = viewOf([entry(1, 259), entry(2, 260)], { permission: 'WRITE' });
     expect(await acts.plan(TAB.id, 260, 'jump')).toEqual({
       kind: 'refused',
-      why: 'GitHub lets only the repository’s admins move a pull request to the front of the merge queue, and rozed-bot isn’t one.',
+      why: 'rozed-bot doesn’t have permission.',
+      next: 'none',
     });
     expect((await planned(acts, 260, 'remove')).kind).toBe('remove');
   });
@@ -411,7 +420,8 @@ describe('planning a change to the queue', () => {
     const { acts } = setup();
     expect(await acts.plan(TAB.id, 259, 'jump')).toEqual({
       kind: 'refused',
-      why: '#259 is at the front of the merge queue already.',
+      why: '#259 is already at the front.',
+      next: 'none',
     });
     expect((await planned(acts, 259, 'remove')).kind).toBe('remove');
   });
@@ -422,7 +432,8 @@ describe('planning a change to the queue', () => {
     poller.stacks = [stackOf(263, [251, 252, 253])];
     expect(await acts.plan(TAB.id, 252, 'remove')).toEqual({
       kind: 'refused',
-      why: 'Take #251 out instead: GitHub takes a stack out from its bottom layer.',
+      why: 'Remove the bottom layer, #251, instead',
+      next: 'none',
     });
     // #253, open but not in the queue, stays.
     expect(await planned(acts, 251)).toMatchObject({ stack: 263, above: [252] });
@@ -436,7 +447,8 @@ describe('planning a change to the queue', () => {
     poller.stacks = [stackOf(263, [259, 260])];
     expect(await acts.plan(TAB.id, 260, 'jump')).toEqual({
       kind: 'refused',
-      why: '#260 is in GitHub stack #263 with #259, which GitHub queues in order, so Lo doesn’t move it to the front on its own.',
+      why: 'GitHub queues a stack’s layers in order',
+      next: 'none',
     });
     // A stack with no other open layer holds nothing back.
     poller.stacks = [stackOf(263, [260])];
@@ -446,16 +458,17 @@ describe('planning a change to the queue', () => {
   it('asks nothing of an entry whose head Lo hasn’t read whole, or of a tab that moved on as it read', async () => {
     const { acts, watch, poller } = setup();
     watch.view = viewOf([entry(1, 259), entry(2, 260, 'abc')]);
-    expect(await acts.plan(TAB.id, 260, 'remove')).toEqual({
+    expect(await acts.plan(TAB.id, 260, 'remove')).toMatchObject({
       kind: 'refused',
-      why: 'Lo hasn’t read #260’s head.',
+      why: '',
+      checking: true,
     });
     watch.view = viewOf([entry(1, 259), entry(2, 260)]);
     poller.onRead = () => {
       watch.branch = 'main';
     };
     expect(await acts.plan(TAB.id, 260, 'remove')).toMatchObject({
-      why: 'The merge queue’s tab changed. Ask again from it.',
+      why: 'The queue has changed.',
     });
   });
 
@@ -469,7 +482,9 @@ describe('planning a change to the queue', () => {
     });
     expect(await acts.plan(TAB.id, 260, 'remove')).toMatchObject({
       kind: 'refused',
-      why: expect.stringContaining('Lo couldn’t read #260’s GitHub stack') as unknown,
+      why: 'GitHub returned an error.',
+      details: expect.any(String) as unknown,
+      checking: true,
     });
   });
 
@@ -478,13 +493,13 @@ describe('planning a change to the queue', () => {
     writes.taken.add(260);
     expect(await acts.plan(TAB.id, 260, 'jump')).toEqual({
       kind: 'refused',
-      why: 'Lo is already merging #260.',
+      why: '#260 is still merging.',
     });
     watch.view = viewOf([entry(1, 251), entry(2, 252)]);
     poller.stacks = [stackOf(263, [251, 252])];
     writes.taken.add(252);
     expect(await acts.plan(TAB.id, 251, 'remove')).toMatchObject({
-      why: 'Lo is already merging #252.',
+      why: '#252 is still merging.',
     });
   });
 });
@@ -507,10 +522,8 @@ describe('confirming a change to the queue', () => {
     expect(await confirming).toEqual({ kind: 'removed', numbers: [260] });
     expect(poller.sent).toEqual([['dequeue', 260, 'PR_260', 'e4/queued', []]]);
     expect(writes.taken.size).toBe(0);
-    expect(await acts.confirm(plan.key)).toEqual({
-      kind: 'refused',
-      why: 'That change was confirmed already.',
-    });
+    // Confirmed again, it was asked by a press the dialog no longer shows: it closes.
+    expect(await acts.confirm(plan.key)).toEqual({ kind: 'refused', why: '', next: 'gone' });
     expect(poller.sent).toHaveLength(1);
   });
 
@@ -520,7 +533,7 @@ describe('confirming a change to the queue', () => {
     const second = await planned(acts, 260, 'jump');
     expect(await acts.confirm(first.key)).toMatchObject({
       kind: 'refused',
-      why: 'Lo no longer has that question. Ask again from the queue.',
+      why: 'The queue has changed.',
     });
     expect(await acts.confirm(second.key)).toEqual({ kind: 'moved', position: 1 });
     expect(poller.sent).toEqual([['jump', 260, 'PR_260', HEAD]]);
@@ -541,36 +554,36 @@ describe('confirming a change to the queue', () => {
     left.watch.view = viewOf([entry(1, 259)]);
     expect(await left.acts.confirm(plan.key)).toEqual({
       kind: 'refused',
-      why: '#260 left the merge queue for e4/queued since Lo asked.',
+      why: '#260 left the merge queue.',
+      next: 'gone',
     });
 
     const pushed = setup();
     const again = await planned(pushed.acts, 260);
     pushed.watch.view = viewOf([entry(1, 259), entry(2, 260, 'b'.repeat(40))]);
     expect(await pushed.acts.confirm(again.key)).toMatchObject({
-      why: '#260 has a newer push since Lo asked, so Lo didn’t change the queue.',
+      why: '#260’s revision is out of date.',
+      next: 'ask',
     });
 
     const moved = setup();
     const other = await planned(moved.acts, 260);
     moved.watch.branch = 'main';
-    expect(await moved.acts.confirm(other.key)).toMatchObject({
-      why: 'The tab shows main’s queue now. Nothing was sent.',
-    });
+    // The dialog closes as its tab shows another branch.
+    expect(await moved.acts.confirm(other.key)).toMatchObject({ why: '', next: 'gone' });
 
     const away = setup();
     const signedOut = await planned(away.acts, 260);
     away.watch.away = 'rozed-bot is signed out.';
     expect(await away.acts.confirm(signedOut.key)).toMatchObject({
       why: 'rozed-bot is signed out.',
+      next: 'signIn',
     });
 
     const closed = setup();
     const gone = await planned(closed.acts, 260);
     closed.state.open = false;
-    expect(await closed.acts.confirm(gone.key)).toMatchObject({
-      why: 'The merge queue’s tab is closed. Nothing was sent.',
-    });
+    expect(await closed.acts.confirm(gone.key)).toMatchObject({ why: '', next: 'gone' });
 
     for (const { poller } of [left, pushed, moved, away, closed]) expect(poller.sent).toEqual([]);
   });
@@ -581,14 +594,13 @@ describe('confirming a change to the queue', () => {
     unread.watch.view = 'GitHub couldn’t be reached';
     expect(await unread.acts.confirm(plan.key)).toEqual({
       kind: 'refused',
-      why: 'Lo couldn’t read the merge queue for e4/queued again, so it didn’t send it: GitHub couldn’t be reached.',
+      why: '',
+      details: 'GitHub couldn’t be reached',
     });
     const offline = setup();
     const other = await planned(offline.acts, 260);
     offline.poller.offline = true;
-    expect(await offline.acts.confirm(other.key)).toMatchObject({
-      why: 'Offline. Change the queue once you’re back.',
-    });
+    expect(await offline.acts.confirm(other.key)).toMatchObject({ why: 'Offline.' });
     expect([...unread.poller.sent, ...offline.poller.sent]).toEqual([]);
   });
 
@@ -597,7 +609,8 @@ describe('confirming a change to the queue', () => {
     const plan = await planned(acts, 260, 'jump');
     watch.view = viewOf([entry(1, 259), entry(2, 260)], { permission: 'WRITE' });
     expect(await acts.confirm(plan.key)).toMatchObject({
-      why: expect.stringContaining('only the repository’s admins') as unknown,
+      why: 'rozed-bot doesn’t have permission.',
+      next: 'none',
     });
     expect(poller.sent).toEqual([]);
   });
@@ -608,7 +621,8 @@ describe('confirming a change to the queue', () => {
     watch.view = viewOf([entry(1, 260)]);
     expect(await acts.confirm(plan.key)).toEqual({
       kind: 'refused',
-      why: '#260 is at the front of the merge queue already.',
+      why: '#260 is already at the front.',
+      next: 'none',
     });
     expect(poller.sent).toEqual([]);
     expect(writes.taken.size).toBe(0);
@@ -621,20 +635,14 @@ describe('confirming a change to the queue', () => {
     watch.onFresh = () => {
       poller.offline = true;
     };
-    expect(await acts.confirm(plan.key)).toEqual({
-      kind: 'refused',
-      why: 'Offline. Change the queue once you’re back.',
-    });
+    expect(await acts.confirm(plan.key)).toEqual({ kind: 'refused', why: 'Offline.' });
     watch.onFresh = undefined;
     poller.offline = false;
     plan = await planned(acts, 260);
     watch.onFresh = () => {
       state.open = false;
     };
-    expect(await acts.confirm(plan.key)).toEqual({
-      kind: 'refused',
-      why: 'The merge queue’s tab is closed. Nothing was sent.',
-    });
+    expect(await acts.confirm(plan.key)).toEqual({ kind: 'refused', why: '', next: 'gone' });
     expect(poller.sent).toEqual([]);
   });
 
@@ -649,7 +657,7 @@ describe('confirming a change to the queue', () => {
     expect(answer).toMatchObject({
       kind: 'again',
       plan: { kind: 'remove', number: 251, above: [252] },
-      why: 'The layers of #251’s GitHub stack in the queue changed. Check what leaves with it now, then confirm.',
+      why: 'The layers removed with it have changed.',
     });
     expect(poller.sent).toEqual([]);
     if (answer.kind !== 'again') throw new Error('expected to ask again');
@@ -662,12 +670,12 @@ describe('confirming a change to the queue', () => {
     const plan = await planned(acts, 260);
     state.converting = { kind: 'running', prs: [259, 260] };
     expect(await acts.confirm(plan.key)).toMatchObject({
-      why: 'Lo is making #259 and #260 a GitHub stack. Change the queue once that’s done.',
+      why: 'GitHub is still changing this stack.',
     });
     state.converting = undefined;
     const again = await planned(acts, 260);
     writes.taken.add(260);
-    expect(await acts.confirm(again.key)).toMatchObject({ why: 'Lo is already merging #260.' });
+    expect(await acts.confirm(again.key)).toMatchObject({ why: '#260 is still merging.' });
     expect(poller.sent).toEqual([]);
   });
 
@@ -684,7 +692,7 @@ describe('confirming a change to the queue', () => {
     await vi.advanceTimersByTimeAsync(0);
     acts.cancel(plan.key);
     read?.();
-    expect(await confirming).toEqual({ kind: 'refused', why: 'Cancelled. Nothing was sent.' });
+    expect(await confirming).toEqual({ kind: 'refused', why: '', next: 'gone' });
     expect(poller.sent).toEqual([]);
   });
 
@@ -693,7 +701,10 @@ describe('confirming a change to the queue', () => {
     poller.jumped = { refusal: 'stacked', others: [259] };
     expect(await acts.confirm((await planned(acts, 260, 'jump')).key)).toEqual({
       kind: 'refused',
-      why: "#259 is in its GitHub stack, which GitHub queues in order, so Lo didn't move it to the front.",
+      why: 'GitHub queues a stack’s layers in order',
+      next: 'none',
+      details:
+        "#259 is in its GitHub stack, which GitHub queues in order, so Lo didn't move it to the front",
     });
     poller.dequeued = new GithubError({
       kind: 'unauthorized',
@@ -701,7 +712,8 @@ describe('confirming a change to the queue', () => {
     });
     expect(await acts.confirm((await planned(acts, 260)).key)).toMatchObject({
       kind: 'refused',
-      why: expect.stringMatching(/Nothing was sent\.$/) as unknown,
+      why: 'rozed-bot is signed out.',
+      next: 'signIn',
     });
     expect(writes.taken.size).toBe(0);
   });
@@ -711,7 +723,9 @@ describe('confirming a change to the queue', () => {
     poller.jumped = { kind: 'notBack', failure: { refusal: 'headMoved' } };
     expect(await acts.confirm((await planned(acts, 260, 'jump')).key)).toEqual({
       kind: 'partly',
-      why: 'GitHub took #260 out of the merge queue for e4/queued to move it, then wouldn’t add it back: Someone pushed to the pull request since Lo showed it. It’s out of the queue. Add it again from its merge panel.',
+      why: 'It left the merge queue and wasn’t added back.',
+      next: 'open',
+      details: 'Someone pushed to the pull request since Lo showed it',
     });
   });
 
@@ -725,7 +739,8 @@ describe('confirming a change to the queue', () => {
     const plan = await planned(acts, 260);
     expect(await acts.confirm(plan.key)).toEqual({
       kind: 'unknown',
-      why: "Lo can’t tell whether #260 left the merge queue for e4/queued: GitHub’s answer didn’t reach Lo: couldn't reach GitHub: The connection closed. It may be out. Lo reads the queue again, which shows it, and sends nothing again.",
+      why: 'GitHub didn’t respond.',
+      details: "couldn't reach GitHub: The connection closed.",
     });
     await vi.advanceTimersByTimeAsync(0);
     // The read after it failed: the turn holds, and it's read again later.
@@ -747,7 +762,7 @@ describe('confirming a change to the queue', () => {
     };
     expect(await acts.confirm((await planned(acts, 260, 'jump')).key)).toMatchObject({
       kind: 'unknown',
-      why: expect.stringContaining('Lo can’t tell whether it added it back') as unknown,
+      why: 'GitHub didn’t respond.',
     });
     await vi.advanceTimersByTimeAsync(0);
     expect(writes.taken.size).toBe(0);
@@ -761,7 +776,7 @@ describe('confirming a change to the queue', () => {
     });
     expect(await acts.confirm((await planned(acts, 260, 'jump')).key)).toMatchObject({
       kind: 'unknown',
-      why: expect.stringContaining('Lo can’t tell whether it added it back') as unknown,
+      why: 'GitHub didn’t respond.',
     });
     await vi.advanceTimersByTimeAsync(0);
     expect(writes.busy(REPO, [260])).toEqual([260]);
@@ -847,14 +862,10 @@ describe('a question that no longer stands', () => {
     const { acts } = setup();
     const left = await planned(acts, 260);
     acts.heard(TAB.id, viewOf([entry(1, 259)]));
-    expect(await acts.confirm(left.key)).toMatchObject({
-      why: 'Lo no longer has that question. Ask again from the queue.',
-    });
+    expect(await acts.confirm(left.key)).toMatchObject({ why: 'The queue has changed.' });
     const pushed = await planned(acts, 260);
     acts.heard(TAB.id, viewOf([entry(1, 259), entry(2, 260, 'c'.repeat(40))]));
-    expect(await acts.confirm(pushed.key)).toMatchObject({
-      why: 'Lo no longer has that question. Ask again from the queue.',
-    });
+    expect(await acts.confirm(pushed.key)).toMatchObject({ why: 'The queue has changed.' });
     // A read that may not list every entry drops nothing.
     const kept = await planned(acts, 260);
     acts.heard(TAB.id, viewOf([entry(1, 259)], { total: 150 }));
@@ -865,9 +876,7 @@ describe('a question that no longer stands', () => {
     const { acts } = setup();
     const plan = await planned(acts, 260);
     acts.drop(TAB.id);
-    expect(await acts.confirm(plan.key)).toMatchObject({
-      why: 'Lo no longer has that question. Ask again from the queue.',
-    });
+    expect(await acts.confirm(plan.key)).toMatchObject({ why: 'The queue has changed.' });
   });
 });
 
@@ -888,17 +897,20 @@ describe('`a` on a pull request waiting to join', () => {
     ]);
     expect(await acts.autoMergeOff(TAB.id, 258)).toEqual({
       kind: 'refused',
-      why: '#258 is in the merge queue already.',
+      why: '#258 is already in the merge queue.',
+      next: 'none',
     });
     expect(await acts.autoMergeOff(TAB.id, 259)).toMatchObject({
-      why: 'Auto-merge is off for #259 already.',
+      why: 'Auto-merge is already off.',
     });
     expect(await acts.autoMergeOff(TAB.id, 260)).toMatchObject({
-      why: '#260 isn’t open into e4/queued any more.',
+      why: '#260 is no longer open into e4/queued.',
+      next: 'gone',
     });
     watch.waiting = 'GitHub couldn’t be reached';
     expect(await acts.autoMergeOff(TAB.id, 258)).toMatchObject({
-      why: expect.stringContaining('so it didn’t turn off auto-merge') as unknown,
+      why: '',
+      details: 'GitHub couldn’t be reached',
     });
     expect(poller.sent).toEqual([]);
   });
@@ -907,13 +919,11 @@ describe('`a` on a pull request waiting to join', () => {
     const { acts, poller, writes } = setup();
     writes.taken.add(258);
     expect(await acts.autoMergeOff(TAB.id, 258)).toMatchObject({
-      why: 'Lo is already merging #258.',
+      why: '#258 is still merging.',
     });
     writes.taken.clear();
     poller.offline = true;
-    expect(await acts.autoMergeOff(TAB.id, 258)).toMatchObject({
-      why: 'Offline. Change the queue once you’re back.',
-    });
+    expect(await acts.autoMergeOff(TAB.id, 258)).toMatchObject({ why: 'Offline.' });
     expect(poller.sent).toEqual([]);
   });
 
@@ -924,7 +934,7 @@ describe('`a` on a pull request waiting to join', () => {
     };
     expect(await acts.autoMergeOff(TAB.id, 258)).toEqual({
       kind: 'refused',
-      why: 'The merge queue’s tab changed. Turn off auto-merge from it again.',
+      why: 'The queue has changed.',
     });
     expect(poller.sent).toEqual([]);
   });
@@ -939,9 +949,8 @@ describe('`a` on a pull request waiting to join', () => {
     };
     expect(await acts.autoMergeOff(TAB.id, 258)).toMatchObject({
       kind: 'partly',
-      why: expect.stringContaining(
-        'joined the merge queue for e4/queued before auto-merge went off',
-      ) as unknown,
+      why: '#258 had already joined the merge queue.',
+      next: 'remove',
     });
   });
 
@@ -952,7 +961,7 @@ describe('`a` on a pull request waiting to join', () => {
     const answer = acts.autoMergeOff(TAB.id, 258);
     expect(await answer).toMatchObject({
       kind: 'unknown',
-      why: expect.stringContaining('Lo can’t tell whether auto-merge is off for #258') as unknown,
+      why: 'GitHub didn’t respond.',
     });
     await vi.advanceTimersByTimeAsync(0);
     expect(writes.taken.size).toBe(0);

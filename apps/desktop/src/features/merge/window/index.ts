@@ -57,7 +57,7 @@ import { WatchedBanner, watchedSwitch } from './WatchedBanner.tsx';
 function unsure(): { key: string } | string {
   const tab = activeTab();
   const job = tab?.kind === 'pull' ? jobOf(tab) : undefined;
-  return job?.state.kind === 'unknown' ? job : 'Lo knows how its last merge of this went.';
+  return job?.state.kind === 'unknown' ? job : 'No merge to check';
 }
 
 export default {
@@ -77,7 +77,7 @@ export default {
     askAgain: {
       run: () => {
         const job = unsure();
-        if (typeof job !== 'string') askAgain(job.key);
+        if (typeof job !== 'string') void askAgain(job.key);
       },
       enabled: () => {
         const job = unsure();

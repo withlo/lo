@@ -2,8 +2,9 @@
 // summary, kept through the comments feature's drafts; and submitting your review, in its turn
 // among the comments feature's writes to the pull request (`./submitter.ts`). When GitHub's answer
 // is lost, your latest reviews are read afresh (`YourReviews`) to find out whether it was
-// submitted, with GitHub's clock as that answer gives it. Other features approve the same way,
-// through `review.submissions`, as approve and ship does before it merges.
+// submitted, with GitHub's clock as that answer gives it, and again when the reader asks. Other
+// features approve the same way, through `review.submissions`, as approve and ship does before it
+// merges.
 
 import { YourReviewsDocument } from '@lo/github';
 
@@ -44,7 +45,10 @@ export default defineFeature(contract, {
     draft({ id, text }) {
       started().draft(id, text);
     },
-    submit: ({ id, event, body, anyway }) => started().submit(id, event, body, anyway),
+    submit: ({ id, event, body }) => started().submit(id, event, body),
+    check({ id }) {
+      started().check(id);
+    },
   },
   start({ use, publish }) {
     const service = use(tabs);

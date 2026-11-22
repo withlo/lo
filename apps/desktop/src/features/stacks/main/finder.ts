@@ -290,7 +290,7 @@ export class StackFinder {
       conversion(number, facts) {
         const conversion = planConversion(stacks, number, facts);
         if (conversion.kind === 'plan') {
-          return { ...conversion, offer: calloutText(conversion.plan, stacks) };
+          return { ...conversion, offer: calloutText(conversion.plan) };
         }
         const words = reasonsText(conversion.reasons, { number, repository, forest: stacks, list });
         return { ...conversion, words };
@@ -307,7 +307,7 @@ export class StackFinder {
     const entry = tab?.login === undefined ? undefined : this.#pollers.get(tab.login.toLowerCase());
     const forest =
       tab && entry?.kind === 'ready' ? this.#forest(entry.poller, tab.pull.repo) : undefined;
-    if (!forest) return { why: 'Lo doesn’t know this pull request’s stack yet.' };
+    if (!forest) return { why: 'Checking stack…' };
     return runOf(forest.stacks, forest.prs, a, b);
   }
 

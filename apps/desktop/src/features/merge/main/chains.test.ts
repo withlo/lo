@@ -60,6 +60,7 @@ function run(
   const views: Progress[] = [];
   const config: ChainOptions = {
     repo: REPO,
+    login: 'ravi-k',
     number: 5,
     together,
     method: options.method === undefined ? 'SQUASH' : options.method,
@@ -110,7 +111,7 @@ function run(
 }
 
 describe('a chain’s merge a layer at a time', () => {
-  it('moves the layers on it only once GitHub says it merged, in order, and says they need a rebase', async () => {
+  it('moves the layers on it only once GitHub says it merged, in order', async () => {
     const chain = run();
     expect(await chain.chain.moveFirst()).toBe(true);
     expect(chain.sent).toEqual([]);
@@ -120,20 +121,18 @@ describe('a chain’s merge a layer at a time', () => {
     expect(view).toMatchObject({
       phase: 'done',
       moves: [{ status: 'done' }, { status: 'done' }],
-      text: '#6 and #7 now point at main and need a rebase.',
+      text: null,
     });
     expect(chain.ended()).toBe(1);
   });
 
-  it('says the layers it moved need a rebase only when the method leaves their commits out', async () => {
-    // A merge commit lands #5's commits as they are, so they need no rebase.
+  it('says nothing once the layers moved, whatever the method: the stack shows a needed rebase', async () => {
     const merged = run(CHAIN, { method: 'MERGE' });
     merged.chain.merged();
-    expect((await merged.over()).text).toBe('#6 and #7 now point at main.');
-    // A queue whose method the account can't read may squash.
+    expect((await merged.over()).text).toBeNull();
     const queued = run(CHAIN, { method: null });
     queued.chain.merged();
-    expect((await queued.over()).text).toBe('#6 and #7 now point at main and may need a rebase.');
+    expect((await queued.over()).text).toBeNull();
   });
 
   it('after a queue entry, waits for the merge, and moves nothing when it leaves the queue', async () => {
@@ -148,7 +147,7 @@ describe('a chain’s merge a layer at a time', () => {
     expect(await leaves.over()).toMatchObject({
       phase: 'stopped',
       moves: [{ status: 'skipped' }, { status: 'skipped' }],
-      text: '#5 left the merge queue without merging, so Lo moved nothing.',
+      text: 'It left the merge queue.',
     });
     expect(leaves.sent).toEqual([]);
   });
@@ -159,7 +158,7 @@ describe('a chain’s merge a layer at a time', () => {
     waits.chain.enqueued();
     expect(await waits.over()).toMatchObject({
       phase: 'stopped',
-      text: '#5 didn’t merge within 6 hours of joining the merge queue, so Lo moved nothing.',
+      text: '#5 was still in the merge queue after 6 h.',
     });
     expect(waits.reads()).toBe(18);
     expect(waits.sent).toEqual([]);
@@ -168,7 +167,7 @@ describe('a chain’s merge a layer at a time', () => {
     closes.chain.enqueued();
     expect(await closes.over()).toMatchObject({
       phase: 'stopped',
-      text: '#5 was closed without merging, so Lo moved nothing.',
+      text: 'It was closed.',
     });
     expect(closes.sent).toEqual([]);
   });
@@ -183,7 +182,7 @@ describe('a chain’s merge a layer at a time', () => {
     never.chain.unsure();
     expect(await never.over()).toMatchObject({
       phase: 'stopped',
-      text: 'Lo couldn’t tell within 15 minutes whether #5 merged, so it moved nothing.',
+      text: 'GitHub didn’t respond.',
     });
     expect(never.reads()).toBe(15);
     expect(never.sent).toEqual([]);
@@ -200,7 +199,7 @@ describe('a chain’s merge a layer at a time', () => {
     chain.chain.unsure();
     expect(await chain.over()).toMatchObject({
       phase: 'stopped',
-      text: 'Lo couldn’t tell within 15 minutes whether #5 merged, so it moved nothing.',
+      text: 'GitHub didn’t respond.',
     });
     expect(chain.reads()).toBe(25);
     expect(chain.sent).toEqual([]);
@@ -214,14 +213,8 @@ describe('a chain’s merge a layer at a time', () => {
     chain.chain.merged();
     expect(await chain.over()).toMatchObject({
       phase: 'stopped',
-      moves: [
-        { status: 'done' },
-        {
-          status: 'failed',
-          detail: '#7 is on feature now, moved since Lo read it, so Lo left it.',
-        },
-      ],
-      text: '#5 merged, but Lo stopped moving the layers on it. It moved #6 onto main.',
+      moves: [{ status: 'done' }, { status: 'failed', detail: 'Already on feature.' }],
+      text: null,
     });
   });
 
@@ -232,7 +225,8 @@ describe('a chain’s merge a layer at a time', () => {
     });
     chain.chain.merged();
     expect(await chain.over()).toMatchObject({
-      moves: [{ status: 'unknown' }, { status: 'skipped' }],
+      moves: [{ status: 'unknown', detail: 'Not confirmed' }, { status: 'skipped' }],
+      text: 'GitHub didn’t respond.',
     });
     expect(chain.sent).toEqual([6]);
   });
@@ -247,7 +241,7 @@ describe('a chain’s merge a layer at a time', () => {
     expect(await chain.over()).toMatchObject({
       phase: 'stopped',
       moves: [{ before: true, status: 'done' }, { status: 'skipped' }, { status: 'skipped' }],
-      text: '#5 didn’t merge, and stays on main. Lo moved nothing more.',
+      text: '#5’s base branch is now main.',
     });
     expect(chain.sent).toEqual([5]);
 
@@ -258,7 +252,7 @@ describe('a chain’s merge a layer at a time', () => {
     expect(await refused.chain.moveFirst()).toBe(false);
     expect(refused.chain.view()).toMatchObject({
       phase: 'stopped',
-      text: 'Lo didn’t merge #5, since its base branch didn’t move.',
+      text: 'Its base branch didn’t move.',
     });
   });
 
@@ -313,7 +307,7 @@ describe('a chain’s merge a layer at a time', () => {
     chain.chain.enqueued();
     expect(chain.chain.view()).toMatchObject({
       phase: 'waiting',
-      text: '#5 is in the merge queue. Lo moves the layers on it once it merges, while Lo is open.',
+      text: 'The layers above move once it has merged, while Lo is open.',
     });
     expect((await chain.over()).phase).toBe('done');
     expect(chain.mostReading()).toBe(1);

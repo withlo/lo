@@ -205,9 +205,8 @@ export class QueueReads {
   async ahead(id: string): Promise<Ahead> {
     const watched = this.#views.get(id);
     const base = watched?.base;
-    if (!watched || base === undefined) {
-      throw new IpcError('unavailable', 'Lo hasn’t read whether this pull request can merge.');
-    }
+    // The merge status reads "Checking…" until it's read.
+    if (!watched || base === undefined) throw new IpcError('unavailable', '');
     try {
       const poller = await this.#pollerOf(watched);
       const read = await poller.readOnce(
@@ -217,8 +216,9 @@ export class QueueReads {
       );
       return aheadOf(read, watched.pull.number);
     } catch (error) {
+      // The place reads "place not known": what failed is all the error holds, for Details.
       const why = error instanceof GithubError ? error.message : describe(error);
-      throw new IpcError('unavailable', `Lo couldn’t read the merge queue for ${base}: ${why}`);
+      throw new IpcError('unavailable', why);
     }
   }
 

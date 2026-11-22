@@ -1,20 +1,19 @@
 // How the window words a pull request in a merge queue: the merge panel's line for one queued, or
-// ready to join a queue, with what's ahead; the panel's row once it will be removed, and once it
-// left; and the banner that says it left, and why. Text from GitHub, such as check names and
+// ready to join a queue, with what's ahead; the panel's row once it's leaving, and once it left;
+// and the banner that says it left. Text from GitHub, such as check names and
 // logins, is drawn as text without the characters that turn text around, which the components take
 // out. Nothing here draws.
 
 import type { Ahead, InQueue, LeftQueue, MergeState } from '../contract.ts';
 import {
-  capitalized,
   counted,
   duration,
   listed,
   ordinal,
-  PARTIAL_CHECKS,
   rowsOf,
   type PanelHead,
   type Row,
+  type Who,
 } from './words.ts';
 
 /**
@@ -27,14 +26,16 @@ export type AheadRead =
   | { readonly kind: 'read'; readonly ahead: Ahead }
   | { readonly kind: 'failed'; readonly why: string };
 
-/** What's ahead in a queue, after the branch: "4 ahead, about 18 min". Nothing for no queue. */
+/**
+ * What's ahead in a queue, after the branch: "4 ahead · merges in about 18 min". Nothing for no
+ * queue, or where nothing is known of it.
+ */
 export function aheadWords(ahead: Ahead): string | undefined {
   if (ahead.kind === 'none') return undefined;
   const { count, atLeast, timeToMerge } = ahead;
-  if (atLeast && count === 0) return 'Lo can’t tell how many are ahead';
-  if (!atLeast && count === 0) return 'none ahead';
-  const how = `${atLeast ? 'at least ' : ''}${count} ahead`;
-  return timeToMerge === null ? how : `${how}, about ${duration(timeToMerge)}`;
+  if (atLeast && count === 0) return undefined;
+  const how = `${count}${atLeast ? '+' : ''} ahead`;
+  return timeToMerge === null ? how : `${how} · merges in about ${duration(timeToMerge)}`;
 }
 
 /**
@@ -53,18 +54,20 @@ export function queueHead(
     if (place?.kind === 'unlisted' && !place.partial) {
       return {
         kind: 'waiting',
-        verdict: 'Left the queue',
-        into: false,
-        after: `The merge queue for ${state.base} no longer lists it · Lo is reading whether it merged`,
+        verdict: 'Left merge queue',
+        before: undefined,
+        branch: undefined,
+        after: 'Checking…',
       };
     }
     const position = place?.kind === 'listed' ? place.position : state.position;
     const removal = place?.kind === 'listed' && place.state === 'UNMERGEABLE';
     return {
       kind: removal ? 'blocked' : 'queued',
-      verdict: removal ? 'Will be removed' : 'Queued',
-      into: false,
-      after: `In the merge queue for ${state.base}${position === null ? '' : ` · ${ordinal(position)}`}`,
+      verdict: removal ? 'Leaving merge queue' : 'Queued',
+      before: 'In the merge queue for',
+      branch: state.base,
+      after: position === null ? undefined : `· ${ordinal(position)}`,
     };
   }
   if (state.verdict === 'ready' && state.action.kind === 'enqueue') {
@@ -75,7 +78,7 @@ export function queueHead(
         return words === undefined ? head : { ...head, after: `${before} · ${words}` };
       }
       case 'failed':
-        return { ...head, after: `${before} · Lo couldn’t read the queue` };
+        return { ...head, after: `${before} · place not known` };
       case 'none':
       case 'reading':
         return head;
@@ -98,81 +101,50 @@ export function leftNow(state: MergeState, queue: InQueue | undefined): LeftQueu
 }
 
 /**
- * Why a pull request left its merge queue for `base`, as a sentence after "left the merge queue:",
- * starting in lowercase but for a name: "test (node 20) failed with its group."
+ * Why a pull request left its merge queue for `base`, in a sentence: "test (node 20) failed in the
+ * merge queue." Nothing where GitHub gave no reason Lo can name.
  */
-export function leftWhy(left: LeftQueue, base: string): string {
+export function leftWhy(left: LeftQueue, base: string): string | undefined {
   const { why } = left;
-  let said: string;
   switch (why.kind) {
     case 'failedChecks':
-      said =
-        why.checks.length > 0
-          ? `${listed(why.checks.map((check) => check.name))} failed with its group.`
-          : 'its checks failed with its group.';
-      break;
+      return why.checks.length > 0
+        ? `${listed(why.checks.map((check) => check.name))} failed in the merge queue.`
+        : 'Its checks failed in the merge queue.';
     case 'conflict':
-      said = `it conflicts with ${base} or an entry ahead of it.`;
-      break;
+      return `It conflicts with ${base} or a pull request ahead of it.`;
     case 'timedOut':
-      said = 'its checks ran past the queue’s time limit.';
-      break;
+      return 'Its checks ran past the merge queue’s time limit.';
     case 'removed':
-      said = why.you
-        ? 'you took it out.'
+      return why.you
+        ? 'You removed it.'
         : why.by === null
-          ? 'someone took it out.'
-          : `${why.by} took it out.`;
-      break;
+          ? 'It was removed.'
+          : `${why.by} removed it.`;
     case 'other':
-      said = why.reason === null ? 'GitHub gave no reason.' : `GitHub says “${why.reason}”.`;
-      break;
     case 'unknown':
-      said =
-        why.why !== null
-          ? `Lo couldn’t read why: ${why.why.trim().replace(/[.!?]$/, '')}.`
-          : left.partial
-            ? 'Lo can’t tell why: GitHub left it out of its answer.'
-            : 'Lo can’t tell why.';
-      break;
+      return undefined;
     default:
       why satisfies never;
-      said = 'Lo can’t tell why.';
+      return undefined;
   }
-  return partly(left, said);
-}
-
-/** `said` of `left`, saying GitHub may have left part of why out. */
-function partly(left: LeftQueue, said: string): string {
-  return left.partial && left.why.kind !== 'unknown'
-    ? `${said} GitHub left part of why out, so there may be more.`
-    : said;
 }
 
 /**
- * Why a pull request left its merge queue for `base`, as the panel's row says it: a sentence of its
- * own, whose names from GitHub keep their case, with the checks under it.
+ * Why a pull request left its merge queue for `base`, as the panel's row says it, with the checks
+ * under it.
  */
-function rowWhy(left: LeftQueue, base: string): string {
+function rowWhy(left: LeftQueue, base: string): string | undefined {
   const { why } = left;
-  if (why.kind === 'failedChecks') {
-    const count = why.checks.length;
-    return partly(
-      left,
-      count > 0
-        ? `${counted(count, 'check')} failed with its group.`
-        : 'Its checks failed with its group.',
-    );
+  if (why.kind === 'failedChecks' && why.checks.length > 0) {
+    return `${counted(why.checks.length, 'check')} failed in the merge queue.`;
   }
-  if (why.kind === 'removed' && !why.you && why.by !== null) {
-    return partly(left, `Taken out by ${why.by}.`);
-  }
-  return capitalized(leftWhy(left, base));
+  return leftWhy(left, base);
 }
 
-/** The banner's first words for pull request `number`, which `leftWhy` goes on from. */
+/** The banner's one line for pull request `number`; the panel's row says why. */
 export function leftTitle(number: number): string {
-  return `#${number} left the merge queue:`;
+  return `#${number} left the merge queue`;
 }
 
 /** How loud the banner is: a failure in the queue is a danger; the rest is news. */
@@ -210,7 +182,7 @@ function leftRow(left: LeftQueue, base: string): Row {
     key: 'left',
     kind: leftTone(left) === 'danger' ? 'fail' : 'info',
     glyph,
-    title: 'It left the merge queue',
+    title: 'Left merge queue',
     detail: rowWhy(left, base),
     link: undefined,
     subs: checks.map((check, index) => ({
@@ -218,7 +190,7 @@ function leftRow(left: LeftQueue, base: string): Row {
       name: check.name,
       note: 'failed',
       tone: 'fail',
-      link: check.url === null ? undefined : { label: 'Open the run ↗', url: check.url },
+      link: check.url === null ? undefined : { label: 'Open in browser', url: check.url },
     })),
     nextThread: false,
     inTheWay: false,
@@ -242,8 +214,8 @@ export function queueRows(state: MergeState, queue: InQueue | undefined): Row[] 
             key: 'queue-unlisted',
             kind: 'info',
             glyph: 'unknown',
-            title: 'Lo can’t see its place in the queue',
-            detail: 'GitHub left part of the queue out, or it’s longer than Lo reads.',
+            title: 'Place in merge queue not known',
+            detail: undefined,
             link: undefined,
             subs: [],
             nextThread: false,
@@ -261,18 +233,16 @@ export function queueRows(state: MergeState, queue: InQueue | undefined): Row[] 
       glyph: 'failed',
       title:
         count > 0
-          ? `${counted(count, 'check')} failed in the queue`
-          : 'It can’t merge as the queue tested it',
-      detail: place.partial
-        ? `GitHub takes it out of the queue. ${PARTIAL_CHECKS}`
-        : 'GitHub takes it out of the queue.',
+          ? `${counted(count, 'check')} failed in the merge queue`
+          : 'Failed in the merge queue',
+      detail: 'GitHub will remove it from the merge queue.',
       link: undefined,
       subs: place.failed.map((check, index) => ({
         key: `${index}`,
         name: check.name,
         note: 'failed',
         tone: 'fail',
-        link: check.url === null ? undefined : { label: 'Open the run ↗', url: check.url },
+        link: check.url === null ? undefined : { label: 'Open in browser', url: check.url },
       })),
       nextThread: false,
       inTheWay: true,
@@ -280,7 +250,12 @@ export function queueRows(state: MergeState, queue: InQueue | undefined): Row[] 
   ];
 }
 
-/** The merge panel's rows for `state` at `now`, its merge queue's first. */
-export function panelRows(state: MergeState, queue: InQueue | undefined, now?: number): Row[] {
-  return [...queueRows(state, queue), ...rowsOf(state, now)];
+/** The merge panel's rows for `state` at `now`, its merge queue's first. `who` names the account. */
+export function panelRows(
+  state: MergeState,
+  queue: InQueue | undefined,
+  now?: number,
+  who?: Who,
+): Row[] {
+  return [...queueRows(state, queue), ...rowsOf(state, now, who)];
 }

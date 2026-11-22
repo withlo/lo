@@ -18,7 +18,7 @@ import type { Page } from '@playwright/test';
 import { appFolder, expect, KEYCHAIN, test as base } from './app.ts';
 
 /** The generation both were recorded on. */
-const { pulls, githubStack } = MERGE_PULLS[8];
+const { pulls } = MERGE_PULLS[8];
 
 /** How long the panel can take to say where a pull request sits: two lists of e2e's pull requests. */
 const PLACED = 60_000;
@@ -109,23 +109,25 @@ test('a GitHub stack’s top layer merges with the layer below it as one, showin
   const { stack1, stack2 } = pulls;
   await panelOf(page, stack2.number);
   await expect(panel(page)).toContainText(
-    `#${stack1.number}, below it in GitHub stack #${githubStack}, merge with it.`,
+    `#${stack1.number} merges too, below it in the GitHub stack.`,
     { timeout: PLACED },
   );
-  await expect(panel(page).getByRole('button', { name: /Merge 2 layers/ })).toBeVisible();
+  await expect(panel(page).getByRole('button', { name: /Merge 2 layers…/ })).toBeVisible();
 
   await page.keyboard.press('Enter');
   await asks(page, 'Merge 2 layers');
-  await expect(dialog(page)).toContainText('A GitHub stack merges as one.');
   await expect(rows(page)).toHaveText([
     new RegExp(`#${stack1.number} Fixture M8: stack, first layer`),
-    new RegExp(`#${stack2.number} Fixture M8: stack, second layer.*The one on screen`),
+    new RegExp(`#${stack2.number} Fixture M8: stack, second layer`),
   ]);
 
   await page.keyboard.press('Enter');
-  await expect(dialog(page)).toContainText('Merging 2 layers into merge/8/base');
-  await expect(dialog(page)).toContainText('Branch rules are checked as it runs.');
-  await expect(said(page, 'Merged 2 layers into merge/8/base')).toBeVisible({ timeout: MERGING });
+  // The dialog stays, its main button busy, until it says it's done; no toast says it meanwhile.
+  await expect(dialog(page).getByRole('status').filter({ hasText: 'Merged 2 layers' })).toBeVisible(
+    { timeout: MERGING },
+  );
+  await expect(said(page, 'Merged 2 layers')).toHaveCount(1);
+  await dialog(page).getByRole('button', { name: /^Done/ }).click();
   await expect(dialog(page)).toBeHidden();
 
   // One merge, of the top layer's head, which GitHub merges the layer below with, sent once Lo
@@ -156,7 +158,7 @@ test.describe('a chain that can’t be a GitHub stack', () => {
     const { chain1, chain2, draft } = pulls;
     await panelOf(page, chain1.number);
     await expect(panel(page)).toContainText(
-      `#${chain1.number} merges into merge/8/base alone. Then Lo moves #${draft.number} and #${chain2.number} onto merge/8/base, while Lo is open.`,
+      `#${chain1.number} merges alone. #${draft.number} and #${chain2.number} then move onto merge/8/base, while Lo is open.`,
       { timeout: PLACED },
     );
 
@@ -165,22 +167,23 @@ test.describe('a chain that can’t be a GitHub stack', () => {
     // With a merge commit, GitHub's default here, the layers moved need no rebase.
     await expect(dialog(page)).toContainText('Merge commit');
     await expect(rows(page)).toHaveText([
-      new RegExp(`Merge #${chain1.number} into merge/8/base`),
-      new RegExp(`Move #${draft.number} onto merge/8/base`),
-      new RegExp(`Move #${chain2.number} onto merge/8/base`),
+      new RegExp(`Merge #${chain1.number} into merge/8/base\\.`),
+      new RegExp(`Move #${draft.number} onto merge/8/base\\.`),
+      new RegExp(`Move #${chain2.number} onto merge/8/base\\.`),
     ]);
     await expect(dialog(page)).not.toContainText('rebase');
     await expect(dialog(page)).toContainText(
-      'Lo moves the layers above once it has merged, while Lo is open.',
+      'The layers above move once it has merged, while Lo is open.',
     );
 
     await page.keyboard.press('Enter');
-    await expect(said(page, `Merged #${chain1.number}, one layer at a time`)).toBeVisible({
-      timeout: MERGING,
-    });
+    // The dialog says it's done once the layers above have moved, and no toast does.
     await expect(
-      said(page, `#${draft.number} and #${chain2.number} now point at merge/8/base.`),
-    ).toBeVisible();
+      dialog(page)
+        .getByRole('status')
+        .filter({ hasText: `Merged #${chain1.number}` }),
+    ).toBeVisible({ timeout: MERGING });
+    await expect(said(page, `Merged #${chain1.number}`)).toHaveCount(1);
     await expect(said(page, 'rebase')).toHaveCount(0);
 
     // Each moved once, after the merge.

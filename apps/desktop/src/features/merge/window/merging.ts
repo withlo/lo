@@ -1,23 +1,31 @@
 // What merging does in the window: `⏎` in the merge panel, once Lo knows where the pull request
 // sits, asking again where what the panel heard keeps it from merging, asks main for a plan and
-// shows it in the dialog in the panel's place, or says why not; the dialog confirms its key, and
-// `Esc` goes back to the panel. Main
-// says how each merge goes on `jobs`: done, a toast says so; refused, or ended without Lo knowing
-// how, the dialog says so while it's open, else a banner on the pull request's tab does. A chain's
-// run, which goes on after its merge, says in a toast how it ended, done or stopped. The window
-// never sends a merge itself. `a` plans auto-merge, and `⌥⏎` a merge past the rules, which
-// confirms only with the pull request's number typed, the same way; with auto-merge on, `a` asks
-// main to turn it off at once. When GitHub won't turn auto-merge on because nothing blocks the
-// merge now, the dialog shows the merge main planned in its place.
+// shows it in the dialog in the panel's place; the dialog confirms its key, and `Esc` goes back to
+// the panel. "Merge…" from the app menu opens the panel first. Main says how each merge goes on
+// `jobs`: done, the dialog says so while it's open, else a toast does; refused, or ended without Lo
+// knowing how, the dialog says so while it's open, else a banner on the pull request's tab does. A
+// chain's run, which goes on after its merge, says how it ended the same way. The window never
+// sends a merge itself. `a` plans auto-merge, and `⌥⏎` a merge past the rules, which confirms only
+// with the pull request's number typed, the same way; with auto-merge on, `a` asks main to turn it
+// off at once. When GitHub won't turn auto-merge on because nothing blocks the merge now, the
+// dialog shows the merge main planned in its place.
 
-import { announce, notify } from '../../../window/commands/notices.tsx';
+import { announce, refuse } from '../../../window/commands/notices.tsx';
 import { client } from '../../../window/ipc.ts';
 import { contract as revisionsContract } from '../../revisions/contract.ts';
 import { contract as tabContract } from '../../tab/contract.ts';
 import { revisionLabel, revisionsOf } from '../../revisions/window/shared.ts';
 import { activeTab, pullOf, withoutBidi } from '../../tab/window/shared.ts';
 import type { Asked, JobView, MergePlan, MergeState, PlanKind, Refusal } from '../contract.ts';
-import { closePanel, openPanel, opened } from './actions.ts';
+import {
+  canOpen,
+  closePanel,
+  openPanel,
+  opened,
+  PANEL_FIRST,
+  panelTrouble,
+  whoOf,
+} from './actions.ts';
 import { main } from './main.ts';
 import { placeNow } from './placing.ts';
 import {
@@ -33,11 +41,11 @@ import {
   cantAutoMerge,
   cantMerge,
   cantOverride,
-  doneDetail,
+  confirmLabel,
+  detailsOf,
   doneLine,
   mergeLabel,
   mergeTitle,
-  outcomeDetail,
   outcomeTitle,
   placedLabel,
   placedWhy,
@@ -55,30 +63,55 @@ function setDialog(dialog: MergeDialog | undefined): void {
 /** Whether the open panel can ask for something now, as `cant` says of its status, or why not. */
 function canAsk(cant: typeof cantMerge): true | string {
   const open = opened();
-  if (!open) return 'The merge panel isn’t open.';
-  if (merging.getState().dialog !== undefined) return 'A merge is being confirmed.';
+  if (!open) return PANEL_FIRST;
   const tab = activeTab();
-  return cant(open.state, tab?.kind === 'pull' ? tab.number : 0) ?? true;
+  if (tab?.kind !== 'pull') return PANEL_FIRST;
+  return cant(open.state, tab.number, whoOf(tab)) ?? true;
 }
 
 /**
- * Whether `⏎` in the open panel can ask for a merge, or why not. Where the pull request sits is
- * asked as it's pressed, since what the panel last heard may be out of date.
+ * Whether "Merge…" can run: with the panel closed, it opens it, where it can open; in the panel,
+ * `⏎` asks for a merge, unless the status says why not. Where the pull request sits is asked as
+ * it's pressed, since what the panel last heard may be out of date. While the dialog shows a merge,
+ * there's nothing more to ask, and it does nothing.
  */
 export function canMerge(): true | string {
+  if (merging.getState().dialog !== undefined) return true;
+  if (!opened()) return canOpen();
   return canAsk(cantMerge);
 }
 
-/** Whether `a` in the open panel can turn auto-merge on, or off, or why not. */
+/**
+ * Whether `a` in the open panel can turn auto-merge on, or off, or why not: not while a merge of the
+ * pull request Lo sent is at work, which auto-merge turned off is too, one at a time.
+ */
 export function canAutoMerge(): true | string {
   const can = canAsk(cantAutoMerge);
   const tab = activeTab();
   if (can !== true || tab?.kind !== 'pull') return can;
-  // Auto-merge turned off is a merge write too, one at a time.
   const job = merging.getState().jobs.get(pullKey(tab.owner, tab.repo, tab.number));
-  return job?.state.kind === 'sending' || job?.state.kind === 'pending'
-    ? `Lo is already merging #${tab.number}.`
+  return job && (job.state.kind === 'sending' || job.state.kind === 'pending')
+    ? workingOf(job)
     : true;
+}
+
+/** What a merge Lo sent is doing while it's at work, as the reason the controls it holds are dimmed. */
+function workingOf(job: JobView): string {
+  switch (job.kind) {
+    case 'merge':
+    case 'override':
+      return 'Merging…';
+    case 'enqueue':
+      return 'Adding…';
+    case 'autoMerge':
+    case 'whenReady':
+      return 'Turning on…';
+    case 'autoMergeOff':
+      return 'Turning off…';
+    default:
+      job.kind satisfies never;
+      return 'Merging…';
+  }
 }
 
 /** Whether `⌥⏎` in the open panel can merge past the rules, or why not. */
@@ -86,25 +119,36 @@ export function canOverride(): true | string {
   return canAsk(cantOverride);
 }
 
+/** Whether auto-merge is being turned off for `tab`'s pull request now, as asked or as main says. */
+export function turningOff(tab: { id: string; owner: string; repo: string; number: number }) {
+  const { turningOff: asked, jobs } = merging.getState();
+  if (asked.has(tab.id)) return true;
+  const job = jobs.get(pullKey(tab.owner, tab.repo, tab.number));
+  return (
+    job?.kind === 'autoMergeOff' && (job.state.kind === 'sending' || job.state.kind === 'pending')
+  );
+}
+
 /** The views whose `⏎` waits to hear where their pull request sits. */
 const pressed = new Set<string>();
 
 /**
- * Asks main for the merge the open panel offers, with the method shown and the squash text typed,
- * and shows it in the dialog, in the panel's place, to confirm, once Lo knows where the pull
- * request sits: as the panel heard it, unless that keeps the merge from going, which main is asked
- * again, so it never refuses for where the pull request sat. Where it sits, or a plan main refuses,
- * says why, and the panel stays.
+ * "Merge…": with the panel closed, opens it, at its reasons. In the panel, asks main for the merge
+ * it offers, with the method shown and the squash text typed, and shows it in the dialog, in the
+ * panel's place, to confirm, once Lo knows where the pull request sits: as the panel heard it,
+ * unless that keeps the merge from going, which main is asked again, so it never refuses for where
+ * the pull request sat. Where it sits says why it doesn't, and the panel stays.
  */
 export function mergeFromPanel(): void {
+  if (merging.getState().dialog !== undefined) return;
   const open = opened();
-  const tab = activeTab();
-  if (!open || tab?.kind !== 'pull') return;
-  const { id, state } = open;
-  if (pressed.has(id)) {
-    notify('Merge', `Lo is checking what merges with #${tab.number}.`);
+  if (!open) {
+    openPanel();
     return;
   }
+  const { id, state } = open;
+  // The main button reads "Checking…" meanwhile.
+  if (pressed.has(id)) return;
   pressed.add(id);
   placeNow(id, state)
     .then((placement) => {
@@ -112,35 +156,63 @@ export function mergeFromPanel(): void {
       if (opened()?.id !== id || merging.getState().dialog !== undefined) return;
       const why = placedWhy(placement);
       if (why === undefined) planFromPanel('merge');
-      else notify('Merge', withoutBidi(why));
+      else refuse(withoutBidi(why));
     })
-    .catch((error: unknown) => notify('Merge', messageOf(error)))
+    .catch((error: unknown) => console.error('Lo couldn’t ask where the pull request sits:', error))
     .finally(() => pressed.delete(id));
 }
 
 /**
- * `a` in the open panel: turns auto-merge off at once when it's on; else plans it, as `⏎` plans a
- * merge, for the dialog to confirm.
+ * `a` in the open panel: turns auto-merge off at once when it's on, its button busy until main
+ * answers; else plans it, as `⏎` plans a merge, for the dialog to confirm.
  */
 export function autoMergeFromPanel(): void {
   const open = opened();
   const tab = activeTab();
-  if (!open || tab?.kind !== 'pull') return;
-  const why = canAutoMerge();
-  if (why !== true) {
-    notify('Merge when ready', withoutBidi(why));
+  if (!open || tab?.kind !== 'pull' || canAutoMerge() !== true) return;
+  if (open.state.auto.kind !== 'off') {
+    planFromPanel('autoMerge');
     return;
   }
-  if (open.state.auto.kind === 'off') {
-    main()
-      .autoMergeOff({ id: open.id })
-      .then((done) => {
-        if (done.kind === 'refused') notify('Turn off auto-merge', withoutBidi(done.refusal.text));
-      })
-      .catch((error: unknown) => notify('Turn off auto-merge', messageOf(error)));
-    return;
+  void turnOffAutoMerge(tab);
+}
+
+/**
+ * Turns off auto-merge for `tab`'s pull request at once, asking nothing, since that merges nothing:
+ * busy until main answers. What went wrong shows in its merge panel, which opens to say it. Resolves
+ * to whether main sent it.
+ */
+export async function turnOffAutoMerge(tab: {
+  id: string;
+  owner: string;
+  repo: string;
+  number: number;
+}): Promise<boolean> {
+  const { id } = tab;
+  if (turningOff(tab)) return false;
+  const asking = (on: boolean) =>
+    merging.setState(({ turningOff: was }) => {
+      const next = new Set(was);
+      if (on) next.add(id);
+      else next.delete(id);
+      return { turningOff: next };
+    });
+  const failed = (reason: string | undefined, details: string | undefined) => {
+    panelTrouble(id, tab.number, { title: 'Couldn’t turn off auto-merge', reason, details });
+    return false;
+  };
+  asking(true);
+  panels.update(id, (panel) => ({ ...panel, trouble: undefined }));
+  try {
+    const done = await main().autoMergeOff({ id });
+    if (done.kind !== 'refused') return true;
+    const { refusal } = done;
+    return failed(refusal.text === '' ? undefined : withoutBidi(refusal.text), detailsOf(refusal));
+  } catch (error) {
+    return failed(undefined, messageOf(error));
+  } finally {
+    asking(false);
   }
-  planFromPanel('autoMerge');
 }
 
 /** `⌥⏎` in the open panel: plans a merge past the rules, for the dialog to confirm. */
@@ -163,20 +235,40 @@ function kindAsked(asked: Asked, state: MergeState): PlanKind {
   }
 }
 
+/** What was asked for a plan of `kind`, to ask for it again. */
+function askedOf(kind: PlanKind): Asked {
+  switch (kind) {
+    case 'merge':
+    case 'enqueue':
+      return 'merge';
+    case 'autoMerge':
+    case 'whenReady':
+      return 'autoMerge';
+    case 'override':
+      return 'override';
+    default:
+      kind satisfies never;
+      return 'merge';
+  }
+}
+
 /** What the dialog's main button says while main plans `asked`: what it will say once planned. */
 function labelAsked(asked: Asked, label: string): string {
   switch (asked) {
     case 'merge':
       return label;
     case 'autoMerge':
-      return 'Merge when ready';
+      return 'Turn on auto-merge';
     case 'override':
-      return 'Merge anyway';
+      return 'Bypass rules and merge';
     default:
       asked satisfies never;
       return label;
   }
 }
+
+/** The dialog while main plans. */
+type Planning = Extract<MergeDialog, { kind: 'planning' }>;
 
 /** Asks main for what the open panel offers as `asked`, and shows it in the dialog to confirm. */
 function planFromPanel(asked: Asked): void {
@@ -184,11 +276,7 @@ function planFromPanel(asked: Asked): void {
   const tab = activeTab();
   if (!open || tab?.kind !== 'pull') return;
   const can = { merge: canMerge, autoMerge: canAutoMerge, override: canOverride }[asked];
-  const why = can();
-  if (why !== true) {
-    notify(asked === 'override' ? 'Merge without the rules' : 'Merge', withoutBidi(why));
-    return;
-  }
+  if (can() !== true || merging.getState().dialog !== undefined) return;
   const panel = panels.get(open.id);
   const { action } = open.state;
   const method = shownMethod(open.state, panel.method);
@@ -199,7 +287,7 @@ function planFromPanel(asked: Asked): void {
   const pull = pullOf(open.id);
   const login = pull?.acting?.kind === 'account' ? pull.acting.login : undefined;
   const head = pull?.shown ?? undefined;
-  const planning: MergeDialog = {
+  const planning: Planning = {
     kind: 'planning',
     id: open.id,
     number: tab.number,
@@ -208,10 +296,11 @@ function planFromPanel(asked: Asked): void {
       placedLabel(
         placement,
         action.kind !== 'merge',
-        action.kind === 'merge' ? mergeLabel(method ?? action.method) : 'Add to merge queue',
+        action.kind === 'merge' ? mergeLabel(tab.number) : 'Add to merge queue',
       ),
     ),
     title: mergeTitle(kind, tab.number, layers),
+    ask: { id: open.id, asked, method: method ?? null, title: panel.title, message: panel.message },
     // What the dialog states is known here already, so it says it while main checks.
     ...(login !== undefined &&
       head !== undefined && {
@@ -229,34 +318,107 @@ function planFromPanel(asked: Asked): void {
       }),
   };
   closePanel(open.id);
+  plan(planning);
+}
+
+/**
+ * Why the panel's status says `planning` can't go, for a refusal main gave no reason for: the
+ * dimmed control's own words.
+ */
+function statusWhy(planning: Planning): string | undefined {
+  const view = statuses.getState().views.get(planning.id);
+  const tab = activeTab();
+  if (view?.kind !== 'known' || tab?.kind !== 'pull' || tab.id !== planning.id) return undefined;
+  const cant = { merge: cantMerge, autoMerge: cantAutoMerge, override: cantOverride }[
+    planning.ask.asked
+  ];
+  return cant(view.state, planning.number, whoOf(tab));
+}
+
+/**
+ * Shows `planning` in the dialog and asks main for its plan: shown to confirm once it comes, or why
+ * there's none, in the dialog, to try again from.
+ */
+function plan(planning: Planning): void {
   setDialog(planning);
-  const back = (said: string) => {
-    if (merging.getState().dialog !== planning) return;
-    setDialog(undefined);
-    openPanel(open.id, tab.number);
-    notify('Merge', withoutBidi(said));
-  };
+  const still = () => merging.getState().dialog === planning;
+  const { ask } = planning;
   main()
     .plan({
-      id: open.id,
-      method: method ?? null,
-      title: panel.title,
-      message: panel.message,
-      ...(asked === 'merge' ? {} : { asked }),
+      id: ask.id,
+      method: ask.method,
+      title: ask.title,
+      message: ask.message,
+      ...(ask.asked === 'merge' ? {} : { asked: ask.asked }),
     })
     .then((planned) => {
       if (planned.kind === 'refused') {
-        back(planned.why);
+        // Still finding out, Lo says only how far it has got.
+        const why = planned.why === '' && !planned.again ? statusWhy(planning) : planned.why;
+        if (still()) {
+          setDialog({
+            ...planning,
+            failed: { why, details: planned.details, again: planned.again },
+          });
+        }
         return;
       }
       // Cancelled while it was planned.
-      if (merging.getState().dialog !== planning) {
+      if (!still()) {
         void main().cancel({ key: planned.plan.key });
         return;
       }
       setDialog({ kind: 'confirm', plan: planned.plan, note: undefined, sending: false });
     })
-    .catch((error: unknown) => back(messageOf(error)));
+    .catch((error: unknown) => {
+      if (still())
+        setDialog({ ...planning, failed: { why: undefined, details: messageOf(error) } });
+    });
+}
+
+/**
+ * "Try again" in the dialog: plans afresh what was asked, as it was asked, and asks to confirm it
+ * once it comes. The title stays, and the main button says "Checking…" meanwhile.
+ */
+export function planAgain(): void {
+  const dialog = merging.getState().dialog;
+  if (!dialog || dialog.kind === 'confirm') return;
+  if (dialog.kind === 'planning') {
+    // While Lo is still finding out, how far it has got stays on screen as it's asked again.
+    if (dialog.failed?.again === true) plan({ ...dialog });
+    else if (dialog.failed !== undefined) plan({ ...dialog, failed: undefined });
+    return;
+  }
+  const { plan: was } = dialog;
+  const head = pullOf(was.id)?.shown ?? was.head;
+  const together = was.together?.kind === 'stack' ? was.together : undefined;
+  const stack = together !== undefined;
+  plan({
+    kind: 'planning',
+    id: was.id,
+    number: was.number,
+    label: confirmLabel(was),
+    title: mergeTitle(was.kind, was.number, together ? together.below.length + 1 : 1),
+    ask: {
+      id: was.id,
+      asked: askedOf(was.kind),
+      method: was.method,
+      title: was.title,
+      message: was.message,
+    },
+    sketch: {
+      id: was.id,
+      number: was.number,
+      login: was.login,
+      kind: was.kind,
+      method: was.method,
+      base: was.base,
+      head,
+      title: was.title,
+      stack,
+    },
+    last: was,
+  });
 }
 
 /** The number typed in the dialog that confirms a merge past the rules. */
@@ -272,57 +434,51 @@ export function typeNumber(typed: string): void {
 export function confirmMerge(): void {
   const dialog = merging.getState().dialog;
   if (dialog?.kind !== 'confirm' || dialog.sending) return;
-  const { plan } = dialog;
+  const { plan: confirmed, note } = dialog;
   const typed = dialog.typed ?? '';
-  if (plan.kind === 'override' && typed !== String(plan.number)) return;
+  if (confirmed.kind === 'override' && typed !== String(confirmed.number)) return;
   setDialog({ ...dialog, sending: true });
   const still = () => {
     const now = merging.getState().dialog;
-    return now?.kind === 'confirm' && now.plan.key === plan.key;
+    return now?.kind === 'confirm' && now.plan.key === confirmed.key;
   };
   main()
-    .confirm(plan.kind === 'override' ? { key: plan.key, typed } : { key: plan.key })
-    .then((confirmed) => {
-      if (!still()) {
-        // Left as main sent it: it goes on, and the tab shows how it ends.
-        if (confirmed.kind === 'sent') {
-          notify(
-            'Merge',
-            `Lo had sent #${plan.number}’s ${plan.kind === 'autoMerge' || plan.kind === 'whenReady' ? 'auto-merge' : 'merge'} already. The tab shows how it ends.`,
-          );
-        }
-        return;
-      }
-      switch (confirmed.kind) {
+    .confirm(confirmed.kind === 'override' ? { key: confirmed.key, typed } : { key: confirmed.key })
+    .then((answer) => {
+      // Left as main sent it: it goes on, and a toast or the tab's banner says how it ends.
+      if (!still()) return;
+      switch (answer.kind) {
         case 'sent':
-          setDialog({ kind: 'sent', plan });
+          setDialog({ kind: 'sent', plan: confirmed, note });
           // It may have ended before main answered.
-          settled(jobsByKey(plan.key));
+          settled(jobsByKey(confirmed.key));
           return;
         case 'again':
           // Asked again, the number is typed again.
-          setDialog({ kind: 'confirm', plan: confirmed.plan, note: confirmed.why, sending: false });
+          setDialog({ kind: 'confirm', plan: answer.plan, note: answer.why, sending: false });
           return;
         case 'refused':
-          setDialog({ kind: 'refused', plan, refusal: confirmed.refusal });
+          setDialog({ kind: 'refused', plan: confirmed, refusal: answer.refusal, note });
           return;
         default:
-          confirmed satisfies never;
+          answer satisfies never;
       }
     })
     .catch((error: unknown) => {
       if (!still()) return;
       setDialog({
         kind: 'refused',
-        plan,
-        refusal: { kind: 'failed', text: messageOf(error), rules: [], until: null, newer: null },
+        plan: confirmed,
+        refusal: { kind: 'failed', text: '', rules: [], until: null, newer: null },
+        note,
+        details: messageOf(error),
       });
     });
 }
 
 /**
  * `Esc` in the dialog: a plan not confirmed is forgotten, and the panel comes back; one that went
- * goes on, and the tab shows how it ends.
+ * goes on, and a toast or the tab's banner says how it ends.
  */
 export function leaveDialog(): void {
   const dialog = merging.getState().dialog;
@@ -355,7 +511,7 @@ export function openPull(job: Pick<JobView, 'owner' | 'repo'>, number: number): 
   setDialog(undefined);
   client(tabContract)
     .open({ kind: 'pull', owner: job.owner, repo: job.repo, number })
-    .catch((error: unknown) => notify(`Open #${number}`, messageOf(error)));
+    .catch((error: unknown) => console.error(`Lo couldn’t open #${number}:`, error));
 }
 
 /** The merge from the plan named `key`, as main last said. */
@@ -376,11 +532,77 @@ export function dismissJob(key: string): void {
   seen(key);
 }
 
-/** Asks GitHub again how the merge named `key` went: a read, nothing sent again. */
-export function askAgain(key: string): void {
+/** Whether GitHub is being asked again how the merge named `key` went. */
+export function checking(key: string): boolean {
+  return merging.getState().checking.has(key);
+}
+
+/** Marks the merge named `key` as being looked for again, or not. */
+function markChecking(key: string, on: boolean): void {
+  merging.setState(({ checking: was }) => {
+    const next = new Set(was);
+    if (on) next.add(key);
+    else next.delete(key);
+    return { checking: next };
+  });
+}
+
+/**
+ * "Check again": asks GitHub again how the merge named `key` went, a read, nothing sent again. Its
+ * button is busy until main answers, and how the merge stands then says the rest.
+ */
+export function askAgain(key: string): Promise<void> {
+  if (checking(key)) return Promise.resolve();
+  markChecking(key, true);
+  return main()
+    .askAgain({ key })
+    .catch((error: unknown) => console.error('Lo couldn’t ask GitHub again:', error))
+    .finally(() => markChecking(key, false));
+}
+
+/** How long "Check again" waits to hear how the last merge ended before its button is its own. */
+const LOOK_FOR = 30_000;
+
+/**
+ * "Check again" in the dialog, where main refused `asked` since the last merge of its pull request
+ * hasn't a known end: asks GitHub how that one went, its button busy until what the look found
+ * comes, then goes back to the panel, from where it may merge again. Found not to be known still,
+ * the dialog stays, to check again.
+ */
+export function askAgainBack(asked: MergePlan): void {
+  const { key } = asked;
+  if (checking(key)) return;
+  const pull = pullKey(asked.owner, asked.repo, asked.number);
+  const before = merging.getState().jobs.get(pull);
+  markChecking(key, true);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let stop: (() => void) | undefined;
+  const end = (leave: boolean) => {
+    stop?.();
+    clearTimeout(timer);
+    markChecking(key, false);
+    const dialog = merging.getState().dialog;
+    if (leave && dialog?.kind === 'refused' && dialog.plan.key === key) leaveDialog();
+  };
+  stop = merging.subscribe((state, previous) => {
+    if (state.dialog !== previous.dialog && state.dialog?.kind !== 'refused') {
+      end(false);
+      return;
+    }
+    if (state.jobs === previous.jobs) return;
+    const job = state.jobs.get(pull);
+    if (!job || job === before) return;
+    if (job.state.kind === 'sending' || job.state.kind === 'pending') return;
+    end(job.state.kind !== 'unknown');
+  });
+  // GitHub may have nothing more to say of it: the button is its own again after a while.
+  timer = setTimeout(() => end(false), LOOK_FOR);
   main()
     .askAgain({ key })
-    .catch((error: unknown) => notify('Ask GitHub again', messageOf(error)));
+    .catch((error: unknown) => {
+      console.error('Lo couldn’t ask GitHub again:', error);
+      end(false);
+    });
 }
 
 /** A newer push than the one a merge was confirmed at: from that head, to the newer one if known. */
@@ -413,33 +635,32 @@ export function newerOf(id: string, refusal: Refusal, head: string): Newer | und
   return newerFrom(refusal, head, latest);
 }
 
-/** "See r5 → r6", or "See the newer push" when Lo can't name both revisions. */
+/** "Show r6", or "Show latest" while Lo can't name the newer revision. */
 export function newerLabel(id: string, newer: Newer): string {
-  const view = revisionsOf(id);
-  const from = revisionLabel(view, newer.from);
-  const to = newer.to === undefined ? undefined : revisionLabel(view, newer.to);
-  return from && to ? `See ${from} → ${to}` : 'See the newer push';
+  const to = newer.to === undefined ? undefined : revisionLabel(revisionsOf(id), newer.to);
+  return to === undefined ? 'Show latest' : `Show ${to}`;
 }
 
-/** Shows what the newer push changed in view `id`: from the head on screen to the newer one. */
+/**
+ * Shows what the newer push changed in view `id`: from the head on screen to the newer one. Its
+ * button waits, busy, until Lo has read the newer push, and does nothing before.
+ */
 export function seeNewer(id: string, newer: Newer): void {
-  setDialog(undefined);
   const { to } = newer;
-  if (to === undefined) {
-    notify('See the newer push', 'Lo hasn’t read the newer push yet.');
-    return;
-  }
+  if (to === undefined) return;
+  setDialog(undefined);
   client(revisionsContract)
     .compare({ id, from: newer.from, to })
-    .catch((error: unknown) => notify('See the newer push', messageOf(error)));
+    .catch((error: unknown) => console.error('Lo couldn’t show the newer revision:', error));
 }
 
-/** The keys of merges whose toast was shown. */
+/** The keys of merges whose end was said, in the dialog or a toast. */
 const toasted = new Set<string>();
 
 /**
- * Takes a merge as main says it. Once it's done, a toast says so, and the dialog closes; one that
- * needs the reader stays in the dialog while it shows it, else the tab's banner says it.
+ * Takes a merge as main says it. Once it's done, the dialog says so while it shows it, else a
+ * toast does; one that needs the reader stays in the dialog while it shows it, else the tab's
+ * banner says it.
  */
 export function heardJob(job: JobView, quiet = false): void {
   const jobs = new Map(merging.getState().jobs);
@@ -453,19 +674,16 @@ export function heardJob(job: JobView, quiet = false): void {
   settled(job);
 }
 
-/**
- * Whether a merge that's done stays in the dialog showing it, to offer what comes next: a GitHub
- * stack's merge, with the layers above it, which moved onto the base.
- */
-export function staysShown(job: JobView): boolean {
-  const { together } = job;
-  return together?.kind === 'stack' && together.above.length > 0 && job.state.kind === 'merged';
+/** Whether the dialog shows the merge named `key`, from its plan. */
+function shows(key: string): boolean {
+  const dialog = merging.getState().dialog;
+  return dialog !== undefined && dialog.kind !== 'planning' && dialog.plan.key === key;
 }
 
 /**
- * A merge that's done closes the dialog showing it, and says so in a toast, once. Auto-merge GitHub
- * wouldn't turn on, since the pull request can merge as it is, shows in the dialog the merge main
- * planned in its place, to confirm as any merge.
+ * A merge that's done stays in the dialog that shows it, which says so; else a toast does, once.
+ * Auto-merge GitHub wouldn't turn on, since the pull request can merge as it is, shows in the dialog
+ * the merge main planned in its place, to confirm as any merge.
  */
 function settled(job: JobView | undefined): void {
   if (!job) return;
@@ -482,30 +700,20 @@ function settled(job: JobView | undefined): void {
     return;
   }
   const line = doneLine(job);
-  if (toasted.has(job.key)) return;
-  const shown = dialog && dialog.kind !== 'planning' && dialog.plan.key === job.key;
-  if (line === undefined) {
-    // A chain's run that stopped after its merge went says so wherever the reader is.
-    const { together } = job;
-    if (together?.kind !== 'chain' || together.phase !== 'stopped') return;
-    if (job.state.kind === 'refused') return;
-    toasted.add(job.key);
-    if (!shown) notify(outcomeTitle(job) ?? '', withoutBidi(outcomeDetail(job)));
-    return;
-  }
+  if (line === undefined || toasted.has(job.key)) return;
   toasted.add(job.key);
-  // The auto-merge watch's banner says what it did, and approve and ship's toast what it did.
-  if (job.watch === true || shipSent(job.key)) return;
-  if (shown && !staysShown(job)) setDialog(undefined);
   // What was typed went with it.
-  const plan = dialog && dialog.kind !== 'planning' ? dialog.plan : undefined;
-  if (plan?.key === job.key && job.state.kind === 'merged') forgetTyped(plan);
-  announce(withoutBidi(line), withoutBidi(doneDetail(job)));
+  const shown = dialog && dialog.kind !== 'planning' ? dialog.plan : undefined;
+  if (shown?.key === job.key && job.state.kind === 'merged') forgetTyped(shown);
+  // The dialog that shows it says it's done; the auto-merge watch's banner says what it did, and
+  // approve and ship's dialog or toast what it did.
+  if (shows(job.key) || job.watch === true || shipSent(job.key)) return;
+  announce(withoutBidi(line));
 }
 
-/** Forgets the squash text typed for `plan`'s view, which went with the merge. */
-function forgetTyped(plan: MergePlan): void {
-  panels.update(plan.id, (panel) => ({ ...panel, title: '', message: '' }));
+/** Forgets the squash text typed for `sent`'s view, which went with the merge. */
+function forgetTyped(sent: MergePlan): void {
+  panels.update(sent.id, (panel) => ({ ...panel, title: '', message: '' }));
 }
 
 /** Catches up on the merges main follows, as after the window loads again: no toasts. */

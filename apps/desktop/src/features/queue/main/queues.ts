@@ -46,14 +46,12 @@ function keyOf(login: string): string {
   return login.toLowerCase();
 }
 
-/** Why a signed-out account's queues aren't read. */
+/**
+ * Why the queues of an account that's signed out, or that Lo doesn't have, aren't read: they're
+ * read again once it's signed in.
+ */
 function signedOutWhy(login: string): string {
-  return `${login} is signed out. Lo reads the queue again once you sign in to it.`;
-}
-
-/** Why the queues of an account Lo doesn't have aren't read. */
-function goneWhy(login: string): string {
-  return `Lo isn’t signed in to ${login}, and reads the queue again once you sign in to it.`;
+  return `${login} is signed out.`;
 }
 
 /** The merge queues' tabs, and what's read of each. */
@@ -101,6 +99,23 @@ export class Queues {
     return this.#followed.get(id)?.watch.state();
   }
 
+  /**
+   * Reads merge queue tab `id`'s queue and those waiting to join it again, both begun now, and
+   * says why one failed, if one did: what "Check again" looks at.
+   */
+  async look(id: string): Promise<string | undefined> {
+    const followed = this.#followed.get(id);
+    if (!followed) return undefined;
+    // A read under way began before now, and may not show what changed since.
+    const since = Date.now() - 1;
+    const [queue, waiting] = await Promise.all([
+      followed.watch.fresh(0, since),
+      followed.watch.freshWaiting(0, since),
+    ]);
+    if (typeof queue === 'string') return queue;
+    return typeof waiting === 'string' ? waiting : undefined;
+  }
+
   /** The merge queue's tab `id`, while it's open, and what reads its queue. */
   found(id: string): { tab: QueueTab; watch: QueueWatch } | undefined {
     const tab = this.#queueTab(id);
@@ -126,10 +141,7 @@ export class Queues {
       throw new IpcError('unavailable', 'Lo is still working out which account this tab uses.');
     }
     if (acting.kind !== 'account') {
-      throw new IpcError(
-        'refused',
-        'Lo reads a merge queue as a signed-in account. This tab reads without signing in.',
-      );
+      throw new IpcError('refused', 'Sign in to open the merge queue');
     }
     return tabs.open({
       kind: 'queue',
@@ -200,7 +212,7 @@ export class Queues {
     const key = keyOf(event.login);
     if (event.kind === 'removed') {
       for (const { source } of this.#of(key)) source.forget();
-      this.#hold(key, goneWhy(event.login));
+      this.#hold(key, signedOutWhy(event.login));
     } else {
       this.#hold(key, signedOutWhy(event.login));
     }
@@ -231,7 +243,7 @@ export class Queues {
     }
     for (const { watch } of this.#followed.values()) {
       const key = keyOf(watch.login);
-      if (!byKey.has(key) && !this.#away.has(key)) this.#hold(key, goneWhy(watch.login));
+      if (!byKey.has(key) && !this.#away.has(key)) this.#hold(key, signedOutWhy(watch.login));
     }
   }
 

@@ -52,19 +52,15 @@ describe(']s and [s', () => {
   });
 
   it("don't go round, and say why at either end", () => {
-    expect(stepFrom(STACK, 85, 1)).toEqual({ why: '#85 is the last layer.' });
-    expect(stepFrom(STACK, 82, -1)).toEqual({ why: '#82 is the first layer.' });
+    expect(stepFrom(STACK, 85, 1)).toEqual({ why: '#85 is the top layer' });
+    expect(stepFrom(STACK, 82, -1)).toEqual({ why: '#82 is the bottom layer' });
   });
 
   it("say why there's nowhere to go without a stack", () => {
-    expect(stepFrom({ kind: 'none' }, 87, 1)).toEqual({ why: "#87 isn't in a stack." });
-    expect(stepFrom({ kind: 'unknown' }, 84, 1)).toEqual({
-      why: 'Lo is still looking for the stack #84 is in.',
-    });
-    expect(stepFrom(undefined, 84, -1)).toEqual({
-      why: 'Lo is still looking for the stack #84 is in.',
-    });
-    expect(stepFrom(STACK, 90, 1)).toEqual({ why: "#90 isn't in its stack now." });
+    expect(stepFrom({ kind: 'none' }, 87, 1)).toEqual({ why: '#87 isn’t in a stack' });
+    expect(stepFrom({ kind: 'unknown' }, 84, 1)).toEqual({ why: 'Checking stack…' });
+    expect(stepFrom(undefined, 84, -1)).toEqual({ why: 'Checking stack…' });
+    expect(stepFrom(STACK, 90, 1)).toEqual({ why: 'The stack has changed' });
   });
 });
 

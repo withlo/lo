@@ -46,16 +46,18 @@ describe('asking to turn on auto-merge from outside the panel', () => {
 
   it('never turns off auto-merge that’s on, and says why it can’t turn it on', () => {
     expect(autoMergeAsked({ kind: 'known', state: state({ auto: { kind: 'off' } }) }, 261)).toEqual(
-      { kind: 'said', why: 'Auto-merge is on for #261 already.', panel: true },
+      { kind: 'said', why: 'Auto-merge is already on', panel: true },
     );
     expect(
       autoMergeAsked(
         { kind: 'known', state: state({ auto: { kind: 'notPossible', reason: 'closed' } }) },
         261,
       ),
-    ).toEqual({ kind: 'said', why: '#261 is closed.', panel: true });
-    expect(
-      autoMergeAsked({ kind: 'none', why: 'Sign in to see whether it can merge.' }, 261),
-    ).toEqual({ kind: 'said', why: 'Sign in to see whether it can merge.', panel: false });
+    ).toEqual({ kind: 'said', why: '#261 is closed', panel: true });
+    expect(autoMergeAsked({ kind: 'none', why: 'Sign in to merge' }, 261)).toEqual({
+      kind: 'said',
+      why: 'Sign in to merge',
+      panel: false,
+    });
   });
 });

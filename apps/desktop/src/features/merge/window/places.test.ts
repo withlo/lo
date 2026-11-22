@@ -1,6 +1,6 @@
 // How the window words a pull request in a merge queue: the merge panel's line for one queued or
-// ready to join a queue, its rows once it will be removed or left, and the banner's sentence for
-// why it left, for each reason GitHub gives and for one Lo can't tell.
+// ready to join a queue, its rows once it's leaving or left, and the sentence for why it left, for
+// each reason GitHub gives, and none for one Lo can't name.
 
 import { describe, expect, it } from 'vitest';
 
@@ -73,14 +73,15 @@ function left(why: LeftQueue['why'], partial = false): LeftQueue {
 }
 
 describe('the panel’s line', () => {
-  it('says where a queued pull request is, fresher than GitHub’s read of it, or that it will be removed', () => {
+  it('says where a queued pull request is, fresher than GitHub’s read of it, or that it’s leaving', () => {
     const queued = state();
     const none = { kind: 'none' } as const;
     expect(queueHead(panelHead(queued), queued, undefined, none)).toEqual({
       kind: 'queued',
       verdict: 'Queued',
-      into: false,
-      after: 'In the merge queue for e4/queued · 2nd',
+      before: 'In the merge queue for',
+      branch: 'e4/queued',
+      after: '· 2nd',
     });
     const third: InQueue = {
       place: {
@@ -93,51 +94,61 @@ describe('the panel’s line', () => {
       },
       left: null,
     };
-    expect(queueHead(panelHead(queued), queued, third, none).after).toBe(
-      'In the merge queue for e4/queued · 3rd',
-    );
+    expect(queueHead(panelHead(queued), queued, third, none).after).toBe('· 3rd');
     expect(queueHead(panelHead(queued), queued, FAILED, none)).toMatchObject({
       kind: 'blocked',
-      verdict: 'Will be removed',
+      verdict: 'Leaving merge queue',
+      branch: 'e4/queued',
+      after: '· 3rd',
     });
     // The queue no longer lists it: it left, and Lo reads whether it merged.
     const gone: InQueue = { place: { kind: 'unlisted', partial: false }, left: null };
     expect(queueHead(panelHead(queued), queued, gone, none)).toEqual({
       kind: 'waiting',
-      verdict: 'Left the queue',
-      into: false,
-      after: 'The merge queue for e4/queued no longer lists it · Lo is reading whether it merged',
+      verdict: 'Left merge queue',
+      before: undefined,
+      branch: undefined,
+      after: 'Checking…',
     });
     const unplaced = state({ position: null });
-    expect(queueHead(panelHead(unplaced), unplaced, undefined, none).after).toBe(
-      'In the merge queue for e4/queued',
-    );
+    expect(queueHead(panelHead(unplaced), unplaced, undefined, none)).toMatchObject({
+      before: 'In the merge queue for',
+      branch: 'e4/queued',
+      after: undefined,
+    });
   });
 
-  it('says what’s ahead of one ready for the queue, once read, or that Lo couldn’t read it', () => {
+  it('says what’s ahead of one ready for the merge queue, once read, or that its place isn’t known', () => {
     const head = panelHead(READY);
+    expect(head).toEqual({
+      kind: 'ready',
+      verdict: 'Ready for merge queue',
+      before: undefined,
+      branch: 'e4/queued',
+      after: 'has a merge queue',
+    });
     expect(queueHead(head, READY, undefined, { kind: 'reading' })).toEqual(head);
     const read = (ahead: Parameters<typeof aheadWords>[0]) =>
       queueHead(head, READY, undefined, { kind: 'read', ahead }).after;
     expect(read({ kind: 'queue', count: 4, atLeast: false, timeToMerge: 1080 })).toBe(
-      'e4/queued merges through a queue · 4 ahead, about 18 min',
+      'has a merge queue · 4 ahead · merges in about 18 min',
     );
     expect(read({ kind: 'queue', count: 0, atLeast: false, timeToMerge: null })).toBe(
-      'e4/queued merges through a queue · none ahead',
+      'has a merge queue · 0 ahead',
     );
-    expect(read({ kind: 'none' })).toBe('e4/queued merges through a queue');
+    expect(read({ kind: 'none' })).toBe('has a merge queue');
     expect(queueHead(head, READY, undefined, { kind: 'failed', why: 'x' }).after).toBe(
-      'e4/queued merges through a queue · Lo couldn’t read the queue',
+      'has a merge queue · place not known',
     );
   });
 
   it('never reads a queue GitHub left part of out as empty', () => {
     expect(aheadWords({ kind: 'queue', count: 2, atLeast: true, timeToMerge: null })).toBe(
-      'at least 2 ahead',
+      '2+ ahead',
     );
-    expect(aheadWords({ kind: 'queue', count: 0, atLeast: true, timeToMerge: null })).toBe(
-      'Lo can’t tell how many are ahead',
-    );
+    expect(
+      aheadWords({ kind: 'queue', count: 0, atLeast: true, timeToMerge: null }),
+    ).toBeUndefined();
     expect(aheadWords({ kind: 'none' })).toBeUndefined();
   });
 });
@@ -145,8 +156,7 @@ describe('the panel’s line', () => {
 describe('why it left', () => {
   it('is a sentence for each reason GitHub gives', () => {
     const base = 'e4/queued';
-    const why = (reason: LeftQueue['why'], partial?: boolean) =>
-      leftWhy(left(reason, partial), base);
+    const why = (reason: LeftQueue['why']) => leftWhy(left(reason), base);
     expect(
       why({
         kind: 'failedChecks',
@@ -155,37 +165,35 @@ describe('why it left', () => {
           { name: 'lint', state: 'failed', url: null },
         ],
       }),
-    ).toBe('ci and lint failed with its group.');
-    expect(why({ kind: 'failedChecks', checks: [] })).toBe('its checks failed with its group.');
-    expect(why({ kind: 'conflict' })).toBe('it conflicts with e4/queued or an entry ahead of it.');
-    expect(why({ kind: 'timedOut' })).toBe('its checks ran past the queue’s time limit.');
-    expect(why({ kind: 'removed', by: 'rozed-bot', you: true })).toBe('you took it out.');
-    expect(why({ kind: 'removed', by: 'tess-okafor', you: false })).toBe(
-      'tess-okafor took it out.',
+    ).toBe('ci and lint failed in the merge queue.');
+    expect(why({ kind: 'failedChecks', checks: [] })).toBe('Its checks failed in the merge queue.');
+    expect(why({ kind: 'conflict' })).toBe(
+      'It conflicts with e4/queued or a pull request ahead of it.',
     );
-    expect(why({ kind: 'removed', by: null, you: false })).toBe('someone took it out.');
-    expect(why({ kind: 'other', reason: 'branch_protection_changed' })).toBe(
-      'GitHub says “branch_protection_changed”.',
-    );
-    expect(why({ kind: 'other', reason: null })).toBe('GitHub gave no reason.');
+    expect(why({ kind: 'timedOut' })).toBe('Its checks ran past the merge queue’s time limit.');
+    expect(why({ kind: 'removed', by: 'rozed-bot', you: true })).toBe('You removed it.');
+    expect(why({ kind: 'removed', by: 'tess-okafor', you: false })).toBe('tess-okafor removed it.');
+    expect(why({ kind: 'removed', by: null, you: false })).toBe('It was removed.');
   });
 
-  it('says Lo can’t tell, never that it stayed, and what GitHub may have left out', () => {
+  it('is nothing where GitHub gave no reason Lo can name, and never hedges for what it left out', () => {
     const base = 'e4/queued';
-    expect(leftWhy(left({ kind: 'unknown', why: null }), base)).toBe('Lo can’t tell why.');
-    expect(leftWhy(left({ kind: 'unknown', why: null }, true), base)).toBe(
-      'Lo can’t tell why: GitHub left it out of its answer.',
-    );
-    expect(leftWhy(left({ kind: 'unknown', why: 'GitHub can’t be reached.' }), base)).toBe(
-      'Lo couldn’t read why: GitHub can’t be reached.',
-    );
+    expect(
+      leftWhy(left({ kind: 'other', reason: 'branch_protection_changed' }), base),
+    ).toBeUndefined();
+    expect(leftWhy(left({ kind: 'other', reason: null }), base)).toBeUndefined();
+    expect(leftWhy(left({ kind: 'unknown', why: null }), base)).toBeUndefined();
+    expect(leftWhy(left({ kind: 'unknown', why: null }, true), base)).toBeUndefined();
+    expect(
+      leftWhy(left({ kind: 'unknown', why: 'GitHub can’t be reached.' }), base),
+    ).toBeUndefined();
     expect(leftWhy(left({ kind: 'conflict' }, true), base)).toBe(
-      'it conflicts with e4/queued or an entry ahead of it. GitHub left part of why out, so there may be more.',
+      'It conflicts with e4/queued or a pull request ahead of it.',
     );
   });
 
   it('is loud for a failure in the queue, and news for the rest', () => {
-    expect(leftTitle(134)).toBe('#134 left the merge queue:');
+    expect(leftTitle(134)).toBe('#134 left the merge queue');
     expect(leftTone(left({ kind: 'timedOut' }))).toBe('danger');
     expect(leftTone(left({ kind: 'removed', by: null, you: false }))).toBe('warn');
     expect(leftTone(left({ kind: 'unknown', why: null }))).toBe('warn');
@@ -216,53 +224,58 @@ describe('the panel’s rows', () => {
     expect(rows.map((row) => row.key)).toEqual(['left', 'checks-failed']);
     expect(rows[0]).toMatchObject({
       kind: 'fail',
-      title: 'It left the merge queue',
-      detail: '1 check failed with its group.',
+      title: 'Left merge queue',
+      detail: '1 check failed in the merge queue.',
       inTheWay: false,
-      subs: [{ name: 'ci', link: { label: 'Open the run ↗', url: RUN } }],
+      subs: [{ name: 'ci', link: { label: 'Open in browser', url: RUN } }],
     });
     const out = (why: LeftQueue['why'], partial?: boolean) =>
-      panelRows(blocked, { place: null, left: left(why, partial) })[0]?.detail;
-    expect(out({ kind: 'removed', by: null, you: true })).toBe('You took it out.');
-    // Names from GitHub keep their case.
-    expect(out({ kind: 'removed', by: 'tess-okafor', you: false })).toBe(
-      'Taken out by tess-okafor.',
+      panelRows(blocked, { place: null, left: left(why, partial) })[0];
+    expect(out({ kind: 'removed', by: null, you: true })).toMatchObject({
+      kind: 'info',
+      detail: 'You removed it.',
+    });
+    // A login from GitHub keeps its case, first in the sentence or not.
+    expect(out({ kind: 'removed', by: 'tess-okafor', you: false })?.detail).toBe(
+      'tess-okafor removed it.',
     );
-    expect(out({ kind: 'conflict' }, true)).toBe(
-      'It conflicts with e4/queued or an entry ahead of it. GitHub left part of why out, so there may be more.',
+    expect(out({ kind: 'conflict' }, true)?.detail).toBe(
+      'It conflicts with e4/queued or a pull request ahead of it.',
     );
+    expect(out({ kind: 'unknown', why: null })?.detail).toBeUndefined();
   });
 
-  it('say first that a queued one will be removed, and which checks failed', () => {
+  it('say first that a queued one is leaving, and which checks failed', () => {
     expect(queueRows(state(), FAILED)).toEqual([
       expect.objectContaining({
         key: 'queue-removal',
-        title: '1 check failed in the queue',
-        detail: 'GitHub takes it out of the queue.',
+        title: '1 check failed in the merge queue',
+        detail: 'GitHub will remove it from the merge queue.',
         inTheWay: true,
         subs: [
-          expect.objectContaining({ name: 'ci', link: { label: 'Open the run ↗', url: RUN } }),
+          expect.objectContaining({ name: 'ci', link: { label: 'Open in browser', url: RUN } }),
         ],
       }),
     ]);
     const listed = FAILED.place?.kind === 'listed' ? FAILED.place : undefined;
     if (!listed) throw new Error('not listed');
     expect(queueRows(state(), { place: { ...listed, failed: [] }, left: null })[0]?.title).toBe(
-      'It can’t merge as the queue tested it',
+      'Failed in the merge queue',
     );
     expect(queueRows(state(), { place: { ...listed, state: 'MERGEABLE' }, left: null })).toEqual(
       [],
     );
     expect(queueRows(state(), { place: { ...listed, partial: true }, left: null })[0]?.detail).toBe(
-      'GitHub takes it out of the queue. GitHub left part of the queue out, so more checks may have failed.',
+      'GitHub will remove it from the merge queue.',
     );
   });
 
-  it('say when Lo can’t see its place, only where GitHub left part of the queue out', () => {
+  it('say when its place isn’t known, only where GitHub left part of the queue out', () => {
     expect(queueRows(state(), { place: { kind: 'unlisted', partial: true }, left: null })).toEqual([
       expect.objectContaining({
         key: 'queue-unlisted',
-        title: 'Lo can’t see its place in the queue',
+        title: 'Place in merge queue not known',
+        inTheWay: false,
       }),
     ]);
     expect(queueRows(state(), { place: { kind: 'unlisted', partial: false }, left: null })).toEqual(

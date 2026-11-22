@@ -1,6 +1,7 @@
-// What approve and ship's dialog says: each step as the confirmation lists it, how each stands as it
-// runs, where it stopped and why, and what the auto-merge watch says of a push after your approval.
-// Pure functions, so they're tested without a window.
+// What approve and ship's dialog says: its two steps as the confirmation lists them, how each stands
+// as it runs, what the main button says meanwhile, where it stopped and why, what it did once it's
+// done, and what the auto-merge watch says of a push after your approval. Pure functions, so
+// they're tested without a window.
 
 import type { StepState } from '@lo/ui';
 
@@ -18,16 +19,14 @@ import type {
 } from '../contract.ts';
 import {
   ago,
+  capitalized,
   counted,
+  detailsOf,
   doneLine,
   inTheWayOf,
-  mergeLabel,
-  methodLabel,
   outcomeDetail,
   outcomeTitle,
-  pendingLine,
   pushWarning,
-  queueLine,
   waitsFor,
   type Said,
 } from './words.ts';
@@ -48,70 +47,50 @@ export function revision(label: Label, head: string): string {
   return label(head) ?? head.slice(0, 7);
 }
 
-/** The first step: the revision on screen is still the newest push. */
-function checkStep(plan: Pick<ShipPlan, 'head'>, label: Label, state: StepState): StepWords {
-  const shown = revision(label, plan.head);
-  return state === 'done'
-    ? { key: 'check', state, title: `Newest push is ${shown}` }
-    : {
-        key: 'check',
-        state,
-        title: `Check that ${shown} is still the newest push`,
-        detail: 'If anyone pushed since you looked, Lo stops here and approves nothing.',
-      };
-}
-
-/** What goes with the approval: "With your summary and 1 pending comment." */
+/** What goes with the approval: "Your summary and 1 pending comment are submitted with it." */
 function withWords(approval: ShipApproval, summary: boolean): string | undefined {
   const comments = approval.kind === 'submitPending' ? approval.comments : 0;
   if (comments > 0) {
-    return `With your ${summary ? 'summary and ' : ''}${counted(comments, 'pending comment')}.`;
+    const pending = counted(comments, 'pending comment');
+    return summary
+      ? `Your summary and ${pending} are submitted with it.`
+      : `${pending} ${comments === 1 ? 'is' : 'are'} submitted with it.`;
   }
-  return summary ? 'With your summary.' : undefined;
+  return summary ? 'Your summary is submitted with it.' : undefined;
 }
 
 /** The approval step, as the confirmation lists it, or as it stands once run. */
 function approveStep(
-  approval: ShipApproval,
-  login: string,
-  head: string,
-  summary: boolean,
-  label: Label,
+  plan: Pick<ShipPlan, 'approval' | 'login' | 'number' | 'summary'>,
   state: StepState,
 ): StepWords {
   const key = 'approve';
+  const { approval, login, number } = plan;
   switch (approval.kind) {
     case 'ownPullRequest':
       return {
         key,
         state: 'skipped',
-        title: 'Approve',
-        detail: 'It’s your pull request, so GitHub takes no approval from you.',
+        title: `Approve #${number}.`,
+        detail: 'Authors can’t approve their own pull request.',
       };
     case 'alreadyApproved':
-      return {
-        key,
-        state: 'done',
-        title: `Approved as ${login}`,
-        detail: `You approved ${revision(label, head)} already.`,
-      };
+      return { key, state: 'done', title: `Approved as ${login}.` };
+    // The step keeps the words it was asked with in every state: its ball says it's done.
     case 'approve':
     case 'submitPending':
     case 'reapproveDismissed': {
-      const again = approval.kind === 'reapproveDismissed';
-      if (state === 'done') return { key, state, title: `Approved as ${login}` };
-      const dismissed = again ? 'Your approval was dismissed.' : undefined;
-      const goes = withWords(approval, summary);
+      const again = approval.kind === 'reapproveDismissed' ? ' again' : '';
       return {
         key,
         state,
-        title: `${again ? 'Approve again' : 'Approve'} as ${login}`,
-        detail: [dismissed, goes].filter((each) => each !== undefined).join(' ') || undefined,
+        title: `Approve #${number}${again} as ${login}.`,
+        detail: withWords(approval, plan.summary),
       };
     }
     default:
       approval satisfies never;
-      return { key, state, title: 'Approve' };
+      return { key, state, title: `Approve #${number}.` };
   }
 }
 
@@ -131,42 +110,65 @@ function namedOf(plan: Pick<ShipPlan, 'base' | 'afterPush'>, step: ShipStep): Sa
   };
 }
 
-/** Why a step stopped, in words. */
-export function stopWords(stop: ShipStop, base: string): string {
+/** Who approve and ship acts as, and where. */
+type Where = Pick<ShipPlan, 'owner' | 'repo' | 'login' | 'base'>;
+
+/** Why a step stopped, after its title, in words, if anything more. */
+export function stopWords(stop: ShipStop, where: Where): string | undefined {
   switch (stop.kind) {
-    case 'headMoved':
-      return 'Someone pushed after the approval, so Lo merged nothing.';
-    case 'headUnknown':
-      return 'GitHub didn’t say which commit it’s at, so Lo merged nothing.';
     case 'blocked':
       return stop.autoMerge
-        ? `Can’t merge: ${inTheWayOf(stop.blockers)}. Auto-merge is on, so GitHub merges it if that clears.`
-        : `Can’t merge: ${inTheWayOf(stop.blockers)}. Your approval stays.`;
+        ? `${capitalized(inTheWayOf(stop.blockers))}. Auto-merge is on.`
+        : `${capitalized(inTheWayOf(stop.blockers))}.`;
     case 'noAutoMerge':
-      return `It waits on ${inTheWayOf(stop.blockers)}, and GitHub doesn’t let you turn on auto-merge for it.`;
-    case 'noPermission':
-      return `GitHub doesn’t let you merge into ${base}.`;
-    case 'noMethod':
-      return 'The repository allows no merge method.';
+      return `${where.owner}/${where.repo} doesn’t allow auto-merge, or ${where.login} can’t merge.`;
     case 'incomplete':
-      return stop.incomplete === 'checksCutShort'
-        ? 'GitHub has over 1,000 checks here, so Lo merged nothing. Merge it on GitHub.'
-        : 'GitHub left part of its answer out, so Lo merged nothing.';
+      return stop.incomplete === 'checksCutShort' ? 'It has over 1,000 checks.' : undefined;
+    case 'headMoved':
+    case 'headUnknown':
+    case 'noPermission':
+    case 'noMethod':
+    case 'where':
+      return undefined;
+    default:
+      stop satisfies never;
+      return undefined;
+  }
+}
+
+/** A stopped step's title, as the dialog names where it stopped: "Can’t merge yet." */
+export function stopTitle(stop: ShipStop, where: Where): string {
+  switch (stop.kind) {
+    case 'headMoved':
+      return 'This revision is out of date.';
+    case 'headUnknown':
+    case 'incomplete':
+      return stop.kind === 'incomplete' && stop.incomplete === 'checksCutShort'
+        ? 'Can’t merge yet.'
+        : 'GitHub returned an error.';
+    case 'blocked':
+      return 'Can’t merge yet.';
+    case 'noAutoMerge':
+      return 'Can’t turn on auto-merge.';
+    case 'noPermission':
+      return `${where.login} can’t merge into ${where.base}.`;
+    case 'noMethod':
+      return `${where.owner}/${where.repo} allows no merge method.`;
     case 'where':
       return stop.text;
     default:
       stop satisfies never;
-      return 'Lo stopped.';
+      return 'GitHub returned an error.';
   }
 }
 
-/** A method as GitHub doing it: "squashes". */
+/** How GitHub merges with `method`, as a step after the approval says it: "squashes and merges". */
 function merges(method: Method | null): string {
   switch (method) {
     case 'SQUASH':
-      return 'squashes';
+      return 'squashes and merges';
     case 'REBASE':
-      return 'rebases';
+      return 'rebases and merges';
     case 'MERGE':
     case null:
       return 'merges';
@@ -176,9 +178,24 @@ function merges(method: Method | null): string {
   }
 }
 
+/** The step after the approval that merges, by its method: "Squash and merge it into main." */
+function mergeStepTitle(method: Method, base: string): string {
+  switch (method) {
+    case 'SQUASH':
+      return `Squash and merge it into ${base}.`;
+    case 'MERGE':
+      return `Merge it into ${base} with a merge commit.`;
+    case 'REBASE':
+      return `Rebase and merge it into ${base}.`;
+    default:
+      method satisfies never;
+      return `Merge it into ${base}.`;
+  }
+}
+
 /** The step after the approval, as the confirmation lists it. */
 function shipStep(
-  plan: Pick<ShipPlan, 'base' | 'afterPush' | 'approval'>,
+  plan: Where & Pick<ShipPlan, 'afterPush'>,
   step: ShipStep,
   state: StepState,
 ): StepWords {
@@ -186,83 +203,92 @@ function shipStep(
   const { base } = plan;
   switch (step.kind) {
     case 'merge':
-      return { key, state, title: `${mergeLabel(step.method)} into ${base}` };
+      return { key, state, title: mergeStepTitle(step.method, base) };
     case 'enqueue':
-      return {
-        key,
-        state,
-        title: `Add to the merge queue for ${base}`,
-        detail: queueLine(step.method),
-      };
+      return { key, state, title: `Add it to the merge queue for ${base}.` };
     case 'autoMerge':
       return {
         key,
         state,
-        title: `Turn on auto-merge, ${methodLabel(step.method).toLowerCase()} into ${base}`,
-        detail: `GitHub ${merges(step.method)} it once ${waitsFor(namedOf(plan, step))}.`,
+        title: 'Turn on auto-merge.',
+        detail: `GitHub ${merges(step.method)} it into ${base} once ${waitsFor(namedOf(plan, step))}.`,
       };
     case 'enqueueWhenReady':
       return {
         key,
         state,
-        title: `Merge when ready, through the merge queue for ${base}`,
-        detail: `GitHub adds it to the queue once ${waitsFor(namedOf(plan, step))}.`,
+        title: 'Turn on auto-merge.',
+        detail: `It joins the merge queue for ${base} once ${waitsFor(namedOf(plan, step))}.`,
       };
     case 'autoMergeAlreadyOn':
       return {
         key,
         state,
-        title: 'Nothing more: auto-merge is on already',
+        title: 'Auto-merge is on.',
         detail:
           step.waitingOn.length === 0
-            ? 'GitHub merges it now.'
+            ? 'GitHub merges it once it’s approved.'
             : `GitHub merges it once ${waitsFor(namedOf(plan, step))}.`,
       };
     case 'alreadyQueued':
-      return { key, state, title: `Nothing more: it’s in the merge queue for ${base} already` };
+      return { key, state, title: `In the merge queue for ${base}.` };
     case 'stop':
       return {
         key,
-        state: state === 'todo' ? 'todo' : 'stopped',
-        title: plan.approval.kind === 'ownPullRequest' ? 'Stop there' : 'Stop after approving',
-        detail: stopWords(step.stop, base),
+        state: state === 'todo' ? state : 'stopped',
+        title: stopTitle(step.stop, plan),
+        detail: stopWords(step.stop, plan),
       };
     default:
       step satisfies never;
-      return { key, state, title: 'Ship' };
+      return { key, state, title: `Merge it into ${base}.` };
   }
 }
 
-/** The confirmation's title. */
+/** What the main button says while the step after the approval runs: "Merging…". */
+export function stepWorking(step: ShipStep): string {
+  switch (step.kind) {
+    case 'merge':
+      return 'Merging…';
+    case 'enqueue':
+      return 'Adding…';
+    case 'autoMerge':
+    case 'enqueueWhenReady':
+      return 'Turning on…';
+    case 'autoMergeAlreadyOn':
+    case 'alreadyQueued':
+    case 'stop':
+      return 'Approving…';
+    default:
+      step satisfies never;
+      return 'Approving…';
+  }
+}
+
+/** The dialog's title, the same in every state. */
 export function shipTitle(number: number): string {
   return `Approve and ship #${number}?`;
 }
 
-/** The confirmation's main button: it approves, or only ships. */
-export function shipLabel(approval: ShipApproval): string {
-  return approval.kind === 'ownPullRequest' || approval.kind === 'alreadyApproved'
-    ? 'Ship'
-    : 'Approve and ship';
+/** The dialog's main button, whether it approves or only merges. */
+export function shipLabel(): string {
+  return 'Approve and ship';
 }
 
-/** The steps the confirmation lists, none done yet. */
-export function plannedSteps(plan: ShipPlan, label: Label): StepWords[] {
-  return [
-    checkStep(plan, label, 'todo'),
-    approveStep(plan.approval, plan.login, plan.head, plan.summary, label, 'todo'),
-    shipStep(plan, plan.likely, 'todo'),
-  ];
+/** The two steps the confirmation lists, none done yet: the approval, then what follows it. */
+export function plannedSteps(plan: ShipPlan): StepWords[] {
+  return [approveStep(plan, 'todo'), shipStep(plan, plan.likely, 'todo')];
 }
 
 /**
- * What the confirmation warns of a push before it merges, when auto-merge may follow your
- * approval: and that Lo turns it off when one comes, while it runs.
+ * What the confirmation warns of a commit pushed before it merges, when auto-merge may follow your
+ * approval: and that auto-merge turns off when one comes, while Lo is open.
  */
 export function shipWarning(plan: ShipPlan): string | undefined {
   if (!plan.warning) return undefined;
   const warning = pushWarning({ afterPush: plan.afterPush, base: plan.base });
   if (warning === undefined) return undefined;
-  return `${warning} While Lo runs, it turns auto-merge off if someone pushes after your approval.`;
+  return `${warning} While Lo is open, auto-merge turns off if a commit is pushed after your approval.`;
 }
 
 /** Who pushed `head`, and when, as the revisions have it: "mira-chen pushed r3 2 min ago". */
@@ -270,39 +296,16 @@ export function pushedWords(
   revisions: readonly RevisionRow[] | undefined,
   head: string,
   label: Label,
-  now: number,
+  now: number | undefined,
 ): string {
   const found = revisions?.find((each) => each.head === head.toLowerCase());
   const shown = revision(label, head);
   const who = found?.pusher ?? 'Someone';
   const when =
-    found?.pushedAt.kind === 'exact' || found?.pushedAt.kind === 'by'
+    now !== undefined && (found?.pushedAt.kind === 'exact' || found?.pushedAt.kind === 'by')
       ? ` ${ago(found.pushedAt.at, now)}`
       : '';
   return `${who} pushed ${shown}${when}`;
-}
-
-/**
- * The dialog when a newer push stopped it before approving: who pushed what, the revision you
- * reviewed, and nothing approved.
- */
-export function newerSteps(
-  from: string,
-  to: string | undefined,
-  revisions: readonly RevisionRow[] | undefined,
-  label: Label,
-  now: number,
-): StepWords[] {
-  return [
-    {
-      key: 'check',
-      state: 'stopped',
-      title: to === undefined ? 'A newer push arrived' : pushedWords(revisions, to, label, now),
-      detail: `You reviewed ${revision(label, from)}.`,
-    },
-    { key: 'approve', state: 'skipped', title: 'Approve' },
-    { key: 'ship', state: 'skipped', title: 'Merge' },
-  ];
 }
 
 /** Whether approve and ship from `approval` sends an approval. */
@@ -310,47 +313,37 @@ export function approves(approval: ShipApproval): boolean {
   return approval.kind !== 'ownPullRequest' && approval.kind !== 'alreadyApproved';
 }
 
-/** A stopped step's title, as the dialog names where it stopped: "Can’t merge: conflicts". */
-export function stopTitle(stop: ShipStop, base: string): string {
-  switch (stop.kind) {
-    case 'headMoved':
-      return 'Someone pushed after the approval';
-    case 'headUnknown':
-      return 'GitHub didn’t say which commit it’s at';
-    case 'blocked':
-      return `Can’t merge: ${inTheWayOf(stop.blockers)}`;
-    case 'noAutoMerge':
-      return 'Can’t turn on auto-merge';
-    case 'noPermission':
-      return `Can’t merge into ${base}`;
-    case 'noMethod':
-      return 'No merge method is allowed';
-    case 'incomplete':
-      return 'GitHub left part of its answer out';
-    case 'where':
-      return 'Can’t merge it from here';
-    default:
-      stop satisfies never;
-      return 'Stopped';
-  }
-}
+/**
+ * What the main button does where it stopped: "Try again", which plans it afresh; "Show r6" for a
+ * newer revision; "Merge panel", to merge from there once it has approved; "Check again" for a
+ * merge whose end isn't known, or, for an approval whose end isn't known, `look`, which reads your
+ * reviews to tell whether it went, sending nothing, and plans afresh once that's known.
+ */
+export type Again =
+  | { readonly kind: 'try' }
+  | { readonly kind: 'look' }
+  | { readonly kind: 'newer'; readonly refusal: Refusal; readonly head: string }
+  | { readonly kind: 'panel' }
+  | { readonly kind: 'check'; readonly job: JobView };
 
 /**
- * What the dialog's main button does once it ran: nothing while it runs or once it's done; "Done"
- * where it stopped, with "Merge panel" too after approving; "See r2 → r3" for a newer push; "Ask
- * GitHub again" for a merge Lo can't tell the end of.
+ * How a run stands, for the foot and the line above it: still at work, with what the main button
+ * says meanwhile; done, with what it did; or stopped, with what went wrong and what to do.
  */
 export type End =
-  | { readonly kind: 'running' }
-  | { readonly kind: 'done' }
-  | { readonly kind: 'stopped'; readonly panel: boolean }
-  | { readonly kind: 'newer'; readonly refusal: Refusal; readonly head: string }
-  | { readonly kind: 'unsure'; readonly job: JobView };
+  | { readonly kind: 'running'; readonly working: string }
+  | { readonly kind: 'done'; readonly line: string }
+  | {
+      readonly kind: 'failed';
+      readonly title: string;
+      readonly reason: string | undefined;
+      /** GitHub's own text, or the error's, which only Details shows. */
+      readonly details?: string | undefined;
+      readonly again: Again;
+    };
 
-/** What the dialog shows once it runs: its title, a line under it, and the steps as they stand. */
+/** What the dialog shows once it runs: the steps as they stand, and how it stands. */
 export interface Running {
-  readonly title: string;
-  readonly description: string;
   readonly steps: StepWords[];
   readonly end: End;
 }
@@ -362,26 +355,22 @@ export interface Pushes {
   readonly now: number;
 }
 
-/** The line under the dialog's title: the repository and the pull request, then `more`. */
-function repoLine(plan: Pick<ShipPlan, 'repo' | 'number'>, more?: string): string {
-  return `${plan.repo} #${plan.number}${more === undefined ? '' : ` · ${more}`}`;
+/** Where a stop after a newer revision ends: "This revision is out of date.", and "Show r6". */
+export function newerEnd(number: number, refusal: Refusal, head: string): End {
+  return {
+    kind: 'failed',
+    title: `Couldn’t approve #${number}`,
+    reason: 'This revision is out of date.',
+    again: { kind: 'newer', refusal, head },
+  };
 }
 
-/** The dialog for a newer push than the revision on screen, which stopped it before approving. */
-export function newerShown(
-  plan: Pick<ShipPlan, 'repo' | 'number'>,
-  refusal: Refusal,
-  head: string,
-  pushes: Pushes,
-): Running {
-  const from = refusal.newer?.from ?? head;
-  const to = refusal.newer?.to ?? undefined;
-  return {
-    title: 'A newer push arrived',
-    description: repoLine(plan, 'nothing was approved'),
-    steps: newerSteps(from, to, pushes.revisions, pushes.label, pushes.now),
-    end: { kind: 'newer', refusal, head },
-  };
+/**
+ * The title of a run that stopped at its merge, in its dialog: the approval step says whether it
+ * approved.
+ */
+function unmerged(plan: Pick<ShipPlan, 'number'>): string {
+  return `Couldn’t merge #${plan.number}`;
 }
 
 /**
@@ -392,105 +381,89 @@ export function runningOf(
   plan: ShipPlan,
   view: ShipView | undefined,
   job: JobView | undefined,
-  pushes: Pushes,
 ): Running {
-  const { label } = pushes;
   const approving = approves(plan.approval);
   const approved = view?.approved === true || plan.approval.kind === 'alreadyApproved';
-  const title = approving ? `Approving and shipping #${plan.number}` : `Shipping #${plan.number}`;
-  const check = checkStep(plan, label, 'done');
-  const approval = (state: StepState) =>
-    approveStep(plan.approval, plan.login, plan.head, plan.summary, label, state);
-  const running: End = { kind: 'running' };
+  const approval = (state: StepState) => approveStep(plan, state);
   const phase = view?.phase;
   switch (phase?.kind) {
     case undefined:
     case 'approving':
       return {
-        title,
-        description: repoLine(plan),
-        steps: [check, approval(approving ? 'now' : 'todo'), shipStep(plan, plan.likely, 'todo')],
-        end: running,
+        steps: [approval(approving ? 'now' : 'todo'), shipStep(plan, plan.likely, 'todo')],
+        end: { kind: 'running', working: approving ? 'Approving…' : stepWorking(plan.likely) },
       };
     case 'reading':
       return {
-        title,
-        description: repoLine(plan),
-        steps: [
-          check,
-          approval('done'),
-          {
-            ...shipStep(plan, plan.likely, 'now'),
-            detail: approving ? 'Waiting for GitHub to show your approval.' : 'Reading it again.',
-          },
-        ],
-        end: running,
+        steps: [approval('done'), shipStep(plan, plan.likely, 'now')],
+        end: { kind: 'running', working: stepWorking(plan.likely) },
       };
     case 'done':
       return {
-        title,
-        description: repoLine(plan),
-        steps: [check, approval('done'), shipStep(plan, phase.step, 'done')],
-        end: { kind: 'done' },
+        steps: [approval('done'), shipStep(plan, phase.step, 'done')],
+        end: { kind: 'done', line: shipDoneLine(view ?? { ...plan, approved }, undefined) },
       };
     case 'sending':
-      return sendingOf(plan, phase.step, job, approved, {
-        title,
-        steps: [check, approval('done')],
-      });
+      return sendingOf(plan, phase.step, job, approved, view, approval('done'));
     case 'stopped': {
       const { refusal, stop } = phase;
-      if (phase.at === 'approve') {
-        if (refusal.newer !== null) return newerShown(plan, refusal, plan.head, pushes);
+      if (phase.at === 'approve' || phase.at === 'unsure') {
+        const steps = [
+          { ...approval('stopped'), state: 'stopped' as const },
+          { ...shipStep(plan, plan.likely, 'todo'), state: 'skipped' as const, detail: undefined },
+        ];
+        if (phase.at === 'approve' && refusal.newer !== null) {
+          return { steps, end: newerEnd(plan.number, refusal, plan.head) };
+        }
         return {
-          title: 'Not approved',
-          description: repoLine(plan, 'nothing was approved'),
-          steps: [
-            check,
-            { ...approval('stopped'), state: 'stopped', detail: refusal.text },
-            { ...shipStep(plan, plan.likely, 'todo'), state: 'skipped', detail: undefined },
-          ],
-          end: { kind: 'stopped', panel: false },
-        };
-      }
-      if (phase.at === 'unsure') {
-        return {
-          title: 'Can’t tell whether it approved',
-          description: repoLine(plan, 'nothing was merged'),
-          steps: [
-            check,
-            { ...approval('stopped'), state: 'stopped', detail: refusal.text },
-            { ...shipStep(plan, plan.likely, 'todo'), state: 'skipped', detail: undefined },
-          ],
-          end: { kind: 'stopped', panel: true },
+          steps,
+          end: {
+            kind: 'failed',
+            title:
+              phase.at === 'unsure' ? 'Approval not confirmed' : `Couldn’t approve #${plan.number}`,
+            reason:
+              refusal.text !== ''
+                ? refusal.text
+                : phase.at === 'unsure'
+                  ? 'GitHub didn’t respond.'
+                  : undefined,
+            details: detailsOf(refusal),
+            again: phase.at === 'unsure' ? { kind: 'look' } : { kind: 'try' },
+          },
         };
       }
       const planned = shipStep(plan, plan.likely, 'stopped');
+      const why =
+        stop === null
+          ? refusal.text
+          : [stopTitle(stop, plan), stopWords(stop, plan)].filter((part) => part).join(' ');
       return {
-        title: approved ? 'Approved, but not merged' : 'Not merged',
-        description: repoLine(
-          plan,
-          approving && approved ? 'your approval stays' : 'nothing was merged',
-        ),
         steps: [
-          check,
           approval(approved ? 'done' : 'skipped'),
+          // The step stays as it was asked: the problem says why it stopped.
           {
-            key: 'ship',
+            ...planned,
             state: 'stopped',
-            title: stop === null ? planned.title : stopTitle(stop, plan.base),
-            detail: stop === null ? refusal.text : stopWords(stop, plan.base),
+            detail: plan.likely.kind === 'stop' ? planned.detail : undefined,
           },
         ],
-        end:
-          refusal.newer === null
-            ? { kind: 'stopped', panel: true }
-            : { kind: 'newer', refusal, head: plan.head },
+        end: {
+          kind: 'failed',
+          title: unmerged(plan),
+          reason: why === '' ? undefined : why,
+          details: detailsOf(refusal),
+          again:
+            refusal.newer !== null
+              ? { kind: 'newer', refusal, head: plan.head }
+              : approved
+                ? { kind: 'panel' }
+                : { kind: 'try' },
+        },
       };
     }
     default:
       phase satisfies never;
-      return { title, description: repoLine(plan), steps: [], end: running };
+      return { steps: [], end: { kind: 'running', working: 'Approving…' } };
   }
 }
 
@@ -500,95 +473,119 @@ function sendingOf(
   step: ShipStep,
   job: JobView | undefined,
   approved: boolean,
-  before: { title: string; steps: StepWords[] },
+  view: ShipView | undefined,
+  approval: StepWords,
 ): Running {
   const going = shipStep(plan, step, 'now');
   const state = job?.state;
-  const now = (detail: string): Running => ({
-    title: before.title,
-    description: repoLine(plan),
-    steps: [...before.steps, { ...going, detail }],
-    end: { kind: 'running' },
-  });
+  const working: Running = {
+    steps: [approval, going],
+    end: { kind: 'running', working: stepWorking(step) },
+  };
   switch (state?.kind) {
     case undefined:
     case 'sending':
-      return now('Sending');
     case 'pending':
-      return now(pendingLine({ kind: job?.kind ?? 'merge' }));
+      return working;
     case 'refused': {
+      // GitHub can merge it now: Lo reads it again and merges it instead, and the step says so.
       if (state.refusal.kind === 'canMergeNow') {
-        return now('GitHub can merge it now, so Lo reads it again and merges it instead.');
+        return {
+          steps: [approval, { ...going, title: `Merge it into ${plan.base}.`, detail: undefined }],
+          end: { kind: 'running', working: 'Merging…' },
+        };
       }
       return {
-        title: approved ? 'Approved, but not merged' : 'Not merged',
-        description: repoLine(
-          plan,
-          approved && approves(plan.approval) ? 'your approval stays' : 'nothing was merged',
-        ),
-        steps: [
-          ...before.steps,
-          {
-            ...going,
-            state: 'stopped',
-            detail: job ? outcomeDetail(job) : state.refusal.text,
-          },
-        ],
-        end:
-          state.refusal.newer === null
-            ? { kind: 'stopped', panel: true }
-            : { kind: 'newer', refusal: state.refusal, head: plan.head },
+        steps: [approval, { ...going, state: 'stopped' }],
+        end: {
+          kind: 'failed',
+          title: unmerged(plan),
+          reason: (job ? outcomeDetail(job) : state.refusal.text) || undefined,
+          details: detailsOf(state.refusal),
+          again:
+            state.refusal.newer !== null
+              ? { kind: 'newer', refusal: state.refusal, head: plan.head }
+              : approved
+                ? { kind: 'panel' }
+                : { kind: 'try' },
+        },
       };
     }
     case 'unknown':
       return {
-        title: (job && outcomeTitle(job)) ?? before.title,
-        description: repoLine(plan, approved ? 'your approval stays' : undefined),
-        steps: [...before.steps, { ...going, detail: job ? outcomeDetail(job) : undefined }],
-        end: job ? { kind: 'unsure', job } : { kind: 'running' },
+        steps: [approval, going],
+        end: job
+          ? {
+              kind: 'failed',
+              title: outcomeTitle(job) ?? 'Merge not confirmed',
+              reason: outcomeDetail(job) || undefined,
+              again: { kind: 'check', job },
+            }
+          : working.end,
       };
     case 'merged':
     case 'enqueued':
     case 'autoMergeOn':
     case 'autoMergeOff':
       return {
-        title: before.title,
-        description: repoLine(plan),
-        steps: [...before.steps, { ...going, state: 'done' }],
-        end: { kind: 'done' },
+        steps: [approval, { ...going, state: 'done' }],
+        end: { kind: 'done', line: shipDoneLine(view ?? { ...plan, approved }, job) },
       };
     default:
       state satisfies never;
-      return now('Sending');
+      return working;
   }
 }
 
 /**
- * What the toast says once approve and ship is done: "Approved and merged #4821 into main", or
- * without the approval, the merge's own words. With nothing more to send, what was there already.
+ * What approve and ship did, once it's done, in its dialog or its toast: "Approved and merged
+ * #4821", or without the approval, the merge's own words. With nothing more to send, what was
+ * there already.
  */
-export function shipDoneLine(view: ShipView, job: JobView | undefined): string {
+export function shipDoneLine(
+  view: Pick<ShipView, 'number' | 'approved' | 'approval'> & { readonly phase?: ShipView['phase'] },
+  job: JobView | undefined,
+): string {
   const approved = view.approved && approves(view.approval);
   const line = job ? doneLine(job) : undefined;
-  if (line !== undefined) {
+  if (line !== undefined && job) {
     if (!approved) return line;
-    return line.startsWith('#')
-      ? `Approved #${view.number}. ${line}`
-      : `Approved and ${line.charAt(0).toLowerCase()}${line.slice(1)}`;
+    switch (job.state.kind) {
+      case 'merged':
+        return `Approved and merged #${view.number}`;
+      case 'enqueued':
+        return `Approved and added #${view.number} to merge queue`;
+      case 'autoMergeOn':
+        return `Approved #${view.number} and turned on auto-merge`;
+      case 'autoMergeOff':
+      case 'sending':
+      case 'pending':
+      case 'refused':
+      case 'unknown':
+        return `Approved #${view.number}`;
+      default:
+        job.state satisfies never;
+        return `Approved #${view.number}`;
+    }
   }
-  const step = view.phase.kind === 'done' ? view.phase.step : undefined;
-  const already =
-    step?.kind === 'alreadyQueued'
-      ? `#${view.number} is in the merge queue for ${view.base} already`
-      : `Auto-merge is on for #${view.number} already`;
-  return approved ? `Approved #${view.number}. ${already}` : already;
+  if (approved) return `Approved #${view.number}`;
+  const step = view.phase?.kind === 'done' ? view.phase.step : undefined;
+  return step?.kind === 'alreadyQueued'
+    ? `#${view.number} is already in the merge queue`
+    : `Auto-merge is already on for #${view.number}`;
 }
 
-/** The banner the auto-merge watch shows on the pull request's tab, or the toast without one. */
+/**
+ * The banner the auto-merge watch shows on the pull request's tab, or the toast without one: one
+ * line, and its one button, which acts.
+ */
 export interface WatchedWords {
   readonly tone: 'danger' | 'warn';
   readonly title: string;
-  readonly detail: string;
+  /** The reason, for a failure. */
+  readonly detail: string | undefined;
+  /** "Show r5", or "Turn off auto-merge". */
+  readonly action: 'show' | 'turnOff';
 }
 
 /** What the auto-merge watch says of `watched`, a push after your approval. */
@@ -596,33 +593,32 @@ export function watchedWords(
   watched: Watched,
   revisions: readonly RevisionRow[] | undefined,
   label: Label,
-  now: number,
 ): WatchedWords {
-  const pushed = pushedWords(revisions, watched.head, label, now);
-  const approved = revision(label, watched.approved);
-  const number = `#${watched.number}`;
+  const pushed = pushedWords(revisions, watched.head, label, undefined);
   switch (watched.kind) {
     case 'turnedOff':
       return {
         tone: 'warn',
-        title: `Lo turned off auto-merge: ${pushed} after you approved ${approved}.`,
-        detail: `${number} would have merged with your approval. Review the push, then turn auto-merge on again from the merge panel.`,
+        title: `${pushed} after your approval · Auto-merge is off`,
+        detail: undefined,
+        action: 'show',
       };
     case 'notTurnedOff':
       return {
         tone: 'danger',
-        title: `Lo couldn’t turn off auto-merge for ${number}: ${pushed} after you approved ${approved}.`,
-        detail: `${watched.why ?? 'GitHub didn’t take it.'} The push would merge with your approval. Turn auto-merge off from the merge panel.`,
+        title: 'Couldn’t turn off auto-merge',
+        detail: `${pushed} after your approval.`,
+        action: 'turnOff',
       };
     case 'cantTell':
       return {
         tone: 'warn',
-        title: `Lo can’t tell whether ${number} would merge ${pushed.charAt(0).toLowerCase()}${pushed.slice(1)} with your approval.`,
-        detail:
-          'GitHub left part of its answer out. Lo reads it again, and turns auto-merge off if it would.',
+        title: `${pushed} after your approval · Auto-merge is on`,
+        detail: undefined,
+        action: 'turnOff',
       };
     default:
       watched.kind satisfies never;
-      return { tone: 'warn', title: 'Auto-merge', detail: '' };
+      return { tone: 'warn', title: pushed, detail: undefined, action: 'show' };
   }
 }

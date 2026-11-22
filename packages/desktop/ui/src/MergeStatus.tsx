@@ -15,14 +15,16 @@ export type MergeKind = 'ready' | 'waiting' | 'blocked' | 'queued' | 'auto' | 'm
 const dot = cva('flex-none rounded-pill', {
   variants: {
     kind: {
-      ready: 'bg-success',
-      waiting: 'bg-warning',
-      blocked: 'bg-danger',
-      queued: 'bg-queue',
-      auto: 'bg-accent',
-      merged: 'bg-state-merged',
-      closed: 'bg-state-closed',
+      ready: 'bg-success text-success',
+      waiting: 'bg-warning text-warning',
+      blocked: 'bg-danger text-danger',
+      queued: 'bg-queue text-queue',
+      auto: 'bg-accent text-accent',
+      merged: 'bg-state-merged text-state-merged',
+      closed: 'bg-state-closed text-state-closed',
     },
+    // It just landed here, with nothing else to say so: it fills, once.
+    fills: { true: 'move-fill', false: '' },
     size: {
       // Beside a line of small text, in the header.
       sm: 'size-8',
@@ -33,9 +35,20 @@ const dot = cva('flex-none rounded-pill', {
   defaultVariants: { size: 'sm' },
 });
 
-/** The dot for how a pull request stands on merging. It says nothing alone: words go beside it. */
-export function MergeDot({ kind, size }: { kind: MergeKind; size?: 'sm' | 'md' | undefined }) {
-  return <span className={dot({ kind, size })} aria-hidden="true" />;
+/**
+ * The dot for how a pull request stands on merging. It says nothing alone: words go beside it.
+ * With `fills`, it fills from a ring over 260 ms as it's drawn.
+ */
+export function MergeDot({
+  kind,
+  size,
+  fills = false,
+}: {
+  kind: MergeKind;
+  size?: 'sm' | 'md' | undefined;
+  fills?: boolean | undefined;
+}) {
+  return <span className={dot({ kind, size, fills })} aria-hidden="true" />;
 }
 
 export interface MergeStatusProps {
@@ -57,6 +70,11 @@ export interface MergeStatusProps {
   expanded?: boolean | undefined;
   /** The button, for the panel to open under. */
   ref?: Ref<HTMLButtonElement> | undefined;
+  /**
+   * The merge it stands for has just landed, with no dialog open to say so: the dot fills, once,
+   * over 260 ms. Give it only on the draw the pull request turns `merged`.
+   */
+  landed?: boolean | undefined;
 }
 
 const line =
@@ -76,12 +94,14 @@ export function MergeStatus({
   onClick,
   expanded,
   ref,
+  landed = false,
 }: MergeStatusProps) {
   const said = withoutBidi(verdict);
   const reasons = detail === undefined ? undefined : withoutBidi(detail);
   const content = (
     <>
-      <MergeDot kind={kind} />
+      {/* A new dot as it lands, so its fill plays then and only then. */}
+      <MergeDot key={landed ? 'landed' : 'still'} kind={kind} fills={landed} />
       <strong className="flex-none font-semibold text-fg">{said}</strong>
       {reasons !== undefined && reasons !== '' && (
         <span className="min-w-0 truncate">{reasons}</span>

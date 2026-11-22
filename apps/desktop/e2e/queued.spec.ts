@@ -3,8 +3,8 @@
 // the app while one was first in `e4/queued`'s queue and another behind it: the header says the
 // place, the merge panel says it again with the queue a key away, and the panel of one ready for
 // the queue says what's ahead of it. `app_queued_left` was recorded as the queue failed the one
-// behind and GitHub took it out: the header says it will be removed, then a banner says it left and
-// why, and opens the panel, whose first row says it again. Each is served with GitHub's answer to
+// behind and GitHub took it out: the header says it's leaving, then a banner says it left, and
+// opens the panel, whose first row says why. Each is served with GitHub's answer to
 // each overview ref read again added (`app_queued_polled`, `app_queued_left_polled`), as Lo reads
 // one again when its window comes to the front.
 
@@ -48,10 +48,8 @@ test('a queued pull request says its place, and its panel the queue it’s in, a
   await expect(status(page)).toContainText('about 11 min');
   await page.keyboard.press('m');
   await expect(panel(page)).toContainText('In the merge queue for e4/queued · 1st');
-  await expect(panel(page)).toContainText(
-    'The queue’s settings choose the method and the message: squash.',
-  );
-  const see = panel(page).getByRole('button', { name: /See the queue/ });
+  await expect(panel(page)).toContainText('Squash, set by the merge queue');
+  const see = panel(page).getByRole('button', { name: /^Merge queue/ });
   await expect(see).toContainText('gq');
   await see.click();
   await expect(panel(page)).toBeHidden();
@@ -62,36 +60,36 @@ test('a queued pull request says its place, and its panel the queue it’s in, a
 
 test('the panel of one ready for the queue says what’s ahead of it', async ({ page }) => {
   await open(page, pulls.queuedPass.number);
-  await expect(status(page)).toContainText('Ready for the queue');
+  await expect(status(page)).toContainText('Ready for merge queue');
   await page.keyboard.press('m');
   await expect(panel(page)).toContainText(
-    'e4/queued merges through a queue · 2 ahead, about 11 min',
+    'e4/queued has a merge queue · 2 ahead · merges in about 11 min',
   );
 });
 
 test.describe('once the queue fails one', () => {
   test.use({ cassette: 'app_queued_left_polled' });
 
-  test('it will be removed, then a banner says it left and why, and opens the panel', async ({
+  test('it’s leaving, then a banner says it left, and opens the panel, which says why', async ({
     page,
   }) => {
     // Lo reads its pull request every 20 s, and GitHub took it out about a minute later.
     test.setTimeout(120_000);
     await open(page, pulls.queuedFail.number);
-    await expect(status(page)).toContainText('Will be removed');
-    await expect(status(page)).toContainText('ci failed in the queue');
+    await expect(status(page)).toContainText('Leaving merge queue');
+    await expect(status(page)).toContainText('ci failed');
     await page.keyboard.press('m');
     const first = panel(page).locator('[role="option"]').first();
     await expect(first).toHaveAttribute('data-key', 'queue-removal');
-    await expect(first).toContainText('1 check failed in the queue');
+    await expect(first).toContainText('1 check failed in the merge queue');
     await page.keyboard.press('Escape');
 
-    const banner = page.getByText(`#${pulls.queuedFail.number} left the merge queue:`);
+    // The banner's one line; the panel's first row says why.
+    const banner = page.getByText(`#${pulls.queuedFail.number} left the merge queue`);
     await expect(banner).toBeVisible({ timeout: 90_000 });
-    await expect(page.getByText('ci failed with its group.')).toBeVisible();
-    await page.getByRole('button', { name: /Merge panel/ }).click();
+    await page.getByRole('button', { name: /^Merge panel/ }).click();
     await expect(first).toHaveAttribute('data-key', 'left');
-    await expect(first).toContainText('1 check failed with its group.');
-    await expect(first.getByRole('button', { name: /Open the run/ })).toBeVisible();
+    await expect(first).toContainText('1 check failed in the merge queue.');
+    await expect(first.getByRole('button', { name: /^Open in browser/ })).toBeVisible();
   });
 });
