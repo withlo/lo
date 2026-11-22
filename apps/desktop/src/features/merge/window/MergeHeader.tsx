@@ -249,8 +249,8 @@ function NextThread() {
 const ENTER = ['⏎'];
 const AUTO = ['a'];
 
-/** What the main button says until Lo knows where the pull request sits. */
-const CHECKING = 'Checking what merges with it';
+/** What the main button says until Lo knows where the pull request sits, and so what merges. */
+const CHECKING = 'Checking…';
 
 /** The panel's button that merges past the rules, as `⌥⏎` does, for an account that may. */
 function Override() {
@@ -399,7 +399,7 @@ function footOf(
   // Where it sits keeps it from merging from here: a chain that becomes a GitHub stack first.
   const placed = placement?.kind === 'convert' || placement?.kind === 'refused';
   // Until Lo knows where it sits, it can't say what merges with it: a GitHub stack's layers below.
-  const busy = placeUnknown(panel.place) ? CHECKING : undefined;
+  const busy = placeUnknown(panel.place);
   const auto =
     state.autoMerge !== null
       ? { on: true, ...turn }
@@ -419,6 +419,7 @@ function footOf(
           keys: enter,
           disabled: off || placed,
           busy,
+          working: CHECKING,
           onClick: mergeFromPanel,
         }}
       />
@@ -433,6 +434,7 @@ function footOf(
           keys: enter,
           disabled: off || placed,
           busy,
+          working: CHECKING,
           onClick: mergeFromPanel,
         }}
       />

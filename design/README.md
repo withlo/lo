@@ -233,11 +233,15 @@ Lo waits in three ways. Use the first that fits, and never two for one wait.
 - `Skeleton` is the `skeleton` utility on a block. Give each the size of what it stands for.
 - A view that shows `Loading` or skeletons sets `aria-busy` on its own box until its content is in,
   so a screen reader waits for the content rather than reading the wait.
-- Pass `busy={false}` to a button that can be busy, not nothing, so it holds room for both labels
-  and doesn't change width. A busy button is `aria-busy`, takes no press and isn't greyed. Without a
-  `working`, it shows its label beside the ring, so it keeps its name.
-- What takes a button's props does the same: a `Banner`'s and a `Problem`'s action each take `busy`
-  and `working` as `Button` does.
+- Pass `busy={false}` to a button that can be busy, not nothing, and its `working` too, so it holds
+  room for both and doesn't change width. A busy button is `aria-busy`, takes no press and isn't
+  greyed. Without a `working`, it shows its label beside the ring, so it keeps its name.
+- It's as wide as the wider of its label and its `working` beside the ring, so keep `working` short:
+  "Checking…", not "Checking what merges with it". Where the words change as the work goes on, as
+  trusting a repo's do ("Checking…", "Waiting…", "Trusting…"), keep each within the label's width,
+  and give the first at rest.
+- What takes a button's props does the same: a `Banner`'s and a `Problem`'s action and the merge
+  panel's main button (`MergeFoot`'s `primary`) each take `busy` and `working` as `Button` does.
 - `Spinner` (the `spinner` utility) alone is for a wait inside a line, such as a status bar item.
   Never beside a button, which is `busy`, and never for a whole view.
 
@@ -257,12 +261,15 @@ that floats.
 
 - **`Dialog`** asks or shows one thing, over a scrim. Three widths: `size="sm"` (420 px, one
   question), `md` (540 px, the default) and `lg` (720 px, a list or code). Its top edge stays 96 px
-  from the window's top whatever its height, so it never jumps between steps. With an `action` it
-  draws its own foot and takes a `state`: `ask`, `working`, `done` or `failed`. The body stays put
-  through all four. The button that leaves reads "Cancel" until something is sent, "Close" after a
-  failure and "Done" once it has worked; the main button reads its `label`, then `working`, then
-  "Try again". What went wrong goes in `problem`, above the foot. While it's `working`, nothing
-  leaves it: Cancel, `Esc` and a click outside all refuse.
+  from the window's top whatever its height, so it never jumps between steps: a taller step grows it
+  downward in the Sheet move's time. While it grows (`data-growing`), its body is clipped at the
+  top, not scrolled, so no scroll bar shows. It focuses its main button, or what `initialFocus`
+  names, as it mounts, without scrolling its body. With an `action` it draws its own foot and takes
+  a `state`: `ask`, `working`, `done` or `failed`. The body stays put through all four. The button
+  that leaves reads "Cancel" until something is sent, "Close" after a failure and "Done" once it has
+  worked; the main button reads its `label`, then `working`, then "Try again". What went wrong goes
+  in `problem`, above the foot. While it's `working`, nothing leaves it: Cancel, `Esc` and a click
+  outside all refuse.
 - **`Popover`** is a small panel beside what it's about: a status item's details, a picker. Give it
   its `trigger`, or an `anchor` when a key opens it.
 - **`ContextMenu`** is the menu at a point: what can be done to what was right-clicked, each with
@@ -271,7 +278,9 @@ that floats.
 - **`Tooltip`** names a control and its key: see [Controls](#controls).
 - **`ToastStack`** shows results at the bottom right, above the status bar: three at most, four
   seconds each, paused under the pointer or focus. A toast is one line, clamped to three, and one
-  action at most. A toast never reports a failure: that's a `Problem` where it happened. Keep each
+  action at most. One that waits for the reader may add a `body`: plain words wrap, anywhere a long
+  path needs to, and clamp to three lines; a body of its own markup, such as a command to copy,
+  shows whole. A toast never reports a failure: that's a `Problem` where it happened. Keep each
   toast the same object while it shows. To show one again, as a second "Copied path", put a new
   object with the same `id` in `toasts`: it stays in its place and its four seconds start over.
 - **`Problem`** is something that went wrong, in one shape: what failed, why, the one thing to do,

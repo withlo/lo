@@ -392,8 +392,8 @@ it('says it’s checking what merges with it until main first says, and `⏎` wa
   const page = draw(<MergeHeader tab={tabOf('t19')} />);
   await until(() => page.querySelector('button') !== null);
   act(() => page.querySelector('button')?.click());
-  await until(() => primary()?.textContent === 'Checking what merges with it');
-  expect(primary()?.getAttribute('aria-busy')).toBe('true');
+  await until(() => primary()?.getAttribute('aria-busy') === 'true');
+  expect(primary()?.querySelector('span > span:not([aria-hidden])')?.textContent).toBe('Checking…');
   expect(primary()?.getAttribute('aria-disabled')).toBe('true');
   // `⏎` waits for the answer, and a second one says what it waits for.
   act(() => mergeFromPanel());

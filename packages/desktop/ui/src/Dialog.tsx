@@ -116,11 +116,12 @@ export function Dialog(props: DialogProps) {
     onClosed?.();
   });
   const main = useRef<HTMLButtonElement>(null);
+  const body = useRef<HTMLDivElement>(null);
   const focus = initialFocus ?? (action !== undefined && foot === undefined ? main : undefined);
-  // What `focus` names has focus as the dialog mounts, not a frame on. Without it, Base UI chooses
-  // where focus goes.
+  // What `focus` names has focus as the dialog mounts, not a frame on, and without scrolling its
+  // body. Without it, Base UI chooses where focus goes.
   const takeFocus = useTakeFocus(focus);
-  const grow = useGrow();
+  const grow = useGrow(body);
   const mounted = useCallback(
     (element: HTMLDivElement | null) => {
       grow(element);
@@ -145,7 +146,8 @@ export function Dialog(props: DialogProps) {
         <Base.Viewport className="fixed inset-0 z-dialog flex items-start justify-center px-16 pt-dialog-top pb-16">
           <Base.Popup
             ref={mounted}
-            initialFocus={focus}
+            // Base UI would focus it again a frame on, scrolling the body to it.
+            initialFocus={focus === undefined ? undefined : skip}
             finalFocus={false}
             // Leaving, it takes no focus: a caller that focuses something in it as it closes, a
             // frame or two on, would leave focus on nothing once it's gone.
@@ -165,7 +167,10 @@ export function Dialog(props: DialogProps) {
                 )}
               </div>
             </div>
-            <div className="flex min-h-0 flex-col gap-12 overflow-auto px-20 pt-12 pb-16">
+            <div
+              ref={body}
+              className="flex min-h-0 flex-col gap-12 overflow-auto px-20 pt-12 pb-16"
+            >
               {children}
               {foot === undefined && state === 'failed' && problem !== undefined && (
                 <Problem {...problem} layout="inline" />
@@ -228,51 +233,71 @@ function Foot({ children }: { children: ReactNode }) {
   );
 }
 
+/** Tells Base UI to focus nothing: the dialog has focused what it means to. */
+const skip = () => false;
+
 /**
  * A ref for a dialog's panel that moves its height when what's in it changes, as one step of a
  * dialog gives way to a taller one: the panel grows to the new height in the Sheet move's time,
  * and its top edge stays put. A window resized changes it at once.
+ *
+ * While it grows the panel has `data-growing`, and its body is clipped at the top, not scrolled:
+ * the body is shorter than what's in it until the move ends, and would show a scroll bar or scroll
+ * to a control focused meanwhile.
  */
-function useGrow(): (panel: HTMLElement | null) => void {
+function useGrow(body: RefObject<HTMLElement | null>): (panel: HTMLElement | null) => void {
   const watch = useRef<ResizeObserver | undefined>(undefined);
-  return useCallback((panel: HTMLElement | null) => {
-    watch.current?.disconnect();
-    watch.current = undefined;
-    if (!panel || typeof ResizeObserver === 'undefined') return;
-    const view = panel.ownerDocument.defaultView;
-    let last: number | undefined;
-    let within = { width: view?.innerWidth, height: view?.innerHeight };
-    let moving = false;
-    watch.current = new ResizeObserver(() => {
-      // Its own frames, as it grows.
-      if (moving) return;
-      const from = last;
-      const to = panel.offsetHeight;
-      last = to;
-      const was = within;
-      within = { width: view?.innerWidth, height: view?.innerHeight };
-      if (from === undefined || from === to || to === 0) return;
-      if (was.width !== within.width || was.height !== within.height) return;
-      if (motionReduced() || typeof panel.animate !== 'function') return;
-      // Leaving: it fades where it is.
-      if (panel.hasAttribute('data-ending-style') || panel.hasAttribute('data-closed')) return;
-      const style = getComputedStyle(panel);
-      const move = panel.animate(
-        { height: [`${from}px`, `${to}px`] },
-        {
-          duration: milliseconds(style.getPropertyValue('--lo-dur')),
-          easing: style.getPropertyValue('--lo-ease-in-out').trim() || 'ease-in-out',
-        },
-      );
-      moving = true;
-      const rest = () => {
-        moving = false;
-        last = panel.offsetHeight;
-      };
-      move.finished.then(rest, rest);
-    });
-    watch.current.observe(panel);
-  }, []);
+  return useCallback(
+    (panel: HTMLElement | null) => {
+      watch.current?.disconnect();
+      watch.current = undefined;
+      if (!panel || typeof ResizeObserver === 'undefined') return;
+      const view = panel.ownerDocument.defaultView;
+      let last: number | undefined;
+      let within = { width: view?.innerWidth, height: view?.innerHeight };
+      let moving = false;
+      watch.current = new ResizeObserver(() => {
+        // Its own frames, as it grows.
+        if (moving) return;
+        const from = last;
+        const to = panel.offsetHeight;
+        last = to;
+        const was = within;
+        within = { width: view?.innerWidth, height: view?.innerHeight };
+        if (from === undefined || from === to || to === 0) return;
+        if (was.width !== within.width || was.height !== within.height) return;
+        if (motionReduced() || typeof panel.animate !== 'function') return;
+        // Leaving: it fades where it is.
+        if (panel.hasAttribute('data-ending-style') || panel.hasAttribute('data-closed')) return;
+        const style = getComputedStyle(panel);
+        const move = panel.animate(
+          { height: [`${from}px`, `${to}px`] },
+          {
+            duration: milliseconds(style.getPropertyValue('--lo-dur')),
+            easing: style.getPropertyValue('--lo-ease-in-out').trim() || 'ease-in-out',
+          },
+        );
+        moving = true;
+        panel.setAttribute('data-growing', '');
+        const inside = body.current;
+        if (inside) {
+          inside.scrollTop = 0;
+          // `clip` on both axes: `overflow-y: clip` beside `overflow-x: auto` would be `hidden`,
+          // which still scrolls to a control that takes focus.
+          inside.style.overflow = 'clip';
+        }
+        const rest = () => {
+          moving = false;
+          panel.removeAttribute('data-growing');
+          inside?.style.removeProperty('overflow');
+          last = panel.offsetHeight;
+        };
+        move.finished.then(rest, rest);
+      });
+      watch.current.observe(panel);
+    },
+    [body],
+  );
 }
 
 /** A CSS time as milliseconds: `160ms`, `0.16s`. */

@@ -9,7 +9,7 @@ import { Banner, type BannerAction } from '@lo/ui';
 
 import { openSettingsFile } from '../../settings/window/shared.ts';
 import { useTabState, type PullTab } from '../../tab/window/shared.ts';
-import { askToTrust, bannerOf, dismissBanner, failures, statuses } from './status.ts';
+import { askToTrust, bannerOf, dismissBanner, failures, statuses, TRUST_STARTS } from './status.ts';
 
 export function TrustBanner({ tab }: { tab: PullTab }) {
   const status = useTabState(statuses, tab.id);
@@ -25,7 +25,9 @@ export function TrustBanner({ tab }: { tab: PullTab }) {
     actions.push({
       label: action.label,
       busy: action.busy !== undefined,
-      working: action.busy,
+      // Said before it's pressed too, unseen: the button is as wide as its label or these words,
+      // and so as wide pressed as before.
+      working: action.busy ?? TRUST_STARTS,
       onClick: () => void askToTrust(status, action.pull),
     });
   }

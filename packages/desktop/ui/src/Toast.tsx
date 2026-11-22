@@ -64,13 +64,21 @@ export interface ToastProps {
    * itself is this one line.
    */
   title: ReactNode;
-  /** More about it, for a toast that waits for the reader. */
+  /**
+   * More about it, for a toast that waits for the reader. Plain words wrap, anywhere a long path
+   * needs to, and show three lines at most; a body of its own markup, such as a command to copy,
+   * shows whole.
+   */
   body?: ReactNode;
   /** Buttons for what to do about it, for a toast that waits for the reader. */
   actions?: ReactNode;
   /** The one thing to do about a one-line toast, at its end. */
   action?: ToastAction | undefined;
 }
+
+const more = cva('col-start-2 min-w-0 wrap-anywhere text-fg-muted text-small', {
+  variants: { plain: { true: 'line-clamp-3', false: '' } },
+});
 
 /**
  * A quiet note when something finished or arrived. One that goes by itself is one line: an icon,
@@ -89,7 +97,9 @@ export function Toast({ tone, icon: mark, title, body, actions, action }: ToastP
           {action.keys && <Key keys={action.keys} decorative />}
         </Button>
       )}
-      {body !== undefined && <div className="col-start-2 text-fg-muted text-small">{body}</div>}
+      {body !== undefined && (
+        <div className={more({ plain: typeof body === 'string' })}>{body}</div>
+      )}
       {actions !== undefined && <div className="col-start-2 mt-8 flex gap-6">{actions}</div>}
     </div>
   );

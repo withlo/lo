@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 // The pieces every move is made of: the one switch that turns them off, what a popup does the
-// moment it's asked to close, the Open and Swap moves, where a jump lands, and scrolling a pane.
+// moment it's asked to close, the Open and Swap moves, where a jump lands, scrolling a pane and a
+// dialog growing.
 
 import { act, useState } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -8,6 +9,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { missingRules } from '../test/classes.ts';
 import { cleanUp, click, render, rerender } from '../test/dom.ts';
 import { Collapse, Swap } from './Collapse.tsx';
+import { Dialog } from './Dialog.tsx';
 import {
   giveFocusBack,
   land,
@@ -265,6 +267,51 @@ describe('a thumb', () => {
     // Another segment chosen is measured afresh.
     rerender(host, views('diff'));
     expect(watchers).toBe(2);
+  });
+});
+
+describe('a dialog that grows', () => {
+  it('clips its body until it has grown, rather than scrolling it', async () => {
+    let measured: (() => void) | undefined;
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          measured = callback;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    );
+    setMotion('full');
+    render(
+      <Dialog open onOpenChange={() => {}} title="Sign in to GitHub">
+        <p>Open GitHub and enter the code.</p>
+      </Dialog>,
+    );
+    const panel = document.querySelector<HTMLElement>('[data-lo-scope="dialog"]');
+    const body = document.querySelector('p')?.parentElement;
+    if (!panel || !body) throw new Error('no dialog');
+    let height = 200;
+    Object.defineProperty(panel, 'offsetHeight', { get: () => height });
+    const { promise: finished, resolve: done } = Promise.withResolvers<void>();
+    const animate = vi.fn<() => { finished: Promise<void> }>(() => ({ finished }));
+    Object.defineProperty(panel, 'animate', { value: animate });
+    act(() => measured?.());
+    // The next step is taller, and the body was scrolled.
+    height = 320;
+    body.scrollTop = 40;
+    act(() => measured?.());
+    expect(animate).toHaveBeenCalledWith({ height: ['200px', '320px'] }, expect.anything());
+    expect(panel.hasAttribute('data-growing')).toBe(true);
+    expect(body.style.overflow).toBe('clip');
+    expect(body.scrollTop).toBe(0);
+    await act(async () => {
+      done();
+      await finished;
+    });
+    expect(panel.hasAttribute('data-growing')).toBe(false);
+    expect(body.style.overflow).toBe('');
   });
 });
 

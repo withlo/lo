@@ -318,11 +318,13 @@ describe('MergePanel', () => {
 
   it('says what Lo is checking in the main button’s place, and takes no click until it’s done', () => {
     const onClick = vi.fn<() => void>();
-    const busy = { label: 'Merge', keys: ['⏎'], busy: 'Checking what merges with it', onClick };
+    const busy = { label: 'Merge', keys: ['⏎'], busy: true, working: 'Checking…', onClick };
     frame({ kind: 'ready', verdict: 'Ready to merge', foot: <MergeFoot primary={busy} /> });
     const button = [...panel().querySelectorAll('button')].at(-1);
-    expect(button?.textContent).toBe('Checking what merges with it');
-    expect(button?.querySelector('kbd')).toBeNull();
+    // Its label stays, unseen, holding its width.
+    const shown = button?.querySelector('span > span:not([aria-hidden])');
+    expect(shown?.textContent).toBe('Checking…');
+    expect(shown?.querySelector('kbd')).toBeNull();
     expect(button?.getAttribute('aria-busy')).toBe('true');
     expect(button?.getAttribute('aria-disabled')).toBe('true');
     click(button!);
@@ -614,7 +616,7 @@ describe('MergePanel', () => {
           auto={{ on: false, onChange: () => undefined, keys: ['a'] }}
           start={<span>start</span>}
           method="Squash"
-          primary={{ label: 'Merge', keys: ['⏎'], busy: 'Checking what merges with it' }}
+          primary={{ label: 'Merge', keys: ['⏎'], busy: true, working: 'Checking…' }}
         />
       ),
     });

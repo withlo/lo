@@ -16,7 +16,6 @@ import { Key } from './Key.tsx';
 import { MergeDot, type MergeKind } from './MergeStatus.tsx';
 import { useReturnFocus } from './returnFocus.ts';
 import { SegmentedControl } from './SegmentedControl.tsx';
-import { Spinner } from './Spinner.tsx';
 import { Switch } from './Switch.tsx';
 
 export interface MergePanelProps {
@@ -163,11 +162,16 @@ export interface MergePrimary {
   /** `quiet` where merging isn't the next thing, as while auto-merge waits. */
   quiet?: boolean | undefined;
   /**
-   * What Lo is doing before it can name the merge, while it does: "Checking what merges with it".
-   * The button says so, with a ring turning, in place of its label, which might not hold once it's
-   * done, and pressing it does nothing until then.
+   * Lo is finding out what merges, before it can name the merge. The button says `working`, with a
+   * ring turning, in place of its label, which might not hold once it's done, and pressing it does
+   * nothing until then.
    */
-  busy?: string | undefined;
+  busy?: boolean | undefined;
+  /**
+   * What it says while busy: "Checking…". Give it while it isn't busy too: the button is as wide
+   * as the wider of the two either way, so it doesn't snap to another width as the wait ends.
+   */
+  working?: string | undefined;
   onClick?: (() => void) | undefined;
 }
 
@@ -212,28 +216,20 @@ export function MergeFoot({ auto, start, method, primary }: MergeFootProps) {
       {method !== undefined && <span>{method}</span>}
       <Button
         variant={primary.quiet ? 'secondary' : 'primary'}
-        aria-disabled={primary.disabled || primary.busy !== undefined || undefined}
-        aria-busy={primary.busy === undefined ? undefined : true}
+        busy={primary.busy}
+        working={primary.working}
+        aria-disabled={primary.disabled || undefined}
         onClick={() => {
-          if (!primary.disabled && primary.busy === undefined) primary.onClick?.();
+          if (!primary.disabled) primary.onClick?.();
         }}
       >
-        {primary.busy === undefined ? (
-          <>
-            {primary.label}
-            {primary.keys && (
-              <Key
-                keys={primary.keys}
-                decorative
-                className={primary.quiet || primary.disabled ? undefined : 'text-on-accent'}
-              />
-            )}
-          </>
-        ) : (
-          <span className="inline-flex items-center gap-6">
-            <Spinner size="xs" />
-            {primary.busy}
-          </span>
+        {primary.label}
+        {primary.keys && (
+          <Key
+            keys={primary.keys}
+            decorative
+            className={primary.quiet || primary.disabled ? undefined : 'text-on-accent'}
+          />
         )}
       </Button>
     </>
