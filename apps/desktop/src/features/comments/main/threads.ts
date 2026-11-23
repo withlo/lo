@@ -88,14 +88,16 @@ function sameCompared(a: Compared | null, b: Compared | null): boolean {
 }
 
 /**
- * Why no read can be answered now, as `status` says: GitHub can't be reached, the account is signed
- * out, or the rate limit holds every read. Nothing when reads go on.
+ * Why no read can be answered now, as `status` says: GitHub can't be reached, `login` is signed
+ * out, or the rate limit holds every read until it resets, at a time of day on this computer.
+ * Nothing when reads go on.
  */
-export function stallOf(status: PollStatus): string | undefined {
-  if (status.signedOut) return 'The account is signed out of GitHub.';
+export function stallOf(status: PollStatus, login: string): string | undefined {
+  if (status.signedOut) return `${login} is signed out.`;
   if (status.offline) return `GitHub can’t be reached: ${status.offline.error}`;
   if (status.rateLimit.kind === 'paused') {
-    return `GitHub’s rate limit holds every read until ${new Date(status.rateLimit.until).toISOString()}.`;
+    const time = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+    return `GitHub’s rate limit resets at ${time.format(status.rateLimit.until)}.`;
   }
   return undefined;
 }
@@ -330,7 +332,7 @@ export class ThreadReads {
   #stalled(followed: Followed, poller: ThreadsPoller): void {
     if (!this.#current(followed) || followed.poller !== poller) return;
     if (followed.threadsRead || followed.threads.status !== 'loading') return;
-    const why = stallOf(poller.status());
+    const why = stallOf(poller.status(), followed.login ?? 'The account');
     if (why !== undefined) this.#fail(followed, why);
   }
 
