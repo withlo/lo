@@ -26,6 +26,14 @@ A request is matched by its key:
   recorded write matches only a body serialized exactly as it was then: compact JSON, keys in the
   same order.
 
+A conditional read has no recording when it carries the ETag or time of the last answer recorded for
+its resource, but the recording never sent it back: how often an app polls depends on how long a
+test takes, so a poll can come after the last one recorded. When the recording polled that resource
+with the same kind of condition, an ETag or a time, the replay answers it as GitHub does for a state
+that hasn't changed, a `304` with the state's ETag, time and API headers and no content. Any other
+conditional read the cassette has no answer for, such as an ETag where the recording polled by time,
+an earlier state's, or a resource it only read, is still a request it can't answer.
+
 Each key's responses come back in the order they were recorded, and the last one repeats, the steady
 state of a poll. Where an app's test could poll past the answers recorded before a write, it serves
 its cassette a stage at a time (`apps/desktop/e2e/staged.ts`): until Lo sends the next write the
