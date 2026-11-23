@@ -144,7 +144,9 @@ export function Overlays() {
         }}
         groups={helpGroups(registry())}
         errors={registry().keymapErrors()}
-        problem={keymap.problem}
+        // Without a button for the file, what's wrong with it, or why Lo won't open it.
+        problem={keymap.problem?.title ?? (keymap.canOpen ? undefined : keymap.refusal)}
+        problemReason={keymap.problem?.reason}
         onOpenKeymap={
           // Without a file Lo will open, there's no button, and nothing to offer.
           keymap.canOpen

@@ -112,7 +112,8 @@ export default defineFeature(contract, {
           editor: keymapEditor({ packaged: app.isPackaged, env: process.env }),
         },
       );
-      if (!result.ok) throw new IpcError('unopened', result.reason);
+      // Why, as the code; what the system said, if anything, behind Details.
+      if (!result.ok) throw new IpcError(result.why, result.said ?? '');
     },
   },
   start({ publish, git, use }) {

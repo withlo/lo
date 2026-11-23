@@ -16,8 +16,10 @@ export interface KeyHelpProps {
   groups: readonly HelpGroup[];
   /** The keymap file's lines Lo couldn't use. Only the first few are listed. */
   errors?: readonly KeymapError[] | undefined;
-  /** What went wrong with the keymap file as a whole, such as being too big to read. */
+  /** What went wrong with the keymap file as a whole, as an error's title. */
   problem?: string | undefined;
+  /** Why, under `problem`: one sentence. */
+  problemReason?: string | undefined;
   /** A command to show: its row is marked and scrolled to. */
   show?: string | undefined;
   /** Opens the keymap file. Without it, key help offers no button for it. */
@@ -39,6 +41,7 @@ export function KeyHelp({
   groups,
   errors = [],
   problem,
+  problemReason,
   show,
   onOpenKeymap,
   container,
@@ -119,9 +122,10 @@ export function KeyHelp({
               {problem !== undefined && (
                 <div
                   role="alert"
-                  className="rounded-md border border-danger-border bg-danger-bg px-12 py-8"
+                  className="flex flex-col gap-4 rounded-md border border-danger-border bg-danger-bg px-12 py-8"
                 >
-                  {problem}
+                  <span className="font-semibold">{problem}</span>
+                  {problemReason !== undefined && <span>{problemReason}</span>}
                 </div>
               )}
               {errors.length > 0 && (
