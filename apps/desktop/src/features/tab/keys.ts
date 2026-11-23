@@ -13,6 +13,7 @@ const place = (position: number) => ({
   group: 'Tabs and window' as const,
   keys: [`cmd+${position}`],
   when: outside,
+  control: 'the tab in the strip',
 });
 
 export default defineCommands('tab', {
@@ -25,7 +26,13 @@ export default defineCommands('tab', {
   show7: place(7),
   show8: place(8),
   /** `⌘9` is the last tab however many are open, as in browsers, so the end is always a key away. */
-  showLast: { label: 'Last tab', group: 'Tabs and window', keys: ['cmd+9'], when: outside },
+  showLast: {
+    label: 'Last tab',
+    group: 'Tabs and window',
+    keys: ['cmd+9'],
+    when: outside,
+    control: 'the last tab in the strip, or in its "N more" menu',
+  },
   /**
    * Round the ends of the tabs the strip shows: one folded into "N more" moves into the strip as
    * it's shown, so stepping on to it would only step back. `⌃⇥` too, on both systems, as browsers
@@ -75,10 +82,11 @@ export default defineCommands('tab', {
    * search their tabs with the same key. In a comment box, the key attaches files instead.
    */
   more: {
-    label: 'Tabs that don’t fit',
+    label: 'More tabs',
     group: 'Tabs and window',
     keys: ['cmd+shift+a'],
     when: { except: ['dialog', 'palette', 'box'] },
+    control: '"N more" at the end of the strip',
   },
   /** Opens and closes a pull request's left panel: its stack and files. */
   leftPanel: {
@@ -104,18 +112,20 @@ export default defineCommands('tab', {
    * round the end. A file whole isn't one of them: it opens from a file, and `⌃o` goes back.
    */
   nextView: {
-    label: 'Next middle view',
+    label: 'Next view',
     group: 'View',
     keys: ['`'],
     overVim: true,
     when: { except: ['menu', 'dialog', 'palette', 'box'], mode: 'normal' },
+    control: "Overview, Diff and Timeline in the pull request's header",
   },
   previousView: {
-    label: 'Previous middle view',
+    label: 'Previous view',
     group: 'View',
     keys: ['~'],
     overVim: true,
     when: { except: ['menu', 'dialog', 'palette', 'box'], mode: 'normal' },
+    control: "Overview, Diff and Timeline in the pull request's header",
   },
   /**
    * The tab on screen, or the one right-clicked. On Linux it's Ctrl+W, over Vim's window keys,

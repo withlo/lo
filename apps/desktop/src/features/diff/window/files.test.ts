@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { FileVersions, Start } from '../contract.ts';
-import { diffFileOf, headerOf, inOrder, keptOrder, viewKey } from './files.ts';
+import { diffFileOf, headerOf, inOrder, keepsBox, keptOrder, viewKey } from './files.ts';
 import type { Entry, Shown } from './loader.ts';
 
 function entry(id: string, path: string, start: Start = 'shown', place = 0): Entry {
@@ -160,5 +160,24 @@ describe('the order a diff is drawn in', () => {
       keptOrder(first, 'h', [...local, entry('d2', 'c.ts')], 'tree', byGenerated).order,
     ).toEqual(['b.ts', 'c.ts', 'a.ts']);
     expect(keptOrder(first, 'next', local, 'tree', byGenerated).order).toEqual(['b.ts', 'a.ts']);
+  });
+});
+
+describe('what the middle shows', () => {
+  const waiting = 'Comparing r1 with r2 once the local copy has both…';
+
+  it('keeps a view drawn, held, while the next loads or waits for what it needs', () => {
+    expect(keepsBox({ drawable: true, held: false, said: undefined, waiting: null })).toBe(true);
+    expect(keepsBox({ drawable: false, held: true, said: undefined, waiting: null })).toBe(true);
+    // A wait for the local copy is a wait: the view stays, held, and the wait goes unsaid.
+    expect(keepsBox({ drawable: false, held: true, said: waiting, waiting })).toBe(true);
+  });
+
+  it('gives the middle to an answer, and to a wait when nothing is drawn', () => {
+    expect(keepsBox({ drawable: false, held: true, said: 'No files changed', waiting: null })).toBe(
+      false,
+    );
+    expect(keepsBox({ drawable: false, held: false, said: waiting, waiting })).toBe(false);
+    expect(keepsBox({ drawable: false, held: false, said: undefined, waiting: null })).toBe(false);
   });
 });

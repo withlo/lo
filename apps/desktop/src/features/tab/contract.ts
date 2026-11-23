@@ -287,11 +287,16 @@ export const choice = z.union([
 export type Choice = z.output<typeof choice>;
 
 /**
- * Where to move a tab: to a place in the strip, from 0, counted without it; or one place along the
- * tabs the strip shows, but not past their ends. Without an id, a step moves the tab on screen.
+ * Where to move a tab: to a place in the strip, from 0, counted without it, `brought` when it's
+ * the tab on screen, brought into the strip's last place from past it; or one place along the tabs
+ * the strip shows, but not past their ends. Without an id, a step moves the tab on screen.
  */
 export const move = z.union([
-  z.strictObject({ id: tabId, to: z.number().int().min(0).max(1_000_000) }),
+  z.strictObject({
+    id: tabId,
+    to: z.number().int().min(0).max(1_000_000),
+    brought: z.literal(true).optional(),
+  }),
   z.strictObject({ id: tabId.optional(), step: z.union([z.literal(1), z.literal(-1)]), within }),
 ]);
 export type Move = z.output<typeof move>;
@@ -319,8 +324,11 @@ export type Acting = z.output<typeof acting>;
 export const header = z.strictObject({
   title: z.string(),
   state: pullState,
-  /** The author's login, or null for an account GitHub deleted. */
-  author: z.string().nullable(),
+  /**
+   * The author's login, or null for an account GitHub deleted. Nothing while it isn't known: a
+   * poll's summary, which can come before GitHub's details, doesn't name the author.
+   */
+  author: z.string().nullable().optional(),
   head: z.strictObject({ branch: z.string(), fork: z.string().nullable() }),
   base: z.strictObject({ branch: z.string() }),
 });

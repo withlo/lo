@@ -73,7 +73,7 @@ test('`gq` opens the queue of the branch a pull request goes into, those tested 
   // The queue's own method: its entries squash, though GitHub says the auto-merge is a merge.
   await expect(top).toContainText('Squash · groups of up to 5');
   await expect(top).toContainText('as rozed-bot');
-  await expect(page).toHaveTitle('rozed-dev/e2e — Merge queue · e4/queued');
+  await expect(page).toHaveTitle('rozed-dev/e2e · Merge queue for e4/queued');
 
   expect(await rowKeys(page)).toEqual([slow1, passing, slow2]);
   const group = queue(page).locator('[role="rowgroup"][aria-label^="Testing together"]');
@@ -167,7 +167,7 @@ test('the queue’s tab comes back after Lo restarts, and reads its queue again'
 
   const second = await start();
   try {
-    await expect(second.page).toHaveTitle('rozed-dev/e2e — Merge queue · e4/queued');
+    await expect(second.page).toHaveTitle('rozed-dev/e2e · Merge queue for e4/queued');
     await expect(queue(second.page).locator('header')).toContainText('as rozed-bot');
     expect(await rowKeys(second.page)).toContain(slow1);
   } finally {

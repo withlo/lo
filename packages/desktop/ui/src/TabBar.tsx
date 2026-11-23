@@ -1,4 +1,3 @@
-import { Menu } from '@base-ui/react/menu';
 import { cva } from 'class-variance-authority';
 import {
   useEffect,
@@ -8,13 +7,19 @@ import {
   type CSSProperties,
   type HTMLAttributes,
   type KeyboardEvent,
+  type MouseEvent,
   type ReactNode,
   type RefObject,
 } from 'react';
 
+import { Button } from './Button.tsx';
+import type { CommandControl } from './commands/control.ts';
+import { ContextMenu, type ContextMenuAnchor } from './ContextMenu.tsx';
 import { withoutBidi } from './controls.ts';
 import { motionReduced, whenSettled } from './motion.ts';
 import { Skeleton, Spinner } from './Spinner.tsx';
+import { Tooltip } from './Tooltip.tsx';
+import { useControl } from './useControl.ts';
 
 /** A tab in the strip: a pull request's (or a whole stack's), or one of Lo's own. */
 export type Tab = PullTab | RecentTab | SettingsTab | QueueTab;
@@ -71,12 +76,13 @@ export interface TabBarProps {
   onNew?: (() => void) | undefined;
   /**
    * Moves a tab to place `to` among `tabs`, from 0, counted without it: one dragged along the
-   * strip, or the tab on screen, brought into the strip from past the last place that fits.
-   * Without it, tabs don't drag, and a tab brought in is only drawn there. The strip shows a
-   * dragged tab at its new place until `tabs` comes in another order, or until what this returns
-   * settles.
+   * strip, or, `brought`, the tab on screen, brought into the strip from past the last place that
+   * fits, when the tab that was there folds back among the others by when it opened, as
+   * `bringIn` has it. Without it, tabs don't drag, and a tab brought in is only drawn there. The
+   * strip shows a dragged tab at its new place until `tabs` comes in another order, or until what
+   * this returns settles.
    */
-  onMove?: ((id: string, to: number) => void | Promise<unknown>) | undefined;
+  onMove?: ((id: string, to: number, brought?: boolean) => void | Promise<unknown>) | undefined;
   /** Where the menu of tabs that don't fit is put in the page: an element inside `.lo-app`. */
   menuContainer?: HTMLElement | null | undefined;
   /** Whether the menu of tabs that don't fit is open, for a key to open it. */
@@ -87,22 +93,76 @@ export interface TabBarProps {
   onFold?: ((folded: readonly string[]) => void) | undefined;
   /** What sits at the strip's end, after the tabs' room: a button that isn't about a tab. */
   end?: ReactNode;
+  /**
+   * The commands the strip's buttons stand for, by id: `open`, which the `+` runs, `close`, which
+   * a tab's `×` runs on it, and `more`, which opens the menu of tabs that don't fit. Each button is
+   * named by its command's label, with its key in its tooltip, so it follows the keymap file.
+   */
+  commands?: StripCommands | undefined;
+}
+
+/** The commands the strip's buttons stand for, by id. */
+export interface StripCommands {
+  readonly open?: string | undefined;
+  readonly close?: string | undefined;
+  readonly more?: string | undefined;
+}
+
+/** A button's words: its command's label and key, or its own words where it has no command. */
+function wordsOf(control: CommandControl | undefined, words: string) {
+  return {
+    label: control?.label ?? words,
+    keys: control?.keys,
+    shortcut: control?.shortcut,
+  };
 }
 
 const tab = cva(
-  'relative mt-8 flex max-w-tab-w min-w-tab-w-min shrink grow-0 basis-tab-w items-center gap-6 rounded-t-md ps-12 pe-6 whitespace-nowrap no-drag text-small focus-visible:shadow-ring-inset',
+  '@container relative isolate mt-8 flex max-w-tab-w min-w-tab-w-min shrink grow-0 basis-tab-w items-center rounded-t-md ps-12 pe-6 whitespace-nowrap no-drag text-small focus-visible:shadow-ring-inset',
   {
     variants: {
-      selected: { true: 'tab-flares bg-bg-chrome text-fg', false: '' },
+      // Only the tab on screen joins the page below it. Another under the pointer takes the hover
+      // tint, held clear of the strip's foot, so two tabs never look current.
+      selected: { true: 'tab-flares bg-bg-chrome text-fg', false: 'tab-hover' },
       // Over the tabs it passes, on a ground of its own, so theirs don't show through it.
       dragged: { true: 'tab-dragged', false: '' },
     },
     compoundVariants: [
-      { selected: false, dragged: false, class: 'text-fg-muted hover:bg-hover hover:text-fg' },
+      {
+        selected: false,
+        dragged: false,
+        class: 'text-fg-muted move-tint before:move-tint hover:text-fg',
+      },
       { selected: false, dragged: true, class: 'bg-bg-raised text-fg' },
     ],
   },
 );
+
+/** What a tab says, in one row. */
+const LABEL = 'flex min-w-0 flex-1 items-center gap-6';
+
+/**
+ * The end of what a tab says: its title, or the skeleton that stands for it. A tab that closes
+ * keeps room at its end for its close button, so nothing before the title, its number above all,
+ * ever sits under it. While the button shows, on the tab on screen or one under the pointer, the
+ * title fades out under it, which takes no more room from it: a tab reads the same whether it's on
+ * screen or not, and nothing moves as the pointer comes.
+ */
+const tail = cva('flex-1', {
+  variants: {
+    fade: {
+      always: 'min-w-control-h-sm tab-fade',
+      hover: 'min-w-control-h-sm group-hover:tab-fade',
+      never: 'min-w-0',
+    },
+  },
+});
+
+/** Whether, and when, a tab's title fades under its close button. */
+type Fade = 'always' | 'hover' | 'never';
+
+/** A pull request's state, as its ball is named: as its pill in the header says it. */
+const STATE_NAMES = { open: 'Open', draft: 'Draft', merged: 'Merged', closed: 'Closed' } as const;
 
 const state = cva('size-8 flex-none rounded-full', {
   variants: {
@@ -143,6 +203,7 @@ export function TabBar({
   onMoreOpenChange,
   onFold,
   end,
+  commands,
 }: TabBarProps) {
   const list = useRef<HTMLDivElement>(null);
   const plus = useRef<HTMLButtonElement>(null);
@@ -150,7 +211,16 @@ export function TabBar({
   const [landed, setLanded] = useState<Landed | undefined>(undefined);
   const measured = useRoom(list, plus, more, tabs.length);
   const room = measured?.fits;
-  const { tabs: ordered, moved } = bringIn(inOrder(tabs, landed), selected, room);
+  // Read once for every tab: what the close buttons say doesn't depend on the tab.
+  const closeWords = wordsOf(useControl(commands?.close ?? ''), 'Close tab');
+  // When each tab opened, as this strip saw them, for a tab that folds to keep its place.
+  const opened = useRef(new Map<string, number>());
+  const { tabs: ordered, moved } = bringIn(
+    inOrder(tabs, landed),
+    selected,
+    room,
+    noteOpened(opened.current, tabs),
+  );
   const { shown, folded } = foldTabs(ordered, room);
   // The tab on screen, brought into the strip, moves there in the order, once each time, as it's
   // drawn there, so whatever's asked of main after goes to that order. Only by a room measured
@@ -158,7 +228,7 @@ export function TabBar({
   const bringing =
     moved && measured?.count === tabs.length && `${moved.id}\n${moved.to}\n${orderOf(tabs)}`;
   useLayoutEffect(() => {
-    if (bringing && moved) void onMove?.(moved.id, moved.to);
+    if (bringing && moved) void onMove?.(moved.id, moved.to, true);
   }, [bringing]);
   const drag = useDrag(list, shown, onMove !== undefined, (id, to) => {
     if (!onMove) return;
@@ -184,7 +254,7 @@ export function TabBar({
       <div
         ref={list}
         role="tablist"
-        aria-label="Pull requests"
+        aria-label="Tabs"
         className="relative flex h-full min-w-0 flex-1 gap-2 px-8"
       >
         {shown.map((item, index) => (
@@ -196,6 +266,7 @@ export function TabBar({
             count={ordered.length}
             onSelect={onSelect}
             onClose={onClose}
+            words={closeWords}
             drag={drag(item, index)}
           />
         ))}
@@ -207,20 +278,10 @@ export function TabBar({
             container={menuContainer}
             open={moreOpen}
             onOpenChange={onMoreOpenChange}
+            command={commands?.more}
           />
         )}
-        <button
-          ref={plus}
-          type="button"
-          aria-label="Review a pull request"
-          aria-disabled={onNew ? undefined : true}
-          onClick={onNew}
-          className="ms-6 grid size-control-h-sm flex-none place-items-center self-center rounded-sm text-fg-muted no-drag hover:bg-hover hover:text-fg focus-visible:shadow-ring"
-        >
-          <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M8 3.25v9.5M3.25 8h9.5" />
-          </svg>
-        </button>
+        <NewTab button={plus} onNew={onNew} command={commands?.open} />
         <div className="flex-1 self-stretch" />
       </div>
       {end !== undefined && <div className="flex flex-none items-center pe-8 no-drag">{end}</div>}
@@ -243,22 +304,47 @@ export function foldTabs<T extends { readonly id: string }>(
 
 /**
  * `tabs` with the tab on screen in the last place that fits, when it's further along, so the strip
- * shows it; and where it moved to, from 0, counted without it. The tab that was there folds.
+ * shows it; and where it moved to, from 0, counted without it. The tab that was there folds,
+ * before the first folded tab that opened after it, by `opened`, or last: so tabs opened one after
+ * another fold in the order they opened, as do tabs chosen from "N more" in turn. Without
+ * `opened`, tabs opened in the order they're in.
  */
 export function bringIn<T extends { readonly id: string }>(
   tabs: readonly T[],
   selected: string | undefined,
   room: number | undefined,
+  opened: ReadonlyMap<string, number> = new Map(tabs.map((item, place) => [item.id, place])),
 ): { tabs: readonly T[]; moved?: { id: string; to: number } } {
   if (room === undefined || tabs.length <= room) return { tabs };
   const to = Math.max(1, room) - 1;
   const at = tabs.findIndex((item) => item.id === selected);
   const onScreen = tabs[at];
-  if (!onScreen || at <= to) return { tabs };
+  const there = tabs[to];
+  if (!onScreen || !there || at <= to) return { tabs };
+  const rest = tabs.toSpliced(at, 1).toSpliced(to, 1, onScreen);
+  const when = opened.get(there.id) ?? Infinity;
+  const later = rest.findIndex(
+    (item, place) => place > to && (opened.get(item.id) ?? Infinity) > when,
+  );
   return {
-    tabs: tabs.toSpliced(at, 1).toSpliced(to, 0, onScreen),
+    tabs: rest.toSpliced(later === -1 ? rest.length : later, 0, there),
     moved: { id: onScreen.id, to },
   };
+}
+
+/**
+ * Notes in `opened` each of `tabs` the strip hasn't seen yet, as opened after every tab it has, in
+ * the order they're in; and forgets those closed.
+ */
+export function noteOpened(
+  opened: Map<string, number>,
+  tabs: readonly { readonly id: string }[],
+): ReadonlyMap<string, number> {
+  const open = new Set(tabs.map((item) => item.id));
+  for (const id of opened.keys()) if (!open.has(id)) opened.delete(id);
+  let next = Math.max(-1, ...opened.values()) + 1;
+  for (const { id } of tabs) if (!opened.has(id)) opened.set(id, next++);
+  return opened;
 }
 
 /** The strip's room, in CSS pixels, as `tabsThatFit` reads it. */
@@ -644,8 +730,53 @@ function focusedTab(strip: HTMLElement | null): string | undefined {
 }
 
 /**
- * The "N more" button, and the menu of the tabs it holds. Choosing one shows it. `Tab` reaches the
- * button, and a key can open the menu, through `open`.
+ * The `+` at the end of the tabs, which opens a pull request: named by its command, with its key
+ * in its tooltip. Like the strip's other buttons, it sits on the tabs' line, under the strip's top
+ * edge as they do.
+ */
+function NewTab({
+  button,
+  onNew,
+  command,
+}: {
+  button: RefObject<HTMLButtonElement | null>;
+  onNew: TabBarProps['onNew'];
+  command: string | undefined;
+}) {
+  const words = wordsOf(useControl(command ?? ''), 'Open pull request…');
+  return (
+    <span className="ms-6 mt-8 flex flex-none items-center self-center no-drag">
+      <Button
+        ref={button}
+        variant="ghost"
+        size="sm"
+        icon
+        aria-label={words.label}
+        aria-disabled={onNew ? undefined : true}
+        hint={words.label}
+        hintKeys={words.keys}
+        hintShortcut={words.shortcut}
+        onClick={onNew}
+      >
+        <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M8 3.25v9.5M3.25 8h9.5" />
+        </svg>
+      </Button>
+    </span>
+  );
+}
+
+/** The menu of tabs that don't fit, open: where, from what, and whether a key opened it. */
+interface MoreOpen {
+  readonly anchor: ContextMenuAnchor;
+  readonly keyboard: boolean;
+  readonly from: HTMLElement | undefined;
+}
+
+/**
+ * The "N more" button, and the menu of the tabs it holds, under it. Choosing one shows it. `Tab`
+ * reaches the button, and a key can open the menu, through `open`, with its first tab
+ * highlighted. The menu is the shared `ContextMenu`, so it comes and goes as every menu does.
  */
 function MoreTabs({
   trigger,
@@ -654,6 +785,7 @@ function MoreTabs({
   container,
   open,
   onOpenChange,
+  command,
 }: {
   trigger: RefObject<HTMLButtonElement | null>;
   tabs: readonly Tab[];
@@ -661,49 +793,70 @@ function MoreTabs({
   container: HTMLElement | null | undefined;
   open: boolean | undefined;
   onOpenChange: ((open: boolean) => void) | undefined;
+  command: string | undefined;
 }) {
+  const words = wordsOf(useControl(command ?? ''), 'More tabs');
+  const [own, setOwn] = useState(false);
+  const shown = open ?? own;
+  const [at, setAt] = useState<MoreOpen | undefined>(undefined);
+  const keyboard = useRef(true);
+  const setOpen = (next: boolean) => {
+    if (open === undefined) setOwn(next);
+    onOpenChange?.(next);
+  };
+  // Where it opens, read as it's asked to: under the button, from wherever focus was.
+  useLayoutEffect(() => {
+    if (!shown) return;
+    const box = trigger.current?.getBoundingClientRect();
+    if (!box) return;
+    const active = document.activeElement;
+    setAt({
+      anchor: { x: box.left, y: box.top, width: box.width, height: box.height },
+      keyboard: keyboard.current,
+      from: active instanceof HTMLElement && active !== document.body ? active : undefined,
+    });
+    keyboard.current = true;
+  }, [shown, trigger]);
   return (
-    <Menu.Root
-      {...(open === undefined ? {} : { open })}
-      onOpenChange={(next) => onOpenChange?.(next)}
-    >
-      <Menu.Trigger
+    <span className="ms-4 mt-8 flex flex-none items-center self-center no-drag">
+      <Button
         ref={trigger}
+        variant="ghost"
+        size="sm"
         aria-label={`${tabs.length} more tabs`}
-        className="ms-4 inline-flex h-control-h-sm flex-none items-center gap-4 self-center rounded-sm px-8 text-fg-muted no-drag text-small hover:bg-hover hover:text-fg focus-visible:shadow-ring data-popup-open:bg-press data-popup-open:text-fg"
+        aria-haspopup="menu"
+        aria-expanded={shown}
+        hint={words.label}
+        hintKeys={words.keys}
+        hintShortcut={words.shortcut}
+        onClick={(event: MouseEvent<HTMLButtonElement>) => {
+          // A press of the pointer opens it with nothing highlighted; `⏎` or Space, its first tab.
+          keyboard.current = event.detail === 0;
+          setOpen(!shown);
+        }}
       >
         <span className="lo-num">{tabs.length}</span> more
         <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
           <path d="m4.5 6.25 3.5 3.5 3.5-3.5" />
         </svg>
-      </Menu.Trigger>
-      <Menu.Portal container={container}>
-        <Menu.Positioner
-          side="bottom"
-          align="start"
-          sideOffset={2}
-          collisionPadding={8}
-          className="z-popover outline-none"
-        >
-          <Menu.Popup
-            aria-label="More tabs"
-            data-lo-scope="menu"
-            className="max-h-palette-list-h max-w-tab-w min-w-menu-w overflow-y-auto rounded-md bg-bg-overlay p-4 text-fg shadow-pop outline-none text-small"
-          >
-            {tabs.map((item) => (
-              <Menu.Item
-                key={item.id}
-                label={labelOf(item)}
-                onClick={() => onSelect?.(item.id)}
-                className="flex min-h-menu-item-h cursor-default items-center gap-6 rounded-sm px-8 py-2 whitespace-nowrap text-fg outline-none select-none focus-visible:shadow-none data-highlighted:bg-hover"
-              >
-                <TabLabel tab={item} selected={false} />
-              </Menu.Item>
-            ))}
-          </Menu.Popup>
-        </Menu.Positioner>
-      </Menu.Portal>
-    </Menu.Root>
+      </Button>
+      <ContextMenu
+        open={shown && at !== undefined}
+        onOpenChange={(next) => {
+          if (!next) setOpen(false);
+        }}
+        label="More tabs"
+        anchor={at?.anchor}
+        sections={[tabs.map((item) => ({ id: item.id, label: labelOf(item) }))]}
+        finalFocus={at?.from ?? trigger.current ?? undefined}
+        highlightFirst={at?.keyboard}
+        onClosed={(chosen) => {
+          if (chosen !== undefined) onSelect?.(chosen);
+        }}
+        container={container}
+        long
+      />
+    </span>
   );
 }
 
@@ -735,6 +888,7 @@ function TabItem({
   count,
   onSelect,
   onClose,
+  words,
   drag,
 }: {
   tab: Tab;
@@ -743,10 +897,13 @@ function TabItem({
   count: number;
   onSelect: TabBarProps['onSelect'];
   onClose: TabBarProps['onClose'];
+  /** What the close buttons say, the same on every tab. */
+  words: ReturnType<typeof wordsOf>;
   drag: TabDrag;
 }) {
   const { id } = item;
   const loading = item.kind === 'pull' && isLoading(item);
+  const closable = item.kind !== 'recent';
   return (
     <div
       role="tab"
@@ -765,23 +922,38 @@ function TabItem({
         .filter(Boolean)
         .join(' ')}
     >
-      <TabLabel tab={item} selected={selected} />
-      {item.kind !== 'recent' && (
-        <button
-          type="button"
-          aria-label="Close tab"
-          tabIndex={-1}
-          onClick={(event) => {
-            event.stopPropagation();
-            onClose?.(id);
-          }}
-          // Another tab's button takes no room until it's hovered, so a narrow tab keeps its name.
-          className={`size-20 flex-none place-items-center rounded-xs text-fg-muted hover:bg-press hover:text-fg ${selected ? 'grid' : 'hidden group-hover:grid'}`}
+      <span className={LABEL} data-tab-label>
+        <TabLabel
+          tab={item}
+          selected={selected}
+          fade={!closable ? 'never' : selected ? 'always' : 'hover'}
+        />
+      </span>
+      {closable && (
+        // Over the end of the tab, taking no room: the one on screen always shows it, another only
+        // under the pointer, so a narrow tab keeps its name.
+        <span
+          className={`absolute inset-y-0 end-4 items-center ${selected ? 'flex' : 'hidden group-hover:flex'}`}
         >
-          <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M4 4l8 8M12 4l-8 8" />
-          </svg>
-        </button>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon
+            aria-label={words.label}
+            tabIndex={-1}
+            hint={words.label}
+            hintKeys={words.keys}
+            hintShortcut={words.shortcut}
+            onClick={(event: MouseEvent<HTMLButtonElement>) => {
+              event.stopPropagation();
+              onClose?.(id);
+            }}
+          >
+            <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M4 4l8 8M12 4l-8 8" />
+            </svg>
+          </Button>
+        </span>
       )}
     </div>
   );
@@ -793,12 +965,14 @@ function isLoading(item: PullTab): boolean {
 }
 
 /**
- * What a tab says: a pull request's state, place and title, or the name of one of Lo's own. As
- * the tab narrows, its title goes first, then its repository's name shortens, but never past
- * its first letter and an ellipsis, and never past half the tab; its number stays whole.
+ * What a tab says: a pull request's state, place, stack and title, or the name of one of Lo's own.
+ * As the tab narrows, its title goes first, then its stack's count, then its repository's name
+ * shortens, but never past its first letter and an ellipsis, and never past half the tab; its
+ * number stays whole. The marks, the state's ball and the stack's count, are named in a tooltip
+ * and to a screen reader.
  */
-function TabLabel({ tab: item, selected }: { tab: Tab; selected: boolean }) {
-  const title = `min-w-0 flex-1 truncate ${selected ? 'font-medium' : ''}`;
+function TabLabel({ tab: item, selected, fade }: { tab: Tab; selected: boolean; fade: Fade }) {
+  const title = `${tail({ fade })} truncate ${selected ? 'font-medium' : ''}`;
   switch (item.kind) {
     case 'pull':
       return (
@@ -806,26 +980,25 @@ function TabLabel({ tab: item, selected }: { tab: Tab; selected: boolean }) {
           {isLoading(item) ? (
             <Spinner size="xs" />
           ) : (
-            item.state && <span className={state({ state: item.state })} title={item.state} />
+            item.state && (
+              <Tooltip label={STATE_NAMES[item.state]}>
+                <span
+                  role="img"
+                  aria-label={STATE_NAMES[item.state]}
+                  className={state({ state: item.state })}
+                />
+              </Tooltip>
+            )
           )}
           <span className="max-w-1/2 min-w-16 shrink truncate text-fg-muted">{item.repo} </span>
           <span className="lo-num flex-none text-fg-muted">#{item.number}</span>
+          {item.stack !== undefined && <StackCount layers={item.stack} />}
           {isLoading(item) ? (
-            <Skeleton className="w-48 min-w-0 shrink" />
+            <span className={`${tail({ fade })} flex items-center`}>
+              <Skeleton className="w-48 min-w-0 shrink" />
+            </span>
           ) : (
             <span className={title}>{item.title}</span>
-          )}
-          {item.stack !== undefined && (
-            <span
-              className="inline-flex flex-none items-center gap-4 text-fg-muted text-micro"
-              title={`Stack of ${item.stack}`}
-            >
-              <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M8 2.25 13.75 5 8 7.75 2.25 5Z" />
-                <path d="M2.25 8 8 10.75 13.75 8M2.25 11 8 13.75 13.75 11" />
-              </svg>
-              {item.stack}
-            </span>
           )}
         </>
       );
@@ -867,4 +1040,27 @@ function TabLabel({ tab: item, selected }: { tab: Tab; selected: boolean }) {
       item satisfies never;
       throw new Error(`A tab of an unknown kind: ${JSON.stringify(item)}.`);
   }
+}
+
+/**
+ * How many pull requests a tab's stack holds, as a mark: the count beside the stack's icon. It's
+ * the first thing a narrow tab gives up after its title (`tab-stack`), so its number stays whole.
+ */
+function StackCount({ layers }: { layers: number }) {
+  const name = `Stack · ${layers === 1 ? '1 layer' : `${layers} layers`}`;
+  return (
+    <Tooltip label={name}>
+      <span
+        role="img"
+        aria-label={name}
+        className="inline-flex tab-stack flex-none items-center gap-4 text-fg-muted text-micro"
+      >
+        <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M8 2.25 13.75 5 8 7.75 2.25 5Z" />
+          <path d="M2.25 8 8 10.75 13.75 8M2.25 11 8 13.75 13.75 11" />
+        </svg>
+        <span className="lo-num">{layers}</span>
+      </span>
+    </Tooltip>
+  );
 }

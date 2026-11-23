@@ -8,6 +8,7 @@ import {
   dragPlace,
   foldTabs,
   labelOf,
+  noteOpened,
   slideOf,
   TabBar,
   tabsThatFit,
@@ -60,9 +61,9 @@ describe('TabBar', () => {
   it('draws an empty strip with only the button that opens a pull request', () => {
     const markup = renderToStaticMarkup(<TabBar tabs={[]} />);
     expect(markup).toContain('role="tablist"');
-    expect(markup).toContain('aria-label="Pull requests"');
+    expect(markup).toContain('aria-label="Tabs"');
     expect(markup).not.toContain('role="tab"');
-    expect(markup).toContain('aria-label="Review a pull request"');
+    expect(markup).toContain('aria-label="Open pull request…"');
     // Inert until there's a way to open one.
     expect(markup).toContain('aria-disabled="true"');
   });
@@ -72,8 +73,10 @@ describe('TabBar', () => {
     expect(markup.match(/role="tab"/g)).toHaveLength(5);
     expect(markup.match(/aria-selected="true"/g)).toHaveLength(1);
     expect(markup).toContain('#4821');
-    expect(markup).toContain('title="Stack of 4"');
-    expect(markup).not.toContain('aria-disabled');
+    // Its marks are named, to a screen reader as in their tooltips.
+    expect(markup).toContain('role="img" aria-label="Stack · 4 layers"');
+    expect(markup).toContain('role="img" aria-label="Open"');
+    expect(markup).not.toContain('aria-disabled="');
     // Each carries its id, for a right-click on it.
     expect(tabsIn(markup).map((each) => /data-tab="([^"]*)"/.exec(each)?.[1])).toEqual([
       'a',
@@ -98,10 +101,10 @@ describe('TabBar', () => {
       <TabBar tabs={[{ kind: 'pull', id: 'a', repo: 'fd', number: 2212 }]} selected="a" />,
     );
     expect(markup).toMatch(/>fd <\/span><span[^>]*>#2212<\/span>/);
-    expect(markup).not.toContain('title="open"');
+    expect(markup).not.toContain('role="img"');
     expect(markup).toContain('aria-label="Close tab"');
     // Not opening: nothing says it's busy.
-    expect(markup).not.toContain('aria-busy');
+    expect(markup).not.toContain('aria-busy="');
     expect(markup).not.toContain('spinner');
   });
 
@@ -118,7 +121,7 @@ describe('TabBar', () => {
         tabs={[{ kind: 'pull', id: 'a', repo: 'fd', number: 2212, loading: true, title: 'Done' }]}
       />,
     );
-    expect(arrived).not.toContain('aria-busy');
+    expect(arrived).not.toContain('aria-busy="');
     expect(arrived).not.toContain('skeleton');
     expect(arrived).toContain('Done</span>');
   });
@@ -136,10 +139,33 @@ describe('TabBar', () => {
     expect(markup).toMatch(/<span class="[^"]*flex-none[^"]*">#123456<\/span>/);
   });
 
-  it("takes no room for another tab's close button until it's hovered", () => {
+  it("lays its close button over the tab's end, fading the title under it, and shows another tab's only under the pointer", () => {
     const [selected, other] = tabsIn(renderToStaticMarkup(<TabBar tabs={tabs} selected="a" />));
-    expect(selected).toMatch(/aria-label="Close tab"[^>]*class="[^"]* grid"/);
-    expect(other).toMatch(/aria-label="Close tab"[^>]*class="[^"]* hidden group-hover:grid"/);
+    // The button takes no room from the title, so a tab reads the same on screen or not.
+    expect(selected).toMatch(/class="absolute [^"]* flex"><button[^>]*aria-label="Close tab"/);
+    expect(other).toMatch(
+      /class="absolute [^"]* hidden group-hover:flex"><button[^>]*aria-label="Close tab"/,
+    );
+    // Only the title fades, and it keeps the button's room at the tab's end, so the number never
+    // sits under the button.
+    expect(selected).not.toMatch(/tab-fade[^"]*" data-tab-label/);
+    expect(selected).toMatch(
+      /class="flex-1 min-w-control-h-sm tab-fade truncate font-medium">Rate limit GraphQL/,
+    );
+    expect(other).toMatch(/class="flex-1 min-w-control-h-sm group-hover:tab-fade truncate ">/);
+  });
+
+  it('gives its stack count up before its number as it narrows, and joins the page only on screen', () => {
+    const [selected, other] = tabsIn(renderToStaticMarkup(<TabBar tabs={tabs} selected="a" />));
+    // The count comes before the title, so the title is what goes first, and the tab is the
+    // container its count goes at.
+    expect(selected).toMatch(/aria-label="Stack · 4 layers" class="[^"]*\btab-stack\b/);
+    expect(selected).toMatch(/#4821<\/span><span role="img" aria-label="Stack · 4 layers"/);
+    expect(selected).toMatch(/class="group @container /);
+    // Hovered, a tab not on screen takes the hover tint, not the current tab's ground.
+    expect(selected).toContain('tab-flares bg-bg-chrome');
+    expect(other).toContain('tab-hover');
+    expect(other).not.toContain('bg-bg-chrome');
   });
 
   it('names Recent pull requests and Settings, and gives Recent no close button', () => {
@@ -211,11 +237,60 @@ describe('tabs that don’t fit', () => {
     const { shown, folded } = foldTabs(order, 4);
     expect(ids(shown)).toEqual(['t1', 't2', 't3', 't9']);
     expect(ids(folded)).toEqual(['t4', 't5', 't6', 't7', 't8', 't10']);
+    // One that opened after some of those folded goes back among them by when it opened.
+    const back = bringIn(
+      ten,
+      't9',
+      4,
+      new Map(ten.map(({ id }, place) => [id, id === 't4' ? 8.5 : place])),
+    );
+    expect(back.moved).toEqual({ id: 't9', to: 3 });
+    expect(ids(foldTabs(back.tabs, 4).folded)).toEqual(['t5', 't6', 't7', 't8', 't4', 't10']);
     // With room for one, it's the one.
     expect(ids(foldTabs(bringIn(ten, 't7', 1).tabs, 1).shown)).toEqual(['t7']);
     expect(ids(foldTabs(bringIn(ten, 't7', 0).tabs, 0).shown)).toEqual(['t7']);
     // One that fits stays where it is.
     expect(bringIn(ten, 't4', 4)).toEqual({ tabs: ten });
+  });
+
+  it('fold in the order they opened, as each opens on screen, and keep it as one comes back', () => {
+    let order: readonly { id: string }[] = ten.slice(0, 4);
+    const opened = new Map<string, number>();
+    const choose = (id: string) => {
+      order = bringIn(order, id, 4, noteOpened(opened, order)).tabs;
+    };
+    for (const tab of ten.slice(4)) {
+      order = [...order, tab];
+      choose(tab.id);
+    }
+    const { shown, folded } = foldTabs(order, 4);
+    expect(ids(shown)).toEqual(['t1', 't2', 't3', 't10']);
+    expect(ids(folded)).toEqual(['t4', 't5', 't6', 't7', 't8', 't9']);
+    // Chosen from "N more", one after another, each folds back where it was.
+    choose('t6');
+    expect(ids(foldTabs(order, 4).folded)).toEqual(['t4', 't5', 't7', 't8', 't9', 't10']);
+    choose('t7');
+    expect(ids(foldTabs(order, 4).folded)).toEqual(['t4', 't5', 't6', 't8', 't9', 't10']);
+    choose('t4');
+    expect(ids(foldTabs(order, 4).folded)).toEqual(['t5', 't6', 't7', 't8', 't9', 't10']);
+    choose('t5');
+    expect(ids(foldTabs(order, 4).folded)).toEqual(['t4', 't6', 't7', 't8', 't9', 't10']);
+  });
+
+  it('fold in the order they opened when several open before the strip brings one in', () => {
+    const opened = new Map<string, number>();
+    const first = bringIn(ten.slice(0, 8), 't8', 4, noteOpened(opened, ten.slice(0, 8)));
+    const then = [...first.tabs, ...ten.slice(8)];
+    const { tabs: order } = bringIn(then, 't10', 4, noteOpened(opened, then));
+    expect(ids(foldTabs(order, 4).folded)).toEqual(['t4', 't5', 't6', 't7', 't8', 't9']);
+    // A tab closed is forgotten, and opened again, it's the newest.
+    expect(
+      noteOpened(
+        opened,
+        then.filter(({ id }) => id !== 't2'),
+      ).has('t2'),
+    ).toBe(false);
+    expect(noteOpened(opened, then).get('t2')).toBe(10);
   });
 
   it('don’t exist while every tab fits, or while the room isn’t known', () => {
@@ -304,5 +379,9 @@ describe('TabBar styles', () => {
     expect(classes.length).toBeGreaterThan(30);
     const css = await buildCss(classes);
     expect(classes.filter((name) => !hasRule(css, name))).toEqual([]);
+    // A tab under the pointer takes a third of the ghost hover, under the tab on screen's ground.
+    expect(css).toMatch(
+      /\.tab-hover:hover::before \{[^}]*color-mix\(in srgb, var\(--lo-hover\) 33%, transparent\)/,
+    );
   });
 });

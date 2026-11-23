@@ -52,7 +52,7 @@ export default {
     defineView(notes, {
       id: 'revisions.note',
       order: 10,
-      render: ({ tab, end }) => createElement(Note, { tab, end }),
+      render: ({ tab, end, held }) => createElement(Note, { tab, end, held }),
     }),
   ],
   start() {

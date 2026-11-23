@@ -31,9 +31,9 @@ function nameOf(tab: Tab): string {
   }
 }
 
-/** What's said of `tab` at `place`, from 0, among `count` tabs: "fd #2212 is now tab 2 of 3." */
+/** What's said of `tab` at `place`, from 0, among `count` tabs: "Moved fd #2212 to tab 2 of 3". */
 export function saidOf(tab: Tab, place: number, count: number): string {
-  return `${nameOf(tab)} is now tab ${place + 1} of ${count}.`;
+  return `Moved ${nameOf(tab)} to tab ${place + 1} of ${count}`;
 }
 
 /**
@@ -89,7 +89,10 @@ export async function stepTab(target: TabTarget | NoTarget, by: 1 | -1): Promise
   );
 }
 
-/** Moves a tab dragged along the strip to place `to`, from 0, counted without it. */
-export async function dropTab(id: string, to: number): Promise<void> {
-  say(await main().move({ id, to }));
+/**
+ * Moves a tab dragged along the strip, or `brought` into it, to place `to`, from 0, counted
+ * without it.
+ */
+export async function dropTab(id: string, to: number, brought?: boolean): Promise<void> {
+  say(await main().move(brought ? { id, to, brought } : { id, to }));
 }

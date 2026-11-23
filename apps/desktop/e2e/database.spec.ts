@@ -23,7 +23,7 @@ function column(path: string, sql: string, name: string): string[] {
 }
 
 test('the database opens on a fresh data folder, with its migrations table', async ({ page }) => {
-  await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
+  await expect(page.getByRole('tablist', { name: 'Tabs' })).toBeVisible();
   const file = join(dataFolder(), 'lo.db');
   expect(rows(file, 'PRAGMA journal_mode')).toEqual([{ journal_mode: 'wal' }]);
   // Lo itself has only the migrations table; each feature brings its own, named for it, and its

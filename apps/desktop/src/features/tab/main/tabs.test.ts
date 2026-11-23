@@ -217,6 +217,28 @@ describe('moving a tab', () => {
     expect(tabs.move('t1', 0)).toEqual({ id: 't1', place: 0 });
   });
 
+  it('folds the tab that was there back by when it opened, as one is brought into the strip', () => {
+    const { tabs, heard } = tabsOn(database());
+    for (const number of [1, 2, 3]) tabs.open({ ...fd, number });
+    // With room for three, each tab opened after is brought into the last place, in one change.
+    for (const number of [4, 5, 6]) {
+      const id = tabs.open({ ...fd, number });
+      heard.length = 0;
+      tabs.move(id, 2, true);
+      expect(heard).toHaveLength(1);
+    }
+    expect(names(tabs.list())).toEqual(['fd#1', 'fd#2', '*fd#6', 'fd#3', 'fd#4', 'fd#5']);
+    // One chosen from those folded, in turn, and each goes back before the first opened after it.
+    for (const id of ['t4', 't5']) {
+      tabs.select({ id });
+      tabs.move(id, 2, true);
+    }
+    expect(names(tabs.list())).toEqual(['fd#1', 'fd#2', '*fd#5', 'fd#3', 'fd#4', 'fd#6']);
+    // Dragged there, the tab that was there goes on one place.
+    tabs.move('t6', 2);
+    expect(names(tabs.list())).toEqual(['fd#1', 'fd#2', 'fd#6', '*fd#5', 'fd#3', 'fd#4']);
+  });
+
   it('steps the tab on screen, or another, one place along, but not round the ends', () => {
     const { tabs, heard } = three();
     expect(tabs.step(undefined, -1)).toEqual({ id: 't3', place: 1 });

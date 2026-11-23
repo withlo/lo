@@ -12,6 +12,7 @@ import {
   StatusItem,
   StatusKeys,
   StatusMode,
+  Swap,
   useCopy,
   type HeaderConnection,
 } from '@lo/ui';
@@ -373,7 +374,9 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
           aria-label="Pull request"
         >
           <Slot slot={over} props={{ tab }} />
-          <div className="relative min-h-0 flex-1">
+          {/* One shown in another's place fades in over it, a Swap that keeps them all drawn; the
+          first the tab shows is just there. */}
+          <Swap id={shownMiddle?.id} keep className="relative min-h-0 flex-1">
             {shownMiddle ? (
               middles
                 .filter((each) => each === shownMiddle || kept.includes(each.id))
@@ -393,7 +396,7 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
             ) : (
               <Placeholder tab={tab.id} />
             )}
-          </div>
+          </Swap>
         </section>
         {showRight && shownRight && (
           <aside

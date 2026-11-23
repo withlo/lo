@@ -251,6 +251,11 @@ export interface DrawOptions {
   onTop?: string | undefined;
   /** The viewed marks as they show: viewed files start closed. */
   marks: ShownMarks;
+  /**
+   * A view drawn again, held while the next one loads, from what `loader` kept of it: it tells main
+   * nothing of what's on screen, which is what's next.
+   */
+  held?: boolean | undefined;
 }
 
 /** How many views the page has drawn, for the smoke test. */
@@ -787,9 +792,11 @@ export function draw(options: DrawOptions): Drawing {
   setShown(options.shown);
   // The diff at this head is on screen: it stays, until the reader loads a newer push, and so does
   // where it starts, until the reader asks for another start.
-  main()
-    .drawn({ id: tab.id, at, compareFrom })
-    .catch((error: unknown) => console.error("Lo couldn't say the diff was drawn:", error));
+  if (!options.held) {
+    main()
+      .drawn({ id: tab.id, at, compareFrom })
+      .catch((error: unknown) => console.error("Lo couldn't say the diff was drawn:", error));
+  }
   const headers = new Map(files.map((file) => [file.id, JSON.stringify(file.header)]));
   /** Takes the files as they are now, with their marks: headers, and how each starts out. */
   const take = (next: readonly Entry[]) => {

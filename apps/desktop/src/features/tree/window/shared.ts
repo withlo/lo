@@ -15,6 +15,7 @@ import { foldersOf, panelOrder, type Mode } from './model.ts';
 import { keyOf, pathOfKey } from './paths.ts';
 import {
   choices,
+  diffHeld,
   focus,
   held,
   onScreen,
@@ -150,6 +151,14 @@ export function followFile(tab: string, file: string | undefined): void {
   if (file !== undefined && !inTree) {
     reveal.update(tab, (last) => ({ key: file, count: (last?.count ?? 0) + 1 }));
   }
+}
+
+/**
+ * Says whether `tab`'s diff holds the view it drew, while the next is on its way: the tree holds
+ * the rows it drew, taking no input, until the diff draws the next, and shows its own then.
+ */
+export function holdTree(tab: string, holding: boolean): void {
+  if (diffHeld.get(tab) !== holding) diffHeld.set(tab, holding);
 }
 
 /** Puts the keyboard on `key`'s row in `tab`'s tree, and scrolls to it. */
