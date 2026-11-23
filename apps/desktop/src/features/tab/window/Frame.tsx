@@ -55,8 +55,8 @@ export function TabStrip() {
         }}
         onClose={(id) => registry().run('tab.close', { kind: 'tab', tab: id })}
         onNew={() => registry().run('open.box', NO_TARGET)}
-        onMove={(id, to) =>
-          dropTab(id, to).catch((error: unknown) =>
+        onMove={(id, to, brought) =>
+          dropTab(id, to, brought).catch((error: unknown) =>
             console.error("Lo couldn't move the tab:", error),
           )
         }

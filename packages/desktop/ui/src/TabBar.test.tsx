@@ -8,6 +8,7 @@ import {
   dragPlace,
   foldTabs,
   labelOf,
+  noteOpened,
   slideOf,
   TabBar,
   tabsThatFit,
@@ -236,11 +237,60 @@ describe('tabs that don’t fit', () => {
     const { shown, folded } = foldTabs(order, 4);
     expect(ids(shown)).toEqual(['t1', 't2', 't3', 't9']);
     expect(ids(folded)).toEqual(['t4', 't5', 't6', 't7', 't8', 't10']);
+    // One that opened after some of those folded goes back among them by when it opened.
+    const back = bringIn(
+      ten,
+      't9',
+      4,
+      new Map(ten.map(({ id }, place) => [id, id === 't4' ? 8.5 : place])),
+    );
+    expect(back.moved).toEqual({ id: 't9', to: 3 });
+    expect(ids(foldTabs(back.tabs, 4).folded)).toEqual(['t5', 't6', 't7', 't8', 't4', 't10']);
     // With room for one, it's the one.
     expect(ids(foldTabs(bringIn(ten, 't7', 1).tabs, 1).shown)).toEqual(['t7']);
     expect(ids(foldTabs(bringIn(ten, 't7', 0).tabs, 0).shown)).toEqual(['t7']);
     // One that fits stays where it is.
     expect(bringIn(ten, 't4', 4)).toEqual({ tabs: ten });
+  });
+
+  it('fold in the order they opened, as each opens on screen, and keep it as one comes back', () => {
+    let order: readonly { id: string }[] = ten.slice(0, 4);
+    const opened = new Map<string, number>();
+    const choose = (id: string) => {
+      order = bringIn(order, id, 4, noteOpened(opened, order)).tabs;
+    };
+    for (const tab of ten.slice(4)) {
+      order = [...order, tab];
+      choose(tab.id);
+    }
+    const { shown, folded } = foldTabs(order, 4);
+    expect(ids(shown)).toEqual(['t1', 't2', 't3', 't10']);
+    expect(ids(folded)).toEqual(['t4', 't5', 't6', 't7', 't8', 't9']);
+    // Chosen from "N more", one after another, each folds back where it was.
+    choose('t6');
+    expect(ids(foldTabs(order, 4).folded)).toEqual(['t4', 't5', 't7', 't8', 't9', 't10']);
+    choose('t7');
+    expect(ids(foldTabs(order, 4).folded)).toEqual(['t4', 't5', 't6', 't8', 't9', 't10']);
+    choose('t4');
+    expect(ids(foldTabs(order, 4).folded)).toEqual(['t5', 't6', 't7', 't8', 't9', 't10']);
+    choose('t5');
+    expect(ids(foldTabs(order, 4).folded)).toEqual(['t4', 't6', 't7', 't8', 't9', 't10']);
+  });
+
+  it('fold in the order they opened when several open before the strip brings one in', () => {
+    const opened = new Map<string, number>();
+    const first = bringIn(ten.slice(0, 8), 't8', 4, noteOpened(opened, ten.slice(0, 8)));
+    const then = [...first.tabs, ...ten.slice(8)];
+    const { tabs: order } = bringIn(then, 't10', 4, noteOpened(opened, then));
+    expect(ids(foldTabs(order, 4).folded)).toEqual(['t4', 't5', 't6', 't7', 't8', 't9']);
+    // A tab closed is forgotten, and opened again, it's the newest.
+    expect(
+      noteOpened(
+        opened,
+        then.filter(({ id }) => id !== 't2'),
+      ).has('t2'),
+    ).toBe(false);
+    expect(noteOpened(opened, then).get('t2')).toBe(10);
   });
 
   it('don’t exist while every tab fits, or while the room isn’t known', () => {

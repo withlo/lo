@@ -89,7 +89,10 @@ export async function stepTab(target: TabTarget | NoTarget, by: 1 | -1): Promise
   );
 }
 
-/** Moves a tab dragged along the strip to place `to`, from 0, counted without it. */
-export async function dropTab(id: string, to: number): Promise<void> {
-  say(await main().move({ id, to }));
+/**
+ * Moves a tab dragged along the strip, or `brought` into it, to place `to`, from 0, counted
+ * without it.
+ */
+export async function dropTab(id: string, to: number, brought?: boolean): Promise<void> {
+  say(await main().move(brought ? { id, to, brought } : { id, to }));
 }

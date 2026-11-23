@@ -76,12 +76,13 @@ export interface TabBarProps {
   onNew?: (() => void) | undefined;
   /**
    * Moves a tab to place `to` among `tabs`, from 0, counted without it: one dragged along the
-   * strip, or the tab on screen, brought into the strip from past the last place that fits.
-   * Without it, tabs don't drag, and a tab brought in is only drawn there. The strip shows a
-   * dragged tab at its new place until `tabs` comes in another order, or until what this returns
-   * settles.
+   * strip, or, `brought`, the tab on screen, brought into the strip from past the last place that
+   * fits, when the tab that was there folds back among the others by when it opened, as
+   * `bringIn` has it. Without it, tabs don't drag, and a tab brought in is only drawn there. The
+   * strip shows a dragged tab at its new place until `tabs` comes in another order, or until what
+   * this returns settles.
    */
-  onMove?: ((id: string, to: number) => void | Promise<unknown>) | undefined;
+  onMove?: ((id: string, to: number, brought?: boolean) => void | Promise<unknown>) | undefined;
   /** Where the menu of tabs that don't fit is put in the page: an element inside `.lo-app`. */
   menuContainer?: HTMLElement | null | undefined;
   /** Whether the menu of tabs that don't fit is open, for a key to open it. */
@@ -212,7 +213,14 @@ export function TabBar({
   const room = measured?.fits;
   // Read once for every tab: what the close buttons say doesn't depend on the tab.
   const closeWords = wordsOf(useControl(commands?.close ?? ''), 'Close tab');
-  const { tabs: ordered, moved } = bringIn(inOrder(tabs, landed), selected, room);
+  // When each tab opened, as this strip saw them, for a tab that folds to keep its place.
+  const opened = useRef(new Map<string, number>());
+  const { tabs: ordered, moved } = bringIn(
+    inOrder(tabs, landed),
+    selected,
+    room,
+    noteOpened(opened.current, tabs),
+  );
   const { shown, folded } = foldTabs(ordered, room);
   // The tab on screen, brought into the strip, moves there in the order, once each time, as it's
   // drawn there, so whatever's asked of main after goes to that order. Only by a room measured
@@ -220,7 +228,7 @@ export function TabBar({
   const bringing =
     moved && measured?.count === tabs.length && `${moved.id}\n${moved.to}\n${orderOf(tabs)}`;
   useLayoutEffect(() => {
-    if (bringing && moved) void onMove?.(moved.id, moved.to);
+    if (bringing && moved) void onMove?.(moved.id, moved.to, true);
   }, [bringing]);
   const drag = useDrag(list, shown, onMove !== undefined, (id, to) => {
     if (!onMove) return;
@@ -296,22 +304,47 @@ export function foldTabs<T extends { readonly id: string }>(
 
 /**
  * `tabs` with the tab on screen in the last place that fits, when it's further along, so the strip
- * shows it; and where it moved to, from 0, counted without it. The tab that was there folds.
+ * shows it; and where it moved to, from 0, counted without it. The tab that was there folds,
+ * before the first folded tab that opened after it, by `opened`, or last: so tabs opened one after
+ * another fold in the order they opened, as do tabs chosen from "N more" in turn. Without
+ * `opened`, tabs opened in the order they're in.
  */
 export function bringIn<T extends { readonly id: string }>(
   tabs: readonly T[],
   selected: string | undefined,
   room: number | undefined,
+  opened: ReadonlyMap<string, number> = new Map(tabs.map((item, place) => [item.id, place])),
 ): { tabs: readonly T[]; moved?: { id: string; to: number } } {
   if (room === undefined || tabs.length <= room) return { tabs };
   const to = Math.max(1, room) - 1;
   const at = tabs.findIndex((item) => item.id === selected);
   const onScreen = tabs[at];
-  if (!onScreen || at <= to) return { tabs };
+  const there = tabs[to];
+  if (!onScreen || !there || at <= to) return { tabs };
+  const rest = tabs.toSpliced(at, 1).toSpliced(to, 1, onScreen);
+  const when = opened.get(there.id) ?? Infinity;
+  const later = rest.findIndex(
+    (item, place) => place > to && (opened.get(item.id) ?? Infinity) > when,
+  );
   return {
-    tabs: tabs.toSpliced(at, 1).toSpliced(to, 0, onScreen),
+    tabs: rest.toSpliced(later === -1 ? rest.length : later, 0, there),
     moved: { id: onScreen.id, to },
   };
+}
+
+/**
+ * Notes in `opened` each of `tabs` the strip hasn't seen yet, as opened after every tab it has, in
+ * the order they're in; and forgets those closed.
+ */
+export function noteOpened(
+  opened: Map<string, number>,
+  tabs: readonly { readonly id: string }[],
+): ReadonlyMap<string, number> {
+  const open = new Set(tabs.map((item) => item.id));
+  for (const id of opened.keys()) if (!open.has(id)) opened.delete(id);
+  let next = Math.max(-1, ...opened.values()) + 1;
+  for (const { id } of tabs) if (!opened.has(id)) opened.set(id, next++);
+  return opened;
 }
 
 /** The strip's room, in CSS pixels, as `tabsThatFit` reads it. */

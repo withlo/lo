@@ -89,6 +89,15 @@ async function resize(app: ElectronApplication, page: Page, width: number | 'scr
   return wanted;
 }
 
+/** The pull request numbers `items` name, in order. */
+async function numbersIn(items: Locator): Promise<number[]> {
+  return (await items.allTextContents()).map((text) => Number(/#(\d+)/.exec(text)?.[1]));
+}
+
+/** `count` numbers up from `first`. */
+const upFrom = (first: number, count: number) =>
+  Array.from({ length: count }, (_, index) => first + index);
+
 /** `count` pull requests, `r1 #1` to `rN #N`. */
 const many = (count: number) =>
   Array.from({ length: count }, (_, index) => pull('withlo', `r${index + 1}`, index + 1));
@@ -524,9 +533,10 @@ test('the tabs that don’t fit are in the "N more" menu, and choosing one shows
   await more(page).click();
   const menu = page.getByRole('menu', { name: 'More tabs' });
   const items = menu.getByRole('menuitem');
-  // In the order, after the last tab the strip shows.
+  // In the order, after the last tab the strip shows, which is the order they opened in.
   const order = await inOrder(page);
   await expect(items).toHaveText(order.slice(16 - folded));
+  await expect.poll(() => numbersIn(items)).toEqual(upFrom(16 - folded, folded));
   const chosen = order.at(-1) ?? '';
   const replaced = order[15 - folded] ?? '';
   await items.last().click();
@@ -537,7 +547,9 @@ test('the tabs that don’t fit are in the "N more" menu, and choosing one shows
   await expect(tabs(page).last()).toHaveText(chosen);
   await expect.poll(async () => (await inOrder(page))[15 - folded]).toBe(chosen);
   await more(page).click();
-  await expect(items.first()).toHaveText(replaced);
+  // It opened last, so it folds last.
+  await expect(items.last()).toHaveText(replaced);
+  await expect.poll(() => numbersIn(items)).toEqual([...upFrom(16 - folded, folded - 1), 16]);
   await page.keyboard.press('Escape');
 });
 

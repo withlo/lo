@@ -130,7 +130,7 @@ export default defineFeature(contract, {
     layer: ({ id, number }, context) => tabsOf(context).layer(id, number),
     move: (input, context) =>
       'to' in input
-        ? tabsOf(context).move(input.id, input.to)
+        ? tabsOf(context).move(input.id, input.to, input.brought)
         : tabsOf(context).step(input.id, input.step, input.within),
     state: ({ id }) => watching().snapshot(id),
     reload({ id }) {
