@@ -18,11 +18,14 @@ import { views } from './store.ts';
 
 /** Main's answers to each comparison asked for, which the test gives when it likes. */
 const answers: (() => void)[] = [];
+/** Main's refusals of each comparison asked for, the same way. */
+const refusals: ((error: Error) => void)[] = [];
 vi.mock('./main.ts', () => ({
   main: () => ({
     compare: () =>
-      new Promise<void>((resolve) => {
+      new Promise<void>((resolve, reject) => {
         answers.push(resolve);
+        refusals.push(reject);
       }),
   }),
 }));
@@ -90,12 +93,12 @@ describe('comparing another pair', () => {
 
   it('is coming as soon as it’s asked for, and asking for what’s on screen calls it off', async () => {
     views.set('asking', view({ id: 'asking', comparison: whole }));
-    expect(compareTo('asking', whole, 'Show the thread')).toBe('now');
-    expect(compareTo('asking', first, 'Show the thread')).toBe('coming');
+    expect(compareTo('asking', whole)).toBe('now');
+    expect(compareTo('asking', first)).toBe('coming');
     // Before main says so.
     expect(comparisonComing('asking')).toEqual(first);
-    expect(compareTo('asking', first, 'Show the thread')).toBe('coming');
-    expect(compareTo('asking', whole, 'Show the thread')).toBe('now');
+    expect(compareTo('asking', first)).toBe('coming');
+    expect(compareTo('asking', whole)).toBe('now');
     expect(comparisonComing('asking')).toBeUndefined();
     // Main took both; what it says from then on is what's coming.
     for (const answer of answers.splice(0)) answer();
@@ -107,17 +110,25 @@ describe('comparing another pair', () => {
   it('says so as it’s asked for, and takes it back once it’s called off', () => {
     views.set('saying', view({ id: 'saying', comparison: whole }));
     const say = { title: 'Comparing base → r1', body: 'This thread is on r1.' };
-    expect(compareTo('saying', first, 'Show the thread', say)).toBe('coming');
+    expect(compareTo('saying', first, say)).toBe('coming');
     expect(notice()).toMatchObject(say);
     // Asked for again, it stands.
-    expect(compareTo('saying', first, 'Back')).toBe('coming');
+    expect(compareTo('saying', first)).toBe('coming');
     expect(notice()).toMatchObject(say);
-    expect(compareTo('saying', whole, 'Back')).toBe('now');
+    expect(compareTo('saying', whole)).toBe('now');
     expect(notice()).toBeUndefined();
   });
 
+  it('says in a note what main couldn’t compare, with what it said behind Details', async () => {
+    views.set('failing', view({ id: 'failing', comparison: whole }));
+    expect(compareTo('failing', first)).toBe('coming');
+    refusals.at(-1)?.(new Error('The revision is gone.'));
+    await vi.waitFor(() => expect(notice()?.title).toMatch(/^Couldn’t compare /));
+    expect(notice()).toMatchObject({ body: '', tone: 'danger', details: 'The revision is gone.' });
+  });
+
   it('can’t be before the revisions are read', () => {
-    expect(compareTo('unread', first, 'Show the thread')).toEqual({
+    expect(compareTo('unread', first)).toEqual({
       why: 'Lo hasn’t read the pull request’s revisions yet.',
     });
   });

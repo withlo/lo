@@ -16,7 +16,7 @@ import {
   refuse,
   withdraw,
 } from './notices.tsx';
-import { createRegistry, registry } from './registry.ts';
+import { createRegistry, registry, setMiddle } from './registry.ts';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -43,6 +43,8 @@ afterEach(() => {
 });
 
 const status = () => document.querySelector('[role="status"]');
+/** The file a file place is in. */
+const fileOf = (at: { kind: string; file?: string }) => (at.kind === 'file' ? at.file : '');
 const region = () => document.querySelector('.toast-floating');
 
 /** A toast's parts, as a screen reader hears them in order. */
@@ -213,10 +215,10 @@ describe('notices', () => {
     expect(text?.querySelector('button')?.textContent).toMatch(/^Copy/);
   });
 
-  it('show a failure as one, a block as a warning, and the rest as news', () => {
+  it('show a failure as one, with Details or not, a block as a warning, and a reason as news', () => {
     act(() => {
       notify('Couldn’t update Lo', '', { details: 'Failed to copy Lo.app' });
-      notify('Couldn’t open #82', 'The browser sent it straight back.', { tone: 'danger' });
+      notify('Couldn’t open #82', 'The browser sent it straight back.');
       notify('Can’t check for updates', 'This copy of Lo is built from source.', {
         tone: 'warning',
       });
@@ -227,7 +229,7 @@ describe('notices', () => {
       'flex-none text-danger',
       'flex-none text-warning',
     ]);
-    act(() => notify('Back', "There's nowhere to go back to."));
+    act(() => refuse('Sign in to comment'));
     const newest = [...(status()?.querySelectorAll('.toast > span:first-child') ?? [])].at(-1);
     expect(newest?.className).toBe('flex-none text-info');
   });
@@ -339,17 +341,78 @@ describe('a command that did nothing', () => {
     expect(status()?.textContent).toBe('');
   });
 
-  it('says where Back and Forward have nowhere to go', () => {
+  it('dims Back and Forward with nowhere to go, and says nothing when their keys are pressed', () => {
+    expect(registry().enabled('keys.back', NO_TARGET)).toBe('');
+    expect(registry().enabled('keys.forward', NO_TARGET)).toBe('');
+    act(() => {
+      registry().run('keys.back', NO_TARGET);
+      registry().run('keys.forward', NO_TARGET);
+    });
+    expect(notices()).toEqual([]);
+    expect(status()?.textContent).toBe('');
+    // A place a view can show again: Back has somewhere to go, and once there, Forward does.
+    const { history } = registry();
+    const shown: unknown[] = [];
+    history.register('', 'diff', (at) => {
+      shown.push(at);
+      return true;
+    });
+    history.record({ view: 'diff', at: { kind: 'file', file: 'a.ts' } });
+    expect(registry().enabled('keys.back', NO_TARGET)).toBe(true);
+    expect(registry().enabled('keys.forward', NO_TARGET)).toBe('');
     act(() => {
       registry().run('keys.back', NO_TARGET);
     });
-    expect(toast()).toMatchObject({ title: 'Back', body: "There's nowhere to go back to." });
+    expect(shown).toEqual([{ kind: 'file', file: 'a.ts' }]);
+    expect(registry().enabled('keys.back', NO_TARGET)).toBe('');
+    expect(notices()).toEqual([]);
+  });
+
+  it('skips a place that’s gone, and with none left, dims Back and says nothing', () => {
+    const { history } = registry();
+    const gone = new Set<string>();
+    const shown: string[] = [];
+    history.register(
+      '',
+      'diff',
+      (at) => {
+        shown.push(fileOf(at) ?? '');
+        return true;
+      },
+      (at) => !gone.has(fileOf(at) ?? ''),
+    );
+    history.record({ view: 'diff', at: { kind: 'file', file: 'a.ts' } });
+    history.record({ view: 'diff', at: { kind: 'file', file: 'b.ts' } });
+    // A push removes b.ts: Back goes past it, to a.ts.
+    gone.add('b.ts');
+    act(() => {
+      registry().run('keys.back', NO_TARGET);
+    });
+    expect(shown).toEqual(['a.ts']);
+    // Forward from a.ts has only b.ts, which is gone: it's dimmed, and says nothing when pressed.
+    expect(registry().enabled('keys.forward', NO_TARGET)).toBe('');
     act(() => {
       registry().run('keys.forward', NO_TARGET);
     });
-    expect(toast()).toMatchObject({
-      title: 'Forward',
-      body: "There's nowhere to go forward to.",
+    expect(shown).toEqual(['a.ts']);
+    expect(notices()).toEqual([]);
+  });
+
+  it('skips where the cursor is, and with nowhere else, dims Back and says nothing', () => {
+    const { history } = registry();
+    const at = { view: 'diff', at: { kind: 'file', file: 'a.ts' } } as const;
+    history.register('', 'diff', () => true);
+    history.record(at);
+    let cursor: typeof at | undefined;
+    const stop = setMiddle({ focus: () => undefined, here: () => cursor });
+    expect(registry().enabled('keys.back', NO_TARGET)).toBe(true);
+    // The cursor goes back to the place by hand: Back from there has nowhere to go.
+    cursor = at;
+    expect(registry().enabled('keys.back', NO_TARGET)).toBe('');
+    act(() => {
+      registry().run('keys.back', NO_TARGET);
     });
+    stop();
+    expect(notices()).toEqual([]);
   });
 });

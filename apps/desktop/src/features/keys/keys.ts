@@ -16,6 +16,7 @@ export default defineCommands('keys', {
     label: 'Command palette',
     group: 'Find',
     keys: ['cmd+shift+p'],
+    bar: { menu: 'View', order: 90 },
   },
   /** In the palette, shows the highlighted action in key help. */
   showKey: {
@@ -31,6 +32,7 @@ export default defineCommands('keys', {
    */
   menu: {
     label: 'Show the right-click menu',
+    control: 'A right-click on what has focus',
     group: 'Tabs and window',
     keys: ['menu', 'shift+f10'],
     when: { except: ['menu', 'dialog', 'palette'] },
@@ -42,6 +44,7 @@ export default defineCommands('keys', {
    */
   escape: {
     label: 'Back to the middle view',
+    control: 'A click in the middle view',
     group: 'Tabs and window',
     keys: ['esc'],
     when: { except: ['menu', 'dialog', 'palette', 'box'], mode: 'normal' },

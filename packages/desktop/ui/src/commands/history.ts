@@ -2,8 +2,11 @@
 // target), never an editor or a DOM node, so a view that's gone can't be reached through it, and
 // going back after `Tab` lands on the side the jump was made on. Each view registers how it
 // reveals an entry; an entry no view can reveal now (a closed file view, a file a push removed) is
-// skipped. An entry can say what its view showed then, such as the diff's comparison, which the
-// view shows again before the place.
+// skipped, and one a view says is gone is dropped as what the view shows changes. An entry can say
+// what its view showed then, such as the diff's comparison, which the view shows again before the
+// place. Back and Forward skip a place that's where the tab is now. Whether there's anywhere to go
+// back or forward to is asked without going, so Back and Forward dim where there's nowhere, and
+// who listens hears each change.
 
 import { plainTarget, type Place, type Span, type Target } from './targets.ts';
 
@@ -25,6 +28,18 @@ export interface Entry {
  */
 export type Reveal = (at: Target, within?: string) => boolean;
 
+/**
+ * Whether a view could show `at` now, in what `within` names, asked without showing it: `false`
+ * for a place that's gone, such as a file a push removed. A view that can't tell says `true`.
+ */
+export type Shows = (at: Target, within?: string) => boolean;
+
+/** How a view shows its places, and whether it still could. */
+interface Revealer {
+  readonly reveal: Reveal;
+  readonly shows: Shows | undefined;
+}
+
 /** As many entries as Vim keeps. */
 export const HISTORY_LIMIT = 100;
 
@@ -38,42 +53,84 @@ interface List {
 export class History {
   private readonly limit: number;
   private readonly lists = new Map<string, List>();
-  private readonly reveals = new Map<string, Map<View, Reveal>>();
+  private readonly reveals = new Map<string, Map<View, Revealer>>();
   /** The tab whose list `record`, `back` and `forward` use. Before any tab, the window's own. */
   private current = '';
   /** A view is revealing an entry: the jump it makes to get there is the walk's, not a new one. */
   private revealing = false;
+  private readonly listeners = new Set<() => void>();
 
   constructor(options: { readonly limit?: number } = {}) {
     this.limit = options.limit ?? HISTORY_LIMIT;
   }
 
+  /**
+   * Calls `listener` whenever where `back` or `forward` could go may have changed: a place
+   * recorded, a step back or forward, another tab current, a tab closed, or a view come or gone.
+   * Returns a function that stops it.
+   */
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
   /** Makes `id` the current tab. */
   tab(id: string): void {
+    if (this.current === id) return;
     this.current = id;
+    this.changed();
   }
 
   /** Forgets a closed tab's list and its views. */
   close(id: string): void {
     this.lists.delete(id);
     this.reveals.delete(id);
+    this.changed();
   }
 
   /**
-   * Lets `view` in `tab` reveal its entries. Returns the function to call when the view goes, after
-   * which its entries are skipped.
+   * Lets `view` in `tab` reveal its entries, and with `shows`, say which are gone without showing
+   * them. Returns the function to call when the view goes, after which its entries are skipped.
    */
-  register(tab: string, view: View, reveal: Reveal): () => void {
+  register(tab: string, view: View, reveal: Reveal, shows?: Shows): () => void {
     let views = this.reveals.get(tab);
     if (!views) {
       views = new Map();
       this.reveals.set(tab, views);
     }
-    views.set(view, reveal);
+    const revealer: Revealer = { reveal, shows };
+    views.set(view, revealer);
+    this.changed();
     return () => {
       const current = this.reveals.get(tab);
-      if (current?.get(view) === reveal) current.delete(view);
+      if (current?.get(view) !== revealer) return;
+      current.delete(view);
+      this.changed();
     };
+  }
+
+  /**
+   * Drops `tab`'s places its views say are gone, as when the comparison on screen changes, so Back
+   * and Forward go to the nearest place still there. The place the tab is at stays, so the walk
+   * goes on from it.
+   */
+  dropGone(tab: string): void {
+    const list = this.lists.get(tab);
+    const views = this.reveals.get(tab);
+    if (!list || !views) return;
+    const gone = (entry: Entry) => views.get(entry.view)?.shows?.(entry.at, entry.within) === false;
+    let before = 0;
+    const kept = list.entries.filter((entry, index) => {
+      if (index === list.index || !gone(entry)) return true;
+      if (index < list.index) before += 1;
+      return false;
+    });
+    if (kept.length === list.entries.length) return;
+    list.entries = kept;
+    list.index -= before;
+    this.changed();
   }
 
   /**
@@ -87,11 +144,13 @@ export class History {
     list.entries.length = Math.min(list.index + 1, list.entries.length);
     this.push(list, from);
     list.index = list.entries.length;
+    this.changed();
   }
 
   /**
-   * Goes back to the newest earlier place a view can reveal, skipping the rest, and returns it.
-   * `here` is where the tab is now, kept so that `forward` can come back to it.
+   * Goes back to the newest earlier place a view can reveal, skipping the rest and any that's
+   * `here`, where the tab is now, and returns it. `here` is kept so that `forward` can come back to
+   * it.
    */
   back(here?: Entry): Entry | undefined {
     const list = this.list();
@@ -101,25 +160,56 @@ export class History {
     }
     for (let index = list.index - 1; index >= 0; index--) {
       const entry = list.entries[index];
-      if (entry && this.reveal(entry)) {
+      if (entry && !isHere(entry, here) && this.reveal(entry)) {
         list.index = index;
+        this.changed();
         return entry;
       }
     }
     return undefined;
   }
 
-  /** Goes forward to the next place a view can reveal, skipping the rest, and returns it. */
-  forward(): Entry | undefined {
+  /**
+   * Goes forward to the next place a view can reveal, skipping the rest and any that's `here`, and
+   * returns it.
+   */
+  forward(here?: Entry): Entry | undefined {
     const list = this.list();
     for (let index = list.index + 1; index < list.entries.length; index++) {
       const entry = list.entries[index];
-      if (entry && this.reveal(entry)) {
+      if (entry && !isHere(entry, here) && this.reveal(entry)) {
         list.index = index;
+        this.changed();
         return entry;
       }
     }
     return undefined;
+  }
+
+  /**
+   * Whether `back` from `here` has an earlier place to go to that a view is there to reveal, and
+   * hasn't said is gone, asked without going.
+   */
+  canBack(here?: Entry): boolean {
+    const list = this.list();
+    const { entries } = list;
+    let from = list.index;
+    // Where `back` would keep `here` first: at the end, or as the last place when it's that one.
+    if (from >= entries.length && here) {
+      const last = entries.at(-1);
+      from = last && same(last, here) ? entries.length - 1 : entries.length;
+    }
+    return entries
+      .slice(0, Math.max(0, from))
+      .some((entry) => !isHere(entry, here) && this.revealable(entry));
+  }
+
+  /** Whether `forward` from `here` has a later place to go to, as `canBack` asks it. */
+  canForward(here?: Entry): boolean {
+    const list = this.list();
+    return list.entries
+      .slice(list.index + 1)
+      .some((entry) => !isHere(entry, here) && this.revealable(entry));
   }
 
   /** The current tab's entries, oldest first. */
@@ -152,16 +242,32 @@ export class History {
     }
   }
 
+  /** Whether a view of the current tab's is there to reveal `entry`, and hasn't said it's gone. */
+  private revealable(entry: Entry): boolean {
+    const revealer = this.reveals.get(this.current)?.get(entry.view);
+    return revealer !== undefined && revealer.shows?.(entry.at, entry.within) !== false;
+  }
+
+  private changed(): void {
+    for (const listener of this.listeners) listener();
+  }
+
   private reveal(entry: Entry): boolean {
-    const reveal = this.reveals.get(this.current)?.get(entry.view);
-    if (reveal === undefined) return false;
+    if (!this.revealable(entry)) return false;
+    const revealer = this.reveals.get(this.current)?.get(entry.view);
+    if (revealer === undefined) return false;
     this.revealing = true;
     try {
-      return reveal(entry.at, entry.within);
+      return revealer.reveal(entry.at, entry.within);
     } finally {
       this.revealing = false;
     }
   }
+}
+
+/** Whether `entry` is `here`, where the tab is now, which going to wouldn't move it. */
+function isHere(entry: Entry, here: Entry | undefined): boolean {
+  return here !== undefined && same(entry, here);
 }
 
 /**

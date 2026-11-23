@@ -29,7 +29,7 @@ import {
 import { main, revisions } from './main.ts';
 import type { Row } from './rows.ts';
 import { claim, takeRevisions, takeSidebar, takeTimeline } from './store.ts';
-import { TimelineMiddle } from './TimelineView.tsx';
+import { TIMELINE_VIEW, TimelineMiddle } from './TimelineView.tsx';
 import { changeTarget, loginOf } from './yours.ts';
 
 /** Whether there's a timeline on screen for a key to act on, or why not. */
@@ -105,7 +105,7 @@ export default {
   views: [
     // The third middle view, after the overview (10), the diff (20) and the whole file (25).
     defineView(middle, {
-      id: 'timeline.view',
+      id: TIMELINE_VIEW,
       order: 30,
       label: 'Timeline',
       render: ({ tab, shown }) => createElement(TimelineMiddle, { tab, shown }),

@@ -8,7 +8,9 @@
 // for what was there before, and so is a key press in the moment after focus comes into the toast,
 // since the key that took it there may still be down: a key held down repeats, and a repeat never
 // presses a button. When a toast goes while one of its buttons has focus, as it does on pressing
-// Update or Hide, focus goes back to the middle of the window, rather than to nowhere.
+// Update or Hide, focus goes back to the middle of the window, rather than to nowhere. While
+// Settings › About shows the offer in view under its Lo row, the toast steps aside, so the offer and
+// its failure are said once.
 
 import { Button, CopyButton, Meter, Problem, Spinner, Toast, useCopy } from '@lo/ui';
 import { useLayoutEffect, useRef, type KeyboardEvent as KeyEvent, type ReactNode } from 'react';
@@ -314,8 +316,12 @@ export function UpdateToast({ state }: { state: UpdateState }) {
   }
 }
 
-/** The view in the toast region: the toast for where updates stand now. */
+/**
+ * The view in the toast region: the toast for where updates stand now, except while Settings ›
+ * About shows the same under its Lo row, in view.
+ */
 export function Offer() {
   const state = useStore(updatesStore, (window) => window.state);
-  return <UpdateToast state={state} />;
+  const aside = useStore(updatesStore, (window) => window.offerInView);
+  return aside ? null : <UpdateToast state={state} />;
 }

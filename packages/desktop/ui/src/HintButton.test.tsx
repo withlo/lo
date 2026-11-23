@@ -6,12 +6,14 @@ import { afterEach, expect, onTestFinished, test, vi } from 'vitest';
 
 import { testCommands, type Ran } from '../test/commands.ts';
 import { holdRegistry } from './commands/control.ts';
+import { defineCommands, handlers } from './commands/declare.ts';
 import { Registry } from './commands/registry.ts';
 import type { LineTarget } from './commands/targets.ts';
 import { HintButton } from './HintButton.tsx';
 import { HintRow } from './HintRow.tsx';
 import { MoreButton } from './MoreButton.tsx';
 import { TOOLTIP_DELAY, TooltipGroup } from './Tooltip.tsx';
+import { useControl } from './useControl.ts';
 
 const LINE: LineTarget = { kind: 'line', at: { file: 'a.ts', side: 'new', line: 3 } };
 
@@ -67,6 +69,58 @@ test('a hint whose command can’t run is dimmed, says why, and runs nothing', (
   act(() => button.click());
   expect(ran).toEqual([]);
   expect(draw(<HintButton command="diff.nothing" />).querySelector('button')).toBeNull();
+});
+
+test('a hint whose command has nothing to say is dimmed with no tooltip, and follows the history', () => {
+  vi.useFakeTimers();
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  const declarations = defineCommands('go', {
+    back: { label: 'Back', group: 'Code', keys: ['ctrl+o'] },
+  });
+  const registry: Registry = new Registry({
+    system: 'mac',
+    commands: handlers(declarations, {
+      back: { run() {}, enabled: () => registry.history.canBack() || '' },
+    }),
+  });
+  release = holdRegistry(registry);
+  const host = draw(<HintButton command="go.back" />);
+  const button = host.querySelector('button')!;
+  expect(button.getAttribute('aria-disabled')).toBe('true');
+  expect(button.hasAttribute('aria-describedby')).toBe(false);
+  act(() => {
+    button.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: host }));
+    button.dispatchEvent(new MouseEvent('mouseenter', { relatedTarget: host }));
+    button.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+    vi.advanceTimersByTime(TOOLTIP_DELAY);
+  });
+  expect(host.querySelector('.tooltip')).toBeNull();
+  // Somewhere to go back to, and it's drawn again, ready.
+  act(() => {
+    registry.history.register('', 'diff', () => true);
+    registry.history.record({ view: 'diff', at: { kind: 'none' } });
+  });
+  expect(button.hasAttribute('aria-disabled')).toBe(false);
+});
+
+test('a control is drawn again only when what it shows changes, not at each step of the history', () => {
+  const { registry } = held();
+  let draws = 0;
+  function Counted() {
+    draws += 1;
+    return <span>{useControl('diff.comment', LINE)?.label}</span>;
+  }
+  draw(<Counted />);
+  const before = draws;
+  act(() => {
+    registry.history.register('', 'diff', () => true);
+    registry.history.record({ view: 'diff', at: { kind: 'none' } });
+  });
+  expect(draws).toBe(before);
+  act(() => void registry.setKeymap('bind C diff.comment'));
+  expect(draws).toBe(before + 1);
 });
 
 /** The row the HintRow test measures. */

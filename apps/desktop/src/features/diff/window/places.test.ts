@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 // Following a reference to code before a tab's diff has its files: the place waits for them, for a
 // while, saying so, then shows in the diff when it has the file, and whole when it doesn't; or
-// it's dropped, saying so, once it's waited too long or the reader does anything else, a key Lo
-// takes included.
+// it's dropped once it's waited too long, or, its note taken back, once the reader does anything
+// else, a key Lo takes included.
 
 import { defineCommands, handlers, KEY_EVENT, listen, Registry } from '@lo/ui/commands';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
@@ -22,8 +22,8 @@ const seen = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../window/commands/notices.tsx', () => ({
-  notify: (title: string, body: string) => {
-    seen.notes.push(body === '' ? title : `${title} ${body}`);
+  refuse: (reason: string) => {
+    seen.notes.push(reason);
   },
   withdraw: (title: string, body: string) => {
     seen.notes.push(`withdrawn: ${body === '' ? title : `${title} ${body}`}`);
@@ -160,7 +160,7 @@ describe('showPlace', () => {
     expect(seen.middles).toEqual([]);
   });
 
-  it('drops the place, saying so, once the reader does anything else', () => {
+  it('drops the place, and takes its note back, once the reader does anything else', () => {
     for (const input of [
       new Event(KEY_EVENT),
       new PointerEvent('pointerdown'),
@@ -170,7 +170,8 @@ describe('showPlace', () => {
       seen.notes.length = 0;
       showPlace('t1', 'src/parser.ts', 7);
       window.dispatchEvent(input);
-      expect(seen.notes.at(-1)).toBe('Couldn’t read the changed files');
+      // Moving on isn't a failure: nothing more is said.
+      expect(seen.notes).toEqual(['Reading changed files…', 'withdrawn: Reading changed files…']);
       diff.take(state([changed('src/parser.ts')]));
       expect(seen.middles).toEqual([]);
     }
@@ -187,7 +188,7 @@ describe('showPlace', () => {
     press(']');
     expect(seen.notes).toEqual(['Reading changed files…']);
     press('b');
-    expect(seen.notes.at(-1)).toBe('Couldn’t read the changed files');
+    expect(seen.notes).toEqual(['Reading changed files…', 'withdrawn: Reading changed files…']);
     diff.take(state([changed('src/parser.ts')]));
     expect(seen.middles).toEqual([]);
   });

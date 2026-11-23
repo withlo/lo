@@ -54,7 +54,7 @@ import {
   type DrawnOverview,
   type Scroll,
 } from './follow.ts';
-import { copyInstallCommand, followSkill, installSkill } from './skill.ts';
+import { copyInstallCommand, followSkill, installable, installSkill } from './skill.ts';
 import { keepSinceOnly } from './since.ts';
 import { OverviewStatus } from './Status.tsx';
 import { catchUp, keepOnly, readAgain, states, takeRevisions, takeState } from './store.ts';
@@ -300,6 +300,7 @@ export default {
       run: async () => {
         await installSkill();
       },
+      enabled: installable,
     },
     copyInstallCommand: { run: () => copyInstallCommand() },
   }),

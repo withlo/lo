@@ -650,18 +650,29 @@ const registered = new Set<string>();
 
 /**
  * Lets tab `tab`'s history reveal its places in the overview for as long as the tab is open: a
- * block of the overview it shows, which comes on screen with the block given focus.
+ * block of the overview it shows, which comes on screen with the block given focus, or the
+ * overview itself, left at no block. A block a newer overview doesn't have is gone.
  */
 export function placesFor(tab: string): void {
   if (registered.has(tab)) return;
   registered.add(tab);
-  registry().history.register(tab, 'overview', (at) => {
-    const tree = trees.get(tab);
-    const index = at.kind === 'block' && tree !== undefined ? blockIn(at.block, tree) : undefined;
-    if (index === undefined) return false;
-    revealBlock(tab, index);
-    return true;
-  });
+  registry().history.register(
+    tab,
+    'overview',
+    (at) => {
+      if (at.kind === 'none') return showMiddle(tab, OVERVIEW_VIEW);
+      const tree = trees.get(tab);
+      const index = at.kind === 'block' && tree !== undefined ? blockIn(at.block, tree) : undefined;
+      if (index === undefined) return false;
+      revealBlock(tab, index);
+      return true;
+    },
+    // A block the overview on screen no longer has is gone. Before one is drawn, it can't tell.
+    (at) => {
+      const tree = trees.get(tab);
+      return at.kind !== 'block' || tree === undefined || blockIn(at.block, tree) !== undefined;
+    },
+  );
 }
 
 /**
