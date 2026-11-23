@@ -22,8 +22,6 @@ import {
 import { Decoration, type DecorationSet, EditorView, lineNumbers } from '@codemirror/view';
 
 import {
-  CODE_FOCUS,
-  FOCUS_ATTRIBUTE,
   type HeaderTarget,
   KEY_EVENT,
   type KeySource,
@@ -144,7 +142,6 @@ class WholeFile implements FileView {
     this.dom = document.createElement('div');
     this.dom.className = 'lo-fileview';
     this.dom.setAttribute(SCOPE_ATTRIBUTE, 'file');
-    this.dom.setAttribute(FOCUS_ATTRIBUTE, CODE_FOCUS);
     parent.append(this.dom);
     const count = this.#count;
     const side = this.#side;

@@ -34,9 +34,7 @@ import {
 import type { FileDiff, MovedBlock, RowBlock } from '@lo/diff';
 
 import {
-  CODE_FOCUS,
   controlOf,
-  FOCUS_ATTRIBUTE,
   type HeaderTarget,
   KEY_EVENT,
   type KeySource,
@@ -568,7 +566,6 @@ class View implements DiffView {
     this.dom = document.createElement('div');
     this.dom.className = 'lo-diffview';
     this.dom.setAttribute(SCOPE_ATTRIBUTE, 'diff');
-    this.dom.setAttribute(FOCUS_ATTRIBUTE, CODE_FOCUS);
     if (init.note) {
       const tone = init.note.tone === 'plain' ? '' : ` lo-diffnote--${init.note.tone}`;
       const note = document.createElement('div');

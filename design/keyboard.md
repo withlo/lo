@@ -87,11 +87,11 @@ code view and comment box follows at once.
   own focus work, and only while focus is still on the body. Focus that went anywhere by then, as a
   dialog giving it back to its trigger, stays there, and so does focus that left an element still on
   the page, by a click on nothing or the window losing focus. Should focus fall without a word, the
-  next key pressed on the body catches it, before the key is matched. A scope can name what takes
-  the focus it catches (`data-lo-focus`, a selector): a code view names its text, `.cm-content`,
-  where its cursor and Vim keys are, and the pane that had focus last takes it again. Else the scope
-  takes it itself, made focusable (`tabIndex = -1`) if it can't be, and drawing no ring, until focus
-  leaves it, for anywhere but the window losing focus.
+  next key pressed on the body catches it, before the key is matched. A code view's scope gives it
+  to the view (its source's `focus`), which puts it in its text, where its cursor and Vim keys are,
+  in the pane that had focus last, the cursor where it was. Any other scope takes it itself, made
+  focusable (`tabIndex = -1`) if it can't be, and drawing no ring, until focus leaves it, for
+  anywhere but the window losing focus.
 - **A better place than the scope is the view's to give.** Where one exists, such as the field a
   button was beside, the stack's tree above the note that held a Try again, or a dialog's main
   button, the view moves focus there itself as the element goes, and the window's handler finds

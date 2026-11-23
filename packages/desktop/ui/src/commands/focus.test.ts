@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { CAUGHT_ATTRIBUTE, catchFocus } from './focus.ts';
+import { setScopeSource, type KeySource } from './scopes.ts';
 
 let stop: () => void;
 
@@ -22,6 +23,19 @@ function leave(id: string, wrapped = id): void {
   focused.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
   element(wrapped).remove();
   expect(document.activeElement).toBe(document.body);
+}
+
+/** A code view whose `focus` puts focus on `id`, as a diff puts it in its pane's text. */
+function view(id: string | undefined): KeySource {
+  return {
+    keyState: () => ({ mode: 'normal', pending: false, target: { kind: 'none' } }),
+    passKeys: () => undefined,
+    clearPending: () => undefined,
+    setVimKeys: () => undefined,
+    focus: () => {
+      if (id) element(id).focus();
+    },
+  };
 }
 
 /** Lets a frame pass, and the tasks after it. */
@@ -109,12 +123,14 @@ describe('focus that falls to the page with what had it', () => {
   });
 });
 
-describe('a scope that names what takes its focus', () => {
+describe('a code view’s scope', () => {
+  let stops: (() => void)[];
+
   beforeEach(() => {
-    // A diff names its text, of which it has a pane for each side. A box in it is its own.
+    // A diff has a pane for each side, and a box in it is a code view of its own.
     document.body.innerHTML = `
-      <div data-lo-scope="diff" id="diff" data-lo-focus=".cm-content">
-        <div data-lo-scope="box" id="box" data-lo-focus=".cm-content">
+      <div data-lo-scope="diff" id="diff">
+        <div data-lo-scope="box" id="box">
           <div class="cm-content" id="text" tabindex="-1"></div>
           <button id="send">Send</button>
         </div>
@@ -123,29 +139,38 @@ describe('a scope that names what takes its focus', () => {
         <button id="tip">Show the tip</button>
       </div>
     `;
+    stops = [
+      setScopeSource(element('diff'), view('new')),
+      setScopeSource(element('box'), view('text')),
+    ];
   });
 
-  test('gives it to the first it names, not one in a scope inside it, and leaves the scope as it was', () => {
-    element('tip').focus();
-    leave('tip');
-    settle();
-    expect(document.activeElement).toBe(element('old'));
-    const diff = element('diff');
-    expect(diff.hasAttribute(CAUGHT_ATTRIBUTE)).toBe(false);
-    expect(diff.hasAttribute('tabindex')).toBe(false);
+  afterEach(() => {
+    for (const each of stops) each();
   });
 
-  test('gives it to the one that had focus last, while it’s still there', () => {
-    element('new').focus();
+  test('gives it to the view, which puts it in its text, and is left as it was', () => {
     element('tip').focus();
     leave('tip');
     settle();
     expect(document.activeElement).toBe(element('new'));
+    const diff = element('diff');
+    expect(diff.hasAttribute(CAUGHT_ATTRIBUTE)).toBe(false);
+    expect(diff.hasAttribute('tabindex')).toBe(false);
 
     element('send').focus();
     leave('send');
     settle();
     expect(document.activeElement).toBe(element('text'));
+  });
+
+  test('takes it itself where the view can’t, as while it draws nothing', () => {
+    stops.push(setScopeSource(element('diff'), view(undefined)));
+    element('tip').focus();
+    leave('tip');
+    settle();
+    expect(document.activeElement).toBe(element('diff'));
+    expect(element('diff').hasAttribute(CAUGHT_ATTRIBUTE)).toBe(true);
   });
 });
 

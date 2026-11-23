@@ -2,15 +2,15 @@
 // once pressed, the browser drops focus on the page's body, where none of the view's keys reach
 // the view. One handler on `window` gives it to the nearest part of the view still there: as focus
 // moves, it notes the scopes around the focused element, and once that element has gone and left
-// focus on the body, it focuses the nearest of them still on the page, or what that scope names to
-// take it (`data-lo-focus`), as a code view names its text. It looks a frame on, after React's
+// focus on the body, it focuses the nearest of them still on the page, or, for a code view, gives
+// the view focus in its text, where its cursor and Vim keys are. It looks a frame on, after React's
 // effects, Base UI's focus and a closing popup giving focus back, and stands aside where focus went
 // anywhere by then, as to a dialog's trigger, or where the element is still on the page, as after a
 // click on nothing or the window losing focus. Should the browser drop focus without a word, the
 // next key pressed on the body catches it first. A view with a better place for focus than the
 // scope, such as a field, puts it there itself first.
 
-import { FOCUS_ATTRIBUTE, SCOPE_ATTRIBUTE } from './scopes.ts';
+import { findScope, isKeySource, SCOPE_ATTRIBUTE } from './scopes.ts';
 
 type Win = Window & typeof globalThis;
 
@@ -28,7 +28,8 @@ interface Held {
 
 /**
  * What caught focus: a scope's own element, marked so it draws no ring, and given a `tabindex` if
- * it took one to take focus, or the target the scope names, which is left as it was.
+ * it took one to take focus, or what in a code view its view gave focus to, which is left as it
+ * was.
  */
 interface Caught {
   readonly element: HTMLElement;
@@ -47,8 +48,6 @@ interface Caught {
 export function catchFocus(win: Win): () => void {
   let held: Held | undefined;
   let caught: Caught | undefined;
-  /** The target each scope names that had focus last, so a diff's caught focus goes to its pane. */
-  const targets = new WeakMap<HTMLElement, Element>();
   let frame: number | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let leaving: ReturnType<typeof setTimeout> | undefined;
@@ -86,7 +85,7 @@ export function catchFocus(win: Win): () => void {
     if (!onBody()) return;
     for (const scope of fell.scopes) {
       if (!scope.isConnected) continue;
-      const took = take(win, scope, targets.get(scope));
+      const took = take(win, scope);
       if (took === undefined) continue;
       release();
       caught = took;
@@ -104,11 +103,7 @@ export function catchFocus(win: Win): () => void {
       held = undefined;
       return;
     }
-    const scopes = scopesAround(win, into);
-    held = { element: into, scopes };
-    const [nearest] = scopes;
-    const named = nearest?.getAttribute(FOCUS_ATTRIBUTE);
-    if (nearest && named && into.matches(named)) targets.set(nearest, into);
+    held = { element: into, scopes: scopesAround(win, into) };
   };
 
   const onFocusOut = (event: FocusEvent) => {
@@ -172,36 +167,17 @@ function scopesAround(win: Win, element: Element): HTMLElement[] {
 }
 
 /**
- * What `scope` names to take the focus it catches: the one that had focus last, while it's still
- * there, or else the first. Only its own, never one in a scope nested in it, as a box in the diff.
+ * Gives `scope` focus: to its code view, which puts it in its text, or else to the scope itself,
+ * with no ring, made focusable first if it isn't. Says what took it, or nothing if neither can, as
+ * when the scope is hidden or inert.
  */
-function targetOf(
-  win: Win,
-  scope: HTMLElement,
-  last: Element | undefined,
-): HTMLElement | undefined {
-  const named = scope.getAttribute(FOCUS_ATTRIBUTE);
-  if (!named) return undefined;
-  const own = (each: Element): each is HTMLElement =>
-    each instanceof win.HTMLElement &&
-    each.isConnected &&
-    each.matches(named) &&
-    each.closest(`[${SCOPE_ATTRIBUTE}]`) === scope;
-  if (last && own(last)) return last;
-  return [...scope.querySelectorAll(named)].find(own);
-}
-
-/**
- * Focuses what `scope` names to take focus, or else the scope itself, with no ring, made focusable
- * first if it isn't, and says what took it, or nothing if neither can, as when it's hidden or
- * inert.
- */
-function take(win: Win, scope: HTMLElement, last: Element | undefined): Caught | undefined {
-  const target = targetOf(win, scope, last);
-  if (target) {
-    target.focus({ preventScroll: true });
-    if (win.document.activeElement === target) {
-      return { element: target, marked: false, madeFocusable: false };
+function take(win: Win, scope: HTMLElement): Caught | undefined {
+  const { source } = findScope(scope);
+  if (isKeySource(source) && source.focus) {
+    source.focus();
+    const { activeElement } = win.document;
+    if (activeElement instanceof win.HTMLElement && scope.contains(activeElement)) {
+      return { element: activeElement, marked: false, madeFocusable: false };
     }
   }
   const focused = () => win.document.activeElement === scope;

@@ -34,8 +34,6 @@ import { classHighlighter } from '@lezer/highlight';
 import { getCM, Vim } from '@replit/codemirror-vim';
 
 import {
-  CODE_FOCUS,
-  FOCUS_ATTRIBUTE,
   type KeySource,
   SCOPE_ATTRIBUTE,
   setScopeSource,
@@ -190,7 +188,6 @@ export class CommentBox implements BoxHost, KeySource {
     this.dom.className = 'lo-diffcomposer';
     this.#followGrowth();
     this.dom.setAttribute(SCOPE_ATTRIBUTE, 'box');
-    this.dom.setAttribute(FOCUS_ATTRIBUTE, CODE_FOCUS);
     this.#parts = {
       head: part('head'),
       note: part('note'),

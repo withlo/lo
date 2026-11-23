@@ -127,10 +127,8 @@ export {
   type RegistryOptions,
 } from './registry.ts';
 export {
-  CODE_FOCUS,
   codeScopes,
   engineScopes,
-  FOCUS_ATTRIBUTE,
   findScope,
   hasEditMenu,
   isEditable,
