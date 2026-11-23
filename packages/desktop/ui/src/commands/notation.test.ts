@@ -82,19 +82,19 @@ describe('notation', () => {
   });
 
   test('says why keys can’t be read', () => {
-    expect(readKeys('')).toEqual({ error: 'No keys.' });
-    expect(readKeys('cmd+')).toEqual({ error: '"cmd+" has no key after its last "+".' });
-    expect(readKeys('+p')).toEqual({ error: '"+p" has a "+" with nothing before it.' });
+    expect(readKeys('')).toEqual({ error: 'No keys' });
+    expect(readKeys('cmd+')).toEqual({ error: '`cmd+` has no key after `+`' });
+    expect(readKeys('+p')).toEqual({ error: '`+p` has nothing before `+`' });
     expect(readKeys('meta+p')).toEqual({
-      error: '"meta" in "meta+p" isn\'t a modifier: use cmd, ctrl, alt or shift.',
+      error: '`meta` isn’t a modifier: use `cmd`, `ctrl`, `alt` or `shift`',
     });
     expect(readKeys('shift+ctrl+shift+a')).toEqual({
-      error: '"shift+ctrl+shift+a" holds shift twice.',
+      error: '`shift+ctrl+shift+a` has `shift` twice',
     });
     expect(readKeys('g escape')).toEqual({
-      error: '"escape" isn\'t a key: write one character, or a name such as enter.',
+      error: '`escape` isn’t a key: use one character or a name such as `enter`',
     });
-    expect(() => parseKeys('cmd+')).toThrow('Keys "cmd+": "cmd+" has no key after its last "+".');
+    expect(() => parseKeys('cmd+')).toThrow('Keys "cmd+": `cmd+` has no key after `+`');
   });
 
   test('cmd is ⌘ on macOS and Ctrl on Linux, and ctrl is ⌃ on both', () => {

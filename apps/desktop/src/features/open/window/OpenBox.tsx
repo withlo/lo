@@ -34,12 +34,6 @@ function labels(keys: string): string[] {
   return keyLabels(systemStrokes(parseKeys(keys), system), system);
 }
 
-/** The first key `id` has now, as this system shows it, if it has one. */
-function keyOf(id: string): string[] | undefined {
-  const [first] = registry().keysOf(id);
-  return first && keyLabels(first, registry().system);
-}
-
 const LINK_ICON = (
   <svg className="lo-i text-fg-muted" viewBox="0 0 16 16" aria-hidden="true">
     <path d="M6.5 9.5l3-3M7 4.5l1-1a2.47 2.47 0 0 1 3.5 3.5l-1 1M9 11.5l-1 1A2.47 2.47 0 0 1 4.5 9l1-1" />
@@ -222,7 +216,6 @@ export function OpenBox() {
       onClosed={boxClosed}
       label="Open pull request"
       placeholder="Paste a pull request link"
-      keys={keyOf('open.box')}
       mono
       icon={LINK_ICON}
       mode={state.fromClipboard ? 'From clipboard' : undefined}

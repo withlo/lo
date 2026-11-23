@@ -74,7 +74,7 @@ async function listed(page: Page): Promise<unknown> {
   return reply;
 }
 
-test('the account in the token file is added as Lo starts, and the window gets only its summary; the app menu has Sign in with GitHub… and Sign out…; Linux’s fallback is marked v10; and a build run from source goes by Lo Dev', async ({
+test('the account in the token file is added as Lo starts, and the window gets only its summary; the app menu leaves accounts to Settings; Linux’s fallback is marked v10; and a build run from source goes by Lo Dev', async ({
   app,
   page,
 }) => {
@@ -99,12 +99,13 @@ test('the account in the token file is added as Lo starts, and the window gets o
 
   // The app menu is the Mac's.
   if (process.platform === 'darwin') {
-    await test.step('the app menu has Sign in with GitHub… and Sign out…', async () => {
+    await test.step('the app menu leaves accounts to Settings', async () => {
       const labels = await app.evaluate(({ Menu }) =>
         (Menu.getApplicationMenu()?.items[0]?.submenu?.items ?? []).map((item) => item.label),
       );
-      expect(labels).toContain('Sign in with GitHub…');
-      expect(labels).toContain('Sign out…');
+      expect(labels).toContain('Settings…');
+      expect(labels).not.toContain('Sign in with GitHub…');
+      expect(labels).not.toContain('Sign out…');
     });
   }
 

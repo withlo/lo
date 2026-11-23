@@ -389,7 +389,7 @@
   --lo-list-repo-w: 220px; /* Widest the repository column of a list of pull requests grows. */
   --lo-list-who-w: 150px; /* Width of a list of pull requests' column of people: its author, its account. */
   --lo-list-when-w: 96px; /* Width of a list of pull requests' column of times. */
-  --lo-keyhelp-w: 1240px; /* Widest the key help grows. */
+  --lo-keyhelp-nav-w: 160px; /* Width of the list of areas beside keyboard shortcuts' keys. */
   --lo-settings-nav-w: 220px; /* Width of the list of groups beside Settings. */
   --lo-settings-w: 720px; /* Widest Settings' column of rows grows, in the middle of the room beside its list. */
   --lo-dialog-w: 540px; /* Width of a medium dialog, the default: signing in, importing accounts, choosing an account. */

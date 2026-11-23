@@ -14,35 +14,35 @@ const declared = defineCommands('diff', {
   // Out of order on purpose: a menu follows `order`, not the order commands are declared in.
   copyPath: {
     label: 'Copy the path',
-    group: 'Copy and open',
+    group: 'Tabs',
     keys: ['y p'],
     targets: ['file'],
     menu: { on: 'file', order: 60 },
   },
   show: {
     label: 'Show in the diff',
-    group: 'Files',
+    group: 'Go',
     keys: ['enter'],
     targets: ['file'],
     menu: { on: 'file', order: 10 },
   },
   markViewed: {
     label: 'Mark viewed',
-    group: 'Files',
+    group: 'Go',
     keys: ['e'],
     targets: ['file'],
     menu: { on: 'file', order: 20 },
   },
   comment: {
     label: 'Comment on the file',
-    group: 'Act',
+    group: 'Review',
     keys: ['c'],
     targets: ['file'],
     menu: { on: 'file', order: 30 },
   },
   openGithub: {
     label: 'Open on GitHub',
-    group: 'Copy and open',
+    group: 'Tabs',
     keys: ['g x'],
     targets: ['file'],
     menu: { on: 'file', order: 70 },
@@ -50,7 +50,7 @@ const declared = defineCommands('diff', {
   // A line's, not a file's, and one with a second key.
   suggest: {
     label: 'Suggest a change',
-    group: 'Act',
+    group: 'Review',
     keys: ['s', 'cmd+shift+s'],
     targets: ['line'],
     menu: { on: 'line', order: 10 },
@@ -58,23 +58,23 @@ const declared = defineCommands('diff', {
   // For one system.
   quit: {
     label: 'Quit Lo',
-    group: 'Tabs and window',
+    group: 'Tabs',
     keys: ['cmd+q'],
     when: { system: 'linux' },
     menu: { on: 'file', order: 80 },
   },
   open: {
     label: 'Open a PR',
-    group: 'Find',
+    group: 'Go',
     keys: ['cmd+l', { keys: 'cmd+o', on: 'mac' }],
     menu: { on: 'file', order: 40 },
   },
   // Has keys, but isn't in a menu.
-  next: { label: 'Next file', group: 'Jump', keys: ['] f'], targets: ['file'] },
+  next: { label: 'Next file', group: 'Go', keys: ['] f'], targets: ['file'] },
   // Vim's own, which nothing runs.
   down: {
     label: 'Line down',
-    group: 'Move',
+    group: 'Go',
     keys: ['j'],
     vim: 'own',
     menu: { on: 'file', order: 1 },
@@ -197,7 +197,7 @@ describe('a right-click menu', () => {
     const fold = defineCommands('diff', {
       toggle: {
         label: 'Open or close the thread, or the file',
-        group: 'Diff view',
+        group: 'View',
         keys: ['z a'],
         targets: ['header', 'thread'],
         menu: [

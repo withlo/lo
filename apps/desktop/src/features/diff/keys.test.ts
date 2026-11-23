@@ -1,4 +1,4 @@
-// "Overview note", which has no key: offered in the diff alone, which draws the overview's markers,
+// "Show overview note", which has no key: offered in the diff alone, which draws the overview's markers,
 // on a line with one, and listed on that line's menu only. And `gm`, a jump, which `⌃o` comes back
 // from.
 
@@ -42,11 +42,11 @@ const registry = new Registry({
   ),
 });
 
-/** Whether the palette offers "Overview note" in `scope`, on `target`. */
+/** Whether the palette offers "Show overview note" in `scope`, on `target`. */
 const offered = (scope: string, target: LineTarget) =>
   paletteItems(registry, scope, target).some((item) => item.id === 'diff.overviewNote');
 
-describe('Overview note', () => {
+describe('Show overview note', () => {
   it('is in the palette in the diff alone, on a line with a note', () => {
     expect(offered('diff', line(4))).toBe(true);
     expect(offered('diff', line(5))).toBe(false);
@@ -61,12 +61,12 @@ describe('Overview note', () => {
       menuSections(registry, target)
         .flat()
         .map((item) => item.label);
-    expect(menu(line(4))).toContain('Overview note');
-    expect(menu(line(5))).not.toContain('Overview note');
+    expect(menu(line(4))).toContain('Show overview note');
+    expect(menu(line(5))).not.toContain('Show overview note');
   });
 });
 
-describe('The other end of moved code', () => {
+describe('Go to moved code', () => {
   it('is a jump: it records where the cursor was, which ⌃o goes back to', () => {
     const here: Entry = { view: 'diff', at: line(4) };
     const jumps = new Registry({

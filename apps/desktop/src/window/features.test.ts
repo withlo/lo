@@ -5,7 +5,7 @@ import { checkCommands, checkSlots, checkViews, featureViews } from './features.
 import { defineSlot, defineView } from './slots.tsx';
 
 const keys = commandsOf(
-  defineCommands('keys', { help: { label: 'Every key', group: 'Tabs and window', keys: ['?'] } }),
+  defineCommands('keys', { help: { label: 'Keyboard shortcuts', group: 'App', keys: ['?'] } }),
 );
 
 it("collects features' commands, each declared under its own folder's name", () => {

@@ -17,11 +17,11 @@ import { dataFolder, expect, keymapPath, opened, test } from './app.ts';
 
 const mac = process.platform === 'darwin';
 
-/** Opens key help by its key, from the middle of the window. */
+/** Opens keyboard shortcuts by its key, from the middle of the window. */
 async function openHelp(page: Page) {
   await page.locator('main[data-lo-middle]').focus();
   await page.keyboard.press('?');
-  const help = page.getByRole('dialog', { name: 'Every key' });
+  const help = page.getByRole('dialog', { name: 'Keyboard shortcuts' });
   await expect(help).toBeVisible();
   return help;
 }
@@ -45,15 +45,15 @@ test.describe('with a keymap file', () => {
     ].join('\n'),
   });
 
-  test('key help shows its remap and a bad line’s error, and a change to the file applies', async ({
+  test('keyboard shortcuts shows its remap and a bad line’s error, and a change to the file applies', async ({
     page,
   }) => {
     const help = await openHelp(page);
     const palette = help.locator('[data-command="keys.palette"] kbd');
     await expect(palette).toHaveText([mac ? '⌘K' : 'Ctrl+K']);
     const alert = help.getByRole('alert');
-    await expect(alert).toContainText("The keymap file has a line Lo can't use:");
-    await expect(alert).toContainText("Line 4: There's no command called nope.nothing.");
+    await expect(alert).toContainText('Can’t use 1 line of the keymap file');
+    await expect(alert).toContainText('Line 4 · No command nope.nothing');
 
     // The remap works: the palette opens on its new key.
     await page.keyboard.press('Escape');
@@ -79,9 +79,7 @@ test.describe('with a keymap file', () => {
     // Writing it in place applies too, and a line that can't apply is reported where it is.
     await openHelp(page);
     writeFileSync(keymapPath(dataFolder()), '# nothing here\n\n\nbind alt+p keys.nope\n');
-    await expect(help.getByRole('alert')).toContainText(
-      "Line 4: There's no command called keys.nope.",
-    );
+    await expect(help.getByRole('alert')).toContainText('Line 4 · No command keys.nope');
     await expect(palette).toHaveText([mac ? '⌘⇧P' : 'Ctrl+Shift+P']);
   });
 });
@@ -97,10 +95,10 @@ async function pressOpen(page: Page): Promise<void> {
 const toast = (page: Page, text: string) => page.getByRole('status').filter({ hasText: text });
 
 const openKeymap = (help: ReturnType<Page['locator']>) =>
-  help.getByRole('button', { name: 'Open the keymap file' });
+  help.getByRole('button', { name: 'Open keymap file' });
 
 test.describe('with no keymap file', () => {
-  test('key help opens the keymap file, making it first, and never writes over one', async ({
+  test('keyboard shortcuts opens the keymap file, making it first, and never writes over one', async ({
     page,
   }) => {
     const path = keymapPath(dataFolder());
@@ -112,7 +110,7 @@ test.describe('with no keymap file', () => {
     await expect.poll(() => existsSync(path)).toBe(true);
     await expect.poll(opened).toEqual([realpathSync(path)]);
     expect(readFileSync(path, 'utf8')).toMatch(/^# Lo's keymap\./);
-    // Key help stays, so what's wrong with the file is there when its editor is closed.
+    // Keyboard shortcuts stays, so what's wrong with the file is there when its editor is closed.
     await expect(help).toBeVisible();
     await expect(help.getByRole('alert')).toHaveCount(0);
 
@@ -141,7 +139,7 @@ test.describe('with a keymap file that opening could run', () => {
   const script = '#!/bin/sh\necho hello\nbind cmd+j keys.palette\n';
   test.use({ keymap: script });
 
-  test('an executable one is not opened: key help says why and has no button, and g , says why too', async ({
+  test('an executable one is not opened: keyboard shortcuts says why and has no button, and g , says why too', async ({
     page,
   }) => {
     const path = keymapPath(dataFolder());
@@ -158,12 +156,12 @@ test.describe('with a keymap file that opening could run', () => {
     await pressOpen(page);
     await expect(toast(page, 'The keymap file is executable')).toBeVisible();
     // The reason alone, not under the command's name.
-    await expect(toast(page, 'Open the keymap file')).toHaveCount(0);
+    await expect(toast(page, 'Open keymap file')).toHaveCount(0);
     // Nothing was started.
     await page.waitForTimeout(300);
     expect(opened()).toEqual([]);
 
-    // Once it is a plain file, key help offers it again, and it opens.
+    // Once it is a plain file, keyboard shortcuts offers it again, and it opens.
     chmodSync(path, 0o644);
     await openHelp(page);
     await expect(openKeymap(help)).toBeVisible();

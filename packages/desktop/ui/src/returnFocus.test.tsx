@@ -57,7 +57,9 @@ const palette = (open: boolean) => (
   />
 );
 
-const keyHelp = (open: boolean) => <KeyHelp open={open} onOpenChange={() => {}} groups={[]} />;
+const keyHelp = (open: boolean) => (
+  <KeyHelp open={open} onOpenChange={() => {}} here={[]} areas={[]} all={[]} />
+);
 
 const dialog = (open: boolean) => (
   <Dialog open={open} onOpenChange={() => {}} title="Dialog">
@@ -68,7 +70,7 @@ const dialog = (open: boolean) => (
 describe('closing a dialog', () => {
   it.each([
     ['a palette', palette],
-    ['key help', keyHelp],
+    ['keyboard shortcuts', keyHelp],
     ['a dialog', dialog],
   ])(
     'puts focus back on the element that had it, not a tabbable part of it: %s',
@@ -162,10 +164,7 @@ describe('closing a popup that gives focus back a frame on, once its close is co
     Reflect.deleteProperty(Element.prototype, 'getAnimations');
   });
 
-  const late = [
-    ['the merge panel', mergePanel],
-    ['key help', keyHelp],
-  ] as const;
+  const late = [['the merge panel', mergePanel]] as const;
 
   it.each(late)('gives it back to where it was when nothing opened: %s', async (_, popup) => {
     const { container, show } = page(closing(popup, false));

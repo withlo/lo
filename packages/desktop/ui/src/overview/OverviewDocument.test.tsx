@@ -364,7 +364,7 @@ describe('drawing again', () => {
 function blockKey(label: string, key: string) {
   return {
     label,
-    group: 'Overview' as const,
+    group: 'View' as const,
     keys: [key],
     targets: ['block' as const, 'none' as const],
   };

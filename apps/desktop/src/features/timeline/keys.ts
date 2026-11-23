@@ -13,9 +13,21 @@ const timeline: When = { scope: 'timeline' };
 export default defineCommands(
   'timeline',
   {
+    /**
+     * Shows the timeline in the middle of the pull request's tab on screen: one of the three views
+     * the header's switch lists, so the app menu has it beside the other two, checked while it shows.
+     */
+    show: {
+      label: 'Timeline',
+      control: "Timeline in the pull request's header",
+      group: 'View',
+      keys: [],
+      bar: { menu: 'View', section: 'views', order: 30 },
+      toggle: 'choice',
+    },
     down: {
       label: 'Next event',
-      group: 'Move',
+      group: 'Go',
       keys: ['j', 'down'],
       when: timeline,
       repeat: true,
@@ -23,7 +35,7 @@ export default defineCommands(
     },
     up: {
       label: 'Previous event',
-      group: 'Move',
+      group: 'Go',
       keys: ['k', 'up'],
       when: timeline,
       repeat: true,
@@ -35,14 +47,16 @@ export default defineCommands(
      */
     nextLink: {
       label: 'Next link',
-      group: 'Move',
+      description: 'Stops at the event’s buttons too.',
+      group: 'Go',
       keys: ['tab'],
       when: timeline,
       control: 'a click on the link or button itself',
     },
     previousLink: {
       label: 'Previous link',
-      group: 'Move',
+      description: 'Stops at the event’s buttons too.',
+      group: 'Go',
       keys: ['shift+tab'],
       when: timeline,
       control: 'a click on the link or button itself',
@@ -50,7 +64,7 @@ export default defineCommands(
     /** Focus in the box at the timeline's end, which comments on the pull request itself. */
     comment: {
       label: 'Comment on pull request',
-      group: 'Act',
+      group: 'Comments',
       keys: ['c'],
       when: timeline,
       control: "the comment box at the timeline's end",
@@ -58,7 +72,7 @@ export default defineCommands(
     /** A box with your comment's text, in its card, to edit it and save it over GitHub's text. */
     editComment: {
       label: 'Edit comment',
-      group: 'Act',
+      group: 'Comments',
       keys: ['i'],
       targets: ['row'],
       when: timeline,
@@ -67,7 +81,7 @@ export default defineCommands(
     /** Deletes your comment, once you say so. */
     deleteComment: {
       label: 'Delete comment…',
-      group: 'Act',
+      group: 'Comments',
       keys: ['d d'],
       targets: ['row'],
       when: timeline,
@@ -76,7 +90,7 @@ export default defineCommands(
     /** Shows the hidden comment or review, as its "Show comment" does. */
     showComment: {
       label: 'Show comment',
-      group: 'Act',
+      group: 'Comments',
       keys: [],
       targets: ['row'],
       when: timeline,
@@ -85,7 +99,7 @@ export default defineCommands(
     /** Shows the diff, where a review's comments are, as its "Show in diff" does. */
     showInDiff: {
       label: 'Show in diff',
-      group: 'View',
+      group: 'Comments',
       keys: [],
       targets: ['row'],
       when: timeline,
@@ -110,7 +124,8 @@ export default defineCommands(
      */
     openOnGithub: {
       label: 'Open on GitHub',
-      group: 'Copy and open',
+      description: 'The event, where it happened.',
+      group: 'Tabs',
       keys: ['g x'],
       targets: ['row'],
       when: timeline,

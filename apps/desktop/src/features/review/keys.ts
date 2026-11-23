@@ -13,7 +13,7 @@ export default defineCommands('review', {
     group: 'Review',
     keys: ['cmd+enter'],
     when: { except: ['box', 'dialog', 'palette', 'menu'] },
-    bar: { menu: 'Review', order: 10 },
+    bar: { menu: 'Review', section: 'review', order: 10 },
     control: 'Submit review… in the header, beside the merge status',
   },
 });

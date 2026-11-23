@@ -206,12 +206,6 @@ test('opens lo:// links and a second launch’s links as a typed link, and says 
   });
 
   await test.step('installs the lo command, which hands a link to the Lo running', async () => {
-    if (mac) {
-      const labels = await app.evaluate(({ Menu }) =>
-        (Menu.getApplicationMenu()?.items[0]?.submenu?.items ?? []).map((item) => item.label),
-      );
-      expect(labels).toContain('Install lo command');
-    }
     const reply = await page.evaluate(() => window.lo.invoke('open.installCommand'));
     const lo = join(test.info().outputPath('bin'), 'lo');
     expect(reply).toEqual({ ok: true, value: { kind: 'installed', path: lo, onPath: false } });

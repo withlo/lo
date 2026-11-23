@@ -1,4 +1,5 @@
 export {
+  STRIP_ATTRIBUTE,
   TabBar,
   type PullTab,
   type RecentTab,
@@ -30,7 +31,7 @@ export {
   type ToastStackProps,
   type ToastTone,
 } from './Toast.tsx';
-export { KeyHelp, type KeyHelpProblem, type KeyHelpProps } from './KeyHelp.tsx';
+export { HERE, KeyHelp, type KeyHelpProblem, type KeyHelpProps } from './KeyHelp.tsx';
 export { MORE_ACTIONS, MoreButton, openMenuUnder, type MoreButtonProps } from './MoreButton.tsx';
 export { Palette, PaletteHint, type PaletteGroup, type PaletteProps } from './Palette.tsx';
 export {

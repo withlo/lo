@@ -193,7 +193,6 @@ export function Finder() {
       onClosed={finderClosed}
       label="Go to a file"
       placeholder="Find a file by name"
-      keys={keyOf('tree.find')}
       icon={FILE_ICON}
       query={state.query}
       onQueryChange={typeQuery}

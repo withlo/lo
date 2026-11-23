@@ -2,71 +2,117 @@ import type { MenuItemConstructorOptions } from 'electron';
 import { describe, expect, it } from 'vitest';
 
 import type { BarItem } from '../features/keys/contract.ts';
-import { acceleratorOf, appMenu, macMenu } from './menu.ts';
+import { acceleratorOf, appMenu, barNames, menuTree, type MenuOptions } from './menu.ts';
+
+/** A command in the app menu, enabled, with no key. */
+const item = (
+  id: string,
+  menu: string,
+  section: string,
+  order: number,
+  more: Partial<BarItem> = {},
+) => ({ id, label: id, menu, section, order, enabled: true, ...more }) satisfies BarItem;
 
 const items: BarItem[] = [
-  {
-    id: 'keys.forward',
+  item('keys.forward', 'Go', 'history', 20, {
     label: 'Forward',
-    menu: 'Go',
-    order: 20,
     key: { key: 'i', meta: false, ctrl: true, alt: false, shift: false },
-    enabled: true,
-  },
-  {
-    id: 'keys.back',
+  }),
+  item('keys.back', 'Go', 'history', 10, {
     label: 'Back',
-    menu: 'Go',
-    order: 10,
     key: { key: 'o', meta: false, ctrl: true, alt: false, shift: false },
     enabled: false,
-  },
-  { id: 'view.inline', label: 'Inline or side by side', menu: 'View', order: 5, enabled: true },
+  }),
+  item('diff.inline', 'View', 'diff', 5, { label: 'Inline' }),
 ];
 
-/** A command in the app menu's Update submenu. */
-const update = (id: string, order: number, enabled: boolean): BarItem => ({
-  id,
-  label: id,
-  menu: 'Update',
-  order,
-  enabled,
-});
+const options: MenuOptions = {
+  name: 'Lo',
+  devTools: false,
+  run: () => undefined,
+  redraw: () => undefined,
+};
+
+/** Clicks `on`, by its key or not, as Electron would. */
+const clickOn = (on: MenuItemConstructorOptions | undefined, triggeredByAccelerator: boolean) =>
+  on?.click?.(
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- only the event is read.
+    {} as Parameters<NonNullable<MenuItemConstructorOptions['click']>>[0],
+    undefined,
+    { triggeredByAccelerator, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false },
+  );
 
 function menuOf(template: MenuItemConstructorOptions[], label: string) {
   const found = template.find((each) => each.label === label);
   return Array.isArray(found?.submenu) ? found.submenu : undefined;
 }
 
+/** A menu's items by id, role or type. */
+const partsOf = (template: MenuItemConstructorOptions[], label: string) =>
+  menuOf(template, label)?.map((each) => each.id ?? each.role ?? each.type);
+
 /** Every role and accelerator in a template, however deep. */
 function everything(template: MenuItemConstructorOptions[]): string[] {
-  return template.flatMap((item) => [
-    ...(item.role ? [`role:${item.role}`] : []),
-    ...(typeof item.accelerator === 'string' ? [`key:${item.accelerator}`] : []),
-    ...(Array.isArray(item.submenu) ? everything(item.submenu) : []),
+  return template.flatMap((each) => [
+    ...(each.role ? [`role:${each.role}`] : []),
+    ...(typeof each.accelerator === 'string' ? [`key:${each.accelerator}`] : []),
+    ...(Array.isArray(each.submenu) ? everything(each.submenu) : []),
   ]);
 }
 
-describe('the macOS app menu', () => {
+/** The item in the app section of Lo's menu, with Restart to update `enabled` or not. */
+const updateItem = (enabled: boolean) =>
+  partsOf(
+    menuTree(
+      'mac',
+      [
+        item('updates.check', 'Lo', 'app', 10),
+        item('updates.restart', 'Lo', 'app', 10, { instead: 'updates.check', enabled }),
+      ],
+      options,
+    ),
+    'Lo',
+  )?.slice(2, 3);
+
+/** A template's menus, each by label and role. */
+const topOf = (menus: MenuItemConstructorOptions[]) => menus.map((each) => [each.label, each.role]);
+
+describe('the app menu', () => {
   const run: string[] = [];
-  const template = macMenu(items, { name: 'Lo', devTools: false, run: (id) => run.push(id) });
+  const template = menuTree('mac', items, { ...options, run: (id) => run.push(id) });
 
   it('never reloads the page or closes the window by key', () => {
-    const all = everything(template);
-    for (const missing of [
-      'role:reload',
-      'role:forceReload',
-      'role:close',
-      'role:toggleDevTools',
-    ]) {
-      expect(all).not.toContain(missing);
+    for (const system of ['mac', 'linux'] as const) {
+      const all = everything(menuTree(system, items, options));
+      for (const missing of ['role:reload', 'role:forceReload', 'role:close']) {
+        expect(all).not.toContain(missing);
+      }
+      expect(all.filter((each) => /\+[RW]$/.test(each))).toEqual([]);
     }
-    expect(all.filter((each) => /\+[RW]$/.test(each))).toEqual([]);
   });
 
-  it("keeps the system's roles: the app's menu, editing and the window", () => {
+  it('keeps the menus in their order, leaving out those with nothing in them', () => {
     expect(template.map((each) => each.label)).toEqual(['Lo', 'Edit', 'View', 'Go', 'Window']);
-    expect(menuOf(template, 'Lo')?.map((each) => each.role ?? each.type)).toEqual([
+    expect(barNames().map(({ menu }) => menu)).toEqual([
+      'Lo',
+      'File',
+      'Edit',
+      'View',
+      'Go',
+      'Review',
+      'Window',
+      'Help',
+    ]);
+    expect(barNames().find(({ menu }) => menu === 'File')?.sections).toEqual([
+      'open',
+      'pull',
+      'tab',
+      'quit',
+    ]);
+  });
+
+  it("keeps macOS's roles: the app's menu, editing and the window", () => {
+    expect(partsOf(template, 'Lo')).toEqual([
       'about',
       'separator',
       'services',
@@ -77,7 +123,7 @@ describe('the macOS app menu', () => {
       'separator',
       'quit',
     ]);
-    expect(menuOf(template, 'Edit')?.map((each) => each.role ?? each.type)).toEqual([
+    expect(partsOf(template, 'Edit')).toEqual([
       'undo',
       'redo',
       'separator',
@@ -86,130 +132,113 @@ describe('the macOS app menu', () => {
       'paste',
       'selectAll',
     ]);
-    expect(template.at(-1)?.role).toBe('windowMenu');
-    expect(menuOf(template, 'Window')?.map((each) => each.role ?? each.type)).toEqual([
-      'minimize',
-      'zoom',
-      'separator',
-      'front',
-    ]);
+    expect(template.at(-1)).toMatchObject({ label: 'Window', role: 'windowMenu' });
+    expect(partsOf(template, 'Window')).toEqual(['minimize', 'zoom', 'separator', 'front']);
   });
 
-  it('adds Help, the last menu, while a command is in it', () => {
-    const welcome: BarItem = {
-      id: 'welcome.show',
-      label: 'Welcome to Lo',
-      menu: 'Help',
-      order: 10,
-      enabled: true,
-    };
-    const withHelp = macMenu([welcome], { name: 'Lo', devTools: false, run: () => undefined });
-    expect(withHelp.at(-1)).toMatchObject({ label: 'Help', role: 'help' });
-    expect(menuOf(withHelp, 'Help')?.map((each) => each.label)).toEqual(['Welcome to Lo']);
-    expect(template.some((each) => each.label === 'Help')).toBe(false);
-  });
-
-  it("puts commands for the app's own menu after About", () => {
-    const install: BarItem = {
-      id: 'open.installCommand',
-      label: 'Install command-line tool',
-      menu: 'App',
-      order: 10,
-      enabled: true,
-    };
-    const withApp = macMenu([install], { name: 'Lo', devTools: false, run: () => undefined });
-    expect(menuOf(withApp, 'Lo')?.map((each) => each.id ?? each.role ?? each.type)).toEqual([
-      'about',
-      'separator',
-      'open.installCommand',
-      'separator',
-      'services',
-      'separator',
-      'hide',
-      'hideOthers',
-      'unhide',
-      'separator',
-      'quit',
-    ]);
-  });
-
-  it('puts the commands of the Update menu in a submenu of the app’s own, after its others', () => {
-    const check: BarItem = {
-      id: 'updates.check',
-      label: 'Check for updates',
-      menu: 'App',
-      order: 1,
-      enabled: true,
-    };
-    const build = (...rest: BarItem[]) =>
-      menuOf(
-        macMenu([check, ...rest], { name: 'Lo', devTools: false, run: () => undefined }),
-        'Lo',
-      );
-    const withUpdate = build(update('updates.copy', 2, false), update('updates.move', 1, true));
-    expect(withUpdate?.map((each) => each.id ?? each.label ?? each.role ?? each.type)).toEqual([
-      'about',
-      'separator',
-      'updates.check',
-      'Update',
-      'separator',
-      'services',
-      'separator',
-      'hide',
-      'hideOthers',
-      'unhide',
-      'separator',
-      'quit',
-    ]);
-    const submenu = withUpdate?.find((each) => each.label === 'Update');
-    expect(Array.isArray(submenu?.submenu) && submenu.submenu.map((each) => each.id)).toEqual([
-      'updates.move',
-      'updates.copy',
-    ]);
-    // It can be opened while something in it can run, and is greyed when nothing can.
-    expect(submenu?.enabled).toBe(true);
-    const greyed = build(update('updates.copy', 2, false), update('updates.move', 1, false));
-    expect(greyed?.find((each) => each.label === 'Update')?.enabled).toBe(false);
-    // And it isn't there when no command is in it.
-    expect(build()?.some((each) => each.label === 'Update')).toBe(false);
-  });
-
-  it("puts Lo's commands in their menus, in order, with their keys and states", () => {
+  it("puts Lo's commands in their sections, in order, with their keys and states", () => {
     expect(
       menuOf(template, 'Go')?.map((each) => [each.id, each.label, each.accelerator, each.enabled]),
     ).toEqual([
       ['keys.back', 'Back', 'Control+O', false],
       ['keys.forward', 'Forward', 'Control+I', true],
     ]);
-    expect(menuOf(template, 'View')?.map((each) => each.id ?? each.role ?? each.type)).toEqual([
-      'view.inline',
+    expect(partsOf(template, 'View')).toEqual(['diff.inline', 'separator', 'togglefullscreen']);
+    const help = menuTree('mac', [item('welcome.show', 'Help', 'help', 10)], options);
+    expect(help.at(-1)).toMatchObject({ label: 'Help', role: 'help' });
+  });
+
+  it('puts Settings in the app’s own menu, with the system’s …, after About', () => {
+    const lo = partsOf(
+      menuTree(
+        'mac',
+        [
+          item('settings.open', 'Lo', 'app', 20, { label: 'Settings' }),
+          item('updates.check', 'Lo', 'app', 10),
+        ],
+        options,
+      ),
+      'Lo',
+    );
+    expect(lo?.slice(0, 5)).toEqual([
+      'about',
       'separator',
-      'togglefullscreen',
+      'updates.check',
+      'settings.open',
+      'separator',
     ]);
-    // A menu Lo has nothing in isn't shown.
-    expect(menuOf(template, 'File')).toBeUndefined();
-    expect(menuOf(template, 'Review')).toBeUndefined();
+    const settings = menuOf(
+      menuTree('mac', [item('settings.open', 'Lo', 'app', 20, { label: 'Settings' })], options),
+      'Lo',
+    )?.find((each) => each.id === 'settings.open');
+    expect(settings?.label).toBe('Settings…');
+  });
+
+  it('shows a command in place of another while it can run, and not otherwise', () => {
+    expect(updateItem(true)).toEqual(['updates.restart']);
+    expect(updateItem(false)).toEqual(['updates.check']);
+  });
+
+  it('draws a switch as a check box and a choice as a radio item, each with its state', () => {
+    const view = menuOf(
+      menuTree(
+        'mac',
+        [
+          item('tab.rightPanel', 'View', 'panels', 10, { toggle: 'switch', checked: true }),
+          item('diff.sideBySide', 'View', 'diff', 10, { toggle: 'choice', checked: false }),
+          item('diff.inline', 'View', 'diff', 20, { toggle: 'choice', checked: true }),
+        ],
+        options,
+      ),
+      'View',
+    );
+    expect(
+      view?.filter((each) => each.id).map((each) => [each.id, each.type, each.checked]),
+    ).toEqual([
+      ['tab.rightPanel', 'checkbox', true],
+      ['diff.sideBySide', 'radio', false],
+      ['diff.inline', 'radio', true],
+    ]);
   });
 
   it('runs a command on a click, and nothing when a key triggered the item', () => {
-    const back = menuOf(template, 'Go')?.[0];
-    const click = (triggeredByAccelerator: boolean) =>
-      back?.click?.(
-        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- only the event is read.
-        {} as Parameters<NonNullable<MenuItemConstructorOptions['click']>>[0],
-        undefined,
-        { triggeredByAccelerator, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false },
-      );
-    click(true);
+    const forward = menuOf(template, 'Go')?.[1];
+    clickOn(forward, true);
     expect(run).toEqual([]);
-    click(false);
-    expect(run).toEqual(['keys.back']);
+    clickOn(forward, false);
+    expect(run).toEqual(['keys.forward']);
+  });
+
+  it('draws the menu again after a click on a check or a radio item, by its key or not, and only then', () => {
+    let redrawn = 0;
+    const ran: string[] = [];
+    const view = menuOf(
+      menuTree(
+        'mac',
+        [
+          item('tab.leftPanel', 'View', 'panels', 10, { toggle: 'switch', checked: true }),
+          item('diff.inline', 'View', 'diff', 20, { toggle: 'choice', checked: true }),
+          item('keys.palette', 'View', 'palette', 10),
+        ],
+        { ...options, run: (id) => ran.push(id), redraw: () => (redrawn += 1) },
+      ),
+      'View',
+    );
+    const byId = (id: string) => view?.find((each) => each.id === id);
+    clickOn(byId('tab.leftPanel'), false);
+    clickOn(byId('tab.leftPanel'), true);
+    clickOn(byId('diff.inline'), false);
+    expect(redrawn).toBe(3);
+    expect(ran).toEqual(['tab.leftPanel', 'diff.inline']);
+    clickOn(byId('keys.palette'), false);
+    expect(redrawn).toBe(3);
+    expect(ran).toEqual(['tab.leftPanel', 'diff.inline', 'keys.palette']);
   });
 
   it('offers the developer tools only when asked', () => {
-    const withTools = macMenu(items, { name: 'Lo', devTools: true, run: () => {} });
-    expect(menuOf(withTools, 'View')?.map((each) => each.role ?? each.id ?? each.type)).toEqual([
-      'view.inline',
+    const withTools = menuTree('mac', items, { ...options, devTools: true });
+    expect(partsOf(withTools, 'View')).toEqual([
+      'diff.inline',
       'separator',
       'toggleDevTools',
       'separator',
@@ -218,9 +247,42 @@ describe('the macOS app menu', () => {
   });
 });
 
-it('Linux has no app menu', () => {
-  expect(appMenu('linux', items, { name: 'Lo', devTools: true, run: () => {} })).toBeNull();
-  expect(appMenu('darwin', items, { name: 'Lo', devTools: false, run: () => {} })).not.toBeNull();
+describe('the app menu on Linux', () => {
+  const linux = [
+    ...items,
+    item('settings.open', 'Lo', 'app', 20, { label: 'Settings' }),
+    item('app.quit', 'File', 'quit', 10),
+    item('app.fullScreen', 'View', 'screen', 10),
+    item('app.about', 'Help', 'about', 10),
+  ];
+  const template = appMenu('linux', linux, options);
+
+  it("is the same tree, with Lo's commands where macOS has its own", () => {
+    expect(template.map((each) => each.label)).toEqual([
+      'Lo',
+      'File',
+      'Edit',
+      'View',
+      'Go',
+      'Window',
+      'Help',
+    ]);
+    expect(partsOf(template, 'Lo')).toEqual(['settings.open']);
+    expect(menuOf(template, 'Lo')?.[0]?.label).toBe('Settings');
+    expect(partsOf(template, 'File')).toEqual(['app.quit']);
+    expect(partsOf(template, 'View')).toEqual(['diff.inline', 'separator', 'app.fullScreen']);
+    expect(partsOf(template, 'Window')).toEqual(['minimize']);
+    expect(partsOf(template, 'Help')).toEqual(['app.about']);
+    // Only macOS fills a menu by its role.
+    expect(template.some((each) => each.role !== undefined)).toBe(false);
+  });
+
+  it('is the tree macOS gets on macOS', () => {
+    expect(topOf(appMenu('darwin', linux, options))).toEqual(
+      topOf(menuTree('mac', linux, options)),
+    );
+    expect(topOf(appMenu('darwin', linux, options))).not.toEqual(topOf(template));
+  });
 });
 
 /** The accelerator for `name` with these modifiers held. */

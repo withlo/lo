@@ -457,8 +457,8 @@ let stopKeys: () => void = () => {};
 // key one of Lo's commands takes goes no further than its `keydown`.
 beforeAll(() => {
   const keys = defineCommands('test', {
-    act: { label: 'Act', group: 'Act', keys: ['e'] },
-    fold: { label: 'Fold', group: 'Act', keys: ['z a'] },
+    act: { label: 'Act', group: 'Review', keys: ['e'] },
+    fold: { label: 'Fold', group: 'Review', keys: ['z a'] },
   });
   const handler = {
     run() {
@@ -1028,7 +1028,12 @@ describe('a box on a code block', () => {
     restore(VIEW);
     // A click in the macOS menu bar makes no event in the page; the command it chose runs.
     const menu = defineCommands('menu', {
-      act: { label: 'Act', group: 'Act', keys: [], bar: { menu: 'View', order: 10 } },
+      act: {
+        label: 'Act',
+        group: 'Review',
+        keys: [],
+        bar: { menu: 'View', section: 'diff', order: 10 },
+      },
     });
     let ran = 0;
     const handler = {

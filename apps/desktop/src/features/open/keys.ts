@@ -13,16 +13,16 @@ export default defineCommands(
      */
     box: {
       label: 'Open pull request…',
-      group: 'Find',
+      group: 'Tabs',
       keys: ['cmd+l', { keys: 'cmd+o', on: 'mac' }],
       when: { except: ['dialog', 'palette'] },
-      bar: { menu: 'File', order: 5 },
+      bar: { menu: 'File', section: 'open', order: 10 },
     },
     /** In Recent, opens the pull request link on the clipboard. */
     paste: {
       label: 'Paste link',
       control: "Paste link in Recent, before any pull request's listed",
-      group: 'Find',
+      group: 'Tabs',
       keys: ['cmd+v'],
       when: { scope: 'recent' },
     },
@@ -30,7 +30,7 @@ export default defineCommands(
     filter: {
       label: 'Filter pull requests…',
       control: 'The filter field at the top of Recent',
-      group: 'Find',
+      group: 'Tabs',
       keys: ['/'],
       when: { scope: 'recent' },
     },
@@ -42,7 +42,7 @@ export default defineCommands(
     clearFilter: {
       label: 'Clear filter',
       control: 'Clear filter in Recent, where the filter matches nothing',
-      group: 'Find',
+      group: 'Tabs',
       keys: ['cmd+backspace'],
       when: { scope: 'recent' },
     },
@@ -50,14 +50,14 @@ export default defineCommands(
     openRecent: {
       label: 'Open pull request',
       control: 'A click on a row of Recent',
-      group: 'Find',
+      group: 'Tabs',
       keys: ['enter'],
       when: { scope: 'recent' },
     },
     nextRecent: {
       label: 'Next pull request',
       control: 'The rows of Recent, each opened by a click',
-      group: 'Move',
+      group: 'Tabs',
       keys: ['j', 'down'],
       when: { scope: 'recent' },
       repeat: true,
@@ -65,7 +65,7 @@ export default defineCommands(
     previousRecent: {
       label: 'Previous pull request',
       control: 'The rows of Recent, each opened by a click',
-      group: 'Move',
+      group: 'Tabs',
       keys: ['k', 'up'],
       when: { scope: 'recent' },
       repeat: true,
@@ -77,9 +77,8 @@ export default defineCommands(
     installCommand: {
       label: 'Install `lo` command',
       control: 'Install on the lo command row of Settings',
-      group: 'Tabs and window',
+      group: 'App',
       keys: [],
-      bar: { menu: 'App', order: 10 },
     },
   },
   { scopes: ['recent'] },

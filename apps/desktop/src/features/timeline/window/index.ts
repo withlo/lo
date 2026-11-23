@@ -13,7 +13,7 @@ import {
   focusCommentBox,
   onCommentWritten,
 } from '../../comments/window/shared.ts';
-import { middle, type PullTab } from '../../tab/window/shared.ts';
+import { middle, showingMiddle, type PullTab } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
 import { showDiff } from '../../diff/window/shared.ts';
 import {
@@ -51,6 +51,7 @@ function whyNot(tab: PullTab, row: Row, change: 'edit' | 'delete'): string | und
 
 export default {
   commands: handlers(keys, {
+    show: showingMiddle(TIMELINE_VIEW),
     down: { run: () => move(1), enabled: timelineNow },
     up: { run: () => move(-1), enabled: timelineNow },
     nextLink: { run: () => nextLink(1), enabled: timelineNow },

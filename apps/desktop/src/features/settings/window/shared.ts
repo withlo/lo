@@ -170,7 +170,7 @@ export async function openSettingsFile(): Promise<void> {
     refuse(
       error instanceof IpcError && error.code === 'unopened'
         ? error.message
-        : 'Couldn’t open settings.json',
+        : 'Couldn’t open `settings.json`',
     );
   }
 }

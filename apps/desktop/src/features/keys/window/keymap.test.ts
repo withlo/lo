@@ -83,9 +83,7 @@ describe('the keymap file in the window', () => {
     start(bridge);
     push('keys.keymap', file('bind ctrl+b keys.back\nbind x nope.nothing\nvim normal Y y$'));
     expect(keysOf('keys.back')).toEqual(['ctrl+b', 'ctrl+o']);
-    expect(registry().keymapErrors()).toEqual([
-      { line: 2, message: "There's no command called nope.nothing." },
-    ]);
+    expect(registry().keymapErrors()).toEqual([{ line: 2, message: 'No command `nope.nothing`' }]);
     push('keys.keymap', file('bind ctrl+k keys.back'));
     expect(keysOf('keys.back')).toEqual(['ctrl+k', 'ctrl+o']);
     expect(registry().keymapErrors()).toEqual([]);

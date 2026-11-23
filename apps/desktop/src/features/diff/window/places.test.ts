@@ -179,7 +179,7 @@ describe('showPlace', () => {
 
   it('drops the place once a key Lo takes, such as `] b`, ends its sequence', () => {
     const declarations = defineCommands('overview', {
-      nextBlock: { label: 'Next block', group: 'Overview', keys: ['] b'] },
+      nextBlock: { label: 'Next block', group: 'View', keys: ['] b'] },
     });
     const commands = handlers(declarations, { nextBlock: { run() {} } });
     onTestFinished(listen(window, new Registry({ system: 'mac', commands })));

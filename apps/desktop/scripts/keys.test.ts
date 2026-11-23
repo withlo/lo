@@ -7,28 +7,34 @@ import { code, keysDoc, readFeatures } from './keys.ts';
 const diff = defineCommands('diff', {
   markViewed: {
     label: 'Mark viewed',
-    group: 'Act',
+    group: 'Review',
     keys: ['e'],
     overVim: true,
     count: 'files',
     when: { scope: ['diff', 'tree'], mode: 'normal' },
   },
-  nextFile: { label: 'Next file', group: 'Jump', keys: ['] f'], vim: 'motion' },
-  down: { label: 'Line down', group: 'Move', keys: ['j'], vim: 'own' },
-  open: { label: 'Open a PR', group: 'Find', keys: ['cmd+l', { keys: 'cmd+o', on: 'mac' }] },
-  files: { label: 'Files', group: 'Find', keys: ['cmd+p'], overVim: true },
-  quit: { label: 'Quit', group: 'Tabs and window', keys: ['cmd+q'], when: { system: 'linux' } },
-  install: { label: 'Install', group: 'Tabs and window', keys: [], bar: { menu: 'App', order: 1 } },
+  nextFile: { label: 'Next file', group: 'Go', keys: ['] f'], vim: 'motion' },
+  down: { label: 'Line down', group: 'Go', keys: ['j'], vim: 'own' },
+  open: { label: 'Open a PR', group: 'Go', keys: ['cmd+l', { keys: 'cmd+o', on: 'mac' }] },
+  files: { label: 'Files', group: 'Go', keys: ['cmd+p'], overVim: true },
+  quit: { label: 'Quit', group: 'Tabs', keys: ['cmd+q'], when: { system: 'linux' } },
+  install: {
+    label: 'Install',
+    group: 'Tabs',
+    keys: [],
+    bar: { menu: 'App', section: 'app', order: 1 },
+  },
+  undo: { label: 'Undo', group: 'Tabs', keys: [], control: 'Undo on its toast' },
   licenses: {
     label: 'Licenses',
-    group: 'Tabs and window',
+    group: 'Tabs',
     keys: [],
-    bar: { menu: 'App', order: 2 },
+    bar: { menu: 'App', section: 'app', order: 2 },
     menu: { on: 'none', order: 2 },
   },
   about: {
     label: 'About',
-    group: 'Tabs and window',
+    group: 'Tabs',
     keys: [],
     when: { system: 'linux' },
     menu: { on: 'none', order: 1 },
@@ -37,28 +43,28 @@ const diff = defineCommands('diff', {
 const tree = defineCommands(
   'tree',
   {
-    order: { label: 'Tree or review order', group: 'Files', keys: ['t'], when: { scope: 'tree' } },
+    order: { label: 'Tree or review order', group: 'Go', keys: ['t'], when: { scope: 'tree' } },
   },
   { scopes: ['tree'] },
 );
 const comments = defineCommands('comments', {
   add: {
     label: 'Add to review',
-    group: 'Comment box',
+    group: 'Comments',
     keys: ['cmd+enter'],
     editor: true,
     when: { scope: 'box' },
   },
   leave: {
     label: 'Leave insert mode',
-    group: 'Comment box',
+    group: 'Comments',
     keys: ['esc'],
     vim: 'own',
     when: { scope: 'box', mode: 'insert' },
   },
   close: {
     label: 'Close the box and keep the draft',
-    group: 'Comment box',
+    group: 'Comments',
     keys: ['esc'],
     editor: true,
     when: { scope: 'box', mode: 'normal' },
@@ -78,57 +84,58 @@ function section(heading: string): string[] {
 }
 
 describe('docs/keys.md', () => {
-  it('lists key help’s groups in their order, in macOS form', () => {
+  it('lists the groups in their order, in macOS form', () => {
     const headings = doc.split('\n').filter((line) => line.startsWith('## '));
-    expect(headings.slice(0, 9)).toEqual([
-      '## Move',
-      '## Jump',
-      '## Act',
-      '## Code',
-      '## Find',
-      '## Files',
-      '## Comment box',
-      '## Palettes',
-      '## Tabs and window',
+    expect(headings.slice(0, headings.indexOf('## Where keys apply'))).toEqual([
+      '## Go',
+      '## Review',
+      '## Comments',
+      '## View',
+      '## Tabs',
+      '## App',
     ]);
-    expect(section('## Find')).toContain(
+    expect(doc).toContain(
+      'The commands are in 8 groups, the same in Keyboard shortcuts (`?`), the command palette and the app menu: Go, Review, Comments, Code, View, Merge, Tabs and App.',
+    );
+    expect(section('## Go')).toContain(
       '| Open a PR | `⌘L`, `⌘O` (macOS only) | Anywhere | `diff.open` |',
     );
-    expect(section('## Code')).toContain('| Back | `⌃o` | Anywhere but `box` | `keys.back` |');
+    expect(section('## Go')).toContain('| Back | `⌃o` | Anywhere but `box` | `keys.back` |');
     // A command on Linux only is listed with the keys for one system.
-    expect(section('## Tabs and window').join('\n')).not.toContain('diff.quit');
+    expect(section('## Tabs').join('\n')).not.toContain('diff.quit');
   });
 
   it('says where a command with no key is found instead', () => {
-    expect(section('## Tabs and window')).toContain(
-      '| Install | None: in the app menu on macOS and the palette | Anywhere | `diff.install` |',
+    expect(section('## Tabs')).toContain(
+      '| Install | None: the app menu or the command palette | Anywhere | `diff.install` |',
+    );
+    expect(section('## Tabs')).toContain(
+      '| Undo | None: its control or the command palette | Anywhere | `diff.undo` |',
     );
   });
 
-  it('says where a command with no key in both the app menu and a right-click menu is found, noting that only macOS has the app menu', () => {
-    expect(section('## Tabs and window')).toContain(
-      '| Licenses | None: in the app menu on macOS, its menu and the palette | Anywhere | `diff.licenses` |',
+  it('says where a command with no key in both the app menu and a right-click menu is found', () => {
+    expect(section('## Tabs')).toContain(
+      '| Licenses | None: the app menu, its right-click menu or the command palette | Anywhere | `diff.licenses` |',
     );
   });
 
   it('says where each key applies', () => {
-    expect(section('## Act')).toContain(
+    expect(section('## Review')).toContain(
       '| Mark viewed | `e` | In `diff` and `tree`; in code views, only in normal mode | `diff.markViewed` |',
     );
-    expect(section('## Jump')).toContain(
+    expect(section('## Go')).toContain(
       "| Next file | `] f` | Anywhere; in code views with Vim keys on, Vim's motion | `diff.nextFile` |",
     );
-    expect(section('## Move')).toContain(
+    expect(section('## Go')).toContain(
       "| Line down | `j` | Vim's own key, in code views | `diff.down` |",
     );
-    expect(section('## Files')).toContain(
-      '| Tree or review order | `t` | In `tree` | `tree.order` |',
-    );
+    expect(section('## Go')).toContain('| Tree or review order | `t` | In `tree` | `tree.order` |');
     expect(section('## Where keys apply')).toContain('| `tree` | Named by `tree`. |');
   });
 
   it('lists the keys an editor handles itself, saying the keymap file can’t change them', () => {
-    const lines = section('## Comment box');
+    const lines = section('## Comments');
     expect(lines).toContain(
       "| Add to review | `⌘⏎` | In `box`; the editor's own key, which the keymap file can't change | `comments.add` |",
     );
@@ -172,9 +179,9 @@ describe('docs/keys.md', () => {
     expect(lines).toContain('| Quit | `Ctrl+Q` | Linux | Anywhere | `diff.quit` |');
     // One with no key on purpose says where it's found instead, and is no more on macOS's list.
     expect(lines).toContain(
-      '| About | None: in its menu and the palette | Linux | Anywhere | `diff.about` |',
+      '| About | None: its right-click menu or the command palette | Linux | Anywhere | `diff.about` |',
     );
-    expect(section('## Tabs and window').join('\n')).not.toContain('diff.about');
+    expect(section('## Tabs').join('\n')).not.toContain('diff.about');
     expect(lines.join('\n')).toContain(
       'Lo never takes `Ctrl+C`, `Ctrl+X`, `Ctrl+V`, `Ctrl+A`, `Ctrl+Z` or `Ctrl+W`',
     );
@@ -204,7 +211,7 @@ describe('docs/keys.md', () => {
     );
     expect(doc).toContain('a file of up to 1 MB and lines of up to 1,000 characters');
     expect(() => keysDoc([diff, tree])).toThrow(
-      "The example keymap no longer applies: line 2: There's no command called keys.palette.",
+      'The example keymap no longer applies: line 2: No command `keys.palette`',
     );
   });
 

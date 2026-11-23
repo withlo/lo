@@ -11,7 +11,12 @@ import { createElement } from 'react';
 import type { WindowFeature } from '../../../window/features.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { onCodeRest, onDiffDrawn } from '../../diff/window/shared.ts';
-import { onSettingsChange, settingRow, watchSetting } from '../../settings/window/shared.ts';
+import {
+  onSettingsChange,
+  settingNow,
+  settingRow,
+  watchSetting,
+} from '../../settings/window/shared.ts';
 import { dialogs, onClosed, right, status as statusBar } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
 import { hints } from '../settings.ts';
@@ -70,7 +75,7 @@ export default {
     definition: { run: definition, enabled: codeNow },
     references: { run: references, enabled: codeNow },
     type: { run: typeOf, enabled: codeNow },
-    hints: { run: toggleHints, enabled: codeNow },
+    hints: { run: toggleHints, enabled: codeNow, checked: () => settingNow(hints) },
     outline: { run: outline, enabled: codeNow },
     nextAnswer: { run: () => pick(1), enabled: peekNow },
     previousAnswer: { run: () => pick(-1), enabled: peekNow },

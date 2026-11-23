@@ -1121,14 +1121,13 @@ Recent pull requests, and links from other apps. Each is untrusted text, read th
 - Other apps hand Lo links as `open-url` events (`lo://`, and web links from a link router), and as
   the arguments of a second launch, which hands them to the Lo running and quits. A packaged Lo
   registers itself for `lo://` as it starts.
-- "Install `lo` command", in the macOS app menu, Settings and the command palette, with no key since
-  it's done once, writes `lo`, a shell script that takes one argument, refuses anything but a
-  `lo://`, `https://` or `http://` link, and passes it on quoted: on macOS to
-  `open -n -b com.scornz.lo --args`, since `open` drops the arguments of an app that's running, in
-  `/usr/local/bin` once the system's prompt for an administrator allows it, or `~/.local/bin`; on
-  Linux to Lo's program, in `~/.local/bin`. It never replaces a `lo` it didn't write, or one it
-  can't read. A build run from source writes it in `LO_COMMAND_FOLDER` when that's set, without
-  asking, and a packaged build ignores it.
+- "Install `lo` command", in Settings and the command palette, with no key since it's done once,
+  writes `lo`, a shell script that takes one argument, refuses anything but a `lo://`, `https://` or
+  `http://` link, and passes it on quoted: on macOS to `open -n -b com.scornz.lo --args`, since
+  `open` drops the arguments of an app that's running, in `/usr/local/bin` once the system's prompt
+  for an administrator allows it, or `~/.local/bin`; on Linux to Lo's program, in `~/.local/bin`. It
+  never replaces a `lo` it didn't write, or one it can't read. A build run from source writes it in
+  `LO_COMMAND_FOLDER` when that's set, without asking, and a packaged build ignores it.
 
 ### Updates
 
@@ -1179,8 +1178,8 @@ its own app, installs it when the reader says so.
 - **The window.** The toast is in the `tab.toasts` slot, below a note that passes, and it waits
   until it's acted on. It never takes focus, no button installs or restarts but by its own press,
   and a press in the half second after a toast comes or changes does nothing. Every button is a
-  keyless command too: the app menu holds "Check for updates", "Update Lo" and "Restart to update",
-  and an "Update" submenu the rest, each greyed unless it applies. Settings' Updates section shows
+  keyless command too: Lo's menu in the app menu holds "Check for updates", or "Restart to update"
+  in its place once an update is ready, and Help holds "What’s new". Settings' Updates section shows
   the version and commit, "Check now" and the switch for `updates.check`. The overview runs "Check
   for updates" through the command registry, importing `updates/keys.ts`.
 

@@ -8,8 +8,8 @@
 // move, `⏎` goes, and `Esc` goes back to the threads, if they were showing, or closes the panel.
 //
 // Trust's and language servers' commands, each with no key: trusting is done once a repository,
-// and through main's own dialog, and a server's status item offers the rest. In the palette and
-// the app's Review menu; a pull request's banner offers the first two.
+// and through main's own dialog, and a server's status item offers the rest. In the palette; a
+// pull request's banner offers the first two.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -30,7 +30,7 @@ export default defineCommands(
      * first, each saying where it came from. With none, the status bar says so and nothing opens.
      */
     definition: {
-      label: 'Definition',
+      label: 'Show definition',
       group: 'Code',
       keys: ['g d'],
       targets: ['line'],
@@ -42,7 +42,7 @@ export default defineCommands(
      * closed and takes focus.
      */
     references: {
-      label: 'References',
+      label: 'Show references',
       group: 'Code',
       keys: ['g r'],
       targets: ['line'],
@@ -51,7 +51,7 @@ export default defineCommands(
     },
     /** What the word at the cursor is, in a card over it that takes no focus. */
     type: {
-      label: 'Type',
+      label: 'Show type',
       group: 'Code',
       keys: ['K'],
       targets: ['line'],
@@ -65,10 +65,11 @@ export default defineCommands(
      */
     hints: {
       label: 'Type hints',
-      group: 'Code',
+      group: 'View',
       keys: ['g h'],
       when: code,
-      bar: { menu: 'View', order: 50 },
+      bar: { menu: 'View', section: 'diff', order: 40 },
+      toggle: 'switch',
     },
     /** The cursor's file's definitions, nested, in a palette that finds them as you type. */
     outline: {
@@ -80,7 +81,7 @@ export default defineCommands(
       menu: { on: 'header', order: 15 },
     },
     nextAnswer: {
-      label: 'Next answer in the peek',
+      label: 'Next definition',
       group: 'Code',
       control: "an answer in a peek's list",
       keys: ['j', 'down'],
@@ -89,7 +90,7 @@ export default defineCommands(
       repeat: true,
     },
     previousAnswer: {
-      label: 'Previous answer in the peek',
+      label: 'Previous definition',
       group: 'Code',
       control: "an answer in a peek's list",
       keys: ['k', 'up'],
@@ -102,7 +103,7 @@ export default defineCommands(
      * otherwise the file whole. A jump, which `⌃o` comes back from.
      */
     goAnswer: {
-      label: 'Go to the answer',
+      label: 'Go to definition',
       group: 'Code',
       control: "the button in a peek's head that goes to the answer",
       keys: ['enter'],
@@ -112,7 +113,7 @@ export default defineCommands(
     },
     /** Closes the peek, and the cursor goes back to its line. */
     closePeek: {
-      label: 'Close the peek',
+      label: 'Close definitions',
       group: 'Code',
       control: "Close in a peek's head",
       keys: ['esc'],
@@ -120,16 +121,16 @@ export default defineCommands(
       when: peek,
     },
     nextReference: {
-      label: 'Next reference in the panel',
-      group: 'Panels',
+      label: 'Next reference',
+      group: 'Code',
       control: "Next in the references panel's foot",
       keys: ['j', 'down'],
       when: panel,
       repeat: true,
     },
     previousReference: {
-      label: 'Previous reference in the panel',
-      group: 'Panels',
+      label: 'Previous reference',
+      group: 'Code',
       control: "Previous in the references panel's foot",
       keys: ['k', 'up'],
       when: panel,
@@ -137,8 +138,8 @@ export default defineCommands(
     },
     /** The reference the keyboard is on, as the peek's `⏎` goes. A jump, which `⌃o` comes back from. */
     goReference: {
-      label: 'Go to the reference',
-      group: 'Panels',
+      label: 'Go to reference',
+      group: 'Code',
       control: "Go to reference in the references panel's foot, or a reference's row",
       keys: ['enter'],
       when: panel,
@@ -148,32 +149,32 @@ export default defineCommands(
      * closes. Focus goes back to the middle view.
      */
     closeReferences: {
-      label: 'Close the references',
-      group: 'Panels',
+      label: 'Close references',
+      group: 'Code',
       control: "Close in the references panel's foot",
       keys: ['esc'],
       when: panel,
     },
     /** Asks main to ask whether to trust the repository of the pull request on screen. */
     trust: {
-      label: 'Trust this repo…',
+      label: 'Trust repo…',
       group: 'Code',
+      control: 'Trust repo… on the banner about language servers, and on their status item',
       keys: [],
-      bar: { menu: 'Review', order: 40 },
     },
     /** Asks main to ask whether to trust the pull request on screen, from its fork, alone. */
     trustPull: {
-      label: 'Trust this PR…',
+      label: 'Trust pull request…',
       group: 'Code',
+      control: 'Trust pull request… on the banner about language servers, and on their status item',
       keys: [],
-      bar: { menu: 'Review', order: 41 },
     },
     /** Stops trusting what trusts the pull request on screen: language servers stop on it. */
     untrust: {
-      label: 'Stop trusting this repo',
+      label: 'Stop trusting',
       group: 'Code',
+      control: 'Stop trusting this repo on a language server’s status item',
       keys: [],
-      bar: { menu: 'Review', order: 42 },
     },
     /**
      * Starts the language servers of the pull request on screen again, or of the tab Settings'
@@ -185,19 +186,17 @@ export default defineCommands(
       group: 'Code',
       keys: [],
       targets: ['none', 'tab'],
-      bar: { menu: 'Review', order: 44 },
     },
     /**
      * Shows the log of the pull request on screen's language server, or of the tab Settings' list
      * of language servers names.
      */
     log: {
-      label: 'Show the language server’s log',
+      label: 'Show language server log',
       control: 'Show log on a pull request in Settings › Code intelligence › Language servers',
       group: 'Code',
       keys: [],
       targets: ['none', 'tab'],
-      bar: { menu: 'Review', order: 45 },
     },
   },
   { scopes: ['references'] },

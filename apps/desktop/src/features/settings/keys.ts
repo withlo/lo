@@ -10,15 +10,16 @@ export default defineCommands(
     open: {
       label: 'Settings',
       control: 'the gear at the end of the tab strip',
-      group: 'Tabs and window',
+      group: 'App',
       keys: ['cmd+,'],
+      bar: { menu: 'Lo', section: 'app', order: 20 },
       when: { except: ['dialog', 'palette'] },
     },
     /** In Settings, on the list of groups or the rows themselves. */
     nextSection: {
       label: 'Next group',
       control: "a group in Settings' list",
-      group: 'Move',
+      group: 'App',
       keys: ['j'],
       when: { scope: 'settings' },
       repeat: true,
@@ -26,7 +27,7 @@ export default defineCommands(
     previousSection: {
       label: 'Previous group',
       control: "a group in Settings' list",
-      group: 'Move',
+      group: 'App',
       keys: ['k'],
       when: { scope: 'settings' },
       repeat: true,
@@ -35,7 +36,7 @@ export default defineCommands(
     search: {
       label: 'Search settings',
       control: "the search field over Settings' rows",
-      group: 'Find',
+      group: 'App',
       keys: ['/', 'cmd+f'],
       when: { scope: ['settings', 'noMatch'] },
     },
@@ -47,15 +48,15 @@ export default defineCommands(
     clearSearch: {
       label: 'Clear search',
       control: 'Clear search in Settings, where the search finds nothing',
-      group: 'Find',
+      group: 'App',
       keys: ['cmd+backspace'],
       when: { scope: 'noMatch' },
     },
     /** Opens the settings file in the system's text editor, so the person can fix it. */
     openFile: {
-      label: 'Open settings.json',
+      label: 'Open `settings.json`',
       control: "Open settings.json at the foot of Settings' list",
-      group: 'Tabs and window',
+      group: 'App',
       keys: ['g .'],
       when: { except: ['menu', 'dialog', 'palette', 'box'], mode: 'normal' },
     },
@@ -63,7 +64,7 @@ export default defineCommands(
     showCache: {
       label: 'Show cache folder',
       control: 'Show in Finder on the Cache row of Settings › Storage',
-      group: 'Tabs and window',
+      group: 'App',
       keys: ['g c'],
       when: { scope: 'settings' },
     },
