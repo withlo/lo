@@ -19,6 +19,7 @@ import {
   type PollEvent,
   type PullRequest,
   type PullSummary,
+  type RepoAccount,
 } from '@lo/github';
 
 import { detailsOf, githubCause } from '../../../ipc/cause.ts';
@@ -47,8 +48,10 @@ import {
   problemOf,
   rateLimitedUntil,
   readPull,
+  signedOutOf,
   withSummary,
   type Opened,
+  type ReadAs,
 } from './reads.ts';
 
 /** The parts of GitHub a pull request's tab uses. */
@@ -138,6 +141,19 @@ export class PullTab {
   #problem: Problem | undefined;
   /** Whether any account is signed in, as the last choice of account found. */
   #signedIn = false;
+  /**
+   * An account GitHub signed out, as the last choice of account found: a read as nobody that GitHub
+   * refuses names it, since signing in to it again may open the pull request.
+   */
+  #signedOut: string | undefined;
+  /** What the last choice of account found: who's remembered for it, and what GitHub refused. */
+  #found: RepoAccount | undefined;
+  /**
+   * The failure a read that found GitHub out of reach left, with nothing kept to show: the tab stays
+   * on its loading view until being out of reach has lasted, as its chip does, so a blip says
+   * nothing.
+   */
+  #outOfReach: Problem | undefined;
   /** How the tab stands with GitHub while it acts as nobody, which no poller says. */
   #anonymousConnection: Connection = { kind: 'live' };
   /** Since when reading as nobody has found GitHub out of reach. */
@@ -332,26 +348,50 @@ export class PullTab {
 
   /**
    * An account was added, or signed in again: a tab whose pull request its account, or nobody,
-   * couldn't see works out its account again, which may be the new one.
+   * couldn't see works out its account again, which may be the new one, and so does one that reads
+   * as nobody under the rate limit, which an account's own limit may lift. A tab that goes on as
+   * nobody works out again which signed-out account its failures name.
    */
   accountAdded(): void {
-    if (this.#closed || !this.#unseen()) return;
-    this.#forgetAccount();
-    this.#started = true;
-    void this.#open();
-    this.#publish();
+    if (this.#closed) return;
+    if (this.#unseen() || this.#limitedAsNobody()) {
+      this.#forgetAccount();
+      this.#started = true;
+      void this.#open();
+      this.#publish();
+      return;
+    }
+    if (this.#acting?.kind === 'anonymous') void this.#nameSignedOut();
+  }
+
+  /** Whether the tab reads as nobody and GitHub's rate limit for nobody holds its reads back. */
+  #limitedAsNobody(): boolean {
+    return this.#acting?.kind === 'anonymous' && this.#anonymousConnection.kind === 'rateLimited';
+  }
+
+  /** Works out again which signed-out account a read as nobody names, as the accounts now are. */
+  async #nameSignedOut(): Promise<void> {
+    try {
+      const accounts = await this.#options.github.accounts();
+      if (!this.#closed) this.#signedOut = signedOutOf(accounts, this.#found);
+    } catch (error) {
+      this.#options.log(`listing the accounts: ${describe(error)}`);
+    }
   }
 
   /**
    * Whether the tab can't show its pull request because the account it acts as, or nobody, can't
-   * see it: GitHub says it doesn't exist, or that it's private.
+   * see it: GitHub says it doesn't exist, or that it's private, or refuses nobody's read while an
+   * account is signed out, which may see it once signed in again.
    */
   #unseen(): boolean {
     const problem = this.#problem;
-    if (this.#acting === undefined || problem === undefined) return false;
-    return (
-      problem.kind === 'notFound' || (problem.kind === 'failed' && problem.cause.kind === 'private')
-    );
+    const acting = this.#acting;
+    if (acting === undefined || problem === undefined) return false;
+    if (problem.kind === 'notFound') return true;
+    if (problem.kind !== 'failed') return false;
+    const { cause } = problem;
+    return cause.kind === 'private' || (cause.kind === 'signedOut' && acting.kind === 'anonymous');
   }
 
   /** The tab acts as no one it chose: what it watched with the account, and its local copy, go. */
@@ -475,7 +515,11 @@ export class PullTab {
       const accounts = await github.accounts();
       this.#signedIn = accounts.length > 0;
       const found = accounts.length === 0 ? undefined : await github.accountForRepo(this.pull.repo);
+      // As the check left them: a token GitHub refused there has signed its account out.
+      const after = found === undefined ? accounts : await github.accounts();
       if (this.#closed) return false;
+      this.#found = found;
+      this.#signedOut = signedOutOf(after, found);
       const decision = decideAccount(found);
       switch (decision.kind) {
         case 'open': {
@@ -597,6 +641,7 @@ export class PullTab {
       if (this.#closed) return;
       this.#readFailures = 0;
       this.#problem = undefined;
+      this.#outOfReach = undefined;
       this.#anonymousConnection = { kind: 'live' };
       this.#anonymousOfflineSince = undefined;
       this.#learnRepository(RepoRef.parse(opened.toOpen.base.repo.full_name));
@@ -612,41 +657,44 @@ export class PullTab {
       this.#readFailures += 1;
       const now = Date.now();
       const until = rateLimitedUntil(error, now);
+      const login = acting.kind === 'account' ? acting.login : this.#signedOut;
+      const cause = githubCause(causeOf(error, { owner: this.pull.repo.owner, login }));
+      let retryAt: number | null;
       if (isUnreached(error)) {
-        // Offline: what the poller kept shows, and the local copy reads what it fetched before.
-        const retryAt = this.#scheduleRead();
-        this.#problem = undefined;
+        retryAt = this.#scheduleRead();
         this.#anonymousOfflineSince ??= now;
-        this.#anonymousConnection = {
-          kind: 'offline',
-          retryAt,
-          error: saidBy(error),
-        };
-        this.#useSaved();
-        this.#startLocal();
+        this.#anonymousConnection = { kind: 'offline', retryAt, cause, error: saidBy(error) };
       } else if (until !== undefined) {
-        this.#scheduleRead(Math.max(0, until - now));
-        this.#problem = undefined;
+        retryAt = this.#scheduleRead(Math.max(0, until - now));
         this.#anonymousConnection = {
           kind: 'rateLimited',
           login: null,
           until: Math.round(until),
           secondary: false,
         };
-        this.#useSaved();
-        this.#startLocal();
       } else if (error instanceof GithubError && error.isUnauthorized()) {
-        // The account is signed out, which its poller says. What it fetched before still shows,
-        // and it's read again once the poller is signed in again.
-        this.#problem = undefined;
-        this.#waitForSignIn();
-        this.#useSaved();
-        this.#startLocal();
+        // The account is signed out, which its poller says, and it's read again once the poller is
+        // signed in again.
+        this.#answered();
+        retryAt = this.#waitForSignIn();
       } else {
+        this.#answered();
         const problem = problemOf(error, this.pull, this.#actingFor(acting), undefined);
-        const retryAt = problem.kind === 'failed' ? this.#scheduleRead() : undefined;
+        const again = problem.kind === 'failed' ? this.#scheduleRead() : undefined;
         this.#problem =
-          problem.kind === 'failed' ? { ...problem, retryAt: retryAt ?? null } : problem;
+          problem.kind === 'failed' ? { ...problem, retryAt: again ?? null } : problem;
+        this.#options.log(`reading ${this.pull.toString()}: ${describe(error)}`);
+        return;
+      }
+      // GitHub can't be asked now, which the header's chip says: what the poller kept shows, and
+      // the local copy reads what it fetched before. With nothing kept to show, the tab can't open
+      // its pull request, and says why in its view's place until the read that's due opens it.
+      this.#problem = undefined;
+      this.#useSaved();
+      this.#startLocal();
+      if (this.#shown === undefined) {
+        this.#problem = { kind: 'failed', cause, details: detailsOf(saidBy(error)), retryAt };
+        this.#outOfReach = isUnreached(error) ? this.#problem : undefined;
         this.#options.log(`reading ${this.pull.toString()}: ${describe(error)}`);
       }
     }
@@ -655,17 +703,15 @@ export class PullTab {
   /**
    * Reads the pull request again once the account's poller is signed in again, or hears it, so
    * the read waits for the account rather than asking GitHub on a timer of its own. Without a
-   * poller, as for nobody, it reads again after a wait.
+   * poller, as for nobody, it reads again after a wait. Returns when it reads again on a timer.
    */
-  #waitForSignIn(): void {
+  #waitForSignIn(): number | null {
     const poller = this.#poller;
-    if (!poller) {
-      this.#scheduleRead();
-      return;
-    }
+    if (!poller) return this.#scheduleRead();
     clearTimeout(this.#readTimer);
     this.#readTimer = undefined;
     this.#waitingForSignIn = { signedOut: poller.status().signedOut };
+    return null;
   }
 
   /** The poller's status changed: once it's signed in again after being signed out, read. */
@@ -686,10 +732,10 @@ export class PullTab {
     void this.#open();
   }
 
-  #actingFor(
-    acting: Acting,
-  ): { kind: 'account'; login: string } | { kind: 'anonymous'; signedIn: boolean } {
-    return acting.kind === 'account' ? acting : { kind: 'anonymous', signedIn: this.#signedIn };
+  #actingFor(acting: Acting): ReadAs {
+    return acting.kind === 'account'
+      ? acting
+      : { kind: 'anonymous', signedIn: this.#signedIn, signedOut: this.#signedOut };
   }
 
   /** Reads the pull request again after a wait, 5 s doubling to 5 minutes. Returns when. */
@@ -918,6 +964,22 @@ export class PullTab {
     return this.#anonymousConnection;
   }
 
+  /** GitHub answered a read, if not with the pull request: it's in reach. */
+  #answered(): void {
+    this.#anonymousConnection = { kind: 'live' };
+    this.#anonymousOfflineSince = undefined;
+  }
+
+  /**
+   * Whether the tab's failure is GitHub out of reach, with nothing kept to show, for less time than
+   * its chip waits to say so: until then the tab stays on its loading view.
+   */
+  #blip(): boolean {
+    const since = this.#anonymousOfflineSince;
+    if (this.#outOfReach === undefined || this.#problem !== this.#outOfReach) return false;
+    return since !== undefined && !this.#lasted(since);
+  }
+
   /**
    * Whether GitHub has been out of reach long enough, since `since`, to say so. Until it has, the
    * tab says it again once it has.
@@ -939,14 +1001,16 @@ export class PullTab {
     const latest = this.#latest;
     const shown = this.#shown;
     const connection = this.#connection();
-    const problem = this.#problem ?? null;
+    // Out of reach for less time than the chip waits, the tab is still loading, between reads too.
+    const blip = this.#blip();
+    const problem = blip ? null : (this.#problem ?? null);
     // Only while what's shown may be out of date, so a read that confirms it changes nothing sent.
     const stale = connection.kind !== 'live' && connection.kind !== 'limitLow';
     const checked = this.#savedAt;
     return {
       id: this.id,
       loading:
-        this.#opening !== undefined && this.#header === undefined && this.#problem === undefined,
+        (this.#opening !== undefined || blip) && this.#header === undefined && problem === null,
       acting: this.#acting ?? null,
       header: this.#header ?? null,
       connection,

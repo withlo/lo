@@ -23,9 +23,10 @@ import {
 } from '@lo/github';
 import { requiresUpToDate, type Local } from '@lo/review';
 
+import { githubCause, type Cause } from '../../../ipc/cause.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
 import type { MergeStatusView, MergeView, Method, Off } from '../contract.ts';
-import { clock, explained, type Asker } from './causes.ts';
+import { explained, type Asker } from './causes.ts';
 import { offOf } from './merging.ts';
 import { pagesOf, stateOf } from './status.ts';
 
@@ -101,7 +102,7 @@ interface Followed {
   /** Why the last read after `facts` failed, until one doesn't. */
   failedAgain: string | undefined;
   /** Why the poller can't read now, as its status says, once `facts` are in. */
-  stall: string | undefined;
+  stall: Cause | undefined;
   /** Why Lo merges nothing now, as the poller last said, once `facts` are in. */
   off: Off | null;
   /** What GitHub doesn't say, as `facts` were last mapped with. */
@@ -127,14 +128,15 @@ function sameLogin(a: string | undefined, b: string | undefined): boolean {
 }
 
 /**
- * Why no read can be answered now for `login`, as `status` says: GitHub can't be reached, the
- * account is signed out, or the rate limit holds every read. Nothing when reads go on.
+ * Why no read can be answered now for `login`, as `status` says, for the window to word: GitHub
+ * gives no answer, by why, the account is signed out, or the rate limit holds every read. Nothing
+ * when reads go on.
  */
-function stallOf(status: PollStatus, login: string): string | undefined {
-  if (status.signedOut) return `${login} is signed out.`;
-  if (status.offline) return 'Offline.';
+export function stallOf(status: PollStatus, login: string): Cause | undefined {
+  if (status.signedOut) return { kind: 'signedOut', login };
+  if (status.offline) return githubCause(status.offline.cause);
   if (status.rateLimit.kind === 'paused') {
-    return `GitHub’s rate limit resets at ${clock(status.rateLimit.until)}.`;
+    return { kind: 'rateLimit', resets: Math.round(status.rateLimit.until) };
   }
   return undefined;
 }
@@ -342,9 +344,9 @@ export class MergeReads {
    */
   #stalled(followed: Followed, poller: MergePoller): void {
     if (!this.#current(followed) || followed.poller !== poller) return;
-    const why = stallOf(poller.status(), followed.login ?? '');
-    if (followed.facts) this.#stale(followed, why, followed.failedAgain, offOf(poller));
-    else if (why !== undefined) this.#fail(followed, why, why);
+    const stall = stallOf(poller.status(), followed.login ?? '');
+    if (followed.facts) this.#stale(followed, stall, followed.failedAgain, offOf(poller));
+    else if (stall !== undefined) this.#failStalled(followed, stall);
   }
 
   /**
@@ -353,12 +355,12 @@ export class MergeReads {
    */
   #stale(
     followed: Followed,
-    stall: string | undefined,
+    stall: Cause | undefined,
     failedAgain: string | undefined,
     off = followed.off,
   ): void {
     if (
-      followed.stall === stall &&
+      JSON.stringify(followed.stall) === JSON.stringify(stall) &&
       followed.failedAgain === failedAgain &&
       JSON.stringify(followed.off) === JSON.stringify(off)
     ) {
@@ -432,7 +434,8 @@ export class MergeReads {
       facts,
       local,
       readAt: cached.fetchedAt,
-      stale: followed.stall ?? followed.failedAgain,
+      stale: followed.failedAgain,
+      stall: followed.stall,
       off: followed.off,
       pull: {
         owner: followed.pull.repo.owner,
@@ -482,6 +485,12 @@ export class MergeReads {
       })
       .catch((error: unknown) => this.#options.log(describe(error)));
     return undefined;
+  }
+
+  /** Fails the first read for `stall`, which the window words, as the poller can't read now. */
+  #failStalled(followed: Followed, stall: Cause): void {
+    this.#options.log(`${followed.pull.toString()}: can't read now (${stall.kind})`);
+    this.#set(followed, { kind: 'failed', why: '', stall });
   }
 
   /** The first read failed, for `why`, the reader's words; `raw` is what failed, for the log. */

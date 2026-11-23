@@ -144,6 +144,53 @@ function hidden(): Promise<Response> {
   return Promise.resolve(Response.json({ message: 'Not Found' }, { status: 404 }));
 }
 
+/** GitHub's answer to nobody's read once the rate limit for nobody is used up, until `reset`. */
+function limited(reset: number): Promise<Response> {
+  return Promise.resolve(
+    Response.json(
+      { message: 'API rate limit exceeded for 127.0.0.1.' },
+      {
+        status: 403,
+        headers: { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(reset) },
+      },
+    ),
+  );
+}
+
+/**
+ * The tab's GitHub, with rozed-bot signed out until `signIn`, so a repository is read as nobody,
+ * whose reads GitHub answers with `refusal`.
+ */
+function signedOutAccount(refusal: () => Promise<Response>) {
+  const replay = replayGithub('app_e2e');
+  let out = true;
+  const github: TabGithub = {
+    ...replay.github,
+    anonymous: new GithubClient({ fetch: refusal, urls: GITHUB }),
+    accounts: async () =>
+      (await replay.github.accounts()).map((each) => ({
+        ...each,
+        signedOut: out ? ('refused' as const) : undefined,
+      })),
+    accountForRepo: (repo) =>
+      out
+        ? Promise.resolve({
+            repo,
+            choice: { kind: 'none' },
+            visible: [],
+            remembered: {},
+            problems: [],
+          })
+        : replay.github.accountForRepo(repo),
+  };
+  return {
+    github,
+    signIn: () => {
+      out = false;
+    },
+  };
+}
+
 /**
  * The tab's GitHub, with no account until `add`, and a GitHub that answers nobody's reads as
  * a private repository's: it has no such pull request.
@@ -573,6 +620,16 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
 
     await expect.poll(() => reads, { timeout: 10_000 }).toBe(1);
     await expect.poll(() => poller.status().signedOut, { timeout: 10_000 }).toBe(true);
+    // With nothing kept to show, it can't open, and says why in its view's place.
+    await expect
+      .poll(() => sent.pull?.problem)
+      .toMatchObject({
+        kind: 'failed',
+        cause: { kind: 'signedOut', login: 'rozed-bot' },
+        details: 'Bad credentials',
+        retryAt: null,
+      });
+    expect(sent.pull?.loading).toBe(false);
     // Past the first wait a read of its own would have taken, nothing more is asked.
     await new Promise((resolve) => setTimeout(resolve, 6_500));
     expect(reads).toBe(1);
@@ -583,6 +640,129 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
     for (const listener of listeners) listener();
     await expect.poll(() => reads, { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
     await expect.poll(() => sent.pull?.header?.author, { timeout: 20_000 }).toBe('rozed-bot');
+    expect(sent.pull?.problem).toBe(null);
+    tab.close();
+  });
+
+  it('says why in place of its view when nobody can read it for the rate limit, and reads again at its reset', async () => {
+    const git = await testGit();
+    // A reset a second or two from the tab's first read, past which GitHub answers again.
+    const reset = Math.floor(Date.now() / 1000) + 2;
+    const answer = replayFetch('app_e2e');
+    const github: TabGithub = {
+      ...replayGithub('app_e2e').github,
+      anonymous: new GithubClient({
+        fetch: (input, init) => (Date.now() < reset * 1000 ? limited(reset) : answer(input, init)),
+        urls: GITHUB,
+      }),
+      accounts: () => Promise.resolve([]),
+    };
+    const { tab, sent } = tabFor({ github, git });
+    tab.show();
+    // With nothing kept to show, the tab can't open: it fails with the limit, not a wait for good.
+    await expect
+      .poll(() => sent.pull?.problem)
+      .toMatchObject({
+        kind: 'failed',
+        cause: { kind: 'rateLimit', resets: reset * 1000 },
+        details: 'API rate limit exceeded for 127.0.0.1.',
+        retryAt: reset * 1000,
+      });
+    expect(sent.pull).toMatchObject({
+      loading: false,
+      shown: null,
+      connection: { kind: 'rateLimited', login: null, until: reset * 1000 },
+    });
+    // The read due at the reset opens it.
+    await expect.poll(() => sent.pull?.header?.title, { timeout: 10_000 }).toBe(TITLE);
+    expect(sent.pull).toMatchObject({ problem: null, connection: { kind: 'live' } });
+    tab.close();
+  });
+
+  it('works out its account again once one signs in, while the rate limit holds nobody’s reads', async () => {
+    const reset = Math.floor(Date.now() / 1000) + 3600;
+    const { github, signIn } = signedOutAccount(() => limited(reset));
+    const git = await testGit();
+    const { tab, sent } = tabFor({ github, git });
+    tab.show();
+    await expect
+      .poll(() => sent.pull?.problem)
+      .toMatchObject({ kind: 'failed', cause: { kind: 'rateLimit', resets: reset * 1000 } });
+    // Signed in, the account's own limit reads it, long before nobody's resets.
+    signIn();
+    tab.accountAdded();
+    await expect.poll(() => sent.pull?.acting).toEqual({ kind: 'account', login: 'rozed-bot' });
+    await expect.poll(() => sent.pull?.header?.title).toBe(TITLE);
+    expect(sent.pull?.problem).toBe(null);
+    tab.close();
+  });
+
+  it('waits on its loading view while nobody can reach GitHub, says so once that lasts, and opens once GitHub answers', async () => {
+    const answer = replayFetch('app_e2e');
+    let reachable = false;
+    const github: TabGithub = {
+      ...replayGithub('app_e2e').github,
+      anonymous: new GithubClient({
+        fetch: (input, init) =>
+          reachable
+            ? answer(input, init)
+            : Promise.reject(new TypeError('fetch failed', { cause: { code: 'ENOTFOUND' } })),
+        urls: GITHUB,
+      }),
+      accounts: () => Promise.resolve([]),
+    };
+    const git = await testGit();
+    const { tab, sent, lines } = tabFor({ github, git, offlineAfter: 1_500 });
+    tab.show();
+    // A blip says nothing: the read failed, and the tab stays on its loading view, still loading
+    // until the next read.
+    await expect.poll(() => lines.some((line) => line.startsWith('reading'))).toBe(true);
+    expect(sent.pull).toMatchObject({
+      loading: true,
+      problem: null,
+      header: null,
+      connection: { kind: 'live' },
+    });
+    // Once it lasts, it says why in its view's place, as its chip does.
+    await expect
+      .poll(() => sent.pull?.problem, { timeout: 5_000 })
+      .toMatchObject({ kind: 'failed', cause: { kind: 'offline' } });
+    expect(sent.pull?.connection).toMatchObject({ kind: 'offline', cause: { kind: 'offline' } });
+    // The read due next opens it.
+    reachable = true;
+    await expect.poll(() => sent.pull?.header?.title, { timeout: 10_000 }).toBe(TITLE);
+    expect(sent.pull).toMatchObject({ problem: null, connection: { kind: 'live' } });
+    tab.close();
+  });
+
+  it('says the account GitHub signed out, where nobody’s read is refused, and opens as it once signed in again', async () => {
+    const { github, signIn } = signedOutAccount(() => Promise.resolve(badCredentials()));
+    const git = await testGit();
+    const { tab, sent } = tabFor({ github, git });
+    tab.show();
+    await expect
+      .poll(() => sent.pull?.problem)
+      .toMatchObject({ kind: 'failed', cause: { kind: 'signedOut', login: 'rozed-bot' } });
+    expect(sent.pull?.acting).toEqual({ kind: 'anonymous' });
+    expect(sent.pull?.loading).toBe(false);
+
+    // Signed in again: the tab works out its account again, which sees it.
+    signIn();
+    tab.accountAdded();
+    await expect.poll(() => sent.pull?.acting).toEqual({ kind: 'account', login: 'rozed-bot' });
+    await expect.poll(() => sent.pull?.header?.title).toBe(TITLE);
+    expect(sent.pull?.problem).toBe(null);
+    tab.close();
+  });
+
+  it('says the account GitHub signed out, not that none can see it, where nobody finds no such pull request', async () => {
+    const { github } = signedOutAccount(hidden);
+    const git = await testGit();
+    const { tab, sent } = tabFor({ github, git });
+    tab.show();
+    await expect
+      .poll(() => sent.pull?.problem)
+      .toMatchObject({ kind: 'notFound', cause: { kind: 'signedOut', login: 'rozed-bot' } });
     tab.close();
   });
 

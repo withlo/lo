@@ -13,6 +13,7 @@ import { runControl, type NoTarget, type RowTarget } from '@lo/ui/commands';
 import { createStore } from 'zustand/vanilla';
 
 import { announce } from '../../../window/commands/notices.tsx';
+import { explain } from '../../../window/explain.ts';
 import { registry } from '../../../window/commands/registry.ts';
 import { askAutoMerge } from '../../merge/window/shared.ts';
 import type { QueueTab } from '../../tab/contract.ts';
@@ -51,6 +52,15 @@ export interface Sketch {
 /** Why a change didn't go, or isn't known to have, with what failed as its title. */
 export interface Failure extends ActWhy {
   readonly title: string;
+}
+
+/**
+ * Why `failure` happened, as its reason line says it: its cause, worded as the guide does, else
+ * main's words, without the characters that turn text around; nothing where neither says why.
+ */
+export function reasonOf(failure: ActWhy): string | undefined {
+  const said = failure.cause === undefined ? failure.why : (explain(failure.cause) ?? '');
+  return said === '' ? undefined : withoutBidi(said);
 }
 
 /**

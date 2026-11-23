@@ -4,7 +4,13 @@
 // details; and a change to the pull request, a newer push, is its banner. Nothing here draws
 // anything.
 
-import { explain, gitWords, REMEDY_LABELS, remedyOf } from '../../../window/explain.ts';
+import {
+  explain,
+  gitWords,
+  offlineLabel,
+  REMEDY_LABELS,
+  remedyOf,
+} from '../../../window/explain.ts';
 import type { Connection, FetchFailure, LocalState, PullView } from '../contract.ts';
 
 /** What a button the tab offers does. */
@@ -158,8 +164,10 @@ export function failureOf(
       };
     case 'failed': {
       // What it offers follows the cause: a sign-in, or nothing while the rate limit holds, whose
-      // reset time the reason says; else Try again, or Try now while Lo waits to.
-      const remedy = remedyOf(problem.cause);
+      // reset time the reason says, unless the tab reads as nobody, whom a sign-in reads past it;
+      // else Try again, or Try now while Lo waits to.
+      const limited = problem.cause.kind === 'rateLimit' && view?.acting?.kind === 'anonymous';
+      const remedy = limited ? 'signIn' : remedyOf(problem.cause);
       const at = remedy === 'tryAgain' ? problem.retryAt : null;
       return {
         id: 'failed',
@@ -216,13 +224,19 @@ export function accountChoice(view: PullView | undefined, shown: Shown): Account
 
 /** How a tab stands with GitHub, when it isn't as usual: the header's chip, and its details. */
 export interface ConnectionNote {
-  /** What's wrong, which picks the chip's icon. */
-  readonly kind: 'signedOut' | 'rateLimited' | 'offline';
+  /**
+   * What's wrong, which picks the chip's icon: no connection to GitHub (`offline`), or a read GitHub
+   * didn't answer in time (`failed`), as for a read that failed.
+   */
+  readonly kind: 'signedOut' | 'rateLimited' | 'offline' | 'failed';
   readonly tone: 'warn' | 'danger';
   /** The chip's one or two words: "Offline". */
   readonly label: string;
-  /** Its details' line, from the guide's causes: "GitHub’s rate limit resets at 14:05." */
-  readonly line: string;
+  /**
+   * Its details' line, from the guide's causes: "GitHub’s rate limit resets at 14:05." Nothing
+   * where the cause isn't known.
+   */
+  readonly line: string | undefined;
   /** When Lo tries again by itself, which the line counts down to. */
   readonly retryAt?: number | undefined;
   /** What GitHub or the network said, as it came, for Details. */
@@ -256,16 +270,20 @@ export function connectionNote(
         label: 'Rate limit reached',
         line: `GitHub’s rate limit resets at ${clock.time(connection.until)}.`,
       };
-    case 'offline':
+    case 'offline': {
+      // GitHub gave no answer, worded by why: only what "Offline" names has its icon.
+      const { cause } = connection;
+      const label = offlineLabel(cause);
       return {
-        kind: 'offline',
+        kind: label === 'Offline' ? 'offline' : 'failed',
         tone: 'warn',
-        label: 'Offline',
-        line: explain({ kind: 'offline' }) ?? 'Offline.',
+        label,
+        line: explain(cause),
         retryAt: connection.retryAt ?? undefined,
         details: connection.error === '' ? undefined : connection.error,
         action: connection.retryAt === null ? retry : tryNow,
       };
+    }
     case 'live':
     case 'limitLow':
     case undefined:

@@ -32,9 +32,6 @@ import { held, shownAt } from './threads.ts';
 import { wrotePull } from './written.ts';
 import { actText, noReply, type Doing } from './writing.ts';
 
-/** Why a change to a thread can't go while GitHub can't be reached. */
-export const OFFLINE_ACT = 'Offline';
-
 /** Why a thread can't be acted on in the diff on screen. */
 const NOT_HERE = 'This thread isn’t in this diff';
 
@@ -491,8 +488,9 @@ export async function resolveThread(tab: PullTab, row: ThreadRow): Promise<void>
     refused(view, { kind: 'cantResolve', resolved }, doing);
     return;
   }
-  if (offline(view)) {
-    refuse(OFFLINE_ACT);
+  const away = offline(view);
+  if (away !== undefined) {
+    refuse(away);
     return;
   }
   unfailed(view, row.id);
@@ -634,8 +632,9 @@ export function remove(tab: PullTab, target: ThreadKeyTarget, comment?: string):
   const chosen = yours(tab.id, row, 'delete', comment);
   if (!chosen) return;
   // Nothing would go: it's refused now, not after the question.
-  if (offline(tab.id)) {
-    refuse(OFFLINE_ACT);
+  const away = offline(tab.id);
+  if (away !== undefined) {
+    refuse(away);
     return;
   }
   const facts = deleteFacts(threadOf(row), chosen, undefined);
@@ -670,8 +669,9 @@ export async function confirmDelete(): Promise<void> {
     refuse(busy);
     return;
   }
-  if (offline(tab.id)) {
-    refuse(OFFLINE_ACT);
+  const away = offline(tab.id);
+  if (away !== undefined) {
+    refuse(away);
     return;
   }
   unfailed(tab.id, thread ?? comment);

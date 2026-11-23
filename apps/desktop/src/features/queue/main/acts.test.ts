@@ -8,6 +8,7 @@ import {
   GithubError,
   type AutoMergeState,
   type Dequeued,
+  type GithubCause,
   type GithubClient,
   type Jumped,
   type MergeRefusal,
@@ -175,6 +176,8 @@ function answered<T>(answer: Answer<T>): Promise<T> {
 /** An account's poller, as a test sets it, saying what it was asked to send. */
 class FakePoller implements ActPoller {
   offline = false;
+  /** Why GitHub gives no answer, while it gives none. */
+  unanswered: GithubCause = { kind: 'offline' };
   signedOut = false;
   heldUntil: number | undefined;
   /** The Stacks API's answer for the pull request asked about: none holds it, unless set. */
@@ -206,7 +209,12 @@ class FakePoller implements ActPoller {
   status() {
     return {
       offline: this.offline
-        ? { since: 0, retryAt: 0, error: 'GitHub can’t be reached.' }
+        ? {
+            since: 0,
+            retryAt: 0,
+            cause: this.unanswered,
+            error: 'GitHub can’t be reached.',
+          }
         : undefined,
       signedOut: this.signedOut,
     };
@@ -365,8 +373,17 @@ describe('planning a change to the queue', () => {
     poller.offline = true;
     expect(await acts.plan(TAB.id, 260, 'remove')).toMatchObject({
       kind: 'refused',
-      why: 'Offline.',
+      why: '',
+      cause: { kind: 'offline' },
     });
+    // Its cause, for the window to word: GitHub took a request and never answered.
+    poller.unanswered = { kind: 'timeout' };
+    expect(await acts.plan(TAB.id, 260, 'remove')).toMatchObject({
+      why: '',
+      cause: { kind: 'timeout' },
+      details: 'GitHub can’t be reached.',
+    });
+    poller.unanswered = { kind: 'offline' };
     poller.offline = false;
     poller.signedOut = true;
     expect(await acts.plan(TAB.id, 260, 'remove')).toMatchObject({
@@ -600,7 +617,7 @@ describe('confirming a change to the queue', () => {
     const offline = setup();
     const other = await planned(offline.acts, 260);
     offline.poller.offline = true;
-    expect(await offline.acts.confirm(other.key)).toMatchObject({ why: 'Offline.' });
+    expect(await offline.acts.confirm(other.key)).toMatchObject({ cause: { kind: 'offline' } });
     expect([...unread.poller.sent, ...offline.poller.sent]).toEqual([]);
   });
 
@@ -635,7 +652,10 @@ describe('confirming a change to the queue', () => {
     watch.onFresh = () => {
       poller.offline = true;
     };
-    expect(await acts.confirm(plan.key)).toEqual({ kind: 'refused', why: 'Offline.' });
+    expect(await acts.confirm(plan.key)).toMatchObject({
+      kind: 'refused',
+      cause: { kind: 'offline' },
+    });
     watch.onFresh = undefined;
     poller.offline = false;
     plan = await planned(acts, 260);
@@ -923,7 +943,7 @@ describe('`a` on a pull request waiting to join', () => {
     });
     writes.taken.clear();
     poller.offline = true;
-    expect(await acts.autoMergeOff(TAB.id, 258)).toMatchObject({ why: 'Offline.' });
+    expect(await acts.autoMergeOff(TAB.id, 258)).toMatchObject({ cause: { kind: 'offline' } });
     expect(poller.sent).toEqual([]);
   });
 

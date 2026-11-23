@@ -36,6 +36,9 @@ export function signedOut(login: string): ActWhy {
   return { why: `${login} is signed out.`, next: 'signIn' };
 }
 
+/** Where this computer keeps an account's sign-in. */
+const KEPT_IN = process.platform === 'darwin' ? 'the Keychain' : 'the keyring';
+
 /** What `error` says, as it came. */
 export function textOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -73,7 +76,7 @@ export function causeOf(error: unknown, login: string, owner?: string): ActWhy {
       return { ...signedOut(detail.missing ?? login), details };
     case 'tokenUnavailable':
       return {
-        why: `${login}’s sign-in can’t be read from ${process.platform === 'darwin' ? 'the Keychain' : 'the keyring'}.`,
+        why: `${login}’s sign-in can’t be read from ${KEPT_IN}.`,
         details,
       };
     case 'notFound':

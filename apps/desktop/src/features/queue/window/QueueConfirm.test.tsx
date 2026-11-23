@@ -392,6 +392,20 @@ describe('confirming', () => {
     await until(() => calls('queue.confirm') === 2);
   });
 
+  it('says why GitHub gave no answer as its cause says, which main sends in place of words', async () => {
+    confirming = () => ({ kind: 'refused', why: '', cause: { kind: 'timeout' }, details: 'down' });
+    draw(<QueueConfirm />);
+    ask();
+    await until(() => dialog() !== null);
+    await later();
+    act(() => {
+      dialog()!.dispatchEvent(enter());
+    });
+    await until(() => stepKind() === 'failed');
+    expect(dialog()?.textContent).toContain('GitHub didn’t respond.');
+    expect(dialog()?.textContent).not.toContain('Offline');
+  });
+
   it('takes a confirmation whose answer never came back as not known, not as refused', async () => {
     confirming = () => {
       throw new IpcError('unavailable', 'Main stopped answering.');

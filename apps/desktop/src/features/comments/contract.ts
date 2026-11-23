@@ -11,6 +11,7 @@
 
 import { z } from 'zod';
 
+import { cause } from '../../ipc/cause.ts';
 import { defineContract, reply } from '../../ipc/contract.ts';
 import { comparisonKey } from '../diff/contract.ts';
 import { oid, tabId } from '../tab/contract.ts';
@@ -129,7 +130,9 @@ export type Compared = z.output<typeof compared>;
  *
  * - `status`: `signIn` for a view that acts as nobody, which reads none; `run` for a run of a
  *   stack's layers, which has none; `loading` until they're read, which they are once the view
- *   has been on screen; `ready`; `failed` when they couldn't be read, with why in `problem`.
+ *   has been on screen; `ready`; `failed` when they couldn't be read, with why in `problem`, or
+ *   in `stall`, a cause the window words, while the poller can't read: GitHub gives no answer,
+ *   the account is signed out, or the rate limit holds every read.
  * - `threads`, in GitHub's order, your pending review's among them.
  * - `missing`: how many threads and comments GitHub left out with an error.
  * - `compared`: the comparison of revisions the view shows, if it shows one.
@@ -141,6 +144,7 @@ export const threadsView = z.strictObject({
   missing: z.number().int().nonnegative(),
   compared: compared.nullable(),
   problem: z.string().max(4096).nullable(),
+  stall: cause.optional(),
 });
 export type ThreadsView = z.output<typeof threadsView>;
 

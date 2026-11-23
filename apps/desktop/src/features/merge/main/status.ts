@@ -21,6 +21,7 @@ import {
   type UncheckedRule,
 } from '@lo/review';
 
+import type { Cause } from '../../../ipc/cause.ts';
 import type { Blocker, Check, MergeState, Named, Off, Reviewer, Unchecked } from '../contract.ts';
 import { aboveStackBottom, afterPushOf, autoActionOf, overrideActionOf } from './auto.ts';
 
@@ -144,8 +145,10 @@ export interface StatusInput {
   readonly local: Local;
   /** When GitHub last confirmed it, in milliseconds since the Unix epoch. */
   readonly readAt: number;
-  /** Why Lo couldn't read it again since, while it can't. */
+  /** Why the last read since failed, while Lo can't read it again. */
   readonly stale?: string | undefined;
+  /** Why the poller can't read it again now, as a cause, while it can't. */
+  readonly stall?: Cause | undefined;
   /** Why Lo merges nothing now, whatever GitHub says, if it doesn't. */
   readonly off?: Off | null | undefined;
   /** The pull request, for its page when GitHub's answer didn't give one. */
@@ -153,7 +156,15 @@ export interface StatusInput {
 }
 
 /** Where the pull request's merge stands, for the window to word. */
-export function stateOf({ facts, local, readAt, stale, off, pull }: StatusInput): MergeState {
+export function stateOf({
+  facts,
+  local,
+  readAt,
+  stale,
+  stall,
+  off,
+  pull,
+}: StatusInput): MergeState {
   const snapshot = mergeSnapshot(facts, local);
   const status = mergeStatus(snapshot);
   const url = pullPage(facts, pull.owner, pull.repo, pull.number);
@@ -201,7 +212,8 @@ export function stateOf({ facts, local, readAt, stale, off, pull }: StatusInput)
     url,
     head: commitOf(facts.pullRequest.head),
     readAt: Math.max(0, Math.round(readAt)),
-    stale: stale === undefined ? null : text(stale),
+    stale: stall === undefined && stale !== undefined ? text(stale) : null,
+    stall: stall ?? null,
     off: off ?? null,
   };
 }

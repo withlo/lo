@@ -23,6 +23,7 @@ import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 
 import { useMenuTarget } from '../../../window/commands/menus.tsx';
+import { offlineLabel } from '../../../window/explain.ts';
 import { avatarImage } from '../../../window/images.ts';
 import { useAccounts } from '../../accounts/window/shared.ts';
 import { usePull, useRun, useTabState } from '../../tab/window/shared.ts';
@@ -48,7 +49,6 @@ import {
   CHECK_FIRST,
   IN_A_LAYER,
   notesOf,
-  OFFLINE,
   offerLabels,
   sentLabel,
   SIGN_IN,
@@ -75,7 +75,7 @@ function useWhyNot(box: Box): string | undefined {
   const run = useRun(box.view);
   if (pull?.acting?.kind !== 'account') return SIGN_IN;
   if (run) return IN_A_LAYER;
-  if (pull.connection.kind === 'offline') return OFFLINE;
+  if (pull.connection.kind === 'offline') return offlineLabel(pull.connection.cause);
   return undefined;
 }
 

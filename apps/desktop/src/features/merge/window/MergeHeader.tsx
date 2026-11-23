@@ -72,6 +72,7 @@ import {
 import {
   CANT_CHECK,
   cantMerge,
+  failedWhy,
   headerLine,
   methodLabel,
   methodNote,
@@ -643,6 +644,7 @@ function StatusPanel({
   anchor: HTMLButtonElement | null;
 }) {
   const failed = view.kind === 'failed';
+  const why = failed ? failedWhy(view) : '';
   return (
     <MergePanel
       open={open}
@@ -660,7 +662,7 @@ function StatusPanel({
         <div className="pb-8">
           <Problem
             title={CANT_CHECK}
-            reason={view.why === '' ? undefined : withoutBidi(view.why)}
+            reason={why === '' ? undefined : withoutBidi(why)}
             details={view.details}
           />
         </div>

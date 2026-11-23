@@ -5,6 +5,7 @@
 
 import { z } from 'zod';
 
+import { cause } from '../../ipc/cause.ts';
 import { defineContract, reply } from '../../ipc/contract.ts';
 import { login } from '../accounts/contract.ts';
 import { helpLink, oid, tabId } from '../tab/contract.ts';
@@ -90,9 +91,10 @@ export type OverviewCommit = z.output<typeof overviewCommit>;
  * Why main couldn't read the overview just now, worst first, each with when it tries again: the
  * account is signed out; the rate limit is used up, or GitHub asked Lo to slow down; an
  * organization, `org`, blocks the account until it's authorized for single sign-on (`sso`) or
- * until the organization approves Lo (`approval`), with GitHub's links to fix that; GitHub can't
- * be reached; or anything else GitHub answered, or sent, such as a file that isn't the one its ID
- * names. A `message` is what GitHub or the system said, as it said it, for Details.
+ * until the organization approves Lo (`approval`), with GitHub's links to fix that; GitHub gave no
+ * answer, for `cause`, such as no connection or no answer in time; or anything else GitHub
+ * answered, or sent, such as a file that isn't the one its ID names. A `message` is what GitHub or
+ * the system said, as it said it, for Details.
  */
 export const problem = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('signedOut'), login, retryAt: time }),
@@ -105,7 +107,7 @@ export const problem = z.discriminatedUnion('kind', [
     links: z.array(helpLink),
     retryAt: time,
   }),
-  z.strictObject({ kind: z.literal('offline'), message: z.string(), retryAt: time }),
+  z.strictObject({ kind: z.literal('offline'), cause, message: z.string(), retryAt: time }),
   z.strictObject({ kind: z.literal('failed'), message: z.string(), retryAt: time }),
 ]);
 export type Problem = z.output<typeof problem>;

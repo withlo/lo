@@ -19,9 +19,6 @@ import {
   type Submitting,
 } from '../contract.ts';
 
-/** Why submitting is off while GitHub can't be reached. */
-export const OFFLINE = 'Offline';
-
 /** Why the main button is off while the dialog reads what it shows. */
 export const READING = 'Reading pending review…';
 

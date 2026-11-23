@@ -42,7 +42,7 @@ import {
   type StepWords,
 } from './shipWords.ts';
 import { merging, shipping, statuses, type ShipDialog as Dialogue } from './store.ts';
-import { detailsOf } from './words.ts';
+import { detailsOf, refusalText } from './words.ts';
 
 /** A key written in Lo's notation, such as `enter`, as this system shows it. */
 function labels(keys: string): string[] {
@@ -230,6 +230,7 @@ function shownOf(dialog: Dialogue): Shown {
       const body = plan && <StepList steps={plannedSteps(plan)} plan={plan} />;
       const head = plan?.head ?? refusal.newer?.from;
       const details = detailsOf(refusal);
+      const said = refusalText(refusal);
       const step = `refused ${plan?.key ?? dialog.id}`;
       // Lo is still finding out where its merge would go: that's progress, not a failure, and the
       // dialog asks again as it goes.
@@ -239,7 +240,7 @@ function shownOf(dialog: Dialogue): Shown {
           state: 'ask',
           primary: { label: shipLabel(), run: () => undefined, busy: true, working: CHECKING },
           body,
-          line: refusal.text === '' ? undefined : noteLine(refusal.text),
+          line: said === '' ? undefined : noteLine(said),
         };
       }
       if (refusal.newer !== null && head !== undefined) {
@@ -263,7 +264,7 @@ function shownOf(dialog: Dialogue): Shown {
         problem: {
           // Asked before anything was sent: main couldn't plan it, or checking it again stopped it.
           title: plan ? `Couldn’t approve #${dialog.number}` : `Couldn’t check #${dialog.number}`,
-          reason: refusal.text === '' ? undefined : refusal.text,
+          reason: said === '' ? undefined : said,
           details,
         },
       };

@@ -30,6 +30,7 @@ import {
   outcomeDetail,
   outcomeTitle,
   pushWarning,
+  refusalText,
   waitsFor,
   type Said,
 } from './words.ts';
@@ -461,11 +462,8 @@ export function runningOf(
             title:
               phase.at === 'unsure' ? 'Approval not confirmed' : `Couldn’t approve #${plan.number}`,
             reason:
-              refusal.text !== ''
-                ? refusal.text
-                : phase.at === 'unsure'
-                  ? 'GitHub didn’t respond.'
-                  : undefined,
+              refusalText(refusal) ||
+              (phase.at === 'unsure' ? 'GitHub didn’t respond.' : undefined),
             details: detailsOf(refusal),
             again: phase.at === 'unsure' ? { kind: 'look' } : { kind: 'try' },
           },
@@ -474,7 +472,7 @@ export function runningOf(
       const planned = shipStep(plan, plan.likely, 'stopped');
       const why =
         stop === null
-          ? refusal.text
+          ? refusalText(refusal)
           : [stopTitle(stop, plan), stopWords(stop, plan)].filter((part) => part).join(' ');
       return {
         steps: [
@@ -539,7 +537,7 @@ function sendingOf(
         end: {
           kind: 'failed',
           title: unmerged(plan),
-          reason: (job ? outcomeDetail(job) : state.refusal.text) || undefined,
+          reason: (job ? outcomeDetail(job) : refusalText(state.refusal)) || undefined,
           details: detailsOf(state.refusal),
           again:
             state.refusal.newer !== null

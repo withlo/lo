@@ -4,8 +4,8 @@
 // window's size and how fast it draws, so a read can't be matched to a recorded one as it was
 // asked. Each post is answered as it was recorded, and one that wasn't as GitHub answers an ID it
 // has no post for. A test can hold a request at it, as an upload is held until the test lets it go,
-// or cut the connection of a write once its request has come, as a proxy that drops it would. It
-// says which GraphQL operations came.
+// or cut the connection of a write once it has passed the request on, as a proxy that drops it
+// before the answer would. It says which GraphQL operations came.
 
 import { createServer, type ServerResponse } from 'node:http';
 import { buffer } from 'node:stream/consumers';
@@ -57,8 +57,9 @@ export interface BodiesServer {
 
 export interface BodiesOptions {
   /**
-   * The GraphQL operation whose connection is cut once its whole request has come, with no answer,
-   * as a proxy that drops the connection then would.
+   * The GraphQL operation whose connection is cut once its whole request has come and been passed
+   * on, with no answer, as a proxy that drops the connection before GitHub's answer comes back
+   * would.
    */
   readonly cut?: string | undefined;
 }
@@ -80,14 +81,12 @@ export async function serveBodies(
     void (async () => {
       const body = await buffer(incoming);
       await hold(incoming.url ?? '/');
+      let cut = false;
       if (incoming.url?.endsWith('/graphql')) {
         const asked = objectOf(parseJson(body.toString('utf8')));
         const name = asked?.['operationName'];
         if (typeof name === 'string') operations.push(name);
-        if (name !== undefined && name === options.cut) {
-          incoming.socket.destroy();
-          return undefined;
-        }
+        cut = name !== undefined && name === options.cut;
         if (asked?.['operationName'] === 'RenderedBodies') {
           const ids = objectOf(asked['variables'])?.['ids'];
           const strings = Array.isArray(ids) ? ids.filter((id) => typeof id === 'string') : [];
@@ -107,6 +106,11 @@ export async function serveBodies(
         body: method === 'GET' || method === 'HEAD' ? undefined : new Uint8Array(body),
         redirect: 'manual',
       });
+      // GitHub has the write, and its answer is lost on the way back.
+      if (cut) {
+        incoming.socket.destroy();
+        return undefined;
+      }
       const out: Record<string, string> = {};
       response.headers.forEach((value, name) => {
         if (!['content-length', 'content-encoding', 'transfer-encoding'].includes(name)) {

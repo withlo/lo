@@ -5,6 +5,7 @@
 import { FORMAT, LIMITS, type Finding, type SizeKind, type Sizes } from '@lo/artifact';
 import { formatBytes } from '@lo/ui';
 
+import { explain } from '../../../window/explain.ts';
 import type { Byline, OverviewCommit, Problem } from '../contract.ts';
 
 /** `seconds` in the largest whole unit: "5 min", "2 h", "3 d"; nothing under a minute. */
@@ -187,9 +188,10 @@ function timeOfDay(at: number): string {
 }
 
 /**
- * Why the overview couldn't be fetched, as an error's reason says it: its cause, "Offline.", and
- * when it's fetched again, `retryAt`, which the reason counts down after it ("Retrying in 8 s.")
- * unless the cause says when itself. GitHub's own words go behind Details.
+ * Why the overview couldn't be fetched, as an error's reason says it: its cause, such as "GitHub
+ * didn’t respond.", or nothing where it isn't known, and when it's fetched again, `retryAt`, which
+ * the reason counts down after it ("Retrying in 8 s.") unless the cause says when itself. GitHub's
+ * own words go behind Details.
  */
 export function problemReason(problem: Problem): { cause: string; retryAt?: number | undefined } {
   const { retryAt } = problem;
@@ -209,7 +211,7 @@ export function problemReason(problem: Problem): { cause: string; retryAt?: numb
         retryAt,
       };
     case 'offline':
-      return { cause: 'Offline.', retryAt };
+      return { cause: explain(problem.cause) ?? '', retryAt };
     case 'failed':
       return { cause: 'GitHub returned an error.', retryAt };
     default:

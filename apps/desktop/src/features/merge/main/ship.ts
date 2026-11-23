@@ -79,7 +79,7 @@ import {
   busyText,
   LOOKS,
   offOf,
-  offText,
+  offRefusal,
   type AutoAnswer,
   type Goes,
   type Merging,
@@ -522,7 +522,7 @@ export class Shipping {
       return refused(own('account', describe(error)));
     }
     const off = offOf(poller);
-    if (off) return refused(own(off.kind, offText(off, login)));
+    if (off) return refused(offRefusal(off, login));
     // The control is busy until the head is on screen, and its merge status read.
     const head = this.#options.headOnScreen(id) ?? '';
     if (!FULL.test(head)) return refused(own('unread', ''));
@@ -824,11 +824,7 @@ export class Shipping {
     const tab = this.#tabHolds(plan, pull);
     if (tab) return tab;
     const off = offOf(poller);
-    if (off) {
-      return own(off.kind, offText(off, plan.login), {
-        until: off.kind === 'paused' ? off.until : null,
-      });
-    }
+    if (off) return offRefusal(off, plan.login);
     const head = this.#options.headOnScreen(plan.id) ?? '';
     if (!sameCommit(head, plan.head)) return own('screen', 'The revision has changed.');
     // The tab knows of a newer push than the one on screen.
@@ -1110,12 +1106,7 @@ export class Shipping {
     }
     const off = offOf(poller);
     if (off) {
-      this.#stopAt(
-        run,
-        own(off.kind, offText(off, plan.login), {
-          until: off.kind === 'paused' ? off.until : null,
-        }),
-      );
+      this.#stopAt(run, offRefusal(off, plan.login));
       return;
     }
     const converting = this.#converting(pull);

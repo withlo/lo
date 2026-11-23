@@ -532,6 +532,7 @@
   &[data-gave-up~='time'] [data-gives='time'],
   &[data-gave-up~='hint'] [data-gives='hint'],
   &[data-gave-up~='labels'] [data-gives='labels'],
+  &[data-gave-up~='mark'] [data-gives='mark'],
   &[data-gave-up~='actions'] [data-gives='actions'],
   &[data-gave-up~='fill'] [data-gives='fill'],
   &:not([data-gave-up~='labels']) [data-takes='labels'],

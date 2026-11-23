@@ -168,6 +168,9 @@ describe('the panel with nothing to list', () => {
       kind: 'failed',
       reason: 'Offline.',
     });
+    // Why the poller can't read, worded here by its cause.
+    const hung = { ...emptyView('failed'), stall: { kind: 'timeout' as const } };
+    expect(emptyOf(hung, 'all')).toEqual({ kind: 'failed', reason: 'GitHub didn’t respond.' });
   });
 
   it('says there are no threads yet, whatever the filter, where there are none', () => {

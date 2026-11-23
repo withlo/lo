@@ -49,6 +49,7 @@ import {
   outcomeTitle,
   placedLabel,
   placedWhy,
+  refusalText,
   shownMethod,
 } from './words.ts';
 
@@ -207,7 +208,8 @@ export async function turnOffAutoMerge(tab: {
     const done = await main().autoMergeOff({ id });
     if (done.kind !== 'refused') return true;
     const { refusal } = done;
-    return failed(refusal.text === '' ? undefined : withoutBidi(refusal.text), detailsOf(refusal));
+    const said = refusalText(refusal);
+    return failed(said === '' ? undefined : withoutBidi(said), detailsOf(refusal));
   } catch (error) {
     return failed(undefined, messageOf(error));
   } finally {
@@ -354,7 +356,8 @@ function plan(planning: Planning): void {
     .then((planned) => {
       if (planned.kind === 'refused') {
         // Still finding out, Lo says only how far it has got.
-        const why = planned.why === '' && !planned.again ? statusWhy(planning) : planned.why;
+        const said = refusalText({ text: planned.why, cause: planned.cause });
+        const why = said === '' && !planned.again ? statusWhy(planning) : said;
         if (still()) {
           setDialog({
             ...planning,
@@ -694,7 +697,7 @@ function settled(job: JobView | undefined): void {
     setDialog({
       kind: 'confirm',
       plan: offer,
-      note: job.state.kind === 'refused' ? job.state.refusal.text : undefined,
+      note: job.state.kind === 'refused' ? refusalText(job.state.refusal) : undefined,
       sending: false,
     });
     return;

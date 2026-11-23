@@ -461,9 +461,6 @@ export const NOT_IN_DIFF = 'Those lines aren’t in the diff';
 /** Why a line refuses a comment where Lo couldn't read its file's patch. */
 export const NO_LINES = 'Couldn’t check which lines take comments';
 
-/** Why sending is off while GitHub can't be reached. */
-export const OFFLINE = 'Offline';
-
 /** Why a view acting as nobody can't write. */
 export const SIGN_IN = 'Sign in to comment';
 

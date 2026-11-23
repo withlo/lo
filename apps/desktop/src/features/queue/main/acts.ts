@@ -42,6 +42,7 @@ import {
   type QueueView,
 } from '@lo/github';
 
+import { githubCause } from '../../../ipc/cause.ts';
 import type { MergeTurn, MergeWrites } from '../../merge/service.ts';
 import type { Converting } from '../../stacks/service.ts';
 import type { QueueTab } from '../../tab/contract.ts';
@@ -154,7 +155,8 @@ export function numbers(prs: readonly number[]): string {
 
 /**
  * Why nothing in a queue changes now as `login` with `poller`, whatever the queue holds, if
- * nothing does.
+ * nothing does. GitHub giving no answer crosses as its cause, with what the poller last heard
+ * behind it, for the window to word.
  */
 export function offWhy(
   poller: Pick<ActPoller, 'status' | 'writesHeldUntil'>,
@@ -162,7 +164,9 @@ export function offWhy(
 ): ActWhy | undefined {
   const status = poller.status();
   if (status.signedOut) return signedOut(login);
-  if (status.offline) return { why: 'Offline.' };
+  if (status.offline) {
+    return { why: '', cause: githubCause(status.offline.cause), details: status.offline.error };
+  }
   const until = poller.writesHeldUntil();
   return until === undefined ? undefined : rateLimited(until);
 }

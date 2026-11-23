@@ -14,7 +14,9 @@ import {
   type PullRequest,
   type PullSummary,
   type PullToOpen,
+  type RepoAccount,
   saidBy,
+  sameLogin,
 } from '@lo/github';
 
 import { detailsOf, githubCause } from '../../../ipc/cause.ts';
@@ -128,7 +130,7 @@ function viewedOf(state: string): Files['files'][number]['viewed'] {
 
 /**
  * How what a tab shows stands, from its account's poller: signed out, the rate limit used up,
- * GitHub out of reach, the rate limit low, or live.
+ * GitHub out of reach, with why as the poller has it, the rate limit low, or live.
  */
 export function connectionOf(login: string, status: PollStatus): Connection {
   if (status.signedOut) return { kind: 'signedOut', login };
@@ -145,6 +147,7 @@ export function connectionOf(login: string, status: PollStatus): Connection {
     return {
       kind: 'offline',
       retryAt: Math.max(0, Math.round(offline.retryAt)),
+      cause: githubCause(offline.cause),
       error: offline.error,
     };
   }
@@ -174,20 +177,63 @@ export function rateLimitedUntil(error: unknown, now: number): number | undefine
 }
 
 /**
+ * Who a tab reads its pull request as: an account, or nobody, with whether any account is signed
+ * in, and one GitHub signed out, if one is, which a read GitHub refuses names.
+ */
+export type ReadAs =
+  | { readonly kind: 'account'; readonly login: string }
+  | {
+      readonly kind: 'anonymous';
+      readonly signedIn: boolean;
+      readonly signedOut?: string | undefined;
+    };
+
+/**
+ * The signed-out account a read as nobody names when GitHub refuses it or finds nothing, since
+ * signing in to it again may show the pull request: the one remembered for the repository, or for
+ * its owner; else one GitHub refused as `found` checked which accounts can see it; else the only
+ * account there is. Nothing when none of those is signed out, as `accounts` now stand.
+ */
+export function signedOutOf(
+  accounts: readonly {
+    readonly account: { readonly login: string };
+    readonly signedOut: string | undefined;
+  }[],
+  found: Pick<RepoAccount, 'problems' | 'remembered'> | undefined,
+): string | undefined {
+  const out = (login: string | undefined) =>
+    login === undefined
+      ? undefined
+      : accounts.find(
+          (each) => each.signedOut !== undefined && sameLogin(each.account.login, login),
+        )?.account.login;
+  const refused = (found?.problems ?? [])
+    .filter(({ error }) => error.isUnauthorized())
+    .map(({ login }) => login);
+  for (const login of [found?.remembered.repo, found?.remembered.owner, ...refused]) {
+    const named = out(login);
+    if (named !== undefined) return named;
+  }
+  const [only, ...others] = accounts;
+  return others.length === 0 ? out(only?.account.login) : undefined;
+}
+
+/**
  * What reading the pull request to open it ran into, as a problem the tab shows, with its cause
  * and what GitHub said: not there, or the account can't see it (or, read without one, with
- * `signedIn` saying whether any account is); blocked until the account's authorized, with
- * GitHub's link; or anything else, which Lo tries again at `retryAt`. Nothing for an error the
- * poller's status says already: GitHub out of reach, the rate limit or a refused token.
+ * `signedIn` saying whether any account is, and `signedOut` an account GitHub signed out, which
+ * signing in to again may show it); blocked until the account's authorized, with GitHub's link; or
+ * anything else, which Lo tries again at `retryAt`. Nothing for an error the poller's status says
+ * already: GitHub out of reach, the rate limit or a refused token.
  */
 export function problemOf(
   error: unknown,
   pull: PullRef,
-  acting: { kind: 'account'; login: string } | { kind: 'anonymous'; signedIn: boolean },
+  acting: ReadAs,
   retryAt: number | undefined,
 ): Problem {
   const github = githubErrorIn(error);
-  const login = acting.kind === 'account' ? acting.login : undefined;
+  const login = acting.kind === 'account' ? acting.login : acting.signedOut;
   const cause = githubCause(causeOf(error, { owner: pull.repo.owner, login }));
   const details = detailsOf(saidBy(error));
   if (github) {
@@ -200,7 +246,9 @@ export function problemOf(
         cause:
           acting.kind === 'account'
             ? { kind: 'hidden', login: acting.login }
-            : { kind: 'private', signedIn: acting.signedIn },
+            : acting.signedOut === undefined
+              ? { kind: 'private', signedIn: acting.signedIn }
+              : { kind: 'signedOut', login: acting.signedOut },
         details,
       };
     }

@@ -18,7 +18,7 @@ import { main } from './main.ts';
 import { jobsByKey, newerOf, seeNewer } from './merging.ts';
 import { merging, pullKey, shipping, type ShipDialog } from './store.ts';
 import { shipDoneLine, watchedWords, type Label } from './shipWords.ts';
-import { detailsOf, doneLine } from './words.ts';
+import { detailsOf, doneLine, refusalText } from './words.ts';
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -330,6 +330,7 @@ function settle(view: ShipView | undefined): void {
       // Left before it stopped: the merge panel says where and why, never a toast.
       const id = viewOf.get(view.key);
       if (!showing(view.key) && id !== undefined) {
+        const reason = refusalText(phase.refusal);
         panelTrouble(id, view.number, {
           title:
             phase.at === 'approve'
@@ -339,7 +340,7 @@ function settle(view: ShipView | undefined): void {
                 : view.approved
                   ? `Approved #${view.number}, but couldn’t merge it`
                   : `Couldn’t merge #${view.number}`,
-          reason: phase.refusal.text === '' ? undefined : withoutBidi(phase.refusal.text),
+          reason: reason === '' ? undefined : withoutBidi(reason),
           details: detailsOf(phase.refusal),
         });
       }
