@@ -7,8 +7,8 @@ Every key can be remapped in `~/.config/lo/keymap`.
 
 ## Vim keys
 
-"Vim keys" in the command palette and the View menu switches the `editor.vim` setting, and every
-code view and comment box follows at once.
+"Vim keys" in the command palette and Settings › Keyboard switches the `editor.vim` setting, and
+every code view and comment box follows at once.
 
 - **Off, as Lo starts,** code has a caret, as text anywhere does: click to place it, arrows to move
   it, Shift with either to select, `⌘C` to copy, and `/` or `⌘F` to search. A comment box is typed

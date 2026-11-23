@@ -20,12 +20,11 @@
 // registry, nor changed by the keymap file. What the buttons in a box's notes do is also on its
 // frame's right-click menu, and in the palette while focus is in the box, each only where the box
 // offers it, without a key of its own. Where the drafts are that the diff, drawn again, had nowhere
-// to open, the palette and the app menu's Review menu say, as a click on the status bar's note for
-// them does.
+// to open, the palette says, as a click on the status bar's note for them does.
 //
 // Vim keys are a setting, `editor.vim`, off as Lo starts: "Vim keys" switches it, from the palette
-// or the app menu's View menu. Off, code and boxes have a plain caret, a box takes typing as soon
-// as it has focus, and every key here works as it does with them on, but Vim's own.
+// or Settings › Keyboard. Off, code and boxes have a plain caret, a box takes typing as soon as it
+// has focus, and every key here works as it does with them on, but Vim's own.
 //
 // In the threads panel, the `threads` scope: `j` and `k` move between its threads, `⏎` shows the
 // one the keyboard is on in the diff, and `f` steps through what it lists: the unresolved threads,

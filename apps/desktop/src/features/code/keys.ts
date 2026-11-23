@@ -8,8 +8,8 @@
 // move, `⏎` goes, and `Esc` goes back to the threads, if they were showing, or closes the panel.
 //
 // Trust's and language servers' commands, each with no key: trusting is done once a repository,
-// and through main's own dialog, and a server's status item offers the rest. In the palette and
-// the app's Review menu; a pull request's banner offers the first two.
+// and through main's own dialog, and a server's status item offers the rest. In the palette; a
+// pull request's banner offers the first two.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
