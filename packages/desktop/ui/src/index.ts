@@ -33,7 +33,14 @@ export {
 export { KeyHelp, type KeyHelpProps } from './KeyHelp.tsx';
 export { MORE_ACTIONS, MoreButton, openMenuUnder, type MoreButtonProps } from './MoreButton.tsx';
 export { Palette, PaletteHint, type PaletteGroup, type PaletteProps } from './Palette.tsx';
-export { Banner, type BannerAction, type BannerProps } from './Banner.tsx';
+export {
+  Banner,
+  BannerDrawn,
+  BannerMoreProvider,
+  type BannerAction,
+  type BannerMore,
+  type BannerProps,
+} from './Banner.tsx';
 export { PRHeader, type HeaderConnection, type PRHeaderProps } from './PRHeader.tsx';
 export { Branch, type BranchProps } from './Branch.tsx';
 export { LinkButton } from './LinkButton.tsx';
@@ -77,7 +84,17 @@ export { LayerList, type LayerListProps, type LayerRow } from './LayerList.tsx';
 export { TypeToConfirm, typedMatches, type TypeToConfirmProps } from './TypeToConfirm.tsx';
 export { Skeleton, Spinner, type SpinnerProps } from './Spinner.tsx';
 export { StatePill, type PullRequestState } from './StatePill.tsx';
-export { StatusBar, StatusItem, StatusKeys, StatusMode } from './StatusBar.tsx';
+export {
+  StatusActions,
+  StatusBall,
+  StatusBar,
+  StatusItem,
+  StatusKeys,
+  StatusLine,
+  StatusMode,
+  type StatusBallState,
+  type StatusItemProps,
+} from './StatusBar.tsx';
 export { Button, type ButtonProps } from './Button.tsx';
 export { Input, type InputProps } from './Input.tsx';
 export { Meter, type MeterProps } from './Meter.tsx';
@@ -118,7 +135,7 @@ export {
   type TooltipProps,
 } from './Tooltip.tsx';
 export { Collapse, Swap, type CollapseProps, type SwapProps } from './Collapse.tsx';
-export { Problem, type ProblemAction, type ProblemProps } from './Problem.tsx';
+export { Problem, useDetails, type ProblemAction, type ProblemProps } from './Problem.tsx';
 export { Countdown, countdownSaid, countdownWords, type CountdownProps } from './Countdown.tsx';
 export { EmptyState, type EmptyAction, type EmptyStateProps } from './EmptyState.tsx';
 export {

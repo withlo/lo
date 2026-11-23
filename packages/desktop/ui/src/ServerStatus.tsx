@@ -4,10 +4,17 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from './Button.tsx';
 import { formatBytes } from './bytes.ts';
 import { showFormat } from './controls.ts';
-import { Popover, PopoverDescription, PopoverTitle } from './Popover.tsx';
-import { Problem } from './Problem.tsx';
+import { CopyFaces, CopyStatus, useCopy, useCopySaid } from './CopyButton.tsx';
+import { Popover } from './Popover.tsx';
+import { Problem, type ProblemAction } from './Problem.tsx';
 import { ShownText } from './ShownText.tsx';
-import { Spinner } from './Spinner.tsx';
+import {
+  STATUS_BUTTON,
+  StatusActions,
+  StatusBall,
+  StatusLine,
+  type StatusBallState,
+} from './StatusBar.tsx';
 
 /** Why a language server isn't running. */
 export type ServerFailure =
@@ -63,19 +70,23 @@ export type ServerState =
 /** What the details offer to do about trust. */
 export interface ServerTrust {
   /**
-   * "Trust repo…" and "Trust this PR…" ask in a dialog of main's, so they end in an ellipsis,
-   * and the details stay open while Lo asks; "Stop trusting this repo" takes it away at once, and
+   * "Trust repo…" and "Trust pull request…" ask in a dialog of main's, so they end in an
+   * ellipsis, and the details stay open while Lo asks; "Stop trusting" takes it away at once, and
    * closes them.
    */
   action: 'repo' | 'pr' | 'stop';
   onChoose: () => void;
   /**
-   * What Lo is doing about it, while it does: "Checking with GitHub", "Trusting". The button is
-   * busy and says so, with a ring turning, in place of its label, and pressing it does nothing
-   * until it's done.
+   * What Lo is doing about it, while it does: "Checking…", "Trusting…". The button is busy and says
+   * so, with a ring turning, in place of its label, and pressing it does nothing until it's done.
    */
   busy?: string | undefined;
-  /** Why trusting didn't happen, which the details say under what they said, until it's asked again. */
+  /**
+   * The widest thing it says while busy, where `busy` changes as Lo goes on: "Trusting…" for one
+   * that says "Waiting…" first. The button holds that room from the start, so it's one width.
+   */
+  widest?: string | undefined;
+  /** Why trusting didn't happen, which the details say under their line, until it's asked again. */
   failure?: ServerTrustFailure | undefined;
 }
 
@@ -83,10 +94,10 @@ export interface ServerTrust {
 export interface ServerTrustFailure {
   /** What didn't happen: "Couldn’t trust fieldwork/atlas-api". */
   title: string;
-  /** Why, in a sentence or two. */
+  /** Why, in a sentence, or nothing where the cause isn't known. */
   message: string;
   /** A button that helps, after the reason: "Open settings.json". */
-  fix?: { label: string; onChoose: () => void } | undefined;
+  fix?: { label: ReactNode; onChoose: () => void } | undefined;
 }
 
 export interface ServerStatusProps {
@@ -96,8 +107,13 @@ export interface ServerStatusProps {
   /** The program and its version, for the details: "tsserver 5.6.3". */
   version?: string | undefined;
   /**
-   * The button that starts it again. A failed download offers "Retry" in its place, and one waiting
-   * in line "Start next", unless it's next already. One refused offers none.
+   * The details' one line, where the caller knows it better than the state does: what language
+   * servers are off for, "Language servers are off for fieldwork/atlas-api".
+   */
+  line?: string | undefined;
+  /**
+   * The button that starts it again. A failed download offers "Try again" in its place, and one
+   * waiting in line "Start next", unless it's next already. One refused offers none.
    */
   onRestart?: (() => void) | undefined;
   onShowLog?: (() => void) | undefined;
@@ -105,235 +121,118 @@ export interface ServerStatusProps {
   trust?: ServerTrust | undefined;
   /** Whether the details are open. Without it, the item keeps its own. */
   open?: boolean | undefined;
+  /** They're open unasked, as an offer: focus stays where the reader is. */
+  quiet?: boolean | undefined;
   onOpenChange?: ((open: boolean) => void) | undefined;
   /** Where the details are put in the page: an element inside `.lo-app`. */
   container?: HTMLElement | null | undefined;
 }
-
-/** What the details say fills in for a server that isn't answering: the syntax index does. */
-const FALLBACK = "Peek, references and hovers fall back to the syntax index until it's back.";
-const WAITING = "Peek, references and hovers use the syntax index until it's ready.";
-const UNTIL = 'Until then, peek, references and hovers use the syntax index.';
-const INSTEAD = 'Peek, references and hovers use the syntax index instead.';
 
 /** The percent of a progress report, clamped to the scale it's on. */
 function percentOf(percent: number): number {
   return Math.min(100, Math.max(0, Math.round(percent)));
 }
 
+/** "38 / 112 MB": how much of a download has come, in the whole's unit where they share one. */
+function measure(done: number, total: number): string {
+  const part = formatBytes(done);
+  const whole = formatBytes(total);
+  const unit = part.slice(part.lastIndexOf(' '));
+  return whole.endsWith(unit) ? `${part.slice(0, -unit.length)} / ${whole}` : `${part} / ${whole}`;
+}
+
 /**
- * The word or words beside the language's name in the status bar, which Settings' list of
- * language servers says too.
+ * What the item says of a server: its state in words, around its name. `name` is how the name is
+ * drawn, as text or as `ShownText`, so one list of words serves a screen reader and the eye.
  */
-export function ServerWords({ name: raw, state }: { name: string; state: ServerState }): ReactNode {
-  const name = <ShownText text={raw} />;
+function words<T>(name: T, state: ServerState): (T | string)[] {
   switch (state.kind) {
     case 'downloading':
-      return (
-        <>
-          {name} downloading ·{' '}
-          <span className="lo-num">
-            {formatBytes(state.done)} of {formatBytes(state.total)}
-          </span>
-        </>
-      );
+      return ['Downloading ', name, ` · ${measure(state.done, state.total)}`];
     case 'unpacking':
-      return <>{name} unpacking</>;
+      return ['Installing ', name, '…'];
     case 'building':
-      return <>{name} building</>;
+      return ['Building ', name, '…'];
     case 'waiting':
-      return state.next ? <>{name} waiting · next</> : <>{name} waiting</>;
+      return [name, ' · waiting to start'];
     case 'starting':
-      return <>{name} starting</>;
+      return ['Starting ', name, '…'];
     case 'indexing':
-      return (
-        <>
-          {name} indexing
-          {state.percent !== undefined && (
-            <>
-              {' '}
-              <span className="lo-num">{percentOf(state.percent)}%</span>
-            </>
-          )}
-        </>
-      );
+      return state.percent === undefined
+        ? ['Indexing with ', name, '…']
+        : ['Indexing with ', name, ` · ${percentOf(state.percent)}%`];
     case 'ready':
-      return name;
+      return [name];
     case 'notAnswering':
-      return <>{name} not answering</>;
+      return [name, ' isn’t responding'];
     case 'failed':
-      return <>{name} failed</>;
+      return [name, ' isn’t running'];
     case 'missing':
-      return <>{name} toolchain missing</>;
+      return [name, ` needs ${state.needs}`];
     case 'refused':
-      return <>{name} refused</>;
+      return [name, ' can’t use the local copy'];
     case 'off':
-      return 'Language servers off';
+      return ['Language servers off'];
     default:
       state satisfies never;
       throw new Error(`A language server state Lo doesn't know: ${JSON.stringify(state)}.`);
   }
 }
 
-const DOT = {
-  ok: 'bg-success',
-  warn: 'bg-warning',
-  fail: 'bg-danger',
-  idle: 'bg-fg-dim',
-} as const;
+/**
+ * The words beside a language server's ball in the status bar, which Settings' list of language
+ * servers says too: "Starting gopls…", "gopls", "gopls isn’t running".
+ */
+export function ServerWords({ name, state }: { name: string; state: ServerState }): ReactNode {
+  return words(<ShownText key="name" text={name} />, state).map((part, index) =>
+    typeof part === 'string' ? (
+      // Numbers keep their width as they count.
+      <span key={index} className={/\d/.test(part) ? 'lo-num' : undefined}>
+        {part}
+      </span>
+    ) : (
+      part
+    ),
+  );
+}
 
-/** A language server's state as a mark: a ring turning while it's coming up, else a dot. */
-function Mark({ state }: { state: ServerState }) {
+/** The same words as text: the details' name, for a screen reader. */
+export function serverText(name: string, state: ServerState): string {
+  return words(showFormat(name), state).join('');
+}
+
+/** A language server's state as its ball draws it. */
+export function serverBall(state: ServerState): StatusBallState {
   switch (state.kind) {
     case 'downloading':
     case 'unpacking':
     case 'building':
     case 'starting':
     case 'indexing':
-      return <Spinner size="xs" />;
+      return 'working';
     case 'ready':
-      return <span className={`size-8 flex-none rounded-full ${DOT.ok}`} aria-hidden="true" />;
-    case 'failed':
-      return <span className={`size-8 flex-none rounded-full ${DOT.fail}`} aria-hidden="true" />;
+      return 'ready';
     case 'waiting':
+      return 'warn';
+    case 'failed':
     case 'notAnswering':
     case 'missing':
-      return <span className={`size-8 flex-none rounded-full ${DOT.warn}`} aria-hidden="true" />;
+      return 'failed';
     case 'refused':
     case 'off':
-      return <span className={`size-8 flex-none rounded-full ${DOT.idle}`} aria-hidden="true" />;
+      return 'off';
     default:
       state satisfies never;
       throw new Error(`A language server state Lo doesn't know: ${JSON.stringify(state)}.`);
   }
 }
 
-/** The status bar's items, as `StatusItem` sets them. A failed server's is tinted. */
-const item = cva(
-  'inline-flex h-20 min-w-0 items-center gap-6 rounded-xs px-6 hover:bg-hover hover:text-fg focus-visible:shadow-ring',
-  {
-    variants: {
-      failed: { true: 'bg-danger-bg text-danger', false: '' },
-    },
+/** A server's item, as `StatusItem` draws one. A server that can't run is tinted. */
+const item = cva(STATUS_BUTTON, {
+  variants: {
+    failed: { true: 'bg-danger-bg text-danger', false: '' },
   },
-);
-
-/** What the details' heading says of the server: "TypeScript ready", "TypeScript stopped". */
-function heading(raw: string, state: ServerState): ReactNode {
-  const name = <ShownText text={raw} />;
-  switch (state.kind) {
-    case 'downloading':
-      return <>{name} downloading</>;
-    case 'unpacking':
-      return <>{name} unpacking</>;
-    case 'building':
-      return <>{name} building</>;
-    case 'waiting':
-      return <>{name} waiting</>;
-    case 'starting':
-      return <>{name} starting</>;
-    case 'indexing':
-      return <>{name} indexing</>;
-    case 'ready':
-      return <>{name} ready</>;
-    case 'notAnswering':
-      return <>{name} not answering</>;
-    case 'failed':
-      return <>{name} stopped</>;
-    case 'missing':
-      return <>{name} toolchain missing</>;
-    case 'refused':
-      return <>{name} refused</>;
-    case 'off':
-      return 'Language servers off';
-    default:
-      state satisfies never;
-      throw new Error(`A language server state Lo doesn't know: ${JSON.stringify(state)}.`);
-  }
-}
-
-/** What went wrong, in a sentence, for a failure. */
-function why(failure: ServerFailure): ReactNode {
-  switch (failure.kind) {
-    case 'memory':
-      return (
-        <>
-          It ran out of memory at <ShownText text={failure.limit} />
-          {failure.files !== undefined &&
-            ` while loading ${failure.files.toLocaleString('en-US')} files`}
-          .
-        </>
-      );
-    case 'download':
-    case 'error':
-      return <ShownText text={failure.message} />;
-    default:
-      failure satisfies never;
-      throw new Error(`A failure Lo doesn't know: ${JSON.stringify(failure)}.`);
-  }
-}
-
-/** What the details say under the heading. */
-function detail(raw: string, state: ServerState): ReactNode {
-  const name = <ShownText text={raw} />;
-  switch (state.kind) {
-    case 'downloading':
-    case 'unpacking':
-    case 'building':
-    case 'starting':
-    case 'indexing':
-      return WAITING;
-    case 'refused':
-      return (
-        <>
-          <ShownText text={state.why} /> {INSTEAD}
-        </>
-      );
-    case 'waiting':
-      return (
-        <>
-          {`Lo runs ${state.count} language servers at once at most, and they're all in use on screen.`}{' '}
-          {name}{' '}
-          {state.next
-            ? 'is next in line, and starts when one of them stops.'
-            : 'is in line, and starts when its turn comes.'}{' '}
-          {UNTIL}
-        </>
-      );
-    case 'ready':
-      return undefined;
-    case 'notAnswering':
-      return `It missed several answers in a row. ${FALLBACK}`;
-    case 'failed':
-      return (
-        <>
-          {why(state.why)} {FALLBACK}
-        </>
-      );
-    case 'missing':
-      return (
-        <>
-          {name} needs <ShownText text={state.needs} />.
-          {state.install !== undefined && (
-            <>
-              {' '}
-              Install {state.plural === true ? 'them' : 'it'} with{' '}
-              <code className="text-fg code-small">
-                <ShownText text={state.install} />
-              </code>
-              .
-            </>
-          )}{' '}
-          {UNTIL}
-        </>
-      );
-    case 'off':
-      return `Lo runs language servers only on repos you trust. ${UNTIL}`;
-    default:
-      state satisfies never;
-      throw new Error(`A language server state Lo doesn't know: ${JSON.stringify(state)}.`);
-  }
-}
+});
 
 /** What the button that takes the reader to trust, or to stop, says. */
 function trustLabel(action: ServerTrust['action']): string {
@@ -341,9 +240,9 @@ function trustLabel(action: ServerTrust['action']): string {
     case 'repo':
       return 'Trust repo…';
     case 'pr':
-      return 'Trust this PR…';
+      return 'Trust pull request…';
     case 'stop':
-      return 'Stop trusting this repo';
+      return 'Stop trusting';
     default:
       action satisfies never;
       throw new Error(`A way to change trust Lo doesn't know: ${JSON.stringify(action)}.`);
@@ -352,11 +251,91 @@ function trustLabel(action: ServerTrust['action']): string {
 
 /**
  * What the button that starts a server again says: for one waiting in line, which it puts first,
- * "Start next".
+ * "Start next"; for a download that failed, "Try again".
  */
 function restartLabel(state: ServerState): string {
   if (state.kind === 'waiting') return 'Start next';
-  return state.kind === 'failed' && state.why.kind === 'download' ? 'Retry' : 'Restart';
+  return state.kind === 'failed' && state.why.kind === 'download' ? 'Try again' : 'Restart';
+}
+
+/** Why a server can't run, for its `Problem`: the reason where it's known, and what it said. */
+interface CantRun {
+  readonly reason?: string | undefined;
+  readonly details?: string | undefined;
+  /** The command that installs what it needs, which the Problem's button copies. */
+  readonly install?: string | undefined;
+}
+
+/** Why a server can't run, or nothing for one that isn't stopped. */
+function cantRun(state: ServerState): CantRun | undefined {
+  switch (state.kind) {
+    case 'notAnswering':
+      return { reason: 'It didn’t respond.' };
+    case 'failed': {
+      const { why } = state;
+      switch (why.kind) {
+        case 'memory':
+          return {
+            reason: 'It ran out of memory.',
+            details:
+              why.files === undefined
+                ? why.limit
+                : `${why.limit}, ${why.files.toLocaleString('en-US')} files`,
+          };
+        case 'download':
+        case 'error':
+          // What it said is its own sentence, not a cause Lo knows: it goes behind Details.
+          return { details: why.message };
+        default:
+          why satisfies never;
+          throw new Error(`A failure Lo doesn't know: ${JSON.stringify(why)}.`);
+      }
+    }
+    case 'missing':
+      return {
+        reason: `${state.plural === true ? 'They need' : 'It needs'} ${state.needs}.`,
+        details: state.install,
+        install: state.install,
+      };
+    case 'downloading':
+    case 'unpacking':
+    case 'building':
+    case 'waiting':
+    case 'starting':
+    case 'indexing':
+    case 'ready':
+    case 'refused':
+    case 'off':
+      return undefined;
+    default:
+      state satisfies never;
+      throw new Error(`A language server state Lo doesn't know: ${JSON.stringify(state)}.`);
+  }
+}
+
+/** The details' one line for a server that can run: what it waits for, why it's held, its version. */
+function lineOf(state: ServerState, version: string | undefined): ReactNode {
+  switch (state.kind) {
+    case 'waiting':
+      return `At most ${state.count} language servers run at once.`;
+    case 'refused':
+      return <ShownText text={state.why} />;
+    case 'ready':
+      return version === undefined ? undefined : <ShownText text={version} />;
+    case 'downloading':
+    case 'unpacking':
+    case 'building':
+    case 'starting':
+    case 'indexing':
+    case 'notAnswering':
+    case 'failed':
+    case 'missing':
+    case 'off':
+      return undefined;
+    default:
+      state satisfies never;
+      throw new Error(`A language server state Lo doesn't know: ${JSON.stringify(state)}.`);
+  }
 }
 
 /**
@@ -394,19 +373,22 @@ function handOffFocus(own: readonly (HTMLElement | null)[], details: HTMLElement
 }
 
 /**
- * One language server in the status bar: a mark and its name, with how far it has got while it's
- * coming up. A click, or `⏎` on it, opens its details over it, with what to do: start it again, or
- * read its log. A failed server shows "Restart" beside its name, since that's the one thing to do.
- * The item is quiet while all is well.
+ * One language server in the status bar, as `StatusItem` draws an item: its ball and its state in
+ * words, "Starting gopls…" while it comes up and its name alone once it's ready. A click, or `⏎`
+ * on it, opens its details over it: one line of state, or why it can't run, and what to do: start
+ * it again, read its log, trust the repo or stop trusting it. A server that stopped shows its
+ * Restart beside its name, since that's the one thing to do. The item is quiet while all is well.
  */
 export function ServerStatus({
   name,
   state,
   version,
+  line,
   onRestart,
   onShowLog,
   trust,
   open,
+  quiet = false,
   onOpenChange,
   container,
 }: ServerStatusProps) {
@@ -416,28 +398,55 @@ export function ServerStatus({
     (state.kind === 'waiting' && state.next) || state.kind === 'refused' ? undefined : onRestart;
   const [kept, setKept] = useState(false);
   const shown = open ?? kept;
-  const restart = useRef<HTMLButtonElement>(null);
   const first = useRef<HTMLButtonElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const beside = useRef<HTMLButtonElement>(null);
   const details = useRef<HTMLDivElement | null>(null);
+  const copy = useCopy();
+  const [copied, sayCopied] = useCopySaid();
   // Whatever takes the item away while it has focus, such as a caller that draws another item for
   // the new state, would drop focus on the page: it goes to the bar instead.
   useLayoutEffect(() => () => handOffFocus([trigger.current, beside.current], details.current), []);
-  const failed = state.kind === 'failed';
-  const says = detail(name, state);
+  const ball = serverBall(state);
+  const stopped = cantRun(state);
+  const says = line ?? lineOf(state, version);
   const change = (next: boolean) => {
     setKept(next);
     onOpenChange?.(next);
   };
+  const restart = (): void => {
+    change(false);
+    again?.();
+  };
+  const install = stopped?.install;
+  // The one thing to do about a server that can't run is its Problem's button: copy what installs
+  // what it needs, or start it again.
+  const fix: ProblemAction | undefined =
+    install !== undefined
+      ? {
+          label: <CopyFaces said={copied}>Copy command</CopyFaces>,
+          onClick: () => {
+            Promise.resolve()
+              .then(() => copy(install))
+              .then(
+                () => sayCopied('copied'),
+                () => sayCopied('failed'),
+              );
+          },
+        }
+      : stopped !== undefined && again
+        ? { label: restartLabel(state), onClick: restart }
+        : undefined;
+  // Restart goes in the row under the line, unless the Problem holds it.
+  const restartInRow = again !== undefined && (stopped === undefined || install !== undefined);
   return (
     <>
       <Popover
         open={shown}
         onOpenChange={change}
         trigger={
-          <button type="button" ref={trigger} className={item({ failed })}>
-            <Mark state={state} />
+          <button type="button" ref={trigger} className={item({ failed: ball === 'failed' })}>
+            <StatusBall state={ball} />
             <span className="min-w-0 truncate">
               <ServerWords name={name} state={state} />
             </span>
@@ -445,31 +454,35 @@ export function ServerStatus({
         }
         side="top"
         scope="dialog"
+        label={serverText(name, state)}
         // The details take focus as they open, not a frame on, so a key pressed then is theirs. It
-        // goes to Restart, or to the first of the other buttons when the server has none to offer.
-        initialFocus={again ? restart : first}
+        // goes to the first button in their row, or to them when there's none.
+        initialFocus={first}
+        takeFocus={!quiet}
         popupRef={details}
         container={container}
-        className="flex server-details flex-col gap-8 px-12 py-12"
+        className="flex status-details flex-col gap-8 p-12"
       >
-        <div className="flex items-center gap-8">
-          <Mark state={state} />
-          <PopoverTitle className="m-0 min-w-0 truncate text-ui-strong">
-            {heading(name, state)}
-          </PopoverTitle>
-          {version !== undefined && (
-            <span className="lo-num ms-auto flex-none text-fg-muted text-small">
-              <ShownText text={version} />
-            </span>
-          )}
-        </div>
-        {says !== undefined && (
-          <PopoverDescription className="m-0 text-fg-muted text-small">{says}</PopoverDescription>
+        {says !== undefined && <StatusLine>{says}</StatusLine>}
+        {stopped !== undefined && (
+          <Problem
+            title={
+              <>
+                Can’t run <ShownText text={name} />
+              </>
+            }
+            reason={stopped.reason === undefined ? undefined : <ShownText text={stopped.reason} />}
+            action={fix}
+            details={stopped.details}
+          />
         )}
+        {install !== undefined && <CopyStatus said={copied} />}
         {trust?.failure && (
           <Problem
             title={<ShownText text={trust.failure.title} />}
-            reason={<ShownText text={trust.failure.message} />}
+            reason={
+              trust.failure.message === '' ? undefined : <ShownText text={trust.failure.message} />
+            }
             action={
               trust.failure.fix && {
                 label: trust.failure.fix.label,
@@ -478,24 +491,16 @@ export function ServerStatus({
             }
           />
         )}
-        {(again || onShowLog || trust) && (
-          <div className="flex flex-wrap gap-6">
-            {again && (
-              <Button
-                ref={restart}
-                variant={failed ? 'primary' : 'secondary'}
-                size="sm"
-                onClick={() => {
-                  change(false);
-                  again();
-                }}
-              >
+        {(restartInRow || onShowLog || trust) && (
+          <StatusActions>
+            {restartInRow && (
+              <Button ref={first} variant="secondary" size="sm" onClick={restart}>
                 {restartLabel(state)}
               </Button>
             )}
             {onShowLog && (
               <Button
-                ref={again ? undefined : first}
+                ref={restartInRow ? undefined : first}
                 variant="ghost"
                 size="sm"
                 onClick={() => {
@@ -503,16 +508,17 @@ export function ServerStatus({
                   onShowLog();
                 }}
               >
-                Show the log
+                Show log
               </Button>
             )}
             {trust && (
               <Button
-                ref={again || onShowLog ? undefined : first}
+                ref={restartInRow || onShowLog ? undefined : first}
                 variant={state.kind === 'off' ? 'secondary' : 'ghost'}
                 size="sm"
                 busy={trust.busy !== undefined}
                 working={trust.busy}
+                widest={trust.widest}
                 onClick={() => {
                   // Trusting asks first, and says here how that goes.
                   if (trust.action === 'stop') change(false);
@@ -522,10 +528,10 @@ export function ServerStatus({
                 {trustLabel(trust.action)}
               </Button>
             )}
-          </div>
+          </StatusActions>
         )}
       </Popover>
-      {failed && again && (
+      {state.kind === 'failed' && again && (
         <button
           ref={beside}
           type="button"

@@ -1,18 +1,25 @@
 import { cva } from 'class-variance-authority';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import { Branch } from './Branch.tsx';
+import { Popover } from './Popover.tsx';
 import { Skeleton } from './Spinner.tsx';
 import { StatePill, type PullRequestState } from './StatePill.tsx';
 
 /**
- * How what's shown stands with GitHub, when it isn't as usual: "Offline · saved 14:02", "Rate
- * limited · until 10:42", or "Signed out", in danger.
+ * How what's shown stands with GitHub, when it isn't as usual, in a word or two: "Offline", "Rate
+ * limit reached", or "Signed out", in danger. A click on it opens its details under it.
  */
 export interface HeaderConnection {
   tone: 'warn' | 'danger';
   label: string;
-  detail?: string | undefined;
+  /**
+   * What a click on the chip opens: the line that says why, when the tab last heard from GitHub,
+   * and the one thing to do about it.
+   */
+  details?: ReactNode;
+  /** Where the details are put in the page: an element inside `.lo-app`. */
+  container?: HTMLElement | null | undefined;
 }
 
 export interface PRHeaderProps {
@@ -41,7 +48,13 @@ export interface PRHeaderProps {
 
 const chip = cva(
   'inline-flex h-row-h flex-none items-center gap-6 rounded-pill ps-8 pe-12 font-medium whitespace-nowrap text-small',
-  { variants: { tone: { warn: 'chip-warn', danger: 'chip-danger' } } },
+  {
+    variants: {
+      tone: { warn: 'chip-warn', danger: 'chip-danger' },
+      button: { true: 'move-tint hover:text-fg focus-visible:shadow-ring', false: '' },
+    },
+    defaultVariants: { button: false },
+  },
 );
 
 /**
@@ -76,15 +89,7 @@ export function PRHeader({
         )}
         <span className="lo-num flex-none pr-number text-fg-muted">#{number}</span>
         <span className="min-w-8 flex-1" />
-        {connection !== undefined && (
-          <span className={chip({ tone: connection.tone })}>
-            <ConnectionIcon tone={connection.tone} />
-            {connection.label}
-            {connection.detail !== undefined && (
-              <span className="font-normal text-fg-muted">· {connection.detail}</span>
-            )}
-          </span>
-        )}
+        {connection !== undefined && <ConnectionChip connection={connection} />}
         {status}
         {acting !== undefined && (
           <span
@@ -126,6 +131,38 @@ export function PRHeader({
         {children}
       </div>
     </header>
+  );
+}
+
+/** The chip for how the tab stands with GitHub: a button that opens its details, if it has any. */
+function ConnectionChip({ connection }: { connection: HeaderConnection }) {
+  const [open, setOpen] = useState(false);
+  const face = (
+    <>
+      <ConnectionIcon tone={connection.tone} />
+      {connection.label}
+    </>
+  );
+  if (connection.details === undefined) {
+    return <span className={chip({ tone: connection.tone })}>{face}</span>;
+  }
+  return (
+    <Popover
+      open={open}
+      onOpenChange={setOpen}
+      trigger={
+        <button type="button" className={chip({ tone: connection.tone, button: true })}>
+          {face}
+        </button>
+      }
+      align="end"
+      label={connection.label}
+      scope="dialog"
+      container={connection.container}
+      className="flex status-details flex-col gap-8 p-12"
+    >
+      {connection.details}
+    </Popover>
   );
 }
 

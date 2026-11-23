@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-// Trust in the window, with main answered by a stand-in bridge: the banner says what main decided
-// and only asks main, its button says how far main has got and waits meanwhile, and once trusting
-// failed it says why, offering to open the settings file and to try again; the palette's commands
-// act only where they can, and Settings lists what's trusted, from the file, with "Stop trusting".
+// Trust in the window, with main answered by a stand-in bridge: the Language servers item's
+// details say what main decided and only ask main, open by themselves once for a repo at the first
+// `g d`, and their button says how far main has got and waits meanwhile; once trusting failed they
+// say why, offering to open the settings file and to try again; the palette's commands act only
+// where they can, and Settings lists what's trusted, from the file, with "Stop trusting".
 
 import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -11,12 +12,12 @@ import { beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import { IpcError } from '../../../ipc/contract.ts';
 import { installBridge } from '../../../window/test/bridge.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
-import type { Status } from '../contract.ts';
+import type { Servers, Status } from '../contract.ts';
 import { readTrusted } from '../settings.ts';
 import feature from './index.ts';
-import { askable, bannerOf, drawn, trustable, trustSwitch, untrustable } from './status.ts';
+import { ServerItems } from './ServerItems.tsx';
+import { askable, offered, offerOf, offerOnce, trustable, untrustable } from './status.ts';
 import { rowsOf } from './Trusted.tsx';
-import { TrustBanner } from './TrustBanner.tsx';
 
 /** What main says of each view, by its id. */
 const states = new Map<string, Status>();
@@ -24,8 +25,12 @@ const states = new Map<string, Status>();
 /** How main answers `code.trust`, which a test sets. */
 let answerTrust: (input: unknown) => unknown = () => 'cancelled';
 
+/** What main says of each view's servers, by its id: off, as nothing trusts them. */
+const off = (view: string): Servers => ({ view, off: true, servers: [] });
+
 const bridge = installBridge({
   'code.state': (input) => states.get(String(Reflect.get(Object(input), 'view'))) ?? null,
+  'code.servers': (input) => off(String(Reflect.get(Object(input), 'view'))),
   'code.trust': (input) => answerTrust(input),
   'code.untrust': () => undefined,
   'code.dismiss': () => undefined,
@@ -86,101 +91,142 @@ const button = (page: HTMLElement, name: string) =>
     (each) => said(each) === name || each.getAttribute('aria-label') === name,
   );
 
-describe('the banner', () => {
+/** Draws tab `id`'s Language servers item, off as nothing trusts its view, as `change` says. */
+function offItem(id: string, change: Partial<Status> = {}): HTMLElement {
+  const page = draw(<ServerItems tab={tabOf(id)} />);
+  act(() => {
+    bridge.push('code.served', off(id));
+    bridge.push('code.status', statusOf(id, change));
+  });
+  return page;
+}
+
+/** The item's details, open over it, or nothing while they're closed. */
+const details = () => document.querySelector<HTMLElement>('.status-details') ?? undefined;
+
+/** Opens the item's details, as a click on it does, and gives them. */
+function open(page: HTMLElement): HTMLElement {
+  act(() => page.querySelector('button')?.click());
+  const shown = details();
+  expect(shown).toBeDefined();
+  return shown ?? page;
+}
+
+/** What main says once a view is trusted: so, and its servers starting. */
+function trustedNow(id: string): void {
+  bridge.push('code.status', statusOf(id, { trust: { kind: 'trusted', by: 'repo' } }));
+  bridge.push('code.served', {
+    view: id,
+    off: false,
+    servers: [{ id: 'typescript', name: 'TypeScript', state: { kind: 'starting' } }],
+  });
+}
+
+describe('the Language servers item', () => {
   it('says language servers are off for a repository nothing trusts, and only asks main', async () => {
-    const page = draw(<TrustBanner tab={tabOf('t1')} />);
-    expect(page.textContent).toBe('');
-    act(() => bridge.push('code.status', statusOf('t1')));
-    // One fact, in one line.
-    expect(page.querySelector('[role="status"] p')?.textContent).toBe(
+    const page = offItem('t1');
+    expect(page.textContent).toBe('Language servers off');
+    const shown = open(page);
+    // One fact, in one line, and one button.
+    expect(shown.querySelector('p')?.textContent).toBe(
       'Language servers are off for rozed-dev/e2e',
     );
-    act(() => button(page, 'Trust repo…')?.click());
+    expect([...shown.querySelectorAll('button')].map(said)).toEqual(['Trust repo…']);
+    act(() => button(shown, 'Trust repo…')?.click());
     await until(() => bridge.calls.some(([channel]) => channel === 'code.trust'));
     expect(bridge.calls.find(([channel]) => channel === 'code.trust')?.[1]).toEqual({
       view: 't1',
       repo: 'rozed-dev/e2e',
       pull: null,
     });
-    // Main hasn't said it's trusted, so the banner stays.
-    expect(page.textContent).toContain('Language servers are off');
+    // Main hasn't said it's trusted, so the details stay, saying the same.
+    expect(details()?.textContent).toContain('Language servers are off');
   });
 
-  it('offers a fork’s pull request alone, and goes once dismissed', async () => {
-    const page = draw(<TrustBanner tab={tabOf('t2')} />);
-    act(() =>
-      bridge.push(
-        'code.status',
-        statusOf('t2', { pull: 97, head: { kind: 'fork', repo: 'rozed-bot/e2e' } }),
-      ),
-    );
-    expect(page.textContent).toContain('Language servers are off for the fork rozed-bot/e2e');
-    act(() => button(page, 'Trust pull request…')?.click());
+  it('offers a fork’s pull request alone', async () => {
+    const shown = open(offItem('t2', { pull: 97, head: { kind: 'fork', repo: 'rozed-bot/e2e' } }));
+    expect(shown.textContent).toContain('Language servers are off for the fork rozed-bot/e2e');
+    act(() => button(shown, 'Trust pull request…')?.click());
     await until(() =>
       bridge.calls.some(
         ([channel, input]) => channel === 'code.trust' && Reflect.get(Object(input), 'pull') === 97,
       ),
     );
-    act(() => button(page, 'Dismiss')?.click());
-    expect(page.textContent).toBe('');
-    await until(() => bridge.calls.some(([channel]) => channel === 'code.dismiss'));
-    expect(bridge.calls.find(([channel]) => channel === 'code.dismiss')?.[1]).toEqual({
-      view: 't2',
-    });
   });
 
-  it('shows only on a view nothing trusts, with git, not dismissed', () => {
-    expect(bannerOf(null)).toBeUndefined();
-    expect(bannerOf(statusOf('t', { dismissed: true }))).toBeUndefined();
+  it('offers nothing to trust for a fork GitHub no longer has', () => {
+    const shown = open(offItem('t10', { head: { kind: 'gone' } }));
+    expect(shown.textContent).toBe('Language servers are off for a fork that no longer exists');
+    expect(shown.querySelector('button')).toBeNull();
+  });
+
+  it('offers to trust only a view nothing trusts, with git', () => {
+    expect(offerOf(null)).toBeUndefined();
     for (const trust of [
       { kind: 'noGit' },
       { kind: 'checking' },
       { kind: 'waiting' },
       { kind: 'trusted', by: 'repo' },
-      // Lo couldn't check what may trust it: the banner would offer what's there already.
+      // Lo couldn't check what may trust it: the item would offer what's there already.
       { kind: 'untrusted', why: 'unread' },
     ] as const) {
-      expect(bannerOf(statusOf('t', { trust }))).toBeUndefined();
+      expect(offerOf(statusOf('t', { trust }))).toBeUndefined();
     }
     // A repository by the name trusted that isn't the one.
-    expect(bannerOf(statusOf('t', { trust: { kind: 'untrusted', why: 'other' } }))?.action).toEqual(
-      {
-        label: 'Trust repo…',
-        pull: false,
-      },
-    );
-    // A fork GitHub no longer has can't be trusted.
-    expect(bannerOf(statusOf('t', { head: { kind: 'gone' } }))?.action).toBeUndefined();
+    expect(offerOf(statusOf('t', { trust: { kind: 'untrusted', why: 'other' } }))).toEqual({
+      line: 'Language servers are off for rozed-dev/e2e',
+      pull: false,
+    });
+    // Offered once already, it's offered still, in the item's details.
+    expect(offerOf(statusOf('t', { dismissed: true }))?.pull).toBe(false);
   });
 
-  it('keeps its place in the tab until it has closed', () => {
-    const tab = tabOf('t9');
-    draw(<TrustBanner tab={tab} />);
-    act(() => bridge.push('code.status', statusOf('t9')));
-    expect(drawn.get('t9')).toBe('on');
-    expect(trustSwitch.shows(tab)).toBe(true);
-    act(() =>
-      bridge.push('code.status', statusOf('t9', { trust: { kind: 'trusted', by: 'repo' } })),
-    );
-    // Closing takes no time here, so it's gone, and nothing holds its place.
-    expect(drawn.get('t9')).toBe('off');
-    expect(trustSwitch.shows(tab)).toBe(false);
+  it('opens by itself once for a repo, at the first `g d`, and leaves focus where it was', async () => {
+    const page = offItem('t3');
+    const elsewhere = document.createElement('button');
+    document.body.append(elsewhere);
+    onTestFinished(() => elsewhere.remove());
+    elsewhere.focus();
+    act(() => offerOnce('t3'));
+    expect(details()?.textContent).toContain('Language servers are off for rozed-dev/e2e');
+    expect(document.activeElement).toBe(elsewhere);
+    // Main keeps that it was offered, for every tab of the repository.
+    await until(() => bridge.calls.some(([channel]) => channel === 'code.dismiss'));
+    expect(bridge.calls.find(([channel]) => channel === 'code.dismiss')?.[1]).toEqual({
+      view: 't3',
+    });
+    act(() => offered.set('t3', 'closed'));
+    act(() => offerOnce('t3'));
+    expect(offered.get('t3')).toBe('closed');
+    // A click opens them as ever, and they take focus then.
+    open(page);
+    expect(offered.get('t3')).toBe('open');
+  });
+
+  it('doesn’t open by itself where it was offered, while Lo asks, or where nothing can be trusted', () => {
+    for (const [id, change] of [
+      ['t11', { dismissed: true }],
+      ['t12', { trusting: 'asking' }],
+      ['t13', { head: { kind: 'gone' } }],
+      ['t14', { trust: { kind: 'trusted', by: 'repo' } }],
+    ] as const) {
+      act(() => bridge.push('code.status', statusOf(id, change)));
+      act(() => offerOnce(id));
+      expect(offered.get(id)).toBe('closed');
+    }
   });
 
   it('asks main where a view drawn before it said anything stands', async () => {
-    states.set('t3', statusOf('t3'));
-    const tab = tabOf('t3');
-    expect(trustSwitch.shows(tab)).toBe(false);
-    const stop = trustSwitch.subscribe(tab, () => undefined);
-    onTestFinished(stop);
-    await until(() => trustSwitch.shows(tab));
+    states.set('t9', statusOf('t9'));
+    const page = draw(<ServerItems tab={tabOf('t9')} />);
+    await until(() => page.textContent === 'Language servers off');
   });
 });
-
 /** How many times the window asked main for `channel`. */
 const asked = (channel: string) => bridge.calls.filter(([name]) => name === channel).length;
-/** The banner's button that trusts, whatever it says now. */
-const trustButton = (page: HTMLElement) => [...page.querySelectorAll('button')].at(-2);
+/** The details' button that trusts, whatever it says now: the last of their buttons. */
+const trustButton = (page: HTMLElement | undefined) =>
+  [...(page?.querySelectorAll('button') ?? [])].at(-1);
 /** What a button at work says: the words on it that show, in place of its label. */
 const says = (control: HTMLElement | undefined) => control && said(control);
 

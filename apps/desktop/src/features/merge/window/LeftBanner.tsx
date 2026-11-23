@@ -38,13 +38,11 @@ export function LeftBanner({ tab }: { tab: PullTab }) {
     <Banner
       tone={leftTone(found.left)}
       title={leftTitle(tab.number)}
-      actions={[
-        {
-          label: 'Merge panel',
-          keys: keyOf('merge.panel'),
-          onClick: () => openPanel(tab.id, tab.number),
-        },
-      ]}
+      action={{
+        label: 'Merge panel',
+        keys: keyOf('merge.panel'),
+        onClick: () => openPanel(tab.id, tab.number),
+      }}
       onDismiss={() => dismissLeft(tab.id)}
     />
   );

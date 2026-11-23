@@ -760,8 +760,8 @@
   }
 }
 
-/* A language server's details, over its item in the status bar. */
-@utility server-details {
+/* A status item's details, over it in the status bar: a language server's, the local copy's. */
+@utility status-details {
   width: 360px;
   max-width: calc(100vw - var(--lo-sp-32));
 }

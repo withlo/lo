@@ -1,5 +1,5 @@
 import { cva } from 'class-variance-authority';
-import type { ReactNode } from 'react';
+import { createContext, useContext, type ReactNode } from 'react';
 
 import { Button } from './Button.tsx';
 import { Key } from './Key.tsx';
@@ -20,7 +20,7 @@ const icon = cva('flex-none', {
   },
 });
 
-/** Something a banner offers to do. Its label starts with a verb. */
+/** What a banner offers to do. Its label starts with a verb. */
 export interface BannerAction {
   label: string;
   onClick: () => void;
@@ -43,33 +43,60 @@ export interface BannerAction {
 
 export interface BannerProps {
   tone: 'info' | 'warn' | 'danger';
-  /** What happened, in a strong first clause. */
+  /** What changed, as a fact: "ravi-k pushed r5". */
   title: ReactNode;
-  /** What else to know, or what to do, after it. */
+  /** One more fact, where the title can't hold it, on the same line. */
   detail?: ReactNode;
-  actions?: readonly BannerAction[] | undefined;
-  /** Dismisses it, for a banner whose state can wait. */
+  /** The one thing to do about it. */
+  action?: BannerAction | undefined;
+  /** Puts it away for good, for news the reader has seen. */
   onDismiss?: (() => void) | undefined;
 }
 
 /**
- * A full-width message under the PR header, about the whole tab: what happened, then what to do,
- * with its actions. A tab shows two at most. A `danger` banner is an alert; the others are
- * announced politely. One that comes or goes while the tab is open does it inside a `Collapse`.
+ * How many other banners wait behind the one shown, and the way to the next of them. A tab shows
+ * one banner at a time, and gives this to the one it shows, which offers "+1".
  */
-export function Banner({ tone, title, detail, actions = [], onDismiss }: BannerProps) {
+export interface BannerMore {
+  readonly count: number;
+  readonly next: () => void;
+}
+
+const More = createContext<BannerMore | undefined>(undefined);
+
+/** Gives the banner inside it the others that wait behind it. */
+export const BannerMoreProvider = More.Provider;
+
+const Drawn = createContext<((props: BannerProps) => void) | undefined>(undefined);
+
+/**
+ * Hears what the banner inside it draws, as it draws it, so the tab can draw the same banner while
+ * it leaves, once its owner has none to draw.
+ */
+export const BannerDrawn = Drawn.Provider;
+
+/**
+ * One line under the PR header about a change to this pull request: what changed, the one thing to
+ * do about it, and Dismiss. A tab shows one at a time, the most urgent, with "+1" for the rest, and
+ * opens and closes the row it's in with the Open move. Offers, set-up and standing states aren't
+ * banners: they go on the control they belong to. A `danger` banner is an alert; the others are
+ * announced politely.
+ */
+export function Banner(props: BannerProps) {
+  const { tone, title, detail, action, onDismiss } = props;
+  const more = useContext(More);
+  useContext(Drawn)?.(props);
   return (
     <div role={tone === 'danger' ? 'alert' : 'status'} className={banner({ tone })}>
       <BannerIcon tone={tone} />
-      <p className="min-w-0 flex-1">
+      <p className="m-0 min-w-0 flex-1">
         <strong className="font-semibold">{title}</strong>
         {detail !== undefined && <span className="text-fg-muted"> {detail}</span>}
       </p>
-      {(actions.length > 0 || onDismiss) && (
+      {(action || onDismiss || more) && (
         <div className="flex flex-none items-center gap-6">
-          {actions.map((action) => (
+          {action && (
             <Button
-              key={action.label}
               size="sm"
               busy={action.busy}
               working={action.working}
@@ -79,7 +106,17 @@ export function Banner({ tone, title, detail, actions = [], onDismiss }: BannerP
               {action.label}
               {action.keys && <Key keys={action.keys} decorative />}
             </Button>
-          ))}
+          )}
+          {more && (
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label={`Next, ${more.count} more`}
+              onClick={more.next}
+            >
+              <span className="lo-num">+{more.count}</span>
+            </Button>
+          )}
           {onDismiss && (
             <Button size="sm" variant="ghost" icon aria-label="Dismiss" onClick={onDismiss}>
               <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">

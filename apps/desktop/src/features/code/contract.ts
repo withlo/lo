@@ -64,8 +64,8 @@ export type Trusting = z.output<typeof trusting>;
 /**
  * Where a view of a pull request's tab stands, sent each time it changes: its repository and pull
  * request as the tab names them, where its head is (`null` until GitHub has said), its trust,
- * whether the reader dismissed the banner for its repository, and, while main is trusting it, how
- * far that has got.
+ * whether Lo has offered once to trust its repository (`dismissed`), and, while main is trusting
+ * it, how far that has got.
  */
 export const status = z.strictObject({
   view: tabId,
@@ -272,7 +272,9 @@ export const contract = defineContract('code', {
       ]),
       reply: reply<void>(),
     },
-    /** Dismisses the banner for view `view`'s repository: no tab of it shows it again. */
+    /**
+     * Keeps that Lo has offered to trust view `view`'s repository: no tab of it offers again unasked.
+     */
     dismiss: { input: z.strictObject({ view: tabId }), reply: reply<void>() },
     /** How far view `view`'s syntax index has got, or nothing for no such view. The `indexed` topic follows it. */
     index: { input: z.strictObject({ view: tabId }), reply: reply<IndexState | null>() },

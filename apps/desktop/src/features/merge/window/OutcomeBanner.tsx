@@ -48,7 +48,7 @@ export function OutcomeBanner({ tab }: { tab: PullTab }) {
       tone={job.state.kind === 'refused' ? 'danger' : 'warn'}
       title={withoutBidi(outcomeTitle(job) ?? '')}
       detail={detail === '' ? undefined : withoutBidi(detail)}
-      actions={[actionOf(tab, job)]}
+      action={actionOf(tab, job)}
       onDismiss={() => dismissJob(job.key)}
     />
   );

@@ -1,5 +1,5 @@
-// How far each view's syntax index has got, as main last said: kept with the view, and gone when
-// its tab closes. What the status bar says of it follows from it, as a plain function tested alone.
+// How far each view's code index has got, as main last said: kept with the view, and gone when its
+// tab closes. What its status bar item says follows from it, as a plain function tested alone.
 
 import { tabState } from '../../tab/window/shared.ts';
 import type { IndexState, Indexed, PartialWhy } from '../contract.ts';
@@ -29,63 +29,60 @@ export function catchUpIndex(view: string): void {
     .finally(() => asked.delete(view));
 }
 
-/** What the status bar's item says of a view's index, if anything. */
+/** What the status bar's item says of a view's index, and what's behind it in its details. */
 export interface IndexItem {
-  readonly dot: 'ok' | 'busy' | 'warn' | 'fail';
+  readonly ball: 'off' | 'working' | 'ready' | 'warn' | 'failed';
   readonly text: string;
-  readonly title?: string;
+  /** The details' one line: why it holds what it holds. */
+  readonly lines?: readonly string[];
+  /** Why it couldn't be built, as main said, for its details' `Problem`. */
+  readonly failure?: string;
 }
 
 const count = (value: number) => value.toLocaleString('en-US');
 
 /** Why an index is partial, a sentence each. */
 const WHY: Readonly<Record<PartialWhy, string>> = {
-  files: `Lo reads ${count(TREE_FILES)} files of a tree at most, nearest the PR’s own first.`,
-  bytes: `Lo downloads ${count(TREE_BYTES / 1024 ** 2)} MB of a tree’s files at most.`,
-  offline: 'Offline, Lo reads only what the local copy has.',
-  listing: 'A tree has more files than Lo lists, so none of them are read.',
+  files: `The ${count(TREE_FILES)} files nearest the changes are indexed.`,
+  bytes: `The first ${count(TREE_BYTES / 1024 ** 2)} MB of files are indexed.`,
+  offline: 'Offline.',
+  listing: 'The repo has too many files to list.',
 };
 
 /**
- * The index's item: how far it has got while it builds, its name once it's ready, and that it's
- * partial, with how much and why on hover. Nothing without git or before the local copy, which
- * say so themselves.
+ * The index's item: how far it has got while it builds, its name once it's ready, with how much a
+ * partial one has, and why, in its details. A ring while it waits for the local copy, and nothing
+ * without git, which the local copy's item says.
  */
 export function indexItem(state: IndexState | null): IndexItem | undefined {
   switch (state?.kind) {
     case undefined:
     case 'noGit':
-    case 'waiting':
       return undefined;
+    case 'waiting':
+      return { ball: 'off', text: 'Code index' };
     case 'building':
       return {
-        dot: 'busy',
+        ball: 'working',
         text:
           state.total === 0
-            ? 'Syntax index'
-            : `Syntax index ${count(state.done)} / ${count(state.total)}`,
+            ? 'Indexing code…'
+            : `Indexing code · ${count(state.done)} / ${count(state.total)}`,
       };
     case 'ready': {
       const { partial } = state;
-      if (!partial) return { dot: 'ok', text: 'Syntax index' };
-      const reasons = partial.why.map((why) => WHY[why]);
+      if (!partial) return { ball: 'ready', text: 'Code index' };
       return {
-        dot: 'warn',
-        text: 'Syntax index partial',
-        title: [
-          ...(partial.total > 0
-            ? [`It has ${count(partial.indexed)} of ${count(partial.total)} files.`]
-            : []),
-          ...reasons,
-        ].join(' '),
+        ball: 'warn',
+        text:
+          partial.total > 0
+            ? `Code index · ${count(partial.indexed)} / ${count(partial.total)} files`
+            : 'Code index',
+        lines: partial.why.map((why) => WHY[why]),
       };
     }
     case 'failed':
-      return {
-        dot: 'fail',
-        text: 'Syntax index failed',
-        title: `${state.message} Lo tries again by itself.`,
-      };
+      return { ball: 'failed', text: 'Can’t index the code', failure: state.message };
     default:
       state satisfies never;
       return undefined;

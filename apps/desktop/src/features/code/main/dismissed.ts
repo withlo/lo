@@ -1,5 +1,5 @@
-// The repositories whose banner the reader dismissed, kept in the database (`code_dismissed`), so
-// the banner asks once a repository.
+// The repositories Lo has offered to trust, kept in the database (`code_dismissed`), so the offer
+// opens by itself once a repository.
 
 import type { Database } from '../../../main/database.ts';
 

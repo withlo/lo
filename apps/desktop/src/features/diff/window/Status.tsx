@@ -17,25 +17,25 @@ export function DiffStatus({ tab }: { tab: PullTab }) {
   );
   return (
     <>
-      {ready?.from === 'github' && <StatusItem dot="busy">GitHub’s diff</StatusItem>}
+      {ready?.from === 'github' && <StatusItem ball="warn">GitHub’s diff</StatusItem>}
       {state?.partial && (
-        <StatusItem dot="warn">
+        <StatusItem ball="warn">
           {state.compareFrom === null ? 'First 3,000 files shown' : 'First 300 files shown'}
         </StatusItem>
       )}
       {ready?.uncompared &&
         (tab.run ? (
-          <StatusItem dot="warn">Showing #{tab.number} alone</StatusItem>
+          <StatusItem ball="warn">Showing #{tab.number} alone</StatusItem>
         ) : (
-          <StatusItem dot="warn">Layers below included</StatusItem>
+          <StatusItem ball="warn">Layers below included</StatusItem>
         ))}
       {ready && progress.done < progress.of && (
-        <StatusItem>
+        <StatusItem ball="working">
           Diffing files · {progress.done} of {progress.of}
         </StatusItem>
       )}
       {!whitespace && ready?.from === 'local' && (
-        <StatusItem dot="idle">Whitespace changes hidden</StatusItem>
+        <StatusItem ball="off">Whitespace changes hidden</StatusItem>
       )}
     </>
   );

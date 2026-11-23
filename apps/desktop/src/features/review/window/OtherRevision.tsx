@@ -35,18 +35,16 @@ export function OtherRevisionBanner({ tab }: { tab: PullTab }) {
     <Banner
       tone="info"
       title={said.title}
-      actions={
+      action={
         show === undefined
-          ? []
-          : [
-              {
-                label: `Show ${revisionLabel(revisions.get(tab.id), show)}`,
-                onClick: () => {
-                  dismiss(tab.id, key);
-                  showRevision(tab.id, show);
-                },
+          ? undefined
+          : {
+              label: `Show ${revisionLabel(revisions.get(tab.id), show)}`,
+              onClick: () => {
+                dismiss(tab.id, key);
+                showRevision(tab.id, show);
               },
-            ]
+            }
       }
       onDismiss={() => dismiss(tab.id, key)}
     />

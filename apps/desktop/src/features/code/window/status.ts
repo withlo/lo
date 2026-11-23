@@ -1,14 +1,15 @@
 // Where each view of a pull request's tab stands with trust, as main last said: kept with the
-// view, and gone when its tab closes. What the banner says, and what the palette's trust commands
-// may do, follow from it, as plain functions tested alone. The window only asks: main asks the
-// reader in its own dialog before it trusts anything. While it does, the view's status says how far
-// it has got, which the trust buttons show, and the window keeps why the last ask didn't trust a
-// view, for the banner and the status item's details to say in place.
+// view, and gone when its tab closes. What the Language servers item offers, and what the palette's
+// trust commands may do, follow from it, as plain functions tested alone. The window only asks:
+// main asks the reader in its own dialog before it trusts anything. While it does, the view's
+// status says how far it has got, which the trust buttons show, and the window keeps why the last
+// ask didn't trust a view, for the item's details to say in place. The offer is the item's, and
+// opens by itself once for a repo: at the first `g d` in it.
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { notify } from '../../../window/commands/notices.tsx';
 import type { SettingsState } from '../../settings/contract.ts';
-import { activeTab, tabState, type BannerSwitch } from '../../tab/window/shared.ts';
+import { activeTab, tabState } from '../../tab/window/shared.ts';
 import type { Status } from '../contract.ts';
 import { readTrusted, trusted } from '../settings.ts';
 import { main } from './main.ts';
@@ -44,7 +45,7 @@ function setFailure(view: string, failure: TrustFailure | null): void {
 
 /**
  * Hears that the settings changed: what the file held that kept Lo from trusting a view may be
- * fixed, so what it said of that goes, and the banner offers to trust it again. Not while `state`
+ * fixed, so what it said of that goes, and the item offers to trust it again. Not while `state`
  * still has a problem that keeps Lo from saving what's trusted: main says what it read as it
  * refuses, and that can reach the window after the refusal does.
  */
@@ -120,7 +121,8 @@ export function failureTitle(status: Status, failure: TrustFailure): string {
 const asked = new Set<string>();
 
 /** Asks main where a view stands, once, for a view drawn before main said anything of it. */
-function catchUp(view: string): void {
+export function catchUp(view: string): void {
+  if (statuses.get(view) !== null) return;
   if (asked.has(view)) return;
   asked.add(view);
   main()
@@ -132,71 +134,31 @@ function catchUp(view: string): void {
     .finally(() => asked.delete(view));
 }
 
-/**
- * What the banner says of a view, with what it offers: one fact in a line, one button, and a
- * dismiss. A second line only once trusting failed, for why.
- */
-export interface TrustBannerText {
-  /** `danger` once trusting it failed. */
-  readonly tone: 'warn' | 'danger';
-  readonly title: string;
-  readonly detail?: string | undefined;
-  /**
-   * The button that asks main to ask the reader, if trusting can help, with what Lo is doing
-   * while it does.
-   */
-  readonly action?:
-    | { readonly label: string; readonly pull: boolean; readonly busy?: string | undefined }
-    | undefined;
-  /** Whether it offers to open the settings file, for what it holds that kept Lo from trusting. */
-  readonly openFile?: boolean | undefined;
+/** What the Language servers item offers a view nothing trusts: one line, and one button. */
+export interface TrustOffer {
+  /** "Language servers are off for fieldwork/atlas-api". */
+  readonly line: string;
+  /** Whether it offers to trust the pull request alone, from its fork, or the repo; or nothing. */
+  readonly pull?: boolean | undefined;
 }
 
 /**
- * The banner a view shows, if any: on a view language servers are off for because nothing trusts
- * it, until the reader dismisses it for its repository. Not without git, which has its own, nor
- * while Lo is still working it out, nor when the trust it has couldn't be checked: then the
- * banner would offer what may be there already. While main trusts it, its button says how far
- * that has got; once that failed (`failure`), it says why, and offers to try again.
+ * What the Language servers item offers a view, if it's off because nothing trusts it: not without
+ * git, nor while Lo is still working it out, nor when the trust it has couldn't be checked, where
+ * the offer could be for what's there already. A fork GitHub no longer has can't be trusted.
  */
-export function bannerOf(
-  status: Status | null,
-  failure: TrustFailure | null = null,
-): TrustBannerText | undefined {
-  const offered = offerOf(status);
-  if (!status || !offered) return undefined;
-  const busy = busyLabel(status);
-  const action =
-    busy === undefined ? offered.action : offered.action && { ...offered.action, busy };
-  if (!failure) return { tone: 'warn', ...offered, action };
-  return {
-    tone: 'danger',
-    title: failureTitle(status, failure),
-    detail: failure.message,
-    action,
-    openFile: failure.file,
-  };
-}
-
-/** What the banner says of a view before the reader asks anything, if it shows. */
-function offerOf(status: Status | null): Omit<TrustBannerText, 'tone'> | undefined {
-  if (!status || status.dismissed) return undefined;
+export function offerOf(status: Status | null): TrustOffer | undefined {
+  if (!status) return undefined;
   const { trust, head, repo } = status;
   if (trust.kind !== 'untrusted' || trust.why === 'unread') return undefined;
   switch (head?.kind) {
     case 'fork':
-      return {
-        title: `Language servers are off for the fork ${head.repo}`,
-        action: { label: 'Trust pull request…', pull: true },
-      };
+      return { line: `Language servers are off for the fork ${head.repo}`, pull: true };
     case 'gone':
-      return { title: 'Language servers are off for a fork that no longer exists' };
+      return { line: 'Language servers are off for a fork that no longer exists' };
     case 'base':
     case undefined:
-      return {
-        title: `Language servers are off for ${repo}`,
-        action: { label: 'Trust repo…', pull: false },
-      };
+      return { line: `Language servers are off for ${repo}`, pull: false };
     default:
       head satisfies never;
       return undefined;
@@ -204,33 +166,35 @@ function offerOf(status: Status | null): Omit<TrustBannerText, 'tone'> | undefin
 }
 
 /**
- * Whether each view's banner has been drawn: `on` while it's on screen, which holds its place in
- * the tab until it has closed, and `off` once it has gone.
+ * Whether each view's Language servers item has its details open: `open` as the reader opened
+ * them, or `offered` as the first `g d` in a repo nothing trusts opened them, unasked, which leaves
+ * focus where it was.
  */
-export const drawn = tabState<'never' | 'on' | 'off'>(() => 'never');
+export const offered = tabState<'closed' | 'offered' | 'open'>(() => 'closed');
 
 /**
- * Whether a view's banner shows: while there's something to offer, and then until the banner has
- * closed, so it leaves as it came. A view drawn before main said anything asks as it comes on
- * screen.
+ * Opens the Language servers item's offer on view `view`, once for its repository: where nothing
+ * trusts it and it can be trusted, the first time the reader asks for what a language server
+ * would answer. Main keeps that it was offered, for every tab of the repository.
  */
-export const trustSwitch: BannerSwitch = {
-  shows: (tab) => bannerOf(statuses.get(tab.id)) !== undefined || drawn.get(tab.id) === 'on',
-  subscribe(tab, listener) {
-    if (statuses.get(tab.id) === null) catchUp(tab.id);
-    const stops = [statuses.subscribe(listener), drawn.subscribe(listener)];
-    return () => {
-      for (const stop of stops) stop();
-    };
-  },
-};
+export function offerOnce(view: string): void {
+  const status = statuses.get(view);
+  if (!status || status.dismissed || status.trusting !== undefined) return;
+  const offer = offerOf(status);
+  if (offer?.pull === undefined) return;
+  offered.set(view, 'offered');
+  statuses.set(view, { ...status, dismissed: true });
+  main()
+    .dismiss({ view })
+    .catch((error: unknown) => console.error("Lo couldn't keep that it offered trust:", error));
+}
 
 /**
  * Asks main to ask the reader whether to trust `status`'s repository, or with `pull`, its PR. While
  * main does, the view's status says how far it has got, and a second ask does nothing. Why it
- * failed, main asking about another view meanwhile included, is kept for the banner and the status
- * item's details to say; asked from where neither shows (`elsewhere`), as from the palette with the
- * banner dismissed, it's said in a note too.
+ * failed, main asking about another view meanwhile included, is kept for the status item's details
+ * to say; asked from where they don't show (`elsewhere`), as from the palette, it's said in a note
+ * too.
  */
 export async function askToTrust(
   status: Status,
@@ -251,13 +215,13 @@ export async function askToTrust(
     }
     const failure: TrustFailure = {
       pull,
-      message:
-        error instanceof IpcError && error.code !== 'internal' ? error.message : 'Try again.',
+      // A cause that isn't known has no reason line: the button says what to do.
+      message: error instanceof IpcError && error.code !== 'internal' ? error.message : '',
       file: error instanceof IpcError && error.code === 'settingsFile',
     };
     setFailure(view, failure);
     const now = statuses.get(view) ?? status;
-    if (elsewhere && !bannerOf(now)) {
+    if (elsewhere) {
       notify(failureTitle(now, failure), failure.message);
     }
   }
@@ -269,7 +233,7 @@ export async function askToTrust(
  */
 export function askable(status: Status | string, pull: boolean): true | string {
   if (typeof status !== 'string' && status.trusting !== undefined) {
-    return 'Lo is asking whether to trust this repo already.';
+    return 'Answer the open question first';
   }
   return trustable(status, pull);
 }
@@ -280,27 +244,15 @@ export async function stopTrusting(status: Status): Promise<void> {
     await main().untrust({ view: status.view });
   } catch (error) {
     console.error("Lo couldn't stop trusting a repo:", error);
-    notify('Stop trusting this repo', "Lo couldn't change the settings file.");
-  }
-}
-
-/** Dismisses the banner for `status`'s repository. */
-export async function dismissBanner(status: Status): Promise<void> {
-  // Gone at once; main keeps it for every tab of the repository, and says so.
-  statuses.set(status.view, { ...status, dismissed: true });
-  setFailure(status.view, null);
-  try {
-    await main().dismiss({ view: status.view });
-  } catch (error) {
-    console.error("Lo couldn't dismiss the banner:", error);
+    notify(`Couldn’t stop trusting ${status.repo}`, '`settings.json` couldn’t be saved.');
   }
 }
 
 /** The view on screen's status, or why there's none to act on. */
 export function onScreen(): Status | string {
   const tab = activeTab();
-  if (tab?.kind !== 'pull') return "There's no pull request on screen.";
-  return statuses.get(tab.id) ?? 'Lo is still working out whether this repo is trusted.';
+  if (tab?.kind !== 'pull') return 'Open a pull request first';
+  return statuses.get(tab.id) ?? 'Checking whether this repo is trusted';
 }
 
 /** Why the trust commands can't act on `status`, or that they can: `true`. */
@@ -309,29 +261,29 @@ export function trustable(status: Status | string, pull: boolean): true | string
   const { trust, head } = status;
   switch (trust.kind) {
     case 'noGit':
-      return 'Code features need git.';
+      return 'Git wasn’t found';
     case 'trusted':
       return trust.by === 'repo'
-        ? `Lo trusts ${status.repo} already.`
-        : 'Lo trusts this PR already.';
+        ? `${status.repo} is already trusted`
+        : 'This pull request is already trusted';
     case 'checking':
     case 'waiting':
-      return 'Lo is still working out whether this repo is trusted.';
+      return 'Checking whether this repo is trusted';
     case 'untrusted':
       break;
     default:
       trust satisfies never;
-      return 'Lo is still working out whether this repo is trusted.';
+      return 'Checking whether this repo is trusted';
   }
-  if (head?.kind === 'gone') return 'GitHub no longer has the fork this PR comes from.';
+  if (head?.kind === 'gone') return 'The fork no longer exists';
   const fork = head?.kind === 'fork';
-  if (pull && !fork) return "This PR's branch is in the repo itself: trust the repo instead.";
-  if (!pull && fork) return 'This PR comes from a fork: trust this PR instead.';
+  if (pull && !fork) return 'This pull request isn’t from a fork';
+  if (!pull && fork) return 'This pull request is from a fork';
   return true;
 }
 
 /** Why "Stop trusting this repo" can't act on `status`, or that it can: `true`. */
 export function untrustable(status: Status | string): true | string {
   if (typeof status === 'string') return status;
-  return status.trust.kind === 'trusted' ? true : "Lo doesn't trust this repo.";
+  return status.trust.kind === 'trusted' ? true : 'This repo isn’t trusted';
 }

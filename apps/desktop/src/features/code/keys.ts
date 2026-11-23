@@ -175,13 +175,6 @@ export default defineCommands(
       keys: [],
       bar: { menu: 'Review', order: 42 },
     },
-    /** Dismisses the banner saying language servers are off, for the repository on screen. */
-    dismiss: {
-      label: 'Dismiss the banner about language servers',
-      group: 'Code',
-      keys: [],
-      bar: { menu: 'Review', order: 43 },
-    },
     /**
      * Starts the language servers of the pull request on screen again, or of the tab Settings'
      * list of language servers names.

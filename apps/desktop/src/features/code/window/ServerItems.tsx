@@ -1,8 +1,9 @@
 // A pull request's language servers in its tab's status bar: one item for each server its new
-// side needs, each opening its details with "Restart", "Show the log" and "Stop trusting this
-// repo"; or, on a view nothing trusts, "Language servers off", whose details offer to trust it.
-// Those stay open while main asks, their button saying how far it has got: once it's trusted, the
-// item gives way to the servers starting, and once trusting failed, they say why.
+// side needs, each opening its details with "Restart", "Show log" and "Stop trusting"; or, on a
+// view nothing trusts, "Language servers off", whose details say what they're off for and offer to
+// trust it. They open by themselves once for a repo, at the first `g d` in it. They stay open while
+// main asks, their button saying how far it has got: once it's trusted, the item gives way to the
+// servers starting, and once trusting failed, they say why.
 
 import { ServerStatus, type ServerTrust } from '@lo/ui';
 import { useEffect } from 'react';
@@ -13,44 +14,62 @@ import { catchUpServers, itemState, restartServer, servers, showLog } from './se
 import {
   askToTrust,
   busyLabel,
+  catchUp,
   failures,
   failureTitle,
+  offered,
+  offerOf,
   statuses,
   stopTrusting,
-  trustable,
+  TRUSTING,
 } from './status.ts';
 
 export function ServerItems({ tab }: { tab: PullTab }) {
   const shown = useTabState(servers, tab.id);
   const status = useTabState(statuses, tab.id);
   const failure = useTabState(failures, tab.id);
+  const open = useTabState(offered, tab.id);
   useEffect(() => catchUpServers(tab.id), [tab.id]);
+  useEffect(() => catchUp(tab.id), [tab.id]);
   const container = document.getElementById('root');
   if (!shown || !status) return null;
   if (shown.off) {
-    const pull = trustable(status, true) === true;
+    const offer = offerOf(status);
+    const pull = offer?.pull;
     const trust: ServerTrust | undefined =
-      pull || trustable(status, false) === true
-        ? {
+      pull === undefined
+        ? undefined
+        : {
             action: pull ? 'pr' : 'repo',
             onChoose: () => void askToTrust(status, pull),
             busy: busyLabel(status),
+            widest: TRUSTING,
             failure: failure
               ? {
                   title: failureTitle(status, failure),
                   message: failure.message,
                   fix: failure.file
-                    ? { label: 'Open settings.json', onChoose: () => void openSettingsFile() }
+                    ? {
+                        label: (
+                          <>
+                            Open <code>settings.json</code>
+                          </>
+                        ),
+                        onChoose: () => void openSettingsFile(),
+                      }
                     : undefined,
                 }
               : undefined,
-          }
-        : undefined;
+          };
     return (
       <ServerStatus
         name="Language servers"
         state={{ kind: 'off' }}
+        line={offer?.line}
         trust={trust}
+        open={open !== 'closed'}
+        quiet={open === 'offered'}
+        onOpenChange={(next) => offered.set(tab.id, next ? 'open' : 'closed')}
         container={container}
       />
     );

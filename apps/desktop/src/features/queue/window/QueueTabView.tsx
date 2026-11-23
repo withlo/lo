@@ -597,7 +597,7 @@ export function QueueTabView({ tab }: { tab: QueueTab }) {
         start={
           // Never shrunk: the hints give way to them.
           <span className="flex flex-none items-center gap-2">
-            <StatusItem dot={state?.failure ? 'warn' : 'ok'}>{tab.login}</StatusItem>
+            <StatusItem ball={state?.failure ? 'warn' : 'ready'}>{tab.login}</StatusItem>
             {state !== undefined && state.readAt !== null && (
               <StatusItem>{updated(state.readAt, now)}</StatusItem>
             )}

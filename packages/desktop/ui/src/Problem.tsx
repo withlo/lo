@@ -34,6 +34,11 @@ export interface ProblemProps {
   reason?: ReactNode;
   action?: ProblemAction | undefined;
   /**
+   * Other ways on, beside the one thing to do, for a failed view that can also be left: "Open on
+   * GitHub", "Close tab". Drawn quieter than `action`, after it.
+   */
+  others?: readonly ProblemAction[] | undefined;
+  /**
    * What came back, as it came: the status, GitHub's own words, a path. It stays behind a Details
    * button, with a Copy button, and is the only place raw text shows. Copy goes through the window's
    * `CopyRoute`.
@@ -61,7 +66,14 @@ const problem = cva('min-w-0 text-ui', {
  * line repeats it. A screen reader hears what failed and why at once, as an alert, and not its
  * buttons. Nothing in it changes on a timer except through `Countdown`, so the alert is read once.
  */
-export function Problem({ title, reason, action, details, layout = 'inline' }: ProblemProps) {
+export function Problem({
+  title,
+  reason,
+  action,
+  others = [],
+  details,
+  layout = 'inline',
+}: ProblemProps) {
   const view = layout === 'view';
   // In a view, the text sits 12 px under the buttons, in a roomier well with a hairline, since
   // the well's fill is the view's own ground, as the overview's other wells have; inline, under
@@ -71,17 +83,24 @@ export function Problem({ title, reason, action, details, layout = 'inline' }: P
     view ? 'pt-12' : 'pt-8',
     view ? 'p-12 inset-ring inset-ring-border' : 'p-8',
   );
-  const act = action && (
+  const button = (each: ProblemAction, main: boolean, key?: number) => (
     <Button
-      variant={view ? 'primary' : 'secondary'}
+      key={key}
+      variant={main ? (view ? 'primary' : 'secondary') : 'ghost'}
       size={view ? 'md' : 'sm'}
-      busy={action.busy}
-      working={action.working}
-      onClick={action.onClick}
+      busy={each.busy}
+      working={each.working}
+      onClick={each.onClick}
     >
-      {action.label}
-      {action.keys && <Key keys={action.keys} decorative />}
+      {each.label}
+      {each.keys && <Key keys={each.keys} decorative />}
     </Button>
+  );
+  const act = (action || others.length > 0) && (
+    <>
+      {action && button(action, true)}
+      {others.map((each, index) => button(each, false, index))}
+    </>
   );
   return (
     <div className={problem({ layout })}>

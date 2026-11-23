@@ -48,7 +48,7 @@ export function WatchedBanner({ tab }: { tab: PullTab }) {
       tone={words.tone}
       title={withoutBidi(words.title)}
       detail={words.detail === undefined ? undefined : withoutBidi(words.detail)}
-      actions={[action]}
+      action={action}
       onDismiss={() => dismissWatched(key)}
     />
   );

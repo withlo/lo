@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
 import type { LocalState, PullView } from '../contract.ts';
-import { ago, bannersFor, inWords, span, type Clock } from './banners.ts';
+import {
+  accountChoice,
+  ago,
+  bannersFor,
+  connectionNote,
+  failureOf,
+  localNote,
+  span,
+  type Clock,
+} from './banners.ts';
 
 const HEAD = '5530830f535b2947f1b50a184dc58a9c7b2845ad';
 const FIRST = '45e4f22d09ea29631f43d3f8c1e05b7fb4001099';
@@ -31,53 +40,46 @@ const ready: LocalState = {
   offline: false,
 };
 
-/** Each banner's id, most urgent first. */
-const ids = (pull: PullView, local: LocalState = ready) =>
-  bannersFor(pull, local, 'rozed-dev/e2e', clock).map((banner) => banner.id);
-
-describe('a pull request’s banners', () => {
-  it('say nothing while all is well', () => {
-    expect(ids(view())).toEqual([]);
-    expect(ids(view(), { kind: 'waiting' })).toEqual([]);
+describe('a pull request’s tab that can’t show it', () => {
+  it('says nothing while it can', () => {
+    expect(failureOf(view(), 9)).toBe(undefined);
+    expect(failureOf(undefined, 9)).toBe(undefined);
   });
 
-  it("say a pull request can't be opened, with a way to try again", () => {
-    const [banner] = bannersFor(
-      view({
-        problem: { kind: 'notFound', message: 'GitHub has no pull request rozed-dev/e2e#9.' },
-      }),
-      { kind: 'waiting' },
-      'rozed-dev/e2e',
-      clock,
-    );
-    expect(banner).toEqual({
+  it('says it can’t open the pull request, with a way to try again', () => {
+    expect(
+      failureOf(
+        view({
+          problem: { kind: 'notFound', message: 'GitHub has no pull request rozed-dev/e2e#9.' },
+        }),
+        9,
+      ),
+    ).toEqual({
       id: 'notFound',
       tone: 'danger',
-      title: "Lo can't open this pull request.",
+      title: 'Can’t open #9',
       detail: 'GitHub has no pull request rozed-dev/e2e#9.',
       actions: [{ label: 'Try again', do: { kind: 'retry' } }],
     });
   });
 
-  it("offer a layer that can't be opened a way back to the pull request its tab opened on", () => {
+  it("offers a layer that can't be opened a way back to the pull request its tab opened on", () => {
     // As for a tab that comes back at a layer whose pull request was deleted since.
-    const [banner] = bannersFor(
+    const failed = failureOf(
       view({
         problem: { kind: 'notFound', message: 'GitHub has no pull request rozed-dev/e2e#9.' },
       }),
-      { kind: 'waiting' },
-      'rozed-dev/e2e',
-      clock,
+      9,
       84,
     );
-    expect(banner?.actions).toEqual([
+    expect(failed?.actions).toEqual([
       { label: 'Show #84', do: { kind: 'layer', number: 84 } },
       { label: 'Try again', do: { kind: 'retry' } },
     ]);
   });
 
-  it("offer GitHub's link to fix single sign-on, and each account that can see it", () => {
-    const blocked = bannersFor(
+  it("offers GitHub's link to fix single sign-on first", () => {
+    const blocked = failureOf(
       view({
         problem: {
           kind: 'blocked',
@@ -85,162 +87,206 @@ describe('a pull request’s banners', () => {
           links: [{ label: 'Authorize on GitHub', url: 'https://github.com/orgs/rozed-dev/sso' }],
         },
       }),
-      ready,
-      'rozed-dev/e2e',
-      clock,
+      9,
     );
-    expect(blocked[0]?.actions).toEqual([
+    expect(blocked?.title).toBe('Can’t open #9');
+    expect(blocked?.actions).toEqual([
       {
         label: 'Authorize on GitHub',
         do: { kind: 'link', url: 'https://github.com/orgs/rozed-dev/sso' },
       },
       { label: 'Try again', do: { kind: 'retry' } },
     ]);
-    const ask = bannersFor(
-      view({ acting: null, problem: { kind: 'ask', logins: ['rozed-bot', 'other-bot'] } }),
-      { kind: 'waiting' },
-      'rozed-dev/e2e',
-      clock,
+  });
+
+  it('counts down to the next try, and offers to try now meanwhile', () => {
+    const failed = failureOf(
+      view({ problem: { kind: 'failed', message: 'GitHub answered 502.', retryAt: 1_020_000 } }),
+      9,
     );
-    expect(ask[0]).toMatchObject({
-      title: 'More than one account can see rozed-dev/e2e.',
-      actions: [
-        { label: 'Use rozed-bot', do: { kind: 'choose', login: 'rozed-bot' } },
-        { label: 'Use other-bot', do: { kind: 'choose', login: 'other-bot' } },
-      ],
+    expect(failed).toMatchObject({
+      retryAt: 1_020_000,
+      actions: [{ label: 'Try now', do: { kind: 'retry' } }],
+    });
+    const stopped = failureOf(
+      view({ problem: { kind: 'failed', message: 'GitHub answered 502.', retryAt: null } }),
+      9,
+    );
+    expect(stopped?.retryAt).toBe(undefined);
+    expect(stopped?.actions).toEqual([{ label: 'Try again', do: { kind: 'retry' } }]);
+  });
+
+  it('asks which account to open it as, when several can see it, rather than failing', () => {
+    const asking = view({
+      acting: null,
+      problem: { kind: 'ask', logins: ['rozed-bot', 'other'] },
+    });
+    expect(failureOf(asking, 264)).toBe(undefined);
+    expect(accountChoice(asking, 264, 'rozed-dev')).toEqual({
+      title: 'Choose an account for #264',
+      line: '2 of your accounts can see it. Remembered for every rozed-dev repo.',
+      logins: ['rozed-bot', 'other'],
+    });
+    expect(accountChoice(view(), 264, 'rozed-dev')).toBe(undefined);
+  });
+});
+
+describe('how a tab stands with GitHub', () => {
+  const NOW = 1_000_000_000;
+  const at = (seconds: number) => NOW + seconds * 1000;
+  const clockAt: Clock = { now: NOW, time: (time) => `at ${time}` };
+
+  it('says nothing while all is well, or while the rate limit only runs low', () => {
+    expect(connectionNote({ kind: 'live' }, clockAt)).toBe(undefined);
+    expect(connectionNote(undefined, clockAt)).toBe(undefined);
+    expect(connectionNote({ kind: 'limitLow', remaining: 9, reset: 1 }, clockAt)).toBe(undefined);
+  });
+
+  it('says an account is signed out, and offers to sign in again', () => {
+    expect(connectionNote({ kind: 'signedOut', login: 'rozed-bot' }, clockAt)).toEqual({
+      tone: 'danger',
+      label: 'Signed out',
+      line: 'rozed-bot is signed out.',
+      action: { label: 'Sign in again', do: { kind: 'signIn' } },
     });
   });
 
-  it('say how the tab stands with GitHub, with when what it shows was saved', () => {
-    const [offline] = bannersFor(
-      view({
-        connection: {
-          kind: 'offline',
-          savedAt: clock.now - 2 * 3600_000,
-          retryAt: null,
-          error: 'x',
-        },
-      }),
-      ready,
-      'rozed-dev/e2e',
-      clock,
-    );
-    expect(offline).toMatchObject({
+  it('says when a used up rate limit resets, in one wording whoever it’s for', () => {
+    const paused = (secondary: boolean, login: string | null) =>
+      connectionNote({ kind: 'rateLimited', login, until: at(25 * 60), secondary }, clockAt);
+    expect(paused(false, 'rozed-bot')).toEqual({
       tone: 'warn',
-      title: "You're offline.",
-      detail: 'Showing what Lo saved 2 hours ago.',
+      label: 'Rate limit reached',
+      line: `GitHub’s rate limit resets at at ${at(25 * 60)}.`,
     });
-    const [limited] = bannersFor(
-      view({
-        connection: {
-          kind: 'rateLimited',
-          login: null,
-          until: clock.now + 18 * 60_000,
-          secondary: false,
-        },
-      }),
-      ready,
-      'rozed-dev/e2e',
-      clock,
-    );
-    expect(limited).toMatchObject({
-      title: "GitHub's rate limit without signing in is used up.",
-      detail: `Nothing updates until it resets at at ${clock.now + 18 * 60_000}, in 18 minutes.`,
-    });
-    expect(ids(view({ connection: { kind: 'signedOut', login: 'rozed-bot' } }))).toEqual([
-      'signedOut',
-    ]);
-    // A low limit is the status bar's.
-    expect(ids(view({ connection: { kind: 'limitLow', remaining: 9, reset: 1 } }))).toEqual([]);
+    expect(paused(true, null)).toEqual(paused(false, 'rozed-bot'));
   });
 
-  it('say what the local copy is doing, and leave a fetch offline stopped to the offline banner', () => {
+  it('says offline, when it last heard from GitHub, and when it tries again', () => {
     expect(
-      bannersFor(
-        view(),
-        { kind: 'fetching', progress: 'receiving objects, 44% of 1234', attempt: 1 },
-        'rozed-dev/e2e',
-        clock,
-      )[0],
-    ).toMatchObject({
-      tone: 'info',
-      title: 'Fetching a local copy of rozed-dev/e2e.',
-      detail: 'Receiving objects, 44% of 1234',
+      connectionNote(
+        { kind: 'offline', savedAt: at(-2 * 3_600), retryAt: at(2 * 60), error: 'ENOTFOUND' },
+        clockAt,
+      ),
+    ).toEqual({
+      tone: 'warn',
+      label: 'Offline',
+      line: 'Offline.',
+      retryAt: at(2 * 60),
+      checked: at(-2 * 3_600),
+      details: 'ENOTFOUND',
+      action: { label: 'Try now', do: { kind: 'retry' } },
     });
+    expect(
+      connectionNote({ kind: 'offline', savedAt: null, retryAt: null, error: '' }, clockAt),
+    ).toEqual({
+      tone: 'warn',
+      label: 'Offline',
+      line: 'Offline.',
+      action: { label: 'Try again', do: { kind: 'retry' } },
+    });
+  });
+});
+
+describe('the local copy’s item', () => {
+  it('is a ring until it fetches, then counts, then is filled at its head', () => {
+    expect(localNote(undefined, undefined)).toBe(undefined);
+    expect(localNote({ kind: 'waiting' }, undefined)).toEqual({ ball: 'off', label: 'Local copy' });
+    expect(
+      localNote(
+        { kind: 'fetching', progress: 'receiving objects, 44% of 1234', attempt: 1 },
+        undefined,
+      ),
+    ).toEqual({ ball: 'working', label: 'Fetching local copy · 44%' });
+    expect(
+      localNote({ kind: 'fetching', progress: 'connecting to GitHub', attempt: 1 }, undefined),
+    ).toEqual({ ball: 'working', label: 'Fetching local copy…' });
+    expect(localNote(ready, undefined)).toEqual({
+      ball: 'ready',
+      label: 'Local copy',
+      at: '5530830',
+    });
+    expect(localNote({ ...ready, offline: true }, undefined)).toMatchObject({
+      ball: 'warn',
+      label: 'Local copy · offline',
+    });
+  });
+
+  it('says it can’t fetch for as long as it can’t, with why and the one thing to do', () => {
     const retrying: LocalState = {
       kind: 'retrying',
-      failure: 'network',
-      message: "can't fetch pull request #78: the network failed",
+      failure: 'other',
+      message: "can't fetch pull request #78: git exited",
       attempt: 2,
       retryAt: clock.now + 12_000,
     };
-    expect(bannersFor(view(), retrying, 'rozed-dev/e2e', clock)[0]).toMatchObject({
-      tone: 'warn',
-      detail:
-        "Can't fetch pull request #78: the network failed. Lo tries again in 12 s, attempt 3.",
-      actions: [{ label: 'Retry now', do: { kind: 'retry' } }],
+    expect(localNote(retrying, undefined)).toEqual({
+      ball: 'failed',
+      label: 'Can’t fetch the local copy',
+      problem: {
+        id: 'local',
+        tone: 'warn',
+        title: 'Can’t fetch the local copy',
+        detail: "Can't fetch pull request #78: git exited.",
+        retryAt: clock.now + 12_000,
+        actions: [{ label: 'Try now', do: { kind: 'retry' } }],
+      },
     });
-    const offline = view({
-      connection: { kind: 'offline', savedAt: null, retryAt: null, error: 'x' },
+    expect(
+      localNote({ kind: 'failed', failure: 'diskFull', message: 'x' }, undefined)?.problem,
+    ).toMatchObject({
+      detail: 'The disk is full.',
+      actions: [{ label: 'Clear cache', do: { kind: 'clearCache' } }],
     });
-    expect(ids(offline, retrying)).toEqual(['offline']);
     expect(
-      ids(view(), { kind: 'failed', failure: 'diskFull', message: 'the disk is full' }),
-    ).toEqual(['local']);
+      localNote({ kind: 'failed', failure: 'other', message: 'x' }, undefined)?.problem?.actions,
+    ).toEqual([{ label: 'Try again', do: { kind: 'retry' } }]);
     expect(
-      bannersFor(
-        view(),
-        { kind: 'failed', failure: 'diskFull', message: 'x' },
-        'rozed-dev/e2e',
-        clock,
-      )[0]?.title,
-    ).toBe("The disk is full, so Lo can't save the local copy.");
-    expect(
-      bannersFor(
-        view(),
-        { kind: 'failed', failure: 'diskFull', message: 'x' },
-        'rozed-dev/e2e',
-        clock,
-      )[0]?.actions,
-    ).toEqual([
-      { label: 'Clear the cache', do: { kind: 'clearCache' } },
-      { label: 'Try again', do: { kind: 'retry' } },
-    ]);
-    expect(
-      bannersFor(
-        view(),
-        { kind: 'noGit', message: "Lo can't find git.", install: 'Get it.' },
-        'rozed-dev/e2e',
-        clock,
-      )[0]?.actions,
-    ).toEqual([{ label: 'Check again', do: { kind: 'retry' } }]);
-    expect(
-      ids(view(), { kind: 'noGit', message: "Lo can't find git.", install: 'Get it.' }),
-    ).toEqual(['noGit']);
+      localNote({ kind: 'noGit', message: "Lo can't find git.", install: 'Get it.' }, undefined),
+    ).toMatchObject({
+      ball: 'failed',
+      label: 'Can’t find Git',
+      problem: {
+        title: 'Can’t find Git',
+        actions: [{ label: 'Check again', do: { kind: 'retry' } }],
+      },
+    });
   });
 
-  it('offer the newer push, and keep the most urgent first', () => {
+  it('leaves a fetch that stopped offline to the header, which says offline already', () => {
+    const retrying: LocalState = {
+      kind: 'retrying',
+      failure: 'network',
+      message: 'the network failed',
+      attempt: 2,
+      retryAt: clock.now + 12_000,
+    };
+    expect(
+      localNote(retrying, { kind: 'offline', savedAt: null, retryAt: null, error: 'x' }),
+    ).toEqual({ ball: 'warn', label: 'Local copy · offline' });
+    expect(localNote(retrying, { kind: 'live' })?.ball).toBe('failed');
+  });
+});
+
+describe('the tab’s banner', () => {
+  it('says nothing while the push on screen is the newest', () => {
+    expect(bannersFor(view())).toEqual([]);
+    expect(bannersFor(undefined)).toEqual([]);
+  });
+
+  it('says there’s a newer push in one line, with a way to show it, until it’s dismissed', () => {
     const newer = view({ shown: FIRST, newer: HEAD });
-    expect(bannersFor(newer, ready, 'rozed-dev/e2e', clock)).toEqual([
+    expect(bannersFor(newer)).toEqual([
       {
         id: 'newer',
         tone: 'info',
-        title: 'There’s a newer push.',
-        detail: "You're reading 45e4f22, and it stays on screen until you load the newer one.",
-        actions: [{ label: 'Load the newer push', do: { kind: 'reload' } }],
+        title: 'There’s a newer push',
+        actions: [{ label: 'Show latest', do: { kind: 'reload' } }],
       },
     ]);
-    expect(
-      ids(
-        view({
-          shown: FIRST,
-          newer: HEAD,
-          connection: { kind: 'offline', savedAt: null, retryAt: null, error: 'x' },
-          problem: { kind: 'failed', message: 'x', retryAt: null },
-        }),
-        { kind: 'failed', failure: 'other', message: 'x' },
-      ),
-    ).toEqual(['failed', 'offline', 'local', 'newer']);
+    expect(bannersFor(newer, HEAD)).toEqual([]);
+    // A push newer than the one dismissed is news again.
+    expect(bannersFor(newer, FIRST)).toHaveLength(1);
   });
 });
 
@@ -250,111 +296,25 @@ describe('a wait', () => {
       '1 s',
       '1 s',
       '12 s',
-      'a minute',
-      '2 minutes',
-      'an hour',
-      'an hour',
-      '2 hours',
+      '1 min',
+      '2 min',
+      '1 h',
+      '1 h',
+      '2 h',
     ]);
   });
-});
 
-describe('poll state', () => {
-  const NOW = 1_000_000_000;
-  const at = (seconds: number) => NOW + seconds * 1000;
-  const clockAt: Clock = { now: NOW, time: (time) => `at ${time}` };
-  const noteFor = (pull: PullView) => bannersFor(pull, ready, 'rozed-dev/e2e', clockAt);
-
-  it('ages read in words', () => {
-    const before = (seconds: number) => ago(at(-seconds), NOW);
+  it('reads how long ago in the same units', () => {
+    const NOW = 1_000_000_000;
+    const before = (seconds: number) => ago(NOW - seconds * 1000, NOW);
     expect(before(0)).toBe('just now');
     expect(before(59)).toBe('just now');
-    expect(before(60)).toBe('a minute ago');
-    expect(before(150)).toBe('2 minutes ago');
-    expect(before(3_600)).toBe('an hour ago');
-    expect(before(7_300)).toBe('2 hours ago');
-    expect(before(86_400 + 3)).toBe('a day ago');
+    expect(before(60)).toBe('1 min ago');
+    expect(before(150)).toBe('2 min ago');
+    expect(before(3_600)).toBe('1 h ago');
+    expect(before(7_300)).toBe('2 h ago');
+    expect(before(86_400 + 3)).toBe('1 d ago');
     // A clock that went back.
-    expect(ago(at(5), NOW)).toBe('just now');
-    expect(inWords(at(30), NOW)).toBe('in a moment');
-    expect(inWords(at(300), NOW)).toBe('in 5 minutes');
-    expect(inWords(at(-300), NOW)).toBe('in a moment');
-  });
-
-  it('polling that goes well says nothing', () => {
-    expect(noteFor(view())).toEqual([]);
-  });
-
-  it('a signed out account asks to sign in again', () => {
-    expect(noteFor(view({ connection: { kind: 'signedOut', login: 'rozed-bot' } }))).toEqual([
-      {
-        id: 'signedOut',
-        tone: 'danger',
-        title: 'rozed-bot is signed out.',
-        detail: "GitHub refused rozed-bot's token. Sign in to it again to see what's changed.",
-        actions: [],
-      },
-    ]);
-  });
-
-  it('a used up rate limit says when it resets', () => {
-    const paused = (secondary: boolean) =>
-      noteFor(
-        view({
-          connection: { kind: 'rateLimited', login: 'rozed-bot', until: at(25 * 60), secondary },
-        }),
-      )[0];
-    expect(paused(false)).toMatchObject({
-      tone: 'warn',
-      title: "GitHub's rate limit for rozed-bot is used up.",
-      detail: `Nothing updates until it resets at at ${at(25 * 60)}, in 25 minutes.`,
-    });
-    expect(paused(true)?.title).toBe('GitHub asked Lo to slow down.');
-    // Running low says so in the status bar, not in a banner.
-    expect(
-      noteFor(view({ connection: { kind: 'limitLow', remaining: 100, reset: at(2 * 3_600) } })),
-    ).toEqual([]);
-  });
-
-  it('offline says how old the details are and when it tries again', () => {
-    const [offline] = noteFor(
-      view({
-        connection: {
-          kind: 'offline',
-          savedAt: at(-2 * 3_600),
-          retryAt: at(2 * 60),
-          error: 'the network is down',
-        },
-      }),
-    );
-    expect(offline).toEqual({
-      id: 'offline',
-      tone: 'warn',
-      title: "You're offline.",
-      detail: 'Showing what Lo saved 2 hours ago. Lo tries again in 2 minutes.',
-      actions: [{ label: 'Try again', do: { kind: 'retry' } }],
-    });
-  });
-
-  it("a failed poll says why with github's link", () => {
-    const [failed] = noteFor(
-      view({
-        problem: {
-          kind: 'blocked',
-          message: 'Resource protected by organization SAML enforcement.',
-          links: [
-            {
-              label: 'Authorize on GitHub',
-              url: 'https://github.com/orgs/acme/sso?authorization_request=A1',
-            },
-          ],
-        },
-      }),
-    );
-    expect(failed?.title).toBe('Resource protected by organization SAML enforcement.');
-    expect(failed?.actions[0]).toEqual({
-      label: 'Authorize on GitHub',
-      do: { kind: 'link', url: 'https://github.com/orgs/acme/sso?authorization_request=A1' },
-    });
+    expect(ago(NOW + 5000, NOW)).toBe('just now');
   });
 });
