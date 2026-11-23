@@ -195,11 +195,7 @@ function main(given: Readonly<Record<string, (input: unknown) => unknown>> = {})
     {
       'welcome.state': () => ({ finished: false }),
       'welcome.finish': () => undefined,
-      'accounts.ghAccounts': () => ({
-        kind: 'missing',
-        message: 'Lo found no gh.',
-        passedOver: false,
-      }),
+      'accounts.ghAccounts': () => ({ kind: 'missing' }),
       'open.command': () => ({ installed: [] }),
       'app.info': () => ({ git: { status: 'found', version: '2.54.0' }, nonce: '' }),
     },

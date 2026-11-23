@@ -487,15 +487,30 @@ describe('importing from gh', () => {
     act(() => closeDialog());
     installBridge({
       'accounts.keyring': () => null,
-      'accounts.ghAccounts': () => ({
-        kind: 'missing',
-        message: "Lo can't find gh, GitHub's command-line tool.",
-        passedOver: false,
-      }),
+      'accounts.ghAccounts': () => ({ kind: 'missing' }),
     });
     act(() => openImport());
     await settle();
     expect(dialog('import-gh')?.textContent).toContain('Can’t find GitHub CLI');
+    expect(button(dialog('import-gh'), 'Check again')).toBeDefined();
+    act(() => closeDialog());
+    // One too old to list its accounts says its version, and what gh said is behind Details.
+    installBridge({
+      'accounts.keyring': () => null,
+      'accounts.ghAccounts': () => ({
+        kind: 'failed',
+        program: '/usr/bin/gh',
+        why: 'tooOld',
+        version: '2.20.0',
+        details: 'unknown flag: --json',
+      }),
+    });
+    act(() => openImport());
+    await settle();
+    const old = dialog('import-gh')?.textContent ?? '';
+    expect(old).toContain('Can’t use GitHub CLI 2.20.0');
+    expect(old).toContain('A newer version is required.');
+    expect(old).not.toContain('unknown flag');
     expect(button(dialog('import-gh'), 'Check again')).toBeDefined();
   });
 
@@ -564,7 +579,11 @@ describe('importing from gh', () => {
       // Each account asked for fails as it did before.
       'accounts.importGh': (input) =>
         [
-          { ok: false, login: 'rozed-bot', why: { kind: 'unknown', details: 'fetch failed' } },
+          {
+            ok: false,
+            login: 'rozed-bot',
+            why: { kind: 'failed', cause: { kind: 'offline' }, details: 'fetch failed' },
+          },
           { ok: false, login: 'someone-else', why: { kind: 'otherAccount', other: 'rozed-bot' } },
         ].filter(({ login }) => JSON.stringify(input).includes(`"${login}"`)),
     });

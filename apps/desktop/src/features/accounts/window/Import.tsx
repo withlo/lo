@@ -28,6 +28,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 
 import { IpcError } from '../../../ipc/contract.ts';
 import { registry } from '../../../window/commands/registry.ts';
 import { client } from '../../../window/ipc.ts';
+import { explain } from '../../../window/explain.ts';
 import { contract as app } from '../../app/contract.ts';
 import type { GhAccount, GhListing, ImportFailure, Imported } from '../contract.ts';
 import { closeDialog, openSignIn } from './dialogs.ts';
@@ -128,8 +129,8 @@ function failureWords(
         reason: `GitHub CLI’s sign-in for ${login} belongs to ${why.other}.`,
         details: undefined,
       };
-    case 'unknown':
-      return { reason: undefined, details: why.details };
+    case 'failed':
+      return { reason: explain(why.cause), details: why.details };
     default:
       throw new Error(`An import failure Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
   }
@@ -140,7 +141,7 @@ function failureWords(
  * GitHub's error, not for what GitHub CLI holds.
  */
 function canRetry(why: ImportFailure): boolean {
-  return why.kind === 'unknown';
+  return why.kind === 'failed';
 }
 
 /** Sign-ins are kept in the system's keychain, which isn't there, as this system says it. */
@@ -302,24 +303,54 @@ interface Doing {
   load: () => void;
 }
 
-/** What stopped the listing, as an error: GitHub CLI isn't there to run, or it failed. */
+/**
+ * What stopped the listing, as an error: GitHub CLI isn't there to run, or it failed. Where the fix
+ * is outside Lo, the button only looks again.
+ */
 function unlisted(listing: Unlisted | undefined): {
   problem: NonNullable<DialogProps['problem']>;
   again: string;
 } {
-  if (listing?.kind === 'missing') {
-    return {
-      problem: {
-        title: listing.passedOver ? 'Can’t use GitHub CLI' : 'Can’t find GitHub CLI',
-        details: listing.message,
-      },
-      again: 'Check again',
-    };
+  const reading = 'Can’t read GitHub CLI’s accounts';
+  if (listing === undefined) return { problem: { title: reading }, again: 'Try again' };
+  switch (listing.kind) {
+    case 'missing':
+      return { problem: { title: 'Can’t find GitHub CLI' }, again: 'Check again' };
+    case 'distrusted':
+      return {
+        problem: { title: 'Can’t use GitHub CLI', details: listing.details },
+        again: 'Check again',
+      };
+    case 'failed':
+      break;
+    default:
+      throw new Error(`A listing Lo doesn't know: ${JSON.stringify(listing satisfies never)}`);
   }
-  return {
-    problem: { title: 'Can’t read GitHub CLI’s accounts', details: listing?.message },
-    again: 'Try again',
-  };
+  const { details } = listing;
+  switch (listing.why) {
+    case 'run':
+      return { problem: { title: 'Can’t use GitHub CLI', details }, again: 'Check again' };
+    case 'tooOld': {
+      const version = listing.version === null ? '' : ` ${listing.version}`;
+      return {
+        problem: {
+          title: `Can’t use GitHub CLI${version}`,
+          reason: 'A newer version is required.',
+          details,
+        },
+        again: 'Check again',
+      };
+    }
+    case 'tooSlow':
+      return {
+        problem: { title: reading, reason: explain({ kind: 'tooSlow' }), details },
+        again: 'Try again',
+      };
+    case 'other':
+      return { problem: { title: reading, details }, again: 'Try again' };
+    default:
+      throw new Error(`A failure Lo doesn't know: ${JSON.stringify(listing.why satisfies never)}`);
+  }
 }
 
 function view(step: Step, doing: Doing): Shown {

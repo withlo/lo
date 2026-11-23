@@ -1,4 +1,4 @@
-// What went wrong in signing in or importing an account, in words for the person: never a token.
+// What went wrong in signing in or importing an account: never a token.
 
 import { GithubError } from '@lo/github';
 
@@ -20,8 +20,8 @@ export function noKeychain(error: unknown): NoKeychain | undefined {
 }
 
 /**
- * What GitHub's error says about a token Lo was checking, in words for the person, or nothing for
- * an error that isn't GitHub's.
+ * What GitHub's error says about a token Lo was checking, for the log, or nothing for an error that
+ * isn't GitHub's.
  */
 export function githubMessage(error: unknown): string | undefined {
   if (!(error instanceof GithubError)) return undefined;
