@@ -450,8 +450,8 @@ function ChangeJumps({ tab }: { tab: string }) {
 
 /**
  * What the middle says in place of the diff, when there's something to say: why there's nothing to
- * draw. Nothing while the diff is on its way, or while the tab hasn't opened, since its banner says
- * why one can't.
+ * draw. Nothing while the diff is on its way, or while the tab hasn't opened, since the tab says
+ * why it can't in place of its view.
  */
 function waitingSays(
   snapshot: Snapshot,

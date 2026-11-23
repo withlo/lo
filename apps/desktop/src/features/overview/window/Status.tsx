@@ -22,7 +22,7 @@ export function OverviewStatus({ tab }: { tab: PullTab }) {
   if (!onScreen && offered(opened, knownOf(standing), setting)) {
     const keys = keyOf(stepKeyOf(ids, shown, OVERVIEW_VIEW));
     return (
-      <StatusItem dot="busy" onClick={() => showMiddle(tab.id, OVERVIEW_VIEW)}>
+      <StatusItem ball="ready" onClick={() => showMiddle(tab.id, OVERVIEW_VIEW)}>
         Overview ready
         {keys !== undefined && (
           <>

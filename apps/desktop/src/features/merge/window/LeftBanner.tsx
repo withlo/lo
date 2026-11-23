@@ -38,21 +38,22 @@ export function LeftBanner({ tab }: { tab: PullTab }) {
     <Banner
       tone={leftTone(found.left)}
       title={leftTitle(tab.number)}
-      actions={[
-        {
-          label: 'Merge panel',
-          keys: keyOf('merge.panel'),
-          onClick: () => openPanel(tab.id, tab.number),
-        },
-      ]}
+      action={{
+        label: 'Merge panel',
+        keys: keyOf('merge.panel'),
+        onClick: () => openPanel(tab.id, tab.number),
+      }}
       onDismiss={() => dismissLeft(tab.id)}
     />
   );
 }
 
-/** Whether a tab's banner shows: while its pull request's leaving the queue is news. */
+/** What a tab's banner says: while its pull request's leaving the queue is news. */
 export const leftSwitch: BannerSwitch = {
-  shows: (tab) => leftOf(tab) !== undefined,
+  said(tab) {
+    const found = leftOf(tab);
+    return found && { tone: leftTone(found.left), title: leftTitle(tab.number) };
+  },
   subscribe(_tab, listener) {
     const left = queues.subscribe(listener);
     const status = statuses.subscribe(listener);

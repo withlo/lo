@@ -10,7 +10,7 @@
 
 import type { Page } from '@playwright/test';
 
-import { expect, onQueued as test, QUEUED } from './app.ts';
+import { expect, onQueued as test, QUEUED, tabBanners } from './app.ts';
 
 const { pulls } = QUEUED;
 
@@ -85,7 +85,7 @@ test.describe('once the queue fails one', () => {
     await page.keyboard.press('Escape');
 
     // The banner's one line; the panel's first row says why.
-    const banner = page.getByText(`#${pulls.queuedFail.number} left the merge queue`);
+    const banner = tabBanners(page).getByText(`#${pulls.queuedFail.number} left the merge queue`);
     await expect(banner).toBeVisible({ timeout: 90_000 });
     await page.getByRole('button', { name: /^Merge panel/ }).click();
     await expect(first).toHaveAttribute('data-key', 'left');

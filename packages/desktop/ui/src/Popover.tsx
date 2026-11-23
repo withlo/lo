@@ -38,6 +38,11 @@ export interface PopoverProps {
   className?: string | undefined;
   /** What has focus once it opens. Without one, the panel itself. */
   initialFocus?: RefObject<HTMLElement | null> | undefined;
+  /**
+   * `false` for one that opens unasked, as an offer does at the first key that needs it: focus
+   * stays where the reader is, and a click or `Tab` takes them into it.
+   */
+  takeFocus?: boolean | undefined;
   /** The panel's element. */
   popupRef?: Ref<HTMLDivElement> | undefined;
   /**
@@ -67,6 +72,7 @@ export function Popover({
   children,
   className,
   initialFocus,
+  takeFocus = true,
   popupRef,
   onClosed,
   container,
@@ -91,15 +97,15 @@ export function Popover({
     onClosed?.();
   });
   // The panel takes focus as it mounts, not a frame on, so a key pressed then is its own.
-  const takeFocus = useTakeFocus(initialFocus);
+  const focus = useTakeFocus(initialFocus);
   const mounted = useCallback(
     (element: HTMLDivElement | null) => {
       popup.current = element;
-      takeFocus(element);
+      if (takeFocus) focus(element);
       if (typeof popupRef === 'function') popupRef(element);
       else if (popupRef) popupRef.current = element;
     },
-    [takeFocus, popupRef],
+    [focus, takeFocus, popupRef],
   );
   return (
     <Base.Root open={open} onOpenChange={(next) => onOpenChange(next)}>

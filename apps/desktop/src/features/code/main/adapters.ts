@@ -51,7 +51,7 @@ export type Prepared =
   | { readonly kind: 'ready'; readonly launch: Launch }
   | {
       readonly kind: 'missing';
-      /** What it needs: "Go 1.24 or later". */
+      /** What it needs: "Go 1.24 or newer". */
       readonly needs: string;
       /** A command that installs it, when there's one: `brew install go`. */
       readonly install?: string | undefined;

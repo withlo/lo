@@ -21,8 +21,7 @@
   flex: 1 1 1px;
   min-width: 0;
 }
-.lo-diffview > .lo-diffnote,
-.lo-diffview > .lo-diffslack {
+.lo-diffview > .lo-diffnote {
   flex: 1 0 100%;
 }
 /*

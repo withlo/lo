@@ -17,11 +17,20 @@ import { main } from './main.ts';
 /** Each view's servers, once main has said. */
 export const servers = tabState<Servers | null>(() => null);
 
+/**
+ * Whether each view's Language servers item has its details open: `open` as the reader opened
+ * them, or `offered` as the first `g d` in a repo nothing trusts opened them, unasked, which leaves
+ * focus where it was. Closed again once the view's servers are no longer off, as once trusted, so
+ * the item a later Stop trusting brings back starts closed.
+ */
+export const offered = tabState<'closed' | 'offered' | 'open'>(() => 'closed');
+
 /** Takes what main said of a view's servers. */
 export function takeServers(shown: Servers): void {
   if (JSON.stringify(servers.get(shown.view)) !== JSON.stringify(shown)) {
     servers.set(shown.view, shown);
   }
+  if (!shown.off && offered.get(shown.view) !== 'closed') offered.set(shown.view, 'closed');
 }
 
 const asked = new Set<string>();

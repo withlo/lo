@@ -146,7 +146,7 @@ describe('PRHeader’s status', () => {
         head={{ branch: 'ravi/graphql-cost' }}
         base={{ branch: 'ravi/plan-limits' }}
         acting={{ login: 'tess-okafor' }}
-        connection={{ tone: 'warn', label: 'Offline', detail: 'saved 14:02' }}
+        connection={{ kind: 'offline', tone: 'warn', label: 'Offline' }}
         status={status}
       >
         <span>Comparing</span>

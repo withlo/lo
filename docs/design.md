@@ -142,8 +142,7 @@ Everything a PR contains is untrusted: code, Markdown, images and artifacts.
 ### Local data
 
 - **Database.** A SQLite file holds cached PR data, "last seen" revisions, the account to use per
-  owner, recent PRs, unsent comment text and the repos whose banner about language servers you
-  dismissed.
+  owner, recent PRs, unsent comment text and the repos Lo has offered to trust once.
 - **Settings file.** `settings.json` in `~/.config/lo/` holds the settings, among them which repos
   and PRs you trust to run language servers. The window shows that list but can't write it: only the
   main process does. It adds an entry only once its own dialog says "Trust", and the window can ask
@@ -713,11 +712,12 @@ Languages, and hostile content could use a bug in one. So they run only when the
 the PR's branch lives in that repo. A PR from a fork is someone else's code, even in a repo you
 trust.
 
-- **Untrusted repo.** A banner says "Language servers are off for this repo," with buttons to trust
-  the repo or dismiss the banner. You're asked once per repo: trusting opens a dialog of Lo's own
-  that names the repo, with "Cancel" as its default, and Lo remembers a dismissal for the repo.
-- **PR from a fork.** The banner offers to trust that one PR instead, and its later pushes are
-  trusted too.
+- **Untrusted repo.** The status bar's Language servers item reads "Language servers off", and its
+  details say what they're off for, with "Trust repo…". It opens by itself once per repo, at the
+  first `g d` there. Trusting opens a dialog of Lo's own that names the repo, with "Cancel" as its
+  default.
+- **PR from a fork.** The item offers to trust that one PR instead, and its later pushes are trusted
+  too.
 - **Where it's kept.** Trust is in the settings file, by the repo's name and GitHub's ID for it, so
   a name that comes to belong to another repo isn't trusted. Only the main process writes it.
 - **Settings.** Settings lists trusted repos and PRs, and you can remove any of them. Removing one
@@ -1160,9 +1160,10 @@ its overview or its diff.
 
 ### GitHub
 
-- **Offline.** Cached PRs open with a banner showing when the data is from. You can still write
-  comments: they're kept on this computer as drafts, and you post them yourself once you're back
-  online. Nothing posts by itself. Reviewing and merging are off until then.
+- **Offline.** Cached PRs open with "Offline" in the header, whose details say when the data was
+  last checked. You can still write comments: they're kept on this computer as drafts, and you post
+  them yourself once you're back online. Nothing posts by itself. Reviewing and merging are off
+  until then.
 - **A proxy that asks Lo to sign in.** Behind a proxy that signs you in with Kerberos, reads work.
   Writes, such as comments, reviews and merges, stop before anything is sent. They say the proxy
   asked Lo to sign in. Writes go over Node's HTTP stack, which can't sign in to a proxy. Lo can't
@@ -1170,12 +1171,12 @@ its overview or its diff.
 - **Unsent text.** Text in comment boxes is saved on this computer until it's posted, so a crash or
   restart doesn't lose it. After a restart, or a reload of the window, its box opens again where it
   was, unfocused, saying when the draft was saved, with a button to discard it.
-- **Rate limit used up.** A banner shows when it resets. Polling pauses until then, and so does
-  writing, as it does for a minute when GitHub turns a comment away as sent too fast. A comment,
-  review or merge asked for meanwhile isn't sent, and says when it can be. A change to a stack's
-  base branches waits, and goes once the pause is over.
-- **Signed out.** If an account's token is revoked, that account's tabs ask you to sign in again.
-  Other accounts keep working.
+- **Rate limit used up.** The header says so, and its details say when it resets. Polling pauses
+  until then, and so does writing, as it does for a minute when GitHub turns a comment away as sent
+  too fast. A comment, review or merge asked for meanwhile isn't sent, and says when it can be. A
+  change to a stack's base branches waits, and goes once the pause is over.
+- **Signed out.** If an account's token is revoked, that account's tabs say so in the header, whose
+  details ask you to sign in again. Other accounts keep working.
 - **Single sign-on.** If an org requires SSO approval for the token, Lo shows GitHub's link to grant
   it.
 - **PR state changes.** When a PR is closed, merged or reopened while it's open in Lo, the tab
@@ -1185,8 +1186,9 @@ its overview or its diff.
 
 - **First open.** The diff appears straight away from GitHub's API. Whole-file context, navigation
   and rebase-aware comparison turn on when the local copy is ready, with progress shown.
-- **Fetch fails.** Those features stay off, a banner explains why, and Lo retries.
-- **Disk full.** A banner offers to clear the cache.
+- **Fetch fails.** Those features stay off, the local copy's status bar item says why, and Lo
+  retries.
+- **Disk full.** The local copy's item offers to clear the cache.
 - **Missing revisions.** A force-pushed revision that GitHub no longer has, and that Lo never
   fetched, is shown as "no longer available."
 

@@ -730,6 +730,9 @@ export default defineFeature(contract, {
       viewsOf().updateAll();
     },
     index: ({ view }) => index?.state(view) ?? null,
+    retryIndex({ view }) {
+      index?.retryNow(view);
+    },
     servers: ({ view }) => serving?.servers(view) ?? null,
     async restart({ view, server }) {
       if (!serving) throw new IpcError('unavailable', 'Lo is starting, or quitting.');

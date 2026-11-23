@@ -208,12 +208,13 @@ test('a ready pull request GitHub may not have told all of never looks clean, an
   }
 });
 
-test('a status Lo couldn’t read again, or hasn’t for long, says when it was checked', () => {
+test('a status Lo couldn’t read again, or hasn’t for long, says when it was checked in its panel', () => {
   const failed = state({ stale: 'GitHub answered 502', readAt: NOW - 3 * 60_000 });
-  expect(headerLine({ kind: 'known', state: failed }, NOW)).toEqual({
+  // The header's line is the verdict and its one detail, however old.
+  expect(headerLine({ kind: 'known', state: failed })).toEqual({
     kind: 'ready',
     verdict: 'Ready to merge',
-    detail: 'Squash into main · Checked 3 min ago',
+    detail: 'Squash into main',
     opens: true,
   });
   expect(rowsOf(failed, NOW).at(-1)).toMatchObject({
@@ -222,20 +223,14 @@ test('a status Lo couldn’t read again, or hasn’t for long, says when it was 
     detail: 'GitHub answered 502',
     inTheWay: false,
   });
-  // Read five minutes ago it's current: the poller lets a read stand that long.
-  expect(headerLine({ kind: 'known', state: state({ readAt: NOW - 5 * 60_000 }) }, NOW)).toEqual(
-    known(state()),
-  );
   const old = state({ verdict: 'queued', position: 1, readAt: NOW - 12 * 60_000 });
-  expect(headerLine({ kind: 'known', state: old }, NOW)).toMatchObject({
+  expect(headerLine({ kind: 'known', state: old })).toMatchObject({
     verdict: 'Queued, 1st',
-    detail: 'Checked 12 min ago',
+    detail: undefined,
   });
   expect(rowsOf(old, NOW).at(-1)).toMatchObject({ title: 'Checked 12 min ago', detail: undefined });
   // A merge stays merged.
-  expect(
-    headerLine({ kind: 'known', state: state({ verdict: 'merged', readAt: 0 }) }, NOW)?.detail,
-  ).toBeUndefined();
+  expect(rowsOf(state({ verdict: 'merged', readAt: 0 }), NOW).at(-1)?.key).not.toBe('stale');
 });
 
 test('how long ago reads in its largest whole unit', () => {
@@ -430,7 +425,7 @@ test('places in a queue read as ordinals', () => {
 
 test('a queued pull request’s place, as Lo last read its queue, says when it should merge, or that it’s leaving', () => {
   const queued = { kind: 'known', state: state({ verdict: 'queued', position: 2 }) } as const;
-  expect(headerLine(queued, NOW)).toMatchObject({ verdict: 'Queued, 2nd', detail: undefined });
+  expect(headerLine(queued)).toMatchObject({ verdict: 'Queued, 2nd', detail: undefined });
   const place = {
     kind: 'listed',
     position: 3,
@@ -439,18 +434,19 @@ test('a queued pull request’s place, as Lo last read its queue, says when it s
     failed: [],
     partial: false,
   } satisfies QueuePlace;
-  expect(headerLine(queued, NOW, { place, left: null })).toEqual({
+  expect(headerLine(queued, { place, left: null })).toEqual({
     kind: 'queued',
     verdict: 'Queued, 3rd',
     detail: 'merges in about 12 min',
     opens: true,
   });
-  expect(
-    headerLine(queued, NOW, { place: { ...place, timeToMerge: null }, left: null }),
-  ).toMatchObject({ verdict: 'Queued, 3rd', detail: undefined });
+  expect(headerLine(queued, { place: { ...place, timeToMerge: null }, left: null })).toMatchObject({
+    verdict: 'Queued, 3rd',
+    detail: undefined,
+  });
   const failed = { ...place, state: 'UNMERGEABLE', timeToMerge: null } satisfies QueuePlace;
   expect(
-    headerLine(queued, NOW, {
+    headerLine(queued, {
       place: { ...failed, failed: [{ name: 'ci', state: 'failed', url: RUN }] },
       left: null,
     }),
@@ -459,20 +455,23 @@ test('a queued pull request’s place, as Lo last read its queue, says when it s
     verdict: 'Leaving merge queue',
     detail: 'ci failed',
   });
-  expect(headerLine(queued, NOW, { place: failed, left: null })).toMatchObject({
+  expect(headerLine(queued, { place: failed, left: null })).toMatchObject({
     verdict: 'Leaving merge queue',
     detail: undefined,
   });
   // GitHub left part of the queue out: where Lo can't see it, GitHub's own read of its place stands.
   expect(
-    headerLine(queued, NOW, { place: { kind: 'unlisted', partial: true }, left: null }),
+    headerLine(queued, { place: { kind: 'unlisted', partial: true }, left: null }),
   ).toMatchObject({ verdict: 'Queued, 2nd' });
   // The queue no longer lists it: it left, never the place it had, until its status says how.
-  expect(
-    headerLine(queued, NOW, { place: { kind: 'unlisted', partial: false }, left: null }),
-  ).toEqual({ kind: 'waiting', verdict: 'Left merge queue', detail: 'Checking…', opens: true });
+  expect(headerLine(queued, { place: { kind: 'unlisted', partial: false }, left: null })).toEqual({
+    kind: 'waiting',
+    verdict: 'Left merge queue',
+    detail: 'Checking…',
+    opens: true,
+  });
   // No longer queued, its queue's last read says nothing in the header.
-  expect(headerLine({ kind: 'known', state: state() }, NOW, { place, left: null })).toMatchObject({
+  expect(headerLine({ kind: 'known', state: state() }, { place, left: null })).toMatchObject({
     verdict: 'Ready to merge',
   });
 });

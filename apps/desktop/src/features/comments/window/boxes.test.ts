@@ -1604,7 +1604,7 @@ describe('sending', () => {
     await send(box, 'now');
     expect(box.state.refusal).toEqual({ kind: 'notInDiff' });
     expect(drawn[0]!.composer.closed).toBeUndefined();
-    said.pull = pull({ connection: { kind: 'offline', savedAt: null, retryAt: null, error: '' } });
+    said.pull = pull({ connection: { kind: 'offline', retryAt: null, error: '' } });
     await send(box, 'review');
     expect(asked('comments.send')).toHaveLength(1);
   });
@@ -1975,7 +1975,7 @@ describe('acting on a thread', () => {
     acts.resolve(tab(), ON_TWO);
     expect(notice()?.title).toMatch(/ can’t resolve this thread$/);
     said.pull = pull({
-      connection: { kind: 'offline', savedAt: null, retryAt: null, error: 'down' },
+      connection: { kind: 'offline', retryAt: null, error: 'down' },
     });
     acts.resolve(tab(), ON_FIVE);
     expect(notice()?.title).toBe('Offline');
@@ -2084,7 +2084,7 @@ describe('acting on a thread', () => {
   test('`dd` offline says so at once, asking nothing', () => {
     withThreads(threadRow('T2', 2));
     said.pull = pull({
-      connection: { kind: 'offline', savedAt: null, retryAt: null, error: 'down' },
+      connection: { kind: 'offline', retryAt: null, error: 'down' },
     });
     acts.remove(tab(), ON_TWO);
     expect(acts.deleteAsking()).toBeUndefined();

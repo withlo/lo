@@ -344,15 +344,12 @@ export function staleness(
 export const CANT_CHECK = 'Can’t check merge status';
 
 /**
- * The header's merge status for `view` at `now`, with its place in the merge queue as `queue` last
- * read it, or nothing while there's nothing to show: before main says anything, and for a view
- * that reads none.
+ * The header's merge status for `view`, with its place in the merge queue as `queue` last read it,
+ * or nothing while there's nothing to show: before main says anything, and for a view that reads
+ * none. It's a verdict and one detail: when the status was checked is the panel's to say, and the
+ * header chip's while the tab can't hear from GitHub.
  */
-export function headerLine(
-  view: MergeView | undefined,
-  now: number = Date.now(),
-  queue?: InQueue,
-): HeaderLine | undefined {
+export function headerLine(view: MergeView | undefined, queue?: InQueue): HeaderLine | undefined {
   if (view === undefined) return undefined;
   switch (view.kind) {
     case 'none':
@@ -364,21 +361,11 @@ export function headerLine(
       // The panel has the reason.
       return { kind: 'waiting', verdict: CANT_CHECK, detail: undefined, opens: true };
     case 'known':
-      return dated(queuedLine(knownLine(view.state), view.state, queue), view.state, now);
+      return queuedLine(knownLine(view.state), view.state, queue);
     default:
       view satisfies never;
       return undefined;
   }
-}
-
-/** `line`, saying when `state` was read when it may be out of date at `now`. */
-function dated(line: HeaderLine, state: MergeState, now: number): HeaderLine {
-  const old = staleness(state, now);
-  if (!old) return line;
-  return {
-    ...line,
-    detail: [line.detail, `Checked ${old.ago}`].filter((part) => part !== undefined).join(' · '),
-  };
 }
 
 function knownLine(state: MergeState): HeaderLine {

@@ -1,7 +1,8 @@
 // The syntax index across views: a tree shown by two views is built once, the new side before the
 // old, each view says how far it has got, and a view back online builds what it left for want of
-// the network. Clearing the cache reads it all again, and a tree with more files than git lists is
-// left partial.
+// the network. Clearing the cache reads it all again, a tree that failed is built again, by itself
+// once its wait ends or at once when asked, and a tree with more files than git lists is left
+// partial.
 
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
@@ -93,6 +94,29 @@ describe('the syntax index', () => {
     index.follow('t1', undefined);
     expect(index.state('t1')).toBe(undefined);
     expect(index.sides('t1')).toBe(undefined);
+  });
+
+  it('says when it builds a tree that failed again, and builds it at once when asked', async () => {
+    const repo = fakeRepo({ commits });
+    const { index } = setUp();
+    let opened = 0;
+    const before = Date.now();
+    // The first tree finds no local copy; the next, and any after, find it.
+    index.follow('t1', {
+      kind: 'ready',
+      clone: () => (opened++ === 0 ? undefined : Promise.resolve(repo)),
+      new: commitOf('head'),
+      old: commitOf('base'),
+      offline: false,
+    });
+    await vi.waitFor(() => expect(index.state('t1')).toMatchObject({ kind: 'failed' }));
+    const failed = index.state('t1');
+    expect(failed).toMatchObject({ message: "The pull request's local copy isn't open." });
+    const retryAt = failed?.kind === 'failed' ? failed.retryAt : null;
+    expect(retryAt).toBeGreaterThanOrEqual(before + 5_000);
+    // "Try now": built again before the wait ends.
+    index.retryNow('t1');
+    await vi.waitFor(() => expect(index.state('t1')).toEqual({ kind: 'ready', partial: null }));
   });
 
   it('leaves a tree with more files than git lists partial, and reads the other side', async () => {

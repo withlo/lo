@@ -337,7 +337,7 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
     expect(after.sent.pull?.header?.title).toBe(TITLE);
     expect(after.sent.pull?.shown).toBe(APP_PULL.head);
     await expect.poll(() => after.sent.pull?.connection.kind, { timeout: 10_000 }).toBe('offline');
-    expect(after.sent.pull?.connection).toMatchObject({ savedAt: expect.any(Number) });
+    expect(after.sent.pull?.checked).toEqual(expect.any(Number));
     expect(after.sent.pull?.problem).toBe(null);
     after.tab.close();
   });

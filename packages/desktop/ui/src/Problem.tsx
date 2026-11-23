@@ -1,5 +1,5 @@
 import { cva } from 'class-variance-authority';
-import { useId, useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode, type Ref } from 'react';
 
 import { Button } from './Button.tsx';
 import { Collapse } from './Collapse.tsx';
@@ -22,6 +22,8 @@ export interface ProblemAction {
   busy?: boolean | undefined;
   /** What the button says while busy: "Trying again…". */
   working?: string | undefined;
+  /** The button, for what gives it focus, as details that open on the one thing to do. */
+  ref?: Ref<HTMLButtonElement> | undefined;
 }
 
 export interface ProblemProps {
@@ -34,25 +36,54 @@ export interface ProblemProps {
   reason?: ReactNode;
   action?: ProblemAction | undefined;
   /**
+   * Other ways on, beside the one thing to do, for a failed view that can also be left: "Open on
+   * GitHub", "Close tab". Drawn quieter than `action`, after it; in a status item's details, after
+   * Details too, as "Show log" is.
+   */
+  others?: readonly ProblemAction[] | undefined;
+  /**
    * What came back, as it came: the status, GitHub's own words, a path. It stays behind a Details
    * button, with a Copy button, and is the only place raw text shows. Copy goes through the window's
    * `CopyRoute`.
    */
   details?: string | undefined;
   /**
-   * `view` when a whole view failed and this takes its place, with nothing drawn behind it;
-   * `inline` when an action failed, shown by its control: above a dialog's foot, in a panel.
+   * Commands that put it right, such as one that installs what's missing: each on its own line,
+   * as code, with Copy. Only in a status item's details (`layout="details"`).
    */
-  layout?: 'view' | 'inline' | undefined;
+  commands?: readonly string[] | undefined;
+  /**
+   * `view` when a whole view failed and this takes its place, with nothing drawn behind it;
+   * `inline` when an action failed, shown by its control: above a dialog's foot, in a panel;
+   * `details` in a status item's details, which are its box, so it has none of its own, and each
+   * part takes a row of the popover's width.
+   */
+  layout?: 'view' | 'inline' | 'details' | undefined;
+  /**
+   * `warn` while it's a wait, not a failure: Lo tries again by itself, or it waits for something
+   * else to let go. As the status item's amber ball, its triangle and ground are amber. `danger`,
+   * the default, once it failed.
+   */
+  tone?: 'danger' | 'warn' | undefined;
 }
 
 const problem = cva('min-w-0 text-ui', {
   variants: {
     layout: {
       view: 'flex h-full flex-col items-center justify-center gap-12 p-32 text-center',
-      inline: 'flex flex-col rounded-md border border-danger-border bg-danger-bg p-12 text-small',
+      inline: 'flex flex-col rounded-md border p-12 text-small',
+      details: 'flex flex-col text-small',
     },
+    tone: { danger: '', warn: '' },
   },
+  compoundVariants: [
+    { layout: 'inline', tone: 'danger', class: 'border-danger-border bg-danger-bg' },
+    { layout: 'inline', tone: 'warn', class: 'border-warning-border bg-warning-bg' },
+  ],
+});
+
+const triangle = cva('lo-i lo-i--sm flex-none', {
+  variants: { tone: { danger: 'text-danger', warn: 'text-warning' } },
 });
 
 /**
@@ -61,8 +92,18 @@ const problem = cva('min-w-0 text-ui', {
  * line repeats it. A screen reader hears what failed and why at once, as an alert, and not its
  * buttons. Nothing in it changes on a timer except through `Countdown`, so the alert is read once.
  */
-export function Problem({ title, reason, action, details, layout = 'inline' }: ProblemProps) {
+export function Problem({
+  title,
+  reason,
+  action,
+  others = [],
+  details,
+  commands = [],
+  layout = 'inline',
+  tone = 'danger',
+}: ProblemProps) {
   const view = layout === 'view';
+  const copy = useCopy();
   // In a view, the text sits 12 px under the buttons, in a roomier well with a hairline, since
   // the well's fill is the view's own ground, as the overview's other wells have; inline, under
   // the line, on the problem's own fill.
@@ -71,20 +112,71 @@ export function Problem({ title, reason, action, details, layout = 'inline' }: P
     view ? 'pt-12' : 'pt-8',
     view ? 'p-12 inset-ring inset-ring-border' : 'p-8',
   );
-  const act = action && (
+  const button = (each: ProblemAction, main: boolean, key?: number) => (
     <Button
-      variant={view ? 'primary' : 'secondary'}
+      key={key}
+      variant={main ? (view ? 'primary' : 'secondary') : 'ghost'}
       size={view ? 'md' : 'sm'}
-      busy={action.busy}
-      working={action.working}
-      onClick={action.onClick}
+      ref={each.ref}
+      busy={each.busy}
+      working={each.working}
+      onClick={each.onClick}
     >
-      {action.label}
-      {action.keys && <Key keys={action.keys} decorative />}
+      {each.label}
+      {each.keys && <Key keys={each.keys} decorative />}
     </Button>
   );
+  const act = (action || others.length > 0) && (
+    <>
+      {action && button(action, true)}
+      {others.map((each, index) => button(each, false, index))}
+    </>
+  );
+  const icon = (
+    <svg className={triangle({ tone })} viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M7.13 2.5a1 1 0 0 1 1.74 0l5.2 9.5a1 1 0 0 1-.87 1.5H2.8a1 1 0 0 1-.87-1.5Z" />
+      <path d="M8 6.25v3M8 11.25v.01" />
+    </svg>
+  );
+  if (layout === 'details') {
+    return (
+      <div className={problem({ layout, tone })}>
+        <div className="flex flex-col gap-8">
+          {/* What failed on its own row, after its triangle, and why under it, full width. */}
+          <div role="alert" className="flex flex-col gap-2">
+            <p className="m-0 flex items-center gap-8 font-semibold text-fg">
+              {icon}
+              {title}
+            </p>
+            {/* The space is for what reads the alert as one run of text; it takes no room. */}
+            {reason !== undefined && ' '}
+            {reason !== undefined && <p className="m-0 text-fg-muted">{reason}</p>}
+          </div>
+          {/* Each command whole, on a line that scrolls, not breaks, with Copy at its end. */}
+          {commands.map((command) => (
+            <div key={command} className="flex items-center gap-8 rounded-sm bg-bg-well px-8 py-6">
+              <pre className="m-0 min-w-0 flex-1 overflow-x-auto whitespace-pre text-fg code-small select-text">
+                <code>{command}</code>
+              </pre>
+              <CopyButton size="sm" onCopy={() => copy(command)} />
+            </div>
+          ))}
+          {/* One row: the one thing to do first, then Details, then the other ways on; a ghost
+            button first sits on the line's edge, as the text above it does. */}
+          {(act || more) && (
+            <div className={`flex flex-wrap items-center gap-6 ${action ? '' : '-ms-8'}`}>
+              {action && button(action, true)}
+              {more}
+              {others.map((each, index) => button(each, false, index))}
+            </div>
+          )}
+        </div>
+        {details !== undefined && shown}
+      </div>
+    );
+  }
   return (
-    <div className={problem({ layout })}>
+    <div className={problem({ layout, tone })}>
       {view ? (
         // One column, centred, as wide as what failed and why: the buttons under it, and the
         // text behind Details as wide as it, so the text adds no width as it opens.
@@ -105,14 +197,7 @@ export function Problem({ title, reason, action, details, layout = 'inline' }: P
         </div>
       ) : (
         <div className="flex items-start gap-8">
-          <svg
-            className="lo-i lo-i--sm mt-2 flex-none text-danger"
-            viewBox="0 0 16 16"
-            aria-hidden="true"
-          >
-            <path d="M7.13 2.5a1 1 0 0 1 1.74 0l5.2 9.5a1 1 0 0 1-.87 1.5H2.8a1 1 0 0 1-.87-1.5Z" />
-            <path d="M8 6.25v3M8 11.25v.01" />
-          </svg>
+          <span className="mt-2 flex flex-none">{icon}</span>
           {/* What failed on a line of its own, and why under it. */}
           <div role="alert" className="flex min-w-0 flex-1 flex-col">
             <p className="m-0 font-semibold text-fg">{title}</p>

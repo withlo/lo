@@ -1,7 +1,7 @@
 // The tab strip's keys: a tab by its place, the next and previous tab, moving one, the tabs that
 // don't fit and closing one. They work wherever focus is, a text field included, but not under a
 // dialog or a palette, which hold the keys while they're open. And a pull request's tab's: its left
-// and right panels, and its middle views.
+// and right panels, its middle views, and the account to open it as.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -126,6 +126,21 @@ export default defineCommands('tab', {
     overVim: true,
     when: { except: ['menu', 'dialog', 'palette', 'box'], mode: 'normal' },
     control: "Overview, Diff and Timeline in the pull request's header",
+  },
+  /**
+   * Opens the pull request on screen as an account that can see it, where more than one can and
+   * none was chosen for its repo's owner, which Lo then remembers: the account the target names, a
+   * row of the tab's choice by its login, or, with none or another list's row, as from the palette
+   * or the File menu, the menu of them. It's done once for an owner, so it has no key.
+   */
+  chooseAccount: {
+    label: 'Choose account…',
+    control: 'Open as and Choose account… where a pull request’s tab needs an account chosen',
+    group: 'Tabs and window',
+    keys: [],
+    targets: ['row', 'none'],
+    when: outside,
+    bar: { menu: 'File', order: 7 },
   },
   /**
    * The tab on screen, or the one right-clicked. On Linux it's Ctrl+W, over Vim's window keys,

@@ -3614,9 +3614,6 @@ function boxed(top: number) {
     },
     /** The view's box. */
     dom: () => parent!.querySelector<HTMLElement>('.lo-diffview')!,
-    /** How much room is above the first file. */
-    room: () =>
-      Number.parseFloat(parent!.querySelector<HTMLElement>('.lo-diffslack')?.style.height || '0'),
   };
 }
 
@@ -3635,7 +3632,7 @@ describe('its place on the page', () => {
     page.box.top = 0;
     page.frame();
     watch.resize(page.dom(), 600, 800);
-    expect(page.room()).toBe(0);
+    expect(page.dom().scrollTop).toBe(0);
     // From there, once the box has been still, a banner coming leaves the diff where it was seen,
     // by the scroll.
     page.frame();
@@ -3643,6 +3640,57 @@ describe('its place on the page', () => {
     page.box.top = 30;
     watch.resize(page.dom(), 570, 800);
     expect(page.dom().scrollTop).toBe(30);
+  });
+
+  test('at its top, takes the room a banner leaves, with no band above the first file', () => {
+    const watch = observers();
+    const page = boxed(30);
+    open();
+    page.frame();
+    page.frame();
+    page.frame();
+    // Scrolled a little, the scroll takes what it can of the banner going, and the box the rest.
+    page.dom().scrollTop = 10;
+    page.dom().dispatchEvent(new Event('scroll'));
+    page.box.top = 0;
+    watch.resize(page.dom(), 600, 800);
+    expect(page.dom().scrollTop).toBe(0);
+    // Coming back, it leaves the diff where it was, by the scroll.
+    page.box.top = 30;
+    watch.resize(page.dom(), 570, 800);
+    expect(page.dom().scrollTop).toBe(30);
+  });
+
+  test('moves down with a banner coming, rather than put the cursor’s row out of its top', () => {
+    const watch = observers();
+    const page = boxed(0);
+    // The editors' text is laid out from the box's top, less the scroll.
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element,
+    ) {
+      if (this.classList.contains('lo-diffview')) return new DOMRect(0, page.box.top, 800, 600);
+      if (this.classList.contains('cm-content')) {
+        return new DOMRect(0, page.box.top - page.dom().scrollTop, 400, 4000);
+      }
+      return new DOMRect();
+    });
+    open();
+    page.frame();
+    page.frame();
+    page.frame();
+    // At its top, the cursor on the first file's header: the scroll stays at the top, and the
+    // content goes down with the box.
+    page.box.top = 34;
+    watch.resize(page.dom(), 566, 800);
+    expect(page.dom().scrollTop).toBe(0);
+    // Read further down, with the cursor's row above the screen, the rows stay still, by the scroll.
+    page.box.top = 0;
+    watch.resize(page.dom(), 600, 800);
+    page.dom().scrollTop = 200;
+    page.dom().dispatchEvent(new Event('scroll'));
+    page.box.top = 34;
+    watch.resize(page.dom(), 566, 800);
+    expect(page.dom().scrollTop).toBe(234);
   });
 
   test('first seen under a banner still opening, follows its box until it’s still, with no scroll', () => {
@@ -3656,7 +3704,7 @@ describe('its place on the page', () => {
       page.frame();
       watch.resize(page.dom(), 600 - top, 800);
       expect(page.dom().scrollTop).toBe(0);
-      expect(page.room()).toBe(0);
+      expect(page.dom().scrollTop).toBe(0);
     }
     // Still for two frames, its place is kept from there.
     page.frame();
@@ -3686,14 +3734,14 @@ describe('its place on the page', () => {
     page.box.top = 0;
     watch.resize(page.dom(), 600, 800);
     page.frame();
-    expect(page.room()).toBe(0);
+    expect(page.dom().scrollTop).toBe(0);
     // Shown, in a frame that then tells of a banner that went in it.
     page.box.top = 30;
     shown.seen();
     page.box.top = 0;
     page.frame();
     watch.resize(page.dom(), 600, 800);
-    expect(page.room()).toBe(0);
+    expect(page.dom().scrollTop).toBe(0);
     page.frame();
     page.frame();
     page.box.top = 30;

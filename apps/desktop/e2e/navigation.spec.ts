@@ -105,7 +105,7 @@ async function press(page: Page, ...keys: string[]): Promise<void> {
 const PANEL = `${process.platform === 'darwin' ? 'Meta' : 'Control'}+Shift+Backslash`;
 
 const peek = (page: Page) => page.locator('.lo-diffpeek');
-const status = (page: Page) => page.locator('footer[aria-label="Status"]');
+const status = (page: Page) => page.locator('footer[aria-label="Status bar"]');
 
 test('gd, K, gr, gO and gh answer from the syntax index of a PR nothing trusts', async ({
   page,

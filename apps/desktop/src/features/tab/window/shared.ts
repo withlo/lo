@@ -17,6 +17,7 @@ import {
   type Run,
   type Tab,
 } from '../contract.ts';
+import { blocked } from './banners.ts';
 import { makeTabState, type TabState, useKept } from './kept.ts';
 import { main } from './main.ts';
 import {
@@ -82,22 +83,33 @@ export const header = defineSlot<{ tab: PullTab }>('tab.header');
 export const headerStatus = defineSlot<{ tab: PullTab }>('tab.headerStatus');
 
 /**
- * What a view in {@link banners} says of itself, so a tab makes room only for the banners it has:
- * whether it draws one for a tab now, and when that may change.
+ * What a view's banner says for a tab while it draws one: how urgent it is (`tone`, as the banner
+ * draws it), and its title, as the banner shows it.
+ */
+export interface BannerSaid {
+  readonly tone: 'info' | 'warn' | 'danger';
+  readonly title: string;
+}
+
+/**
+ * What a view in {@link banners} says of itself, so a tab makes room only for the banners it has,
+ * puts them in order and tells a screen reader of one that arrives behind the one shown: what it
+ * draws for a tab now, and when that may change.
  */
 export interface BannerSwitch {
-  /** Whether the view draws a banner for `tab` now. */
-  readonly shows: (tab: PullTab) => boolean;
+  /** What the view's banner for `tab` says now, or nothing while it draws none. */
+  readonly said: (tab: PullTab) => BannerSaid | undefined;
   /**
-   * Calls `listener` when `shows` may say otherwise for `tab`, which is on screen until it stops.
+   * Calls `listener` when `said` may say otherwise for `tab`, which is on screen until it stops.
    * Returns a function that stops it.
    */
   readonly subscribe: (tab: PullTab, listener: () => void) => () => void;
 }
 
 /**
- * Banners of other features' about a pull request's tab, under Lo's own: a view draws one banner
- * while it `shows` one, and nothing otherwise. Two show at most, the most urgent first.
+ * Banners of other features' about a pull request's tab, beside Lo's own: a view draws one banner
+ * while it says one, and nothing otherwise. The tab shows one at a time, the most urgent first,
+ * then in the slot's order, Lo's own first.
  */
 export const banners = defineSlot<{ tab: PullTab }, BannerSwitch>('tab.banners');
 
@@ -229,6 +241,15 @@ export { withoutBidi } from '../../../ipc/cause.ts';
 /** What main last said of a view of a pull request's tab, re-rendering when it changes. */
 export function usePull(tab: string): PullView | undefined {
   return useStore(pullsStore, (state) => state.views.get(tab));
+}
+
+/**
+ * Whether tab `tab` can't show its pull request now, so why takes its view's place, and what's
+ * around the view, such as the files beside it, has nothing to show or act on. Re-renders when that
+ * changes.
+ */
+export function useBlocked(tab: string): boolean {
+  return useStore(pullsStore, (state) => blocked(state.views.get(tab)));
 }
 
 /** A pull request's tab's local copy, re-rendering when it changes. */

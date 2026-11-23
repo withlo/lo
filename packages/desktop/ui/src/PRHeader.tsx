@@ -1,24 +1,50 @@
 import { cva } from 'class-variance-authority';
-import type { ReactNode } from 'react';
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 
 import { Branch } from './Branch.tsx';
+import { besideIn, handOffFocus } from './focus.ts';
+import { Popover } from './Popover.tsx';
 import { Skeleton } from './Spinner.tsx';
 import { StatePill, type PullRequestState } from './StatePill.tsx';
 
 /**
- * How what's shown stands with GitHub, when it isn't as usual: "Offline · saved 14:02", "Rate
- * limited · until 10:42", or "Signed out", in danger.
+ * How what's shown stands with GitHub, when it isn't as usual, in a word or two: "Offline", "Rate
+ * limit reached", or "Signed out", in danger. A click on it opens its details under it.
  */
 export interface HeaderConnection {
+  /**
+   * What's wrong, which picks its icon: GitHub can't be reached (`offline`), the account is signed
+   * out, the rate limit is reached, or a read failed.
+   */
+  kind: 'offline' | 'signedOut' | 'rateLimited' | 'failed';
   tone: 'warn' | 'danger';
+  /** One or two words: "Offline", "GitHub error". */
   label: string;
-  detail?: string | undefined;
+  /**
+   * What a click on the chip opens: the line that says why, when the tab last heard from GitHub,
+   * and the one thing to do about it.
+   */
+  details?: ReactNode;
+  /** Where the details are put in the page: an element inside `.lo-app`. */
+  container?: HTMLElement | null | undefined;
 }
 
 export interface PRHeaderProps {
   number: number;
   /** Its title and state, once known. Until then the header holds their places. */
   title?: string | undefined;
+  /**
+   * The pull request can't be shown, so what isn't known won't come: the header holds no places,
+   * and names it by `repo` and its number, as text, where it has no title.
+   */
+  missing?: { repo: string } | undefined;
   state?: PullRequestState | undefined;
   /** The author's login: null for an account GitHub deleted, and nothing while it isn't known. */
   author?: string | null | undefined;
@@ -41,7 +67,13 @@ export interface PRHeaderProps {
 
 const chip = cva(
   'inline-flex h-row-h flex-none items-center gap-6 rounded-pill ps-8 pe-12 font-medium whitespace-nowrap text-small',
-  { variants: { tone: { warn: 'chip-warn', danger: 'chip-danger' } } },
+  {
+    variants: {
+      tone: { warn: 'chip-warn', danger: 'chip-danger' },
+      button: { true: 'move-tint hover:text-fg focus-visible:shadow-ring', false: '' },
+    },
+    defaultVariants: { button: false },
+  },
 );
 
 /**
@@ -52,6 +84,7 @@ const chip = cva(
 export function PRHeader({
   number,
   title,
+  missing,
   state,
   author,
   head,
@@ -64,27 +97,21 @@ export function PRHeader({
   return (
     <header className="pr-header h-header-h min-w-0 flex-none bg-bg-chrome ps-16 pe-12 pb-6">
       <div className="flex min-w-0 items-center gap-12">
-        {state === undefined ? (
-          <Skeleton className="w-48 flex-none" />
-        ) : (
+        {state !== undefined ? (
           <StatePill state={state} />
-        )}
-        {title === undefined ? (
-          <Skeleton className="w-tab-w max-w-full min-w-0" />
         ) : (
-          <h1 className="lo-selectable min-w-0 truncate text-fg text-title">{title}</h1>
+          missing === undefined && <Skeleton className="w-48 flex-none" />
+        )}
+        {title !== undefined || missing !== undefined ? (
+          <h1 className="lo-selectable min-w-0 truncate text-fg text-title">
+            {title ?? missing?.repo}
+          </h1>
+        ) : (
+          <Skeleton className="w-tab-w max-w-full min-w-0" />
         )}
         <span className="lo-num flex-none pr-number text-fg-muted">#{number}</span>
         <span className="min-w-8 flex-1" />
-        {connection !== undefined && (
-          <span className={chip({ tone: connection.tone })}>
-            <ConnectionIcon tone={connection.tone} />
-            {connection.label}
-            {connection.detail !== undefined && (
-              <span className="font-normal text-fg-muted">· {connection.detail}</span>
-            )}
-          </span>
-        )}
+        {connection !== undefined && <ConnectionChip connection={connection} />}
         {status}
         {acting !== undefined && (
           <span
@@ -106,7 +133,7 @@ export function PRHeader({
       <div className="flex min-w-0 items-center gap-12">
         <span className="flex min-w-0 items-center gap-6 whitespace-nowrap text-fg-muted text-small">
           {head === undefined || base === undefined ? (
-            <Skeleton className="w-tab-w" />
+            missing === undefined && <Skeleton className="w-tab-w" />
           ) : (
             <>
               {author === undefined ? (
@@ -130,17 +157,127 @@ export function PRHeader({
   );
 }
 
-function ConnectionIcon({ tone }: { tone: HeaderConnection['tone'] }) {
+/** The chip for how the tab stands with GitHub: a button that opens its details, if it has any. */
+function ConnectionChip({ connection }: { connection: HeaderConnection }) {
+  const [open, setOpen] = useState(false);
+  // The chip as it's drawn now, for focus to come back to as its details end.
+  const self = useRef<HTMLElement | null>(null);
+  const face = (
+    <>
+      <ConnectionIcon kind={connection.kind} />
+      {connection.label}
+    </>
+  );
+  if (connection.details === undefined) {
+    return (
+      <span ref={self} className={chip({ tone: connection.tone })}>
+        {face}
+      </span>
+    );
+  }
   return (
-    <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-      {tone === 'danger' ? (
+    <ChipDetails
+      open={open}
+      onOpenChange={setOpen}
+      chip={self}
+      trigger={
+        <button
+          type="button"
+          ref={(element) => {
+            self.current = element;
+          }}
+          className={chip({ tone: connection.tone, button: true })}
+        >
+          {face}
+        </button>
+      }
+      connection={connection}
+    />
+  );
+}
+
+/**
+ * The chip's details. Ended while they hold focus, as by a Try again that brings the tab back
+ * online, which takes the chip too, focus goes to the chip as it's drawn now, else to the header's
+ * next control, else its previous one, not to the page.
+ */
+function ChipDetails({
+  open,
+  onOpenChange,
+  chip: self,
+  trigger,
+  connection,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  chip: RefObject<HTMLElement | null>;
+  trigger: ReactElement<Record<string, unknown>>;
+  connection: HeaderConnection;
+}) {
+  const popup = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(
+    () => () => {
+      const leaving = [self.current, popup.current];
+      const stops = besideIn(self.current?.parentElement, leaving);
+      handOffFocus(leaving, () => [self.current, ...stops]);
+    },
+    [self],
+  );
+  return (
+    <Popover
+      open={open}
+      onOpenChange={onOpenChange}
+      trigger={trigger}
+      align="end"
+      label={connection.label}
+      scope="dialog"
+      popupRef={popup}
+      container={connection.container}
+      className="flex status-details flex-col gap-8 p-12"
+    >
+      {connection.details}
+    </Popover>
+  );
+}
+
+/** The chip's icon for what's wrong: a struck cloud offline, a clock for the rate limit. */
+function ConnectionIcon({ kind }: { kind: HeaderConnection['kind'] }) {
+  return (
+    <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true" data-icon={kind}>
+      <ConnectionPaths kind={kind} />
+    </svg>
+  );
+}
+
+function ConnectionPaths({ kind }: { kind: HeaderConnection['kind'] }) {
+  switch (kind) {
+    case 'offline':
+      return (
+        <path d="M5.2 5.3a3.75 3.75 0 0 0-.7 7.2h6.7M9.6 4.1a3.75 3.75 0 0 1 3.9 6.6M2 2l12 12" />
+      );
+    case 'signedOut':
+      return (
         <>
           <circle cx="8" cy="8" r="6.25" />
           <path d="M8 4.75v3.5M8 10.75v.01" />
         </>
-      ) : (
-        <path d="M5.2 5.3a3.75 3.75 0 0 0-.7 7.2h6.7M9.6 4.1a3.75 3.75 0 0 1 3.9 6.6M2 2l12 12" />
-      )}
-    </svg>
-  );
+      );
+    case 'rateLimited':
+      return (
+        <>
+          <circle cx="8" cy="8" r="6.25" />
+          <path d="M8 4.75V8l2.25 1.5" />
+        </>
+      );
+    case 'failed':
+      return (
+        <>
+          <path d="M8 2.25 14.25 13.25H1.75Z" />
+          <path d="M8 6.5v3M8 11.25v.01" />
+        </>
+      );
+    default:
+      kind satisfies never;
+      return null;
+  }
 }

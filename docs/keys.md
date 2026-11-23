@@ -82,25 +82,24 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## Code
 
-| Action                                    | Keys                                           | Where                                                            | Command               |
-| ----------------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------- | --------------------- |
-| Definition                                | `g d`                                          | In `diff` and `file`; in code views, only in normal mode         | `code.definition`     |
-| References                                | `g r`                                          | In `diff`, `file` and `peek`; in code views, only in normal mode | `code.references`     |
-| Type                                      | `K`                                            | In `diff` and `file`; in code views, only in normal mode         | `code.type`           |
-| Type hints                                | `g h`                                          | In `diff` and `file`; in code views, only in normal mode         | `code.hints`          |
-| Outline                                   | `g O`                                          | In `diff` and `file`; in code views, only in normal mode         | `code.outline`        |
-| Next answer in the peek                   | `j`, `↓`                                       | In `peek`; in code views, only in normal mode                    | `code.nextAnswer`     |
-| Previous answer in the peek               | `k`, `↑`                                       | In `peek`; in code views, only in normal mode                    | `code.previousAnswer` |
-| Go to the answer                          | `⏎`                                            | In `peek`; in code views, only in normal mode                    | `code.goAnswer`       |
-| Close the peek                            | `Esc`                                          | In `peek`; in code views, only in normal mode                    | `code.closePeek`      |
-| Trust this repo…                          | None: in the app menu on macOS and the palette | Anywhere                                                         | `code.trust`          |
-| Trust this PR…                            | None: in the app menu on macOS and the palette | Anywhere                                                         | `code.trustPull`      |
-| Stop trusting this repo                   | None: in the app menu on macOS and the palette | Anywhere                                                         | `code.untrust`        |
-| Dismiss the banner about language servers | None: in the app menu on macOS and the palette | Anywhere                                                         | `code.dismiss`        |
-| Restart language servers                  | None: in the app menu on macOS and the palette | Anywhere                                                         | `code.restart`        |
-| Show the language server’s log            | None: in the app menu on macOS and the palette | Anywhere                                                         | `code.log`            |
-| Back                                      | `⌃o`                                           | Anywhere but `box`                                               | `keys.back`           |
-| Forward                                   | `⌃i`                                           | Anywhere but `box`                                               | `keys.forward`        |
+| Action                         | Keys                                           | Where                                                            | Command               |
+| ------------------------------ | ---------------------------------------------- | ---------------------------------------------------------------- | --------------------- |
+| Definition                     | `g d`                                          | In `diff` and `file`; in code views, only in normal mode         | `code.definition`     |
+| References                     | `g r`                                          | In `diff`, `file` and `peek`; in code views, only in normal mode | `code.references`     |
+| Type                           | `K`                                            | In `diff` and `file`; in code views, only in normal mode         | `code.type`           |
+| Type hints                     | `g h`                                          | In `diff` and `file`; in code views, only in normal mode         | `code.hints`          |
+| Outline                        | `g O`                                          | In `diff` and `file`; in code views, only in normal mode         | `code.outline`        |
+| Next answer in the peek        | `j`, `↓`                                       | In `peek`; in code views, only in normal mode                    | `code.nextAnswer`     |
+| Previous answer in the peek    | `k`, `↑`                                       | In `peek`; in code views, only in normal mode                    | `code.previousAnswer` |
+| Go to the answer               | `⏎`                                            | In `peek`; in code views, only in normal mode                    | `code.goAnswer`       |
+| Close the peek                 | `Esc`                                          | In `peek`; in code views, only in normal mode                    | `code.closePeek`      |
+| Trust this repo…               | None: in the app menu on macOS and the palette | Anywhere                                                         | `code.trust`          |
+| Trust this PR…                 | None: in the app menu on macOS and the palette | Anywhere                                                         | `code.trustPull`      |
+| Stop trusting this repo        | None: in the app menu on macOS and the palette | Anywhere                                                         | `code.untrust`        |
+| Restart language servers       | None: in the app menu on macOS and the palette | Anywhere                                                         | `code.restart`        |
+| Show the language server’s log | None: in the app menu on macOS and the palette | Anywhere                                                         | `code.log`            |
+| Back                           | `⌃o`                                           | Anywhere but `box`                                               | `keys.back`           |
+| Forward                        | `⌃i`                                           | Anywhere but `box`                                               | `keys.forward`        |
 
 ## Copy and open
 
@@ -341,6 +340,7 @@ mode. In the box's preview, or on its frame, `Esc` closes it at once, from any m
 | Move tab left             | `⌃⇧PgUp`                                                 | Anywhere but `dialog` and `palette`                                                    | `tab.moveLeft`          |
 | Move tab right            | `⌃⇧PgDn`                                                 | Anywhere but `dialog` and `palette`                                                    | `tab.moveRight`         |
 | More tabs                 | `⌘⇧A`                                                    | Anywhere but `dialog`, `palette` and `box`                                             | `tab.more`              |
+| Choose account…           | None: in the app menu on macOS and the palette           | Anywhere but `dialog` and `palette`                                                    | `tab.chooseAccount`     |
 | Close tab                 | `⌘W`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.close`             |
 | Check for updates         | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.check`         |
 | Update Lo                 | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.install`       |
