@@ -193,35 +193,14 @@ export type AttachmentRefusal =
    */
   | { reason: 'unreadable'; what: 'metadata' | 'location'; part: string };
 
-/** What the comment box says when Lo won't attach a file. */
-export function describeRefusal(refusal: AttachmentRefusal): string {
-  switch (refusal.reason) {
-    case 'unsupported':
-      return 'GitHub takes PNG, JPEG, GIF, WebP and SVG images and MP4, MOV and WebM videos';
-    case 'empty':
-      return "it's empty";
-    case 'tooLarge':
-      return `it's larger than GitHub's ${formatSize(refusal.limit)}`;
-    case 'mislabelled':
-      return `its name says ${ATTACHMENT_KINDS[refusal.kind].label}, but it isn't`;
-    case 'unreadable':
-      return refusal.what === 'location'
-        ? 'Its location data can’t be removed.'
-        : 'Its metadata can’t be read.';
-    default:
-      throw new Error(
-        `a refusal of an attachment Lo doesn't know: ${JSON.stringify(refusal satisfies never)}`,
-      );
-  }
-}
-
 /** A file Lo won't attach. {@link RefusedAttachment.refusal} says why. */
 export class RefusedAttachment extends Error {
   override name = 'RefusedAttachment';
   readonly refusal: AttachmentRefusal;
 
   constructor(refusal: AttachmentRefusal, options?: ErrorOptions) {
-    super(describeRefusal(refusal), options);
+    // Its words are the comment box's, which it writes from the refusal: this names it for a log.
+    super(`refused as ${refusal.reason}`, options);
     this.refusal = refusal;
   }
 }
@@ -265,16 +244,6 @@ export function prepareAttachment(name: string, bytes: Uint8Array): PreparedAtta
 /** Whether GitHub takes `file` only on a paid plan: a video over {@link FREE_VIDEO_LIMIT}. */
 export function needsPaidPlan(file: PreparedAttachment): boolean {
   return ATTACHMENT_KINDS[file.kind].video && file.bytes.length > FREE_VIDEO_LIMIT;
-}
-
-/** `bytes` as people read sizes: "245 KB", "2.1 MB", in units of 1,024. */
-export function formatSize(bytes: number): string {
-  const KIB = 1024;
-  if (bytes < KIB) return `${bytes} bytes`;
-  if (bytes < KIB * KIB) return `${(bytes / KIB).toFixed(0)} KB`;
-  const megabytes = bytes / (KIB * KIB);
-  const whole = megabytes - Math.trunc(megabytes) < 0.05 || megabytes >= 10;
-  return `${megabytes.toFixed(whole ? 0 : 1)} MB`;
 }
 
 /**

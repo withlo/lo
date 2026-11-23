@@ -293,7 +293,7 @@ function Status({ dialog }: { dialog: SignInDialog }) {
         {statusOf(dialog, left !== undefined && left <= 0)}
       </div>
       {left !== undefined && left > 0 && (
-        <span className="lo-num flex-none">Code expires in {duration(left, 'up')}</span>
+        <span className="lo-num flex-none">Code expires in {duration(left, 'down')}</span>
       )}
     </div>
   );

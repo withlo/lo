@@ -31,7 +31,7 @@ import { holdTree, orderIn, useOrderMode } from '../../tree/window/shared.ts';
 import { layout as layoutSetting, whitespace as whitespaceSetting } from '../settings.ts';
 import { draw, type DrawOptions, type Drawing, type Place } from './drawing.ts';
 import { inOrder, keepsBox, keptOrder, type KeptOrder, viewKey } from './files.ts';
-import type { Snapshot } from './loader.ts';
+import { problemSays, type Snapshot } from './loader.ts';
 import { usePage } from './page.ts';
 import { placesFor } from './places.ts';
 import { notes } from './shared.ts';
@@ -467,7 +467,7 @@ function waitingSays(
     const to = ends && revisionLabel(revisions, ends.to);
     return from && to ? `No files changed in ${from} → ${to}` : 'No files changed';
   }
-  if (state?.problem && state.files === null) return state.problem;
+  if (state?.problem && state.files === null) return problemSays(state.problem);
   return undefined;
 }
 

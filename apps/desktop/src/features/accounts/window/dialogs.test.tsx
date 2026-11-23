@@ -142,8 +142,8 @@ describe('the sign-in dialog', () => {
     expect(shown?.textContent).toContain('Enter this code at github.com/login/device');
     // How long the code has left is beside the line, not in what a screen reader has read out.
     expect(status()).toBe('Waiting for approval…');
-    // 14 min 59 s, counted down as a wait is: rounded up.
-    expect(shown?.textContent).toContain('Code expires in 15 min');
+    // 14 min 59 s, rounded down, as a deadline is: it never says more time than is left.
+    expect(shown?.textContent).toContain('Code expires in 14 min');
     // The main button copies the code and opens GitHub's page, through main.
     expect(document.activeElement?.textContent).toContain('Copy and open GitHub');
     click(button(shown, 'Copy and open GitHub'));

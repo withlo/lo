@@ -1097,9 +1097,10 @@ export class ServerPool {
       if (!victim) return;
       total -= victim.server?.memory ?? 0;
       left = left.filter((entry) => entry !== victim);
+      // For the log, the cap itself: the window words it from the state's `cap`.
       void this.#end(
         victim,
-        `Lo’s language servers held more than ${gigabytes(this.#limits.memory)}`,
+        `Lo’s language servers held more than ${this.#limits.memory.toLocaleString('en-US')} bytes`,
       );
     }
   }
@@ -1215,8 +1216,4 @@ function describe(error: unknown): string {
 /** `text`, cut to what the contract carries. */
 function clip(text: string): string {
   return text.length > 400 ? `${text.slice(0, 399)}…` : text;
-}
-
-function gigabytes(bytes: number): string {
-  return `${Math.round(bytes / 1024 ** 3)} GB`;
 }

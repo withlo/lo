@@ -23,6 +23,7 @@ import {
   keepUploadsOf,
   metadataNote,
   placeholderFor,
+  refusalSays,
   takeAddresses,
   takeProgress,
   clearStranded,
@@ -59,13 +60,12 @@ vi.mock('./main.ts', () => ({
     prepare(input: PrepareInput): Promise<Prepared> {
       asked.prepare.push(input);
       if (input.bytes === null || !/\.(png|gif)$/.test(input.name)) {
-        return Promise.resolve({ kind: 'refused', why: 'GitHub doesn’t take this kind' });
+        return Promise.resolve({ kind: 'refused', refusal: { reason: 'unsupported' } });
       }
       return Promise.resolve({
         kind: 'prepared',
         name: input.name,
         bytes: new Uint8Array(input.bytes),
-        size: '8 bytes',
         // Lo reads a PNG's metadata, and not a GIF's.
         metadata: input.name.endsWith('.png')
           ? { kind: 'image', removed: { location: true, other: false, embedded: false } }
@@ -214,6 +214,16 @@ describe('the text', () => {
       'demo.mov · location removed',
     );
   });
+
+  test('why a file isn’t attached reads as a sentence, with its limit as sizes are written', () => {
+    expect(refusalSays({ reason: 'tooLarge', limit: 100 * 1024 * 1024 })).toBe(
+      'It’s larger than GitHub’s 100 MB.',
+    );
+    expect(refusalSays({ reason: 'mislabelled', kind: 'jpeg' })).toBe(
+      'Its name says JPEG, but it isn’t.',
+    );
+    expect(refusalSays({ reason: 'empty' })).toBe('It’s empty.');
+  });
 });
 
 describe('attaching', () => {
@@ -249,7 +259,10 @@ describe('attaching', () => {
     // Nothing of it was read.
     expect(asked.prepare).toEqual([{ name: 'notes.txt', bytes: null }]);
     expect(attachingOf(box).state.notes.map(({ title, text }) => [title, text])).toEqual([
-      ['Couldn’t attach notes.txt', 'GitHub doesn’t take this kind.'],
+      [
+        'Couldn’t attach notes.txt',
+        'GitHub takes PNG, JPEG, GIF, WebP and SVG images and MP4, MOV and WebM videos.',
+      ],
     ]);
     expect(asked.upload).toEqual([]);
   });

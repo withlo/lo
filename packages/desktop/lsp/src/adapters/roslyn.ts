@@ -277,8 +277,8 @@ export async function inCheckout(root: string, paths: readonly string[]): Promis
 export function csharpProject(sources: readonly string[]): string {
   const items = sources.map((path) => `    <Compile Include="${xml(msbuild(path))}" />`);
   return `<Project>
-  <!-- Lo’s project for its C# language server: the checkout’s .cs files, read against .NET’s own
-       reference assemblies, with nothing else of the checkout’s. -->
+  <!-- Lo's project for its C# language server: the checkout's .cs files, read against .NET's own
+       reference assemblies, with nothing else of the checkout's. -->
   <PropertyGroup>
     <ImportDirectoryBuildProps>false</ImportDirectoryBuildProps>
     <ImportDirectoryBuildTargets>false</ImportDirectoryBuildTargets>
@@ -310,7 +310,7 @@ export function csharpProject(sources: readonly string[]): string {
 ${items.join('\n')}
   </ItemGroup>
   <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
-  <!-- The SDK’s own analyzers and source generators, which the compiler would load, removed once
+  <!-- The SDK's own analyzers and source generators, which the compiler would load, removed once
        the SDK has added them. -->
   <Target Name="LoWithoutAnalyzers" BeforeTargets="CoreCompile">
     <ItemGroup>

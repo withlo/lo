@@ -1732,10 +1732,10 @@ Linux, without the packages its toolchain needs, it says which, and the command 
   Homebrew's is, can't bring that folder's `go` ahead of the toolchain's.
 - An adapter names what its server downloads up front, the server and the toolchains it uses, so the
   status bar adds them up from the first byte ("Java downloading · 38.1 MB of 177.4 MB"), counting
-  only what isn't installed yet, in the units Settings counts in (`formatBytes`). It gets only the
-  toolchains it names. A toolchain that can't download says which and why ("The Temurin JDK couldn't
-  download. …"). Toolchains are installed in `<cache>/toolchains/`, which the cache's cap doesn't
-  count, and as Lo starts, versions `toolchains.json` no longer pins are removed.
+  only what isn't installed yet, in the units Settings counts in (`bytes` in `@lo/ui`). It gets only
+  the toolchains it names. A toolchain that can't download says which and why ("The Temurin JDK
+  couldn't download. …"). Toolchains are installed in `<cache>/toolchains/`, which the cache's cap
+  doesn't count, and as Lo starts, versions `toolchains.json` no longer pins are removed.
 - Settings' Toolchains section lists each toolchain pinned for the system, how much room it takes by
   its marker or that it isn't downloaded and how large it is, and the servers that use it. "Remove"
   refuses installs of it from the start, with the message its servers then show ("Go was removed.

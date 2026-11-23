@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { DiffState, FileText, FileVersions, Source, Start } from '../contract.ts';
 import { type FileJob, type FileResult, JOB_LINES, patchReach } from '../jobs.ts';
 import { IpcError } from '../../../ipc/contract.ts';
-import { Loader, type LoaderWork, type Shown, type Sink } from './loader.ts';
+import { Loader, problemSays, type LoaderWork, type Shown, type Sink } from './loader.ts';
 
 const HEAD = 'a'.repeat(40);
 const NEXT = 'b'.repeat(40);
@@ -700,5 +700,18 @@ describe('a tab’s diff in the window', () => {
     loader.take(state(files));
     await settle(loader);
     expect(heard).toEqual([]);
+  });
+});
+
+describe('what couldn’t be read, in words', () => {
+  it('says a size over the local copy’s limit as the guide writes sizes', () => {
+    const limit = 64 * 1024 * 1024;
+    expect(problemSays({ kind: 'tooLarge', limit, fellBack: false })).toBe(
+      'The changes are over the 64 MB limit.',
+    );
+    expect(problemSays({ kind: 'tooLarge', limit, fellBack: true })).toBe(
+      'Changes over 64 MB · showing GitHub’s diff',
+    );
+    expect(problemSays({ kind: 'compare' })).toBe('Couldn’t compare the revisions');
   });
 });

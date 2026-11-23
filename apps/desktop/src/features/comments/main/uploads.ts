@@ -11,11 +11,11 @@
 // it, and kept once GitHub has answered. Nothing here calls Electron.
 
 import {
+  type AttachmentRefusal,
   type AttachmentTarget,
   attachmentKind,
   attachmentMarkdown,
   bytesAgree,
-  describeRefusal,
   explainUploadError,
   GithubError,
   type Poller,
@@ -73,8 +73,8 @@ export function checkedFile(
 }
 
 /** A file refused for `refusal`, as the box says it. */
-function refused(refusal: Parameters<typeof describeRefusal>[0]): { refusal: UploadRefusal } {
-  return { refusal: { kind: 'file', why: describeRefusal(refusal) } };
+function refused(refusal: AttachmentRefusal): { refusal: UploadRefusal } {
+  return { refusal: { kind: 'file', refusal } };
 }
 
 /** Whether GitHub answered Not Found, as it does an upload it won't take from a token. */

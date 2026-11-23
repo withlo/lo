@@ -9,6 +9,7 @@
 // and avatars, on the image scheme (`ipc/images.ts`), which the feature serves in main, so nothing
 // of that goes through a request.
 
+import type { AttachmentRefusal } from '@lo/github';
 import { z } from 'zod';
 
 import { cause } from '../../ipc/cause.ts';
@@ -391,14 +392,14 @@ export const fileName = z
   .regex(/^[^/\\\p{Cc}]+$/u);
 
 /**
- * Why main didn't upload a file, before anything was sent, as the box says it: `file`, a file
- * GitHub doesn't take, with why in a few words; `cantWrite`, as the account can't write to the
+ * Why main didn't upload a file, before anything was sent, for the box to word: `file`, a file
+ * GitHub doesn't take, and why; `cantWrite`, as the account can't write to the
  * repository `repo`, which GitHub's uploads need; `needsGh`, as GitHub took no upload with Lo's
  * sign-in and gh has none for the account; `paused`, as GitHub asked Lo to hold off writing until
  * `until`; `signIn`, for a view that acts as nobody; `run`, for a run of a stack's layers.
  */
 export type UploadRefusal =
-  | { kind: 'file'; why: string }
+  | { kind: 'file'; refusal: AttachmentRefusal }
   | { kind: 'cantWrite'; repo: string }
   | { kind: 'needsGh' }
   | { kind: 'paused'; until: number }

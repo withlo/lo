@@ -34,7 +34,7 @@ describe('ago', () => {
 });
 
 describe('duration', () => {
-  it('says time gone in its largest whole unit, rounded down', () => {
+  it('says time gone, or what’s left before a deadline, in its largest whole unit, rounded down', () => {
     expect(duration(0)).toBe('0 s');
     expect(duration(400)).toBe('0 s');
     expect(duration(59 * SECOND)).toBe('59 s');
@@ -52,7 +52,11 @@ describe('duration', () => {
     expect(duration(59.5 * SECOND, 'up')).toBe('1 min');
     expect(duration(61 * SECOND, 'up')).toBe('2 min');
     expect(duration(HOUR, 'up')).toBe('1 h');
+    // In every unit: past an hour and past a day too.
+    expect(duration(HOUR + 59 * MINUTE, 'up')).toBe('2 h');
+    expect(duration(DAY - MINUTE, 'up')).toBe('1 d');
     expect(duration(2 * DAY, 'up')).toBe('2 d');
+    expect(duration(2 * DAY + HOUR, 'up')).toBe('3 d');
   });
 });
 

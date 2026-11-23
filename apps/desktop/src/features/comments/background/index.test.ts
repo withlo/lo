@@ -118,7 +118,6 @@ describe('prepareFile', () => {
     expect(prepared).toMatchObject({
       kind: 'prepared',
       name: 'shot.png',
-      size: `${PNG.length} bytes`,
       metadata: { kind: 'image' },
       paidPlan: false,
     });
@@ -130,16 +129,16 @@ describe('prepareFile', () => {
   it('says why it won’t attach a file, reading none of one too large to be anything', () => {
     expect(prepareFile({ name: 'notes.txt', bytes: new TextEncoder().encode('hi') })).toEqual({
       kind: 'refused',
-      why: 'GitHub takes PNG, JPEG, GIF, WebP and SVG images and MP4, MOV and WebM videos',
+      refusal: { reason: 'unsupported' },
     });
     expect(prepareFile({ name: 'notes.txt', bytes: null })).toMatchObject({ kind: 'refused' });
     expect(prepareFile({ name: 'demo.mov', bytes: null })).toEqual({
       kind: 'refused',
-      why: "it's larger than GitHub's 100 MB",
+      refusal: { reason: 'tooLarge', limit: 100 * 1024 * 1024 },
     });
     expect(prepareFile({ name: 'shot.jpg', bytes: PNG })).toEqual({
       kind: 'refused',
-      why: "its name says JPEG, but it isn't",
+      refusal: { reason: 'mislabelled', kind: 'jpeg' },
     });
   });
 });

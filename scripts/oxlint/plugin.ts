@@ -312,8 +312,26 @@ export const APOSTROPHE_MESSAGE =
 /** A straight apostrophe between two letters, as in "can't" or "GitHub's". */
 const STRAIGHT = /\p{L}'\p{L}/u;
 
+/** A plural's straight apostrophe, after an "s" that ends a word, as in "Settings' list". */
+const PLURAL = /\p{L}s'(?=[\s.,;:!?)]|$)/u;
+
+/** A straight quote that opens a quotation, before a letter and after none: "'main'". */
+const OPENS = /(?<![\p{L}\p{N}])'(?=\p{L})/u;
+
 /** Code a string holds between backticks, as in "Run `git config user.name 'Ravi'`". */
 const IN_BACKTICKS = /`[^`]*`/g;
+
+/** A comment in markup, `<!-- … -->`, which is a file's own text, as a project file Lo writes. */
+const IN_MARKUP_COMMENTS = /<!--[\s\S]*?-->/g;
+
+/**
+ * Whether `text` has a straight apostrophe: in a word, or after a plural. A plural's is looked for
+ * only in text that quotes nothing with straight quotes, where its closing quote would look the
+ * same, so "Settings' list" is refused, and "the 'rules' list" isn't.
+ */
+function hasStraight(text: string): boolean {
+  return STRAIGHT.test(text) || (PLURAL.test(text) && !OPENS.test(text));
+}
 
 /** The elements whose text is code: what's typed, or what a program wrote. */
 const CODE_ELEMENTS = new Set(['code', 'kbd', 'pre', 'samp']);
@@ -362,12 +380,15 @@ const COMPARES = new Set(['===', '!==', '==', '!=']);
 
 /**
  * `lo/no-straight-apostrophe` refuses a straight apostrophe between two letters in a string the
- * reader may see, as {@link readerStrings} finds them: "can't" is written "can’t"
- * (`design/writing.md`). Code keeps its straight ones, so it leaves alone what's between backticks
- * in a string, the text of a `<code>`, `<kbd>`, `<pre>` or `<samp>`, a module's name, an object's
- * key, and text from elsewhere that Lo looks for or compares with, as git or a server writes it: an
- * argument of `includes`, `has`, `startsWith`, `test` and the like, either side of `===`, and a
- * `case`. What's put in a template literal counts as a word, so `${name}'s` is refused too.
+ * reader may see, as {@link readerStrings} finds them, or after a plural: "can't" is written
+ * "can’t", and "Settings' list" "Settings’ list" (`design/writing.md`). A plural's is let through in
+ * text that quotes with straight quotes, where it can't be told from a closing quote. Code keeps its
+ * straight ones, so it leaves alone what's between backticks in a string, the text of a `<code>`,
+ * `<kbd>`, `<pre>` or `<samp>`, a module's name, an object's key, a comment in markup, which is a
+ * file's own text, and text from elsewhere that Lo looks for or compares with, as git or a server
+ * writes it: an argument of `includes`, `has`, `startsWith`, `test` and the like, either side of
+ * `===`, and a `case`. What's put in a template literal counts as a word, so `${name}'s` is refused
+ * too.
  */
 export const noStraightApostrophe = {
   meta: {
@@ -383,7 +404,8 @@ export const noStraightApostrophe = {
     const strings = readerStrings(context, ({ node, parts }) => {
       const [start, end] = spanOf(node);
       if (code.some(([from, to]) => start >= from && end <= to)) return;
-      if (!STRAIGHT.test(parts.join('x').replaceAll(IN_BACKTICKS, ''))) return;
+      const text = parts.join('x').replaceAll(IN_BACKTICKS, '').replaceAll(IN_MARKUP_COMMENTS, '');
+      if (!hasStraight(text)) return;
       context.report({ node, message: APOSTROPHE_MESSAGE });
     });
     return {

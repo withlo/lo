@@ -783,7 +783,7 @@ export async function keepUnder(host: CleanupHost, cap: number): Promise<string[
     }
   }
   if (trimmed > 0) host.note(`removed ${trimmed} checkouts past the cache’s cap`);
-  if (emptied > 0) host.note(`removed ${emptied} language servers' homes past the cache’s cap`);
+  if (emptied > 0) host.note(`removed ${emptied} language servers’ homes past the cache’s cap`);
   if (removed.length > 0) {
     host.note(`removed the least recently used clones past the cache’s cap: ${removed.join(', ')}`);
   }

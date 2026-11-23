@@ -267,9 +267,9 @@ export function writeFailed(
   }
 }
 
-/** A time of day, as the system writes one. */
+/** A time of day, as the system writes one: "14:05", "2:05 PM", never "02:05 PM". */
 function timeOfDay(at: number): string {
-  return new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
 /**

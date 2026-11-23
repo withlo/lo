@@ -154,8 +154,9 @@ export function plainDataProblem(value: unknown): string | undefined {
       item.buffer instanceof ArrayBuffer
     ) {
       bytes += item.buffer.byteLength;
+      // The count itself, for an error's Details: nothing here writes sizes as the window does.
       return bytes > BYTES_LIMIT
-        ? `it holds more than ${BYTES_LIMIT / 1024 ** 2} MB of bytes`
+        ? `it holds more than ${BYTES_LIMIT.toLocaleString('en-US')} bytes`
         : undefined;
     }
     if (Array.isArray(item)) {

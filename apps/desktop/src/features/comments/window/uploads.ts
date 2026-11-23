@@ -15,7 +15,7 @@
 // `https` address pasted or dropped goes in as an image; files dropped before it said go in, and
 // out again before they're sent. Nothing is uploaded again by itself.
 
-import type { Metadata } from '@lo/github';
+import { ATTACHMENT_KINDS, type AttachmentRefusal, type Metadata } from '@lo/github';
 import { bytes, clock } from '@lo/ui';
 import type { Composer } from '@lo/ui/code';
 
@@ -487,6 +487,26 @@ export function metadataNote(name: string, metadata: Metadata): string | undefin
   }
 }
 
+/** Why Lo won't attach a file, as the box says it: "It’s larger than GitHub’s 10 MB." */
+export function refusalSays(refusal: AttachmentRefusal): string {
+  switch (refusal.reason) {
+    case 'unsupported':
+      return 'GitHub takes PNG, JPEG, GIF, WebP and SVG images and MP4, MOV and WebM videos.';
+    case 'empty':
+      return 'It’s empty.';
+    case 'tooLarge':
+      return `It’s larger than GitHub’s ${bytes(refusal.limit)}.`;
+    case 'mislabelled':
+      return `Its name says ${ATTACHMENT_KINDS[refusal.kind].label}, but it isn’t.`;
+    case 'unreadable':
+      return refusal.what === 'location'
+        ? 'Its location data can’t be removed.'
+        : 'Its metadata can’t be read.';
+    default:
+      throw new Error(`A refusal Lo doesn’t know: ${JSON.stringify(refusal satisfies never)}`);
+  }
+}
+
 /** A reason that came as part of a sentence, as a line of its own: "It’s empty." */
 function asReason(why: string): string {
   const line = why.charAt(0).toUpperCase() + why.slice(1);
@@ -504,7 +524,7 @@ export function refusedNote(
 ): { title?: string; text: string } {
   switch (refusal.kind) {
     case 'file':
-      return { title: couldntAttach(name), text: asReason(refusal.why) };
+      return { title: couldntAttach(name), text: refusalSays(refusal.refusal) };
     case 'cantWrite':
     case 'needsGh':
       return { text: offNote(refusal, login).text };
@@ -607,12 +627,12 @@ async function refuseUnread(attaching: Attaching, file: File): Promise<void> {
     const answer = await commentsJobs().prepare({ name: file.name, bytes: null });
     why =
       answer.kind === 'refused'
-        ? answer.why
+        ? refusalSays(answer.refusal)
         : 'GitHub takes PNG, JPEG, GIF, WebP, SVG, MP4, MOV and WebM.';
   } catch (error) {
-    why = describe(error);
+    why = asReason(describe(error));
   }
-  attaching.say(`upload-refused-${uploadKey()}`, asReason(why), 'danger', couldntAttach(file.name));
+  attaching.say(`upload-refused-${uploadKey()}`, why, 'danger', couldntAttach(file.name));
 }
 
 /** Prepares `file` in the background process, then uploads it through main. */
@@ -647,7 +667,7 @@ async function attachOne(attaching: Attaching, file: File, attachment: Attachmen
     return;
   }
   if (prepared.kind === 'refused') {
-    failed(asReason(prepared.why), couldntAttach(name));
+    failed(refusalSays(prepared.refusal), couldntAttach(name));
     return;
   }
   const said = metadataNote(name, prepared.metadata);

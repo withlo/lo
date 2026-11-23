@@ -20,24 +20,27 @@ const DAY = 24 * HOUR;
 const AGO_DAYS = 30;
 
 /**
- * `milliseconds` in its largest whole unit only, never two: 2 h 14 min is 2 h. Time gone rounds
- * down to it, so 59 s stays 59 s and 0 is 0 s. A wait rounds up, as a countdown counts: never under
- * a second, and up to the next minute past one, so 61 s is 2 min.
+ * How a length of time rounds to its unit. `down` for time gone, so 59 s stays 59 s, and for what's
+ * left before a deadline, which is never more than it says: a code with 14 min 59 s left expires in
+ * 14 min. `up` for a wait, as a countdown counts: never under a second, and 1 h 59 min is 2 h.
  */
-export function spanOf(milliseconds: number, round: 'down' | 'up' = 'down'): Span {
+export type Round = 'down' | 'up';
+
+/** `milliseconds` in its largest whole unit only, never two: 2 h 14 min is 2 h, rounded `round`. */
+export function spanOf(milliseconds: number, round: Round = 'down'): Span {
   const at = Number.isFinite(milliseconds) ? Math.max(0, milliseconds) : 0;
-  const up = round === 'up';
-  const seconds = up ? Math.max(1, Math.ceil(at / SECOND)) : Math.floor(at / SECOND);
+  const whole = round === 'up' ? Math.ceil : Math.floor;
+  const seconds = round === 'up' ? Math.max(1, whole(at / SECOND)) : whole(at / SECOND);
   if (seconds < 60) return { count: seconds, unit: 's' };
-  const minutes = up ? Math.ceil(seconds / 60) : Math.floor(seconds / 60);
+  const minutes = whole(seconds / 60);
   if (minutes < 60) return { count: minutes, unit: 'min' };
-  const hours = Math.floor(minutes / 60);
+  const hours = whole(minutes / 60);
   if (hours < 24) return { count: hours, unit: 'h' };
-  return { count: Math.floor(hours / 24), unit: 'd' };
+  return { count: whole(hours / 24), unit: 'd' };
 }
 
 /** A length of time, as {@link spanOf} rounds it: "20 s", "5 min", "2 h", "3 d". */
-export function duration(milliseconds: number, round: 'down' | 'up' = 'down'): string {
+export function duration(milliseconds: number, round: Round = 'down'): string {
   const { count, unit } = spanOf(milliseconds, round);
   return `${count} ${unit}`;
 }
@@ -50,9 +53,9 @@ export function about(milliseconds: number): string {
 
 /**
  * How long before `now` `at` was, in its largest whole unit: "just now" under a minute, "5 min ago",
- * "2 h ago", "3 d ago". More than 30 days back it's the date, "Nov 12", with the year when it isn't
- * this one: "Nov 12, 2025". A time after `now`, from a clock that runs ahead, is "just now", and a
- * time that isn't one says nothing.
+ * "2 h ago", "3 d ago". More than 30 days back it's the date as the system writes one, "Nov 12",
+ * with the year when it isn't this one: "Nov 12, 2025". A time after `now`, from a clock that runs
+ * ahead, is "just now", and a time that isn't one says nothing.
  */
 export function ago(at: number, now: number): string {
   if (!Number.isFinite(at)) return '';
@@ -61,7 +64,7 @@ export function ago(at: number, now: number): string {
   if (gone <= AGO_DAYS * DAY) return `${duration(gone)} ago`;
   const date = new Date(at);
   const year = date.getFullYear() === new Date(now).getFullYear() ? undefined : 'numeric';
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year });
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year });
 }
 
 let timeFormat: Intl.DateTimeFormat | undefined;

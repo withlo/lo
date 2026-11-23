@@ -357,12 +357,16 @@ test('a straight apostrophe the reader may see is refused, in any form', () => {
     const why = \`\${login}'s token isn’t valid\`;
     const label = <p>It's over the limit</p>;
     throw new IpcError('missing', "There's no tab with that id.");
+    const plural = "The pull requests' checks";
+    const last = <p>Open Settings' list</p>;
   `;
   expect(straight(source)).toEqual([
     '"Couldn\'t send the comment"',
     "`${login}'s token isn’t valid`",
     "It's over the limit",
     '"There\'s no tab with that id."',
+    '"The pull requests\' checks"',
+    "Open Settings' list",
   ]);
 });
 
@@ -386,6 +390,8 @@ test('code keeps its straight apostrophes, and so does text from elsewhere', () 
     }
     const plain = line.replace("it's", 'it’s');
     console.error("Lo couldn't copy the path:", error);
+    const quotes = "Pushes to 'releases' are refused";
+    const project = \`<!-- Lo's project, with nothing else of the checkout's. -->\`;
   `;
   expect(straight(source)).toEqual([]);
   // What a replace puts in its place is its own.

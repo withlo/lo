@@ -88,7 +88,7 @@ export default defineCommands('keys', {
    */
   openKeymap: {
     label: 'Open keymap file',
-    control: "Open keymap file at the foot of Settings' list",
+    control: 'Open keymap file at the foot of Settings’ list',
     group: 'App',
     keys: ['g ,'],
     when: { except: ['menu', 'dialog', 'palette', 'box'], mode: 'normal' },

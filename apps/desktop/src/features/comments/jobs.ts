@@ -3,7 +3,7 @@
 // openings as one line of plain text; and a file attached to a comment, checked and with its
 // metadata taken out, as it's uploaded. Nothing here calls Node or Electron.
 
-import type { Metadata } from '@lo/github';
+import type { AttachmentRefusal, Metadata } from '@lo/github';
 import { DEFAULT_LIMITS, type Tree } from '@lo/markdown';
 import { z } from 'zod';
 
@@ -86,20 +86,18 @@ export const prepareInput = z.strictObject({
 export type PrepareInput = z.output<typeof prepareInput>;
 
 /**
- * A file ready to upload: its name, the bytes to send, how large they are as people read sizes,
- * what Lo took out of it, and whether GitHub takes it only on a paid plan; or why Lo won't attach
- * it, in a few words.
+ * A file ready to upload: its name, the bytes to send, what Lo took out of it, and whether GitHub
+ * takes it only on a paid plan; or why Lo won't attach it, which the comment box words.
  */
 export type Prepared =
   | {
       kind: 'prepared';
       name: string;
       bytes: Uint8Array<ArrayBuffer>;
-      size: string;
       metadata: Metadata;
       paidPlan: boolean;
     }
-  | { kind: 'refused'; why: string };
+  | { kind: 'refused'; refusal: AttachmentRefusal };
 
 export const contract = defineJobs('comments', {
   /** A post's text as Lo's tree: from its HTML when given, else from its Markdown. */

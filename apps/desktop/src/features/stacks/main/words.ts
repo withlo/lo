@@ -124,9 +124,9 @@ function detailsOf(error: unknown): string {
   return error instanceof Error ? sentence(error.message) : sentence(String(error));
 }
 
-/** A time of day, as this computer writes it: "14:05". */
+/** A time of day as the system writes it, as the window's `clock` does: "14:05", "2:05 PM". */
 function timeOf(at: number): string {
-  return new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
 /** Why `error` stopped what was asked of GitHub as `login`, as every error says it. */
