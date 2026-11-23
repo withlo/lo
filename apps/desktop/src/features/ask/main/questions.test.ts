@@ -8,7 +8,7 @@ import { Questions, type QuestionWindow } from './questions.ts';
 
 const REPLACE = {
   title: 'Replace Lo in Applications?',
-  detail: 'The copy in Applications moves to the Trash. This one takes its place and restarts.',
+  detail: 'The copy in Applications moves to the Trash. This copy takes its place and restarts.',
   action: 'Replace Lo',
 };
 

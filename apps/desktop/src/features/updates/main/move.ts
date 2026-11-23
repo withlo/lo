@@ -19,7 +19,7 @@ export type Move = (conflict: (kind: Conflict) => boolean) => boolean;
 /** The question Lo asks before it replaces a Lo already in Applications. "Cancel" is the default. */
 export const REPLACE: Asked = {
   title: 'Replace Lo in Applications?',
-  detail: 'The copy in Applications moves to the Trash. This one takes its place and restarts.',
+  detail: 'The copy in Applications moves to the Trash. This copy takes its place and restarts.',
   action: 'Replace Lo',
 };
 

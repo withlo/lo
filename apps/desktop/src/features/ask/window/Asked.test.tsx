@@ -16,7 +16,7 @@ import feature from './index.ts';
 const REPLACE: Question = {
   id: '0b5f7f2e-7d1c-4c57-9a43-1f1f3b6c5a10',
   title: 'Replace Lo in Applications?',
-  detail: 'The copy in Applications moves to the Trash. This one takes its place and restarts.',
+  detail: 'The copy in Applications moves to the Trash. This copy takes its place and restarts.',
   action: 'Replace Lo',
 };
 
