@@ -14,6 +14,7 @@ import {
   type HeaderConnection,
 } from '@lo/ui';
 import { focusedMode, onFocusedMode } from '@lo/ui/code';
+import { NO_TARGET } from '@lo/ui/commands';
 import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 
 import { registry } from '../../../window/commands/registry.ts';
@@ -116,6 +117,11 @@ function run(id: string, action: BannerDo): void {
         return main().reload({ id });
       case 'choose':
         return main().choose({ id, login: action.login });
+      case 'signIn':
+        registry().run('accounts.addAccount', NO_TARGET);
+        return Promise.resolve();
+      case 'close':
+        return main().close({ id });
       case 'link':
         return main().openExternal({ url: action.url });
       case 'clearCache':
@@ -151,7 +157,7 @@ function useBanners(
   const now = useNow(counting);
   const held = useTabs().tabs.find((each) => viewIds([each]).includes(tab.id));
   const own = held?.kind === 'pull' && held.number !== tab.number ? held.number : undefined;
-  return bannersFor(view, local, `${tab.owner}/${tab.repo}`, systemClock(now), own);
+  return bannersFor(view, local, tab, systemClock(now), own);
 }
 
 /** The banners: Lo's own, then other features', two at most, the most urgent first. */

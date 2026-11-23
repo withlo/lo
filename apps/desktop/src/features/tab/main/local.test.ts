@@ -124,8 +124,15 @@ describe('failureOf', () => {
       failure: 'other',
       retry: true,
     });
+    // A copy that can't be trusted, held open, says by what, with why it can't be trusted.
+    expect(
+      failureOf(new GitError({ kind: 'busy', message: 'it was changed', held: 'servers' })),
+    ).toMatchObject({ failure: 'heldByServers', said: 'it was changed', retry: true });
+    // Git's own words are what Details holds.
+    expect(failureOf(fetchFailing('network')).said).toBe('fatal: …');
     expect(failureOf(new Error('something else'))).toEqual({
       failure: 'other',
+      said: 'something else',
       message: 'something else',
       retry: true,
     });
@@ -395,8 +402,7 @@ describe('a local copy', { timeout: 60_000 }, () => {
   it("waits for git, and says when there's none to fetch with", () => {
     const status: GitStatus = {
       status: 'missing',
-      message: "Lo can't find git.",
-      install: 'Get it.',
+      install: { commands: ['xcode-select --install'] },
     };
     const noGit: LocalGit = {
       status,
@@ -411,8 +417,7 @@ describe('a local copy', { timeout: 60_000 }, () => {
     local.show(APP_PULL.head);
     expect(local.state).toEqual({
       kind: 'noGit',
-      message: "Lo can't find git.",
-      install: 'Get it.',
+      git: { status: 'missing', install: { commands: ['xcode-select --install'], page: null } },
     });
     expect(last()).toEqual(local.state);
     local.close();
@@ -432,7 +437,7 @@ describe('a local copy', { timeout: 60_000 }, () => {
     expect(last()).toEqual({
       kind: 'failed',
       failure: 'refNotFound',
-      message: expect.stringContaining("can't fetch pull request #80"),
+      details: expect.stringContaining('refs/pull/80/head'),
     });
     const said = states.length;
     local.retry();

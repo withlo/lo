@@ -103,7 +103,7 @@ export async function codeReply(
 ): Promise<CodeReply> {
   const access = codeAccess(local);
   if (access === 'noGit') return { kind: 'noGit' };
-  if (local.kind === 'failed') return { kind: 'failed', why: local.message };
+  if (local.kind === 'failed') return { kind: 'failed', why: local.details ?? '' };
   const opening = access === 'waiting' ? undefined : clone();
   if (!opening) return { kind: 'waiting' };
   try {

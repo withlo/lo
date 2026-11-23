@@ -159,7 +159,7 @@ export class SinceReads {
       case 'failed':
         return {
           kind: 'failed',
-          why: `The pull request’s local copy couldn’t be fetched: ${local.message}`,
+          why: `The pull request’s local copy couldn’t be fetched: ${local.details ?? ''}`,
         };
       case 'waiting':
       case 'fetching':

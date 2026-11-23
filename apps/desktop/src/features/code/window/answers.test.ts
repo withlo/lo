@@ -66,10 +66,10 @@ describe('what the status bar says', () => {
     expect(notYet({ kind: 'fetching', progress: null, attempt: 1 })).toBe(
       'The syntax index waits for the local copy.',
     );
-    expect(notYet({ kind: 'noGit', message: 'No git.', install: '' })).toBe(
-      'Code features need git.',
-    );
-    expect(notYet({ kind: 'failed', failure: 'diskFull', message: 'the disk is full' })).toBe(
+    expect(
+      notYet({ kind: 'noGit', git: { status: 'missing', install: { commands: [], page: null } } }),
+    ).toBe('Code features need git.');
+    expect(notYet({ kind: 'failed', failure: 'diskFull', details: 'the disk is full' })).toBe(
       'Code features need the local copy, which Lo couldn’t fetch: the disk is full.',
     );
     expect(

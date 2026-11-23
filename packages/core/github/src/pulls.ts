@@ -315,14 +315,9 @@ export async function fetchPullAs(
  * Reads the pull request to open it with `client`, a client without an account. It works for
  * public repositories only and counts against GitHub's 60 requests an hour per IP address, so the
  * app keeps one such client, which keeps what GitHub last said about that limit for every tab.
- * `canSignIn` says whether Lo can sign in to GitHub, which it can't when it couldn't read its
- * accounts.
+ * An unsuccessful answer throws GitHub's own error.
  */
-export async function fetchPublicPull(
-  client: GithubClient,
-  pull: PullRef,
-  { canSignIn }: { canSignIn: boolean },
-): Promise<PullToOpen> {
+export async function fetchPublicPull(client: GithubClient, pull: PullRef): Promise<PullToOpen> {
   let response: RestResponse;
   try {
     // A renamed repository answers with a redirect to its new name, which the client follows.
@@ -330,7 +325,7 @@ export async function fetchPublicPull(
   } catch (error) {
     throw withContext(`asking GitHub for ${pull.toString()}`, error);
   }
-  checkStatus(response, pull, canSignIn);
+  checkStatus(response);
   try {
     return response.json(readPullToOpen);
   } catch (error) {
@@ -367,56 +362,15 @@ export async function githubAnswers(
   }
 }
 
-/** Turns an unsuccessful answer into an error that says what to do about it, caused by GitHub's error. */
-function checkStatus(response: RestResponse, pull: PullRef, canSignIn: boolean): void {
+/**
+ * Throws GitHub's error for an unsuccessful answer, as it came: a pull request that's missing or
+ * private is `notFound`, and the limit for requests made without signing in is `rateLimited`, with
+ * the time it resets. The window says what to do about each.
+ */
+function checkStatus(response: RestResponse): void {
   const { status, headers } = response;
   if (status >= 200 && status < 300) return;
-  const cause = GithubError.fromResponse(status, headers, response.text());
-  const rateLimited = headers.get('x-ratelimit-remaining') === '0';
-  if (rateLimited && (status === 403 || status === 429)) {
-    const used = "GitHub's limit of 60 requests an hour without signing in is used up";
-    throw new Error(
-      canSignIn
-        ? `${used}; sign in from Accounts… in the Lo menu, or try again later`
-        : `${used}; try again later`,
-      { cause },
-    );
-  }
-  if (status === 404) {
-    const missing = `GitHub has no public pull request ${pull.toString()}`;
-    throw new Error(
-      canSignIn
-        ? `${missing}, and no account Lo is signed in to can see it. Sign in from Accounts… in the Lo menu`
-        : `${missing}, and Lo couldn't read its accounts to sign in`,
-      { cause },
-    );
-  }
-  const message = 'message' in cause.detail ? cause.detail.message : '';
-  throw new Error(`GitHub answered ${statusLine(status)} for ${pull.toString()}: ${message}`, {
-    cause,
-  });
-}
-
-/** The reason phrases of the error statuses GitHub answers with. */
-const REASONS: Readonly<Record<number, string>> = {
-  400: 'Bad Request',
-  401: 'Unauthorized',
-  403: 'Forbidden',
-  404: 'Not Found',
-  409: 'Conflict',
-  410: 'Gone',
-  422: 'Unprocessable Entity',
-  429: 'Too Many Requests',
-  500: 'Internal Server Error',
-  502: 'Bad Gateway',
-  503: 'Service Unavailable',
-  504: 'Gateway Timeout',
-};
-
-/** A status with its reason phrase, such as `500 Internal Server Error`. */
-function statusLine(status: number): string {
-  const reason = REASONS[status];
-  return reason === undefined ? String(status) : `${status} ${reason}`;
+  throw GithubError.fromResponse(status, headers, response.text());
 }
 
 /** `error` after what was being done when it happened: `<context>: <what went wrong>`. */

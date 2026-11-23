@@ -2,7 +2,8 @@
 // happened, then what to do, with what each banner offers to do. The tab shows two at most; the
 // rest are in the status bar. Nothing here draws anything.
 
-import type { LocalState, PullView } from '../contract.ts';
+import { explain, gitWords } from '../../../window/explain.ts';
+import type { FetchFailure, LocalState, PullView } from '../contract.ts';
 
 /** What a banner's button does. */
 export type BannerDo =
@@ -11,6 +12,10 @@ export type BannerDo =
   /** Clears Lo's cache of local copies, then tries again. */
   | { kind: 'clearCache' }
   | { kind: 'choose'; login: string }
+  /** Signs in with GitHub, for a pull request no account signed in can see. */
+  | { kind: 'signIn' }
+  /** Closes the tab. */
+  | { kind: 'close' }
   /** Opens a page on github.com: GitHub's own link to fix a problem. */
   | { kind: 'link'; url: string }
   /** Shows another layer of the tab's stack: the pull request the tab opened on. */
@@ -22,7 +27,16 @@ export interface BannerSpec {
   readonly tone: 'info' | 'warn' | 'danger';
   readonly title: string;
   readonly detail?: string | undefined;
+  /** What GitHub or Git said, as it came, for Details: never in the title or the line. */
+  readonly details?: string | undefined;
   readonly actions: readonly { readonly label: string; readonly do: BannerDo }[];
+}
+
+/** The pull request a tab shows: by its repository and number. */
+export interface Shown {
+  readonly owner: string;
+  readonly repo: string;
+  readonly number: number;
 }
 
 /** The most banners a tab shows at once. */
@@ -94,32 +108,50 @@ export function short(oid: string): string {
 export function bannersFor(
   view: PullView | undefined,
   local: LocalState | undefined,
-  repository: string,
+  shown: Shown,
   clock: Clock,
   own?: number,
 ): BannerSpec[] {
   const banners: BannerSpec[] = [];
+  const repository = `${shown.owner}/${shown.repo}`;
   const retry = { label: 'Try again', do: { kind: 'retry' } } as const;
+  const tryNow = { label: 'Try now', do: { kind: 'retry' } } as const;
+  const cantOpen = `Can’t open #${shown.number}`;
   const problem = view?.problem;
   if (problem) {
     switch (problem.kind) {
-      case 'notFound':
+      case 'notFound': {
+        // Missing, or hidden from whoever asked: signing in may show it, and GitHub's page says
+        // which; or the tab can go.
+        const signIn =
+          problem.cause.kind === 'private' && !problem.cause.signedIn
+            ? [{ label: 'Sign in with GitHub…', do: { kind: 'signIn' } } as const]
+            : [];
+        const page = `https://github.com/${repository}/pull/${shown.number}`;
         banners.push({
           id: 'notFound',
           tone: 'danger',
-          title: "Lo can't open this pull request.",
-          detail: problem.message,
+          title: cantOpen,
+          detail: explain(problem.cause),
+          details: problem.details,
           actions:
             own === undefined
-              ? [retry]
-              : [{ label: `Show #${own}`, do: { kind: 'layer', number: own } }, retry],
+              ? [
+                  ...signIn,
+                  { label: 'Open on GitHub', do: { kind: 'link', url: page } },
+                  { label: 'Close tab', do: { kind: 'close' } },
+                ]
+              : [{ label: `Show #${own}`, do: { kind: 'layer', number: own } }],
         });
         break;
+      }
       case 'blocked':
         banners.push({
           id: 'blocked',
           tone: 'danger',
-          title: problem.message,
+          title: cantOpen,
+          detail: explain(problem.cause),
+          details: problem.details,
           actions: [
             ...problem.links.map((link) => ({
               label: link.label,
@@ -142,18 +174,21 @@ export function bannersFor(
           })),
         });
         break;
-      case 'failed':
+      case 'failed': {
+        const counting = problem.retryAt !== null;
         banners.push({
           id: 'failed',
           tone: 'danger',
-          title: "Lo couldn't read this pull request.",
-          detail:
-            problem.retryAt === null
-              ? problem.message
-              : `${problem.message} Lo tries again in ${span(problem.retryAt - clock.now)}.`,
-          actions: [retry],
+          title: cantOpen,
+          detail: line(
+            explain(problem.cause),
+            problem.retryAt === null ? undefined : retrying(problem.retryAt, clock),
+          ),
+          details: problem.details,
+          actions: [counting ? tryNow : retry],
         });
         break;
+      }
       default:
         problem satisfies never;
     }
@@ -208,16 +243,20 @@ export function bannersFor(
       connection satisfies never;
   }
   const offline = connection?.kind === 'offline';
+  const login = view?.acting?.kind === 'account' ? view.acting.login : undefined;
   switch (local?.kind) {
-    case 'noGit':
+    case 'noGit': {
+      const words = gitWords(local.git);
       banners.push({
         id: 'noGit',
         tone: 'warn',
-        title: "Lo can't fetch a local copy without git.",
-        detail: `${local.message} ${local.install}`,
+        title: words.title,
+        detail: words.reason,
+        details: [...words.commands, words.page, words.details].filter(Boolean).join('\n'),
         actions: [{ label: 'Check again', do: { kind: 'retry' } }],
       });
       break;
+    }
     case 'fetching':
       banners.push({
         id: 'local',
@@ -227,36 +266,42 @@ export function bannersFor(
         actions: [],
       });
       break;
-    case 'retrying':
+    case 'retrying': {
       // Offline says it already, and the fetch tries again with it.
       if (offline && local.failure === 'network') break;
+      const held = heldBy(local.failure, repository);
       banners.push({
         id: 'local',
         tone: 'warn',
-        title: "The local copy's fetch stopped.",
-        detail: `${capitalized(local.message)}. Lo tries again in ${span(local.retryAt - clock.now)}, attempt ${local.attempt + 1}.`,
-        actions: [{ label: 'Retry now', do: { kind: 'retry' } }],
+        title: held === undefined ? CANT_FETCH : CANT_USE,
+        detail: line(
+          held ?? fetchReason(local.failure, repository, login),
+          retrying(local.retryAt, clock),
+        ),
+        details: local.details,
+        actions: [tryNow],
       });
       break;
-    case 'failed':
-      banners.push(
-        local.failure === 'diskFull'
-          ? {
-              id: 'local',
-              tone: 'danger',
-              title: "The disk is full, so Lo can't save the local copy.",
-              detail: 'Free some space, or clear the cache of local copies, then try again.',
-              actions: [{ label: 'Clear the cache', do: { kind: 'clearCache' } }, retry],
-            }
-          : {
-              id: 'local',
-              tone: 'danger',
-              title: "Lo couldn't fetch the local copy.",
-              detail: `${capitalized(local.message)}.`,
-              actions: [retry],
-            },
-      );
+    }
+    case 'failed': {
+      const held = heldBy(local.failure, repository);
+      banners.push({
+        id: 'local',
+        tone: 'danger',
+        title: held === undefined ? CANT_FETCH : CANT_USE,
+        detail: held ?? fetchReason(local.failure, repository, login),
+        details: local.details,
+        actions:
+          local.failure === 'diskFull'
+            ? [{ label: 'Clear cache', do: { kind: 'clearCache' } }]
+            : local.failure === 'auth'
+              ? [{ label: 'Sign in with GitHub…', do: { kind: 'signIn' } }]
+              : held === undefined
+                ? [retry]
+                : [],
+      });
       break;
+    }
     case 'waiting':
     case 'ready':
     case undefined:
@@ -274,6 +319,76 @@ export function bannersFor(
     });
   }
   return banners;
+}
+
+/** The title of a local copy that can't be fetched, for as long as it can't. */
+const CANT_FETCH = 'Can’t fetch the local copy';
+
+/** The title of a local copy that can't be trusted and can't be made again yet. */
+const CANT_USE = 'Can’t use the local copy';
+
+/** A reason and what follows it, on one line: nothing when there's neither. */
+function line(...parts: readonly (string | undefined)[]): string | undefined {
+  const said = parts.filter((part) => part !== undefined && part !== '');
+  return said.length === 0 ? undefined : said.join(' ');
+}
+
+/** "Retrying in 20 s.": the wait before Lo tries again by itself. */
+function retrying(at: number, clock: Clock): string {
+  return `Retrying in ${span(at - clock.now)}.`;
+}
+
+/**
+ * Why a local copy that can't be trusted can't be made again yet: a tab of the repository has it
+ * open, or a language server runs on it. Nothing for any other failure.
+ */
+function heldBy(failure: FetchFailure, repository: string): string | undefined {
+  if (failure === 'heldByTabs') return `It’s made again once every tab of ${repository} closes.`;
+  if (failure === 'heldByServers') return 'It’s made again once its language servers stop.';
+  return undefined;
+}
+
+/**
+ * Why fetching the local copy failed, as the guide's causes word it, for `repository`, asked as
+ * `login` if as anyone: nothing where the cause isn't known, or where only the wait is worth
+ * saying, as for a sign-in that's being renewed.
+ */
+function fetchReason(
+  failure: FetchFailure,
+  repository: string,
+  login: string | undefined,
+): string | undefined {
+  switch (failure) {
+    case 'network':
+      return explain({ kind: 'offline' });
+    case 'certificate':
+      return explain({ kind: 'certificate' });
+    case 'rateLimited':
+      return explain({ kind: 'rateLimit', resets: null });
+    case 'timedOut':
+      return explain({ kind: 'timeout' });
+    case 'diskFull':
+      return explain({ kind: 'diskFull' });
+    case 'auth':
+      return `${repository} doesn’t exist, or it’s private.`;
+    case 'repoNotFound':
+      return login === undefined
+        ? `${repository} doesn’t exist, or it’s private.`
+        : `${repository} doesn’t exist, or ${login} can’t see it.`;
+    case 'refNotFound':
+    case 'unavailable':
+      return 'This revision’s commit is no longer on GitHub.';
+    case 'tooLarge':
+      return 'The download is too large.';
+    case 'heldByTabs':
+    case 'heldByServers':
+    case 'tokenRefused':
+    case 'other':
+      return undefined;
+    default:
+      failure satisfies never;
+      return undefined;
+  }
 }
 
 function capitalized(text: string): string {

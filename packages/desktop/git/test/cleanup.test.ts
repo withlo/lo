@@ -1313,7 +1313,7 @@ test('a tree pinned while a whole repack runs stays, though the repack found not
     before: `case " $* " in *" repack "*) export GIT_EXEC_PATH='${children}';; esac`,
   });
   const found = await gitAt(program, { env: process.env, platform: process.platform });
-  if (found.status !== 'found') throw new Error(found.message);
+  if (found.status !== 'found') throw new Error(`found ${found.status}`);
   // Pull request #1 changes line 3 of a.txt, trunk then line 18 and adds enough files that
   // downloading them one by one piles up packs, and r2 is r1 rebased with line 10 changed too.
   const made = repoServer();
@@ -1436,7 +1436,7 @@ async function slowGit(pattern: string, options: { stubborn?: boolean } = {}) {
     ].join('\n'),
   });
   const found = await gitAt(program, { env: process.env, platform: process.platform });
-  if (found.status !== 'found') throw new Error(found.message);
+  if (found.status !== 'found') throw new Error(`found ${found.status}`);
   return { git: found.git, started, go, marker };
 }
 
@@ -1620,7 +1620,7 @@ test('a clone opened over and over still gets repacked, and its opens wait secon
     before: `case " $* " in ${REPACKS}) sleep 1;; esac`,
   });
   const found = await gitAt(program, { env: process.env, platform: process.platform });
-  if (found.status !== 'found') throw new Error(found.message);
+  if (found.status !== 'found') throw new Error(`found ${found.status}`);
   const maintenance = { idleFor: 200, grace: 3000, attempts: 3 };
   const logged: string[] = [];
   const { cache, gitDir } = await manyPacks({
@@ -1657,7 +1657,7 @@ test('a clone is looked at again once its lock is idle, a few times each launch 
     before: `case " $* " in ${REPACKS}) exit 1;; esac`,
   });
   const found = await gitAt(program, { env: process.env, platform: process.platform });
-  if (found.status !== 'found') throw new Error(found.message);
+  if (found.status !== 'found') throw new Error(`found ${found.status}`);
   const logged: string[] = [];
   const { cache } = await manyPacks({
     git: found.git,

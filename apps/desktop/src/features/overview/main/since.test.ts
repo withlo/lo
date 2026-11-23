@@ -282,7 +282,7 @@ describe('SinceReads', () => {
     const waiting: LocalState[] = [
       { kind: 'waiting' },
       { kind: 'fetching', progress: null, attempt: 1 },
-      { kind: 'retrying', failure: 'network', message: 'Offline.', attempt: 2, retryAt: 0 },
+      { kind: 'retrying', failure: 'network', details: 'Offline.', attempt: 2, retryAt: 0 },
     ];
     for (const local of waiting) {
       expect(await since.count(local, opened, first, second)).toEqual({ kind: 'waiting' });
@@ -290,13 +290,16 @@ describe('SinceReads', () => {
         kind: 'waiting',
       });
     }
-    const noGit: LocalState = { kind: 'noGit', message: 'No git.', install: 'Install it.' };
+    const noGit: LocalState = {
+      kind: 'noGit',
+      git: { status: 'missing', install: { commands: [], page: null } },
+    };
     expect(await since.count(noGit, opened, first, second)).toEqual({ kind: 'noGit' });
     expect(await since.file(noGit, opened, first, second, 'README.md')).toEqual({
       kind: 'unread',
       why: 'Lo needs git to read the code.',
     });
-    const failed: LocalState = { kind: 'failed', failure: 'auth', message: 'Signed out.' };
+    const failed: LocalState = { kind: 'failed', failure: 'auth', details: 'Signed out.' };
     expect(await since.count(failed, opened, first, second)).toEqual({
       kind: 'failed',
       why: 'The pull request’s local copy couldn’t be fetched: Signed out.',

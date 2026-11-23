@@ -4,11 +4,14 @@
 // the browser; anything else opens nothing. Nothing here calls Electron.
 
 import {
+  causeOf,
   decideAccount,
   GithubError,
   pullMerged,
   PullRef,
   readPullSummary,
+  refusalCause,
+  saidBy,
   sameLogin,
   type AccountRefusal,
   type Acting,
@@ -18,13 +21,13 @@ import {
 } from '@lo/github';
 import { parsePullLink, type PullLink } from '@lo/review';
 
+import { detailsOf, githubCause } from '../../../ipc/cause.ts';
 import type { GithubAccess } from '../../accounts/service.ts';
 import type { PullState } from '../../tab/contract.ts';
 import type { TabService } from '../../tab/service.ts';
 import {
   TEXT_LIMIT,
   type Blocked,
-  type Cause,
   type GithubPage,
   type NotPull,
   type Opened,
@@ -299,7 +302,10 @@ async function lookAtPull(named: PullLink, github: LinkGithub): Promise<Preview>
   try {
     choice = await choose(pull, github);
   } catch (error) {
-    return blocked({ kind: 'unchecked', cause: causeOf(error, owner) }, describe(error));
+    return blocked(
+      { kind: 'unchecked', cause: githubCause(causeOf(error, { owner })) },
+      detailsOf(saidBy(error)),
+    );
   }
   switch (choice.kind) {
     case 'open': {
@@ -337,64 +343,20 @@ async function lookAtPull(named: PullLink, github: LinkGithub): Promise<Preview>
       };
     }
     case 'refuse': {
-      const { refusal, found } = choice;
-      const chosen = found.choice.kind === 'unavailable' ? found.choice.login : undefined;
-      const problems = found.problems.filter(
-        ({ login }) => chosen === undefined || sameLogin(login, chosen),
-      );
-      // The cause that stops it: an organization's, where one stops it, since its link fixes it.
-      const first =
-        problems.find(({ error }) => error.helpLink() !== undefined) ??
-        problems.find(({ error }) => !error.isUnauthorized()) ??
-        problems[0];
-      const cause =
-        first === undefined
-          ? ({ kind: 'unknown' } as const)
-          : causeOf(first.error, owner, first.login);
+      const { cause, details } = refusalCause(choice.refusal, owner);
       return blocked(
-        { kind: 'refused', cause, links: refusal.links, openAnyway: refusal.waitable },
-        refusal.message,
+        {
+          kind: 'refused',
+          cause: githubCause(cause),
+          links: choice.refusal.links,
+          openAnyway: choice.refusal.waitable,
+        },
+        detailsOf(details),
       );
     }
     default:
       choice satisfies never;
       return blocked({ kind: 'unknown' });
-  }
-}
-
-/**
- * Why GitHub didn't answer, or refused, as the window words it: from the error, for a repository of
- * `owner`, asked as `login` when an account was.
- */
-export function causeOf(error: unknown, owner: string, login?: string): Cause {
-  if (!(error instanceof GithubError)) return { kind: 'unknown' };
-  const { detail } = error;
-  switch (detail.kind) {
-    case 'network':
-      return { kind: 'offline' };
-    case 'rateLimited':
-      return { kind: 'rateLimit', resets: detail.reset === undefined ? null : detail.reset * 1000 };
-    case 'unauthorized': {
-      const who = detail.missing ?? login;
-      return who === undefined ? { kind: 'unknown' } : { kind: 'signedOut', login: who };
-    }
-    case 'ssoRequired':
-      return { kind: 'sso', org: owner };
-    case 'oauthAppRestricted':
-      return { kind: 'unapproved', org: detail.org ?? owner };
-    case 'api':
-    case 'graphql':
-    case 'inconsistent':
-    case 'decode':
-      return { kind: 'github' };
-    case 'tokenUnavailable':
-      return login === undefined ? { kind: 'unknown' } : { kind: 'unreadable', login };
-    case 'notFound':
-    case 'refusedUrl':
-      return { kind: 'unknown' };
-    default:
-      detail satisfies never;
-      return { kind: 'unknown' };
   }
 }
 

@@ -240,8 +240,8 @@ describe('BlockTexts', () => {
     const states: LocalState[] = [
       { kind: 'waiting' },
       { kind: 'fetching', progress: null, attempt: 1 },
-      { kind: 'noGit', message: 'No git.', install: 'Install it.' },
-      { kind: 'failed', failure: 'network', message: 'It broke.' },
+      { kind: 'noGit', git: { status: 'missing', install: { commands: [], page: null } } },
+      { kind: 'failed', failure: 'network', details: 'It broke.' },
     ];
     const answers = await Promise.all(
       states.map((local) => texts.read(local, opened, second, 'README.md', true)),

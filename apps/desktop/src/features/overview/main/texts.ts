@@ -121,7 +121,7 @@ export class BlockTexts {
       case 'noGit':
         return unread('Lo needs git to read the code.');
       case 'failed':
-        return unread(`The pull request’s local copy couldn’t be fetched: ${local.message}`);
+        return unread(`The pull request’s local copy couldn’t be fetched: ${local.details ?? ''}`);
       case 'waiting':
       case 'fetching':
       case 'retrying':

@@ -1105,7 +1105,9 @@ describe('the code', () => {
     tab.update(info({ local: { ...ready, kind: 'ready', offline: false } }), false, true);
     expect(sent.at(-1)?.code).toBe('ready');
     tab.update(
-      info({ local: { kind: 'noGit', message: 'No git.', install: 'Install git.' } }),
+      info({
+        local: { kind: 'noGit', git: { status: 'missing', install: { commands: [], page: null } } },
+      }),
       false,
       true,
     );

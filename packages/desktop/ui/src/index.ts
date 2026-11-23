@@ -118,7 +118,7 @@ export {
   type TooltipProps,
 } from './Tooltip.tsx';
 export { Collapse, Swap, type CollapseProps, type SwapProps } from './Collapse.tsx';
-export { Problem, type ProblemAction, type ProblemProps } from './Problem.tsx';
+export { Problem, type ProblemAction, type ProblemProps, useDetails } from './Problem.tsx';
 export { EmptyState, type EmptyAction, type EmptyStateProps } from './EmptyState.tsx';
 export {
   CopyButton,

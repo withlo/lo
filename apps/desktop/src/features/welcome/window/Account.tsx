@@ -5,16 +5,19 @@ import {
   Button,
   Callout,
   Collapse,
+  CopyButton,
   Key,
   LogoMotion,
   Mark,
   Problem,
   SetupDone,
-  Ticks,
+  useCopy,
+  useDetails,
 } from '@lo/ui';
 import type { ReactNode } from 'react';
 import { useStore } from 'zustand';
 
+import { gitWords } from '../../../window/explain.ts';
 import { importFromGh, signIn, useAccounts } from '../../accounts/window/shared.ts';
 import { checkGit, goTo } from './actions.ts';
 import { keyOf } from './labels.ts';
@@ -43,34 +46,53 @@ function look(): void {
   void checkGit();
 }
 
+/** A command to run, as code, with Copy. */
+function Command({ command }: { command: string }) {
+  const copy = useCopy();
+  return (
+    <div className="flex items-center gap-8 rounded-sm bg-bg-well py-6 ps-8 pe-6 text-fg inset-ring inset-ring-border">
+      <code className="min-w-0 flex-1 break-all code-small select-text">{command}</code>
+      <CopyButton size="sm" onCopy={() => copy(command)} />
+    </div>
+  );
+}
+
 /**
- * What Lo needs of Git and how to get it, when it can't find one it can run: what's wrong on the
- * line with "Check again", and how to get one under it, in room the step already holds, so the mark
- * and the foot stay where they are. A look that failed says so under it, with main's words behind
+ * What Lo needs of Git and how to get it, when it can't find one it can run, as the guide's Error:
+ * the title on the line with "Check again", the reason under it, the commands that install one,
+ * each with Copy, and Git's path behind Details, in room the step already holds, so the mark and
+ * the foot stay where they are. A look that failed says so under it, with main's words behind
  * Details, and "Check again" looks once more.
  */
 function GitNotice() {
   const { git, checking, checkFailed, checks } = useStore(welcomeStore);
-  if (!gitProblem(git)) return null;
+  const words = gitProblem(git) ? gitWords(git) : undefined;
+  const { more, shown } = useDetails(words?.details);
+  if (words === undefined) return null;
   return (
     <div className="flex flex-col gap-8">
       <Callout tone="warning">
         <div className="flex flex-col gap-2">
           <div className="flex items-start gap-12">
-            <p className="m-0 min-w-0 flex-1 font-semibold text-fg">
-              <Ticks text={git.message} />
-            </p>
+            <p className="m-0 min-w-0 flex-1 font-semibold text-fg">{words.title}</p>
             {/* On the first line, and no taller than it, so the box is as deep under its words
                 as over them. */}
-            <div className="flex h-1lh flex-none items-center">
+            <div className="flex h-1lh flex-none items-center gap-4">
+              {more}
               <Button size="sm" busy={checking} working="Checking…" onClick={look}>
                 Check again
               </Button>
             </div>
           </div>
-          <p className="m-0 text-fg-muted">
-            <Ticks text={git.install} />
-          </p>
+          {words.reason !== undefined && <p className="m-0 text-fg-muted">{words.reason}</p>}
+          <div className="mt-6 flex flex-col gap-4">
+            {words.commands.map((command) => (
+              <Command key={command} command={command} />
+            ))}
+          </div>
+          {/* Lo opens no page off GitHub, so the page is shown to copy. */}
+          {words.page !== undefined && <Command command={words.page} />}
+          {shown}
         </div>
       </Callout>
       <Collapse open={checkFailed !== undefined}>
@@ -80,7 +102,7 @@ function GitNotice() {
       </Collapse>
       {/* A look that found nothing new says what the notice says again, to a screen reader. */}
       <span key={checks} role="status" className="sr-only">
-        {checks > 0 && !checking && checkFailed === undefined ? git.message : ''}
+        {checks > 0 && !checking && checkFailed === undefined ? words.title : ''}
       </span>
     </div>
   );

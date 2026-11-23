@@ -613,13 +613,10 @@ export class Cache {
           // Never pulled out from under a repository that's still reading it, nor a language
           // server still running on one of its checkouts, as one stopping may be.
           if (lock.users > 0 || lock.servers > 0) {
-            const still =
-              lock.users > 0
-                ? 'is still open, so it can be made again only once it closes'
-                : 'a language server still runs on it, so it can be made again only once that stops';
             throw new GitError({
               kind: 'busy',
-              message: `${owner}/${name}'s local copy can't be trusted, since ${reason}, and ${still}`,
+              message: `${owner}/${name}'s local copy can't be trusted, since ${reason}`,
+              held: lock.users > 0 ? 'tabs' : 'servers',
             });
           }
           this.#log?.(`${owner}/${name}: making its local copy again, since ${reason}`);

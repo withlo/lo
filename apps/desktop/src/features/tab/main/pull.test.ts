@@ -205,10 +205,7 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
     tab.show();
     await expect
       .poll(() => sent.pull?.problem)
-      .toEqual({
-        kind: 'notFound',
-        message: "GitHub has no pull request rozed-dev/e2e#9999, or rozed-bot can't see it.",
-      });
+      .toMatchObject({ kind: 'notFound', cause: { kind: 'hidden', login: 'rozed-bot' } });
     expect(sent.pull?.loading).toBe(false);
     expect(sent.pull?.header).toBe(null);
     expect(sent.local).toEqual({ kind: 'waiting' });
@@ -226,9 +223,8 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
     tab.show();
     await expect.poll(() => sent.pull?.problem?.kind).toBe('notFound');
     expect(sent.pull?.acting).toEqual({ kind: 'anonymous' });
-    expect(sent.pull?.problem).toMatchObject({
-      message: expect.stringContaining('GitHub has no public pull request rozed-dev/gone#1'),
-    });
+    // The account can't see it either, which the reason says.
+    expect(sent.pull?.problem).toMatchObject({ cause: { kind: 'private', signedIn: true } });
     // Nobody is remembered for it.
     expect(kept.filter((change) => change.login !== undefined)).toEqual([]);
     tab.close();
@@ -598,7 +594,8 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
       .poll(() => sent.pull?.problem)
       .toEqual({
         kind: 'blocked',
-        message: expect.stringContaining('SAML'),
+        cause: { kind: 'sso', org: 'rozed-dev' },
+        details: expect.stringContaining('SAML'),
         links: [
           {
             label: 'Authorize on GitHub',
@@ -630,7 +627,7 @@ describe('working out the account while GitHub doesn’t answer', () => {
     web: 'https://github.com',
     uploads: 'https://uploads.github.com',
   };
-  const status = { status: 'missing', message: "Lo can't find git.", install: 'Get it.' } as const;
+  const status = { status: 'missing', install: { commands: ['xcode-select --install'] } } as const;
   const noGit: LocalGit = {
     status,
     cache: undefined,

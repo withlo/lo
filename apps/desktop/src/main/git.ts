@@ -12,7 +12,9 @@ import { dirname, isAbsolute, join, normalize } from 'node:path';
 import {
   Cache,
   DEFAULT_CAP,
+  describeDistrust,
   findGit,
+  formatVersion,
   type Git,
   gitAt,
   type GitStatus,
@@ -23,6 +25,7 @@ import {
   unlockCache,
 } from '@lo/git';
 
+import type { GitTrouble } from '../ipc/git.ts';
 import { StartupError } from './startup.ts';
 
 type Environment = Readonly<Record<string, string | undefined>>;
@@ -679,11 +682,7 @@ class GitHost implements MainGit {
   #find(): Promise<GitStatus> {
     const { settings, env, platform } = this.#options;
     if (settings.program === 'none') {
-      return Promise.resolve({
-        status: 'missing',
-        message: "Lo can't find git.",
-        install: installAdvice(platform),
-      });
+      return Promise.resolve({ status: 'missing', install: installAdvice(platform, 'missing') });
     }
     const { signal } = this.#stopping;
     if (settings.program !== undefined) return gitAt(settings.program, { env, platform, signal });
@@ -746,5 +745,38 @@ async function within(milliseconds: number, promise: Promise<unknown>): Promise<
     await Promise.race([promise, elapsed]);
   } finally {
     clearTimeout(timer);
+  }
+}
+
+/**
+ * Why Lo has no git it can run, as the window hears it: parts, never a sentence. A git someone
+ * else could change names what's true of it, and the system's words, behind Details.
+ */
+export function troubleOf(status: Exclude<GitStatus, { status: 'found' }>): GitTrouble {
+  const install = { commands: [...status.install.commands], page: status.install.page ?? null };
+  switch (status.status) {
+    case 'missing':
+      return { status: 'missing', install };
+    case 'distrusted':
+      return {
+        status: 'distrusted',
+        program: status.program,
+        why: status.distrust.why,
+        details: `${status.program}\n${describeDistrust(status.distrust)}`,
+        install,
+      };
+    case 'tooOld':
+      return {
+        status: 'tooOld',
+        program: status.program,
+        version: formatVersion(status.version),
+        minimum: formatVersion(status.minimum),
+        check: status.check,
+        install,
+      };
+    default:
+      throw new Error(
+        `What Lo found of git isn't known: ${JSON.stringify(status satisfies never)}`,
+      );
   }
 }

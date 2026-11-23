@@ -2,6 +2,7 @@ import { Replay, replayFetch, type Interaction, type Json } from '@lo/testing';
 import { expect, test } from 'vitest';
 
 import { GithubClient } from './client.ts';
+import { GithubError } from './errors.ts';
 import { unchecked } from './json.ts';
 import { fetchPublicPull, fetchPullAs, readPullToOpen, type PullToOpen } from './pulls.ts';
 import { PullRef } from './refs.ts';
@@ -52,8 +53,8 @@ function asBody(body: string): Pick<Interaction['response'], 'body' | 'body_text
   }
 }
 
-function fetchAnonymously(fetch: typeof globalThis.fetch, canSignIn = true) {
-  return fetchPublicPull(new GithubClient({ fetch }), PULL, { canSignIn });
+function fetchAnonymously(fetch: typeof globalThis.fetch) {
+  return fetchPublicPull(new GithubClient({ fetch }), PULL);
 }
 
 function fetchSignedIn(fetch: typeof globalThis.fetch) {
@@ -162,38 +163,29 @@ test('refuses a repository name that isnt owner slash name', () => {
   }
 });
 
-test('a missing or private pull request says to sign in', async () => {
+test('a missing or private pull request is githubs not found', async () => {
   const error = await failure(fetchAnonymously(canned(404, '{"message":"Not Found"}')));
-  expect(error.message).toContain('Sign in from Accounts…');
+  expect(error).toBeInstanceOf(GithubError);
+  expect((error as GithubError).detail).toMatchObject({ kind: 'notFound', message: 'Not Found' });
 });
 
-test('without an accounts database it doesnt say to sign in', async () => {
-  const missing = await failure(fetchAnonymously(canned(404, '{"message":"Not Found"}'), false));
-  expect(missing.message).toBe(
-    "GitHub has no public pull request sharkdp/fd#2212, and Lo couldn't read its accounts to sign in",
-  );
-  const rateLimited = canned(403, '{"message":"API rate limit exceeded"}', {
-    'x-ratelimit-remaining': '0',
-  });
-  const limited = await failure(fetchAnonymously(rateLimited, false));
-  expect(limited.message).toBe(
-    "GitHub's limit of 60 requests an hour without signing in is used up; try again later",
-  );
-});
-
-test('a used up rate limit says so', async () => {
+test('a used up rate limit is githubs, with when it resets', async () => {
   const fetch = canned(403, '{"message":"API rate limit exceeded"}', {
     'x-ratelimit-remaining': '0',
+    'x-ratelimit-reset': '1700000000',
   });
   const error = await failure(fetchAnonymously(fetch));
-  expect(error.message).toContain('try again later');
+  expect((error as GithubError).detail).toMatchObject({
+    kind: 'rateLimited',
+    secondary: false,
+    reset: 1700000000,
+  });
+  expect((error as GithubError).said()).toBe('API rate limit exceeded');
 });
 
-test('other errors carry githubs message', async () => {
+test('other errors carry githubs status and message', async () => {
   const error = await failure(fetchAnonymously(canned(500, '{"message":"Server Error"}')));
-  expect(error.message).toBe(
-    'GitHub answered 500 Internal Server Error for sharkdp/fd#2212: Server Error',
-  );
+  expect((error as GithubError).said()).toBe('500 Internal Server Error\nServer Error');
 });
 
 test('refuses a clone url off github', () => {

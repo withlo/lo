@@ -30,6 +30,13 @@ export const MAX_RETRY_AFTER = 60 * 60;
  */
 export type NetworkFailure = 'offline' | 'tunnel' | 'refused' | 'lost' | 'unknown';
 
+/**
+ * What a proxy did, when a proxy is why a request got no answer: it couldn't connect to GitHub, or
+ * couldn't be reached (`refused`), it asked to sign in, which Lo can't (`signIn`), or the system's
+ * settings name a proxy of a kind Lo doesn't send through (`unsupported`).
+ */
+export type ProxyFailure = 'refused' | 'signIn' | 'unsupported';
+
 /** What went wrong, with what GitHub said. */
 export type GithubErrorDetail =
   /**
@@ -81,8 +88,13 @@ export type GithubErrorDetail =
   | { kind: 'inconsistent'; message: string }
   /** A request to somewhere other than GitHub's API. Lo sends its token nowhere else, so it never sent this one. */
   | { kind: 'refusedUrl'; host: string }
-  /** The request didn't get an answer. */
-  | { kind: 'network'; failure: NetworkFailure; message: string }
+  /** The request didn't get an answer, through a `proxy` that's why, if one is. */
+  | {
+      kind: 'network';
+      failure: NetworkFailure;
+      message: string;
+      proxy?: ProxyFailure | undefined;
+    }
   /**
    * The account's token couldn't be read, such as from a locked keychain. The account is still
    * signed in; trying again later may work.
@@ -137,6 +149,20 @@ export class GithubError extends Error {
       return helpLink('Request approval on GitHub', approvalUrl());
     }
     return undefined;
+  }
+
+  /**
+   * What GitHub said, as it came, for Details: its own message, an answer's status with it, or the
+   * system's words for a request that got no answer. Never a sentence of Lo's about it, but where
+   * GitHub said nothing Lo can show, as for pages that didn't fit together, a request Lo refused
+   * to send or an answer it couldn't read, which keep the words that say what happened.
+   */
+  said(): string {
+    try {
+      return saidOf(this.detail);
+    } catch {
+      return this.message;
+    }
   }
 
   /** Whether the token is no good and the account needs signing in again. */
@@ -355,6 +381,171 @@ function describe(detail: GithubErrorDetail): string {
   }
 }
 
+/** What GitHub said of `detail`, as it came: see {@link GithubError.said}. */
+function saidOf(detail: GithubErrorDetail): string {
+  switch (detail.kind) {
+    case 'api': {
+      const line = statusLine(detail.status);
+      return detail.message === '' || detail.message === `HTTP ${detail.status}`
+        ? line
+        : `${line}\n${detail.message}`;
+    }
+    case 'graphql': {
+      const messages = detail.errors.map((error) => error.message).filter(Boolean);
+      return messages.length === 0 ? describe(detail) : messages.join('\n');
+    }
+    case 'unauthorized':
+    case 'ssoRequired':
+    case 'oauthAppRestricted':
+    case 'rateLimited':
+    case 'notFound':
+    case 'network':
+    case 'tokenUnavailable':
+      return detail.message === '' ? describe(detail) : detail.message;
+    case 'inconsistent':
+    case 'refusedUrl':
+    case 'decode':
+      return describe(detail);
+    default:
+      throw new Error(`a GitHub error Lo doesn't know: ${JSON.stringify(detail satisfies never)}`);
+  }
+}
+
+/** The reason phrases of the error statuses GitHub answers with. */
+const REASONS: Readonly<Record<number, string>> = {
+  400: 'Bad Request',
+  401: 'Unauthorized',
+  403: 'Forbidden',
+  404: 'Not Found',
+  409: 'Conflict',
+  410: 'Gone',
+  413: 'Payload Too Large',
+  422: 'Unprocessable Entity',
+  429: 'Too Many Requests',
+  500: 'Internal Server Error',
+  502: 'Bad Gateway',
+  503: 'Service Unavailable',
+  504: 'Gateway Timeout',
+};
+
+/** A status with its reason phrase, such as `500 Internal Server Error`. */
+export function statusLine(status: number): string {
+  const reason = REASONS[status];
+  return reason === undefined ? String(status) : `${status} ${reason}`;
+}
+
+/**
+ * Why something that went to GitHub didn't come back, as the guide's causes name it, with what
+ * the window needs to word it (`window/explain.ts`): no connection; a proxy in the way; GitHub's
+ * own error; no answer in time; its rate limit, resetting at `resets` (milliseconds since the Unix
+ * epoch) when GitHub said; an account signed out, or whose sign-in can't be read; something that
+ * doesn't exist or can't be seen, by `login`, or with none signed in (`private`) or none of the
+ * accounts able to (`signedIn`); an organization that requires single sign-on or hasn't approved
+ * Lo; or something else, which has no words of its own.
+ */
+export type GithubCause =
+  | { readonly kind: 'offline' }
+  | { readonly kind: 'proxy'; readonly why: ProxyFailure }
+  | { readonly kind: 'github' }
+  | { readonly kind: 'timeout' }
+  | { readonly kind: 'rateLimit'; readonly resets: number | null }
+  | { readonly kind: 'signedOut'; readonly login: string }
+  | { readonly kind: 'unreadable'; readonly login: string }
+  | { readonly kind: 'hidden'; readonly login: string }
+  | { readonly kind: 'private'; readonly signedIn: boolean }
+  | { readonly kind: 'sso'; readonly org: string }
+  | { readonly kind: 'unapproved'; readonly org: string }
+  | { readonly kind: 'unknown' };
+
+/** What a cause can say besides the error: the repository's `owner`, and the account that asked. */
+export interface CauseContext {
+  readonly owner?: string | undefined;
+  readonly login?: string | undefined;
+  /** When it was asked, in milliseconds since the Unix epoch: now, unless said. */
+  readonly now?: number | undefined;
+}
+
+/**
+ * Why `error` stopped what was asked of GitHub, as a {@link GithubCause}: `unknown` for an error
+ * that isn't GitHub's, or is one the guide has no words for. The window words it, and GitHub's own
+ * text goes behind Details ({@link GithubError.said}).
+ */
+export function causeOf(error: unknown, context: CauseContext = {}): GithubCause {
+  const github = githubErrorIn(error);
+  if (github === undefined) return { kind: 'unknown' };
+  const { detail } = github;
+  const { owner, login } = context;
+  switch (detail.kind) {
+    case 'network':
+      if (detail.proxy !== undefined) return { kind: 'proxy', why: detail.proxy };
+      switch (detail.failure) {
+        case 'offline':
+          return { kind: 'offline' };
+        case 'tunnel':
+          return { kind: 'proxy', why: 'refused' };
+        case 'lost':
+          return { kind: 'timeout' };
+        case 'refused':
+        case 'unknown':
+          return { kind: 'unknown' };
+        default:
+          detail.failure satisfies never;
+          return { kind: 'unknown' };
+      }
+    case 'rateLimited': {
+      const now = context.now ?? Date.now();
+      const resets =
+        detail.reset === undefined
+          ? detail.retryAfter === undefined
+            ? null
+            : now + detail.retryAfter * 1000
+          : detail.reset * 1000;
+      return { kind: 'rateLimit', resets };
+    }
+    case 'unauthorized': {
+      const who = detail.missing ?? login;
+      return who === undefined ? { kind: 'unknown' } : { kind: 'signedOut', login: who };
+    }
+    case 'tokenUnavailable':
+      return login === undefined ? { kind: 'unknown' } : { kind: 'unreadable', login };
+    case 'notFound':
+      return login === undefined ? { kind: 'private', signedIn: false } : { kind: 'hidden', login };
+    case 'ssoRequired':
+      return owner === undefined ? { kind: 'unknown' } : { kind: 'sso', org: owner };
+    case 'oauthAppRestricted': {
+      const org = detail.org ?? owner;
+      return org === undefined ? { kind: 'unknown' } : { kind: 'unapproved', org };
+    }
+    case 'api':
+    case 'graphql':
+      return { kind: 'github' };
+    case 'inconsistent':
+    case 'refusedUrl':
+    case 'decode':
+      return { kind: 'unknown' };
+    default:
+      // GitHub may fail in a way Lo doesn't know yet: its words say it, behind Details.
+      detail satisfies never;
+      return { kind: 'unknown' };
+  }
+}
+
+/** What GitHub said of `error`, as it came, or the error's own text when it isn't GitHub's. */
+export function saidBy(error: unknown): string {
+  const github = githubErrorIn(error);
+  if (github !== undefined) return github.said();
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** The GitHub error `error` is, or was caused by, a few causes deep. */
+export function githubErrorIn(error: unknown): GithubError | undefined {
+  for (let at = error, depth = 0; at !== undefined && depth < 5; depth++) {
+    if (at instanceof GithubError) return at;
+    at = at instanceof Error ? at.cause : undefined;
+  }
+  return undefined;
+}
+
 function stringOrNothing(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
@@ -442,12 +633,8 @@ export function parseSsoHeader(value: string | null | undefined): SsoHeader | un
   return header;
 }
 
-/**
- * Why `fetch` failed, from what it threw: Node's `fetch` puts a system error code on the error's
- * `cause`, and Electron's `net.fetch` puts Chromium's network error name in its message. Code
- * whose `fetch` throws something else passes its own.
- */
-export function classifyNetworkError(error: unknown): NetworkFailure {
+/** The names and codes `fetch`'s error carries, and its causes', as one string to search. */
+function namesIn(error: unknown): string {
   const names: string[] = [];
   let current: unknown = error;
   for (let depth = 0; depth < 5 && current !== undefined && current !== null; depth++) {
@@ -462,7 +649,31 @@ export function classifyNetworkError(error: unknown): NetworkFailure {
     }
     current = Reflect.get(current, 'cause');
   }
-  const said = names.join(' ');
+  return names.join(' ');
+}
+
+/**
+ * What a proxy did, when `fetch` failed because of one: from Chromium's error names, or the
+ * `ProxyStopped` that Lo's own writes throw, with the code it carries. Nothing when no proxy was
+ * why.
+ */
+export function classifyProxy(error: unknown): ProxyFailure | undefined {
+  const said = namesIn(error);
+  if (/ERR_PROXY_AUTH_\w+/.test(said)) return 'signIn';
+  if (/ERR_NO_SUPPORTED_PROXIES/.test(said)) return 'unsupported';
+  if (/\bProxyStopped\b|ERR_TUNNEL_CONNECTION_FAILED|ERR_PROXY_CONNECTION_FAILED/.test(said)) {
+    return 'refused';
+  }
+  return undefined;
+}
+
+/**
+ * Why `fetch` failed, from what it threw: Node's `fetch` puts a system error code on the error's
+ * `cause`, and Electron's `net.fetch` puts Chromium's network error name in its message. Code
+ * whose `fetch` throws something else passes its own.
+ */
+export function classifyNetworkError(error: unknown): NetworkFailure {
+  const said = namesIn(error);
   const has = (pattern: RegExp) => pattern.test(said);
   if (has(/\bTimeoutError\b/)) return 'lost';
   if (has(/ERR_TUNNEL_CONNECTION_FAILED|unsuccessful tunnel/)) return 'tunnel';
