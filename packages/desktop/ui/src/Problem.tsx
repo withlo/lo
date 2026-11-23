@@ -155,7 +155,7 @@ export function Problem({
           {commands.map((command) => (
             <div key={command} className="flex items-center gap-8 rounded-sm bg-bg-well px-8 py-6">
               <pre className="m-0 min-w-0 flex-1 overflow-x-auto whitespace-pre text-fg code-small select-text">
-                {command}
+                <code>{command}</code>
               </pre>
               <CopyButton size="sm" onCopy={() => copy(command)} />
             </div>
