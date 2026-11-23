@@ -379,5 +379,9 @@ describe('TabBar styles', () => {
     expect(classes.length).toBeGreaterThan(30);
     const css = await buildCss(classes);
     expect(classes.filter((name) => !hasRule(css, name))).toEqual([]);
+    // A tab under the pointer takes a third of the ghost hover, under the tab on screen's ground.
+    expect(css).toMatch(
+      /\.tab-hover:hover::before \{[^}]*color-mix\(in srgb, var\(--lo-hover\) 33%, transparent\)/,
+    );
   });
 });

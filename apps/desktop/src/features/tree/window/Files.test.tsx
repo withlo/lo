@@ -12,7 +12,7 @@ import type { Changed, TreeState } from '../contract.ts';
 import { closeRow, markViewed, move, openRow, setAll, show, showable } from './actions.ts';
 import { Files } from './Files.tsx';
 import feature from './index.ts';
-import { fileOrder, followFile, onShowFile } from './shared.ts';
+import { fileOrder, followFile, holdTree, onShowFile } from './shared.ts';
 import { choices, focus, onScreen, showState, shown, states } from './store.ts';
 
 // The tab on screen, for the keys that act on it; the tab feature isn't loaded.
@@ -158,6 +158,24 @@ describe('the files panel', () => {
     expect(row('README.md')?.className).toContain('text-fg-dim');
     act(() => setAll(TAB.id, false));
     expect(row('src')?.textContent).toContain('4');
+  });
+
+  it('holds the rows it drew, taking no input, while the diff holds its view, and changes with it', () => {
+    const { container, row } = render();
+    const tree = () => container.querySelector('[role="tree"]');
+    act(() => holdTree(TAB.id, true));
+    onTestFinished(() => holdTree(TAB.id, false));
+    // The next comparison is still being worked out: main lists no changes yet.
+    act(() => showState({ ...LOCAL, changes: null, compared: null }));
+    expect(tree()?.hasAttribute('inert')).toBe(true);
+    expect(tree()?.getAttribute('aria-busy')).toBe('true');
+    expect(row('src/parser.ts')?.textContent).toContain('R');
+    expect(row('src')?.getAttribute('aria-expanded')).toBe('true');
+    act(() => showState({ ...LOCAL, compared: [change('src/parser.ts', 'modified')] }));
+    act(() => holdTree(TAB.id, false));
+    expect(tree()?.hasAttribute('inert')).toBe(false);
+    expect(tree()?.hasAttribute('aria-busy')).toBe(false);
+    expect(row('src/parser.ts')?.getAttribute('data-hit')).not.toBeNull();
   });
 
   it('says why only the changed files show', () => {

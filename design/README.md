@@ -243,8 +243,11 @@ time.
   It draws its content anew for each `id`. Content that must not be drawn anew, such as a code view
   or middle views kept drawn while hidden, takes `keep`: the box and what's in it stay, and the box
   fades in as it is in the frame `id` changes, so change the content in that frame too. With `keep`,
-  an `id` of `undefined` names nothing yet, and what it names first doesn't move. Never put
-  `move-swap` on an element yourself.
+  an `id` of `undefined` names nothing yet, and what it names first doesn't move. A box `keep` fades
+  in over nothing, so content that replaces other content it can't draw over, such as a diff's next
+  code view, goes in a layer of its own over the last one instead: it takes `swapIn(layer)` once
+  it's laid out, and the last layer goes once the move has run (`whenSettled`), so no frame shows
+  the box empty. Never put `move-swap` on an element yourself.
 - **`reveal(element, { block })`** brings an element into view by scrolling its own pane and nothing
   else. Use it in place of `scrollIntoView`, which scrolls the window's shell too. A jump (`start`,
   `center`, `end`) lands; keeping a cursor in view (`nearest`, the default) doesn't. An element
@@ -288,8 +291,10 @@ its last, as the step appears. Where one would play again on a step the reader c
 ## Waiting
 
 Lo waits in three ways. Use the first that fits, and never two for one wait. Never replace drawn
-content with a wait: what's drawn stays until what replaces it is ready, marked as at work where it
-says so (a `Spinner` in its bar), and then the new content takes its place in one Swap.
+content with a wait: what's drawn stays until what replaces it is ready and laid out, marked as at
+work where it says so (a `Spinner` in its bar), and takes no input; then the new content takes its
+place in one Swap, over it, and whatever else says what it shows (a bar's line, a list beside it)
+changes in the same frame.
 
 | When                                 | What shows                                                                                                                                        | Component                        |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
