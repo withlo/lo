@@ -85,6 +85,7 @@ import {
   type MergeSnapshot,
 } from '@lo/review';
 
+import { githubCause, type Cause } from '../../../ipc/cause.ts';
 import type { Converting, Forest } from '../../stacks/service.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
 import type {
@@ -362,20 +363,30 @@ function askerOf(plan: Pick<SentPlan, 'login' | 'owner'>): Asker {
   return { login: plan.login, owner: plan.owner };
 }
 
+/** What a dimmed control calls a cause of GitHub giving no answer, where it isn't "Offline". */
+const OFF_LABELS: Partial<Record<Cause['kind'], string>> = {
+  timeout: 'No response',
+  unreadable: 'Can’t read sign-in',
+  unknown: 'Can’t reach GitHub',
+};
+
 /** Why Lo merges nothing now with `poller`, whatever GitHub says of the pull request. */
 export function offOf(poller: Pick<Poller, 'status' | 'writesHeldUntil'>): Off | null {
   const status = poller.status();
   if (status.signedOut) return { kind: 'signedOut' };
-  if (status.offline) return { kind: 'offline' };
+  if (status.offline) return { kind: 'offline', cause: githubCause(status.offline.cause) };
   const until = poller.writesHeldUntil();
   return until === undefined ? null : { kind: 'paused', until: Math.max(0, Math.round(until)) };
 }
 
-/** Why nothing merges now, for `off`, as `login`: the reason on the dimmed control. */
+/**
+ * Why nothing merges now, for `off`, as `login`: the reason on the dimmed control, as the window's
+ * `offWords` and the header's chip say it, by why GitHub gives no answer.
+ */
 export function offText(off: Off, login: string): string {
   switch (off.kind) {
     case 'offline':
-      return 'Offline';
+      return OFF_LABELS[off.cause.kind] ?? 'Offline';
     case 'paused':
       return `GitHub’s rate limit resets at ${clock(off.until)}`;
     case 'signedOut':

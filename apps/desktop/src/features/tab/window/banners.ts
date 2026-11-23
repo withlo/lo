@@ -263,12 +263,13 @@ export function connectionNote(
         line: `GitHub’s rate limit resets at ${clock.time(connection.until)}.`,
       };
     case 'offline': {
-      // GitHub gave no answer, worded by why: only no connection at all is "Offline".
+      // GitHub gave no answer, worded by why: only what "Offline" names has its icon.
       const { cause } = connection;
+      const label = chipLabel(cause, 'Offline');
       return {
-        kind: cause.kind === 'timeout' ? 'failed' : 'offline',
+        kind: label === 'Offline' ? 'offline' : 'failed',
         tone: 'warn',
-        label: chipLabel(cause, 'Offline'),
+        label,
         line: explain(cause),
         retryAt: connection.retryAt ?? undefined,
         details: connection.error === '' ? undefined : connection.error,

@@ -14,6 +14,7 @@ import { createStore } from 'zustand/vanilla';
 
 import { refuse, withdraw } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
+import { explain } from '../../../window/explain.ts';
 import { diffStateOf, showThread as showInDiff, type ShowWhen } from '../../diff/window/shared.ts';
 import {
   comparedIn,
@@ -111,7 +112,10 @@ export function emptyOf(
     case 'signIn':
       return { kind: 'none', heading: 'Sign in to see threads', action: 'accounts.addAccount' };
     case 'failed':
-      return { kind: 'failed', reason: threads?.problem ?? undefined };
+      return {
+        kind: 'failed',
+        reason: threads?.stall ? explain(threads.stall) : (threads?.problem ?? undefined),
+      };
     case 'ready':
       // Where there are threads, the filter hides them all, and its button lists them again.
       return threads !== undefined && threads.threads.length > 0 && filter !== 'all'

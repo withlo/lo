@@ -2,7 +2,7 @@
 // each cause, and none where the cause isn't known, with what the reader can do about it. GitHub's
 // own text stays out of the reason, behind Details. Nothing here calls Electron or GitHub.
 
-import { describeMergeRefusal, GithubError, type MergeRefusal } from '@lo/github';
+import { describeMergeRefusal, GithubError, type GithubCause, type MergeRefusal } from '@lo/github';
 
 import type { ActWhy } from '../contract.ts';
 
@@ -34,6 +34,43 @@ export function rateLimited(until: number): ActWhy {
 /** Why `login`'s account can't change anything: it's signed out. */
 export function signedOut(login: string): ActWhy {
   return { why: `${login} is signed out.`, next: 'signIn' };
+}
+
+/** Where this computer keeps an account's sign-in. */
+const KEPT_IN = process.platform === 'darwin' ? 'the Keychain' : 'the keyring';
+
+/**
+ * Why nothing changes while GitHub gives `login` no answer, by `cause`, as its poller says, with
+ * what the poller last heard behind it: the same reasons as a request that got none.
+ */
+export function unanswered(cause: GithubCause, login: string, details: string): ActWhy {
+  switch (cause.kind) {
+    case 'offline':
+      return { why: 'Offline.', details };
+    case 'timeout':
+      return { why: NO_ANSWER, details };
+    case 'proxy':
+      return {
+        why: cause.why === 'refused' ? 'The proxy couldn’t connect to GitHub.' : '',
+        details,
+      };
+    case 'unreadable':
+      return { why: `${login}’s sign-in can’t be read from ${KEPT_IN}.`, details };
+    // Only what keeps GitHub out of reach stalls a poller; the rest has no reason here.
+    case 'certificate':
+    case 'github':
+    case 'hidden':
+    case 'private':
+    case 'rateLimit':
+    case 'signedOut':
+    case 'sso':
+    case 'unapproved':
+    case 'unknown':
+      return { why: '', details };
+    default:
+      cause satisfies never;
+      return { why: '', details };
+  }
 }
 
 /** What `error` says, as it came. */
@@ -73,7 +110,7 @@ export function causeOf(error: unknown, login: string, owner?: string): ActWhy {
       return { ...signedOut(detail.missing ?? login), details };
     case 'tokenUnavailable':
       return {
-        why: `${login}’s sign-in can’t be read from ${process.platform === 'darwin' ? 'the Keychain' : 'the keyring'}.`,
+        why: `${login}’s sign-in can’t be read from ${KEPT_IN}.`,
         details,
       };
     case 'notFound':

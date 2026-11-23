@@ -171,6 +171,7 @@ function state(change: Partial<MergeState> = {}): MergeState {
     head: 'a'.repeat(40),
     readAt: NOW,
     stale: null,
+    stall: null,
     off: null,
     ...change,
   };
@@ -392,7 +393,10 @@ function primary(): HTMLButtonElement | undefined {
 }
 
 it('dims the main button with why while Lo merges nothing, its words the same', async () => {
-  views.set('t12', { kind: 'known', state: state({ off: { kind: 'offline' } }) });
+  views.set('t12', {
+    kind: 'known',
+    state: state({ off: { kind: 'offline', cause: { kind: 'offline' } } }),
+  });
   const page = draw(<MergeHeader tab={tabOf('t12')} />);
   await until(() => page.querySelector('button') !== null);
   act(() => page.querySelector('button')?.click());

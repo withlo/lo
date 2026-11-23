@@ -19,6 +19,7 @@ import {
   type PollEvent,
   type PullRequest,
   type PullSummary,
+  type RepoAccount,
 } from '@lo/github';
 
 import { detailsOf, githubCause } from '../../../ipc/cause.ts';
@@ -145,6 +146,14 @@ export class PullTab {
    * refuses names it, since signing in to it again may open the pull request.
    */
   #signedOut: string | undefined;
+  /** What the last choice of account found: who's remembered for it, and what GitHub refused. */
+  #found: RepoAccount | undefined;
+  /**
+   * The failure a read that found GitHub out of reach left, with nothing kept to show: the tab stays
+   * on its loading view until being out of reach has lasted, as its chip does, so a blip says
+   * nothing.
+   */
+  #outOfReach: Problem | undefined;
   /** How the tab stands with GitHub while it acts as nobody, which no poller says. */
   #anonymousConnection: Connection = { kind: 'live' };
   /** Since when reading as nobody has found GitHub out of reach. */
@@ -339,14 +348,35 @@ export class PullTab {
 
   /**
    * An account was added, or signed in again: a tab whose pull request its account, or nobody,
-   * couldn't see works out its account again, which may be the new one.
+   * couldn't see works out its account again, which may be the new one, and so does one that reads
+   * as nobody under the rate limit, which an account's own limit may lift. A tab that goes on as
+   * nobody works out again which signed-out account its failures name.
    */
   accountAdded(): void {
-    if (this.#closed || !this.#unseen()) return;
-    this.#forgetAccount();
-    this.#started = true;
-    void this.#open();
-    this.#publish();
+    if (this.#closed) return;
+    if (this.#unseen() || this.#limitedAsNobody()) {
+      this.#forgetAccount();
+      this.#started = true;
+      void this.#open();
+      this.#publish();
+      return;
+    }
+    if (this.#acting?.kind === 'anonymous') void this.#nameSignedOut();
+  }
+
+  /** Whether the tab reads as nobody and GitHub's rate limit for nobody holds its reads back. */
+  #limitedAsNobody(): boolean {
+    return this.#acting?.kind === 'anonymous' && this.#anonymousConnection.kind === 'rateLimited';
+  }
+
+  /** Works out again which signed-out account a read as nobody names, as the accounts now are. */
+  async #nameSignedOut(): Promise<void> {
+    try {
+      const accounts = await this.#options.github.accounts();
+      if (!this.#closed) this.#signedOut = signedOutOf(accounts, this.#found);
+    } catch (error) {
+      this.#options.log(`listing the accounts: ${describe(error)}`);
+    }
   }
 
   /**
@@ -485,8 +515,11 @@ export class PullTab {
       const accounts = await github.accounts();
       this.#signedIn = accounts.length > 0;
       const found = accounts.length === 0 ? undefined : await github.accountForRepo(this.pull.repo);
+      // As the check left them: a token GitHub refused there has signed its account out.
+      const after = found === undefined ? accounts : await github.accounts();
       if (this.#closed) return false;
-      this.#signedOut = signedOutOf(accounts, found);
+      this.#found = found;
+      this.#signedOut = signedOutOf(after, found);
       const decision = decideAccount(found);
       switch (decision.kind) {
         case 'open': {
@@ -608,6 +641,7 @@ export class PullTab {
       if (this.#closed) return;
       this.#readFailures = 0;
       this.#problem = undefined;
+      this.#outOfReach = undefined;
       this.#anonymousConnection = { kind: 'live' };
       this.#anonymousOfflineSince = undefined;
       this.#learnRepository(RepoRef.parse(opened.toOpen.base.repo.full_name));
@@ -641,8 +675,10 @@ export class PullTab {
       } else if (error instanceof GithubError && error.isUnauthorized()) {
         // The account is signed out, which its poller says, and it's read again once the poller is
         // signed in again.
+        this.#answered();
         retryAt = this.#waitForSignIn();
       } else {
+        this.#answered();
         const problem = problemOf(error, this.pull, this.#actingFor(acting), undefined);
         const again = problem.kind === 'failed' ? this.#scheduleRead() : undefined;
         this.#problem =
@@ -658,6 +694,7 @@ export class PullTab {
       this.#startLocal();
       if (this.#shown === undefined) {
         this.#problem = { kind: 'failed', cause, details: detailsOf(saidBy(error)), retryAt };
+        this.#outOfReach = isUnreached(error) ? this.#problem : undefined;
         this.#options.log(`reading ${this.pull.toString()}: ${describe(error)}`);
       }
     }
@@ -927,6 +964,22 @@ export class PullTab {
     return this.#anonymousConnection;
   }
 
+  /** GitHub answered a read, if not with the pull request: it's in reach. */
+  #answered(): void {
+    this.#anonymousConnection = { kind: 'live' };
+    this.#anonymousOfflineSince = undefined;
+  }
+
+  /**
+   * Whether the tab's failure is GitHub out of reach, with nothing kept to show, for less time than
+   * its chip waits to say so: until then the tab stays on its loading view.
+   */
+  #blip(): boolean {
+    const since = this.#anonymousOfflineSince;
+    if (this.#outOfReach === undefined || this.#problem !== this.#outOfReach) return false;
+    return since !== undefined && !this.#lasted(since);
+  }
+
   /**
    * Whether GitHub has been out of reach long enough, since `since`, to say so. Until it has, the
    * tab says it again once it has.
@@ -948,14 +1001,13 @@ export class PullTab {
     const latest = this.#latest;
     const shown = this.#shown;
     const connection = this.#connection();
-    const problem = this.#problem ?? null;
+    const problem = this.#blip() ? null : (this.#problem ?? null);
     // Only while what's shown may be out of date, so a read that confirms it changes nothing sent.
     const stale = connection.kind !== 'live' && connection.kind !== 'limitLow';
     const checked = this.#savedAt;
     return {
       id: this.id,
-      loading:
-        this.#opening !== undefined && this.#header === undefined && this.#problem === undefined,
+      loading: this.#opening !== undefined && this.#header === undefined && problem === null,
       acting: this.#acting ?? null,
       header: this.#header ?? null,
       connection,

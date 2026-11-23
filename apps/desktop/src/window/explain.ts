@@ -91,14 +91,37 @@ export function explain(cause: Cause, system: System = currentSystem()): string 
 }
 
 /**
- * What the header's chip calls `cause`, why a read of GitHub's got no answer or failed: "Offline"
- * only where no connection reached GitHub, and "No response" where GitHub didn't answer in time.
- * Any other cause is `otherwise`.
+ * What a chip, or a dimmed control's reason, calls `cause`, why GitHub gave no answer or a read
+ * failed: "Offline" only where no connection reached GitHub, "No response" where GitHub didn't
+ * answer in time, "Can’t read sign-in" where the account's sign-in can't be read, and "Can’t
+ * reach GitHub" where Lo can't tell why. Any other cause is `otherwise`.
  */
 export function chipLabel(cause: Cause, otherwise: string): string {
-  if (cause.kind === 'offline') return 'Offline';
-  if (cause.kind === 'timeout') return 'No response';
-  return otherwise;
+  switch (cause.kind) {
+    case 'offline':
+      return 'Offline';
+    case 'timeout':
+      return 'No response';
+    case 'unreadable':
+      return 'Can’t read sign-in';
+    case 'unknown':
+      return 'Can’t reach GitHub';
+    case 'proxy':
+    case 'github':
+    case 'rateLimit':
+    case 'signedOut':
+    case 'hidden':
+    case 'private':
+    case 'sso':
+    case 'unapproved':
+    case 'certificate':
+    case 'diskFull':
+    case 'tooSlow':
+    case 'memory':
+      return otherwise;
+    default:
+      throw new Error(`A cause Lo doesn't know: ${JSON.stringify(cause satisfies never)}`);
+  }
 }
 
 /**

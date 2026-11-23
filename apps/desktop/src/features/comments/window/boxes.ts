@@ -41,6 +41,7 @@ import {
 
 import { announce, notice, refuse, withdraw } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
+import { chipLabel } from '../../../window/explain.ts';
 import { client } from '../../../window/ipc.ts';
 import {
   diffStateOf,
@@ -114,6 +115,7 @@ import {
   whyOf,
   NOTHING_TO_DISCARD,
   NOTHING_TO_UNDO,
+  OFFLINE,
 } from './writing.ts';
 
 /** How long after the last key a box's text is saved, in milliseconds. */
@@ -499,9 +501,13 @@ export function loginOf(view: string): string | undefined {
   return acting?.kind === 'account' ? acting.login : undefined;
 }
 
-/** Whether GitHub can't be reached for view `view`, so nothing sends. */
-export function offline(view: string): boolean {
-  return pullOf(view)?.connection.kind === 'offline';
+/**
+ * Why nothing sends for view `view` while GitHub gives it no answer, as the header's chip calls
+ * why ("Offline", "No response"), or nothing while GitHub answers.
+ */
+export function offline(view: string): string | undefined {
+  const connection = pullOf(view)?.connection;
+  return connection?.kind === 'offline' ? chipLabel(connection.cause, OFFLINE) : undefined;
 }
 
 /** The screen a view's diff shows, as its threads are placed on it, for a file of it. */
@@ -1377,7 +1383,7 @@ export async function send(box: Box, how: Send): Promise<void> {
   const { place, text } = box.state;
   // Sent before, and nobody knows whether it posted: it's looked up first ("Check again").
   if (box.state.sending === 'unknown') return;
-  if (text.trim() === '' || offline(view) || canWrite(view) !== true) return;
+  if (text.trim() === '' || offline(view) !== undefined || canWrite(view) !== true) return;
   box.dropSave();
   box.lastHow = how;
   box.before = beforeOf(view, place);

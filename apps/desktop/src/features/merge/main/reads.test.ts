@@ -336,10 +336,11 @@ test('a status read before a failed read, or while GitHub can’t be reached, sa
   expect(known().stale).toBeNull();
   expect(known().off).toBeNull();
   followed.fake.offline('getaddrinfo ENOTFOUND api.github.com');
-  expect(known().stale).toBe('Offline.');
-  expect(known().off).toEqual({ kind: 'offline' });
+  // Why, as a cause, for the window to word.
+  expect(known()).toMatchObject({ stale: null, stall: { kind: 'offline' } });
+  expect(known().off).toEqual({ kind: 'offline', cause: { kind: 'offline' } });
   followed.fake.offline(undefined);
-  expect(known().stale).toBeNull();
+  expect(known()).toMatchObject({ stale: null, stall: null });
   expect(known().off).toBeNull();
 });
 

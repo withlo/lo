@@ -20,6 +20,7 @@ import { formatBytes } from '@lo/ui';
 import type { Composer } from '@lo/ui/code';
 
 import { clockOf } from '../../../window/time.ts';
+import { chipLabel } from '../../../window/explain.ts';
 import { pullOf, runOf } from '../../tab/window/shared.ts';
 import {
   ATTACHMENT_LIMIT,
@@ -385,7 +386,7 @@ export function whyNoAttach(view: string): string | undefined {
   if (runOf(view)) return IN_A_LAYER;
   const off = uploadsOff(view);
   if (off !== undefined) return offNote(off, pull.acting.login).text;
-  if (pull.connection.kind === 'offline') return OFFLINE;
+  if (pull.connection.kind === 'offline') return chipLabel(pull.connection.cause, OFFLINE);
   return undefined;
 }
 

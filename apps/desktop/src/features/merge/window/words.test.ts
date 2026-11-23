@@ -75,6 +75,7 @@ function state(change: Partial<MergeState> = {}): MergeState {
     head: 'a'.repeat(40),
     readAt: NOW,
     stale: null,
+    stall: null,
     off: null,
     ...change,
   };
@@ -229,6 +230,12 @@ test('a status Lo couldn’t read again, or hasn’t for long, says when it was 
     detail: undefined,
   });
   expect(rowsOf(old, NOW).at(-1)).toMatchObject({ title: 'Checked 12 min ago', detail: undefined });
+  // The poller can't read, worded by why GitHub gave no answer.
+  const hung = state({ stall: { kind: 'timeout' }, readAt: NOW - 60_000 });
+  expect(rowsOf(hung, NOW).at(-1)).toMatchObject({
+    title: 'Checked 1 min ago',
+    detail: 'GitHub didn’t respond.',
+  });
   // A merge stays merged.
   expect(rowsOf(state({ verdict: 'merged', readAt: 0 }), NOW).at(-1)?.key).not.toBe('stale');
 });
@@ -488,7 +495,12 @@ test('GitHub’s estimates read in their largest whole unit', () => {
 
 test('merging is off, with why, offline, while GitHub’s rate limit holds, signed out, or while it can’t merge', () => {
   expect(cantMerge(state(), 138)).toBeUndefined();
-  expect(cantMerge(state({ off: { kind: 'offline' } }), 138)).toBe('Offline');
+  expect(cantMerge(state({ off: { kind: 'offline', cause: { kind: 'offline' } } }), 138)).toBe(
+    'Offline',
+  );
+  expect(cantMerge(state({ off: { kind: 'offline', cause: { kind: 'timeout' } } }), 138)).toBe(
+    'No response',
+  );
   const at = new Date(2026, 10, 16, 14, 5).getTime();
   expect(cantMerge(state({ off: { kind: 'paused', until: at } }), 138)).toBe(
     'GitHub’s rate limit resets at 14:05',
@@ -558,9 +570,12 @@ test('auto-merge and a merge past the rules say in a few words why they can’t'
       138,
     ),
   ).toBe('Conflicts with main');
-  expect(cantAutoMerge(state({ auto: { kind: 'on' }, off: { kind: 'offline' } }), 138)).toBe(
-    'Offline',
-  );
+  expect(
+    cantAutoMerge(
+      state({ auto: { kind: 'on' }, off: { kind: 'offline', cause: { kind: 'offline' } } }),
+      138,
+    ),
+  ).toBe('Offline');
 
   const override = (reason: Extract<MergeState['override'], { kind: 'notPossible' }>['reason']) =>
     cantOverride(state({ override: { kind: 'notPossible', reason } }), 138, WHO);

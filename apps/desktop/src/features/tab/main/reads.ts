@@ -16,10 +16,10 @@ import {
   type PullToOpen,
   type RepoAccount,
   saidBy,
+  sameLogin,
 } from '@lo/github';
 
 import { detailsOf, githubCause } from '../../../ipc/cause.ts';
-import type { AccountState } from '../../accounts/service.ts';
 
 import type { Connection, Files, Header, Problem, PullState } from '../contract.ts';
 
@@ -189,16 +189,33 @@ export type ReadAs =
     };
 
 /**
- * An account GitHub signed out, before `found` checked which accounts can see the repository or as
- * it did: what a read as nobody that GitHub refuses names, since signing in to it again may show
- * the pull request. Nothing while every account is signed in.
+ * The signed-out account a read as nobody names when GitHub refuses it or finds nothing, since
+ * signing in to it again may show the pull request: the one remembered for the repository, or for
+ * its owner; else one GitHub refused as `found` checked which accounts can see it; else the only
+ * account there is. Nothing when none of those is signed out, as `accounts` now stand.
  */
 export function signedOutOf(
-  accounts: readonly Pick<AccountState, 'account' | 'signedOut'>[],
-  found: Pick<RepoAccount, 'problems'> | undefined,
+  accounts: readonly {
+    readonly account: { readonly login: string };
+    readonly signedOut: string | undefined;
+  }[],
+  found: Pick<RepoAccount, 'problems' | 'remembered'> | undefined,
 ): string | undefined {
-  const refused = found?.problems.find(({ error }) => error.isUnauthorized());
-  return refused?.login ?? accounts.find((each) => each.signedOut !== undefined)?.account.login;
+  const out = (login: string | undefined) =>
+    login === undefined
+      ? undefined
+      : accounts.find(
+          (each) => each.signedOut !== undefined && sameLogin(each.account.login, login),
+        )?.account.login;
+  const refused = (found?.problems ?? [])
+    .filter(({ error }) => error.isUnauthorized())
+    .map(({ login }) => login);
+  for (const login of [found?.remembered.repo, found?.remembered.owner, ...refused]) {
+    const named = out(login);
+    if (named !== undefined) return named;
+  }
+  const [only, ...others] = accounts;
+  return others.length === 0 ? out(only?.account.login) : undefined;
 }
 
 /**

@@ -191,6 +191,7 @@ function readAt(head: string): MergeState {
     head,
     readAt: 1,
     stale: null,
+    stall: null,
     off: null,
   };
 }

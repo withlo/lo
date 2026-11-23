@@ -531,9 +531,10 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
   (offline, signed out, the rate limit, a read that failed after the view was drawn, which stays) is
   the PR header's chip, whose details say why, then "Checked 4 min ago" while there's a view it's
   about, and the one thing to do. Its words follow the cause: "Offline" only where no connection
-  reached GitHub, and "No response" where GitHub took a read and never answered. Offline is said
-  there alone, and the merge status never says when it was checked. A change to the pull request is
-  the banner.
+  reached GitHub, "No response" where GitHub took a read and never answered, "Can’t read sign-in"
+  where the account's sign-in can't be read, and "Can’t reach GitHub" where Lo can't tell why. A
+  control that's off while GitHub gives no answer says it the same way. Offline is said there alone,
+  and the merge status never says when it was checked. A change to the pull request is the banner.
 - The status bar holds `StatusItem`s: a ball and a label. A ring while it's off or not there yet, a
   spinner at work, filled once ready, amber while it waits or holds back, red only once it failed,
   and not while it waits to try again. A click opens its details: one line of state and its actions,

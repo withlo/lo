@@ -6,6 +6,7 @@
 
 import type { MergeKind } from '@lo/ui';
 
+import { chipLabel, explain } from '../../../window/explain.ts';
 import type {
   Action,
   Blocker,
@@ -328,6 +329,14 @@ export function ago(at: number, now: number): string {
 }
 
 /**
+ * Why the first read of a view's merge status failed: why the poller can't read now, by its cause,
+ * or else what main said.
+ */
+export function failedWhy(view: Extract<MergeView, { kind: 'failed' }>): string {
+  return view.stall === undefined ? view.why : (explain(view.stall) ?? '');
+}
+
+/**
  * Whether `state` may be out of date at `now`, and why: Lo couldn't read it again (`why`), or it's
  * gone unread past {@link STALE_AFTER}. Nothing while it's current, or once it merged.
  */
@@ -336,8 +345,12 @@ export function staleness(
   now: number,
 ): { readonly ago: string; readonly why: string | undefined } | undefined {
   if (state.verdict === 'merged') return undefined;
-  if (state.stale === null && now - state.readAt < STALE_AFTER) return undefined;
-  return { ago: ago(state.readAt, now), why: state.stale ?? undefined };
+  const { stall, stale } = state;
+  if (stall === null && stale === null && now - state.readAt < STALE_AFTER) return undefined;
+  return {
+    ago: ago(state.readAt, now),
+    why: stall === null ? (stale ?? undefined) : explain(stall),
+  };
 }
 
 /** The verdict of a status that couldn't be read. */
@@ -872,7 +885,7 @@ function clock(at: number): string {
 export function offWords(off: Off, who: Who = SOMEONE): string {
   switch (off.kind) {
     case 'offline':
-      return 'Offline';
+      return chipLabel(off.cause, 'Offline');
     case 'paused':
       return `GitHub’s rate limit resets at ${clock(off.until)}`;
     case 'signedOut':

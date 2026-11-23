@@ -84,6 +84,13 @@ describe('chipLabel', () => {
     expect(chipLabel({ kind: 'github' }, 'GitHub error')).toBe('GitHub error');
     expect(chipLabel({ kind: 'proxy', why: 'refused' }, 'Offline')).toBe('Offline');
   });
+
+  it('names a sign-in that can’t be read, and a failure Lo can’t tell the cause of', () => {
+    expect(chipLabel({ kind: 'unreadable', login: 'rozed-bot' }, 'Offline')).toBe(
+      'Can’t read sign-in',
+    );
+    expect(chipLabel({ kind: 'unknown' }, 'Offline')).toBe('Can’t reach GitHub');
+  });
 });
 
 describe('gitWords', () => {

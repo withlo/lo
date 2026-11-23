@@ -271,7 +271,16 @@ describe('how a tab stands with GitHub', () => {
       label: 'Offline',
       line: 'GitHub’s certificate couldn’t be verified.',
     });
-    expect(unanswered({ kind: 'unknown' })).toMatchObject({ label: 'Offline', line: undefined });
+    // A sign-in that can't be read, and a failure Lo can't name, are no connection lost.
+    expect(unanswered({ kind: 'unreadable', login: 'rozed-bot' })).toMatchObject({
+      kind: 'failed',
+      label: 'Can’t read sign-in',
+    });
+    expect(unanswered({ kind: 'unknown' })).toMatchObject({
+      kind: 'failed',
+      label: 'Can’t reach GitHub',
+      line: undefined,
+    });
   });
 });
 

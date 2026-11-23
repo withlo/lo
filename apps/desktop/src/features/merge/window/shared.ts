@@ -8,7 +8,7 @@ import type { MergeView } from '../contract.ts';
 import { openPanel, panelTrouble } from './actions.ts';
 import { autoMergeFromPanel } from './merging.ts';
 import { shipping, statuses } from './store.ts';
-import { cantAutoMerge } from './words.ts';
+import { cantAutoMerge, failedWhy } from './words.ts';
 
 /** How long Lo waits for a view to say whether it can merge before giving up: 30 s. */
 export const AUTO_MERGE_WAIT = 30_000;
@@ -34,8 +34,9 @@ export function autoMergeAsked(
     case 'loading':
       return undefined;
     case 'none':
-    case 'failed':
       return { kind: 'said', why: view.why, panel: false };
+    case 'failed':
+      return { kind: 'said', why: failedWhy(view), panel: false };
     case 'known': {
       const { auto } = view.state;
       if (auto.kind === 'on') return { kind: 'plan' };

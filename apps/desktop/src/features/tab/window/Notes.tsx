@@ -258,8 +258,8 @@ function useNow(ticking: boolean): number {
 }
 
 /**
- * The header's chip for a tab whose read failed after its view was drawn, which stays: "No
- * response" where GitHub didn't answer, "Offline" where nothing reached it, else "GitHub error".
+ * The header's chip for a tab whose read failed after its view was drawn, which stays: what
+ * `chipLabel` calls its cause, else "GitHub error".
  */
 function readFailed(view: PullView | undefined): string {
   const problem = view?.problem;

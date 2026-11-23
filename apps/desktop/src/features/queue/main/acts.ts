@@ -55,6 +55,7 @@ import {
   refusalOf,
   signedOut,
   textOf,
+  unanswered,
 } from './causes.ts';
 import type { QueueWatch } from './watch.ts';
 
@@ -162,7 +163,7 @@ export function offWhy(
 ): ActWhy | undefined {
   const status = poller.status();
   if (status.signedOut) return signedOut(login);
-  if (status.offline) return { why: 'Offline.' };
+  if (status.offline) return unanswered(status.offline.cause, login, status.offline.error);
   const until = poller.writesHeldUntil();
   return until === undefined ? undefined : rateLimited(until);
 }

@@ -645,11 +645,15 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
   });
 
   it('says why in place of its view when nobody can read it for the rate limit, and reads again at its reset', async () => {
-    const reset = Math.floor(Date.now() / 1000) + 600;
-    const replay = replayGithub('app_e2e');
+    // A reset a second or two away, past which GitHub answers again.
+    const reset = Math.floor(Date.now() / 1000) + 2;
+    const answer = replayFetch('app_e2e');
     const github: TabGithub = {
-      ...replay.github,
-      anonymous: new GithubClient({ fetch: () => limited(reset), urls: GITHUB }),
+      ...replayGithub('app_e2e').github,
+      anonymous: new GithubClient({
+        fetch: (input, init) => (Date.now() < reset * 1000 ? limited(reset) : answer(input, init)),
+        urls: GITHUB,
+      }),
       accounts: () => Promise.resolve([]),
     };
     const git = await testGit();
@@ -669,6 +673,59 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
       shown: null,
       connection: { kind: 'rateLimited', login: null, until: reset * 1000 },
     });
+    // The read due at the reset opens it.
+    await expect.poll(() => sent.pull?.header?.title, { timeout: 10_000 }).toBe(TITLE);
+    expect(sent.pull).toMatchObject({ problem: null, connection: { kind: 'live' } });
+    tab.close();
+  });
+
+  it('works out its account again once one signs in, while the rate limit holds nobody’s reads', async () => {
+    const reset = Math.floor(Date.now() / 1000) + 3600;
+    const { github, signIn } = signedOutAccount(() => limited(reset));
+    const git = await testGit();
+    const { tab, sent } = tabFor({ github, git });
+    tab.show();
+    await expect
+      .poll(() => sent.pull?.problem)
+      .toMatchObject({ kind: 'failed', cause: { kind: 'rateLimit', resets: reset * 1000 } });
+    // Signed in, the account's own limit reads it, long before nobody's resets.
+    signIn();
+    tab.accountAdded();
+    await expect.poll(() => sent.pull?.acting).toEqual({ kind: 'account', login: 'rozed-bot' });
+    await expect.poll(() => sent.pull?.header?.title).toBe(TITLE);
+    expect(sent.pull?.problem).toBe(null);
+    tab.close();
+  });
+
+  it('waits on its loading view while nobody can reach GitHub, says so once that lasts, and opens once GitHub answers', async () => {
+    const answer = replayFetch('app_e2e');
+    let reachable = false;
+    const github: TabGithub = {
+      ...replayGithub('app_e2e').github,
+      anonymous: new GithubClient({
+        fetch: (input, init) =>
+          reachable
+            ? answer(input, init)
+            : Promise.reject(new TypeError('fetch failed', { cause: { code: 'ENOTFOUND' } })),
+        urls: GITHUB,
+      }),
+      accounts: () => Promise.resolve([]),
+    };
+    const git = await testGit();
+    const { tab, sent, lines } = tabFor({ github, git, offlineAfter: 1_500 });
+    tab.show();
+    // A blip says nothing: the read failed, and the tab stays on its loading view.
+    await expect.poll(() => lines.some((line) => line.startsWith('reading'))).toBe(true);
+    expect(sent.pull).toMatchObject({ problem: null, header: null, connection: { kind: 'live' } });
+    // Once it lasts, it says why in its view's place, as its chip does.
+    await expect
+      .poll(() => sent.pull?.problem, { timeout: 5_000 })
+      .toMatchObject({ kind: 'failed', cause: { kind: 'offline' } });
+    expect(sent.pull?.connection).toMatchObject({ kind: 'offline', cause: { kind: 'offline' } });
+    // The read due next opens it.
+    reachable = true;
+    await expect.poll(() => sent.pull?.header?.title, { timeout: 10_000 }).toBe(TITLE);
+    expect(sent.pull).toMatchObject({ problem: null, connection: { kind: 'live' } });
     tab.close();
   });
 

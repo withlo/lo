@@ -241,7 +241,8 @@ describe('changing your comment on the pull request', () => {
     });
     removeOnPull(tab(), comment());
     expect(deleteAsking()).toBeUndefined();
-    expect(notice()?.title).toBe('Offline');
+    // Worded by why, as the header's chip is: GitHub took the read and never answered.
+    expect(notice()?.title).toBe('No response');
     said.pull = pull();
     removeOnPull(tab(), comment());
     expect(deleteAsking()).toMatchObject({ thread: null, comment: 'IC_1', body: 'Looks right.' });

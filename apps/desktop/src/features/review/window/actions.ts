@@ -11,6 +11,7 @@ import type { Composer } from '@lo/ui/code';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { announce, refuse } from '../../../window/commands/notices.tsx';
+import { chipLabel } from '../../../window/explain.ts';
 import { type Attachable, endUploads, uploadsHold } from '../../comments/window/shared.ts';
 import { shipShowing } from '../../merge/window/shared.ts';
 import { pullOf, runOf, activeTab, type PullTab } from '../../tab/window/shared.ts';
@@ -89,9 +90,13 @@ export function canSubmit(view: string): true | string {
   return true;
 }
 
-/** Whether GitHub can't be reached for view `view`, so nothing is submitted. */
-export function offline(view: string): boolean {
-  return pullOf(view)?.connection.kind === 'offline';
+/**
+ * Why nothing is submitted for view `view` while GitHub gives it no answer, as the header's chip
+ * calls why ("Offline", "No response"), or nothing while GitHub answers.
+ */
+export function offline(view: string): string | undefined {
+  const connection = pullOf(view)?.connection;
+  return connection?.kind === 'offline' ? chipLabel(connection.cause, OFFLINE) : undefined;
 }
 
 /** The pull request's tab on screen, if a review can be submitted from it, or why not. */
@@ -233,7 +238,8 @@ export function whyNot(now = Date.now()): string | undefined {
   if (!dialog?.read) return READING;
   const can = canSubmit(dialog.view);
   if (can !== true) return can;
-  if (offline(dialog.view)) return OFFLINE;
+  const away = offline(dialog.view);
+  if (away !== undefined) return away;
   if (uploadsHold(summaryBox(dialog.view))) return UPLOADING;
   const until = pausedUntil(dialog.read, now);
   return until === undefined ? undefined : pausedReason(until);
