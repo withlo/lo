@@ -6,7 +6,7 @@
 
 import type { MergeKind } from '@lo/ui';
 
-import { chipLabel, explain } from '../../../window/explain.ts';
+import { explain, offlineLabel, type Cause } from '../../../window/explain.ts';
 import type {
   Action,
   Blocker,
@@ -885,7 +885,7 @@ function clock(at: number): string {
 export function offWords(off: Off, who: Who = SOMEONE): string {
   switch (off.kind) {
     case 'offline':
-      return chipLabel(off.cause, 'Offline');
+      return offlineLabel(off.cause);
     case 'paused':
       return `GitHub’s rate limit resets at ${clock(off.until)}`;
     case 'signedOut':
@@ -894,6 +894,19 @@ export function offWords(off: Off, who: Who = SOMEONE): string {
       off satisfies never;
       return 'Offline';
   }
+}
+
+/**
+ * What a refusal says: GitHub giving no answer, by its `cause`, as {@link offWords} says it, else
+ * main's `text`, which is a refused plan's `why`.
+ */
+export function refusalText(refusal: {
+  readonly text: string;
+  readonly cause?: Cause | undefined;
+}): string {
+  return refusal.cause === undefined
+    ? refusal.text
+    : offWords({ kind: 'offline', cause: refusal.cause });
 }
 
 /** The titles of the reasons in `rows` that `keep` keeps, a line each, as a dimmed control's reason. */
@@ -1446,7 +1459,7 @@ export function outcomeTitle(job: JobView): string | undefined {
 /** The reason under {@link outcomeTitle}, in the core's words, and what GitHub showed since. */
 export function outcomeDetail(job: JobView): string {
   const said: string[] = [];
-  if (job.state.kind === 'refused') said.push(job.state.refusal.text);
+  if (job.state.kind === 'refused') said.push(refusalText(job.state.refusal));
   if (job.state.kind === 'unknown') {
     said.push(job.state.text);
     if (job.state.shows === 'open') said.push(`#${job.number} is still open.`);

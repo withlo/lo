@@ -93,8 +93,8 @@ export function explain(cause: Cause, system: System = currentSystem()): string 
 /**
  * What a chip, or a dimmed control's reason, calls `cause`, why GitHub gave no answer or a read
  * failed: "Offline" only where no connection reached GitHub, "No response" where GitHub didn't
- * answer in time, "Can’t read sign-in" where the account's sign-in can't be read, and "Can’t
- * reach GitHub" where Lo can't tell why. Any other cause is `otherwise`.
+ * answer in time, and "Can’t read sign-in" where the account's sign-in can't be read. Any other
+ * cause is `otherwise`.
  */
 export function chipLabel(cause: Cause, otherwise: string): string {
   switch (cause.kind) {
@@ -105,7 +105,6 @@ export function chipLabel(cause: Cause, otherwise: string): string {
     case 'unreadable':
       return 'Can’t read sign-in';
     case 'unknown':
-      return 'Can’t reach GitHub';
     case 'proxy':
     case 'github':
     case 'rateLimit':
@@ -122,6 +121,15 @@ export function chipLabel(cause: Cause, otherwise: string): string {
     default:
       throw new Error(`A cause Lo doesn't know: ${JSON.stringify(cause satisfies never)}`);
   }
+}
+
+/**
+ * What a chip, or a dimmed control's reason, calls GitHub giving the connection no answer, for
+ * `cause`: as {@link chipLabel} says, "Can’t reach GitHub" where Lo can't tell why, and "Offline"
+ * for the rest, such as a proxy that refused.
+ */
+export function offlineLabel(cause: Cause): string {
+  return cause.kind === 'unknown' ? 'Can’t reach GitHub' : chipLabel(cause, 'Offline');
 }
 
 /**

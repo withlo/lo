@@ -262,6 +262,12 @@ describe('a read that fails after the view was drawn', () => {
       problem: { kind: 'failed', cause: { kind: 'timeout' }, retryAt: null },
     };
     expect(draw(<Chip view={unanswered} />).textContent).toBe('failed danger No response');
+    // A cause Lo can't tell is GitHub's error, as ever: only the connection says it can't reach it.
+    const unknown: PullView = {
+      ...failedRead,
+      problem: { kind: 'failed', cause: { kind: 'unknown' }, retryAt: null },
+    };
+    expect(draw(<Chip view={unknown} />).textContent).toBe('failed danger GitHub error');
     // When GitHub last confirmed what's on screen goes under the line, in every state.
     const checked = Date.now() - 4 * 60_000;
     expect(await chipLines({ ...unanswered, checked })).toEqual([

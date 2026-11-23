@@ -892,10 +892,11 @@ status bar.
   account there is, and none where other accounts are signed in. An account added, or signed in
   again, has a tab read as nobody under the rate limit work out its account again, and has the
   others name the signed-out account afresh.
-- What says GitHub gave no answer, anywhere, says why, by the cause `causeOf` gave it, as
-  `chipLabel` and `explain` word it: the tab's connection, merge's `Off`, and the stall of a poller
-  that can't read now, which the merge status and the review threads carry as a cause. The merge and
-  queue features' own refusals, which main words, take the same words from the poller's cause.
+- What says GitHub gave no answer, anywhere, says why, by the cause `causeOf` gave it, which crosses
+  as data for the window to word with `offlineLabel`, `chipLabel` and `explain`: the tab's
+  connection, merge's `Off` and its refusals for it, the queue's `ActWhy` while its poller can't
+  reach GitHub, the overview's `offline` problem, and the stall of a poller that can't read now,
+  which the merge status and the review threads carry. Main words none of it.
 - The window gets what it shows on `tab.pull`, `tab.files` and `tab.local`, each sent only when it
   changes, and asks for all three with `tab.state`. None of it holds a token. `tab.copy` puts up to
   1 MiB of text on the clipboard, and `tab.openExternal` opens pages on `https://github.com/` only,

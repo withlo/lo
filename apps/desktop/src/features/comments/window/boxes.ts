@@ -41,7 +41,7 @@ import {
 
 import { announce, notice, refuse, withdraw } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
-import { chipLabel } from '../../../window/explain.ts';
+import { offlineLabel } from '../../../window/explain.ts';
 import { client } from '../../../window/ipc.ts';
 import {
   diffStateOf,
@@ -115,7 +115,6 @@ import {
   whyOf,
   NOTHING_TO_DISCARD,
   NOTHING_TO_UNDO,
-  OFFLINE,
 } from './writing.ts';
 
 /** How long after the last key a box's text is saved, in milliseconds. */
@@ -507,7 +506,7 @@ export function loginOf(view: string): string | undefined {
  */
 export function offline(view: string): string | undefined {
   const connection = pullOf(view)?.connection;
-  return connection?.kind === 'offline' ? chipLabel(connection.cause, OFFLINE) : undefined;
+  return connection?.kind === 'offline' ? offlineLabel(connection.cause) : undefined;
 }
 
 /** The screen a view's diff shows, as its threads are placed on it, for a file of it. */

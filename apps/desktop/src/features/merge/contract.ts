@@ -531,8 +531,9 @@ export const plan = z.strictObject({
 export type MergePlan = z.output<typeof plan>;
 
 /**
- * A plan to confirm, or why there's none, in Lo's words. `again` when Lo is still finding out what
- * the merge takes, as while it looks up a stack's branches: asking again soon may plan it.
+ * A plan to confirm, or why there's none, in Lo's words, or as `cause`, why GitHub gives no answer,
+ * which the window words in place of an empty `why`. `again` when Lo is still finding out what the
+ * merge takes, as while it looks up a stack's branches: asking again soon may plan it.
  */
 export const planned = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('plan'), plan }),
@@ -542,6 +543,7 @@ export const planned = z.discriminatedUnion('kind', [
     again: z.boolean(),
     /** What GitHub, or the error, said, for Details. */
     details: words.optional(),
+    cause: cause.optional(),
   }),
 ]);
 export type Planned = z.output<typeof planned>;
@@ -552,6 +554,8 @@ export type Planned = z.output<typeof planned>;
  * - `kind`: the core's name for GitHub's refusal, such as `headMoved`, `rules` or `paused`, or
  *   Lo's own at the press, such as `offline`, `busy` or `unread`;
  * - `text`: what happened, and what to do, in sentences;
+ * - `cause`: why GitHub gives no answer, for `offline`, which the window words in place of an empty
+ *   `text`;
  * - `rules`: each rule GitHub named, for `rules`;
  * - `details`: GitHub's own text, or the error's, as it came, which only Details shows;
  * - `until`: when GitHub allows writes again, for `paused`;
@@ -563,6 +567,7 @@ export type Planned = z.output<typeof planned>;
 export const refusal = z.strictObject({
   kind: z.string().max(64),
   text: words,
+  cause: cause.optional(),
   rules: z.array(words),
   details: words.optional(),
   until: time.nullable(),

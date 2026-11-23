@@ -186,7 +186,7 @@ export function ReadFailed({ tab, problem }: { tab: PullTab; problem: ReadProble
           {cause}
           {retryAt !== undefined && (
             <>
-              {' '}
+              {cause === '' ? '' : ' '}
               Retrying <Countdown at={retryAt} />.
             </>
           )}

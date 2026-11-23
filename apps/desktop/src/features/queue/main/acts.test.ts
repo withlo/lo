@@ -373,12 +373,14 @@ describe('planning a change to the queue', () => {
     poller.offline = true;
     expect(await acts.plan(TAB.id, 260, 'remove')).toMatchObject({
       kind: 'refused',
-      why: 'Offline.',
+      why: '',
+      cause: { kind: 'offline' },
     });
-    // Worded by why: GitHub took a request and never answered.
+    // Its cause, for the window to word: GitHub took a request and never answered.
     poller.unanswered = { kind: 'timeout' };
     expect(await acts.plan(TAB.id, 260, 'remove')).toMatchObject({
-      why: 'GitHub didn’t respond.',
+      why: '',
+      cause: { kind: 'timeout' },
       details: 'GitHub can’t be reached.',
     });
     poller.unanswered = { kind: 'offline' };
@@ -615,7 +617,7 @@ describe('confirming a change to the queue', () => {
     const offline = setup();
     const other = await planned(offline.acts, 260);
     offline.poller.offline = true;
-    expect(await offline.acts.confirm(other.key)).toMatchObject({ why: 'Offline.' });
+    expect(await offline.acts.confirm(other.key)).toMatchObject({ cause: { kind: 'offline' } });
     expect([...unread.poller.sent, ...offline.poller.sent]).toEqual([]);
   });
 
@@ -650,7 +652,10 @@ describe('confirming a change to the queue', () => {
     watch.onFresh = () => {
       poller.offline = true;
     };
-    expect(await acts.confirm(plan.key)).toMatchObject({ kind: 'refused', why: 'Offline.' });
+    expect(await acts.confirm(plan.key)).toMatchObject({
+      kind: 'refused',
+      cause: { kind: 'offline' },
+    });
     watch.onFresh = undefined;
     poller.offline = false;
     plan = await planned(acts, 260);
@@ -938,7 +943,7 @@ describe('`a` on a pull request waiting to join', () => {
     });
     writes.taken.clear();
     poller.offline = true;
-    expect(await acts.autoMergeOff(TAB.id, 258)).toMatchObject({ why: 'Offline.' });
+    expect(await acts.autoMergeOff(TAB.id, 258)).toMatchObject({ cause: { kind: 'offline' } });
     expect(poller.sent).toEqual([]);
   });
 

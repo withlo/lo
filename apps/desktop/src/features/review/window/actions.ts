@@ -11,14 +11,13 @@ import type { Composer } from '@lo/ui/code';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { announce, refuse } from '../../../window/commands/notices.tsx';
-import { chipLabel } from '../../../window/explain.ts';
+import { offlineLabel } from '../../../window/explain.ts';
 import { type Attachable, endUploads, uploadsHold } from '../../comments/window/shared.ts';
 import { shipShowing } from '../../merge/window/shared.ts';
 import { pullOf, runOf, activeTab, type PullTab } from '../../tab/window/shared.ts';
 import { IN_A_LAYER, SIGN_IN, type ReviewEventRow, type Submission } from '../contract.ts';
 import { main, revisions as revisionsClient, tabs } from './main.ts';
 import {
-  OFFLINE,
   pausedReason,
   pausedUntil,
   READING,
@@ -96,7 +95,7 @@ export function canSubmit(view: string): true | string {
  */
 export function offline(view: string): string | undefined {
   const connection = pullOf(view)?.connection;
-  return connection?.kind === 'offline' ? chipLabel(connection.cause, OFFLINE) : undefined;
+  return connection?.kind === 'offline' ? offlineLabel(connection.cause) : undefined;
 }
 
 /** The pull request's tab on screen, if a review can be submitted from it, or why not. */

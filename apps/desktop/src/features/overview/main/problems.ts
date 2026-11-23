@@ -1,7 +1,9 @@
 // What reading an overview ran into, as the tab says it, and when to try again: sorted as a pull
 // request's tab sorts what reading it ran into. Nothing here calls Electron or keeps state.
 
-import { githubErrorIn, saidBy } from '@lo/github';
+import { causeOf, githubErrorIn, saidBy } from '@lo/github';
+
+import { githubCause } from '../../../ipc/cause.ts';
 
 import type { Acting } from '../../tab/contract.ts';
 import type { Problem } from '../contract.ts';
@@ -72,7 +74,9 @@ export function problemOf(
       };
     }
     if (detail.kind === 'network' || detail.kind === 'tokenUnavailable') {
-      return { problem: { kind: 'offline', message: github.said(), retryAt }, wait };
+      const login = acting.kind === 'account' ? acting.login : undefined;
+      const cause = githubCause(causeOf(error, { login, owner }));
+      return { problem: { kind: 'offline', cause, message: github.said(), retryAt }, wait };
     }
   }
   return { problem: { kind: 'failed', message: saidBy(error), retryAt }, wait };

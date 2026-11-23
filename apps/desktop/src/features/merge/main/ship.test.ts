@@ -503,7 +503,7 @@ describe('the press', () => {
     const offlineKey = (await offline.plan()).key;
     offline.set.offline();
     await expect(offline.shipping.confirm(offlineKey)).resolves.toMatchObject({
-      refusal: { kind: 'offline' },
+      refusal: { kind: 'offline', text: '', cause: { kind: 'offline' } },
     });
     const screen = setup();
     const screenKey = (await screen.plan()).key;

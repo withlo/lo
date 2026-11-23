@@ -4,7 +4,13 @@
 // details; and a change to the pull request, a newer push, is its banner. Nothing here draws
 // anything.
 
-import { chipLabel, explain, gitWords, REMEDY_LABELS, remedyOf } from '../../../window/explain.ts';
+import {
+  explain,
+  gitWords,
+  offlineLabel,
+  REMEDY_LABELS,
+  remedyOf,
+} from '../../../window/explain.ts';
 import type { Connection, FetchFailure, LocalState, PullView } from '../contract.ts';
 
 /** What a button the tab offers does. */
@@ -265,7 +271,7 @@ export function connectionNote(
     case 'offline': {
       // GitHub gave no answer, worded by why: only what "Offline" names has its icon.
       const { cause } = connection;
-      const label = chipLabel(cause, 'Offline');
+      const label = offlineLabel(cause);
       return {
         kind: label === 'Offline' ? 'offline' : 'failed',
         tone: 'warn',

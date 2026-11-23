@@ -14,7 +14,7 @@ import {
   type Files,
   type PullView,
 } from '../../tab/window/shared.ts';
-import { chipLabel } from '../../../window/explain.ts';
+import { offlineLabel } from '../../../window/explain.ts';
 import { PATH_LIMIT, pathBytes, type TreePath } from '../../tree/contract.ts';
 import type { Marked } from '../contract.ts';
 import { main } from './main.ts';
@@ -182,7 +182,7 @@ function connectionRefusal(pull: PullView): string | undefined {
     case 'signedOut':
       return `${connection.login} is signed out`;
     case 'offline':
-      return chipLabel(connection.cause, 'Offline');
+      return offlineLabel(connection.cause);
     case 'rateLimited':
       return `GitHub’s rate limit resets at ${timeOf(connection.until)}`;
     case 'live':

@@ -11,6 +11,7 @@
 
 import { z } from 'zod';
 
+import type { Cause } from '../../ipc/cause.ts';
 import { defineContract, reply } from '../../ipc/contract.ts';
 import { branchName, pullNumber, tabId } from '../tab/contract.ts';
 
@@ -242,11 +243,13 @@ export type ActNext = 'signIn' | 'open' | 'remove' | 'ask' | 'none' | 'gone';
 
 /**
  * Why a change didn't go, or isn't known to have: `why`, one line in the reader's words, empty for
- * a cause not known; `details`, GitHub's own text, as it came; `next`, what can be done about it;
+ * a cause not known; `cause`, why GitHub gives no answer, which the window words in place of an
+ * empty `why`; `details`, GitHub's own text, as it came; `next`, what can be done about it;
  * `checking`, that it failed while Lo checked the queue, before it asked.
  */
 export interface ActWhy {
   readonly why: string;
+  readonly cause?: Cause | undefined;
   readonly details?: string | undefined;
   readonly next?: ActNext | undefined;
   readonly checking?: boolean | undefined;

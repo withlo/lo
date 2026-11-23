@@ -487,13 +487,13 @@ export class MergeReads {
     return undefined;
   }
 
-  /** The first read failed, for `why`, the reader's words; `raw` is what failed, for the log. */
   /** Fails the first read for `stall`, which the window words, as the poller can't read now. */
   #failStalled(followed: Followed, stall: Cause): void {
     this.#options.log(`${followed.pull.toString()}: can't read now (${stall.kind})`);
     this.#set(followed, { kind: 'failed', why: '', stall });
   }
 
+  /** The first read failed, for `why`, the reader's words; `raw` is what failed, for the log. */
   #fail(followed: Followed, why: string, raw: string): void {
     this.#options.log(`${followed.pull.toString()}: ${raw}`);
     // What it said goes behind Details, unless it's only the reason again.

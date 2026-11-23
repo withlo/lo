@@ -32,6 +32,7 @@ import {
   placedLabel,
   placedWhy,
   queueLine,
+  refusalText,
   rowPage,
   rowsOf,
   shownMethod,
@@ -491,6 +492,15 @@ test('GitHub’s estimates read in their largest whole unit', () => {
     '1 h',
     '2 h',
   ]);
+});
+
+test('a refusal for GitHub giving no answer says its cause as a dimmed control does, else main’s words', () => {
+  expect(refusalText({ text: '', cause: { kind: 'timeout' } })).toBe('No response');
+  expect(refusalText({ text: '', cause: { kind: 'offline' } })).toBe('Offline');
+  expect(refusalText({ text: '', cause: { kind: 'unknown' } })).toBe('Can’t reach GitHub');
+  expect(refusalText({ text: 'This tab’s account has changed.' })).toBe(
+    'This tab’s account has changed.',
+  );
 });
 
 test('merging is off, with why, offline, while GitHub’s rate limit holds, signed out, or while it can’t merge', () => {

@@ -5,7 +5,7 @@ import { noBranchRules } from '@lo/github';
 import type { Local } from '@lo/review';
 import { expect, test } from 'vitest';
 
-import { mergeState } from '../contract.ts';
+import { mergeState, mergeView } from '../contract.ts';
 import { pageOf, pagesOf, stateOf } from './status.ts';
 import { factsOf, HEAD } from './test/facts.ts';
 
@@ -143,6 +143,32 @@ test('a read GitHub left part of out, or whose checks were cut short, says so', 
     { rules: { ...noBranchRules('main'), unavailable: 'GitHub answered 403' } },
   );
   expect(partial.partial).toBe(true);
+});
+
+test('a stall and GitHub giving no answer cross as causes the contract takes', () => {
+  const facts = factsOf();
+  const stalled = stateOf({
+    facts,
+    local: LOCAL,
+    readAt: 5,
+    pull: PULL,
+    stale: 'GitHub can’t be reached.',
+    stall: { kind: 'timeout' },
+    off: { kind: 'offline', cause: { kind: 'timeout' } },
+  });
+  // The cause stands in for main's words, which only a read that failed for something else gives.
+  expect(stalled).toMatchObject({
+    stale: null,
+    stall: { kind: 'timeout' },
+    off: { kind: 'offline', cause: { kind: 'timeout' } },
+  });
+  expect(mergeState.safeParse(stalled).success).toBe(true);
+  expect(mergeView.safeParse({ kind: 'failed', why: '', stall: { kind: 'offline' } }).success).toBe(
+    true,
+  );
+  // A cause the contract doesn't know doesn't cross.
+  const unknown = { ...stalled, off: { kind: 'offline', cause: { kind: 'lost' } } };
+  expect(mergeState.safeParse(unknown).success).toBe(false);
 });
 
 test('only an https page with a host is one the panel links', () => {

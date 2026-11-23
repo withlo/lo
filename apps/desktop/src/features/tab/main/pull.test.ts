@@ -645,7 +645,8 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
   });
 
   it('says why in place of its view when nobody can read it for the rate limit, and reads again at its reset', async () => {
-    // A reset a second or two away, past which GitHub answers again.
+    const git = await testGit();
+    // A reset a second or two from the tab's first read, past which GitHub answers again.
     const reset = Math.floor(Date.now() / 1000) + 2;
     const answer = replayFetch('app_e2e');
     const github: TabGithub = {
@@ -656,7 +657,6 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
       }),
       accounts: () => Promise.resolve([]),
     };
-    const git = await testGit();
     const { tab, sent } = tabFor({ github, git });
     tab.show();
     // With nothing kept to show, the tab can't open: it fails with the limit, not a wait for good.
@@ -714,9 +714,15 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
     const git = await testGit();
     const { tab, sent, lines } = tabFor({ github, git, offlineAfter: 1_500 });
     tab.show();
-    // A blip says nothing: the read failed, and the tab stays on its loading view.
+    // A blip says nothing: the read failed, and the tab stays on its loading view, still loading
+    // until the next read.
     await expect.poll(() => lines.some((line) => line.startsWith('reading'))).toBe(true);
-    expect(sent.pull).toMatchObject({ problem: null, header: null, connection: { kind: 'live' } });
+    expect(sent.pull).toMatchObject({
+      loading: true,
+      problem: null,
+      header: null,
+      connection: { kind: 'live' },
+    });
     // Once it lasts, it says why in its view's place, as its chip does.
     await expect
       .poll(() => sent.pull?.problem, { timeout: 5_000 })

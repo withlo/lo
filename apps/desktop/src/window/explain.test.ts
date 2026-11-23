@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { chipLabel, explain, gitWords, REMEDY_LABELS, remedyOf, waitsOut } from './explain.ts';
+import {
+  chipLabel,
+  explain,
+  gitWords,
+  offlineLabel,
+  REMEDY_LABELS,
+  remedyOf,
+  waitsOut,
+} from './explain.ts';
 
 describe('explain', () => {
   it('words each cause as the guide does', () => {
@@ -85,11 +93,20 @@ describe('chipLabel', () => {
     expect(chipLabel({ kind: 'proxy', why: 'refused' }, 'Offline')).toBe('Offline');
   });
 
-  it('names a sign-in that can’t be read, and a failure Lo can’t tell the cause of', () => {
+  it('names a sign-in that can’t be read, and leaves a cause Lo can’t tell to `otherwise`', () => {
     expect(chipLabel({ kind: 'unreadable', login: 'rozed-bot' }, 'Offline')).toBe(
       'Can’t read sign-in',
     );
-    expect(chipLabel({ kind: 'unknown' }, 'Offline')).toBe('Can’t reach GitHub');
+    expect(chipLabel({ kind: 'unknown' }, 'GitHub error')).toBe('GitHub error');
+  });
+});
+
+describe('offlineLabel', () => {
+  it('calls GitHub out of reach for a cause Lo can’t tell “Can’t reach GitHub”, else as a chip does', () => {
+    expect(offlineLabel({ kind: 'unknown' })).toBe('Can’t reach GitHub');
+    expect(offlineLabel({ kind: 'timeout' })).toBe('No response');
+    expect(offlineLabel({ kind: 'unreadable', login: 'rozed-bot' })).toBe('Can’t read sign-in');
+    expect(offlineLabel({ kind: 'proxy', why: 'refused' })).toBe('Offline');
   });
 });
 

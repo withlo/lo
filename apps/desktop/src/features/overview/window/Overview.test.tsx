@@ -655,7 +655,12 @@ describe('an overview that can’t be shown', () => {
         stateOf(tab, {
           found: 'unknown',
           overview: null,
-          problem: { kind: 'offline', message: 'reset', retryAt: Date.now() + 8_000 },
+          problem: {
+            kind: 'offline',
+            cause: { kind: 'offline' },
+            message: 'reset',
+            retryAt: Date.now() + 8_000,
+          },
         }),
       ),
     );
