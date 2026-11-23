@@ -240,6 +240,17 @@ function broken(): string {
   throw new Error('getconf: no such variable');
 }
 
+/** What `start` threw a {@link StartupError} for. */
+function refusal(start: () => unknown): unknown {
+  try {
+    start();
+  } catch (error) {
+    if (error instanceof StartupError) return error.failure;
+    throw error;
+  }
+  return undefined;
+}
+
 describe('macCaches', () => {
   it('asks getconf, by its path, and gives the folder’s real path', () => {
     const { said, real } = userCaches();
@@ -256,12 +267,16 @@ describe('macCaches', () => {
     const { said, given, real } = userCaches();
     chmodSync(real, 0o777);
     expect(() => macCaches({ run: () => said, uid })).toThrow(StartupError);
-    expect(() => macCaches({ run: () => said, uid })).toThrow(
-      `Lo keeps its cache in the folder macOS keeps for this user's caches, but other users can change ${given}, so Lo won't use it.`,
-    );
-    expect(() => macCaches({ run: broken, uid })).toThrow(
-      "macOS didn't say where that is (getconf: no such variable)",
-    );
+    expect(refusal(() => macCaches({ run: () => said, uid }))).toEqual({
+      kind: 'cacheFolder',
+      why: 'writable',
+      path: given,
+    });
+    expect(refusal(() => macCaches({ run: broken, uid }))).toEqual({
+      kind: 'cacheFolder',
+      why: 'noLocation',
+      said: 'getconf: no such variable',
+    });
   });
 
   it('checks the real path it gives, not only the one getconf named', () => {
@@ -270,9 +285,10 @@ describe('macCaches', () => {
     const elsewhere = folder();
     chmodSync(elsewhere, 0o777);
     fake('realpath', (path) => (path === said.slice(0, -1) ? elsewhere : undefined));
-    expect(() => macCaches({ run: () => said, uid })).toThrow(
-      `but other users can change ${elsewhere}, so Lo won't use it.`,
-    );
+    expect(refusal(() => macCaches({ run: () => said, uid }))).toMatchObject({
+      why: 'writable',
+      path: elsewhere,
+    });
   });
 
   it.runIf(process.platform === 'darwin')('finds this user’s folder for caches', () => {
@@ -298,19 +314,21 @@ describe('whyNotCaches', () => {
     const link = join(dir, 'link');
     symlinkSync(dir, link);
     for (const path of ['cache', '', '/Users/me/../other']) {
-      expect(whyNotCaches(path, uid)).toBe(
-        `macOS named ${JSON.stringify(path)}, which isn't an absolute path`,
-      );
+      expect(whyNotCaches(path, uid)).toEqual({ why: 'noLocation', said: JSON.stringify(path) });
     }
-    expect(whyNotCaches(join(dir, 'missing'), uid)).toMatch(/^Lo can't find .*missing \(ENOENT/);
-    expect(whyNotCaches(file, uid)).toBe(`${file} isn't a folder`);
+    expect(whyNotCaches(join(dir, 'missing'), uid)).toMatchObject({
+      why: 'missing',
+      path: join(dir, 'missing'),
+      said: expect.stringMatching(/ENOENT/),
+    });
+    expect(whyNotCaches(file, uid)).toEqual({ why: 'notFolder', path: file });
     // Even with the slash that would have the link followed.
-    expect(whyNotCaches(link, uid)).toBe(`${link} is a link`);
-    expect(whyNotCaches(`${link}/`, uid)).toBe(`${link} is a link`);
-    expect(whyNotCaches(dir, uid + 1)).toBe(`another user owns ${dir}`);
+    expect(whyNotCaches(link, uid)).toEqual({ why: 'link', path: link });
+    expect(whyNotCaches(`${link}/`, uid)).toEqual({ why: 'link', path: link });
+    expect(whyNotCaches(dir, uid + 1)).toEqual({ why: 'owner', path: dir });
     for (const mode of [0o770, 0o702]) {
       chmodSync(dir, mode);
-      expect(whyNotCaches(dir, uid)).toBe(`other users can change ${dir}`);
+      expect(whyNotCaches(dir, uid)).toEqual({ why: 'writable', path: dir });
     }
   });
 });
@@ -729,7 +747,7 @@ describe('createGit', () => {
   it('runs no git with LO_GIT=none, and opens no cache', async () => {
     const { git, root } = testGit({ settings: { program: 'none' } });
 
-    expect(await git.check()).toMatchObject({ status: 'missing', message: "Lo can't find git." });
+    expect(await git.check()).toMatchObject({ status: 'missing' });
 
     expect(git.cache).toBe(undefined);
     expect(existsSync(root)).toBe(false);
