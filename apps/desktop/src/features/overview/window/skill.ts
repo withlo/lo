@@ -2,18 +2,20 @@
 // Settings, the welcome screen or the app menu alike; and the command that installs it from a
 // terminal, which Settings shows and copies.
 
+import { COPIED_MS, type CopySaid } from '@lo/ui';
 import { createStore } from 'zustand/vanilla';
 
-import { notify } from '../../../window/commands/notices.tsx';
+import { menuStale } from '../../../window/commands/bar.ts';
+import { announce, fail, notify, refuse } from '../../../window/commands/notices.tsx';
 import type { Agent, SkillResult, SkillState } from '../contract.ts';
 import { main, tabs } from './main.ts';
-import { agentsToInstall, refusalWords, resultWords } from './words.ts';
+import { agentsToInstall, installWords, notSetUp, refusalWords } from './words.ts';
 
 /** The checker Lo builds in, `@withlo/overview@<version>`, as electron.vite.config.ts reads it. */
 declare const LO_OVERVIEW_CHECKER: string;
 
-/** What the notice and the command are called. */
-export const TITLE = 'Install overview skill';
+/** What an install that failed says, in a note or on the row that asked. */
+export const FAILED = 'Couldn’t install the overview skill';
 
 /**
  * The command that installs the skill from a terminal: the checker by the exact version the skill
@@ -26,23 +28,23 @@ export interface SkillStore {
   readonly state: SkillState | undefined;
   /** Whether it's being installed. */
   readonly installing: boolean;
-  /** What went wrong when main couldn't be asked to install it, until the next install. */
-  readonly said: string | undefined;
   /**
    * Main couldn't be asked to install it when a row asked: the error's words, which the row gives
    * behind Details, until the next install.
    */
   readonly failed: string | undefined;
-  /** Whether the install command was copied a moment ago: not since Settings' row appeared. */
-  readonly copied: boolean;
+  /**
+   * How the last copy of the install command went, a moment ago, for its button to say: not since
+   * Settings' row appeared.
+   */
+  readonly copied: CopySaid | undefined;
 }
 
 export const skillStore = createStore<SkillStore>()(() => ({
   state: undefined,
   installing: false,
-  said: undefined,
   failed: undefined,
-  copied: false,
+  copied: undefined,
 }));
 
 /** How many times main has pushed where the skill stands. */
@@ -62,80 +64,121 @@ export async function checkSkill(): Promise<void> {
   }
 }
 
-/** Takes where the skill stands each time main says it changed. Returns a way to stop. */
+/**
+ * Takes where the skill stands each time main says it changed, and has the app menu made again
+ * when that changes whether it can be installed. Returns a way to stop.
+ */
 export function followSkill(): () => void {
-  return main().subscribe('skill', (state) => {
+  let was = installable();
+  const unwatch = skillStore.subscribe(() => {
+    const now = installable();
+    if (now === was) return;
+    was = now;
+    menuStale();
+  });
+  const stop = main().subscribe('skill', (state) => {
     pushes++;
     skillStore.setState({ state });
   });
+  return () => {
+    unwatch();
+    stop();
+  };
+}
+
+/**
+ * Why the command can't install the skill now, which dims it, or `true`: while it's being
+ * installed. Whether an agent is set up it asks main as it runs, since the folders change outside
+ * Lo and the window looks at them only while a row shows. The rows dim their buttons on that too.
+ */
+export function installable(): true | string {
+  return skillStore.getState().installing ? 'Installing…' : true;
 }
 
 /**
  * Installs the skill for `only`, the agents a row names, or else for the agents that lack it, or
- * again for those that are set up, and says how it went once: in a notice when a command asked, and
- * on the row when a row did (`row`), with a notice only when no agent is set up. Where the skill stands then, and what stops it
- * where it does, are the rows' to say. Resolves with what main did, or nothing when it couldn't be
- * asked.
+ * again for those that are set up, and says how it went once: on the row when a row asked (`row`),
+ * and in a note when a command did, with nothing in view. Where the skill stands then, and what
+ * stops it where it does, are the rows' to say. While no agent is set up, the rows' buttons are
+ * dimmed with why; the command asked then says the reason alone. Resolves with what main did, or
+ * nothing when it couldn't be asked.
  */
 export async function installSkill(
   only?: readonly Agent[],
   from: 'command' | 'row' = 'command',
 ): Promise<readonly SkillResult[] | undefined> {
   if (skillStore.getState().installing) return undefined;
-  skillStore.setState({ installing: true, said: undefined, failed: undefined });
-  let said: string | undefined;
+  skillStore.setState({ installing: true, failed: undefined });
+  let tell: (() => void) | undefined;
   let results: readonly SkillResult[] | undefined;
   try {
     // Asked just now, so the choice is made of where things stand and not of when the window looked.
     const before = await main().currentSkill();
-    results = await main().installSkill({ agents: [...(only ?? agentsToInstall(before))] });
-    // A row says where the skill stands for each agent, and not that none is set up, which is why
-    // nothing happened.
-    const none = results.find((each) => each.kind === 'refused' && each.agent === null);
-    said =
-      from === 'command'
-        ? resultWords(results, before)
-        : none?.kind === 'refused'
-          ? refusalWords(none.why, before)
-          : undefined;
+    const done = await main().installSkill({ agents: [...(only ?? agentsToInstall(before))] });
+    results = done;
+    const none = done.find((each) => each.kind === 'refused' && each.agent === null);
+    if (none?.kind === 'refused') {
+      const why = notSetUp(before) ?? refusalWords(none.why, before);
+      tell = () => refuse(why);
+    } else if (from === 'command') {
+      // Each agent named where it went one way for some and the other for the rest.
+      const said = installWords(done, before);
+      tell = () => {
+        if (said.done !== undefined) announce(said.done);
+        for (const each of said.failed) notify(each.title, each.body);
+      };
+    }
   } catch (error) {
     console.error("Lo couldn't install the overview skill:", error);
-    if (from === 'row') {
-      skillStore.setState({ failed: error instanceof Error ? error.message : String(error) });
-    } else {
-      said = "Lo couldn't install the overview skill.";
-      skillStore.setState({ said });
-    }
+    const details = error instanceof Error ? error.message : String(error);
+    if (from === 'row') skillStore.setState({ failed: details });
+    else tell = () => notify(FAILED, '', { details });
   }
   // Still installing while the window learns where things stand, so no button offers what it was.
   await checkSkill();
   skillStore.setState({ installing: false });
-  if (said !== undefined) notify(TITLE, said);
+  tell?.();
   return results;
 }
 
-/** What the notice for copying the command is called. */
-export const COPY_TITLE = 'Copy the install command';
-
-/** How long the button says "Copied" after a copy, in ms. */
-export const COPIED_FOR = 3000;
+/** How long the button says "Copied" or "Couldn’t copy" after a copy, in ms. */
+export const COPIED_FOR = COPIED_MS;
 
 let forgetting: ReturnType<typeof setTimeout> | undefined;
 
+/** How many of Settings' rows with the install command's Copy button are drawn. */
+let buttons = 0;
+
+/**
+ * Says that Settings' row with the install command's Copy button is drawn, so a copy says how it
+ * went on the button. Returns a function to call when the row goes.
+ */
+export function drawCopyButton(): () => void {
+  buttons += 1;
+  return () => {
+    buttons -= 1;
+  };
+}
+
 /**
  * Puts the command that installs the skill from a terminal on the clipboard, as `yc` does, and says
- * so for a few seconds, each time. When it can't, says that in a notice.
+ * how that went, each time: on Settings' Copy button while its row is drawn, which reads "Copied"
+ * or "Couldn’t copy" for a moment, and otherwise in a note, as for `yc` while a search hides it.
  */
 export async function copyInstallCommand(): Promise<void> {
-  let copied = true;
+  let failed: string | undefined;
   try {
     await tabs().copy({ text: INSTALL_COMMAND });
   } catch (error) {
     console.error("Lo couldn't copy the command that installs the overview skill:", error);
-    notify(COPY_TITLE, "Lo couldn't copy the command.");
-    copied = false;
+    failed = error instanceof Error ? error.message : String(error);
+  }
+  if (buttons === 0) {
+    if (failed === undefined) announce('Copied install command');
+    else fail('Couldn’t copy the command', failed);
+    return;
   }
   clearTimeout(forgetting);
-  skillStore.setState({ copied });
-  if (copied) forgetting = setTimeout(() => skillStore.setState({ copied: false }), COPIED_FOR);
+  skillStore.setState({ copied: failed === undefined ? 'copied' : 'failed' });
+  forgetting = setTimeout(() => skillStore.setState({ copied: undefined }), COPIED_FOR);
 }

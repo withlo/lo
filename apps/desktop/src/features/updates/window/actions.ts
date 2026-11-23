@@ -217,8 +217,15 @@ export async function openUpdatePage(): Promise<void> {
   await openPage(pageOfUpdate(updatesStore.getState().state) ?? RELEASES);
 }
 
-/** Puts the toast's first button in focus, which `Tab` then moves from. The toast never does. */
+/**
+ * Puts the toast's first button in focus, which `Tab` then moves from, or, while the toast steps
+ * aside for Settings › About, the offer's main button there (its filled one), or its first while it
+ * has none, as while the update downloads. The toast never does.
+ */
 export function goToToast(): void {
-  const first = document.querySelector<HTMLElement>('[data-lo-scope="toasts"] button');
+  const first =
+    document.querySelector<HTMLElement>('[data-lo-scope="toasts"] button') ??
+    document.querySelector<HTMLElement>('[data-lo-offer] button[data-fill]') ??
+    document.querySelector<HTMLElement>('[data-lo-offer] button');
   first?.focus();
 }

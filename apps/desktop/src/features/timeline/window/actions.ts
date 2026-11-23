@@ -250,9 +250,8 @@ export function compare(tab: string, from: RevisionMark, to: RevisionMark): void
   revisions()
     .compare({ id: tab, from: from.head, to: to.head })
     .catch((error: unknown) => {
-      notify(
-        `Compare r${from.number} → r${to.number}`,
-        error instanceof Error ? error.message : String(error),
-      );
+      notify(`Couldn’t compare r${from.number} → r${to.number}`, '', {
+        details: error instanceof Error && error.message !== '' ? error.message : undefined,
+      });
     });
 }

@@ -89,7 +89,8 @@ export interface ButtonProps
    * `disabled` button it's the reason it can't be pressed now, in a few words with no full stop:
    * "Sign in to comment". The button is then dimmed and out of the tab order as any disabled one
    * is, and still shows its tooltip under the pointer, which a `disabled` element wouldn't. A screen
-   * reader hears the reason as its description, so give it as text.
+   * reader hears the reason as its description, so give it as text. `''` dims it with nothing to
+   * say, where the dimmed label says it all: no tooltip and no description.
    *
    * A button that has one only some of the time, as a reason comes and goes, passes `null`
    * meanwhile, not nothing: it's then the same element throughout, and keeps focus.
@@ -153,7 +154,7 @@ export function Button({
         ? {
             'aria-disabled': true,
             tabIndex: -1,
-            'aria-description': typeof hint === 'string' ? hint : undefined,
+            'aria-description': typeof hint === 'string' && hint !== '' ? hint : undefined,
           }
         : {})}
       // Not `disabled`, which would drop focus from it. It's said to be unavailable while it works,
@@ -195,7 +196,8 @@ export function Button({
   );
   if (hint === undefined) return control;
   return (
-    <Tooltip label={hint} keys={refused ? undefined : hintKeys} on={hintOn}>
+    // An empty reason has nothing to say, and the tooltip stays, empty, so the element does too.
+    <Tooltip label={hint === '' ? null : hint} keys={refused ? undefined : hintKeys} on={hintOn}>
       {control}
     </Tooltip>
   );

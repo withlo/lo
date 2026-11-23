@@ -3,7 +3,7 @@
 
 import { ROW_HEIGHT } from '@lo/ui';
 
-import { notify } from '../../../window/commands/notices.tsx';
+import { refuse } from '../../../window/commands/notices.tsx';
 import { passedOver, toggleViewed, viewedMarksOf } from '../../revisions/window/shared.ts';
 import { activeTab, type PullTab } from '../../tab/window/shared.ts';
 import { canShow, focusRow, pathOf, revealFile, showFile } from './shared.ts';
@@ -125,9 +125,12 @@ function changeOf(tab: string, key: string) {
   return states.get(tab)?.changes?.find((change) => keyOf(change.path) === key);
 }
 
+/** Why a file that isn't changed has no viewed mark. */
+const UNCHANGED = 'Only changed files can be marked viewed';
+
 /** Why `key` can't be marked viewed, or `true`: only a changed file has a mark. */
 export function markable(tab: string, key: string): true | string {
-  return changeOf(tab, key) ? true : 'Only a changed file has a viewed mark.';
+  return changeOf(tab, key) ? true : UNCHANGED;
 }
 
 /**
@@ -140,7 +143,7 @@ export function markViewed(tab: string, key: string, count?: number): void {
   const changes = states.get(tab)?.changes ?? [];
   const byKey = new Map(changes.map((change) => [keyOf(change.path), change]));
   if (!byKey.has(key)) {
-    notify('Mark viewed', 'Only a changed file has a viewed mark.');
+    refuse(UNCHANGED);
     return;
   }
   // Read each time, so a file just marked counts as viewed.
@@ -155,7 +158,7 @@ export function markViewed(tab: string, key: string, count?: number): void {
     if (!change) return;
     const toggled = toggleViewed(tab, { path: change.path, previous: change.previous });
     if (toggled.kind === 'refused') {
-      notify('Mark viewed', toggled.why);
+      refuse(toggled.why);
       return;
     }
     if (toggled.kind !== 'marking') return;

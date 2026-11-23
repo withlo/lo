@@ -13,6 +13,7 @@ import { installBridge } from '../../../window/test/bridge.ts';
 import { rows } from '../../settings/window/shared.ts';
 import { RELEASES } from '../contract.ts';
 import feature from './index.ts';
+import { Offer } from './Offer.tsx';
 import { showVersion, updatesStore } from './store.ts';
 
 let finish: (answer: unknown) => void = () => {};
@@ -184,5 +185,48 @@ describe('the About rows', () => {
       }),
     );
     expect(page.textContent).toContain('Downloading Lo 0.2.0…');
+  });
+
+  it('have the toast step aside while the offer under the version is in view, and come back after', () => {
+    const toast = document.createElement('div');
+    document.body.append(toast);
+    const region = createRoot(toast);
+    act(() => region.render(<Offer />));
+    onTestFinished(() => {
+      act(() => region.unmount());
+    });
+    act(() => updatesStore.setState({ state: { status: 'ready', version: '0.2.0' } }));
+    expect(toast.textContent).toContain('Lo 0.2.0 is ready');
+
+    const host = document.createElement('div');
+    document.body.append(host);
+    const settings = createRoot(host);
+    act(() =>
+      settings.render(
+        <Slots views={feature.views ?? []}>
+          <Rows />
+        </Slots>,
+      ),
+    );
+    // A test has no layout to tell, so the offer counts as in view, and is said once, on the row.
+    expect(host.textContent).toContain('Lo 0.2.0 is ready');
+    expect(toast.textContent).toBe('');
+
+    act(() => settings.unmount());
+    expect(toast.textContent).toContain('Lo 0.2.0 is ready');
+  });
+
+  it('have the toast step aside for an offer that comes while the version is in view', () => {
+    const toast = document.createElement('div');
+    document.body.append(toast);
+    const region = createRoot(toast);
+    act(() => region.render(<Offer />));
+    onTestFinished(() => {
+      act(() => region.unmount());
+    });
+    const page = draw();
+    act(() => updatesStore.setState({ state: { status: 'ready', version: '0.2.0' } }));
+    expect(page.textContent).toContain('Lo 0.2.0 is ready');
+    expect(toast.textContent).toBe('');
   });
 });

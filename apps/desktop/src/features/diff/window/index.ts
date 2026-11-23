@@ -8,6 +8,7 @@ import type { HeaderTarget, LineTarget, Place, Span, Target } from '@lo/ui/comma
 import { handlers } from '@lo/ui/commands';
 import { createElement } from 'react';
 
+import { announce, fail } from '../../../window/commands/notices.tsx';
 import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
 import { defineView } from '../../../window/slots.tsx';
@@ -209,8 +210,29 @@ function layoutNow(): true | string {
   return !drawn.beside || 'Code beside is always inline';
 }
 
-async function copy(text: string): Promise<void> {
-  await tabs().copy({ text });
+/** What a copy says once it's done, or what failed, in a note: no button in view says it. */
+interface Said {
+  readonly done: string;
+  readonly failed: string;
+}
+
+const LINES: Said = { done: 'Copied lines', failed: 'Couldn’t copy the lines' };
+const LINK: Said = { done: 'Copied link to line', failed: 'Couldn’t copy the link' };
+const PATH: Said = { done: 'Copied path', failed: 'Couldn’t copy the path' };
+
+/**
+ * Puts `text` on the clipboard, for a key or a menu row, and says how that went in a note:
+ * `said.done`, or `said.failed` with what main said behind Details.
+ */
+async function copy(text: string, said: Said): Promise<void> {
+  try {
+    await tabs().copy({ text });
+  } catch (error) {
+    console.error(`${said.failed}:`, error);
+    fail(said.failed, error instanceof Error && error.message !== '' ? error.message : undefined);
+    return;
+  }
+  announce(said.done);
 }
 
 /** `yy` in the whole file on screen, or in the diff on screen. */
@@ -221,13 +243,14 @@ const copyCode = inCode<LineTarget>(
     const lines = spansOf(target, count).flatMap((span) =>
       all.slice(Math.min(span.from, span.to) - 1, Math.max(span.from, span.to)),
     );
-    await copy(lines.join('\n'));
+    await copy(lines.join('\n'), LINES);
   },
   async ({ view }, target, count) => {
     await copy(
       spansOf(target, count)
         .flatMap((span) => view.lines(span))
         .join('\n'),
+      LINES,
     );
   },
 );
@@ -326,7 +349,7 @@ export default {
       // Code another feature draws, such as an overview's code block, copies from what it draws.
       run: (target, count) => {
         const elsewhere = linesElsewhere(spansOf(target, count));
-        if (elsewhere) void copy(elsewhere.join('\n'));
+        if (elsewhere) void copy(elsewhere.join('\n'), LINES);
         else copyCode(target, count);
       },
       enabled: (target) => drawnElsewhere(target.at.file) || codeNow(),
@@ -335,12 +358,12 @@ export default {
       run: inCode(
         async (whole, target) => {
           const link = await wholeLink(whole, lineOf(target).line?.line);
-          if (link) await copy(link);
+          if (link) await copy(link, LINK);
         },
         async (drawn, target) => {
           const { file, line } = lineOf(target);
           const path = pathOfId(drawn, file);
-          if (path) await copy(await changesLink(drawn.pull, path, line));
+          if (path) await copy(await changesLink(drawn.pull, path, line), LINK);
         },
       ),
       enabled: codeNow,
@@ -348,11 +371,11 @@ export default {
     copyPath: {
       run: inCode(
         async (whole) => {
-          await copy(whole.path.text);
+          await copy(whole.path.text, PATH);
         },
         async (drawn, target) => {
           const path = pathOfId(drawn, lineOf(target).file);
-          if (path) await copy(path.text);
+          if (path) await copy(path.text, PATH);
         },
       ),
       enabled: codeNow,

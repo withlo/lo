@@ -8,11 +8,11 @@
 
 import type { ToastAction } from '@lo/ui';
 
-import { IpcError } from '../../../ipc/contract.ts';
-import { announce, notify, withdraw } from '../../../window/commands/notices.tsx';
+import { announce, withdraw } from '../../../window/commands/notices.tsx';
 import { useTabState } from '../../tab/window/shared.ts';
 import type { TreePath } from '../../tree/contract.ts';
 import type { Compared, ComparisonView } from '../contract.ts';
+import { compareFailed } from './failed.ts';
 import { afterHold as heldAfter, holdLimit as heldFor } from './hold.ts';
 import { main } from './main.ts';
 import { problemWords } from './model.ts';
@@ -236,13 +236,12 @@ function takeBack(tab: string, compared: Compared): void {
  * Has tab `tab` compare `compared`, as the reader asked: `now` when that's on screen and nothing
  * else is coming, `coming` when it's asked for, or why it can't be. One asked for after another
  * takes its place, so the last asked for is what shows: asked for what's on screen, what was coming
- * is called off, and the note it put up, `say`, is taken back. Main's refusal comes as a note titled
- * `title`.
+ * is called off, and the note it put up, `say`, is taken back. Main's refusal comes as a note that
+ * the comparison failed, with what main said behind Details.
  */
 export function compareTo(
   tab: string,
   compared: Compared,
-  title: string,
   say?: Said,
 ): 'now' | 'coming' | { readonly why: string } {
   const view = views.get(tab);
@@ -267,10 +266,7 @@ export function compareTo(
     .compare({ id: tab, ...compared })
     .then(taken, (error: unknown) => {
       taken();
-      notify(
-        title,
-        error instanceof IpcError ? error.message : 'Lo couldn’t compare them. Try again.',
-      );
+      compareFailed(views.get(tab), compared, error);
     });
   return now ? 'now' : 'coming';
 }
@@ -286,5 +282,5 @@ export function compareAgain(
   const view = views.get(tab);
   const compared = view && comparisonNamed(view, name);
   if (!compared) return { why: 'Lo can’t tell what that place compared.' };
-  return compareTo(tab, compared, 'Back');
+  return compareTo(tab, compared);
 }

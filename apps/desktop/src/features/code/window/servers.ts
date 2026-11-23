@@ -78,18 +78,19 @@ export function itemState(state: ServerState): ItemState {
   }
 }
 
-/** Asks main to start view `view`'s server `server` again. */
+/**
+ * Asks main to start view `view`'s server `server` again. A failure is said in a note, with what
+ * main said behind Details, since the server's item has nowhere to say it yet.
+ */
 export async function restartServer(view: string, server: string, name: string): Promise<void> {
   try {
     await main().restart({ view, server });
   } catch (error) {
     console.error(`Lo couldn't start ${name} again:`, error);
-    notify(
-      `Restart ${name}`,
-      error instanceof IpcError && error.code !== 'internal'
-        ? error.message
-        : `Lo couldn't start ${name} again.`,
-    );
+    notify(`Couldn’t restart ${name}`, '', {
+      details: error instanceof IpcError && error.code !== 'internal' ? error.message : undefined,
+      action: { label: 'Try again', onClick: () => void restartServer(view, server, name) },
+    });
   }
 }
 

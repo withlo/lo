@@ -354,8 +354,11 @@ test('Settings checks on "Check now", and turns checking by itself off and on', 
   await expect(updates).toContainText('Lo 0.0.0');
   // The e2e build is run from source, so it has no commit to show.
   await expect(updates).toContainText('Built from source');
-  // Lo's own first check has come and gone by the time the toast shows; ask again from Settings.
-  await expect(said(page, 'Lo 0.9.0 is available')).toBeVisible({ timeout: 20_000 });
+  // Lo's own first check has come and gone by the time the offer shows; ask again from Settings.
+  // The offer is said on the row, in view, so the toast that would say the same steps aside.
+  await updates.scrollIntoViewIfNeeded();
+  await expect(updates).toContainText('Lo 0.9.0 is available', { timeout: 20_000 });
+  await expect(said(page, 'Lo 0.9.0 is available')).toHaveCount(0);
   const before = feed.asked.length;
   feed.offer('0.0.0');
   await updates.getByRole('button', { name: 'Check now' }).click();

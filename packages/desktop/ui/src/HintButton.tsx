@@ -21,7 +21,7 @@ export interface HintButtonProps {
  * Every row of key hints is made of these, so no hint is only text and every key shown can be
  * clicked. The label, the key and whether it can run come from the registry, so a hint never
  * shows a key the keymap file has moved. While its command can't run it's dimmed, with the reason
- * as its tooltip. In a `HintRow` too narrow for its key chips, its key is in its tooltip, with its
+ * as its tooltip, or none for an empty reason, where the dimmed label says it all. In a `HintRow` too narrow for its key chips, its key is in its tooltip, with its
  * command's label. A click leaves focus where it was, on what the key acts on. It draws nothing
  * for a command that isn't there.
  */
@@ -40,8 +40,8 @@ export function HintButton({ command, target, children }: HintButtonProps) {
         variant="ghost"
         size="sm"
         aria-disabled={off || undefined}
-        aria-describedby={off ? why : undefined}
-        hint={control.off ?? (keyTip ? control.label : null)}
+        aria-describedby={control.off ? why : undefined}
+        hint={control.off || (keyTip ? control.label : null)}
         hintKeys={keyTip ? control.keys : undefined}
         {...keyAria(control.keys, control.shortcut)}
         // A click leaves focus where the key works, so the keys beside it go on working.
@@ -53,7 +53,7 @@ export function HintButton({ command, target, children }: HintButtonProps) {
         {children ?? control.label}
         {control.keys && <Key keys={control.keys} quiet decorative />}
       </Button>
-      {off && (
+      {control.off && (
         <span id={why} className="sr-only">
           {control.off}
         </span>
