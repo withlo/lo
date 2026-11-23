@@ -10,6 +10,15 @@ import { systemOf } from './commands/registry.ts';
 
 export type { Cause } from '../ipc/cause.ts';
 
+/** Why a text file Lo opens, such as the keymap file or the licenses, didn't open on Linux. */
+export const NO_TEXT_APP = 'No app is set for text files.';
+
+/** What Linux was asked for the app for text files, which answered none: behind Details. */
+export const TEXT_APP_QUERY = 'xdg-mime query default text/plain';
+
+/** Why a text file didn't open on a system Lo has no way to open one on. */
+export const UNSUPPORTED = 'Opening text files isn’t supported on this system.';
+
 /** A time of day, in the system's own format: `14:05`. */
 export function timeOfDay(time: number): string {
   return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(time);
@@ -113,6 +122,29 @@ export function waitsOut(cause: Cause): boolean {
   }
 }
 
+/**
+ * What an error for `cause` offers to do about it: sign in again, for an account GitHub signed out
+ * (`signInAgain`); sign in, for what the account, or nobody, can't see (`signIn`); nothing, while
+ * trying again can't help until it's waited out ({@link waitsOut}), as with the rate limit, which
+ * says when it resets; else try again.
+ */
+export type Remedy = 'tryAgain' | 'signIn' | 'signInAgain' | 'none';
+
+/** What an error for `cause` offers to do about it, as {@link Remedy} says. */
+export function remedyOf(cause: Cause): Remedy {
+  if (waitsOut(cause)) return 'none';
+  if (cause.kind === 'signedOut') return 'signInAgain';
+  if (cause.kind === 'hidden' || (cause.kind === 'private' && !cause.signedIn)) return 'signIn';
+  return 'tryAgain';
+}
+
+/** The button of each remedy that has one, as the guide words it. */
+export const REMEDY_LABELS = {
+  tryAgain: 'Try again',
+  signIn: 'Sign in with GitHub…',
+  signInAgain: 'Sign in again',
+} as const satisfies Record<Exclude<Remedy, 'none'>, string>;
+
 /** What a Git Lo can't run says: its title, its reason, how to get one, and the rest behind Details. */
 export interface GitWords {
   readonly title: string;
@@ -150,6 +182,14 @@ export function gitWords(trouble: GitTrouble): GitWords {
     default:
       throw new Error(`A Git Lo doesn't know: ${JSON.stringify(trouble satisfies never)}`);
   }
+}
+
+/**
+ * Why a program someone else could change can't be used, by what's true of it, as the reason under
+ * its error: Git's, or GitHub CLI's.
+ */
+export function distrustReason(why: Extract<GitTrouble, { status: 'distrusted' }>['why']): string {
+  return DISTRUST[why];
 }
 
 /** Why a git someone else could change can't be used, by what's true of it. */

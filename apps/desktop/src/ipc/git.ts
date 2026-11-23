@@ -16,12 +16,21 @@ const install = z.strictObject({
  * newest is `version`, older than the `minimum` its failed `check` needs: its version, or whether
  * it can be kept from downloading on its own.
  */
+/** Why someone besides this user and root could change a program Lo found, as `@lo/git` says. */
+export const distrustWhy = z.enum([
+  'owner',
+  'writable',
+  'folderOwner',
+  'folderWritable',
+  'unchecked',
+]);
+
 export const gitTrouble = z.discriminatedUnion('status', [
   z.strictObject({ status: z.literal('missing'), install }),
   z.strictObject({
     status: z.literal('distrusted'),
     program: z.string(),
-    why: z.enum(['owner', 'writable', 'folderOwner', 'folderWritable', 'unchecked']),
+    why: distrustWhy,
     details: z.string(),
     install,
   }),

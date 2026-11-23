@@ -5,12 +5,14 @@
 
 import {
   Banner,
+  CopyButton,
   PRHeader,
   Spinner,
   StatusBar,
   StatusItem,
   StatusKeys,
   StatusMode,
+  useCopy,
   type HeaderConnection,
 } from '@lo/ui';
 import { focusedMode, onFocusedMode } from '@lo/ui/code';
@@ -190,7 +192,13 @@ function Banners({ tab, own: all }: { tab: PullTab; own: readonly BannerSpec[] }
           key={banner.id}
           tone={banner.tone}
           title={banner.title}
-          detail={banner.detail}
+          detail={
+            banner.commands === undefined ? (
+              banner.detail
+            ) : (
+              <Commands detail={banner.detail} commands={banner.commands} />
+            )
+          }
           actions={banner.actions.map((action) => ({
             label: action.label,
             onClick: () => run(tab.id, action.do),
@@ -201,6 +209,28 @@ function Banners({ tab, own: all }: { tab: PullTab; own: readonly BannerSpec[] }
         <other.render key={other.id} tab={tab} />
       ))}
     </div>
+  );
+}
+
+/** A banner's line, then what it says to run, each as code with Copy. */
+function Commands({
+  detail,
+  commands,
+}: {
+  detail: string | undefined;
+  commands: readonly string[];
+}) {
+  const copy = useCopy();
+  return (
+    <>
+      {detail}
+      {commands.map((command) => (
+        <span key={command} className="ms-8 inline-flex items-center gap-4 align-middle">
+          <code className="break-all text-fg code-small select-text">{command}</code>
+          <CopyButton size="sm" variant="ghost" onCopy={() => copy(command)} />
+        </span>
+      ))}
+    </>
   );
 }
 

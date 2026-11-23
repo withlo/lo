@@ -11,8 +11,9 @@
 // never says it couldn't trust what it then trusts. Nothing here calls Electron, so it runs under
 // unit tests.
 
-import { saidBy, type PullRequestRepositories } from '@lo/github';
+import { causeOf, saidBy, type PullRequestRepositories } from '@lo/github';
 
+import { detailsOf, githubCause } from '../../../ipc/cause.ts';
 import { IpcError } from '../../../ipc/contract.ts';
 import { Unwritten } from '../../settings/service.ts';
 import type { Asked, Trusting } from '../contract.ts';
@@ -212,8 +213,8 @@ export class TrustAsker<W extends AskWindow = AskWindow> {
    * window, or the view, closed meanwhile. Throws an `IpcError` for a request it won't ask, with no
    * window to ask in, and while it's asking already, so two requests never share a dialog: `busy`
    * for the same view, which asks already, and `asking` for another, saying which, once its dialog
-   * is brought forward; for GitHub's read failing or taking too long (`unread`); and, once the
-   * reader said "Trust", for an entry it couldn't write ({@link unsaved}). Meanwhile `progress`
+   * is brought forward; and, once the reader said "Trust", for an entry it couldn't write
+   * ({@link unsaved}). GitHub's read failing or taking too long answers `unread`, by its cause. Meanwhile `progress`
    * hears each step, and that it's over.
    */
   async ask(request: TrustRequest, window: W | undefined): Promise<Asked> {
@@ -263,6 +264,7 @@ export class TrustAsker<W extends AskWindow = AskWindow> {
       step('reading');
       const repositories = await this.#read(view, gone.signal);
       if (!repositories || gone.signal.aborted) return 'cancelled';
+      if ('kind' in repositories) return repositories;
       const subject = subjectOf(request, view, repositories);
       step('asking');
       const answer = await options.confirm(window, questionFor(subject), gone.signal);
@@ -284,9 +286,13 @@ export class TrustAsker<W extends AskWindow = AskWindow> {
 
   /**
    * Reads `view`'s repositories from GitHub, or nothing once `gone` aborts first. The read is given
-   * up on then, or once the limit passes, which fails as `unread`.
+   * up on then, or once the limit passes, which is `unread` as GitHub not answering in time; any
+   * other failure is `unread` by GitHub's cause.
    */
-  async #read(view: AskedView, gone: AbortSignal): Promise<PullRequestRepositories | undefined> {
+  async #read(
+    view: AskedView,
+    gone: AbortSignal,
+  ): Promise<PullRequestRepositories | Extract<Asked, { kind: 'unread' }> | undefined> {
     const reading = new AbortController();
     const giveUp = () => reading.abort(new Error('Nobody waits on it.'));
     const timer = setTimeout(giveUp, this.#options.readLimit ?? READ_LIMIT);
@@ -300,8 +306,14 @@ export class TrustAsker<W extends AskWindow = AskWindow> {
       });
     } catch (error) {
       if (gone.aborted) return undefined;
-      // What GitHub or the system said, behind Details.
-      throw new IpcError('unread', saidBy(error));
+      // Why, by its cause, with what GitHub or the system said behind Details.
+      if (reading.signal.aborted) return { kind: 'unread', cause: { kind: 'timeout' } };
+      const [owner] = view.repo.split('/');
+      return {
+        kind: 'unread',
+        cause: githubCause(causeOf(error, { owner })),
+        details: detailsOf(saidBy(error)),
+      };
     } finally {
       clearTimeout(timer);
       gone.removeEventListener('abort', giveUp);

@@ -243,8 +243,9 @@ export default defineFeature(contract, {
         (error: unknown) => log(`listing the accounts: ${String(error)}`),
       );
     });
+    // What the window words: an account added is in the accounts it's sent anyway.
     accounts.onEvent((event) => {
-      if (event.kind !== 'seen') publish('event', event);
+      if (event.kind !== 'seen' && event.kind !== 'added') publish('event', event);
     });
     // Each poller polls faster while Lo's window is in front.
     accounts.setForeground(false);

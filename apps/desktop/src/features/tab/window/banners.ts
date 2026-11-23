@@ -2,7 +2,7 @@
 // happened, then what to do, with what each banner offers to do. The tab shows two at most; the
 // rest are in the status bar. Nothing here draws anything.
 
-import { explain, gitWords } from '../../../window/explain.ts';
+import { explain, gitWords, REMEDY_LABELS, remedyOf } from '../../../window/explain.ts';
 import type { FetchFailure, LocalState, PullView } from '../contract.ts';
 
 /** What a banner's button does. */
@@ -27,6 +27,11 @@ export interface BannerSpec {
   readonly tone: 'info' | 'warn' | 'danger';
   readonly title: string;
   readonly detail?: string | undefined;
+  /**
+   * What to run, after the line, each as code with Copy: the commands that install Git, and the
+   * page that lists newer packages, which Lo shows to copy since it opens no page off GitHub.
+   */
+  readonly commands?: readonly string[] | undefined;
   /** What GitHub or Git said, as it came, for Details: never in the title or the line. */
   readonly details?: string | undefined;
   readonly actions: readonly { readonly label: string; readonly do: BannerDo }[];
@@ -123,9 +128,10 @@ export function bannersFor(
       case 'notFound': {
         // Missing, or hidden from whoever asked: signing in may show it, and GitHub's page says
         // which; or the tab can go.
+        const remedy = remedyOf(problem.cause);
         const signIn =
-          problem.cause.kind === 'private' && !problem.cause.signedIn
-            ? [{ label: 'Sign in with GitHub…', do: { kind: 'signIn' } } as const]
+          remedy === 'signIn' || remedy === 'signInAgain'
+            ? [{ label: REMEDY_LABELS[remedy], do: { kind: 'signIn' } } as const]
             : [];
         const page = `https://github.com/${repository}/pull/${shown.number}`;
         banners.push({
@@ -175,17 +181,22 @@ export function bannersFor(
         });
         break;
       case 'failed': {
-        const counting = problem.retryAt !== null;
+        // What it offers follows the cause: a sign-in, or nothing while the rate limit holds,
+        // whose reset time the reason says; else Try again, or Try now while Lo waits to.
+        const remedy = remedyOf(problem.cause);
+        const at = remedy === 'tryAgain' ? problem.retryAt : null;
         banners.push({
           id: 'failed',
           tone: 'danger',
           title: cantOpen,
-          detail: line(
-            explain(problem.cause),
-            problem.retryAt === null ? undefined : retrying(problem.retryAt, clock),
-          ),
+          detail: line(explain(problem.cause), at === null ? undefined : retrying(at, clock)),
           details: problem.details,
-          actions: [counting ? tryNow : retry],
+          actions:
+            remedy === 'none'
+              ? []
+              : remedy === 'tryAgain'
+                ? [at === null ? retry : tryNow]
+                : [{ label: REMEDY_LABELS[remedy], do: { kind: 'signIn' } }],
         });
         break;
       }
@@ -252,7 +263,8 @@ export function bannersFor(
         tone: 'warn',
         title: words.title,
         detail: words.reason,
-        details: [...words.commands, words.page, words.details].filter(Boolean).join('\n'),
+        commands: words.page === undefined ? words.commands : [...words.commands, words.page],
+        details: words.details,
         actions: [{ label: 'Check again', do: { kind: 'retry' } }],
       });
       break;
@@ -270,16 +282,17 @@ export function bannersFor(
       // Offline says it already, and the fetch tries again with it.
       if (offline && local.failure === 'network') break;
       const held = heldBy(local.failure, repository);
+      // A copy held for its tabs or servers is made again once they let go, whenever that is: it
+      // says what it waits for, with no time and nothing to press.
       banners.push({
         id: 'local',
         tone: 'warn',
         title: held === undefined ? CANT_FETCH : CANT_USE,
-        detail: line(
-          held ?? fetchReason(local.failure, repository, login),
-          retrying(local.retryAt, clock),
-        ),
+        detail:
+          held ??
+          line(fetchReason(local.failure, repository, login), retrying(local.retryAt, clock)),
         details: local.details,
-        actions: [tryNow],
+        actions: held === undefined ? [tryNow] : [],
       });
       break;
     }

@@ -141,17 +141,28 @@ function serverHints(
 }
 
 /**
- * Why code features can't answer about a view yet, from its local copy, if they can't: what failed,
- * when fetching it did and Lo won't try again unless asked.
+ * Why code features can't answer about a view yet, from its local copy: there's no git, the copy
+ * couldn't be fetched and Lo won't try again unless asked, or it isn't there yet.
  */
-export function notYet(local: LocalState | undefined): string | undefined {
-  if (local?.kind === 'noGit') return 'Code features need git.';
-  if (local?.kind === 'failed') {
-    return `Code features need the local copy, which Lo couldn’t fetch: ${local.details ?? ''}.`;
-  }
-  if (local?.kind !== 'ready') return 'The syntax index waits for the local copy.';
+export type NotYet = 'noGit' | 'notFetched' | 'waiting';
+
+/**
+ * Why code features can't answer about a view yet, from its local copy, if they can't. What Git
+ * said of a fetch that failed is behind the local copy's own Details, not here.
+ */
+export function notYet(local: LocalState | undefined): NotYet | undefined {
+  if (local?.kind === 'noGit') return 'noGit';
+  if (local?.kind === 'failed') return 'notFetched';
+  if (local?.kind !== 'ready') return 'waiting';
   return undefined;
 }
+
+/** Why code features can't answer yet, as the status bar says it. */
+export const NOT_YET = {
+  noGit: 'Code features need git.',
+  notFetched: 'The local copy couldn’t be fetched',
+  waiting: 'The syntax index waits for the local copy.',
+} as const satisfies Record<NotYet, string>;
 
 /**
  * What the status bar says of a question that failed, in main's own words where it gave them, as

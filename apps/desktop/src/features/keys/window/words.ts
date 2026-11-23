@@ -2,6 +2,7 @@
 // with what the system said, and the window writes the sentence.
 
 import { IpcError } from '../../../ipc/contract.ts';
+import { NO_TEXT_APP, TEXT_APP_QUERY, UNSUPPORTED } from '../../../window/explain.ts';
 import type { KeymapFile as Shown, KeymapProblem } from '../../../window/commands/keymap.ts';
 import type { KeymapFile } from '../contract.ts';
 
@@ -39,16 +40,18 @@ export function keymapWords(file: KeymapFile): Shown {
       return reading(undefined, problem.code);
     case 'executable':
       // Its keys apply: only opening it is refused, since that could run it.
-      return { text, canOpen, refusal: 'The keymap file is executable' };
+      return {
+        text,
+        canOpen,
+        refusal: 'The keymap file is executable',
+        remedy: 'Clear its execute permission to open it from here.',
+      };
     default:
       throw new Error(
         `A keymap problem Lo doesn't know: ${JSON.stringify(problem satisfies never)}`,
       );
   }
 }
-
-/** What Linux was asked for the app for text files, which answered none. */
-const TEXT_APP_QUERY = 'xdg-mime query default text/plain';
 
 /** Opening the keymap file failed: why, as a toast's title, reason and Details. */
 export function unopenedWords(
@@ -64,7 +67,9 @@ export function unopenedWords(
     case 'refused':
       return { title, reason: refusal === undefined ? '' : `${refusal}.`, details: said };
     case 'noApp':
-      return { title, reason: 'No app is set for text files.', details: TEXT_APP_QUERY };
+      return { title, reason: NO_TEXT_APP, details: TEXT_APP_QUERY };
+    case 'unsupported':
+      return { title, reason: UNSUPPORTED, details: said };
     default:
       return { title, reason: '', details: said };
   }

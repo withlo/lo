@@ -17,7 +17,7 @@ import { Key, KeyHelp, keyAria, Palette, PaletteHint, type PaletteGroup } from '
 import { useState, useSyncExternalStore } from 'react';
 
 import { focusedTarget } from './bar.ts';
-import { keymapState, subscribeKeymap } from './keymap.ts';
+import { keymapProblem, keymapState, subscribeKeymap } from './keymap.ts';
 import { registry, useKeys } from './registry.ts';
 
 /** What's open over the window. */
@@ -145,8 +145,7 @@ export function Overlays() {
         groups={helpGroups(registry())}
         errors={registry().keymapErrors()}
         // Without a button for the file, what's wrong with it, or why Lo won't open it.
-        problem={keymap.problem?.title ?? (keymap.canOpen ? undefined : keymap.refusal)}
-        problemReason={keymap.problem?.reason}
+        problem={keymapProblem()}
         onOpenKeymap={
           // Without a file Lo will open, there's no button, and nothing to offer.
           keymap.canOpen

@@ -137,7 +137,7 @@ function describe(error: unknown): string {
  * when the account the copy fetched as has been signed out of, that, as GitHub's cause.
  */
 function localProblem(error: unknown, what: TreeProblem['what']): TreeProblem {
-  const details = detailsOf(describe(error));
+  const details = detailsOf(error instanceof GitError ? error.said() : saidBy(error));
   const cause = causeOf(error);
   if (cause.kind === 'signedOut') return { what, why: { kind: 'github', cause }, details };
   return { what, why: { kind: 'local' }, details };

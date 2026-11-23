@@ -69,7 +69,7 @@ describe('Slot', () => {
     expect(renderToStaticMarkup(<Slot slot={left} props={{}} />)).toBe('');
   });
 
-  it('shows a note in place of a view that throws, logs why, and keeps the others', () => {
+  it('shows an error in place of a view that throws, with what it threw, logs why, and keeps the others', () => {
     const error = errors();
     const withBroken = [
       ...views,
@@ -80,11 +80,16 @@ describe('Slot', () => {
         <Slot slot={status} props={{ tab: '#12' }} />
       </Slots>,
     );
-    // The views in order, with the note in the broken one's place.
-    expect([...page.children].map((each) => each.tagName)).toEqual(['U', 'B', 'P', 'I']);
-    const note = page.querySelector('[role="alert"]');
-    expect(note?.getAttribute('data-lo-failed-view')).toBe('stacks.broken');
-    expect(note?.textContent).toBe('Can’t show this viewTry again');
+    // The views in order, with the error in the broken one's place.
+    expect([...page.children].map((each) => each.tagName)).toEqual(['U', 'B', 'DIV', 'I']);
+    const failed = page.querySelector('[data-lo-failed-view]');
+    expect(failed?.getAttribute('data-lo-failed-view')).toBe('stacks.broken');
+    // What failed is the alert; Details and Try again are beside it, not in it.
+    expect(failed?.querySelector('[role="alert"]')?.textContent).toBe('Can’t show this view');
+    const buttons = [...(failed?.querySelectorAll('button') ?? [])];
+    expect(buttons.map((each) => each.textContent)).toEqual(['Details', 'Try again']);
+    act(() => buttons[0]?.click());
+    expect(failed?.textContent).toContain('Error: the tree is missing');
     expect(error).toHaveBeenCalledWith(
       "Lo couldn't show the view stacks.broken:",
       expect.objectContaining({ message: 'the tree is missing' }),
@@ -105,7 +110,10 @@ describe('Slot', () => {
     );
     expect(page.querySelector('[role="alert"]')?.textContent).toContain('Can’t show this view');
     throws = false;
-    act(() => page.querySelector('button')?.click());
+    const again = [...page.querySelectorAll('button')].find(
+      (each) => each.textContent === 'Try again',
+    );
+    act(() => again?.click());
     expect(page.querySelector('[role="alert"]')).toBeNull();
     expect(page.textContent).toBe('drawn');
   });
@@ -158,7 +166,7 @@ describe('a view that fails', () => {
         <Middle />
       </Slots>,
     );
-    expect(page.querySelector('[role="alert"]')?.getAttribute('data-lo-failed-view')).toBe(
+    expect(page.querySelector('[data-lo-failed-view]')?.getAttribute('data-lo-failed-view')).toBe(
       'diff.diff',
     );
     expect(error).toHaveBeenCalledWith(

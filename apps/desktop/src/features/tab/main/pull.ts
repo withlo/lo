@@ -243,6 +243,8 @@ export class PullTab {
     this.#readTimer = undefined;
     this.#waitingForSignIn = undefined;
     this.#started = true;
+    // What its account couldn't see, another may: the account is worked out again.
+    if (this.#unseen()) this.#forgetAccount();
     void this.#open();
     this.#local?.retry();
     // Without git, trying again is looking for it again, as "Check again" does.
@@ -323,13 +325,42 @@ export class PullTab {
   accountGone(login: string): void {
     const acting = this.#acting;
     if (acting?.kind !== 'account' || acting.login.toLowerCase() !== login.toLowerCase()) return;
+    this.#forgetAccount();
+    if (this.#started) void this.#open();
+    this.#publish();
+  }
+
+  /**
+   * An account was added, or signed in again: a tab whose pull request its account, or nobody,
+   * couldn't see works out its account again, which may be the new one.
+   */
+  accountAdded(): void {
+    if (this.#closed || !this.#unseen()) return;
+    this.#forgetAccount();
+    this.#started = true;
+    void this.#open();
+    this.#publish();
+  }
+
+  /**
+   * Whether the tab can't show its pull request because the account it acts as, or nobody, can't
+   * see it: GitHub says it doesn't exist, or that it's private.
+   */
+  #unseen(): boolean {
+    const problem = this.#problem;
+    if (this.#acting === undefined || problem === undefined) return false;
+    return (
+      problem.kind === 'notFound' || (problem.kind === 'failed' && problem.cause.kind === 'private')
+    );
+  }
+
+  /** The tab acts as no one it chose: what it watched with the account, and its local copy, go. */
+  #forgetAccount(): void {
     this.#detach();
     this.#acting = undefined;
     this.#options.keep({ login: null });
     this.#local?.close();
     this.#local = undefined;
-    if (this.#started) void this.#open();
-    this.#publish();
   }
 
   /** Git changed: Lo found it, or opened its cache. */
@@ -590,7 +621,7 @@ export class PullTab {
           kind: 'offline',
           savedAt: null,
           retryAt,
-          error: describe(error),
+          error: saidBy(error),
         };
         this.#useSaved();
         this.#startLocal();

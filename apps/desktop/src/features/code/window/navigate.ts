@@ -43,6 +43,7 @@ import {
   noHover,
   noneFound,
   noReferences,
+  NOT_YET,
   notYet,
   peekOf,
   textsFrom,
@@ -100,7 +101,7 @@ function ask(target: LineTarget | HeaderTarget): Asked | undefined {
   const at = placeOf(target);
   const why = notYet(localCopyOf(tab));
   if (why) {
-    say(tab, why);
+    say(tab, NOT_YET[why]);
     return undefined;
   }
   const file = codeViews(tab).fileAt(at);
@@ -725,7 +726,7 @@ export async function toggleHints(): Promise<void> {
   }
   const why = notYet(localCopyOf(tab));
   if (why) {
-    say(tab, why);
+    say(tab, NOT_YET[why]);
     return;
   }
   await turnOn(tab);

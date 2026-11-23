@@ -165,7 +165,12 @@ describe('the keymap file in the window', () => {
       canOpen: false,
     });
     expect(keysOf('keys.back')).toEqual(['ctrl+b', 'ctrl+o']);
-    expect(keymapState()).toEqual({ problem: undefined, canOpen: false, refusal: why });
+    expect(keymapState()).toEqual({
+      problem: undefined,
+      canOpen: false,
+      refusal: why,
+      remedy: 'Clear its execute permission to open it from here.',
+    });
     expect(registry().enabled('keys.openKeymap', NO_TARGET)).toBe(why);
     expect(registry().run('keys.openKeymap', NO_TARGET)).toBe(why);
     // The reason alone, not under the command's name.

@@ -2,6 +2,7 @@ import { handlers } from '@lo/ui/commands';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { notify } from '../../../window/commands/notices.tsx';
+import { NO_TEXT_APP, TEXT_APP_QUERY, UNSUPPORTED } from '../../../window/explain.ts';
 import type { WindowFeature } from '../../../window/features.ts';
 import { client, type Client } from '../../../window/ipc.ts';
 import { contract, type Theme } from '../contract.ts';
@@ -29,10 +30,9 @@ export function unopened(error: unknown): { reason: string; details: string | un
     case 'missing':
       return { reason: 'The file is missing from this copy of Lo.', details: undefined };
     case 'noApp':
-      return {
-        reason: 'No app is set for text files.',
-        details: 'xdg-mime query default text/plain',
-      };
+      return { reason: NO_TEXT_APP, details: TEXT_APP_QUERY };
+    case 'unsupported':
+      return { reason: UNSUPPORTED, details: undefined };
     default:
       return { reason: '', details: error.message === '' ? undefined : error.message };
   }

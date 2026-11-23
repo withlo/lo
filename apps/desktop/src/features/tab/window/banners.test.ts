@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import type { Cause } from '../../../ipc/cause.ts';
+import { timeOfDay } from '../../../window/explain.ts';
 import type { LocalState, PullView } from '../contract.ts';
 import { ago, bannersFor, inWords, span, type Clock } from './banners.ts';
 
@@ -60,7 +62,9 @@ describe('a pull request’s banners', () => {
       title: 'Can’t open #9',
       detail: 'It doesn’t exist, or rozed-bot can’t see it.',
       details: 'Not Found',
+      // Another account may see it: signing in with one works out the tab's account again.
       actions: [
+        { label: 'Sign in with GitHub…', do: { kind: 'signIn' } },
         {
           label: 'Open on GitHub',
           do: { kind: 'link', url: 'https://github.com/rozed-dev/e2e/pull/9' },
@@ -105,6 +109,29 @@ describe('a pull request’s banners', () => {
       detail: 'GitHub returned an error. Retrying in 20 s.',
       details: '500 Internal Server Error',
       actions: [{ label: 'Try now', do: { kind: 'retry' } }],
+    });
+  });
+
+  it('offer what the cause calls for: a sign-in, or nothing while the rate limit holds', () => {
+    const failed = (cause: Cause) =>
+      bannersFor(
+        view({ problem: { kind: 'failed', cause, retryAt: clock.now + 5_000 } }),
+        { kind: 'waiting' },
+        E2E,
+        clock,
+      )[0];
+    // The reset time is the reason: no countdown to the next try, and nothing to press.
+    expect(failed({ kind: 'rateLimit', resets: clock.now + 25 * 60_000 })).toMatchObject({
+      detail: `GitHub’s rate limit resets at ${timeOfDay(clock.now + 25 * 60_000)}.`,
+      actions: [],
+    });
+    expect(failed({ kind: 'signedOut', login: 'rozed-bot' })).toMatchObject({
+      detail: 'rozed-bot is signed out.',
+      actions: [{ label: 'Sign in again', do: { kind: 'signIn' } }],
+    });
+    expect(failed({ kind: 'hidden', login: 'rozed-bot' })).toMatchObject({
+      detail: 'It doesn’t exist, or rozed-bot can’t see it.',
+      actions: [{ label: 'Sign in with GitHub…', do: { kind: 'signIn' } }],
     });
   });
 
@@ -241,7 +268,20 @@ describe('a pull request’s banners', () => {
       detail: 'The disk is full.',
       actions: [{ label: 'Clear cache', do: { kind: 'clearCache' } }],
     });
-    // A copy held open says what it waits for, with nothing to press.
+    // A copy held open says what it waits for, with nothing to press and no time, even while
+    // main looks again by itself.
+    expect(
+      bannersFor(
+        view(),
+        { kind: 'retrying', failure: 'heldByServers', attempt: 1, retryAt: clock.now + 20_000 },
+        E2E,
+        clock,
+      )[0],
+    ).toMatchObject({
+      title: 'Can’t use the local copy',
+      detail: 'It’s made again once its language servers stop.',
+      actions: [],
+    });
     expect(
       bannersFor(view(), { kind: 'failed', failure: 'heldByTabs' }, E2E, clock)[0],
     ).toMatchObject({
@@ -253,10 +293,32 @@ describe('a pull request’s banners', () => {
       kind: 'noGit',
       git: { status: 'missing', install: { commands: ['xcode-select --install'], page: null } },
     };
+    // How to install Git is in the banner, to copy, never only behind Details.
     expect(bannersFor(view(), noGit, E2E, clock)[0]).toMatchObject({
       title: 'Can’t find Git',
-      details: 'xcode-select --install',
+      commands: ['xcode-select --install'],
+      details: undefined,
       actions: [{ label: 'Check again', do: { kind: 'retry' } }],
+    });
+    const old: LocalState = {
+      kind: 'noGit',
+      git: {
+        status: 'tooOld',
+        program: '/usr/bin/git',
+        version: '2.30.0',
+        minimum: '2.41.0',
+        check: 'version',
+        install: {
+          commands: ['sudo apt install git'],
+          page: 'https://git-scm.com/downloads/linux',
+        },
+      },
+    };
+    expect(bannersFor(view(), old, E2E, clock)[0]).toMatchObject({
+      title: 'Can’t use Git 2.30.0',
+      detail: 'Version 2.41.0 or newer is required.',
+      commands: ['sudo apt install git', 'https://git-scm.com/downloads/linux'],
+      details: '/usr/bin/git',
     });
     expect(ids(view(), noGit)).toEqual(['noGit']);
   });

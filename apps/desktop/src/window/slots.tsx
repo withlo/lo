@@ -5,9 +5,10 @@
 // its own error boundary, however its owner renders it: one that fails shows a short note in its
 // place, and the rest of the window goes on.
 
-import { Button } from '@lo/ui';
+import { Problem } from '@lo/ui';
 import { Component, createContext, createElement, use, useMemo, type ReactNode } from 'react';
 
+import { detailsOf } from '../ipc/cause.ts';
 import { channelName } from '../ipc/contract.ts';
 
 /**
@@ -149,15 +150,23 @@ export function ViewPart({ id, children }: { id: string; children: ReactNode }) 
   return <Contained id={id}>{children}</Contained>;
 }
 
-/**
- * One view, which shows a note in its place, and logs why, when it throws. "Try again" draws it
- * again.
- */
-class Contained extends Component<{ id: string; children: ReactNode }, { failed: boolean }> {
-  override state = { failed: false };
+/** Whether a view threw, and what it threw, for Details. */
+interface Failed {
+  readonly failed: boolean;
+  readonly details?: string | undefined;
+}
 
-  static getDerivedStateFromError(): { failed: boolean } {
-    return { failed: true };
+/**
+ * One view, which shows an error in its place, with what it threw behind Details, and logs why,
+ * when it throws. "Try again" draws it again.
+ */
+class Contained extends Component<{ id: string; children: ReactNode }, Failed> {
+  override state: Failed = { failed: false };
+
+  static getDerivedStateFromError(error: unknown): Failed {
+    const said =
+      error instanceof Error ? (error.stack ?? `${error.name}: ${error.message}`) : String(error);
+    return { failed: true, details: detailsOf(said) };
   }
 
   override componentDidCatch(error: unknown): void {
@@ -168,16 +177,13 @@ class Contained extends Component<{ id: string; children: ReactNode }, { failed:
   override render(): ReactNode {
     if (!this.state.failed) return this.props.children;
     return (
-      <p
-        className="flex items-center gap-8 px-8 py-4 text-fg-muted text-ui"
-        role="alert"
-        data-lo-failed-view={this.props.id}
-      >
-        Can’t show this view
-        <Button size="sm" onClick={() => this.setState({ failed: false })}>
-          Try again
-        </Button>
-      </p>
+      <div className="p-8" data-lo-failed-view={this.props.id}>
+        <Problem
+          title="Can’t show this view"
+          action={{ label: 'Try again', onClick: () => this.setState({ failed: false }) }}
+          details={this.state.details}
+        />
+      </div>
     );
   }
 }
