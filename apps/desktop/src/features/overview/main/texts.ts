@@ -181,11 +181,9 @@ export class BlockTexts {
       base = await changes.base;
     } catch (error) {
       this.#log(`finding where an overview's commit branched off: ${describe(error)}`);
-      return unknown(`Lo couldn’t find where the commit branched off: ${describe(error)}`);
+      return unknown('unknown');
     }
-    if (base === undefined) {
-      return unknown('The commit shares no history with the base branch.');
-    }
+    if (base === undefined) return unknown('unrelated');
     if (base === commit) return { kind: 'same' };
     const files = await changes.files;
     let old: FileVersion | undefined;
@@ -297,7 +295,7 @@ function unread(why: CodeCause): Extract<BlockText, { kind: 'unread' }> {
   return { kind: 'unread', why };
 }
 
-function unknown(why: string): Extract<BaseText, { kind: 'unknown' }> {
+function unknown(why: CodeCause | 'unrelated'): Extract<BaseText, { kind: 'unknown' }> {
   return { kind: 'unknown', why };
 }
 

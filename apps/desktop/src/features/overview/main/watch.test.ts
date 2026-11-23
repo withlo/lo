@@ -831,7 +831,8 @@ describe('failing', () => {
         () => Response.json({ message: 'Server Error' }, { status: 502 }),
         {
           kind: 'failed',
-          message: 'GitHub answered 502: Server Error',
+          // What GitHub said, for Details.
+          message: '502 Bad Gateway\nServer Error',
           retryAt: Date.now() + 5_000,
         },
       ],

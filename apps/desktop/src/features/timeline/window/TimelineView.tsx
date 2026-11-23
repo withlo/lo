@@ -39,6 +39,7 @@ import {
 
 import { useMenuTarget } from '../../../window/commands/menus.tsx';
 import { registry, setMiddle, useKeys } from '../../../window/commands/registry.ts';
+import { explain } from '../../../window/explain.ts';
 import { avatarImage } from '../../../window/images.ts';
 import {
   deletePullComment,
@@ -60,7 +61,7 @@ import {
   withoutBidi,
   type PullTab,
 } from '../../tab/window/shared.ts';
-import type { TimelineCause, TimelineView } from '../contract.ts';
+import type { TimelineView } from '../contract.ts';
 import {
   compare,
   focusRow,
@@ -165,21 +166,15 @@ function NoneInRun({ tab }: { tab: PullTab }) {
   );
 }
 
-/** Why a timeline couldn't be read, in the causes every error is worded by. */
-const CAUSES = {
-  offline: 'Offline.',
-  failed: 'GitHub returned an error.',
-} as const satisfies Record<TimelineCause, string>;
-
 /**
- * A timeline that couldn't be read, with nothing read before: why, with GitHub's own words behind
- * Details, and when main tries again, counted down, where it knows. Try now, or Try again where it
+ * A timeline that couldn't be read, with nothing read before: why, by its cause, with what GitHub or
+ * the system said behind Details, and when main tries again, counted down, where it knows. Try now, or Try again where it
  * doesn't, reads it at once, busy until main's read has answered. While the account's poller reads
  * nothing, the tab's banner says the wait and has the way to try again, so this has neither.
  */
 function Failed({ tab, view }: { tab: PullTab; view: TimelineView | undefined }) {
   const [trying, setTrying] = useState(false);
-  const cause = view?.cause ? CAUSES[view.cause] : undefined;
+  const cause = view?.cause ? explain(view.cause) : undefined;
   const retryAt = view?.retryAt ?? undefined;
   const stalled = view?.stalled ?? false;
   return (
@@ -214,7 +209,7 @@ function Failed({ tab, view }: { tab: PullTab; view: TimelineView | undefined })
               },
             }
       }
-      details={view?.problem ? withoutBidi(view.problem) : undefined}
+      details={view?.details ? withoutBidi(view.details) : undefined}
     />
   );
 }

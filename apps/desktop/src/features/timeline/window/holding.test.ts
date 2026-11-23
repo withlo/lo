@@ -56,7 +56,7 @@ function view(items: Item[], id = VIEW): TimelineView {
     status: 'ready',
     timeline: timeline(items),
     cause: null,
-    problem: null,
+    details: null,
     retryAt: null,
     stalled: false,
   };

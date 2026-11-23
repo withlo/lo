@@ -91,7 +91,7 @@ export type CheckedOverview =
       details?: string | undefined;
     };
 
-/** `artifact.md` couldn't be read, and main's why, which Details shows as main said it. */
+/** `artifact.md` couldn't be read, with what GitHub or the system said, which Details shows. */
 class Unread extends Error {
   readonly why: string;
 
@@ -121,9 +121,12 @@ export function failedWhy(error: unknown): string {
   return known ?? '';
 }
 
-/** What a failed check has behind Details: main's why for `artifact.md` it couldn't read. */
+/**
+ * What a failed check has behind Details: what GitHub or the system said when main couldn't read
+ * `artifact.md`, where it said anything.
+ */
 export function failedDetails(error: unknown): string | undefined {
-  return error instanceof Unread ? error.why : undefined;
+  return error instanceof Unread && error.why !== '' ? error.why : undefined;
 }
 
 /** What a tab's checking reads with, and where it sends what it found. */
@@ -523,7 +526,7 @@ export class Checking {
       // A check that started again since asks for itself.
       if (signal.aborted) return;
       for (const [index, path] of asked.entries()) {
-        const file = answers[index] ?? { kind: 'unread', why: 'Main gave no answer for it.' };
+        const file = answers[index] ?? { kind: 'unread', why: '' };
         figures.push({ path, file, sent: firstSent(path, file) });
       }
     };
