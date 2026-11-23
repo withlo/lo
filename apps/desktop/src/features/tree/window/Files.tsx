@@ -16,6 +16,7 @@ import { mode as modeSetting } from '../settings.ts';
 import { type FileThreads, useCounts } from './counts.ts';
 import { model as modelOf, type Row } from './model.ts';
 import { useViewedCount } from './shared.ts';
+import { problemWords, unlistedWords, type TreeWords } from './words.ts';
 import {
   askFolders,
   catchUp,
@@ -81,22 +82,29 @@ function drawn(
 /** What the panel says over the files, when only some of them can show. */
 function noteOf(state: TreeState | undefined, omitted: number): ReactNode {
   if (!state) return undefined;
-  const notes: string[] = [];
+  const notes: TreeWords[] = [];
   const long = state.omitted + omitted;
   if (long > 0) {
-    notes.push(
-      `${long.toLocaleString('en')} unchanged ${long === 1 ? 'file has a path' : 'files have paths'} longer than ${PATH_LIMIT.toLocaleString('en')} bytes, which the tree leaves out.`,
-    );
+    notes.push({
+      title: `${long.toLocaleString('en')} unchanged ${long === 1 ? 'file has a path' : 'files have paths'} longer than ${PATH_LIMIT.toLocaleString('en')} bytes, which the tree leaves out.`,
+    });
   }
-  if (state.listing.kind === 'changed') notes.push(state.listing.why);
+  if (state.listing.kind === 'changed') notes.push(unlistedWords(state.listing.why));
   if (state.partial) {
-    notes.push(
-      'GitHub lists only some of the changed files, so the rest show once the local copy is ready.',
-    );
+    notes.push({
+      title:
+        'GitHub lists only some of the changed files, so the rest show once the local copy is ready.',
+    });
   }
-  if (state.problem !== null) notes.push(state.problem);
+  if (state.problem !== null) notes.push(problemWords(state.problem));
   if (notes.length === 0) return undefined;
-  return notes.map((note) => <p key={note}>{note}</p>);
+  // A title, then its reason under it.
+  return notes.map((note) => (
+    <p key={note.title}>
+      {note.title}
+      {note.reason !== undefined && <span className="block">{note.reason}</span>}
+    </p>
+  ));
 }
 
 /** The target a key in the tree acts on: the file the keyboard is on, or nothing on a folder. */

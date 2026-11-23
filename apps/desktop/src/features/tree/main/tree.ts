@@ -14,7 +14,7 @@ import {
   type Repo,
 } from '@lo/git';
 import {
-  GithubError,
+  causeOf,
   type GithubClient,
   MAX_FILES,
   MAX_PAGES,
@@ -24,8 +24,10 @@ import {
   readPullFiles,
   RepoRef,
   repoTree,
+  saidBy,
 } from '@lo/github';
 
+import { detailsOf, githubCause } from '../../../ipc/cause.ts';
 import { IpcError } from '../../../ipc/contract.ts';
 import type { Comparing, OnScreen } from '../../revisions/service.ts';
 import type { Acting } from '../../tab/contract.ts';
@@ -39,6 +41,7 @@ import {
   type Source,
   type TreePath,
   type TreeState,
+  type TreeProblem,
 } from '../contract.ts';
 import { githubChanged, listedAt, localChange, longAtHead } from './changes.ts';
 import { find, type Searched } from './find.ts';
@@ -98,7 +101,7 @@ interface At {
   changes: Changed[] | undefined;
   changesFrom: Source | undefined;
   partial: boolean;
-  problem: string | undefined;
+  problem: TreeProblem | undefined;
   /** Files of the listing left out, since their paths are longer than `PATH_LIMIT` bytes. */
   listedOmitted: number;
   /** What's been started for it, so nothing starts twice. */
@@ -111,9 +114,16 @@ interface At {
   readonly timers: Set<ReturnType<typeof setTimeout>>;
 }
 
-/** Why the tree shows only the changed files of a repository whose paths are too much to list. */
-const TOO_MANY_BYTES =
-  'This repository’s file paths come to more than 32 MB, so the tree shows only the changed ones.';
+/** The changes between two revisions are over `limit` bytes, which the local copy won't read. */
+class TooLarge extends Error {
+  readonly limit: number;
+
+  constructor(limit: number) {
+    super(`the files changed between the revisions are larger than ${limit} bytes`);
+    this.name = 'TooLarge';
+    this.limit = limit;
+  }
+}
 
 /** Where a tree is read from. */
 type Read = 'local' | 'github';
@@ -122,28 +132,31 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** How what the tree says begins, when the reader signed out of the account it read as. */
-const SIGNED_OUT = 'You signed out of ';
-
-/** The login of the account `error` says Lo has no more, if it does: the reader signed out of it. */
-function signedOutOf(error: unknown): string | undefined {
-  for (let at = error, depth = 0; at !== undefined && depth < 5; depth++) {
-    if (at instanceof GithubError) {
-      return at.detail.kind === 'unauthorized' ? at.detail.missing : undefined;
-    }
-    at = at instanceof Error ? at.cause : undefined;
-  }
-  return undefined;
+/**
+ * Why reading from the local copy failed: the local copy can't be used, with what Git said, or,
+ * when the account the copy fetched as has been signed out of, that, as GitHub's cause.
+ */
+function localProblem(error: unknown, what: TreeProblem['what']): TreeProblem {
+  const details = detailsOf(describe(error));
+  const cause = causeOf(error);
+  if (cause.kind === 'signedOut') return { what, why: { kind: 'github', cause }, details };
+  return { what, why: { kind: 'local' }, details };
 }
 
-/**
- * What the tree says of a failed read: `problem(reason)` with the reason in words, or, when the
- * account the tab read as has been signed out of, that and what to do, which no token error says.
- */
-function said(error: unknown, problem: (reason: string) => string): string {
-  const login = signedOutOf(error);
-  if (login === undefined) return problem(describe(error));
-  return `${SIGNED_OUT}${login}. Sign in to load this pull request’s files.`;
+/** Why reading from GitHub as `acting` failed, by GitHub's cause, with what GitHub said. */
+function githubProblem(
+  error: unknown,
+  acting: Acting,
+  owner: string,
+): {
+  cause: ReturnType<typeof githubCause>;
+  details: string | undefined;
+} {
+  const login = acting.kind === 'account' ? acting.login : undefined;
+  return {
+    cause: githubCause(causeOf(error, { owner, login })),
+    details: detailsOf(saidBy(error)),
+  };
 }
 
 export class TreeTab {
@@ -334,7 +347,7 @@ export class TreeTab {
       if (!this.#current(at)) return false;
       if (listed.tooLarge) {
         at.files = undefined;
-        at.listing = { kind: 'changed', why: TOO_MANY_BYTES };
+        at.listing = { kind: 'changed', why: { kind: 'tooManyBytes' } };
       } else {
         at.files = new Files(listed.files, this.#options.wholeLimit);
         at.listing = at.files.listing();
@@ -347,15 +360,12 @@ export class TreeTab {
       if (!this.#current(at)) return false;
       if (error instanceof GitError && error.detail.kind === 'tooLarge') {
         at.files = undefined;
-        at.listing = {
-          kind: 'changed',
-          why: `This repository has more than ${MAX_ENTRIES.toLocaleString('en')} files, so the tree shows only the changed ones.`,
-        };
+        at.listing = { kind: 'changed', why: { kind: 'tooManyFiles', limit: MAX_ENTRIES } };
         at.from = 'local';
         return false;
       }
       this.#options.log(`listing the files at ${at.head}: ${describe(error)}`);
-      at.problem = said(error, (why) => `Lo couldn't list the files in the local copy: ${why}`);
+      at.problem = localProblem(error, 'files');
       return true;
     }
   }
@@ -388,8 +398,8 @@ export class TreeTab {
         { base: mergeBase, head: at.head },
       );
       if (!this.#current(at)) return;
+      // The diff says the changes are too large to read here, and GitHub's list stands.
       if ('refused' in compared) {
-        at.problem = `The changed files are larger than ${Math.round(compared.limit / 2 ** 20)} MB, so the tree marks them as GitHub lists them.`;
         this.#publish();
         this.#fallBackToGithub(at);
         if (failed) this.#retry(at, 'local');
@@ -399,11 +409,7 @@ export class TreeTab {
       // Between two revisions, what changed from one to the other.
       const between = at.comparing ? await at.comparing.compared() : undefined;
       if (!this.#current(at)) return;
-      if (between && 'refused' in between) {
-        throw new Error(
-          `the files changed between the revisions are larger than ${Math.round(between.limit / 2 ** 20)} MB`,
-        );
-      }
+      if (between && 'refused' in between) throw new TooLarge(between.limit);
       const betweenFiles = (between?.files ?? []).flatMap((file) =>
         file.change ? [file.change] : [],
       );
@@ -428,10 +434,10 @@ export class TreeTab {
     } catch (error) {
       if (!this.#current(at)) return;
       this.#options.log(`finding what changed at ${at.head}: ${describe(error)}`);
-      at.problem = said(
-        error,
-        (why) => `Lo couldn't read what changed from the local copy: ${why}`,
-      );
+      at.problem =
+        error instanceof TooLarge
+          ? { what: 'changes', why: { kind: 'tooLarge', limit: error.limit } }
+          : localProblem(error, 'changes');
       this.#fallBackToGithub(at);
       failed = true;
     }
@@ -501,14 +507,11 @@ export class TreeTab {
     if (at.from === undefined) {
       if (tree.status === 'fulfilled' && tree.value) {
         if (tree.value.truncated) {
-          at.listing = {
-            kind: 'changed',
-            why: 'GitHub lists only part of this repository’s files, so the tree shows the changed ones until the local copy is ready.',
-          };
+          at.listing = { kind: 'changed', why: { kind: 'truncated' } };
         } else {
           const listed = fromGithub(tree.value.items, this.#options.listingBytes);
           if (listed.tooLarge) {
-            at.listing = { kind: 'changed', why: TOO_MANY_BYTES };
+            at.listing = { kind: 'changed', why: { kind: 'tooManyBytes' } };
           } else {
             at.files = new Files(listed.files, this.#options.wholeLimit);
             at.listing = at.files.listing();
@@ -518,14 +521,8 @@ export class TreeTab {
         at.from = 'github';
       } else if (tree.status === 'rejected') {
         this.#options.log(`reading the files from GitHub: ${describe(tree.reason)}`);
-        at.listing = {
-          kind: 'changed',
-          why: said(
-            tree.reason,
-            (why) =>
-              `Lo couldn’t read the repository’s files from GitHub (${why}), so the tree shows the changed ones until the local copy is ready.`,
-          ),
-        };
+        const { cause, details } = githubProblem(tree.reason, acting, repository.owner);
+        at.listing = { kind: 'changed', why: { kind: 'failed', cause, details } };
         failed = true;
       }
     }
@@ -536,19 +533,15 @@ export class TreeTab {
           at.changes = listed.files.map(githubChanged);
           at.changesFrom = 'github';
           at.partial = listed.partial;
-          if (
-            at.problem?.startsWith('Lo couldn’t read the changed files from GitHub') ||
-            at.problem?.startsWith(SIGNED_OUT)
-          ) {
+          // GitHub's own failure, or a sign-out, is over once GitHub lists them.
+          if (at.problem?.why.kind === 'github') {
             at.problem = undefined;
           }
         }
       } else if (files.status === 'rejected') {
         this.#options.log(`reading the changed files from GitHub: ${describe(files.reason)}`);
-        at.problem ??= said(
-          files.reason,
-          (why) => `Lo couldn’t read the changed files from GitHub: ${why}`,
-        );
+        const { cause, details } = githubProblem(files.reason, acting, repository.owner);
+        at.problem ??= { what: 'changes', why: { kind: 'github', cause }, details };
         failed = true;
       }
     }

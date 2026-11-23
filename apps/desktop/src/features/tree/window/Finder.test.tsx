@@ -299,14 +299,14 @@ describe('searching', () => {
     act(() =>
       showState({
         ...TREE,
-        listing: { kind: 'changed', why: 'GitHub lists only part of this repository’s files.' },
+        listing: { kind: 'changed', why: { kind: 'truncated' } },
         omitted: 2,
         compared: null,
       }),
     );
     await open();
     expect(document.body.textContent).toContain(
-      'Only changed files can be found. GitHub lists only part of this repository’s files.',
+      'Unchanged files aren’t listed · GitHub lists only part of this repo.',
     );
     expect(document.body.textContent).toContain(
       '2 unchanged files have paths longer than 1,024 bytes, which the finder leaves out.',
