@@ -483,6 +483,10 @@ test('a cached read that fails says so and is tried again at the open prs interv
   expect(t.events()).toContain("failed to read Counted #1: couldn't read GitHub's answer: no good");
   // The pull request itself is fine, and polled as ever.
   expect(t.poller.check(pr(1))).toBeDefined();
+  // When it's read again, as the wall clock counts.
+  const left = (t.poller.readRetryAt(pr(1), COUNTED) ?? 0) - Date.now();
+  expect(left).toBeGreaterThan(19_000);
+  expect(left).toBeLessThanOrEqual(20_000);
 
   answers.answer(7);
   await t.runUntil(19);
@@ -491,6 +495,7 @@ test('a cached read that fails says so and is tried again at the open prs interv
   expect(answers.runs).toBe(2);
   expect(t.events()).toEqual(['read Counted #1']);
   expect(cachedCount(t)).toBe(7);
+  expect(t.poller.readRetryAt(pr(1), COUNTED), 'read, it waits on nothing').toBeUndefined();
 });
 
 test('a cached read whose refresh keeps failing waits longer each time', async () => {

@@ -11,6 +11,7 @@ import {
   type Cached,
   type Poller,
   type PollEvent,
+  type PollStatus,
   type PullRequestSidebar,
   type PullRequestTimeline,
 } from '@lo/github';
@@ -18,12 +19,16 @@ import {
 import type { PullTabInfo } from '../../tab/service.ts';
 import type { SidebarView, TimelineCause, TimelineView } from '../contract.ts';
 
-/** What the timeline uses of an account's poller: its two reads, its events, and reading again. */
+/**
+ * What the timeline uses of an account's poller: its two reads, its events, reading again and when,
+ * and how polling is going.
+ */
 export interface TimelinePoller extends Pick<
   Poller,
-  'timeline' | 'pullRequestSidebar' | 'onEvent'
+  'timeline' | 'pullRequestSidebar' | 'onEvent' | 'onChange' | 'status'
 > {
   readAfresh(pull: PullRef, kind: typeof TIMELINE): unknown;
+  readRetryAt(pull: PullRef, kind: typeof TIMELINE): number | undefined;
   cachedRead(pull: PullRef, kind: typeof TIMELINE): Cached<PullRequestTimeline> | undefined;
   cachedRead(
     pull: PullRef,
@@ -41,7 +46,12 @@ export interface TimelineTabOptions {
     sidebar(view: SidebarView): void;
   };
   readonly log: (line: string) => void;
+  /** How long Try again waits for the read it asked for to answer, in ms: 20 s by default. */
+  readonly readWait?: number | undefined;
 }
+
+/** How long Try again waits for its read, by default: as long as a merge waits for its facts. */
+const READ_WAIT = 20_000;
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -49,11 +59,25 @@ function describe(error: unknown): string {
 
 /**
  * Why reading the timeline failed, in the causes every error is worded by: GitHub couldn't be
- * reached, didn't respond, or answered with an error, as anything else is.
+ * reached, or answered with an error, as anything else is.
  */
 function causeOf(error: unknown): TimelineCause {
-  if (!(error instanceof GithubError) || error.detail.kind !== 'network') return 'failed';
-  return error.detail.failure === 'offline' ? 'offline' : 'noAnswer';
+  return error instanceof GithubError && error.isUnreachable() ? 'offline' : 'failed';
+}
+
+/**
+ * Whether the poller reads nothing now: GitHub can't be reached, the rate limit holds every read,
+ * or the account is signed out. A read asked for then gets no answer until that's over.
+ */
+function stalled(status: PollStatus): boolean {
+  return status.signedOut || status.offline !== undefined || status.rateLimit.kind === 'paused';
+}
+
+/** Why a timeline that was never read can't be, and when the poller tries again, if it says. */
+interface Failure {
+  readonly cause: TimelineCause;
+  readonly words: string;
+  readonly retryAt: number | undefined;
 }
 
 export class TimelineTab {
@@ -71,6 +95,8 @@ export class TimelineTab {
   #problem: { readonly cause: TimelineCause; readonly words: string } | undefined;
   /** What waits for the timeline's next read to answer, as Try again does. */
   #waiting: (() => void)[] = [];
+  /** What the window was last told of a failure, so a change in polling says only what's new. */
+  #told = '';
   #closed = false;
 
   constructor(options: TimelineTabOptions) {
@@ -80,13 +106,37 @@ export class TimelineTab {
 
   /** The timeline as main has it now, as the window gets it. */
   timeline(): TimelineView {
+    const failure = this.#failure();
     return {
       id: this.id,
-      status: this.#status(),
+      status: this.#status(failure),
       timeline: this.#timeline ?? null,
-      cause: this.#timeline === undefined ? (this.#problem?.cause ?? null) : null,
-      problem: this.#timeline === undefined ? (this.#problem?.words ?? null) : null,
+      cause: failure?.cause ?? null,
+      problem: failure?.words ?? null,
+      retryAt: failure?.retryAt ?? null,
     };
+  }
+
+  /**
+   * Why the timeline can't be read, while nothing has been: GitHub can't be reached now, as the
+   * poller says, or the read failed; with when the poller tries again, where it says.
+   */
+  #failure(): Failure | undefined {
+    if (this.#timeline || this.#info?.run || this.#info?.acting?.kind === 'anonymous') {
+      return undefined;
+    }
+    const offline = this.#poller?.status().offline;
+    if (offline) {
+      return {
+        cause: 'offline',
+        words: `Lo couldn’t read the timeline: ${offline.error}`,
+        retryAt: Math.round(offline.retryAt),
+      };
+    }
+    if (!this.#problem) return undefined;
+    const pull = this.#pull;
+    const at = pull && this.#poller?.readRetryAt(pull, TIMELINE);
+    return { ...this.#problem, retryAt: at === undefined ? undefined : Math.round(at) };
   }
 
   /** What goes beside the description, as main has it now. */
@@ -135,7 +185,9 @@ export class TimelineTab {
 
   /**
    * Reads the timeline again at once, after it failed, whatever wait its failures set, and settles
-   * once that read has answered, however it went.
+   * once that read has answered, however it went. A failure of the network, the token or the rate
+   * limit sends no answer, and nothing is read while the poller is stalled, so it also settles once
+   * the poller stalls, and after `readWait` at most: what the view says of the failure then stays.
    */
   async retry(): Promise<void> {
     const pull = this.#pull;
@@ -147,22 +199,49 @@ export class TimelineTab {
       await this.#watch(pull, login);
       return;
     }
-    const answered = new Promise<void>((resolve) => this.#waiting.push(resolve));
-    if (poller.readAfresh(pull, TIMELINE) === undefined) this.#answered();
-    await answered;
+    if (stalled(poller.status())) return;
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const settle = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        stop();
+        resolve();
+      };
+      const timer = setTimeout(settle, this.#options.readWait ?? READ_WAIT);
+      const stop = poller.onChange(() => {
+        if (stalled(poller.status())) settle();
+      });
+      this.#waiting.push(settle);
+      if (poller.readAfresh(pull, TIMELINE) === undefined) settle();
+    });
   }
 
   /** The timeline's read has answered: what waited on it hears. */
   #answered(): void {
-    for (const done of this.#waiting.splice(0)) done();
+    for (const settle of this.#waiting.splice(0)) settle();
   }
 
-  #status(): TimelineView['status'] {
+  /**
+   * Tells the window of a change in how polling goes, such as GitHub becoming unreachable, or the
+   * time a failed read is tried again, while nothing has been read: nothing when its failure says
+   * the same.
+   */
+  #restate(): void {
+    if (this.#closed || this.#timeline) return;
+    const view = this.timeline();
+    const told = JSON.stringify([view.status, view.cause, view.problem, view.retryAt]);
+    if (told === this.#told) return;
+    this.#publishTimeline();
+  }
+
+  #status(failure: Failure | undefined): TimelineView['status'] {
     const info = this.#info;
     if (info?.run) return 'run';
     if (info?.acting?.kind === 'anonymous') return 'signIn';
     if (this.#timeline) return 'ready';
-    return this.#problem === undefined ? 'loading' : 'failed';
+    return failure === undefined ? 'loading' : 'failed';
   }
 
   #reset(): void {
@@ -186,7 +265,13 @@ export class TimelineTab {
     }
     if (!this.#current(pull, login) || this.#poller) return;
     this.#poller = poller;
-    this.#unsubscribe = poller.onEvent((event) => this.#heard(poller, pull, event));
+    const events = poller.onEvent((event) => this.#heard(poller, pull, event));
+    const changes = poller.onChange(() => this.#restate());
+    this.#unsubscribe = () => {
+      events();
+      changes();
+    };
+    this.#restate();
     const reads = await Promise.allSettled([
       poller.timeline(pull),
       poller.pullRequestSidebar(pull),
@@ -277,7 +362,9 @@ export class TimelineTab {
   }
 
   #publishTimeline(): void {
-    this.#options.publish.timeline(this.timeline());
+    const view = this.timeline();
+    this.#told = JSON.stringify([view.status, view.cause, view.problem, view.retryAt]);
+    this.#options.publish.timeline(view);
   }
 
   #publishSidebar(): void {

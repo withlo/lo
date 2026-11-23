@@ -1059,6 +1059,16 @@ export class Poller {
   }
 
   /**
+   * When the read of `kind` kept for `pull` may run again after failing, as `Date.now()` counts:
+   * nothing while it isn't waiting on a failure, or its wait is over.
+   */
+  readRetryAt<T>(pull: PullRef, kind: ReadKind<T>): number | undefined {
+    const at = this.#pulls.get(pull.key)?.reads.get(kind.name)?.retryAt;
+    const left = at === undefined ? 0 : at - this.#config.monotonic();
+    return left > 0 ? this.#config.now() + left : undefined;
+  }
+
+  /**
    * `pull`'s push history, as {@link Poller.readCached} keeps it, read as this account. It's read
    * again after a push, a retarget, a merge or a close, and when a review is submitted.
    */

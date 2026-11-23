@@ -6,6 +6,7 @@ import {
   type Cached,
   type GithubErrorDetail,
   type PollEvent,
+  type PollStatus,
   type PullRequestSidebar,
   type PullRequestTimeline,
 } from '@lo/github';
@@ -62,6 +63,9 @@ function cached<T>(value: T | undefined): Cached<T> | undefined {
 /** A poller that reads what a test keeps in it, and the events a test sends as its polls. */
 function pollerOf(first: PullRequestTimeline | Error) {
   const listeners = new Set<(event: PollEvent) => void>();
+  const observers = new Set<() => void>();
+  let status: PollStatus = { rateLimit: { kind: 'normal' }, offline: undefined, signedOut: false };
+  let retryAt: number | undefined;
   const kept: { timeline?: PullRequestTimeline; sidebar?: PullRequestSidebar } = {
     sidebar: SIDEBAR,
   };
@@ -91,11 +95,32 @@ function pollerOf(first: PullRequestTimeline | Error) {
     },
     cachedRead,
     readAfresh,
+    readRetryAt: () => retryAt,
+    onChange(observer) {
+      observers.add(observer);
+      return () => observers.delete(observer);
+    },
+    status: () => status,
+  };
+  /** Something the poller holds changed, which those observing it hear. */
+  const changed = () => {
+    for (const observer of observers) observer();
   };
   return {
     poller,
     listeners,
+    observers,
     readAfresh,
+    /** Polling goes as `next` says from now. */
+    goes(next: Partial<PollStatus>) {
+      status = { ...status, ...next };
+      changed();
+    },
+    /** The timeline's failed read is tried again at `at`, or isn't waiting. */
+    retries(at: number | undefined) {
+      retryAt = at;
+      changed();
+    },
     /** A poll read the timeline again, as `next`. */
     read(next: PullRequestTimeline) {
       kept.timeline = next;
@@ -109,7 +134,7 @@ function pollerOf(first: PullRequestTimeline | Error) {
   };
 }
 
-function tabOf(poller: TimelinePoller) {
+function tabOf(poller: TimelinePoller, readWait?: number) {
   const timelines: TimelineView[] = [];
   const sidebars: SidebarView[] = [];
   const asked = vi.fn<(login: string) => Promise<TimelinePoller>>(() => Promise.resolve(poller));
@@ -118,6 +143,7 @@ function tabOf(poller: TimelinePoller) {
     github: { poller: asked },
     publish: { timeline: (view) => timelines.push(view), sidebar: (view) => sidebars.push(view) },
     log: () => undefined,
+    readWait,
   });
   return { tab, timelines, sidebars, asked };
 }
@@ -162,11 +188,24 @@ describe('TimelineTab', () => {
     expect(timelines.at(-1)).toMatchObject({
       cause: 'failed',
       problem: 'Lo couldn’t read the timeline: GitHub is down',
+      retryAt: null,
     });
-    polled.failed({ kind: 'network', failure: 'offline', message: 'getaddrinfo ENOTFOUND' });
-    expect(timelines.at(-1)?.cause).toBe('offline');
-    polled.failed({ kind: 'network', failure: 'lost', message: 'socket hang up' });
-    expect(timelines.at(-1)?.cause).toBe('noAnswer');
+    // The poller says when it reads it again, which the window counts down to.
+    polled.retries(1_000_000);
+    expect(timelines.at(-1)).toMatchObject({ status: 'failed', retryAt: 1_000_000 });
+    const told = timelines.length;
+    polled.goes({});
+    expect(timelines.length, 'nothing new, nothing said').toBe(told);
+    // GitHub can't be reached, as the poller says, not a read: no read fails for it.
+    polled.goes({ offline: { since: 0, retryAt: 2_000_000, error: 'getaddrinfo ENOTFOUND.' } });
+    expect(timelines.at(-1)).toMatchObject({
+      status: 'failed',
+      cause: 'offline',
+      problem: 'Lo couldn’t read the timeline: getaddrinfo ENOTFOUND.',
+      retryAt: 2_000_000,
+    });
+    polled.goes({ offline: undefined });
+    expect(timelines.at(-1)).toMatchObject({ cause: 'failed', retryAt: 1_000_000 });
 
     polled.read(timeline('At last'));
     expect(timelines.at(-1)).toMatchObject({ status: 'ready', cause: null, problem: null });
@@ -195,6 +234,35 @@ describe('TimelineTab', () => {
     polled.read(timeline('At last'));
     await again;
     expect(timelines.at(-1)?.status).toBe('ready');
+  });
+
+  it('stops waiting for the read it asked for once the poller stalls, or after a while', async () => {
+    const polled = pollerOf(new Error('GitHub is down'));
+    const { tab, timelines } = tabOf(polled.poller, 50);
+    tab.update(info());
+    tab.show();
+    await vi.waitFor(() => expect(timelines.at(-1)?.status).toBe('failed'));
+    // GitHub goes unreachable while it waits: no read will answer.
+    const offline = tab.retry();
+    polled.goes({ offline: { since: 0, retryAt: 2_000_000, error: 'Offline.' } });
+    await offline;
+    // Stalled, it asks for nothing.
+    polled.readAfresh.mockClear();
+    await tab.retry();
+    expect(polled.readAfresh).not.toHaveBeenCalled();
+    polled.goes({
+      offline: undefined,
+      rateLimit: { kind: 'paused', until: 0, reason: { kind: 'secondary' } },
+    });
+    await tab.retry();
+    polled.goes({ rateLimit: { kind: 'normal' }, signedOut: true });
+    await tab.retry();
+    expect(polled.readAfresh).not.toHaveBeenCalled();
+    // A read that gets no answer at all is given up on after the wait.
+    polled.goes({ signedOut: false });
+    await tab.retry();
+    expect(polled.readAfresh).toHaveBeenCalledOnce();
+    expect(polled.observers.size, 'what waited stops listening').toBe(1);
   });
 
   it('reads anew as another account', async () => {

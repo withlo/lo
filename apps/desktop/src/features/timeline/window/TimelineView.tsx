@@ -8,6 +8,7 @@
 // own comments have Edit and Delete, and an edit's box is drawn in the comment's card.
 
 import {
+  Countdown,
   EmptyState,
   Label,
   Problem,
@@ -167,24 +168,34 @@ function NoneInRun({ tab }: { tab: PullTab }) {
 /** Why a timeline couldn't be read, in the causes every error is worded by. */
 const CAUSES = {
   offline: 'Offline.',
-  noAnswer: 'GitHub didn’t respond.',
   failed: 'GitHub returned an error.',
 } as const satisfies Record<TimelineCause, string>;
 
 /**
  * A timeline that couldn't be read, with nothing read before: why, with GitHub's own words behind
- * Details, and Try again, busy until main's read has answered. Main reads it again as time goes on
- * too, and draws it once it's read.
+ * Details, and when main tries again, counted down, where it knows. Try now, or Try again where it
+ * doesn't, reads it at once, busy until main's read has answered.
  */
 function Failed({ tab, view }: { tab: PullTab; view: TimelineView | undefined }) {
   const [trying, setTrying] = useState(false);
+  const cause = view?.cause ? CAUSES[view.cause] : undefined;
+  const retryAt = view?.retryAt ?? undefined;
   return (
     <Problem
       layout="view"
       title="Can’t show the timeline"
-      reason={view?.cause ? CAUSES[view.cause] : undefined}
+      reason={
+        retryAt === undefined ? (
+          cause
+        ) : (
+          <>
+            {cause}
+            {cause !== undefined && ' '}Retrying <Countdown at={retryAt} />.
+          </>
+        )
+      }
       action={{
-        label: 'Try again',
+        label: retryAt === undefined ? 'Try again' : 'Try now',
         busy: trying,
         working: 'Trying…',
         onClick: () => {

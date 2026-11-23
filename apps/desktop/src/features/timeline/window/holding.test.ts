@@ -51,7 +51,14 @@ function press(key: string): void {
 let VIEW = 'h0';
 
 function view(items: Item[], id = VIEW): TimelineView {
-  return { id, status: 'ready', timeline: timeline(items), cause: null, problem: null };
+  return {
+    id,
+    status: 'ready',
+    timeline: timeline(items),
+    cause: null,
+    problem: null,
+    retryAt: null,
+  };
 }
 
 /** The reader's post of `Ship it.`, made when the timeline held `had` comments with its text. */
