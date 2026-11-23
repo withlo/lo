@@ -710,7 +710,7 @@ describe('a lost answer', () => {
     expect(shown.last()).toMatchObject([{ restored: true, sending: 'checking', sent: 'Lost?' }]);
     expect(await shown.made.send('t1', onLine(), 'Lost?', 'review')).toEqual({
       kind: 'refused',
-      refusal: { kind: 'github', message: 'Lo is still looking whether it posted.' },
+      refusal: { kind: 'busy' },
     });
     shown.made.stop();
     await vi.advanceTimersByTimeAsync(8_000);

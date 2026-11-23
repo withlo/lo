@@ -491,10 +491,12 @@ function footOf(
       />
     );
   }
+  // With auto-merge on, the head says the method it merges with, and the foot names no other.
+  const named = action.kind === 'merge' || state.autoMerge !== null ? undefined : method;
   return (
     <MergeFoot
       auto={auto}
-      method={action.kind === 'merge' || method === undefined ? undefined : methodLabel(method)}
+      method={named === undefined ? undefined : methodLabel(named)}
       primary={primary}
     />
   );

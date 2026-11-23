@@ -1,5 +1,5 @@
-// Asking the reader to trust: nothing but "Trust" in main's own dialog, pressed while the window
-// is there, writes an entry, and only the entry that dialog named.
+// Asking the reader to trust: nothing but the trust button in main's own dialog, pressed while the
+// window is there, writes an entry, and only the entry that dialog named.
 
 import { GithubError, type PullRequestRepositories } from '@lo/github';
 import { describe, expect, it, vi } from 'vitest';
@@ -27,8 +27,8 @@ const OWN: PullRequestRepositories = { base: E2E, head: E2E, isCrossRepository: 
 const FORKED: PullRequestRepositories = { base: E2E, head: FORK, isCrossRepository: true };
 const GONE: PullRequestRepositories = { base: E2E, head: undefined, isCrossRepository: true };
 
-const TRUST = BUTTONS.indexOf('Trust');
-const CANCEL = BUTTONS.indexOf('Cancel');
+const TRUST = BUTTONS.repo.indexOf('Trust repo');
+const CANCEL = BUTTONS.repo.indexOf('Cancel');
 
 /** A dialog the test answers: what it was asked, and the answer it gives each. */
 interface Asked {
@@ -117,15 +117,15 @@ describe('the dialog', () => {
       type: 'warning',
       message: 'Trust fieldwork/atlas-api?',
       detail:
-        'Lo will check out its pull requests and run language servers on them. The servers read its code and settings. Lo limits what they run, but they aren’t sandboxed. The repo’s settings can still steer them. A file that exploits a bug in one could run code as you.',
-      buttons: ['Trust', 'Cancel'],
+        'Language servers read this repo’s code and settings. They aren’t sandboxed. Trust only repos whose code you’d run.',
+      buttons: ['Trust repo', 'Cancel'],
       defaultId: CANCEL,
       cancelId: CANCEL,
       noLink: true,
     });
   });
 
-  it('asks about a fork’s pull request, saying later pushes are trusted too', () => {
+  it('asks about a fork’s pull request, saying every revision is trusted', () => {
     const question = questionFor({
       kind: 'pull',
       repo: 'fieldwork/atlas-api',
@@ -134,10 +134,12 @@ describe('the dialog', () => {
       from: 'sam-whit/atlas-api',
       fromId: 'R_2',
     });
-    expect(question.message).toBe('Trust pull request #4833 from sam-whit/atlas-api?');
+    expect(question.message).toBe('Trust #4833 from sam-whit/atlas-api?');
     expect(question.detail).toBe(
-      'Lo will check it out and run language servers on it. The servers read its code and settings. Lo limits what they run, but they aren’t sandboxed. The repo’s settings can still steer them. A file that exploits a bug in one could run code as you. Later pushes to this pull request are trusted too.',
+      'Language servers read this pull request’s code and settings, at every revision. They aren’t sandboxed. Trust only code you’d run.',
     );
+    expect(question.buttons).toEqual(['Trust pull request', 'Cancel']);
+    expect(question.buttons.indexOf('Trust pull request')).toBe(TRUST);
     expect([question.buttons[question.defaultId], question.buttons[question.cancelId]]).toEqual([
       'Cancel',
       'Cancel',
@@ -360,7 +362,7 @@ describe('asking to trust', () => {
     const { trust, dialogs, written } = asker(views, () => Promise.resolve(FORKED));
     const asking = trust.ask({ view: 't2', repo: 'rozed-dev/e2e', pull: 97 });
     await until(() => dialogs.length === 1);
-    expect(dialogs[0]?.question.message).toBe('Trust pull request #97 from rozed-bot/e2e?');
+    expect(dialogs[0]?.question.message).toBe('Trust #97 from rozed-bot/e2e?');
     dialogs[0]?.answer(TRUST);
     expect(await asking).toBe('trusted');
     expect(written).toEqual([

@@ -281,7 +281,7 @@ describe('review order', () => {
       'README.md [M]',
       'parse.ts [M, in src]',
       '  parse.test.ts [A, in src]',
-      '# Config',
+      '# Configuration',
       'package.json [M]',
       '# Generated',
       'pnpm-lock.yaml [M, gen]',

@@ -125,7 +125,7 @@ export async function installSkill(
       const said = installWords(done, before);
       tell = () => {
         if (said.done !== undefined) announce(said.done);
-        for (const each of said.failed) notify(each.title, each.body);
+        for (const each of said.failed) notify(each.title, each.body, { details: each.details });
       };
     }
   } catch (error) {

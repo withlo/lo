@@ -188,9 +188,7 @@ describe('the welcome screen’s step', () => {
     await settle();
     expect(step()?.querySelector('.text-ui-strong')?.textContent).toBe('Overview skill');
     expect(step()?.querySelector('[role="img"]')?.textContent).toContain('parse');
-    expect(step()?.textContent).toContain(
-      'Teaches Claude Code and Codex to write overviews that Lo shows.',
-    );
+    expect(step()?.textContent).toContain('Teaches Claude Code and Codex to write overviews.');
     expect(button(step(), 'Install').disabled).toBe(false);
   });
 
@@ -218,9 +216,7 @@ describe('the welcome screen’s step', () => {
     main(state({ installed: true }, { blocked: why }));
     render();
     await settle();
-    expect(step()?.textContent).toContain(
-      '~/.agents/skills/lo-overview holds another skill. Move it, then install again.',
-    );
+    expect(step()?.textContent).toContain('~/.agents/skills/lo-overview holds another skill.');
     // A path is code.
     expect(
       [...(step()?.querySelectorAll('.code-small') ?? [])].map((each) => each.textContent),
@@ -268,7 +264,7 @@ describe('Settings’ row', () => {
     expect(row()?.querySelector('[role="status"] .code-small')?.textContent).toBe(
       '~/.claude/skills',
     );
-    expect(button(row(), 'Install for Codex')).toBeDefined();
+    expect(button(row(), 'Install')).toBeDefined();
   });
 
   it('dims Install with why while no agent is set up', async () => {
@@ -309,7 +305,7 @@ describe('Settings’ row', () => {
     );
     render();
     await settle();
-    click(button(row(), 'Install for Codex'));
+    click(button(row(), 'Install'));
     await settle();
     expect(asked.asked()).toEqual([['overview.installSkill', { agents: ['codex'] }]]);
     expect(lines()).toEqual([
@@ -351,7 +347,7 @@ describe('Settings’ row', () => {
     await settle();
     const said = [
       'Claude Code · installed in ~/.claude/skills',
-      'Codex · not installed ~/.agents/skills/lo-overview holds another skill, "review". Move it, then install again.',
+      'Codex · not installed ~/.agents/skills/lo-overview holds another skill, “review”.',
     ];
     expect(lines()).toEqual(said);
     // Said on the row, which asked, and in no note besides.
@@ -382,7 +378,7 @@ describe('Settings’ row', () => {
     render();
     await settle();
     expect(lines()[0]).toBe(
-      "Claude Code · installed, can’t update ~/.claude/skills/lo-overview is a link, and Lo doesn't install the skill through links. Remove it, then install again.",
+      'Claude Code · installed, can’t update ~/.claude/skills/lo-overview is a link, not a folder.',
     );
     const before = notices();
     click(button(row(), 'Install again'));

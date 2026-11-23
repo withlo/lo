@@ -129,9 +129,12 @@ export type Version = z.output<typeof version>;
 /**
  * Why Lo won't show a file whole, besides its size: the revisions compared are too large to replay
  * the older side's changes onto (`compared`), the pull request shares no history with its base, so
- * there's no older side (`unrelated`), or it's a submodule, another repository's commit.
+ * there's no older side (`unrelated`), it's a submodule, another repository's commit, the pull
+ * request changes no file that was at that path (`unchanged`), or there's no file at that path in
+ * the head on screen (`missing`) or in the base (`notInBase`).
  */
-export type WholeRefusal = 'compared' | 'unrelated' | 'submodule';
+export type WholeRefusal =
+  'compared' | 'unrelated' | 'submodule' | 'unchanged' | 'missing' | 'notInBase';
 
 /**
  * A whole file, as `diff.whole` replies: its text; or what its whole-file view says in place of

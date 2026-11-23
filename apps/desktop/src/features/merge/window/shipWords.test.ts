@@ -11,6 +11,7 @@ import {
   runningOf,
   shipDoneLine,
   shipLabel,
+  shipTitle,
   shipWarning,
   stopTitle,
   stopWords,
@@ -148,8 +149,20 @@ it('skips the approval on your own pull request, says again after a dismissal, a
     title: 'Approve #138.',
     detail: 'Authors can’t approve their own pull request.',
   });
-  // The button names both, whether it approves or not.
-  expect(shipLabel()).toBe('Approve and ship');
+  // With the approval skipped, the title and the button promise only what follows.
+  expect([shipTitle(138, own), shipLabel(own)]).toEqual(['Merge #138?', 'Merge #138']);
+  const queues = { ...own, likely: { kind: 'enqueue', method: null } } as const;
+  expect([shipTitle(138, queues), shipLabel(queues)]).toEqual([
+    'Add #138 to merge queue?',
+    'Add to merge queue',
+  ]);
+  // Otherwise, approved already or not, and before it's planned, they name both.
+  const approved = planOf({ approval: { kind: 'alreadyApproved' } });
+  expect([shipTitle(138, approved), shipLabel(approved)]).toEqual([
+    'Approve and ship #138?',
+    'Approve and ship',
+  ]);
+  expect([shipTitle(138), shipLabel()]).toEqual(['Approve and ship #138?', 'Approve and ship']);
   expect(plannedSteps(planOf({ approval: { kind: 'reapproveDismissed' } }))[0]).toMatchObject({
     title: 'Approve #138 again as tess-okafor.',
     detail: undefined,

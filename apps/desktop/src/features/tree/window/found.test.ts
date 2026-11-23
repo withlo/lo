@@ -178,26 +178,26 @@ describe('what the foot says', () => {
       new Map(),
       false,
     );
-    expect(enterAction(changed)).toBe('Show in the diff');
-    expect(enterAction(other)).toBe('Show the whole file');
+    expect(enterAction(changed)).toBe('Show in diff');
+    expect(enterAction(other)).toBe('Open whole file');
     expect(enterAction(undefined)).toBeUndefined();
   });
 
   it('counts the files listed of the repository’s, of the matches or of the changed files', () => {
     const some = answer([found('a.ts', true), found('b.ts', false)]);
     expect(countText(undefined, 0, 3_880, 5, false)).toBe('');
-    expect(countText(some, 2, 3_880, 5, false)).toBe('2 of 3,880 files');
+    expect(countText(some, 2, 3_880, 5, false)).toBe('2 / 3,880 files');
     expect(countText(some, 2, undefined, 5, false)).toBe('2 files');
     expect(countText(answer([found('a.ts', true)]), 1, undefined, 5, false)).toBe('1 file');
-    expect(countText(some, 1, 3_880, 5, true)).toBe('1 of 5 changed files');
+    expect(countText(some, 1, 3_880, 5, true)).toBe('1 / 5 changed files');
     expect(countText(some, 1, 3_880, undefined, true)).toBe('1 changed');
     const many = answer(
       Array.from({ length: FIND_LIMIT }, (_, at) => found(`f${at}.ts`, false)),
       1_234,
     );
-    expect(countText(many, FIND_LIMIT, 3_880, 5, false)).toBe('100 of 1,234 matches');
+    expect(countText(many, FIND_LIMIT, 3_880, 5, false)).toBe('First 100 of 1,234 matches shown');
     expect(countText({ ...many, query: '' }, FIND_LIMIT, 3_880, 5, false)).toBe(
-      '100 of 1,234 files',
+      'First 100 of 1,234 files shown',
     );
   });
 });

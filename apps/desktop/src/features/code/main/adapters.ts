@@ -189,7 +189,7 @@ function onNode(
 ): Adapter {
   return {
     ...adapter,
-    noHints: server.hints ? undefined : `${server.name} has no type hints.`,
+    noHints: server.hints ? undefined : `${server.name} has no type hints`,
     // Node and the server, and no toolchain: it runs on Node alone.
     downloads: { servers: ['node', server.id], toolchains: [] },
     async prepare(context) {
@@ -234,7 +234,7 @@ const SWIFT: Adapter = {
   id: 'swift',
   name: 'Swift',
   languages: { swift: 'swift' },
-  noReferences: `${SOURCEKIT_LSP.name} finds references only from a build, which Lo never runs.`,
+  noReferences: `${SOURCEKIT_LSP.name} needs a build to find references`,
   checkout: sourceKitCheckoutProblem,
   system: {
     id: 'swift',
@@ -261,7 +261,7 @@ function swiftOnLinux(distro: SwiftDistro): Adapter {
     id: 'swift',
     name: 'Swift',
     languages: { swift: 'swift' },
-    noReferences: `${SOURCEKIT_LSP.name} finds references only from a build, which Lo never runs.`,
+    noReferences: `${SOURCEKIT_LSP.name} needs a build to find references`,
     checkout: sourceKitCheckoutProblem,
     // The server comes in the toolchain.
     downloads: { servers: [], toolchains: [toolchain] },
@@ -286,7 +286,7 @@ function native(
 ): Adapter {
   return {
     ...adapter,
-    noHints: server.hints ? undefined : `${server.name} has no type hints.`,
+    noHints: server.hints ? undefined : `${server.name} has no type hints`,
     downloads: { servers: [server.id], toolchains },
     async prepare(context) {
       const used = new Map<string, Toolchain>();

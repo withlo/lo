@@ -11,7 +11,7 @@ import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { useViewedMarks } from '../../revisions/window/shared.ts';
 import { changeSetting, useSetting } from '../../settings/window/shared.ts';
 import { useBlocked, useTabState, type PullTab } from '../../tab/window/shared.ts';
-import { fileKey, PATH_LIMIT, type TreeState } from '../contract.ts';
+import { fileKey, type TreeState } from '../contract.ts';
 import { mode as modeSetting } from '../settings.ts';
 import { type FileThreads, useCounts } from './counts.ts';
 import { model as modelOf, type Row } from './model.ts';
@@ -88,15 +88,15 @@ function noteOf(state: TreeState | undefined, omitted: number): ReactNode {
   const long = state.omitted + omitted;
   if (long > 0) {
     notes.push({
-      title: `${long.toLocaleString('en')} unchanged ${long === 1 ? 'file has a path' : 'files have paths'} longer than ${PATH_LIMIT.toLocaleString('en')} bytes, which the tree leaves out.`,
+      title:
+        long === 1
+          ? '1 unchanged file with a path over 1 KB isn’t listed.'
+          : `${long.toLocaleString('en')} unchanged files with paths over 1 KB aren’t listed.`,
     });
   }
   if (state.listing.kind === 'changed') notes.push(unlistedWords(state.listing.why));
   if (state.partial) {
-    notes.push({
-      title:
-        'GitHub lists only some of the changed files, so the rest show once the local copy is ready.',
-    });
+    notes.push({ title: 'First 3,000 changed files shown' });
   }
   if (state.problem !== null) notes.push(problemWords(state.problem));
   if (notes.length === 0) return undefined;
@@ -119,11 +119,7 @@ export function treeTarget(tab: string): Target {
 /** Skeleton rows, while the files are on their way. */
 function Loading() {
   return (
-    <div
-      className="flex flex-col gap-12 px-16 py-8"
-      aria-busy="true"
-      aria-label="Loading the files"
-    >
+    <div className="flex flex-col gap-12 px-16 py-8" aria-busy="true" aria-label="Reading files…">
       {[60, 45, 70, 50].map((width) => (
         <Skeleton key={width} className={width > 55 ? 'w-3/4' : 'w-1/2'} />
       ))}

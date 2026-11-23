@@ -186,7 +186,7 @@ export function planRefusal(refusal: ReviewRefusal): SendRefusal {
     case 'pendingUnknown':
       return { kind: 'pendingUnknown' };
     case 'blank':
-      return { kind: 'github', message: 'A comment needs some text.' };
+      return { kind: 'github', message: 'Write a comment first' };
     case 'otherRevision':
     case 'ownPullRequest':
     case 'nothingToSubmit':
@@ -216,7 +216,7 @@ export function writeRefusal(refusal: ReviewWriteRefusal): SendRefusal {
       return { kind: 'github', message: `${describeReviewRefusal(refusal)}.` };
     default:
       refusal satisfies never;
-      return { kind: 'github', message: 'GitHub refused it.' };
+      return { kind: 'github', message: 'GitHub returned an error.' };
   }
 }
 
@@ -454,11 +454,7 @@ export class Writer {
     const stands = this.#standing(key, this.#options.drafts.get(target.login, target.pull, place));
     // Sent already, and not settled: sending it again could post it twice.
     if (stands === 'waiting' || stands === 'sending' || stands === 'checking') {
-      const message =
-        stands === 'checking'
-          ? 'Lo is still looking whether it posted.'
-          : 'It’s being sent already.';
-      return Promise.resolve({ kind: 'refused', refusal: { kind: 'github', message } });
+      return Promise.resolve({ kind: 'refused', refusal: { kind: 'busy' } });
     }
     // Sent, and nobody knows whether it posted: only a look that finds it didn't lets it go again.
     if (stands === 'unknown') {
@@ -535,8 +531,7 @@ export class Writer {
     const kept = this.#options.drafts.get(login, pull, place);
     const base = kept?.base;
     if (base == null) {
-      const message =
-        'Lo doesn’t have the text this edit started from. Discard it, then edit again.';
+      const message = 'The comment’s earlier text is missing.';
       return Promise.resolve({ kind: 'refused', refusal: { kind: 'github', message } });
     }
     const stands = this.#standing(key, kept);
@@ -726,7 +721,7 @@ export class Writer {
     const read = await this.#reviewRead(poller, pull);
     if (!details) {
       this.#settled(target, key, null);
-      const message = 'Lo hasn’t read the pull request from GitHub yet. Send it once it has.';
+      const message = 'Reading pull request…';
       return { kind: 'refused', refusal: { kind: 'github', message } };
     }
     const review = yourReview(details.id, read ?? { kind: 'unknown', why: 'not read since' });
@@ -739,7 +734,7 @@ export class Writer {
       threadsOf(poller, pull)?.get(place.thread)?.viewerCanReply === false
     ) {
       this.#settled(target, key, null);
-      const message = 'GitHub doesn’t let you reply to this thread.';
+      const message = `${login} can’t reply to this thread`;
       return { kind: 'refused', refusal: { kind: 'github', message } };
     }
     const comment: NewComment =
@@ -808,7 +803,7 @@ export class Writer {
       };
     }
     this.#unsent(target, key, place);
-    return { kind: 'refused', refusal: { kind: 'github', message: 'GitHub didn’t take it.' } };
+    return { kind: 'refused', refusal: { kind: 'github', message: 'GitHub returned an error.' } };
   }
 
   /**
@@ -827,7 +822,7 @@ export class Writer {
     const details = poller.pullRequest(pull)?.details;
     if (!details) {
       this.#settled(target, key, null);
-      const message = 'Lo hasn’t read the pull request from GitHub yet. Send it once it has.';
+      const message = 'Reading pull request…';
       return { kind: 'refused', refusal: { kind: 'github', message } };
     }
     // From here it may be on GitHub, until GitHub says otherwise: a restart keeps that.

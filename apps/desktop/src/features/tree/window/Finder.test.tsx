@@ -133,11 +133,11 @@ afterEach(async () => {
   screen.tab = undefined;
 });
 
-const dialog = () => document.querySelector('[role="dialog"][aria-label="Go to a file"]');
+const dialog = () => document.querySelector('[role="dialog"][aria-label="Go to file"]');
 const options = () => [...document.querySelectorAll('[role="option"]')];
 const labels = () => options().map((option) => option.textContent);
 const field = () => {
-  const input = document.querySelector('input[aria-label="Go to a file"]');
+  const input = document.querySelector('input[aria-label="Go to file"]');
   if (!(input instanceof HTMLInputElement)) throw new Error('The finder has no field.');
   return input;
 };
@@ -149,6 +149,12 @@ async function open() {
   });
   await vi.waitFor(() => expect(options().length).toBeGreaterThan(0));
 }
+
+/** The foot's hint for the changed-files switch. */
+const changedOnlyHint = () =>
+  [...document.querySelectorAll('kbd')]
+    .map((key) => key.parentElement)
+    .find((each) => each?.textContent === 'Changed files onlyTab');
 
 /** Types into the field, as React hears it: through the setter React watches. */
 function type(text: string): void {
@@ -169,27 +175,27 @@ describe('opening the finder', () => {
       'format.tssrcM',
       'legacy.tssrcD',
       'parser.tssrcR',
-      'README.mdwhole file',
-      'guide.mddocswhole file',
+      'README.mdunchanged',
+      'guide.mddocsunchanged',
     ]);
     // An unchanged file is set back; a deleted one is struck through.
     expect(options()[3]?.querySelector('.text-fg-dim')).not.toBeNull();
     expect(options()[1]?.querySelector('.line-through')).not.toBeNull();
-    expect(document.body.textContent).toContain('5 of 6 files');
+    expect(document.body.textContent).toContain('5 / 6 files');
   });
 
   it('says what ⏎ and the other keys do, in this system’s form', async () => {
     await open();
     const foot = [...document.querySelectorAll('kbd')].map((key) => key.parentElement?.textContent);
     expect(foot).toEqual(
-      expect.arrayContaining(['Show in the diff⏎', 'Whole file⌘⏎', 'Changed onlyTab']),
+      expect.arrayContaining(['Show in diff⏎', 'Open whole file⌘⏎', 'Changed files onlyTab']),
     );
-    expect(document.querySelector('input[aria-label="Go to a file"]')).not.toBeNull();
+    expect(document.querySelector('input[aria-label="Go to file"]')).not.toBeNull();
   });
 
   it('is refused where there’s no pull request on screen', () => {
     screen.tab = undefined;
-    expect(registry().enabled('tree.find', NO_TARGET)).toBe('There’s no pull request on screen.');
+    expect(registry().enabled('tree.find', NO_TARGET)).toBe('Open a pull request first');
   });
 
   it('shows what a search of a long path found, shortened in the middle and not dropped', async () => {
@@ -261,7 +267,7 @@ describe('searching', () => {
     finding(() => []);
     type('zzz');
     await vi.waitFor(() => expect(options()).toHaveLength(0));
-    await vi.waitFor(() => expect(document.body.textContent).toContain('No file matches "zzz".'));
+    await vi.waitFor(() => expect(document.body.textContent).toContain('No files match “zzz”'));
     answers['tree.find'] = () => {
       throw new IpcError('internal', 'It broke.');
     };
@@ -269,7 +275,7 @@ describe('searching', () => {
     onTestFinished(() => error.mockRestore());
     type('zzzz');
     await vi.waitFor(() =>
-      expect(document.body.textContent).toContain("Lo couldn't search the files."),
+      expect(document.body.textContent).toContain('Couldn’t search the files'),
     );
   });
 
@@ -292,7 +298,7 @@ describe('searching', () => {
     act(() => {
       registry().run('tree.find', NO_TARGET);
     });
-    expect(document.body.textContent).toContain('Reading the files…');
+    expect(document.body.textContent).toContain('Reading files…');
   });
 
   it('says which files it can’t find', async () => {
@@ -309,7 +315,7 @@ describe('searching', () => {
       'Unchanged files aren’t listed · GitHub lists only part of this repo.',
     );
     expect(document.body.textContent).toContain(
-      '2 unchanged files have paths longer than 1,024 bytes, which the finder leaves out.',
+      '2 unchanged files with paths over 1 KB aren’t listed.',
     );
   });
 });
@@ -321,14 +327,14 @@ describe('Tab', () => {
       registry().run('tree.findChanged', NO_TARGET);
     });
     expect(labels()).toEqual(['format.tssrcM', 'legacy.tssrcD', 'parser.tssrcR']);
-    expect(document.body.textContent).toContain('3 of 3 changed files');
-    expect(document.body.textContent).toContain('Changed only');
-    const foot = [...document.querySelectorAll('kbd')].map((key) => key.parentElement?.textContent);
-    expect(foot).toContain('All filesTab');
+    expect(document.body.textContent).toContain('3 / 3 changed files');
+    // The switch's hint is checked while it's on, and says the same either way.
+    expect(changedOnlyHint()?.querySelector('svg[aria-label="On"]')).not.toBeNull();
     act(() => {
       registry().run('tree.findChanged', NO_TARGET);
     });
     expect(options()).toHaveLength(5);
+    expect(changedOnlyHint()?.querySelector('svg[aria-label="On"]')).toBeNull();
     // It didn't search again: the answer holds every changed match.
     expect(bridge.calls.filter(([channel]) => channel === 'tree.find')).toHaveLength(1);
   });
@@ -342,7 +348,7 @@ describe('Tab', () => {
       registry().run('tree.findChanged', NO_TARGET);
     });
     expect(options()).toHaveLength(0);
-    expect(document.body.textContent).toContain('No changed file matches "read".');
+    expect(document.body.textContent).toContain('No changed files match “read”');
   });
 
   it('does nothing while the finder is shut, as in the other palettes', () => {
@@ -381,7 +387,7 @@ describe('going to a file', () => {
     await vi.waitFor(() => expect(dialog()).toBeNull());
     expect(focus.get(TAB.id)).toBe('src/format.ts');
     expect(notice()).toEqual({
-      title: 'No diff to show it in',
+      title: 'The diff isn’t open',
       body: '',
     });
   });
@@ -400,7 +406,7 @@ describe('going to a file', () => {
     choose('README.md');
     await vi.waitFor(() => expect(dialog()).toBeNull());
     expect(notice()).toEqual({
-      title: 'Whole files can’t be opened here',
+      title: 'Whole files can’t open in this tab',
       body: '',
     });
   });
@@ -446,7 +452,7 @@ describe('going to a file', () => {
     });
     await vi.waitFor(() => expect(dialog()).toBeNull());
     expect(notice()).toEqual({
-      title: 'Whole files can’t be opened here',
+      title: 'Whole files can’t open in this tab',
       body: '',
     });
   });
@@ -456,7 +462,7 @@ describe('going to a file', () => {
     finding(() => []);
     type('zzz');
     await vi.waitFor(() => expect(options()).toHaveLength(0));
-    expect(registry().enabled('tree.findWhole', NO_TARGET)).toBe('No file is highlighted.');
+    expect(registry().enabled('tree.findWhole', NO_TARGET)).toBe('No file highlighted');
     act(() => {
       registry().run('tree.findWhole', NO_TARGET);
     });

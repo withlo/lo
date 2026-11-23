@@ -178,7 +178,7 @@ export function RevisionPicker({
       open={open}
       onOpenChange={onOpenChange}
       anchor={anchor}
-      label="Revisions"
+      label="Compare revisions"
       // The list takes the keys, so it takes focus.
       initialFocus={listElement}
       container={container}
@@ -191,7 +191,7 @@ export function RevisionPicker({
       <div
         ref={list}
         role="listbox"
-        aria-label="Revisions"
+        aria-label="Compare revisions"
         aria-multiselectable="true"
         tabIndex={-1}
         data-lo-scope={scope}

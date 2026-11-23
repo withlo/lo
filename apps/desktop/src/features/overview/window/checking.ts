@@ -96,7 +96,7 @@ class Unread extends Error {
   readonly why: string;
 
   constructor(why: string) {
-    super(`Lo couldn't read artifact.md: ${why}`);
+    super(`Couldn’t read artifact.md: ${why}`);
     this.why = why;
   }
 }

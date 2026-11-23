@@ -1,7 +1,7 @@
 // The file finder over the window (`⌘P`): any file in the repository, found by name, the changed
 // ones first and marked, on the same palette the command palette and the open box use.
 
-import { FileIcon, FileMarks, Palette, PaletteHint, Spinner, Tag } from '@lo/ui';
+import { FileIcon, FileMarks, Palette, PaletteHint, Spinner } from '@lo/ui';
 import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
 import { useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
 import { useStore } from 'zustand';
@@ -9,7 +9,7 @@ import { useStore } from 'zustand';
 import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { useViewedMarks } from '../../revisions/window/shared.ts';
 import { useActiveTab } from '../../tab/window/shared.ts';
-import { PATH_LIMIT, type TreeState } from '../contract.ts';
+import type { TreeState } from '../contract.ts';
 import {
   changesByKey,
   countText,
@@ -95,7 +95,7 @@ function Row({ item }: { item: Item }) {
         {item.change ? (
           <FileMarks change={item.change} viewed={item.viewed} />
         ) : (
-          !item.changed && <span className="text-fg-muted text-small">whole file</span>
+          !item.changed && <span className="text-fg-muted text-small">unchanged</span>
         )}
       </span>
     </>
@@ -111,17 +111,15 @@ function emptyOf(state: FinderState, tree: TreeState | undefined): ReactNode {
     return (
       <span className="inline-flex items-center gap-8">
         <Spinner size="xs" />
-        {reading ? 'Reading the files…' : 'Looking…'}
+        {reading ? 'Reading files…' : 'Searching files…'}
       </span>
     );
   }
   const typed = state.query.trim() !== '';
   if (state.changedOnly) {
-    return typed
-      ? `No changed file matches "${state.query}".`
-      : 'This pull request changes no files.';
+    return typed ? `No changed files match “${state.query}”` : 'No files changed';
   }
-  return typed ? `No file matches "${state.query}".` : 'There are no files to find.';
+  return typed ? `No files match “${state.query}”` : 'No files';
 }
 
 /** What the finder says about the files it can't list, if anything. */
@@ -131,7 +129,9 @@ function noteOf(tree: TreeState | undefined): string | undefined {
   if (tree.listing.kind === 'changed') notes.push(oneLine(unlistedWords(tree.listing.why)));
   if (tree.omitted > 0) {
     notes.push(
-      `${tree.omitted.toLocaleString('en')} unchanged ${tree.omitted === 1 ? 'file has a path' : 'files have paths'} longer than ${PATH_LIMIT.toLocaleString('en')} bytes, which the finder leaves out.`,
+      tree.omitted === 1
+        ? '1 unchanged file with a path over 1 KB isn’t listed.'
+        : `${tree.omitted.toLocaleString('en')} unchanged files with paths over 1 KB aren’t listed.`,
     );
   }
   if (tree.problem !== null) notes.push(oneLine(problemWords(tree.problem)));
@@ -191,8 +191,8 @@ export function Finder() {
         if (!next) closeFinder();
       }}
       onClosed={finderClosed}
-      label="Go to a file"
-      placeholder="Find a file by name"
+      label="Go to file"
+      placeholder="Filter by name"
       icon={FILE_ICON}
       query={state.query}
       onQueryChange={typeQuery}
@@ -207,7 +207,6 @@ export function Finder() {
           <span className="lo-num">
             {countText(state.answer, items.length, files, tree?.changes?.length, state.changedOnly)}
           </span>
-          {state.changedOnly && <Tag>Changed only</Tag>}
           {note !== undefined && (
             <span role="status" className="min-w-0">
               {note}
@@ -215,10 +214,16 @@ export function Finder() {
           )}
           <span className="flex-1" />
           {enter !== undefined && <PaletteHint keys={labels('enter')}>{enter}</PaletteHint>}
-          {whole && highlighted && <PaletteHint keys={whole}>Whole file</PaletteHint>}
+          {whole && highlighted && <PaletteHint keys={whole}>Open whole file</PaletteHint>}
           {onlyChanged && (
             <PaletteHint keys={onlyChanged}>
-              {state.changedOnly ? 'All files' : 'Changed only'}
+              {/* A switch, checked while it's on. */}
+              {state.changedOnly && (
+                <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-label="On">
+                  <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />
+                </svg>
+              )}
+              Changed files only
             </PaletteHint>
           )}
         </>

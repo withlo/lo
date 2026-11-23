@@ -55,7 +55,8 @@ describe('PRHeader', () => {
     // The chip is a word or two, and a button that opens what's behind it.
     expect(markup).not.toContain('Checked 5 min ago');
     expect(markup).toMatch(/<button type="button"[^>]*chip-warn[^>]*>.*Offline<\/button>/);
-    expect(markup).toContain('Acting as rozed-bot');
+    expect(markup).toMatch(/as<\/span> rozed-bot/);
+    expect(markup).not.toContain('Acting as');
     expect(markup).toContain('wants to merge');
     expect(markup).toContain('someone/e2e:app/head');
     expect(markup).toContain('app/base');
@@ -67,7 +68,7 @@ describe('PRHeader', () => {
     expect(markup).not.toContain('<h1');
     expect(markup.match(/skeleton/g)).toHaveLength(3);
     expect(markup).not.toContain('Offline');
-    expect(markup).not.toContain('Acting as');
+    expect(markup).not.toContain('rozed-bot');
   });
 
   it('holds no places for a pull request it can’t show, and names it by its repo and number', () => {
@@ -92,7 +93,7 @@ describe('PRHeader', () => {
       />,
     );
     expect(markup).toContain('Not signed in');
-    expect(markup).toContain('A deleted account');
+    expect(markup).toContain('Deleted account');
     expect(markup).toContain('Merged');
   });
 });

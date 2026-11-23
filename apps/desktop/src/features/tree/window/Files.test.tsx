@@ -185,7 +185,7 @@ describe('the files panel', () => {
       partial: true,
     });
     expect(container.querySelector('[role="note"]')?.textContent).toBe(
-      'Unchanged files aren’t listedGitHub lists only part of this repo.GitHub lists only some of the changed files, so the rest show once the local copy is ready.',
+      'Unchanged files aren’t listedGitHub lists only part of this repo.First 3,000 changed files shown',
     );
     expect(container.querySelector('[data-key="README.md"]')).toBeNull();
   });
@@ -223,8 +223,8 @@ describe('following the diff', () => {
 
   it('asks the diff to show a changed file, and refuses while no diff can', () => {
     render();
-    expect(showable(TAB.id, 'src/format.ts')).toBe('No diff to show it in');
-    expect(showable(TAB.id, 'README.md')).toBe('Whole files can’t be opened here');
+    expect(showable(TAB.id, 'src/format.ts')).toBe('The diff isn’t open');
+    expect(showable(TAB.id, 'README.md')).toBe('Whole files can’t open in this tab');
     const diff = vi.fn<(tab: string, file: string) => void>();
     const stop = onShowFile('diff', diff);
     onTestFinished(stop);

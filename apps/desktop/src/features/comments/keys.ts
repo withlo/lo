@@ -313,6 +313,7 @@ export default defineCommands(
       control: 'The Vim keys switch in Settings › Keyboard',
       group: 'App',
       keys: [],
+      toggle: 'switch',
     },
     /**
      * Says where each draft is that the diff, drawn again, had nowhere to open, and when it opens,

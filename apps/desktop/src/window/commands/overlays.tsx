@@ -19,7 +19,16 @@ import {
   type Target,
 } from '@lo/ui/commands';
 import { onVim, plainKeys, vimOn } from '@lo/ui/code';
-import { HERE, Key, KeyHelp, keyAria, Palette, PaletteHint, type PaletteGroup } from '@lo/ui';
+import {
+  CheckIcon,
+  HERE,
+  Key,
+  KeyHelp,
+  keyAria,
+  Palette,
+  PaletteHint,
+  type PaletteGroup,
+} from '@lo/ui';
 import { Fragment, useState, useSyncExternalStore } from 'react';
 
 import { focusedTarget } from './bar.ts';
@@ -294,6 +303,7 @@ function CommandPalette({
       groups={groups}
       itemId={(match) => match.item.id}
       itemKeys={({ item }) => keyAria(item.keys, item.shortcut)}
+      itemChecked={({ item }) => item.checked}
       onHighlight={(match) => {
         highlighted = match?.item.id;
       }}
@@ -321,6 +331,7 @@ function CommandPalette({
             )}
           </span>
           <span className="ms-auto flex flex-none items-center gap-8">
+            {item.checked === true && <CheckIcon glyph="ok" />}
             {item.keys && <Key keys={item.keys} decorative />}
           </span>
         </>

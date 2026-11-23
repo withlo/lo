@@ -1,7 +1,10 @@
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
+
 import { parseSync, Visitor } from 'oxc-parser';
 import { expect, test } from 'vitest';
 
-import plugin, { MESSAGE, SCROLL_MESSAGE } from './plugin.ts';
+import plugin, { MESSAGE, SCROLL_MESSAGE, SUBJECT_MESSAGE } from './plugin.ts';
 
 /** The source of each node `lo/no-returned-never` reports in `source`, a TypeScript file. */
 function reported(source: string): string[] {
@@ -215,4 +218,106 @@ test("an element's scrollIntoView is refused, however it's called, and CodeMirro
     "element['scrollIntoView']()",
     'element.scrollIntoViewIfNeeded()',
   ]);
+});
+
+/** The source of each string `lo/no-lo-subject` reports in `source`, a file named `name`. */
+function subjects(source: string, name = 'file.tsx'): string[] {
+  const found: string[] = [];
+  const rule = plugin.rules['no-lo-subject'].create({
+    report: ({ node, message }) => {
+      expect(message).toBe(SUBJECT_MESSAGE);
+      const start: unknown = Reflect.get(node, 'start');
+      const end: unknown = Reflect.get(node, 'end');
+      found.push(
+        typeof start === 'number' && typeof end === 'number' ? source.slice(start, end) : '',
+      );
+    },
+  });
+  const { program } = parseSync(name, source);
+  new Visitor({
+    CallExpression: (node) => rule.CallExpression(node),
+    NewExpression: (node) => rule.NewExpression(node),
+    Literal: (node) => rule.Literal(node),
+    TemplateLiteral: (node) => rule.TemplateLiteral(node),
+    JSXText: (node) => rule.JSXText(node),
+  }).visit(program);
+  return found;
+}
+
+test('a string the reader may see that makes Lo its subject is flagged, in any form', () => {
+  const source = `
+    const said = 'Lo couldn’t send the comment.';
+    const why = \`Lo can’t open \${path}\`;
+    const label = <span title="Lo is reading the file">
+      Lo is checking
+    </span>;
+    throw new IpcError('failed', "Lo couldn't read the comments.");
+  `;
+  expect(subjects(source)).toEqual([
+    "'Lo couldn’t send the comment.'",
+    '`Lo can’t open ${path}`',
+    '"Lo is reading the file"',
+    `
+      Lo is checking
+    `,
+    '"Lo couldn\'t read the comments."',
+  ]);
+});
+
+test('a version, another subject, and what only a developer reads are left alone', () => {
+  const source = `
+    const offer = \`Lo \${version} is available\`;
+    const version = 'Lo 0.9.0';
+    const named = 'Lo Dev';
+    const own = 'Lo’s own dialog';
+    const title = 'Couldn’t send the comment';
+    console.error("Lo couldn't copy the path:", error);
+    log(\`Lo couldn't check the setting \${key}:\`, error);
+    this.#log('Lo is quitting');
+    work.log('Lo couldn’t highlight a file:', error);
+    throw new Error(\`Lo doesn't know why: \${String(why)}\`);
+    giveUp.abort(new DOMException('Lo is quitting', 'AbortError'));
+  `;
+  expect(subjects(source)).toEqual([]);
+});
+
+/** Where the desktop app's strings are: its source, and its packages'. */
+const ROOT = join(import.meta.dirname, '..', '..');
+const SOURCES = [
+  'apps/desktop/src',
+  ...readdirSync(join(ROOT, 'packages/desktop'))
+    .map((name) => `packages/desktop/${name}/src`)
+    .filter((folder) => existsSync(join(ROOT, folder))),
+];
+
+/** Every source file under `folder` that isn't a test's, nor built or installed. */
+function sourceFiles(folder: string): string[] {
+  return readdirSync(folder, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(folder, entry.name);
+    if (entry.isDirectory()) {
+      const skipped = ['node_modules', 'dist', 'test', 'fixtures', '.tsbuild'];
+      return skipped.includes(entry.name) ? [] : sourceFiles(path);
+    }
+    return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : [];
+  });
+}
+
+/**
+ * How many strings the desktop app has today that make Lo its subject. A change that rewrites one
+ * lowers it, so it only goes down; at none, `lo/no-lo-subject` goes in `.oxlintrc.json` as an
+ * error.
+ */
+const CEILING = 97;
+
+test('the desktop app has no more strings that make Lo its subject than it had', () => {
+  const found = SOURCES.flatMap((folder) => sourceFiles(join(ROOT, folder))).flatMap((path) =>
+    subjects(readFileSync(path, 'utf8'), path).map(
+      (text) => `${relative(ROOT, path)}: ${text.split('\n')[0]}`,
+    ),
+  );
+  // Over the ceiling, the failure lists them all; under it, lower `CEILING` to the count.
+  expect({ count: found.length, over: found.length > CEILING ? found : [] }).toEqual({
+    count: CEILING,
+    over: [],
+  });
 });

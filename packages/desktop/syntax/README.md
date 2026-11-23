@@ -99,7 +99,7 @@ Its imports are matched by a guess for each language from its path and imports a
 project's manifest: relative imports for TypeScript and JavaScript, `from` for Python, `crate::`,
 `self::`, `super::` and `mod` for Rust, the import path's last folders for Go, `import` and
 `package` for Java and Kotlin, and `use` with PSR-4's folders for PHP. Every answer is labelled
-"Syntax index", or "Syntax index · same name" when only its name links it to the asking file.
+"Code index", or "Code index · same name" when only its name links it to the asking file.
 
 `tagsVersion` is a hash of the grammars the tagged languages parse with, the version of
 `web-tree-sitter` that runs them, their tag queries and the code that reads them, the depth guard in

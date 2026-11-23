@@ -419,7 +419,9 @@ that floats.
   outside refuse. An action's `busy` is at work while it can still be left, as while it's checked
   before it's sent, or while "Check again" looks. `widest` holds the room of its widest label from
   the first draw; `other` is a button before the one that leaves ("Open #265"); and `mainRef`
-  follows the main button.
+  follows the main button. Every question Lo asks is a `Dialog` but one: whether to trust a repo is
+  main's own native dialog, since what runs in the window could answer a question the window draws
+  (`AGENTS.md`, "Trust").
 - **`Popover`** is a small panel beside what it's about: a status item's details, a picker. Give it
   its `trigger`, or an `anchor` when a key opens it. One that opens unasked, as an offer, takes
   `takeFocus={false}`, so focus stays where the reader is until they go to it.

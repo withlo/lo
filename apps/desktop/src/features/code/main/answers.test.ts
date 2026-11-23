@@ -109,11 +109,11 @@ describe('answers from the syntax index', () => {
         line: 2,
         kind: 'function',
         source: 'syntax',
-        label: 'Syntax index',
+        label: 'Code index',
         changed: false,
         lines: { from: 1, text: PARSE.trimEnd().split('\n') },
       },
-      { path: 'lib/other.ts', label: 'Syntax index · same name', changed: true },
+      { path: 'lib/other.ts', label: 'Code index · same name', changed: true },
     ]);
     expect(found.more).toBe(false);
   });
@@ -134,7 +134,7 @@ describe('answers from the syntax index', () => {
       { path: 'src/format.ts', line: 1, column: 25 },
       { path: 'src/format.ts', line: 2, column: 47 },
     ]);
-    expect(found.answers[0]).toMatchObject({ label: 'Syntax index · same name', changed: true });
+    expect(found.answers[0]).toMatchObject({ label: 'Code index · same name', changed: true });
   });
 
   it('looks through a file once however many paths hold it, within a job’s bytes, and caps its uses', async () => {
@@ -166,7 +166,7 @@ describe('answers from the syntax index', () => {
       name: 'parse',
       kind: 'function',
       text: "export function parse(input: string) { return input.split('\\n') }",
-      label: 'Syntax index',
+      label: 'Code index',
     });
     expect(await outline(answering, sides, { key: head, path: 'src/parse.ts' })).toMatchObject({
       symbols: [

@@ -115,11 +115,15 @@ async function open(page: Page, number: number, shown: string): Promise<void> {
  * has looked up every merged pull request its stacks may link through, and rozed-dev/e2e has more
  * branches than one listing looks up: the rest are looked up a while later, as recorded. Until
  * then the dialog says how far it has got, with "Checking…" at work, and asks again by itself as
- * they're looked up: that's progress, never a failure. Its title stays the same throughout.
+ * they're looked up: that's progress, never a failure. Planned, its title is `title`.
  */
-async function ship(page: Page, number: number): Promise<void> {
+async function ship(
+  page: Page,
+  number: number,
+  title = `Approve and ship #${number}?`,
+): Promise<void> {
   await page.keyboard.press(SHIP);
-  await expect(dialog(page)).toContainText(`Approve and ship #${number}?`);
+  await expect(dialog(page)).toBeVisible();
   const busy = dialog(page).locator('button[aria-busy="true"]');
   // Planned, with its steps and nothing busy.
   await expect
@@ -127,6 +131,7 @@ async function ship(page: Page, number: number): Promise<void> {
       timeout: LOOKUPS,
     })
     .toBe(true);
+  await expect(dialog(page)).toContainText(title);
   await expect(dialog(page).getByRole('alert')).toHaveCount(0);
 }
 
@@ -151,12 +156,15 @@ test.describe('on your own pull request', () => {
     test.setTimeout(LOOKUPS + 60_000);
     const { number } = pulls.squash;
     await open(page, number, 'Ready to merge');
-    await ship(page, number);
+    // The title and the button promise only the merge.
+    await ship(page, number, `Merge #${number}?`);
     // Two steps: the approval, skipped, then the merge.
     await expect(steps(page)).toHaveCount(2);
     await expect(steps(page).nth(0)).toContainText('Authors can’t approve their own pull request.');
     await expect(steps(page).nth(1)).toContainText('into merge/10/base with a merge commit.');
-    await expect(dialog(page).getByRole('button', { name: /^Approve and ship/ })).toBeVisible();
+    await expect(
+      dialog(page).getByRole('button', { name: new RegExp(`^Merge #${number}`) }),
+    ).toBeVisible();
     expect(merges(github, number)).toBe(0);
 
     await page.keyboard.press('Enter');
@@ -176,7 +184,7 @@ test.describe('into a branch with a merge queue, while its checks run', () => {
   test('`⌘⇧⏎` turns on auto-merge', async ({ page, github }) => {
     const { number } = pulls.queuedSlow1;
     await open(page, number, 'Can’t merge yet');
-    await ship(page, number);
+    await ship(page, number, 'Turn on auto-merge?');
     await expect(steps(page).nth(1)).toContainText('Turn on auto-merge.');
     await expect(steps(page).nth(1)).toContainText('It joins the merge queue for e4/queued once');
     await page.keyboard.press('Enter');

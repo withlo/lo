@@ -288,7 +288,7 @@ export function UpdateToast({ state }: { state: UpdateState }) {
                 <Meter
                   value={state.received}
                   max={state.total}
-                  label={`Downloading Lo ${state.version}`}
+                  label={`Downloading Lo ${state.version}…`}
                 />
               ) : undefined
             }

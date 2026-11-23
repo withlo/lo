@@ -1489,9 +1489,9 @@ test('fills in its code from the local copy, at the commit it describes, as the 
   await expect(cache).toContainText('Can’t show this code');
   await expect(cache).toContainText('src/cache.ts isn’t in');
   await cache.getByRole('button', { name: /^Go to file…/ }).click();
-  const finder = page.getByRole('dialog', { name: 'Go to a file' });
+  const finder = page.getByRole('dialog', { name: 'Go to file' });
   await expect(finder).toBeVisible();
-  await expect(finder.getByRole('combobox', { name: 'Go to a file' })).toHaveValue('cache.ts');
+  await expect(finder.getByRole('combobox', { name: 'Go to file' })).toHaveValue('cache.ts');
   await page.keyboard.press('Escape');
   await expect(finder).toHaveCount(0);
 
@@ -1675,8 +1675,8 @@ test.describe('while the local copy comes late', () => {
       await codeBlock(page, 'src/cache.ts', 'L1–4')
         .getByRole('button', { name: /^Go to file…/ })
         .click();
-      const finder = page.getByRole('dialog', { name: 'Go to a file' });
-      await expect(finder.getByRole('combobox', { name: 'Go to a file' })).toHaveValue('cache.ts');
+      const finder = page.getByRole('dialog', { name: 'Go to file' });
+      await expect(finder.getByRole('combobox', { name: 'Go to file' })).toHaveValue('cache.ts');
     });
   }
 });

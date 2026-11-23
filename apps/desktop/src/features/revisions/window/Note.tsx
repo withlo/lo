@@ -1,4 +1,4 @@
-// The note over a pull request's tab's diff: what it compares, "r3 → r5, since you last looked",
+// The note over a pull request's tab's diff: what it compares, "r3 → r5 · since last opened",
 // and what to know about how, such as that it compares across a rebase. One line, the same height
 // from the first frame, so the diff below never moves. It ends with what the diff puts there. While
 // the diff holds the view it drew, the note says what that view compares, and changes with it.
@@ -40,7 +40,7 @@ export function Note({
   const keys = first && keyLabels(first, registry().system);
   const now = tab.run
     ? runNoteOf(tab.run.layers, files?.uncompared === true)
-    : noteOf(pull?.acting?.kind === 'anonymous' ? undefined : view, keys?.join(''));
+    : noteOf(pull?.acting?.kind === 'anonymous' ? undefined : view);
   // What the view on screen compares, while the diff holds it.
   const drawn = useRef(now);
   useLayoutEffect(() => {
@@ -54,7 +54,7 @@ export function Note({
       {/* The note is what it says; the diff's controls after it are their own. */}
       <div
         role="note"
-        aria-label="What the diff compares"
+        aria-label="Comparison"
         data-lo-diffnote={note.tone}
         className="flex min-w-0 flex-1 items-center gap-8"
       >

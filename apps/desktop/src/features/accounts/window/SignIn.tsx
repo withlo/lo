@@ -188,7 +188,11 @@ export function SignInView({
   // Where to type the code, while there's one to type. Its line stays, empty, at every other
   // step, so nothing moves: the code's box closes by itself when the sign-in ends before a code.
   const where =
-    dialog?.state?.kind === 'waiting' ? `Enter this code at ${page ?? 'GitHub'}` : '\u00a0';
+    dialog?.state?.kind === 'waiting'
+      ? page === undefined
+        ? 'Enter this code on GitHub'
+        : `Enter this code at ${page}`
+      : '\u00a0';
   return (
     <Dialog
       open={dialog !== undefined}

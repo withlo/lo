@@ -165,7 +165,7 @@ test('gf opens the file at the cursor whole, at its line and in its side’s ver
   await expect
     .poll(() => wholeAt(page))
     .toEqual({ path: 'src/parser.ts', version: 'new', line: before?.line });
-  await expect(whole(page)).toContainText('Changed in this pull request');
+  await expect(whole(page)).toContainText('Changed');
   await expect(code(page).locator('[class*="lo-syn-"]').first()).toBeVisible();
   await expect(code(page).locator('.cm-content')).toBeFocused();
   // The tree marks it.
@@ -207,7 +207,7 @@ test('gf opens the file at the cursor whole, at its line and in its side’s ver
   await press(page, 'g', 'f');
   await expect.poll(async () => (await wholeAt(page))?.path).toBe('src/parse.ts');
   await expect.poll(async () => (await wholeAt(page))?.version).toBe('old');
-  await expect(whole(page)).toContainText('Before this pull request');
+  await expect(whole(page)).toContainText('Before changes');
   await expect(code(page)).toContainText("input.split('\\n')");
   expect(refused).toEqual([]);
 });
@@ -220,7 +220,7 @@ test('a file the pull request leaves alone opens whole from the tree, and Back r
   await row(page, 'README.md').click();
   await expect(code(page)).toBeVisible();
   await expect(code(page)).toContainText('# App fixture');
-  await expect(whole(page)).toContainText('Unchanged in this pull request');
+  await expect(whole(page)).toContainText('Unchanged');
   await expect.poll(() => wholeAt(page)).toMatchObject({ path: 'README.md', version: 'new' });
   // The keyboard stays in the tree, which marks the file.
   await expect(tree(page)).toBeFocused();
@@ -277,7 +277,7 @@ test('the finder’s ⌘⏎ opens any file whole, and ~ and ` step only through 
   await drawn(page);
   await page.locator('[data-lo-middle]').focus();
   await page.keyboard.press(`${held}+p`);
-  const finder = page.getByRole('dialog', { name: 'Go to a file' });
+  const finder = page.getByRole('dialog', { name: 'Go to file' });
   await expect(finder.getByRole('option').first()).toBeVisible();
   await page.keyboard.type('wrap');
   await expect(finder.getByRole('option').first()).toContainText('wrap.ts');

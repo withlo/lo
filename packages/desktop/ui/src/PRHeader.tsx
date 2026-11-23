@@ -114,12 +114,7 @@ export function PRHeader({
         {connection !== undefined && <ConnectionChip connection={connection} />}
         {status}
         {acting !== undefined && (
-          <span
-            className="inline-flex h-control-h flex-none items-center gap-6 px-6 whitespace-nowrap text-fg text-small"
-            title={
-              acting === 'anonymous' ? 'Reading without signing in' : `Acting as ${acting.login}`
-            }
-          >
+          <span className="inline-flex h-control-h flex-none items-center gap-6 px-6 whitespace-nowrap text-fg text-small">
             {acting === 'anonymous' ? (
               <span className="text-fg-muted">Not signed in</span>
             ) : (
@@ -140,7 +135,7 @@ export function PRHeader({
                 // Its room, held until GitHub names the author, who is never assumed deleted.
                 <Skeleton className="w-48 flex-none" />
               ) : (
-                <strong className="font-semibold text-fg">{author ?? 'A deleted account'}</strong>
+                <strong className="font-semibold text-fg">{author ?? 'Deleted account'}</strong>
               )}{' '}
               wants to merge
               <Branch name={head.fork ? `${head.fork}:${head.branch}` : head.branch} />

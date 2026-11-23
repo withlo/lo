@@ -228,9 +228,9 @@ describe('Peek', () => {
     const host = render(<Peek name="estimateCost" candidates={SYNTAX} selected="import" />);
     const rows = options(host);
     expect(rows[0]?.textContent).toBe(
-      'graphql/cost/estimate.ts3Syntax index · From zod · not installed',
+      'graphql/cost/estimate.ts3Code index · From zod · not installed',
     );
-    expect(rows[1]?.textContent).toBe('test/helpers/cost.ts7Syntax index · same name');
+    expect(rows[1]?.textContent).toBe('test/helpers/cost.ts7Code index · same name');
   });
 
   it('shows an answer outside the repository as that, with no path, nothing to go to and no code', () => {
@@ -239,7 +239,7 @@ describe('Peek', () => {
       <Peek name="estimateCost" candidates={SYNTAX} selected="outside" keys={KEYS} onGo={onGo} />,
     );
     const outside = options(host)[2]!;
-    expect(outside.textContent).toBe('Outside this repoSyntax index');
+    expect(outside.textContent).toBe('Outside this repoCode index');
     // No path or line to read, and `aria-selected` says it is the one on.
     expect(outside.getAttribute('aria-selected')).toBe('true');
     expect(outside.querySelector('.font-semibold')).toBeNull();
@@ -386,7 +386,7 @@ describe('PeekHead', () => {
       </div>,
     );
     expect(host.textContent).toContain(
-      'Line · 1 definition· r2·Syntax index · TypeScript is starting.',
+      'Line · 1 definition· r2·Code index · TypeScript is starting',
     );
     const server = render(
       <div>
@@ -404,6 +404,6 @@ describe('PeekHead', () => {
       </div>,
     );
     expect(host.textContent).not.toContain('·TypeScript');
-    expect(host.textContent).not.toContain('Syntax index');
+    expect(host.textContent).not.toContain('Code index');
   });
 });

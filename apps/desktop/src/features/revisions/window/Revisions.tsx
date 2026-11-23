@@ -1,7 +1,7 @@
 // The header's revision button, showing what's compared ("r3 → r5"), and the revision picker it
 // opens, as `gv` does.
 
-import { RevisionPicker } from '@lo/ui';
+import { RevisionPicker, Ticks } from '@lo/ui';
 import { keyLabels } from '@lo/ui/commands';
 import { useEffect, useState } from 'react';
 
@@ -28,7 +28,11 @@ function keyOf(id: string): string[] | undefined {
 function notesOf(lines: readonly (string | undefined)[]) {
   const said = lines.filter((line) => line !== undefined);
   if (said.length === 0) return undefined;
-  return said.map((line) => <div key={line}>{line}</div>);
+  return said.map((line) => (
+    <div key={line}>
+      <Ticks text={line} />
+    </div>
+  ));
 }
 
 export function Revisions({ tab }: { tab: PullTab }) {
@@ -66,7 +70,9 @@ export function Revisions({ tab }: { tab: PullTab }) {
           else openPicker();
         }}
       >
-        {view.status === 'loading' || !compared ? 'Revisions…' : comparisonLabel(view, compared)}
+        {view.status === 'loading' || !compared
+          ? 'Reading revisions…'
+          : comparisonLabel(view, compared)}
         {reason && <span className="text-fg-muted text-small">{reason}</span>}
       </button>
       <RevisionPicker
@@ -77,14 +83,7 @@ export function Revisions({ tab }: { tab: PullTab }) {
         anchor={button}
         container={document.getElementById('root')}
         scope="revisions"
-        heading={
-          <>
-            <span>Comparing</span>
-            <strong className="font-semibold text-fg code-small">
-              {asked ? comparisonLabel(view, asked) : ''}
-            </strong>
-          </>
-        }
+        heading={<span>Compare revisions</span>}
         openKeys={keyOf('revisions.picker')}
         rows={rows}
         focused={picker.open ? picker.focused : undefined}
@@ -109,9 +108,9 @@ export function Revisions({ tab }: { tab: PullTab }) {
         endKeys={keyOf('revisions.end')}
         note={notesOf([
           view.waitingFor === 'local'
-            ? 'Revisions are compared once the local copy is ready.'
+            ? 'Fetching local copy…'
             : view.waitingFor === 'git'
-              ? 'Comparing revisions needs git, which Lo can’t find.'
+              ? 'Git wasn’t found'
               : undefined,
           overviewNote(view, marks),
         ])}

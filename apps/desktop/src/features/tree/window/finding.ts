@@ -73,7 +73,7 @@ function search(): void {
         // A newer search took its place, or the tab went: nothing to say.
         if (mine !== searches || (error instanceof IpcError && error.code === 'superseded')) return;
         console.error("Lo couldn't search the files:", error);
-        finderStore.setState({ problem: "Lo couldn't search the files." });
+        finderStore.setState({ problem: 'Couldn’t search the files' });
       },
     );
 }
@@ -208,5 +208,5 @@ export function openWhole(): void {
  */
 export function wholeReady(): true | string {
   if (!finderOpen()) return true;
-  return highlighted() === undefined ? 'No file is highlighted.' : true;
+  return highlighted() === undefined ? 'No file highlighted' : true;
 }

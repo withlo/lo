@@ -10,6 +10,7 @@
 // `c` there opens a box under them. The status bar says which drafts the diff, drawn again, had
 // nowhere to open. What it keeps of a view goes as the view's tab closes.
 
+import { vimOn } from '@lo/ui/code';
 import { handlers, type HeaderTarget, type LineTarget, type Target } from '@lo/ui/commands';
 import { createElement } from 'react';
 
@@ -106,7 +107,7 @@ import {
   takeReview,
   takeThreads,
 } from './threads.ts';
-import { followVim, switchVim, vimDetail } from './vim.ts';
+import { followVim, switchVim } from './vim.ts';
 
 /** The pull request's tab on screen, where a comment can be written, or why one can't. */
 function writable(): PullTab | string {
@@ -243,7 +244,7 @@ export default {
     checkAgain: offering('checkAgain'),
     moveToFile: offering('onFile'),
     showLatest: offering('showLatest', 'loadNewer'),
-    vim: { run: switchVim, detail: vimDetail },
+    vim: { run: switchVim, checked: vimOn },
     keptDrafts: {
       run: (target) => {
         if (target.kind !== 'tab') {

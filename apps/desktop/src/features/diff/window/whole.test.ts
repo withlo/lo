@@ -106,7 +106,8 @@ describe('a file read whole', () => {
         new IpcError('invalid', 'There’s no file at that path in the head on screen.'),
         { kind: 'failed', why: 'There’s no file at that path in the head on screen.' },
       ],
-      [new Error('the bridge fell over'), { kind: 'failed', why: 'Lo couldn’t read it.' }],
+      // Anything else has no reason Lo knows: the title says it alone.
+      [new Error('the bridge fell over'), { kind: 'failed', why: '' }],
     ] as const) {
       readWhole('t2', file, HEAD, null, true, made);
       answers.at(-1)?.(answer);

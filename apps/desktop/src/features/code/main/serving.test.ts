@@ -322,7 +322,7 @@ describe('following views for servers', () => {
     expect(serving.serverFor('v1', head, 'src/b.py')).toMatchObject({
       kind: 'ready',
       name: 'Python',
-      noHints: 'Pyright has no type hints.',
+      noHints: 'Pyright has no type hints',
     });
     const typescript = serving.serverFor('v1', head, 'src/a.ts');
     expect(typescript).toMatchObject({ kind: 'ready', name: 'TypeScript' });

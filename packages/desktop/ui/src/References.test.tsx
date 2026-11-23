@@ -72,7 +72,7 @@ describe('ReferencesHead', () => {
     const host = render(
       <ReferencesHead name={WORD} count={1} files={1} source={{ kind: 'syntax' }} />,
     );
-    expect(host.textContent).toBe('RateLimitedError1 in 1 file · Syntax index');
+    expect(host.textContent).toBe('RateLimitedError1 in 1 file · Code index');
   });
 
   it('says why a language server didn’t answer, or how many more it found outside the repository', () => {
@@ -82,11 +82,11 @@ describe('ReferencesHead', () => {
         count={2}
         files={1}
         source={{ kind: 'syntax' }}
-        fallback="TypeScript is starting."
+        fallback="TypeScript is starting"
       />,
     );
     expect(fallback.textContent).toBe(
-      'RateLimitedError2 in 1 file · Syntax indexTypeScript is starting.',
+      'RateLimitedError2 in 1 file · Code indexTypeScript is starting',
     );
     const outside = render(
       <ReferencesHead

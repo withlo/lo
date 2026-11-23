@@ -22,7 +22,7 @@ function definitions(more: Partial<PeekView> = {}): PeekView {
     label: 'Definitions of estimateCost',
     answers: [
       { path: 'src/cost/estimate.ts', line: 18, column: 16, source: 'server', label: 'TypeScript' },
-      { path: 'test/cost.ts', line: 7, source: 'syntax', label: 'Syntax index · same name' },
+      { path: 'test/cost.ts', line: 7, source: 'syntax', label: 'Code index · same name' },
     ],
     shown: 0,
     code: {

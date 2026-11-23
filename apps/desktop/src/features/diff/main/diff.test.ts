@@ -496,16 +496,19 @@ describe('a whole file', { timeout: 60_000 }, () => {
     await expect(
       diff.whole(APP_PULL.firstHead, 'new', at('README.md'), false),
     ).rejects.toMatchObject({ code: 'moved' });
-    // The base's README.md is no file the comparison changes, nor is the renamed file's new path.
+    // The base's README.md is no file the comparison changes, nor is the renamed file's new path:
+    // a refusal the window words.
     for (const path of ['README.md', 'src/parser.ts']) {
-      await expect(diff.whole(APP_PULL.head, 'old', at(path), false)).rejects.toMatchObject({
-        code: 'invalid',
+      await expect(diff.whole(APP_PULL.head, 'old', at(path), false)).resolves.toEqual({
+        kind: 'refused',
+        why: 'unchanged',
       });
     }
     // Nothing at a path, or a folder there.
     for (const path of ['src/nothing.ts', 'src', '../README.md']) {
-      await expect(diff.whole(APP_PULL.head, 'new', at(path), false)).rejects.toMatchObject({
-        code: 'invalid',
+      await expect(diff.whole(APP_PULL.head, 'new', at(path), false)).resolves.toEqual({
+        kind: 'refused',
+        why: 'missing',
       });
     }
   });

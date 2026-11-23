@@ -174,7 +174,7 @@ function answer(change: Partial<CodeAnswer> = {}): CodeAnswer {
     name: 'Line',
     kind: 'interface',
     source: 'syntax',
-    label: 'Syntax index',
+    label: 'Code index',
     changed: true,
     ...change,
   };
@@ -211,15 +211,15 @@ describe('gd', () => {
   it('asks nothing before the local copy, or without git, and says why', async () => {
     seen.local = { kind: 'fetching' };
     await definition(AT);
-    expect(said.get('t1')?.text).toBe('The syntax index waits for the local copy.');
+    expect(said.get('t1')?.text).toBe('Fetching local copy…');
     seen.local = { kind: 'noGit' };
     await definition(AT);
-    expect(said.get('t1')?.text).toBe('Code features need git.');
+    expect(said.get('t1')?.text).toBe('Git wasn’t found');
     // Nor while the side's commit isn't known.
     seen.local = { kind: 'ready' };
     seen.commit = undefined;
     await definition(AT);
-    expect(said.get('t1')?.text).toBe('The syntax index waits for the local copy.');
+    expect(said.get('t1')?.text).toBe('Fetching local copy…');
     expect(seen.asked).toEqual([]);
   });
 
@@ -234,16 +234,16 @@ describe('gd', () => {
       job: 'definitions',
       input: { view: 't1', key: HEAD, path: 'src/format.ts', line: 1, column: 14 },
     });
-    expect(said.get('t1')?.text).toBe('No definition of `parse` found');
+    expect(said.get('t1')?.text).toBe('No definition of `parse`');
     expect(seen.peeks).toEqual([]);
   });
 
   it('says what main says, such as that the index waits for the local copy', async () => {
     seen.answers.set('definitions', () => {
-      throw new IpcError('unavailable', 'The syntax index waits for the local copy.');
+      throw new IpcError('unavailable', 'Fetching local copy…');
     });
     await definition(AT).catch(() => undefined);
-    expect(said.get('t1')?.text).toBe('The syntax index waits for the local copy.');
+    expect(said.get('t1')?.text).toBe('Fetching local copy…');
   });
 
   it('cancels the question before when it’s asked again', async () => {
@@ -260,7 +260,7 @@ describe('gd', () => {
       name: 'Line',
       answers: [
         answer({ lines }),
-        answer({ side: 'old', path: 'src/parse.ts', label: 'Syntax index · same name' }),
+        answer({ side: 'old', path: 'src/parse.ts', label: 'Code index · same name' }),
       ],
       more: false,
     }));
@@ -307,15 +307,15 @@ describe('gd', () => {
     expect(seen.asked.map((each) => each.job)).toEqual(['definitions']);
   });
 
-  it('says why the index answered when a language server didn’t, with nothing found', async () => {
+  it('says only that nothing was found when a language server didn’t answer, which its own item says', async () => {
     seen.answers.set('definitions', (): Definitions => ({
       name: 'parse',
       answers: [],
       more: false,
-      fallback: 'TypeScript is starting.',
+      fallback: 'TypeScript is starting',
     }));
     await definition(AT);
-    expect(said.get('t1')?.text).toBe('No definition of `parse` found. TypeScript is starting.');
+    expect(said.get('t1')?.text).toBe('No definition of `parse`');
   });
 
   it('closes the peek on Esc, back on its line', async () => {
@@ -388,7 +388,7 @@ describe('gr with every reference outside the repository', () => {
       outside: 3,
     }));
     await references(AT);
-    expect(said.get('t1')?.text).toBe('`parse` has 3 references, all outside this repository.');
+    expect(said.get('t1')?.text).toBe('3 references, all outside this repo');
     expect(seen.right).toEqual([]);
   });
 });
@@ -429,7 +429,7 @@ function statusOf(view: string, trust: Status['trust'] = { kind: 'untrusted', wh
   } satisfies Status;
 }
 
-const UNTRUSTED = 'Type hints need a language server, which Lo runs only on repos you trust.';
+const UNTRUSTED = 'Trust the repo to see type hints';
 
 describe('gh', () => {
   it('asks for the hints on screen, and with none says why and stays off', async () => {
@@ -465,17 +465,14 @@ describe('gh', () => {
     statuses.set('t1', statusOf('t1', { kind: 'trusted', by: 'repo' }));
     const cases: [Hints, string][] = [
       [
-        { hints: [], label: 'TypeScript', fallback: 'TypeScript is starting.' },
-        'TypeScript is starting.',
+        { hints: [], label: 'TypeScript', fallback: 'TypeScript is starting' },
+        'TypeScript is starting',
       ],
       [
-        { hints: [], label: 'Pyright', none: 'Pyright has no type hints.' },
-        'Pyright has no type hints.',
+        { hints: [], label: 'Pyright', none: 'Pyright has no type hints' },
+        'Pyright has no type hints',
       ],
-      [
-        { hints: [], label: 'TypeScript' },
-        'TypeScript gives no type hints for the code on screen.',
-      ],
+      [{ hints: [], label: 'TypeScript' }, 'TypeScript has no type hints for this file'],
     ];
     for (const [found, text] of cases) {
       seen.answers.set('hints', () => found);
@@ -489,7 +486,7 @@ describe('gh', () => {
   it('asks nothing before the local copy, and stays off', async () => {
     seen.local = { kind: 'fetching' };
     await toggleHints();
-    expect(said.get('t1')?.text).toBe('The syntax index waits for the local copy.');
+    expect(said.get('t1')?.text).toBe('Fetching local copy…');
     expect(seen.asked).toEqual([]);
     expect(hints.getState().on).toBe(false);
   });
@@ -528,7 +525,7 @@ describe('gh', () => {
     seen.answers.set('hints', (input): Hints => {
       const view = typeof input === 'object' && input !== null && 'view' in input && input.view;
       return view === 't2'
-        ? { hints: [], label: 'Pyright', none: 'Pyright has no type hints.' }
+        ? { hints: [], label: 'Pyright', none: 'Pyright has no type hints' }
         : { hints: [HINT], label: 'TypeScript' };
     });
     await toggleHints();
@@ -609,7 +606,7 @@ describe('K and the pointer resting', () => {
     text: 'export interface Line {',
     markdown: false,
     source: 'syntax',
-    label: 'Syntax index',
+    label: 'Code index',
     at: answer(),
   };
 
@@ -639,17 +636,17 @@ describe('K and the pointer resting', () => {
     seen.answers.set('hover', (): Hover => ({ ...read, tree: undefined }));
     await typeOf(AT);
     expect(hovers.getState()).toBeUndefined();
-    expect(said.get('t1')?.text).toBe('No definition found at the cursor.');
+    expect(said.get('t1')?.text).toBe('No type for this name');
   });
 
   it('says so when K finds nothing, but a rest that finds nothing says nothing', async () => {
     seen.answers.set('hover', () => ({ none: true }));
     await typeOf(AT);
-    expect(said.get('t1')?.text).toBe('No definition found at the cursor.');
-    // With why the server didn't answer, when one could have.
-    seen.answers.set('hover', () => ({ none: true, fallback: 'TypeScript is starting.' }));
+    expect(said.get('t1')?.text).toBe('No type for this name');
+    // Why the server didn't answer, when one could have, is on its own status item, not here.
+    seen.answers.set('hover', () => ({ none: true, fallback: 'TypeScript is starting' }));
     await typeOf(AT);
-    expect(said.get('t1')?.text).toBe('No definition found at the cursor. TypeScript is starting.');
+    expect(said.get('t1')?.text).toBe('No type for this name');
     said.set('t1', undefined);
     rested('t1', 'diff', PLACE);
     await settle();

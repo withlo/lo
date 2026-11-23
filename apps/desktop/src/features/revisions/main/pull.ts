@@ -1178,7 +1178,7 @@ export class RevisionsTab {
   /** What the diff says while it waits for the comparison the markers ask for. */
   #waitingWhy(): string {
     const chosen = this.#chosen;
-    if (!chosen || !this.#revisions) return 'Reading the revisions…';
+    if (!chosen || !this.#revisions) return 'Reading revisions…';
     const from = chosen.from === null ? 'the base' : this.#label(chosen.from);
     return `Comparing ${from} with ${this.#label(chosen.to)} once the local copy has both…`;
   }

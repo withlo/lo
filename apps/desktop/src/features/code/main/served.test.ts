@@ -227,22 +227,19 @@ describe('definitions', () => {
     const why = 'The checkout’s tsconfig.json names a plugin, so Lo won’t run vtsls on it.';
     const slow = standIn({ 'textDocument/definition': { ok: false, why: 'deadline' } });
     const cases = [
-      [not({ kind: 'starting', name }), 'TypeScript is starting.'],
-      [
-        not({ kind: 'waiting', name, count: 4 }),
-        'TypeScript is waiting to start. Lo runs 4 language servers at once at most.',
-      ],
+      [not({ kind: 'starting', name }), 'TypeScript is starting'],
+      [not({ kind: 'waiting', name, count: 4 }), 'TypeScript is waiting to start'],
       [not({ kind: 'refused', name, why }), why],
       [
         not({ kind: 'missing', name, needs: 'Go 1.24 or newer' }),
-        'TypeScript needs Go 1.24 or newer.',
+        'TypeScript needs Go 1.24 or newer',
       ],
-      [not({ kind: 'failed', name }), 'TypeScript failed. Restart it from the status bar.'],
-      [not({ kind: 'stopped', name }), 'TypeScript stopped.'],
-      [slow.serverOf, "TypeScript didn't answer in time."],
+      [not({ kind: 'failed', name }), 'TypeScript isn’t running'],
+      [not({ kind: 'stopped', name }), 'TypeScript isn’t running'],
+      [slow.serverOf, 'TypeScript didn’t respond'],
       [
         standIn({ 'textDocument/definition': { ok: false, why: 'notReady' } }).serverOf,
-        'TypeScript is starting.',
+        'TypeScript is starting',
       ],
     ] as const;
     for (const [serverOf, fallback] of cases) {
@@ -304,8 +301,8 @@ describe('definitions', () => {
       notes.push(found.fallback);
     }
     expect(notes).toEqual([
-      "TypeScript can't run: this PR's checkout isn't usable. Lo is making it again.",
-      "TypeScript can't run: this PR's checkout isn't usable.",
+      'TypeScript can’t use the local copy',
+      'TypeScript can’t use the local copy',
     ]);
   });
 });
@@ -360,7 +357,7 @@ describe('the other questions', () => {
     expect(hovered).toMatchObject({
       source: 'syntax',
       markdown: false,
-      fallback: "Lo couldn't read TypeScript's hover.",
+      fallback: 'Couldn’t show the type',
     });
     // Markdown that draws nothing is no hover.
     const { answering: reading } = await view();
@@ -385,7 +382,7 @@ describe('the other questions', () => {
     const hovered = await servedHover(answering, sides, PARSE_CALL, undefined, serverOf);
     expect(hovered).toMatchObject({
       source: 'syntax',
-      fallback: "Lo took too long to read TypeScript's hover.",
+      fallback: 'TypeScript didn’t respond',
     });
   });
 
@@ -395,7 +392,7 @@ describe('the other questions', () => {
     const starting: NotServing = { kind: 'starting', name: 'TypeScript' };
     expect(await servedHover(answering, sides, join, undefined, () => starting)).toEqual({
       none: true,
-      fallback: 'TypeScript is starting.',
+      fallback: 'TypeScript is starting',
     });
     // No server reads the file, so there's nothing to say why.
     expect(await servedHover(answering, sides, join, undefined, () => undefined)).toEqual({
@@ -410,10 +407,10 @@ describe('the other questions', () => {
       'textDocument/hover': { ok: true, value: null },
     });
     const references = await servedReferences(answering, sides, PARSE_CALL, undefined, serverOf);
-    expect(references.fallback).toBe("TypeScript didn't answer in time.");
+    expect(references.fallback).toBe('TypeScript didn’t respond');
     expect(references.answers.every((each) => each.source === 'syntax')).toBe(true);
     const hovered = await servedHover(answering, sides, PARSE_CALL, undefined, serverOf);
-    expect(hovered).toMatchObject({ source: 'syntax', markdown: false, label: 'Syntax index' });
+    expect(hovered).toMatchObject({ source: 'syntax', markdown: false, label: 'Code index' });
   });
 
   it('gives the server’s hints on the new side only, and its outline, nested', async () => {
@@ -615,7 +612,7 @@ describe('references from a definition', () => {
         serverOf,
       );
       expect(asked).toEqual(['textDocument/references', 'textDocument/definition']);
-      expect(references.fallback).toBe('TypeScript found no references there.');
+      expect(references.fallback).toBe('TypeScript found no references');
       expect(references.answers.length).toBeGreaterThan(0);
       expect(references.answers.every((each) => each.source === 'syntax')).toBe(true);
     }
@@ -646,7 +643,7 @@ describe('references from a definition', () => {
     // The definition has what's left, and nothing's left to ask for the references there.
     expect(asked).toEqual(['textDocument/references', 'textDocument/definition']);
     expect(deadlines).toEqual([10_000, 1_000]);
-    expect(references.fallback).toBe("TypeScript didn't answer in time.");
+    expect(references.fallback).toBe('TypeScript didn’t respond');
     expect(references.answers.length).toBeGreaterThan(0);
     expect(references.answers.every((each) => each.source === 'syntax')).toBe(true);
   });
@@ -656,13 +653,10 @@ describe('references from a definition', () => {
     for (const [definition, why] of [
       [
         { ok: true, value: [{ uri: 'jdt://x', range: at('x', 1, 0).range }] },
-        'TypeScript found its definition outside the repository.',
+        'TypeScript found it outside this repo',
       ],
-      [
-        { ok: true, value: [at('build/out.ts', 1, 0)] },
-        'TypeScript found its definition outside the repository.',
-      ],
-      [{ ok: false, why: 'deadline' }, "TypeScript didn't answer in time."],
+      [{ ok: true, value: [at('build/out.ts', 1, 0)] }, 'TypeScript found it outside this repo'],
+      [{ ok: false, why: 'deadline' }, 'TypeScript didn’t respond'],
     ] as const) {
       const { serverOf, asked } = standIn(
         {
@@ -688,7 +682,7 @@ describe('references from a definition', () => {
     );
     const references = await servedReferences(answering, sides, PARSE_CALL, undefined, serverOf);
     expect(opened).not.toContain('src/parse.ts');
-    expect(references.fallback).toBe("TypeScript found its definition in a file it doesn't read.");
+    expect(references.fallback).toBe('TypeScript can’t read the file it’s in');
   });
 
   it('takes any other server’s empty references as its answer, asked where the reader is', async () => {
@@ -707,7 +701,7 @@ describe('references from a definition', () => {
 describe('references from the index alone', () => {
   it('never asks a server that finds none Lo can use, and says why', async () => {
     const { sides, answering } = await view();
-    const why = 'SourceKit-LSP finds references only from a build, which Lo never runs.';
+    const why = 'SourceKit-LSP needs a build to find references';
     const { serverOf, asked } = standIn(
       { 'textDocument/references': { ok: true, value: [at('src/parse.ts', 2, 16)] } },
       true,
@@ -731,14 +725,14 @@ describe('type hints', () => {
     expect(await servedHints(sides, file, undefined, unoffered.serverOf)).toEqual({
       hints: [],
       label: 'TypeScript',
-      none: 'TypeScript has no type hints.',
+      none: 'TypeScript has no type hints',
     });
     // Its adapter's word comes first, as for a paid feature the server would refuse.
-    const paid = standIn({}, true, { none: 'Its free version has no type hints.' });
+    const paid = standIn({}, true, { none: 'Its free version has no type hints' });
     expect(await servedHints(sides, file, undefined, paid.serverOf)).toEqual({
       hints: [],
       label: 'TypeScript',
-      none: 'Its free version has no type hints.',
+      none: 'Its free version has no type hints',
     });
     expect([...unoffered.asked, ...paid.asked]).toEqual([]);
   });
@@ -749,13 +743,13 @@ describe('type hints', () => {
     expect(await servedHints(sides, file, undefined, () => starting)).toEqual({
       hints: [],
       label: 'TypeScript',
-      fallback: 'TypeScript is starting.',
+      fallback: 'TypeScript is starting',
     });
     const slow = standIn({ 'textDocument/inlayHint': { ok: false, why: 'deadline' } });
     expect(await servedHints(sides, file, undefined, slow.serverOf)).toEqual({
       hints: [],
       label: 'TypeScript',
-      fallback: "TypeScript didn't answer in time.",
+      fallback: 'TypeScript didn’t respond',
     });
     expect(await servedHints(sides, file, undefined, () => undefined)).toEqual({ hints: [] });
   });

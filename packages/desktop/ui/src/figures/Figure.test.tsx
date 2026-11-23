@@ -333,34 +333,32 @@ describe('an image figure', () => {
 
 describe('a figure that can’t be shown', () => {
   const cases: [FigureState, string][] = [
-    [{ state: 'leftOut', why: 'missing' }, "figures/a.png isn't in the overview's commit."],
-    [{ state: 'leftOut', why: 'notFile' }, "figures/a.png isn't a file."],
-    [{ state: 'leftOut', why: 'type' }, "figures/a.png isn't the type its name says."],
-    [
-      { state: 'leftOut', why: 'header' },
-      "figures/a.png has a damaged header, so Lo can't tell its size.",
-    ],
-    [
-      { state: 'leftOut', why: 'encoding' },
-      "figures/a.png isn't UTF-8, which an SVG figure must be.",
-    ],
+    [{ state: 'leftOut', why: 'missing' }, 'a.png isn’t in the overview’s commit.'],
+    [{ state: 'leftOut', why: 'notFile' }, 'a.png isn’t a file.'],
+    [{ state: 'leftOut', why: 'type' }, 'a.png isn’t the type its name says.'],
+    [{ state: 'leftOut', why: 'header' }, 'a.png is damaged.'],
+    [{ state: 'leftOut', why: 'encoding' }, 'a.png isn’t UTF-8.'],
     [
       { state: 'leftOut', why: 'content' },
-      "figures/a.png holds what a figure can't, such as a script, a style or an outside image.",
+      'a.png holds what a figure can’t, such as a script or an outside image.',
     ],
-    [{ state: 'leftOut', why: 'tooLarge' }, 'figures/a.png is larger than a figure may be.'],
-    [{ state: 'unread', why: 'failed' }, "figures/a.png couldn't be read."],
-    [{ state: 'unread', why: 'stopped' }, 'figures/a.png took too long to read.'],
+    [{ state: 'leftOut', why: 'tooLarge' }, 'a.png is too large for a figure.'],
+    [{ state: 'unread', why: 'failed' }, 'a.png couldn’t be read.'],
+    [{ state: 'unread', why: 'stopped' }, 'a.png took too long to read.'],
     // From another process, a state Lo doesn't know.
-    [JSON.parse('{"state": "other"}'), "figures/a.png couldn't be read."],
+    [JSON.parse('{"state": "other"}'), 'a.png couldn’t be read.'],
   ];
 
-  test.each(cases)('%o says why', (figure, why) => {
+  test.each(cases)('%o says why, with the path behind Details', (figure, why) => {
     render({ path: 'figures/a.png', figure, number: 3, caption: 'The dashboard.' });
     const shown = host.querySelector('figure.lo-figure--broken')!;
     expect(shown.querySelector('.lo-figure__frame p')?.textContent).toBe(
-      `Figure 3 can't be shown. ${why}`,
+      `Can’t show figure 3 ${why}`,
     );
+    const details = shown.querySelector<HTMLButtonElement>('button[aria-expanded]');
+    expect(details?.textContent).toBe('Details');
+    act(() => details?.click());
+    expect(shown.querySelector('.problem-details')?.textContent).toBe('figures/a.png');
     expect(shown.querySelector('figcaption')?.textContent).toBe('Figure 3. The dashboard.');
   });
 
@@ -390,7 +388,7 @@ describe('a figure that can’t be shown', () => {
       number: 1,
     });
     expect(host.querySelector('.lo-figure--broken p')?.textContent).toContain(
-      "holds what a figure can't",
+      'holds what a figure can’t',
     );
   });
 
@@ -408,8 +406,8 @@ describe('a figure that can’t be shown', () => {
     expect(
       [...host.querySelectorAll('.lo-figure--broken p')].map((note) => note.textContent),
     ).toEqual([
-      "Figure 1 can't be shown. figures/a.svg has no viewBox, so Lo can't tell its size.",
-      "Figure 2 can't be shown. figures/b.svg has no viewBox, so Lo can't tell its size.",
+      'Can’t show figure 1 a.svg has no viewBox.',
+      'Can’t show figure 2 b.svg has no viewBox.',
     ]);
   });
 

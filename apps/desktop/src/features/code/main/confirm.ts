@@ -1,7 +1,7 @@
 // Asking the reader to trust a repository, or one pull request from a fork: the only way Lo comes
 // to trust one. The window only asks main to ask; main reads from GitHub what the pull request
 // joins, asks in a dialog of its own attached to the window that asked, which a page can't answer
-// for the reader, and writes what that dialog named only once the reader says "Trust" there. It
+// for the reader, and writes what that dialog named only once the reader trusts it there. It
 // names only what GitHub calls by a name GitHub allows, so no line break or direction mark ever
 // reaches it. "Cancel" is the dialog's default and its `Esc`, so a key held down from the banner
 // never trusts anything. One dialog at a time, for all of Lo: asked about another view meanwhile,
@@ -50,35 +50,32 @@ export interface Question {
   readonly noLink: true;
 }
 
-/** The dialog's buttons, in order. */
-export const BUTTONS = ['Trust', 'Cancel'] as const;
-const TRUST = BUTTONS.indexOf('Trust');
-const CANCEL = BUTTONS.indexOf('Cancel');
-
-/**
- * Why trust matters, promising no more than Lo does: the servers read what's checked out, Lo holds
- * back what they run (`@lo/lsp`'s adapters say how and what still reaches each), and no sandbox
- * holds them.
- */
-const RISK =
-  'The servers read its code and settings. Lo limits what they run, but they aren’t sandboxed. The repo’s settings can still steer them. A file that exploits a bug in one could run code as you.';
+/** The dialog's buttons for each kind of subject, in order: the one that trusts, then "Cancel". */
+export const BUTTONS = {
+  repo: ['Trust repo', 'Cancel'],
+  pull: ['Trust pull request', 'Cancel'],
+} as const;
+const TRUST = 0;
+const CANCEL = 1;
 
 /** The dialog that asks whether to trust `subject`. */
 export function questionFor(subject: Subject): Question {
-  const asked = { type: 'warning', buttons: BUTTONS, defaultId: CANCEL, cancelId: CANCEL } as const;
+  const asked = { type: 'warning', defaultId: CANCEL, cancelId: CANCEL, noLink: true } as const;
   if (subject.kind === 'repo') {
     return {
       ...asked,
+      buttons: BUTTONS.repo,
       message: `Trust ${subject.repo}?`,
-      detail: `Lo will check out its pull requests and run language servers on them. ${RISK}`,
-      noLink: true,
+      detail:
+        'Language servers read this repo’s code and settings. They aren’t sandboxed. Trust only repos whose code you’d run.',
     };
   }
   return {
     ...asked,
-    message: `Trust pull request #${subject.pull} from ${subject.from}?`,
-    detail: `Lo will check it out and run language servers on it. ${RISK} Later pushes to this pull request are trusted too.`,
-    noLink: true,
+    buttons: BUTTONS.pull,
+    message: `Trust #${subject.pull} from ${subject.from}?`,
+    detail:
+      'Language servers read this pull request’s code and settings, at every revision. They aren’t sandboxed. Trust only code you’d run.',
   };
 }
 
@@ -209,11 +206,11 @@ export class TrustAsker<W extends AskWindow = AskWindow> {
 
   /**
    * Asks in `window`, the window that sent `request`, and answers how it went: `trusted` once the
-   * reader said "Trust" and the entry is written, `cancelled` for any other answer, or once that
+   * reader said to trust and the entry is written, `cancelled` for any other answer, or once that
    * window, or the view, closed meanwhile. Throws an `IpcError` for a request it won't ask, with no
    * window to ask in, and while it's asking already, so two requests never share a dialog: `busy`
    * for the same view, which asks already, and `asking` for another, saying which, once its dialog
-   * is brought forward; and, once the reader said "Trust", for an entry it couldn't write
+   * is brought forward; and, once the reader said to trust, for an entry it couldn't write
    * ({@link unsaved}). GitHub's read failing or taking too long answers `unread`, by its cause. Meanwhile `progress`
    * hears each step, and that it's over.
    */
@@ -268,10 +265,10 @@ export class TrustAsker<W extends AskWindow = AskWindow> {
       const subject = subjectOf(request, view, repositories);
       step('asking');
       const answer = await options.confirm(window, questionFor(subject), gone.signal);
-      // Only "Trust", pressed while the window and the view were there to ask in, trusts anything.
+      // Only the trust button, pressed while the window and the view were there to ask in, trusts.
       if (gone.signal.aborted || answer !== TRUST) return 'cancelled';
       step('saving');
-      // Not given up on: once the reader said "Trust", Lo says it couldn't only once it hasn't.
+      // Not given up on: once the reader said to trust, Lo says it couldn't only once it hasn't.
       try {
         await options.write(entryFor(subject, options.now?.() ?? new Date()));
       } catch (error) {

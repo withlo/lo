@@ -152,15 +152,15 @@ export async function copyLog(lines: readonly string[]): Promise<boolean> {
 export function serversFor(target: NoTarget | TabTarget): Servers | string {
   if (target.kind === 'none') return serversOnScreen();
   const shown = servers.get(target.tab);
-  if (!shown || shown.servers.length === 0) return 'No language server runs on this PR.';
+  if (!shown || shown.servers.length === 0) return 'No language server is running';
   return shown;
 }
 
 /** The view on screen's servers, or why there are none to act on. */
 export function serversOnScreen(): Servers | string {
   const tab = activeTab();
-  if (tab?.kind !== 'pull') return "There's no pull request on screen.";
+  if (tab?.kind !== 'pull') return 'Open a pull request first';
   const shown = servers.get(tab.id);
-  if (!shown || shown.servers.length === 0) return 'No language server runs on this PR.';
+  if (!shown || shown.servers.length === 0) return 'No language server is running';
   return shown;
 }

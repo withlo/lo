@@ -222,7 +222,7 @@ export function readWhole(
         if (reads.get(tab) !== read) return;
         // Main's own words for what it refused; anything else is logged, and said plainly.
         if (!(error instanceof IpcError)) work.log('Lo couldn’t read a file whole:', error);
-        const why = error instanceof IpcError ? error.message : 'Lo couldn’t read it.';
+        const why = error instanceof IpcError ? error.message : '';
         reads.set(tab, { ...read, content: { kind: 'failed', why } });
       },
     )

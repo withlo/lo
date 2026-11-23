@@ -327,7 +327,7 @@ test('answers its keys: files, changes, sides, layout, whitespace and folds, Esc
   await test.step('a key held shows in the status bar, and no mode does, with Vim keys off', async () => {
     const status = page.locator('footer[aria-label="Status bar"]');
     await expect(status.locator('.mode-chip')).toHaveCount(0);
-    const held = status.locator('[title="Keys typed so far"]');
+    const held = status.locator('[title="Keys typed"]');
     await press(page, 'g');
     await expect(held).toHaveText('g');
     await press(page, 'Escape');
@@ -701,7 +701,7 @@ interface Jump {
   to: { path: string; header: boolean };
 }
 
-const finder = (page: Page) => page.getByRole('dialog', { name: 'Go to a file' });
+const finder = (page: Page) => page.getByRole('dialog', { name: 'Go to file' });
 
 /**
  * The jumps, in the order one Lo goes through them. `]f` is last: it opens a file's 5,001 lines,

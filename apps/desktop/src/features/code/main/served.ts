@@ -147,30 +147,26 @@ function waitingFor(serving: NotServing): string {
   const { name } = serving;
   switch (serving.kind) {
     case 'starting':
-      return `${name} is starting.`;
+      return `${name} is starting`;
     case 'waiting':
-      return `${name} is waiting to start. Lo runs ${serving.count} language servers at once at most.`;
+      return `${name} is waiting to start`;
     case 'refused':
       return serving.why;
     case 'missing':
-      return `${name} needs ${serving.needs}.`;
+      return `${name} needs ${serving.needs}`;
     case 'failed':
-      return `${name} failed. Restart it from the status bar.`;
+      return `${name} isn’t running`;
     case 'stopped':
-      return `${name} stopped.`;
+      return `${name} isn’t running`;
     default:
       serving satisfies never;
       throw new Error(`a server's state Lo doesn't know: ${JSON.stringify(serving)}`);
   }
 }
 
-/**
- * What the syntax index's answers say when the server's checkout isn't usable, and whether Lo is
- * making it again.
- */
-function unusableCheckout(name: string, remaking: boolean): string {
-  const why = `${name} can't run: this PR's checkout isn't usable.`;
-  return remaking ? `${why} Lo is making it again.` : why;
+/** What the code index's answers say when the server's local copy can't be used. */
+function unusableCheckout(name: string): string {
+  return `${name} can’t use the local copy`;
 }
 
 /** Why a server's request has no answer, as the syntax index's answers say it. */
@@ -178,15 +174,14 @@ function fallbackOf(name: string, why: NoAnswer): string {
   switch (why) {
     case 'notReady':
     case 'notOpen':
-      return `${name} is starting.`;
+      return `${name} is starting`;
     case 'stopped':
-      return `${name} stopped.`;
+      return `${name} isn’t running`;
     case 'busy':
     case 'deadline':
-      return `${name} didn't answer in time.`;
     case 'declined':
     case 'failed':
-      return `${name} didn't answer.`;
+      return `${name} didn’t respond`;
     case 'cancelled':
     case 'replaced':
       throw new IpcError('cancelled', 'The question was cancelled.');
@@ -214,14 +209,15 @@ async function ask<M extends Method>(
   // The server reads the file on disk too: one that isn't the head's would answer about other text.
   const matched = await serving.matches(file.path, file.oid);
   if (matched === 'remaking' || matched === 'unusable') {
-    return { ok: false, fallback: unusableCheckout(serving.name, matched === 'remaking') };
+    return { ok: false, fallback: unusableCheckout(serving.name) };
   }
   if (!matched) return { ok: false };
   if (options.signal?.aborted) throw new IpcError('cancelled', 'The question was cancelled.');
   const languageId = serving.languageOf(file.path);
-  if (languageId === undefined) return { ok: false, fallback: `${serving.name} doesn't read it.` };
+  if (languageId === undefined)
+    return { ok: false, fallback: `${serving.name} doesn’t read this file` };
   if (!serving.server.open(file.path, languageId, decoder.decode(file.bytes))) {
-    return { ok: false, fallback: `${serving.name} is starting.` };
+    return { ok: false, fallback: `${serving.name} is starting` };
   }
   const answer = await serving.server.request(method, params, options);
   if (answer.ok) return answer;
@@ -477,7 +473,7 @@ export async function servedReferences(
     const deadline = Math.min(serving.definitionDeadline ?? DEADLINES.definitions, left());
     const found = await definitionOf(serving, sides, file, at, { deadline, signal });
     // With no definition, this may be a declaration nothing uses.
-    if (found === undefined) return syntax(`${serving.name} found no references there.`);
+    if (found === undefined) return syntax(`${serving.name} found no references`);
     if ('fallback' in found) return syntax(found.fallback);
     if (!sameSpot(found, here)) {
       if (left() < 1) return late();
@@ -539,11 +535,11 @@ async function definitionOf(
   if (!answer.ok) return { fallback: answer.fallback };
   const [first] = locationsOf(answer.value, 1) ?? [];
   if (first === undefined) return undefined;
-  const outside = { fallback: `${serving.name} found its definition outside the repository.` };
+  const outside = { fallback: `${serving.name} found it outside this repo` };
   const path = serving.server.pathOf(first.uri);
   if (path === undefined) return outside;
   if (serving.languageOf(path) === undefined) {
-    return { fallback: `${serving.name} found its definition in a file it doesn't read.` };
+    return { fallback: `${serving.name} can’t read the file it’s in` };
   }
   try {
     const defined = await readAsked(sides, { key: at.key, path });
@@ -633,11 +629,7 @@ export async function servedHover(
     if (error instanceof IpcError && error.code === 'cancelled') throw error;
     // The window never draws the Markdown itself: the index answers, saying why.
     const slow = error instanceof IpcError && error.code === 'unanswered';
-    return syntax(
-      slow
-        ? `Lo took too long to read ${serving.name}'s hover.`
-        : `Lo couldn't read ${serving.name}'s hover.`,
-    );
+    return syntax(slow ? `${serving.name} didn’t respond` : 'Couldn’t show the type');
   }
   // Markdown that shows nothing, as a comment alone: the index may know the name.
   if (tree.blocks.length === 0) return syntax();
@@ -688,7 +680,7 @@ function hintless(serving: Serving): string | undefined {
   const { capabilities } = serving.server;
   // Lo takes no registration of them later, so what it said to `initialize` is all it offers.
   const offered = capabilities === undefined || Boolean(capabilities.inlayHintProvider);
-  return offered ? undefined : `${serving.name} has no type hints.`;
+  return offered ? undefined : `${serving.name} has no type hints`;
 }
 
 /**

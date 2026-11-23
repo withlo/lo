@@ -329,6 +329,30 @@ describe('the palette', () => {
     expect(filterPalette(items, 'queued').map(({ item }) => item.id)).toEqual(['diff.merge']);
   });
 
+  it('says whether a switch is on, and nothing of a command that isn’t one', () => {
+    const switches = defineCommands('code', {
+      wrap: { label: 'Wrap lines', group: 'View', keys: [], toggle: 'switch' },
+      fold: { label: 'Fold all', group: 'View', keys: [] },
+    });
+    const checked = (on: boolean) =>
+      paletteItems(
+        new Registry({
+          system: 'mac',
+          commands: handlers(switches, { wrap: { run() {}, checked: () => on }, fold: run }),
+        }),
+        'window',
+        NO_TARGET,
+      ).map((item) => [item.label, item.checked]);
+    expect(checked(true)).toEqual([
+      ['Wrap lines', true],
+      ['Fold all', undefined],
+    ]);
+    expect(checked(false)).toEqual([
+      ['Wrap lines', false],
+      ['Fold all', undefined],
+    ]);
+  });
+
   it('names a command by what it would do now, where its handler says', () => {
     const named = new Registry({
       system: 'mac',

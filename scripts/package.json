@@ -20,7 +20,9 @@
           "default",
           "^production",
           "{workspaceRoot}/vitest.config.ts",
-          "{workspaceRoot}/.github/workflows/publish.yml"
+          "{workspaceRoot}/.github/workflows/publish.yml",
+          "{workspaceRoot}/apps/desktop/src/**/*",
+          "{workspaceRoot}/packages/desktop/*/src/**/*"
         ]
       }
     }

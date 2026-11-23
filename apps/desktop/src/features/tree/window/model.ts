@@ -289,7 +289,7 @@ function fileRow(
 const GROUPS: Record<FileKind, string> = {
   source: 'Source and tests',
   test: 'Source and tests',
-  config: 'Config',
+  config: 'Configuration',
   generated: 'Generated',
 };
 

@@ -225,9 +225,9 @@ describe('Markdown', () => {
       <Markdown tree={tree([paragraph(text('A.'))], ['cut', 'deep', 'nodes'])} />,
     );
     expect([...page.querySelectorAll('[role="note"]')].map((note) => note.textContent)).toEqual([
-      'This is too long to show whole, so only its start is here.',
-      'Some of this nests too deeply to show, so it shows as plain text.',
-      'This holds too much to show whole, so the rest shows as plain text.',
+      'Only the start shown',
+      'Deepest parts shown as plain text',
+      'Rest shown as plain text',
     ]);
   });
 

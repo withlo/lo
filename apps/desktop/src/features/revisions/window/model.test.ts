@@ -73,17 +73,17 @@ describe('the revision picker', () => {
       ['4', 'r4', 'Force-pushed · rebased onto main'],
       ['3', 'r3', 'Force-pushed'],
       ['2', 'r2', 'Pushed'],
-      ['1', 'r1', 'No longer available'],
+      ['1', 'r1', 'No longer on GitHub'],
       ['b', 'base', 'main'],
     ]);
     expect(rows[0]).toMatchObject({
       meta: `ravi-k · 40 min ago · 5555555`,
-      tags: [{ label: 'Newest', kind: 'newest' }],
+      tags: [{ label: 'Latest', kind: 'newest' }],
     });
     expect(rows[1]).toMatchObject({
       forced: true,
-      meta: `ravi-k · seen 6 hours ago · 4444444`,
-      tags: [{ label: 'Last seen here', kind: 'seen' }],
+      meta: `ravi-k · 6 hours ago or earlier · 4444444`,
+      tags: [{ label: 'Last opened', kind: 'seen' }],
     });
     expect(rows[3]?.tags).toEqual([{ label: 'Your review', kind: 'review' }]);
     expect(rows[4]).toMatchObject({ disabled: true, forced: false });
@@ -105,7 +105,7 @@ describe('the revision picker', () => {
     expect(rows.filter((row) => row.tags?.some((tag) => tag.kind === 'overview'))).toHaveLength(1);
     // Beside the other markers on the same revision.
     expect(rowsOf(view(), NOW, { overview: head('5') })[0]?.tags).toEqual([
-      { label: 'Newest', kind: 'newest' },
+      { label: 'Latest', kind: 'newest' },
       { label: 'Overview', kind: 'overview' },
     ]);
     expect(overviewNote(view(), { overview: head('3') })).toBeUndefined();
@@ -117,7 +117,7 @@ describe('the revision picker', () => {
       rowsOf(view(), NOW, marks).some((row) => row.tags?.some((tag) => tag.kind === 'overview')),
     ).toBe(false);
     expect(overviewNote(view(), marks)).toBe(
-      'The overview describes ccccccc, which isn’t one of these revisions.',
+      'The overview was written for `ccccccc`, a commit inside a revision.',
     );
     // Not before the revisions are read, nor with no overview.
     expect(overviewNote(view({ status: 'loading', revisions: [] }), marks)).toBeUndefined();
@@ -162,8 +162,8 @@ describe('the revision picker', () => {
     });
     expect(shortcutRows(shown, { review: ['r'], seen: ['s'], whole: ['w'] })).toEqual([
       { id: 'review', label: 'Since your review · r2 → r5', keys: ['r'], pressed: false },
-      { id: 'seen', label: 'Since last seen · r4 → r5', keys: ['s'], pressed: true },
-      { id: 'whole', label: 'Whole PR · base → r5', keys: ['w'], pressed: false },
+      { id: 'seen', label: 'Since last opened · r4 → r5', keys: ['s'], pressed: true },
+      { id: 'whole', label: 'Whole pull request · base → r5', keys: ['w'], pressed: false },
     ]);
     // A marker on the head on screen, or on a revision that's gone, offers nothing.
     expect(
@@ -176,57 +176,56 @@ describe('the note over the diff', () => {
   it('names the layers of a run, or the pull request when GitHub couldn’t compare it as one diff', () => {
     expect(runNoteOf([83, 84], false)).toEqual({
       tone: 'plain',
-      text: 'Every change, #83 → #84',
+      text: '#83 → #84 · every change',
     });
-    expect(runNoteOf([82, 83, 84], false).text).toBe('Every change, #82 → #84');
+    expect(runNoteOf([82, 83, 84], false).text).toBe('#82 → #84 · every change');
     // The diff shows only the top layer's pull request then, which is what the note says.
-    expect(runNoteOf([83, 84], true).text).toBe('Every change in the pull request');
+    expect(runNoteOf([83, 84], true).text).toBe('Whole pull request');
   });
 
   it('says what’s compared, and why it starts where it does', () => {
-    expect(noteOf(view())).toEqual({ tone: 'plain', text: 'r4 → r5, since you last looked' });
+    expect(noteOf(view())).toEqual({ tone: 'plain', text: 'r4 → r5 · since last opened' });
     expect(noteOf(view({ comparison: { from: head('2'), to: head('5') } })).text).toBe(
-      'r2 → r5, since your review',
+      'r2 → r5 · since your review',
     );
     expect(noteOf(view({ comparison: { from: head('3'), to: head('5') } })).text).toBe('r3 → r5');
     expect(noteOf(view({ comparison: { from: null, to: head('5') } })).text).toBe(
-      'Every change, base → r5',
+      'base → r5 · whole pull request',
     );
-    expect(noteOf(undefined).text).toBe('Every change in the pull request');
+    expect(noteOf(undefined).text).toBe('Whole pull request');
   });
 
   it('says when nothing is new, and what a comparison across a rebase shows', () => {
     expect(
       noteOf(view({ comparison: { from: null, to: head('5') }, nothingNewSince: head('5') })),
-    ).toEqual({ tone: 'info', text: 'Every change, base → r5 · no change since r5' });
+    ).toEqual({ tone: 'info', text: 'base → r5 · whole pull request · no change since r5' });
     expect(noteOf(view({ replay: 'clean' })).text).toBe(
-      'r4 → r5, since you last looked · across a rebase: only what the author changed',
+      'r4 → r5 · since last opened · across a rebase · the author’s changes only',
     );
     expect(noteOf(view({ replay: 'conflicted', conflicted: 2 }))).toEqual({
       tone: 'warn',
-      text: 'r4 → r5, since you last looked · Lo couldn’t replay r4 across the rebase, so this compares the heads, and shows what came with the base too: 2 files had conflicts',
+      text: 'r4 → r5 · since last opened · 2 files conflicted in the rebase · includes the base branch’s changes',
     });
     expect(noteOf(view({ replay: 'retargeted' })).tone).toBe('warn');
     const gone = { kind: 'gone', head: head('2') } as const;
     const compare = { kind: 'compare', from: head('2'), to: head('5'), why: gone } as const;
     expect(noteOf(view({ problem: compare }))).toEqual({
       tone: 'warn',
-      text: 'r4 → r5, since you last looked · Couldn’t compare r2 → r5 · r2’s commit is no longer on GitHub.',
+      text: 'r4 → r5 · since last opened · Couldn’t compare r2 → r5 · r2’s commit is no longer on GitHub.',
     });
   });
 
-  it('offers a comparison that came too late to be drawn first, with the key that takes it', () => {
+  it('offers a comparison that came too late to be drawn first, whose key is the chip beside it', () => {
     expect(
       noteOf(
         view({
           comparison: { from: null, to: head('5') },
           offered: { from: head('4'), to: head('5') },
         }),
-        'gv',
       ),
     ).toEqual({
       tone: 'info',
-      text: 'Every change, base → r5 · r4 → r5, since you last looked: gv',
+      text: 'base → r5 · whole pull request · r4 → r5 since last opened',
     });
     expect(
       noteOf(
@@ -234,15 +233,14 @@ describe('the note over the diff', () => {
           comparison: { from: null, to: head('5') },
           offered: { from: head('2'), to: head('5') },
         }),
-        'Ctrl+K',
       ).text,
-    ).toBe('Every change, base → r5 · r2 → r5, since your review: Ctrl+K');
+    ).toBe('base → r5 · whole pull request · r2 → r5 since your review');
   });
 
   it('says what it waits for', () => {
     expect(
       noteOf(view({ comparison: null, pending: { from: head('4'), to: head('5') } })).text,
-    ).toBe('Comparing r4 → r5 once the local copy has both…');
+    ).toBe('Comparing r4 → r5…');
     expect(
       noteOf(
         view({
@@ -250,7 +248,7 @@ describe('the note over the diff', () => {
           pending: { from: head('2'), to: head('5') },
         }),
       ).text,
-    ).toBe('Every change, base → r5 · comparing r2 → r5 once the local copy has both…');
+    ).toBe('base → r5 · whole pull request · comparing r2 → r5…');
   });
 });
 

@@ -175,7 +175,7 @@ export function causeWords(cause: CodeCause, path: string, written: string): Wor
     case 'noGit':
       return ['Git wasn’t found.'];
     case 'notFetched':
-      return ['The local copy couldn’t be fetched.'];
+      return ['Can’t fetch the local copy.'];
     case 'noCommit':
       return [`${written}’s commit isn’t in the local copy.`];
     case 'noFile':

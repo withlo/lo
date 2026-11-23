@@ -9,6 +9,7 @@ import type { RevisionRow } from '../../revisions/contract.ts';
 import type {
   JobView,
   Method,
+  PlanKind,
   Refusal,
   ShipApproval,
   ShipPlan,
@@ -20,10 +21,12 @@ import type {
 import {
   ago,
   capitalized,
+  confirmLabel,
   counted,
   detailsOf,
   doneLine,
   inTheWayOf,
+  mergeTitle,
   outcomeDetail,
   outcomeTitle,
   pushWarning,
@@ -265,14 +268,50 @@ export function stepWorking(step: ShipStep): string {
   }
 }
 
-/** The dialog's title, the same in every state. */
-export function shipTitle(number: number): string {
-  return `Approve and ship #${number}?`;
+/**
+ * What `plan` does as the merge panel names it, when its approval step is skipped, since you wrote
+ * the pull request: nothing where it approves or has approved, before it's planned, or when the
+ * step after does nothing either.
+ */
+function shipsOnly(plan: ShipPlan | undefined): PlanKind | undefined {
+  if (plan?.approval.kind !== 'ownPullRequest') return undefined;
+  switch (plan.likely.kind) {
+    case 'merge':
+      return 'merge';
+    case 'enqueue':
+      return 'enqueue';
+    case 'autoMerge':
+      return 'autoMerge';
+    case 'enqueueWhenReady':
+      return 'whenReady';
+    case 'autoMergeAlreadyOn':
+    case 'alreadyQueued':
+    case 'stop':
+      return undefined;
+    default:
+      plan.likely satisfies never;
+      return undefined;
+  }
 }
 
-/** The dialog's main button, whether it approves or only merges. */
-export function shipLabel(): string {
-  return 'Approve and ship';
+/**
+ * The dialog's title, the same in every state once it's planned: "Approve and ship #264?", or on
+ * your own pull request, which you can't approve, only what follows: "Merge #264?".
+ */
+export function shipTitle(number: number, plan?: ShipPlan): string {
+  const only = shipsOnly(plan);
+  return only === undefined ? `Approve and ship #${number}?` : `${mergeTitle(only, number, 1)}?`;
+}
+
+/**
+ * The dialog's main button: "Approve and ship", or on your own pull request, the merge panel's
+ * button for what follows: "Merge #264".
+ */
+export function shipLabel(plan?: ShipPlan): string {
+  const only = shipsOnly(plan);
+  return plan === undefined || only === undefined
+    ? 'Approve and ship'
+    : confirmLabel({ kind: only, number: plan.number });
 }
 
 /** The two steps the confirmation lists, none done yet: the approval, then what follows it. */

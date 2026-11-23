@@ -1,7 +1,16 @@
 // The dialog that shows a language server's log: plain text, as main keeps it in memory, with a
 // way to copy it.
 
-import { Button, Callout, Dialog, DialogSpacer, Key } from '@lo/ui';
+import {
+  Button,
+  CopyFaces,
+  CopyStatus,
+  Dialog,
+  DialogSpacer,
+  Key,
+  Problem,
+  useCopySaid,
+} from '@lo/ui';
 import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from 'zustand';
@@ -22,10 +31,11 @@ export function ServerLog() {
   const { system } = registry();
   /** The log once main has said, `null` for none, or `false` when it couldn't be read. */
   const [log, setLog] = useState<Log | null | false | undefined>();
-  const [copied, setCopied] = useState<boolean>();
+  const [said, say] = useCopySaid();
+  // Each "Try again" reads the log once more.
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     setLog(undefined);
-    setCopied(undefined);
     if (!shown) return undefined;
     let current = true;
     main()
@@ -40,7 +50,7 @@ export function ServerLog() {
     return () => {
       current = false;
     };
-  }, [shown]);
+  }, [shown, attempt]);
   const lines = log ? log.lines : [];
   return (
     <Dialog
@@ -48,8 +58,8 @@ export function ServerLog() {
       onOpenChange={(open) => {
         if (!open) close();
       }}
-      title={shown ? `${shown.name}'s log` : 'Log'}
-      description="Its last 1,000 lines, kept in memory while Lo runs."
+      title={shown ? `${shown.name}’s log` : 'Language server log'}
+      description="The last 1,000 lines."
       initialFocus={done}
       container={document.getElementById('root')}
       testId="server-log"
@@ -59,14 +69,15 @@ export function ServerLog() {
             variant="ghost"
             disabled={lines.length === 0}
             onClick={() => {
-              void copyLog(lines).then(setCopied);
+              void copyLog(lines).then((copied) => say(copied ? 'copied' : 'failed'));
             }}
           >
-            {copied ? 'Copied' : 'Copy the log'}
+            <CopyFaces said={said}>Copy log</CopyFaces>
           </Button>
+          <CopyStatus said={said} />
           <DialogSpacer />
           <Button ref={done} variant="primary" onClick={close}>
-            Done
+            Close
             <Key
               keys={keyLabels(systemStrokes(parseKeys('enter'), system), system)}
               decorative
@@ -76,18 +87,14 @@ export function ServerLog() {
         </>
       }
     >
-      {copied === false && (
-        <Callout tone="danger" role="alert">
-          Lo couldn’t copy the log.
-        </Callout>
-      )}
-      <span role="status" className="sr-only">
-        {copied ? 'Copied the log.' : ''}
-      </span>
       {log === false ? (
-        <Callout tone="danger">Lo couldn’t read the log.</Callout>
+        <Problem
+          layout="inline"
+          title="Can’t show the log"
+          action={{ label: 'Try again', onClick: () => setAttempt((count) => count + 1) }}
+        />
       ) : log === undefined ? null : lines.length === 0 ? (
-        <p className="m-0 text-fg-muted">Nothing is in the log yet.</p>
+        <p className="m-0 text-fg-muted">No log lines yet</p>
       ) : (
         <pre className="m-0 overflow-auto rounded-sm bg-bg-well px-12 py-8 text-fg code-small">
           {lines.join('\n')}

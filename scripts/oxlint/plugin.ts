@@ -13,6 +13,9 @@
  * naming the value in an error (`JSON.stringify(value satisfies never)`) is the intended form.
  *
  * `lo/no-scroll-into-view` refuses an element's `scrollIntoView`: see {@link noScrollIntoView}.
+ *
+ * `lo/no-lo-subject` flags a string the reader may see that starts with "Lo ": see
+ * {@link noLoSubject}.
  */
 
 /** A syntax tree node, as oxlint hands one to a rule. */
@@ -158,7 +161,114 @@ export const noScrollIntoView = {
   },
 };
 
+export const SUBJECT_MESSAGE =
+  'This string makes Lo its subject. Name the reader’s thing instead: “Couldn’t send the comment”, not “Lo couldn’t send your comment”. Lo is the subject only to tell it apart from GitHub or another app, and “Lo 0.9.0” names a version.';
+
+/**
+ * "Lo " and a word in lower case at the start of a string, as a sentence starts: not a version,
+ * "Lo 0.9.0 is available", nor a name, "Lo Dev".
+ */
+const LO_SUBJECT = /^Lo [a-z]/;
+
+/** What logs a message and what makes an error no one reads but a developer, by name. */
+const UNREAD_CALLS = new Set(['log', 'warn', 'debug', 'trace', 'info']);
+const UNREAD_ERRORS = new Set(['Error', 'TypeError', 'RangeError', 'DOMException']);
+
+/** The name `node` calls: a plain name, or the last part of a member or private name. */
+function calleeName(node: unknown): string | undefined {
+  if (!isNode(node)) return undefined;
+  if (node.type === 'Identifier') {
+    const name: unknown = Reflect.get(node, 'name');
+    return typeof name === 'string' ? name : undefined;
+  }
+  if (node.type !== 'MemberExpression') return undefined;
+  const property: unknown = Reflect.get(node, 'property');
+  if (isNode(property) && property.type === 'PrivateIdentifier') {
+    const name: unknown = Reflect.get(property, 'name');
+    return typeof name === 'string' ? name : undefined;
+  }
+  return memberName(node);
+}
+
+/** Whether `node`, a member expression, reads from `console`. */
+function onConsole(node: unknown): boolean {
+  if (!isNode(node) || node.type !== 'MemberExpression') return false;
+  const object: unknown = Reflect.get(node, 'object');
+  return (
+    isNode(object) && object.type === 'Identifier' && Reflect.get(object, 'name') === 'console'
+  );
+}
+
+/** Where `node` starts and ends in its file. */
+function spanOf(node: AstNode): [number, number] {
+  const start: unknown = Reflect.get(node, 'start');
+  const end: unknown = Reflect.get(node, 'end');
+  return [typeof start === 'number' ? start : 0, typeof end === 'number' ? end : 0];
+}
+
+/**
+ * `lo/no-lo-subject` flags a string the reader may see that starts with "Lo " and a word in lower
+ * case: a string or template literal, or JSX text. Lo isn't the subject of what it says
+ * (`design/writing.md`). A version, "Lo 0.9.0", and a name, "Lo Dev", are left alone, and so is
+ * what only a developer reads: a log call's message
+ * (`console.*`, and anything called `log`, `warn`, `debug`, `trace` or `info`) and a plain
+ * `Error`'s. Strings that remain are counted against a ceiling in its test, which only goes down,
+ * until there are none and it's an error in `.oxlintrc.json`.
+ */
+export const noLoSubject = {
+  meta: {
+    type: 'suggestion',
+    docs: { description: 'Flag a string the reader may see that makes Lo its subject.' },
+  },
+  create(context: Context) {
+    /** The spans of log calls' and plain errors' arguments, which only a developer reads. */
+    const unread: [number, number][] = [];
+    const skip = (node: AstNode): void => {
+      const args: unknown = Reflect.get(node, 'arguments');
+      if (!Array.isArray(args)) return;
+      for (const arg of args) if (isNode(arg)) unread.push(spanOf(arg));
+    };
+    const check = (node: AstNode, text: unknown): void => {
+      if (typeof text !== 'string' || !LO_SUBJECT.test(text)) return;
+      const [start, end] = spanOf(node);
+      if (unread.some(([from, to]) => start >= from && end <= to)) return;
+      context.report({ node, message: SUBJECT_MESSAGE });
+    };
+    return {
+      CallExpression(node: AstNode): void {
+        const callee: unknown = Reflect.get(node, 'callee');
+        const name = calleeName(callee);
+        if (onConsole(callee) || (name !== undefined && UNREAD_CALLS.has(name))) skip(node);
+      },
+      NewExpression(node: AstNode): void {
+        const name = calleeName(Reflect.get(node, 'callee'));
+        if (name !== undefined && UNREAD_ERRORS.has(name)) skip(node);
+      },
+      Literal(node: AstNode): void {
+        check(node, Reflect.get(node, 'value'));
+      },
+      TemplateLiteral(node: AstNode): void {
+        const quasis: unknown = Reflect.get(node, 'quasis');
+        const first: unknown = Array.isArray(quasis) ? quasis[0] : undefined;
+        const value: unknown = isNode(first) ? Reflect.get(first, 'value') : undefined;
+        check(
+          node,
+          typeof value === 'object' && value !== null ? Reflect.get(value, 'cooked') : undefined,
+        );
+      },
+      JSXText(node: AstNode): void {
+        const value: unknown = Reflect.get(node, 'value');
+        check(node, typeof value === 'string' ? value.trimStart() : undefined);
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: 'lo' },
-  rules: { 'no-returned-never': noReturnedNever, 'no-scroll-into-view': noScrollIntoView },
+  rules: {
+    'no-returned-never': noReturnedNever,
+    'no-scroll-into-view': noScrollIntoView,
+    'no-lo-subject': noLoSubject,
+  },
 };

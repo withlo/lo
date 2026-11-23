@@ -848,7 +848,7 @@ export interface PeekAnswer {
   /** Where its name starts on the line, from 0, when it's known: its code marks the name. */
   column?: number | undefined;
   source: PeekSource;
-  /** Where it came from, as its frame says: "TypeScript", "Syntax index · same name". */
+  /** Where it came from, as its frame says: "TypeScript", "Code index · same name". */
   label?: string | undefined;
 }
 

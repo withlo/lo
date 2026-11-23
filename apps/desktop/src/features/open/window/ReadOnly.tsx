@@ -13,7 +13,7 @@ export function ReadOnly({ tab }: { tab: PullTab }) {
     <span className="inline-flex items-center gap-6 text-fg-muted text-small">
       Read only
       <Button size="sm" variant="ghost" onClick={signIn}>
-        Sign in to see revisions
+        Sign in to compare revisions
       </Button>
     </span>
   );

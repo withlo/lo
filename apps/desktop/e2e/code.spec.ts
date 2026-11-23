@@ -155,7 +155,7 @@ test('builds the syntax index of a PR nothing trusts, says so in the status bar,
             column: 17,
             kind: 'interface',
             source: 'syntax',
-            label: 'Syntax index',
+            label: 'Code index',
             changed: true,
             lines: { from: 1 },
           },
@@ -245,7 +245,7 @@ trusting(
         })
         .toMatchObject({ trust: { kind: 'untrusted' } });
       expect(started()).toEqual([]);
-      await answerDialogs(app, 'Trust');
+      await answerDialogs(app, 'Trust repo');
       expect(
         await page.evaluate(
           (view) => window.lo.invoke('code.trust', { view, repo: 'rozed-dev/e2e', pull: null }),

@@ -252,9 +252,11 @@ test('draws threads under their lines, resolved ones collapsed, and counts them'
   const header = page
     .locator('[data-lo-diff] .cm-editor .lo-diffhead--end[data-path="src/backoff.ts"]')
     .first();
-  await expect(header.getByRole('img', { name: '4 unresolved of 5' })).toHaveClass(/is-open/);
+  await expect(header.getByRole('img', { name: '4 / 5 threads unresolved' })).toHaveClass(
+    /is-open/,
+  );
   const tree = page.locator('[data-lo-scope="tree"]');
-  await expect(tree.getByRole('img', { name: '4 unresolved of 5' })).toBeVisible();
+  await expect(tree.getByRole('img', { name: '4 / 5 threads unresolved' })).toBeVisible();
   await expect(tree.getByRole('img', { name: '1 unresolved' })).toHaveCount(1);
 });
 

@@ -169,11 +169,11 @@ export function MarkdownNotes({ notes }: { notes: readonly Note[] }) {
 function noteText(note: Note): string {
   switch (note) {
     case 'cut':
-      return 'This is too long to show whole, so only its start is here.';
+      return 'Only the start shown';
     case 'deep':
-      return 'Some of this nests too deeply to show, so it shows as plain text.';
+      return 'Deepest parts shown as plain text';
     case 'nodes':
-      return 'This holds too much to show whole, so the rest shows as plain text.';
+      return 'Rest shown as plain text';
     default:
       note satisfies never;
       throw new Error(`A note Lo doesn't know: ${JSON.stringify(note)}.`);

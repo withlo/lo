@@ -257,7 +257,7 @@ describe.each(['dark', 'light'] as const)('in the %s theme', (theme) => {
     const bar = page.querySelector('[role="meter"]');
     expect(bar?.getAttribute('aria-valuenow')).toBe(String(38 * 1024 * 1024));
     expect(bar?.getAttribute('aria-valuemax')).toBe(String(112 * 1024 * 1024));
-    expect(bar?.getAttribute('aria-label')).toBe('Downloading Lo 0.2.0');
+    expect(bar?.getAttribute('aria-label')).toBe('Downloading Lo 0.2.0…');
   });
 
   it('says only what it knows of a download whose size GitHub hasn’t said', () => {

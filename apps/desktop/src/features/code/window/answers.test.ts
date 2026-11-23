@@ -20,7 +20,8 @@ import {
   metaOf,
   noDefinition,
   noHints,
-  noneFound,
+  noReferences,
+  NO_TYPE,
   NOT_YET,
   notYet,
   outlineRows,
@@ -42,24 +43,23 @@ function answer(change: Partial<CodeAnswer> = {}): CodeAnswer {
     name: 'Line',
     kind: 'interface',
     source: 'syntax',
-    label: 'Syntax index',
+    label: 'Code index',
     changed: true,
     ...change,
   };
 }
 
 describe('what the status bar says', () => {
-  it('names what has no definition, and why a language server didn’t answer', () => {
-    expect(noDefinition('parse')).toBe('No definition of `parse` found');
-    expect(noneFound(noDefinition('parse'), undefined)).toBe('No definition of `parse` found');
-    expect(noneFound(noDefinition('parse'), 'TypeScript is starting.')).toBe(
-      'No definition of `parse` found. TypeScript is starting.',
-    );
+  it('names what has no definition or references, as a fact alone', () => {
+    expect(noDefinition('parse')).toBe('No definition of `parse`');
+    expect(noReferences('parse')).toBe('No references to `parse`');
+    expect(NO_TYPE).toBe('No type for this name');
   });
 
   it('counts references a language server found only outside the repository', () => {
-    expect(allOutside('parse', 3)).toBe('`parse` has 3 references, all outside this repository.');
-    expect(allOutside('parse', 1)).toBe('`parse` has 1 reference, outside this repository.');
+    expect(allOutside(3)).toBe('3 references, all outside this repo');
+    expect(allOutside(1)).toBe('1 reference, outside this repo');
+    expect(allOutside(1200)).toBe('1,200 references, all outside this repo');
   });
 
   it('says why code features can’t answer before the local copy, or without git', () => {
@@ -79,11 +79,11 @@ describe('what the status bar says', () => {
   });
 
   it('says what main said of a question that failed, and nothing of one a newer one cancelled', () => {
-    expect(
-      failureOf(new IpcError('unavailable', 'The syntax index waits for the local copy.')),
-    ).toBe('The syntax index waits for the local copy.');
+    expect(failureOf(new IpcError('unavailable', 'Fetching local copy…'))).toBe(
+      'Fetching local copy…',
+    );
     expect(failureOf(new IpcError('cancelled', 'code.definitions was cancelled.'))).toBeUndefined();
-    expect(failureOf(new Error('boom'))).toBe('Lo couldn’t ask the syntax index.');
+    expect(failureOf(new Error('boom'))).toBe('Couldn’t search the code index');
   });
 });
 
@@ -96,18 +96,18 @@ describe('a peek', () => {
     });
     expect(peekSource({ answers: [answer({ from: 'zod' })] })).toEqual({
       source: { kind: 'syntax' },
-      note: "From zod, which Lo doesn't install",
+      note: 'From zod · not installed',
     });
     // Several, whose list says where each came from.
     expect(peekSource({ answers: [server, server] })).toBeUndefined();
     expect(
-      peekSource({ answers: [answer(), answer()], fallback: 'TypeScript is starting.' }),
-    ).toEqual({ source: { kind: 'syntax' }, note: 'TypeScript is starting.' });
+      peekSource({ answers: [answer(), answer()], fallback: 'TypeScript is starting' }),
+    ).toEqual({ source: { kind: 'syntax' }, note: 'TypeScript is starting' });
   });
 
   it('says where each answer came from, and what sets it apart', () => {
     expect(sourceOf(answer())).toEqual({ source: { kind: 'syntax' }, note: undefined });
-    expect(sourceOf(answer({ label: 'Syntax index · same name' }))).toEqual({
+    expect(sourceOf(answer({ label: 'Code index · same name' }))).toEqual({
       source: { kind: 'syntax' },
       note: 'same name',
     });
@@ -120,7 +120,7 @@ describe('a peek', () => {
   it('lists the answers, each with its own key, and shows the code of the one picked', () => {
     const answers = [
       answer(),
-      answer({ path: 'test/parser.ts', line: 7, label: 'Syntax index · same name' }),
+      answer({ path: 'test/parser.ts', line: 7, label: 'Code index · same name' }),
     ];
     const candidates = candidatesOf(answers);
     expect(candidates.map((each) => [each.key, each.note])).toEqual([
@@ -135,13 +135,13 @@ describe('a peek', () => {
     });
     expect(peekOf({ name: 'Line', answers, more: false }, 1, code)).toEqual({
       answers: [
-        { path: 'src/parser.ts', line: 2, column: 17, source: 'syntax', label: 'Syntax index' },
+        { path: 'src/parser.ts', line: 2, column: 17, source: 'syntax', label: 'Code index' },
         {
           path: 'test/parser.ts',
           line: 7,
           column: 17,
           source: 'syntax',
-          label: 'Syntax index · same name',
+          label: 'Code index · same name',
         },
       ],
       shown: 1,
@@ -169,14 +169,12 @@ describe('a peek', () => {
       note: undefined,
     });
     expect(peekOf({ name: 'Array', answers, more: false }, 0, undefined).waiting).toBe(false);
-    expect(metaOf(outside, 'r2')).toBe('Outside this repository');
+    expect(metaOf(outside, 'r2')).toBe('Outside this repo');
   });
 
   it('says where the answer shown is, at which revision, and whether the PR changes it', () => {
-    expect(metaOf(answer(), 'r2')).toBe('src/parser.ts · r2 · changed in this PR');
-    expect(metaOf(answer({ changed: false }), undefined)).toBe(
-      'src/parser.ts · unchanged in this PR',
-    );
+    expect(metaOf(answer(), 'r2')).toBe('src/parser.ts · r2 · changed');
+    expect(metaOf(answer({ changed: false }), undefined)).toBe('src/parser.ts · unchanged');
   });
 });
 
@@ -308,35 +306,31 @@ describe('gh with no type hints', () => {
 
   it('says why the server that reads the code gave none', () => {
     const asked = { hints: [], label: 'TypeScript' };
-    expect(noHints([asked], trusted, ready)).toBe(
-      'TypeScript gives no type hints for the code on screen.',
+    expect(noHints([asked], trusted, ready)).toBe('TypeScript has no type hints for this file');
+    expect(noHints([{ ...asked, fallback: 'TypeScript is starting' }], trusted, null)).toBe(
+      'TypeScript is starting',
     );
-    expect(noHints([{ ...asked, fallback: 'TypeScript is starting.' }], trusted, null)).toBe(
-      'TypeScript is starting.',
-    );
-    expect(noHints([{ ...asked, none: 'Pyright has no type hints.' }], trusted, ready)).toBe(
-      'Pyright has no type hints.',
+    expect(noHints([{ ...asked, none: 'Pyright has no type hints' }], trusted, ready)).toBe(
+      'Pyright has no type hints',
     );
     const failed = servers({ kind: 'failed', why: { kind: 'error', message: 'It exited.' } });
-    expect(noHints([{ ...asked, fallback: 'TypeScript stopped.' }], trusted, failed)).toBe(
-      'TypeScript failed. Restart it from the status bar.',
+    expect(noHints([{ ...asked, fallback: 'TypeScript isn’t running' }], trusted, failed)).toBe(
+      'TypeScript isn’t running',
     );
     const missing = servers({ kind: 'missing', needs: 'Go 1.24 or newer' });
-    expect(noHints([asked], trusted, missing)).toBe('TypeScript needs Go 1.24 or newer.');
+    expect(noHints([asked], trusted, missing)).toBe('TypeScript needs Go 1.24 or newer');
     const why = 'The checkout’s tsconfig.json names a plugin, so Lo won’t run vtsls on it.';
     expect(noHints([asked], trusted, servers({ kind: 'refused', why }))).toBe(why);
     // A file whose server says why comes before one that doesn't.
-    expect(noHints([asked, { ...asked, fallback: 'TypeScript is starting.' }], trusted, null)).toBe(
-      'TypeScript is starting.',
+    expect(noHints([asked, { ...asked, fallback: 'TypeScript is starting' }], trusted, null)).toBe(
+      'TypeScript is starting',
     );
   });
 
   it('says why no server reads the code, from the view’s trust', () => {
-    expect(noHints([{ hints: [] }], trusted, ready)).toBe(
-      'No language server reads the code on screen.',
-    );
+    expect(noHints([{ hints: [] }], trusted, ready)).toBe('No language server for this file');
     expect(noHints([], status({ kind: 'untrusted', why: 'unnamed' }), null)).toBe(
-      'Type hints need a language server, which Lo runs only on repos you trust.',
+      'Trust the repo to see type hints',
     );
     expect(
       noHints(
@@ -344,14 +338,14 @@ describe('gh with no type hints', () => {
         status({ kind: 'untrusted', why: 'unnamed' }, { kind: 'fork', repo: 'sam/e2e' }),
         null,
       ),
-    ).toBe('Type hints need a language server, which Lo runs only on PRs you trust.');
+    ).toBe('Trust the pull request to see type hints');
     // The banner's cause: Lo can't tell whose code it is.
     expect(noHints([], status({ kind: 'untrusted', why: 'unnamed' }, { kind: 'gone' }), null)).toBe(
-      'Type hints need a language server. GitHub no longer has this PR’s fork, so Lo can’t tell whose code it is.',
+      'The fork no longer exists',
     );
     expect(noHints([], status({ kind: 'checking' }), null)).toBe(
-      'Type hints wait for Lo to work out whether this repo is trusted.',
+      'Checking whether this repo is trusted',
     );
-    expect(noHints([], null, null)).toBe('Type hints need a language server.');
+    expect(noHints([], null, null)).toBe('Type hints need a language server');
   });
 });

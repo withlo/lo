@@ -287,7 +287,7 @@ describe('replying', () => {
     const reply = { kind: 'reply' as const, thread: THREAD };
     expect(await made.send('t1', reply, 'Agreed.', 'review')).toEqual({
       kind: 'refused',
-      refusal: { kind: 'github', message: 'GitHub doesn’t let you reply to this thread.' },
+      refusal: { kind: 'github', message: 'rozed-bot can’t reply to this thread' },
     });
     expect(fake.sent).toEqual([]);
     expect(last()).toMatchObject([{ place: reply, text: 'Agreed.', sending: null }]);

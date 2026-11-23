@@ -575,7 +575,7 @@ export class Installer {
       download?.kind === 'go' &&
       (this.#platform === undefined || download.builds[this.#platform] === undefined);
     if (download === undefined || unbuilt) {
-      throw new DownloadError('unavailable', 'There’s no download of it for this system.');
+      throw new DownloadError('unavailable', 'It has no download for this computer.');
     }
     return download;
   }
@@ -775,7 +775,7 @@ async function buildChecked(
   const { files, folder, platform, go, signal } = options;
   const pinned = download.builds[platform];
   if (pinned === undefined) {
-    throw new DownloadError('unavailable', 'There’s no download of it for this system.');
+    throw new DownloadError('unavailable', 'It has no download for this computer.');
   }
   const program = await buildGo({ go: go.entry, download, files, folder, platform, signal });
   const { size } = await stat(program);

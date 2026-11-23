@@ -14,7 +14,7 @@ import { choices, focus, onScreen, setOpen, shown, states } from './store.ts';
 /** The pull request's tab on screen, or why a key for the tree can't run. */
 export function pullOnScreen(): PullTab | string {
   const tab = activeTab();
-  return tab?.kind === 'pull' ? tab : 'There’s no pull request on screen.';
+  return tab?.kind === 'pull' ? tab : 'Open a pull request first';
 }
 
 /** The rows the tree last showed of `tab`. */
@@ -185,9 +185,9 @@ function nextIn(
 /** Why the file `key` can't be shown, or `true`: a changed file in the diff, any whole. */
 export function showable(tab: string, key: string): true | string {
   if (changeOf(tab, key)) {
-    return canShow('diff') || 'No diff to show it in';
+    return canShow('diff') || 'The diff isn’t open';
   }
-  return canShow('whole') || 'Whole files can’t be opened here';
+  return canShow('whole') || 'Whole files can’t open in this tab';
 }
 
 /**
@@ -207,7 +207,7 @@ export function show(tab: string, key: string): void {
 
 /** Why `key` can't be opened whole, or `true`. */
 export function wholeShowable(): true | string {
-  return canShow('whole') || 'Whole files can’t be opened here';
+  return canShow('whole') || 'Whole files can’t open in this tab';
 }
 
 /** The key of the row the keyboard is on, if it's a file's. */
@@ -218,9 +218,7 @@ export function focusedFile(tab: string): string | undefined {
 
 /** Whether the tree is on screen to go to. */
 export function treeShown(): true | string {
-  return document.querySelector('[data-lo-scope="tree"]') !== null
-    ? true
-    : 'The file tree isn’t open.';
+  return document.querySelector('[data-lo-scope="tree"]') !== null ? true : 'Files aren’t open';
 }
 
 /**

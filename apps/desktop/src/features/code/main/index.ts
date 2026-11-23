@@ -282,7 +282,7 @@ function sidesOf(id: string): ViewSides {
   if (sides) return sides;
   const state = index?.state(id);
   if (state?.kind === 'noGit') throw new IpcError('unavailable', 'Code features need git.');
-  throw new IpcError('unavailable', 'The syntax index waits for the local copy.');
+  throw new IpcError('unavailable', 'Fetching local copy…');
 }
 
 /** The language server for a file of view `view`'s new side, if one reads it there. */
