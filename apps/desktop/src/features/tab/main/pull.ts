@@ -1001,13 +1001,16 @@ export class PullTab {
     const latest = this.#latest;
     const shown = this.#shown;
     const connection = this.#connection();
-    const problem = this.#blip() ? null : (this.#problem ?? null);
+    // Out of reach for less time than the chip waits, the tab is still loading, between reads too.
+    const blip = this.#blip();
+    const problem = blip ? null : (this.#problem ?? null);
     // Only while what's shown may be out of date, so a read that confirms it changes nothing sent.
     const stale = connection.kind !== 'live' && connection.kind !== 'limitLow';
     const checked = this.#savedAt;
     return {
       id: this.id,
-      loading: this.#opening !== undefined && this.#header === undefined && problem === null,
+      loading:
+        (this.#opening !== undefined || blip) && this.#header === undefined && problem === null,
       acting: this.#acting ?? null,
       header: this.#header ?? null,
       connection,

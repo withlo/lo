@@ -168,6 +168,21 @@ describe('TabBar', () => {
     expect(other).not.toContain('bg-bg-chrome');
   });
 
+  it('gives its mark up, the ball or the spinner in its place, where its number wouldn’t fit beside it', () => {
+    const [stated] = tabsIn(renderToStaticMarkup(<TabBar tabs={tabs} selected="a" />));
+    const [opening] = tabsIn(
+      renderToStaticMarkup(
+        <TabBar tabs={[{ kind: 'pull', id: 'a', repo: 'fd', number: 2212, loading: true }]} />,
+      ),
+    );
+    // The row measures what fits and names what it gave up, which its stylesheet hides.
+    expect(stated).toMatch(/class="give-up [^"]*" data-tab-label/);
+    expect(stated).toMatch(/role="img" aria-label="Open" data-gives="mark"/);
+    expect(opening).toMatch(
+      /<span data-gives="mark" class="flex flex-none"><span class="[^"]*spinner/,
+    );
+  });
+
   it('names Recent pull requests and Settings, and gives Recent no close button', () => {
     const markup = renderToStaticMarkup(
       <TabBar

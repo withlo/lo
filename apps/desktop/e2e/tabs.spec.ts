@@ -1,3 +1,6 @@
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+
 import type { History } from '@lo/ui/commands';
 import {
   _electron as electron,
@@ -649,31 +652,85 @@ function fits(locator: Locator) {
   }));
 }
 
-test('the narrowest tabs keep their repository, cut short, and their number whole', async ({
-  app,
-  page,
-}) => {
-  await resize(app, page, 1440);
-  const long = 'a-repository-with-a-long-name';
-  await open(
-    page,
-    ...Array.from({ length: 40 }, (_, index) => pull('withlo', long, 123_456 + index)),
-  );
-  await expect.poll(() => openCount(page)).toBe(40);
+/**
+ * Holds every tab in the strip at its narrowest, 120 px, and expects each to keep its repository,
+ * cut short, and its number whole. A strip with more tabs than fit shares what's left over among
+ * those it shows, so they'd be a little wider.
+ */
+async function narrowest(page: Page, repository: string): Promise<void> {
+  // Through the page's own stylesheet: its policy takes no style of a test's.
+  await page.evaluate(() => {
+    const [sheet] = document.styleSheets;
+    sheet?.insertRule(
+      '[role="tab"][data-tab] { max-width: var(--lo-tab-w-min) !important; }',
+      sheet.cssRules.length,
+    );
+  });
   for (const tab of await tabs(page).all()) {
-    const repository = tab.getByText(long, { exact: true });
+    expect((await tab.boundingBox())?.width).toBeLessThan(121);
+    const name = tab.getByText(repository, { exact: true });
     const number = tab.locator('span', { hasText: /^#\d+$/ });
     // Its first letter and an ellipsis, at least.
-    expect(await fits(repository)).toEqual({ width: expect.any(Number), cut: true });
-    expect((await fits(repository)).width).toBeGreaterThanOrEqual(12);
+    expect(await fits(name)).toEqual({ width: expect.any(Number), cut: true });
+    expect((await fits(name)).width).toBeGreaterThanOrEqual(12);
     expect(await fits(number)).toMatchObject({ cut: false });
   }
-  // The number ends before the close button starts, on the tab on screen and one under the pointer.
-  await clear(shown(page));
-  const other = strip(page).getByRole('tab', { selected: false }).first();
-  await other.hover();
-  await clear(other);
-  await expectFits(page);
+}
+
+/** Expects `tab`'s number clear of its close button under the pointer. */
+async function clearHovered(page: Page, tab: Locator): Promise<void> {
+  await holdHover(page, tab);
+  await clear(tab);
+}
+
+test('the narrowest tabs keep their repository, cut short, and their number whole, opening or showing their state', async () => {
+  const long = 'a-repository-with-a-long-name';
+  const openings = Array.from({ length: 40 }, (_, index) => pull('withlo', long, 123_456 + index));
+  // Each still opening, with a spinner in its state's place, as GitHub stays out of reach for less
+  // time than the header's chip waits to say so.
+  const first = await launch({ LO_OFFLINE_AFTER_MS: String(10 * 60_000) });
+  try {
+    await resize(first.app, first.page, 1440);
+    await open(first.page, ...openings);
+    await expect.poll(() => openCount(first.page)).toBe(40);
+    await narrowest(first.page, long);
+    // The number ends before the close button starts, on the tab on screen and one under the
+    // pointer.
+    await clear(shown(first.page));
+    const opening = strip(first.page).locator(
+      '[role="tab"][aria-selected="false"][aria-busy="true"]',
+    );
+    await expect(opening.first()).toBeVisible();
+    await clearHovered(first.page, opening.first());
+    await expectFits(first.page);
+  } finally {
+    await first.app.close();
+  }
+
+  // Every other tab comes back with what GitHub said of it last: its title, and its state's ball.
+  const database = new DatabaseSync(join(dataFolder(), 'lo.db'));
+  try {
+    database
+      .prepare("UPDATE tab_tabs SET title = ?, state = 'open' WHERE number % 2 = 0")
+      .run('Make the tab strip narrower');
+  } finally {
+    database.close();
+  }
+  const second = await launch();
+  try {
+    await resize(second.app, second.page, 1440);
+    await expect.poll(() => openCount(second.page)).toBe(40);
+    await narrowest(second.page, long);
+    const stated = strip(second.page)
+      .getByRole('tab', { selected: false })
+      .filter({ hasText: /Make the tab strip narrower$/ })
+      .first();
+    await expect(stated.locator('[aria-label="Open"]')).toHaveCount(1);
+    await clearHovered(second.page, stated);
+    await expectFits(second.page);
+  } finally {
+    await second.app.close();
+  }
 });
 
 test('a repository with a long name takes half its tab at most, leaving room for the title', async ({
@@ -687,11 +744,13 @@ test('a repository with a long name takes half its tab at most, leaving room for
   expect((box?.width ?? Infinity) * 2).toBeLessThanOrEqual((tab?.width ?? 0) + 1);
 });
 
-/** Starts Lo on the test's data folder, and waits for its window. */
-async function launch(): Promise<{ app: ElectronApplication; page: Page }> {
+/** Starts Lo on the test's data folder, with `env` besides, and waits for its window. */
+async function launch(
+  env: Record<string, string> = {},
+): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({
     args: [appFolder],
-    env: { ...appEnvironment(dataFolder()), ...(await unreachable()) },
+    env: { ...appEnvironment(dataFolder()), ...(await unreachable()), ...env },
     chromiumSandbox: true,
   });
   const page = await drawnWindow(app);
