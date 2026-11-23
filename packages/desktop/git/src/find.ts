@@ -13,23 +13,42 @@ import { type Environment, inheritedEnvironment } from './environment.ts';
 import { Git, Runner } from './git.ts';
 import { oidFromOutput } from './oid.ts';
 import { Child, type Finished } from './spawn.ts';
-import {
-  compareVersions,
-  formatVersion,
-  type GitVersion,
-  MINIMUM_VERSION,
-  parseVersion,
-} from './version.ts';
+import { compareVersions, type GitVersion, MINIMUM_VERSION, parseVersion } from './version.ts';
 
-/** Whether Lo has a git, and if not, why not and how to get one. */
+/**
+ * Why someone besides this user and root could change a program: another user owns it, or its
+ * folder (or one above it), or others can change it or that folder, or its permissions couldn't
+ * be read (`unchecked`), with the system's words (`said`). `path` is what that's true of.
+ */
+export interface Distrust {
+  readonly why: 'owner' | 'writable' | 'folderOwner' | 'folderWritable' | 'unchecked';
+  readonly path: string;
+  readonly said?: string | undefined;
+}
+
+/**
+ * How to get a git Lo can run, on this system: commands to run, each to copy, and on Linux, for a
+ * package that's itself too old, a page that lists newer ones (`page`).
+ */
+export interface Install {
+  readonly commands: readonly string[];
+  readonly page?: string | undefined;
+}
+
+/**
+ * Whether Lo has a git, and if not, why not and how to get one, as parts the app words: none was
+ * found (`missing`); the only one found could be changed by someone else (`distrusted`); or the
+ * newest is older than `minimum`, the version its failed check needs, which is its version, or
+ * whether it can be kept from downloading (`lazyFetch`).
+ */
 export type GitStatus =
   | { readonly status: 'found'; readonly git: Git }
+  | { readonly status: 'missing'; readonly install: Install }
   | {
-      readonly status: 'missing';
-      /** What's wrong, for the user. */
-      readonly message: string;
-      /** How to install git on this system. */
-      readonly install: string;
+      readonly status: 'distrusted';
+      readonly program: string;
+      readonly distrust: Distrust;
+      readonly install: Install;
     }
   | {
       readonly status: 'tooOld';
@@ -37,9 +56,13 @@ export type GitStatus =
       readonly version: GitVersion;
       /** The check it failed: its version, or whether it can be kept from downloading. */
       readonly check: 'version' | 'lazyFetch';
-      readonly message: string;
-      readonly install: string;
+      /** The oldest version that passes it. */
+      readonly minimum: GitVersion;
+      readonly install: Install;
     };
+
+/** The oldest git that can be kept from downloading on its own (`GIT_NO_LAZY_FETCH`). */
+export const LAZY_FETCH_VERSION: GitVersion = { major: 2, minor: 45, patch: 0 };
 
 /** Where git may be besides `PATH`. */
 export interface Places {
@@ -119,9 +142,10 @@ export async function findGit(options: FindOptions): Promise<GitStatus> {
     const distrusted = await distrustProgram(candidate, real, places.groups);
     if (distrusted !== undefined) {
       passedOver ??= {
-        status: 'missing',
-        message: `Lo found git at ${candidate}, but ${distrusted}, so Lo won't run it.`,
-        install: installAdvice(options.platform),
+        status: 'distrusted',
+        program: candidate,
+        distrust: distrusted,
+        install: installAdvice(options.platform, 'missing'),
       };
       continue;
     }
@@ -166,16 +190,14 @@ async function check(
   const { signal } = options;
   const version = options.known ?? (await readVersion(program, inherited, signal));
   if (version === undefined) return missing(platform);
-  const install = installAdvice(platform);
+  const install = installAdvice(platform, 'tooOld');
   if (compareVersions(version, MINIMUM_VERSION) < 0) {
     return {
       status: 'tooOld',
       program,
       version,
       check: 'version',
-      message:
-        `Lo needs git ${formatVersion(MINIMUM_VERSION)} or newer, and ${program} is git ` +
-        `${formatVersion(version)}.`,
+      minimum: MINIMUM_VERSION,
       install,
     };
   }
@@ -191,9 +213,7 @@ async function check(
       program,
       version,
       check: 'lazyFetch',
-      message:
-        `Lo needs a git that can be kept from downloading on its own (GIT_NO_LAZY_FETCH), as ` +
-        `git 2.45 and newer can, and ${program}, git ${formatVersion(version)}, can't.`,
+      minimum: LAZY_FETCH_VERSION,
       install,
     };
   }
@@ -201,21 +221,23 @@ async function check(
 }
 
 function missing(platform: NodeJS.Platform): GitStatus {
-  return { status: 'missing', message: "Lo can't find git.", install: installAdvice(platform) };
+  return { status: 'missing', install: installAdvice(platform, 'missing') };
 }
 
-/** How to install git, or a newer one, on `platform`. */
-export function installAdvice(platform: NodeJS.Platform): string {
+/**
+ * How to install git on `platform`, where none it can run was found (`missing`), or a newer one
+ * (`tooOld`). On a Mac, the Command Line Tools give one, but can carry an old one, so a newer one
+ * comes from Homebrew. On Linux, the system's package manager gives one, and where its package is
+ * itself too old, git-scm.com lists newer ones.
+ */
+export function installAdvice(platform: NodeJS.Platform, need: 'missing' | 'tooOld'): Install {
   if (platform === 'darwin') {
-    return (
-      'Install or update the Xcode Command Line Tools: run `xcode-select --install` in ' +
-      'Terminal. Or install git with Homebrew: `brew install git`.'
-    );
+    return { commands: [need === 'tooOld' ? 'brew install git' : 'xcode-select --install'] };
   }
-  return (
-    "Install or update git with your system's package manager, such as `sudo apt install git` " +
-    'or `sudo dnf install git`. Where it has an older git, git-scm.com lists newer packages.'
-  );
+  return {
+    commands: ['sudo apt install git', 'sudo dnf install git'],
+    page: need === 'tooOld' ? 'https://git-scm.com/downloads/linux' : undefined,
+  };
 }
 
 /** How long a git may take to say its version. */
@@ -356,7 +378,7 @@ async function distrustProgram(
   candidate: string,
   real: string,
   groups: readonly number[],
-): Promise<string | undefined> {
+): Promise<Distrust | undefined> {
   const user = process.getuid?.();
   const ours = (uid: number) => uid === 0 || uid === user;
   // Whether someone besides the owner, root and the trusted groups may write to it.
@@ -364,8 +386,8 @@ async function distrustProgram(
     (info.mode & 0o002) !== 0 || ((info.mode & 0o020) !== 0 && !groups.includes(info.gid));
   try {
     const file = await stat(real);
-    if (!ours(file.uid)) return 'another user owns it';
-    if (othersMayWrite(file)) return 'other users can change it';
+    if (!ours(file.uid)) return { why: 'owner', path: real };
+    if (othersMayWrite(file)) return { why: 'writable', path: real };
     for (const path of new Set([
       real,
       join(await realpath(dirname(candidate)), basename(candidate)),
@@ -373,13 +395,13 @@ async function distrustProgram(
       let child = path;
       for (let folder = dirname(path); ; folder = dirname(folder)) {
         const info = await stat(folder);
-        if (!ours(info.uid)) return `another user owns ${folder}`;
+        if (!ours(info.uid)) return { why: 'folderOwner', path: folder };
         if (othersMayWrite(info)) {
           const nearest = child === path;
           const sticky = (info.mode & 0o1000) !== 0;
           const childOwner = (await lstat(child)).uid;
           if (nearest || !sticky || !ours(childOwner)) {
-            return `other users can change ${folder}`;
+            return { why: 'folderWritable', path: folder };
           }
         }
         if (folder === dirname(folder)) break;
@@ -388,8 +410,50 @@ async function distrustProgram(
     }
     return undefined;
   } catch (error) {
-    return `it can't be checked (${error instanceof Error ? error.message : String(error)})`;
+    const said = error instanceof Error ? error.message : String(error);
+    return { why: 'unchecked', path: real, said };
   }
+}
+
+/** `distrust` in words, for a log or Details: "another user owns /usr/local/bin". */
+export function describeDistrust(distrust: Distrust): string {
+  switch (distrust.why) {
+    case 'owner':
+      return `another user owns ${distrust.path}`;
+    case 'writable':
+      return `other users can change ${distrust.path}`;
+    case 'folderOwner':
+      return `another user owns ${distrust.path}`;
+    case 'folderWritable':
+      return `other users can change ${distrust.path}`;
+    case 'unchecked':
+      return `${distrust.path} can't be checked (${distrust.said ?? 'no reason given'})`;
+    default:
+      throw new Error(
+        `A distrust Lo doesn't know: ${JSON.stringify(distrust.why satisfies never)}`,
+      );
+  }
+}
+
+/**
+ * Why someone besides this user and root could change the program at `program`, links followed,
+ * as parts, or `undefined` when nobody else can: the rule {@link findGit} holds git to, for the
+ * other programs Lo finds and runs, such as `gh`. A program whose link can't be followed is
+ * `unchecked`, with the system's words. `groups` are the groups that may write to it, as
+ * {@link Places.groups} has them.
+ */
+export async function distrustOf(
+  program: string,
+  groups: readonly number[],
+): Promise<Distrust | undefined> {
+  let real: string;
+  try {
+    real = await realpath(program);
+  } catch (error) {
+    const said = error instanceof Error ? error.message : String(error);
+    return { why: 'unchecked', path: program, said };
+  }
+  return distrustProgram(program, real, groups);
 }
 
 /**
@@ -404,7 +468,8 @@ export async function whyDistrusted(
 ): Promise<string | undefined> {
   const real = await realpath(program).catch(() => undefined);
   if (real === undefined) return "it can't be found";
-  return distrustProgram(program, real, groups);
+  const distrust = await distrustProgram(program, real, groups);
+  return distrust === undefined ? undefined : describeDistrust(distrust);
 }
 
 /** Whether `path` is a file this user may run. */

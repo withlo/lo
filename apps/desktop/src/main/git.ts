@@ -12,7 +12,9 @@ import { dirname, isAbsolute, join, normalize } from 'node:path';
 import {
   Cache,
   DEFAULT_CAP,
+  describeDistrust,
   findGit,
+  formatVersion,
   type Git,
   gitAt,
   type GitStatus,
@@ -23,7 +25,8 @@ import {
   unlockCache,
 } from '@lo/git';
 
-import { StartupError } from './startup.ts';
+import type { GitTrouble } from '../ipc/git.ts';
+import { StartupError, type StartupFailure } from './startup.ts';
 
 type Environment = Readonly<Record<string, string | undefined>>;
 
@@ -118,7 +121,7 @@ export function macCaches(options: { run?: Run; uid?: number } = {}): string {
   try {
     said = run('/usr/bin/getconf', ['DARWIN_USER_CACHE_DIR']);
   } catch (error) {
-    throw refuse(`macOS didn't say where that is (${describe(error)})`);
+    throw refuse({ why: 'noLocation', said: describe(error) });
   }
   const folder = said.endsWith('\n') ? said.slice(0, -1) : said;
   const why = whyNotCaches(folder, uid);
@@ -127,7 +130,7 @@ export function macCaches(options: { run?: Run; uid?: number } = {}): string {
   try {
     real = realpathSync(folder);
   } catch (error) {
-    throw refuse(`Lo can't find ${folder} (${describe(error)})`);
+    throw refuse({ why: 'missing', path: folder, said: describe(error) });
   }
   // What Lo uses is checked too, not just what it was named.
   const whyReal = whyNotCaches(real, uid);
@@ -135,10 +138,16 @@ export function macCaches(options: { run?: Run; uid?: number } = {}): string {
   return real;
 }
 
-/** Lo's refusal of the Mac's folder for this user's caches, for `why`. */
-function refuse(why: string): StartupError {
+/** Why Lo won't use a folder for its cache, with the folder and what the system said. */
+export type CacheRefusal = Omit<Extract<StartupFailure, { kind: 'cacheFolder' }>, 'kind'>;
+
+/** Lo's refusal of the Mac's folder for this user's caches, for `refusal`. */
+function refuse(refusal: CacheRefusal): StartupError {
+  const where = refusal.path === undefined ? '' : ` (${refusal.path})`;
+  const said = refusal.said === undefined ? '' : `: ${refusal.said}`;
   return new StartupError(
-    `Lo keeps its cache in the folder macOS keeps for this user's caches, but ${why}, so Lo won't use it.`,
+    { kind: 'cacheFolder', ...refusal },
+    `Lo keeps its cache in the folder macOS keeps for this user's caches${where}, but won't use it: ${refusal.why}${said}`,
   );
 }
 
@@ -147,22 +156,22 @@ function refuse(why: string): StartupError {
  * path, a folder rather than a link to one, owned by the user `uid`, and closed to changes by
  * anyone else.
  */
-export function whyNotCaches(folder: string, uid: number): string | undefined {
+export function whyNotCaches(folder: string, uid: number): CacheRefusal | undefined {
   // Without the slash that ends it, which would have a link followed.
   const path = folder.length > 1 ? folder.replace(/\/+$/, '') : folder;
   if (!isAbsolute(path) || normalize(path) !== path || path.includes('\n')) {
-    return `macOS named ${JSON.stringify(folder)}, which isn't an absolute path`;
+    return { why: 'noLocation', said: JSON.stringify(folder) };
   }
   let found: Stats;
   try {
     found = lstatSync(path);
   } catch (error) {
-    return `Lo can't find ${path} (${describe(error)})`;
+    return { why: 'missing', path, said: describe(error) };
   }
-  if (found.isSymbolicLink()) return `${path} is a link`;
-  if (!found.isDirectory()) return `${path} isn't a folder`;
-  if (found.uid !== uid) return `another user owns ${path}`;
-  if ((found.mode & 0o022) !== 0) return `other users can change ${path}`;
+  if (found.isSymbolicLink()) return { why: 'link', path };
+  if (!found.isDirectory()) return { why: 'notFolder', path };
+  if (found.uid !== uid) return { why: 'owner', path };
+  if ((found.mode & 0o022) !== 0) return { why: 'writable', path };
   return undefined;
 }
 
@@ -679,11 +688,7 @@ class GitHost implements MainGit {
   #find(): Promise<GitStatus> {
     const { settings, env, platform } = this.#options;
     if (settings.program === 'none') {
-      return Promise.resolve({
-        status: 'missing',
-        message: "Lo can't find git.",
-        install: installAdvice(platform),
-      });
+      return Promise.resolve({ status: 'missing', install: installAdvice(platform, 'missing') });
     }
     const { signal } = this.#stopping;
     if (settings.program !== undefined) return gitAt(settings.program, { env, platform, signal });
@@ -746,5 +751,38 @@ async function within(milliseconds: number, promise: Promise<unknown>): Promise<
     await Promise.race([promise, elapsed]);
   } finally {
     clearTimeout(timer);
+  }
+}
+
+/**
+ * Why Lo has no git it can run, as the window hears it: parts, never a sentence. A git someone
+ * else could change names what's true of it, and the system's words, behind Details.
+ */
+export function troubleOf(status: Exclude<GitStatus, { status: 'found' }>): GitTrouble {
+  const install = { commands: [...status.install.commands], page: status.install.page ?? null };
+  switch (status.status) {
+    case 'missing':
+      return { status: 'missing', install };
+    case 'distrusted':
+      return {
+        status: 'distrusted',
+        program: status.program,
+        why: status.distrust.why,
+        details: `${status.program}\n${describeDistrust(status.distrust)}`,
+        install,
+      };
+    case 'tooOld':
+      return {
+        status: 'tooOld',
+        program: status.program,
+        version: formatVersion(status.version),
+        minimum: formatVersion(status.minimum),
+        check: status.check,
+        install,
+      };
+    default:
+      throw new Error(
+        `What Lo found of git isn't known: ${JSON.stringify(status satisfies never)}`,
+      );
   }
 }

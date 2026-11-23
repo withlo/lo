@@ -36,7 +36,7 @@ test('a read past its limit is stopped with everything it started', async () => 
     ].join('\n'),
   });
   const found = await gitAt(program, { env: process.env, platform: process.platform });
-  if (found.status !== 'found') throw new Error(found.message);
+  if (found.status !== 'found') throw new Error(`found ${found.status}`);
   const server = repoServer();
   const remote = server.repo('owner', 'repo');
   const base = parseOid(remote.write('a.txt', 'a\n').commit('base'));

@@ -15,9 +15,10 @@ import { delimiter, isAbsolute, join } from 'node:path';
 import {
   Child,
   defaultPlaces,
+  distrustOf,
   GitError,
   isExecutableFile,
-  whyDistrusted,
+  type Distrust,
   type Places,
 } from '@lo/git';
 import { Token } from '@lo/github';
@@ -84,15 +85,40 @@ export function ghEnvironment(env: Environment): Record<string, string> {
   };
 }
 
-/** Why gh couldn't be found or run, or what it said went wrong, in words for the person. */
+/**
+ * What went wrong with gh: it couldn't be run (`run`), it's too old to list its accounts
+ * (`tooOld`), it took too long (`tooSlow`), or anything else, in gh's own words.
+ */
+export type GhTrouble = 'run' | 'tooOld' | 'tooSlow' | 'other';
+
+/**
+ * Why gh couldn't be run, or what it said went wrong. Its message is for the log; what the window
+ * shows comes from `trouble`, with `said` behind Details.
+ */
 export class GhError extends Error {
   override name = 'GhError';
+  readonly trouble: GhTrouble;
+  /** What gh or the system said, as it came, never a token: empty when neither said anything. */
+  readonly said: string;
+
+  constructor(
+    message: string,
+    options: ErrorOptions & { trouble?: GhTrouble; said?: string } = {},
+  ) {
+    super(message, options);
+    this.trouble = options.trouble ?? 'other';
+    this.said = options.said ?? '';
+  }
 }
 
-/** Where gh is, or why Lo has none. */
+/**
+ * Where gh is, or why Lo has none: none found, or one passed over since someone besides this user
+ * or root could change it (`distrusted`, with where it is and why).
+ */
 export type GhLookup =
   | { readonly kind: 'found'; readonly program: string }
-  | { readonly kind: 'missing'; readonly message: string; readonly passedOver: boolean };
+  | { readonly kind: 'missing' }
+  | { readonly kind: 'distrusted'; readonly program: string; readonly distrust: Distrust };
 
 /** An account gh is signed in to on github.com, as `gh auth status` lists it. */
 export interface GhAccount {
@@ -140,7 +166,7 @@ export class Gh {
    */
   async find(): Promise<GhLookup> {
     const { program } = this.#options;
-    if (program === 'none') return missing();
+    if (program === 'none') return { kind: 'missing' };
     const candidates =
       program === undefined
         ? [...(this.#options.env.PATH ?? '').split(delimiter), ...this.#places.folders]
@@ -154,18 +180,14 @@ export class Gh {
       if (real === undefined || tried.has(real)) continue;
       tried.add(real);
       if (!(await isExecutableFile(candidate))) continue;
-      const distrusted = await whyDistrusted(candidate, this.#places.groups);
-      if (distrusted !== undefined) {
-        passedOver ??= {
-          kind: 'missing',
-          message: `Lo found gh at ${candidate}, but ${distrusted}, so Lo won't run it.`,
-          passedOver: true,
-        };
+      const distrust = await distrustOf(candidate, this.#places.groups);
+      if (distrust !== undefined) {
+        passedOver ??= { kind: 'distrusted', program: candidate, distrust };
         continue;
       }
       return { kind: 'found', program: candidate };
     }
-    return passedOver ?? missing();
+    return passedOver ?? { kind: 'missing' };
   }
 
   /** gh's version, such as `2.62.0`, or nothing when it doesn't say. */
@@ -230,6 +252,7 @@ export class Gh {
       if (error instanceof GitError && error.detail.kind === 'tooSlow') {
         throw new GhError(`gh didn't ${what} within ${timeout / 1000} s, so Lo stopped it.`, {
           cause: error,
+          trouble: 'tooSlow',
         });
       }
       if (error instanceof GitError && error.detail.kind === 'tooLarge') {
@@ -237,27 +260,25 @@ export class Gh {
           cause: error,
         });
       }
-      throw new GhError(`Lo couldn't run gh at ${program}.`, { cause: error });
+      throw new GhError(`Lo couldn't run gh at ${program}.`, {
+        cause: error,
+        trouble: 'run',
+        said: error instanceof Error ? error.message : String(error),
+      });
     }
     // A gh stopped as Lo quits ends without an error of its own.
     if (signal.aborted) throw signal.reason;
     if (finished.code !== 0) {
       const said = summarize(finished.stderr);
       if (said.includes('unknown flag: --json')) {
-        throw new GhError('Lo needs a newer gh to list its accounts. Update gh and try again.');
+        throw new GhError('Lo needs a newer gh to list its accounts.', { trouble: 'tooOld', said });
       }
-      throw new GhError(said === '' ? `gh couldn't ${what}.` : `gh couldn't ${what}: ${said}`);
+      throw new GhError(said === '' ? `gh couldn't ${what}.` : `gh couldn't ${what}: ${said}`, {
+        said,
+      });
     }
     return finished.stdout;
   }
-}
-
-function missing(): GhLookup {
-  return {
-    kind: 'missing',
-    message: "Lo can't find gh, GitHub's command-line tool.",
-    passedOver: false,
-  };
 }
 
 /** Anything that looks like a GitHub token, which never reaches an error message. */

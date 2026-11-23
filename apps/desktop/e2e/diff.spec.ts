@@ -846,6 +846,11 @@ test.describe('without git', () => {
   }) => {
     await drawn(page, 'github');
     await expect(page.getByText('GitHub’s diff', { exact: true })).toBeVisible();
+    // The tab says how to get Git, as a command to copy.
+    const banners = page.locator('[data-lo-banners]');
+    await expect(banners).toContainText('Can’t find Git');
+    await expect(banners.locator('code').first()).not.toBeEmpty();
+    await expect(banners.getByRole('button', { name: 'Copy' }).first()).toBeVisible();
     // The unchanged lines before src/parser.ts's hunk aren't GitHub's to show.
     await focusDiff(page);
     await press(page, ']', 'f', ']', 'f', ']', 'f', ']', 'f', ']', 'f');

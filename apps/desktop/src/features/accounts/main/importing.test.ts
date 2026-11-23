@@ -100,16 +100,9 @@ describe('importing from gh', () => {
 
   it('says why there is nothing to list', async () => {
     const none = new Gh({ env: {}, platform: process.platform, program: 'none' });
-    expect(await listGh(none, [], () => undefined)).toEqual({
-      kind: 'missing',
-      message: "Lo can't find gh, GitHub's command-line tool.",
-      passedOver: false,
-    });
+    expect(await listGh(none, [], () => undefined)).toEqual({ kind: 'missing' });
     const { gh, log } = setUp({ status: 'not json' });
-    expect(await listGh(gh, [], log)).toMatchObject({
-      kind: 'failed',
-      message: "gh's list of accounts isn't what Lo expects.",
-    });
+    expect(await listGh(gh, [], log)).toMatchObject({ kind: 'failed', why: 'other' });
   });
 
   it('imports an account after checking its token', async () => {
@@ -172,14 +165,18 @@ describe('importing from gh', () => {
       {
         ok: false,
         login: 'rozed-bot',
-        why: { kind: 'unknown', details: "Lo can't find gh, GitHub's command-line tool." },
+        why: { kind: 'failed', cause: { kind: 'unknown' }, details: undefined },
       },
     ]);
     const { gh, log } = setUp();
     expect(
       await importFromGh({ gh, fetch, urls: GITHUB_URLS, add: refusing, log }, ['rozed-bot']),
     ).toEqual([
-      { ok: false, login: 'rozed-bot', why: { kind: 'unknown', details: 'No keyring answered.' } },
+      {
+        ok: false,
+        login: 'rozed-bot',
+        why: { kind: 'failed', cause: { kind: 'unknown' }, details: 'No keyring answered.' },
+      },
     ]);
   });
 });

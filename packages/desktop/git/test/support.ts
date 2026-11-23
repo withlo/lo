@@ -41,7 +41,7 @@ export function systemPath(): string {
 /** The git Lo would find in `env`: the test's own environment unless it says otherwise. */
 export async function foundGit(env: Environment = process.env): Promise<Git> {
   const status = await findGit({ env, platform: process.platform });
-  if (status.status !== 'found') throw new Error(`the tests need git: ${status.message}`);
+  if (status.status !== 'found') throw new Error(`the tests need git: found ${status.status}`);
   return status.git;
 }
 

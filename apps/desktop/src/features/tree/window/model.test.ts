@@ -192,7 +192,7 @@ describe('the tree', () => {
   it('shows only the changed files when that’s all main has, saying why', () => {
     const state: TreeState = {
       ...E2E,
-      listing: { kind: 'changed', why: 'GitHub lists only part of this repository’s files.' },
+      listing: { kind: 'changed', why: { kind: 'truncated' } },
     };
     expect(lines(model(state, new Map(), none, NO_CHOICES).rows)).toEqual(
       lines(model(E2E, new Map(), none, { ...NO_CHOICES, changedOnly: true }).rows),

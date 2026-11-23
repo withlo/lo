@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 're
 import { useStore } from 'zustand';
 
 import { IpcError } from '../../../ipc/contract.ts';
+import { keptIn } from '../../../window/explain.ts';
 import { closeDialog } from './dialogs.ts';
 import { enterOffControls } from './focus.ts';
 import { labels } from './labels.ts';
@@ -40,7 +41,7 @@ export function SignOutView({
   // With one account there's nothing to pick. With several, nothing is picked until the person does.
   const only = logins.length === 1 ? logins[0] : undefined;
   const [picked, setPicked] = useState<string>();
-  const [error, setError] = useState<{ login: string; details: string }>();
+  const [error, setError] = useState<{ login: string; leftover: boolean; details: string }>();
   const [busy, setBusy] = useState(false);
   const chosen = only ?? picked;
   // With several, the first account takes focus: the main button waits for a choice.
@@ -80,6 +81,8 @@ export function SignOutView({
           setBusy(false);
           setError({
             login: chosen,
+            // Signed out, with its sign-in left behind: nothing signs out again.
+            leftover: thrown instanceof IpcError && thrown.code === 'leftover',
             details: thrown instanceof IpcError ? thrown.message : String(thrown),
           });
         },
@@ -115,11 +118,18 @@ export function SignOutView({
         keys: labels('enter'),
         disabled: chosen === undefined ? 'Choose an account' : undefined,
         onRun: signOut,
+        again: error?.leftover ? null : undefined,
       }}
       problem={
         error === undefined
           ? undefined
-          : { title: `Couldn’t sign out of ${error.login}`, details: error.details }
+          : error.leftover
+            ? {
+                title: `Couldn’t delete ${error.login}’s sign-in`,
+                reason: `It’s still in ${keptIn()}.`,
+                details: error.details,
+              }
+            : { title: `Couldn’t sign out of ${error.login}`, details: error.details }
       }
       leaveKeys={labels('esc')}
       initialFocus={only === undefined ? choice : undefined}

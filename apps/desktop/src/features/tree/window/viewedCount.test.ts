@@ -44,7 +44,7 @@ function treeOf(
   return {
     id,
     at: AT,
-    listing: { kind: 'changed', why: 'Only the changed files show.' },
+    listing: { kind: 'changed', why: { kind: 'tooManyBytes' } },
     from: 'local',
     changes,
     changesFrom,

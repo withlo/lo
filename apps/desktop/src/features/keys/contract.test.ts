@@ -34,17 +34,20 @@ it('sends the keymap file as text within the limit, and a problem with it', () =
   expect(keymapFile.safeParse({ text: 'bind x diff.markViewed', canOpen: true }).success).toBe(
     true,
   );
-  expect(keymapFile.safeParse({ text: '', problem: 'Too big.', canOpen: false }).success).toBe(
-    true,
-  );
+  expect(
+    keymapFile.safeParse({ text: '', problem: { kind: 'tooLarge', size: 2e6 }, canOpen: false })
+      .success,
+  ).toBe(true);
   expect(keymapFile.safeParse({ text: 'x'.repeat(KEYMAP_SIZE_LIMIT), canOpen: true }).success).toBe(
     true,
   );
   for (const given of [
     { text: 'x'.repeat(KEYMAP_SIZE_LIMIT + 1), canOpen: true },
-    { text: '', problem: 'x'.repeat(301), canOpen: false },
+    // A problem crosses as a kind, never a sentence.
+    { text: '', problem: 'Too big.', canOpen: false },
+    { text: '', problem: { kind: 'unreadable', code: 'x'.repeat(41) }, canOpen: false },
     { text: '', path: '/etc/passwd', canOpen: true },
-    { problem: 'No text.', canOpen: false },
+    { problem: { kind: 'notText' }, canOpen: false },
     // Whether it can be opened is always said.
     { text: '' },
   ]) {

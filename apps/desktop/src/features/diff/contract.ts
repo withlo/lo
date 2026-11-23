@@ -5,6 +5,7 @@
 // the head it drew stays on screen. It also reads a file whole, changed or not, for the whole-file
 // view.
 
+import type { TooLarge } from '@lo/review';
 import { z } from 'zod';
 
 import { defineContract, reply } from '../../ipc/contract.ts';
@@ -126,16 +127,25 @@ export const version = z.enum(['old', 'new']);
 export type Version = z.output<typeof version>;
 
 /**
+ * Why Lo won't show a file whole, besides its size: the revisions compared are too large to replay
+ * the older side's changes onto (`compared`), the pull request shares no history with its base, so
+ * there's no older side (`unrelated`), or it's a submodule, another repository's commit.
+ */
+export type WholeRefusal = 'compared' | 'unrelated' | 'submodule';
+
+/**
  * A whole file, as `diff.whole` replies: its text; or what its whole-file view says in place of
  * its lines. A file larger than Lo loads at once is `large` until it's asked for anyway; one that
  * isn't text is `binary`; one too large to show even then, or with a line too long to lay out, is
- * `refused`, with why; and until the local copy has the head on screen, it's `waiting`.
+ * `tooLarge`, by which limit; one Lo won't show for another reason is `refused`, by why; and until
+ * the local copy has the head on screen, it's `waiting`.
  */
 export type WholeText =
   | { kind: 'text'; text: string }
   | { kind: 'large'; size: number }
   | { kind: 'binary'; size: number }
-  | { kind: 'refused'; why: string }
+  | { kind: 'tooLarge'; why: TooLarge }
+  | { kind: 'refused'; why: WholeRefusal }
   | { kind: 'waiting' };
 
 export const contract = defineContract('diff', {

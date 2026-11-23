@@ -154,10 +154,7 @@ describe('TreeTab', () => {
     const { tree, settled } = treeTab({ github: (_acting, request) => request(client) });
     tree.update(e2eInfo());
     const state = await settled((sent) => sent.changes !== null);
-    expect(state.listing).toEqual({
-      kind: 'changed',
-      why: 'GitHub lists only part of this repository’s files, so the tree shows the changed ones until the local copy is ready.',
-    });
+    expect(state.listing).toEqual({ kind: 'changed', why: { kind: 'truncated' } });
     expect(changes(state)).toEqual(E2E_CHANGES);
   });
 
@@ -169,13 +166,18 @@ describe('TreeTab', () => {
     });
     tree.update(e2eInfo());
     const failed = await settled((state) => state.listing.kind === 'changed');
+    // Why, as a kind, with what was said behind Details.
     expect(failed).toMatchObject({
       listing: {
         kind: 'changed',
-        why: 'Lo couldn’t read the repository’s files from GitHub (GitHub is down), so the tree shows the changed ones until the local copy is ready.',
+        why: { kind: 'failed', cause: { kind: 'unknown' }, details: 'GitHub is down' },
       },
       changes: null,
-      problem: 'Lo couldn’t read the changed files from GitHub: GitHub is down',
+      problem: {
+        what: 'changes',
+        why: { kind: 'github', cause: { kind: 'unknown' } },
+        details: 'GitHub is down',
+      },
     });
     expect(lines).toContain('reading the files from GitHub: GitHub is down');
 
@@ -193,8 +195,11 @@ describe('TreeTab', () => {
     const { tree, settled } = treeTab({ github: () => Promise.reject(gone) });
     tree.update(e2eInfo());
     const failed = await settled((state) => state.listing.kind === 'changed');
-    const said = 'You signed out of rozed-bot. Sign in to load this pull request’s files.';
-    expect(failed).toMatchObject({ listing: { kind: 'changed', why: said }, problem: said });
+    const cause = { kind: 'signedOut', login: 'rozed-bot' };
+    expect(failed).toMatchObject({
+      listing: { kind: 'changed', why: { kind: 'failed', cause } },
+      problem: { what: 'changes', why: { kind: 'github', cause } },
+    });
     expect(JSON.stringify(failed)).not.toContain('token');
   });
 
@@ -660,7 +665,8 @@ describe('a stack’s layer’s tree', () => {
     );
     const state = await settled((sent) => sent.changesFrom === 'github' && sent.changes !== null);
     expect(state).toMatchObject({ at: C, start: B, partial: false });
-    expect(state.problem).toContain('larger than 200 MB');
+    // The diff says the changes are too large to read here: the tree says nothing of it.
+    expect(state.problem?.what).not.toBe('changes');
     expect(changes(state)).toEqual(['added e2/c.txt']);
   });
 

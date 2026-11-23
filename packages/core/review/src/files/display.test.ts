@@ -17,15 +17,14 @@ const encode = (text: string): Uint8Array => new TextEncoder().encode(text);
 
 test('past fifty mebibytes or with a mebibyte long line a file is too large to show', () => {
   expect(tooLargeToShow(MAX_SHOWN_BYTES, [])).toBeUndefined();
-  expect(tooLargeToShow(MAX_SHOWN_BYTES + 1024 * 1024, [])).toBe(
-    '51.0 MiB, more than the 50 MiB Lo shows',
-  );
+  expect(tooLargeToShow(MAX_SHOWN_BYTES + 1024 * 1024, [])).toEqual({
+    kind: 'size',
+    size: MAX_SHOWN_BYTES + 1024 * 1024,
+  });
   const line = new Uint8Array(MAX_LINE_BYTES).fill(0x78);
   expect(tooLargeToShow(undefined, [line, encode('short\n')])).toBeUndefined();
   const longer = new Uint8Array([...line, ...encode('x\nshort\n')]);
-  expect(tooLargeToShow(undefined, [encode('short\n'), longer])).toBe(
-    'it has a line over 1 MiB long',
-  );
+  expect(tooLargeToShow(undefined, [encode('short\n'), longer])).toEqual({ kind: 'longLine' });
 });
 
 function file(path: string, changedLines: number, size: number | undefined): ChangedFile {

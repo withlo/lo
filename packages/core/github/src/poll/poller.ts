@@ -165,7 +165,7 @@ export interface Offline {
   since: number;
   /** When the next request will try. */
   retryAt: number;
-  /** What went wrong, as a sentence. */
+  /** What went wrong, as GitHub or the system said it, for Details. */
   error: string;
 }
 
@@ -2254,7 +2254,8 @@ export class Poller {
       const detail = detailOf(result.error);
       if (detail.kind === 'network' || detail.kind === 'tokenUnavailable') {
         if (read === undefined) this.#schedule(target)?.serve(ticket);
-        this.#backOff(new GithubError(detail).message, now, wall);
+        const failure = new GithubError(detail);
+        this.#backOff(failure.message, failure.said(), now, wall);
       } else if (detail.kind === 'rateLimited') {
         // Taken in from the client above, as it heard it.
       } else if (detail.kind === 'unauthorized' && this.#accounts.isSignedOut(this.#login)) {
@@ -2547,9 +2548,9 @@ export class Poller {
 
   /**
    * Waits longer each time before trying again, while GitHub can't be reached or the account's
-   * token can't be read, and says so in the status.
+   * token can't be read, and says so in the status, with what GitHub or the system `said`.
    */
-  #backOff(error: string, now: number, wall: number): void {
+  #backOff(error: string, said: string, now: number, wall: number): void {
     const attempts = (this.#offline?.attempts ?? 0) + 1;
     const { offlineFirstWait, offlineMaxWait, jitter, random } = this.#config;
     const wait = backoff(attempts, offlineFirstWait, offlineMaxWait, jitter, random());
@@ -2557,7 +2558,7 @@ export class Poller {
     this.#offline = {
       attempts,
       retryAt: now + wait,
-      status: { since: this.#offline?.status.since ?? wall, retryAt: wall + wait, error },
+      status: { since: this.#offline?.status.since ?? wall, retryAt: wall + wait, error: said },
     };
     this.#changed();
   }
@@ -2580,7 +2581,7 @@ export class Poller {
       this.#signedOut = true;
     } else {
       this.#schedule(target)?.serve(ticket);
-      this.#backOff(message, this.#config.monotonic(), this.#config.now());
+      this.#backOff(message, message, this.#config.monotonic(), this.#config.now());
     }
     this.#refreshStatus();
   }

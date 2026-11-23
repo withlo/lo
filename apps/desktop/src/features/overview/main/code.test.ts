@@ -432,7 +432,7 @@ describe('codeReply', () => {
     ).toEqual({ kind: 'waiting' });
     expect(
       await codeReply(
-        { kind: 'noGit', message: 'No git.', install: 'Install it.' },
+        { kind: 'noGit', git: { status: 'missing', install: { commands: [], page: null } } },
         never,
         commit,
         files,
@@ -440,7 +440,7 @@ describe('codeReply', () => {
     ).toEqual({ kind: 'noGit' });
     expect(
       await codeReply(
-        { kind: 'failed', failure: 'repoNotFound', message: 'GitHub has no such repository.' },
+        { kind: 'failed', failure: 'repoNotFound', details: 'GitHub has no such repository.' },
         never,
         commit,
         files,

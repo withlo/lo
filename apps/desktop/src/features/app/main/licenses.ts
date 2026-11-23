@@ -7,12 +7,20 @@
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import {
-  textEditorCommand,
-  type Launch,
-  type Linux,
-  type OpenResult,
-} from '../../../main/editor.ts';
+import { textEditorCommand, type Launch, type Linux } from '../../../main/editor.ts';
+
+/**
+ * What opening the licenses came to: they opened, or why not: the file isn't in this copy of Lo
+ * (`missing`), there's no app for text (`noApp`, on Linux) or no way to open one on this system
+ * (`unsupported`), or the app didn't start (`launch`), with what the system said.
+ */
+export type LicensesOpened =
+  | { readonly ok: true }
+  | {
+      readonly ok: false;
+      readonly why: 'missing' | 'noApp' | 'unsupported' | 'launch';
+      readonly said?: string | undefined;
+    };
 
 /**
  * Where the licenses file is: in the app's resources, outside the asar, once packaged, so the
@@ -34,21 +42,16 @@ export function licensesPath(options: {
 export async function openLicenses(
   path: string,
   options: { platform: NodeJS.Platform; launch: Launch; linux: Linux; editor?: string | undefined },
-): Promise<OpenResult> {
+): Promise<LicensesOpened> {
   const info = await stat(path).catch(() => undefined);
-  if (!info?.isFile()) return { ok: false, reason: "Lo couldn't find its licenses file." };
+  if (!info?.isFile()) return { ok: false, why: 'missing' };
   const opener = await textEditorCommand(options.platform, path, options);
-  if (!opener) {
-    const reason =
-      options.platform === 'linux'
-        ? "Lo couldn't find the app for text files (`xdg-mime query default text/plain`), so it didn't open the licenses file."
-        : "Lo can't open the licenses file on this system.";
-    return { ok: false, reason };
-  }
+  if (!opener) return { ok: false, why: options.platform === 'linux' ? 'noApp' : 'unsupported' };
   try {
     await options.launch(opener.command, opener.args);
-  } catch {
-    return { ok: false, reason: "Lo couldn't open the licenses file in a text editor." };
+  } catch (error) {
+    const said = error instanceof Error ? error.message : String(error);
+    return { ok: false, why: 'launch', said };
   }
   return { ok: true };
 }

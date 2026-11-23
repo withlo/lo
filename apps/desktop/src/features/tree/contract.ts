@@ -4,6 +4,7 @@
 
 import { z } from 'zod';
 
+import { cause, details } from '../../ipc/cause.ts';
 import { defineContract, reply } from '../../ipc/contract.ts';
 import { oid, tabId } from '../tab/contract.ts';
 
@@ -102,6 +103,35 @@ export const changed = z.strictObject({
 export type Changed = z.output<typeof changed>;
 
 /**
+ * Why the tree lists only the changed files: the repository's paths come to more than the listing
+ * takes (`tooManyBytes`), it has more than `limit` files (`tooManyFiles`), GitHub listed only part
+ * of it (`truncated`), or GitHub couldn't be read, by its cause, until the local copy is ready.
+ */
+export const unlisted = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('tooManyBytes') }),
+  z.strictObject({ kind: z.literal('tooManyFiles'), limit: z.number().int().positive() }),
+  z.strictObject({ kind: z.literal('truncated') }),
+  z.strictObject({ kind: z.literal('failed'), cause, details: details.optional() }),
+]);
+export type Unlisted = z.output<typeof unlisted>;
+
+/**
+ * What the tree couldn't read: the files, or which of them changed (`what`), and why: the local
+ * copy couldn't be used (`local`), the files changed between two revisions are over `limit` bytes
+ * (`tooLarge`), or GitHub's cause. What Git or GitHub said is behind Details.
+ */
+export const treeProblem = z.strictObject({
+  what: z.enum(['files', 'changes']),
+  why: z.discriminatedUnion('kind', [
+    z.strictObject({ kind: z.literal('local') }),
+    z.strictObject({ kind: z.literal('tooLarge'), limit: z.number().int().positive() }),
+    z.strictObject({ kind: z.literal('github'), cause }),
+  ]),
+  details: details.optional(),
+});
+export type TreeProblem = z.output<typeof treeProblem>;
+
+/**
  * The repository's files, as main has them:
  *
  * - `loading` until it has any;
@@ -114,7 +144,7 @@ export const listing = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('loading') }),
   z.strictObject({ kind: z.literal('whole'), entries: z.array(entry) }),
   z.strictObject({ kind: z.literal('folders'), root: z.array(entry) }),
-  z.strictObject({ kind: z.literal('changed'), why: z.string() }),
+  z.strictObject({ kind: z.literal('changed'), why: unlisted }),
 ]);
 export type Listing = z.output<typeof listing>;
 
@@ -139,7 +169,7 @@ export const treeState = z.strictObject({
   changes: z.array(changed).nullable(),
   changesFrom: source.nullable(),
   partial: z.boolean(),
-  problem: z.string().nullable(),
+  problem: treeProblem.nullable(),
   /** How many unchanged files it leaves out, since their paths are longer than {@link PATH_LIMIT} bytes. */
   omitted: z.number().int().nonnegative(),
   compared: z.array(changed).nullable(),

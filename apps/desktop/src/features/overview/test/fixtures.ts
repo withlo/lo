@@ -378,8 +378,7 @@ export function mainFile(entries: readonly FixtureEntry[], path: string): Overvi
   const entry = entries.find((each) => key(each.path) === key(encoder.encode(path)));
   if (!entry) return { kind: 'missing' };
   if (entry.kind !== 'file') return { kind: 'notFile', is: entry.kind };
-  if (entry.size === undefined)
-    return { kind: 'unread', why: "GitHub didn't say how large it is." };
+  if (entry.size === undefined) return { kind: 'unread', why: '' };
   if (entry.size > SIZE_ONLY) return { kind: 'file', size: entry.size, bytes: null };
   if (!entry.bytes) return { kind: 'unread', why: 'GitHub failed to send it.' };
   return { kind: 'file', size: entry.bytes.length, bytes: entry.bytes };

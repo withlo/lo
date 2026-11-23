@@ -226,7 +226,7 @@ describe('a pull request’s diff', { timeout: 60_000 }, () => {
     const [text] = await diff.texts(APP_PULL.head, null, null, null, 'local', [
       find(state, 'src/parser.ts').place,
     ]);
-    expect(text).toEqual({ kind: 'missing', why: expect.stringContaining('a line over 1 MiB') });
+    expect(text).toEqual({ kind: 'missing', why: expect.stringContaining('a line over 1 MB') });
   });
 
   it('reads GitHub’s files and patches until the local copy is ready, which then replaces them', async () => {
@@ -598,8 +598,8 @@ describe('a whole file', { timeout: 60_000 }, () => {
     long.diff.update(e2eInfo(READY));
     await long.settled((each) => each.from === 'local');
     expect(await long.diff.whole(APP_PULL.head, 'new', at('README.md'), true)).toEqual({
-      kind: 'refused',
-      why: 'it has a line over 1 MiB long',
+      kind: 'tooLarge',
+      why: { kind: 'longLine' },
     });
 
     // Past 50 MiB, it isn't read at all.
@@ -609,8 +609,8 @@ describe('a whole file', { timeout: 60_000 }, () => {
     huge.diff.update(e2eInfo(READY));
     await huge.settled((each) => each.from === 'local');
     expect(await huge.diff.whole(APP_PULL.head, 'new', at('README.md'), true)).toEqual({
-      kind: 'refused',
-      why: expect.stringContaining('more than the 50 MiB Lo shows'),
+      kind: 'tooLarge',
+      why: { kind: 'size', size: 60 * 1024 * 1024 },
     });
   });
 });

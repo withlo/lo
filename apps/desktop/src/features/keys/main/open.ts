@@ -7,13 +7,26 @@
 
 import { realpath } from 'node:fs/promises';
 
-import {
-  textEditorCommand,
-  type Launch,
-  type Linux,
-  type OpenResult,
-} from '../../../main/editor.ts';
+import { textEditorCommand, type Launch, type Linux } from '../../../main/editor.ts';
 import { ensureKeymap, readKeymap } from './keymap.ts';
+
+/**
+ * What opening the keymap file came to: it opened, or why not: it couldn't be made (`create`),
+ * it's a file Lo won't open (`refused`), there's no app for text (`noApp`, on Linux) or no way to
+ * open one on this system (`unsupported`), or the app didn't start (`launch`). `said` is what the
+ * system said, as it came.
+ */
+export type KeymapOpened =
+  | { readonly ok: true }
+  | {
+      readonly ok: false;
+      readonly why: 'create' | 'refused' | 'noApp' | 'unsupported' | 'launch';
+      readonly said?: string | undefined;
+    };
+
+function said(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 /**
  * Opens the keymap file at `path` as text, writing it first with a commented header if there is
@@ -24,34 +37,27 @@ import { ensureKeymap, readKeymap } from './keymap.ts';
 export async function openKeymapFile(
   path: string,
   options: { platform: NodeJS.Platform; launch: Launch; linux: Linux; editor?: string | undefined },
-): Promise<OpenResult> {
+): Promise<KeymapOpened> {
   try {
     await ensureKeymap(path);
-  } catch {
-    return { ok: false, reason: "Lo couldn't create the keymap file." };
+  } catch (error) {
+    return { ok: false, why: 'create', said: said(error) };
   }
   let resolved: string;
   try {
     resolved = await realpath(path);
-  } catch {
-    // A link to nothing, or a circle of them: the file's own reading says which.
-    const file = await readKeymap(path);
-    return { ok: false, reason: file.problem ?? "Lo couldn't find the keymap file." };
+  } catch (error) {
+    // A link to nothing, or a circle of them: the window has the file's own reading, which says.
+    return { ok: false, why: 'refused', said: said(error) };
   }
   const file = await readKeymap(resolved);
-  if (!file.canOpen) return { ok: false, reason: file.problem ?? "Lo won't open the keymap file." };
+  if (!file.canOpen) return { ok: false, why: 'refused' };
   const opener = await textEditorCommand(options.platform, resolved, options);
-  if (!opener) {
-    const reason =
-      options.platform === 'linux'
-        ? "Lo couldn't find the app for text files (`xdg-mime query default text/plain`), so it didn't open the keymap file."
-        : "Lo can't open the keymap file on this system.";
-    return { ok: false, reason };
-  }
+  if (!opener) return { ok: false, why: options.platform === 'linux' ? 'noApp' : 'unsupported' };
   try {
     await options.launch(opener.command, opener.args);
-  } catch {
-    return { ok: false, reason: "Lo couldn't open the keymap file in a text editor." };
+  } catch (error) {
+    return { ok: false, why: 'launch', said: said(error) };
   }
   return { ok: true };
 }

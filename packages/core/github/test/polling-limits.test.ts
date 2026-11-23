@@ -383,8 +383,8 @@ test('a graphql rate limit with some left is a secondary limit', async () => {
   });
 });
 
-/** What a request fails with while the network is down. */
-const NETWORK_DOWN = "couldn't reach GitHub: fetch failed: the network is down";
+/** What the system says a request fails with while the network is down. */
+const NETWORK_DOWN = 'fetch failed: the network is down';
 
 test('offline it backs off and answers from the cache with its age', async () => {
   const r = recorded();

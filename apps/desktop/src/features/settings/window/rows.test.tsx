@@ -555,11 +555,12 @@ describe('Keys', () => {
     act(() => {
       applyKeymapFile({
         text: '',
-        problem: "The keymap file isn't a plain file, so Lo doesn't read or open it.",
+        problem: { title: 'Can’t read the keymap file', reason: 'It isn’t a file.' },
         canOpen: false,
       });
     });
-    expect(container.textContent).toContain("The keymap file isn't a plain file");
+    expect(container.textContent).toContain('Can’t read the keymap file');
+    expect(container.textContent).toContain('It isn’t a file.');
     const [open] = container.querySelectorAll('button');
     expect(open?.getAttribute('aria-disabled')).toBe('true');
     expect(container.textContent).toContain('The keymap file can’t be opened');
