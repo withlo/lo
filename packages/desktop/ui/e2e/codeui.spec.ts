@@ -162,7 +162,7 @@ test('the hover card keeps inside a window narrower than it is', async () => {
 test('a status item opens its details from the keyboard, which take focus, close on Esc and give it back', async () => {
   const page = await open();
   await page.evaluate(() => window.parts.show('status', 'dark', 1280));
-  const item = page.getByRole('button', { name: 'Java failed' });
+  const item = page.getByRole('button', { name: 'Java isn’t running' });
   await item.focus();
   await page.keyboard.press('Enter');
   const details = page.getByRole('dialog');
@@ -170,7 +170,7 @@ test('a status item opens its details from the keyboard, which take focus, close
   // The one thing to do has focus, and `Tab` reaches the log's button.
   await expect(details.getByRole('button', { name: 'Restart' })).toBeFocused();
   await page.keyboard.press('Tab');
-  await expect(details.getByRole('button', { name: 'Show the log' })).toBeFocused();
+  await expect(details.getByRole('button', { name: 'Show log' })).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(details).toHaveCount(0);
   await expect(item).toBeFocused();
