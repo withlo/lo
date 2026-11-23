@@ -16,7 +16,7 @@
       "!{projectRoot}/**/*.test.ts?(x)",
       "!{projectRoot}/test/**/*",
       "!{projectRoot}/e2e/**/*",
-      "!{projectRoot}/vitest.config.ts"
+      "!{projectRoot}/vitest.*.ts"
     ]
   },
   "plugins": [

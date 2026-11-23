@@ -156,7 +156,12 @@ right side; don't loosen the rules.
 
 Unit tests are `*.test.ts` files beside the code, run by Vitest. The root `vitest.config.ts` has one
 project per package. Nx runs one project's tests at a time, and Vitest uses two workers, or all of a
-CI runner's cores.
+CI runner's cores. A test that runs git, cloning and fetching repositories it builds, takes longer
+when the machine is busy than the 5 s a test gets, so a package whose tests mostly run git sets a
+longer `testTimeout` for the whole project (`@lo/git`). The desktop app's tests that import
+`@lo/testing/git`, directly or through a module they import, are found by `gitTests()` in
+`apps/desktop/vitest.config.ts` and run as `@lo/desktop:git`, a project of their own with 30 s; the
+rest of the desktop's tests keep the default.
 
 What `ui`'s components do that only a real browser shows, such as where `Tab` moves focus, is tested
 by Playwright specs in `packages/desktop/ui/e2e/`. Each builds its own page with Vite and opens it

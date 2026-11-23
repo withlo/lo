@@ -3,7 +3,8 @@
 // last repeating, and once the merge is sent, those recorded after, in order. Served as it is, the
 // tenth read already answers as merged. With `sooner`, a read recorded only after the merge, made
 // sooner, gets its first answer; without it, none. A write never does: on `app_comments_box`, a
-// comment's deletion sent before the writes recorded ahead of it gets no answer either way.
+// comment's deletion sent before the writes recorded ahead of it gets no answer either way. A stage
+// answers a poll of its own last state that the recording ended before, as any cassette does.
 
 import { readFileSync } from 'node:fs';
 

@@ -652,6 +652,51 @@ test('clearing a viewed file’s mark opens it again, and the cursor stays', asy
   expect(await cursorPath(page)).toBe('src/format.ts');
 });
 
+/**
+ * Waits until the ball in the header of `path`'s file has stayed where it is, and the diff hasn't
+ * scrolled, for `frames` frames in a row. What arrives after the diff is drawn, as a banner does,
+ * pushes it down, and the view scrolls to put back what's on screen: a ball that moves from under
+ * the pointer, or a scroll, takes a tooltip away before it shows, and it isn't brought back.
+ */
+async function atRest(page: Page, path: string, frames = 30): Promise<void> {
+  await page.evaluate(
+    ({ file, still }) =>
+      new Promise<void>((resolve, reject) => {
+        const view = document.querySelector('.lo-diffview');
+        let scrolled = false;
+        const onScroll = () => {
+          scrolled = true;
+        };
+        view?.addEventListener('scroll', onScroll, { capture: true, passive: true });
+        let last = '';
+        let quiet = 0;
+        let seen = 0;
+        const frame = () => {
+          // A header is two bands, one in each column: the ball is in the newer column's.
+          const rect = [...document.querySelectorAll('.lo-diffview .cm-editor .lo-diffhead')]
+            .filter((head) => head instanceof HTMLElement && head.dataset.path === file)
+            .map((head) => head.querySelector('.lo-diffhead__ball'))
+            .find(Boolean)
+            ?.getBoundingClientRect();
+          const now = rect ? JSON.stringify(rect) : '';
+          quiet = now !== '' && now === last && !scrolled ? quiet + 1 : 0;
+          last = now;
+          scrolled = false;
+          seen += 1;
+          if (quiet < still && seen <= 1_200) {
+            requestAnimationFrame(frame);
+            return;
+          }
+          view?.removeEventListener('scroll', onScroll, true);
+          if (quiet >= still) resolve();
+          else reject(new Error(`the ball of ${file} never came to rest`));
+        };
+        requestAnimationFrame(frame);
+      }),
+    { file: path, still: frames },
+  );
+}
+
 test('a click on a file’s viewed ball unmarks it, and another marks it', async ({ page, fake }) => {
   test.setTimeout(60_000);
   fake.marks.set('src/format.ts', 'VIEWED');
@@ -660,9 +705,15 @@ test('a click on a file’s viewed ball unmarks it, and another marks it', async
   await expect(mark).toHaveRole('checkbox');
   await expect(mark).toHaveAccessibleName('Viewed');
   await expect(mark).toHaveAttribute('aria-checked', 'true');
-  // Its tooltip is what a click does.
-  await mark.hover();
-  await expect(page.getByRole('tooltip')).toContainText('Unmark viewed');
+  // Its tooltip is what a click does. It comes once the pointer has rested on the ball for half a
+  // second, so the diff must be at rest first; and if something still moved it, the pointer leaves
+  // and arrives again.
+  await atRest(page, 'src/format.ts');
+  await expect(async () => {
+    await page.mouse.move(0, 0);
+    await mark.hover();
+    await expect(page.getByRole('tooltip')).toContainText('Unmark viewed', { timeout: 2_000 });
+  }).toPass({ timeout: 20_000 });
   await mark.click();
   await expect(mark).toHaveAttribute('aria-checked', 'false');
   await expect.poll(() => fake.writes).toEqual(['UnmarkFileAsViewed src/format.ts']);
