@@ -11,6 +11,7 @@ import {
 import { Avatar } from './Avatar.tsx';
 import type { BannerAction } from './Banner.tsx';
 import { Button } from './Button.tsx';
+import { CODE_FOCUS } from './commands/index.ts';
 import { useGiveUp } from './giveUp.ts';
 import { onVim, vimOn } from './vim.ts';
 import { Key } from './Key.tsx';
@@ -809,6 +810,7 @@ export function CommentBox({
       role="group"
       aria-label={label}
       data-lo-scope="box"
+      data-lo-focus={CODE_FOCUS}
       data-focused={focused ? '' : undefined}
       className={`${box({ focused })} ${className}`}
       onFocus={() => {

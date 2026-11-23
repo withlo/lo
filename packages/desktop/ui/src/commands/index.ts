@@ -76,7 +76,7 @@ export {
   type KeymapLine,
 } from './keymap.ts';
 export { CAUGHT_ATTRIBUTE, catchFocus } from './focus.ts';
-export { KEY_EVENT, listen } from './listener.ts';
+export { KEY_EVENT, listen, type ListenOptions } from './listener.ts';
 export {
   Bindings,
   declaredBindings,
@@ -127,8 +127,10 @@ export {
   type RegistryOptions,
 } from './registry.ts';
 export {
+  CODE_FOCUS,
   codeScopes,
   engineScopes,
+  FOCUS_ATTRIBUTE,
   findScope,
   hasEditMenu,
   isEditable,

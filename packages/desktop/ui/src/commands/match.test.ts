@@ -359,6 +359,7 @@ describe('text', () => {
       word: { label: 'Word', group: 'Find', keys: ['alt+backspace'], when: { scope: 'tree' } },
       all: { label: 'All', group: 'Find', keys: ['cmd+a'], when: { scope: 'palette' } },
       top: { label: 'Top', group: 'Move', keys: ['shift+home', 'cmd+up'] },
+      end: { label: 'End', group: 'Move', keys: ['ctrl+e', 'alt+shift+up'] },
       later: { label: 'Later', group: 'Move', keys: ['g cmd+z'], when: { scope: 'box' } },
       erase: {
         label: 'Erase the query',
@@ -385,6 +386,11 @@ describe('text', () => {
         expect(typed(['cmd+backspace'], box, system), `on ${system}`).toEqual(['pass']);
       }
       expect(typed(['cmd+up'], field)).toEqual(['pass']);
+      // Ctrl+↑ on Linux, a paragraph up; on macOS, ⌃E is the line's end, and ⌥⇧↑ selects to a
+      // paragraph's start.
+      expect(typed(['cmd+up'], field, 'linux')).toEqual(['pass']);
+      expect(typed(['ctrl+e'], field)).toEqual(['pass']);
+      expect(typed(['alt+shift+up'], field)).toEqual(['pass']);
       expect(typed(['alt+backspace'], { scope: 'tree', text: true, editable: true })).toEqual([
         'pass',
       ]);
@@ -411,8 +417,9 @@ describe('text', () => {
         'run editing.clear',
       ]);
       expect(typed(['cmd+up'], diff)).toEqual(['run editing.top']);
-      // Each system has its own: ⌘↑ is the document's top on macOS, and no text key on Linux.
-      expect(typed(['cmd+up'], field, 'linux')).toEqual(['run editing.top']);
+      // Each system has its own: ⌃E is the line's end on macOS, and no text key on Linux.
+      expect(typed(['ctrl+e'], field, 'linux')).toEqual(['run editing.end']);
+      expect(typed(['alt+shift+up'], field, 'linux')).toEqual(['run editing.end']);
     });
 
     test('one later in a sequence counts too', () => {

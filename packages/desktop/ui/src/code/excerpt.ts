@@ -22,6 +22,8 @@ import { Decoration, type DecorationSet, EditorView, gutter, GutterMarker } from
 import type { FileDiff } from '@lo/diff';
 
 import {
+  CODE_FOCUS,
+  FOCUS_ATTRIBUTE,
   type HeaderTarget,
   KEY_EVENT,
   type KeySource,
@@ -336,6 +338,7 @@ class Excerpt implements ExcerptView {
     this.dom = document.createElement('div');
     this.dom.className = 'lo-excerpt';
     this.dom.setAttribute(SCOPE_ATTRIBUTE, 'file');
+    this.dom.setAttribute(FOCUS_ATTRIBUTE, CODE_FOCUS);
     parent.append(this.dom);
     // Both sides' numbers with a diff; the range's side's alone without one.
     const sides: readonly Side[] = init.diff ? ['old', 'new'] : [this.#side];

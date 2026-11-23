@@ -38,6 +38,11 @@ function pressNowhere(key: string): KeyboardEvent {
   return event;
 }
 
+/** Focuses the tree's row, as what catches focus that fell to the page does. */
+function focusRow(): void {
+  element('row').focus();
+}
+
 /** Records the keys that reach `id` itself, as a widget or CodeMirror would see them. */
 function widget(id: string): void {
   element(id).addEventListener('keydown', (event) => {
@@ -57,7 +62,7 @@ beforeEach(() => {
     <div data-lo-scope="dialog"><input id="name"><button id="ok">OK</button></div>
     <div data-lo-scope="menu"><div role="menuitem" tabindex="-1" id="item">Copy</div></div>
     <div data-lo-scope="palette"><input id="query"></div>
-    <div data-lo-scope="overview"><div id="block" tabindex="0"></div></div>
+    <div data-lo-scope="overview" id="overview"><div id="block" tabindex="0"></div></div>
     <input id="loose"><button id="plain">Plain</button>
     <main id="middle" data-lo-middle tabindex="-1"></main>
   `;
@@ -247,6 +252,39 @@ describe('the listener', () => {
       });
     }
     expect(ids()).toEqual(['erase.line', 'erase.line', 'erase.line']);
+  });
+
+  test('reports a field that has focus in a scope listed as holding none', () => {
+    stop();
+    const reports: string[] = [];
+    stop = listen(window, registry, {
+      fieldless: ['tree', 'overview'],
+      report: (message) => reports.push(message),
+    });
+    element('row').focus();
+    element('block').focus();
+    element('query').focus();
+    // A read-only field edits nothing.
+    const shown = document.createElement('input');
+    shown.readOnly = true;
+    element('overview').append(shown);
+    shown.focus();
+    expect(reports).toEqual([]);
+    const filter = document.createElement('input');
+    element('tree').append(filter);
+    filter.focus();
+    expect(reports).toEqual([
+      '`tree` is listed as holding no field, but a field there has focus: the keys that edit text run commands in it.',
+    ]);
+  });
+
+  test('matches a key pressed on the page where focus went as it was sent, as when it was caught', () => {
+    stop();
+    window.addEventListener('keydown', focusRow, { capture: true });
+    stop = listen(window, registry);
+    expect(pressNowhere('e').defaultPrevented).toBe(true);
+    window.removeEventListener('keydown', focusRow, { capture: true });
+    expect(ids()).toEqual(['diff.markViewed']);
   });
 
   test('sends ↓ and ↑ for j and k in a menu', () => {

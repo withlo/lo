@@ -11,3 +11,11 @@
 // - `tree`: the file tree's rows, under its controls.
 
 export const FIELDLESS: readonly string[] = ['noMatch', 'overview', 'recent', 'threads', 'tree'];
+
+// The commands that run everywhere but in a field, which keeps their key, as one that edits text.
+//
+// - `keys.back`: `⌃O` on macOS, which opens a line in a field. Once Esc has left the field, or
+//   closed the dialog or the palette it's in, `⌃O` goes back, and Back is in the palette itself,
+//   the Go menu and the window's right-click menu.
+
+export const LEFT_TO_FIELDS: readonly string[] = ['keys.back'];

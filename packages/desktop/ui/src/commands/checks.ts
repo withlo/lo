@@ -315,16 +315,26 @@ export function checkKeys(features: readonly Declarations[]): string[] {
 /**
  * Text-editing keys: an editable field keeps the keys that edit its text (`textEditingKeys`), so a
  * command bound to one never runs while a field has focus. Each such command says how it's meant:
- * it edits that field itself (`editsField`), or every scope it applies in is one of `fieldless`,
- * which hold no field. Any other, for anywhere or for a scope that can hold one, fails, named with
- * its keys. So does one that says `editsField` with no such key, and a scope in `fieldless` that
- * no feature declares, or that's a code view's, which holds Vim's prompt and its search.
+ * it edits that field itself (`editsField`), every scope it applies in is one of `fieldless`,
+ * which hold no field, or it's one of `kept`, which run everywhere else and leave the key to a
+ * field that has focus. Any other, for anywhere or for a scope that can hold one, fails, named with
+ * its keys. So does one that says `editsField` with no such key, a scope in `fieldless` that no
+ * feature declares, or that's a code view's, which holds Vim's prompt and its search, and a command
+ * in `kept` that no feature declares, or that a field no longer keeps a key of.
  */
 export function checkEditingKeys(
   features: readonly Declarations[],
   fieldless: readonly string[],
+  kept: readonly string[] = [],
 ): string[] {
   const problems: string[] = [];
+  const declared = new Set(features.flatMap(commandsOf).map(({ id }) => id));
+  for (const id of kept) {
+    if (!declared.has(id)) {
+      problems.push(`${id} is listed as leaving its key to a field, but no feature declares it.`);
+    }
+  }
+  const keeps = new Set(kept);
   const known = new Set(scopesOf(features));
   const views = new Set<string>(codeScopes);
   for (const scope of fieldless) {
@@ -349,9 +359,18 @@ export function checkEditingKeys(
       }
       continue;
     }
-    if (keys.length === 0) continue;
     const scopes = listOf(command.when?.scope);
-    if (scopes.length > 0 && scopes.every((scope) => noField.has(scope))) continue;
+    const fine =
+      keys.length === 0 || (scopes.length > 0 && scopes.every((scope) => noField.has(scope)));
+    if (keeps.has(command.id)) {
+      if (fine) {
+        problems.push(
+          `${command.id} is listed as leaving its key to a field, but a field keeps none of its keys.`,
+        );
+      }
+      continue;
+    }
+    if (fine) continue;
     const named = [...new Set(keys)];
     problems.push(
       `${listed(named)} (${command.id}) ${named.length === 1 ? 'edits' : 'edit'} text, which a field that has focus keeps: give the command scopes that hold no field, or editsField if it edits that field itself.`,

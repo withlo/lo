@@ -144,9 +144,12 @@ function selecting(moves: readonly string[]): string[] {
 
 /**
  * The keys that edit text in a field, on each system, in Lo's notation: deleting a word, or to the
- * line's start, selecting everything, undoing and redoing, and moving the caret by word, line and
- * document, with Shift to select. In an editable field they're the field's, and run no command but
- * one that edits that field itself (`editsField`).
+ * line's start, selecting everything, undoing and redoing, and moving the caret by word, line,
+ * paragraph and document, with Shift to select. On macOS they include the Control keys every text
+ * field takes from Emacs: `⌃A` and `⌃E` to the line's start and end, `⌃B`, `⌃F`, `⌃P` and `⌃N` a
+ * letter or a line at a time (with Shift to select), `⌃H` and `⌃D` to delete a letter, `⌃K` to cut
+ * to the line's end, `⌃T` to swap two letters and `⌃O` to open a line. In an editable field
+ * they're the field's, and run no command but one that edits that field itself (`editsField`).
  */
 export const textEditingKeys: Readonly<Record<System, readonly string[]>> = {
   mac: [
@@ -156,8 +159,15 @@ export const textEditingKeys: Readonly<Record<System, readonly string[]>> = {
     'cmd+a',
     'cmd+z',
     'cmd+shift+z',
-    ...selecting(['alt+left', 'alt+right', 'cmd+left', 'cmd+right', 'cmd+up', 'cmd+down']),
+    ...selecting(['alt+left', 'alt+right', 'alt+up', 'alt+down']),
+    ...selecting(['cmd+left', 'cmd+right', 'cmd+up', 'cmd+down']),
     ...selecting(['home', 'end']),
+    ...selecting(['ctrl+a', 'ctrl+e', 'ctrl+b', 'ctrl+f', 'ctrl+p', 'ctrl+n']),
+    'ctrl+h',
+    'ctrl+d',
+    'ctrl+k',
+    'ctrl+t',
+    'ctrl+o',
   ],
   linux: [
     'ctrl+backspace',
@@ -166,7 +176,7 @@ export const textEditingKeys: Readonly<Record<System, readonly string[]>> = {
     'ctrl+z',
     'ctrl+shift+z',
     'ctrl+y',
-    ...selecting(['ctrl+left', 'ctrl+right', 'ctrl+home', 'ctrl+end']),
+    ...selecting(['ctrl+left', 'ctrl+right', 'ctrl+up', 'ctrl+down', 'ctrl+home', 'ctrl+end']),
     ...selecting(['home', 'end']),
   ],
 };

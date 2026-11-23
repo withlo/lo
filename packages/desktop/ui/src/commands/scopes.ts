@@ -22,6 +22,16 @@ export const codeScopes = ['diff', 'file', 'peek', 'box'] as const;
  */
 export const TAB_ATTRIBUTE = 'data-lo-tab';
 
+/**
+ * The attribute that names, as a selector, what in a scope takes focus the scope catches when the
+ * focused element leaves the page (`catchFocus`), in place of the scope's own element: a code
+ * view's text, `.cm-content`, where its cursor and Vim keys are.
+ */
+export const FOCUS_ATTRIBUTE = 'data-lo-focus';
+
+/** What a code view names as its focus target: its editor's text. */
+export const CODE_FOCUS = '.cm-content';
+
 /** A code view's Vim mode, or what a view with no Vim is as to Lo's keys. */
 export type Mode = 'normal' | 'visual' | 'insert';
 

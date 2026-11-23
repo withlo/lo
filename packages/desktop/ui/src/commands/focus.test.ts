@@ -51,6 +51,7 @@ beforeEach(() => {
 afterEach(() => {
   stop();
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 describe('focus that falls to the page with what had it', () => {
@@ -105,6 +106,94 @@ describe('focus that falls to the page with what had it', () => {
     expect(document.activeElement).toBe(element('diff'));
     expect(peek.hasAttribute('tabindex')).toBe(false);
     expect(peek.hasAttribute(CAUGHT_ATTRIBUTE)).toBe(false);
+  });
+});
+
+describe('a scope that names what takes its focus', () => {
+  beforeEach(() => {
+    // A diff names its text, of which it has a pane for each side. A box in it is its own.
+    document.body.innerHTML = `
+      <div data-lo-scope="diff" id="diff" data-lo-focus=".cm-content">
+        <div data-lo-scope="box" id="box" data-lo-focus=".cm-content">
+          <div class="cm-content" id="text" tabindex="-1"></div>
+          <button id="send">Send</button>
+        </div>
+        <div class="cm-content" id="old" tabindex="-1"></div>
+        <div class="cm-content" id="new" tabindex="-1"></div>
+        <button id="tip">Show the tip</button>
+      </div>
+    `;
+  });
+
+  test('gives it to the first it names, not one in a scope inside it, and leaves the scope as it was', () => {
+    element('tip').focus();
+    leave('tip');
+    settle();
+    expect(document.activeElement).toBe(element('old'));
+    const diff = element('diff');
+    expect(diff.hasAttribute(CAUGHT_ATTRIBUTE)).toBe(false);
+    expect(diff.hasAttribute('tabindex')).toBe(false);
+  });
+
+  test('gives it to the one that had focus last, while it’s still there', () => {
+    element('new').focus();
+    element('tip').focus();
+    leave('tip');
+    settle();
+    expect(document.activeElement).toBe(element('new'));
+
+    element('send').focus();
+    leave('send');
+    settle();
+    expect(document.activeElement).toBe(element('text'));
+  });
+});
+
+describe('a scope that caught focus', () => {
+  test('is as it was once focus leaves it for the page, but not as the window loses focus', () => {
+    const threads = element('threads');
+    element('again').focus();
+    leave('again');
+    settle();
+    expect(document.activeElement).toBe(threads);
+    // The window losing focus leaves the scope focused, to come back to.
+    threads.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }));
+    vi.runOnlyPendingTimers();
+    expect(threads.hasAttribute(CAUGHT_ATTRIBUTE)).toBe(true);
+    // A click on nothing puts focus on the page.
+    threads.blur();
+    vi.runOnlyPendingTimers();
+    expect(threads.hasAttribute('tabindex')).toBe(false);
+    expect(threads.hasAttribute(CAUGHT_ATTRIBUTE)).toBe(false);
+  });
+});
+
+describe('focus the browser dropped without a word', () => {
+  test('is caught by the next key pressed on the page, before anything else sees the key', () => {
+    let seen: Element | null = null;
+    const look = () => {
+      seen = document.activeElement;
+    };
+    window.addEventListener('keydown', look, { capture: true });
+    element('again').focus();
+    // No focusout, as when the browser drops focus quietly.
+    element('again').remove();
+    expect(document.activeElement).toBe(document.body);
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true }));
+    window.removeEventListener('keydown', look, { capture: true });
+    expect(document.activeElement).toBe(element('threads'));
+    expect(seen).toBe(element('threads'));
+  });
+
+  test('stays on the page after a click on nothing, once what had it goes', () => {
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+    const again = element('again');
+    again.focus();
+    again.blur();
+    settle();
+    again.remove();
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true }));
+    expect(document.activeElement).toBe(document.body);
   });
 });
 

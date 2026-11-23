@@ -51,16 +51,20 @@ code view and comment box follows at once.
   command a key does, on what was clicked.
 - **A key that edits text never runs a command in a field that can be edited.** The keys are those
   that delete a word or to the line's start (`⌥⌫`, `⌘⌫`, `⌥⌦`; Ctrl+Backspace and Ctrl+Delete on
-  Linux), select all, undo and redo, and move the caret or the selection by word, line and document
-  (`⌥←` `⌥→`, `⌘←` `⌘→`, `⌘↑` `⌘↓`, Home and End, with and without `⇧`; Ctrl with the arrows, Home
-  and End on Linux). `textEditingKeys` in the command engine lists each system's. A field that can
-  be edited is an input or text area that isn't read-only, or editable content, such as a comment
-  box's text, in any mode; a code view's read-only text isn't one. There the keys are the field's,
-  whatever the scope. A command on one of them goes in a scope that holds no field, as Clear
-  filter's `⌘⌫` works in Recent's list and not in the filter field above it. Only a command that
-  changes the text of the field it's pressed in says `editsField`, which gives it the keys there.
-  `checkEditingKeys` fails on any other, naming it; the app lists the scopes that hold no field in
-  `window/commands/fieldless.ts`.
+  Linux), select all, undo and redo, and move the caret or the selection by word, line, paragraph
+  and document (`⌥←` `⌥→` `⌥↑` `⌥↓`, `⌘←` `⌘→` `⌘↑` `⌘↓`, Home and End, with and without `⇧`; Ctrl
+  with the arrows, Home and End on Linux). On macOS they also take in the `⌃` keys every text field
+  has from Emacs: `⌃A` `⌃E` `⌃B` `⌃F` `⌃P` `⌃N` (with and without `⇧`), `⌃H` `⌃D` `⌃K` `⌃T` and
+  `⌃O`. `textEditingKeys` in the command engine lists each system's. A field that can be edited is
+  an input or text area that isn't read-only, or editable content, such as a comment box's text, in
+  any mode; a code view's read-only text isn't one. There the keys are the field's, whatever the
+  scope. A command on one of them goes in a scope that holds no field, as Clear filter's `⌘⌫` works
+  in Recent's list and not in the filter field above it. Only a command that changes the text of the
+  field it's pressed in says `editsField`, which gives it the keys there. `checkEditingKeys` fails
+  on any other, naming it, but those the app lists as leaving their key to a field: Back's `⌃O` goes
+  back everywhere but in a field on macOS, which opens a line with it. The app lists both in
+  `window/commands/fieldless.ts`, and the window logs an error when a field has focus in a scope
+  listed as holding none, as the check is wrong then.
 
 ## Focus
 
@@ -82,8 +86,12 @@ code view and comment box follows at once.
   engine), a frame after the element goes, once React, Base UI and a closing popup have done their
   own focus work, and only while focus is still on the body. Focus that went anywhere by then, as a
   dialog giving it back to its trigger, stays there, and so does focus that left an element still on
-  the page, by a click on nothing or the window losing focus. A scope that can't take focus is made
-  to (`tabIndex = -1`) only while it holds what it caught, and draws no ring then.
+  the page, by a click on nothing or the window losing focus. Should focus fall without a word, the
+  next key pressed on the body catches it, before the key is matched. A scope can name what takes
+  the focus it catches (`data-lo-focus`, a selector): a code view names its text, `.cm-content`,
+  where its cursor and Vim keys are, and the pane that had focus last takes it again. Else the scope
+  takes it itself, made focusable (`tabIndex = -1`) if it can't be, and drawing no ring, until focus
+  leaves it, for anywhere but the window losing focus.
 - **A better place than the scope is the view's to give.** Where one exists, such as the field a
   button was beside, the stack's tree above the note that held a Try again, or a dialog's main
   button, the view moves focus there itself as the element goes, and the window's handler finds
