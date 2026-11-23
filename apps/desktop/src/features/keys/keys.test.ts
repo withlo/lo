@@ -70,6 +70,21 @@ describe("the registry's own keys", () => {
       expect(runs('ctrl+o', view('box'), system)).toBeUndefined();
     }
   });
+
+  it('⌃o goes back in no field on macOS, which opens a line with it there', () => {
+    const fields: Focus[] = [
+      { scope: 'dialog', text: true, editable: true },
+      { scope: 'palette', text: true, editable: true },
+      { scope: 'window', text: true, editable: true },
+    ];
+    for (const field of fields) {
+      expect(runs('ctrl+o', field), `in ${field.scope}`).toBeUndefined();
+      expect(runs('ctrl+o', field, 'linux'), `in ${field.scope}`).toBe('keys.back');
+    }
+    // Out of the field, or in one that's read-only, it goes back.
+    expect(runs('ctrl+o', { scope: 'dialog', text: false })).toBe('keys.back');
+    expect(runs('ctrl+o', { scope: 'palette', text: true })).toBe('keys.back');
+  });
 });
 
 describe('the keymap file', () => {

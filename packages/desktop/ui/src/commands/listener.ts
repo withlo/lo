@@ -8,7 +8,7 @@
 import { holdRegistry } from './control.ts';
 import { contradicts, eventStrokes, type KeyEventLike, type Layout } from './notation.ts';
 import type { Registry } from './registry.ts';
-import { endsTab, findScope, isNowhere, textKind } from './scopes.ts';
+import { endsTab, findScope, isEditable, isNowhere, textKind } from './scopes.ts';
 
 type Win = Window & typeof globalThis;
 
@@ -31,6 +31,18 @@ interface Keyboard {
   getLayoutMap?(): Promise<Layout>;
 }
 
+/** How `listen` checks the scopes it's given. */
+export interface ListenOptions {
+  /**
+   * The scopes said to hold no field, so that the keys that edit text run commands there
+   * (`checkEditingKeys`). Focus on an editable element whose nearest scope is one of them is
+   * reported, as the check is then wrong.
+   */
+  readonly fieldless?: readonly string[] | undefined;
+  /** Where that report goes: `console.error` unless given. */
+  readonly report?: ((message: string) => void) | undefined;
+}
+
 /**
  * Starts listening for keys in `win`. Returns a function that stops.
  *
@@ -42,7 +54,9 @@ interface Keyboard {
  * out of it, focus is sent back. Focus a widget moves itself, while handling the key, stays where
  * it went.
  */
-export function listen(win: Win, registry: Registry): () => void {
+export function listen(win: Win, registry: Registry, options: ListenOptions = {}): () => void {
+  const fieldless = new Set(options.fieldless);
+  const report = options.report ?? ((message: string) => console.error(message));
   /** A `Tab` the browser may still act on, pressed in a scope that ends it. */
   let tab: { event: KeyboardEvent; from: Element; scope: Element } | undefined;
   let tabTimer: ReturnType<typeof setTimeout> | undefined;
@@ -97,7 +111,12 @@ export function listen(win: Win, registry: Registry): () => void {
     const reading = { system: registry.system, layout };
     const handled = registry.handle(
       { strokes: eventStrokes(event, reading), repeat: event.repeat, composing: composing(event) },
-      { scope, text: textKind(element), nowhere: isNowhere(element) },
+      {
+        scope,
+        text: textKind(element),
+        nowhere: isNowhere(element),
+        editable: isEditable(element),
+      },
       () =>
         (element ?? win.document.body).dispatchEvent(new win.Event(KEY_EVENT, { bubbles: true })),
     );
@@ -129,7 +148,13 @@ export function listen(win: Win, registry: Registry): () => void {
 
   const onFocusIn = (event: FocusEvent) => {
     const into = event.target instanceof win.Element ? event.target : null;
-    registry.focusMoved({ scope: findScope(into), text: textKind(into) }, undefined);
+    const intoScope = findScope(into);
+    if (fieldless.has(intoScope.name) && isEditable(into)) {
+      report(
+        `\`${intoScope.name}\` is listed as holding no field, but a field there has focus: the keys that edit text run commands in it.`,
+      );
+    }
+    registry.focusMoved({ scope: intoScope, text: textKind(into) }, undefined);
     const noted = tab;
     if (!noted || !(event.target instanceof win.Node)) return;
     if (noted.scope.contains(event.target) || !noted.from.isConnected) return;
@@ -195,9 +220,15 @@ export function listen(win: Win, registry: Registry): () => void {
   };
 }
 
-/** The element a key event is for: its target, or the focused element. */
+/**
+ * The element a key event is for: its target, or the focused element. A key pressed on the body is
+ * for what focus went to while it was dispatched, as when `catchFocus` caught it first.
+ */
 function focused(win: Win, event: Event): Element | null {
-  return event.target instanceof win.Element ? event.target : win.document.activeElement;
+  const { activeElement, body } = win.document;
+  if (event.target === body && activeElement !== null && activeElement !== body)
+    return activeElement;
+  return event.target instanceof win.Element ? event.target : activeElement;
 }
 
 /** Whether a key is part of an IME composition, including the keydown that starts one. */

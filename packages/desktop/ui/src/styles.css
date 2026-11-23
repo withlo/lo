@@ -24,9 +24,10 @@
    which what's beside them doesn't clip. Where focus is shown by something inside, the element
    that holds it draws none: a list or tree shows it on its active row, a code view with its
    cursor, and a pane, such as the overview, on the block or thing focused in it. Otherwise a ring
-   would box in the whole list, tree, editor or pane, besides the row, cursor or block. An element
-   that draws its own focus some other way sets `shadow-none`, which the utilities layer lets
-   win. */
+   would box in the whole list, tree, editor or pane, besides the row, cursor or block. A scope that
+   caught focus the focused element took with it as it left the page (`data-lo-caught`) draws none
+   either: the reader didn't put it there. An element that draws its own focus some other way sets
+   `shadow-none`, which the utilities layer lets win. */
 @layer base {
   :focus {
     outline: none;
@@ -40,6 +41,7 @@
   }
   .lo-app [aria-activedescendant]:focus-visible,
   .lo-app [data-lo-middle]:focus-visible,
+  .lo-app [data-lo-caught]:focus-visible,
   .lo-app [data-lo-overview]:focus-visible,
   .lo-app .lo-ov:focus-visible,
   .lo-app .cm-editor :is(.cm-content, .cm-scroller):focus-visible {

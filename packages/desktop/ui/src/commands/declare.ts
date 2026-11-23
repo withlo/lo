@@ -110,6 +110,13 @@ export interface Declaration {
    * keymap file can't change them.
    */
   readonly editor?: true;
+  /**
+   * It edits the field that has focus itself, so its keys run there even where they're keys that
+   * edit text (`textEditingKeys`: `⌘⌫`, `⌥←`, `⌘A` and the like), which an editable field otherwise
+   * keeps for its own text. Only for a command that changes that field's text; any other on such a
+   * key goes in a scope that holds no field (`checkEditingKeys`).
+   */
+  readonly editsField?: true;
   /** Running it records the place it leaves in the tab's history first. */
   readonly jump?: boolean;
   /** A held key runs it again with each repeat. Without it, a held key runs it once. */
@@ -246,7 +253,17 @@ export function defineCommands<const D extends Record<string, Declaration>>(
         );
       }
       const extra = (
-        ['vim', 'targets', 'menu', 'bar', 'count', 'jump', 'repeat', 'overVim'] as const
+        [
+          'vim',
+          'targets',
+          'menu',
+          'bar',
+          'count',
+          'jump',
+          'repeat',
+          'overVim',
+          'editsField',
+        ] as const
       )
         .filter((field) => declaration[field] !== undefined)
         .join(', ');
