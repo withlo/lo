@@ -448,7 +448,8 @@ export type Compared = z.output<typeof compared>;
  *
  * - `waiting` until Lo knows what to fetch and has git;
  * - `noGit` when Lo has no git it can run, with why, and how to get one;
- * - `fetching`, with what git is doing, on the `attempt`th try;
+ * - `fetching`, on the `attempt`th try, with how far git has got as it says it (`progress`),
+ *   once it has said;
  * - `ready`, with the head on screen, the base branch's tip it was fetched with, and where the
  *   pull request's changes start: where the two branched, or, for a stack's layer the stacks
  *   feature compares with another commit, `from`, where the head and that commit meet;

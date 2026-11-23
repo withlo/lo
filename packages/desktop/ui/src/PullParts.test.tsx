@@ -29,7 +29,12 @@ const header = (
     head={{ branch: 'app/head', fork: 'someone/e2e' }}
     base={{ branch: 'app/base' }}
     acting={{ login: 'rozed-bot' }}
-    connection={{ tone: 'warn', label: 'Offline', details: <p>Checked 5 min ago</p> }}
+    connection={{
+      kind: 'offline',
+      tone: 'warn',
+      label: 'Offline',
+      details: <p>Checked 5 min ago</p>,
+    }}
   >
     <span>Comparing</span>
   </PRHeader>
@@ -201,7 +206,7 @@ describe('the parts’ styles', () => {
         <PRHeader
           number={1}
           acting="anonymous"
-          connection={{ tone: 'danger', label: 'Signed out' }}
+          connection={{ kind: 'signedOut', tone: 'danger', label: 'Signed out' }}
         />
         <BannerPlaceProvider value={{ more: { count: 1, next: () => {} }, row: { current: null } }}>
           <Banner

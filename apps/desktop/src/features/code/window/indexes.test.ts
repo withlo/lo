@@ -6,12 +6,11 @@ import { indexItem } from './indexes.ts';
 
 describe('the code index’s status item', () => {
   it('counts while it builds, names the index once it’s ready, and says how much a partial one has', () => {
-    // Its details say how far, in files, with a meter.
+    // Its details say how far, in files.
     expect(indexItem({ kind: 'building', done: 1204, total: 3880 })).toEqual({
       ball: 'working',
       text: 'Indexing code · 1,204 / 3,880',
-      lines: ['1,204 of 3,880 files'],
-      progress: { done: 1204, total: 3880 },
+      lines: ['1,204 / 3,880 files'],
     });
     expect(indexItem({ kind: 'building', done: 0, total: 0 })).toEqual({
       ball: 'working',

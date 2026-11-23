@@ -19,7 +19,13 @@ import { StatePill, type PullRequestState } from './StatePill.tsx';
  * limit reached", or "Signed out", in danger. A click on it opens its details under it.
  */
 export interface HeaderConnection {
+  /**
+   * What's wrong, which picks its icon: GitHub can't be reached (`offline`), the account is signed
+   * out, the rate limit is reached, or a read failed.
+   */
+  kind: 'offline' | 'signedOut' | 'rateLimited' | 'failed';
   tone: 'warn' | 'danger';
+  /** One or two words: "Offline", "GitHub error". */
   label: string;
   /**
    * What a click on the chip opens: the line that says why, when the tab last heard from GitHub,
@@ -149,7 +155,7 @@ function ConnectionChip({ connection }: { connection: HeaderConnection }) {
   const self = useRef<HTMLElement | null>(null);
   const face = (
     <>
-      <ConnectionIcon tone={connection.tone} />
+      <ConnectionIcon kind={connection.kind} />
       {connection.label}
     </>
   );
@@ -225,17 +231,44 @@ function ChipDetails({
   );
 }
 
-function ConnectionIcon({ tone }: { tone: HeaderConnection['tone'] }) {
+/** The chip's icon for what's wrong: a struck cloud offline, a clock for the rate limit. */
+function ConnectionIcon({ kind }: { kind: HeaderConnection['kind'] }) {
   return (
-    <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-      {tone === 'danger' ? (
+    <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true" data-icon={kind}>
+      <ConnectionPaths kind={kind} />
+    </svg>
+  );
+}
+
+function ConnectionPaths({ kind }: { kind: HeaderConnection['kind'] }) {
+  switch (kind) {
+    case 'offline':
+      return (
+        <path d="M5.2 5.3a3.75 3.75 0 0 0-.7 7.2h6.7M9.6 4.1a3.75 3.75 0 0 1 3.9 6.6M2 2l12 12" />
+      );
+    case 'signedOut':
+      return (
         <>
           <circle cx="8" cy="8" r="6.25" />
           <path d="M8 4.75v3.5M8 10.75v.01" />
         </>
-      ) : (
-        <path d="M5.2 5.3a3.75 3.75 0 0 0-.7 7.2h6.7M9.6 4.1a3.75 3.75 0 0 1 3.9 6.6M2 2l12 12" />
-      )}
-    </svg>
-  );
+      );
+    case 'rateLimited':
+      return (
+        <>
+          <circle cx="8" cy="8" r="6.25" />
+          <path d="M8 4.75V8l2.25 1.5" />
+        </>
+      );
+    case 'failed':
+      return (
+        <>
+          <path d="M8 2.25 14.25 13.25H1.75Z" />
+          <path d="M8 6.5v3M8 11.25v.01" />
+        </>
+      );
+    default:
+      kind satisfies never;
+      return null;
+  }
 }

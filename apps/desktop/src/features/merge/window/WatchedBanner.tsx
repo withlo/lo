@@ -7,7 +7,7 @@
 import { Banner, type BannerAction } from '@lo/ui';
 import { useStore } from 'zustand';
 
-import { revisionsOf, useRevisions } from '../../revisions/window/shared.ts';
+import { onRevisions, revisionsOf, useRevisions } from '../../revisions/window/shared.ts';
 import { withoutBidi, type BannerSwitch, type PullTab } from '../../tab/window/shared.ts';
 import type { Watched } from '../contract.ts';
 import { newerLabel, seeNewer, turnOffAutoMerge, turningOff } from './merging.ts';
@@ -62,5 +62,11 @@ export const watchedSwitch: BannerSwitch = {
     const words = watchedWords(watched, revisionsOf(tab.id)?.revisions, labelsOf(tab.id));
     return { tone: words.tone, title: withoutBidi(words.title) };
   },
-  subscribe: (_tab, listener) => shipping.subscribe(listener),
+  subscribe(_tab, listener) {
+    // Everything `said` reads: what the watch said, and who pushed which revision.
+    const stops = [shipping.subscribe(listener), onRevisions(listener)];
+    return () => {
+      for (const stop of stops) stop();
+    };
+  },
 };

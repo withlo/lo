@@ -1,5 +1,7 @@
 import { useCallback, type RefObject } from 'react';
 
+import { CAUGHT_ATTRIBUTE } from './commands/focus.ts';
+
 /**
  * A ref for a Base UI popup (a menu, a dialog or a palette) that gives it focus as soon as it
  * mounts: `target`'s element, or the popup itself without one.
@@ -48,7 +50,9 @@ function canHold(element: Element): boolean {
 
 /**
  * Focuses `target`, an element made to take focus (`tabIndex = -1`) only for as long as it holds
- * it, if it isn't a stop for `Tab` already. Says whether it took it.
+ * it, if it isn't a stop for `Tab` already, and marked as the window's catch marks what it catches
+ * (`CAUGHT_ATTRIBUTE`) meanwhile, so it draws no ring: the reader didn't put focus on it. Says
+ * whether it took it.
  */
 function give(target: FocusTarget): boolean {
   if (!(target instanceof HTMLElement)) {
@@ -60,7 +64,15 @@ function give(target: FocusTarget): boolean {
   if (target.ownerDocument.activeElement === target) return true;
   if (target.hasAttribute('tabindex')) return false;
   target.tabIndex = -1;
-  target.addEventListener('blur', () => target.removeAttribute('tabindex'), { once: true });
+  target.setAttribute(CAUGHT_ATTRIBUTE, '');
+  target.addEventListener(
+    'blur',
+    () => {
+      target.removeAttribute('tabindex');
+      target.removeAttribute(CAUGHT_ATTRIBUTE);
+    },
+    { once: true },
+  );
   target.focus({ preventScroll: true });
   return target.ownerDocument.activeElement === target;
 }

@@ -13,12 +13,12 @@ import {
   CopyButton,
   Countdown,
   EmptyState,
-  Meter,
   Problem,
   StatusActions,
   StatusItem,
   StatusLine,
   Swap,
+  handOffFocus,
   useCopy,
   useDetails,
   type BannerPlace,
@@ -175,23 +175,21 @@ const CHOOSE = 'tab.chooseAccount';
 /** Which tabs have their menu of accounts open, as Choose account… opens it. */
 const choosing = tabState<boolean>(() => false);
 
-/** Why tab `tab` can't be opened as `login` now, or as anyone with none: `true` where it can. */
-export function choosable(tab: PullTab, login: string | null): true | string {
-  const choice = accountChoice(pullOf(tab.id), tab);
-  if (!choice || (login !== null && !choice.logins.includes(login))) {
-    return 'There’s no account to choose';
-  }
-  return true;
+/** Why tab `tab` can't be opened as an account now: `true` where it can. */
+export function choosable(tab: PullTab): true | string {
+  return accountChoice(pullOf(tab.id), tab) ? true : 'There’s no account to choose';
 }
 
 /**
- * Opens tab `tab`'s pull request as `login`, which Lo remembers for the repo's owner; or, with none,
- * opens the menu of the accounts it can be opened as.
+ * Opens tab `tab`'s pull request as `row`, the login of an account that can see it, which Lo
+ * remembers for the repo's owner; or, for anything else, as a row of another list a key or the
+ * palette had, opens the menu of the accounts it can be opened as.
  */
-export function chooseAccount(tab: PullTab, login: string | null): void {
-  if (choosable(tab, login) !== true) return;
-  if (login === null) choosing.set(tab.id, true);
-  else run(tab.id, { kind: 'choose', login });
+export function chooseAccount(tab: PullTab, row: string | null): void {
+  const choice = accountChoice(pullOf(tab.id), tab);
+  if (!choice) return;
+  if (row !== null && choice.logins.includes(row)) run(tab.id, { kind: 'choose', login: row });
+  else choosing.set(tab.id, true);
 }
 
 /**
@@ -227,9 +225,10 @@ function Accounts({
       : second === undefined
         ? [as(first)]
         : [as(first), as(second)];
-  // The menu opens under the main button, and gives focus back to it.
-  const opener = open ? (box.current?.querySelector('button') ?? undefined) : undefined;
-  const rect = opener?.getBoundingClientRect();
+  // The menu opens under the main button, and gives focus back to it as it closes.
+  const opener = useRef<HTMLElement | undefined>(undefined);
+  if (open) opener.current = box.current?.querySelector('button') ?? undefined;
+  const rect = open ? opener.current?.getBoundingClientRect() : undefined;
   return (
     <div
       ref={box}
@@ -251,7 +250,7 @@ function Accounts({
         label="Accounts"
         anchor={rect && { x: rect.left, y: rect.top, width: rect.width, height: rect.height }}
         sections={[logins.map((login) => ({ id: login, label: login }))]}
-        finalFocus={opener}
+        finalFocus={opener.current}
         highlightFirst={!pointed.current}
         onClosed={(chosen) => {
           choosing.set(tab.id, false);
@@ -283,7 +282,7 @@ function useNow(ticking: boolean): number {
 }
 
 /** The header's chip for a tab whose read failed after its view was drawn, which stays. */
-const CANT_CHECK = 'Can’t check for changes';
+const READ_FAILED = 'GitHub error';
 
 /**
  * The header's chip for how tab `tab` stands with GitHub, when it isn't as usual: a word or two,
@@ -302,8 +301,9 @@ export function useHeaderConnection(
   if (failed) {
     const [action] = failed.actions;
     return {
+      kind: 'failed',
       tone: failed.retryAt === undefined ? 'danger' : 'warn',
-      label: CANT_CHECK,
+      label: READ_FAILED,
       container: container(),
       details: (
         <>
@@ -321,6 +321,7 @@ export function useHeaderConnection(
   if (!note) return undefined;
   const { action } = note;
   return {
+    kind: note.kind,
     tone: note.tone,
     label: note.label,
     container: container(),
@@ -412,16 +413,25 @@ export function LocalItem({
       <StatusLine>
         At <code className="text-fg code-small">{note.at}</code>
       </StatusLine>
-    ) : note.doing !== undefined ? (
-      <>
-        <StatusLine>{note.doing}</StatusLine>
-        {note.percent !== undefined && <Meter value={note.percent} max={100} label={note.label} />}
-      </>
+    ) : note.ball === 'working' ? (
+      <Fetching line={note.label} said={note.said} />
     ) : undefined;
   return (
     <StatusItem ball={note.ball} details={details} label={note.label} container={container()}>
       {note.label}
     </StatusItem>
+  );
+}
+
+/** The local copy's details while it fetches: how far, in Lo's words, and Git's own behind Details. */
+function Fetching({ line, said }: { line: string; said: string | undefined }) {
+  const { more, shown } = useDetails(said, 'pt-2');
+  return (
+    <>
+      <StatusLine>{line}</StatusLine>
+      {said !== undefined && <StatusActions>{more}</StatusActions>}
+      {shown}
+    </>
   );
 }
 
@@ -509,6 +519,7 @@ export function Banners({ tab, view }: { tab: PullTab; view: PullView | undefine
   const drawn = useRef(new Map<string, BannerProps>()).current;
   const row = useRef<HTMLDivElement>(null);
   const heard = useRef<HTMLDivElement>(null);
+  const alerted = useRef<HTMLDivElement>(null);
   const subscribe = useCallback(
     (listener: () => void) => {
       const stops = views.map((each) => each.subscribe(tab, listener));
@@ -560,17 +571,37 @@ export function Banners({ tab, view }: { tab: PullTab; view: PullView | undefine
     row,
     view: { focus: focusMiddle },
   };
-  // A banner that arrives behind the one shown is said, once, as it arrives: the one shown says
-  // itself.
+  // The row says each banner once, as it comes: politely as it arrives, or comes to the front, and
+  // a danger one, which takes the front, assertively. A title that changes in place isn't said
+  // again, and what was said goes once a banner leaves.
   const ids = entries.map((each) => each.id).join('\n');
-  const before = useRef<ReadonlySet<string> | undefined>(undefined);
+  const before = useRef<{ ids: ReadonlySet<string>; front: string | undefined } | undefined>(
+    undefined,
+  );
   useLayoutEffect(() => {
     const now = new Set(ids === '' ? [] : ids.split('\n'));
     const was = before.current;
-    before.current = now;
-    if (!was || !heard.current) return;
-    const arrived = entries.find((each) => !was.has(each.id) && each.id !== entry?.id);
-    if (arrived) heard.current.textContent = arrived.said.title;
+    const arrived = was && entries.find((each) => !was.ids.has(each.id));
+    const urgent = arrived?.said.tone === 'danger' ? arrived : undefined;
+    before.current = { ids: now, front: urgent?.id ?? entry?.id };
+    if (!was) return;
+    if (urgent && urgent.id !== entry?.id) front.set(tab.id, urgent.id);
+    const polite = heard.current;
+    const assertive = alerted.current;
+    if (!polite || !assertive) return;
+    if ([...was.ids].some((id) => !now.has(id))) {
+      polite.textContent = '';
+      assertive.textContent = '';
+    }
+    if (urgent) {
+      assertive.textContent = urgent.said.title;
+    } else if (arrived) {
+      polite.textContent = arrived.said.title;
+    } else if (entry && entry.id !== was.front) {
+      polite.textContent = entry.said.title;
+    }
+    // The row closes with focus in it, which can't stay as the row goes inert: the view takes it.
+    if (entry === undefined && was.ids.size > 0) handOffFocus([row.current], () => [place.view]);
   });
   const body =
     entry === undefined ? null : 'own' in entry ? (
@@ -587,7 +618,8 @@ export function Banners({ tab, view }: { tab: PullTab; view: PullView | undefine
           </BannerPlaceProvider>
         </Collapse>
       </div>
-      <div ref={heard} role="status" className="sr-only" data-lo-banners-heard />
+      <div ref={heard} aria-live="polite" className="sr-only" data-lo-banners-heard />
+      <div ref={alerted} aria-live="assertive" className="sr-only" data-lo-banners-alerted />
     </>
   );
 }

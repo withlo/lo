@@ -69,6 +69,7 @@ function Header() {
       connection={
         offline
           ? {
+              kind: 'offline',
               tone: 'warn',
               label: 'Offline',
               details: (

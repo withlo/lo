@@ -197,6 +197,7 @@ describe('how a tab stands with GitHub', () => {
 
   it('says an account is signed out, and offers to sign in again', () => {
     expect(connectionNote({ kind: 'signedOut', login: 'rozed-bot' }, clockAt)).toEqual({
+      kind: 'signedOut',
       tone: 'danger',
       label: 'Signed out',
       line: 'rozed-bot is signed out.',
@@ -208,6 +209,7 @@ describe('how a tab stands with GitHub', () => {
     const paused = (secondary: boolean, login: string | null) =>
       connectionNote({ kind: 'rateLimited', login, until: at(25 * 60), secondary }, clockAt);
     expect(paused(false, 'rozed-bot')).toEqual({
+      kind: 'rateLimited',
       tone: 'warn',
       label: 'Rate limit reached',
       line: `GitHub’s rate limit resets at at ${at(25 * 60)}.`,
@@ -222,6 +224,7 @@ describe('how a tab stands with GitHub', () => {
         clockAt,
       ),
     ).toEqual({
+      kind: 'offline',
       tone: 'warn',
       label: 'Offline',
       line: 'Offline.',
@@ -233,6 +236,7 @@ describe('how a tab stands with GitHub', () => {
     expect(
       connectionNote({ kind: 'offline', savedAt: null, retryAt: null, error: '' }, clockAt),
     ).toEqual({
+      kind: 'offline',
       tone: 'warn',
       label: 'Offline',
       line: 'Offline.',
@@ -249,24 +253,22 @@ describe('the local copy’s item', () => {
   it('is a ring until it fetches, then counts, then is filled at its head', () => {
     expect(local(undefined)).toBe(undefined);
     expect(local({ kind: 'waiting' })).toEqual({ ball: 'off', label: 'Local copy' });
-    // Its details say what Git is doing, with a meter once it's measured.
+    // Its details say the same, with what Git said behind Details.
     expect(
-      local({ kind: 'fetching', progress: 'receiving objects, 44% of 1234', attempt: 1 }),
+      local({ kind: 'fetching', progress: 'Receiving objects: 44% (543/1234)', attempt: 1 }),
     ).toEqual({
       ball: 'working',
       label: 'Fetching local copy · 44%',
-      doing: 'Receiving objects, 44% of 1234',
-      percent: 44,
+      said: 'Receiving objects: 44% (543/1234)',
     });
-    expect(local({ kind: 'fetching', progress: 'connecting to GitHub', attempt: 1 })).toEqual({
+    expect(local({ kind: 'fetching', progress: 'Enumerating objects: 12', attempt: 1 })).toEqual({
       ball: 'working',
       label: 'Fetching local copy…',
-      doing: 'Connecting to GitHub',
+      said: 'Enumerating objects: 12',
     });
     expect(local({ kind: 'fetching', progress: null, attempt: 1 })).toEqual({
       ball: 'working',
       label: 'Fetching local copy…',
-      doing: 'Waiting for GitHub…',
     });
     expect(local(ready)).toEqual({ ball: 'ready', label: 'Local copy', at: '5530830' });
     // Offline, it's there all the same: only the header's chip says offline.

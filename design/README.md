@@ -454,10 +454,12 @@ that floats.
   change to this pull request. Offers, set-up and standing states go on the control they belong to.
   It's one line: a `title`, an `action` and Dismiss. The tab shows one at a time, the most urgent
   (`danger`, then `warn`, then `info`), with "+1" for the rest, which moves to the next; the row
-  opens and closes with the Open move, and one banner gives way to the next with Swap. Focus stays
-  in the row as they do (`handOffFocus`, in `keyboard.md`), and a banner that arrives behind the one
-  shown is said in a polite live region. An action that can be busy takes `busy` (`false` at rest)
-  and `working`, as a `Button` does.
+  opens and closes with the Open move, and one banner gives way to the next with Swap. A `danger`
+  banner that arrives takes the front, even once "+1" chose another. Focus stays in the row as they
+  do, whatever takes one away (`handOffFocus`, in `keyboard.md`). The row says each banner once, as
+  it arrives or comes to the front: politely, or assertively for `danger`. A title that changes in
+  place isn't said again. An action that can be busy takes `busy` (`false` at rest) and `working`,
+  as a `Button` does.
 
 Base UI's popup parts (dialog, menu, popover, tooltip, toast and the like) are imported only by
 these pieces. `ui:lint` runs `scripts/check-popups.ts`, which fails on an import anywhere else, so a

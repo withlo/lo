@@ -98,11 +98,15 @@ code view and comment box follows at once.
   focus taken. `handOffFocus` in `@lo/ui` does it: given what's leaving and where focus goes, it
   acts only if focus was inside what's leaving, and a microtask on, once React has drawn what
   replaces it, only if focus fell to the page or stays on what can no longer hold it, as a button in
-  a row that closes. Focus that went anywhere else by then stays. So a banner's "+1" hands focus to
-  the next banner's "+1", or its action where it has none; Dismiss to the same button on the banner
-  that takes its place, else to the middle view; a status item's details, or the header chip's,
-  ending while they hold focus, to their item or chip as it's drawn now, else to the next control
-  beside it (`besideIn`), else the one before it, else the row.
+  a row that closes. Focus that went anywhere else by then stays. A row or other element made to
+  take focus this way draws no ring (`data-lo-caught`) and is no stop for `Tab`. So a banner's "+1"
+  hands focus to the next banner's "+1", or its action where it has none; Dismiss to the same button
+  on the banner that takes its place, else its action, else its "+1"; and a banner that leaves while
+  it holds focus for any other reason, as its own action takes it away or a more urgent one takes
+  its place, to the next banner's action, else its "+1", else its Dismiss. Once the last banner
+  goes, focus goes to the middle view. A status item's details, or the header chip's, ending while
+  they hold focus, hand it to their item or chip as it's drawn now, else to the next control beside
+  it (`besideIn`), else the one before it, else the row.
 
 ## Linux
 

@@ -140,10 +140,9 @@ export default {
         const tab = pullOnScreen();
         if (typeof tab !== 'string') chooseAccount(tab, target.kind === 'row' ? target.row : null);
       },
-      enabled: (target) => {
+      enabled: () => {
         const tab = pullOnScreen();
-        if (typeof tab === 'string') return tab;
-        return choosable(tab, target.kind === 'row' ? target.row : null);
+        return typeof tab === 'string' ? tab : choosable(tab);
       },
     },
     // Main closes the tab on screen as it has it, so two quick presses close two tabs.

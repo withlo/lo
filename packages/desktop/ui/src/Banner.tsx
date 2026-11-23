@@ -103,11 +103,14 @@ function controls(row: HTMLElement | null, kind: Control): HTMLElement[] {
  * do about it, and Dismiss. A tab shows one at a time, the most urgent, with "+1" for the rest, and
  * opens and closes the row it's in with the Open move. Offers, set-up and standing states aren't
  * banners: they go on the control they belong to. A `danger` banner is an alert; the others are
- * announced politely.
+ * announced politely. In a tab's row (`BannerPlaceProvider`), the row says each one as it comes,
+ * once, so the banner itself is still, and a title that changes in place isn't said again.
  *
  * Focus stays in the row as one banner gives way to the next: "+1" hands it to the next banner's
  * "+1", or its action where it has none, and Dismiss to the next banner's Dismiss, or its action or
- * "+1", or, once it was the last, to the view under the row.
+ * "+1". A banner that leaves while it holds focus for any other reason, as its own action takes it
+ * away, or a more urgent one takes its place, hands it to the next banner's action, else its "+1",
+ * else its Dismiss. Either way, once it was the last, focus goes to the view under the row.
  */
 export function Banner(props: BannerProps) {
   const { tone, title, detail, action, onDismiss } = props;
@@ -116,6 +119,23 @@ export function Banner(props: BannerProps) {
   const drawn = useContext(Drawn);
   useLayoutEffect(() => drawn?.(props));
   const self = useRef<HTMLDivElement>(null);
+  // Leaving while it holds focus, whatever took it away, it hands focus to the banner that takes its
+  // place. A press of "+1" or Dismiss has handed it on already, to the same button there.
+  const leaving = useRef(place);
+  leaving.current = place;
+  useLayoutEffect(
+    () => () => {
+      const row = leaving.current?.row.current ?? null;
+      const view = leaving.current?.view;
+      handOffFocus([self.current], () => [
+        ...controls(row, 'action'),
+        ...controls(row, 'more'),
+        ...controls(row, 'dismiss'),
+        view,
+      ]);
+    },
+    [],
+  );
   /** Hands focus on from `kind`, pressed, to the banner that takes this one's place. */
   const handOff = (kind: Control) => {
     const row = place?.row.current ?? null;
@@ -131,7 +151,13 @@ export function Banner(props: BannerProps) {
     );
   };
   return (
-    <div ref={self} role={tone === 'danger' ? 'alert' : 'status'} className={banner({ tone })}>
+    <div
+      ref={self}
+      role={tone === 'danger' ? 'alert' : 'status'}
+      // The row says it as it comes, once.
+      aria-live={place ? 'off' : undefined}
+      className={banner({ tone })}
+    >
       <BannerIcon tone={tone} />
       <p className="m-0 min-w-0 flex-1">
         <strong className="font-semibold">{title}</strong>

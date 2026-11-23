@@ -120,8 +120,8 @@ export default defineCommands('tab', {
   /**
    * Opens the pull request on screen as an account that can see it, where more than one can and
    * none was chosen for its repo's owner, which Lo then remembers: the account the target names, a
-   * row of the tab's choice by its login, or, with none, as from the palette or the File menu, the
-   * menu of them. It's done once for an owner, so it has no key.
+   * row of the tab's choice by its login, or, with none or another list's row, as from the palette
+   * or the File menu, the menu of them. It's done once for an owner, so it has no key.
    */
   chooseAccount: {
     label: 'Choose account…',

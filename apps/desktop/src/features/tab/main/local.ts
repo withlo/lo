@@ -6,12 +6,13 @@
 
 import {
   type Activity,
-  describeProgress,
   GitError,
   type GitStatus,
   type Oid,
   type OpenOptions,
   parseOid,
+  percent,
+  type Progress,
   type PullRequestRefs,
   type Repo,
   type TokenSource,
@@ -128,25 +129,32 @@ export function failureOf(error: unknown): Failure {
   }
 }
 
-/** What git is doing, as the tab says it: "receiving objects, 44% of 1234". */
-export function describeActivity(activity: Activity): string {
+/**
+ * What git said of how far it has got, in its own form, for the item's Details: "Receiving
+ * objects: 44% (555/1234)". Nothing while it waits, connects or GitHub prepares what to send
+ * without saying how far: the item says it's fetching, and there's nothing of Git's to show.
+ */
+export function gitSaid(activity: Activity): string | undefined {
   switch (activity.kind) {
     case 'waitingForLock':
-      return activity.holder === undefined
-        ? 'waiting for the local copy'
-        : `waiting while Lo is ${activity.holder}`;
     case 'connecting':
-      return 'connecting to GitHub';
+      return undefined;
     case 'preparing':
-      return activity.progress === undefined
-        ? 'GitHub is preparing it'
-        : describeProgress(activity.progress);
+      return activity.progress === undefined ? undefined : progressLine(activity.progress);
     case 'transferring':
-      return describeProgress(activity.progress);
+      return progressLine(activity.progress);
     default:
       activity satisfies never;
       throw new Error(`Lo doesn't know what git is doing: ${JSON.stringify(activity)}.`);
   }
+}
+
+/** A line of git's progress, as git writes it: "Receiving objects: 44% (555/1234)". */
+function progressLine(progress: Progress): string {
+  const shown = percent(progress);
+  return shown === undefined || progress.total === undefined
+    ? `${progress.stage}: ${progress.done}`
+    : `${progress.stage}: ${shown}% (${progress.done}/${progress.total})`;
 }
 
 /** What a local copy uses of a clone. */
@@ -472,7 +480,7 @@ export class LocalCopy<R extends Clone = Repo> {
 
   #progress(activity: Activity): void {
     if (this.#closed || this.#fetching.kind !== 'fetching') return;
-    this.#fetching = { kind: 'fetching', progress: describeActivity(activity) };
+    this.#fetching = { kind: 'fetching', progress: gitSaid(activity) };
     this.#sayProgress();
   }
 

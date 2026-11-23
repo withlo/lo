@@ -42,8 +42,6 @@ export interface IndexItem {
   readonly text: string;
   /** The details' one line: how far it has got, or why it holds what it holds. */
   readonly lines?: readonly string[];
-  /** How far it has got while it builds, in files, for the details' meter. */
-  readonly progress?: { readonly done: number; readonly total: number };
   /**
    * That it couldn't be built, for its details' `Problem`: what main said, for Details, and when
    * it's built again by itself, if it is.
@@ -80,8 +78,7 @@ export function indexItem(state: IndexState | null): IndexItem | undefined {
         : {
             ball: 'working',
             text: `Indexing code · ${count(state.done)} / ${count(state.total)}`,
-            lines: [`${count(state.done)} of ${count(state.total)} files`],
-            progress: { done: state.done, total: state.total },
+            lines: [`${count(state.done)} / ${count(state.total)} files`],
           };
     case 'ready': {
       const { partial } = state;

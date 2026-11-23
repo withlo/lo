@@ -205,6 +205,8 @@ export function accountChoice(view: PullView | undefined, shown: Shown): Account
 
 /** How a tab stands with GitHub, when it isn't as usual: the header's chip, and its details. */
 export interface ConnectionNote {
+  /** What's wrong, which picks the chip's icon. */
+  readonly kind: 'signedOut' | 'rateLimited' | 'offline';
   readonly tone: 'warn' | 'danger';
   /** The chip's one or two words: "Offline". */
   readonly label: string;
@@ -231,6 +233,7 @@ export function connectionNote(
   switch (connection?.kind) {
     case 'signedOut':
       return {
+        kind: 'signedOut',
         tone: 'danger',
         label: 'Signed out',
         line: `${connection.login} is signed out.`,
@@ -239,12 +242,14 @@ export function connectionNote(
     case 'rateLimited':
       // One wording, whoever the limit is for, and whether GitHub asked Lo to slow down.
       return {
+        kind: 'rateLimited',
         tone: 'warn',
         label: 'Rate limit reached',
         line: `GitHub’s rate limit resets at ${clock.time(connection.until)}.`,
       };
     case 'offline':
       return {
+        kind: 'offline',
         tone: 'warn',
         label: 'Offline',
         line: explain({ kind: 'offline' }) ?? 'Offline.',
@@ -269,18 +274,15 @@ export interface LocalNote {
   readonly label: string;
   /** The details' one line, for a copy that's there: the commit it's at. */
   readonly at?: string | undefined;
-  /** The details' one line while it fetches: what Git is doing, as far as it said. */
-  readonly doing?: string | undefined;
-  /** How far the fetch has got, in percent, once Git has measured it, for the details' meter. */
-  readonly percent?: number | undefined;
+  /** What Git last said of how far it has got while it fetches, as it came, for Details. */
+  readonly said?: string | undefined;
   /** Why it can't be fetched, for its details, with what to do about it. */
   readonly problem?: BannerSpec | undefined;
 }
 
-/** 62: how far a fetch has got, in percent, from what git said it's doing, if it said. */
-function percentOf(progress: string | null): number | undefined {
-  const found = progress?.match(/(\d+)%/)?.[1];
-  return found === undefined ? undefined : Number(found);
+/** "62%": how far a fetch has got, from what git said of it, if it said. */
+function percentOf(progress: string | null): string | undefined {
+  return progress?.match(/(\d+)%/)?.[0];
 }
 
 /** The title of a local copy that can't be fetched, for as long as it can't. */
@@ -324,14 +326,12 @@ export function localNote(
       };
     }
     case 'fetching': {
+      // Its details say the same, in Lo's words, with Git's own line behind Details.
       const percent = percentOf(local.progress);
-      const said = local.progress ?? '';
       return {
         ball: 'working',
-        label: percent === undefined ? 'Fetching local copy…' : `Fetching local copy · ${percent}%`,
-        doing:
-          said === '' ? 'Waiting for GitHub…' : `${said.charAt(0).toUpperCase()}${said.slice(1)}`,
-        percent,
+        label: percent === undefined ? 'Fetching local copy…' : `Fetching local copy · ${percent}`,
+        said: local.progress ?? undefined,
       };
     }
     case 'ready':

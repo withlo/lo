@@ -174,10 +174,13 @@ describe('handOffFocus', () => {
     a?.setAttribute('inert', '');
     await Promise.resolve();
     expect(document.activeElement).toBe(bar);
+    // Marked as caught, it draws no ring: the reader didn't put focus there.
+    expect(bar.hasAttribute('data-lo-caught')).toBe(true);
     // The row holds focus only until it goes: it was never a stop for `Tab`.
     a?.removeAttribute('inert');
     a?.focus();
     expect(bar.hasAttribute('tabindex')).toBe(false);
+    expect(bar.hasAttribute('data-lo-caught')).toBe(false);
     bar.remove();
   });
 

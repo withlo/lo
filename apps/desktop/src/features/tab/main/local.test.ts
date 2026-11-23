@@ -19,7 +19,7 @@ import type { LocalState } from '../contract.ts';
 import {
   type Clone,
   type CopyGit,
-  describeActivity,
+  gitSaid,
   failureOf,
   LocalCopy,
   paced,
@@ -100,7 +100,7 @@ const receiving = (percent: number): Activity => ({
   progress: { stage: 'Receiving objects', done: percent, total: 100 },
 });
 
-/** What git was doing, as each state said while fetching said it. */
+/** How far git had got, as each state said while fetching said it. */
 const progressIn = (states: readonly LocalState[]): (string | null)[] =>
   states.flatMap((state) => (state.kind === 'fetching' ? [state.progress] : []));
 
@@ -152,20 +152,25 @@ describe('failureOf', () => {
   });
 });
 
-describe('describeActivity', () => {
-  it('says what git is doing, in a few words', () => {
-    expect(describeActivity({ kind: 'connecting', elapsed: 10 })).toBe('connecting to GitHub');
-    expect(describeActivity({ kind: 'preparing', elapsed: 10 })).toBe('GitHub is preparing it');
+describe('gitSaid', () => {
+  it('says how far git has got in its own form, and nothing while it waits or connects', () => {
+    expect(gitSaid({ kind: 'connecting', elapsed: 10 })).toBe(undefined);
+    expect(gitSaid({ kind: 'preparing', elapsed: 10 })).toBe(undefined);
+    expect(gitSaid({ kind: 'waitingForLock', waited: 10, holder: 'repacking' })).toBe(undefined);
     expect(
-      describeActivity({
+      gitSaid({
         kind: 'transferring',
         elapsed: 10,
         progress: { stage: 'Receiving objects', done: 555, total: 1234 },
       }),
-    ).toBe('receiving objects, 44% of 1234');
-    expect(describeActivity({ kind: 'waitingForLock', waited: 10, holder: 'repacking' })).toBe(
-      'waiting while Lo is repacking',
-    );
+    ).toBe('Receiving objects: 44% (555/1234)');
+    expect(
+      gitSaid({
+        kind: 'preparing',
+        elapsed: 10,
+        progress: { stage: 'Enumerating objects', done: 12 },
+      }),
+    ).toBe('Enumerating objects: 12');
   });
 });
 
@@ -238,7 +243,7 @@ describe('a local copy saying what git is doing', () => {
     // What git did since the copy last heard comes together: the latest is said.
     tell(connecting, receiving(10), receiving(20));
     await vi.advanceTimersByTimeAsync(0);
-    expect(progressIn(states)).toEqual([null, 'receiving objects, 20% of 100']);
+    expect(progressIn(states)).toEqual([null, 'Receiving objects: 20% (20/100)']);
 
     tell(receiving(30));
     await vi.advanceTimersByTimeAsync(40);
@@ -248,8 +253,8 @@ describe('a local copy saying what git is doing', () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(progressIn(states)).toEqual([
       null,
-      'receiving objects, 20% of 100',
-      'receiving objects, 40% of 100',
+      'Receiving objects: 20% (20/100)',
+      'Receiving objects: 40% (40/100)',
     ]);
   });
 
@@ -263,12 +268,13 @@ describe('a local copy saying what git is doing', () => {
     tell(connecting);
     await vi.advanceTimersByTimeAsync(PROGRESS_EVERY);
     expect(local.state).toEqual(last());
-    expect(last()).toMatchObject({ kind: 'fetching', progress: 'connecting to GitHub' });
+    // Connecting again, git says nothing of how far it has got.
+    expect(last()).toMatchObject({ kind: 'fetching', progress: null });
   });
 
   it('says nothing between the fetch ending and the head on screen being ready', async () => {
     const { tell, fetched, branched, states, last } = await fetching();
-    tell(connecting);
+    tell(receiving(10));
     await vi.advanceTimersByTimeAsync(0);
     // A line still waiting to be said as the fetch ends, and working out where the head branched
     // taking longer than the wait.

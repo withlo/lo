@@ -30,7 +30,8 @@ interface Shown {
 
 /**
  * A tab's banner row with `banners`, the first shown, "+1" moving to the next round the end, and
- * Dismiss putting the one shown away. The view under the row is `#view`.
+ * Dismiss putting the one shown away, as its action does too, as "Show r5" does once it has shown
+ * it. The view under the row is `#view`.
  */
 function Row({ banners }: { banners: readonly Shown[] }) {
   const [left, setLeft] = useState(banners);
@@ -38,6 +39,10 @@ function Row({ banners }: { banners: readonly Shown[] }) {
   const row = useRef<HTMLDivElement>(null);
   const view = useRef<HTMLButtonElement>(null);
   const shown = left[at % Math.max(1, left.length)];
+  const putAway = () => {
+    setLeft(left.filter((each) => each !== shown));
+    setAt(0);
+  };
   return (
     <>
       <div ref={row}>
@@ -56,11 +61,8 @@ function Row({ banners }: { banners: readonly Shown[] }) {
               <Banner
                 tone="info"
                 title={shown.title}
-                action={shown.action ? { label: 'Show r5', onClick: () => {} } : undefined}
-                onDismiss={() => {
-                  setLeft(left.filter((each) => each !== shown));
-                  setAt(0);
-                }}
+                action={shown.action ? { label: 'Show r5', onClick: putAway } : undefined}
+                onDismiss={putAway}
               />
             )}
           </Swap>
@@ -116,6 +118,36 @@ describe('Banner', () => {
     click(named(host, 'Dismiss'));
     await settle();
     expect(host.textContent).not.toContain('ravi-k pushed r5');
+    expect(document.activeElement).toBe(host.querySelector('#view'));
+  });
+
+  it('hands focus from an action that takes its own banner away to the next one’s action, or another of its buttons', async () => {
+    const host = render(
+      <Row
+        banners={[
+          { title: 'ravi-k pushed r5', action: true },
+          { title: '#264 left the merge queue' },
+          { title: 'Merged #264', action: true },
+        ]}
+      />,
+    );
+    const show = () =>
+      [...host.querySelectorAll('button')].find((each) => each.textContent === 'Show r5')!;
+    focus(show());
+    click(show());
+    await settle();
+    expect(host.textContent).toContain('#264 left the merge queue');
+    // The one now shown has no action, so its "+1" takes it.
+    expect(document.activeElement).toBe(named(host, 'Next'));
+    click(named(host, 'Next'));
+    await settle();
+    expect(host.textContent).toContain('Merged #264');
+    focus(show());
+    click(show());
+    await settle();
+    expect(document.activeElement).toBe(named(host, 'Dismiss'));
+    click(named(host, 'Dismiss'));
+    await settle();
     expect(document.activeElement).toBe(host.querySelector('#view'));
   });
 
