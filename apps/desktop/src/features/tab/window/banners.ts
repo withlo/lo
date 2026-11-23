@@ -4,7 +4,8 @@
 // details; and a change to the pull request, a newer push, is its banner. Nothing here draws
 // anything.
 
-import type { Connection, LocalState, PullView } from '../contract.ts';
+import { explain, gitWords } from '../../../window/explain.ts';
+import type { Connection, FetchFailure, LocalState, PullView } from '../contract.ts';
 
 /** What a button the tab offers does. */
 export type BannerDo =
@@ -13,8 +14,10 @@ export type BannerDo =
   /** Clears Lo's cache of local copies, then tries again. */
   | { kind: 'clearCache' }
   | { kind: 'choose'; login: string }
-  /** Signs in again, for an account GitHub signed out. */
+  /** Signs in with GitHub: for an account GitHub signed out, or a pull request none can see. */
   | { kind: 'signIn' }
+  /** Closes the tab. */
+  | { kind: 'close' }
   /** Opens a page on github.com: GitHub's own link to fix a problem. */
   | { kind: 'link'; url: string }
   /** Shows another layer of the tab's stack: the pull request the tab opened on. */
@@ -29,8 +32,17 @@ export interface BannerSpec {
   readonly detail?: string | undefined;
   /** When Lo tries again by itself, which the line counts down to after the detail. */
   readonly retryAt?: number | undefined;
+  /** What GitHub or Git said, as it came, for Details: never in the title or the line. */
+  readonly details?: string | undefined;
   /** The first is the one thing to do about it; a failed view offers the rest beside it. */
   readonly actions: readonly { readonly label: string; readonly do: BannerDo }[];
+}
+
+/** The pull request a tab shows: by its repository and number. */
+export interface Shown {
+  readonly owner: string;
+  readonly repo: string;
+  readonly number: number;
 }
 
 /** How times read: the clock, and how long until or since. */
@@ -79,39 +91,57 @@ export function short(oid: string): string {
   return oid.slice(0, 7);
 }
 
+const retry = { label: 'Try again', do: { kind: 'retry' } } as const;
+const tryNow = { label: 'Try now', do: { kind: 'retry' } } as const;
+
 /**
  * Why a tab can't show its pull request, which takes the place of its view, or nothing while it
  * can: GitHub has no such pull request or won't show it, an organization blocks the account, or
- * reading it failed. `number` is the pull request on screen, and `own` the one the tab opened on,
- * when that's another layer of its stack, which a layer that can't be opened offers to go back to.
- * Several accounts that could see it are a choice, not a failure: see {@link accountChoice}.
+ * reading it failed. `own` is the pull request the tab opened on, when the view on screen is
+ * another layer of its stack, which a layer that can't be opened, such as one deleted since the tab
+ * showed it, offers to go back to. Several accounts that could see it are a choice, not a failure:
+ * see {@link accountChoice}.
  */
 export function failureOf(
   view: PullView | undefined,
-  number: number,
+  shown: Shown,
   own?: number,
 ): BannerSpec | undefined {
-  const retry = { label: 'Try again', do: { kind: 'retry' } } as const;
-  const title = `Can’t open #${number}`;
+  const repository = `${shown.owner}/${shown.repo}`;
+  const title = `Can’t open #${shown.number}`;
   const problem = view?.problem;
   switch (problem?.kind) {
-    case 'notFound':
+    case 'notFound': {
+      // Missing, or hidden from whoever asked: signing in may show it, and GitHub's page says
+      // which; or the tab can go.
+      const signIn =
+        problem.cause.kind === 'private' && !problem.cause.signedIn
+          ? [{ label: 'Sign in with GitHub…', do: { kind: 'signIn' } } as const]
+          : [];
+      const page = `https://github.com/${repository}/pull/${shown.number}`;
       return {
         id: 'notFound',
         tone: 'danger',
         title,
-        detail: problem.message,
+        detail: explain(problem.cause),
+        details: problem.details,
         actions:
           own === undefined
-            ? [retry]
-            : [{ label: `Show #${own}`, do: { kind: 'layer', number: own } }, retry],
+            ? [
+                ...signIn,
+                { label: 'Open on GitHub', do: { kind: 'link', url: page } },
+                { label: 'Close tab', do: { kind: 'close' } },
+              ]
+            : [{ label: `Show #${own}`, do: { kind: 'layer', number: own } }],
       };
+    }
     case 'blocked':
       return {
         id: 'blocked',
         tone: 'danger',
         title,
-        detail: problem.message,
+        detail: explain(problem.cause),
+        details: problem.details,
         actions: [
           ...problem.links.map((link) => ({
             label: link.label,
@@ -125,9 +155,10 @@ export function failureOf(
         id: 'failed',
         tone: 'danger',
         title,
-        detail: problem.message,
+        detail: explain(problem.cause),
         retryAt: problem.retryAt ?? undefined,
-        actions: [problem.retryAt === null ? retry : { label: 'Try now', do: { kind: 'retry' } }],
+        details: problem.details,
+        actions: [problem.retryAt === null ? retry : tryNow],
       };
     case 'ask':
     case undefined:
@@ -146,16 +177,12 @@ export interface AccountChoice {
 }
 
 /** The choice of account a tab waits on, which takes the place of its view, or nothing. */
-export function accountChoice(
-  view: PullView | undefined,
-  number: number,
-  owner: string,
-): AccountChoice | undefined {
+export function accountChoice(view: PullView | undefined, shown: Shown): AccountChoice | undefined {
   if (view?.problem?.kind !== 'ask') return undefined;
   const { logins } = view.problem;
   return {
-    title: `Choose an account for #${number}`,
-    line: `${logins.length} of your accounts can see it. Remembered for every ${owner} repo.`,
+    title: `Choose an account for #${shown.number}`,
+    line: `${logins.length} of your accounts can see it. Remembered for every ${shown.owner} repo.`,
     logins,
   };
 }
@@ -204,14 +231,11 @@ export function connectionNote(
       return {
         tone: 'warn',
         label: 'Offline',
-        line: 'Offline.',
+        line: explain({ kind: 'offline' }) ?? 'Offline.',
         retryAt: connection.retryAt ?? undefined,
         checked: connection.savedAt ?? undefined,
         details: connection.error === '' ? undefined : connection.error,
-        action: {
-          label: connection.retryAt === null ? 'Try again' : 'Try now',
-          do: { kind: 'retry' },
-        },
+        action: connection.retryAt === null ? retry : tryNow,
       };
     case 'live':
     case 'limitLow':
@@ -238,34 +262,44 @@ function percentOf(progress: string | null): string | undefined {
   return progress?.match(/(\d+)%/)?.[0];
 }
 
+/** The title of a local copy that can't be fetched, for as long as it can't. */
 const CANT_FETCH = 'Can’t fetch the local copy';
 
+/** The title of a local copy that can't be trusted and can't be made again yet. */
+const CANT_USE = 'Can’t use the local copy';
+
 /**
- * The local copy's item, or nothing before the tab has one. A fetch that stopped because GitHub
- * can't be reached is only offline: the header's chip says that, and the fetch tries again with it.
+ * The local copy's item for the tab showing `shown`, as `view` stands, or nothing before the tab
+ * has one. A fetch that stopped because GitHub can't be reached is only offline: the header's chip
+ * says that, and the fetch tries again with it.
  */
 export function localNote(
   local: LocalState | undefined,
-  connection: Connection | undefined,
+  view: PullView | undefined,
+  shown: Shown,
 ): LocalNote | undefined {
-  const retry = { label: 'Try again', do: { kind: 'retry' } } as const;
+  const repository = `${shown.owner}/${shown.repo}`;
+  const login = view?.acting?.kind === 'account' ? view.acting.login : undefined;
   switch (local?.kind) {
     case undefined:
       return undefined;
     case 'waiting':
       return { ball: 'off', label: 'Local copy' };
-    case 'noGit':
+    case 'noGit': {
+      const words = gitWords(local.git);
       return {
         ball: 'failed',
-        label: 'Can’t find Git',
+        label: words.title,
         problem: {
           id: 'noGit',
           tone: 'warn',
-          title: 'Can’t find Git',
-          detail: `${local.message} ${local.install}`,
+          title: words.title,
+          detail: words.reason,
+          details: [...words.commands, words.page, words.details].filter(Boolean).join('\n'),
           actions: [{ label: 'Check again', do: { kind: 'retry' } }],
         },
       };
+    }
     case 'fetching': {
       const percent = percentOf(local.progress);
       return {
@@ -277,45 +311,104 @@ export function localNote(
       return local.offline
         ? { ball: 'warn', label: 'Local copy · offline', at: short(local.head) }
         : { ball: 'ready', label: 'Local copy', at: short(local.head) };
-    case 'retrying':
-      if (connection?.kind === 'offline' && local.failure === 'network') {
+    case 'retrying': {
+      if (view?.connection.kind === 'offline' && local.failure === 'network') {
         return { ball: 'warn', label: 'Local copy · offline' };
       }
+      const held = heldBy(local.failure, repository);
+      const title = held === undefined ? CANT_FETCH : CANT_USE;
       return {
         ball: 'failed',
-        label: CANT_FETCH,
+        label: title,
         problem: {
           id: 'local',
           tone: 'warn',
-          title: CANT_FETCH,
-          detail: `${capitalized(local.message)}.`,
+          title,
+          detail: held ?? fetchReason(local.failure, repository, login),
           retryAt: local.retryAt,
-          actions: [{ label: 'Try now', do: { kind: 'retry' } }],
+          details: local.details,
+          actions: [tryNow],
         },
       };
-    case 'failed':
+    }
+    case 'failed': {
+      const held = heldBy(local.failure, repository);
+      const title = held === undefined ? CANT_FETCH : CANT_USE;
       return {
         ball: 'failed',
-        label: CANT_FETCH,
-        problem:
-          local.failure === 'diskFull'
-            ? {
-                id: 'local',
-                tone: 'danger',
-                title: CANT_FETCH,
-                detail: 'The disk is full.',
-                actions: [{ label: 'Clear cache', do: { kind: 'clearCache' } }],
-              }
-            : {
-                id: 'local',
-                tone: 'danger',
-                title: CANT_FETCH,
-                detail: `${capitalized(local.message)}.`,
-                actions: [retry],
-              },
+        label: title,
+        problem: {
+          id: 'local',
+          tone: 'danger',
+          title,
+          detail: held ?? fetchReason(local.failure, repository, login),
+          details: local.details,
+          actions:
+            local.failure === 'diskFull'
+              ? [{ label: 'Clear cache', do: { kind: 'clearCache' } }]
+              : local.failure === 'auth'
+                ? [{ label: 'Sign in with GitHub…', do: { kind: 'signIn' } }]
+                : held === undefined
+                  ? [retry]
+                  : [],
+        },
       };
+    }
     default:
       local satisfies never;
+      return undefined;
+  }
+}
+
+/**
+ * Why a local copy that can't be trusted can't be made again yet: a tab of the repository has it
+ * open, or a language server runs on it. Nothing for any other failure.
+ */
+function heldBy(failure: FetchFailure, repository: string): string | undefined {
+  if (failure === 'heldByTabs') return `It’s made again once every tab of ${repository} closes.`;
+  if (failure === 'heldByServers') return 'It’s made again once its language servers stop.';
+  return undefined;
+}
+
+/**
+ * Why fetching the local copy failed, as the guide's causes word it, for `repository`, asked as
+ * `login` if as anyone: nothing where the cause isn't known, or where only the wait is worth
+ * saying, as for a sign-in that's being renewed.
+ */
+function fetchReason(
+  failure: FetchFailure,
+  repository: string,
+  login: string | undefined,
+): string | undefined {
+  switch (failure) {
+    case 'network':
+      return explain({ kind: 'offline' });
+    case 'certificate':
+      return explain({ kind: 'certificate' });
+    case 'rateLimited':
+      return explain({ kind: 'rateLimit', resets: null });
+    case 'timedOut':
+      return explain({ kind: 'timeout' });
+    case 'diskFull':
+      return explain({ kind: 'diskFull' });
+    case 'auth':
+      return `${repository} doesn’t exist, or it’s private.`;
+    case 'repoNotFound':
+      return login === undefined
+        ? `${repository} doesn’t exist, or it’s private.`
+        : `${repository} doesn’t exist, or ${login} can’t see it.`;
+    case 'refNotFound':
+    case 'unavailable':
+      return 'This revision’s commit is no longer on GitHub.';
+    case 'tooLarge':
+      return 'The download is too large.';
+    case 'heldByTabs':
+    case 'heldByServers':
+    case 'tokenRefused':
+    case 'other':
+      return undefined;
+    default:
+      failure satisfies never;
       return undefined;
   }
 }
@@ -334,8 +427,4 @@ export function bannersFor(view: PullView | undefined, dismissed?: string | null
       actions: [{ label: 'Show latest', do: { kind: 'reload' } }],
     },
   ];
-}
-
-function capitalized(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1);
 }

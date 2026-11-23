@@ -5,19 +5,22 @@
 // replays GitHub.
 
 import {
+  causeOf,
   GithubClient,
   GithubError,
   missingScopes,
   sameLogin,
+  saidBy,
   type AuthenticatedUser,
   type GitHubUrls,
   type Grant,
   type Token,
 } from '@lo/github';
 
+import { detailsOf, githubCause } from '../../../ipc/cause.ts';
 import type { GhListing, ImportFailure, Imported } from '../contract.ts';
 import { githubMessage, noKeychain } from './errors.ts';
-import { GhError, type Gh, type GhAccount } from './gh.ts';
+import { GhError, type Gh, type GhAccount, type GhLookup } from './gh.ts';
 import { checkedUser } from './users.ts';
 
 export interface ImportOptions {
@@ -34,12 +37,15 @@ export async function listGh(
   log: (message: string) => void,
 ): Promise<GhListing> {
   const found = await gh.find();
-  if (found.kind === 'missing') {
-    return { kind: 'missing', message: found.message, passedOver: found.passedOver };
+  if (found.kind === 'missing') return { kind: 'missing' };
+  if (found.kind === 'distrusted') {
+    return { kind: 'distrusted', program: found.program, details: distrustOf(found) };
   }
   const { program } = found;
+  // gh's version never fails, so it's there to name a gh too old to list its accounts.
+  const asked = gh.version(program);
   try {
-    const [accounts, version] = await Promise.all([gh.accounts(program), gh.version(program)]);
+    const [accounts, version] = await Promise.all([gh.accounts(program), asked]);
     return {
       kind: 'found',
       program,
@@ -56,8 +62,20 @@ export async function listGh(
       })),
     };
   } catch (error) {
-    return { kind: 'failed', program, message: ghMessage(error, log) };
+    const version = (await asked) ?? null;
+    if (!(error instanceof GhError)) {
+      log(`listing gh's accounts: ${logged(error)}`);
+      return { kind: 'failed', program, why: 'other', version, details: detailsOf(logged(error)) };
+    }
+    // What gh couldn't be run with is the system's, so where gh is goes with it.
+    const said = error.trouble === 'run' ? `${program}\n${error.said}` : error.said;
+    return { kind: 'failed', program, why: error.trouble, version, details: detailsOf(said) };
   }
+}
+
+/** Where a gh Lo passed over is, and why, for Details. */
+function distrustOf(found: Extract<GhLookup, { kind: 'distrusted' }>): string {
+  return `${found.program}, ${found.why}`;
 }
 
 /** Whether gh could use the account's token when it last checked. */
@@ -105,16 +123,19 @@ export async function importFromGh(
 ): Promise<Imported[]> {
   const { gh, log } = options;
   const found = await gh.find();
-  if (found.kind === 'missing') {
-    const why: ImportFailure = { kind: 'unknown', details: found.message };
+  if (found.kind !== 'found') {
+    const why: ImportFailure = {
+      kind: 'failed',
+      cause: { kind: 'unknown' },
+      details: found.kind === 'distrusted' ? detailsOf(distrustOf(found)) : undefined,
+    };
     return logins.map((login) => ({ ok: false, login, why }));
   }
   let listed: GhAccount[];
   try {
     listed = await gh.accounts(found.program);
   } catch (error) {
-    const why = failureOf(error, log);
-    return logins.map((login) => ({ ok: false, login, why }));
+    return logins.map((login) => ({ ok: false, login, why: failureOf(error, login, log) }));
   }
   const results: Imported[] = [];
   for (const login of new Set(logins)) {
@@ -132,7 +153,7 @@ export async function importFromGh(
       await options.add(user, { token });
       results.push({ ok: true, login: user.user.login });
     } catch (error) {
-      results.push({ ok: false, login, why: failureOf(error, log) });
+      results.push({ ok: false, login, why: failureOf(error, login, log) });
     }
   }
   return results;
@@ -178,7 +199,11 @@ function tokenFromGh(
   return async (login) => {
     const found = await gh.find();
     if (found.kind === 'missing') {
-      tell(login, found.message);
+      tell(login, "Lo can't find gh, GitHub's command-line tool.");
+      return undefined;
+    }
+    if (found.kind === 'distrusted') {
+      tell(login, `Lo found gh at ${found.program}, but ${found.why}, so Lo won't run it.`);
       return undefined;
     }
     let listed: GhAccount[];
@@ -191,10 +216,7 @@ function tokenFromGh(
       }
       token = await gh.token(found.program, login);
     } catch (error) {
-      tell(
-        login,
-        ghMessage(error, () => undefined),
-      );
+      tell(login, logged(error));
       throw error;
     }
     const client = new GithubClient({ fetch: options.fetch, token, urls: options.urls });
@@ -202,10 +224,7 @@ function tokenFromGh(
     try {
       user = checkedUser(await client.user());
     } catch (error) {
-      tell(
-        login,
-        ghMessage(error, () => undefined),
-      );
+      tell(login, logged(error));
       // A token GitHub refuses, or answers for with no account, is no newer token.
       if (error instanceof GithubError && ['unauthorized', 'decode'].includes(error.detail.kind)) {
         return undefined;
@@ -220,19 +239,37 @@ function tokenFromGh(
   };
 }
 
-/** Why an account wasn't imported, for what went wrong with gh or with checking or keeping its token. */
-function failureOf(error: unknown, log: (message: string) => void): ImportFailure {
+/**
+ * Why `login` wasn't imported, for what went wrong with gh or with checking or keeping its token:
+ * by its cause, with what gh, GitHub or the system said behind Details.
+ */
+function failureOf(error: unknown, login: string, log: (message: string) => void): ImportFailure {
   if (error instanceof OtherAccount) return { kind: 'otherAccount', other: error.other };
-  return { kind: 'unknown', details: ghMessage(error, log) };
+  if (error instanceof GhError) {
+    const cause =
+      error.trouble === 'tooSlow' ? { kind: 'tooSlow' as const } : { kind: 'unknown' as const };
+    return { kind: 'failed', cause, details: detailsOf(error.said) };
+  }
+  // GitHub refusing gh's token is gh's sign-in that can't be used, as gh says of one it checked.
+  if (error instanceof GithubError && error.detail.kind === 'unauthorized') {
+    return { kind: 'unusable', state: detailsOf(error.said()) ?? 'unauthorized' };
+  }
+  if (error instanceof GithubError) {
+    return {
+      kind: 'failed',
+      cause: githubCause(causeOf(error, { login })),
+      details: detailsOf(saidBy(error)),
+    };
+  }
+  const keychain = noKeychain(error);
+  if (keychain !== undefined) {
+    return { kind: 'failed', cause: { kind: 'unknown' }, details: detailsOf(keychain.message) };
+  }
+  log(`importing ${login} from gh: ${logged(error)}`);
+  return { kind: 'failed', cause: { kind: 'unknown' }, details: detailsOf(logged(error)) };
 }
 
-/** What went wrong with gh, or with checking or keeping its token, in gh's or GitHub's words. */
-function ghMessage(error: unknown, log: (message: string) => void): string {
-  if (error instanceof GhError) return error.message;
-  const keychain = noKeychain(error);
-  if (keychain !== undefined) return keychain.message;
-  const github = githubMessage(error);
-  if (github !== undefined) return github;
-  log(`importing from gh: ${error instanceof Error ? error.message : String(error)}`);
-  return "Lo couldn't import the account.";
+/** What went wrong with gh, or with checking or keeping its token, for the log. */
+function logged(error: unknown): string {
+  return githubMessage(error) ?? (error instanceof Error ? error.message : String(error));
 }

@@ -4,13 +4,14 @@ import {
   chooseAccount,
   chosenAccount,
   decideAccount,
+  refusalCause,
   type AccountChoice,
   type AccountDecision,
   type AccountRefusal,
   type Remembered,
   type RepoAccount,
 } from './choice.ts';
-import { approvalUrl, GithubError } from './errors.ts';
+import { GithubError } from './errors.ts';
 import { RepoRef } from './refs.ts';
 
 /** What's remembered when only the owner's account was chosen. */
@@ -87,47 +88,29 @@ test('several accounts with none chosen for the owner means asking', () => {
   expect(decision).toEqual({ kind: 'ask', logins: ['a', 'b'] });
 });
 
-test('a remembered account that couldnt check refuses with githubs reason', () => {
+test('a remembered account that couldnt check refuses with githubs error', () => {
+  const error = serverError();
   const decision = decideAccount(
     found({ kind: 'unavailable', login: 'Work' }, [
       ['other', serverError()],
-      ['work', serverError()],
+      ['work', error],
     ]),
   );
   expect(decision).toEqual({
     kind: 'refuse',
-    refusal: {
-      message:
-        "Work, the account Lo uses for org, couldn't check org/repo: GitHub answered 500: Server Error",
-      links: [],
-      waitable: true,
-    },
+    refusal: { problems: [{ login: 'work', error }], links: [], waitable: true },
   });
-});
-
-test('a repositorys own account that couldnt check says its the repositorys', () => {
-  const personal = found({ kind: 'unavailable', login: 'personal' }, [['personal', serverError()]]);
-  personal.remembered = { repo: 'personal', owner: 'work' };
-  expect(refusal(decideAccount(personal)).message).toBe(
-    "personal, the account Lo uses for org/repo, couldn't check org/repo: GitHub answered 500: Server Error",
-  );
-});
-
-test('messages name the repository as github does now', () => {
-  const moved = found({ kind: 'unavailable', login: 'work' }, [['work', serverError()]]);
-  moved.repo = new RepoRef('bigorg', 'tool');
-  expect(refusal(decideAccount(moved)).message).toMatch(
-    /^work, the account Lo uses for bigorg, couldn't check bigorg\/tool/,
-  );
+  expect(refusalCause(refusal(decision), 'org')).toEqual({
+    cause: { kind: 'github' },
+    details: 'work: 500 Internal Server Error\nServer Error',
+  });
 });
 
 test('a remembered account that needs single sign on refuses with githubs link', () => {
   const said = refusal(
     decideAccount(found({ kind: 'unavailable', login: 'work' }, [['work', sso()]])),
   );
-  expect(said.message).toBe(
-    "work, the account Lo uses for org, couldn't check org/repo: Resource protected by organization SAML enforcement. (https://github.com/orgs/org/sso?authorization_request=abc)",
-  );
+  expect(refusalCause(said, 'org').cause).toEqual({ kind: 'sso', org: 'org' });
   expect(said.links.map((link) => link.url)).toEqual([
     'https://github.com/orgs/org/sso?authorization_request=abc',
   ]);
@@ -139,9 +122,14 @@ test('a remembered account an organization restricts refuses with the approval l
   const said = refusal(
     decideAccount(found({ kind: 'unavailable', login: 'work' }, [['work', oauthRestricted()]])),
   );
-  expect(said.message.endsWith(`(${approvalUrl()})`)).toBe(true);
+  expect(refusalCause(said, 'org').cause.kind).toBe('unapproved');
   expect(said.links).toEqual([oauthRestricted().helpLink()]);
   expect(said.links[0]?.label).toBe('Request approval on GitHub');
+});
+
+test('a remembered account github said nothing of refuses with no cause', () => {
+  const said = refusal(decideAccount(found({ kind: 'unavailable', login: 'work' }, [])));
+  expect(refusalCause(said, 'org')).toEqual({ cause: { kind: 'unknown' }, details: undefined });
 });
 
 test('when no account can check it and github said why it refuses rather than open anonymously', () => {
@@ -159,9 +147,12 @@ test('when no account can check it and github said why it refuses rather than op
       ]),
     ),
   );
-  expect(said.message).toBe(
-    "No account Lo is signed in to could check org/repo, so it didn't open without signing in. home: GitHub's rate limit was hit: API rate limit exceeded; work: Resource protected by organization SAML enforcement. (https://github.com/orgs/org/sso?authorization_request=abc)",
-  );
+  // The organization's cause, since its link fixes it, and what GitHub said to each account.
+  expect(refusalCause(said, 'org')).toEqual({
+    cause: { kind: 'sso', org: 'org' },
+    details:
+      'home: API rate limit exceeded\nwork: Resource protected by organization SAML enforcement.',
+  });
   expect(said.links).toEqual([sso().helpLink()]);
 });
 

@@ -209,7 +209,7 @@ describe('asking to trust', () => {
       ]) {
         const { trust, dialogs, write } = asker(views, () => Promise.resolve(repositories));
         const refused = await refusal(trust.ask({ view: 't2', repo: 'rozed-dev/e2e', pull: 97 }));
-        expect(refused?.code).toBe('refused');
+        expect(refused?.code).toBe('unexpectedName');
         expect(dialogs).toEqual([]);
         expect(write).not.toHaveBeenCalled();
       }
@@ -287,8 +287,7 @@ describe('asking to trust', () => {
     const second = await refusal(trust.ask({ view: 't2', repo: 'rozed-dev/e2e', pull: 97 }));
     expect({ code: second?.code, message: second?.message }).toEqual({
       code: 'asking',
-      message:
-        'Lo is already asking whether to trust rozed-dev/e2e. Answer that first, then try again.',
+      message: 'rozed-dev/e2e',
     });
     expect(focused).toEqual([]);
     await until(() => dialogs.length === 1);
@@ -337,7 +336,11 @@ describe('asking to trust', () => {
     // The tab says rozed-dev/other, and GitHub says its pull request is in rozed-dev/e2e.
     const { trust, dialogs, write } = asker(views, () => Promise.resolve(OWN));
     const refused = await refusal(trust.ask({ view: 't3', repo: 'rozed-dev/other', pull: null }));
-    expect(refused?.code).toBe('changed');
+    // The name GitHub has for it, which the window says.
+    expect({ code: refused?.code, message: refused?.message }).toEqual({
+      code: 'renamed',
+      message: 'rozed-dev/e2e',
+    });
     expect(dialogs).toEqual([]);
     expect(write).not.toHaveBeenCalled();
   });
@@ -374,10 +377,13 @@ describe('asking to trust', () => {
   });
 
   it('refuses to trust as a pull request one from the repository’s own branch, or a gone fork', async () => {
-    for (const repositories of [OWN, GONE]) {
+    for (const [repositories, code] of [
+      [OWN, 'notFork'],
+      [GONE, 'forkGone'],
+    ] as const) {
       const { trust, dialogs, write } = asker(views, () => Promise.resolve(repositories));
       const refused = await refusal(trust.ask({ view: 't2', repo: 'rozed-dev/e2e', pull: 97 }));
-      expect(refused?.code).toBe('refused');
+      expect(refused?.code).toBe(code);
       expect(dialogs).toEqual([]);
       expect(write).not.toHaveBeenCalled();
     }
@@ -438,8 +444,8 @@ describe('saying how it goes', () => {
           true,
         ),
         'settingsFile',
-        // What's wrong, then what to do here: saving the file trusts nothing.
-        "The settings file isn't valid JSON (x). Fix that, then trust the repo again.",
+        // What's wrong in the file, behind Details.
+        "The settings file isn't valid JSON (x).",
       ],
       [
         new Unwritten(
@@ -450,7 +456,7 @@ describe('saying how it goes', () => {
         'unsaved',
         "Lo couldn't write the settings file (ENOSPC).",
       ],
-      [new Error('anything else'), 'unsaved', "Lo couldn't write the settings file."],
+      [new Error('anything else'), 'unsaved', 'anything else'],
     ] as const) {
       const { trust, dialogs, steps } = asker(views, undefined, {
         write: () => Promise.reject(thrown),

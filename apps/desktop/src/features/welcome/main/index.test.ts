@@ -68,7 +68,7 @@ describe('welcome.checkGit', () => {
       looking = true;
       await Promise.resolve();
       looking = false;
-      return { status: 'missing', message: "Lo can't find git.", install: 'Install git.' };
+      return { status: 'missing', install: { commands: ['xcode-select --install'] } };
     });
     const answered = feature.handlers['checkGit']?.(undefined, contextWith({ check }), NO_WINDOW);
     expect(check).toHaveBeenCalledOnce();

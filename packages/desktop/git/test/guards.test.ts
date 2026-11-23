@@ -53,7 +53,7 @@ test('a git that ignores the protocol variable still takes only the remote’s p
   const dir = tempFolder();
   const unset = wrappedGit(join(dir, 'git'), { before: 'unset GIT_ALLOW_PROTOCOL' });
   const status = await gitAt(unset, { env: process.env, platform: process.platform });
-  if (status.status !== 'found') throw new Error(status.message);
+  if (status.status !== 'found') throw new Error(`found ${status.status}`);
   const lo = await runnerIn(dir, { git: status.git, remote: 'https://github.com' });
 
   const listing = lo

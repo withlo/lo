@@ -96,6 +96,8 @@ export interface ServerTrustFailure {
   title: string;
   /** Why, in a sentence, or nothing where the cause isn't known. */
   message: string;
+  /** What the settings file or the system said, as it came, behind Details. */
+  details?: string | undefined;
   /** A button that helps, after the reason: "Open settings.json". */
   fix?: { label: ReactNode; onChoose: () => void } | undefined;
 }
@@ -489,6 +491,7 @@ export function ServerStatus({
                 onClick: trust.failure.fix.onChoose,
               }
             }
+            details={trust.failure.details}
           />
         )}
         {(restartInRow || onShowLog || trust) && (

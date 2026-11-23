@@ -22,6 +22,7 @@ import {
   type ContextMenuAnchor,
   type HeaderConnection,
 } from '@lo/ui';
+import { NO_TARGET } from '@lo/ui/commands';
 import {
   useCallback,
   useEffect,
@@ -31,9 +32,9 @@ import {
   type ReactNode,
 } from 'react';
 
+import { registry } from '../../../window/commands/registry.ts';
 import { client } from '../../../window/ipc.ts';
 import { useViews, type View } from '../../../window/slots.tsx';
-import { signIn } from '../../accounts/window/shared.ts';
 import { contract as settings } from '../../settings/contract.ts';
 import { viewIds, type Connection, type LocalState, type PullView } from '../contract.ts';
 import {
@@ -73,8 +74,10 @@ export function run(id: string, action: BannerDo): void {
       case 'choose':
         return main().choose({ id, login: action.login });
       case 'signIn':
-        signIn();
+        registry().run('accounts.addAccount', NO_TARGET);
         return Promise.resolve();
+      case 'close':
+        return main().close({ id });
       case 'link':
         return main().openExternal({ url: action.url });
       case 'clearCache':
@@ -115,8 +118,8 @@ function useOwn(tab: PullTab): number | undefined {
  */
 export function TabFailed({ tab, view }: { tab: PullTab; view: PullView | undefined }) {
   const own = useOwn(tab);
-  const failure = failureOf(view, tab.number, own);
-  const choice = accountChoice(view, tab.number, tab.owner);
+  const failure = failureOf(view, tab, own);
+  const choice = accountChoice(view, tab);
   if (failure) {
     const [first, ...rest] = failure.actions;
     const act = (each: { label: string; do: BannerDo }) => ({
@@ -131,6 +134,7 @@ export function TabFailed({ tab, view }: { tab: PullTab; view: PullView | undefi
           reason={reasonOf(failure.detail, failure.retryAt)}
           action={first && act(first)}
           others={rest.map(act)}
+          details={failure.details}
         />
       </div>
     );
@@ -295,13 +299,13 @@ function ConnectionActions({
 export function LocalItem({
   tab,
   local,
-  connection,
+  view,
 }: {
   tab: PullTab;
   local: LocalState | undefined;
-  connection: Connection | undefined;
+  view: PullView | undefined;
 }): ReactNode {
-  const note = localNote(local, connection);
+  const note = localNote(local, view, tab);
   if (!note) return null;
   const { problem } = note;
   const details =
@@ -318,6 +322,7 @@ export function LocalItem({
             },
           }
         }
+        details={problem.details}
       />
     ) : note.at !== undefined ? (
       <StatusLine>

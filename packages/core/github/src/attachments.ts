@@ -187,8 +187,11 @@ export type AttachmentRefusal =
   | { reason: 'tooLarge'; limit: number }
   /** Its name says `kind`, but its bytes don't. */
   | { reason: 'mislabelled'; kind: AttachmentKind }
-  /** Lo couldn't read through its metadata, so it can't say what it would send. */
-  | { reason: 'unreadable'; why: string };
+  /**
+   * Lo couldn't read through its metadata, so it can't say what it would send: its metadata can't
+   * be read, or its location can't be taken out (`what`), at `part`, such as "JPEG segment".
+   */
+  | { reason: 'unreadable'; what: 'metadata' | 'location'; part: string };
 
 /** What the comment box says when Lo won't attach a file. */
 export function describeRefusal(refusal: AttachmentRefusal): string {
@@ -202,7 +205,9 @@ export function describeRefusal(refusal: AttachmentRefusal): string {
     case 'mislabelled':
       return `its name says ${ATTACHMENT_KINDS[refusal.kind].label}, but it isn't`;
     case 'unreadable':
-      return `Lo couldn't read through its metadata: ${refusal.why}`;
+      return refusal.what === 'location'
+        ? 'Its location data can’t be removed.'
+        : 'Its metadata can’t be read.';
     default:
       throw new Error(
         `a refusal of an attachment Lo doesn't know: ${JSON.stringify(refusal satisfies never)}`,
@@ -248,7 +253,10 @@ export function prepareAttachment(name: string, bytes: Uint8Array): PreparedAtta
     stripped = stripMetadata(kind, bytes);
   } catch (error) {
     if (!(error instanceof UnreadableMetadata)) throw error;
-    throw new RefusedAttachment({ reason: 'unreadable', why: error.message }, { cause: error });
+    throw new RefusedAttachment(
+      { reason: 'unreadable', what: error.what, part: error.message },
+      { cause: error },
+    );
   }
   if (stripped.bytes.length > limit) throw new RefusedAttachment({ reason: 'tooLarge', limit });
   return { name, kind, bytes: stripped.bytes, metadata: stripped.metadata };

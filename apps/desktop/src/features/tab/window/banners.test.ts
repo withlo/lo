@@ -15,6 +15,12 @@ import {
 const HEAD = '5530830f535b2947f1b50a184dc58a9c7b2845ad';
 const FIRST = '45e4f22d09ea29631f43d3f8c1e05b7fb4001099';
 
+/** The pull request the tab shows. */
+const E2E = { owner: 'rozed-dev', repo: 'e2e', number: 9 };
+
+/** What GitHub has no such pull request, or hides from rozed-bot, comes to. */
+const MISSING = { kind: 'hidden', login: 'rozed-bot' } as const;
+
 const clock: Clock = {
   now: 1_000_000,
   time: (at) => `at ${at}`,
@@ -42,40 +48,46 @@ const ready: LocalState = {
 
 describe('a pull request’s tab that can’t show it', () => {
   it('says nothing while it can', () => {
-    expect(failureOf(view(), 9)).toBe(undefined);
-    expect(failureOf(undefined, 9)).toBe(undefined);
+    expect(failureOf(view(), E2E)).toBe(undefined);
+    expect(failureOf(undefined, E2E)).toBe(undefined);
   });
 
-  it('says it can’t open the pull request, with a way to try again', () => {
+  it("says it can't open the pull request, with GitHub's page and a way to close the tab", () => {
     expect(
-      failureOf(
-        view({
-          problem: { kind: 'notFound', message: 'GitHub has no pull request rozed-dev/e2e#9.' },
-        }),
-        9,
-      ),
+      failureOf(view({ problem: { kind: 'notFound', cause: MISSING, details: 'Not Found' } }), E2E),
     ).toEqual({
       id: 'notFound',
       tone: 'danger',
       title: 'Can’t open #9',
-      detail: 'GitHub has no pull request rozed-dev/e2e#9.',
-      actions: [{ label: 'Try again', do: { kind: 'retry' } }],
+      detail: 'It doesn’t exist, or rozed-bot can’t see it.',
+      details: 'Not Found',
+      actions: [
+        {
+          label: 'Open on GitHub',
+          do: { kind: 'link', url: 'https://github.com/rozed-dev/e2e/pull/9' },
+        },
+        { label: 'Close tab', do: { kind: 'close' } },
+      ],
+    });
+    // With nobody signed in, signing in may show it.
+    expect(
+      failureOf(
+        view({
+          acting: { kind: 'anonymous' },
+          problem: { kind: 'notFound', cause: { kind: 'private', signedIn: false } },
+        }),
+        E2E,
+      ),
+    ).toMatchObject({
+      detail: 'It doesn’t exist, or it’s private.',
+      actions: [{ label: 'Sign in with GitHub…', do: { kind: 'signIn' } }, {}, {}],
     });
   });
 
   it("offers a layer that can't be opened a way back to the pull request its tab opened on", () => {
     // As for a tab that comes back at a layer whose pull request was deleted since.
-    const failed = failureOf(
-      view({
-        problem: { kind: 'notFound', message: 'GitHub has no pull request rozed-dev/e2e#9.' },
-      }),
-      9,
-      84,
-    );
-    expect(failed?.actions).toEqual([
-      { label: 'Show #84', do: { kind: 'layer', number: 84 } },
-      { label: 'Try again', do: { kind: 'retry' } },
-    ]);
+    const failed = failureOf(view({ problem: { kind: 'notFound', cause: MISSING } }), E2E, 84);
+    expect(failed?.actions).toEqual([{ label: 'Show #84', do: { kind: 'layer', number: 84 } }]);
   });
 
   it("offers GitHub's link to fix single sign-on first", () => {
@@ -83,13 +95,18 @@ describe('a pull request’s tab that can’t show it', () => {
       view({
         problem: {
           kind: 'blocked',
-          message: 'The rozed-dev organization needs single sign-on.',
+          cause: { kind: 'sso', org: 'rozed-dev' },
+          details: 'Resource protected by organization SAML enforcement.',
           links: [{ label: 'Authorize on GitHub', url: 'https://github.com/orgs/rozed-dev/sso' }],
         },
       }),
-      9,
+      E2E,
     );
-    expect(blocked?.title).toBe('Can’t open #9');
+    expect(blocked).toMatchObject({
+      title: 'Can’t open #9',
+      detail: 'rozed-dev requires single sign-on.',
+      details: 'Resource protected by organization SAML enforcement.',
+    });
     expect(blocked?.actions).toEqual([
       {
         label: 'Authorize on GitHub',
@@ -99,18 +116,31 @@ describe('a pull request’s tab that can’t show it', () => {
     ]);
   });
 
-  it('counts down to the next try, and offers to try now meanwhile', () => {
-    const failed = failureOf(
-      view({ problem: { kind: 'failed', message: 'GitHub answered 502.', retryAt: 1_020_000 } }),
-      9,
-    );
-    expect(failed).toMatchObject({
+  it('counts down to the next try, offers to try now meanwhile, and keeps GitHub’s words for Details', () => {
+    expect(
+      failureOf(
+        view({
+          problem: {
+            kind: 'failed',
+            cause: { kind: 'github' },
+            details: '500 Internal Server Error',
+            retryAt: 1_020_000,
+          },
+        }),
+        E2E,
+      ),
+    ).toEqual({
+      id: 'failed',
+      tone: 'danger',
+      title: 'Can’t open #9',
+      detail: 'GitHub returned an error.',
       retryAt: 1_020_000,
+      details: '500 Internal Server Error',
       actions: [{ label: 'Try now', do: { kind: 'retry' } }],
     });
     const stopped = failureOf(
-      view({ problem: { kind: 'failed', message: 'GitHub answered 502.', retryAt: null } }),
-      9,
+      view({ problem: { kind: 'failed', cause: { kind: 'unknown' }, retryAt: null } }),
+      E2E,
     );
     expect(stopped?.retryAt).toBe(undefined);
     expect(stopped?.actions).toEqual([{ label: 'Try again', do: { kind: 'retry' } }]);
@@ -121,13 +151,13 @@ describe('a pull request’s tab that can’t show it', () => {
       acting: null,
       problem: { kind: 'ask', logins: ['rozed-bot', 'other'] },
     });
-    expect(failureOf(asking, 264)).toBe(undefined);
-    expect(accountChoice(asking, 264, 'rozed-dev')).toEqual({
-      title: 'Choose an account for #264',
+    expect(failureOf(asking, E2E)).toBe(undefined);
+    expect(accountChoice(asking, E2E)).toEqual({
+      title: 'Choose an account for #9',
       line: '2 of your accounts can see it. Remembered for every rozed-dev repo.',
       logins: ['rozed-bot', 'other'],
     });
-    expect(accountChoice(view(), 264, 'rozed-dev')).toBe(undefined);
+    expect(accountChoice(view(), E2E)).toBe(undefined);
   });
 });
 
@@ -189,65 +219,77 @@ describe('how a tab stands with GitHub', () => {
 });
 
 describe('the local copy’s item', () => {
+  const local = (state: LocalState | undefined, pull: PullView = view()) =>
+    localNote(state, pull, E2E);
+
   it('is a ring until it fetches, then counts, then is filled at its head', () => {
-    expect(localNote(undefined, undefined)).toBe(undefined);
-    expect(localNote({ kind: 'waiting' }, undefined)).toEqual({ ball: 'off', label: 'Local copy' });
+    expect(local(undefined)).toBe(undefined);
+    expect(local({ kind: 'waiting' })).toEqual({ ball: 'off', label: 'Local copy' });
     expect(
-      localNote(
-        { kind: 'fetching', progress: 'receiving objects, 44% of 1234', attempt: 1 },
-        undefined,
-      ),
+      local({ kind: 'fetching', progress: 'receiving objects, 44% of 1234', attempt: 1 }),
     ).toEqual({ ball: 'working', label: 'Fetching local copy · 44%' });
-    expect(
-      localNote({ kind: 'fetching', progress: 'connecting to GitHub', attempt: 1 }, undefined),
-    ).toEqual({ ball: 'working', label: 'Fetching local copy…' });
-    expect(localNote(ready, undefined)).toEqual({
-      ball: 'ready',
-      label: 'Local copy',
-      at: '5530830',
+    expect(local({ kind: 'fetching', progress: 'connecting to GitHub', attempt: 1 })).toEqual({
+      ball: 'working',
+      label: 'Fetching local copy…',
     });
-    expect(localNote({ ...ready, offline: true }, undefined)).toMatchObject({
+    expect(local(ready)).toEqual({ ball: 'ready', label: 'Local copy', at: '5530830' });
+    expect(local({ ...ready, offline: true })).toMatchObject({
       ball: 'warn',
       label: 'Local copy · offline',
     });
   });
 
-  it('says it can’t fetch for as long as it can’t, with why and the one thing to do', () => {
+  it('says it can’t fetch for as long as it can’t, with why, the one thing to do and Git’s words', () => {
     const retrying: LocalState = {
       kind: 'retrying',
-      failure: 'other',
-      message: "can't fetch pull request #78: git exited",
+      failure: 'timedOut',
+      details: 'fatal: the remote end hung up',
       attempt: 2,
       retryAt: clock.now + 12_000,
     };
-    expect(localNote(retrying, undefined)).toEqual({
+    expect(local(retrying)).toEqual({
       ball: 'failed',
       label: 'Can’t fetch the local copy',
       problem: {
         id: 'local',
         tone: 'warn',
         title: 'Can’t fetch the local copy',
-        detail: "Can't fetch pull request #78: git exited.",
+        detail: 'GitHub didn’t respond.',
         retryAt: clock.now + 12_000,
+        details: 'fatal: the remote end hung up',
         actions: [{ label: 'Try now', do: { kind: 'retry' } }],
       },
     });
-    expect(
-      localNote({ kind: 'failed', failure: 'diskFull', message: 'x' }, undefined)?.problem,
-    ).toMatchObject({
+    expect(local({ kind: 'failed', failure: 'diskFull' })?.problem).toMatchObject({
       detail: 'The disk is full.',
       actions: [{ label: 'Clear cache', do: { kind: 'clearCache' } }],
     });
-    expect(
-      localNote({ kind: 'failed', failure: 'other', message: 'x' }, undefined)?.problem?.actions,
-    ).toEqual([{ label: 'Try again', do: { kind: 'retry' } }]);
-    expect(
-      localNote({ kind: 'noGit', message: "Lo can't find git.", install: 'Get it.' }, undefined),
-    ).toMatchObject({
+    expect(local({ kind: 'failed', failure: 'repoNotFound' })?.problem).toMatchObject({
+      detail: 'rozed-dev/e2e doesn’t exist, or rozed-bot can’t see it.',
+      actions: [{ label: 'Try again', do: { kind: 'retry' } }],
+    });
+    expect(local({ kind: 'failed', failure: 'auth' })?.problem?.actions).toEqual([
+      { label: 'Sign in with GitHub…', do: { kind: 'signIn' } },
+    ]);
+    // A copy held open says what it waits for, with nothing to press.
+    expect(local({ kind: 'failed', failure: 'heldByTabs' })).toMatchObject({
+      label: 'Can’t use the local copy',
+      problem: {
+        title: 'Can’t use the local copy',
+        detail: 'It’s made again once every tab of rozed-dev/e2e closes.',
+        actions: [],
+      },
+    });
+    const noGit: LocalState = {
+      kind: 'noGit',
+      git: { status: 'missing', install: { commands: ['xcode-select --install'], page: null } },
+    };
+    expect(local(noGit)).toMatchObject({
       ball: 'failed',
       label: 'Can’t find Git',
       problem: {
         title: 'Can’t find Git',
+        details: 'xcode-select --install',
         actions: [{ label: 'Check again', do: { kind: 'retry' } }],
       },
     });
@@ -257,14 +299,17 @@ describe('the local copy’s item', () => {
     const retrying: LocalState = {
       kind: 'retrying',
       failure: 'network',
-      message: 'the network failed',
+      details: 'fatal: unable to access',
       attempt: 2,
       retryAt: clock.now + 12_000,
     };
     expect(
-      localNote(retrying, { kind: 'offline', savedAt: null, retryAt: null, error: 'x' }),
+      local(
+        retrying,
+        view({ connection: { kind: 'offline', savedAt: null, retryAt: null, error: 'x' } }),
+      ),
     ).toEqual({ ball: 'warn', label: 'Local copy · offline' });
-    expect(localNote(retrying, { kind: 'live' })?.ball).toBe('failed');
+    expect(local(retrying)?.problem?.detail).toBe('Offline.');
   });
 });
 

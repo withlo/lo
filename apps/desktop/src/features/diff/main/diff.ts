@@ -511,7 +511,7 @@ export class DiffTab {
         await repo.download([found.oid], 'the file to show', { maxBytes: MAX_SHOWN_BYTES });
       } catch (error) {
         if (downloadTooLarge(error)) {
-          return { kind: 'refused', why: 'it’s more than the 50 MiB Lo shows' };
+          return { kind: 'tooLarge', why: { kind: 'size', size: null } };
         }
         this.#options.log(`downloading a file to show whole: ${describe(error)}`);
         throw new IpcError('unavailable', `Lo couldn’t download the file: ${describe(error)}`);
@@ -522,7 +522,7 @@ export class DiffTab {
       throw new IpcError('unavailable', 'The local copy doesn’t have this file’s contents.');
     }
     const tooLarge = tooLargeToShow(size, []);
-    if (tooLarge !== undefined) return { kind: 'refused', why: tooLarge };
+    if (tooLarge !== undefined) return { kind: 'tooLarge', why: tooLarge };
     if (size > LARGE_FILE_BYTES && !large) return { kind: 'large', size };
     const contents = await repo.readBlob(found.oid, { maxBytes: MAX_SHOWN_BYTES });
     if (contents === undefined) {
@@ -531,7 +531,7 @@ export class DiffTab {
     if (looksBinary(contents)) return { kind: 'binary', size: contents.length };
     // A minified bundle on one line is as slow to lay out as it is large.
     const long = tooLargeToShow(contents.length, [contents]);
-    if (long !== undefined) return { kind: 'refused', why: long };
+    if (long !== undefined) return { kind: 'tooLarge', why: long };
     return { kind: 'text', text: decoder.decode(contents) };
   }
 
@@ -546,7 +546,11 @@ export class DiffTab {
     if (bytes === undefined) throw new Error('The local copy doesn’t have this file’s contents.');
     // A minified bundle on one line is as slow to lay out as it is large.
     const tooLarge = tooLargeToShow(bytes.length, [bytes]);
-    if (tooLarge !== undefined) throw new Error(`Lo doesn’t show this file: ${tooLarge}.`);
+    if (tooLarge !== undefined) {
+      const why =
+        tooLarge.kind === 'size' ? 'it’s over the 50 MB limit' : 'it has a line over 1 MB long';
+      throw new Error(`Lo doesn’t show this file: ${why}.`);
+    }
     return decoder.decode(bytes);
   }
 

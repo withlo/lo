@@ -81,7 +81,11 @@ describe('compareState', () => {
       why: 'Sign in to compare revisions',
     });
     expect(
-      compareState({ ...view, status: 'failed', problem: 'GitHub said 502.' }, R1, R3),
+      compareState(
+        { ...view, status: 'failed', problem: { kind: 'read', cause: { kind: 'github' } } },
+        R1,
+        R3,
+      ),
     ).toEqual({ ok: false, why: 'Couldn’t read the revisions' });
     expect(compareState({ ...view, waitingFor: 'git' }, R1, R3)).toEqual({
       ok: false,

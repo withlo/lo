@@ -182,7 +182,7 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
       <StatusBar
         start={
           <>
-            <LocalItem tab={tab} local={local} connection={view?.connection} />
+            <LocalItem tab={tab} local={local} view={view} />
             <LimitItem connection={view?.connection} />
             <Slot slot={status} props={{ tab }} />
           </>

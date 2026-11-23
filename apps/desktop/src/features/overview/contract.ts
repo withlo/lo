@@ -92,7 +92,7 @@ export type OverviewCommit = z.output<typeof overviewCommit>;
  * organization, `org`, blocks the account until it's authorized for single sign-on (`sso`) or
  * until the organization approves Lo (`approval`), with GitHub's links to fix that; GitHub can't
  * be reached; or anything else GitHub answered, or sent, such as a file that isn't the one its ID
- * names.
+ * names. A `message` is what GitHub or the system said, as it said it, for Details.
  */
 export const problem = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('signedOut'), login, retryAt: time }),
@@ -156,7 +156,8 @@ export const FILES_LIMIT = 101;
  * larger than `@lo/artifact`'s `SIZE_ONLY`, as a reader may answer it; `missing`, when nothing is
  * at the path; `notFile`, when what's there is a link, a folder or a submodule; `refused`, when
  * the path is one no overview reads, so main never reads it; or `unread`, when main couldn't read
- * it just now, and why.
+ * it just now, with what GitHub or the system said in `why`, for Details: empty when it said
+ * nothing.
  */
 export type OverviewFile =
   | { kind: 'file'; size: number; bytes: Uint8Array | null }
@@ -238,13 +239,14 @@ export type CodeReply =
  * - `same`: as it is at the commit, since the pull request doesn't change it;
  * - `added`: not there, since the pull request adds it;
  * - `changed`: its text there, at `path`, which is another when the pull request renames it;
- * - `unknown`: Lo couldn't read it, and why.
+ * - `unknown`: Lo couldn't read it, for a {@link CodeCause}, or `unrelated` when the commit shares
+ *   no history with the base branch.
  */
 export type BaseText =
   | { kind: 'same' }
   | { kind: 'added' }
   | { kind: 'changed'; path: string; text: string }
-  | { kind: 'unknown'; why: string };
+  | { kind: 'unknown'; why: CodeCause | 'unrelated' };
 
 /**
  * A file a block of an overview shows, as `texts` replies: its text at the overview's commit, with

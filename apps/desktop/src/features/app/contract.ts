@@ -1,28 +1,21 @@
 import { z } from 'zod';
 
 import { defineContract, reply } from '../../ipc/contract.ts';
+import { gitTrouble } from '../../ipc/git.ts';
+
+export { gitTrouble, type GitTrouble } from '../../ipc/git.ts';
 
 export const theme = z.enum(['dark', 'light']);
 export type Theme = z.output<typeof theme>;
 
 /**
  * Whether Lo has a git it can run, so the window can say when it hasn't: `checking` until Lo has
- * looked, which it does once the window is up; `found`, with its version; `missing`; or `tooOld`,
- * with its version and the check it failed, its version or whether it can be kept from downloading
- * on its own. `message` says what's wrong, and `install` how to put it right, in words for the
- * person using Lo.
+ * looked, which it does once the window is up; `found`, with its version; or why not.
  */
 export const gitInfo = z.discriminatedUnion('status', [
   z.strictObject({ status: z.literal('checking') }),
   z.strictObject({ status: z.literal('found'), version: z.string() }),
-  z.strictObject({ status: z.literal('missing'), message: z.string(), install: z.string() }),
-  z.strictObject({
-    status: z.literal('tooOld'),
-    version: z.string(),
-    check: z.enum(['version', 'lazyFetch']),
-    message: z.string(),
-    install: z.string(),
-  }),
+  ...gitTrouble.options,
 ]);
 export type GitInfo = z.output<typeof gitInfo>;
 

@@ -5,7 +5,7 @@
 
 import { fileURLToPath } from 'node:url';
 
-import { RepoRef, sameLogin } from '@lo/github';
+import { RepoRef, sameLogin, TokenLeftover } from '@lo/github';
 import { app, clipboard, net, safeStorage, session } from 'electron';
 
 import { IpcError } from '../../../ipc/contract.ts';
@@ -174,7 +174,9 @@ export default defineFeature(contract, {
         await feature().github.remove(login);
       } catch (error) {
         log(`removing ${login}: ${String(error)}`);
-        throw new IpcError('failed', `Lo couldn't sign out of ${login} completely.`);
+        // Gone from the list, with its sign-in left where the system keeps it: the system's words.
+        if (error instanceof TokenLeftover) throw new IpcError('leftover', error.said);
+        throw new IpcError('failed', error instanceof Error ? error.message : String(error));
       }
     },
     async keyring() {

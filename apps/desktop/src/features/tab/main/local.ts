@@ -17,6 +17,8 @@ import {
   type TokenSource,
 } from '@lo/git';
 
+import { detailsOf } from '../../../ipc/cause.ts';
+import { troubleOf } from '../../../main/git.ts';
 import type { Compared, FetchFailure, LocalState } from '../contract.ts';
 
 /** The first wait before trying a failed fetch again, in milliseconds. */
@@ -69,9 +71,13 @@ function sameRefs(a: PullRequestRefs | undefined, b: PullRequestRefs): boolean {
   );
 }
 
-/** What a failure was, for the tab, and whether Lo tries again by itself. */
+/**
+ * What a failure was, for the tab, and whether Lo tries again by itself: its kind, what Git said
+ * (`said`, for Details), and the error's whole text, for the log.
+ */
 export interface Failure {
   readonly failure: FetchFailure;
+  readonly said: string;
   readonly message: string;
   readonly retry: boolean;
 }
@@ -83,36 +89,42 @@ export interface Failure {
  */
 export function failureOf(error: unknown): Failure {
   if (!(error instanceof GitError)) {
-    return {
-      failure: 'other',
-      message: error instanceof Error ? error.message : String(error),
-      retry: true,
-    };
+    const message = error instanceof Error ? error.message : String(error);
+    return { failure: 'other', said: message, message, retry: true };
   }
   const { detail, message } = error;
+  const said = error.said();
   switch (detail.kind) {
     case 'fetch':
-      return { failure: detail.failure, message, retry: error.isRetryable() };
+      return { failure: detail.failure, said, message, retry: error.isRetryable() };
     case 'diskFull':
-      return { failure: 'diskFull', message, retry: false };
+      return { failure: 'diskFull', said, message, retry: false };
     case 'unavailable':
-      return { failure: 'unavailable', message, retry: false };
+      return { failure: 'unavailable', said, message, retry: false };
     case 'invalid':
     case 'tooLarge':
-      return { failure: 'other', message, retry: false };
+      return { failure: 'other', said, message, retry: false };
+    case 'busy': {
+      const failure =
+        detail.held === 'tabs'
+          ? 'heldByTabs'
+          : detail.held === 'servers'
+            ? 'heldByServers'
+            : 'other';
+      return { failure, said, message, retry: true };
+    }
     case 'notFetched':
     case 'notDownloaded':
     case 'tooManyAttributeFiles':
     case 'baseNotAncestor':
     case 'tooSlow':
-    case 'busy':
     case 'readOnly':
     case 'git':
     case 'io':
-      return { failure: 'other', message, retry: true };
+      return { failure: 'other', said, message, retry: true };
     default:
       detail satisfies never;
-      return { failure: 'other', message, retry: true };
+      return { failure: 'other', said, message, retry: true };
   }
 }
 
@@ -270,7 +282,7 @@ export class LocalCopy<R extends Clone = Repo> {
     }
     const { status } = this.#options.git;
     if (status !== undefined && status.status !== 'found') {
-      return { kind: 'noGit', message: status.message, install: status.install };
+      return { kind: 'noGit', git: troubleOf(status) };
     }
     const fetching = this.#fetching;
     switch (fetching.kind) {
@@ -286,7 +298,7 @@ export class LocalCopy<R extends Clone = Repo> {
         return {
           kind: 'retrying',
           failure: fetching.failure.failure,
-          message: fetching.failure.message,
+          details: detailsOf(fetching.failure.said),
           attempt: this.#failures,
           retryAt: fetching.retryAt,
         };
@@ -294,7 +306,7 @@ export class LocalCopy<R extends Clone = Repo> {
         return {
           kind: 'failed',
           failure: fetching.failure.failure,
-          message: fetching.failure.message,
+          details: detailsOf(fetching.failure.said),
         };
       default:
         fetching satisfies never;

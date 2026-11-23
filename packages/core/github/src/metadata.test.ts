@@ -684,7 +684,9 @@ test('locations in 3gpp and xmp go too', () => {
 
 test('a track of gps isnt sent', () => {
   const gopro = mp4With([], [trackOf('meta', 'gpmd', zeros(8))], []);
-  expect(() => stripMetadata('mp4', gopro)).toThrow('GPS');
+  expect(() => stripMetadata('mp4', gopro)).toThrow(
+    new UnreadableMetadata('location', 'timed metadata track'),
+  );
   const unknown = mp4With([], [trackOf('camm', 'camm', zeros(8))], []);
   expect(() => stripMetadata('mp4', unknown)).toThrow(UnreadableMetadata);
   const located = mp4With(
@@ -775,12 +777,12 @@ test('a video nesting too deep or with broken keys isnt sent', () => {
   for (let level = 0; level < MAX_BOX_DEPTH + 2; level++) deep = box('udta', deep);
   const video = concat(box('ftyp', latin1('isom\0\0\0\0isom')), box('moov', deep));
   expect(() => stripMetadata('mp4', video)).toThrow(
-    new UnreadableMetadata('its boxes nest deeper than Lo reads'),
+    new UnreadableMetadata('metadata', 'nested boxes'),
   );
   const broken = iphoneMov();
   broken.set(be32(3), indexOf(broken, latin1('mdta')) - 4);
   expect(() => stripMetadata('mov', broken)).toThrow(
-    new UnreadableMetadata('its metadata keys are broken'),
+    new UnreadableMetadata('metadata', 'metadata keys'),
   );
 });
 
@@ -811,7 +813,7 @@ test('a webp whose frames or size hide metadata isnt sent', () => {
   const frame = concat(zeros(16), latin1('EXIF'), le32(26), exif(1, true));
   const animated = webpWith([['ANMF', frame]], 0x02);
   expect(() => stripMetadata('webp', animated)).toThrow(
-    new UnreadableMetadata('an animation frame holds more than image data'),
+    new UnreadableMetadata('metadata', 'animation frame'),
   );
   const short = webpWith([['EXIF', exif(1, true)]], WEBP_EXIF);
   short.set(le32(2), 4);

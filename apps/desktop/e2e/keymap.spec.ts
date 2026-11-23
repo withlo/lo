@@ -147,15 +147,13 @@ test.describe('with a keymap file that opening could run', () => {
     const path = keymapPath(dataFolder());
     chmodSync(path, 0o755);
     const help = await openHelp(page);
-    await expect(help.getByRole('alert').first()).toContainText(
-      "The keymap file is executable, so Lo won't open it, which could run it.",
-    );
+    await expect(help.getByRole('alert').first()).toContainText('The keymap file is executable');
     await expect(openKeymap(help)).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(help).toBeHidden();
 
     await pressOpen(page);
-    await expect(toast(page, 'executable, so Lo won')).toBeVisible();
+    await expect(toast(page, 'The keymap file is executable')).toBeVisible();
     // The reason alone, not under the command's name.
     await expect(toast(page, 'Open the keymap file')).toHaveCount(0);
     // Nothing was started.
@@ -180,15 +178,14 @@ test.describe('with a keymap file that opening could run', () => {
     symlinkSync(app, path);
 
     const help = await openHelp(page);
-    await expect(help.getByRole('alert')).toHaveText(
-      "The keymap file isn't a plain file, so Lo doesn't read or open it.",
-    );
+    await expect(help.getByRole('alert')).toContainText('Can’t read the keymap file');
+    await expect(help.getByRole('alert')).toContainText('It isn’t a file.');
     await expect(openKeymap(help)).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(help).toBeHidden();
 
     await pressOpen(page);
-    await expect(toast(page, "isn't a plain file")).toBeVisible();
+    await expect(toast(page, 'The keymap file can’t be opened')).toBeVisible();
     await page.waitForTimeout(300);
     expect(opened()).toEqual([]);
   });

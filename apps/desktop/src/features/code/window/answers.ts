@@ -147,7 +147,7 @@ function serverHints(
 export function notYet(local: LocalState | undefined): string | undefined {
   if (local?.kind === 'noGit') return 'Code features need git.';
   if (local?.kind === 'failed') {
-    return `Code features need the local copy, which Lo couldn’t fetch: ${local.message}.`;
+    return `Code features need the local copy, which Lo couldn’t fetch: ${local.details ?? ''}.`;
   }
   if (local?.kind !== 'ready') return 'The syntax index waits for the local copy.';
   return undefined;

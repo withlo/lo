@@ -38,6 +38,7 @@ import {
   reads,
   readWhole,
   setWholeDrawn,
+  tooLargeReason,
   wholeWork,
 } from './whole.ts';
 
@@ -475,6 +476,12 @@ function Note({
       return (
         <Said title="This file isn’t text" actions={github}>
           It’s {sizeText(content.size)} of binary data, which Lo doesn’t show.
+        </Said>
+      );
+    case 'tooLarge':
+      return (
+        <Said title="Lo doesn’t show this file" actions={github}>
+          {tooLargeReason(content.why)}
         </Said>
       );
     case 'refused':

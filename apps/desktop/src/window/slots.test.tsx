@@ -84,13 +84,30 @@ describe('Slot', () => {
     expect([...page.children].map((each) => each.tagName)).toEqual(['U', 'B', 'P', 'I']);
     const note = page.querySelector('[role="alert"]');
     expect(note?.getAttribute('data-lo-failed-view')).toBe('stacks.broken');
-    expect(note?.textContent).toBe(
-      "Lo couldn't show this part of the window. Restart Lo to try again.",
-    );
+    expect(note?.textContent).toBe('Can’t show this viewTry again');
     expect(error).toHaveBeenCalledWith(
       "Lo couldn't show the view stacks.broken:",
       expect.objectContaining({ message: 'the tree is missing' }),
     );
+  });
+
+  it('draws a view that threw again once Try again is pressed', () => {
+    errors();
+    let throws = true;
+    function Flaky(): React.ReactNode {
+      if (throws) throw new Error('not yet');
+      return <i>drawn</i>;
+    }
+    const page = mount(
+      <Slots views={[defineView(status, { id: 'stacks.flaky', order: 0, render: Flaky })]}>
+        <Slot slot={status} props={{ tab: '#12' }} />
+      </Slots>,
+    );
+    expect(page.querySelector('[role="alert"]')?.textContent).toContain('Can’t show this view');
+    throws = false;
+    act(() => page.querySelector('button')?.click());
+    expect(page.querySelector('[role="alert"]')).toBeNull();
+    expect(page.textContent).toBe('drawn');
   });
 
   it('renders each view as a component of its own, with its own state', () => {

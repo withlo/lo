@@ -207,9 +207,11 @@ describe('the note over the diff', () => {
       text: 'r4 → r5, since you last looked · Lo couldn’t replay r4 across the rebase, so this compares the heads, and shows what came with the base too: 2 files had conflicts',
     });
     expect(noteOf(view({ replay: 'retargeted' })).tone).toBe('warn');
-    expect(noteOf(view({ problem: 'Lo couldn’t compare r2 with r5.' }))).toEqual({
+    const gone = { kind: 'gone', head: head('2') } as const;
+    const compare = { kind: 'compare', from: head('2'), to: head('5'), why: gone } as const;
+    expect(noteOf(view({ problem: compare }))).toEqual({
       tone: 'warn',
-      text: 'r4 → r5, since you last looked · Lo couldn’t compare r2 with r5.',
+      text: 'r4 → r5, since you last looked · Couldn’t compare r2 → r5 · r2’s commit is no longer on GitHub.',
     });
   });
 

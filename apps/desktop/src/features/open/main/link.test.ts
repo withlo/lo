@@ -2,7 +2,6 @@ import {
   Accounts,
   approvalUrl,
   GithubClient,
-  GithubError,
   Token,
   type Account,
   type Grant,
@@ -14,7 +13,6 @@ import { describe, expect, it } from 'vitest';
 import type { Opening } from '../../tab/contract.ts';
 import {
   Browser,
-  causeOf,
   COMES_BACK_WITHIN,
   link,
   look,
@@ -33,7 +31,14 @@ const nothing: typeof globalThis.fetch = (input, init) => {
 };
 
 /** A `fetch` that never reaches GitHub, as when the computer is offline. */
-const offline: typeof globalThis.fetch = () => Promise.reject(new TypeError('fetch failed'));
+const offline: typeof globalThis.fetch = () =>
+  Promise.reject(
+    Object.assign(new TypeError('fetch failed'), {
+      cause: Object.assign(new Error('getaddrinfo ENOTFOUND api.github.com'), {
+        code: 'ENOTFOUND',
+      }),
+    }),
+  );
 
 /** GitHub's answer that a repository or pull request isn't there, or the token can't see it. */
 const notFound: typeof globalThis.fetch = () =>
@@ -480,17 +485,6 @@ function browser(isDefault = false) {
   });
   return { made, opened, later: (ms: number) => (now += ms) };
 }
-
-describe('causeOf', () => {
-  it('says whose sign-in can’t be read, where it knows', () => {
-    const unreadable = new GithubError({ kind: 'tokenUnavailable', message: 'Keychain locked' });
-    expect(causeOf(unreadable, 'rozed-dev', 'rozed-bot')).toEqual({
-      kind: 'unreadable',
-      login: 'rozed-bot',
-    });
-    expect(causeOf(unreadable, 'rozed-dev')).toEqual({ kind: 'unknown' });
-  });
-});
 
 describe('Browser', () => {
   const ISSUE = 'https://github.com/rozed-dev/e2e/issues/12';

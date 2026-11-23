@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { cause, details } from '../../ipc/cause.ts';
 import { defineContract, reply } from '../../ipc/contract.ts';
 
 /** A GitHub login: letters, digits and hyphens, at most 39. */
@@ -127,26 +128,35 @@ export const ghListing = z.discriminatedUnion('kind', [
     version: z.string().nullable(),
     accounts: z.array(ghAccount),
   }),
+  /** No gh found. */
+  z.strictObject({ kind: z.literal('missing') }),
+  /** A gh Lo passed over since someone besides this user or root could change it: where, and why. */
+  z.strictObject({ kind: z.literal('distrusted'), program: z.string(), details }),
   /**
-   * No gh Lo will run: none found, or, when `passedOver`, one Lo passed over since someone else
-   * could change it.
+   * gh failed: it couldn't be run (`run`), it's too old to list its accounts (`tooOld`, with its
+   * `version` when it says), it took too long (`tooSlow`), or anything else (`other`). What gh or
+   * the system said is behind Details.
    */
-  z.strictObject({ kind: z.literal('missing'), message: z.string(), passedOver: z.boolean() }),
-  /** gh ran and failed. */
-  z.strictObject({ kind: z.literal('failed'), program: z.string(), message: z.string() }),
+  z.strictObject({
+    kind: z.literal('failed'),
+    program: z.string(),
+    why: z.enum(['run', 'tooOld', 'tooSlow', 'other']),
+    version: z.string().nullable(),
+    details: details.optional(),
+  }),
 ]);
 export type GhListing = z.output<typeof ghListing>;
 
 /**
  * Why one account wasn't imported from `gh`: gh isn't signed in to it; gh can't use its sign-in,
- * with gh's `state`; gh's sign-in for it belongs to `other`, as GitHub says; or something else, in
- * gh's, GitHub's or the system's own words, for Details.
+ * with gh's `state` or GitHub's refusal; gh's sign-in for it belongs to `other`, as GitHub says; or
+ * something else, by its cause, with gh's, GitHub's or the system's own words for Details.
  */
 export const importFailure = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('notSignedIn') }),
   z.strictObject({ kind: z.literal('unusable'), state: z.string() }),
   z.strictObject({ kind: z.literal('otherAccount'), other: login }),
-  z.strictObject({ kind: z.literal('unknown'), details: z.string().optional() }),
+  z.strictObject({ kind: z.literal('failed'), cause, details: details.optional() }),
 ]);
 export type ImportFailure = z.output<typeof importFailure>;
 

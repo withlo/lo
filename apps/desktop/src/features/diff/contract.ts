@@ -5,6 +5,7 @@
 // the head it drew stays on screen. It also reads a file whole, changed or not, for the whole-file
 // view.
 
+import type { TooLarge } from '@lo/review';
 import { z } from 'zod';
 
 import { defineContract, reply } from '../../ipc/contract.ts';
@@ -129,12 +130,14 @@ export type Version = z.output<typeof version>;
  * A whole file, as `diff.whole` replies: its text; or what its whole-file view says in place of
  * its lines. A file larger than Lo loads at once is `large` until it's asked for anyway; one that
  * isn't text is `binary`; one too large to show even then, or with a line too long to lay out, is
- * `refused`, with why; and until the local copy has the head on screen, it's `waiting`.
+ * `tooLarge`, by which limit; one Lo won't show for another reason is `refused`, with why; and until
+ * the local copy has the head on screen, it's `waiting`.
  */
 export type WholeText =
   | { kind: 'text'; text: string }
   | { kind: 'large'; size: number }
   | { kind: 'binary'; size: number }
+  | { kind: 'tooLarge'; why: TooLarge }
   | { kind: 'refused'; why: string }
   | { kind: 'waiting' };
 

@@ -84,9 +84,11 @@ describe('a thread the diff on screen doesn’t show', () => {
       why: 'This thread’s commit is no longer on GitHub',
     });
     expect(why(row(), undefined)).toEqual({ why: 'Reading revisions…' });
-    expect(why(row(), revisions({ status: 'failed', problem: 'GitHub returned 502.' }))).toEqual({
-      why: 'GitHub returned 502.',
+    const failed = revisions({
+      status: 'failed',
+      problem: { kind: 'read', cause: { kind: 'github' }, details: '502 Bad Gateway' },
     });
+    expect(why(row(), failed)).toEqual({ why: 'Can’t read the revisions' });
     expect(why(row({ writtenOn: 'c'.repeat(40) }), revisions())).toEqual({
       why: 'This thread’s commit isn’t a revision',
     });

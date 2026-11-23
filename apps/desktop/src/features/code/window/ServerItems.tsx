@@ -48,6 +48,7 @@ export function ServerItems({ tab }: { tab: PullTab }) {
               ? {
                   title: failureTitle(status, failure),
                   message: failure.message,
+                  details: failure.details,
                   fix: failure.file
                     ? {
                         label: (

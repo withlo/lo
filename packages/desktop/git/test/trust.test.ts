@@ -411,7 +411,10 @@ test('a clone that fails the check is never pulled out from under a repository r
   const reading = await cache.open('owner', 'repo');
   writeFileSync(join(repo.folder, 'commondir'), '/elsewhere\n');
 
-  await expect(cache.open('owner', 'repo')).rejects.toThrow('is still open');
+  // Busy, held by the tab reading it.
+  await expect(cache.open('owner', 'repo')).rejects.toMatchObject({
+    detail: { kind: 'busy', held: 'tabs' },
+  });
   expect(existsSync(join(reading.folder, 'commondir'))).toBe(true);
   reading.close();
   expect(await madeAgain(cache, repo)).toBe(true);
@@ -422,7 +425,9 @@ test('nor from under a language server still running on one of its checkouts', a
   const release = await cache.useForServer('owner', 'repo', 'ts');
   writeFileSync(join(repo.folder, 'commondir'), '/elsewhere\n');
 
-  await expect(cache.open('owner', 'repo')).rejects.toThrow('a language server still runs on it');
+  await expect(cache.open('owner', 'repo')).rejects.toMatchObject({
+    detail: { kind: 'busy', held: 'servers' },
+  });
   expect(existsSync(join(repo.folder, 'commondir'))).toBe(true);
   release();
   await eventually(() => cache.cloneLock('owner', 'repo').servers === 0);

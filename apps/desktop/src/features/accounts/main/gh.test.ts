@@ -52,9 +52,9 @@ describe('finding gh', () => {
       program,
     });
     const other = fakeGh();
-    expect(
-      await new Gh({ env: { PATH: other.folder }, platform, program: 'none' }).find(),
-    ).toMatchObject({ kind: 'missing', message: "Lo can't find gh, GitHub's command-line tool." });
+    expect(await new Gh({ env: { PATH: other.folder }, platform, program: 'none' }).find()).toEqual(
+      { kind: 'missing' },
+    );
   });
 
   it('passes over a gh other users can change, and says so when it finds no other', async () => {
@@ -66,9 +66,9 @@ describe('finding gh', () => {
     chmodSync(shared, 0o777);
     const gh = new Gh({ env: { PATH: shared }, platform: process.platform, places: nowhere });
     expect(await gh.find()).toEqual({
-      kind: 'missing',
-      message: `Lo found gh at ${join(shared, 'gh')}, but other users can change ${shared}, so Lo won't run it.`,
-      passedOver: true,
+      kind: 'distrusted',
+      program: join(shared, 'gh'),
+      why: `other users can change ${shared}`,
     });
     // A gh the person named is held to the same rule.
     const named = new Gh({
@@ -77,7 +77,7 @@ describe('finding gh', () => {
       program: join(shared, 'gh'),
       places: nowhere,
     });
-    expect((await named.find()).kind).toBe('missing');
+    expect((await named.find()).kind).toBe('distrusted');
     // A trusted one later on wins.
     const trusted = fakeGh();
     const both = new Gh({
@@ -99,7 +99,7 @@ describe('finding gh', () => {
     mkdirSync(links);
     symlinkSync(join(shared, 'real-gh'), join(links, 'gh'));
     const gh = new Gh({ env: { PATH: links }, platform: process.platform, places: nowhere });
-    expect(await gh.find()).toMatchObject({ kind: 'missing' });
+    expect(await gh.find()).toMatchObject({ kind: 'distrusted' });
   });
 
   it("skips what isn't a program", async () => {
@@ -190,12 +190,16 @@ describe('running gh', () => {
     expect(asked(folder)).toEqual(['auth token --hostname github.com --user=rozed-bot']);
   });
 
-  it("shows gh's error for an unknown account", async () => {
+  it("keeps gh's error for an unknown account", async () => {
     const { folder, program } = fakeGh();
     const gh = new Gh({ env: environment(folder), platform: process.platform, places: nowhere });
-    await expect(gh.token(program, 'nobody')).rejects.toThrow(
-      new GhError("gh couldn't read nobody's token: no oauth token found for github.com"),
-    );
+    const error: unknown = await gh.token(program, 'nobody').catch((thrown: unknown) => thrown);
+    expect(error).toBeInstanceOf(GhError);
+    expect(error).toMatchObject({
+      message: "gh couldn't read nobody's token: no oauth token found for github.com",
+      trouble: 'other',
+      said: 'no oauth token found for github.com',
+    });
   });
 
   it('gh never sees tokens from Lo’s environment', async () => {
@@ -219,9 +223,10 @@ describe('running gh', () => {
       script: '#!/bin/sh\necho "unknown flag: --json" >&2\nexit 1\n',
     });
     const gh = new Gh({ env: environment(folder), platform: process.platform, places: nowhere });
-    await expect(gh.accounts(program)).rejects.toThrow(
-      'Lo needs a newer gh to list its accounts. Update gh and try again.',
-    );
+    await expect(gh.accounts(program)).rejects.toMatchObject({
+      trouble: 'tooOld',
+      said: 'unknown flag: --json',
+    });
   });
 
   it('never repeats a token gh printed in an error', async () => {
@@ -232,6 +237,7 @@ describe('running gh', () => {
     const error: unknown = await gh.accounts(program).catch((thrown: unknown) => thrown);
     expect(String(error)).not.toContain('LEAKED');
     expect(String(error)).toContain('bad token <redacted> and <redacted>');
+    expect(error).toMatchObject({ said: 'bad token <redacted> and <redacted>' });
   });
 
   it("refuses a token that can't be one, without repeating it", async () => {

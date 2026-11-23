@@ -21,8 +21,10 @@ export const statuses = tabState<Status | null>(() => null);
 export interface TrustFailure {
   /** Whether it was its pull request alone that was asked about. */
   readonly pull: boolean;
-  /** Why, in a sentence or two. */
+  /** Why, in a sentence, or nothing when the cause isn't known. */
   readonly message: string;
+  /** What GitHub, the settings file or the system said, as it came, for Details. */
+  readonly details?: string | undefined;
   /** Whether what the settings file holds kept Lo from saving it, which editing the file fixes. */
   readonly file: boolean;
 }
@@ -110,6 +112,36 @@ export function busyLabel(status: Status): string | undefined {
     default:
       trusting satisfies never;
       return TRUSTING;
+  }
+}
+
+/**
+ * Why trusting failed, as main sent it: a kind, as the error's code, with what GitHub, the
+ * settings file or the system said as its message. The reason is a sentence of the window's, or
+ * nothing for a cause it doesn't know; what was said goes behind Details.
+ */
+export function trustFailureWords(error: unknown): { message: string; details?: string } {
+  if (!(error instanceof IpcError)) return { message: '' };
+  const said = error.message === '' ? undefined : error.message;
+  switch (error.code) {
+    case 'renamed':
+      return { message: `It’s now named ${error.message}.` };
+    case 'notFork':
+      return { message: 'This pull request isn’t from a fork.' };
+    case 'forkGone':
+      return { message: 'The fork no longer exists.' };
+    case 'settingsFile':
+      return { message: 'settings.json has an error.', details: said };
+    case 'unsaved':
+      return { message: 'settings.json couldn’t be saved.', details: said };
+    case 'internal':
+      return { message: '' };
+    default:
+      // A refusal of main's own, such as the question already asked about another view, says
+      // itself; the rest, whose cause isn't known, have their text behind Details.
+      return error.code === 'asking'
+        ? { message: `Answer the question about ${error.message} first.` }
+        : { message: '', details: said };
   }
 }
 
@@ -215,8 +247,7 @@ export async function askToTrust(
     }
     const failure: TrustFailure = {
       pull,
-      // A cause that isn't known has no reason line: the button says what to do.
-      message: error instanceof IpcError && error.code !== 'internal' ? error.message : '',
+      ...trustFailureWords(error),
       file: error instanceof IpcError && error.code === 'settingsFile',
     };
     setFailure(view, failure);

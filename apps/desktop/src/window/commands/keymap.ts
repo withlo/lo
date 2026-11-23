@@ -3,23 +3,34 @@
 
 import { registry } from './registry.ts';
 
-/** The keymap file, as main sends it. */
+/** What is wrong with the keymap file as a whole, as an error says it. */
+export interface KeymapProblem {
+  readonly title: string;
+  readonly reason?: string | undefined;
+  /** What the system said, as it came. */
+  readonly details?: string | undefined;
+}
+
+/** The keymap file, as the keys feature has it from main, in words. */
 export interface KeymapFile {
   readonly text: string;
   /** What is wrong with the file, if anything is. */
-  readonly problem?: string | undefined;
+  readonly problem?: KeymapProblem | undefined;
   /** Whether Lo will open it in an editor. */
   readonly canOpen: boolean;
+  /** Why it can't be opened, when it can't: the reason on the dimmed command. */
+  readonly refusal?: string | undefined;
 }
 
 /** What the window knows of the keymap file besides its keys. */
 export interface KeymapState {
-  readonly problem: string | undefined;
+  readonly problem: KeymapProblem | undefined;
   readonly canOpen: boolean;
+  readonly refusal: string | undefined;
 }
 
 // Before main has said, there's no problem, and opening the file is allowed: main decides.
-let state: KeymapState = { problem: undefined, canOpen: true };
+let state: KeymapState = { problem: undefined, canOpen: true, refusal: undefined };
 const listeners = new Set<() => void>();
 
 /** Calls `listener` when `keymapState` changes. Returns a function that stops it. */
@@ -37,7 +48,7 @@ export function keymapState(): KeymapState {
 
 /** `true` if the keymap file can be opened, or why not. */
 export function keymapOpenable(): true | string {
-  return state.canOpen ? true : (state.problem ?? "Lo won't open the keymap file.");
+  return state.canOpen ? true : (state.refusal ?? 'The keymap file can’t be opened');
 }
 
 /**
@@ -45,13 +56,14 @@ export function keymapOpenable(): true | string {
  * used are the registry's errors, and `keymapState` holds the rest.
  */
 export function applyKeymapFile(file: KeymapFile): void {
-  state = { problem: file.problem, canOpen: file.canOpen };
+  state = { problem: file.problem, canOpen: file.canOpen, refusal: file.refusal };
   try {
     registry().setKeymap(file.text);
   } catch (error) {
     // The parser reports bad lines; this is a bug, and the keys stay as they were.
     console.error("Lo couldn't apply the keymap file:", error);
-    state = { problem: "Lo couldn't apply the keymap file.", canOpen: file.canOpen };
+    const details = error instanceof Error ? error.message : String(error);
+    state = { ...state, problem: { title: 'Couldn’t apply the keymap file', details } };
   }
   for (const listener of listeners) listener();
 }

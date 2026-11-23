@@ -163,11 +163,11 @@ describe('the files panel', () => {
   it('says why only the changed files show', () => {
     const { container } = render({
       ...LOCAL,
-      listing: { kind: 'changed', why: 'GitHub lists only part of this repository’s files.' },
+      listing: { kind: 'changed', why: { kind: 'truncated' } },
       partial: true,
     });
     expect(container.querySelector('[role="note"]')?.textContent).toBe(
-      'GitHub lists only part of this repository’s files.GitHub lists only some of the changed files, so the rest show once the local copy is ready.',
+      'Unchanged files aren’t listedGitHub lists only part of this repo.GitHub lists only some of the changed files, so the rest show once the local copy is ready.',
     );
     expect(container.querySelector('[data-key="README.md"]')).toBeNull();
   });
@@ -317,7 +317,7 @@ describe('the tree’s keys', () => {
     // GitHub's list, before .gitattributes marked a.pb.go generated.
     const github: TreeState = {
       ...LOCAL,
-      listing: { kind: 'changed', why: 'Only the changed files.' },
+      listing: { kind: 'changed', why: { kind: 'tooManyBytes' } },
       from: 'github',
       changes: [change('a.pb.go', 'modified'), change('b.rs', 'modified')],
       changesFrom: 'github',
