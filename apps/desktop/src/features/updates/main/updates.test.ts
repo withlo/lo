@@ -43,14 +43,14 @@ function fakeUpdater(offered: Partial<Release> = {}) {
 
 let published: UpdateState[];
 let quit: ReturnType<typeof vi.fn<() => void>>;
-let move: ReturnType<typeof vi.fn<() => boolean>>;
+let move: ReturnType<typeof vi.fn<(window: number | undefined) => Promise<boolean>>>;
 let logged: string[];
 
 beforeEach(() => {
   vi.useFakeTimers();
   published = [];
   quit = vi.fn<() => void>();
-  move = vi.fn<() => boolean>(() => true);
+  move = vi.fn<(window: number | undefined) => Promise<boolean>>(() => Promise.resolve(true));
   logged = [];
 });
 
@@ -537,12 +537,12 @@ describe('Later', () => {
 });
 
 describe('moving to Applications', () => {
-  it('happens only where that’s how Lo takes an update', () => {
+  it('happens only where that’s how Lo takes an update, asking in the window that asked', async () => {
     const { updater } = fakeUpdater();
-    start(updater, 'move').move();
-    expect(move).toHaveBeenCalledTimes(1);
+    await start(updater, 'move').move(7);
+    expect(move).toHaveBeenCalledExactlyOnceWith(7);
     for (const how of ['install', 'brew', 'page'] as const) {
-      expect(() => start(updater, how).move()).toThrow(IpcError);
+      await expect(start(updater, how).move(7)).rejects.toThrow(IpcError);
     }
     expect(move).toHaveBeenCalledTimes(1);
   });
@@ -553,14 +553,14 @@ describe('moving to Applications', () => {
     const updates = start(updater, () => how);
     await updates.check(true);
     how = 'page';
-    expect(() => updates.move()).toThrow('This copy of Lo can’t be moved');
+    await expect(updates.move()).rejects.toThrow('This copy of Lo can’t be moved');
     expect(move).not.toHaveBeenCalled();
     expect(updates.state).toEqual({ ...OFFER, how: 'page' });
     how = 'install';
-    expect(() => updates.move()).toThrow('Already in Applications');
+    await expect(updates.move()).rejects.toThrow('Already in Applications');
     expect(updates.state).toEqual(OFFER);
     how = 'move';
-    updates.move();
+    await updates.move();
     expect(move).toHaveBeenCalledTimes(1);
   });
 
@@ -586,13 +586,11 @@ describe('moving to Applications', () => {
     expect(updates.state).toEqual({ ...OFFER, how: 'move' });
   });
 
-  it('says why when the move fails', () => {
+  it('says why when the move fails', async () => {
     const { updater } = fakeUpdater();
-    move.mockImplementation(() => {
-      throw new Error('Failed to copy Lo.app');
-    });
+    move.mockRejectedValue(new Error('Failed to copy Lo.app'));
     // Main's own words, as the window shows them behind Details.
-    expect(() => start(updater, 'move').move()).toThrow(
+    await expect(start(updater, 'move').move()).rejects.toThrow(
       expect.objectContaining({ code: 'failed', message: 'Failed to copy Lo.app' }),
     );
   });

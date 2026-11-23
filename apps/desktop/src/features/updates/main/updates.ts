@@ -83,10 +83,11 @@ export interface UpdatesOptions {
   /** Quits Lo, as any quit does. */
   quit(): void;
   /**
-   * Moves Lo to Applications and starts it again from there: `false` when the reader said not to.
-   * Throws when the move fails.
+   * Moves Lo to Applications and starts it again from there, asking in window `window`, the one
+   * that asked to move, before it replaces a Lo already there: `false` when the reader didn't say
+   * to. Rejects when the move fails.
    */
-  move(): boolean;
+  move(window: number | undefined): Promise<boolean>;
 }
 
 export class Updates {
@@ -312,9 +313,10 @@ export class Updates {
 
   /**
    * Moves Lo to Applications, where it updates itself, when that's how this copy takes one, as Lo
-   * decides again now.
+   * decides again now. Before it replaces a Lo already there, it asks in window `window`, the one
+   * that asked.
    */
-  move(): void {
+  async move(window?: number): Promise<void> {
     const how = this.#decide();
     if (how !== 'move') {
       throw new IpcError(
@@ -323,7 +325,7 @@ export class Updates {
       );
     }
     try {
-      this.#options.move();
+      await this.#options.move(window);
     } catch (error) {
       const why = error instanceof Error ? error.message : String(error);
       this.#options.log(`couldn't move to Applications: ${why}`);
