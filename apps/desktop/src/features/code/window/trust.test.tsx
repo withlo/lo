@@ -320,12 +320,14 @@ describe('asking to trust', () => {
   it('says so when main is asking about another repo, and asks it again once pressed again', async () => {
     const page = draw(<TrustBanner tab={tabOf('t8')} />);
     act(() => bridge.push('code.status', statusOf('t8')));
-    const elsewhere = 'Answer the question about rozed-dev/other first.';
+    // A refusal's reason, in the banner: no full stop.
+    const elsewhere = 'Answer the question about rozed-dev/other first';
     answerTrust = () => {
       throw new IpcError('asking', 'rozed-dev/other');
     };
     act(() => button(page, 'Trust repo…')?.click());
     await until(() => page.textContent.includes(elsewhere));
+    expect(page.textContent).not.toContain(`${elsewhere}.`);
     expect(button(page, 'Trust repo…')?.getAttribute('aria-disabled')).toBeNull();
     answerTrust = () => 'cancelled';
     const before = asked('code.trust');
