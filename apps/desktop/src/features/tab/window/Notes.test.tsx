@@ -285,6 +285,26 @@ describe('a read that fails after the view was drawn', () => {
     const first = { ...failedRead, shown: null };
     expect(blocked(first)).toBe(true);
     expect(draw(<Chip view={first} />).textContent).toBe('none');
+    // Nor while the connection waits: the view's problem says why, once.
+    const resets = Date.now() + 25 * 60_000;
+    const limited: PullView = {
+      ...first,
+      acting: { kind: 'anonymous' },
+      connection: { kind: 'rateLimited', login: null, until: resets, secondary: false },
+      problem: { kind: 'failed', cause: { kind: 'rateLimit', resets }, retryAt: resets },
+    };
+    expect(draw(<Chip view={limited} />).textContent).toBe('none');
+    const away: PullView = {
+      ...first,
+      connection: {
+        kind: 'offline',
+        retryAt: Date.now() + 20_000,
+        cause: { kind: 'offline' },
+        error: 'fetch failed',
+      },
+      problem: { kind: 'failed', cause: { kind: 'offline' }, retryAt: Date.now() + 20_000 },
+    };
+    expect(draw(<Chip view={away} />).textContent).toBe('none');
   });
 });
 

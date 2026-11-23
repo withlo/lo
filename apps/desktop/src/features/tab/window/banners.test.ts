@@ -150,7 +150,7 @@ describe('a pull request’s tab that can’t show it', () => {
     expect(stopped?.actions).toEqual([{ label: 'Try again', do: { kind: 'retry' } }]);
   });
 
-  it('offers what the cause calls for: a sign-in, or nothing while the rate limit holds', () => {
+  it('offers what the cause calls for: a sign-in, or nothing while the rate limit holds an account', () => {
     const failed = (cause: Cause) =>
       failureOf(view({ problem: { kind: 'failed', cause, retryAt: clock.now + 5_000 } }), E2E);
     // The reset time is the reason: no countdown to the next try, and nothing to press.
@@ -158,6 +158,23 @@ describe('a pull request’s tab that can’t show it', () => {
       detail: `GitHub’s rate limit resets at ${timeOfDay(clock.now + 25 * 60_000)}.`,
       retryAt: undefined,
       actions: [],
+    });
+    // Read as nobody, a sign-in reads past it, under the account's own limit.
+    const nobody = failureOf(
+      view({
+        acting: { kind: 'anonymous' },
+        problem: {
+          kind: 'failed',
+          cause: { kind: 'rateLimit', resets: clock.now + 25 * 60_000 },
+          retryAt: clock.now + 25 * 60_000,
+        },
+      }),
+      E2E,
+    );
+    expect(nobody).toMatchObject({
+      detail: `GitHub’s rate limit resets at ${timeOfDay(clock.now + 25 * 60_000)}.`,
+      retryAt: undefined,
+      actions: [{ label: 'Sign in with GitHub…', do: { kind: 'signIn' } }],
     });
     expect(failed({ kind: 'signedOut', login: 'rozed-bot' })).toMatchObject({
       detail: 'rozed-bot is signed out.',
@@ -274,7 +291,7 @@ describe('how a tab stands with GitHub', () => {
     // A sign-in that can't be read, and a failure Lo can't name, are no connection lost.
     expect(unanswered({ kind: 'unreadable', login: 'rozed-bot' })).toMatchObject({
       kind: 'failed',
-      label: 'Can’t read sign-in',
+      label: 'Can’t read the sign-in',
     });
     expect(unanswered({ kind: 'unknown' })).toMatchObject({
       kind: 'failed',

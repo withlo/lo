@@ -275,6 +275,7 @@ One wording per cause:
 | Sent, result not known | GitHub didn’t respond.                            | Check again                |
 | Rate limit             | GitHub’s rate limit resets at 14:05.              | None                       |
 | Rate limit, no time    | GitHub’s rate limit was reached.                  | Try again                  |
+| Rate limit, signed out | GitHub’s rate limit resets at 14:05.              | Sign in with GitHub…       |
 | Signed out             | ravi-k is signed out.                             | Sign in again              |
 | Sign-in can’t be read  | ravi-k’s sign-in can’t be read from the Keychain. | Try again                  |
 | Missing or hidden      | It doesn’t exist, or ravi-k can’t see it.         | Sign in with GitHub…       |

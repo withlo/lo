@@ -164,8 +164,10 @@ export function failureOf(
       };
     case 'failed': {
       // What it offers follows the cause: a sign-in, or nothing while the rate limit holds, whose
-      // reset time the reason says; else Try again, or Try now while Lo waits to.
-      const remedy = remedyOf(problem.cause);
+      // reset time the reason says, unless the tab reads as nobody, whom a sign-in reads past it;
+      // else Try again, or Try now while Lo waits to.
+      const limited = problem.cause.kind === 'rateLimit' && view?.acting?.kind === 'anonymous';
+      const remedy = limited ? 'signIn' : remedyOf(problem.cause);
       const at = remedy === 'tryAgain' ? problem.retryAt : null;
       return {
         id: 'failed',

@@ -302,20 +302,27 @@ async function openAs(page: Page, pull: Opening): Promise<string> {
 onStaged.describe('opened with nobody signed in, while the rate limit is used up', () => {
   onStaged.use({ account: false, answering: 'limited' });
 
-  onStaged('says why in place of its view, with when the limit resets', async ({ page }) => {
-    await openAs(page, E2E);
-    const failed = page.locator('[data-lo-failed]');
-    const why = failed.getByRole('alert').filter({ hasText: 'Can’t open #80' });
-    await expect(why).toContainText('GitHub’s rate limit resets at', { timeout: 20_000 });
-    // It waits out the limit: nothing to press but Details.
-    await expect(failed.getByRole('button', { name: /^(Try|Sign in)/ })).toHaveCount(0);
-    // The header's chip says the limit, once, and nothing around the view waits.
-    const header = page.locator('[data-lo-pull] header');
-    await expect(header.getByRole('button', { name: /^Rate limit/ })).toHaveCount(1);
-    await expect(header.locator('.skeleton')).toHaveCount(0);
-    await expect(page.getByText('Opening pull request…')).toHaveCount(0);
-    await expect(page.getByRole('complementary', { name: 'Files' })).toHaveAttribute('inert', '');
-  });
+  onStaged(
+    'says why in place of its view, with when the limit resets, and offers a sign-in',
+    async ({ page }) => {
+      await openAs(page, E2E);
+      const failed = page.locator('[data-lo-failed]');
+      const why = failed.getByRole('alert').filter({ hasText: 'Can’t open #80' });
+      await expect(why).toContainText('GitHub’s rate limit resets at', { timeout: 20_000 });
+      // Nothing to try until it resets, but signing in reads past it, under the account's own limit.
+      await expect(failed.getByRole('button', { name: /^Try/ })).toHaveCount(0);
+      const signIn = failed.getByRole('button', { name: 'Sign in with GitHub…' });
+      await expect(signIn).toBeVisible();
+      // The problem says the limit, once: no chip in the header, and nothing around the view waits.
+      const header = page.locator('[data-lo-pull] header');
+      await expect(header.getByRole('button', { name: /^Rate limit/ })).toHaveCount(0);
+      await expect(header.locator('.skeleton')).toHaveCount(0);
+      await expect(page.getByText('Opening pull request…')).toHaveCount(0);
+      await expect(page.getByRole('complementary', { name: 'Files' })).toHaveAttribute('inert', '');
+      await signIn.click();
+      await expect(page.getByTestId('sign-in')).toBeVisible();
+    },
+  );
 });
 
 onStaged.describe('opened while GitHub refuses the account’s token', () => {

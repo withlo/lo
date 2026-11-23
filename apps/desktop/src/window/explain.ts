@@ -93,7 +93,7 @@ export function explain(cause: Cause, system: System = currentSystem()): string 
 /**
  * What a chip, or a dimmed control's reason, calls `cause`, why GitHub gave no answer or a read
  * failed: "Offline" only where no connection reached GitHub, "No response" where GitHub didn't
- * answer in time, and "Can’t read sign-in" where the account's sign-in can't be read. Any other
+ * answer in time, and "Can’t read the sign-in" where the account's sign-in can't be read. Any other
  * cause is `otherwise`.
  */
 export function chipLabel(cause: Cause, otherwise: string): string {
@@ -103,7 +103,7 @@ export function chipLabel(cause: Cause, otherwise: string): string {
     case 'timeout':
       return 'No response';
     case 'unreadable':
-      return 'Can’t read sign-in';
+      return 'Can’t read the sign-in';
     case 'unknown':
     case 'proxy':
     case 'github':
