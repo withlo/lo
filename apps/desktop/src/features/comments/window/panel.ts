@@ -372,7 +372,7 @@ export function comparisonFor(
   const head = row.outdated ? row.writtenOn : (row.currentOn ?? row.writtenOn);
   if (head === null) return { why: 'This thread’s commit is no longer on GitHub' };
   if (known?.status !== 'ready') {
-    return { why: known?.problem ?? 'Reading revisions…' };
+    return { why: known?.problem ? 'Can’t read the revisions' : 'Reading revisions…' };
   }
   const revision = known.revisions.find((each) => each.head === head);
   if (!revision) {

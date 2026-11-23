@@ -81,7 +81,7 @@ export function compareState(
     case 'signIn':
       return { ok: false, why: 'Revisions show only for a signed-in account.' };
     case 'failed':
-      return { ok: false, why: revisions.problem ?? 'Lo couldn’t read the revisions.' };
+      return { ok: false, why: 'Can’t read the revisions' };
     default:
       revisions.status satisfies never;
       return { ok: false, why: 'Lo couldn’t read the revisions.' };

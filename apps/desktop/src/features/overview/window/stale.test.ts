@@ -99,8 +99,12 @@ describe('compareState', () => {
       why: 'Revisions show only for a signed-in account.',
     });
     expect(
-      compareState({ ...view, status: 'failed', problem: 'GitHub said 502.' }, R1, R3),
-    ).toEqual({ ok: false, why: 'GitHub said 502.' });
+      compareState(
+        { ...view, status: 'failed', problem: { kind: 'read', cause: { kind: 'github' } } },
+        R1,
+        R3,
+      ),
+    ).toEqual({ ok: false, why: 'Can’t read the revisions' });
     expect(compareState({ ...view, waitingFor: 'git' }, R1, R3)).toEqual({
       ok: false,
       why: 'Comparing revisions needs git, which Lo can’t find.',

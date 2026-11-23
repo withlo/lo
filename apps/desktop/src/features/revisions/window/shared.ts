@@ -15,6 +15,7 @@ import type { TreePath } from '../../tree/contract.ts';
 import type { Compared, ComparisonView } from '../contract.ts';
 import { afterHold as heldAfter, holdLimit as heldFor } from './hold.ts';
 import { main } from './main.ts';
+import { problemWords } from './model.ts';
 import { catchUp, marked, views } from './store.ts';
 import {
   countIn,
@@ -246,7 +247,8 @@ export function compareTo(
 ): 'now' | 'coming' | { readonly why: string } {
   const view = views.get(tab);
   if (!view || view.status !== 'ready') {
-    return { why: view?.problem ?? 'Lo hasn’t read the pull request’s revisions yet.' };
+    if (view?.problem) return { why: problemWords(view, view.problem).title };
+    return { why: 'Lo hasn’t read the pull request’s revisions yet.' };
   }
   const coming = comparisonComing(tab);
   if (sameCompared(coming, compared)) return 'coming';
