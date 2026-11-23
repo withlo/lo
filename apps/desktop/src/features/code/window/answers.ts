@@ -160,7 +160,7 @@ export function notYet(local: LocalState | undefined): NotYet | undefined {
 /** Why code features can't answer yet, as the status bar says it. */
 export const NOT_YET = {
   noGit: 'Code features need git.',
-  notFetched: 'The local copy couldn’t be fetched',
+  notFetched: 'Can’t fetch the local copy',
   waiting: 'The syntax index waits for the local copy.',
 } as const satisfies Record<NotYet, string>;
 

@@ -16,8 +16,8 @@ export const NO_TEXT_APP = 'No app is set for text files.';
 /** What Linux was asked for the app for text files, which answered none: behind Details. */
 export const TEXT_APP_QUERY = 'xdg-mime query default text/plain';
 
-/** Why a text file didn't open on a system Lo has no way to open one on. */
-export const UNSUPPORTED = 'Opening text files isn’t supported on this system.';
+/** Why a text file didn't open on a computer Lo has no way to open one on. */
+export const UNSUPPORTED = 'Opening text files isn’t supported on this computer.';
 
 /** A time of day, in the system's own format: `14:05`. */
 export function timeOfDay(time: number): string {
