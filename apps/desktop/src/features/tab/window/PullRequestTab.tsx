@@ -75,7 +75,7 @@ function FocusedMode() {
 export function PullRequestTab({ tab }: { tab: PullTab }) {
   const view = usePull(tab.id);
   const local = useLocalCopy(tab.id);
-  const connection = useHeaderConnection(tab.id, view?.connection);
+  const connection = useHeaderConnection(tab, view);
   // A pull request the tab can't show takes the middle's place, with why, over what's drawn.
   const failed = blocked(view);
   const { leftOpen, right: rightChosen } = useTabPanels(tab.id);

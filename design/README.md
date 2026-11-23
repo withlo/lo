@@ -452,10 +452,12 @@ that floats.
   alone, copying rejects and the button reads "Couldn’t copy".
 - **`Banner`** is a full-width message under the PR header about the whole tab. A banner reports a
   change to this pull request. Offers, set-up and standing states go on the control they belong to.
-  It's one line: a `title`, an `action` and Dismiss. The tab shows one at a time, the most urgent,
-  with "+1" for the rest, which moves to the next; the row opens and closes with the Open move, and
-  one banner gives way to the next with Swap. An action that can be busy takes `busy` (`false` at
-  rest) and `working`, as a `Button` does.
+  It's one line: a `title`, an `action` and Dismiss. The tab shows one at a time, the most urgent
+  (`danger`, then `warn`, then `info`), with "+1" for the rest, which moves to the next; the row
+  opens and closes with the Open move, and one banner gives way to the next with Swap. Focus stays
+  in the row as they do (`handOffFocus`, in `keyboard.md`), and a banner that arrives behind the one
+  shown is said in a polite live region. An action that can be busy takes `busy` (`false` at rest)
+  and `working`, as a `Button` does.
 
 Base UI's popup parts (dialog, menu, popover, tooltip, toast and the like) are imported only by
 these pieces. `ui:lint` runs `scripts/check-popups.ts`, which fails on an import anywhere else, so a
@@ -493,12 +495,14 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
 - One window, a tab per PR (a whole stack in one tab). Rows top to bottom: tab strip
   (`lo-tabbar-h`), PR header, banners, body, status bar (`lo-statusbar-h`).
 - Each thing the tab says has one place. A pull request it can't show is a `Problem` in place of the
-  view. How the tab stands with GitHub (offline, signed out, the rate limit) is the PR header's
-  chip, whose details say why, when it last heard from GitHub, and the one thing to do. A change to
-  the pull request is the banner.
+  view. How the tab stands with GitHub (offline, signed out, the rate limit, a read that failed
+  after the view was drawn, which stays) is the PR header's chip, whose details say why, when it
+  last heard from GitHub, and the one thing to do. Offline is said there alone. A change to the pull
+  request is the banner.
 - The status bar holds `StatusItem`s: a ball and a label. A ring while it's off or not there yet, a
-  spinner at work, filled once ready, amber where it holds back, red once it failed. A click opens
-  its details: one line of state and its actions, or a `Problem` once it failed. Items keep their
+  spinner at work, filled once ready, amber while it waits or holds back, red only once it failed,
+  and not while it waits to try again. A click opens its details: one line of state and its actions,
+  or a `Problem` once it failed; work under way says how far it has got there. Items keep their
   place: one that has nothing to say yet shows its ring.
 - The body is left panel (stack, then files), the middle sheet, and the threads panel. Each panel
   opens and closes with a key.

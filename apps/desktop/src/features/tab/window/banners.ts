@@ -269,13 +269,18 @@ export interface LocalNote {
   readonly label: string;
   /** The details' one line, for a copy that's there: the commit it's at. */
   readonly at?: string | undefined;
+  /** The details' one line while it fetches: what Git is doing, as far as it said. */
+  readonly doing?: string | undefined;
+  /** How far the fetch has got, in percent, once Git has measured it, for the details' meter. */
+  readonly percent?: number | undefined;
   /** Why it can't be fetched, for its details, with what to do about it. */
   readonly problem?: BannerSpec | undefined;
 }
 
-/** "62%": how far a fetch has got, from what git said it's doing, if it said. */
-function percentOf(progress: string | null): string | undefined {
-  return progress?.match(/(\d+)%/)?.[0];
+/** 62: how far a fetch has got, in percent, from what git said it's doing, if it said. */
+function percentOf(progress: string | null): number | undefined {
+  const found = progress?.match(/(\d+)%/)?.[1];
+  return found === undefined ? undefined : Number(found);
 }
 
 /** The title of a local copy that can't be fetched, for as long as it can't. */
@@ -286,8 +291,9 @@ const CANT_USE = 'Can’t use the local copy';
 
 /**
  * The local copy's item for the tab showing `shown`, as `view` stands, or nothing before the tab
- * has one. A fetch that stopped because GitHub can't be reached is only offline: the header's chip
- * says that, and the fetch tries again with it.
+ * has one. A fetch that stopped because GitHub can't be reached only waits: the header's chip says
+ * the tab is offline, and the fetch tries again with it. Its ball is amber while it waits, red only
+ * once it failed.
  */
 export function localNote(
   local: LocalState | undefined,
@@ -319,25 +325,29 @@ export function localNote(
     }
     case 'fetching': {
       const percent = percentOf(local.progress);
+      const said = local.progress ?? '';
       return {
         ball: 'working',
-        label: percent === undefined ? 'Fetching local copy…' : `Fetching local copy · ${percent}`,
+        label: percent === undefined ? 'Fetching local copy…' : `Fetching local copy · ${percent}%`,
+        doing:
+          said === '' ? 'Waiting for GitHub…' : `${said.charAt(0).toUpperCase()}${said.slice(1)}`,
+        percent,
       };
     }
     case 'ready':
-      return local.offline
-        ? { ball: 'warn', label: 'Local copy · offline', at: short(local.head) }
-        : { ball: 'ready', label: 'Local copy', at: short(local.head) };
+      // Offline, it's there all the same: the header's chip says the tab is offline.
+      return { ball: 'ready', label: 'Local copy', at: short(local.head) };
     case 'retrying': {
+      // A fetch waiting for GitHub to be reached again: the chip says why.
       if (view?.connection.kind === 'offline' && local.failure === 'network') {
-        return { ball: 'warn', label: 'Local copy · offline' };
+        return { ball: 'warn', label: 'Local copy' };
       }
       const held = heldBy(local.failure, repository);
       const title = held === undefined ? CANT_FETCH : CANT_USE;
       // A copy held for its tabs or servers is made again once they let go, whenever that is: it
-      // says what it waits for, with no time and nothing to press.
+      // says what it waits for, with no time and nothing to press. Either way it's a wait.
       return {
-        ball: 'failed',
+        ball: 'warn',
         label: title,
         problem: {
           id: 'local',
@@ -353,12 +363,13 @@ export function localNote(
     case 'failed': {
       const held = heldBy(local.failure, repository);
       const title = held === undefined ? CANT_FETCH : CANT_USE;
+      // One held for its tabs or servers waits for them, so it's a wait, not a failure.
       return {
-        ball: 'failed',
+        ball: held === undefined ? 'failed' : 'warn',
         label: title,
         problem: {
           id: 'local',
-          tone: 'danger',
+          tone: held === undefined ? 'danger' : 'warn',
           title,
           detail: held ?? fetchReason(local.failure, repository, login),
           details: local.details,
@@ -432,18 +443,46 @@ function fetchReason(
   }
 }
 
+/** A revision as the tab's banner names it: its head, its number, and who pushed it. */
+export interface Pushed {
+  readonly head: string;
+  readonly number: number | null;
+  readonly pusher: string | null;
+}
+
 /**
  * The tab's own banners, for a change to its pull request: a newer push than the one on screen,
  * until it's shown or the reader dismisses it. `dismissed` is the newer push the reader dismissed.
+ * Where `revisions` name the push and who pushed it, the banner does too: "ravi-k pushed r5", with
+ * "Show r5". Otherwise it says the revision shown is out of date.
  */
-export function bannersFor(view: PullView | undefined, dismissed?: string | null): BannerSpec[] {
-  if (!view?.newer || !view.shown || view.newer === dismissed) return [];
+export function bannersFor(
+  view: PullView | undefined,
+  dismissed?: string | null,
+  revisions?: readonly Pushed[],
+): BannerSpec[] {
+  const newer = view?.newer;
+  if (!newer || !view.shown || newer === dismissed) return [];
+  const pushed = revisions?.find((each) => each.head.toLowerCase() === newer.toLowerCase());
+  const reload: BannerDo = { kind: 'reload' };
+  const number = pushed?.number ?? null;
+  const pusher = pushed?.pusher ?? null;
+  if (number !== null && pusher !== null) {
+    return [
+      {
+        id: 'newer',
+        tone: 'info',
+        title: `${pusher} pushed r${number}`,
+        actions: [{ label: `Show r${number}`, do: reload }],
+      },
+    ];
+  }
   return [
     {
       id: 'newer',
       tone: 'info',
-      title: 'There’s a newer push',
-      actions: [{ label: 'Show latest', do: { kind: 'reload' } }],
+      title: 'This revision is out of date',
+      actions: [{ label: 'Show latest', do: reload }],
     },
   ];
 }

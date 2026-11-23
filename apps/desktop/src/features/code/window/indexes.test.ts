@@ -6,12 +6,17 @@ import { indexItem } from './indexes.ts';
 
 describe('the code index’s status item', () => {
   it('counts while it builds, names the index once it’s ready, and says how much a partial one has', () => {
+    // Its details say how far, in files, with a meter.
     expect(indexItem({ kind: 'building', done: 1204, total: 3880 })).toEqual({
       ball: 'working',
       text: 'Indexing code · 1,204 / 3,880',
+      lines: ['1,204 of 3,880 files'],
+      progress: { done: 1204, total: 3880 },
     });
-    expect(indexItem({ kind: 'building', done: 0, total: 0 })).toMatchObject({
+    expect(indexItem({ kind: 'building', done: 0, total: 0 })).toEqual({
+      ball: 'working',
       text: 'Indexing code…',
+      lines: ['Starting…'],
     });
     expect(indexItem({ kind: 'ready', partial: null })).toEqual({
       ball: 'ready',
@@ -37,11 +42,19 @@ describe('the code index’s status item', () => {
     });
   });
 
-  it('says it can’t index the code, with what main said behind it', () => {
-    expect(indexItem({ kind: 'failed', message: 'The local copy is gone.' })).toEqual({
+  it('says it can’t index the code, with when it tries again and what main said behind it', () => {
+    // A wait, amber, while it's built again by itself.
+    expect(
+      indexItem({ kind: 'failed', message: 'The local copy is gone.', retryAt: 20_000 }),
+    ).toEqual({
+      ball: 'warn',
+      text: 'Can’t index the code',
+      failure: { message: 'The local copy is gone.', retryAt: 20_000 },
+    });
+    expect(indexItem({ kind: 'failed', message: '', retryAt: null })).toEqual({
       ball: 'failed',
       text: 'Can’t index the code',
-      failure: 'The local copy is gone.',
+      failure: { message: '', retryAt: null },
     });
   });
 

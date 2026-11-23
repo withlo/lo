@@ -16,7 +16,8 @@ import type { Servers, Status } from '../contract.ts';
 import { readTrusted } from '../settings.ts';
 import feature from './index.ts';
 import { ServerItems } from './ServerItems.tsx';
-import { askable, offered, offerOf, offerOnce, trustable, untrustable } from './status.ts';
+import { offered } from './servers.ts';
+import { askable, offerOf, offerOnce, trustable, untrustable } from './status.ts';
 import { rowsOf } from './Trusted.tsx';
 
 /** What main says of each view, by its id. */
@@ -217,6 +218,28 @@ describe('the Language servers item', () => {
     // A click opens them as ever, and they take focus then.
     await open(page);
     expect(offered.get('t3')).toBe('open');
+  });
+
+  it('closes the offer once the view is trusted, so a later Stop trusting finds the item closed', async () => {
+    const page = offItem('t16');
+    act(() => offerOnce('t16'));
+    await settle();
+    expect(details()).toBeDefined();
+    // Trusted: the item gives way to the servers starting, and the offer is done.
+    act(() => trustedNow('t16'));
+    expect(offered.get('t16')).toBe('closed');
+    // Stop trusting brings the item back, closed and asking nothing.
+    act(() => {
+      bridge.push('code.served', off('t16'));
+      bridge.push('code.status', statusOf('t16', { dismissed: true }));
+    });
+    await settle();
+    expect(page.textContent).toBe('Language servers off');
+    expect(details()).toBeUndefined();
+    // Servers no longer off by any road, as by a file fixed by hand, close it too.
+    act(() => offered.set('t16', 'open'));
+    act(() => bridge.push('code.served', { view: 't16', off: false, servers: [] }));
+    expect(offered.get('t16')).toBe('closed');
   });
 
   it('doesn’t open by itself where it was offered, while Lo asks, or where nothing can be trusted', () => {

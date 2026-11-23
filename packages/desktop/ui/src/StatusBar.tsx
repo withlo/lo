@@ -1,11 +1,16 @@
 import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
   useState,
   type ButtonHTMLAttributes,
+  type ReactElement,
   type ReactNode,
   type Ref,
   type RefObject,
 } from 'react';
 
+import { besideIn, handOffFocus } from './focus.ts';
 import { Popover, PopoverDescription } from './Popover.tsx';
 import { Spinner } from './Spinner.tsx';
 
@@ -110,6 +115,19 @@ export function StatusItem({
   ...props
 }: StatusItemProps) {
   const [kept, setKept] = useState(false);
+  // The item as it's drawn now, whichever element that is, for focus to come back to as its details
+  // end.
+  const self = useRef<HTMLElement | null>(null);
+  const mine = useCallback(
+    (element: HTMLElement | null) => {
+      self.current = element;
+      // The caller's ref is for a button: an item that's text gives it none.
+      const button = element instanceof HTMLButtonElement ? element : null;
+      if (typeof ref === 'function') ref(button);
+      else if (ref) ref.current = button;
+    },
+    [ref],
+  );
   const content = (
     <>
       {ball !== undefined && <StatusBall state={ball} />}
@@ -122,39 +140,92 @@ export function StatusItem({
       onOpenChange?.(next);
     };
     return (
-      <Popover
+      <ItemDetails
         open={open ?? kept}
         onOpenChange={change}
+        item={self}
         trigger={
-          <button type="button" {...props} ref={ref} className={STATUS_BUTTON}>
+          <button type="button" {...props} ref={mine} className={STATUS_BUTTON}>
             {content}
           </button>
         }
-        side="top"
         label={label}
-        scope="dialog"
         initialFocus={initialFocus}
         container={container}
-        className="flex status-details flex-col gap-8 p-12"
       >
         {details}
-      </Popover>
+      </ItemDetails>
     );
   }
   if (onClick === undefined) {
-    return <span className={STATUS_ITEM}>{content}</span>;
+    return (
+      <span ref={mine} className={STATUS_ITEM}>
+        {content}
+      </span>
+    );
   }
   return (
     <button
       type="button"
       {...props}
-      ref={ref}
+      ref={mine}
       className={STATUS_BUTTON}
       title={title}
       onClick={onClick}
     >
       {content}
     </button>
+  );
+}
+
+/**
+ * A status item's details, over its trigger. Ended while they hold focus, as by an action that
+ * takes them away, focus goes back to the item as it's drawn now (`item`), else to the bar's next
+ * item, else its previous one, else the bar, not to the page.
+ */
+function ItemDetails({
+  open,
+  onOpenChange,
+  item,
+  trigger,
+  label,
+  initialFocus,
+  container,
+  children,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  item: RefObject<HTMLElement | null>;
+  trigger: ReactElement<Record<string, unknown>>;
+  label: string | undefined;
+  initialFocus: RefObject<HTMLElement | null> | undefined;
+  container: HTMLElement | null | undefined;
+  children: ReactNode;
+}) {
+  const popup = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(
+    () => () => {
+      const leaving = [item.current, popup.current];
+      const stops = besideIn(item.current?.parentElement, leaving);
+      handOffFocus(leaving, () => [item.current, ...stops]);
+    },
+    [item],
+  );
+  return (
+    <Popover
+      open={open}
+      onOpenChange={onOpenChange}
+      trigger={trigger}
+      side="top"
+      label={label}
+      scope="dialog"
+      initialFocus={initialFocus}
+      popupRef={popup}
+      container={container}
+      className="flex status-details flex-col gap-8 p-12"
+    >
+      {children}
+    </Popover>
   );
 }
 

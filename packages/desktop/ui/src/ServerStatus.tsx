@@ -3,6 +3,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
 import { Button } from './Button.tsx';
 import { formatBytes } from './bytes.ts';
+import { besideIn, handOffFocus } from './focus.ts';
 import { showFormat } from './controls.ts';
 import { CopyFaces, CopyStatus, useCopy, useCopySaid } from './CopyButton.tsx';
 import { Popover } from './Popover.tsx';
@@ -125,7 +126,10 @@ export interface ServerStatusProps {
   trust?: ServerTrust | undefined;
   /** Whether the details are open. Without it, the item keeps its own. */
   open?: boolean | undefined;
-  /** They're open unasked, as an offer: focus stays where the reader is. */
+  /**
+   * They're open unasked, as an offer: focus stays where the reader is, and a screen reader hears
+   * their line, politely.
+   */
   quiet?: boolean | undefined;
   onOpenChange?: ((open: boolean) => void) | undefined;
   /** Where the details are put in the page: an element inside `.lo-app`. */
@@ -356,40 +360,6 @@ function lineOf(state: ServerState, version: string | undefined): ReactNode {
 }
 
 /**
- * Where focus goes when an item leaves the page with it: the bar's next item, else its previous
- * one, else the bar itself. `own` is the item's own buttons, and `details` its open details, which
- * leave with it. Nothing happens unless focus is on one of them, or inside the details.
- */
-function handOffFocus(own: readonly (HTMLElement | null)[], details: HTMLElement | null): void {
-  const mine = own.filter((each) => each !== null);
-  const leaving = mine.find((each) => each.isConnected);
-  const bar = leaving?.parentElement;
-  if (!leaving || !bar) return;
-  const active = leaving.ownerDocument.activeElement;
-  if (!active || !(mine.some((each) => each === active) || details?.contains(active))) return;
-  const stops = [...bar.querySelectorAll<HTMLElement>('button:not(:disabled), a[href]')].filter(
-    (stop) => !mine.includes(stop) && !details?.contains(stop),
-  );
-  const next =
-    stops.find(
-      (stop) => leaving.compareDocumentPosition(stop) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ) ??
-    stops.findLast(
-      (stop) => leaving.compareDocumentPosition(stop) & Node.DOCUMENT_POSITION_PRECEDING,
-    );
-  if (next) {
-    next.focus({ preventScroll: true });
-    return;
-  }
-  // The bar is no stop for `Tab`: it takes focus only for as long as it needs to hold it.
-  if (!bar.hasAttribute('tabindex')) {
-    bar.tabIndex = -1;
-    bar.addEventListener('blur', () => bar.removeAttribute('tabindex'), { once: true });
-  }
-  bar.focus({ preventScroll: true });
-}
-
-/**
  * One language server in the status bar, as `StatusItem` draws an item: its ball and its state in
  * words, "Starting gopls…" while it comes up and its name alone once it's ready. A click, or `⏎`
  * on it, opens its details over it: one line of state, or why it can't run, and what to do: start
@@ -422,8 +392,16 @@ export function ServerStatus({
   const copy = useCopy();
   const [copied, sayCopied] = useCopySaid();
   // Whatever takes the item away while it has focus, such as a caller that draws another item for
-  // the new state, would drop focus on the page: it goes to the bar instead.
-  useLayoutEffect(() => () => handOffFocus([trigger.current, beside.current], details.current), []);
+  // the new state, would drop focus on the page: it goes to the bar's next item, else its previous
+  // one, else the bar.
+  useLayoutEffect(
+    () => () => {
+      const leaving = [trigger.current, beside.current, details.current];
+      const stops = besideIn(trigger.current?.parentElement, leaving);
+      handOffFocus(leaving, () => stops);
+    },
+    [],
+  );
   const ball = serverBall(state);
   const stopped = cantRun(state);
   const says = line ?? lineOf(state, version);
@@ -568,6 +546,10 @@ export function ServerStatus({
           {restartLabel(state)}
         </button>
       )}
+      {/* Opened unasked, the details take no focus, so a screen reader hears their line here. */}
+      <span role="status" className="sr-only">
+        {shown && quiet && says !== undefined ? says : ''}
+      </span>
     </>
   );
 }

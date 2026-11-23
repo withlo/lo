@@ -93,7 +93,8 @@ export type PartialWhy = z.output<typeof partialWhy>;
  * - `waiting` for the local copy at the head on screen, or for what the tab compares;
  * - `building`, with the files read of those it reads, across both sides;
  * - `ready`, whole or `partial`: `indexed` of `total` files, and why;
- * - `failed`, with why, which Lo tries again by itself.
+ * - `failed`, with what went wrong (`message`, empty when nothing said), which Lo tries again by
+ *   itself at `retryAt`.
  */
 export const indexState = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('noGit') }),
@@ -113,7 +114,11 @@ export const indexState = z.discriminatedUnion('kind', [
       })
       .nullable(),
   }),
-  z.strictObject({ kind: z.literal('failed'), message: z.string().max(400) }),
+  z.strictObject({
+    kind: z.literal('failed'),
+    message: z.string().max(400),
+    retryAt: z.number().int().nonnegative().nullable(),
+  }),
 ]);
 export type IndexState = z.output<typeof indexState>;
 
@@ -286,6 +291,11 @@ export const contract = defineContract('code', {
     dismiss: { input: z.strictObject({ view: tabId }), reply: reply<void>() },
     /** How far view `view`'s syntax index has got, or nothing for no such view. The `indexed` topic follows it. */
     index: { input: z.strictObject({ view: tabId }), reply: reply<IndexState | null>() },
+    /**
+     * Builds view `view`'s syntax index again now, where it failed, as "Try now" asks, not once its
+     * wait ends. Nothing for a view whose index didn't fail.
+     */
+    retryIndex: { input: z.strictObject({ view: tabId }), reply: reply<void>() },
     /** View `view`'s language servers, or nothing for no such view. The `served` topic follows it. */
     servers: { input: z.strictObject({ view: tabId }), reply: reply<Servers | null>() },
     /**

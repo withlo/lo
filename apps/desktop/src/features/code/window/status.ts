@@ -14,7 +14,7 @@ import { activeTab, tabState } from '../../tab/window/shared.ts';
 import type { Status } from '../contract.ts';
 import { readTrusted, trusted } from '../settings.ts';
 import { main } from './main.ts';
-import { servers } from './servers.ts';
+import { offered, servers } from './servers.ts';
 
 /** Where each view stands, once main has said. */
 export const statuses = tabState<Status | null>(() => null);
@@ -81,10 +81,11 @@ export function takeStatus(status: Status): void {
   if (JSON.stringify(statuses.get(status.view)) !== JSON.stringify(status)) {
     statuses.set(status.view, status);
   }
+  if (status.trust.kind !== 'trusted') return;
   // Trusted after all, as by a file fixed by hand: what failed before is past.
-  if (status.trust.kind === 'trusted' && failures.get(status.view) !== null) {
-    setFailure(status.view, null);
-  }
+  if (failures.get(status.view) !== null) setFailure(status.view, null);
+  // The offer's work is done, so a later Stop trusting finds it closed.
+  if (offered.get(status.view) !== 'closed') offered.set(status.view, 'closed');
 }
 
 /**
@@ -207,13 +208,6 @@ export function offerOf(status: Status | null): TrustOffer | undefined {
       return undefined;
   }
 }
-
-/**
- * Whether each view's Language servers item has its details open: `open` as the reader opened
- * them, or `offered` as the first `g d` in a repo nothing trusts opened them, unasked, which leaves
- * focus where it was.
- */
-export const offered = tabState<'closed' | 'offered' | 'open'>(() => 'closed');
 
 /**
  * Opens the Language servers item's offer on view `view`, once for its repository: where nothing

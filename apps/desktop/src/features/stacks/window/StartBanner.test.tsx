@@ -115,18 +115,18 @@ it('offers the start main offers, and asks main to use it', async () => {
 it('shows only while a start is offered, asking main for it as a tab drawn before main said anything comes on screen', async () => {
   states.set('t2:84', { id: 't2:84', stack: { kind: 'none' }, offer: OFFER });
   const tab = tabOf('t2:84');
-  expect(startSwitch.shows(tab)).toBe(false);
+  expect(startSwitch.said(tab)).toBeUndefined();
   let changes = 0;
   const stop = startSwitch.subscribe(tab, () => {
     changes += 1;
   });
   onTestFinished(stop);
-  await until(() => startSwitch.shows(tab));
+  await until(() => startSwitch.said(tab) !== undefined);
   expect(changes).toBeGreaterThan(0);
   const page = draw(<StartBanner tab={tab} />);
   expect(page.textContent).toContain(OFFER.title);
   act(() => bridge.push('stacks.stack', { id: 't2:84', stack: { kind: 'none' }, offer: null }));
-  expect(startSwitch.shows(tab)).toBe(false);
+  expect(startSwitch.said(tab)).toBeUndefined();
   expect(page.textContent).toBe('');
 });
 
@@ -163,8 +163,8 @@ it('goes once the diff on screen starts where it offers, and stays while it star
     onTestFinished(stop);
   }
   // Both are offered the start; once main has said where each diff starts, only one still needs it.
-  await until(() => startSwitch.shows(elsewhere));
-  await until(() => !startSwitch.shows(started));
+  await until(() => startSwitch.said(elsewhere) !== undefined);
+  await until(() => startSwitch.said(started) === undefined);
   const page = draw(
     <>
       <StartBanner tab={started} />

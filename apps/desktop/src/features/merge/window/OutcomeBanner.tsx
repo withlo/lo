@@ -45,13 +45,18 @@ export function OutcomeBanner({ tab }: { tab: PullTab }) {
   const detail = outcomeDetail(job);
   return (
     <Banner
-      tone={job.state.kind === 'refused' ? 'danger' : 'warn'}
+      tone={toneOf(job)}
       title={withoutBidi(outcomeTitle(job) ?? '')}
       detail={detail === '' ? undefined : withoutBidi(detail)}
       action={actionOf(tab, job)}
       onDismiss={() => dismissJob(job.key)}
     />
   );
+}
+
+/** How urgent `job`'s banner is: a merge GitHub refused is a failure; one Lo can't tell of, a wait. */
+function toneOf(job: JobView): 'danger' | 'warn' {
+  return job.state.kind === 'refused' ? 'danger' : 'warn';
 }
 
 /** The banner's one button for `job`: what its end asks for. */
@@ -87,9 +92,12 @@ function actionOf(tab: PullTab, job: JobView): BannerAction {
   };
 }
 
-/** Whether a tab's banner shows: while its pull request's merge needs the reader. */
+/** What a tab's banner says: while its pull request's merge needs the reader. */
 export const outcomeSwitch: BannerSwitch = {
-  shows: (tab) => outcomeOf(tab) !== undefined,
+  said(tab) {
+    const job = outcomeOf(tab);
+    return job && { tone: toneOf(job), title: withoutBidi(outcomeTitle(job) ?? '') };
+  },
   subscribe(_tab, listener) {
     const merges = merging.subscribe(listener);
     const ships = shipping.subscribe(listener);

@@ -68,11 +68,14 @@ export function offerFor(id: string): Offer | null {
 }
 
 /**
- * Whether a tab's banner shows: while it's offered a start its diff on screen doesn't have
- * already. A tab drawn before main said anything of its stack asks for it as it comes on screen.
+ * What a tab's banner says: while it's offered a start its diff on screen doesn't have already. A
+ * tab drawn before main said anything of its stack asks for it as it comes on screen.
  */
 export const startSwitch: BannerSwitch = {
-  shows: (tab) => offerFor(tab.id) !== null,
+  said(tab) {
+    const offer = offerFor(tab.id);
+    return offer === null ? undefined : { tone: 'info', title: offer.title };
+  },
   subscribe(tab, listener) {
     if (offers.get(tab.id) === null) catchUp(tab.id);
     const stops = [offers.subscribe(listener), onDiffState(tab.id, listener)];

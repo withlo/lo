@@ -9,6 +9,13 @@ import { main } from './main.ts';
 /** Each view's index, once main has said. */
 export const indexes = tabState<IndexState | null>(() => null);
 
+/** Builds view `view`'s index again now, where it failed, as "Try now" asks. */
+export function retryIndex(view: string): void {
+  main()
+    .retryIndex({ view })
+    .catch((error: unknown) => console.error("Lo couldn't index the code again:", error));
+}
+
 /** Takes what main said of a view's index. */
 export function takeIndex({ view, state }: Indexed): void {
   if (JSON.stringify(indexes.get(view)) !== JSON.stringify(state)) indexes.set(view, state);
@@ -33,10 +40,15 @@ export function catchUpIndex(view: string): void {
 export interface IndexItem {
   readonly ball: 'off' | 'working' | 'ready' | 'warn' | 'failed';
   readonly text: string;
-  /** The details' one line: why it holds what it holds. */
+  /** The details' one line: how far it has got, or why it holds what it holds. */
   readonly lines?: readonly string[];
-  /** Why it couldn't be built, as main said, for its details' `Problem`. */
-  readonly failure?: string;
+  /** How far it has got while it builds, in files, for the details' meter. */
+  readonly progress?: { readonly done: number; readonly total: number };
+  /**
+   * That it couldn't be built, for its details' `Problem`: what main said, for Details, and when
+   * it's built again by itself, if it is.
+   */
+  readonly failure?: { readonly message: string; readonly retryAt: number | null };
 }
 
 const count = (value: number) => value.toLocaleString('en-US');
@@ -52,7 +64,8 @@ const WHY: Readonly<Record<PartialWhy, string>> = {
 /**
  * The index's item: how far it has got while it builds, its name once it's ready, with how much a
  * partial one has, and why, in its details. A ring while it waits for the local copy, and nothing
- * without git, which the local copy's item says.
+ * without git, which the local copy's item says. One that failed is amber while it waits to be
+ * built again, as it does by itself, and red once it doesn't.
  */
 export function indexItem(state: IndexState | null): IndexItem | undefined {
   switch (state?.kind) {
@@ -62,13 +75,14 @@ export function indexItem(state: IndexState | null): IndexItem | undefined {
     case 'waiting':
       return { ball: 'off', text: 'Code index' };
     case 'building':
-      return {
-        ball: 'working',
-        text:
-          state.total === 0
-            ? 'Indexing code…'
-            : `Indexing code · ${count(state.done)} / ${count(state.total)}`,
-      };
+      return state.total === 0
+        ? { ball: 'working', text: 'Indexing code…', lines: ['Starting…'] }
+        : {
+            ball: 'working',
+            text: `Indexing code · ${count(state.done)} / ${count(state.total)}`,
+            lines: [`${count(state.done)} of ${count(state.total)} files`],
+            progress: { done: state.done, total: state.total },
+          };
     case 'ready': {
       const { partial } = state;
       if (!partial) return { ball: 'ready', text: 'Code index' };
@@ -82,7 +96,11 @@ export function indexItem(state: IndexState | null): IndexItem | undefined {
       };
     }
     case 'failed':
-      return { ball: 'failed', text: 'Can’t index the code', failure: state.message };
+      return {
+        ball: state.retryAt === null ? 'failed' : 'warn',
+        text: 'Can’t index the code',
+        failure: { message: state.message, retryAt: state.retryAt },
+      };
     default:
       state satisfies never;
       return undefined;

@@ -6,13 +6,14 @@
 import {
   Banner,
   BannerDrawn,
-  BannerMoreProvider,
+  BannerPlaceProvider,
   Button,
   Collapse,
   ContextMenu,
   CopyButton,
   Countdown,
   EmptyState,
+  Meter,
   Problem,
   StatusActions,
   StatusItem,
@@ -20,23 +21,26 @@ import {
   Swap,
   useCopy,
   useDetails,
+  type BannerPlace,
   type BannerProps,
-  type ContextMenuAnchor,
+  type EmptyAction,
   type HeaderConnection,
 } from '@lo/ui';
 import { NO_TARGET } from '@lo/ui/commands';
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
 
-import { registry } from '../../../window/commands/registry.ts';
+import { focusMiddle, registry } from '../../../window/commands/registry.ts';
 import { client } from '../../../window/ipc.ts';
 import { useViews, type View } from '../../../window/slots.tsx';
+import { useRevisions } from '../../revisions/window/shared.ts';
 import { contract as settings } from '../../settings/contract.ts';
 import { viewIds, type Connection, type LocalState, type PullView } from '../contract.ts';
 import {
@@ -53,9 +57,11 @@ import {
 import { main } from './main.ts';
 import {
   banners as bannerSlot,
+  pullOf,
   tabState,
   useTabs,
   useTabState,
+  type BannerSaid,
   type BannerSwitch,
   type PullTab,
 } from './shared.ts';
@@ -132,11 +138,12 @@ function useOwn(tab: PullTab): number | undefined {
 
 /**
  * What takes the place of a tab's view while it can't show its pull request: why, with what to do
- * about it, or the account to open it as. Nothing while it can.
+ * about it, or the account to open it as. Nothing while it can, nor for a read that failed after
+ * the view was drawn, which stays, with the header's chip saying why.
  */
 export function TabFailed({ tab, view }: { tab: PullTab; view: PullView | undefined }) {
   const own = useOwn(tab);
-  const failure = failureOf(view, tab, own);
+  const failure = blocked(view) ? failureOf(view, tab, own) : undefined;
   const choice = accountChoice(view, tab);
   if (failure) {
     const [first, ...rest] = failure.actions;
@@ -157,77 +164,98 @@ export function TabFailed({ tab, view }: { tab: PullTab; view: PullView | undefi
       </div>
     );
   }
-  if (choice) {
-    return (
-      <div className="absolute inset-0 bg-bg" data-lo-failed>
-        <EmptyState title={choice.title} line={choice.line}>
-          <Accounts
-            logins={choice.logins}
-            onChoose={(login) => run(tab.id, { kind: 'choose', login })}
-          />
-        </EmptyState>
-      </div>
-    );
-  }
+  if (choice)
+    return <Accounts tab={tab} title={choice.title} line={choice.line} logins={choice.logins} />;
   return null;
 }
 
+/** The command that opens a tab's pull request as an account, or the menu of them. */
+const CHOOSE = 'tab.chooseAccount';
+
+/** Which tabs have their menu of accounts open, as Choose account… opens it. */
+const choosing = tabState<boolean>(() => false);
+
+/** Why tab `tab` can't be opened as `login` now, or as anyone with none: `true` where it can. */
+export function choosable(tab: PullTab, login: string | null): true | string {
+  const choice = accountChoice(pullOf(tab.id), tab);
+  if (!choice || (login !== null && !choice.logins.includes(login))) {
+    return 'There’s no account to choose';
+  }
+  return true;
+}
+
 /**
- * The accounts a tab can open its pull request as: a button for each of two, the first the main
- * one, or past two, "Choose account…", whose menu lists them.
+ * Opens tab `tab`'s pull request as `login`, which Lo remembers for the repo's owner; or, with none,
+ * opens the menu of the accounts it can be opened as.
+ */
+export function chooseAccount(tab: PullTab, login: string | null): void {
+  if (choosable(tab, login) !== true) return;
+  if (login === null) choosing.set(tab.id, true);
+  else run(tab.id, { kind: 'choose', login });
+}
+
+/**
+ * The accounts a tab can open its pull request as: "Open as" for each of two, the first the main
+ * button, or past two, "Choose account…", whose menu lists them. Each runs the command that takes
+ * an account, which the palette and the File menu run too, without one, to open the menu.
  */
 function Accounts({
+  tab,
+  title,
+  line,
   logins,
-  onChoose,
 }: {
+  tab: PullTab;
+  title: string;
+  line: string;
   logins: readonly string[];
-  onChoose: (login: string) => void;
 }) {
-  const [anchor, setAnchor] = useState<ContextMenuAnchor | undefined>(undefined);
-  const [opener, setOpener] = useState<HTMLElement | undefined>(undefined);
-  // Opened from the keyboard, the menu highlights its first account, so `⏎` opens it at once.
-  const [fromKeys, setFromKeys] = useState(false);
-  if (logins.length <= 2) {
-    return (
-      <div className="flex flex-wrap justify-center gap-8">
-        {logins.map((login, index) => (
-          <Button
-            key={login}
-            variant={index === 0 ? 'primary' : 'secondary'}
-            onClick={() => onChoose(login)}
-          >
-            Open as {login}
-          </Button>
-        ))}
-      </div>
-    );
-  }
+  const box = useRef<HTMLDivElement>(null);
+  const open = useTabState(choosing, tab.id);
+  // Opened by a click, the menu highlights nothing; from the keyboard, its first account, so `⏎`
+  // opens it at once.
+  const pointed = useRef(false);
+  const [first, second, third] = logins;
+  const as = (login: string): EmptyAction => ({
+    command: CHOOSE,
+    target: { kind: 'row', row: login },
+    label: `Open as ${login}`,
+  });
+  const actions: readonly [] | readonly [EmptyAction] | readonly [EmptyAction, EmptyAction] =
+    first === undefined || third !== undefined
+      ? [CHOOSE]
+      : second === undefined
+        ? [as(first)]
+        : [as(first), as(second)];
+  // The menu opens under the main button, and gives focus back to it.
+  const opener = open ? (box.current?.querySelector('button') ?? undefined) : undefined;
+  const rect = opener?.getBoundingClientRect();
   return (
-    <div className="flex justify-center">
-      <Button
-        variant="primary"
-        aria-haspopup="menu"
-        onClick={(event) => {
-          const { left, top, width, height } = event.currentTarget.getBoundingClientRect();
-          setOpener(event.currentTarget);
-          setFromKeys(event.detail === 0);
-          setAnchor({ x: left, y: top, width, height });
-        }}
-      >
-        Choose account…
-      </Button>
+    <div
+      ref={box}
+      className="absolute inset-0 bg-bg"
+      data-lo-failed
+      onPointerDownCapture={() => {
+        pointed.current = true;
+      }}
+      onKeyDownCapture={() => {
+        pointed.current = false;
+      }}
+    >
+      <EmptyState title={title} line={line} actions={actions} />
       <ContextMenu
-        open={anchor !== undefined}
-        onOpenChange={(open) => {
-          if (!open) setAnchor(undefined);
+        open={rect !== undefined}
+        onOpenChange={(next) => {
+          if (!next) choosing.set(tab.id, false);
         }}
         label="Accounts"
-        anchor={anchor}
+        anchor={rect && { x: rect.left, y: rect.top, width: rect.width, height: rect.height }}
         sections={[logins.map((login) => ({ id: login, label: login }))]}
         finalFocus={opener}
-        highlightFirst={fromKeys}
+        highlightFirst={!pointed.current}
         onClosed={(chosen) => {
-          if (chosen !== undefined) onChoose(chosen);
+          choosing.set(tab.id, false);
+          if (chosen !== undefined) run(tab.id, { kind: 'choose', login: chosen });
         }}
         container={container()}
       />
@@ -237,7 +265,10 @@ function Accounts({
 
 /** Whether a tab can't show its pull request now, so its failure takes the view's place. */
 export function blocked(view: PullView | undefined): boolean {
-  return view?.problem !== null && view?.problem !== undefined;
+  const problem = view?.problem;
+  if (problem === null || problem === undefined) return false;
+  // A read that failed after the view was drawn leaves it as it was: the header's chip says why.
+  return problem.kind !== 'failed' || view?.shown === null;
 }
 
 /** The time now, ticking each minute while `ticking`, for "Checked 5 min ago". */
@@ -251,16 +282,42 @@ function useNow(ticking: boolean): number {
   return ticking ? now : Date.now();
 }
 
+/** The header's chip for a tab whose read failed after its view was drawn, which stays. */
+const CANT_CHECK = 'Can’t check for changes';
+
 /**
- * The header's chip for how tab `id` stands with GitHub, when it isn't as usual: a word or two,
+ * The header's chip for how tab `tab` stands with GitHub, when it isn't as usual: a word or two,
  * whose details say why, when the tab last heard from GitHub, and the one thing to do about it.
+ * A read that failed after the view was drawn says so here too, as the view stays: amber while it
+ * counts down to trying again, red once it doesn't.
  */
 export function useHeaderConnection(
-  id: string,
-  connection: Connection | undefined,
+  tab: PullTab,
+  view: PullView | undefined,
 ): HeaderConnection | undefined {
+  const connection = view?.connection;
   const now = useNow(connection?.kind === 'offline');
   const note = connectionNote(connection, systemClock(now));
+  const failed = note || blocked(view) ? undefined : failureOf(view, tab);
+  if (failed) {
+    const [action] = failed.actions;
+    return {
+      tone: failed.retryAt === undefined ? 'danger' : 'warn',
+      label: CANT_CHECK,
+      container: container(),
+      details: (
+        <>
+          <StatusLine>{reasonOf(failed.detail, failed.retryAt)}</StatusLine>
+          {(action || failed.details !== undefined) && (
+            <ConnectionActions
+              details={failed.details}
+              action={action && { label: action.label, onClick: () => run(tab.id, action.do) }}
+            />
+          )}
+        </>
+      ),
+    };
+  }
   if (!note) return undefined;
   const { action } = note;
   return {
@@ -278,7 +335,7 @@ export function useHeaderConnection(
         {(action || note.details !== undefined) && (
           <ConnectionActions
             details={note.details}
-            action={action && { label: action.label, onClick: () => run(id, action.do) }}
+            action={action && { label: action.label, onClick: () => run(tab.id, action.do) }}
           />
         )}
       </>
@@ -355,6 +412,11 @@ export function LocalItem({
       <StatusLine>
         At <code className="text-fg code-small">{note.at}</code>
       </StatusLine>
+    ) : note.doing !== undefined ? (
+      <>
+        <StatusLine>{note.doing}</StatusLine>
+        {note.percent !== undefined && <Meter value={note.percent} max={100} label={note.label} />}
+      </>
     ) : undefined;
   return (
     <StatusItem ball={note.ball} details={details} label={note.label} container={container()}>
@@ -389,53 +451,64 @@ const front = tabState<string | null>(() => null);
 /** Another feature's view in the tab's banner slot. */
 type BannerView = View<{ tab: PullTab }> & BannerSwitch;
 
-/** One of the tab's banners, its own or another feature's. */
+/** One of the tab's banners, its own or another feature's, with what it says. */
 type Entry =
-  | { readonly id: string; readonly own: BannerSpec }
-  | { readonly id: string; readonly view: BannerView };
+  | { readonly id: string; readonly said: BannerSaid; readonly own: BannerSpec }
+  | { readonly id: string; readonly said: BannerSaid; readonly view: BannerView };
+
+/** How urgent each tone is: the tab shows its most urgent banner first. */
+const URGENCY: Readonly<Record<BannerSaid['tone'], number>> = { danger: 0, warn: 1, info: 2 };
 
 /**
  * Another feature's banner, as it draws it while it has one, and as it last drew it once it has
  * none, while the row it was in closes: the row leaves with what it said, not empty.
  */
 function Held({
-  entry,
+  view,
   tab,
   drawn,
 }: {
-  entry: { readonly id: string; readonly view: BannerView };
+  view: BannerView;
   tab: PullTab;
   drawn: Map<string, BannerProps>;
 }) {
-  const { view } = entry;
+  const subscribe = useCallback(
+    (listener: () => void) => view.subscribe(tab, listener),
+    [view, tab],
+  );
+  const shows = useSyncExternalStore(subscribe, () => view.said(tab) !== undefined);
   const hear = useCallback(
     (props: BannerProps) => {
-      drawn.set(entry.id, props);
+      drawn.set(view.id, props);
     },
-    [drawn, entry.id],
+    [drawn, view.id],
   );
-  if (view.shows(tab)) {
+  if (shows) {
     return (
       <BannerDrawn value={hear}>
         <view.render tab={tab} />
       </BannerDrawn>
     );
   }
-  const last = drawn.get(entry.id);
+  const last = drawn.get(view.id);
   return last ? <Banner {...last} /> : null;
 }
 
 /**
- * The tab's banner: one at a time, its own first, then other features' in their order, with "+1"
- * for the rest, which moves to the next. The row opens as the first comes and closes as the last
- * goes, with the Open move, and one gives way to the next in place.
+ * The tab's banner: one at a time, the most urgent first, then in the slot's order, its own first,
+ * with "+1" for the rest, which moves to the next. The row opens as the first comes and closes as
+ * the last goes, with the Open move, and one gives way to the next in place. A banner that arrives
+ * behind the one shown is said, politely, to a screen reader.
  */
 export function Banners({ tab, view }: { tab: PullTab; view: PullView | undefined }) {
   const dismissed = useTabState(dismissedNewer, tab.id);
   const chosen = useTabState(front, tab.id);
-  const own = bannersFor(view, dismissed);
+  const revisions = useRevisions(tab.id);
+  const own = bannersFor(view, dismissed, revisions?.revisions);
   const views: readonly BannerView[] = useViews(bannerSlot);
   const drawn = useRef(new Map<string, BannerProps>()).current;
+  const row = useRef<HTMLDivElement>(null);
+  const heard = useRef<HTMLDivElement>(null);
   const subscribe = useCallback(
     (listener: () => void) => {
       const stops = views.map((each) => each.subscribe(tab, listener));
@@ -445,44 +518,77 @@ export function Banners({ tab, view }: { tab: PullTab; view: PullView | undefine
     },
     [views, tab],
   );
-  // The ids of the views that show a banner for the tab now, as one string, so it compares.
-  const showing = useSyncExternalStore(subscribe, () =>
-    views
-      .filter((each) => each.shows(tab))
-      .map((each) => each.id)
-      .join('\n'),
-  );
-  const shown = new Set(showing.split('\n'));
+  // What the views that show a banner for the tab now say, the same list for as long as it says
+  // the same, so it compares.
+  const kept = useRef<{ key: string; said: ReadonlyMap<string, BannerSaid> }>({
+    key: '',
+    said: new Map(),
+  });
+  const saying = useSyncExternalStore(subscribe, () => {
+    const said = views.flatMap((each) => {
+      const words = each.said(tab);
+      return words ? [[each.id, words] as const] : [];
+    });
+    const key = JSON.stringify(said);
+    if (key !== kept.current.key) kept.current = { key, said: new Map(said) };
+    return kept.current.said;
+  });
   const entries: Entry[] = [
-    ...own.map((spec) => ({ id: spec.id, own: spec })),
-    ...views.filter((each) => shown.has(each.id)).map((each) => ({ id: each.id, view: each })),
-  ];
+    ...own.map((spec) => ({
+      id: spec.id,
+      said: { tone: spec.tone, title: spec.title },
+      own: spec,
+    })),
+    ...views.flatMap((each) => {
+      const said = saying.get(each.id);
+      return said ? [{ id: each.id, said, view: each }] : [];
+    }),
+  ].toSorted((a, b) => URGENCY[a.said.tone] - URGENCY[b.said.tone]);
   const at = Math.max(
     0,
     entries.findIndex((entry) => entry.id === chosen),
   );
   const entry = entries[at];
-  const more =
-    entries.length > 1
-      ? {
-          count: entries.length - 1,
-          next: () => front.set(tab.id, entries[(at + 1) % entries.length]?.id ?? null),
-        }
-      : undefined;
+  const place: BannerPlace = {
+    more:
+      entries.length > 1
+        ? {
+            count: entries.length - 1,
+            next: () => front.set(tab.id, entries[(at + 1) % entries.length]?.id ?? null),
+          }
+        : undefined,
+    row,
+    view: { focus: focusMiddle },
+  };
+  // A banner that arrives behind the one shown is said, once, as it arrives: the one shown says
+  // itself.
+  const ids = entries.map((each) => each.id).join('\n');
+  const before = useRef<ReadonlySet<string> | undefined>(undefined);
+  useLayoutEffect(() => {
+    const now = new Set(ids === '' ? [] : ids.split('\n'));
+    const was = before.current;
+    before.current = now;
+    if (!was || !heard.current) return;
+    const arrived = entries.find((each) => !was.has(each.id) && each.id !== entry?.id);
+    if (arrived) heard.current.textContent = arrived.said.title;
+  });
   const body =
     entry === undefined ? null : 'own' in entry ? (
       <OwnBanner tab={tab} spec={entry.own} newer={view?.newer ?? null} />
     ) : (
-      <Held entry={entry} tab={tab} drawn={drawn} />
+      <Held view={entry.view} tab={tab} drawn={drawn} />
     );
   return (
-    <div className="flex flex-none flex-col" data-lo-banners>
-      <Collapse open={entry !== undefined}>
-        <BannerMoreProvider value={more}>
-          <Swap id={entry?.id ?? 'none'}>{body}</Swap>
-        </BannerMoreProvider>
-      </Collapse>
-    </div>
+    <>
+      <div ref={row} className="flex flex-none flex-col" data-lo-banners>
+        <Collapse open={entry !== undefined}>
+          <BannerPlaceProvider value={place}>
+            <Swap id={entry?.id ?? 'none'}>{body}</Swap>
+          </BannerPlaceProvider>
+        </Collapse>
+      </div>
+      <div ref={heard} role="status" className="sr-only" data-lo-banners-heard />
+    </>
   );
 }
 

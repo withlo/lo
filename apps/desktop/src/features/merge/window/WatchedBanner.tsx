@@ -7,7 +7,7 @@
 import { Banner, type BannerAction } from '@lo/ui';
 import { useStore } from 'zustand';
 
-import { useRevisions } from '../../revisions/window/shared.ts';
+import { revisionsOf, useRevisions } from '../../revisions/window/shared.ts';
 import { withoutBidi, type BannerSwitch, type PullTab } from '../../tab/window/shared.ts';
 import type { Watched } from '../contract.ts';
 import { newerLabel, seeNewer, turnOffAutoMerge, turningOff } from './merging.ts';
@@ -54,8 +54,13 @@ export function WatchedBanner({ tab }: { tab: PullTab }) {
   );
 }
 
-/** Whether a tab's banner shows: while the watch's word on its pull request isn't dismissed. */
+/** What a tab's banner says: while the watch's word on its pull request isn't dismissed. */
 export const watchedSwitch: BannerSwitch = {
-  shows: (tab) => watchedOf(tab) !== undefined,
+  said(tab) {
+    const watched = watchedOf(tab);
+    if (!watched) return undefined;
+    const words = watchedWords(watched, revisionsOf(tab.id)?.revisions, labelsOf(tab.id));
+    return { tone: words.tone, title: withoutBidi(words.title) };
+  },
   subscribe: (_tab, listener) => shipping.subscribe(listener),
 };

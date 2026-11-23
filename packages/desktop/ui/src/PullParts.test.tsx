@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildCss, hasRule } from '../scripts/stylesheet.ts';
-import { Banner, BannerDrawn, BannerMoreProvider, type BannerProps } from './Banner.tsx';
+import { Banner, BannerPlaceProvider } from './Banner.tsx';
 import { PRHeader } from './PRHeader.tsx';
 import { Skeleton, Spinner } from './Spinner.tsx';
 import { StatePill } from './StatePill.tsx';
@@ -104,8 +104,8 @@ const showing = (busy: boolean) =>
   renderToStaticMarkup(
     <Banner
       tone="info"
-      title="There’s a newer push"
-      action={{ label: 'Show latest', busy, working: 'Showing…', onClick: () => {} }}
+      title="ravi-k pushed r5"
+      action={{ label: 'Show r5', busy, working: 'Showing…', onClick: () => {} }}
     />,
   );
 
@@ -115,38 +115,28 @@ describe('Banner', () => {
     const markup = renderToStaticMarkup(
       <Banner
         tone="info"
-        title="There’s a newer push"
-        action={{ label: 'Show latest', onClick: show }}
+        title="ravi-k pushed r5"
+        action={{ label: 'Show r5', onClick: show }}
         onDismiss={() => {}}
       />,
     );
     expect(markup).toContain('role="status"');
     expect(markup).toContain('banner-info');
-    expect(markup).toContain('<strong class="font-semibold">There’s a newer push</strong>');
-    expect(markup).toMatch(/<button type="button" class="[^"]*">Show latest<\/button>/);
+    expect(markup).toContain('<strong class="font-semibold">ravi-k pushed r5</strong>');
+    expect(markup).toMatch(/<button type="button" class="[^"]*"[^>]*>Show r5<\/button>/);
     expect(markup).toContain('aria-label="Dismiss"');
   });
 
   it('offers the next of those that wait behind it, with how many there are', () => {
     const next = vi.fn<() => void>();
     const markup = renderToStaticMarkup(
-      <BannerMoreProvider value={{ count: 2, next }}>
-        <Banner tone="info" title="There’s a newer push" />
-      </BannerMoreProvider>,
+      <BannerPlaceProvider value={{ more: { count: 2, next }, row: { current: null } }}>
+        <Banner tone="info" title="ravi-k pushed r5" />
+      </BannerPlaceProvider>,
     );
     expect(markup).toContain('aria-label="Next, 2 more"');
     expect(markup).toContain('+2');
     expect(renderToStaticMarkup(<Banner tone="info" title="a" />)).not.toContain('more');
-  });
-
-  it('tells what it draws to the tab that shows it, as it draws it', () => {
-    const drawn = vi.fn<(props: BannerProps) => void>();
-    renderToStaticMarkup(
-      <BannerDrawn value={drawn}>
-        <Banner tone="warn" title="#264 left the merge queue" />
-      </BannerDrawn>,
-    );
-    expect(drawn).toHaveBeenCalledWith({ tone: 'warn', title: '#264 left the merge queue' });
   });
 
   it('holds room for an action’s wait while it rests, and says the wait while busy', () => {
@@ -213,14 +203,14 @@ describe('the parts’ styles', () => {
           acting="anonymous"
           connection={{ tone: 'danger', label: 'Signed out' }}
         />
-        <BannerMoreProvider value={{ count: 1, next: () => {} }}>
+        <BannerPlaceProvider value={{ more: { count: 1, next: () => {} }, row: { current: null } }}>
           <Banner
             tone="info"
             title="a"
             action={{ label: 'b', onClick: () => {} }}
             onDismiss={() => {}}
           />
-        </BannerMoreProvider>
+        </BannerPlaceProvider>
         <Banner tone="danger" title="a" />
         <StatusBar start={<StatusItem ball="working">a</StatusItem>} />
         <StatusItem ball="warn" onClick={() => {}}>

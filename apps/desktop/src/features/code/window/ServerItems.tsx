@@ -10,14 +10,13 @@ import { useEffect } from 'react';
 
 import { openSettingsFile } from '../../settings/window/shared.ts';
 import { useTabState, type PullTab } from '../../tab/window/shared.ts';
-import { catchUpServers, itemState, restartServer, servers, showLog } from './servers.ts';
+import { catchUpServers, itemState, offered, restartServer, servers, showLog } from './servers.ts';
 import {
   askToTrust,
   busyLabel,
   catchUp,
   failures,
   failureTitle,
-  offered,
   offerOf,
   statuses,
   stopTrusting,

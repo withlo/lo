@@ -340,6 +340,7 @@ mode. In the box's preview, or on its frame, `Esc` closes it at once, from any m
 | Move tab left             | `⌃⇧PgUp`                                                 | Anywhere but `dialog` and `palette`                                                    | `tab.moveLeft`          |
 | Move tab right            | `⌃⇧PgDn`                                                 | Anywhere but `dialog` and `palette`                                                    | `tab.moveRight`         |
 | Tabs that don’t fit       | `⌘⇧A`                                                    | Anywhere but `dialog`, `palette` and `box`                                             | `tab.more`              |
+| Choose account…           | None: in the app menu on macOS and the palette           | Anywhere but `dialog` and `palette`                                                    | `tab.chooseAccount`     |
 | Close tab                 | `⌘W`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.close`             |
 | Check for updates         | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.check`         |
 | Update Lo                 | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.install`       |

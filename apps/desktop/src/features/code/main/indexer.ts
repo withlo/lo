@@ -83,6 +83,8 @@ interface TreeBuild {
   failure: string | undefined;
   attempt: number;
   retry: ReturnType<typeof setTimeout> | undefined;
+  /** When it's built again after it failed, by itself. */
+  retryAt: number | undefined;
   controller: AbortController;
 }
 
@@ -225,6 +227,7 @@ export class CodeIndex {
       failure: undefined,
       attempt: 0,
       retry: undefined,
+      retryAt: undefined,
       controller: new AbortController(),
     };
   }
@@ -330,15 +333,33 @@ export class CodeIndex {
         RETRY_MAX,
       );
       build.attempt += 1;
-      build.retry = setTimeout(() => {
-        if (this.#builds.get(build.commit) !== build) return;
-        build.state = 'queued';
-        build.controller = new AbortController();
-        if (!this.#queue.includes(build.commit)) this.#queue.push(build.commit);
-        this.#pump();
-      }, wait);
+      build.retryAt = Date.now() + wait;
+      build.retry = setTimeout(() => this.#again(build), wait);
     } finally {
       if (this.#builds.get(build.commit) === build) this.#publishViews(build);
+    }
+  }
+
+  /** Builds `build`, which failed, again once its turn comes. */
+  #again(build: TreeBuild): void {
+    if (this.#builds.get(build.commit) !== build || build.state !== 'failed') return;
+    clearTimeout(build.retry);
+    build.retry = undefined;
+    build.retryAt = undefined;
+    build.state = 'queued';
+    build.controller = new AbortController();
+    if (!this.#queue.includes(build.commit)) this.#queue.push(build.commit);
+    this.#publishViews(build);
+    this.#pump();
+  }
+
+  /** Builds view `id`'s trees that failed again now, as "Try now" asks, not once their wait ends. */
+  retryNow(id: string): void {
+    const input = this.#views.get(id)?.input;
+    if (input?.kind !== 'ready') return;
+    for (const commit of [input.new, input.old]) {
+      const build = commit === undefined ? undefined : this.#builds.get(commit);
+      if (build) this.#again(build);
     }
   }
 
@@ -392,7 +413,9 @@ export class CodeIndex {
     if (builds.some((build) => build.state === 'queued' || build.state === 'running')) {
       return { kind: 'building', done: done.size, total: all.size };
     }
-    if (failed) return { kind: 'failed', message: failed.failure ?? 'Indexing failed.' };
+    if (failed) {
+      return { kind: 'failed', message: failed.failure ?? '', retryAt: failed.retryAt ?? null };
+    }
     const why = [...new Set(builds.flatMap((build) => build.built?.partial ?? []))];
     if (why.length === 0 && done.size === all.size) return { kind: 'ready', partial: null };
     const more = builds.reduce(

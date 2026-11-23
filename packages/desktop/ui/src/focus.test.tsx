@@ -13,7 +13,7 @@ import {
 } from 'vitest';
 
 import { Dialog } from './Dialog.tsx';
-import { useTakeFocus } from './focus.ts';
+import { besideIn, handOffFocus, useTakeFocus } from './focus.ts';
 import { KeyHelp } from './KeyHelp.tsx';
 import { Palette } from './Palette.tsx';
 
@@ -135,5 +135,66 @@ describe('the dialogs take focus as they open, without waiting for a frame', () 
     const page = render(<Asking />);
     await vi.waitFor(() => expect(document.activeElement?.textContent).toBe('Continue'));
     expect(page.querySelector('[role="dialog"]')?.contains(document.activeElement)).toBe(true);
+  });
+});
+
+/** A row of three buttons, on the page. */
+function row(): { row: HTMLElement; buttons: HTMLButtonElement[] } {
+  const element = document.createElement('div');
+  const buttons = ['a', 'b', 'c'].map((name) => {
+    const button = document.createElement('button');
+    button.id = name;
+    element.append(button);
+    return button;
+  });
+  document.body.append(element);
+  return { row: element, buttons };
+}
+
+describe('handOffFocus', () => {
+  it('hands focus on where it fell to the page as what had it left, beside it in its row', async () => {
+    const { row: bar, buttons } = row();
+    const [a, b, c] = buttons;
+    b?.focus();
+    const stops = besideIn(bar, [b]);
+    expect(stops).toEqual([c, a, bar]);
+    handOffFocus([b], () => stops);
+    b?.remove();
+    await Promise.resolve();
+    expect(document.activeElement).toBe(c);
+    bar.remove();
+  });
+
+  it('hands focus on from what can no longer hold it, and to the row itself, only for a while', async () => {
+    const { row: bar, buttons } = row();
+    const [a] = buttons;
+    a?.focus();
+    handOffFocus([a], () => [bar]);
+    // The row it's in closes: it goes inert, with focus still on it.
+    a?.setAttribute('inert', '');
+    await Promise.resolve();
+    expect(document.activeElement).toBe(bar);
+    // The row holds focus only until it goes: it was never a stop for `Tab`.
+    a?.removeAttribute('inert');
+    a?.focus();
+    expect(bar.hasAttribute('tabindex')).toBe(false);
+    bar.remove();
+  });
+
+  it('leaves focus that went anywhere else meanwhile, and that was never in what left', async () => {
+    const { row: bar, buttons } = row();
+    const [a, b, c] = buttons;
+    a?.focus();
+    handOffFocus([a], () => [b]);
+    // As a dialog the press opened takes it.
+    c?.focus();
+    a?.remove();
+    await Promise.resolve();
+    expect(document.activeElement).toBe(c);
+    handOffFocus([b], () => [bar]);
+    b?.remove();
+    await Promise.resolve();
+    expect(document.activeElement).toBe(c);
+    bar.remove();
   });
 });

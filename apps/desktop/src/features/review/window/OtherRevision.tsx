@@ -51,9 +51,12 @@ export function OtherRevisionBanner({ tab }: { tab: PullTab }) {
   );
 }
 
-/** Whether a view's banner shows: while it says something not dismissed. */
+/** What a view's banner says: while it says something not dismissed. */
 export const otherRevisionSwitch: BannerSwitch = {
-  shows: (tab) => bannerOf(tab.id) !== undefined,
+  said(tab) {
+    const said = bannerOf(tab.id);
+    return said && { tone: 'info', title: said.title };
+  },
   subscribe(tab, listener) {
     if (pendings.get(tab.id) === undefined || revisions.get(tab.id) === undefined) {
       catchUp(tab.id);

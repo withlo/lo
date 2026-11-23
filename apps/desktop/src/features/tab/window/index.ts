@@ -11,6 +11,7 @@ import keys from '../keys.ts';
 import { follow } from './follow.ts';
 import { main } from './main.ts';
 import { moreStore, setMoreOpen } from './more.ts';
+import { choosable, chooseAccount } from './Notes.tsx';
 import { inStrip, movable, stepTab } from './order.ts';
 import { middleIds, panels, stepAmong, toggleRight, viewCounts } from './panels.ts';
 import { PullRequestTab } from './PullRequestTab.tsx';
@@ -134,6 +135,17 @@ export default {
     },
     nextView: { run: () => stepMiddle(1), enabled: middleSteps },
     previousView: { run: () => stepMiddle(-1), enabled: middleSteps },
+    chooseAccount: {
+      run: (target) => {
+        const tab = pullOnScreen();
+        if (typeof tab !== 'string') chooseAccount(tab, target.kind === 'row' ? target.row : null);
+      },
+      enabled: (target) => {
+        const tab = pullOnScreen();
+        if (typeof tab === 'string') return tab;
+        return choosable(tab, target.kind === 'row' ? target.row : null);
+      },
+    },
     // Main closes the tab on screen as it has it, so two quick presses close two tabs.
     close: {
       run: (target) => main().close(target.kind === 'tab' ? { id: target.tab } : {}),

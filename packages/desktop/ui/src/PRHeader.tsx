@@ -1,7 +1,15 @@
 import { cva } from 'class-variance-authority';
-import { useState, type ReactNode } from 'react';
+import {
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactElement,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 
 import { Branch } from './Branch.tsx';
+import { besideIn, handOffFocus } from './focus.ts';
 import { Popover } from './Popover.tsx';
 import { Skeleton } from './Spinner.tsx';
 import { StatePill, type PullRequestState } from './StatePill.tsx';
@@ -137,6 +145,8 @@ export function PRHeader({
 /** The chip for how the tab stands with GitHub: a button that opens its details, if it has any. */
 function ConnectionChip({ connection }: { connection: HeaderConnection }) {
   const [open, setOpen] = useState(false);
+  // The chip as it's drawn now, for focus to come back to as its details end.
+  const self = useRef<HTMLElement | null>(null);
   const face = (
     <>
       <ConnectionIcon tone={connection.tone} />
@@ -144,20 +154,69 @@ function ConnectionChip({ connection }: { connection: HeaderConnection }) {
     </>
   );
   if (connection.details === undefined) {
-    return <span className={chip({ tone: connection.tone })}>{face}</span>;
+    return (
+      <span ref={self} className={chip({ tone: connection.tone })}>
+        {face}
+      </span>
+    );
   }
   return (
-    <Popover
+    <ChipDetails
       open={open}
       onOpenChange={setOpen}
+      chip={self}
       trigger={
-        <button type="button" className={chip({ tone: connection.tone, button: true })}>
+        <button
+          type="button"
+          ref={(element) => {
+            self.current = element;
+          }}
+          className={chip({ tone: connection.tone, button: true })}
+        >
           {face}
         </button>
       }
+      connection={connection}
+    />
+  );
+}
+
+/**
+ * The chip's details. Ended while they hold focus, as by a Try again that brings the tab back
+ * online, which takes the chip too, focus goes to the chip as it's drawn now, else to the header's
+ * next control, else its previous one, not to the page.
+ */
+function ChipDetails({
+  open,
+  onOpenChange,
+  chip: self,
+  trigger,
+  connection,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  chip: RefObject<HTMLElement | null>;
+  trigger: ReactElement<Record<string, unknown>>;
+  connection: HeaderConnection;
+}) {
+  const popup = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(
+    () => () => {
+      const leaving = [self.current, popup.current];
+      const stops = besideIn(self.current?.parentElement, leaving);
+      handOffFocus(leaving, () => [self.current, ...stops]);
+    },
+    [self],
+  );
+  return (
+    <Popover
+      open={open}
+      onOpenChange={onOpenChange}
+      trigger={trigger}
       align="end"
       label={connection.label}
       scope="dialog"
+      popupRef={popup}
       container={connection.container}
       className="flex status-details flex-col gap-8 p-12"
     >

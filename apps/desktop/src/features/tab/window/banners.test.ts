@@ -249,21 +249,32 @@ describe('the local copy’s item', () => {
   it('is a ring until it fetches, then counts, then is filled at its head', () => {
     expect(local(undefined)).toBe(undefined);
     expect(local({ kind: 'waiting' })).toEqual({ ball: 'off', label: 'Local copy' });
+    // Its details say what Git is doing, with a meter once it's measured.
     expect(
       local({ kind: 'fetching', progress: 'receiving objects, 44% of 1234', attempt: 1 }),
-    ).toEqual({ ball: 'working', label: 'Fetching local copy · 44%' });
+    ).toEqual({
+      ball: 'working',
+      label: 'Fetching local copy · 44%',
+      doing: 'Receiving objects, 44% of 1234',
+      percent: 44,
+    });
     expect(local({ kind: 'fetching', progress: 'connecting to GitHub', attempt: 1 })).toEqual({
       ball: 'working',
       label: 'Fetching local copy…',
+      doing: 'Connecting to GitHub',
+    });
+    expect(local({ kind: 'fetching', progress: null, attempt: 1 })).toEqual({
+      ball: 'working',
+      label: 'Fetching local copy…',
+      doing: 'Waiting for GitHub…',
     });
     expect(local(ready)).toEqual({ ball: 'ready', label: 'Local copy', at: '5530830' });
-    expect(local({ ...ready, offline: true })).toMatchObject({
-      ball: 'warn',
-      label: 'Local copy · offline',
-    });
+    // Offline, it's there all the same: only the header's chip says offline.
+    expect(local({ ...ready, offline: true })).toEqual(local(ready));
   });
 
   it('says it can’t fetch for as long as it can’t, with why, the one thing to do and Git’s words', () => {
+    // Amber while it waits to try again, or for what holds it; red once it failed.
     const retrying: LocalState = {
       kind: 'retrying',
       failure: 'timedOut',
@@ -272,7 +283,7 @@ describe('the local copy’s item', () => {
       retryAt: clock.now + 12_000,
     };
     expect(local(retrying)).toEqual({
-      ball: 'failed',
+      ball: 'warn',
       label: 'Can’t fetch the local copy',
       problem: {
         id: 'local',
@@ -284,6 +295,7 @@ describe('the local copy’s item', () => {
         actions: [{ label: 'Try now', do: { kind: 'retry' } }],
       },
     });
+    expect(local({ kind: 'failed', failure: 'diskFull' })).toMatchObject({ ball: 'failed' });
     expect(local({ kind: 'failed', failure: 'diskFull' })?.problem).toMatchObject({
       detail: 'The disk is full.',
       actions: [{ label: 'Clear cache', do: { kind: 'clearCache' } }],
@@ -298,6 +310,14 @@ describe('the local copy’s item', () => {
     // A copy held open says what it waits for, with nothing to press and no time, even while
     // main looks again by itself.
     expect(
+      local({
+        kind: 'retrying',
+        failure: 'heldByServers',
+        attempt: 1,
+        retryAt: clock.now + 20_000,
+      }),
+    ).toMatchObject({ ball: 'warn' });
+    expect(
       local({ kind: 'retrying', failure: 'heldByServers', attempt: 1, retryAt: clock.now + 20_000 })
         ?.problem,
     ).toMatchObject({
@@ -307,8 +327,10 @@ describe('the local copy’s item', () => {
       actions: [],
     });
     expect(local({ kind: 'failed', failure: 'heldByTabs' })).toMatchObject({
+      ball: 'warn',
       label: 'Can’t use the local copy',
       problem: {
+        tone: 'warn',
         title: 'Can’t use the local copy',
         detail: 'It’s made again once every tab of rozed-dev/e2e closes.',
         actions: [],
@@ -351,7 +373,7 @@ describe('the local copy’s item', () => {
     });
   });
 
-  it('leaves a fetch that stopped offline to the header, which says offline already', () => {
+  it('leaves a fetch that stopped offline to the header, which says offline already: it waits', () => {
     const retrying: LocalState = {
       kind: 'retrying',
       failure: 'network',
@@ -364,7 +386,7 @@ describe('the local copy’s item', () => {
         retrying,
         view({ connection: { kind: 'offline', savedAt: null, retryAt: null, error: 'x' } }),
       ),
-    ).toEqual({ ball: 'warn', label: 'Local copy · offline' });
+    ).toEqual({ ball: 'warn', label: 'Local copy' });
     expect(local(retrying)?.problem?.detail).toBe('Offline.');
   });
 });
@@ -375,19 +397,45 @@ describe('the tab’s banner', () => {
     expect(bannersFor(undefined)).toEqual([]);
   });
 
-  it('says there’s a newer push in one line, with a way to show it, until it’s dismissed', () => {
+  it('says who pushed which revision, with a way to show it, until it’s dismissed', () => {
     const newer = view({ shown: FIRST, newer: HEAD });
-    expect(bannersFor(newer)).toEqual([
+    const revisions = [
+      { head: FIRST, number: 4, pusher: 'mira-chen' },
+      { head: HEAD.toUpperCase(), number: 5, pusher: 'ravi-k' },
+    ];
+    expect(bannersFor(newer, null, revisions)).toEqual([
       {
         id: 'newer',
         tone: 'info',
-        title: 'There’s a newer push',
-        actions: [{ label: 'Show latest', do: { kind: 'reload' } }],
+        title: 'ravi-k pushed r5',
+        actions: [{ label: 'Show r5', do: { kind: 'reload' } }],
       },
     ]);
-    expect(bannersFor(newer, HEAD)).toEqual([]);
+    expect(bannersFor(newer, HEAD, revisions)).toEqual([]);
     // A push newer than the one dismissed is news again.
-    expect(bannersFor(newer, FIRST)).toHaveLength(1);
+    expect(bannersFor(newer, FIRST, revisions)).toHaveLength(1);
+  });
+
+  it('says the revision shown is out of date where it can’t say who pushed which', () => {
+    const newer = view({ shown: FIRST, newer: HEAD });
+    const outOfDate = [
+      {
+        id: 'newer',
+        tone: 'info',
+        title: 'This revision is out of date',
+        actions: [{ label: 'Show latest', do: { kind: 'reload' } }],
+      },
+    ];
+    // Not yet among the revisions, as before it's loaded.
+    expect(bannersFor(newer)).toEqual(outOfDate);
+    expect(bannersFor(newer, null, [{ head: FIRST, number: 4, pusher: 'mira-chen' }])).toEqual(
+      outOfDate,
+    );
+    // GitHub doesn't say who pushed it, or it has no number.
+    expect(bannersFor(newer, null, [{ head: HEAD, number: 5, pusher: null }])).toEqual(outOfDate);
+    expect(bannersFor(newer, null, [{ head: HEAD, number: null, pusher: 'ravi-k' }])).toEqual(
+      outOfDate,
+    );
   });
 });
 
