@@ -17,7 +17,7 @@
     "release": "electron-builder --config build/release.yml --mac --publish never",
     "release:linux": "electron-builder --config build/release.yml --linux --publish never",
     "start": "electron .",
-    "test": "vitest run --root ../.. --project @lo/desktop"
+    "test": "vitest run --root ../.. --project @lo/desktop --project @lo/desktop:git"
   },
   "dependencies": {
     "@lo/artifact": "workspace:*",

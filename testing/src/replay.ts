@@ -12,6 +12,7 @@ import {
   queryHash,
   readCassette,
   recordedKey,
+  recordedResource,
   requestKey,
   responseBody,
   utf8,
@@ -35,8 +36,10 @@ export class ReplayError extends Error {
 
 /**
  * Serves a cassette's responses: each request gets the next response recorded for its key, and
- * once only one is left it's repeated, the steady state of a poll. A request with no recorded
- * response, or a GraphQL query that changed since it was recorded, throws a {@link ReplayError}.
+ * once only one is left it's repeated, the steady state of a poll. A conditional read that
+ * names a validator GitHub gave for a resource, but that the recording never sent, is answered as
+ * GitHub would for the resource as the recording left it. A request with no recorded response, or
+ * a GraphQL query that changed since it was recorded, throws a {@link ReplayError}.
  */
 export class Replay {
   /** The cassette's name, for messages. */
@@ -46,6 +49,8 @@ export class Replay {
   /** Every request it couldn't answer, in order: each also threw. */
   readonly failures: ReplayError[] = [];
   readonly #byKey = new Map<string, Interaction[]>();
+  /** Every answer recorded for a resource, whatever conditions the request sent, as recorded. */
+  readonly #byResource = new Map<string, Interaction[]>();
 
   constructor(name: string, interactions: Iterable<Interaction>) {
     this.name = name;
@@ -54,6 +59,10 @@ export class Replay {
       const queue = this.#byKey.get(key);
       if (queue) queue.push(interaction);
       else this.#byKey.set(key, [interaction]);
+      const resource = recordedResource(interaction.request);
+      const answers = this.#byResource.get(resource);
+      if (answers) answers.push(interaction);
+      else this.#byResource.set(resource, [interaction]);
     }
   }
 
@@ -102,7 +111,11 @@ export class Replay {
       ifModifiedSince: request.headers.get('if-modified-since'),
     });
     const queue = this.#byKey.get(key);
-    if (!queue) throw new ReplayError(this.#unknown(key, request));
+    if (!queue) {
+      const answer = this.#unrecorded(request);
+      if (answer) return answer;
+      throw new ReplayError(this.#unknown(key, request));
+    }
     const interaction = queue.length > 1 ? queue.shift()! : queue[0]!;
 
     const recorded = interaction.request.query_sha256;
@@ -125,6 +138,54 @@ export class Replay {
     return toResponse(interaction.response);
   }
 
+  /**
+   * The answer to a conditional `GET` that names a validator, an ETag or a time, which GitHub gave
+   * for the resource but the recording never sent back: how many times an app polls depends on how
+   * long it runs, so a poll may come that the recording had ended before. It's answered as GitHub
+   * answers for the resource's last recorded state: a `304` when the validator is that state's,
+   * and that state's response when it's an earlier one's. A validator the recording never saw is
+   * as unrecorded as before.
+   */
+  #unrecorded(request: SeenRequest): Response | undefined {
+    const ifNoneMatch = request.headers.get('if-none-match');
+    const ifModifiedSince = request.headers.get('if-modified-since');
+    if (request.method !== 'GET' || (ifNoneMatch === null && ifModifiedSince === null)) {
+      return undefined;
+    }
+    const answers = this.#byResource.get(requestKey(request.method, request.url, request.body));
+    const latest = answers?.findLast(({ response }) => response.status === 200);
+    if (!answers || !latest) return undefined;
+    // Like GitHub, the ETags decide when the request has any, and the time only when it hasn't.
+    let known: boolean;
+    let current: boolean;
+    if (ifNoneMatch !== null) {
+      const sent = etags(ifNoneMatch);
+      known =
+        sent.has('*') ||
+        answers.some(
+          ({ request: asked, response }) =>
+            shares(etags(asked.if_none_match), sent) || shares(etags(response.headers.etag), sent),
+        );
+      current = sent.has('*') || shares(etags(latest.response.headers.etag), sent);
+    } else {
+      const since = Date.parse(ifModifiedSince ?? '');
+      if (Number.isNaN(since)) return undefined;
+      known = answers.some(
+        ({ request: asked, response }) =>
+          asked.if_modified_since === ifModifiedSince ||
+          response.headers['last-modified'] === ifModifiedSince,
+      );
+      const modified = Date.parse(latest.response.headers['last-modified'] ?? '');
+      current = modified <= since;
+    }
+    if (!known) return undefined;
+    if (!current) return toResponse(latest.response);
+    // What GitHub says of a state that hasn't changed: its validators, and no content.
+    const headers = { ...latest.response.headers };
+    delete headers['content-type'];
+    return toResponse({ status: 304, headers });
+  }
+
   /** Why `request`, whose key is `key`, has no response: the nearest recorded request, and its body. */
   #unknown(key: string, request: SeenRequest): string {
     const lines = [`cassette ${this.name} has no response for`, `  ${key}`];
@@ -140,6 +201,21 @@ export class Replay {
     }
     return lines.join('\n');
   }
+}
+
+/** The ETags in an `If-None-Match` or `ETag` header, weak or strong alike: without any `W/`. */
+function etags(header: string | null | undefined): Set<string> {
+  return new Set(
+    (header ?? '')
+      .split(',')
+      .map((tag) => tag.trim().replace(/^W\//, ''))
+      .filter((tag) => tag !== ''),
+  );
+}
+
+/** Whether two sets of ETags have one in common. */
+function shares(a: Set<string>, b: Set<string>): boolean {
+  return [...a].some((tag) => b.has(tag));
 }
 
 /** A response as recorded. */

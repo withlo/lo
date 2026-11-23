@@ -215,6 +215,79 @@ test('a wrong date fails the test', async () => {
   );
 });
 
+const RESOURCE = 'https://api.github.com/repos/o/r/pulls/1';
+const FIRST = 'Fri, 06 Nov 2026 08:15:07 GMT';
+const LATER = 'Sat, 07 Nov 2026 01:04:21 GMT';
+
+/**
+ * A resource's recording: read, asked again as of its time and told it hasn't changed, then asked
+ * again as of that time and told it has, which ends the recording.
+ */
+function changed(): Replay {
+  const read = (etag: string, modified: string, body: string): Interaction => ({
+    request: { method: 'GET', url: RESOURCE },
+    response: {
+      status: 200,
+      headers: { 'content-type': 'application/json', etag, 'last-modified': modified },
+      body_text: body,
+    },
+  });
+  const again = (recorded: Interaction): Interaction => {
+    recorded.request.if_modified_since = FIRST;
+    return recorded;
+  };
+  const unchanged = again({
+    request: { method: 'GET', url: RESOURCE },
+    response: { status: 304, headers: { etag: '"a"', 'last-modified': FIRST } },
+  });
+  return new Replay('t', [
+    read('"a"', FIRST, 'first'),
+    unchanged,
+    again(read('"b"', LATER, 'later')),
+  ]);
+}
+
+test('a poll the recording ended before gets a 304 for the state it left, by its time', async () => {
+  const fetch = replayFetch(changed());
+  expect(await get(fetch, RESOURCE)).toEqual([200, 'first', '"a"']);
+  expect((await get(fetch, RESOURCE, { 'If-Modified-Since': FIRST }))[0]).toBe(304);
+  expect(await get(fetch, RESOURCE, { 'If-Modified-Since': FIRST })).toEqual([200, 'later', '"b"']);
+  // Never sent while recording: a poll after the answer that gave the new time.
+  for (let poll = 0; poll < 2; poll++) {
+    const response = await fetch(RESOURCE, { headers: { 'If-Modified-Since': LATER } });
+    expect(response.status).toBe(304);
+    expect(response.headers.get('etag')).toBe('"b"');
+    expect(response.headers.get('last-modified')).toBe(LATER);
+    expect(response.headers.has('content-type')).toBe(false);
+    expect(await response.text()).toBe('');
+  }
+});
+
+test('a poll the recording ended before gets a 304 for the state it left, by its etag', async () => {
+  const fetch = replayFetch(changed());
+  // Weak or strong, and among others.
+  for (const sent of ['"b"', 'W/"b"', '"a", W/"b"']) {
+    expect((await get(fetch, RESOURCE, { 'If-None-Match': sent }))[0]).toBe(304);
+  }
+});
+
+test('a validator of an earlier state gets the state the recording left', async () => {
+  const fetch = replayFetch(changed());
+  expect(await get(fetch, RESOURCE, { 'If-None-Match': '"a"' })).toEqual([200, 'later', '"b"']);
+});
+
+test('a validator the recording never saw still fails the test', async () => {
+  const replay = changed();
+  await expect(
+    replay.respond(new Request(RESOURCE, { headers: { 'If-None-Match': '"c"' } })),
+  ).rejects.toThrow('has no response for');
+  await expect(
+    replay.respond(
+      new Request(RESOURCE, { headers: { 'If-Modified-Since': 'Thu, 05 Nov 2026 00:00:00 GMT' } }),
+    ),
+  ).rejects.toThrow('has no response for');
+});
+
 test('a changed query asks for a new recording', async () => {
   const recorded = interaction('POST', 'https://api.github.com/graphql', 200, '{}');
   recorded.request.operation = 'A';
