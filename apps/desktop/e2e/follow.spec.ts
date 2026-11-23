@@ -793,7 +793,7 @@ test('o puts a block’s code beside the overview, which follows the blocks, and
     // A file the pull request doesn't change says so.
     await toBlock(page, BLOCK.readme);
     await press(page, 'o');
-    await expect(beside(page)).toContainText('This pull request doesn’t change README.md.');
+    await expect(beside(page)).toContainText('No changes to README.md');
   });
 
   await test.step('the palette offers Close code beside only while code is beside', async () => {
