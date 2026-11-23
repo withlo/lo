@@ -5,6 +5,7 @@ import { vimOn } from '@lo/ui/code';
 
 import { client } from '../../../window/ipc.ts';
 import { contract as accounts } from '../../accounts/contract.ts';
+import type { Refusal } from '../../open/contract.ts';
 import { chooseVimKeys } from '../../comments/window/shared.ts';
 import { openLink } from '../../open/window/shared.ts';
 import { contract as tabs } from '../../tab/contract.ts';
@@ -202,16 +203,22 @@ export async function openDocs(): Promise<string | undefined> {
   }
 }
 
+/** Why the welcome's field opened nothing: main's refusal, where it gave one, and its reason. */
+export interface NotOpened {
+  readonly why: Refusal | undefined;
+  /** The reason in words, with code between backticks; empty when nothing says why. */
+  readonly message: string;
+}
+
 /**
  * Opens the pull request link typed or pasted in the last step's field, or the sample's, through
- * the open feature. Resolves with why it didn't, empty when nothing says why, or nothing when it
- * opened. A pull request's tab leaves the welcome, since the tab is what shows next; a link that
- * went to the browser doesn't.
+ * the open feature. Resolves with why it didn't, or nothing when it opened. A pull request's tab
+ * leaves the welcome, since the tab is what shows next; a link that went to the browser doesn't.
  */
-export async function openPublic(text: string): Promise<string | undefined> {
+export async function openPublic(text: string): Promise<NotOpened | undefined> {
   const done = await openLink(text.trim());
-  if (done === undefined) return '';
-  if (done.kind === 'refused') return done.message;
+  if (done === undefined) return { why: undefined, message: '' };
+  if (done.kind === 'refused') return { why: done.why, message: done.message };
   if (done.kind === 'tab') leave();
   return undefined;
 }

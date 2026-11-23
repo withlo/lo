@@ -414,14 +414,16 @@ that floats.
   "Unresolve thread" on a resolved thread.
 - **`Tooltip`** names a control and its key: see [Controls](#controls).
 - **`ToastStack`** shows results at the bottom right, above the status bar: three at most, four
-  seconds each, paused under the pointer or focus. A toast is one line, clamped to three, and one
+  seconds each, paused under the pointer or focus. One with an action or Details stays eight
+  seconds, and stays while its Details is open. A toast is one line, clamped to three, and one
   action at most. One that waits for the reader may add a `body`: plain words wrap, anywhere a long
   path needs to, and clamp to three lines; a body of its own markup, such as a command to copy,
-  shows whole. A toast never reports a failure: that's a `Problem` where it happened, or the control
-  that was pressed. Only something asked for by a key with no control for it in view, such as `ya`
-  where no Copy prompt button is drawn, fails in a toast: its line at danger tone. Keep each toast
-  the same object while it shows. To show one again, as a second "Copied path", put a new object
-  with the same `id` in `toasts`: it stays in its place and its four seconds start over.
+  shows whole. A failure is said where it happened: a `Problem` in its view, or the control that was
+  pressed. Only one with nothing in view to host it goes in a toast, at danger tone, with what main
+  said behind Details where it said something: a command run from the menu, a toast that has gone,
+  or a key pressed with no control for it on screen, such as `ya` from the diff. Keep each toast the
+  same object while it shows. To show one again, as a second "Copied path", put a new object with
+  the same `id` in `toasts`: it stays in its place and its time starts over.
 - **`Problem`** is something that went wrong, in one shape: what failed, why, the one thing to do,
   and the raw text behind Details with Copy. The action's label starts with a verb, and is a node,
   so a name that's code stays code in it: "Open `settings.json`". `layout="view"` takes a failed

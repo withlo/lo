@@ -183,6 +183,82 @@ describe('notices', () => {
     expect(lines.map((line) => line.textContent)).toEqual(['One reason.', 'Another reason.']);
   });
 
+  it('set what’s between backticks as code, in the line and under it, never the backticks', () => {
+    act(() => notify('Couldn’t install the `lo` command', 'Another `lo` file is already there.'));
+    act(() => announce('Installed the `lo` command', 'Run `lo .` in a repo.'));
+    const cards = [...(status()?.querySelectorAll('.toast') ?? [])];
+    expect(cards.map((card) => card.textContent)).toEqual([
+      'Couldn’t install the lo commandAnother lo file is already there.',
+      'Installed the lo commandRun lo . in a repo.',
+    ]);
+    const code = [...(status()?.querySelectorAll('.toast .code-small') ?? [])];
+    expect(code.map((each) => each.textContent)).toEqual(['lo', 'lo', 'lo', 'lo .']);
+  });
+
+  it('keep what came with a failure behind Details, with Copy', async () => {
+    act(() => notify('Couldn’t update Lo', '', { details: 'Failed to copy Lo.app' }));
+    const card = status()?.querySelector('.toast');
+    const details = [...(card?.querySelectorAll('button') ?? [])].find(
+      (button) => button.textContent === 'Details',
+    );
+    expect(details?.getAttribute('aria-expanded')).toBe('false');
+    expect(card?.textContent).not.toContain('Failed to copy Lo.app');
+    await act(async () => {
+      details?.click();
+      await Promise.resolve();
+    });
+    expect(details?.getAttribute('aria-expanded')).toBe('true');
+    const text = document.getElementById(details?.getAttribute('aria-controls') ?? '');
+    expect(text?.textContent).toContain('Failed to copy Lo.app');
+    expect(text?.querySelector('button')?.textContent).toMatch(/^Copy/);
+  });
+
+  it('show a failure as one, a block as a warning, and the rest as news', () => {
+    act(() => {
+      notify('Couldn’t update Lo', '', { details: 'Failed to copy Lo.app' });
+      notify('Couldn’t open #82', 'The browser sent it straight back.', { tone: 'danger' });
+      notify('Can’t check for updates', 'This copy of Lo is built from source.', {
+        tone: 'warning',
+      });
+    });
+    const icons = [...(status()?.querySelectorAll('.toast > span:first-child') ?? [])];
+    expect(icons.map((icon) => icon.className)).toEqual([
+      'flex-none text-danger',
+      'flex-none text-danger',
+      'flex-none text-warning',
+    ]);
+    act(() => notify('Back', "There's nowhere to go back to."));
+    const newest = [...(status()?.querySelectorAll('.toast > span:first-child') ?? [])].at(-1);
+    expect(newest?.className).toBe('flex-none text-info');
+  });
+
+  it('keep a note with Details or a button twice as long, whether or not a window draws it', () => {
+    const back = { label: 'Back', onClick: () => undefined };
+    act(() => {
+      notify('Couldn’t update Lo', '', { details: 'Failed to copy Lo.app' });
+      announce('Moved the comment', '', back);
+      announce('Copied path');
+    });
+    act(() => {
+      vi.advanceTimersByTime(NOTICE_TIME);
+    });
+    expect(notices().map((each) => each.title)).toEqual([
+      'Couldn’t update Lo',
+      'Moved the comment',
+    ]);
+    act(() => {
+      vi.advanceTimersByTime(NOTICE_TIME);
+    });
+    expect(notices()).toEqual([]);
+    act(() => root?.unmount());
+    root = undefined;
+    notify('Couldn’t update Lo', '', { details: 'Failed to copy Lo.app' });
+    vi.advanceTimersByTime(NOTICE_TIME);
+    expect(notice()).toMatchObject({ title: 'Couldn’t update Lo' });
+    vi.advanceTimersByTime(NOTICE_TIME);
+    expect(notice()).toBeUndefined();
+  });
+
   it('say what’s done with a tick, in one line', () => {
     act(() => announce('Made #82, #83 and #84 a GitHub stack'));
     expect(toast()).toEqual({

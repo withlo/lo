@@ -3,7 +3,8 @@
 
 import { createStore } from 'zustand/vanilla';
 
-import type { How, UpdateState } from '../contract.ts';
+import type { Failed, How, UpdateState } from '../contract.ts';
+import type { Build } from './words.ts';
 
 export interface UpdatesWindowState {
   /** Where updates stand: nothing on offer until main says. */
@@ -16,14 +17,14 @@ export interface UpdatesWindowState {
   readonly how: How | undefined;
   /** This copy of Lo's version, once main has said. */
   readonly version: string | undefined;
-  /** What names this build beside its version, as {@link buildText} says it, once main has said. */
-  readonly build: string | undefined;
+  /** What names this build beside its version, once main has said. */
+  readonly build: Build | undefined;
   /** A check the reader asked for is going. */
   readonly checking: boolean;
   /** When a check the reader asked for last answered, in milliseconds. */
   readonly checkedAt: number | undefined;
-  /** Why the last check the reader asked for failed, when it did, and its reason when known. */
-  readonly failed: { readonly reason: string | undefined } | undefined;
+  /** Why the last check Settings asked for failed, when it did. */
+  readonly failed: Failed | undefined;
 }
 
 export const updatesStore = createStore<UpdatesWindowState>()(() => ({
@@ -47,7 +48,7 @@ export function showHow(how: How): void {
 }
 
 /** Shows this copy of Lo's version, and what names its build when something does. */
-export function showVersion(version: string, build?: string): void {
+export function showVersion(version: string, build?: Build): void {
   updatesStore.setState({ version, build });
 }
 

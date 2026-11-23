@@ -230,7 +230,7 @@ test.describe('as a command', () => {
     const labels = await app.evaluate(({ Menu }) =>
       (Menu.getApplicationMenu()?.items[0]?.submenu?.items ?? []).map((item) => item.label),
     );
-    const at = labels.indexOf('Install command-line tool');
+    const at = labels.indexOf('Install lo command');
     expect(at).toBeGreaterThan(-1);
     expect(labels[at + 1]).toBe('Install overview skill');
     await app.evaluate(({ Menu }) => {

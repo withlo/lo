@@ -32,7 +32,7 @@ import {
   SYSTEM_PATH,
   type LoUpdater,
 } from './updater.ts';
-import { CHECK_LIMIT, UNANSWERED, Updates } from './updates.ts';
+import { CHECK_LIMIT, Updates } from './updates.ts';
 
 /** What the feed was asked for: each request's path and headers. */
 let asked: { path: string; headers: IncomingHttpHeaders }[];
@@ -432,7 +432,7 @@ describe('a check Lo gives up on', () => {
       await feedHeld.arrived;
       expect(pending.size).toBe(1);
       vi.advanceTimersByTime(CHECK_LIMIT);
-      await expect(checking).resolves.toEqual({ status: 'failed', reason: UNANSWERED });
+      await expect(checking).resolves.toEqual({ status: 'failed', why: 'timeout' });
       // Cancelled as Lo gave up on it: it failed, and the feed saw it closed, unanswered.
       await new Promise((resolve) => setImmediate(resolve));
       expect(pending.size).toBe(0);

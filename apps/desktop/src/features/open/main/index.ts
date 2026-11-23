@@ -148,7 +148,7 @@ export default defineFeature(contract, {
     stopTaking = incomingLinks.take((text) => {
       link(text, outside)
         .then((done) => {
-          if (done.kind === 'refused') context.publish('refused', { message: done.message });
+          if (done.kind === 'refused') context.publish('refused', { why: done.why });
         })
         .catch((error: unknown) => log(`opening a link from another app: ${String(error)}`));
     });

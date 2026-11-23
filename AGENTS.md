@@ -1107,11 +1107,14 @@ Recent pull requests, and links from other apps. Each is untrusted text, read th
 - The open box shows what a link opens and as whom, or why it can't, before anything opens. As it
   opens it asks main for the pull request link on the clipboard, which comes back written as Lo
   writes one; nothing else on the clipboard reaches the window.
+- Main says what a link is, and why it opened nothing, as kinds (`preview`, `refusal`, `blocked`,
+  `cause`), never in words: `window/words.ts` words them, the same under the open box's field, the
+  welcome's and in a note.
 - Other apps hand Lo links as `open-url` events (`lo://`, and web links from a link router), and as
   the arguments of a second launch, which hands them to the Lo running and quits. A packaged Lo
   registers itself for `lo://` as it starts.
-- "Install command-line tool", in the macOS app menu, Settings and the command palette, with no key
-  since it's done once, writes `lo`, a shell script that takes one argument, refuses anything but a
+- "Install `lo` command", in the macOS app menu, Settings and the command palette, with no key since
+  it's done once, writes `lo`, a shell script that takes one argument, refuses anything but a
   `lo://`, `https://` or `http://` link, and passes it on quoted: on macOS to
   `open -n -b com.scornz.lo --args`, since `open` drops the arguments of an app that's running, in
   `/usr/local/bin` once the system's prompt for an administrator allows it, or `~/.local/bin`; on
@@ -1146,14 +1149,16 @@ its own app, installs it when the reader says so.
   (`/opt/homebrew/Caskroom/lo` or `/usr/local/Caskroom/lo`), where Lo never replaces itself, since
   Homebrew's record of the version would go stale, and the toast gives `BREW_UPGRADE`,
   `brew upgrade --cask withlo/tap/lo`; `move` on a Mac anywhere else, such as the disk image or a
-  translocated download, where "Move to Applications" asks before it replaces a Lo already there;
-  `page` on Linux, from source, or where Lo can't write its own folder, where "Download" opens the
-  release's page. Only `install` builds electron-updater's Mac updater: the rest get one that can
-  check and has no way to download.
+  translocated download, where "Move Lo to Applications" asks before it replaces a Lo already there;
+  `page` on Linux, from source, or where Lo can't write its own folder, where "Download update"
+  opens the release's page. Only `install` builds electron-updater's Mac updater: the rest get one
+  that can check and has no way to download.
 - **When.** 30 s after the window is up, then every 6 hours, and on `updates.check`, the command,
   the overview's "Get a newer Lo" and Settings' "Check now". The `updates.check` setting (on) turns
   off only the timed checks. A timed check that fails is logged and tried at the next, and one the
-  reader asked for says why it failed.
+  reader asked for says why it failed: main sends a kind (`failure`), and `window/words.ts` words
+  it. A copy that doesn't check, as a build from source, offers Lo's releases on GitHub instead of
+  another try.
 - **State** is one topic, `state`: `idle`, `available` (the version, the first line of the notes as
   plain text cut to 140 characters, `how`, and the release's page), `downloading` and `ready`. The
   page is built from the version, which must be SemVer, never taken from the feed. The requests are
@@ -1166,10 +1171,10 @@ its own app, installs it when the reader says so.
 - **The window.** The toast is in the `tab.toasts` slot, below a note that passes, and it waits
   until it's acted on. It never takes focus, no button installs or restarts but by its own press,
   and a press in the half second after a toast comes or changes does nothing. Every button is a
-  keyless command too: the app menu holds "Check for updates", "Install the update" and "Restart to
-  update", and an "Update" submenu the rest, each greyed unless it applies. Settings' Updates
-  section shows the version and commit, "Check now" and the switch for `updates.check`. The overview
-  runs "Check for updates" through the command registry, importing `updates/keys.ts`.
+  keyless command too: the app menu holds "Check for updates", "Update Lo" and "Restart to update",
+  and an "Update" submenu the rest, each greyed unless it applies. Settings' Updates section shows
+  the version and commit, "Check now" and the switch for `updates.check`. The overview runs "Check
+  for updates" through the command registry, importing `updates/keys.ts`.
 
 ### The welcome flow
 

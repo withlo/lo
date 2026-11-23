@@ -526,7 +526,7 @@ describe('with no overview', () => {
     view.shown(false);
     await act(() => copyPromptOf(tab.id, 'The prompt'));
     expect(toasts().at(-1)).toBe('Couldn’t copy the prompt');
-    expect(notice()?.failed).toBe(true);
+    expect(notice()?.tone).toBe('danger');
     answers.copyFails = false;
     await act(() => copyPromptOf(tab.id, 'The prompt'));
     expect(toasts().at(-1)).toBe('Copied prompt');
@@ -581,6 +581,10 @@ describe('an overview that can’t be shown', () => {
     act(() => buttonOf(view, 'Details')?.click());
     const details = view.querySelector('.problem-details')?.textContent ?? '';
     expect(details).toMatch(/^ccccccc · ravi-k · 2 d ago\nLine 11 · .*chart/);
+    // In the view's own well, with its hairline, as every view's Details is.
+    expect(view.querySelector('.problem-details')?.parentElement?.className).toContain(
+      'inset-ring-border',
+    );
     const copy = buttonOf(view, 'Copy prompt');
     const before = bridge.calls.length;
     act(() => copy?.click());

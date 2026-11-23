@@ -1,20 +1,6 @@
-// Focus that follows a dialog's main button from one step to the next.
+// Where `⏎` goes in a dialog: to its main button, when nothing else takes it.
 
-import { useEffect, type KeyboardEvent, type RefObject } from 'react';
-
-/**
- * Focuses `ref`'s element each time `step` changes. It waits two frames: when the focused button
- * went with the last step, the dialog gives focus to itself, then again on the next frame, which
- * would otherwise take it back.
- */
-export function useFocusOnStep(ref: RefObject<HTMLElement | null>, step: unknown): void {
-  useEffect(() => {
-    let frame = requestAnimationFrame(() => {
-      frame = requestAnimationFrame(() => ref.current?.focus());
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [ref, step]);
-}
+import type { KeyboardEvent } from 'react';
 
 /** What takes `⏎` for itself: a button, a link or a field. */
 const CONTROLS = 'button, a[href], input, textarea, select, [role="button"], [contenteditable]';

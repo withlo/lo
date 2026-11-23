@@ -15,7 +15,7 @@ import {
   type Token,
 } from '@lo/github';
 
-import type { GhListing, Imported } from '../contract.ts';
+import type { GhListing, ImportFailure, Imported } from '../contract.ts';
 import { githubMessage, noKeychain } from './errors.ts';
 import { GhError, type Gh, type GhAccount } from './gh.ts';
 import { checkedUser } from './users.ts';
@@ -34,7 +34,9 @@ export async function listGh(
   log: (message: string) => void,
 ): Promise<GhListing> {
   const found = await gh.find();
-  if (found.kind === 'missing') return { kind: 'missing', message: found.message };
+  if (found.kind === 'missing') {
+    return { kind: 'missing', message: found.message, passedOver: found.passedOver };
+  }
   const { program } = found;
   try {
     const [accounts, version] = await Promise.all([gh.accounts(program), gh.version(program)]);
@@ -63,6 +65,17 @@ function isUsable(account: GhAccount): boolean {
   return account.state === 'success';
 }
 
+/** gh's token for `login` is `other`'s, as GitHub says. */
+export class OtherAccount extends GhError {
+  override name = 'OtherAccount';
+  readonly other: string;
+
+  constructor(login: string, other: string) {
+    super(`gh's token for ${login} is ${other}'s.`);
+    this.other = other;
+  }
+}
+
 /**
  * The token gh keeps for `login`, and the account GitHub says it's for, which must be `login`. It
  * goes to GitHub's API and nowhere else.
@@ -75,9 +88,7 @@ export async function ghToken(
   const token = await options.gh.token(program, login);
   const client = new GithubClient({ fetch: options.fetch, token, urls: options.urls });
   const user = checkedUser(await client.user());
-  if (!sameLogin(user.user.login, login)) {
-    throw new GhError(`gh's token for ${login} is ${user.user.login}'s.`);
-  }
+  if (!sameLogin(user.user.login, login)) throw new OtherAccount(login, user.user.login);
   return { user, token };
 }
 
@@ -95,28 +106,25 @@ export async function importFromGh(
   const { gh, log } = options;
   const found = await gh.find();
   if (found.kind === 'missing') {
-    return logins.map((login) => ({ ok: false, login, message: found.message }));
+    const why: ImportFailure = { kind: 'unknown', details: found.message };
+    return logins.map((login) => ({ ok: false, login, why }));
   }
   let listed: GhAccount[];
   try {
     listed = await gh.accounts(found.program);
   } catch (error) {
-    const message = ghMessage(error, log);
-    return logins.map((login) => ({ ok: false, login, message }));
+    const why = failureOf(error, log);
+    return logins.map((login) => ({ ok: false, login, why }));
   }
   const results: Imported[] = [];
   for (const login of new Set(logins)) {
     const account = listed.find((each) => sameLogin(each.login, login));
     if (account === undefined) {
-      results.push({ ok: false, login, message: `gh isn't signed in to ${login}.` });
+      results.push({ ok: false, login, why: { kind: 'notSignedIn' } });
       continue;
     }
     if (!isUsable(account)) {
-      results.push({
-        ok: false,
-        login,
-        message: `gh can't use ${account.login}'s token just now: gh says ${account.state}.`,
-      });
+      results.push({ ok: false, login, why: { kind: 'unusable', state: account.state } });
       continue;
     }
     try {
@@ -124,7 +132,7 @@ export async function importFromGh(
       await options.add(user, { token });
       results.push({ ok: true, login: user.user.login });
     } catch (error) {
-      results.push({ ok: false, login, message: ghMessage(error, log) });
+      results.push({ ok: false, login, why: failureOf(error, log) });
     }
   }
   return results;
@@ -212,7 +220,13 @@ function tokenFromGh(
   };
 }
 
-/** What went wrong with gh, or with checking or keeping its token, in words for the person. */
+/** Why an account wasn't imported, for what went wrong with gh or with checking or keeping its token. */
+function failureOf(error: unknown, log: (message: string) => void): ImportFailure {
+  if (error instanceof OtherAccount) return { kind: 'otherAccount', other: error.other };
+  return { kind: 'unknown', details: ghMessage(error, log) };
+}
+
+/** What went wrong with gh, or with checking or keeping its token, in gh's or GitHub's words. */
 function ghMessage(error: unknown, log: (message: string) => void): string {
   if (error instanceof GhError) return error.message;
   const keychain = noKeychain(error);

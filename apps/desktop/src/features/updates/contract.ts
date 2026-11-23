@@ -71,8 +71,35 @@ export function characters(text: string): number {
 /** A count of bytes. */
 const bytes = z.number().int().nonnegative();
 
-/** What Lo says went wrong, in a sentence or two. The window draws it as text. */
-const reason = z.string().min(1).max(400);
+/**
+ * Why a check or a download failed, as a kind the window words: no connection (`offline`), GitHub
+ * didn't answer in time (`timeout`) or answered with an error (`github`), the newest release has no
+ * download for this computer (`noDownload`), the download was damaged (`damaged`) or stopped
+ * (`stopped`), the update isn't signed as this Lo is (`unsigned`), Lo is quitting (`quitting`),
+ * this copy of Lo doesn't check, being built from source (`source`) or packaged but no release
+ * (`unreleased`), or something else (`unknown`).
+ */
+export const failure = z.enum([
+  'offline',
+  'timeout',
+  'github',
+  'noDownload',
+  'damaged',
+  'stopped',
+  'unsigned',
+  'quitting',
+  'source',
+  'unreleased',
+  'unknown',
+]);
+export type Failure = z.output<typeof failure>;
+
+/** What went wrong, as it came, such as GitHub's status or the network's error: for Details. */
+const details = z.string().min(1).max(400);
+
+/** A failure and what came with it. */
+const failed = z.strictObject({ why: failure, details: details.optional() });
+export type Failed = z.output<typeof failed>;
 
 /**
  * A newer Lo, on offer: its `version`; the first `line` of its release notes, as plain text, cut to
@@ -87,7 +114,7 @@ const available = z
     line: z.string().refine((line) => characters(line) <= LINE_LIMIT, 'is too long'),
     how,
     page: z.string(),
-    failed: reason.optional(),
+    failed: failed.optional(),
   })
   .refine((offer) => isVersion(offer.version) && offer.page === releasePage(offer.version), {
     message: 'isn’t the page of the release of its version',
@@ -128,7 +155,7 @@ export type UpdateState = z.output<typeof updateState>;
  */
 export const checkAnswer = z.discriminatedUnion('status', [
   z.strictObject({ status: z.literal('newest'), version }),
-  z.strictObject({ status: z.literal('failed'), reason }),
+  z.strictObject({ status: z.literal('failed'), why: failure, details: details.optional() }),
   available,
   downloading,
   ready,

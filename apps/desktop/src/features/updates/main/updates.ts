@@ -9,13 +9,14 @@
 
 import { IpcError } from '../../../ipc/contract.ts';
 import {
-  BREW_UPGRADE,
   releasePage,
   type CheckAnswer,
+  type Failed,
   type How,
   type UpdateState,
 } from '../contract.ts';
-import { reasonOf } from './log.ts';
+import type { Unchecked } from './feed.ts';
+import { failureOf } from './log.ts';
 import { firstLine } from './notes.ts';
 import { takes } from './versions.ts';
 
@@ -25,11 +26,13 @@ export const INSTALL_LIMIT = 15_000;
 /** How long Lo waits for the feed to answer a check before it gives up on it, in ms. */
 export const CHECK_LIMIT = 60_000;
 
-/** Why a check Lo gave up on failed, in words for the reader. */
-export const UNANSWERED = `GitHub didn’t answer within ${CHECK_LIMIT / 1000} s. Check your connection, then try again.`;
+/** What Lo's log says of a check Lo gave up on. */
+const UNANSWERED = `the feed didn't answer within ${CHECK_LIMIT / 1000} s`;
 
-/** Why a check failed as Lo quit. */
-const QUITTING = 'Lo is quitting.';
+/** A failure, as Lo's log says it. */
+function logged({ why, details }: Failed): string {
+  return details === undefined ? why : `${why} (${details})`;
+}
 
 /** The newest release a feed offers, as electron-updater read it. */
 export interface Release {
@@ -74,7 +77,7 @@ export interface UpdatesOptions {
    */
   how(): How;
   /** electron-updater, when this copy of Lo checks; or why it doesn't. */
-  readonly updater: Updater | { readonly unchecked: string };
+  readonly updater: Updater | { readonly unchecked: Unchecked };
   publish(state: UpdateState): void;
   log(line: string): void;
   /** Quits Lo, as any quit does. */
@@ -113,7 +116,7 @@ export class Updates {
    */
   async check(asked: boolean): Promise<CheckAnswer> {
     const { updater, current } = this.#options;
-    if (!('check' in updater)) return { status: 'failed', reason: updater.unchecked };
+    if (!('check' in updater)) return { status: 'failed', why: updater.unchecked };
     const before = this.#state;
     // The update is chosen: Lo is getting it, or has it.
     if (before.status === 'downloading' || before.status === 'ready') return before;
@@ -122,14 +125,18 @@ export class Updates {
       this.#checking ??= this.#ask(updater);
       release = await this.#checking;
     } catch (error) {
-      if (this.#stopped) return { status: 'failed', reason: QUITTING };
-      const reason = error instanceof Unanswered ? UNANSWERED : reasonOf(error, 'check');
-      this.#options.log(`couldn't check for updates: ${reason}`);
-      return { status: 'failed', reason };
+      if (this.#stopped) return { status: 'failed', why: 'quitting' };
+      const found =
+        error instanceof Unanswered ? { why: 'timeout' as const } : failureOf(error, 'check');
+      // A feed with no release yet has nothing newer.
+      if (found.why === 'noRelease') return { status: 'newest', version: current };
+      const failed: Failed = { ...found, why: found.why };
+      this.#options.log(`couldn't check for updates: ${logged(failed)}`);
+      return { status: 'failed', ...failed };
     }
     const now = this.#state;
     if (now.status === 'downloading' || now.status === 'ready') return now;
-    if (this.#stopped) return { status: 'failed', reason: QUITTING };
+    if (this.#stopped) return { status: 'failed', why: 'quitting' };
     // Never an older version, one Lo isn't released as, nor a prerelease to a release, whatever
     // electron-updater decided. What it decided is what it would download, so an offer of
     // something else is taken back.
@@ -221,8 +228,12 @@ export class Updates {
       .then(
         () => this.#publish({ status: 'ready', version }),
         (error: unknown) => {
-          const failed = reasonOf(error, 'download');
-          this.#options.log(`couldn't download Lo ${version}: ${failed}`);
+          const found = failureOf(error, 'download');
+          const failed: Failed = {
+            ...found,
+            why: found.why === 'noRelease' ? 'noDownload' : found.why,
+          };
+          this.#options.log(`couldn't download Lo ${version}: ${logged(failed)}`);
           this.#publish({ ...offer, failed });
         },
       );
@@ -233,17 +244,17 @@ export class Updates {
     const state = this.#state;
     switch (state.status) {
       case 'idle':
-        return 'There’s no update to install.';
+        return 'No update available';
       case 'available':
         return state.how === 'move'
-          ? 'Lo can’t update itself from where it is. Move it to Applications first.'
+          ? 'Move Lo to Applications first'
           : state.how === 'brew'
-            ? `You installed Lo with Homebrew, so update it there: ${BREW_UPGRADE}`
-            : 'Lo can’t install updates here. Download it from its release page.';
+            ? 'This copy of Lo updates with Homebrew'
+            : 'This copy of Lo can’t update itself';
       case 'downloading':
-        return `Lo ${state.version} is downloading.`;
+        return `Lo ${state.version} is downloading`;
       case 'ready':
-        return `Lo ${state.version} is ready. It installs when you quit, or now.`;
+        return `Lo ${state.version} is ready`;
       default:
         throw new Error(
           `An update state Lo doesn't know: ${JSON.stringify(state satisfies never)}`,
@@ -258,7 +269,7 @@ export class Updates {
   restart(): void {
     const state = this.#state;
     if (state.status !== 'ready' || !('install' in this.#options.updater)) {
-      throw new IpcError('unavailable', 'No update is ready to install.');
+      throw new IpcError('unavailable', 'No update is ready');
     }
     this.#restarting = true;
     this.#options.quit();
@@ -283,7 +294,7 @@ export class Updates {
     setImmediate(() => {
       updater.install().catch((error: unknown) => {
         clearTimeout(limit);
-        this.#options.log(`couldn't install the update: ${reasonOf(error, 'download')}`);
+        this.#options.log(`couldn't install the update: ${logged(installFailure(error))}`);
         this.#options.quit();
       });
     });
@@ -293,7 +304,7 @@ export class Updates {
   later(): void {
     const state = this.#state;
     if (state.status !== 'available') {
-      throw new IpcError('unavailable', 'There’s no update to hide.');
+      throw new IpcError('unavailable', 'No update available');
     }
     this.#hidden = state.version;
     this.#publish({ status: 'idle' });
@@ -308,7 +319,7 @@ export class Updates {
     if (how !== 'move') {
       throw new IpcError(
         'unavailable',
-        how === 'page' ? 'Lo can’t move itself from here.' : 'Lo is in Applications already.',
+        how === 'page' ? 'This copy of Lo can’t be moved' : 'Already in Applications',
       );
     }
     try {
@@ -316,7 +327,7 @@ export class Updates {
     } catch (error) {
       const why = error instanceof Error ? error.message : String(error);
       this.#options.log(`couldn't move to Applications: ${why}`);
-      throw new IpcError('failed', `Lo couldn’t move itself to Applications: ${why}`);
+      throw new IpcError('failed', why);
     }
   }
 
@@ -326,7 +337,7 @@ export class Updates {
    */
   stop(): void {
     this.#stopped = true;
-    this.#giveUp?.abort(new Error(QUITTING));
+    this.#giveUp?.abort(new Error('Lo is quitting.'));
     if (this.#state.status === 'downloading' && 'cancel' in this.#options.updater) {
       this.#options.updater.cancel();
     }
@@ -337,6 +348,12 @@ export class Updates {
     this.#state = state;
     this.#options.publish(state);
   }
+}
+
+/** Why the installer failed, for the log. */
+function installFailure(error: unknown): Failed {
+  const found = failureOf(error, 'download');
+  return { ...found, why: found.why === 'noRelease' ? 'unknown' : found.why };
 }
 
 /** A check Lo gave up on: the feed didn't answer within {@link CHECK_LIMIT}. */

@@ -103,6 +103,7 @@ describe('importing from gh', () => {
     expect(await listGh(none, [], () => undefined)).toEqual({
       kind: 'missing',
       message: "Lo can't find gh, GitHub's command-line tool.",
+      passedOver: false,
     });
     const { gh, log } = setUp({ status: 'not json' });
     expect(await listGh(gh, [], log)).toMatchObject({
@@ -138,7 +139,7 @@ describe('importing from gh', () => {
       'someone-else',
     ]);
     expect(results).toEqual([
-      { ok: false, login: 'someone-else', message: "gh's token for someone-else is rozed-bot's." },
+      { ok: false, login: 'someone-else', why: { kind: 'otherAccount', other: 'rozed-bot' } },
     ]);
     expect(kept).toEqual([]);
     expect(JSON.stringify(results) + logged.join('\n')).not.toContain(GH_TOKEN_FOR_SOMEONE_ELSE);
@@ -151,12 +152,8 @@ describe('importing from gh', () => {
     expect(
       await importFromGh({ gh, fetch, urls: GITHUB_URLS, add, log }, ['nobody', 'broken']),
     ).toEqual([
-      { ok: false, login: 'nobody', message: "gh isn't signed in to nobody." },
-      {
-        ok: false,
-        login: 'broken',
-        message: "gh can't use broken's token just now: gh says error.",
-      },
+      { ok: false, login: 'nobody', why: { kind: 'notSignedIn' } },
+      { ok: false, login: 'broken', why: { kind: 'unusable', state: 'error' } },
     ]);
     expect(kept).toEqual([]);
     expect(fetch.seen).toEqual([]);
@@ -172,12 +169,18 @@ describe('importing from gh', () => {
         ['rozed-bot'],
       ),
     ).toEqual([
-      { ok: false, login: 'rozed-bot', message: "Lo can't find gh, GitHub's command-line tool." },
+      {
+        ok: false,
+        login: 'rozed-bot',
+        why: { kind: 'unknown', details: "Lo can't find gh, GitHub's command-line tool." },
+      },
     ]);
     const { gh, log } = setUp();
     expect(
       await importFromGh({ gh, fetch, urls: GITHUB_URLS, add: refusing, log }, ['rozed-bot']),
-    ).toEqual([{ ok: false, login: 'rozed-bot', message: 'No keyring answered.' }]);
+    ).toEqual([
+      { ok: false, login: 'rozed-bot', why: { kind: 'unknown', details: 'No keyring answered.' } },
+    ]);
   });
 });
 

@@ -77,7 +77,7 @@ export function commandScript(launch: Launch): string {
     MARK,
     '# Lo wrote this file, and writes it again when the command is installed again.',
     'if [ "$#" -ne 1 ]; then',
-    "  echo 'usage: lo <link to a pull request>' >&2",
+    "  echo 'usage: lo <pull request link>' >&2",
     '  exit 2',
     'fi',
     // A link and nothing else, from its first character: Lo itself would read an option, even
@@ -85,7 +85,7 @@ export function commandScript(launch: Launch): string {
     'case "$1" in',
     '  [Ll][Oo]://* | [Hh][Tt][Tt][Pp]://* | [Hh][Tt][Tt][Pp][Ss]://*) ;;',
     '  *)',
-    "    echo 'lo: give it a link to a pull request, such as https://github.com/owner/repo/pull/123.' >&2",
+    "    echo 'lo: not a pull request link. Try lo https://github.com/owner/repo/pull/123' >&2",
     '    exit 2',
     '    ;;',
     'esac',
@@ -205,10 +205,7 @@ export async function installCommand(options: InstallOptions): Promise<Installed
     const path = join(folder, COMMAND);
     const found = await contents(path);
     if (found.kind === 'unreadable') {
-      return {
-        kind: 'failed',
-        message: `Lo couldn't read ${path} to see whether it wrote it, so it left it as it is: ${found.why}`,
-      };
+      return { kind: 'failed', why: 'unreadable', details: `${path}\n${found.why}` };
     }
     if (found.kind === 'text' && !isOurs(found.text)) return { kind: 'taken', path };
   }
@@ -234,7 +231,7 @@ export async function installCommand(options: InstallOptions): Promise<Installed
     await mkdir(user, { recursive: true, mode: 0o755 });
     await writeCommand(user, script);
   } catch (error) {
-    return { kind: 'failed', message: `Lo couldn't write ${path}: ${describe(error)}` };
+    return { kind: 'failed', why: 'unwritable', details: `${path}\n${describe(error)}` };
   }
   return { kind: 'installed', path, onPath: onPath(user, options.path) };
 }
@@ -290,7 +287,7 @@ export function elevateOnMac(
     'set source to item 1 of argv',
     'set target to item 2 of argv',
     'set folder to item 3 of argv',
-    'do shell script "/bin/mkdir -p " & quoted form of folder & " && /usr/bin/install -S -m 755 " & quoted form of source & " " & quoted form of target with prompt "Lo wants to install the lo command, which reviews pull requests from a terminal." with administrator privileges',
+    'do shell script "/bin/mkdir -p " & quoted form of folder & " && /usr/bin/install -S -m 755 " & quoted form of source & " " & quoted form of target with prompt "Installing the lo command needs an administrator’s password." with administrator privileges',
     'end run',
   ];
   return (from, to) =>

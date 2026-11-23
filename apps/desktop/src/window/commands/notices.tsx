@@ -1,17 +1,32 @@
 // The window's notes: toasts at the bottom of the window that go by themselves. Up to three stack,
-// the newest lowest, each with four seconds of its own, so a second note never wipes out the
-// first. A key pressed for a command that can't run, with no control in view to say why, says the
-// reason here, alone. Something asked for that finished, such as a GitHub stack made, says so here
-// too, in a line.
+// the newest lowest, each with time of its own, so a second note never wipes out the first: four
+// seconds, or eight for one with a button or Details, which also stays while its Details is open.
+// A key pressed for a command that can't run, with no control in view to say why, says the reason
+// here, alone. Something asked for that finished, such as a GitHub stack made, says so here too,
+// in a line.
 //
 // A note is one line: the result, or the reason. `refuse` and `announce` with nothing after the
 // line are the two to use. A title with a body under it is the older shape, still drawn for the
-// callers that have it.
+// callers that have it, and the shape of the one failure a note may hold: one with nothing in view
+// to hold it, which keeps main's words behind Details. Its icon says which a note is: a tick for
+// what's done, a failure's for what failed, a warning's for what can't be done here at all, and an
+// info icon for the rest.
 
-import { TOAST_MAX, TOAST_MS, ToastStack, type StackedToast, type ToastAction } from '@lo/ui';
+import {
+  Ticks,
+  TOAST_MAX,
+  TOAST_MS,
+  ToastStack,
+  toastTime,
+  type StackedToast,
+  type ToastAction,
+} from '@lo/ui';
 import { useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
 
-/** How long a note stays, in ms, while the pointer and focus are off it. */
+/**
+ * How long a note stays, in ms, while the pointer and focus are off it. One with a button or
+ * Details stays twice as long: see `toastTime`.
+ */
 export const NOTICE_TIME = TOAST_MS;
 
 /**
@@ -22,10 +37,16 @@ export interface Note {
   readonly title: string;
   readonly body: string;
   readonly done?: boolean | undefined;
-  /** `failed` for something asked for that went wrong, with no control in view to say so. */
-  readonly failed?: boolean | undefined;
   /** Its one button, as "Back" on a note that something moved. */
   readonly action?: ToastAction | undefined;
+  /** What main or the system said of a failure, as it came, behind Details. */
+  readonly details?: string | undefined;
+  /**
+   * Its tone where it isn't the usual one: `danger` for a failure, and `warning` for what can't be
+   * done here at all, as a check for updates on a build from source, which isn't a failure.
+   * Without it, a note with Details is a failure, and the rest are news.
+   */
+  readonly tone?: 'warning' | 'danger' | undefined;
 }
 
 /**
@@ -72,9 +93,10 @@ function time(id: string): void {
   clearTimeout(timers.get(id));
   timers.delete(id);
   if (drawing > 0) return;
+  const note = shown.find((each) => each.id === id)?.note;
   timers.set(
     id,
-    setTimeout(() => dismiss(id), NOTICE_TIME),
+    setTimeout(() => dismiss(id), note === undefined ? NOTICE_TIME : toastTime(note)),
   );
 }
 
@@ -87,8 +109,9 @@ const same = (one: Note, other: Note) =>
   one.title === other.title &&
   one.body === other.body &&
   (one.done ?? false) === (other.done ?? false) &&
-  (one.failed ?? false) === (other.failed ?? false) &&
-  one.action?.label === other.action?.label;
+  one.action?.label === other.action?.label &&
+  one.details === other.details &&
+  one.tone === other.tone;
 
 /**
  * Shows `note` under the others. One already showing that says the same isn't said twice: it's the
@@ -132,22 +155,36 @@ export function announce(title: string, body = '', action?: ToastAction): void {
   show({ title, body, done: true, action });
 }
 
+/** What a note of the older shape may carry besides its words. */
+export interface NoteMore {
+  /** The one thing to do about it. */
+  readonly action?: ToastAction | undefined;
+  /** What main or the system said of a failure, as it came, behind Details. */
+  readonly details?: string | undefined;
+  /** `danger` for a failure with no Details, `warning` for what can't be done here at all. */
+  readonly tone?: 'warning' | 'danger' | undefined;
+}
+
 /**
- * Says that something asked for went wrong, in a line at danger tone, where no control in view can
- * say it: "Couldn’t copy the prompt" for `ya` pressed with no Copy prompt button drawn. A control
- * that's in view says it itself, and a failure that has a view says it there, as a `Problem`.
+ * Says that something asked for went wrong, in a line at danger tone, where nothing in view can
+ * host it: "Couldn’t copy the prompt" for `ya` pressed with no Copy prompt button on screen. A
+ * control that's in view says it itself, and a failure that has a view says it there, as a
+ * `Problem`.
  */
 export function fail(line: string): void {
-  show({ title: line, body: '', failed: true });
+  show({ title: line, body: '', tone: 'danger' });
 }
 
 /**
  * Says `title` with `body` under it, a line a reason: the older shape of a note that says why
- * something didn't happen. A command that can't run uses {@link refuse}; something that failed
- * says so where it was asked for, not here.
+ * something didn't happen, with `more.action`, the one thing to do about it, where there's one. A
+ * command that can't run uses {@link refuse}. Something that failed says so where it was asked
+ * for, not here, unless nothing in view can hold it, as for a command run from the menu or a toast
+ * that has gone: then the note is the error, `title` what failed and `body` why, with
+ * `more.details`, what main or the system said, behind Details, and its tone says it failed.
  */
-export function notify(title: string, body: string): void {
-  show({ title, body });
+export function notify(title: string, body: string, more: NoteMore = {}): void {
+  show({ title, body, ...more });
 }
 
 /** Takes back the note `title` and `body` say, if it's showing: what it said is over. */
@@ -156,37 +193,45 @@ export function withdraw(title: string, body: string): void {
   if (left.length !== shown.length) set(left);
 }
 
-/** Lines of text, each on its own. */
+/** Lines of text, each on its own, with what's between backticks set as code. */
 function lines(text: string): ReactNode {
   const each = text.split('\n');
-  if (each.length === 1) return text;
+  if (each.length === 1) return <Ticks text={text} />;
   return each.map((line, index) => (
     <span key={index} className="block">
-      {line}
+      <Ticks text={line} />
     </span>
   ));
 }
 
-/** What a note's toast says: its line, and what's under it, quieter. */
+/** What a note's toast says: its line, and what's under it, quieter, each with its code as code. */
 function lineOf(note: Note): ReactNode {
   if (note.body === '') return lines(note.title);
   return (
     <>
-      {note.title}
+      <Ticks text={note.title} />
       <span className="block text-fg-muted text-small">{lines(note.body)}</span>
     </>
   );
 }
 
-/** A note's toast: an info icon and the reason, a tick and what's done, or what went wrong. */
+/**
+ * A note's toast: a tick and what's done; its `tone`'s icon where it has one, a failure's or a
+ * warning's; a failure's for one with Details; or else an info icon and the reason.
+ */
 function toastOf(id: string, note: Note): StackedToast {
-  const tone = note.failed ? 'danger' : note.done ? 'success' : 'info';
-  return { id, tone, title: lineOf(note), action: note.action };
+  return {
+    id,
+    tone: note.done ? 'success' : (note.tone ?? (note.details === undefined ? 'info' : 'danger')),
+    title: lineOf(note),
+    action: note.action,
+    details: note.details,
+  };
 }
 
 /**
- * The window's notes, as a stack of toasts: an info icon and the reason, or a tick and what's
- * done. `waiting` holds the toasts that stay until they're acted on, below the stack.
+ * The window's notes, as a stack of toasts, each with its tone's icon: see {@link toastOf}.
+ * `waiting` holds the toasts that stay until they're acted on, below the stack.
  */
 export function Notices({ waiting }: { waiting?: ReactNode }) {
   const notes = useSyncExternalStore(subscribe, () => shown);

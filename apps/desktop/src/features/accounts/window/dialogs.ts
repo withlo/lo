@@ -4,12 +4,7 @@
 import { IpcError } from '../../../ipc/contract.ts';
 import type { SignInState } from '../contract.ts';
 import { main } from './main.ts';
-import {
-  accountsStore,
-  type AccountQuestion,
-  type OpenDialog,
-  type SignInDialog,
-} from './store.ts';
+import { accountsStore, type OpenDialog, type SignInDialog } from './store.ts';
 
 let attempts = 0;
 
@@ -31,9 +26,6 @@ function finish(dialog: OpenDialog): void {
       if (state !== undefined) main().cancelSignIn({ id: state.id }).catch(log('stop signing in'));
       break;
     }
-    case 'pick':
-      dialog.answer(undefined);
-      break;
     case 'import':
     case 'signOut':
       break;
@@ -49,7 +41,7 @@ function show(next: OpenDialog | undefined): void {
   if (dialog !== undefined && dialog !== next) finish(dialog);
 }
 
-/** Closes the dialog open, if any: a sign-in stops, and a picker answers that none was chosen. */
+/** Closes the dialog open, if any: a sign-in stops. */
 export function closeDialog(): void {
   show(undefined);
 }
@@ -158,15 +150,4 @@ export function openImport(): void {
  */
 export function openSignOut(logins: readonly string[]): void {
   show({ kind: 'signOut', logins });
-}
-
-/**
- * Asks which account opens a pull request of `question.owner/name`, remembering the answer when the
- * person leaves the switch on. Resolves with the login, or nothing when the picker was cancelled or
- * another dialog took its place.
- */
-export function pickAccount(question: AccountQuestion): Promise<string | undefined> {
-  return new Promise((resolve) => {
-    show({ kind: 'pick', question, answer: resolve });
-  });
 }

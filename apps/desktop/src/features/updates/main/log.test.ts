@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { logLine, reasonOf, updaterLogger, withoutQueries } from './log.ts';
+import { failureOf, logLine, updaterLogger, withoutQueries } from './log.ts';
 
 /** An error as electron-updater makes one: its message, and its code. */
 function updaterError(message: string, code: string): Error {
@@ -43,53 +43,59 @@ describe('what electron-updater logs', () => {
 });
 
 describe('why a check or a download failed', () => {
-  it('names a network error', () => {
+  it('names a network error, with its code for Details', () => {
     const error = new Error('net::ERR_INTERNET_DISCONNECTED');
-    expect(reasonOf(error, 'check')).toBe(
-      'Lo couldn’t reach GitHub (ERR_INTERNET_DISCONNECTED). Check your connection, then try again.',
-    );
+    expect(failureOf(error, 'check')).toEqual({
+      why: 'offline',
+      details: 'ERR_INTERNET_DISCONNECTED',
+    });
     const wrapped = updaterError(
       'Unable to find latest version on GitHub (https://github.com/withlo/lo/releases/latest), please ensure a production release exists: Error: net::ERR_NAME_NOT_RESOLVED',
       'ERR_UPDATER_LATEST_VERSION_NOT_FOUND',
     );
-    expect(reasonOf(wrapped, 'check')).toContain('(ERR_NAME_NOT_RESOLVED)');
+    expect(failureOf(wrapped, 'check')).toEqual({
+      why: 'offline',
+      details: 'ERR_NAME_NOT_RESOLVED',
+    });
   });
 
-  it('says what GitHub answered', () => {
+  it('says GitHub answered with an error, with its status for Details', () => {
     const error = Object.assign(new Error('HttpError: 503'), { statusCode: 503 });
-    expect(reasonOf(error, 'download')).toBe('GitHub answered 503. Try again later.');
+    expect(failureOf(error, 'download')).toEqual({ why: 'github', details: '503' });
+  });
+
+  it('finds no release where GitHub has none, which is no failure', () => {
     const none = updaterError(
       'Unable to find latest version on GitHub (https://github.com/withlo/lo/releases/latest), please ensure a production release exists: HttpError: 404 \n"method: GET url: …"',
       'ERR_UPDATER_LATEST_VERSION_NOT_FOUND',
     );
-    expect(reasonOf(none, 'check')).toBe('GitHub has no release of Lo yet.');
+    expect(failureOf(none, 'check')).toEqual({ why: 'noRelease' });
+    expect(failureOf(updaterError('none', 'ERR_UPDATER_NO_PUBLISHED_VERSIONS'), 'check')).toEqual({
+      why: 'noRelease',
+    });
   });
 
-  it('says when a release has nothing for this computer, or a download didn’t match', () => {
+  it('says when an update has nothing for this computer, or a download didn’t match', () => {
     expect(
-      reasonOf(
+      failureOf(
         updaterError('Cannot find latest-mac.yml', 'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND'),
         'check',
       ),
-    ).toBe('The newest release on GitHub has no download for this computer.');
+    ).toEqual({ why: 'noDownload' });
     expect(
-      reasonOf(updaterError('sha512 checksum mismatch', 'ERR_CHECKSUM_MISMATCH'), 'download'),
-    ).toBe('The download didn’t match the release’s checksum, so Lo deleted it. Try again.');
+      failureOf(updaterError('sha512 checksum mismatch', 'ERR_CHECKSUM_MISMATCH'), 'download'),
+    ).toEqual({ why: 'damaged' });
   });
 
   it('says when the update isn’t signed as this Lo is', () => {
     const error = new Error(
       'Code signature at URL file:///private/var/x/Lo.app/ did not pass validation: code failed to satisfy specified code requirement(s)',
     );
-    expect(reasonOf(error, 'download')).toBe(
-      'The update isn’t signed as this Lo is, so Lo won’t install it.',
-    );
+    expect(failureOf(error, 'download')).toEqual({ why: 'unsigned' });
   });
 
-  it('says something plain for anything else', () => {
-    expect(reasonOf(new Error('Cannot parse releases feed'), 'check')).toBe(
-      'Lo couldn’t read the newest release on GitHub.',
-    );
-    expect(reasonOf('nope', 'download')).toBe('The download stopped before it finished.');
+  it('knows no cause for anything else', () => {
+    expect(failureOf(new Error('Cannot parse releases feed'), 'check')).toEqual({ why: 'unknown' });
+    expect(failureOf('nope', 'download')).toEqual({ why: 'stopped' });
   });
 });

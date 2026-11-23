@@ -14,7 +14,7 @@ import { installBridge as install } from '../../../window/test/bridge.ts';
 import type { AccountSummary, GhListing, SignInState } from '../contract.ts';
 import { AccountDialogs } from './AccountDialogs.tsx';
 import Accounts, { AccountsSection } from './Accounts.tsx';
-import { closeDialog, openImport, openSignIn, openSignOut, pickAccount } from './dialogs.ts';
+import { closeDialog, openImport, openSignIn, openSignOut } from './dialogs.ts';
 import feature from './index.ts';
 import { pressCopyCode } from './SignIn.tsx';
 import { accountsStore, showAccounts } from './store.ts';
@@ -419,16 +419,17 @@ describe('importing from gh', () => {
       'accounts.ghAccounts': () => listing,
       'accounts.importGh': () => [
         { ok: true, login: 'rozed-bot' },
-        { ok: false, login: 'someone-else', message: "gh's token is rozed-bot's." },
+        { ok: false, login: 'someone-else', why: { kind: 'otherAccount', other: 'rozed-bot' } },
       ],
     });
     render();
     act(() => openImport());
     await settle();
     const shown = dialog('import-gh');
-    expect(shown?.textContent).toContain(
-      'gh 2.103.3 at /opt/homebrew/bin/gh is signed in to 3 accounts',
-    );
+    expect(shown?.textContent).toContain('Import from GitHub CLI');
+    expect(shown?.textContent).toContain('GitHub CLI 2.103.3 · 3 accounts');
+    // Where gh is lives behind no line of the dialog's: GitHub CLI is named, never its path.
+    expect(shown?.textContent).not.toContain('/opt/homebrew/bin/gh');
     const switches = [...(shown?.querySelectorAll('[role="switch"]') ?? [])];
     expect(switches.map((each) => each.getAttribute('aria-label'))).toEqual([
       'Import rozed-bot',
@@ -442,10 +443,14 @@ describe('importing from gh', () => {
       'false',
     ]);
     expect(switches[2]?.hasAttribute('data-disabled')).toBe(true);
+    expect(shown?.textContent).toContain('status error');
     click(switches[1] ?? document.body);
     expect(dialog('import-gh')?.textContent).toContain(
-      "someone-else's token can't merge PRs that change workflows.",
+      'someone-else’s sign-in can’t merge pull requests that change workflows.',
     );
+    // The way to a sign-in that can is beside it.
+    expect(button(dialog('import-gh'), 'Sign in with GitHub…')).toBeDefined();
+    expect(button(dialog('import-gh'), 'Import 2 accounts')).toBeDefined();
     // `⏎` on a switch imports.
     press(switches[1] ?? document.body, 'Enter');
     await settle();
@@ -453,10 +458,16 @@ describe('importing from gh', () => {
       'accounts.importGh',
       { logins: ['rozed-bot', 'someone-else'] },
     ]);
-    expect(dialog('import-gh')?.textContent).toContain('Imported 1 account');
-    expect(dialog('import-gh')?.querySelector('[role="alert"]')?.textContent).toBe(
-      "someone-else: gh's token is rozed-bot's.",
+    const done = dialog('import-gh');
+    expect(done?.textContent).toContain('Imported 1 account');
+    expect(done?.textContent).toContain('Signed in as rozed-bot');
+    expect(done?.textContent).toContain('Couldn’t import someone-else');
+    expect(done?.textContent).toContain(
+      'GitHub CLI’s sign-in for someone-else belongs to rozed-bot.',
     );
+    // The title is the dialog's throughout; the foot says it's done.
+    expect(done?.textContent).toContain('Import from GitHub CLI');
+    expect(button(dialog('import-gh'), 'Done')).toBeDefined();
   });
 
   it('imports nothing without a keyring, and says why there is nothing to import', async () => {
@@ -467,7 +478,11 @@ describe('importing from gh', () => {
     render();
     act(() => openImport());
     await settle();
-    expect(dialog('import-gh')?.textContent).toContain("Lo can't keep your tokens safely");
+    expect(dialog('import-gh')?.textContent).toContain('Can’t import accounts');
+    expect(dialog('import-gh')?.textContent).toContain(
+      'Sign-ins are kept in the Keychain, and it isn’t available.',
+    );
+    expect(button(dialog('import-gh'), 'Quit Lo')).toBeDefined();
     expect(dialog('import-gh')?.querySelectorAll('[role="switch"]')).toHaveLength(0);
     act(() => closeDialog());
     installBridge({
@@ -475,101 +490,105 @@ describe('importing from gh', () => {
       'accounts.ghAccounts': () => ({
         kind: 'missing',
         message: "Lo can't find gh, GitHub's command-line tool.",
+        passedOver: false,
       }),
     });
     act(() => openImport());
     await settle();
-    expect(dialog('import-gh')?.textContent).toContain(
-      "Lo can't find gh, GitHub's command-line tool.",
-    );
-  });
-});
-
-describe('the account picker', () => {
-  it('chooses among the accounts that can see the repository, with j and k, and remembers it', async () => {
-    const bridge = installBridge({ 'accounts.choose': () => undefined });
-    showAccounts([
-      account('tess-o', { name: 'Tess' }),
-      account('tess-okafor', { source: 'gh' }),
-      account('fieldwork-bot', { signedOut: 'refused' }),
-      account('locked', { needsKeyring: true }),
-    ]);
-    render();
-    let answered: string | undefined = 'none yet';
-    act(() => {
-      void pickAccount({
-        owner: 'lumen-ui',
-        name: 'lumen',
-        number: 1182,
-        logins: ['tess-o', 'tess-okafor'],
-        remember: 'owner',
-      }).then((login) => {
-        answered = login;
-      });
-    });
-    const shown = dialog('account-picker');
-    expect(shown?.textContent).toContain('Which account for lumen-ui?');
-    expect(shown?.textContent).toContain(
-      'Opening lumen-ui/lumen#1182. 2 of your accounts can see it.',
-    );
-    const radios = () => [...(shown?.querySelectorAll('[role="radio"]') ?? [])];
-    expect(radios().map((each) => each.getAttribute('aria-checked'))).toEqual([
-      'true',
-      'false',
-      'false',
-      'false',
-    ]);
-    // Accounts that can't open it say why, and can't be chosen.
-    expect(radios()[2]?.getAttribute('aria-disabled')).toBe('true');
-    expect(radios()[2]?.textContent).toContain('Signed out. Sign in again to use it here.');
-    expect(radios()[3]?.textContent).toContain("Lo can't read its token without a keyring");
-    press(radios()[0] ?? document.body, 'j');
-    expect(radios().map((each) => each.getAttribute('aria-checked'))).toEqual([
-      'false',
-      'true',
-      'false',
-      'false',
-    ]);
-    // `j` again goes round, past those that can't be chosen.
-    press(radios()[1] ?? document.body, 'j');
-    expect(radios()[0]?.getAttribute('aria-checked')).toBe('true');
-    press(radios()[0] ?? document.body, 'k');
-    expect(button(shown, 'Open as').textContent).toContain('Open as tess-okafor');
-    expect(shown?.textContent).toContain('Remember for every lumen-ui repo');
-    press(radios()[1] ?? document.body, 'Enter');
-    await settle();
-    expect(bridge.calls).toContainEqual([
-      'accounts.choose',
-      { owner: 'lumen-ui', name: 'lumen', login: 'tess-okafor', remember: 'owner' },
-    ]);
-    expect(answered).toBe('tess-okafor');
-    expect(dialog('account-picker')).toBeNull();
+    expect(dialog('import-gh')?.textContent).toContain('Can’t find GitHub CLI');
+    expect(button(dialog('import-gh'), 'Check again')).toBeDefined();
   });
 
-  it('answers nothing when cancelled, or when another dialog takes its place', async () => {
-    installBridge({ 'accounts.signIn': () => waiting, 'accounts.cancelSignIn': () => undefined });
-    showAccounts([account('a'), account('b')]);
+  it('says GitHub CLI isn’t signed in, with the command that signs it in', async () => {
+    installBridge({
+      'accounts.keyring': () => null,
+      'accounts.ghAccounts': () => ({ ...listing, accounts: [] }),
+    });
     render();
-    const question = { owner: 'o', name: 'r', logins: ['a', 'b'], remember: 'repo' as const };
-    let first: string | undefined = 'none yet';
-    act(() => {
-      void pickAccount(question).then((login) => {
-        first = login;
-      });
-    });
-    expect(dialog('account-picker')?.textContent).toContain('Remember for o/r');
-    act(() => openSignIn());
+    act(() => openImport());
     await settle();
-    expect(first).toBeUndefined();
-    let second: string | undefined = 'none yet';
-    act(() => {
-      void pickAccount(question).then((login) => {
-        second = login;
-      });
+    const shown = dialog('import-gh');
+    expect(shown?.textContent).toContain('Can’t import accounts');
+    expect(shown?.textContent).toContain('GitHub CLI isn’t signed in.');
+    expect(shown?.querySelector('code')?.textContent).toBe('gh auth login');
+    // The command that fixes it reads after what's wrong.
+    const alert = shown?.querySelector('[role="alert"]');
+    const well = shown?.querySelector('code');
+    expect(
+      alert && well ? alert.compareDocumentPosition(well) & Node.DOCUMENT_POSITION_FOLLOWING : 0,
+    ).toBeTruthy();
+    expect(button(dialog('import-gh'), 'Check again')).toBeDefined();
+  });
+
+  it('goes back to choosing when the only account refused would refuse again, saying why', async () => {
+    const bridge = installBridge({
+      'accounts.keyring': () => null,
+      'accounts.ghAccounts': () => listing,
+      'accounts.importGh': () => [
+        { ok: false, login: 'rozed-bot', why: { kind: 'otherAccount', other: 'someone-else' } },
+      ],
     });
-    click(button(dialog('account-picker'), 'Cancel'));
+    render();
+    act(() => openImport());
     await settle();
-    expect(second).toBeUndefined();
+    click(button(dialog('import-gh'), 'Import 1 account'));
+    await settle();
+    const shown = dialog('import-gh');
+    // No failure to try again: the account is out of the choice, with why in its place, said
+    // as it comes by a region that was there while it imported.
+    expect(shown?.querySelector('[role="alert"]')).toBeNull();
+    expect(shown?.querySelector('[role="status"]')?.textContent).toBe(
+      'GitHub CLI’s sign-in for rozed-bot belongs to someone-else.',
+    );
+    const switches = [...(shown?.querySelectorAll('[role="switch"]') ?? [])];
+    expect(switches[0]?.getAttribute('aria-checked')).toBe('false');
+    expect(switches[0]?.hasAttribute('data-disabled')).toBe(true);
+    expect(switches[1]?.hasAttribute('data-disabled')).toBe(false);
+    const main = button(shown, 'Import');
+    expect(main.textContent).toMatch(/^Import(?! \d)/);
+    expect(main.getAttribute('aria-disabled')).toBe('true');
+    expect(main.getAttribute('aria-description')).toBe('Choose an account');
+    expect(() => button(shown, 'Try again')).toThrow('No button "Try again".');
+    // Another can still be chosen and imported.
+    click(switches[1] ?? document.body);
+    expect(
+      button(dialog('import-gh'), 'Import 1 account').getAttribute('aria-disabled'),
+    ).toBeNull();
+    expect(bridge.calls.filter(([channel]) => channel === 'accounts.importGh')).toHaveLength(1);
+  });
+
+  it('tries again only what a second try could change', async () => {
+    const bridge = installBridge({
+      'accounts.keyring': () => null,
+      'accounts.ghAccounts': () => listing,
+      // Each account asked for fails as it did before.
+      'accounts.importGh': (input) =>
+        [
+          { ok: false, login: 'rozed-bot', why: { kind: 'unknown', details: 'fetch failed' } },
+          { ok: false, login: 'someone-else', why: { kind: 'otherAccount', other: 'rozed-bot' } },
+        ].filter(({ login }) => JSON.stringify(input).includes(`"${login}"`)),
+    });
+    render();
+    act(() => openImport());
+    await settle();
+    const region = () => dialog('import-gh')?.querySelector('[role="status"]');
+    click(dialog('import-gh')?.querySelectorAll('[role="switch"]')[1] ?? document.body);
+    click(button(dialog('import-gh'), 'Import 2 accounts'));
+    await settle();
+    // Each failure is its own error while this import's failures show.
+    expect(region()?.textContent).toBe('');
+    click(button(dialog('import-gh'), 'Try again'));
+    await settle();
+    expect(bridge.calls.filter(([channel]) => channel === 'accounts.importGh')).toEqual([
+      ['accounts.importGh', { logins: ['rozed-bot', 'someone-else'] }],
+      ['accounts.importGh', { logins: ['rozed-bot'] }],
+    ]);
+    // The one refused for good before is still out of the choice, with why.
+    expect(region()?.textContent).toBe(
+      'GitHub CLI’s sign-in for someone-else belongs to rozed-bot.',
+    );
+    const switches = [...(dialog('import-gh')?.querySelectorAll('[role="switch"]') ?? [])];
+    expect(switches[1]?.getAttribute('aria-checked')).toBe('false');
   });
 });
 
@@ -588,7 +607,7 @@ describe('signing out', () => {
     await settle();
     const shown = dialog('sign-out');
     expect(shown?.textContent).toContain('Sign out of rozed-bot?');
-    expect(shown?.textContent).toContain("Lo removes rozed-bot's token from this computer");
+    expect(shown?.textContent).toContain('Its sign-in is deleted from this computer.');
     expect(choices()).toHaveLength(0);
     expect(document.activeElement).toBe(button(shown, 'Sign out'));
     expect(bridge.calls.filter(([channel]) => channel === 'accounts.remove')).toEqual([]);
@@ -596,8 +615,11 @@ describe('signing out', () => {
     click(button(shown, 'Sign out'));
     await settle();
     expect(dialog('sign-out')?.querySelector('[role="alert"]')?.textContent).toBe(
-      "Lo couldn't sign out of rozed-bot completely.",
+      'Couldn’t sign out of rozed-bot',
     );
+    // Main's words are behind Details, and the main button tries again.
+    expect(button(dialog('sign-out'), 'Details')).toBeDefined();
+    expect(button(dialog('sign-out'), 'Try again')).toBeDefined();
 
     // Pressing `⏎` where focus has no control of its own tries again.
     refuse = false;
@@ -610,26 +632,55 @@ describe('signing out', () => {
     expect(dialog('sign-out')).toBeNull();
   });
 
+  it('counts an account already gone as signed out when it tries again', async () => {
+    let gone = false;
+    const bridge = installBridge({
+      'accounts.remove': () => {
+        if (gone) throw new IpcError('missing', 'Lo isn’t signed in to rozed-bot.');
+        gone = true;
+        throw new IpcError('failed', "Lo couldn't sign out of rozed-bot completely.");
+      },
+    });
+    showAccounts([account('rozed-bot')]);
+    render();
+    act(() => openSignOut(['rozed-bot']));
+    await settle();
+    click(button(dialog('sign-out'), 'Sign out'));
+    await settle();
+    expect(dialog('sign-out')?.querySelector('[role="alert"]')?.textContent).toBe(
+      'Couldn’t sign out of rozed-bot',
+    );
+    // The first try took the account and failed after: trying again finds it gone, which is done.
+    click(button(dialog('sign-out'), 'Try again'));
+    await settle();
+    expect(bridge.calls.filter(([channel]) => channel === 'accounts.remove')).toHaveLength(2);
+    expect(dialog('sign-out')).toBeNull();
+  });
+
   it('asks which account when there are several, and picks none for the person', async () => {
     const bridge = installBridge({ 'accounts.remove': () => undefined });
     showAccounts([account('rozed-bot'), account('tess-okafor', { source: 'gh' })]);
     render();
     act(() => openSignOut(['rozed-bot', 'tess-okafor']));
     const shown = dialog('sign-out');
-    expect(shown?.textContent).toContain('Sign out of which account?');
+    expect(shown?.querySelector('h2, [id]')?.textContent).toBe('Sign out');
     expect(choices().map((each) => each.textContent)).toEqual([
-      'rozed-botSigned in with GitHub',
-      'tess-okaforImported from gh',
+      'rozed-bot',
+      'tess-okaforFrom GitHub CLI',
     ]);
     expect(choices().map((each) => each.getAttribute('aria-checked'))).toEqual(['false', 'false']);
     // Nothing can be signed out of until one is picked.
-    expect(button(shown, 'Sign out').disabled).toBe(true);
+    expect(button(shown, 'Sign out').getAttribute('aria-disabled')).toBe('true');
+    expect(button(shown, 'Sign out').getAttribute('aria-description')).toBe('Choose an account');
+    // Until one is picked, what's deleted is the account's sign-in, whichever it is.
+    expect(shown?.textContent).toContain('The account’s sign-in is deleted from this computer.');
     press(shown ?? document.body, 'Enter');
     await settle();
     expect(bridge.calls.filter(([channel]) => channel === 'accounts.remove')).toEqual([]);
 
     click(choices()[1] ?? document.body);
-    expect(button(shown, 'Sign out of tess-okafor').disabled).toBe(false);
+    expect(button(shown, 'Sign out of tess-okafor').getAttribute('aria-disabled')).toBeNull();
+    expect(shown?.textContent).toContain('tess-okafor’s sign-in is deleted from this computer.');
     click(button(shown, 'Sign out of tess-okafor'));
     await settle();
     expect(bridge.calls).toContainEqual(['accounts.remove', { login: 'tess-okafor' }]);
@@ -640,13 +691,13 @@ describe('signing out', () => {
     installBridge({ 'accounts.signIn': () => waiting });
     render();
     const signOut = registry().command('accounts.signOut')?.handler;
-    expect(signOut?.enabled?.(NO_TARGET)).toBe("Lo isn't signed in to any account.");
+    expect(signOut?.enabled?.(NO_TARGET)).toBe('No account is signed in');
     showAccounts([account('rozed-bot'), account('tess-okafor')]);
     expect(signOut?.enabled?.(NO_TARGET)).toBe(true);
     act(() => {
       void signOut?.run(NO_TARGET);
     });
-    expect(dialog('sign-out')?.textContent).toContain('Sign out of which account?');
+    expect(choices()).toHaveLength(2);
     // Adding an account starts signing in, in place of the dialog before it.
     act(() => {
       void registry().command('accounts.addAccount')?.handler?.run(NO_TARGET);

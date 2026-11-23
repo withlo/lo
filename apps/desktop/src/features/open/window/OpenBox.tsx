@@ -1,28 +1,29 @@
 // The open box (`⌘L`): a link to a pull request, filled in from the clipboard when it holds one,
 // with what it opens and as whom, or why it can't, and what `⏎` does about it.
 
-import { Button, Palette, PaletteHint, Spinner, Tag, Ticks } from '@lo/ui';
+import { Palette, PaletteHint, Problem, Spinner, StatePill, Ticks } from '@lo/ui';
 import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
 import type { ReactNode } from 'react';
 import { useStore } from 'zustand';
 
 import { registry, useKeys } from '../../../window/commands/registry.ts';
-import type { PullState } from '../../tab/contract.ts';
 import type { Preview } from '../contract.ts';
 import {
-  addAccount,
   boxClosed,
   boxStore,
   closeBox,
-  copyLink,
   currentPreview,
   enterAction,
+  highlight,
   openAs,
-  openPage,
   openText,
   submit,
+  takeWay,
   typeText,
+  type BoxState,
 } from './box.ts';
+import { LinkNote } from './Note.tsx';
+import { blockedWords, notPullLine, wayLabel, webWords } from './words.ts';
 
 /** A row of the box: the pull request, or one of the accounts that can open it. */
 type Row = { kind: 'pull'; id: 'pull' } | { kind: 'as'; id: string; login: string };
@@ -39,118 +40,106 @@ function keyOf(id: string): string[] | undefined {
   return first && keyLabels(first, registry().system);
 }
 
-const STATE_WORDS: Readonly<Record<PullState, string>> = {
-  open: 'Open',
-  draft: 'Draft',
-  merged: 'Merged',
-  closed: 'Closed',
-};
-
 const LINK_ICON = (
   <svg className="lo-i text-fg-muted" viewBox="0 0 16 16" aria-hidden="true">
     <path d="M6.5 9.5l3-3M7 4.5l1-1a2.47 2.47 0 0 1 3.5 3.5l-1 1M9 11.5l-1 1A2.47 2.47 0 0 1 4.5 9l1-1" />
   </svg>
 );
 
-const WARN_ICON = (
-  <svg className="lo-i lo-i--sm mt-2 flex-none text-warning" viewBox="0 0 16 16" aria-hidden="true">
-    <path d="M7.13 2.5a1 1 0 0 1 1.74 0l5.2 9.5a1 1 0 0 1-.87 1.5H2.8a1 1 0 0 1-.87-1.5Z" />
-    <path d="M8 6.25v3M8 11.25v.01" />
+/** An account, as the box draws one beside its name. */
+const PERSON = (
+  <svg className="lo-i lo-i--sm flex-none text-fg-muted" viewBox="0 0 16 16" aria-hidden="true">
+    <circle cx="8" cy="5.25" r="2.75" />
+    <path d="M3 13.5c.5-2.5 2.5-4 5-4s4.5 1.5 5 4" />
   </svg>
 );
 
-const LOCK_ICON = (
-  <svg className="lo-i lo-i--sm mt-2 flex-none text-danger" viewBox="0 0 16 16" aria-hidden="true">
-    <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" />
-    <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
-  </svg>
-);
-
-/** A message under the input: an icon, what's so, and what to do about it. */
-function Message({
-  icon,
-  title,
-  children,
-}: {
-  icon: ReactNode;
-  title: string;
-  children?: ReactNode;
-}) {
+/** A wait under the input: a turning ring and what's being done. */
+function Waiting({ children }: { children: string }) {
   return (
-    <>
-      {icon}
-      <div className="flex min-w-0 flex-col gap-2">
-        <span className="font-semibold">{title}</span>
-        {children}
-      </div>
-    </>
+    <span role="status" className="flex items-center gap-8 text-fg-muted">
+      <Spinner size="xs" />
+      {children}
+    </span>
   );
 }
 
+/**
+ * Runs `action` from a button under the field, and gives the field focus back: the button goes
+ * with what it acted on, and the box stays open while it's done, or the link is looked up again.
+ */
+function fromField(action: () => void): () => void {
+  return () => {
+    const field = document.activeElement
+      ?.closest('[data-lo-scope="palette"]')
+      ?.querySelector<HTMLInputElement>('input');
+    action();
+    field?.focus();
+  };
+}
+
 /** What the box says under the input, for what's in it, if anything. */
-function messageFor(preview: Preview | undefined, text: string, opening: boolean): ReactNode {
+function messageFor(state: BoxState, preview: Preview | undefined): ReactNode {
+  const { text, opening, error } = state;
   if (opening) {
-    return <Message icon={<Spinner size="xs" />} title="Opening…" />;
+    return <Waiting>{preview?.kind === 'web' ? 'Opening link…' : 'Opening pull request…'}</Waiting>;
+  }
+  if (error !== undefined) {
+    return (
+      <div className="min-w-0 flex-1">
+        <Problem
+          title={error.title}
+          reason={error.reason === undefined ? undefined : <Ticks text={error.reason} />}
+          details={error.details}
+          action={
+            error.retry === true
+              ? { label: 'Try again', onClick: fromField(submit), keys: labels('enter') }
+              : undefined
+          }
+        />
+      </div>
+    );
   }
   if (preview === undefined) {
-    return text.trim() === '' ? undefined : (
-      <Message icon={<Spinner size="xs" />} title="Looking it up…" />
-    );
+    return text.trim() === '' ? undefined : <Waiting>Checking link…</Waiting>;
   }
   switch (preview.kind) {
     case 'empty':
     case 'pull':
       return undefined;
     case 'invalid':
+      return <LinkNote title="Not a pull request link" reason={notPullLine(preview.why)} />;
+    case 'web': {
+      const words = webWords(preview);
       return (
-        <Message icon={WARN_ICON} title="That isn’t a link Lo opens">
-          <span className="text-fg-muted text-small">
-            <Ticks text={preview.message} />
-          </span>
-        </Message>
+        <LinkNote
+          title={words.title}
+          reason={words.reason}
+          action={{ label: words.action, onClick: fromField(submit), keys: labels('enter') }}
+        />
       );
-    case 'web':
+    }
+    case 'blocked': {
+      const { title, reason, way } = blockedWords(preview.why, preview);
       return (
-        <Message icon={WARN_ICON} title={preview.title}>
-          <span className="text-fg-muted text-small">{preview.message}</span>
-          {!preview.browse && (
-            <span className="mt-6 flex">
-              <Button size="sm" onClick={() => void copyLink(preview.url)}>
-                Copy the link
-              </Button>
-            </span>
-          )}
-        </Message>
+        <div className="min-w-0 flex-1">
+          <Problem
+            title={title}
+            reason={reason}
+            details={preview.details}
+            action={
+              way === undefined
+                ? undefined
+                : {
+                    label: wayLabel(way),
+                    onClick: fromField(() => takeWay(way, text)),
+                    keys: labels('enter'),
+                  }
+            }
+          />
+        </div>
       );
-    case 'blocked':
-      return (
-        <Message icon={LOCK_ICON} title={preview.title}>
-          <span className="text-fg-muted text-small">{preview.message}</span>
-          {(preview.links.length > 0 || preview.signIn) && (
-            <span className="mt-6 flex flex-wrap gap-8">
-              {preview.links.map((link) => (
-                <Button
-                  key={link.url}
-                  size="sm"
-                  variant="primary"
-                  onClick={() => void openPage(link.url)}
-                >
-                  {link.label}
-                </Button>
-              ))}
-              {preview.signIn && (
-                <Button
-                  size="sm"
-                  variant={preview.links.length > 0 ? 'ghost' : 'primary'}
-                  onClick={addAccount}
-                >
-                  {preview.links.length > 0 ? 'Use another account' : 'Add an account'}
-                </Button>
-              )}
-            </span>
-          )}
-        </Message>
-      );
+    }
     default:
       preview satisfies never;
       return undefined;
@@ -176,14 +165,7 @@ function RowView({ row, preview }: { row: Row; preview: Extract<Preview, { kind:
   if (row.kind === 'as') {
     return (
       <>
-        <svg
-          className="lo-i lo-i--sm flex-none text-fg-muted"
-          viewBox="0 0 16 16"
-          aria-hidden="true"
-        >
-          <circle cx="8" cy="5.25" r="2.75" />
-          <path d="M3 13.5c.5-2.5 2.5-4 5-4s4.5 1.5 5 4" />
-        </svg>
+        {PERSON}
         <span className="whitespace-nowrap">Open as {row.login}</span>
         <span className="min-w-0 truncate text-fg-muted text-small">
           {name} {preview.title ?? ''}
@@ -191,19 +173,24 @@ function RowView({ row, preview }: { row: Row; preview: Extract<Preview, { kind:
       </>
     );
   }
+  // Whom it opens as, as a fact at the row's end: the account's name alone, as the status bar
+  // shows one, or "Read only" without one.
   const as =
-    preview.as.kind === 'account'
-      ? `as ${preview.as.login}`
-      : preview.as.kind === 'anonymous'
-        ? 'read only, without signing in'
-        : '';
+    preview.as.kind === 'account' ? (
+      <span className="flex items-center gap-4">
+        {PERSON}
+        {preview.as.login}
+      </span>
+    ) : preview.as.kind === 'anonymous' ? (
+      'Read only'
+    ) : null;
   return (
     <>
       {name}
       <span className="min-w-0 truncate">{preview.title ?? ''}</span>
       <span className="ms-auto flex flex-none items-center gap-8">
-        {preview.state !== null && <Tag>{STATE_WORDS[preview.state]}</Tag>}
-        <span className="text-fg-muted text-small">{as}</span>
+        {preview.state !== null && <StatePill state={preview.state} />}
+        {as !== null && <span className="text-fg-muted text-small">{as}</span>}
       </span>
     </>
   );
@@ -211,15 +198,10 @@ function RowView({ row, preview }: { row: Row; preview: Extract<Preview, { kind:
 
 /** What the foot says about what's in the box, when there's something to say. */
 function footNote(preview: Preview | undefined): string | undefined {
-  if (preview === undefined || preview.kind === 'empty') {
-    return 'Links to a pull request’s files, commits and checks open the pull request.';
-  }
-  if (preview.kind === 'pull' && preview.as.kind === 'ask') {
-    const where =
-      preview.as.remember === 'owner' ? preview.owner : `${preview.owner}/${preview.repo}`;
-    return `Lo remembers the account you choose for ${where}.`;
-  }
-  return undefined;
+  if (preview?.kind !== 'pull' || preview.as.kind !== 'ask') return undefined;
+  return preview.as.remember === 'owner'
+    ? `Remembered for every ${preview.owner} repo`
+    : `Remembered for ${preview.owner}/${preview.repo}`;
 }
 
 /** The open box, over the window while it's open. */
@@ -228,8 +210,9 @@ export function OpenBox() {
   useKeys();
   const preview = currentPreview(state);
   const rows = rowsFor(preview);
-  const action = enterAction(preview, state.text);
-  const message = state.error ?? messageFor(preview, state.text, state.opening);
+  const note = footNote(preview);
+  // The rows say what `⏎` does on them; a message's own button says it everywhere else.
+  const action = rows.length > 0 && state.error === undefined ? enterAction(state) : undefined;
   return (
     <Palette<Row>
       open={state.open}
@@ -237,12 +220,12 @@ export function OpenBox() {
         if (!next) closeBox();
       }}
       onClosed={boxClosed}
-      label="Review a pull request"
-      placeholder="Paste a link to a pull request"
+      label="Open pull request"
+      placeholder="Paste a pull request link"
       keys={keyOf('open.box')}
       mono
       icon={LINK_ICON}
-      mode={state.fromClipboard ? 'from clipboard' : undefined}
+      mode={state.fromClipboard ? 'From clipboard' : undefined}
       query={state.text}
       onQueryChange={typeText}
       groups={rows.length === 0 ? [] : [{ items: rows }]}
@@ -252,19 +235,21 @@ export function OpenBox() {
         if (row.kind === 'as') void openAs(row.login);
         else void openText(state.text);
       }}
+      onHighlight={(row) => highlight(row?.kind === 'as' ? row.login : undefined)}
       onSubmit={submit}
       renderItem={(row) =>
         preview?.kind === 'pull' ? <RowView row={row} preview={preview} /> : null
       }
-      message={typeof message === 'string' ? <Message icon={WARN_ICON} title={message} /> : message}
+      message={messageFor(state, preview)}
       empty={null}
       foot={
-        <>
-          <span className="min-w-0">{footNote(preview)}</span>
-          <span className="flex-1" />
-          {action !== undefined && <PaletteHint keys={labels('enter')}>{action}</PaletteHint>}
-          <PaletteHint keys={labels('esc')}>Close</PaletteHint>
-        </>
+        note === undefined && action === undefined ? undefined : (
+          <>
+            {note !== undefined && <span className="min-w-0">{note}</span>}
+            <span className="flex-1" />
+            {action !== undefined && <PaletteHint keys={labels('enter')}>{action}</PaletteHint>}
+          </>
+        )
       }
       container={document.getElementById('root')}
     />

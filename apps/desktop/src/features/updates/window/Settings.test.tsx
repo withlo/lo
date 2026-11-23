@@ -11,6 +11,7 @@ import { notice, notices, withdraw } from '../../../window/commands/notices.tsx'
 import { Slots, useViews } from '../../../window/slots.tsx';
 import { installBridge } from '../../../window/test/bridge.ts';
 import { rows } from '../../settings/window/shared.ts';
+import { RELEASES } from '../contract.ts';
 import feature from './index.ts';
 import { showVersion, updatesStore } from './store.ts';
 
@@ -26,6 +27,7 @@ const bridge = installBridge({
       finish = resolve;
     }),
   'settings.set': () => undefined,
+  'tab.openExternal': () => undefined,
 });
 
 beforeAll(() => {
@@ -36,7 +38,7 @@ beforeEach(() => {
   bridge.calls.length = 0;
   act(() => {
     updatesStore.setState({ state: { status: 'idle' }, checkedAt: undefined, failed: undefined });
-    showVersion('0.1.0', 'Commit 0123456');
+    showVersion('0.1.0', { kind: 'commit', commit: '0123456' });
   });
 });
 
@@ -95,7 +97,7 @@ describe('the About rows', () => {
 
   it('show the commit this Lo is built from beside its version, once main has said', () => {
     expect(draw().textContent).toContain('Commit 0123456');
-    act(() => showVersion('0.1.0', 'Built from source'));
+    act(() => showVersion('0.1.0', { kind: 'source' }));
     expect(draw().textContent).toContain('Built from source');
     act(() => showVersion('0.1.0'));
     expect(draw().textContent).not.toContain('Commit');
@@ -104,13 +106,16 @@ describe('the About rows', () => {
 
   it('ask main for it with its version: a packaged Lo says its commit, a source build says so', async () => {
     for (const [said, shown] of [
-      [{ version: '0.2.0', packaged: true, commit: '89abcde' }, 'Commit 89abcde'],
-      [{ version: '0.2.0', packaged: false, commit: '89abcde' }, 'Built from source'],
+      [
+        { version: '0.2.0', packaged: true, commit: '89abcde' },
+        { kind: 'commit', commit: '89abcde' },
+      ],
+      [{ version: '0.2.0', packaged: false, commit: '89abcde' }, { kind: 'source' }],
     ] as const) {
       act(() => updatesStore.setState({ version: undefined, build: undefined }));
       info = said;
       feature.start?.();
-      await vi.waitFor(() => expect(updatesStore.getState().build).toBe(shown));
+      await vi.waitFor(() => expect(updatesStore.getState().build).toEqual(shown));
       expect(updatesStore.getState().version).toBe('0.2.0');
     }
   });
@@ -145,13 +150,28 @@ describe('the About rows', () => {
     const page = draw();
     await act(async () => button(page, 'Check now')?.click());
     await act(async () => {
-      finish({ status: 'failed', reason: 'GitHub didn’t respond.' });
+      finish({ status: 'failed', why: 'timeout' });
       await Promise.resolve();
     });
     expect(page.textContent).toContain('Couldn’t check for updates');
     expect(page.textContent).toContain('GitHub didn’t respond.');
     expect(page.textContent).not.toContain('Checked');
     expect(button(page, 'Try again')).toBeDefined();
+  });
+
+  it('offer Lo’s releases on GitHub where this copy can’t check, as a build from source', async () => {
+    const page = draw();
+    await act(async () => button(page, 'Check now')?.click());
+    await act(async () => {
+      finish({ status: 'failed', why: 'source' });
+      await Promise.resolve();
+    });
+    expect(page.textContent).toContain('Can’t check for updates');
+    expect(page.textContent).toContain('This copy of Lo is built from source.');
+    expect(button(page, 'Try again')).toBeUndefined();
+    bridge.calls.length = 0;
+    await act(async () => button(page, 'Open on GitHub')?.click());
+    expect(bridge.calls).toEqual([['tab.openExternal', { url: RELEASES }]]);
   });
 
   it('show the update on offer under the version', () => {

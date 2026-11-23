@@ -12,7 +12,7 @@ export default defineCommands(
      * Ctrl+O, Vim's `⌃o`.
      */
     box: {
-      label: 'Review a pull request',
+      label: 'Open pull request…',
       group: 'Find',
       keys: ['cmd+l', { keys: 'cmd+o', on: 'mac' }],
       when: { except: ['dialog', 'palette'] },
@@ -20,7 +20,7 @@ export default defineCommands(
     },
     /** In Recent, opens the pull request link on the clipboard. */
     paste: {
-      label: 'Open the link on the clipboard',
+      label: 'Paste link',
       control: "Paste link in Recent, before any pull request's listed",
       group: 'Find',
       keys: ['cmd+v'],
@@ -28,7 +28,8 @@ export default defineCommands(
     },
     /** In Recent, to the box that filters it. */
     filter: {
-      label: 'Filter recent pull requests',
+      label: 'Filter pull requests…',
+      control: 'The filter field at the top of Recent',
       group: 'Find',
       keys: ['/'],
       when: { scope: 'recent' },
@@ -47,13 +48,15 @@ export default defineCommands(
     },
     /** In Recent, opens the pull request chosen. */
     openRecent: {
-      label: 'Open the pull request',
+      label: 'Open pull request',
+      control: 'A click on a row of Recent',
       group: 'Find',
       keys: ['enter'],
       when: { scope: 'recent' },
     },
     nextRecent: {
       label: 'Next pull request',
+      control: 'The rows of Recent, each opened by a click',
       group: 'Move',
       keys: ['j', 'down'],
       when: { scope: 'recent' },
@@ -61,6 +64,7 @@ export default defineCommands(
     },
     previousRecent: {
       label: 'Previous pull request',
+      control: 'The rows of Recent, each opened by a click',
       group: 'Move',
       keys: ['k', 'up'],
       when: { scope: 'recent' },
@@ -71,7 +75,7 @@ export default defineCommands(
      * in the app's own menu on macOS, in Settings, and in the command palette.
      */
     installCommand: {
-      label: 'Install command-line tool',
+      label: 'Install `lo` command',
       control: 'Install on the lo command row of Settings',
       group: 'Tabs and window',
       keys: [],

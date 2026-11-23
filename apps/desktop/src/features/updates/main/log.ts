@@ -1,7 +1,9 @@
-// What electron-updater logs, in Lo's log, and why a check or a download failed, in words for the
-// reader. Neither carries an address's query: GitHub sends a download on to its file host with an
-// address whose query signs it, which nothing should keep. Nothing here calls Electron, so it runs
-// under unit tests.
+// What electron-updater logs, in Lo's log, and why a check or a download failed, as a kind the
+// window words. Neither carries an address's query: GitHub sends a download on to its file host
+// with an address whose query signs it, which nothing should keep. Nothing here calls Electron, so
+// it runs under unit tests.
+
+import type { Failure } from '../contract.ts';
 
 /** The most of one message Lo logs: a feed Lo can't read comes whole in electron-updater's error. */
 const LOG_LIMIT = 2000;
@@ -52,42 +54,34 @@ function codeOf(error: Error): string | undefined {
 }
 
 /** Why electron-updater failed, by the code it gives the error. */
-const BY_CODE: Readonly<Record<string, string>> = {
-  ERR_UPDATER_NO_PUBLISHED_VERSIONS: 'GitHub has no release of Lo yet.',
-  ERR_UPDATER_CHANNEL_FILE_NOT_FOUND:
-    'The newest release on GitHub has no download for this computer.',
-  ERR_UPDATER_ZIP_FILE_NOT_FOUND: 'The newest release on GitHub has no download for this computer.',
-  ERR_UPDATER_NO_FILES_PROVIDED: 'The newest release on GitHub has no download for this computer.',
-  ERR_CHECKSUM_MISMATCH:
-    'The download didn’t match the release’s checksum, so Lo deleted it. Try again.',
+const BY_CODE: Readonly<Record<string, Failure | 'noRelease'>> = {
+  ERR_UPDATER_NO_PUBLISHED_VERSIONS: 'noRelease',
+  ERR_UPDATER_CHANNEL_FILE_NOT_FOUND: 'noDownload',
+  ERR_UPDATER_ZIP_FILE_NOT_FOUND: 'noDownload',
+  ERR_UPDATER_NO_FILES_PROVIDED: 'noDownload',
+  ERR_CHECKSUM_MISMATCH: 'damaged',
 };
 
 /**
- * Why a check for a newer Lo (`check`), or the download of one (`download`), failed, in a sentence
- * for the reader: what happened, and what to do when there's anything.
+ * Why a check for a newer Lo (`check`), or the download of one (`download`), failed, as a kind,
+ * with what came with it for Details: the network's error or GitHub's status. `noRelease` is a
+ * check that found no release at all, which is no failure: there's no update.
  */
-export function reasonOf(error: unknown, during: 'check' | 'download'): string {
-  if (!(error instanceof Error)) {
-    return during === 'check'
-      ? 'Lo couldn’t read the newest release on GitHub.'
-      : 'The download stopped before it finished.';
-  }
+export function failureOf(
+  error: unknown,
+  during: 'check' | 'download',
+): { why: Failure | 'noRelease'; details?: string } {
+  const otherwise = during === 'check' ? 'unknown' : 'stopped';
+  if (!(error instanceof Error)) return { why: otherwise };
   const network = /\bnet::(ERR_[A-Z0-9_]+)/.exec(error.message)?.[1];
-  if (network !== undefined) {
-    return `Lo couldn’t reach GitHub (${network}). Check your connection, then try again.`;
-  }
+  if (network !== undefined) return { why: 'offline', details: network };
   const code = codeOf(error);
   const known = code === undefined ? undefined : BY_CODE[code];
-  if (known !== undefined) return known;
-  if (/code requirement|code ?sign|signature/i.test(error.message)) {
-    return 'The update isn’t signed as this Lo is, so Lo won’t install it.';
-  }
+  if (known !== undefined) return { why: known };
+  if (/code requirement|code ?sign|signature/i.test(error.message)) return { why: 'unsigned' };
   const status = statusOf(error);
-  if (status === 404 && code === 'ERR_UPDATER_LATEST_VERSION_NOT_FOUND') {
-    return 'GitHub has no release of Lo yet.';
-  }
-  if (status !== undefined) return `GitHub answered ${status}. Try again later.`;
-  return during === 'check'
-    ? 'Lo couldn’t read the newest release on GitHub.'
-    : 'The download stopped before it finished. Try again.';
+  if (status === 404 && code === 'ERR_UPDATER_LATEST_VERSION_NOT_FOUND')
+    return { why: 'noRelease' };
+  if (status !== undefined) return { why: 'github', details: String(status) };
+  return { why: otherwise };
 }

@@ -17,15 +17,13 @@ export default {
     copyCode: {
       // Its key presses the dialog's own Copy button, which says how it went.
       run: () => pressCopyCode(),
-      enabled: () => (waitingSignIn() === undefined ? 'No sign-in is waiting for its code' : true),
+      enabled: () => (waitingSignIn() === undefined ? 'No sign-in code to copy' : true),
     },
     addAccount: { run: () => openSignIn() },
     signOut: {
       run: () => openSignOut((accountsStore.getState().accounts ?? []).map(({ login }) => login)),
       enabled: () =>
-        (accountsStore.getState().accounts ?? []).length === 0
-          ? "Lo isn't signed in to any account."
-          : true,
+        (accountsStore.getState().accounts ?? []).length === 0 ? 'No account is signed in' : true,
     },
   }),
   views: [

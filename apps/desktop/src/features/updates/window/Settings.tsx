@@ -3,15 +3,22 @@
 // this copy can do about it; and whether Lo checks by itself, which is the `updates.check` setting.
 
 import { Button, Problem, Setting, SettingsCommand } from '@lo/ui';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
 import { ago, defineRow, settingRow } from '../../settings/window/shared.ts';
 import type { UpdateState } from '../contract.ts';
 import { check as checkSetting } from '../settings.ts';
-import { check } from './actions.ts';
+import { check, checkWay } from './actions.ts';
 import { updatesStore } from './store.ts';
-import { progressText } from './words.ts';
+import {
+  buildText,
+  checkFailedTitle,
+  downloadingText,
+  failureReason,
+  failureWay,
+  type Build,
+} from './words.ts';
 
 /** The time now, again each minute, for a time said as how long ago it was. */
 function useNow(): number {
@@ -34,10 +41,22 @@ function OnOffer({ state }: { state: UpdateState }) {
   let title: string;
   let line: string | undefined;
   let actions = whatsNew;
+  let failed: ReactNode;
   switch (state.status) {
     case 'available': {
       title = `Lo ${state.version} is available`;
-      line = state.failed ?? (state.line === '' ? undefined : state.line);
+      line = state.line === '' ? undefined : state.line;
+      if (state.failed !== undefined) {
+        line = undefined;
+        failed = (
+          <Problem
+            title={`Couldn’t download Lo ${state.version}`}
+            reason={failureReason(state.failed.why)}
+            details={state.failed.details}
+          />
+        );
+      }
+      const again = state.failed !== undefined && failureWay(state.failed.why) === 'again';
       const ways = {
         install: ['updates.install', 'Update'],
         brew: ['updates.copy', 'Copy Homebrew command'],
@@ -46,19 +65,21 @@ function OnOffer({ state }: { state: UpdateState }) {
       } as const;
       const [command, label] = ways[state.how];
       if (state.how === 'move') line = 'Updates need Lo in Applications.';
+      const stopped = state.failed !== undefined && !again && state.how === 'install';
       actions = (
         <>
           {whatsNew}
-          <SettingsCommand command={command} size="sm" variant="primary">
-            {label}
-          </SettingsCommand>
+          {!stopped && (
+            <SettingsCommand command={command} size="sm" variant="primary">
+              {again ? 'Try again' : label}
+            </SettingsCommand>
+          )}
         </>
       );
       break;
     }
     case 'downloading':
-      title = `Downloading Lo ${state.version}…`;
-      line = progressText(state.received, state.total);
+      title = downloadingText(state.version, state.received, state.total);
       break;
     case 'ready':
       title = `Lo ${state.version} is ready`;
@@ -72,13 +93,31 @@ function OnOffer({ state }: { state: UpdateState }) {
       throw new Error(`An update state Lo doesn't know: ${JSON.stringify(state satisfies never)}`);
   }
   return (
-    <div className="flex items-center gap-8 rounded-md border border-border-subtle p-8">
-      <div className="min-w-0 flex-1">
-        <div className="text-ui-strong">{title}</div>
-        {line !== undefined && <div className="truncate text-fg-muted text-small">{line}</div>}
+    <div className="flex flex-col gap-8 rounded-md border border-border-subtle p-8">
+      <div className="flex items-center gap-8">
+        <div className="min-w-0 flex-1">
+          <div className="lo-num text-ui-strong">{title}</div>
+          {line !== undefined && <div className="truncate text-fg-muted text-small">{line}</div>}
+        </div>
+        {actions}
       </div>
-      {actions}
+      {failed}
     </div>
+  );
+}
+
+/** What names a build beside its version: a commit's ID is code. */
+function BuildLabel({ build }: { build: Build }) {
+  return (
+    <span className="ms-8 text-fg-muted text-small">
+      {build.kind === 'source' ? (
+        'Built from source'
+      ) : (
+        <>
+          Commit <code className="code-small">{build.commit}</code>
+        </>
+      )}
+    </span>
   );
 }
 
@@ -96,9 +135,10 @@ function Version({ description }: { label: string; description: string }) {
   const now = useNow();
   const below = failed ? (
     <Problem
-      title="Couldn’t check for updates"
-      reason={failed.reason}
-      action={{ label: 'Try again', onClick: () => void check('settings') }}
+      title={checkFailedTitle(failed.why)}
+      reason={failureReason(failed.why)}
+      details={failed.details}
+      action={checkWay(failed.why, 'settings')}
     />
   ) : offer.status === 'idle' ? undefined : (
     <OnOffer state={offer} />
@@ -108,7 +148,7 @@ function Version({ description }: { label: string; description: string }) {
       label={
         <>
           {version === undefined ? 'Lo' : `Lo ${version}`}
-          {build !== undefined && <span className="ms-8 text-fg-muted text-small">{build}</span>}
+          {build !== undefined && <BuildLabel build={build} />}
         </>
       }
       description={description}
@@ -139,7 +179,7 @@ export default [
       'updates',
       'check for updates',
       updatesStore.getState().version ?? '',
-      updatesStore.getState().build ?? '',
+      ...[updatesStore.getState().build].flatMap((build) => (build ? [buildText(build)] : [])),
     ],
     render: Version,
   }),

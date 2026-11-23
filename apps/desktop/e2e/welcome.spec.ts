@@ -276,11 +276,13 @@ test('opens a public pull request without signing in, and opens again over it wh
   await expect(
     step(page).getByRole('button', { name: 'Open', exact: true }).first(),
   ).toBeDisabled();
-  // A link Lo doesn't open is refused by the field, and the welcome stays.
+  // Text that isn't a pull request link is refused by the field, as the open box says it, and
+  // the welcome stays.
   await linkField(page).fill('owner/repo#1');
   await page.keyboard.press('Enter');
-  await expect(step(page).getByRole('alert')).toContainText('Couldn’t open the link');
-  await expect(step(page).getByRole('alert')).toContainText('A pull request link looks like');
+  const note = step(page).getByRole('status').filter({ hasText: 'Not a pull request link' });
+  await expect(note).toContainText('A pull request link looks like');
+  await expect(step(page).getByRole('alert')).toHaveCount(0);
   await expect(page.getByTestId('sign-in')).toHaveCount(0);
 
   // ⏎ in the field opens its link, and the pull request is what shows.
@@ -340,7 +342,7 @@ test.describe('with GitHub CLI', () => {
     await importing.focus();
     await page.keyboard.press('Enter');
     const dialog = page.getByTestId('import-gh');
-    await expect(dialog).toContainText('is signed in to 2 accounts');
+    await expect(dialog).toContainText('GitHub CLI 2.103.3 · 2 accounts');
     await expect(page.getByTestId('sign-in')).toHaveCount(0);
     await dialog.getByRole('button', { name: /^Import 2 accounts/ }).click();
     await expect(dialog).toContainText('Imported 1 account');
