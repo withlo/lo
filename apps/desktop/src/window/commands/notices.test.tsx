@@ -7,6 +7,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import keys from '../../features/keys/window/index.ts';
 import {
   announce,
+  fail,
   notice,
   notices,
   notify,
@@ -266,6 +267,19 @@ describe('notices', () => {
       icon: true,
     });
     expect(status()?.querySelector('.toast .text-success')).not.toBeNull();
+  });
+
+  it('say what went wrong with no control in view at danger tone, in one line', () => {
+    act(() => fail('Couldn’t copy the prompt'));
+    expect(toast()).toEqual({ title: 'Couldn’t copy the prompt', body: null, icon: true });
+    expect(status()?.querySelector('.toast .text-danger')).not.toBeNull();
+    // What main said goes behind Details.
+    act(() => fail('Couldn’t copy the prompt', 'The clipboard is busy.'));
+    expect(notice()).toMatchObject({ tone: 'danger', details: 'The clipboard is busy.' });
+    const more = [...(status()?.querySelectorAll('button') ?? [])].find(
+      (button) => button.textContent === 'Details',
+    );
+    expect(more).toBeDefined();
   });
 
   it('go after their time with no window drawing them', () => {

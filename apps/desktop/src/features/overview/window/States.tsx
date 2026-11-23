@@ -1,468 +1,338 @@
-// The overview's view when there's no overview to show: none yet, with the prompt to write one and
-// the skill's rows; one that can't be shown, saying why, with the way to the diff in each case; and
-// one that couldn't be read, saying when Lo tries again.
+// The overview's view when there's no overview to show. None yet, or none for a run of a stack's
+// layers, is an empty state: what's absent, one line, and what to do about it here. One that can't
+// be shown, couldn't be checked or couldn't be fetched is a problem in the view's place: what
+// failed, why, the one thing to do, and what was found behind Details.
 
-import { Button, Key, SetupItem, SetupList, Spinner } from '@lo/ui';
+import {
+  CopyFaces,
+  CopyStatus,
+  Countdown,
+  EmptyState,
+  Problem,
+  useCopySaid,
+  type CopySaid,
+  type EmptyAction,
+  type ProblemAction,
+} from '@lo/ui';
 import { NO_TARGET } from '@lo/ui/commands';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from 'zustand';
 
 import { registry, useKeys } from '../../../window/commands/registry.ts';
-import { showDiff } from '../../diff/window/shared.ts';
 import { client } from '../../../window/ipc.ts';
+import { signIn } from '../../accounts/window/shared.ts';
 import { contract as tabContract } from '../../tab/contract.ts';
-import { useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
-import { RELEASES } from '../../updates/contract.ts';
+import { useRunLayers, useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
 import updates from '../../updates/keys.ts';
-import type { Problem, SkillAgent, SkillState } from '../contract.ts';
+import type { Problem as ReadProblem, SkillState } from '../contract.ts';
+import { answerCopies, copyPrompt, promptFor } from './copy.ts';
 import type { Standing } from './facts.ts';
-import { copyPrompt, promptFor } from './copy.ts';
-import { WrittenBy } from './Author.tsx';
+import { loadNewer } from './follow.ts';
 import { useNow } from './hooks.ts';
 import { keyOf } from './labels.ts';
 import { main } from './main.ts';
 import {
   findingPlace,
   invalidSummary,
-  newerWords,
-  problemWords,
+  newerDetails,
+  NEWER_REASON,
+  problemReason,
   sizeRows,
   tooLargeWords,
+  writtenText,
 } from './says.ts';
-import { NewerOffer } from './Shown.tsx';
-import { checkSkill, installSkill, skillStore } from './skill.ts';
-import { refusalWords } from './words.ts';
-import { checkAgain, states } from './store.ts';
+import { checkSkill, skillStore } from './skill.ts';
+import { checkAgain, rereading, states } from './store.ts';
 
 /** The command that asks GitHub for a newer Lo now, and says what it found. */
 const CHECK = `${updates.feature}.${'check' satisfies keyof typeof updates.commands}`;
+/** The commands the states offer, by id. */
+const COPY_PROMPT = 'overview.copyPrompt';
+const INSTALL_SKILL = 'overview.installSkill';
+const RETRY = 'overview.retry';
+/** The command that goes from a run of a stack's layers back to the layer it was chosen from. */
+const BACK = 'stacks.back';
 
-type Tone = 'danger' | 'warn' | 'info' | 'quiet';
-
-/** The icon at the top of a state: what kind of news it is. */
-function StateIcon({ tone }: { tone: Tone }) {
-  const tones: Record<Tone, { className: string; path: ReactNode }> = {
-    danger: {
-      className: 'lo-i lo-ovstate__icon is-danger',
-      path: (
-        <>
-          <circle cx="8" cy="8" r="6.25" />
-          <path d="M5.75 5.75l4.5 4.5M10.25 5.75l-4.5 4.5" />
-        </>
-      ),
-    },
-    warn: {
-      className: 'lo-i lo-ovstate__icon is-warn',
-      path: (
-        <>
-          <path d="M7.13 2.5a1 1 0 0 1 1.74 0l5.2 9.5a1 1 0 0 1-.87 1.5H2.8a1 1 0 0 1-.87-1.5Z" />
-          <path d="M8 6.25v3M8 11.25v.01" />
-        </>
-      ),
-    },
-    info: {
-      className: 'lo-i lo-ovstate__icon is-info',
-      path: (
-        <>
-          <circle cx="8" cy="8" r="6.25" />
-          <path d="M8 11V5.5M5.5 8 8 5.5 10.5 8" />
-        </>
-      ),
-    },
-    quiet: {
-      className: 'lo-i lo-ovstate__icon',
-      path: (
-        <>
-          <path d="M4 2.25h5.5L12 4.75v9H4Z" />
-          <path d="M9.5 2.25v2.5H12M6 7.75h4M6 10.25h2.5" />
-        </>
-      ),
-    },
-  };
-  const { className, path } = tones[tone];
-  return (
-    <svg className={className} viewBox="0 0 16 16" aria-hidden="true">
-      {path}
-    </svg>
-  );
+/** Whether no coding agent that's set up has the overview skill yet: the empty state offers it. */
+function skillMissing(state: SkillState | undefined): boolean {
+  if (state === undefined) return false;
+  const setUp = state.agents.filter((agent) => agent.setUp);
+  return setUp.length > 0 && setUp.every((agent) => !agent.installed && agent.blocked === null);
 }
 
-/** A state of the overview's view: a column in the middle of the sheet. */
-function StateColumn({
-  icon,
-  title,
-  children,
-  actions,
-}: {
-  icon: ReactNode;
-  title: string;
-  children?: ReactNode;
-  actions?: ReactNode;
-}) {
+/**
+ * What tab `id`'s Copy prompt button says of the last copy of its prompt, by the button or by `ya`,
+ * while it's `seen`: drawn, in the view on screen. A copy made while none is seen, as from another
+ * view, which keeps this one drawn but hidden, says so in a toast.
+ */
+function usePromptCopied(id: string, seen: boolean): CopySaid | undefined {
+  const [said, say] = useCopySaid();
+  useEffect(() => (seen ? answerCopies(id, say) : undefined), [seen, id, say]);
+  return said;
+}
+
+/** A prompt to copy into a coding agent, as code the reader can select. */
+function PromptText({ prompt }: { prompt: string }) {
   return (
-    <div className="lo-ovstate">
-      <div className="lo-ovstate__col">
-        {icon}
-        <h2>{title}</h2>
-        {children}
-        {actions !== undefined && <div className="lo-ovstate__actions">{actions}</div>}
-      </div>
+    <div className="lo-prompt w-full max-w-read-measure text-start">
+      <pre className="lo-prompt__body lo-selectable">{prompt}</pre>
     </div>
-  );
-}
-
-/** What the view says while it's finding out what to show. */
-export function Quiet({ children }: { children: ReactNode }) {
-  return (
-    <div className="grid h-full place-items-center p-32 text-center text-fg-muted text-ui">
-      <p className="max-w-read-measure">{children}</p>
-    </div>
-  );
-}
-
-/** The way to the diff, with its key, primary where it's the one thing to do. */
-function ToDiff({ tab, primary }: { tab: PullTab; primary: boolean }) {
-  const keys = keyOf('tab.nextView');
-  return (
-    <Button variant={primary ? 'primary' : 'secondary'} onClick={() => showDiff(tab.id)}>
-      Go to the diff
-      {keys !== undefined && <Key keys={keys} quiet decorative />}
-    </Button>
-  );
-}
-
-/** A button that copies the prompt the state offers, with `ya`, saying so once it has. */
-function CopyButton({
-  prompt,
-  label,
-  primary = false,
-  size,
-}: {
-  prompt: string | undefined;
-  label: string;
-  primary?: boolean;
-  size?: 'sm' | undefined;
-}) {
-  const [copied, setCopied] = useState(false);
-  const keys = keyOf('overview.copyPrompt');
-  if (prompt === undefined) return null;
-  return (
-    <Button
-      variant={primary ? 'primary' : 'secondary'}
-      size={size}
-      onClick={() => {
-        copyPrompt(prompt)
-          .then(() => setCopied(true))
-          .catch((error: unknown) => console.error("Lo couldn't copy the prompt:", error));
-      }}
-    >
-      {copied ? 'Copied' : label}
-      {keys !== undefined && <Key keys={keys} quiet decorative />}
-    </Button>
-  );
-}
-
-/** What the skill's row for one agent says: what installing does, or what stops it. */
-function agentWords(agent: SkillAgent, state: SkillState): string {
-  if (!agent.setUp) return `${agent.name} isn't set up here: Lo found no ${agent.config}.`;
-  if (agent.blocked !== null) return refusalWords(agent.blocked, state);
-  return agent.installed ? `Installed in ${agent.skills}` : `Adds lo-overview to ${agent.skills}`;
-}
-
-/** The skill's row for one agent, in the list on the empty view. */
-function AgentRow({
-  agent,
-  state,
-  installing,
-}: {
-  agent: SkillAgent;
-  state: SkillState;
-  installing: boolean;
-}) {
-  return (
-    <SetupItem
-      icon={
-        <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-          <rect x="2" y="3" width="12" height="10" rx="2" />
-          <path d="M4.75 6.5 6.75 8l-2 1.5M8.5 10h3" />
-        </svg>
-      }
-      title={agent.name}
-      description={agentWords(agent, state)}
-    >
-      <Button
-        size="sm"
-        disabled={installing || !agent.setUp || agent.installed || agent.blocked !== null}
-        onClick={() => void installSkill([agent.agent])}
-      >
-        {agent.installed ? 'Installed' : 'Install'}
-      </Button>
-    </SetupItem>
-  );
-}
-
-/** No overview yet: what one is, the prompt that writes one, and the skill for each agent. */
-export function NoOverview({ tab, standing }: { tab: PullTab; standing: Standing }) {
-  useKeys();
-  const state = useTabState(states, tab.id);
-  const skill = useStore(skillStore);
-  const agents = skill.state;
-  useEffect(() => {
-    void checkSkill();
-  }, []);
-  const ref = state?.ref ?? `refs/lo/pr/${tab.number}`;
-  const prompt = promptFor(tab, standing);
-  const notCommit = standing.kind === 'none' && standing.notCommit;
-  const settings = keyOf('settings.open');
-  const toDiff = keyOf('tab.nextView');
-  return (
-    <div className="lo-ovstate">
-      <div className="lo-ovstate__col">
-        <StateIcon tone="quiet" />
-        <h2>No overview yet</h2>
-        <p>
-          {notCommit && (
-            <>
-              <span className="code-text">{ref}</span> holds something other than a commit, so it
-              isn’t an overview.{' '}
-            </>
-          )}
-          An overview explains a PR in prose, figures and its real code. Lo doesn’t write them:
-          paste this prompt into a coding agent, and it writes one and pushes it to{' '}
-          <span className="text-fg code-text">{ref}</span>.{' '}
-          {state?.watching === false
-            ? 'Open the PR again once it’s pushed to see it.'
-            : 'It shows here as soon as it lands.'}
-        </p>
-        {prompt !== undefined && (
-          <div className="lo-prompt">
-            <div className="lo-prompt__head">
-              Prompt for your agent
-              <CopyButton prompt={prompt} label="Copy" primary size="sm" />
-            </div>
-            <pre className="lo-prompt__body lo-selectable">{prompt}</pre>
-          </div>
-        )}
-        {agents && agents.agents.length > 0 && (
-          <div className="flex flex-col gap-8">
-            <span className="label-caps text-fg-muted text-label">
-              No skill yet? Install it once
-            </span>
-            <SetupList label="The overview skill">
-              {agents.agents.map((agent) => (
-                <AgentRow
-                  key={agent.agent}
-                  agent={agent}
-                  state={agents}
-                  installing={skill.installing}
-                />
-              ))}
-            </SetupList>
-            {skill.said !== undefined && (
-              <p className="text-small" role="status">
-                {skill.said}
-              </p>
-            )}
-          </div>
-        )}
-        <div className="flex flex-wrap gap-16 text-fg-muted text-small">
-          {toDiff !== undefined && (
-            <span className="inline-flex items-center gap-6">
-              <Key keys={toDiff} quiet decorative />
-              Go to the diff
-            </span>
-          )}
-          {settings !== undefined && (
-            <span className="inline-flex items-center gap-6">
-              <Key keys={settings} quiet decorative />
-              Open on the overview or the diff
-            </span>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** Main couldn't read the ref, and has nothing to show: why, and when it tries again. */
-export function ReadFailed({ tab, problem }: { tab: PullTab; problem: Problem }) {
-  const state = useTabState(states, tab.id);
-  const now = useNow(true);
-  const ref = state?.ref ?? `refs/lo/pr/${tab.number}`;
-  const links = problem.kind === 'blocked' ? problem.links : [];
-  return (
-    <StateColumn
-      icon={<Spinner />}
-      title="Couldn’t fetch the overview"
-      actions={
-        <>
-          <Button
-            variant="primary"
-            onClick={() => {
-              main()
-                .retry({ id: tab.id })
-                .catch((error: unknown) => console.error("Lo couldn't read it again:", error));
-            }}
-          >
-            Retry now
-          </Button>
-          {links.map((link) => (
-            <Button
-              key={link.url}
-              onClick={() => {
-                client(tabContract)
-                  .openExternal({ url: link.url })
-                  .catch((error: unknown) => console.error("Lo couldn't open the link:", error));
-              }}
-            >
-              {link.label}
-            </Button>
-          ))}
-          <ToDiff tab={tab} primary={false} />
-        </>
-      }
-    >
-      <p>{problemWords(problem, ref, now)}</p>
-    </StateColumn>
   );
 }
 
 /**
- * What the view says of a run of a stack's layers on screen as one diff: a run has no overview,
- * since each layer's describes that layer alone, and the way to its diff.
+ * No overview yet: the prompt a coding agent writes one from, and Copy prompt. A tab that isn't
+ * watching for one to arrive offers to look again; else, while no agent has the skill, to install
+ * it.
  */
-export function NoneInRun({ tab }: { tab: PullTab }) {
+export function NoOverview({
+  tab,
+  standing,
+  onScreen,
+}: {
+  tab: PullTab;
+  standing: Standing;
+  /** Whether the view is on screen, so its Copy prompt answers a copy. */
+  onScreen: boolean;
+}) {
+  useKeys();
+  const state = useTabState(states, tab.id);
+  const looking = useTabState(rereading, tab.id);
+  const skill = useStore(skillStore, (store) => store.state);
+  const copied = usePromptCopied(tab.id, onScreen);
+  useEffect(() => {
+    void checkSkill();
+  }, []);
+  const prompt = promptFor(tab, standing);
+  const copy: EmptyAction = { command: COPY_PROMPT, copied: copied ?? null };
+  const second: EmptyAction | undefined =
+    state?.watching === false
+      ? { command: RETRY, label: 'Check again', busy: looking, working: 'Checking…' }
+      : skillMissing(skill)
+        ? INSTALL_SKILL
+        : undefined;
   return (
-    <StateColumn
-      icon={<StateIcon tone="quiet" />}
-      title="A run of layers has no overview"
-      actions={<ToDiff tab={tab} primary />}
+    <EmptyState
+      title="No overview yet"
+      line="A coding agent writes one from this prompt."
+      actions={second === undefined ? [copy] : [copy, second]}
     >
-      <p>
-        Each layer’s overview describes that layer alone, so a run of them has none, and its diff
-        shows no markers. Go back to a layer to read its overview.
-      </p>
-    </StateColumn>
+      {prompt !== undefined && <PromptText prompt={prompt} />}
+    </EmptyState>
   );
 }
 
-/** An overview that can't be shown: why, as its check found, and the way to the diff. */
+/** Opens one of GitHub's pages, as a link out of the overview does. */
+function openPage(url: string): void {
+  client(tabContract)
+    .openExternal({ url })
+    .catch((error: unknown) => console.error("Lo couldn't open the page:", error));
+}
+
+/** What to do about a read that failed: sign in again, GitHub's own page, or `again`, Try now. */
+function readAction(problem: ReadProblem, again: ProblemAction): ProblemAction | undefined {
+  switch (problem.kind) {
+    case 'signedOut':
+      return { label: 'Sign in again', onClick: signIn };
+    case 'rateLimited':
+      // Until the limit resets, there's nothing to try.
+      return problem.secondary ? again : undefined;
+    case 'blocked': {
+      const [link] = problem.links;
+      return link ? { label: link.label, onClick: () => openPage(link.url) } : again;
+    }
+    case 'offline':
+    case 'failed':
+      return again;
+    default:
+      problem satisfies never;
+      return again;
+  }
+}
+
+/**
+ * Main couldn't fetch the overview, and has nothing to show: why, and when it's fetched again,
+ * counted down. Try now reads it again without waiting, and is busy until main says how that went:
+ * a problem with a new time to try again, or the overview.
+ */
+export function ReadFailed({ tab, problem }: { tab: PullTab; problem: ReadProblem }) {
+  // The try that Try now asked for, by when the problem it was pressed on said to try again.
+  const [tried, setTried] = useState<number | undefined>(undefined);
+  const { cause, retryAt } = problemReason(problem);
+  const details =
+    problem.kind === 'blocked' || problem.kind === 'failed' || problem.kind === 'offline'
+      ? withoutBidi(problem.message)
+      : undefined;
+  const tryNow: ProblemAction = {
+    label: 'Try now',
+    busy: tried === problem.retryAt,
+    working: 'Trying…',
+    onClick: () => {
+      setTried(problem.retryAt);
+      main()
+        .retry({ id: tab.id })
+        .catch((error: unknown) => {
+          console.error("Lo couldn't read the overview again:", error);
+          setTried(undefined);
+        });
+    },
+  };
+  return (
+    <Problem
+      layout="view"
+      title="Can’t fetch the overview"
+      reason={
+        <>
+          {cause}
+          {retryAt !== undefined && (
+            <>
+              {' '}
+              Retrying <Countdown at={retryAt} />.
+            </>
+          )}
+        </>
+      }
+      action={readAction(problem, tryNow)}
+      details={details}
+    />
+  );
+}
+
+/** A run of a stack's layers on screen as one diff has no overview: each layer has its own. */
+export function NoneInRun({ tab }: { tab: PullTab }) {
+  useKeys();
+  const layers = useRunLayers(tab.id);
+  return (
+    <EmptyState
+      title={`No overview for ${layers}`}
+      line="Each layer has its own."
+      actions={[{ command: BACK, label: 'Show single layer' }]}
+    />
+  );
+}
+
+/**
+ * Copies the prompt that fixes or shrinks tab `id`'s overview, as `ya` does, and reads "Copied" or
+ * "Couldn’t copy" as the last copy came to, as every Copy button does.
+ */
+function copyAction(
+  id: string,
+  prompt: string | undefined,
+  copied: CopySaid | undefined,
+): ProblemAction | undefined {
+  if (prompt === undefined) return undefined;
+  return {
+    label: <CopyFaces said={copied}>Copy prompt</CopyFaces>,
+    keys: keyOf(COPY_PROMPT),
+    onClick: () => void copyPrompt(id, prompt),
+  };
+}
+
+/** Shows the latest overview, pushed since this one, which may show where this one can't. */
+function latestAction(tab: PullTab): ProblemAction {
+  return { label: 'Show latest', onClick: () => loadNewer(tab.id) };
+}
+
+/** An overview that can't be shown: why, as its check found, and the one thing to do about it. */
 export function CantShow({
   tab,
   standing,
+  onScreen,
 }: {
   tab: PullTab;
   standing: Extract<Standing, { kind: 'unchecked' | 'invalid' | 'tooLarge' | 'newer' }>;
+  /** Whether the view is on screen, so its Copy prompt answers a copy. */
+  onScreen: boolean;
 }) {
   useKeys();
   const now = useNow(true, 60_000);
   const state = useTabState(states, tab.id);
-  const newer = state?.newer ? <NewerOffer tab={tab.id} /> : null;
+  const [checking, setChecking] = useState(false);
   const prompt = promptFor(tab, standing);
+  const written = writtenText(standing.commit, now);
+  // A later overview is the way on from any of these.
+  const latest = state?.newer ? latestAction(tab) : undefined;
+  // Copy prompt is the way on from an overview that's wrong or too large.
+  const copies =
+    latest === undefined &&
+    prompt !== undefined &&
+    (standing.kind === 'invalid' || standing.kind === 'tooLarge');
+  const copied = usePromptCopied(tab.id, copies && onScreen);
   switch (standing.kind) {
     case 'invalid':
       return (
-        <StateColumn
-          icon={<StateIcon tone="danger" />}
-          title="This overview can’t be read"
-          actions={
-            <>
-              <ToDiff tab={tab} primary />
-              <CopyButton prompt={prompt} label="Copy a prompt to fix it" />
-              {newer}
-            </>
-          }
-        >
-          <p>
-            {invalidSummary(standing.findings)} It’s at{' '}
-            <WrittenBy commit={standing.commit} now={now} />.
-          </p>
-          {standing.findings.length > 0 && (
-            <ul className="lo-ovstate__report" aria-label="Problems">
-              {standing.findings.map((finding, index) => (
-                <li key={index}>
-                  <span>{withoutBidi(findingPlace(finding))}</span>
-                  <span>{withoutBidi(finding.message)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </StateColumn>
+        <>
+          <Problem
+            layout="view"
+            title="Can’t show this overview"
+            reason={invalidSummary(standing.findings)}
+            action={latest ?? copyAction(tab.id, prompt, copied)}
+            details={[
+              written,
+              ...standing.findings.map(
+                (finding) => `${findingPlace(finding)} · ${withoutBidi(finding.message)}`,
+              ),
+            ].join('\n')}
+          />
+          {copies && <CopyStatus said={copied} />}
+        </>
       );
     case 'tooLarge':
       return (
-        <StateColumn
-          icon={<StateIcon tone="warn" />}
-          title="This overview is too large to show"
-          actions={
-            <>
-              <ToDiff tab={tab} primary />
-              <CopyButton prompt={prompt} label="Copy a prompt to shrink it" />
-              {newer}
-            </>
-          }
-        >
-          <p>
-            {tooLargeWords(standing.what, standing.sizes)} It’s at{' '}
-            <WrittenBy commit={standing.commit} now={now} />.
-          </p>
-          {standing.sizes.kinds.length > 0 && (
-            <ul className="lo-ovstate__report" aria-label="Sizes">
-              {sizeRows(standing.sizes).map((row) => (
-                <li key={row.kind}>
-                  <span>{row.kind}</span>
-                  <span>{row.size}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </StateColumn>
+        <>
+          <Problem
+            layout="view"
+            title="Can’t show this overview"
+            reason={tooLargeWords(standing.what, standing.sizes)}
+            action={latest ?? copyAction(tab.id, prompt, copied)}
+            details={[
+              written,
+              ...sizeRows(standing.sizes).map((row) => `${row.kind} · ${row.size}`),
+            ].join('\n')}
+          />
+          {copies && <CopyStatus said={copied} />}
+        </>
       );
     case 'newer':
       return (
-        <StateColumn
-          icon={<StateIcon tone="info" />}
-          title="This overview needs a newer Lo"
-          actions={
-            <>
-              <Button variant="primary" onClick={() => registry().run(CHECK, NO_TARGET)}>
-                Get a newer Lo
-              </Button>
-              {/* The way on for a Lo that can't check: one built from source, or offline. */}
-              <Button
-                onClick={() => {
-                  client(tabContract)
-                    .openExternal({ url: RELEASES })
-                    .catch((error: unknown) => console.error("Lo couldn't open the page:", error));
-                }}
-              >
-                Open the releases page
-              </Button>
-              <ToDiff tab={tab} primary={false} />
-              {newer}
-            </>
+        <Problem
+          layout="view"
+          title="Can’t show this overview"
+          reason={NEWER_REASON}
+          action={
+            latest ?? {
+              label: registry().command(CHECK)?.label ?? 'Check for updates',
+              onClick: () => {
+                registry().run(CHECK, NO_TARGET);
+              },
+            }
           }
-        >
-          <p>{newerWords(standing.format)}</p>
-        </StateColumn>
+          details={[written, newerDetails(standing.format)].join('\n')}
+        />
       );
     case 'unchecked':
       return (
-        <StateColumn
-          icon={<StateIcon tone="danger" />}
-          title="Lo couldn’t check this overview"
-          actions={
-            <>
-              <Button variant="primary" onClick={() => checkAgain(tab.id)}>
-                Check again
-              </Button>
-              <ToDiff tab={tab} primary={false} />
-              {newer}
-            </>
+        <Problem
+          layout="view"
+          title="Can’t check the overview"
+          reason={standing.why === '' ? undefined : standing.why}
+          action={
+            latest ?? {
+              label: 'Check again',
+              busy: checking,
+              working: 'Checking…',
+              onClick: () => {
+                setChecking(true);
+                void checkAgain(tab.id).finally(() => setChecking(false));
+              },
+            }
           }
-        >
-          <p>{withoutBidi(standing.why)}</p>
-        </StateColumn>
+          details={
+            standing.details === undefined
+              ? written
+              : [written, withoutBidi(standing.details)].join('\n')
+          }
+        />
       );
     default:
       standing satisfies never;

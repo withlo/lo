@@ -25,7 +25,23 @@ export const checked = tabState<CheckedOverview | undefined>(() => undefined);
 /** What main last said of each tab's revisions, for their labels: none until it has. */
 export const revisions = tabState<ComparisonView | undefined>(() => undefined);
 
+/** Whether main is reading each tab's overview again, as Check again asked, until it has. */
+export const rereading = tabState<boolean>(() => false);
+
 const checkings = new Map<string, Checking>();
+
+/**
+ * Asks main to read tab `id`'s overview again now, as Check again and its key do, saying the tab is
+ * `rereading` until main has: its button reads "Checking…" meanwhile.
+ */
+export function readAgain(id: string): void {
+  if (rereading.get(id)) return;
+  rereading.set(id, true);
+  main()
+    .retry({ id })
+    .catch((error: unknown) => console.error("Lo couldn't read the overview again:", error))
+    .finally(() => rereading.set(id, false));
+}
 
 /** Takes a result for tab `id`, unless it's the one the tab has. */
 export function publish(id: string, value: CheckedOverview | undefined): void {
@@ -67,12 +83,16 @@ export function takeState(state: OverviewState): void {
 }
 
 /**
- * Checks tab `id`'s overview again after a check that failed, with what main last said of it.
- * Nothing new starts while a check is under way, or once one has gone through.
+ * Checks tab `id`'s overview again after a check that failed, with what main last said of it, and
+ * settles once that check is done, however it went. Nothing new starts while a check is under way,
+ * or once one has gone through.
  */
-export function checkAgain(id: string): void {
+export async function checkAgain(id: string): Promise<void> {
   const state = states.get(id);
-  if (state) checkingOf(id).take(state);
+  if (!state) return;
+  const checking = checkingOf(id);
+  checking.take(state);
+  await checking.done();
 }
 
 /** Takes what main says of a tab's revisions. */

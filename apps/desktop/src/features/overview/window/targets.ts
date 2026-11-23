@@ -7,9 +7,8 @@ import { LIMITS, type CheckedCode, type CodeRange, type CodeState } from '@lo/ar
 import { splitLines, type FileDiff } from '@lo/diff';
 
 import type { DiffedText } from '../../diff/window/shared.ts';
-import type { BlockText } from '../contract.ts';
+import type { BlockText, CodeCause } from '../contract.ts';
 import type { CodeRead, CodeSeen } from './checking.ts';
-import { shortId } from './says.ts';
 
 /** How the check left a block's code, and what main answered for its file, if it read it. */
 export interface Target {
@@ -56,12 +55,14 @@ export type Words = readonly (string | { readonly code: string })[];
  * What a block shows:
  *
  * - `code`: the code, read from the local copy;
+ * - `waiting`: the code's room, as the code will be laid out, while the local copy comes;
  * - `note`: what it says in its place, in a frame for its variant, with what the reader can do:
  *   find a file of the name it gave (`find`), or open the file at the newest revision Lo has
  *   (`latest`).
  */
 export type Shows =
   | { readonly kind: 'code' }
+  | { readonly kind: 'waiting' }
   | {
       readonly kind: 'note';
       readonly variant: 'code' | 'unresolved' | 'missing';
@@ -71,19 +72,22 @@ export type Shows =
         { readonly kind: 'find'; readonly name: string } | { readonly kind: 'latest' };
     };
 
-/** What a file is, in words, when it isn't a file. */
+/** What a block whose code can't be shown says in its place, whichever the reason. */
+export const CANT_SHOW = 'Can’t show this code';
+
+/** What a path is, in words, when it isn't a file: `is a folder`. */
 function notAFile(answer: CodeSeen | undefined): string {
-  if (answer?.kind !== 'notFile') return 'something other than a file';
+  if (answer?.kind !== 'notFile') return 'isn’t a file';
   switch (answer.is) {
     case 'folder':
-      return 'a folder';
+      return 'is a folder';
     case 'link':
-      return 'a symbolic link';
+      return 'is a symbolic link';
     case 'submodule':
-      return 'a submodule';
+      return 'is a submodule';
     default:
       answer.is satisfies never;
-      return 'something other than a file';
+      return 'isn’t a file';
   }
 }
 
@@ -97,84 +101,61 @@ export function nameOf(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1);
 }
 
+/** A note on code that can't be shown, in a frame for `variant`. */
+function cantShow(
+  variant: 'unresolved' | 'missing',
+  words: Words,
+  action?: Extract<Shows, { kind: 'note' }>['action'],
+): Shows {
+  return action === undefined
+    ? { kind: 'note', variant, title: CANT_SHOW, words }
+    : { kind: 'note', variant, title: CANT_SHOW, words, action };
+}
+
 /**
  * What a block pointing at `target` shows, as its check left it (`found`) and as far as the code
- * was read (`read`), at `commit`, the commit the overview describes.
+ * was read (`read`), in `written`, the revision the overview describes as Lo names it.
  */
-export function showsOf(target: CodeRange, found: Target, read: CodeRead, commit: string): Shows {
+export function showsOf(target: CodeRange, found: Target, read: CodeRead, written: string): Shows {
   const { code, answer } = found;
-  const at = shortId(commit);
   const path = { code: target.path };
   switch (code.state) {
     case 'resolved':
       return { kind: 'code' };
     case 'unread':
-      return unreadShows(read, answer, code.why);
+      return unreadShows(read, answer, code.why, target.path, written);
     case 'broken': {
       const { why } = code;
       switch (why) {
         case 'missing':
-          return {
-            kind: 'note',
-            variant: 'unresolved',
-            title: 'This reference doesn’t resolve.',
-            words: [
-              'There’s no ',
-              path,
-              ` at ${at}, so Lo can’t show the code it names. It may have been renamed, or never pushed.`,
-            ],
-            action: { kind: 'find', name: nameOf(target.path) },
-          };
+          return cantShow('unresolved', [path, ` isn’t in ${written}.`], {
+            kind: 'find',
+            name: nameOf(target.path),
+          });
         case 'lines':
-          return {
-            kind: 'note',
-            variant: 'unresolved',
-            title: 'This reference doesn’t resolve.',
-            words: [path, ` at ${at} has no ${linesWords(target.lines)}, so Lo can’t show them.`],
-          };
+          return cantShow('unresolved', [
+            path,
+            ` has no ${linesWords(target.lines)} in ${written}.`,
+          ]);
         case 'notFile':
-          return {
-            kind: 'note',
-            variant: 'unresolved',
-            title: 'This reference doesn’t resolve.',
-            words: [path, ` at ${at} is ${notAFile(answer)}, so it has no lines to show.`],
-          };
+          return cantShow('unresolved', [path, ` ${notAFile(answer)} in ${written}.`]);
         case 'binary':
-          return {
-            kind: 'note',
-            variant: 'unresolved',
-            title: 'This code isn’t text.',
-            words: [path, ` at ${at} isn’t text, so it has no lines to show.`],
-          };
+          return cantShow('unresolved', [path, ' isn’t text.']);
         case 'tooLarge':
-          return {
-            kind: 'note',
-            variant: 'unresolved',
-            title: 'This file is too large to show.',
-            words: [
-              path,
-              ` at ${at} is larger than ${LIMITS.file / 2 ** 20} MB, the most Lo reads of a file to show its lines.`,
-            ],
-          };
+          return cantShow('unresolved', [path, ` is over the ${LIMITS.file / 2 ** 20} MB limit.`]);
         case 'commit':
-          return {
-            kind: 'note',
-            variant: 'missing',
-            title: 'The commit this overview describes is gone.',
-            words: [
-              `GitHub no longer has ${at}, so Lo can’t show the code it had. The file may still be in the pull request.`,
-            ],
-            action: { kind: 'latest' },
-          };
+          return cantShow('missing', [`${written}’s commit is no longer on GitHub.`], {
+            kind: 'latest',
+          });
         default:
           why satisfies never;
-          return unreadShows(read, answer, 'failed');
+          return unreadShows(read, answer, 'failed', target.path, written);
       }
     }
     default:
       // From the background process: say so, rather than show what Lo doesn't know.
       code satisfies never;
-      return unreadShows(read, answer, 'failed');
+      return unreadShows(read, answer, 'failed', target.path, written);
   }
 }
 
@@ -183,34 +164,68 @@ function note(title: string, words: Words): Shows {
   return { kind: 'note', variant: 'code', title, words };
 }
 
-/** What a block shows when its code wasn't read: why, as far as Lo knows. */
+/**
+ * Why Lo couldn't read a block's code, at `path`, as main gives its cause, in `written`, the
+ * revision the overview describes as Lo names it: nothing where Lo doesn't know the cause, or the
+ * wait says it.
+ */
+export function causeWords(cause: CodeCause, path: string, written: string): Words {
+  const file = { code: path };
+  switch (cause) {
+    case 'noGit':
+      return ['Git wasn’t found.'];
+    case 'notFetched':
+      return ['The local copy couldn’t be fetched.'];
+    case 'noCommit':
+      return [`${written}’s commit isn’t in the local copy.`];
+    case 'noFile':
+      return [file, ` isn’t in ${written}.`];
+    case 'notFile':
+      return [file, ` isn’t a file in ${written}.`];
+    case 'binary':
+      return [file, ' isn’t text.'];
+    case 'tooLarge':
+      return [file, ` is over the ${LIMITS.file / 2 ** 20} MB limit.`];
+    case 'offline':
+      return ['Offline.'];
+    case 'spent':
+      return ['This overview’s code is over the size limit.'];
+    case 'notDownloaded':
+      return ['GitHub didn’t respond.'];
+    case 'notReady':
+    case 'unknown':
+      return [];
+    default:
+      // From main: say nothing, rather than what Lo doesn't know.
+      cause satisfies never;
+      return [];
+  }
+}
+
+/** What a block shows when its code, at `path` in `written`, wasn't read: why, where Lo knows. */
 function unreadShows(
   read: CodeRead,
   answer: CodeSeen | undefined,
   why: 'failed' | 'stopped',
+  path: string,
+  written: string,
 ): Shows {
   switch (read.kind) {
     case 'waiting':
-      return note('Waiting for the local copy.', [
-        'Lo shows this code once it has fetched the pull request.',
-      ]);
+      return { kind: 'waiting' };
     case 'noGit':
-      return note('Lo needs git to show this code.', [
-        'Code comes from the pull request’s local copy, which git fetches.',
-      ]);
+      return note(CANT_SHOW, causeWords('noGit', path, written));
     case 'failed':
-      return note('Lo couldn’t read this code.', [read.why]);
+      return note(CANT_SHOW, causeWords(read.why, path, written));
     case 'none':
     case 'read':
-      if (answer?.kind === 'unread') return note('Lo couldn’t read this code.', [answer.why]);
-      return note('Lo couldn’t read this code.', [
-        why === 'stopped'
-          ? 'Reading the overview’s code took too long.'
-          : 'The local copy didn’t give it.',
-      ]);
+      if (answer?.kind === 'unread') {
+        return note(CANT_SHOW, causeWords(answer.why, path, written));
+      }
+      return note(CANT_SHOW, why === 'stopped' ? ['It took too long.'] : []);
     default:
       read satisfies never;
-      return note('Lo couldn’t read this code.', []);
+      return note(CANT_SHOW, []);
   }
 }
 

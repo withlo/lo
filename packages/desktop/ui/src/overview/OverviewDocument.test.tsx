@@ -15,11 +15,19 @@ import {
 } from '@lo/artifact';
 
 import { buildCss, hasRule } from '../../scripts/stylesheet.ts';
+import {
+  commandsOf,
+  defineCommands,
+  holdRegistry,
+  Registry,
+  type Target,
+} from '../commands/index.ts';
 import { cleanUp, click, disallowed, focus, ids, press, render, rerender } from '../../test/dom.ts';
 import { FakeResizeObserver, resize } from '../../test/figures.ts';
 import { isMarkdownAttribute, MARKDOWN_ELEMENTS } from '../markdown/index.ts';
 import {
   alphabetical,
+  blockHints,
   closeCards,
   HOVER_CLOSE_MS,
   HOVER_OPEN_MS,
@@ -352,6 +360,32 @@ describe('drawing again', () => {
   });
 });
 
+/** A block key, as the overview declares one. */
+function blockKey(label: string, key: string) {
+  return {
+    label,
+    group: 'Overview' as const,
+    keys: [key],
+    targets: ['block' as const, 'none' as const],
+  };
+}
+
+/** What each block's chip offers, run on the block, by its number. */
+function onBlock(block: OverviewBlock, number: number) {
+  return blockHints(block).map((hint) => ({
+    ...hint,
+    target: { kind: 'block' as const, block: String(number) },
+  }));
+}
+
+/** The block keys the focused block's chip offers. */
+const BLOCK_KEYS = defineCommands('overview', {
+  follow: blockKey('Go to code', 'enter'),
+  beside: blockKey('Code beside', 'o'),
+  nextStep: blockKey('Next step', 'right'),
+  nextLink: blockKey('Next link', 'tab'),
+});
+
 describe('blocks', () => {
   it('numbers the blocks the block keys stop at, and leaves plain prose and headings out', () => {
     const tree = fixture('valid/example');
@@ -408,37 +442,62 @@ describe('blocks', () => {
     ]);
   });
 
-  it('draws the focused block’s ring and its keys, and keeps prose’s spacing around prose', () => {
+  it('draws the focused block’s ring and its keys, named by what each does there, and keeps prose’s spacing around prose', () => {
     const tree = fixture('valid/example');
     const at = (kind: OverviewBlock['kind']) =>
       tree.blocks.findIndex((block) => block.kind === kind);
     const focusedOn = (index: number) => {
       cleanUp();
-      return render(<OverviewDocument tree={tree} focused={index} />);
+      return render(<OverviewDocument tree={tree} focused={index} hints={onBlock} />);
     };
+
+    // The block keys, as the overview declares them, which the chip's buttons take their keys and
+    // runs from, and their words, as each names itself on the block: `⏎` opens a link anywhere
+    // but in code, and `→` goes to the next of a set of tabs.
+    const kindOf = (target: Target) =>
+      target.kind === 'block' ? tree.blocks[Number(target.block)]?.kind : undefined;
+    const names: Record<string, (target: Target) => string | undefined> = {
+      'overview.follow': (target) => (kindOf(target) === 'excerpt' ? undefined : 'Open link'),
+      'overview.nextStep': (target) => (kindOf(target) === 'tabs' ? 'Next tab' : undefined),
+    };
+    const ran: string[] = [];
+    onTestFinished(
+      holdRegistry(
+        new Registry({
+          system: 'mac',
+          commands: commandsOf(BLOCK_KEYS).map((each) => {
+            const run = () => void ran.push(each.id);
+            const named = names[each.id];
+            return { ...each, handler: named ? { run, named } : { run } };
+          }),
+        }),
+      ),
+    );
 
     let page = focusedOn(at('excerpt'));
     let block = page.querySelector('.is-focused')!;
     expect(block.className).toBe('lo-block is-focused');
     expect(page.querySelectorAll('.is-focused')).toHaveLength(1);
-    expect(hints(block)).toEqual(['⏎ Go to code', 'o Open beside']);
-    expect(block.querySelector('.lo-block__hints')?.getAttribute('aria-hidden')).toBe('true');
+    expect(hints(block)).toEqual(['Go to code⏎', 'Code besideo']);
+    // A click on one runs its command, and nothing else the block does.
+    click(block.querySelectorAll('.lo-block__hints button')[1]!);
+    expect(ran).toEqual(['overview.beside']);
 
     page = focusedOn(at('tabs'));
-    expect(hints(page.querySelector('.is-focused')!)).toEqual(['← → Switch tabs']);
+    expect(hints(page.querySelector('.is-focused')!)).toEqual(['Next tab→']);
 
     page = focusedOn(at('details'));
     block = page.querySelector('.is-focused')!;
     expect(block.localName).toBe('details');
     expect(block.className).toBe('lo-fold lo-block lo-block--fold is-focused');
     expect(block.querySelector(':scope > summary > .lo-block__hints')).not.toBeNull();
-    expect(hints(block)).toEqual(['⏎ Open or close']);
+    expect(hints(block)).toEqual(['Expand⏎']);
 
     page = focusedOn(at('paragraph') + 2);
     block = page.querySelector('.is-focused')!;
     expect(block.className).toBe('lo-block lo-block--prose is-focused');
     expect(block.firstElementChild?.localName).toBe('p');
-    expect(hints(block)).toEqual(['Tab Next link', '⏎ Follow']);
+    expect(hints(block)).toEqual(['Next linkTab', 'Open link⏎']);
 
     // Unfocused, no chip is drawn at all.
     page = focusedOn(-1);
@@ -462,13 +521,12 @@ describe('terms', () => {
     focus(use);
     expect(use.classList.contains('is-active')).toBe(true);
     expect(card()?.textContent).toBe(
-      'Bucketthe tokens a tenant has to spend. Each request takes one.Glossary⏎',
+      'Bucketthe tokens a tenant has to spend. Each request takes one.',
     );
     expect(card()?.className).toContain('lo-popover lo-hovercard');
     expect([...card()!.children].map((part) => part.className)).toEqual([
       'lo-hovercard__term',
       'lo-hovercard__body',
-      'lo-hovercard__foot',
     ]);
     // The card is a copy: screen readers hear the glossary, which describes the term.
     expect(card()?.getAttribute('aria-hidden')).toBe('true');
@@ -691,7 +749,7 @@ describe('terms', () => {
     expect(page.querySelector('dd h3')?.textContent).toBe('Inside');
 
     focus(term(page));
-    expect(card()?.textContent).toBe('Cachekept in memory. More in the glossary.Glossary⏎');
+    expect(card()?.textContent).toBe('Cachekept in memory. More in the glossary.');
     expect(
       card()?.querySelector('[id], [tabindex], a, summary, details, h1, h2, h3, h4, h5, h6'),
     ).toBeNull();
@@ -976,7 +1034,6 @@ describe('styles', () => {
       /\.lo-block--fold\.is-focused > summary > \.lo-block__hints\s*\{\s*display: flex;/,
     );
     expect(components).toMatch(/\.lo-popover\s*\{[^}]*var\(--lo-bg-overlay\)/);
-    expect(components).toMatch(/\.lo-hovercard__foot\s*\{/);
   });
 });
 
@@ -1018,10 +1075,7 @@ function move(from: Element, to: Element): void {
 
 /** A focused block's chip, each hint as its keys and words. */
 function hints(block: Element): string[] {
-  return [...block.querySelectorAll('.lo-block__hints > span')].map((hint) =>
-    [...hint.querySelectorAll('kbd')]
-      .map((key) => key.textContent)
-      .concat(hint.lastChild?.textContent ?? '')
-      .join(' '),
+  return [...block.querySelectorAll('.lo-block__hints button')].map(
+    (button) => button.textContent ?? '',
   );
 }

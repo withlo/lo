@@ -14,12 +14,14 @@ import { blockId } from './blocks.ts';
 import {
   besideFor,
   blockAt,
+  followName,
   followOf,
   focusedBlock,
   looseControl,
   nextBlock,
   nextLink,
   scroll,
+  stepName,
   targetOf,
   type DrawnOverview,
   type Scroll,
@@ -105,10 +107,16 @@ describe('the block keys', () => {
     stops[0]!.focus();
     expect(focusedBlock(overview)).toBe(stops[0]);
     expect(kindOf(tree, nextBlock(overview, 1))).toBe('excerpt');
-    expect(nextBlock(overview, -1)).toBe('This is the first block.');
+    expect(nextBlock(overview, -1)).toBe('First block');
     stops.at(-1)!.focus();
-    expect(nextBlock(overview, 1)).toBe('This is the last block.');
+    expect(nextBlock(overview, 1)).toBe('Last block');
     expect(kindOf(tree, nextBlock(overview, -1))).toBe('details');
+  });
+
+  it('do nothing and say nothing while the overview draws unseen, under its placeholder', () => {
+    const { overview } = drawn();
+    overview.root.querySelector<HTMLElement>('.lo-ov__article')!.style.visibility = 'hidden';
+    expect(nextBlock(overview, 1)).toBe('');
   });
 
   it('name a block by the tree it’s in, so one from another tree finds none', () => {
@@ -179,7 +187,7 @@ describe('Tab', () => {
     const { overview, stops, tree } = drawn();
     const code = stops.find((stop) => kindOf(tree, stop) === 'excerpt')!;
     code.focus();
-    expect(nextLink(overview, 1)).toBe('This block has no links or parts.');
+    expect(nextLink(overview, 1)).toBe('No links in this block');
   });
 
   it('goes from the overview itself through the outline to the first block, and back', () => {
@@ -195,7 +203,7 @@ describe('Tab', () => {
     sections[1]!.focus();
     expect(nextLink(overview, -1)).toBe(sections[0]);
     sections[0]!.focus();
-    expect(nextLink(overview, -1)).toBe('There’s nothing before this in the overview.');
+    expect(nextLink(overview, -1)).toBe('First link');
   });
 });
 
@@ -231,11 +239,41 @@ describe('following a block', () => {
     });
   });
 
+  it('is named by what it does: Go to code, which is its label, Open link, or a fold’s own', () => {
+    const { overview, stops, tree } = drawn();
+    const code = stops.find((stop) => kindOf(tree, stop) === 'excerpt')!;
+    expect(followName(overview, code)).toBeUndefined();
+    // Prose whose first link is to code goes there; one with focus on a link opens it.
+    const last = stops.at(-1)!;
+    expect(followName(overview, last)).toBeUndefined();
+    last.focus();
+    [...last.querySelectorAll<HTMLElement>('[role="link"]')].at(-1)!.focus();
+    expect(followName(overview, last)).toBe('Open link');
+    // Prose that links only to a term opens it.
+    const term = stops.find((stop) => kindOf(tree, stop) === 'paragraph')!;
+    expect(followName(overview, term)).toBe('Open link');
+    const fold = stops.find((stop) => kindOf(tree, stop) === 'details');
+    if (!(fold instanceof HTMLDetailsElement)) throw new Error('No fold');
+    expect(followName(overview, fold)).toBe('Expand');
+    fold.open = true;
+    expect(followName(overview, fold)).toBe('Collapse');
+    // Nothing to follow: no name, and its label says it can't.
+    const tabs = stops.find((stop) => kindOf(tree, stop) === 'tabs')!;
+    expect(followName(overview, tabs)).toBeUndefined();
+  });
+
+  it('names → by what it steps: Next tab on tabs, and a walkthrough’s own label', () => {
+    const { stops, tree } = drawn();
+    expect(stepName(stops.find((stop) => kindOf(tree, stop) === 'tabs')!)).toBe('Next tab');
+    expect(stepName(stops.find((stop) => kindOf(tree, stop) === 'walkthrough')!)).toBeUndefined();
+    expect(stepName(stops.find((stop) => kindOf(tree, stop) === 'excerpt')!)).toBeUndefined();
+  });
+
   it('says so for tabs, which point at no code and have nothing to follow', () => {
     const { overview, stops, tree } = drawn();
     const tabs = stops.find((stop) => kindOf(tree, stop) === 'tabs')!;
-    expect(followOf(overview, tabs)).toBe('This block has nothing to follow.');
-    expect(besideFor(overview, tabs)).toBe('This block shows no code.');
+    expect(followOf(overview, tabs)).toBe('No code or link in this block');
+    expect(besideFor(overview, tabs)).toBe('No code in this block');
     const code = stops.find((stop) => kindOf(tree, stop) === 'excerpt')!;
     expect(besideFor(overview, code)).toBe(blockNumber(code));
   });

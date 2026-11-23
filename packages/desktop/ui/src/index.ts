@@ -119,15 +119,20 @@ export {
 } from './Tooltip.tsx';
 export { Collapse, Swap, type CollapseProps, type SwapProps } from './Collapse.tsx';
 export { Problem, type ProblemAction, type ProblemProps, useDetails } from './Problem.tsx';
+export { Countdown, countdownSaid, countdownWords, type CountdownProps } from './Countdown.tsx';
 export { EmptyState, type EmptyAction, type EmptyStateProps } from './EmptyState.tsx';
 export {
   CopyButton,
+  CopyFaces,
   CopyRoute,
+  CopyStatus,
   COPIED_MS,
   useCopy,
+  useCopySaid,
   type Copy,
   type CopyButtonProps,
   type CopyRouteProps,
+  type CopySaid,
 } from './CopyButton.tsx';
 export { Loading, LOADING_DELAY_MS, LOADING_SLOW_MS, type LoadingProps } from './Loading.tsx';
 export { LogoMotion, type LogoMotionProps, type LogoPlay } from './LogoMotion.tsx';

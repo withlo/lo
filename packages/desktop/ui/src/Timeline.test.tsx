@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // The timeline's rows: the description card, comments and reviews as cards, pushes, force-pushes,
-// checks, one-line events and the note about older items. Labels take their color from the style
+// checks, one-line events and the note about older events. Labels take their color from the style
 // property, and only when it is six hex digits.
 
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -138,7 +138,6 @@ describe('Timeline', () => {
       'ravi-k opened this 3 days ago',
       'Author',
       'Draft',
-      'Read-only in Lo',
       'GraphQL requests are now limited by what they cost.',
       'Reviewers',
     ]) {
@@ -163,7 +162,7 @@ describe('Timeline', () => {
         <TimelineDescription author="ravi-k" when="now" />
       </Timeline>,
     );
-    expect(host.textContent).toContain('No description.');
+    expect(host.textContent).toContain('No description');
     expect(host.textContent).not.toContain('Draft');
     expect(host.textContent).not.toContain('Reviewers');
   });
@@ -192,7 +191,7 @@ describe('Timeline', () => {
     );
     // Its text isn't drawn, so nothing in it loads.
     expect(hidden.querySelector('[data-testid="body"]')).toBeNull();
-    expect(row(hidden).textContent).toContain('Hidden as outdated');
+    expect(row(hidden).textContent).toContain('Hidden · outdated');
     click(button(row(hidden), 'Show comment'));
     expect(onShow).toHaveBeenCalledOnce();
   });
@@ -220,16 +219,16 @@ describe('Timeline', () => {
       </Timeline>,
     );
     const [changes, approved, dismissed] = [row(host, 0), row(host, 1), row(host, 2)];
-    expect(changes.textContent).toContain('tess-okafor requested changes on r2');
+    expect(changes.textContent).toContain('tess-okafor requested changes · r2');
     expect(changes.textContent).toContain('Close. Two things before I');
-    expect(changes.textContent).toContain('2 comments on rate-limit.ts');
-    click(button(changes, 'Show in the diff'));
+    expect(changes.textContent).toContain('2 comments · rate-limit.ts');
+    click(button(changes, 'Show in diff'));
     expect(onShowInDiff).toHaveBeenCalledOnce();
     expect(approved.textContent).toContain('jun-park approved these changes');
     // No comments, no footer.
-    expect(approved.textContent).not.toContain('Show in the diff');
+    expect(approved.textContent).not.toContain('Show in diff');
     expect(dismissed.textContent).toContain('Dismissed');
-    expect(dismissed.textContent).not.toContain('Show in the diff');
+    expect(dismissed.textContent).not.toContain('Show in diff');
   });
 
   it('draws consecutive commits as one push with their revision, and a lone one in the singular', () => {
@@ -296,13 +295,13 @@ describe('Timeline', () => {
       </Timeline>,
     );
     expect([0, 1, 2].map((at) => row(host, at).textContent)).toEqual([
-      'Checks failed on r22 days ago',
-      'Checks running on r5now',
+      'Checks failed · r22 days ago',
+      'Checks running · r5now',
       'Checks passed',
     ]);
   });
 
-  it('says how many older items are left out, in the singular too, as a row on the rail', () => {
+  it('says how many older events are left out, in the singular too, as a row on the rail', () => {
     const onSee = vi.fn<() => void>();
     const host = render(
       <Timeline>
@@ -311,9 +310,9 @@ describe('Timeline', () => {
       </Timeline>,
     );
     const [many, one] = [...host.querySelectorAll('li')];
-    expect(many?.textContent).toBe("120 older items aren't shown.See them on GitHub.");
-    expect(one?.textContent).toBe("1 older item isn't shown.See it on GitHub.");
-    click(button(many!, 'See them'));
+    expect(many?.textContent).toBe('120 older eventsOpen on GitHub');
+    expect(one?.textContent).toBe('1 older eventOpen on GitHub');
+    click(button(many!, 'Open on GitHub'));
     expect(onSee).toHaveBeenCalledOnce();
   });
 
@@ -414,7 +413,7 @@ describe('Timeline', () => {
     const [mine, theirs] = [row(host, 0), row(host, 1)];
     expect(mine.textContent).toContain('tess-okafor (you) commented');
     expect(button(mine, 'Edit').textContent).toBe('Editi');
-    expect(button(mine, 'Delete').textContent).toBe('Deletedd');
+    expect(button(mine, 'Delete').textContent).toBe('Delete…dd');
     click(button(mine, 'Edit'));
     click(button(mine, 'Delete'));
     expect(onEdit).toHaveBeenCalledOnce();
@@ -453,7 +452,7 @@ describe('Timeline', () => {
         />
       </Timeline>,
     );
-    expect(hidden.textContent).toContain('Hidden as spam');
+    expect(hidden.textContent).toContain('Hidden · spam');
     expect([...hidden.querySelectorAll('button')].map((each) => each.textContent)).toEqual([
       'Show comment',
     ]);

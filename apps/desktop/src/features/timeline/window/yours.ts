@@ -19,7 +19,7 @@ export function loginOf(view: string): string | undefined {
 export function commentIn(row: Row, hidden: boolean): PullComment | string {
   switch (row.kind) {
     case 'comment':
-      if (hidden) return 'This comment is hidden. Show it first.';
+      if (hidden) return 'Show this comment first';
       return {
         id: row.id,
         author: row.author?.login,
@@ -28,18 +28,18 @@ export function commentIn(row: Row, hidden: boolean): PullComment | string {
         viewerCanDelete: row.canDelete,
       };
     case 'description':
-      return 'The description is read-only in Lo.';
+      return 'Edit the description on GitHub';
     case 'review':
-      return 'Lo changes only comments. Change a review on GitHub.';
+      return 'Edit a review on GitHub';
     case 'push':
     case 'forcePush':
     case 'checks':
     case 'event':
     case 'older':
-      return 'This event isn’t a comment.';
+      return 'This event isn’t a comment';
     default:
       row satisfies never;
-      return 'This event isn’t a comment.';
+      return 'This event isn’t a comment';
   }
 }
 

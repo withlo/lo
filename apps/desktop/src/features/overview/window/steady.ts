@@ -26,7 +26,8 @@ export function steady(
       previous.kind === 'failed' &&
       next.kind === 'failed' &&
       previous.key === next.key &&
-      previous.why === next.why;
+      previous.why === next.why &&
+      previous.details === next.details;
     return again ? previous : next;
   }
   const kept: CheckedOverview = {

@@ -367,7 +367,7 @@ export function noteOf(view: ComparisonView | undefined, pickerKey = 'gv'): Note
     return { tone: 'info', text: parts.join(' · ') };
   }
   if (tone === 'plain' && view.nothingNewSince !== null && comparison.from === null) {
-    parts.push(`Nothing new since ${labelOf(view, view.nothingNewSince)}`);
+    parts.push(`no change since ${labelOf(view, view.nothingNewSince)}`);
     tone = 'info';
   }
   return { tone, text: parts.join(' · ') };

@@ -655,6 +655,26 @@ describe('watching', () => {
     expect(github.asked.length).toBe(asked);
     tab.close();
   });
+
+  it('reads a public pull request again without an account when asked, once each time', async () => {
+    const github = new FakeGithub();
+    const { tab, last } = tabWith(github.client);
+    tab.update(info({ acting: { kind: 'anonymous' } }), true, true);
+    await settle();
+    expect(last()).toMatchObject({ watching: false, found: 'none' });
+    const asked = github.asked.length;
+    github.push('rozed-dev/e2e', 5, overview('public', { 'artifact.md': artifactText(5) }));
+    const retried = tab.retry();
+    await settle();
+    await retried;
+    expect(github.asked.length).toBeGreaterThan(asked);
+    expect(last()).toMatchObject({ watching: false, found: 'commit' });
+    // Read once more, it's still not watched.
+    const again = github.asked.length;
+    await vi.advanceTimersByTimeAsync(10 * BACKGROUND_EVERY);
+    expect(github.asked.length).toBe(again);
+    tab.close();
+  });
 });
 
 describe('failing', () => {
@@ -690,8 +710,10 @@ describe('failing', () => {
     tab.update(info(), true, true);
     await settle();
     expect(github.asked.length).toBe(10);
-    tab.retry();
+    const retried = tab.retry();
     await settle();
+    // What asked for it hears once the read is done.
+    await retried;
     expect(github.asked.length).toBe(11);
     expect(last()?.problem?.retryAt).toBe(Date.now() + 5_000);
 
@@ -775,6 +797,8 @@ describe('failing', () => {
           ),
         {
           kind: 'blocked',
+          why: 'sso',
+          org: 'rozed-dev',
           message: 'Resource protected by organization SAML enforcement.',
           links: [
             {
@@ -1127,7 +1151,7 @@ describe('the code', () => {
         new Promise((resolve) => {
           signal.addEventListener('abort', () => {
             stopped = true;
-            resolve({ kind: 'failed', why: 'stopped' });
+            resolve({ kind: 'failed', why: 'unknown' });
           });
         }),
     );

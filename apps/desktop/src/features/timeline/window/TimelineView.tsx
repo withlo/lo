@@ -8,8 +8,10 @@
 // own comments have Edit and Delete, and an edit's box is drawn in the comment's card.
 
 import {
-  Button,
+  Countdown,
+  EmptyState,
   Label,
+  Problem,
   Timeline,
   TimelineChecks,
   TimelineComment,
@@ -36,9 +38,8 @@ import {
 } from 'react';
 
 import { useMenuTarget } from '../../../window/commands/menus.tsx';
-import { registry, setMiddle } from '../../../window/commands/registry.ts';
+import { registry, setMiddle, useKeys } from '../../../window/commands/registry.ts';
 import { avatarImage } from '../../../window/images.ts';
-import { signIn } from '../../accounts/window/shared.ts';
 import {
   deletePullComment,
   editPullComment,
@@ -51,7 +52,15 @@ import {
   useEditsOnPull,
 } from '../../comments/window/shared.ts';
 import { showDiff } from '../../diff/window/shared.ts';
-import { usePull, useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
+import {
+  MiddlePlaceholder,
+  usePull,
+  useRunLayers,
+  useTabState,
+  withoutBidi,
+  type PullTab,
+} from '../../tab/window/shared.ts';
+import type { TimelineCause, TimelineView } from '../contract.ts';
 import {
   compare,
   focusRow,
@@ -62,7 +71,7 @@ import {
   setDrawn,
   stillHidden,
 } from './actions.ts';
-import { tabs } from './main.ts';
+import { main, tabs } from './main.ts';
 import { keepPlace, readingPlace, type ReadingPlace } from './place.ts';
 import { rowsOf, type Part, type Person, type Row } from './rows.ts';
 import {
@@ -121,14 +130,14 @@ export function TimelineMiddle({ tab, shown }: { tab: PullTab; shown: boolean })
   if (tab.run) {
     return (
       <Note shown={shown}>
-        A run of layers has no timeline. Show one of its layers to see its timeline.
+        <NoneInRun tab={tab} />
       </Note>
     );
   }
   return <TimelineOf tab={tab} shown={shown} />;
 }
 
-/** What the middle says in place of the timeline, which `Esc` gives focus to. */
+/** What the middle shows in place of the timeline, which `Esc` gives focus to. */
 function Note({ shown, children }: { shown: boolean; children: ReactNode }) {
   const root = useRef<HTMLDivElement>(null);
   useMiddle(
@@ -137,14 +146,87 @@ function Note({ shown, children }: { shown: boolean; children: ReactNode }) {
     () => root.current?.focus({ preventScroll: true }),
   );
   return (
-    <div
-      ref={root}
-      tabIndex={-1}
-      className="grid h-full place-items-center p-32 text-center text-fg-muted outline-none text-ui"
-      data-lo-timeline="note"
-    >
-      <div className="flex max-w-read-measure flex-col items-center gap-12">{children}</div>
+    <div ref={root} tabIndex={-1} className="h-full outline-none" data-lo-timeline="note">
+      {children}
     </div>
+  );
+}
+
+/** A run of a stack's layers on screen as one diff has no timeline: each layer has its own. */
+function NoneInRun({ tab }: { tab: PullTab }) {
+  useKeys();
+  const layers = useRunLayers(tab.id);
+  return (
+    <EmptyState
+      title={`No timeline for ${layers}`}
+      line="Each layer has its own."
+      actions={[{ command: 'stacks.back', label: 'Show single layer' }]}
+    />
+  );
+}
+
+/** Why a timeline couldn't be read, in the causes every error is worded by. */
+const CAUSES = {
+  offline: 'Offline.',
+  failed: 'GitHub returned an error.',
+} as const satisfies Record<TimelineCause, string>;
+
+/**
+ * A timeline that couldn't be read, with nothing read before: why, with GitHub's own words behind
+ * Details, and when main tries again, counted down, where it knows. Try now, or Try again where it
+ * doesn't, reads it at once, busy until main's read has answered. While the account's poller reads
+ * nothing, the tab's banner says the wait and has the way to try again, so this has neither.
+ */
+function Failed({ tab, view }: { tab: PullTab; view: TimelineView | undefined }) {
+  const [trying, setTrying] = useState(false);
+  const cause = view?.cause ? CAUSES[view.cause] : undefined;
+  const retryAt = view?.retryAt ?? undefined;
+  const stalled = view?.stalled ?? false;
+  return (
+    <Problem
+      layout="view"
+      title="Can’t show the timeline"
+      reason={
+        retryAt === undefined ? (
+          cause
+        ) : (
+          <>
+            {cause}
+            {cause !== undefined && ' '}Retrying <Countdown at={retryAt} />.
+          </>
+        )
+      }
+      action={
+        stalled
+          ? undefined
+          : {
+              label: retryAt === undefined ? 'Try again' : 'Try now',
+              busy: trying,
+              working: 'Trying…',
+              onClick: () => {
+                setTrying(true);
+                main()
+                  .retry({ id: tab.id })
+                  .catch((error: unknown) =>
+                    console.error("Lo couldn't read the timeline again:", error),
+                  )
+                  .finally(() => setTrying(false));
+              },
+            }
+      }
+      details={view?.problem ? withoutBidi(view.problem) : undefined}
+    />
+  );
+}
+
+/** A timeline read as no one, which shows only to an account. */
+function SignIn() {
+  useKeys();
+  return (
+    <EmptyState
+      title="Sign in to see comments"
+      actions={[{ command: 'accounts.addAccount', label: 'Sign in with GitHub…' }]}
+    />
   );
 }
 
@@ -167,25 +249,30 @@ function TimelineOf({ tab, shown }: { tab: PullTab; shown: boolean }) {
     case 'signIn':
       return (
         <Note shown={shown}>
-          <p>Sign in to see comments.</p>
-          <Button onClick={signIn}>Sign in</Button>
+          <SignIn />
         </Note>
       );
     case 'run':
       return (
         <Note shown={shown}>
-          A run of layers has no timeline. Show one of its layers to see its timeline.
+          <NoneInRun tab={tab} />
         </Note>
       );
     case 'failed':
-      return <Note shown={shown}>{view?.problem ?? 'Lo couldn’t read the timeline.'}</Note>;
+      return (
+        <Note shown={shown}>
+          <Failed tab={tab} view={view} />
+        </Note>
+      );
     case 'loading':
     case 'ready':
     case undefined:
       return rows ? (
         <Rows tab={tab} shown={shown} rows={rows} />
       ) : (
-        <Note shown={shown}>Reading the timeline…</Note>
+        <Note shown={shown}>
+          <MiddlePlaceholder tab={tab} status="Reading timeline…" />
+        </Note>
       );
     default:
       status satisfies never;

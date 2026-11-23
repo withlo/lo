@@ -35,19 +35,6 @@
 .lo-hovercard__more {
   color: var(--lo-fg-muted);
 }
-.lo-hovercard__foot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid var(--lo-border-subtle);
-  font: var(--lo-text-small);
-  color: var(--lo-fg-muted);
-}
-.lo-hovercard__key {
-  margin-left: auto;
-}
 
 /*
  * Prose the block keys stop at, in a block that keeps the spacing prose has: the space its own
@@ -344,6 +331,33 @@
 .lo-codeblock__body:has(> .lo-codeblock__msg) {
   background: var(--lo-bg);
 }
+/*
+ * What a code block says in its code's place: its title on a line of its own and the reason under
+ * it, two lines kept whether a reason comes or not, so what it says can change and move nothing.
+ * In an excerpt it's as tall as one line with the frame's padding was, no taller than a short
+ * excerpt's room: its two lines and the padding over and under them make 54 px, as that did.
+ */
+.lo-codeblock__said {
+  min-height: 2lh;
+}
+.lo-codeblock__body > .lo-codeblock__msg {
+  padding-block: var(--lo-sp-6) var(--lo-sp-8);
+}
+/*
+ * A code block's code while the local copy comes: a bar on each line, as long as code runs, in the
+ * middle of the line's height, so the lines are as tall as the code's.
+ */
+.lo-codeblock__skeleton .skeleton {
+  display: inline-block;
+  width: 62%;
+  vertical-align: middle;
+}
+.lo-codeblock__skeleton .cm-line:nth-child(3n + 2) .skeleton {
+  width: 78%;
+}
+.lo-codeblock__skeleton .cm-line:nth-child(3n) .skeleton {
+  width: 45%;
+}
 .lo-codeblock--illustration .lo-codeblock__head strong {
   color: var(--lo-fg);
   font-weight: 600;
@@ -534,4 +548,15 @@
 /* A block the block keys put focus on draws its own ring, `is-focused`, at its own radius. */
 .lo-app .lo-block:focus-visible {
   border-radius: var(--lo-r-md);
+}
+
+/* A focused block's chip holds a button for each of its keys: the pill sits close around them. */
+.lo-block__hints {
+  gap: var(--lo-sp-2);
+  padding: 0 var(--lo-sp-2);
+}
+
+/* The outline's foot holds buttons, whose own padding lines their words up with the sections'. */
+.lo-toc__foot {
+  padding-inline: 0;
 }

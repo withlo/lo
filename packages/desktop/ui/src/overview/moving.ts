@@ -47,10 +47,13 @@ export function focusTargetOf(block: HTMLElement): HTMLElement {
 /** What `Tab` goes between inside a block: links, figures' parts and controls. */
 const STOPS = '[role="link"], button, summary';
 
+/** The chip a focused block shows, whose buttons run the keys `Tab` goes beside. */
+const CHIP = '.lo-block__hints';
+
 /**
  * The links, figure parts and controls in `block` that `Tab` goes between, in order: those shown
  * now, which a closed fold or a tab not chosen hides, that can take focus. The block's own focus,
- * such as a fold's title, isn't one of them.
+ * such as a fold's title, isn't one of them, nor are its chip's buttons, which do what keys do.
  */
 export function linksIn(block: HTMLElement): (HTMLElement | SVGElement)[] {
   const own = focusTargetOf(block);
@@ -58,6 +61,7 @@ export function linksIn(block: HTMLElement): (HTMLElement | SVGElement)[] {
     (element): element is HTMLElement | SVGElement =>
       (element instanceof HTMLElement || element instanceof SVGElement) &&
       element !== own &&
+      element.closest(CHIP) === null &&
       element.tabIndex >= 0 &&
       !(element instanceof HTMLButtonElement && element.disabled) &&
       !hiddenIn(block, element),

@@ -51,7 +51,15 @@ function press(key: string): void {
 let VIEW = 'h0';
 
 function view(items: Item[], id = VIEW): TimelineView {
-  return { id, status: 'ready', timeline: timeline(items), problem: null };
+  return {
+    id,
+    status: 'ready',
+    timeline: timeline(items),
+    cause: null,
+    problem: null,
+    retryAt: null,
+    stalled: false,
+  };
 }
 
 /** The reader's post of `Ship it.`, made when the timeline held `had` comments with its text. */
@@ -220,10 +228,8 @@ describe('what i and dd act on', () => {
         'delete',
       ),
     ).toBe('This comment isn’t yours');
-    expect(changeTarget(row(), true, 'rozed-bot', 'edit')).toBe(
-      'This comment is hidden. Show it first.',
-    );
+    expect(changeTarget(row(), true, 'rozed-bot', 'edit')).toBe('Show this comment first');
     const older: Row = { kind: 'older', key: 'older', count: 3 };
-    expect(commentIn(older, false)).toBe('This event isn’t a comment.');
+    expect(commentIn(older, false)).toBe('This event isn’t a comment');
   });
 });

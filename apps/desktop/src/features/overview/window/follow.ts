@@ -17,7 +17,7 @@ import {
   stepIn,
 } from '@lo/ui/overview';
 
-import { notify } from '../../../window/commands/notices.tsx';
+import { refuse } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
 import { showPlace } from '../../diff/window/shared.ts';
 import { holdLimit } from '../../revisions/window/shared.ts';
@@ -25,7 +25,7 @@ import { showMiddle, tabState } from '../../tab/window/shared.ts';
 import { blockId, blockIn, codeOf, type CodeAt } from './blocks.ts';
 import { OVERVIEW_VIEW } from './labels.ts';
 import { main } from './main.ts';
-import { placeOnHead, placing } from './since.ts';
+import { placeOnHead, placing, writtenIn } from './since.ts';
 
 /** An overview drawn in a tab while it's on screen, as the keys act on it. */
 export interface DrawnOverview {
@@ -222,6 +222,12 @@ export function focusBlock(overview: DrawnOverview, block: HTMLElement): void {
 }
 
 /**
+ * Why the block keys can't move while the overview's first blocks draw, unseen: nothing, so a key
+ * pressed meanwhile does nothing and says nothing. The placeholder over it says the wait.
+ */
+const NOT_DRAWN = '';
+
+/**
  * The block `]b` (`1`) or `[b` (`-1`) goes to: the next or previous one the block keys stop at,
  * from the block the reader is at; from none, or with `fromScreen`, the first that starts at the
  * top of the screen or below it, or the last that starts above it. Or why there's none.
@@ -235,7 +241,7 @@ export function nextBlock(
   const scroller = overview.scroller();
   // Unseen while its first blocks draw, it has nothing to take focus yet.
   if (!article || !scroller || getComputedStyle(article).visibility === 'hidden') {
-    return 'The overview isn’t drawn yet.';
+    return NOT_DRAWN;
   }
   const stops = blockStops(article);
   const focused = fromScreen
@@ -250,8 +256,8 @@ export function nextBlock(
     next = by > 0 ? stops.find(below) : stops.findLast((block) => !below(block));
   }
   if (next) return next;
-  if (stops.length === 0) return 'This overview has no blocks to move between.';
-  return by > 0 ? 'This is the last block.' : 'This is the first block.';
+  if (stops.length === 0) return 'No blocks in this overview';
+  return by > 0 ? 'Last block' : 'First block';
 }
 
 /** What `Tab` stops at before the blocks: the outline's sections and the byline's offer. */
@@ -280,7 +286,7 @@ function leadIn(overview: DrawnOverview): (HTMLElement | SVGElement)[] {
         Boolean(element.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING)) &&
       element.tabIndex >= 0 &&
       !(element instanceof HTMLButtonElement && element.disabled) &&
-      element.closest('[hidden]') === null &&
+      element.closest('[hidden], [data-lo-hints]') === null &&
       drawnOnPage(element),
   );
 }
@@ -297,7 +303,7 @@ export function nextLink(overview: DrawnOverview, by: 1 | -1): HTMLElement | SVG
   const block = focusedBlock(overview);
   if (block) {
     const order = [focusTargetOf(block), ...linksIn(block)];
-    if (order.length === 1) return 'This block has no links or parts.';
+    if (order.length === 1) return 'No links in this block';
     const at = order.findIndex((each) => each === active);
     return order[(Math.max(0, at) + by + order.length) % order.length] ?? order[0]!;
   }
@@ -306,7 +312,7 @@ export function nextLink(overview: DrawnOverview, by: 1 | -1): HTMLElement | SVG
   if (at === -1) return (by > 0 ? lead[0] : lead.at(-1)) ?? nextBlock(overview, 1, true);
   const next = lead[at + by];
   if (next) return next;
-  return by > 0 ? nextBlock(overview, 1, true) : 'There’s nothing before this in the overview.';
+  return by > 0 ? nextBlock(overview, 1, true) : 'First link';
 }
 
 /** Gives `element`, a link, part or control in a block, focus, and brings it on screen. */
@@ -368,7 +374,21 @@ export function followOf(overview: DrawnOverview, block: HTMLElement): Follow | 
   // Its first link or part, never a control such as a tab, which isn't somewhere to go.
   const first = linksIn(block).find((element) => element.getAttribute('role') === 'link');
   if (first) return { kind: 'activate', element: first };
-  return 'This block has nothing to follow.';
+  return 'No code or link in this block';
+}
+
+/**
+ * What `⏎` on `block` is called, by what it does there: "Open link" where it follows a link or a
+ * part, and a fold's "Expand" or "Collapse". Nothing where it goes to code, which its label says,
+ * or where there's nothing to follow.
+ */
+export function followName(overview: DrawnOverview, block: HTMLElement): string | undefined {
+  const found = followOf(overview, block);
+  if (typeof found === 'string' || found.kind === 'code') return undefined;
+  if (block instanceof HTMLDetailsElement && found.element === focusTargetOf(block)) {
+    return block.open ? 'Collapse' : 'Expand';
+  }
+  return 'Open link';
 }
 
 /**
@@ -386,9 +406,6 @@ export function follow(overview: DrawnOverview, block: HTMLElement): void {
   if (!block.contains(document.activeElement)) focusTargetOf(block).focus({ preventScroll: true });
   goToCode(overview.tab, found.code);
 }
-
-/** What the notes say when code can't be gone to. */
-const GO_TO_CODE = 'Go to code';
 
 /**
  * What the reader does that stops code waiting to be placed, as they've moved on: a key, as the key
@@ -436,18 +453,14 @@ export function goToCode(tab: string, code: CodeAt): void {
 function goOnHead(tab: string, code: CodeAt): void {
   const { path, lines } = code;
   const head = placeOnHead(tab, path, lines);
+  const since = writtenIn(tab);
   if (!head) {
-    notify(
-      GO_TO_CODE,
-      `${path} was deleted after this overview was written. Lo can show code only from the push on screen.`,
-    );
+    const name = path.slice(path.lastIndexOf('/') + 1);
+    refuse(since === undefined ? `${name} was deleted` : `${name} was deleted since ${since}`);
     return;
   }
   if (lines && head.line === undefined) {
-    notify(
-      GO_TO_CODE,
-      `${path} changed after this overview was written. Lo can’t tell where these lines are now.`,
-    );
+    refuse(since === undefined ? 'These lines changed' : `These lines changed since ${since}`);
     return;
   }
   showPlace(tab, head.path, head.line, head.lines);
@@ -477,9 +490,20 @@ export function recordFrom(overview: DrawnOverview, from: Element): void {
   registry().history.record({ view: 'overview', at });
 }
 
+/**
+ * What `→` on `block` is called: "Next tab" on tabs. Nothing on a walkthrough, which its label
+ * says, or where there's nothing to step.
+ */
+export function stepName(block: HTMLElement): string | undefined {
+  const own = block.matches('.lo-walk, .lo-tabs')
+    ? block
+    : block.querySelector('.lo-walk, .lo-tabs');
+  return own?.matches('.lo-tabs') ? 'Next tab' : undefined;
+}
+
 /** Whether `block` has a walkthrough or tabs to step, or why not. */
 export function stepsIn(block: HTMLElement): true | string {
-  return hasSteps(block) || 'This block has no steps or tabs.';
+  return hasSteps(block) || 'No steps in this block';
 }
 
 /** Steps the walkthrough or tabs in `block`: `1` on, `-1` back. */
@@ -571,8 +595,8 @@ export function besideFor(
 ): number | string {
   const chosen = block ?? onScreen(overview).find((each) => codeIn(overview, each) !== undefined);
   const index = chosen && blockNumber(chosen);
-  if (!chosen || index === undefined) return 'There’s no block with code on screen.';
-  return codeIn(overview, chosen) ? index : 'This block shows no code.';
+  if (!chosen || index === undefined) return 'Go to a code block first';
+  return codeIn(overview, chosen) ? index : 'No code in this block';
 }
 
 /** Closes the code beside the overview in tab `tab`, if it's open, and says whether it was. */

@@ -52,6 +52,13 @@ export interface KeySource {
   clearPending(): void;
   /** The keys Vim runs Lo's motions with and the keymap's `vim` lines: after a remap, and at first. */
   setVimKeys(keys: readonly VimKey[]): void;
+  /**
+   * Gives the view focus where its keys go: its text, in the pane that had focus last, the cursor
+   * where it was. Focus the view's scope catches as the focused element leaves the page
+   * (`catchFocus`) goes here rather than to the scope's own element. Focusing the text directly
+   * would let the editor take the caret the browser puts there for its cursor.
+   */
+  focus?(): void;
 }
 
 /** What a key acts on in a scope that isn't a code view: the tree's focused file, say. */
@@ -159,6 +166,19 @@ export function isNowhere(element: Element | null | undefined): boolean {
 /** Whether `element` takes typed text: an input, a text area or editable content. */
 export function isTextField(element: Element | null | undefined): boolean {
   return textKind(element) !== undefined;
+}
+
+/**
+ * Whether `element` is an editable field, whose text the keys that edit text change: an input that
+ * takes text, or a text area, that isn't read-only, or editable content, as `isContentEditable`
+ * has it, such as a comment box's text. Content that says it's read-only (`aria-readonly`) isn't
+ * one, so a code view's own text, which CodeMirror marks so, isn't.
+ */
+export function isEditable(element: Element | null | undefined): boolean {
+  const kind = textKind(element);
+  if (!element || kind === undefined) return false;
+  if (kind === 'field') return !element.hasAttribute('readonly');
+  return element.closest('[contenteditable]')?.getAttribute('aria-readonly') !== 'true';
 }
 
 /**

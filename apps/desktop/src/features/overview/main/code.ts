@@ -22,7 +22,7 @@ import { BINARY_WINDOW, LIMITS } from '@lo/artifact';
 import { GitError, parseOid, type FileVersion, type Oid, type Repo } from '@lo/git';
 
 import type { LocalState } from '../../tab/contract.ts';
-import type { CodeAccess, CodeAnswer, CodeReply } from '../contract.ts';
+import type { CodeAccess, CodeAnswer, CodeCause, CodeReply } from '../contract.ts';
 import type { CodeFile } from '../jobs.ts';
 
 /** What the code is read through: the pull request's local copy. */
@@ -103,15 +103,15 @@ export async function codeReply(
 ): Promise<CodeReply> {
   const access = codeAccess(local);
   if (access === 'noGit') return { kind: 'noGit' };
-  if (local.kind === 'failed') return { kind: 'failed', why: local.details ?? '' };
+  if (local.kind === 'failed') return { kind: 'failed', why: 'notFetched' };
   const opening = access === 'waiting' ? undefined : clone();
   if (!opening) return { kind: 'waiting' };
   try {
     return { kind: 'read', files: await readCode(await opening, commit, files, options) };
   } catch (error) {
-    if (options.signal?.aborted) return { kind: 'failed', why: 'The read was stopped.' };
+    if (options.signal?.aborted) return { kind: 'failed', why: 'unknown' };
     options.log?.(`reading the code of an overview: ${describe(error)}`);
-    return { kind: 'failed', why: describe(error) };
+    return { kind: 'failed', why: 'unknown' };
   }
 }
 
@@ -180,7 +180,7 @@ export async function readCode(
     }
   }
   const answers = await new Reading(clone, options).read(commit, wanted);
-  return files.map(({ path }) => answers[order.get(path) ?? -1] ?? unread('It was never read.'));
+  return files.map(({ path }) => answers[order.get(path) ?? -1] ?? unread('unknown'));
 }
 
 /** One overview's code, read: what's been downloaded and read so far, and what's left. */
@@ -195,7 +195,7 @@ class Reading {
   /** What the checks have read, as they count it. */
   #used = 0;
   /** Why the copy can't download, when it can't. */
-  #cannot: string | undefined;
+  #cannot: CodeCause | undefined;
 
   constructor(clone: CodeClone, options: Options) {
     this.#clone = clone;
@@ -217,7 +217,7 @@ class Reading {
       }
     }
     if (lacking.size > 0 && this.#clone.offline) {
-      this.#cannot = 'The local copy is offline, and lacks it.';
+      this.#cannot = 'offline';
     } else if (lacking.size > 1) {
       // One alone is downloaded as it's read.
       const oids = [...lacking];
@@ -233,7 +233,7 @@ class Reading {
     const answers: CodeAnswer[] = [];
     for (const [index, { lines }] of wanted.entries()) {
       this.#stopIfAsked();
-      const place = places[index] ?? unread('It was never looked for.');
+      const place = places[index] ?? unread('unknown');
       if (place.kind !== 'blob') {
         answers.push(place);
       } else if (lines) {
@@ -256,24 +256,24 @@ class Reading {
       switch (brought) {
         case 'brought':
           [size] = await this.#clone.objectSizes([place.oid]);
-          if (size === undefined) return unread("The local copy doesn't have it.");
+          if (size === undefined) return unread('notDownloaded');
           break;
         case 'pastProbe':
           return { kind: 'tooLarge' };
         case 'failed':
-          return unread(this.#cannot ?? "Lo couldn't download it.");
+          return unread(this.#cannot ?? 'notDownloaded');
         case 'pastCap':
         case 'spent':
-          return unread('Lo downloaded as much of this overview’s code as it downloads for one.');
+          return unread('spent');
         default:
           brought satisfies never;
-          return unread("Lo couldn't download it.");
+          return unread('notDownloaded');
       }
     }
     // Past what the checks read of a file: its size says it's too large.
     if (size > LIMITS.file) return { kind: 'file', size, bytes: new Uint8Array() };
     if (this.#streamed + size > STREAM_LIMIT) {
-      return unread("Lo read as much of this overview's code as it reads for one.");
+      return unread('spent');
     }
     this.#streamed += size;
     let blob: Uint8Array | undefined;
@@ -282,7 +282,7 @@ class Reading {
     } catch (error) {
       this.#log(`reading the code of an overview: ${describe(error)}`);
     }
-    if (blob?.length !== size) return unread("Lo couldn't read it from the local copy.");
+    if (blob?.length !== size) return unread('unknown');
     // As the checks read it: the start, and the rest only when it's text and fits.
     const room = LIMITS.code - this.#used;
     const head = blob.subarray(0, Math.min(BINARY_WINDOW, room, size));
@@ -319,7 +319,7 @@ class Reading {
       this.#stopIfAsked();
       if (!pastCap(error)) {
         this.#log(`downloading the code of an overview: ${describe(error)}`);
-        this.#cannot = `Lo couldn't download it: ${describe(error)}`;
+        this.#cannot = 'notDownloaded';
         return 'failed';
       }
       return cap === PROBE ? 'pastProbe' : 'pastCap';
@@ -348,13 +348,13 @@ class Reading {
       // GitHub has the object, but it isn't a commit.
       if (!(await isOther(clone, oid))) {
         this.#log(`fetching the commit an overview names: ${describe(error)}`);
-        return unread(`Lo couldn't fetch the commit: ${describe(error)}`);
+        return unread('noCommit');
       }
     }
     // Exactly that commit: not a tag, which a fetch by ID follows, nor a tree or a file.
     if (await clone.hasCommit(oid)) return oid;
     if (clone.offline && !(await isOther(clone, oid))) {
-      return unread('The local copy is offline, and lacks the commit.');
+      return unread('offline');
     }
     return { kind: 'noCommit' };
   }
@@ -374,7 +374,7 @@ class Reading {
       found = await this.#clone.fileVersions(commit, looked);
     } catch (error) {
       this.#log(`looking for the code of an overview: ${describe(error)}`);
-      const why = unread(`Lo couldn't look for it in the local copy: ${describe(error)}`);
+      const why = unread('unknown');
       return wanted.map(() => why);
     }
     let at = 0;
@@ -393,7 +393,7 @@ class Reading {
           return { kind: 'blob', oid: version.oid, size: version.size };
         default:
           version.mode satisfies never;
-          return unread("It's something Lo doesn't read.");
+          return unread('notFile');
       }
     });
   }
@@ -422,7 +422,7 @@ export function pastCap(error: unknown): boolean {
   );
 }
 
-function unread(why: string): Extract<CodeAnswer, { kind: 'unread' }> {
+function unread(why: CodeCause): Extract<CodeAnswer, { kind: 'unread' }> {
   return { kind: 'unread', why };
 }
 

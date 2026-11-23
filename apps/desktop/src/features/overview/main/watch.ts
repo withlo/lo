@@ -219,12 +219,19 @@ export class OverviewTab {
     }
   }
 
-  /** Reads the ref again now, after a failure. */
-  retry(): void {
+  /**
+   * Reads the ref again now, after a failure or where it's read once, and settles once that read is
+   * done, however it went, so what asked for it can say it's looking until then.
+   */
+  async retry(): Promise<void> {
     if (this.#closed) return;
     this.#failures = 0;
+    // Asked to, a pull request read once without an account is read again.
+    this.#readOnce = false;
     this.#awaited = true;
     this.#read();
+    // A read already under way reads again once it's done: settled once neither is left.
+    while (this.#reading) await this.#reading.catch(() => undefined);
   }
 
   /** Puts the newer overview on screen. */
@@ -422,7 +429,8 @@ export class OverviewTab {
     } catch (error) {
       if (this.#closed) return;
       this.#failures += 1;
-      const { problem, wait } = problemOf(error, acting, this.#failures, this.#now());
+      const { owner } = pull.repository;
+      const { problem, wait } = problemOf(error, acting, this.#failures, this.#now(), owner);
       this.#problem = problem;
       this.#options.log(`reading ${overviewRef(pull.number)}: ${describe(error)}`);
       this.#retryIn(wait);

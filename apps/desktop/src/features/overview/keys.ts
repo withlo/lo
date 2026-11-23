@@ -2,7 +2,7 @@
 // tab; installing the overview skill, which has none; and, in Settings, copying the command that
 // installs it from a terminal. In the overview's own view, the `overview` scope: moving between its
 // blocks and within one, following a block to its code, the code beside it, and scrolling; and, on
-// a block's menu, loading a newer overview or reading it again, which have none.
+// a block's menu, showing the latest overview or reading it again, which have none.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -13,8 +13,20 @@ export default defineCommands(
   'overview',
   {
     /** The next block that holds something to act on: code, a figure, a link to code or a term. */
-    nextBlock: { label: 'Next block', group: 'Overview', keys: ['] b'], when: overview },
-    previousBlock: { label: 'Previous block', group: 'Overview', keys: ['[ b'], when: overview },
+    nextBlock: {
+      label: 'Next block',
+      group: 'Overview',
+      keys: ['] b'],
+      when: overview,
+      control: 'Next block under the outline, and over an overview beside its code',
+    },
+    previousBlock: {
+      label: 'Previous block',
+      group: 'Overview',
+      keys: ['[ b'],
+      when: overview,
+      control: 'Previous block under the outline',
+    },
     /**
      * Follows the block that has focus, or the link, part or control in it that has: code goes to
      * the diff, at the lines it points at, or to the file whole where the diff doesn't have it, and
@@ -27,52 +39,64 @@ export default defineCommands(
       targets: ['block', 'none'],
       when: overview,
       menu: { on: 'block', order: 10 },
+      control: "Go to code on a focused block's chip",
     },
     /** Splits the middle: the overview, and the block's file in the diff beside it, inline. */
     beside: {
-      label: 'Open or close code beside',
+      label: 'Code beside',
       group: 'Overview',
       keys: ['o'],
       targets: ['block', 'none'],
       when: overview,
       menu: { on: 'block', order: 20 },
+      control: 'Code beside on the chip of a focused block with code',
     },
     /**
      * Closes the code beside the overview, as the button over it does, after a term's card that's
      * open. With neither open, focus goes back to the overview, as `Esc` does in any middle view.
      */
-    closeBeside: { label: 'Close code beside', group: 'Overview', keys: ['esc'], when: overview },
+    closeBeside: {
+      label: 'Close code beside',
+      group: 'Overview',
+      keys: ['esc'],
+      when: overview,
+      control: 'Close code beside, over the code beside',
+    },
     /**
      * In the block that has focus, its next link, figure part or control, round through the block
      * itself. From the overview itself, as `Esc` leaves it, the outline's sections, the byline's
      * offer, then the block `]b` goes to.
      */
     nextLink: {
-      label: 'Next link, part or section',
+      label: 'Next link',
       group: 'Overview',
       keys: ['tab'],
       when: overview,
+      control: "Next link on a focused block's chip, and a click on the link itself",
     },
     previousLink: {
-      label: 'Previous link, part or section',
+      label: 'Previous link',
       group: 'Overview',
       keys: ['shift+tab'],
       when: overview,
+      control: 'a click on the link itself',
     },
     /** A walkthrough's next step, or the next of a set of tabs. */
     nextStep: {
-      label: 'Next step or tab',
+      label: 'Next step',
       group: 'Overview',
       keys: ['right'],
       targets: ['block', 'none'],
       when: overview,
+      control: "Next on a walkthrough, a set's tabs, and Next step on a focused block's chip",
     },
     previousStep: {
-      label: 'Previous step or tab',
+      label: 'Previous step',
       group: 'Overview',
       keys: ['left'],
       targets: ['block', 'none'],
       when: overview,
+      control: "Previous on a walkthrough, and a set's tabs",
     },
     scrollDown: {
       label: 'Scroll down',
@@ -80,6 +104,7 @@ export default defineCommands(
       keys: ['j', 'down'],
       repeat: true,
       when: overview,
+      control: "the overview's scroll bar",
     },
     scrollUp: {
       label: 'Scroll up',
@@ -87,15 +112,29 @@ export default defineCommands(
       keys: ['k', 'up'],
       repeat: true,
       when: overview,
+      control: "the overview's scroll bar",
     },
-    top: { label: 'Top of the overview', group: 'Move', keys: ['g g', 'home'], when: overview },
-    bottom: { label: 'End of the overview', group: 'Move', keys: ['G', 'end'], when: overview },
+    top: {
+      label: 'Go to top',
+      group: 'Move',
+      keys: ['g g', 'home'],
+      when: overview,
+      control: "the overview's scroll bar",
+    },
+    bottom: {
+      label: 'Go to bottom',
+      group: 'Move',
+      keys: ['G', 'end'],
+      when: overview,
+      control: "the overview's scroll bar",
+    },
     pageDown: {
       label: 'Page down',
       group: 'Move',
       keys: ['pagedown'],
       repeat: true,
       when: overview,
+      control: "the overview's scroll bar",
     },
     pageUp: {
       label: 'Page up',
@@ -103,18 +142,19 @@ export default defineCommands(
       keys: ['pageup'],
       repeat: true,
       when: overview,
+      control: "the overview's scroll bar",
     },
-    /** Puts the newer overview, pushed while this one was read, on screen. */
+    /** Puts the latest overview, pushed while this one was read, on screen. */
     loadNewer: {
-      label: 'Load the newer overview',
+      label: 'Show latest overview',
       group: 'Overview',
       keys: [],
       targets: ['block', 'none'],
       menu: { on: 'block', order: 40 },
     },
-    /** Reads the overview's ref again now, after a read that failed. */
+    /** Reads the overview's ref again now: after a read that failed, or one made only once. */
     retry: {
-      label: 'Retry',
+      label: 'Try again',
       group: 'Overview',
       keys: [],
       targets: ['block', 'none'],
@@ -126,7 +166,7 @@ export default defineCommands(
      * yank in the code views, as `yy` does there.
      */
     copyPrompt: {
-      label: 'Copy prompt for an agent',
+      label: 'Copy prompt',
       group: 'Overview',
       keys: ['y a'],
       overVim: true,

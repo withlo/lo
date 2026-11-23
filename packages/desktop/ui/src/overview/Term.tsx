@@ -3,7 +3,6 @@ import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'rea
 
 import type { Definition, Overview, TermTarget } from '@lo/artifact';
 
-import { Key } from '../Key.tsx';
 import { drawInlines, useRendering, type Rendering } from '../markdown/index.ts';
 import { useGlossary } from './terms.ts';
 
@@ -215,12 +214,6 @@ function HoverCard({
           >
             <div className="lo-hovercard__term">{definition.name}</div>
             <CardBody definition={definition} rendering={rendering} />
-            <div className="lo-hovercard__foot">
-              Glossary
-              <span className="lo-hovercard__key">
-                <Key keys={['⏎']} quiet decorative />
-              </span>
-            </div>
           </PreviewCard.Popup>
         </PreviewCard.Positioner>
       </PreviewCard.Portal>

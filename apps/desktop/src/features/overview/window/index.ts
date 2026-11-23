@@ -39,6 +39,7 @@ import {
   focusBlock,
   focusLink,
   follow,
+  followName,
   followOf,
   keepPlaces,
   loadNewer,
@@ -47,6 +48,7 @@ import {
   nextLink,
   scroll,
   step,
+  stepName,
   stepsIn,
   toggleBeside,
   type DrawnOverview,
@@ -55,20 +57,20 @@ import {
 import { copyInstallCommand, followSkill, installSkill } from './skill.ts';
 import { keepSinceOnly } from './since.ts';
 import { OverviewStatus } from './Status.tsx';
-import { catchUp, keepOnly, states, takeRevisions, takeState } from './store.ts';
+import { catchUp, keepOnly, readAgain, states, takeRevisions, takeState } from './store.ts';
 
 /** The prompt the overview of the pull request on screen offers, or why there's none. */
 function promptOnScreen(): string | { why: string } {
   const tab = activeTab();
-  if (tab?.kind !== 'pull') return { why: 'There’s no pull request on screen.' };
-  return promptNow(tab) ?? { why: 'There’s no prompt for this pull request’s overview now.' };
+  if (tab?.kind !== 'pull') return { why: 'Open a pull request first' };
+  return promptNow(tab) ?? { why: 'This overview is up to date' };
 }
 
 /** The overview drawn in the tab on screen, or why a key for it can't run. */
 function onScreen(): DrawnOverview | string {
   const tab = activeTab();
-  if (tab?.kind !== 'pull') return 'There’s no pull request on screen.';
-  return drawnIn(tab.id) ?? 'There’s no overview on screen.';
+  if (tab?.kind !== 'pull') return 'Open a pull request first';
+  return drawnIn(tab.id) ?? 'Go to the overview first';
 }
 
 /**
@@ -101,9 +103,9 @@ function withOverview(act: (overview: DrawnOverview) => void) {
 function blockOf(target: Target): { overview: DrawnOverview; block: HTMLElement } | string {
   const overview = onScreen();
   if (typeof overview === 'string') return overview;
-  if (target.kind === 'none') return 'No block has focus. ] b goes to the next one.';
+  if (target.kind === 'none') return 'Go to a block first';
   const block = blockAt(overview, target);
-  return block ? { overview, block } : 'That block isn’t in the overview on screen.';
+  return block ? { overview, block } : 'That block isn’t in this overview';
 }
 
 /** Whether a block's command can run on `target`, as `check` says of it. */
@@ -178,10 +180,23 @@ function stepping(by: 1 | -1) {
   };
 }
 
+/** What `act` calls a block's command on the block `target` names, as its chip and menu say it. */
+function naming(act: (overview: DrawnOverview, block: HTMLElement) => string | undefined) {
+  return (target: Target): string | undefined => {
+    const found = blockOf(target);
+    return typeof found === 'string' ? undefined : act(found.overview, found.block);
+  };
+}
+
 /** What main last said of the overview on screen, if it's said anything. */
 function stateNow() {
   const tab = activeTab();
   return tab?.kind === 'pull' ? states.get(tab.id) : undefined;
+}
+
+/** Whether reading the ref again could find more: its last read failed, or it's read only once. */
+function lookAgain(state: ReturnType<typeof stateNow>): boolean {
+  return Boolean(state?.problem) || state?.watching === false;
 }
 
 export default {
@@ -190,7 +205,7 @@ export default {
     previousBlock: moving(-1),
     nextLink: linking(1),
     previousLink: linking(-1),
-    nextStep: stepping(1),
+    nextStep: { ...stepping(1), named: naming((_overview, block) => stepName(block)) },
     previousStep: stepping(-1),
     follow: {
       run: (target) => {
@@ -206,6 +221,7 @@ export default {
         })(target);
       },
       listed: hasCode,
+      named: naming(followName),
     },
     beside: {
       run: (target) => {
@@ -223,6 +239,12 @@ export default {
         return typeof chosen === 'string' ? chosen : true;
       },
       listed: hasCode,
+      // Pressed again, it closes the code beside.
+      named: () => {
+        const overview = onScreen();
+        if (typeof overview === 'string') return undefined;
+        return besides.get(overview.tab) === undefined ? undefined : 'Close code beside';
+      },
     },
     closeBeside: {
       run: () => {
@@ -237,7 +259,7 @@ export default {
         if (tab?.kind === 'pull' && besides.get(tab.id) !== undefined) return true;
         // From the palette or key help, it only closes the code beside. Its key, which reaches it
         // only in the overview, still closes a term's card or gives the overview focus.
-        return overlay() === undefined ? true : 'There’s no code beside the overview.';
+        return overlay() === undefined ? true : 'Code beside is closed';
       },
     },
     scrollDown: scrolling('down'),
@@ -251,24 +273,23 @@ export default {
         const tab = activeTab();
         if (tab?.kind === 'pull') loadNewer(tab.id);
       },
-      enabled: () => (stateNow()?.newer ? true : 'No newer overview was pushed.'),
+      enabled: () => (stateNow()?.newer ? true : 'This is the latest overview'),
       listed: () => Boolean(stateNow()?.newer),
     },
     retry: {
       run: () => {
         const tab = activeTab();
-        if (tab?.kind !== 'pull') return;
-        main()
-          .retry({ id: tab.id })
-          .catch((error: unknown) => console.error("Lo couldn't read the overview again:", error));
+        if (tab?.kind === 'pull') readAgain(tab.id);
       },
-      enabled: () => (stateNow()?.problem ? true : 'The overview was read without a problem.'),
-      listed: () => Boolean(stateNow()?.problem),
+      // After a failed read, or where main reads the ref once and doesn't watch it: a look again.
+      enabled: () => (lookAgain(stateNow()) ? true : 'Nothing to try again'),
+      listed: () => lookAgain(stateNow()),
     },
     copyPrompt: {
       run: async () => {
+        const tab = activeTab();
         const prompt = promptOnScreen();
-        if (typeof prompt === 'string') await copyPrompt(prompt);
+        if (tab?.kind === 'pull' && typeof prompt === 'string') await copyPrompt(tab.id, prompt);
       },
       enabled: () => {
         const prompt = promptOnScreen();

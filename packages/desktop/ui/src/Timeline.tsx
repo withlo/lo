@@ -346,14 +346,14 @@ export interface TimelineChecksProps extends TimelineRowAttributes {
   focused?: boolean | undefined;
 }
 
-/** A commit's checks, as their state and the revision they ran on: "Checks failed on r2". */
+/** A commit's checks, as their state and the revision they ran on: "Checks failed · r2". */
 export function TimelineChecks({ state, revision, when, focused, ...row }: TimelineChecksProps) {
   const { words, glyph, tone } = CHECKS[state];
   return (
     <TimelineEvent glyph={glyph} tone={tone} when={when} focused={focused} {...row}>
       <span>
         {words}
-        {revision !== undefined && ` on ${revision}`}
+        {revision !== undefined && ` · ${revision}`}
       </span>
     </TimelineEvent>
   );
@@ -479,7 +479,7 @@ function HiddenBody({ hidden }: { hidden: TimelineHidden }) {
       <span>
         {hidden.reason === undefined || hidden.reason === ''
           ? 'Hidden'
-          : `Hidden as ${hidden.reason}`}
+          : `Hidden · ${hidden.reason}`}
       </span>
       <Button size="sm" onClick={hidden.onShow}>
         Show comment
@@ -558,7 +558,7 @@ export function TimelineComment({
                   {keys.edit && <Key keys={keys.edit} decorative />}
                 </Button>
                 <Button variant="ghost" size="sm" onClick={onDelete}>
-                  Delete
+                  Delete…
                   {keys.delete && <Key keys={keys.delete} decorative />}
                 </Button>
               </span>
@@ -600,7 +600,7 @@ export interface TimelineReviewProps extends TimelineRowAttributes {
   hidden?: TimelineHidden | undefined;
   /** How many comments it left, and where: "rate-limit.ts", or "3 files". */
   comments?: { count: number; on?: string | undefined } | undefined;
-  /** "Show in the diff" was pressed. */
+  /** "Show in diff" was pressed. */
   onShowInDiff?: (() => void) | undefined;
   focused?: boolean | undefined;
 }
@@ -634,7 +634,7 @@ export function TimelineReview({
           <Avatar login={author} image={image} size="sm" />
           <span>
             <TimelineName>{author}</TimelineName> {words}
-            {revision !== undefined && ` on ${revision}`}
+            {revision !== undefined && ` · ${revision}`}
           </span>
           {verdict === 'dismissed' && <Tag>Dismissed</Tag>}
           <time className="ms-auto">{when}</time>
@@ -649,10 +649,10 @@ export function TimelineReview({
             <CommentIcon />
             <span>
               {comments.count} {comments.count === 1 ? 'comment' : 'comments'}
-              {comments.on !== undefined && ` on ${comments.on}`}
+              {comments.on !== undefined && ` · ${comments.on}`}
             </span>
             <span className="ms-auto">
-              <LinkButton onClick={onShowInDiff}>Show in the diff</LinkButton>
+              <LinkButton onClick={onShowInDiff}>Show in diff</LinkButton>
             </span>
           </div>
         )}
@@ -734,15 +734,8 @@ export function TimelineDescription({
           </span>
           <Tag>Author</Tag>
           {draft && <Tag>Draft</Tag>}
-          <span className="ms-auto inline-flex items-center gap-4 text-fg-muted text-micro">
-            <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
-              <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" />
-              <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
-            </svg>
-            Read-only in Lo
-          </span>
         </div>
-        <Text>{body ?? <p className="text-fg-muted">No description.</p>}</Text>
+        <Text>{body ?? <p className="text-fg-muted">No description</p>}</Text>
         {(labels.length > 0 || reviewers.length > 0) && (
           <div className="flex flex-wrap items-center gap-8 px-12 pb-12">
             {labels.map((label) => (
@@ -768,25 +761,25 @@ export function TimelineDescription({
 }
 
 export interface TimelineOlderProps extends TimelineRowAttributes {
-  /** How many items are left out. */
+  /** How many events are left out. */
   count: number;
-  /** "See them on GitHub" was pressed. */
+  /** "Open on GitHub" was pressed. */
   onSee?: (() => void) | undefined;
   focused?: boolean | undefined;
 }
 
 /**
- * Past the pages Lo reads, what's left out: "120 older items aren't shown. See them on GitHub."
- * It's a row on the rail like the others, so the line runs through it.
+ * Past the pages Lo reads, what's left out: "120 older events", and Open on GitHub. It's a row on
+ * the rail like the others, so the line runs through it.
  */
 export function TimelineOlder({ count, onSee, focused, ...row }: TimelineOlderProps) {
   return (
     <TimelineRow marker={{ glyph: 'more' }} focused={focused} {...row}>
       <div className="flex min-h-32 flex-wrap items-center gap-x-6 gap-y-2 text-fg-muted text-small">
         <span>
-          {count} older {count === 1 ? "item isn't" : "items aren't"} shown.
+          {count.toLocaleString('en-US')} older {count === 1 ? 'event' : 'events'}
         </span>
-        <LinkButton onClick={onSee}>See {count === 1 ? 'it' : 'them'} on GitHub.</LinkButton>
+        <LinkButton onClick={onSee}>Open on GitHub</LinkButton>
       </div>
     </TimelineRow>
   );

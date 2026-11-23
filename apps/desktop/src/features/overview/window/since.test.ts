@@ -71,8 +71,7 @@ vi.mock(import('./store.ts'), async (original) => ({
   checked: { get: () => fake.result, set() {}, update() {}, subscribe: () => () => {} },
 }));
 
-const { blocksChanged, fileSince, keepSinceOnly, placeOnHead, sinceCount } =
-  await import('./since.ts');
+const { fileSince, keepSinceOnly, placeOnHead, sinceCount } = await import('./since.ts');
 
 /** What main answers for each file, by its path, and for the count. */
 const files = new Map<string, FileSinceText>();
@@ -132,11 +131,6 @@ const READY: LocalState = {
 /** Lets what's under way settle. */
 async function settled(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
-}
-
-/** A code block's lines. */
-function block(path: string, start: number, end: number) {
-  return { kind: 'code' as const, path, lines: { start, end } };
 }
 
 describe('what changed since', () => {
@@ -290,34 +284,6 @@ describe('what changed since', () => {
       'f4',
       'f3',
     ]);
-  });
-
-  it('counts the code blocks on lines the pushes since changed', async () => {
-    files.set('src/base.ts', {
-      kind: 'changed',
-      path: 'src/base.ts',
-      pushed: false,
-      texts: { old: OLD, new: NOW },
-    });
-    expect(
-      await blocksChanged(tab, R1, R2, [
-        // Line 3 changed.
-        block('src/a.ts', 2, 3),
-        // Lines 1–2 moved down, unchanged.
-        block('src/a.ts', 1, 2),
-        block('src/same.ts', 1, 4),
-        // Only the base branch changed it.
-        block('src/base.ts', 3, 3),
-      ]),
-    ).toBe(1);
-    // None while how a file changed isn't known.
-    files.set('src/later.ts', {
-      kind: 'unread',
-      why: 'Lo couldn’t tell where the file went since.',
-    });
-    expect(
-      await blocksChanged(tab, R1, R2, [block('src/a.ts', 2, 3), block('src/later.ts', 1, 1)]),
-    ).toBeUndefined();
   });
 
   it('lets a closed tab’s go', async () => {

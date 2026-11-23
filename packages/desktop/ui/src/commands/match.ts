@@ -24,6 +24,8 @@
 //   held as its count where the focused scope has a command of its own that takes one.
 // - A text field keeps typing and moving through its text. One inside a code view, such as Vim's
 //   `/` and `:` prompt, is typed into as insert mode is: only chords are Lo's.
+// - An editable field, a comment box's text among them, keeps the keys that edit text
+//   (`textEditingKeys`), chords too, but for a command that edits that field itself (`editsField`).
 // - On Linux, in a box in insert mode or a code view's text field, Ctrl+C, X, V, A, Z and W are
 //   never taken.
 // - Keys during IME composition go to the text.
@@ -89,6 +91,12 @@ export interface Focus {
    * the checks ask of every scope, a command's `on` holds.
    */
   readonly on?: ((kind: TargetKind) => boolean) | undefined;
+  /**
+   * Focus is in an editable field (`isEditable`): an input or text area that isn't read-only, or
+   * editable content, as a comment box's text is and a code view's read-only text isn't. The keys
+   * that edit text are its own there.
+   */
+  readonly editable?: boolean | undefined;
 }
 
 /** What becomes of a key. */
@@ -128,6 +136,67 @@ export const linuxEditingKeys: readonly string[] = ['c', 'x', 'v', 'a', 'z', 'w'
   (key) => `ctrl+${key}`,
 );
 const linuxEditing = new Set(linuxEditingKeys);
+
+/** Each of `moves`, and the same with Shift, which selects as it moves. */
+function selecting(moves: readonly string[]): string[] {
+  return moves.flatMap((move) => [move, `shift+${move}`]);
+}
+
+/**
+ * The keys that edit text in a field, on each system, in Lo's notation: deleting a word, or to the
+ * line's start, selecting everything, undoing and redoing, and moving the caret by word, line,
+ * paragraph and document, with Shift to select. On macOS they include the Control keys every text
+ * field takes from Emacs: `⌃A` and `⌃E` to the line's start and end, `⌃B`, `⌃F`, `⌃P` and `⌃N` a
+ * letter or a line at a time (with Shift to select), `⌃H` and `⌃D` to delete a letter, `⌃K` to cut
+ * to the line's end, `⌃T` to swap two letters and `⌃O` to open a line. In an editable field
+ * they're the field's, and run no command but one that edits that field itself (`editsField`).
+ */
+export const textEditingKeys: Readonly<Record<System, readonly string[]>> = {
+  mac: [
+    'alt+backspace',
+    'cmd+backspace',
+    'alt+delete',
+    'cmd+a',
+    'cmd+z',
+    'cmd+shift+z',
+    ...selecting(['alt+left', 'alt+right', 'alt+up', 'alt+down']),
+    ...selecting(['cmd+left', 'cmd+right', 'cmd+up', 'cmd+down']),
+    ...selecting(['home', 'end']),
+    ...selecting(['ctrl+a', 'ctrl+e', 'ctrl+b', 'ctrl+f', 'ctrl+p', 'ctrl+n']),
+    'ctrl+h',
+    'ctrl+d',
+    'ctrl+k',
+    'ctrl+t',
+    'ctrl+o',
+  ],
+  linux: [
+    'ctrl+backspace',
+    'ctrl+delete',
+    'ctrl+a',
+    'ctrl+z',
+    'ctrl+shift+z',
+    'ctrl+y',
+    ...selecting(['ctrl+left', 'ctrl+right', 'ctrl+up', 'ctrl+down', 'ctrl+home', 'ctrl+end']),
+    ...selecting(['home', 'end']),
+  ],
+};
+
+/** The strokes of `textEditingKeys`, by system. */
+const textEditing: Readonly<Record<System, ReadonlySet<string>>> = {
+  mac: strokeIds(textEditingKeys.mac, 'mac'),
+  linux: strokeIds(textEditingKeys.linux, 'linux'),
+};
+
+function strokeIds(keys: readonly string[], system: System): ReadonlySet<string> {
+  return new Set(
+    keys.flatMap((each) => systemStrokes(parseKeys(each), system).map(({ id }) => id)),
+  );
+}
+
+/** Whether `stroke` is one of the keys that edit text in a field on `system`. */
+export function isTextEditing(stroke: Stroke, system: System): boolean {
+  return textEditing[system].has(stroke.id);
+}
 
 /**
  * The keys the engine takes in a menu, before any command: `j` and `k` move as `↓` and `↑` do, so a
@@ -256,6 +325,14 @@ export function holds(binding: Binding, focus: Focus, system: System): boolean {
   if (when?.on !== undefined && focus.on !== undefined && !focus.on(when.on)) return false;
   const first = strokes[0];
   if (first === undefined) return false;
+  // An editable field keeps the keys that edit its text, but for a command that edits it itself.
+  if (
+    focus.editable === true &&
+    command.editsField !== true &&
+    strokes.some((each) => isTextEditing(each, system))
+  ) {
+    return false;
+  }
   if (view) {
     if (when?.mode !== undefined && !listOf(when.mode).includes(view.mode)) return false;
     if ((view.mode === 'insert' || view.pending) && !isChord(first) && !counted(command, view)) {

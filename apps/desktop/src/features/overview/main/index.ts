@@ -123,7 +123,7 @@ export default defineFeature(contract, {
       return tabOf(id).since.file(info.local, () => service.clone(id), commit, head, path);
     },
     retry({ id }) {
-      tabOf(id).retry();
+      return tabOf(id).retry();
     },
     load({ id }) {
       tabOf(id).load();

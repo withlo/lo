@@ -1,4 +1,12 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 
 import { Button, type ButtonProps } from './Button.tsx';
 
@@ -47,11 +55,55 @@ export interface CopyButtonProps extends Pick<ButtonProps, 'variant' | 'size'> {
   onCopy: () => unknown;
 }
 
-type Said = 'copied' | 'failed';
+/** What a Copy button says after a press, for two seconds: "Copied", or "Couldn’t copy". */
+export type CopySaid = 'copied' | 'failed';
+
+/**
+ * What a Copy button says now, and `say`, which makes it say "Copied" or "Couldn’t copy" for two
+ * seconds from now. `say` is the same function throughout, for a copy made elsewhere, as by a key,
+ * to answer on the button.
+ */
+export function useCopySaid(): readonly [CopySaid | undefined, (said: CopySaid) => void] {
+  const [said, setSaid] = useState<CopySaid | undefined>();
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const say = useCallback((what: CopySaid) => {
+    setSaid(what);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setSaid(undefined), COPIED_MS);
+  }, []);
+  return [said, say];
+}
 
 /** One of the things the button says, all in one cell of its grid, so it's as wide as the widest. */
 const face = (shown: boolean) =>
   shown ? 'col-start-1 row-start-1' : 'invisible col-start-1 row-start-1';
+
+/**
+ * What a Copy button says, inside it: `children` at rest, then "Copied" or "Couldn’t copy" as
+ * `said` says. Each is in one cell, so the button is as wide as the widest of the three throughout.
+ */
+export function CopyFaces({ said, children }: { said: CopySaid | undefined; children: ReactNode }) {
+  return (
+    <span className="inline-grid">
+      <span className={face(said === undefined)}>{children}</span>
+      <span className={face(said === 'copied')}>Copied</span>
+      <span className={`${face(said === 'failed')} text-danger`}>Couldn’t copy</span>
+    </span>
+  );
+}
+
+/**
+ * What a Copy button says, to a screen reader: a live region beside the button, not in it, since a
+ * button's content is its name.
+ */
+export function CopyStatus({ said }: { said: CopySaid | undefined }) {
+  return (
+    <span role="status" className="sr-only">
+      {said === 'copied' ? 'Copied' : said === 'failed' ? 'Couldn’t copy' : ''}
+    </span>
+  );
+}
 
 /**
  * A button that copies something and says so itself: it reads "Copied" for two seconds, where the
@@ -65,14 +117,7 @@ export function CopyButton({
   variant = 'ghost',
   size,
 }: CopyButtonProps) {
-  const [said, setSaid] = useState<Said | undefined>();
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(timer.current), []);
-  const say = (what: Said) => {
-    setSaid(what);
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => setSaid(undefined), COPIED_MS);
-  };
+  const [said, say] = useCopySaid();
   return (
     <>
       <Button
@@ -91,16 +136,9 @@ export function CopyButton({
           );
         }}
       >
-        <span className="inline-grid">
-          <span className={face(said === undefined)}>{children}</span>
-          <span className={face(said === 'copied')}>Copied</span>
-          <span className={`${face(said === 'failed')} text-danger`}>Couldn’t copy</span>
-        </span>
+        <CopyFaces said={said}>{children}</CopyFaces>
       </Button>
-      {/* Beside the button, not in it: a button's content is its name, not a live region. */}
-      <span role="status" className="sr-only">
-        {said === 'copied' ? 'Copied' : said === 'failed' ? 'Couldn’t copy' : ''}
-      </span>
+      <CopyStatus said={said} />
     </>
   );
 }

@@ -1,6 +1,5 @@
 // What the overview says in a pull request's tab's status bar: that an overview that came after the
-// tab opened on its diff is ready, with the key that shows it; and, while the overview's view shows
-// there's none, that Lo watches its ref.
+// tab opened on its diff is ready, with the key that shows it.
 
 import { Key, StatusItem } from '@lo/ui';
 
@@ -12,12 +11,10 @@ import { knownOf } from './facts.ts';
 import { useStanding } from './hooks.ts';
 import { keyOf, OVERVIEW_VIEW, stepKeyOf } from './labels.ts';
 import { offered, openings } from './opening.ts';
-import { states } from './store.ts';
 
 export function OverviewStatus({ tab }: { tab: PullTab }) {
   useKeys();
   const standing = useStanding(tab.id);
-  const state = useTabState(states, tab.id);
   const opened = useTabState(openings, tab.id);
   const setting = useKnownSetting(open);
   const { shown, ids } = useMiddle(tab.id);
@@ -35,9 +32,6 @@ export function OverviewStatus({ tab }: { tab: PullTab }) {
         )}
       </StatusItem>
     );
-  }
-  if (onScreen && standing.kind === 'none' && state?.watching === true) {
-    return <StatusItem>Watching {state.ref}</StatusItem>;
   }
   return null;
 }

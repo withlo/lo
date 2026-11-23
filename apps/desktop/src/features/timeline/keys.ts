@@ -14,45 +14,50 @@ export default defineCommands(
   'timeline',
   {
     down: {
-      label: 'Next event in the timeline',
+      label: 'Next event',
       group: 'Move',
       keys: ['j', 'down'],
       when: timeline,
       repeat: true,
+      control: 'a click on the event',
     },
     up: {
-      label: 'Previous event in the timeline',
+      label: 'Previous event',
       group: 'Move',
       keys: ['k', 'up'],
       when: timeline,
       repeat: true,
+      control: 'a click on the event',
     },
     /**
      * In the row the keyboard is on, its next link or button, round through the list itself: it
      * never leaves the row. `Esc` goes back to the list, as in any middle view.
      */
     nextLink: {
-      label: 'Next link or button in the event',
+      label: 'Next link',
       group: 'Move',
       keys: ['tab'],
       when: timeline,
+      control: 'a click on the link or button itself',
     },
     previousLink: {
-      label: 'Previous link or button in the event',
+      label: 'Previous link',
       group: 'Move',
       keys: ['shift+tab'],
       when: timeline,
+      control: 'a click on the link or button itself',
     },
     /** Focus in the box at the timeline's end, which comments on the pull request itself. */
     comment: {
-      label: 'Comment on the pull request',
+      label: 'Comment on pull request',
       group: 'Act',
       keys: ['c'],
       when: timeline,
+      control: "the comment box at the timeline's end",
     },
     /** A box with your comment's text, in its card, to edit it and save it over GitHub's text. */
     editComment: {
-      label: 'Edit your comment',
+      label: 'Edit comment',
       group: 'Act',
       keys: ['i'],
       targets: ['row'],
@@ -61,7 +66,7 @@ export default defineCommands(
     },
     /** Deletes your comment, once you say so. */
     deleteComment: {
-      label: 'Delete your comment…',
+      label: 'Delete comment…',
       group: 'Act',
       keys: ['d d'],
       targets: ['row'],
@@ -70,16 +75,16 @@ export default defineCommands(
     },
     /** Shows the hidden comment or review, as its "Show comment" does. */
     showComment: {
-      label: 'Show the hidden comment',
+      label: 'Show comment',
       group: 'Act',
       keys: [],
       targets: ['row'],
       when: timeline,
       menu: { on: 'row', order: 0 },
     },
-    /** Shows the diff, where a review's comments are, as its "Show in the diff" does. */
+    /** Shows the diff, where a review's comments are, as its "Show in diff" does. */
     showInDiff: {
-      label: 'Show the review’s comments in the diff',
+      label: 'Show in diff',
       group: 'View',
       keys: [],
       targets: ['row'],
@@ -91,25 +96,17 @@ export default defineCommands(
      * does.
      */
     compare: {
-      label: 'Compare the force-push’s revisions',
+      label: 'Compare',
       group: 'View',
       keys: [],
       targets: ['row'],
       when: timeline,
       menu: { on: 'row', order: 20 },
     },
-    /** Opens the pull request on GitHub, for the events Lo didn't read, as "See them on GitHub" does. */
-    seeOlder: {
-      label: 'See the older events on GitHub',
-      group: 'Copy and open',
-      keys: [],
-      targets: ['row'],
-      when: timeline,
-      menu: { on: 'row', order: 30 },
-    },
     /**
      * Opens the row on GitHub: a comment or review where it is, a push's commit, a force-push's
-     * comparison, a mention's source, and anything else the pull request.
+     * comparison, a mention's source, and anything else, the older events Lo didn't read among
+     * them, the pull request.
      */
     openOnGithub: {
       label: 'Open on GitHub',

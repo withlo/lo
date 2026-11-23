@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import {
@@ -302,6 +302,36 @@ test.describe('with a settings file that is not JSON', () => {
     await theme(page, 'Light').click();
     await expect.poll(saved).toEqual({ theme: 'light', keep: 1 });
   });
+});
+
+test('Try again saves a change that couldn’t be, and focus stays in Settings as the button goes', async ({
+  page,
+}) => {
+  // Lo can't write in the settings file's folder, so a change isn't saved.
+  const folder = dirname(settingsPath(dataFolder()));
+  mkdirSync(folder, { recursive: true });
+  const again = row(page, 'settings.theme').getByRole('button', { name: 'Try again' });
+  chmodSync(folder, 0o500);
+  try {
+    await openSettings(page);
+    await theme(page, 'Light').click();
+    await expect(row(page, 'settings.theme').getByRole('alert')).toContainText(
+      'Couldn’t change the theme',
+    );
+    await expect(again).toBeVisible();
+  } finally {
+    chmodSync(folder, 0o700);
+  }
+
+  // Pressed from the keyboard, it goes with focus on it, and the change is saved.
+  await again.focus();
+  await page.keyboard.press('Enter');
+  await expect(again).toHaveCount(0);
+  await expect.poll(saved).toEqual({ theme: 'light' });
+  // Focus goes to Settings, not the page, so its keys work at once.
+  await expect(page.locator('[data-lo-scope="settings"]')).toBeFocused();
+  await page.keyboard.press('/');
+  await expect(page.getByRole('searchbox', { name: 'Search settings' })).toBeFocused();
 });
 
 test('main refuses a setting the window sends that no feature declared, or its schema refuses', async ({

@@ -5,14 +5,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ComparisonView, RevisionRow } from '../../revisions/contract.ts';
-import {
-  compareState,
-  flagWords,
-  labelOf,
-  pushesSince,
-  staleAgainst,
-  staleWords,
-} from './stale.ts';
+import { compareState, flagWords, labelOf, staleAgainst, staleWords } from './stale.ts';
 
 const R1 = '1'.repeat(40);
 const R2 = '2'.repeat(40);
@@ -68,19 +61,11 @@ describe('staleAgainst', () => {
   });
 });
 
-describe('labelOf and pushesSince', () => {
+describe('labelOf', () => {
   it('names a revision by its label, and any other commit by its short id', () => {
     expect(labelOf(view, R2)).toBe('r2');
     expect(labelOf(view, OTHER)).toBe('abcdef0');
     expect(labelOf(undefined, R2)).toBe('2222222');
-  });
-
-  it('counts the pushes between two revisions, not a commit reviewed but never pushed', () => {
-    expect(pushesSince(view, R1, R3)).toBe(2);
-    expect(pushesSince(view, R2, R3)).toBe(1);
-    expect(pushesSince(view, R3, R1)).toBeUndefined();
-    expect(pushesSince(view, 'f'.repeat(40), R3)).toBeUndefined();
-    expect(pushesSince(undefined, R1, R3)).toBeUndefined();
   });
 });
 
@@ -90,13 +75,10 @@ describe('compareState', () => {
   });
 
   it('says why it can’t compare', () => {
-    expect(compareState(undefined, R1, R3)).toEqual({
-      ok: false,
-      why: 'Lo is still reading the revisions.',
-    });
+    expect(compareState(undefined, R1, R3)).toEqual({ ok: false, why: 'Reading revisions…' });
     expect(compareState({ ...view, status: 'signIn' }, R1, R3)).toEqual({
       ok: false,
-      why: 'Revisions show only for a signed-in account.',
+      why: 'Sign in to compare revisions',
     });
     expect(
       compareState(
@@ -104,57 +86,36 @@ describe('compareState', () => {
         R1,
         R3,
       ),
-    ).toEqual({ ok: false, why: 'Can’t read the revisions' });
+    ).toEqual({ ok: false, why: 'Couldn’t read the revisions' });
     expect(compareState({ ...view, waitingFor: 'git' }, R1, R3)).toEqual({
       ok: false,
-      why: 'Comparing revisions needs git, which Lo can’t find.',
+      why: 'Can’t find Git',
     });
     expect(compareState(view, 'f'.repeat(40), R3)).toEqual({
       ok: false,
-      why: 'The overview’s commit isn’t one of the revisions.',
+      why: 'This overview’s commit isn’t a revision',
     });
     const gone = viewOf([{ ...revision(R1, 1), available: false }, revision(R2, 2)]);
-    expect(compareState(gone, R1, R2)).toEqual({ ok: false, why: 'r1 is no longer available.' });
+    expect(compareState(gone, R1, R2)).toEqual({ ok: false, why: 'r1 is no longer on GitHub' });
   });
 });
 
 describe('staleWords', () => {
   it('says what it was written for and where the pull request is, from the first frame', () => {
     expect(staleWords({ written: 'r3', now: 'r5' })).toEqual({
-      title: 'Written for r3. The PR is at r5.',
+      title: 'Written for r3 · now r5',
       detail: '',
     });
     expect(staleWords({ written: 'abcdef0', now: 'r5' }).title).toBe(
-      'Written for abcdef0. The PR is at r5.',
+      'Written for abcdef0 · now r5',
     );
   });
 
-  it('fills in the pushes, files and blocks since as each comes', () => {
-    expect(staleWords({ written: 'r3', now: 'r5', pushes: 2 }).detail).toBe('2 pushes since.');
-    expect(staleWords({ written: 'r3', now: 'r5', pushes: 2, files: 5 }).detail).toBe(
-      '2 pushes since, touching 5 files.',
-    );
-    expect(staleWords({ written: 'r3', now: 'r5', pushes: 2, files: 5, blocks: 1 }).detail).toBe(
-      '2 pushes since, touching 5 files. 1 code block below points at lines that changed.',
-    );
-    expect(staleWords({ written: 'r4', now: 'r5', pushes: 1, files: 1, blocks: 3 }).detail).toBe(
-      '1 push since, touching 1 file. 3 code blocks below point at lines that changed.',
-    );
-    expect(staleWords({ written: 'r4', now: 'r5', pushes: 1, files: 0, blocks: 0 }).detail).toBe(
-      '1 push since, touching no files. No code block below points at lines that changed.',
-    );
-  });
-
-  it('counts files alone for a commit that isn’t a revision, and leaves out what it can’t count', () => {
-    expect(staleWords({ written: 'abcdef0', now: 'r5', files: 5 }).detail).toBe(
-      '5 files changed since.',
-    );
-    expect(staleWords({ written: 'abcdef0', now: 'r5', files: 1 }).detail).toBe(
-      '1 file changed since.',
-    );
-    expect(staleWords({ written: 'r3', now: 'r5', pushes: 2, files: null }).detail).toBe(
-      '2 pushes since.',
-    );
+  it('fills in how many files changed once it’s known, and nothing when it can’t be', () => {
+    expect(staleWords({ written: 'r3', now: 'r5', files: 5 }).detail).toBe('5 files changed');
+    expect(staleWords({ written: 'r3', now: 'r5', files: 1 }).detail).toBe('1 file changed');
+    expect(staleWords({ written: 'r3', now: 'r5', files: 0 }).detail).toBe('no files changed');
+    expect(staleWords({ written: 'r3', now: 'r5', files: null }).detail).toBe('');
   });
 });
 
@@ -166,23 +127,23 @@ function lines(changed: { from: number; to: number }[]): string | undefined {
 }
 
 describe('flagWords', () => {
-  const shows = 'This block shows r3, which the text describes.';
+  const shows = 'showing r3';
 
   it('names the lines that changed', () => {
-    expect(lines([{ from: 48, to: 48 }])).toBe(`Line 48 changed in r5. ${shows}`);
+    expect(lines([{ from: 48, to: 48 }])).toBe(`Line 48 changed in r5 · ${shows}`);
     expect(
       lines([
         { from: 48, to: 48 },
         { from: 50, to: 50 },
       ]),
-    ).toBe(`Lines 48 and 50 changed in r5. ${shows}`);
+    ).toBe(`Lines 48 and 50 changed in r5 · ${shows}`);
     expect(
       lines([
         { from: 46, to: 48 },
         { from: 50, to: 50 },
         { from: 52, to: 53 },
       ]),
-    ).toBe(`Lines 46–48, 50 and 52–53 changed in r5. ${shows}`);
+    ).toBe(`Lines 46–48, 50 and 52–53 changed in r5 · ${shows}`);
     expect(
       lines([
         { from: 1, to: 1 },
@@ -191,7 +152,7 @@ describe('flagWords', () => {
         { from: 8, to: 8 },
         { from: 10, to: 12 },
       ]),
-    ).toBe(`8 of its lines changed in r5. ${shows}`);
+    ).toBe(`8 lines changed in r5 · ${shows}`);
   });
 
   it('says where lines were added inside the block', () => {
@@ -200,22 +161,21 @@ describe('flagWords', () => {
         { kind: 'lines', changed: [{ from: 7, to: 7 }], added: [8], addedLines: 1 },
         { written: 'r1', now: 'r2' },
       ),
-    ).toBe(
-      'Line 7 changed in r2, and a line was added after line 8. This block shows r1, which the text describes.',
+    ).toBe('Line 7 changed in r2 · lines added after line 8 · showing r1');
+    expect(flagWords({ kind: 'lines', changed: [], added: [12], addedLines: 1 }, labels)).toBe(
+      `1 line added after line 12 in r5 · ${shows}`,
     );
     expect(flagWords({ kind: 'lines', changed: [], added: [8, 12], addedLines: 4 }, labels)).toBe(
-      `Lines were added after lines 8 and 12 in r5. ${shows}`,
+      `Lines added after lines 8 and 12 in r5 · ${shows}`,
     );
     expect(
       flagWords({ kind: 'lines', changed: [], added: [1, 2, 3, 4, 5], addedLines: 5 }, labels),
-    ).toBe(`Lines were added in 5 places in r5. ${shows}`);
+    ).toBe(`Lines added in 5 places in r5 · ${shows}`);
   });
 
-  it('says a file was deleted, or changed in a way Lo can’t compare', () => {
-    expect(flagWords({ kind: 'deleted' }, labels)).toBe(`This file was deleted in r5. ${shows}`);
-    expect(flagWords({ kind: 'opaque' }, labels)).toBe(
-      `This file changed in r5, and Lo can’t tell which lines. ${shows}`,
-    );
+  it('says a file was deleted, or changed in a way that can’t be compared', () => {
+    expect(flagWords({ kind: 'deleted' }, labels)).toBe(`Deleted in r5 · ${shows}`);
+    expect(flagWords({ kind: 'opaque' }, labels)).toBe(`Changed in r5 · ${shows}`);
   });
 
   it('says nothing when no line it shows changed', () => {
@@ -224,7 +184,7 @@ describe('flagWords', () => {
 
   it('names a commit that isn’t a revision by its short id', () => {
     expect(flagWords({ kind: 'deleted' }, { written: 'abcdef0', now: 'r5' })).toBe(
-      'This file was deleted in r5. This block shows abcdef0, which the text describes.',
+      'Deleted in r5 · showing abcdef0',
     );
   });
 });

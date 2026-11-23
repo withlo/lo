@@ -5,6 +5,8 @@
 // - handlers: one for every command but Vim's own, and none for a command `keys.ts` doesn't
 //   declare;
 // - keys: every command has a default key on each system it's on;
+// - text-editing keys: a command on a key that edits text in a field either edits that field
+//   itself, or applies only in scopes that hold no field;
 // - menus: every item in a right-click menu or the app menu has a key, and a right-click menu's
 //   target is one its command takes;
 // - clashes: in each scope, mode and system, no key or start of a sequence is claimed twice, and
@@ -25,6 +27,7 @@ import {
 import {
   declaredBindings,
   holds,
+  isTextEditing,
   menuArrows,
   precedence,
   startsWith,
@@ -307,6 +310,73 @@ export function checkKeys(features: readonly Declarations[]): string[] {
       .filter((system) => !hasKey(command, system))
       .map((system) => `${command.id} has no key on ${systemNames[system]}.`),
   );
+}
+
+/**
+ * Text-editing keys: an editable field keeps the keys that edit its text (`textEditingKeys`), so a
+ * command bound to one never runs while a field has focus. Each such command says how it's meant:
+ * it edits that field itself (`editsField`), every scope it applies in is one of `fieldless`,
+ * which hold no field, or it's one of `kept`, which run everywhere else and leave the key to a
+ * field that has focus. Any other, for anywhere or for a scope that can hold one, fails, named with
+ * its keys. So does one that says `editsField` with no such key, a scope in `fieldless` that no
+ * feature declares, or that's a code view's, which holds Vim's prompt and its search, and a command
+ * in `kept` that no feature declares, or that a field no longer keeps a key of.
+ */
+export function checkEditingKeys(
+  features: readonly Declarations[],
+  fieldless: readonly string[],
+  kept: readonly string[] = [],
+): string[] {
+  const problems: string[] = [];
+  const declared = new Set(features.flatMap(commandsOf).map(({ id }) => id));
+  for (const id of kept) {
+    if (!declared.has(id)) {
+      problems.push(`${id} is listed as leaving its key to a field, but no feature declares it.`);
+    }
+  }
+  const keeps = new Set(kept);
+  const known = new Set(scopesOf(features));
+  const views = new Set<string>(codeScopes);
+  for (const scope of fieldless) {
+    if (views.has(scope)) {
+      problems.push(`${scope} is listed as holding no field, but it's a code view.`);
+    } else if (!known.has(scope)) {
+      problems.push(`${scope} is listed as holding no field, but no feature declares it.`);
+    }
+  }
+  const noField = new Set(fieldless.filter((scope) => known.has(scope) && !views.has(scope)));
+  for (const command of features.flatMap(commandsOf)) {
+    // Vim's own keys and an editor's never run as Lo's.
+    if (isOwned(command)) continue;
+    const keys = systemsOf(command).flatMap((system) =>
+      declaredBindings([command], system)
+        .filter(({ strokes }) => strokes.some((each) => isTextEditing(each, system)))
+        .map(({ strokes }) => quoted(strokes, system)),
+    );
+    if (command.editsField === true) {
+      if (keys.length === 0) {
+        problems.push(`${command.id} says editsField, but none of its keys edits text.`);
+      }
+      continue;
+    }
+    const scopes = listOf(command.when?.scope);
+    const fine =
+      keys.length === 0 || (scopes.length > 0 && scopes.every((scope) => noField.has(scope)));
+    if (keeps.has(command.id)) {
+      if (fine) {
+        problems.push(
+          `${command.id} is listed as leaving its key to a field, but a field keeps none of its keys.`,
+        );
+      }
+      continue;
+    }
+    if (fine) continue;
+    const named = [...new Set(keys)];
+    problems.push(
+      `${listed(named)} (${command.id}) ${named.length === 1 ? 'edits' : 'edit'} text, which a field that has focus keeps: give the command scopes that hold no field, or editsField if it edits that field itself.`,
+    );
+  }
+  return problems;
 }
 
 /** A target of `kind`, with all it can give: a line has a thread on it, so it gives a file too. */

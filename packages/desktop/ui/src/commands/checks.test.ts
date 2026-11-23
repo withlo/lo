@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import {
   checkClashes,
+  checkEditingKeys,
   checkHandlers,
   checkIds,
   checkKeys,
@@ -69,6 +70,7 @@ describe('the checks', () => {
   test('pass declarations that follow every rule', () => {
     expect(checkIds(passing)).toEqual([]);
     expect(checkKeys(passing)).toEqual([]);
+    expect(checkEditingKeys(passing, ['tree'])).toEqual([]);
     expect(checkMenus(passing)).toEqual([]);
     expect(checkClashes(passing)).toEqual([]);
     expect(checkVim(passing)).toEqual([]);
@@ -206,6 +208,81 @@ describe('keys', () => {
         }),
       ]),
     ).toEqual(['diff.hidden has no key on macOS.', 'diff.hidden has no key on Linux.']);
+  });
+});
+
+describe('text-editing keys', () => {
+  const lists = feature(
+    {
+      clear: {
+        label: 'Clear filter',
+        group: 'Find',
+        keys: ['cmd+backspace'],
+        when: { scope: 'list' },
+      },
+      top: {
+        label: 'Top',
+        group: 'Move',
+        keys: ['home', 'g g'],
+        when: { scope: ['list', 'tree'] },
+      },
+      everywhere: { label: 'Everywhere', group: 'Find', keys: ['cmd+a'] },
+      unscoped: {
+        label: 'Not the field',
+        group: 'Find',
+        keys: ['alt+left'],
+        when: { except: ['list'] },
+      },
+      form: { label: 'Form', group: 'Find', keys: ['cmd+z'], when: { scope: ['list', 'form'] } },
+      linux: {
+        label: 'Back a word',
+        group: 'Move',
+        keys: [
+          { keys: 'ctrl+left', on: 'linux' },
+          { keys: 'cmd+[', on: 'mac' },
+        ],
+        when: { scope: 'form' },
+      },
+      erase: {
+        label: 'Erase',
+        group: 'Find',
+        keys: ['cmd+backspace'],
+        when: { scope: 'form' },
+        editsField: true,
+      },
+      plain: { label: 'Plain', group: 'Find', keys: ['x', 'cmd+enter'], when: { scope: 'form' } },
+      down: { label: 'Line down', group: 'Move', keys: ['cmd+down'], vim: 'own' },
+    },
+    'lists',
+    ['list', 'form', 'tree'],
+  );
+
+  test('name each command on one that could run in a field, and pass the rest', () => {
+    expect(checkEditingKeys([lists], ['list', 'tree'])).toEqual([
+      '`cmd+a` and `ctrl+a` (lists.everywhere) edit text, which a field that has focus keeps: give the command scopes that hold no field, or editsField if it edits that field itself.',
+      '`alt+left` (lists.unscoped) edits text, which a field that has focus keeps: give the command scopes that hold no field, or editsField if it edits that field itself.',
+      '`cmd+z` and `ctrl+z` (lists.form) edit text, which a field that has focus keeps: give the command scopes that hold no field, or editsField if it edits that field itself.',
+      '`ctrl+left` (lists.linux) edits text, which a field that has focus keeps: give the command scopes that hold no field, or editsField if it edits that field itself.',
+    ]);
+  });
+
+  test('fail editsField on a command none of whose keys edits text', () => {
+    const odd = feature(
+      { erase: { label: 'Erase', group: 'Find', keys: ['x'], editsField: true } },
+      'odd',
+    );
+    expect(checkEditingKeys([odd], [])).toEqual([
+      'odd.erase says editsField, but none of its keys edits text.',
+    ]);
+  });
+
+  test('fail a scope listed as holding no field that nothing declares, or that’s a code view', () => {
+    expect(checkEditingKeys([lists], ['list', 'tree', 'form', 'lsit', 'box'])).toEqual([
+      'lsit is listed as holding no field, but no feature declares it.',
+      "box is listed as holding no field, but it's a code view.",
+      '`cmd+a` and `ctrl+a` (lists.everywhere) edit text, which a field that has focus keeps: give the command scopes that hold no field, or editsField if it edits that field itself.',
+      '`alt+left` (lists.unscoped) edits text, which a field that has focus keeps: give the command scopes that hold no field, or editsField if it edits that field itself.',
+    ]);
   });
 });
 

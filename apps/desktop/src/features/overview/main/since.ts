@@ -123,12 +123,12 @@ export class SinceReads {
         case 'waiting':
           return { kind: 'waiting' };
         case 'noGit':
-          return { kind: 'unread', why: 'Lo needs git to read the code.' };
+          return { kind: 'unread', why: 'noGit' };
         case 'failed':
           return { kind: 'unread', why: ready.why };
         default:
           ready satisfies never;
-          return { kind: 'unread', why: 'Lo couldn’t read the local copy.' };
+          return { kind: 'unread', why: 'unknown' };
       }
     }
     try {
@@ -157,10 +157,7 @@ export class SinceReads {
       case 'noGit':
         return { kind: 'noGit' };
       case 'failed':
-        return {
-          kind: 'failed',
-          why: `The pull request’s local copy couldn’t be fetched: ${local.details ?? ''}`,
-        };
+        return { kind: 'failed', why: 'notFetched' };
       case 'waiting':
       case 'fetching':
       case 'retrying':
@@ -194,10 +191,7 @@ export class SinceReads {
         () => undefined,
         (error: unknown): NotReady => {
           if (error instanceof GitError && error.detail.kind === 'unavailable') {
-            return {
-              kind: 'failed',
-              why: 'GitHub no longer has the commit the overview describes.',
-            };
+            return { kind: 'failed', why: 'noCommit' };
           }
           // Asked again by the next read.
           if (this.#fetching?.done === done) this.#fetching = undefined;
@@ -221,7 +215,7 @@ export class SinceReads {
     const bytes = encoder.encode(path);
     const [was] = await clone.fileVersions(commit, [bytes]);
     if (was === undefined || was === 'folder') {
-      return { kind: 'unread', why: 'There’s no file at that path at the overview’s commit.' };
+      return { kind: 'unread', why: 'noFile' };
     }
     if (commit === head) return { kind: 'same', path };
     const [found] = await clone.fileVersions(head, [bytes]);
@@ -236,7 +230,7 @@ export class SinceReads {
     if (now === undefined) {
       const whole = await this.#wholeOf(clone, commit, head, comparing);
       if (whole === undefined) {
-        return { kind: 'unread', why: 'Lo couldn’t tell where the file went since.' };
+        return { kind: 'unread', why: 'unknown' };
       }
       now = whole.find((each) => each.old?.path.equals(bytes))?.new;
       if (now === undefined) return { kind: 'deleted' };
@@ -340,9 +334,9 @@ export class SinceReads {
 
   /** A read that failed, logged, unless it was stopped. */
   #failed(error: unknown): Extract<SinceReply, { kind: 'failed' }> {
-    if (this.#stopped.signal.aborted) return { kind: 'failed', why: 'The read was stopped.' };
+    if (this.#stopped.signal.aborted) return { kind: 'failed', why: 'unknown' };
     this.#log(`reading what changed since an overview’s commit: ${describe(error)}`);
-    return { kind: 'failed', why: `Lo couldn’t read it from the local copy: ${describe(error)}` };
+    return { kind: 'failed', why: 'unknown' };
   }
 }
 
