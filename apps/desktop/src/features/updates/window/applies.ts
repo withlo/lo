@@ -3,7 +3,7 @@
 // refuses a command that doesn't apply as well, with these words or nearly: this is what the window
 // can tell without asking.
 
-import { BREW_UPGRADE, type How, type UpdateState } from '../contract.ts';
+import type { How, UpdateState } from '../contract.ts';
 
 /** `true`, or why not. */
 export type Applies = true | string;
@@ -16,16 +16,16 @@ function offerOf(state: UpdateState): Offered | undefined {
 }
 
 /** Why there's no update to do something with, or what has become of the one there is. */
-function without(state: UpdateState, what: string): string {
+function without(state: UpdateState): string {
   switch (state.status) {
     case 'idle':
-      return `There’s no update to ${what}.`;
+      return 'No update available';
     case 'available':
-      return `Lo ${state.version} isn’t downloaded yet.`;
+      return `Lo ${state.version} isn’t downloaded`;
     case 'downloading':
-      return `Lo ${state.version} is downloading.`;
+      return `Lo ${state.version} is downloading`;
     case 'ready':
-      return `Lo ${state.version} is ready. It installs when you quit, or now.`;
+      return `Lo ${state.version} is ready`;
     default:
       throw new Error(`An update state Lo doesn't know: ${JSON.stringify(state satisfies never)}`);
   }
@@ -35,13 +35,13 @@ function without(state: UpdateState, what: string): string {
 function otherWay(offer: Offered): string {
   switch (offer.how) {
     case 'install':
-      return 'Lo installs this update itself. Use "Install the update".';
+      return 'This copy of Lo updates itself';
     case 'move':
-      return 'Lo can’t update itself from where it is. Move it to Applications first.';
+      return 'Move Lo to Applications first';
     case 'brew':
-      return `You installed Lo with Homebrew, so update it there: ${BREW_UPGRADE}`;
+      return 'This copy of Lo updates with Homebrew';
     case 'page':
-      return 'Lo can’t install updates here. Download it from its release page.';
+      return 'This copy of Lo can’t update itself';
     default:
       throw new Error(
         `A way to update Lo doesn't know: ${JSON.stringify(offer.how satisfies never)}`,
@@ -51,13 +51,13 @@ function otherWay(offer: Offered): string {
 
 /** Check for updates: whenever one isn't going. */
 export function canCheck(checking: boolean): Applies {
-  return checking ? 'A check is already going.' : true;
+  return checking ? 'Already checking' : true;
 }
 
-/** Install the update: an offer this copy of Lo takes itself. */
+/** Update Lo: an offer this copy of Lo takes itself. */
 export function canInstall(state: UpdateState): Applies {
   const offer = offerOf(state);
-  if (offer === undefined) return without(state, 'install');
+  if (offer === undefined) return without(state);
   return offer.how === 'install' ? true : otherWay(offer);
 }
 
@@ -67,11 +67,11 @@ export function canRestart(state: UpdateState): Applies {
     case 'ready':
       return true;
     case 'idle':
-      return 'No update is ready to install.';
+      return 'No update is ready';
     case 'available':
-      return `Lo ${state.version} isn’t downloaded yet.`;
+      return `Lo ${state.version} isn’t downloaded`;
     case 'downloading':
-      return `Lo ${state.version} is still downloading.`;
+      return `Lo ${state.version} is downloading`;
     default:
       throw new Error(`An update state Lo doesn't know: ${JSON.stringify(state satisfies never)}`);
   }
@@ -79,7 +79,7 @@ export function canRestart(state: UpdateState): Applies {
 
 /** Why Lo can't be moved to Applications, when how it takes an update isn't to be moved. */
 function stays(how: How): string {
-  return how === 'page' ? 'Lo can’t move itself from here.' : 'Lo is in Applications already.';
+  return how === 'page' ? 'This copy of Lo can’t be moved' : 'Already in Applications';
 }
 
 /**
@@ -90,7 +90,7 @@ function stays(how: How): string {
 export function canMove(state: UpdateState, how: How | undefined): Applies {
   switch (state.status) {
     case 'idle':
-      if (how === undefined) return 'Lo can’t tell yet whether it needs to move.';
+      if (how === undefined) return 'Checking where Lo is installed';
       return how === 'move' ? true : stays(how);
     case 'available':
       return state.how === 'move' ? true : stays(state.how);
@@ -104,31 +104,26 @@ export function canMove(state: UpdateState, how: How | undefined): Applies {
 
 /** Hide the update until Lo restarts: an offer. */
 export function canHide(state: UpdateState): Applies {
-  return state.status === 'available' ? true : without(state, 'hide');
-}
-
-/** What's new: an update, on offer, downloading or ready, has a release page. */
-export function canOpenNotes(state: UpdateState): Applies {
-  return state.status === 'idle' ? 'There’s no update to read about.' : true;
+  return state.status === 'available' ? true : without(state);
 }
 
 /** Download the update: an offer whose way is its release page. */
 export function canDownload(state: UpdateState): Applies {
   const offer = offerOf(state);
-  if (offer === undefined) return without(state, 'download');
+  if (offer === undefined) return without(state);
   return offer.how === 'page' ? true : otherWay(offer);
 }
 
 /** Copy the Homebrew command: an offer that's updated through Homebrew. */
 export function canCopy(state: UpdateState): Applies {
   const offer = offerOf(state);
-  if (offer === undefined) return without(state, 'update with Homebrew');
+  if (offer === undefined) return without(state);
   return offer.how === 'brew' ? true : otherWay(offer);
 }
 
 /** Go to the update: while its toast is there. */
 export function canGoTo(state: UpdateState): Applies {
-  return state.status === 'idle' ? 'There’s no update to go to.' : true;
+  return state.status === 'idle' ? 'No update available' : true;
 }
 
 /**

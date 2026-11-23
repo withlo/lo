@@ -1,8 +1,9 @@
 // The sign-out dialog: which account to sign out of, when there are several, and what signing out
-// does, before it does it.
+// does, before it does it. Its body stays put while it signs out: the main button is busy, and a
+// sign-out that failed says so above the foot, with the main button trying again.
 
-import { Button, Choices, Dialog, DialogSpacer, Key, type ChoiceItem } from '@lo/ui';
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { Choices, Dialog, type ChoiceItem, type DialogState } from '@lo/ui';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useStore } from 'zustand';
 
 import { IpcError } from '../../../ipc/contract.ts';
@@ -10,10 +11,21 @@ import { closeDialog } from './dialogs.ts';
 import { enterOffControls } from './focus.ts';
 import { labels } from './labels.ts';
 import { main } from './main.ts';
-import { how } from './Picker.tsx';
+import type { AccountSummary } from '../contract.ts';
 import { accountsStore, type OpenDialog } from './store.ts';
 
 type SignOut = Extract<OpenDialog, { kind: 'signOut' }>;
+
+/**
+ * What's said of `account` under its login: its name, and where it came from when that isn't the
+ * usual way, signing in with GitHub.
+ */
+function how(account: AccountSummary | undefined): string | undefined {
+  if (account === undefined) return undefined;
+  const fromCli = account.source === 'gh';
+  if (account.name === null) return fromCli ? 'From GitHub CLI' : undefined;
+  return fromCli ? `${account.name} · from GitHub CLI` : account.name;
+}
 
 /** The sign-out dialog, open while `dialog` is the dialog open. */
 export function SignOutView({
@@ -28,10 +40,14 @@ export function SignOutView({
   // With one account there's nothing to pick. With several, nothing is picked until the person does.
   const only = logins.length === 1 ? logins[0] : undefined;
   const [picked, setPicked] = useState<string>();
-  const [error, setError] = useState<string>();
+  const [error, setError] = useState<{ login: string; details: string }>();
   const [busy, setBusy] = useState(false);
-  const primary = useRef<HTMLButtonElement>(null);
   const chosen = only ?? picked;
+  // With several, the first account takes focus: the main button waits for a choice.
+  const choice = useRef<HTMLElement | null>(null);
+  const choices = useCallback((element: HTMLDivElement | null) => {
+    choice.current = element?.querySelector<HTMLElement>('[role="radio"]:not(:disabled)') ?? null;
+  }, []);
 
   // Each time it opens, nothing is picked and nothing is said.
   useEffect(() => {
@@ -42,12 +58,7 @@ export function SignOutView({
 
   const items: ChoiceItem<string>[] = logins.map((login) => {
     const account = accounts.find((each) => each.login.toLowerCase() === login.toLowerCase());
-    const description = how(account);
-    return {
-      value: login,
-      title: login,
-      description: description === '' ? undefined : description,
-    };
+    return { value: login, title: login, description: how(account) };
   });
 
   const signOut = () => {
@@ -61,10 +72,16 @@ export function SignOutView({
           if (accountsStore.getState().dialog === dialog) closeDialog();
         },
         (thrown: unknown) => {
+          // Gone already, as when the last try took the account and failed after: that's done.
+          if (thrown instanceof IpcError && thrown.code === 'missing') {
+            if (accountsStore.getState().dialog === dialog) closeDialog();
+            return;
+          }
           setBusy(false);
-          setError(
-            thrown instanceof IpcError ? thrown.message : `Lo couldn't sign out of ${chosen}.`,
-          );
+          setError({
+            login: chosen,
+            details: thrown instanceof IpcError ? thrown.message : String(thrown),
+          });
         },
       );
   };
@@ -82,47 +99,54 @@ export function SignOutView({
     }
   };
 
+  const state: DialogState = busy ? 'working' : error === undefined ? 'ask' : 'failed';
   return (
     <Dialog
       open={dialog !== undefined}
       onOpenChange={(open) => {
         if (!open) closeDialog();
       }}
-      title={only === undefined ? 'Sign out of which account?' : `Sign out of ${only}?`}
+      title={only === undefined ? 'Sign out' : `Sign out of ${only}?`}
+      size="sm"
+      state={state}
+      action={{
+        label: only === undefined && chosen !== undefined ? `Sign out of ${chosen}` : 'Sign out',
+        working: 'Signing out…',
+        keys: labels('enter'),
+        disabled: chosen === undefined ? 'Choose an account' : undefined,
+        onRun: signOut,
+      }}
+      problem={
+        error === undefined
+          ? undefined
+          : { title: `Couldn’t sign out of ${error.login}`, details: error.details }
+      }
+      leaveKeys={labels('esc')}
+      initialFocus={only === undefined ? choice : undefined}
       onKeyDown={onKeyDown}
-      initialFocus={only === undefined ? undefined : primary}
       container={container}
       testId="sign-out"
-      foot={
-        <>
-          <DialogSpacer />
-          <Button onClick={closeDialog}>
-            Cancel
-            <Key keys={labels('esc')} decorative />
-          </Button>
-          <Button
-            ref={primary}
-            variant="primary"
-            disabled={chosen === undefined || busy}
-            onClick={signOut}
-          >
-            {only === undefined && chosen !== undefined ? `Sign out of ${chosen}` : 'Sign out'}
-            <Key keys={labels('enter')} decorative className="text-on-accent" />
-          </Button>
-        </>
-      }
     >
       <p className="m-0 text-fg-muted">
-        Lo removes {only === undefined ? 'its' : `${only}'s`} token from this computer and forgets
-        which repos open with it.
+        {only !== undefined
+          ? 'Its sign-in is deleted'
+          : chosen === undefined
+            ? 'The account’s sign-in is deleted'
+            : `${chosen}’s sign-in is deleted`}{' '}
+        from this computer. Repos that opened with it ask for an account again.
       </p>
       {only === undefined && (
-        <Choices label="Account" items={items} value={picked} onChange={setPicked} />
-      )}
-      {error !== undefined && (
-        <p role="alert" className="m-0 text-danger text-small">
-          {error}
-        </p>
+        <div ref={choices}>
+          <Choices
+            label="Account"
+            items={items}
+            value={picked}
+            onChange={(next) => {
+              setPicked(next);
+              setError(undefined);
+            }}
+          />
+        </div>
       )}
     </Dialog>
   );

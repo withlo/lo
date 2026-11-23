@@ -224,7 +224,8 @@ test.describe('a system with no keychain Lo keeps tokens with', () => {
 
     await accounts(page).getByRole('button', { name: 'Import from GitHub CLI' }).click();
     const importing = page.getByTestId('import-gh');
-    await expect(importing).toContainText("Lo can't keep your tokens safely");
+    await expect(importing.getByRole('alert')).toContainText('Can’t import accounts');
+    await expect(importing.getByRole('button', { name: /Quit Lo/ })).toBeFocused();
     expect(
       await page.evaluate(() => window.lo.invoke('accounts.importGh', { logins: ['rozed-bot'] })),
     ).toMatchObject({ ok: false, error: { code: 'noKeyring' } });
@@ -308,21 +309,21 @@ test.describe('importing from gh', () => {
     await openSettings(page);
     await accounts(page).getByRole('button', { name: 'Import from GitHub CLI' }).click();
     const dialog = page.getByTestId('import-gh');
-    await expect(dialog).toContainText('gh 2.103.3 at');
-    await expect(dialog).toContainText('is signed in to 2 accounts');
+    await expect(dialog).toContainText('GitHub CLI 2.103.3 · 2 accounts');
     const bot = dialog.getByRole('switch', { name: 'Import rozed-bot' });
     const other = dialog.getByRole('switch', { name: 'Import someone-else' });
     await expect(bot).toBeChecked();
     await expect(other).toBeChecked();
     await expect(dialog).toContainText(
-      "someone-else's token can't merge PRs that change workflows.",
+      'someone-else’s sign-in can’t merge pull requests that change workflows.',
     );
     await expect(dialog.getByRole('button', { name: /Import 2 accounts/ })).toBeFocused();
     await page.keyboard.press('Enter');
 
     await expect(dialog).toContainText('Imported 1 account');
+    await expect(dialog.getByRole('alert')).toContainText('Couldn’t import someone-else');
     await expect(dialog.getByRole('alert')).toContainText(
-      "someone-else: gh's token for someone-else is rozed-bot's.",
+      'GitHub CLI’s sign-in for someone-else belongs to rozed-bot.',
     );
     await expect(dialog.getByRole('button', { name: /Done/ })).toBeFocused();
     await page.keyboard.press('Enter');

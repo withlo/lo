@@ -69,6 +69,22 @@ describe('the app menu’s items', () => {
     expect(barItems(registry, none).map((item) => item.enabled)).toEqual([true, false]);
   });
 
+  it('name code plainly, since a menu can’t set it apart', () => {
+    const install = handlers(
+      defineCommands('open', {
+        installCommand: {
+          label: 'Install `lo` command',
+          group: 'Tabs and window',
+          keys: [],
+          bar: { menu: 'App', order: 10 },
+        },
+      }),
+      { installCommand: { run() {} } },
+    );
+    const registry = new Registry({ system: 'mac', commands: install });
+    expect(barItems(registry, none).map((item) => item.label)).toEqual(['Install lo command']);
+  });
+
   it('can none run while a right-click menu is open over the window', () => {
     const registry = new Registry({ system: 'mac', commands });
     expect(

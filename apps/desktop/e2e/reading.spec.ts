@@ -962,8 +962,9 @@ test('says when the overview couldn’t be fetched, and reads it again on Retry 
     // newer Lo, and this one, built from source with no feed, says it doesn't check.
     await newer.getByRole('button', { name: 'Get a newer Lo' }).focus();
     await page.keyboard.press('Enter');
-    const checked = page.getByRole('status').filter({ hasText: 'Lo couldn’t check for updates' });
-    await expect(checked).toContainText('built from source, so it doesn’t check for updates');
+    const checked = page.getByRole('status').filter({ hasText: 'Can’t check for updates' });
+    await expect(checked).toContainText('This copy of Lo is built from source.');
+    await expect(checked.getByRole('button', { name: 'Open on GitHub' })).toBeVisible();
     expect(browsed()).toEqual([]);
     // The way on for a Lo that doesn't check: the releases page.
     await newer.getByRole('button', { name: 'Open the releases page' }).click();

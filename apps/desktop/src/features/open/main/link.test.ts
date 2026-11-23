@@ -2,6 +2,7 @@ import {
   Accounts,
   approvalUrl,
   GithubClient,
+  GithubError,
   Token,
   type Account,
   type Grant,
@@ -13,6 +14,7 @@ import { describe, expect, it } from 'vitest';
 import type { Opening } from '../../tab/contract.ts';
 import {
   Browser,
+  causeOf,
   COMES_BACK_WITHIN,
   link,
   look,
@@ -164,18 +166,18 @@ describe('readLink', () => {
   });
 
   it.each([
-    ['https://github.com/rozed-dev/e2e/issues/12', 'That’s an issue, not a pull request'],
-    ['https://github.com/rozed-dev/e2e', 'That isn’t a pull request'],
-    [
-      'https://github.com/rozed-dev/e2e/pulls',
-      'That’s the list of pull requests, not a pull request',
-    ],
-    ['github.com/rozed-dev/e2e/commit/abc', 'That’s a commit, not a pull request'],
-    ['https://example.com/rozed-dev/e2e/pull/80', 'That isn’t a link to GitHub'],
-  ])('reads %j as a web link for the browser: %s', (text, title) => {
-    const read = readLink(text);
-    expect(read).toMatchObject({ kind: 'web', title });
-    expect(read.kind === 'web' && read.message).toContain('This one goes to your browser.');
+    ['https://github.com/rozed-dev/e2e/issues/12', true, 'issue'],
+    ['https://github.com/rozed-dev/e2e', true, null],
+    ['https://github.com/rozed-dev/e2e/pulls', true, 'pulls'],
+    ['github.com/rozed-dev/e2e/commit/abc', true, 'commit'],
+    ['https://github.com/rozed-dev/e2e/tree/main/src', true, 'folder'],
+    ['https://example.com/rozed-dev/e2e/pull/80', false, null],
+  ])('reads %j as a web link for the browser', (text, github, page) => {
+    expect(readLink(text)).toMatchObject({ kind: 'web', github, page, secure: true });
+  });
+
+  it('reads a web link over plain http as one it won’t hand on', () => {
+    expect(readLink('http://example.com/x')).toMatchObject({ kind: 'web', secure: false });
   });
 
   it.each([
@@ -193,15 +195,13 @@ describe('readLink', () => {
     expect(['invalid', 'web']).toContain(readLink(text).kind);
   });
 
-  it('says a bad link is not one, and what a good one looks like', () => {
-    expect(readLink('rozed-dev/e2e#80')).toEqual({
+  it('says why a bad link is not one', () => {
+    expect(readLink('rozed-dev/e2e#80')).toEqual({ kind: 'invalid', why: 'link' });
+    expect(readLink('lo://github.com/rozed-dev/e2e/issues/12')).toEqual({
       kind: 'invalid',
-      message: 'A pull request link looks like `https://github.com/owner/repo/pull/123`.',
+      why: 'loLink',
     });
-    expect(readLink('lo://github.com/rozed-dev/e2e/issues/12')).toMatchObject({
-      kind: 'invalid',
-      message: expect.stringContaining('lo:// links to pull requests only'),
-    });
+    expect(readLink(`${E2E}?${'x'.repeat(3000)}`)).toEqual({ kind: 'invalid', why: 'long' });
     expect(readLink('   ')).toEqual({ kind: 'empty' });
   });
 });
@@ -315,10 +315,7 @@ describe('link', () => {
   it('hands the browser no plain http link from the window, but opens an http pull request link', async () => {
     const made = options(await signedIn([], nothing));
     for (const text of ['http://example.com/', 'http://github.com/rozed-dev/e2e/issues/12']) {
-      expect(await link(text, made.options)).toEqual({
-        kind: 'refused',
-        message: expect.stringContaining('It’s http, not https'),
-      });
+      expect(await link(text, made.options)).toEqual({ kind: 'refused', why: 'insecure' });
     }
     expect(made.browsed).toEqual([]);
     expect(await link('http://github.com/rozed-dev/e2e/pull/80', made.options)).toMatchObject({
@@ -360,24 +357,15 @@ describe('look', () => {
         'https://github.com/rozed-dev/gone/pull/1',
         await signedIn([], replayFetch('app_e2e')),
       ),
-    ).toMatchObject({
-      kind: 'blocked',
-      title: 'GitHub has no public pull request rozed-dev/gone#1',
-      message: 'If it’s private, sign in with an account that can see it.',
-      signIn: true,
-      openAnyway: false,
-    });
+    ).toMatchObject({ kind: 'blocked', why: { kind: 'hidden', signedIn: false } });
     const github = await signedIn(['rozed-bot'], replayFetch('app_e2e'));
     expect(await look('https://github.com/rozed-dev/gone/pull/1', github)).toMatchObject({
       kind: 'blocked',
-      title: 'None of your accounts can see rozed-dev/gone',
-      message: 'It’s private, or it doesn’t exist. Sign in with an account that has access.',
-      signIn: true,
+      why: { kind: 'hidden', signedIn: true },
     });
     expect(await look('https://github.com/rozed-dev/e2e/pull/9999', github)).toMatchObject({
       kind: 'blocked',
-      title: 'GitHub has no pull request rozed-dev/e2e#9999',
-      signIn: false,
+      why: { kind: 'missing' },
     });
   });
 
@@ -388,12 +376,13 @@ describe('look', () => {
       owner: 'rozed-dev',
       repo: 'restricted',
       number: 3,
-      title: 'rozed-dev hasn’t approved Lo',
-      message:
-        'rozed-dev restricts third-party apps, so GitHub hides its repositories from Lo. An owner has to approve Lo first: ask for it on GitHub, and GitHub emails rozed-dev’s owners.',
-      links: [{ label: 'Request approval on GitHub', url: approvalUrl() }],
-      signIn: true,
-      openAnyway: false,
+      why: {
+        kind: 'refused',
+        cause: { kind: 'unapproved', org: 'rozed-dev' },
+        links: [{ label: 'Request approval on GitHub', url: approvalUrl() }],
+        openAnyway: false,
+      },
+      details: expect.any(String),
     });
     expect(approvalUrl()).toMatch(/^https:\/\/github\.com\/settings\/connections\/applications\//);
   });
@@ -424,32 +413,55 @@ describe('look', () => {
     });
   });
 
+  it('says when GitHub’s rate limit resets, for a 403 that says the limit was reached', async () => {
+    const resets = 1_793_001_800;
+    const limited: typeof globalThis.fetch = () =>
+      Promise.resolve(
+        new Response('{"message":"API rate limit exceeded for user ID 1."}', {
+          status: 403,
+          headers: {
+            'content-type': 'application/json',
+            'x-ratelimit-remaining': '0',
+            'x-ratelimit-reset': String(resets),
+            'retry-after': '1800',
+          },
+        }),
+      );
+    const preview = await look(
+      'https://github.com/rozed-dev/limited/pull/1',
+      await signedIn(['rozed-bot'], limited),
+    );
+    expect(preview).toMatchObject({
+      kind: 'blocked',
+      why: { kind: 'refused', cause: { kind: 'rateLimit', resets: resets * 1000 } },
+    });
+  });
+
   it('says GitHub couldn’t be asked, and that opening it tries again', async () => {
     expect(await look(E2E, await signedIn(['rozed-bot'], offline))).toMatchObject({
       kind: 'blocked',
-      title: 'Lo couldn’t ask GitHub about rozed-dev/e2e#80',
-      openAnyway: true,
+      why: { kind: 'unchecked', cause: { kind: 'offline' } },
     });
   });
 
   it('says what a link that isn’t a pull request is, and asks GitHub nothing', async () => {
     const github = await signedIn([], nothing);
     expect(await look('', github)).toEqual({ kind: 'empty' });
-    expect(await look('https://github.com/rozed-dev/e2e/issues/12', github)).toMatchObject({
+    expect(await look('https://github.com/rozed-dev/e2e/issues/12', github)).toEqual({
       kind: 'web',
       url: 'https://github.com/rozed-dev/e2e/issues/12',
-      title: 'That’s an issue, not a pull request',
-      browse: true,
+      github: true,
+      page: 'issue',
+      secure: true,
     });
-    expect(await look('rozed-dev/e2e#80', github)).toMatchObject({ kind: 'invalid' });
+    expect(await look('rozed-dev/e2e#80', github)).toEqual({ kind: 'invalid', why: 'link' });
     // Plain http goes nowhere: the box offers to copy it.
     expect(await look('http://example.com/x', github)).toEqual({
       kind: 'web',
       url: 'http://example.com/x',
-      title: 'That link isn’t secure',
-      message:
-        'It’s http, not https, so Lo won’t hand it to your browser. Copy it, and open it yourself if you trust it.',
-      browse: false,
+      github: false,
+      page: null,
+      secure: false,
     });
   });
 });
@@ -469,13 +481,24 @@ function browser(isDefault = false) {
   return { made, opened, later: (ms: number) => (now += ms) };
 }
 
+describe('causeOf', () => {
+  it('says whose sign-in can’t be read, where it knows', () => {
+    const unreadable = new GithubError({ kind: 'tokenUnavailable', message: 'Keychain locked' });
+    expect(causeOf(unreadable, 'rozed-dev', 'rozed-bot')).toEqual({
+      kind: 'unreadable',
+      login: 'rozed-bot',
+    });
+    expect(causeOf(unreadable, 'rozed-dev')).toEqual({ kind: 'unknown' });
+  });
+});
+
 describe('Browser', () => {
   const ISSUE = 'https://github.com/rozed-dev/e2e/issues/12';
 
   it('hands a link to the browser, and not one that came straight back from it', async () => {
     const { made, opened, later } = browser();
     expect(await made.hand(ISSUE, { fromOutside: true })).toBeUndefined();
-    expect(await made.hand(ISSUE, { fromOutside: true })).toContain('came straight back');
+    expect(await made.hand(ISSUE, { fromOutside: true })).toBe('cameBack');
     // Asked for in the window, it goes again.
     expect(await made.hand(ISSUE, { fromOutside: false })).toBeUndefined();
     later(COMES_BACK_WITHIN + 1);
@@ -485,7 +508,7 @@ describe('Browser', () => {
 
   it('hands nothing on while Lo is the default browser', async () => {
     const { made, opened } = browser(true);
-    expect(await made.hand(ISSUE, { fromOutside: false })).toContain('Lo is your default browser');
+    expect(await made.hand(ISSUE, { fromOutside: false })).toBe('defaultBrowser');
     expect(opened).toEqual([]);
   });
 });

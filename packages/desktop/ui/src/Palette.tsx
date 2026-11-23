@@ -45,7 +45,11 @@ export interface PaletteProps<T> {
   icon?: ReactNode;
   /** A note at the end of the input, on where what's in it came from: "from clipboard". */
   mode?: ReactNode;
-  /** A message under the input, above the list: what's typed can't be used, and why. */
+  /**
+   * A message under the input, above the list: what's typed can't be used, and why. It's no live
+   * region of its own: the line in it that a screen reader should hear says so itself, as a
+   * `Problem` does, so no region holds another.
+   */
   message?: ReactNode;
   /** `⏎` with no row to act on, such as under a message: what the foot says `⏎` does. */
   onSubmit?: (() => void) | undefined;
@@ -147,9 +151,7 @@ export function Palette<T>(props: PaletteProps<T>) {
                 {keys && <Key keys={keys} quiet />}
               </div>
               {message !== undefined && (
-                <div role="status" className="flex gap-12 px-16 py-12 text-ui">
-                  {message}
-                </div>
+                <div className="flex gap-12 px-16 py-12 text-ui">{message}</div>
               )}
               <Autocomplete.List
                 aria-label={`${label} results`}

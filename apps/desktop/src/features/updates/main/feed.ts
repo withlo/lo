@@ -35,11 +35,11 @@ export const GITHUB_FEED: Feed = Object.freeze({
   private: false,
 });
 
-/** Why a copy of Lo doesn't check for updates, as a check asked for says. */
-export const UNCHECKED = {
-  source: 'This copy of Lo was built from source, so it doesn’t check for updates.',
-  unreleased: 'This copy of Lo isn’t a release, so it doesn’t check for updates.',
-} as const;
+/**
+ * Why a copy of Lo doesn't check for updates, as a check asked for says: it was built from source,
+ * or it's packaged but isn't a release.
+ */
+export type Unchecked = 'source' | 'unreleased';
 
 /**
  * The feed Lo checks, or why it checks none. A packaged Lo checks github.com's when it carries
@@ -52,14 +52,14 @@ export function feedFor(options: {
   resources: string;
   exists(path: string): boolean;
   env: Environment;
-}): { readonly feed: Feed } | { readonly unchecked: string } {
+}): { readonly feed: Feed } | { readonly unchecked: Unchecked } {
   if (options.packaged) {
     return options.exists(join(options.resources, UPDATE_CONFIG))
       ? { feed: GITHUB_FEED }
-      : { unchecked: UNCHECKED.unreleased };
+      : { unchecked: 'unreleased' };
   }
   const address = options.env.LO_UPDATES_FEED;
-  if (address === undefined || address === '') return { unchecked: UNCHECKED.source };
+  if (address === undefined || address === '') return { unchecked: 'source' };
   const url = URL.parse(address);
   const local =
     url !== null &&

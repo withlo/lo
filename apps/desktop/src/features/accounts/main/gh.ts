@@ -92,7 +92,7 @@ export class GhError extends Error {
 /** Where gh is, or why Lo has none. */
 export type GhLookup =
   | { readonly kind: 'found'; readonly program: string }
-  | { readonly kind: 'missing'; readonly message: string };
+  | { readonly kind: 'missing'; readonly message: string; readonly passedOver: boolean };
 
 /** An account gh is signed in to on github.com, as `gh auth status` lists it. */
 export interface GhAccount {
@@ -159,6 +159,7 @@ export class Gh {
         passedOver ??= {
           kind: 'missing',
           message: `Lo found gh at ${candidate}, but ${distrusted}, so Lo won't run it.`,
+          passedOver: true,
         };
         continue;
       }
@@ -252,7 +253,11 @@ export class Gh {
 }
 
 function missing(): GhLookup {
-  return { kind: 'missing', message: "Lo can't find gh, GitHub's command-line tool." };
+  return {
+    kind: 'missing',
+    message: "Lo can't find gh, GitHub's command-line tool.",
+    passedOver: false,
+  };
 }
 
 /** Anything that looks like a GitHub token, which never reaches an error message. */

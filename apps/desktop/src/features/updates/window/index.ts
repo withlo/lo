@@ -36,14 +36,13 @@ import {
   canHide,
   canInstall,
   canMove,
-  canOpenNotes,
   canRestart,
   menuKey,
 } from './applies.ts';
 import { Offer } from './Offer.tsx';
 import Settings from './Settings.tsx';
 import { showVersion, updatesStore } from './store.ts';
-import { buildText } from './words.ts';
+import { buildOf } from './words.ts';
 
 /** Where updates stand, for what a command applies to. */
 const now = () => updatesStore.getState();
@@ -55,11 +54,12 @@ export default {
     restart: { run: restart, enabled: () => canRestart(now().state) },
     move: { run: move, enabled: () => canMove(now().state, now().how) },
     later: { run: later, enabled: () => canHide(now().state) },
-    whatsNew: { run: openUpdatePage, enabled: () => canOpenNotes(now().state) },
+    // With none on offer, what's new is on the list of Lo's releases.
+    whatsNew: { run: openUpdatePage },
     download: { run: openUpdatePage, enabled: () => canDownload(now().state) },
     copy: {
       async run() {
-        if (await copyBrewCommand()) announce('Copied the Homebrew command');
+        if (await copyBrewCommand()) announce('Copied Homebrew command');
       },
       enabled: () => canCopy(now().state),
     },
@@ -87,9 +87,7 @@ export default {
     void readHow();
     client(app)
       .info()
-      .then(({ version, packaged, commit }) =>
-        showVersion(version, buildText({ packaged, commit })),
-      )
+      .then(({ version, packaged, commit }) => showVersion(version, buildOf({ packaged, commit })))
       .catch((error: unknown) => console.error("Lo couldn't read its version:", error));
     // The app menu greys what doesn't apply, so it's made again when what applies changes.
     updatesStore.subscribe((next, before) => {

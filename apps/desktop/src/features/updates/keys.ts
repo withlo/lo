@@ -1,6 +1,6 @@
-// The updates feature's commands: checking for a newer Lo, installing it, restarting into it,
+// The updates feature's commands: checking for a newer Lo, updating to it, restarting into it,
 // moving Lo to Applications so it can update itself, and hiding an update until Lo starts again;
-// and what the other buttons of the toast that offers it do: open the release's page, copy the
+// and what the other buttons of the toast that offers it do: open the update's page, copy the
 // Homebrew command, and go to the toast. Each is done once in a while, so none has a key: the app
 // menu and the command palette reach them, each only while it applies. The app menu lists what's
 // asked of an update most, to check for one, install it and restart into it, and the rest are in
@@ -22,7 +22,7 @@ export default defineCommands(
     },
     /** Downloads the newer Lo on offer, to install as Lo quits. */
     install: {
-      label: 'Install the update',
+      label: 'Update Lo',
       control: "Update on the update's toast, and in Settings › About",
       group: 'Tabs and window',
       keys: [],
@@ -45,16 +45,20 @@ export default defineCommands(
       when: { system: 'mac' },
       bar: { menu: 'Update', order: 1 },
     },
-    /** Hides the update on offer until Lo starts again. */
+    /** Hides the update on offer until Lo starts again: it comes back after a restart. */
     later: {
-      label: 'Hide the update until Lo restarts',
+      label: 'Hide update',
+      control: "Hide on the update's toast",
       group: 'Tabs and window',
       keys: [],
       bar: { menu: 'Update', order: 2 },
     },
-    /** Opens the page of the release on offer, where its notes are. */
+    /**
+     * Opens the page of the update on offer, where its notes are; with none on offer, the list of
+     * Lo's releases.
+     */
     whatsNew: {
-      label: 'Open what’s new in the update',
+      label: 'What’s new',
       control: "What’s new on the update's toast, and in Settings › About",
       group: 'Tabs and window',
       keys: [],
@@ -62,15 +66,15 @@ export default defineCommands(
     },
     /** Opens the page of the release on offer, to download it from, where Lo can't install it. */
     download: {
-      label: 'Download the update from its page',
-      control: "Download on the update's toast, and in Settings › About",
+      label: 'Download update',
+      control: "Download update on the update's toast, and in Settings › About",
       group: 'Tabs and window',
       keys: [],
       bar: { menu: 'Update', order: 4 },
     },
     /** Copies the command that updates Lo through Homebrew. */
     copy: {
-      label: 'Copy the Homebrew update command',
+      label: 'Copy Homebrew command',
       control: "Copy on the update's toast, and in Settings › About",
       group: 'Tabs and window',
       keys: [],
@@ -81,7 +85,7 @@ export default defineCommands(
      * `Esc` goes back to the middle of the window from. The toast never takes focus itself.
      */
     focus: {
-      label: 'Go to the update',
+      label: 'Go to update',
       group: 'Tabs and window',
       keys: [],
       bar: { menu: 'Update', order: 6 },

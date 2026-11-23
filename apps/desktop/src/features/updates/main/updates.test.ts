@@ -5,7 +5,6 @@ import type { How, UpdateState } from '../contract.ts';
 import {
   CHECK_LIMIT,
   INSTALL_LIMIT,
-  UNANSWERED,
   Updates,
   type QuitEvent,
   type Release,
@@ -201,8 +200,8 @@ describe('a check', () => {
     const updates = start(updater);
     await expect(updates.check(true)).resolves.toEqual({
       status: 'failed',
-      reason:
-        'Lo couldn’t reach GitHub (ERR_INTERNET_DISCONNECTED). Check your connection, then try again.',
+      why: 'offline',
+      details: 'ERR_INTERNET_DISCONNECTED',
     });
     await updates.check(false);
     expect(logged).toHaveLength(2);
@@ -232,11 +231,10 @@ describe('a check', () => {
   });
 
   it('says why this copy of Lo doesn’t check', async () => {
-    const updates = start({ unchecked: 'This copy of Lo isn’t a release.' });
-    await expect(updates.check(true)).resolves.toEqual({
-      status: 'failed',
-      reason: 'This copy of Lo isn’t a release.',
-    });
+    for (const unchecked of ['unreleased', 'source'] as const) {
+      const updates = start({ unchecked });
+      await expect(updates.check(true)).resolves.toEqual({ status: 'failed', why: unchecked });
+    }
   });
 });
 
@@ -271,12 +269,12 @@ describe('a check the feed doesn’t answer', () => {
     await vi.advanceTimersByTimeAsync(CHECK_LIMIT - 1);
     expect(signals[0]?.aborted).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
-    const failed = { status: 'failed', reason: UNANSWERED };
+    const failed = { status: 'failed', why: 'timeout' };
     await expect(timed).resolves.toEqual(failed);
     await expect(asked).resolves.toEqual(failed);
     // The updater is told to drop it.
     expect(signals[0]?.aborted).toBe(true);
-    expect(logged).toContain(`couldn't check for updates: ${UNANSWERED}`);
+    expect(logged).toContain("couldn't check for updates: timeout");
     // A day later, as at any time after, a check asks the feed again, and gets its answer.
     await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
     await expect(updates.check(true)).resolves.toEqual(OFFER);
@@ -319,7 +317,7 @@ describe('a check the feed doesn’t answer', () => {
     const updates = start(updater);
     const checking = updates.check(true);
     updates.stop();
-    await expect(checking).resolves.toEqual({ status: 'failed', reason: 'Lo is quitting.' });
+    await expect(checking).resolves.toEqual({ status: 'failed', why: 'quitting' });
     expect(signals[0]?.aborted).toBe(true);
     expect(vi.getTimerCount()).toBe(0);
   });
@@ -349,7 +347,7 @@ describe('installing', () => {
 
   it('is refused with nothing on offer', () => {
     const { updater } = fakeUpdater();
-    expect(() => start(updater).install()).toThrow('There’s no update to install.');
+    expect(() => start(updater).install()).toThrow('No update available');
     expect(updater.download).not.toHaveBeenCalled();
   });
 
@@ -359,9 +357,7 @@ describe('installing', () => {
     const updates = start(updater, () => how);
     await updates.check(true);
     how = 'page';
-    expect(() => updates.install()).toThrow(
-      'Lo can’t install updates here. Download it from its release page.',
-    );
+    expect(() => updates.install()).toThrow('This copy of Lo can’t update itself');
     expect(updater.download).not.toHaveBeenCalled();
     expect(updates.state).toEqual({ ...OFFER, how: 'page' });
     expect(published).toEqual([OFFER, { ...OFFER, how: 'page' }]);
@@ -396,7 +392,7 @@ describe('installing', () => {
     updates.install();
     downloads[0]?.fail(Object.assign(new Error('HttpError: 503'), { statusCode: 503 }));
     await vi.runAllTimersAsync();
-    expect(updates.state).toEqual({ ...OFFER, failed: 'GitHub answered 503. Try again later.' });
+    expect(updates.state).toEqual({ ...OFFER, failed: { why: 'github', details: '503' } });
     updates.install();
     downloads[1]?.done();
     await vi.runAllTimersAsync();
@@ -496,9 +492,9 @@ describe('restarting', () => {
   it('is refused with nothing ready', async () => {
     const { updater } = fakeUpdater();
     const updates = start(updater);
-    expect(() => updates.restart()).toThrow('No update is ready to install.');
+    expect(() => updates.restart()).toThrow('No update is ready');
     await updates.check(true);
-    expect(() => updates.restart()).toThrow('No update is ready to install.');
+    expect(() => updates.restart()).toThrow('No update is ready');
     expect(quit).not.toHaveBeenCalled();
   });
 });
@@ -536,7 +532,7 @@ describe('Later', () => {
 
   it('is refused with nothing on offer', () => {
     const { updater } = fakeUpdater();
-    expect(() => start(updater).later()).toThrow('There’s no update to hide.');
+    expect(() => start(updater).later()).toThrow('No update available');
   });
 });
 
@@ -557,11 +553,11 @@ describe('moving to Applications', () => {
     const updates = start(updater, () => how);
     await updates.check(true);
     how = 'page';
-    expect(() => updates.move()).toThrow('Lo can’t move itself from here.');
+    expect(() => updates.move()).toThrow('This copy of Lo can’t be moved');
     expect(move).not.toHaveBeenCalled();
     expect(updates.state).toEqual({ ...OFFER, how: 'page' });
     how = 'install';
-    expect(() => updates.move()).toThrow('Lo is in Applications already.');
+    expect(() => updates.move()).toThrow('Already in Applications');
     expect(updates.state).toEqual(OFFER);
     how = 'move';
     updates.move();
@@ -595,8 +591,9 @@ describe('moving to Applications', () => {
     move.mockImplementation(() => {
       throw new Error('Failed to copy Lo.app');
     });
+    // Main's own words, as the window shows them behind Details.
     expect(() => start(updater, 'move').move()).toThrow(
-      'Lo couldn’t move itself to Applications: Failed to copy Lo.app',
+      expect.objectContaining({ code: 'failed', message: 'Failed to copy Lo.app' }),
     );
   });
 });

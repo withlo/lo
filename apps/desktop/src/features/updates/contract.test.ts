@@ -60,9 +60,9 @@ describe('the state the window hears', () => {
 
   it('takes an offer of a version with its own page', () => {
     expect(updateState.parse(offer)).toEqual(offer);
-    expect(
-      checkAnswer.parse({ ...offer, failed: 'GitHub answered 503. Try again later.' }),
-    ).toEqual({ ...offer, failed: 'GitHub answered 503. Try again later.' });
+    const failed = { why: 'github', details: '503' } as const;
+    expect(checkAnswer.parse({ ...offer, failed })).toEqual({ ...offer, failed });
+    expect(checkAnswer.safeParse({ ...offer, failed: 'GitHub answered 503.' }).success).toBe(false);
   });
 
   it('refuses a page that isn’t its version’s, and a version Lo isn’t released as', () => {

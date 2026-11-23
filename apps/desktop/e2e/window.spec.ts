@@ -145,7 +145,7 @@ test('the window opens on a fresh data folder, on Recent pull requests alone, in
     expect(fonts.family).toMatch(/^"Host Grotesk"/);
     // It opens the box to open a pull request with.
     await open.click();
-    await expect(page.getByRole('dialog', { name: 'Review a pull request' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Open pull request' })).toBeVisible();
     // Their licenses ship with the window's files.
     for (const font of ['host-grotesk', 'fragment-mono']) {
       expect(

@@ -80,5 +80,5 @@ In Choosy's settings, open Rules and add a rule that opens in Lo when all of the
 ## From a terminal
 
 `lo <link>` opens a pull request from a terminal. Install it from the welcome, from Settings or from
-Lo's menu ("Install command-line tool"). `lo://github.com/<owner>/<repo>/pull/<number>` links open a
-pull request too.
+Lo's menu ("Install `lo` command"). `lo://github.com/<owner>/<repo>/pull/<number>` links open a pull
+request too.

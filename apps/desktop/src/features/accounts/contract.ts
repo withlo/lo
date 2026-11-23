@@ -127,17 +127,33 @@ export const ghListing = z.discriminatedUnion('kind', [
     version: z.string().nullable(),
     accounts: z.array(ghAccount),
   }),
-  /** No gh Lo will run: none found, or one that someone else could change. */
-  z.strictObject({ kind: z.literal('missing'), message: z.string() }),
+  /**
+   * No gh Lo will run: none found, or, when `passedOver`, one Lo passed over since someone else
+   * could change it.
+   */
+  z.strictObject({ kind: z.literal('missing'), message: z.string(), passedOver: z.boolean() }),
   /** gh ran and failed. */
   z.strictObject({ kind: z.literal('failed'), program: z.string(), message: z.string() }),
 ]);
 export type GhListing = z.output<typeof ghListing>;
 
+/**
+ * Why one account wasn't imported from `gh`: gh isn't signed in to it; gh can't use its sign-in,
+ * with gh's `state`; gh's sign-in for it belongs to `other`, as GitHub says; or something else, in
+ * gh's, GitHub's or the system's own words, for Details.
+ */
+export const importFailure = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('notSignedIn') }),
+  z.strictObject({ kind: z.literal('unusable'), state: z.string() }),
+  z.strictObject({ kind: z.literal('otherAccount'), other: login }),
+  z.strictObject({ kind: z.literal('unknown'), details: z.string().optional() }),
+]);
+export type ImportFailure = z.output<typeof importFailure>;
+
 /** How importing one account from `gh` went. */
 export const imported = z.discriminatedUnion('ok', [
   z.strictObject({ ok: z.literal(true), login }),
-  z.strictObject({ ok: z.literal(false), login, message: z.string() }),
+  z.strictObject({ ok: z.literal(false), login, why: importFailure }),
 ]);
 export type Imported = z.output<typeof imported>;
 

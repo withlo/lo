@@ -60,7 +60,14 @@ const problem = cva('min-w-0 text-ui', {
  */
 export function Problem({ title, reason, action, details, layout = 'inline' }: ProblemProps) {
   const view = layout === 'view';
-  const { more, shown } = useDetails(details, view ? undefined : 'pt-8');
+  // In a view, the text sits 12 px under the buttons, in a roomier well with a hairline, since
+  // the well's fill is the view's own ground, as the overview's other wells have; inline, under
+  // the line, on the problem's own fill.
+  const { more, shown } = useDetails(
+    details,
+    view ? 'pt-12' : 'pt-8',
+    view ? 'p-12 inset-ring inset-ring-border' : 'p-8',
+  );
   const act = action && (
     <Button
       variant={view ? 'primary' : 'secondary'}
@@ -76,18 +83,23 @@ export function Problem({ title, reason, action, details, layout = 'inline' }: P
   return (
     <div className={problem({ layout })}>
       {view ? (
-        <>
-          <div role="alert" className="flex max-w-read-measure flex-col gap-4">
+        // One column, centred, as wide as what failed and why: the buttons under it, and the
+        // text behind Details as wide as it, so the text adds no width as it opens.
+        <div className="flex max-w-read-measure flex-col items-center gap-12">
+          <div role="alert" className="flex flex-col gap-4">
             <p className="m-0 text-title">{title}</p>
             {reason !== undefined && <p className="m-0 text-fg-muted">{reason}</p>}
           </div>
           {(act || more) && (
-            <div className="flex items-center gap-8">
-              {act}
-              {more}
+            <div className="flex flex-col items-center self-stretch">
+              <div className="flex items-center gap-8">
+                {act}
+                {more}
+              </div>
+              {details !== undefined && <div className="w-0 min-w-full">{shown}</div>}
             </div>
           )}
-        </>
+        </div>
       ) : (
         <div className="flex items-start gap-8">
           <svg
@@ -115,26 +127,26 @@ export function Problem({ title, reason, action, details, layout = 'inline' }: P
           )}
         </div>
       )}
-      {details !== undefined && (
-        <div className={view ? 'w-full max-w-read-measure' : undefined}>{shown}</div>
-      )}
+      {!view && details !== undefined && shown}
     </div>
   );
 }
 
 /**
  * The raw text behind Details, wherever something that failed shows it: `more`, the Details button
- * that opens it, and `shown`, what opens, the text with Copy, under a gap of `gap` inside what opens,
- * so a closed one takes no room. Nothing for no `details`.
+ * that opens it, and `shown`, what opens, the text with Copy in a well, under a gap of `gap` inside
+ * what opens, so a closed one takes no room. `well` is the well's padding, and a hairline where
+ * its fill is the surface it sits on. `open` says whether it's open. Nothing for no `details`.
  */
 export function useDetails(
   details: string | undefined,
   gap?: string,
-): { more: ReactNode; shown: ReactNode } {
+  well = 'p-8',
+): { more: ReactNode; shown: ReactNode; open: boolean } {
   const copy = useCopy();
   const [detailed, setDetailed] = useState(false);
   const id = useId();
-  if (details === undefined) return { more: null, shown: null };
+  if (details === undefined) return { more: null, shown: null, open: false };
   const more = (
     <Button
       variant="ghost"
@@ -150,7 +162,7 @@ export function useDetails(
     <div id={id}>
       <Collapse open={detailed}>
         <div className={gap}>
-          <div className="flex items-start gap-8 rounded-sm bg-bg-well p-8 text-start">
+          <div className={`flex items-start gap-8 rounded-sm bg-bg-well text-start ${well}`}>
             <pre className="m-0 problem-details min-w-0 flex-1 overflow-auto wrap-anywhere whitespace-pre-wrap text-fg-muted code-small">
               {details}
             </pre>
@@ -160,5 +172,5 @@ export function useDetails(
       </Collapse>
     </div>
   );
-  return { more, shown };
+  return { more, shown, open: detailed };
 }
