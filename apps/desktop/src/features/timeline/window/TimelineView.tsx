@@ -174,12 +174,14 @@ const CAUSES = {
 /**
  * A timeline that couldn't be read, with nothing read before: why, with GitHub's own words behind
  * Details, and when main tries again, counted down, where it knows. Try now, or Try again where it
- * doesn't, reads it at once, busy until main's read has answered.
+ * doesn't, reads it at once, busy until main's read has answered. While the account's poller reads
+ * nothing, the tab's banner says the wait and has the way to try again, so this has neither.
  */
 function Failed({ tab, view }: { tab: PullTab; view: TimelineView | undefined }) {
   const [trying, setTrying] = useState(false);
   const cause = view?.cause ? CAUSES[view.cause] : undefined;
   const retryAt = view?.retryAt ?? undefined;
+  const stalled = view?.stalled ?? false;
   return (
     <Problem
       layout="view"
@@ -194,18 +196,24 @@ function Failed({ tab, view }: { tab: PullTab; view: TimelineView | undefined })
           </>
         )
       }
-      action={{
-        label: retryAt === undefined ? 'Try again' : 'Try now',
-        busy: trying,
-        working: 'Trying…',
-        onClick: () => {
-          setTrying(true);
-          main()
-            .retry({ id: tab.id })
-            .catch((error: unknown) => console.error("Lo couldn't read the timeline again:", error))
-            .finally(() => setTrying(false));
-        },
-      }}
+      action={
+        stalled
+          ? undefined
+          : {
+              label: retryAt === undefined ? 'Try again' : 'Try now',
+              busy: trying,
+              working: 'Trying…',
+              onClick: () => {
+                setTrying(true);
+                main()
+                  .retry({ id: tab.id })
+                  .catch((error: unknown) =>
+                    console.error("Lo couldn't read the timeline again:", error),
+                  )
+                  .finally(() => setTrying(false));
+              },
+            }
+      }
       details={view?.problem ? withoutBidi(view.problem) : undefined}
     />
   );

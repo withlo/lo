@@ -116,6 +116,10 @@ function pollerOf(first: PullRequestTimeline | Error) {
       status = { ...status, ...next };
       changed();
     },
+    /** The cache holds no timeline, nor does GitHub answer one yet. */
+    empty() {
+      delete kept.timeline;
+    },
     /** The timeline's failed read is tried again at `at`, or isn't waiting. */
     retries(at: number | undefined) {
       retryAt = at;
@@ -189,23 +193,35 @@ describe('TimelineTab', () => {
       cause: 'failed',
       problem: 'Lo couldn’t read the timeline: GitHub is down',
       retryAt: null,
+      stalled: false,
     });
     // The poller says when it reads it again, which the window counts down to.
     polled.retries(1_000_000);
     expect(timelines.at(-1)).toMatchObject({ status: 'failed', retryAt: 1_000_000 });
     const told = timelines.length;
     polled.goes({});
+    polled.goes({});
     expect(timelines.length, 'nothing new, nothing said').toBe(told);
-    // GitHub can't be reached, as the poller says, not a read: no read fails for it.
+    // GitHub can't be reached, as the poller says, not a read: no read fails for it. The tab's
+    // banner says the wait, so no time is said here.
     polled.goes({ offline: { since: 0, retryAt: 2_000_000, error: 'getaddrinfo ENOTFOUND.' } });
     expect(timelines.at(-1)).toMatchObject({
       status: 'failed',
       cause: 'offline',
       problem: 'Lo couldn’t read the timeline: getaddrinfo ENOTFOUND.',
-      retryAt: 2_000_000,
+      retryAt: null,
+      stalled: true,
     });
-    polled.goes({ offline: undefined });
-    expect(timelines.at(-1)).toMatchObject({ cause: 'failed', retryAt: 1_000_000 });
+    // Nor while the rate limit holds every read, or the account is signed out.
+    polled.goes({
+      offline: undefined,
+      rateLimit: { kind: 'paused', until: 0, reason: { kind: 'secondary' } },
+    });
+    expect(timelines.at(-1)).toMatchObject({ cause: 'failed', retryAt: null, stalled: true });
+    polled.goes({ rateLimit: { kind: 'normal' }, signedOut: true });
+    expect(timelines.at(-1)).toMatchObject({ cause: 'failed', retryAt: null, stalled: true });
+    polled.goes({ signedOut: false });
+    expect(timelines.at(-1)).toMatchObject({ cause: 'failed', retryAt: 1_000_000, stalled: false });
 
     polled.read(timeline('At last'));
     expect(timelines.at(-1)).toMatchObject({ status: 'ready', cause: null, problem: null });
@@ -263,6 +279,26 @@ describe('TimelineTab', () => {
     await tab.retry();
     expect(polled.readAfresh).toHaveBeenCalledOnce();
     expect(polled.observers.size, 'what waited stops listening').toBe(1);
+  });
+
+  it('shows what it saved when it opens offline, failing only once that has been read', async () => {
+    const polled = pollerOf(timeline('Saved'));
+    polled.goes({ offline: { since: 0, retryAt: 2_000_000, error: 'Offline.' } });
+    const { tab, timelines } = tabOf(polled.poller);
+    tab.update(info());
+    expect(tab.show().timeline.status).toBe('loading');
+    await vi.waitFor(() => expect(timelines.at(-1)?.status).toBe('ready'));
+    expect(timelines.map((view) => view.status)).not.toContain('failed');
+
+    // With nothing saved, it says so once the cache has answered.
+    const empty = pollerOf(timeline('Saved'));
+    empty.empty();
+    empty.goes({ offline: { since: 0, retryAt: 2_000_000, error: 'Offline.' } });
+    const opened = tabOf(empty.poller);
+    opened.tab.update(info());
+    opened.tab.show();
+    await vi.waitFor(() => expect(opened.timelines.at(-1)?.status).toBe('failed'));
+    expect(opened.timelines.at(-1)).toMatchObject({ cause: 'offline', stalled: true });
   });
 
   it('reads anew as another account', async () => {

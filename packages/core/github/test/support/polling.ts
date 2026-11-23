@@ -29,6 +29,7 @@ import {
   type PollEvent,
   type PollStatus,
 } from '../../src/poll/poller.ts';
+import type { PollConfig } from '../../src/poll/governor.ts';
 import { pullRequest, type PullRequest } from '../../src/queries.ts';
 import { PullRef, RepoRef } from '../../src/refs.ts';
 import { Token } from '../../src/token.ts';
@@ -186,6 +187,8 @@ export interface PollingOptions {
   /** Reads an account imported from `gh` from `gh` again, given the network. */
   reread?: ((network: Network, login: string) => Promise<Token | undefined>) | undefined;
   lookUpMerged?: LookUpMerged | undefined;
+  /** What the poller's clocks and intervals are, where a test needs them other than the default. */
+  config?: Partial<PollConfig> | undefined;
 }
 
 /** One poller for rozed-bot, its accounts and its cache, and what it sends and says. */
@@ -257,7 +260,7 @@ export class Polling {
       accounts: this.accounts,
       login: LOGIN,
       cache: this.cache,
-      config: { jitter: 0 },
+      config: { jitter: 0, ...this.#options.config },
       log: (message) => this.logs.push(message),
       lookUpMerged: this.#options.lookUpMerged,
       seen: (_login, pull, heads, when) => {

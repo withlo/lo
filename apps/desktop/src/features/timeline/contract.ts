@@ -207,7 +207,7 @@ export type TimelineCause = z.output<typeof timelineCause>;
  * nobody, which reads no timeline; `run` for a run of a stack's layers, which has none of its own;
  * `ready`; or `failed`, when it couldn't be read and nothing was read before, with why in `cause`,
  * the error's words in `problem`, and when it's read again by itself in `retryAt`, as `Date.now()`
- * counts, where that's known.
+ * counts, where that's known and the poller isn't `stalled`.
  */
 export const timelineView = z.strictObject({
   id: tabId,
@@ -216,6 +216,12 @@ export const timelineView = z.strictObject({
   cause: timelineCause.nullable(),
   problem: z.string().nullable(),
   retryAt: z.number().int().nonnegative().nullable(),
+  /**
+   * Whether the account's poller reads nothing now: GitHub can't be reached, the rate limit holds
+   * every read, or the account is signed out. The tab's banner says the wait then, with its own way
+   * to try again, so the timeline offers none, and says no time.
+   */
+  stalled: z.boolean(),
 });
 export type TimelineView = z.output<typeof timelineView>;
 

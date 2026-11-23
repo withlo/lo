@@ -78,6 +78,8 @@ interface Failure {
   readonly cause: TimelineCause;
   readonly words: string;
   readonly retryAt: number | undefined;
+  /** Whether the poller reads nothing now, so nothing here can try again. */
+  readonly stalled: boolean;
 }
 
 export class TimelineTab {
@@ -97,6 +99,8 @@ export class TimelineTab {
   #waiting: (() => void)[] = [];
   /** What the window was last told of a failure, so a change in polling says only what's new. */
   #told = '';
+  /** Whether the first read has answered, from the cache or GitHub: a failure counts after it. */
+  #landed = false;
   #closed = false;
 
   constructor(options: TimelineTabOptions) {
@@ -114,29 +118,36 @@ export class TimelineTab {
       cause: failure?.cause ?? null,
       problem: failure?.words ?? null,
       retryAt: failure?.retryAt ?? null,
+      stalled: failure?.stalled ?? false,
     };
   }
 
   /**
    * Why the timeline can't be read, while nothing has been: GitHub can't be reached now, as the
-   * poller says, or the read failed; with when the poller tries again, where it says.
+   * poller says, or the read failed; with when the poller tries again, where it says. While the
+   * poller is stalled, the tab's banner says the wait and has its own Try again, so this says
+   * neither: it's `stalled`, with no time.
    */
   #failure(): Failure | undefined {
     if (this.#timeline || this.#info?.run || this.#info?.acting?.kind === 'anonymous') {
       return undefined;
     }
-    const offline = this.#poller?.status().offline;
-    if (offline) {
+    const poller = this.#poller;
+    const status = poller?.status();
+    const pull = this.#pull;
+    const stall = status !== undefined && stalled(status);
+    // A tab that opens offline shows what it saved, once it's read that: nothing fails before.
+    if (status?.offline && this.#landed) {
       return {
         cause: 'offline',
-        words: `Lo couldn’t read the timeline: ${offline.error}`,
-        retryAt: Math.round(offline.retryAt),
+        words: `Lo couldn’t read the timeline: ${status.offline.error}`,
+        retryAt: undefined,
+        stalled: true,
       };
     }
     if (!this.#problem) return undefined;
-    const pull = this.#pull;
-    const at = pull && this.#poller?.readRetryAt(pull, TIMELINE);
-    return { ...this.#problem, retryAt: at === undefined ? undefined : Math.round(at) };
+    const at = stall || !pull ? undefined : poller?.readRetryAt(pull, TIMELINE);
+    return { ...this.#problem, retryAt: at, stalled: stall };
   }
 
   /** What goes beside the description, as main has it now. */
@@ -207,6 +218,7 @@ export class TimelineTab {
         settled = true;
         clearTimeout(timer);
         stop();
+        this.#waiting = this.#waiting.filter((each) => each !== settle);
         resolve();
       };
       const timer = setTimeout(settle, this.#options.readWait ?? READ_WAIT);
@@ -231,7 +243,13 @@ export class TimelineTab {
   #restate(): void {
     if (this.#closed || this.#timeline) return;
     const view = this.timeline();
-    const told = JSON.stringify([view.status, view.cause, view.problem, view.retryAt]);
+    const told = JSON.stringify([
+      view.status,
+      view.cause,
+      view.problem,
+      view.retryAt,
+      view.stalled,
+    ]);
     if (told === this.#told) return;
     this.#publishTimeline();
   }
@@ -251,6 +269,7 @@ export class TimelineTab {
     this.#timeline = undefined;
     this.#sidebar = undefined;
     this.#problem = undefined;
+    this.#landed = false;
     this.#answered();
   }
 
@@ -277,6 +296,7 @@ export class TimelineTab {
       poller.pullRequestSidebar(pull),
     ]);
     if (this.#poller !== poller) return;
+    this.#landed = true;
     const [timeline, sidebar] = reads;
     if (timeline.status === 'rejected') {
       if (!this.#timeline) {
@@ -295,6 +315,8 @@ export class TimelineTab {
       this.#sidebar = sidebar.value.value;
       this.#publishSidebar();
     }
+    // With nothing saved to show, what polling says now counts.
+    this.#restate();
   }
 
   /** Whether the tab still shows `pull` as `login`. */
@@ -363,7 +385,13 @@ export class TimelineTab {
 
   #publishTimeline(): void {
     const view = this.timeline();
-    this.#told = JSON.stringify([view.status, view.cause, view.problem, view.retryAt]);
+    this.#told = JSON.stringify([
+      view.status,
+      view.cause,
+      view.problem,
+      view.retryAt,
+      view.stalled,
+    ]);
     this.#options.publish.timeline(view);
   }
 

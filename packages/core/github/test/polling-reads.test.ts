@@ -483,10 +483,6 @@ test('a cached read that fails says so and is tried again at the open prs interv
   expect(t.events()).toContain("failed to read Counted #1: couldn't read GitHub's answer: no good");
   // The pull request itself is fine, and polled as ever.
   expect(t.poller.check(pr(1))).toBeDefined();
-  // When it's read again, as the wall clock counts.
-  const left = (t.poller.readRetryAt(pr(1), COUNTED) ?? 0) - Date.now();
-  expect(left).toBeGreaterThan(19_000);
-  expect(left).toBeLessThanOrEqual(20_000);
 
   answers.answer(7);
   await t.runUntil(19);
@@ -495,6 +491,42 @@ test('a cached read that fails says so and is tried again at the open prs interv
   expect(answers.runs).toBe(2);
   expect(t.events()).toEqual(['read Counted #1']);
   expect(cachedCount(t)).toBe(7);
+});
+
+/**
+ * When a failed read is tried again is worked out once, by the wall clock, as it fails: asked again
+ * while polls go on, with a monotonic clock that isn't in whole milliseconds, it's the same, so
+ * what counts it down isn't told of a new time with each poll.
+ */
+test('a failed read says when it is tried again, the same each time it is asked', async () => {
+  // A monotonic clock with a fraction of a millisecond that differs from one call to the next.
+  let calls = 0;
+  const t = await Polling.start('cached_read_fails', recorded(), {
+    config: { monotonic: () => performance.now() + (calls++ % 3) * 0.3 },
+  });
+  const answers = new Answers();
+  answers.answer({ error: 'no good' });
+  void t.poller.setOpen(pr(1));
+  void counted(t, pr(1), answers);
+  await t.run();
+  expect(answers.runs).toBe(1);
+  const retryAt = t.poller.readRetryAt(pr(1), COUNTED);
+  expect(retryAt, 'whole milliseconds').toSatisfy(Number.isInteger);
+  expect((retryAt ?? 0) - Date.now()).toBeGreaterThan(19_000);
+  expect((retryAt ?? 0) - Date.now()).toBeLessThanOrEqual(20_000);
+  // Asked as each change the poller makes is heard, and as time goes on, the time stays.
+  const asked: (number | undefined)[] = [];
+  const stop = t.poller.onChange(() => asked.push(t.poller.readRetryAt(pr(1), COUNTED)));
+  for (let second = 1; second < 20; second++) {
+    await t.runUntil(second);
+    asked.push(t.poller.readRetryAt(pr(1), COUNTED));
+  }
+  stop();
+  expect(new Set(asked)).toEqual(new Set([retryAt]));
+
+  answers.answer(7);
+  await t.runUntil(20);
+  expect(answers.runs).toBe(2);
   expect(t.poller.readRetryAt(pr(1), COUNTED), 'read, it waits on nothing').toBeUndefined();
 });
 
