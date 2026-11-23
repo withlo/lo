@@ -196,15 +196,32 @@ export const timeline = z.strictObject({
 export type Timeline = z.output<typeof timeline>;
 
 /**
+ * Why a timeline couldn't be read: GitHub can't be reached now, as the account's poller says
+ * (`offline`), or it answered with an error (`failed`), as anything else is.
+ */
+export const timelineCause = z.enum(['offline', 'failed']);
+export type TimelineCause = z.output<typeof timelineCause>;
+
+/**
  * A view's timeline, as main has it: `loading` until it's read; `signIn` for a tab that acts as
  * nobody, which reads no timeline; `run` for a run of a stack's layers, which has none of its own;
- * `ready`; or `failed`, with why in `problem`, when it couldn't be read and nothing was read before.
+ * `ready`; or `failed`, when it couldn't be read and nothing was read before, with why in `cause`,
+ * the error's words in `problem`, and when it's read again by itself in `retryAt`, as `Date.now()`
+ * counts, where that's known and the poller isn't `stalled`.
  */
 export const timelineView = z.strictObject({
   id: tabId,
   status: z.enum(['loading', 'signIn', 'run', 'ready', 'failed']),
   timeline: timeline.nullable(),
+  cause: timelineCause.nullable(),
   problem: z.string().nullable(),
+  retryAt: z.number().int().nonnegative().nullable(),
+  /**
+   * Whether the account's poller reads nothing now: GitHub can't be reached, the rate limit holds
+   * every read, or the account is signed out. The tab's banner says the wait then, with its own way
+   * to try again, so the timeline offers none, and says no time.
+   */
+  stalled: z.boolean(),
 });
 export type TimelineView = z.output<typeof timelineView>;
 
@@ -238,6 +255,12 @@ export const contract = defineContract('timeline', {
       input: z.strictObject({ id: tabId }),
       reply: reply<{ timeline: TimelineView; sidebar: SidebarView }>(),
     },
+    /**
+     * Reads view `id`'s timeline again at once, after it failed, and answers once that read has,
+     * however it went, or once it's plain none will come soon: GitHub can't be reached, the rate
+     * limit holds every read, the account is signed out, or nothing answered within 20 s.
+     */
+    retry: { input: z.strictObject({ id: tabId }), reply: reply<void>() },
   },
   topics: {
     /** A view's timeline, each time it changes. */

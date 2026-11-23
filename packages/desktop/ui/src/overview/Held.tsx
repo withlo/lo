@@ -47,7 +47,7 @@ export function Held({ children }: { children: ReactNode }) {
       {cut && (
         <div className="lo-held__more">
           <Button size="sm" onClick={() => held.current?.release()}>
-            Show the whole block
+            Show whole block
           </Button>
         </div>
       )}

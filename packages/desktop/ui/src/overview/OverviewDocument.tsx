@@ -21,7 +21,9 @@ import type {
 } from '@lo/artifact';
 import { plainText, type Code } from '@lo/markdown';
 
-import { Key } from '../Key.tsx';
+import { heldRegistry } from '../commands/control.ts';
+import { NO_TARGET } from '../commands/targets.ts';
+import { HintButton } from '../HintButton.tsx';
 import {
   Anchors,
   Fold,
@@ -80,7 +82,7 @@ export interface OverviewDocumentProps {
   focused?: number | undefined;
   /** Whether the outline of sections shows beside the article. Narrow sheets hide it anyway. */
   outline?: boolean | undefined;
-  /** What the outline says under its sections, such as the block keys. */
+  /** What sits under the outline's sections: the buttons that move between blocks. */
   outlineFoot?: ReactNode;
   views?: OverviewViews | undefined;
   /**
@@ -88,8 +90,12 @@ export interface OverviewDocumentProps {
    * and a web target is always an `https://` page, for main to open.
    */
   onFollow?: ((target: OverviewTarget, from: Element) => void) | undefined;
-  /** Says what each focused block can do: by default, what its kind can. */
-  hints?: ((block: OverviewBlock) => readonly BlockHint[]) | undefined;
+  /**
+   * What each focused block's chip offers, given the block and its number: by default, what its
+   * kind can do, on whatever has focus. It's asked again whenever it's a new function, so one that
+   * changes as what the chip says does draws the chip again.
+   */
+  hints?: ((block: OverviewBlock, number: number) => readonly BlockHint[]) | undefined;
   /** Where hover cards go: an element inside `.lo-app`. By default, the `.lo-app` it's in. */
   container?: HTMLElement | null | undefined;
   /** The scrolling element. */
@@ -143,6 +149,11 @@ export function OverviewDocument({
   const sections = useMemo(() => outlineOf(tree.blocks), [tree.blocks]);
   const lead = useMemo(() => leadOf(tree.blocks), [tree.blocks]);
   const [current, setCurrent] = useState<number | undefined>(undefined);
+  // What the focused block's chip offers. Only that block is drawn again as it changes.
+  const offered = useMemo(() => {
+    const block = focused === undefined ? undefined : tree.blocks[focused];
+    return block === undefined || focused === undefined ? NO_HINTS : hints(block, focused);
+  }, [focused, hints, tree.blocks]);
   const [target, setTarget] = useState<string | undefined>(undefined);
   const root = useRef<HTMLDivElement | null>(null);
   const cards = useRef<HTMLElement | null>(null);
@@ -274,7 +285,7 @@ export function OverviewDocument({
                   number={index}
                   lead={index === lead}
                   focused={focused === index}
-                  hints={hints}
+                  hints={focused === index ? offered : NO_HINTS}
                 />
               ))}
               <MarkdownNotes notes={tree.notes} />
@@ -292,7 +303,8 @@ interface ArticleBlockProps {
   /** Whether it's the tl;dr's first paragraph, set larger. */
   lead: boolean;
   focused: boolean;
-  hints: (block: OverviewBlock) => readonly BlockHint[];
+  /** What its chip offers, while it's focused. */
+  hints: readonly BlockHint[];
 }
 
 /**
@@ -318,7 +330,7 @@ const ArticleBlock = memo(function ArticleBlock({
       <MarkdownBlock<Overview> node={block} />
     );
   if (!isStop(block)) return drawn;
-  const chip = focused ? <Hints hints={hints(block)} /> : null;
+  const chip = focused ? <Hints hints={hints} fold={block.kind === 'details'} /> : null;
   if (block.kind === 'details') {
     return (
       <Fold
@@ -351,21 +363,41 @@ const FRAMED: ReadonlySet<OverviewBlock['kind']> = new Set([
   'tabs',
 ]);
 
-/** A focused block's chip: what its keys do. */
-function Hints({ hints }: { hints: readonly BlockHint[] }) {
+/** A chip that offers nothing, as every block but the focused one has. */
+const NO_HINTS: readonly BlockHint[] = [];
+
+/**
+ * A focused block's chip: a button for each thing its keys do there, with the key, named by what
+ * it does on the block, as its handler's `named` says: "Open link" for `⏎` on prose that links to
+ * a page, "Next tab" for `→` on tabs. A press leaves focus on the block, and never reaches the
+ * block itself, so a fold's title doesn't take it as a click of its own.
+ */
+function Hints({ hints, fold }: { hints: readonly BlockHint[]; fold: boolean }) {
   if (hints.length === 0) return null;
   return (
-    <span className="lo-block__hints" aria-hidden="true">
+    <span className="lo-block__hints" onClick={(event) => event.stopPropagation()}>
       {hints.map((hint) => (
-        <span key={hint.label} className="inline-flex items-center gap-4">
-          {hint.keys.map((keys) => (
-            <Key key={keys.join(' ')} keys={keys} quiet decorative />
-          ))}
-          {hint.label}
-        </span>
+        <HintButton key={hint.command} command={hint.command} target={hint.target}>
+          {fold ? <FoldWords /> : heldRegistry()?.named(hint.command, hint.target ?? NO_TARGET)}
+        </HintButton>
       ))}
     </span>
   );
+}
+
+/** What its command does to the fold it's in: "Expand" while it's closed, "Collapse" while open. */
+function FoldWords() {
+  const own = useRef<HTMLSpanElement>(null);
+  const [open, setOpen] = useState(false);
+  useLayoutEffect(() => {
+    const fold = own.current?.closest('details');
+    if (!fold) return undefined;
+    const read = () => setOpen(fold.open);
+    read();
+    fold.addEventListener('toggle', read);
+    return () => fold.removeEventListener('toggle', read);
+  }, []);
+  return <span ref={own}>{open ? 'Collapse' : 'Expand'}</span>;
 }
 
 /** How the overview's own blocks and links draw, in the document's markdown. */

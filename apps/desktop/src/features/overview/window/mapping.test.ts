@@ -80,14 +80,14 @@ describe('lineOnHead', () => {
     expect(lineOnHead(deleted, 1)).toBeUndefined();
     expect(onHead(deleted, 'src/a.ts', { start: 1, end: 2 })).toBeUndefined();
     const binary = fileSinceOf(
-      { kind: 'changed', path: 'logo.png', pushed: true, texts: { why: 'It isn’t text.' } },
+      { kind: 'changed', path: 'logo.png', pushed: true, texts: { why: 'binary' } },
       undefined,
     );
     expect(binary).toEqual({
       kind: 'opaque',
       path: 'logo.png',
       pushed: true,
-      why: 'It isn’t text.',
+      why: 'binary',
     });
     expect(lineOnHead(binary, 1)).toBeUndefined();
     expect(onHead(binary, 'logo.png', { start: 1, end: 2 })).toEqual({

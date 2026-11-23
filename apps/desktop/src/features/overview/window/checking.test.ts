@@ -333,7 +333,7 @@ describe('Checking', () => {
   });
 
   it('reads code that was unread again, and publishes only what changed', async () => {
-    let reply: CodeReply = { kind: 'read', files: [{ kind: 'unread', why: 'Offline.' }] };
+    let reply: CodeReply = { kind: 'read', files: [{ kind: 'unread', why: 'offline' }] };
     const { checking, published, asked } = checkingWith(() => reply);
     const commit = commitOf();
     checking.take(stateOf(commit, 'offline'));
@@ -357,7 +357,7 @@ describe('Checking', () => {
     );
     const half: CodeReply = {
       kind: 'read',
-      files: [READ.files[0] ?? { kind: 'missing' }, { kind: 'unread', why: 'Offline.' }],
+      files: [READ.files[0] ?? { kind: 'missing' }, { kind: 'unread', why: 'offline' }],
     };
     let reply: CodeReply = half;
     const published: (CheckedOverview | undefined)[] = [];
@@ -390,13 +390,13 @@ describe('Checking', () => {
     // Read again as the copy comes back, the read fails, or the copy isn't there after all, or
     // what was read is unread now: what was read stays.
     for (const again of [
-      { kind: 'failed', why: 'It broke.' },
+      { kind: 'failed', why: 'unknown' },
       { kind: 'waiting' },
       {
         kind: 'read',
         files: [
-          { kind: 'unread', why: 'Gone.' },
-          { kind: 'unread', why: 'Gone.' },
+          { kind: 'unread', why: 'unknown' },
+          { kind: 'unread', why: 'unknown' },
         ],
       },
     ] satisfies CodeReply[]) {
@@ -477,8 +477,8 @@ describe('Checking', () => {
     const commit = commitOf();
     failing.take(stateOf(commit, 'ready'));
     await vi.waitFor(() => expect(published).toHaveLength(1));
-    // In Lo's words: what main said goes to the log.
-    expect(last()).toMatchObject({ kind: 'failed', why: 'Lo couldn’t read artifact.md.' });
+    // Lo doesn't know why main couldn't read it: what main said goes behind Details.
+    expect(last()).toMatchObject({ kind: 'failed', why: '', details: 'GitHub was out of reach.' });
     fail = false;
     failing.take({ ...stateOf(commit, 'ready'), problem: null, saved: true });
     await vi.waitFor(() => expect(published).toHaveLength(3));
@@ -509,16 +509,15 @@ function readOf(size: number): CodeRead {
 }
 
 describe('failedWhy', () => {
-  it('says why a check failed in Lo’s words, never the error’s own', () => {
+  it('says why a check failed where the cause is known, never the error’s own words', () => {
     expect(failedWhy(new IpcError('timeout', 'overview.check ran past 10000 ms.'))).toBe(
-      'Checking it took longer than Lo allows.',
+      'It took too long.',
     );
-    expect(failedWhy(new IpcError('internal', 'SQLITE_BUSY: database is locked'))).toBe(
-      'Lo can’t tell why.',
+    expect(failedWhy(new IpcError('memory', 'overview.check ran out of memory.'))).toBe(
+      'It ran out of memory.',
     );
-    expect(failedWhy(new TypeError("Cannot read properties of undefined (reading 'x')"))).toBe(
-      'Lo can’t tell why.',
-    );
+    expect(failedWhy(new IpcError('internal', 'SQLITE_BUSY: database is locked'))).toBe('');
+    expect(failedWhy(new TypeError("Cannot read properties of undefined (reading 'x')"))).toBe('');
   });
 });
 

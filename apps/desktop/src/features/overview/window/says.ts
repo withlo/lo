@@ -1,35 +1,40 @@
 // What the overview's view says: who wrote it and when, why it can't be shown (its findings by
-// line, its sizes by kind, the format it's in) and why it couldn't be read, with when Lo tries
-// again. Plain functions of what main and the check found, so each wording is tested alone.
+// line, its sizes by kind, the format it's in) and why it couldn't be fetched, with when it's
+// fetched again. Plain functions of what main and the check found, so each wording is tested alone.
 
 import { FORMAT, LIMITS, type Finding, type SizeKind, type Sizes } from '@lo/artifact';
+import { formatBytes } from '@lo/ui';
 
-import type { Byline, Problem } from '../contract.ts';
+import type { Byline, OverviewCommit, Problem } from '../contract.ts';
 
-/** `seconds` in the largest whole unit, or nothing under a minute. */
+/** `seconds` in the largest whole unit: "5 min", "2 h", "3 d"; nothing under a minute. */
 function whole(seconds: number): string | undefined {
   if (seconds < 60) return undefined;
-  const [count, unit] =
-    seconds < 3_600
-      ? [Math.floor(seconds / 60), 'minute']
-      : seconds < 86_400
-        ? [Math.floor(seconds / 3_600), 'hour']
-        : [Math.floor(seconds / 86_400), 'day'];
-  if (count === 1) return unit === 'hour' ? 'an hour' : `a ${unit}`;
-  return `${count} ${unit}s`;
+  if (seconds < 3_600) return `${Math.floor(seconds / 60)} min`;
+  if (seconds < 86_400) return `${Math.floor(seconds / 3_600)} h`;
+  return `${Math.floor(seconds / 86_400)} d`;
 }
 
-/** How long before `now` `then` was: "just now", "5 minutes ago", "2 days ago". */
+/** How many days back a time is still said as how long ago it was, rather than as its date. */
+const AGO_DAYS = 30;
+
+/**
+ * How long before `now` `then` was: "just now", "5 min ago", "2 d ago"; past 30 days, its date:
+ * "Nov 12", or "Nov 12, 2025" in another year.
+ */
 export function ago(then: number, now: number): string {
-  const said = whole(Math.floor(Math.max(0, now - then) / 1000));
+  const seconds = Math.floor(Math.max(0, now - then) / 1000);
+  if (seconds > AGO_DAYS * 86_400) {
+    const date = new Date(then);
+    const sameYear = date.getFullYear() === new Date(now).getFullYear();
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      ...(sameYear ? {} : { year: 'numeric' }),
+    });
+  }
+  const said = whole(seconds);
   return said === undefined ? 'just now' : `${said} ago`;
-}
-
-/** How long until `then`, from `now`, for what counts down: "in 8 s", "in 2 minutes". */
-export function until(then: number, now: number): string {
-  const seconds = Math.max(1, Math.ceil((then - now) / 1000));
-  if (seconds < 60) return `in ${seconds} s`;
-  return `in ${whole(Math.ceil(seconds / 60) * 60) ?? `${seconds} s`}`;
 }
 
 /**
@@ -60,6 +65,11 @@ function plainName(name: string): string {
   return name.replaceAll(MARKS, ' ').replaceAll(/\s+/g, ' ').trim();
 }
 
+/** Lines of a file, after its name and `·`: "line 3", "lines 3–9". */
+export function linesOf({ start, end }: { start: number; end: number }): string {
+  return start === end ? `line ${start}` : `lines ${start}–${end}`;
+}
+
 /** A commit's short ID, as the byline and the reports write it. */
 export function shortId(id: string): string {
   return id.slice(0, 7);
@@ -70,33 +80,45 @@ function counted(count: number, one: string, many = `${one}s`): string {
   return `${count.toLocaleString('en-US')} ${count === 1 ? one : many}`;
 }
 
-/** A size in bytes as people read it: "820 bytes", "48 KB", "74 MB". */
+/** A size in bytes as people read it: "820 B", "48 KB", "74 MB". */
 export function bytes(size: number): string {
-  if (size < 1024) return counted(size, 'byte');
-  const kb = size / 1024;
-  if (kb < 1024) return `${Math.round(kb).toLocaleString('en-US')} KB`;
-  const mb = kb / 1024;
-  return `${mb < 10 ? mb.toFixed(1).replace(/\.0$/, '') : Math.round(mb).toLocaleString('en-US')} MB`;
+  return formatBytes(size);
 }
 
 /**
- * Where a finding is, as the report's first column says it: its line, and the file when it isn't
- * `artifact.md` itself, or the file alone.
+ * Where a finding is, as Details lists it: its line, and the file when it isn't `artifact.md`
+ * itself, or the file alone: "Line 12", "notes.md · line 3".
  */
 export function findingPlace(finding: Finding): string {
   const own = finding.file === 'artifact.md';
   if (finding.line !== undefined) {
-    return own ? `line ${finding.line}` : `${finding.file}, line ${finding.line}`;
+    return own ? `Line ${finding.line}` : `${finding.file} · line ${finding.line}`;
   }
   return own ? 'artifact.md' : finding.file;
 }
 
-/** What the "can't be read" report says of the findings: "The checker found 2 problems". */
+/** Why an overview its check refused can't be shown: "It has 2 problems." */
 export function invalidSummary(findings: readonly Finding[]): string {
   const errors = findings.filter((each) => each.severity === 'error').length;
-  return errors === 0
-    ? 'Lo found a problem in the overview.'
-    : `Lo found ${counted(errors, 'problem')} in the overview.`;
+  return `It has ${counted(Math.max(errors, 1), 'problem')}.`;
+}
+
+/**
+ * The commit an overview is at, who wrote it and when, as Details starts: "a91c4e2 · ravi-k ·
+ * 2 d ago", or the commit alone until main has read who wrote it.
+ */
+export function writtenText(commit: OverviewCommit, now: number): string {
+  const { byline } = commit;
+  const id = shortId(commit.id);
+  if (byline === null) return id;
+  const author = authorOf(byline);
+  const who =
+    author.kind === 'login'
+      ? author.login
+      : author.kind === 'name'
+        ? `“${author.name}”`
+        : undefined;
+  return [id, who, ago(byline.at, now)].filter((part) => part !== undefined).join(' · ');
 }
 
 /** A kind of file, as the "too large" report names it. */
@@ -123,24 +145,18 @@ export function kindName(kind: SizeKind): string {
   }
 }
 
-/** Why the overview is too large, against Lo's limit for what it's past. */
+/** Why the overview is too large, against the limit for what it's past. */
 export function tooLargeWords(what: 'text' | 'entries' | 'bytes', sizes: Sizes): string {
   switch (what) {
     case 'text':
-      return `Its artifact.md is larger than ${bytes(LIMITS.size)}, the most Lo reads.`;
+      return `Its text is over the ${bytes(LIMITS.size)} limit.`;
     case 'entries':
-      return `It holds more than ${counted(LIMITS.entries, 'file and folder', 'files and folders')}, and Lo shows overviews of up to ${LIMITS.entries.toLocaleString('en-US')}.`;
-    case 'bytes': {
-      const [largest] = sizes.kinds;
-      const most =
-        largest && largest.bytes > sizes.bytes / 2
-          ? ` Most of it is ${kindName(largest.kind)}: ${counted(largest.files, 'file')}, ${bytes(largest.bytes)} in all.`
-          : '';
-      return `It's ${bytes(sizes.bytes)}, and Lo shows overviews up to ${bytes(LIMITS.commit)}.${most}`;
-    }
+      return `It has more than ${counted(LIMITS.entries, 'file and folder', 'files and folders')}.`;
+    case 'bytes':
+      return `It’s ${bytes(sizes.bytes)}, over the ${bytes(LIMITS.commit)} limit.`;
     default:
       what satisfies never;
-      return 'It’s past Lo’s limits.';
+      return 'It’s over the size limit.';
   }
 }
 
@@ -153,33 +169,51 @@ export function sizeRows(sizes: Sizes): { kind: string; size: string }[] {
 }
 
 /** Why an overview in a newer format can't be shown. */
-export function newerWords(format: number): string {
-  return `It's written in format ${format.toLocaleString('en-US')}, and this Lo reads ${
+export const NEWER_REASON = 'It needs a newer version of Lo.';
+
+/**
+ * The formats behind Details, for an overview in a newer one: "Format 2. This version reads
+ * format 1."
+ */
+export function newerDetails(format: number): string {
+  return `Format ${format.toLocaleString('en-US')}. This version reads ${
     FORMAT === 1 ? 'format 1' : `formats 1 to ${FORMAT}`
   }.`;
 }
 
+/** A time of day, in the system's own format: "14:05". */
+function timeOfDay(at: number): string {
+  return new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
 /**
- * Why the ref couldn't be read, and when Lo tries again: "GitHub couldn't be reached while Lo read
- * refs/lo/pr/80. Trying again in 8 s."
+ * Why the overview couldn't be fetched, as an error's reason says it: its cause, "Offline.", and
+ * when it's fetched again, `retryAt`, which the reason counts down after it ("Retrying in 8 s.")
+ * unless the cause says when itself. GitHub's own words go behind Details.
  */
-export function problemWords(problem: Problem, ref: string, now: number): string {
-  const again = `Trying again ${until(problem.retryAt, now)}.`;
+export function problemReason(problem: Problem): { cause: string; retryAt?: number | undefined } {
+  const { retryAt } = problem;
   switch (problem.kind) {
     case 'signedOut':
-      return `${problem.login} is signed out, so Lo couldn't read ${ref}. Sign in again in Settings. ${again}`;
+      return { cause: `${problem.login} is signed out.` };
     case 'rateLimited':
       return problem.secondary
-        ? `GitHub asked Lo to slow down while it read ${ref}. ${again}`
-        : `GitHub's rate limit is used up, so Lo couldn't read ${ref}. ${again}`;
+        ? { cause: 'GitHub’s rate limit was reached.', retryAt }
+        : { cause: `GitHub’s rate limit resets at ${timeOfDay(retryAt)}.` };
     case 'blocked':
-      return `${problem.message.replace(/\.+$/, '')}. ${again}`;
+      return {
+        cause:
+          problem.why === 'sso'
+            ? `${problem.org} requires single sign-on.`
+            : `${problem.org} hasn’t approved Lo.`,
+        retryAt,
+      };
     case 'offline':
-      return `GitHub couldn't be reached while Lo read ${ref}. ${again}`;
+      return { cause: 'Offline.', retryAt };
     case 'failed':
-      return `Lo couldn't read ${ref}: ${problem.message.replace(/\.+$/, '')}. ${again}`;
+      return { cause: 'GitHub returned an error.', retryAt };
     default:
       problem satisfies never;
-      return `Lo couldn't read ${ref}.`;
+      return { cause: '', retryAt };
   }
 }

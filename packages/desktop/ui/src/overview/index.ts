@@ -23,6 +23,7 @@ export {
   CodeBody,
   CodeFlag,
   CodeNote,
+  CodeSkeleton,
   Illustration,
   PathName,
   type CodeBlockVariant,

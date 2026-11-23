@@ -335,6 +335,12 @@ one: never a lone line of muted text, a paragraph, or an icon over one.
   it's dimmed with the reason as its tooltip. An action is the id alone, or
   `{ command, target, label }`: `target` is what the command runs on, as a key pressed there would,
   and `label` is other words where the command's label isn't what the view says.
+- An action whose command starts work the view waits on is `busy` until it's done, with `working`
+  its verb: "Check again" reads "Checking…" at the same width. One that copies takes `copied`, what
+  its last copy came to from `useCopySaid` (`null` at rest), and reads "Copied" or "Couldn’t copy"
+  for two seconds with `CopyButton`'s own faces, whether its press or its key copied.
+- `children` is what the state holds for its actions to act on, between the line and the buttons:
+  the prompt that Copy prompt copies, as code. Never more words.
 - It fills the box it's in and centres itself, so give that box the view's height. In a narrow panel
   it wraps.
 - Its title is a heading of level 2; `level={3}` makes it one of level 3, for a list under a heading
@@ -401,18 +407,23 @@ that floats.
 - **`ContextMenu`** is the menu at a point: what can be done to what was right-clicked, each with
   its key. A command that does one of two things is named by which it would do there, from its
   handler's `named`: "Unresolve" on a resolved thread, "Expand" on one drawn collapsed (a
-  `ThreadTarget`'s `collapsed`).
+  `ThreadTarget`'s `collapsed`). A focused overview block's chip names its buttons the same way:
+  "Open link" for `⏎` on prose that links to a page, "Next tab" for `→` on tabs.
 - **`Palette`** is the box that finds things by typing, from the top of the window. A command that
   does one of two things is named there by which it would do, from its handler's `labelled`:
   "Unresolve thread" on a resolved thread.
 - **`Tooltip`** names a control and its key: see [Controls](#controls).
 - **`ToastStack`** shows results at the bottom right, above the status bar: three at most, four
-  seconds each, paused under the pointer or focus. A toast is one line, clamped to three, and one
+  seconds each, paused under the pointer or focus. One with an action or Details stays eight
+  seconds, and stays while its Details is open. A toast is one line, clamped to three, and one
   action at most. One that waits for the reader may add a `body`: plain words wrap, anywhere a long
   path needs to, and clamp to three lines; a body of its own markup, such as a command to copy,
-  shows whole. A toast never reports a failure: that's a `Problem` where it happened. Keep each
-  toast the same object while it shows. To show one again, as a second "Copied path", put a new
-  object with the same `id` in `toasts`: it stays in its place and its four seconds start over.
+  shows whole. A failure is said where it happened: a `Problem` in its view, or the control that was
+  pressed. Only one with nothing in view to host it goes in a toast, at danger tone, with what main
+  said behind Details where it said something: a command run from the menu, a toast that has gone,
+  or a key pressed with no control for it on screen, such as `ya` from the diff. Keep each toast the
+  same object while it shows. To show one again, as a second "Copied path", put a new object with
+  the same `id` in `toasts`: it stays in its place and its time starts over.
 - **`Problem`** is something that went wrong, in one shape: what failed, why, the one thing to do,
   and the raw text behind Details with Copy. The action's label starts with a verb, and is a node,
   so a name that's code stays code in it: "Open `settings.json`". `layout="view"` takes a failed
@@ -421,9 +432,16 @@ that floats.
   else that says what failed, such as a comment box's note, puts the raw text behind the same
   Details and Copy with `useDetails(details)`, which gives the button and the text it opens to draw
   where they go.
+- **Nothing in a `Problem` changes on a timer except through `Countdown`.** A retry's wait is
+  `Retrying <Countdown at={retryAt} />.`: it counts "in 8 s" down for the eye, and a screen reader
+  hears the wait as it stood when first drawn, spelled out ("in 8 seconds"), and nothing after, so
+  the alert is read once, not every second. A new retry time is a new count.
 - **`CopyButton`** copies and says so itself: it reads "Copied" for two seconds, and no toast says
   it again. When copying throws or rejects, it reads "Couldn’t copy" instead. A live region beside
-  it says the same to a screen reader.
+  it says the same to a screen reader. Any other control that copies says it the same way:
+  `useCopySaid()` gives what to say and `say`, `<CopyFaces said={said}>` draws the three faces in
+  the button at the widest one's width, and `<CopyStatus said={said} />` is the live region beside
+  it.
 - **`CopyRoute`** gives everything inside it the window's way to copy. The window is refused every
   permission, so it can't use the browser's clipboard: it copies through main's `tab.copy`, and one
   `CopyRoute` around the window (`Window.tsx`) says so. `Problem`'s Copy goes through it, and a

@@ -1,8 +1,7 @@
 // What an overview written for an older push says of it: whether it's out of date, its banner's
-// words ("Written for r3. The PR is at r5.", how much changed since), and each code block's flag
-// ("Lines 48 and 50 changed in r5. This block shows r3, which the text describes."). Revisions are
-// named by their labels, and a commit that isn't a revision's head by its short id. Plain
-// functions, each tested alone.
+// words ("Written for r3 · now r5", how many files changed since), and each code block's flag
+// ("Lines 48 and 50 changed in r5 · showing r3"). Revisions are named by their labels, and a commit
+// that isn't a revision's head by its short id. Plain functions, each tested alone.
 
 import type { CodeRange, Excerpt } from '@lo/artifact';
 
@@ -33,34 +32,15 @@ export function labelOf(revisions: ComparisonView | undefined, commit: string): 
 }
 
 /**
- * How many pushes there have been since `from`, up to `to`: none known unless both are revisions,
- * `from` the older.
- */
-export function pushesSince(
-  revisions: ComparisonView | undefined,
-  from: string,
-  to: string,
-): number | undefined {
-  const list = revisions?.revisions ?? [];
-  const start = list.findIndex((each) => each.head === from);
-  const end = list.findIndex((each) => each.head === to);
-  if (start < 0 || end <= start) return undefined;
-  // A commit reviewed but never pushed has no number, and was no push.
-  return list.slice(start + 1, end + 1).filter((each) => each.number !== null).length;
-}
-
-/**
  * What the banner knows: the labels of what the overview was written for and where the pull
- * request is, and once each is known, how many pushes since, how many files they changed (`null`
- * when Lo couldn't compare), and how many code blocks point at lines that changed (none known for
- * an overview with no code blocks).
+ * request is, and once it's known, how many files changed since (`null` when they couldn't be
+ * compared). Each code block on lines that changed says so itself, so the banner doesn't count
+ * them.
  */
 export interface StaleFacts {
   readonly written: string;
   readonly now: string;
-  readonly pushes?: number | undefined;
   readonly files?: number | null | undefined;
-  readonly blocks?: number | undefined;
 }
 
 /**
@@ -73,29 +53,27 @@ export function compareState(
   to: string,
 ): { readonly ok: true } | { readonly ok: false; readonly why: string } {
   if (revisions === undefined || revisions.status === 'loading') {
-    return { ok: false, why: 'Lo is still reading the revisions.' };
+    return { ok: false, why: 'Reading revisions…' };
   }
   switch (revisions.status) {
     case 'ready':
       break;
     case 'signIn':
-      return { ok: false, why: 'Revisions show only for a signed-in account.' };
+      return { ok: false, why: 'Sign in to compare revisions' };
     case 'failed':
-      return { ok: false, why: revisions.problem ?? 'Lo couldn’t read the revisions.' };
+      return { ok: false, why: 'Couldn’t read the revisions' };
     default:
       revisions.status satisfies never;
-      return { ok: false, why: 'Lo couldn’t read the revisions.' };
+      return { ok: false, why: 'Couldn’t read the revisions' };
   }
-  if (revisions.waitingFor === 'git') {
-    return { ok: false, why: 'Comparing revisions needs git, which Lo can’t find.' };
-  }
+  if (revisions.waitingFor === 'git') return { ok: false, why: 'Can’t find Git' };
   const list = revisions.revisions;
   const start = list.findIndex((each) => each.head === from);
   const end = list.findIndex((each) => each.head === to);
-  if (start < 0) return { ok: false, why: 'The overview’s commit isn’t one of the revisions.' };
-  if (end <= start) return { ok: false, why: 'Lo is still reading the revisions.' };
+  if (start < 0) return { ok: false, why: 'This overview’s commit isn’t a revision' };
+  if (end <= start) return { ok: false, why: 'Reading revisions…' };
   if (!list[start]?.available) {
-    return { ok: false, why: `${labelOf(revisions, from)} is no longer available.` };
+    return { ok: false, why: `${labelOf(revisions, from)} is no longer on GitHub` };
   }
   return { ok: true };
 }
@@ -105,35 +83,15 @@ function counted(count: number, one: string, many = `${one}s`): string {
   return `${count.toLocaleString('en-US')} ${count === 1 ? one : many}`;
 }
 
-/** The banner's words: its title, and what changed since, as far as it's known. */
+/**
+ * The banner's words: what it was written for and where the pull request is, "Written for r3 · now
+ * r5", and how many files changed since, once it's known: "4 files changed".
+ */
 export function staleWords(facts: StaleFacts): { title: string; detail: string } {
-  const title = `Written for ${facts.written}. The PR is at ${facts.now}.`;
-  const { pushes, files, blocks } = facts;
-  const sentences: string[] = [];
-  const pushed = pushes !== undefined && pushes > 0 ? counted(pushes, 'push', 'pushes') : undefined;
-  const touched =
-    files === undefined || files === null
-      ? undefined
-      : files === 0
-        ? 'touching no files'
-        : `touching ${counted(files, 'file')}`;
-  if (pushed !== undefined && touched !== undefined) sentences.push(`${pushed} since, ${touched}.`);
-  else if (pushed !== undefined) sentences.push(`${pushed} since.`);
-  else if (files !== undefined && files !== null) {
-    sentences.push(
-      files === 0 ? 'No files changed since.' : `${counted(files, 'file')} changed since.`,
-    );
-  }
-  if (blocks !== undefined) {
-    sentences.push(
-      blocks === 0
-        ? 'No code block below points at lines that changed.'
-        : blocks === 1
-          ? '1 code block below points at lines that changed.'
-          : `${blocks.toLocaleString('en-US')} code blocks below point at lines that changed.`,
-    );
-  }
-  return { title, detail: sentences.join(' ') };
+  const title = `Written for ${facts.written} · now ${facts.now}`;
+  const { files } = facts;
+  if (files === undefined || files === null) return { title, detail: '' };
+  return { title, detail: files === 0 ? 'no files changed' : `${counted(files, 'file')} changed` };
 }
 
 /** Items in a list, as a sentence says them: "7", "7 and 9", "7, 9 and 12". */
@@ -145,14 +103,14 @@ function listed(items: readonly string[]): string {
 /** The most runs of lines a flag names, past which it counts them. */
 const NAMED_RUNS = 4;
 
-/** Which lines changed, as a flag starts: "Line 7", "Lines 48 and 50", "Lines 7–9". */
+/** Which lines changed, as a flag starts: "Line 7", "Lines 48 and 50", "Lines 7–9", "14 lines". */
 function changedWords(runs: readonly Run[]): string {
   const [only] = runs;
   if (runs.length === 1 && only && only.from === only.to) return `Line ${only.from}`;
   if (runs.length > NAMED_RUNS) {
     let count = 0;
     for (const { from, to } of runs) count += to - from + 1;
-    return `${count.toLocaleString('en-US')} of its lines`;
+    return counted(count, 'line');
   }
   return `Lines ${listed(runs.map(({ from, to }) => (from === to ? `${from}` : `${from}–${to}`)))}`;
 }
@@ -165,29 +123,29 @@ function addedWords(after: readonly number[]): string {
 
 /**
  * A code block's flag, for lines it shows that changed between the overview's commit, `written`,
- * and the head on screen, `now`, as `change` says; none when they didn't.
+ * and the head on screen, `now`, as `change` says; none when they didn't: "Lines 12–14 changed in
+ * r5 · showing r3".
  */
 export function flagWords(
   change: BlockChange,
   labels: { readonly written: string; readonly now: string },
 ): string | undefined {
-  const shows = `This block shows ${labels.written}, which the text describes.`;
+  const shows = `showing ${labels.written}`;
   switch (change.kind) {
     case 'none':
       return undefined;
     case 'deleted':
-      return `This file was deleted in ${labels.now}. ${shows}`;
+      return `Deleted in ${labels.now} · ${shows}`;
     case 'opaque':
-      return `This file changed in ${labels.now}, and Lo can’t tell which lines. ${shows}`;
+      return `Changed in ${labels.now} · ${shows}`;
     case 'lines': {
       const { changed, added, addedLines } = change;
-      const lines = addedLines === 1 ? 'a line was added' : 'lines were added';
       if (changed.length === 0) {
-        const said = `${lines} ${addedWords(added)} in ${labels.now}.`;
-        return `${said.charAt(0).toUpperCase()}${said.slice(1)} ${shows}`;
+        const lines = addedLines === 1 ? '1 line added' : 'Lines added';
+        return `${lines} ${addedWords(added)} in ${labels.now} · ${shows}`;
       }
-      const also = added.length > 0 ? `, and ${lines} ${addedWords(added)}` : '';
-      return `${changedWords(changed)} changed in ${labels.now}${also}. ${shows}`;
+      const also = added.length > 0 ? ` · lines added ${addedWords(added)}` : '';
+      return `${changedWords(changed)} changed in ${labels.now}${also} · ${shows}`;
     }
     default:
       change satisfies never;
@@ -196,8 +154,8 @@ export function flagWords(
 }
 
 /**
- * The lines each `:::code` block in `tree` shows, in the order they're written, for the banner to
- * count those that changed. It walks with an explicit stack, so no tree can overflow it.
+ * The lines each `:::code` block in `tree` shows, in the order they're written. It walks with an
+ * explicit stack, so no tree can overflow it.
  */
 export function codeBlocksIn(tree: object): CodeRange[] {
   const found: CodeRange[] = [];

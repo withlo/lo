@@ -49,6 +49,9 @@ export default defineFeature(contract, {
       }
       return tab.show();
     },
+    retry({ id }) {
+      return followed.get(id)?.retry();
+    },
   },
   start(context) {
     stops.push(context.use(tabs).onPull((id) => follow(context, id)));

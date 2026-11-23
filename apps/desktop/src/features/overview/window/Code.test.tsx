@@ -164,6 +164,7 @@ function contextOf(state: CodeState, read: CodeRead = { kind: 'read', commit: CO
     pull: { id: tab, kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: 80 },
     tree: 1,
     commit: COMMIT,
+    written: 'r1',
     read,
     target: () => ({ code: state, answer: undefined }),
   } satisfies CodeContext;
@@ -342,14 +343,14 @@ describe('a code block', () => {
   });
 
   it('says why it couldn’t read its file', async () => {
-    texts.set('src/a.ts', { kind: 'unread', why: 'It isn’t text.' });
+    texts.set('src/a.ts', { kind: 'unread', why: 'binary' });
     const page = draw(
       <ExcerptBlock node={excerpt('src/a.ts', 1, 3)} context={contextOf(RESOLVED)} />,
     );
     place(true);
     await until(() => page.querySelector('.lo-codeblock__msg') !== null);
     expect(page.querySelector('.lo-codeblock__msg')?.textContent).toBe(
-      'Lo couldn’t read this code. It isn’t text.',
+      'Can’t show this codesrc/a.ts isn’t text.',
     );
     // The code read again, it asks again.
     texts.set('src/a.ts', { kind: 'text', text: 'a\nb\nc\n', base: { kind: 'same' } });
@@ -369,7 +370,7 @@ describe('a code block', () => {
     place(true);
     expect(page.querySelector('.lo-codeblock--unresolved')).not.toBeNull();
     const button = [...page.querySelectorAll<HTMLElement>('.lo-codeblock__head button')].find(
-      (each) => each.textContent?.startsWith('Find a file named cache.ts'),
+      (each) => each.textContent?.startsWith('Go to file…'),
     );
     expect(page.querySelector('.lo-codeblock__msg button')).toBeNull();
     act(() => {
@@ -379,16 +380,17 @@ describe('a code block', () => {
     expect(asked()).toEqual([]);
   });
 
-  it('says it waits for the local copy, as tall as its lines', () => {
+  it('waits for the local copy as a skeleton of its lines, as tall as they are, and busy', () => {
     const page = draw(
       <ExcerptBlock
         node={excerpt('src/a.ts', 3, 9)}
         context={contextOf({ state: 'unread', why: 'failed' }, { kind: 'waiting' })}
       />,
     );
-    expect(page.querySelector('.lo-codeblock__msg strong')?.textContent).toBe(
-      'Waiting for the local copy.',
-    );
+    expect(page.querySelector('.lo-codeblock__msg')).toBeNull();
+    const skeleton = page.querySelector('.lo-codeblock__skeleton');
+    expect(skeleton?.getAttribute('aria-busy')).toBe('true');
+    expect(skeleton?.querySelectorAll('.cm-line .skeleton')).toHaveLength(7);
     expect(page.querySelectorAll('.lo-codeblock__space .cm-line')).toHaveLength(7);
   });
 });

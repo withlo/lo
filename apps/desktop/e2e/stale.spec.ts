@@ -223,24 +223,18 @@ test('says it was written for r1 from its first frame, and flags the block on li
   const id = await opened(app, page);
 
   await test.step('says it was written for r1 from its first frame, and flags the block on lines r2 changed', async () => {
-    await expect(banner(page).locator('.lo-ov-stale__title')).toHaveText(
-      'Written for r1. The PR is at r2.',
-    );
-    await expect(banner(page).getByRole('button', { name: 'Compare r1 → r2' })).toBeVisible();
-    await expect(
-      banner(page).getByRole('button', { name: /Copy prompt for an agent/ }),
-    ).toBeVisible();
+    await expect(banner(page).locator('.lo-ov-stale__title')).toHaveText('Written for r1 · now r2');
+    await expect(banner(page).getByRole('button')).toHaveText(['Compare r1 → r2']);
     const room = await banner(page).evaluate((element) => element.getBoundingClientRect().height);
 
-    // Once the local copy is there: one push since, which changed the parser alone (the README came
-    // with the base it was rebased onto), and one code block points at lines it changed.
+    // Once the local copy is there: one file changed since, the parser alone (the README came with
+    // the base it was rebased onto).
     await expect
       .poll(() => current(page, id), { timeout: 30_000 })
       .toMatchObject({ code: 'ready' });
-    await expect(banner(page).locator('.lo-ov-stale__sub')).toHaveText(
-      '1 push since, touching 1 file. 1 code block below points at lines that changed.',
-      { timeout: 20_000 },
-    );
+    await expect(banner(page).locator('.lo-ov-stale__sub')).toHaveText('1 file changed', {
+      timeout: 20_000,
+    });
     expect(await banner(page).evaluate((element) => element.getBoundingClientRect().height)).toBe(
       room,
     );
@@ -250,7 +244,7 @@ test('says it was written for r1 from its first frame, and flags the block on li
     await expect(parser.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 20_000 });
     const flag = parser.locator('.lo-codeblock__flag');
     await expect(flag).toContainText(
-      'Line 7 changed in r2, and a line was added after line 8. This block shows r1, which the text describes.',
+      'Line 7 changed in r2 · lines added after line 8 · showing r1',
     );
     await expect(flag.getByRole('button', { name: 'Compare r1 → r2' })).toBeVisible();
     await expect(parser.locator('.cm-gutterElement.is-stale')).toHaveText(['7']);
@@ -307,7 +301,7 @@ test('says it was written for r1 from its first frame, and flags the block on li
   });
 
   await test.step('keeps the banner as tall whatever its labels and what changed since say, at any width', async () => {
-    await expect(banner(page).locator('.lo-ov-stale__sub')).toContainText('code block', {
+    await expect(banner(page).locator('.lo-ov-stale__sub')).toContainText('changed', {
       timeout: 20_000,
     });
     for (const width of [1440, 1100, 1020, 980, 900, 760, 700]) {
@@ -328,8 +322,7 @@ test('says it was written for r1 from its first frame, and flags the block on li
         seen.push(height());
         sub.textContent = '';
         seen.push(height());
-        sub.textContent =
-          '12 pushes since, touching 128 files. 14 code blocks below point at lines that changed.';
+        sub.textContent = '128 files changed';
         seen.push(height());
         copy.remove();
         return seen;
@@ -362,11 +355,11 @@ test.describe('while the local copy comes late', () => {
       await expect
         .poll(() => current(page, id), { timeout: 20_000 })
         .toMatchObject({ code: 'failed' });
-      // Without the local copy, it says what it was written for and how many pushes since.
+      // Without the local copy, it says what it was written for, and where the pull request is.
       await expect(banner(page).locator('.lo-ov-stale__title')).toHaveText(
-        'Written for r1. The PR is at r2.',
+        'Written for r1 · now r2',
       );
-      await expect(banner(page).locator('.lo-ov-stale__sub')).toHaveText('1 push since.');
+      await expect(banner(page).locator('.lo-ov-stale__sub')).toHaveText('');
 
       // The local copy comes, and with it how much changed and the flag.
       writeAppRemote(test.info().outputPath('remote'));
@@ -374,10 +367,9 @@ test.describe('while the local copy comes late', () => {
       await expect
         .poll(() => current(page, id), { timeout: 30_000 })
         .toMatchObject({ code: 'ready' });
-      await expect(banner(page).locator('.lo-ov-stale__sub')).toHaveText(
-        '1 push since, touching 1 file. 1 code block below points at lines that changed.',
-        { timeout: 20_000 },
-      );
+      await expect(banner(page).locator('.lo-ov-stale__sub')).toHaveText('1 file changed', {
+        timeout: 20_000,
+      });
       await expect(
         codeBlock(page, 'src/parser.ts', 'L7–10').locator('.lo-codeblock__flag'),
       ).toBeVisible({ timeout: 20_000 });

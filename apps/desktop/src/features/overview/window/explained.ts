@@ -60,11 +60,11 @@ type Work =
 type Add = (where: Where, target: CodeRange, said: readonly Block<Overview>[]) => void;
 
 /** What a code block says with no prose around it. */
-const BLOCK_WORDS = 'A code block in the overview shows these lines.';
+const BLOCK_WORDS = 'A code block shows these lines.';
 /** What a walkthrough's step says with no words of its own. */
-const STEP_WORDS = 'A step of a walkthrough in the overview shows these lines.';
+const STEP_WORDS = 'A walkthrough step shows these lines.';
 /** What a figure's part says with no caption. */
-const FIGURE_WORDS = 'A figure in the overview points at these lines.';
+const FIGURE_WORDS = 'A figure points at these lines.';
 
 /**
  * Everything in `tree` that points at lines of code, each once for its block and step, block by

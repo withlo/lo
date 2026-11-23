@@ -295,8 +295,8 @@ describe('readCode', () => {
       { path: 'docs/readme.md', lines: true },
     ]);
     expect(answers).toEqual([
-      { kind: 'unread', why: expect.any(String) },
-      { kind: 'unread', why: expect.any(String) },
+      { kind: 'unread', why: 'notDownloaded' },
+      { kind: 'unread', why: 'notDownloaded' },
     ]);
     expect(downloads).toHaveLength(1);
   });
@@ -343,7 +343,7 @@ describe('the limit on what downloads bring', () => {
     );
     expect(brought(downloads)).toBeLessThanOrEqual(DOWNLOAD_LIMIT + downloads.length);
     expect(answers.filter(({ kind }) => kind === 'tooLarge').length).toBeGreaterThan(0);
-    expect(answers.at(-1)).toEqual({ kind: 'unread', why: expect.any(String) });
+    expect(answers.at(-1)).toEqual({ kind: 'unread', why: 'spent' });
   });
 
   it('counts what comes in, not the files’ sizes: a small file padded out costs what it brings', async () => {
@@ -360,7 +360,7 @@ describe('the limit on what downloads bring', () => {
     );
     expect(brought(downloads)).toBeLessThanOrEqual(DOWNLOAD_LIMIT + downloads.length);
     expect(answers[0]).toEqual(file(9, 'ninebytes'));
-    expect(answers.at(-1)).toEqual({ kind: 'unread', why: expect.any(String) });
+    expect(answers.at(-1)).toEqual({ kind: 'unread', why: 'spent' });
   });
 
   it('stops a download once the read is stopped', async () => {
@@ -445,7 +445,7 @@ describe('codeReply', () => {
         commit,
         files,
       ),
-    ).toEqual({ kind: 'failed', why: 'GitHub has no such repository.' });
+    ).toEqual({ kind: 'failed', why: 'notFetched' });
   });
 
   it('reads from the local copy once it’s there', async () => {
@@ -471,13 +471,17 @@ describe('stopping a read', () => {
   it('stops a read asked for another way, or stopped, and joins one asked for alike', async () => {
     const reading = new CodeReading();
     const stopped: string[] = [];
+    // What each read answers once it's stopped, by its name.
+    const answers = new Map<string, CodeReply>();
     let started = 0;
     const waiting = (name: string) => (signal: AbortSignal) => {
       started += 1;
       return new Promise<CodeReply>((resolve) => {
         signal.addEventListener('abort', () => {
           stopped.push(name);
-          resolve({ kind: 'failed', why: name });
+          const answer: CodeReply = { kind: 'failed', why: 'unknown' };
+          answers.set(name, answer);
+          resolve(answer);
         });
       });
     };
@@ -486,8 +490,8 @@ describe('stopping a read', () => {
     const again = reading.run('a', waiting('again'));
     expect(started).toBe(1);
     const second = reading.run('b', waiting('second'));
-    expect(await first).toEqual({ kind: 'failed', why: 'first' });
-    expect(await again).toEqual({ kind: 'failed', why: 'first' });
+    expect(await first).toBe(answers.get('first'));
+    expect(await again).toBe(answers.get('first'));
     expect(stopped).toEqual(['first']);
     reading.stop();
     await second;
@@ -505,7 +509,7 @@ describe('stopping a read', () => {
       [{ path: 'src/a.ts', lines: true }],
       { signal: controller.signal },
     );
-    expect(reply).toEqual({ kind: 'failed', why: expect.any(String) });
+    expect(reply).toEqual({ kind: 'failed', why: 'unknown' });
     expect(reads).toEqual([]);
   });
 });

@@ -67,7 +67,7 @@ export function blockThreadsChanged(tab: string): void {
  */
 export function blockLines(tab: string, target: Target): BlockLines | string {
   // A line is a drawn block's, or one of a view that takes no comment, as the whole file's.
-  if (target.kind !== 'line' && !drawnIn(tab)) return 'There’s no overview on screen.';
+  if (target.kind !== 'line' && !drawnIn(tab)) return 'Go to the overview first';
   return blockLinesOf(tab, target);
 }
 

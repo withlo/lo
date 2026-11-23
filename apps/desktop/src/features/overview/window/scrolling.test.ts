@@ -54,6 +54,6 @@ describe('the scroll commands', () => {
     const target = { kind: 'none' } as const;
     expect(handlerOf('pageUp').enabled?.(target)).toBe(true);
     drawn.overview = undefined;
-    expect(handlerOf('pageUp').enabled?.(target)).toBe('There’s no overview on screen.');
+    expect(handlerOf('pageUp').enabled?.(target)).toBe('Go to the overview first');
   });
 });

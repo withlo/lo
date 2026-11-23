@@ -322,6 +322,28 @@ export async function showTabOf(id: string): Promise<void> {
   await main().select({ id: held.id });
 }
 
+function runLayersIn(tabs: readonly Tab[], id: string): string {
+  for (const tab of tabs) {
+    if (tab.kind !== 'pull' || !tab.run || runViewId(tab, tab.run.layers) !== id) continue;
+    const stack = tab.stack?.layers ?? [];
+    const [bottom] = tab.run.layers;
+    const top = tab.run.layers.at(-1);
+    const first = bottom === undefined ? -1 : stack.indexOf(bottom);
+    const last = top === undefined ? -1 : stack.indexOf(top);
+    if (first >= 0 && last >= 0) return `layers ${first + 1}–${last + 1}`;
+  }
+  return 'these layers';
+}
+
+/**
+ * The layers the run view `id` shows as one diff spans, by their places in its tab's stack, bottom
+ * first: "layers 2–3", or "these layers" while the stack doesn't hold them. The empty states of
+ * other views name it so, since each layer has its own. Re-renders when the stack arrives.
+ */
+export function useRunLayers(id: string): string {
+  return useStore(tabsStore, (state) => runLayersIn(state.tabs, id));
+}
+
 /**
  * The id the view of a run of `layers`, bottom first, would have in the pull request's tab that
  * holds view `id`, before main has made it: nothing when no tab holds that view.

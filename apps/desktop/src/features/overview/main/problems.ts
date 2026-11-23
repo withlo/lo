@@ -31,14 +31,17 @@ function describe(error: unknown): string {
 
 /**
  * What `error` was, for a tab acting as `acting`, at `now`, after `failures` failures in a row,
- * counting it: the problem to say, and how long to wait before reading again. A refusal for the
- * rate limit waits as long as GitHub asked, and anything else {@link retryWait}.
+ * counting it, reading the overview of a pull request in `owner`'s repository: the problem to say,
+ * and how long to wait before reading again. A refusal for the rate limit waits as long as GitHub
+ * asked, and anything else {@link retryWait}. An organization that blocks the read is the one
+ * GitHub names, else `owner`.
  */
 export function problemOf(
   error: unknown,
   acting: Acting,
   failures: number,
   now: number,
+  owner: string,
 ): { problem: Problem; wait: number } {
   const github = githubError(error);
   const wait = retryWait(failures);
@@ -67,8 +70,16 @@ export function problemOf(
     }
     const link = github.helpLink();
     if (link) {
+      const approval = detail.kind === 'oauthAppRestricted';
       return {
-        problem: { kind: 'blocked', message: github.message, links: [link], retryAt },
+        problem: {
+          kind: 'blocked',
+          why: approval ? 'approval' : 'sso',
+          org: (approval ? detail.org : undefined) ?? owner,
+          message: github.message,
+          links: [link],
+          retryAt,
+        },
         wait,
       };
     }

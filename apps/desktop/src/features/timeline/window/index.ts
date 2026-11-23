@@ -24,7 +24,6 @@ import {
   onScreen,
   openOnGithub,
   revealHidden,
-  seeOlder,
   stillHidden,
 } from './actions.ts';
 import { main, revisions } from './main.ts';
@@ -79,30 +78,24 @@ export default {
     ),
     showComment: onRow(
       (row, { tab }) =>
-        stillHidden(tab.id, row) ? undefined : 'This event isn’t a hidden comment.',
+        stillHidden(tab.id, row) ? undefined : 'This event isn’t a hidden comment',
       (row, timeline) => revealHidden(timeline, row.key),
     ),
     showInDiff: onRow(
       (row) =>
-        row.kind === 'review' && row.comments > 0 ? undefined : 'This event left no comments.',
+        row.kind === 'review' && row.comments > 0 ? undefined : 'No comments from this event',
       (_, { tab }) => {
         showDiff(tab.id);
       },
     ),
     compare: onRow(
       (row) =>
-        row.kind === 'forcePush' && row.compare
-          ? undefined
-          : 'This event isn’t a force-push Lo can compare.',
+        row.kind === 'forcePush' && row.compare ? undefined : 'Nothing to compare on this event',
       (row, { tab }) => {
         if (row.kind === 'forcePush' && row.compare) {
           compare(tab.id, row.compare.from, row.compare.to);
         }
       },
-    ),
-    seeOlder: onRow(
-      (row) => (row.kind === 'older' ? undefined : 'Every event is in the timeline.'),
-      (_, { tab }) => seeOlder(tab),
     ),
     openOnGithub: onRow(
       () => undefined,

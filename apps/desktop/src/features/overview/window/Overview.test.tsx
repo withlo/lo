@@ -5,12 +5,13 @@
 // was, its folds open and its focus where it was. What Settings says and showing the diff are
 // stood in for, so each test says what Settings holds and sees when the tab hands over to the diff.
 
-import { commandsOf } from '@lo/ui/commands';
+import { commandsOf, holdRegistry } from '@lo/ui/commands';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { IpcError } from '../../../ipc/contract.ts';
+import { notice, notices, withdraw } from '../../../window/commands/notices.tsx';
 import { createRegistry } from '../../../window/commands/registry.ts';
 import { Slots } from '../../../window/slots.tsx';
 import { installBridge } from '../../../window/test/bridge.ts';
@@ -24,12 +25,13 @@ import { checkOverview, parseOverview } from '../background/index.ts';
 import settingsKeys from '../../settings/keys.ts';
 import updatesKeys from '../../updates/keys.ts';
 import { Checking } from './checking.ts';
+import { copyPrompt as copyPromptOf } from './copy.ts';
 import { OverviewMark } from './Mark.tsx';
 import { openings } from './opening.ts';
 import { OverviewView } from './Overview.tsx';
 import { blockInOverview, blockKey } from './shared.ts';
 import { OverviewStatus } from './Status.tsx';
-import { checked, publish, states } from './store.ts';
+import { checked, publish, readAgain, states } from './store.ts';
 
 /** What Settings says a pull request opens on: unknown until main has said. */
 const settings = vi.hoisted(() => ({ open: 'overview' as 'overview' | 'diff' | undefined }));
@@ -125,28 +127,45 @@ const SKILL: SkillState = {
   ],
 };
 
+/** Whether main's clipboard refuses what it's given, and how main answers a read again. */
+const answers = vi.hoisted(() => ({ copyFails: false, retried: (): void => undefined }));
+
 const bridge = installBridge({
-  'tab.copy': () => undefined,
+  'tab.copy': () => {
+    if (answers.copyFails) throw new IpcError('failed', 'The clipboard is busy.');
+  },
   'tab.openExternal': () => undefined,
   'overview.currentSkill': () => SKILL,
-  'overview.retry': () => undefined,
+  // Answered once the test says main's read is done.
+  'overview.retry': () =>
+    new Promise<void>((resolve) => {
+      answers.retried = resolve;
+    }),
 });
 
-/** Runs of "Check for updates", whose feature is stood in for. */
+/** Runs of "Check for updates" and Copy prompt, whose handlers are stood in for. */
 const checkUpdates = vi.hoisted(() => vi.fn<() => void>());
+const copyPrompt = vi.hoisted(() => vi.fn<() => void>());
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
-  createRegistry(
-    [
-      ...commandsOf(tabKeys),
-      ...commandsOf(keys),
-      ...commandsOf(settingsKeys),
-      ...commandsOf(updatesKeys).map((command) =>
-        command.id === 'updates.check' ? { ...command, handler: { run: checkUpdates } } : command,
-      ),
-    ],
-    'mac',
+  // Held as the key listener holds it, so the views' buttons find their commands.
+  holdRegistry(
+    createRegistry(
+      [
+        ...commandsOf(tabKeys),
+        ...commandsOf(keys).map((command) =>
+          command.id === 'overview.copyPrompt'
+            ? { ...command, handler: { run: copyPrompt } }
+            : command,
+        ),
+        ...commandsOf(settingsKeys),
+        ...commandsOf(updatesKeys).map((command) =>
+          command.id === 'updates.check' ? { ...command, handler: { run: checkUpdates } } : command,
+        ),
+      ],
+      'mac',
+    ),
   );
 });
 
@@ -155,7 +174,36 @@ afterEach(() => {
   settings.open = 'overview';
   showDiff.mockClear();
   checkUpdates.mockClear();
+  copyPrompt.mockClear();
 });
+
+/** The title of the problem the view shows in the overview's place, for a standing of `kind`. */
+function problemTitle(view: HTMLElement, kind: string): string | undefined {
+  return (
+    view.querySelector(`[data-lo-overview="${kind}"] [role="alert"] > p:first-child`)
+      ?.textContent ?? undefined
+  );
+}
+
+/** The button on `view` whose words start with `label`. */
+function buttonOf(view: HTMLElement, label: string): HTMLButtonElement | undefined {
+  return [...view.querySelectorAll('button')].find((each) => each.textContent?.startsWith(label));
+}
+
+/** The toasts showing, by their lines, oldest first. */
+function toasts(): string[] {
+  return notices().map((note) => note.title);
+}
+
+/** What `button` reads now: its face in view, of those it holds room for, without its key. */
+function faceOf(button: HTMLButtonElement | undefined): string | undefined {
+  const faces = button?.querySelectorAll('.inline-grid > span');
+  if (!faces || faces.length === 0) return button?.textContent ?? undefined;
+  const shown = [...faces].find(
+    (face) => !face.classList.contains('invisible') && face.getAttribute('aria-hidden') !== 'true',
+  );
+  return shown?.textContent ?? undefined;
+}
 
 /**
  * A tab's checking, as the store's, publishing as the store does, with its jobs run in this
@@ -215,11 +263,17 @@ function render(tab: PullTab) {
       ),
     );
   draw(true);
-  onTestFinished(() => {
+  let mounted = true;
+  const unmount = () => {
+    if (!mounted) return;
+    mounted = false;
     act(() => root.unmount());
+  };
+  onTestFinished(() => {
+    unmount();
     container.remove();
   });
-  return Object.assign(container, { shown: draw });
+  return Object.assign(container, { shown: draw, unmount });
 }
 
 /**
@@ -246,9 +300,7 @@ describe('as the tab opens', () => {
     await until(() => view.querySelector('[data-lo-overview="shown"]') !== null);
     expect(openings.get(tab.id)).toMatchObject({ on: 'overview', late: false, seen: true });
     expect(showDiff).not.toHaveBeenCalled();
-    expect(view.querySelector('.lo-ov-byline')?.textContent).toContain(
-      'ravi-k wrote this overview 2 days ago',
-    );
+    expect(view.querySelector('.lo-ov-byline')?.textContent).toContain('ravi-k · 2 d ago');
     expect(view.querySelector('.lo-ovmark--pending')).toBeNull();
     expect(view.querySelector('.lo-ovmark[role="img"]')).not.toBeNull();
   });
@@ -282,16 +334,14 @@ describe('as the tab opens', () => {
     expect(view.querySelector('.lo-figure[aria-busy="true"]')?.textContent).toContain(
       'Reading figure 1…',
     );
-    expect(view.querySelector('.lo-ov-byline')?.textContent).not.toContain('wrote this overview');
+    expect(view.querySelector('.lo-ov-byline')?.textContent).not.toContain('ravi-k');
 
     letGo();
     await until(() => view.querySelector('.lo-figure[aria-busy]') === null);
     expect(view.querySelector('.lo-figure--broken')).toBeNull();
     expect(view.querySelector('.lo-figure__frame svg:not(.lo-i)')).not.toBeNull();
     act(() => states.set(tab.id, stateOf(tab)));
-    expect(view.querySelector('.lo-ov-byline')?.textContent).toContain(
-      'ravi-k wrote this overview',
-    );
+    expect(view.querySelector('.lo-ov-byline')?.textContent).toContain('ravi-k · ');
   });
 
   it('opens on the overview once a check main refused at first goes through, within the bound', async () => {
@@ -329,9 +379,8 @@ describe('as the tab opens', () => {
     });
     expect(openings.get(tab.id)).toMatchObject({ on: 'diff', late: true });
     expect(showDiff).toHaveBeenCalledTimes(1);
-    expect(view.querySelector('[data-lo-overview="unchecked"] h2')?.textContent).toBe(
-      'Lo couldn’t check this overview',
-    );
+    expect(problemTitle(view, 'unchecked')).toBe('Can’t check the overview');
+    expect(view.textContent).toContain('Check again');
 
     // The diff is on screen, and the check goes through.
     view.shown(false);
@@ -402,13 +451,14 @@ describe('as the tab opens', () => {
 });
 
 describe('a run of a stack’s layers on screen as one diff', () => {
-  it('says it has no overview, with the way to its diff, and leaves the tab to open on the diff', () => {
-    const tab = { ...tabOf(), run: { layers: [6, 7], start: 'a'.repeat(40), from: 7 } };
+  it('says it has no overview, naming its layers, and leaves the tab to open on the diff', () => {
+    // On screen, the run's view holds no stack: its tab in the strip does, and names the places.
+    const tab: PullTab = { ...tabOf(), run: { layers: [6, 7], start: 'a'.repeat(40), from: 7 } };
     const view = render(tab);
     expect(view.querySelector('[data-lo-overview="run"] h2')?.textContent).toBe(
-      'A run of layers has no overview',
+      'No overview for these layers',
     );
-    expect(view.textContent).toContain('Go to the diff');
+    expect(view.textContent).toContain('Each layer has its own.');
     expect(openings.get(tab.id).on).toBeUndefined();
   });
 });
@@ -434,27 +484,78 @@ describe('the blocks a tab’s overview has', () => {
 });
 
 describe('with no overview', () => {
-  it('offers the prompt to write one, the skill for each agent and the way to the diff', async () => {
+  it('offers the prompt to write one, Copy prompt, and the skill while no agent has it', async () => {
     const tab = tabOf();
     act(() => states.set(tab.id, stateOf(tab, { found: 'none', overview: null })));
     const view = render(tab);
-    await until(() => (view.textContent ?? '').includes('Claude Code'));
+    await until(() => buttonOf(view, 'Install overview skill') !== undefined);
     expect(view.querySelector('h2')?.textContent).toBe('No overview yet');
+    expect(view.textContent).toContain('A coding agent writes one from this prompt.');
     expect(view.querySelector('pre')?.textContent).toContain(
       'https://github.com/rozed-dev/e2e/pull/7',
     );
-    expect(view.textContent).toContain('It shows here as soon as it lands.');
-    expect(view.textContent).toContain("Codex isn't set up here: Lo found no ~/.codex.");
-    expect(view.textContent).toContain('Go to the diff');
-    expect(view.textContent).toContain('Open on the overview or the diff');
-    const copy = [...view.querySelectorAll('button')].find((each) =>
-      each.textContent?.startsWith('Copy'),
-    );
-    act(() => copy?.click());
-    await until(() => bridge.calls.some(([channel]) => channel === 'tab.copy'));
-    expect(bridge.calls.find(([channel]) => channel === 'tab.copy')?.[1]).toEqual({
-      text: view.querySelector('pre')?.textContent,
+    expect([...view.querySelectorAll('button')].map(faceOf)).toEqual([
+      'Copy prompt',
+      'Install overview skill',
+    ]);
+    act(() => buttonOf(view, 'Copy prompt')?.click());
+    expect(copyPrompt).toHaveBeenCalledOnce();
+  });
+
+  it('says how a copy of its prompt went on Copy prompt, by its press or `ya`, and else in a toast', async () => {
+    const tab = tabOf();
+    act(() => states.set(tab.id, stateOf(tab, { found: 'none', overview: null })));
+    const view = render(tab);
+    const copy = () => buttonOf(view, 'Copy prompt');
+    onTestFinished(() => {
+      withdraw('Copied prompt', '');
+      withdraw('Couldn’t copy the prompt', '');
     });
+    const before = toasts().length;
+    await act(() => copyPromptOf(tab.id, 'The prompt'));
+    expect(faceOf(copy())).toBe('Copied');
+    expect(view.querySelector('[role="status"]')?.textContent).toBe('Copied');
+    answers.copyFails = true;
+    onTestFinished(() => {
+      answers.copyFails = false;
+    });
+    await act(() => copyPromptOf(tab.id, 'The prompt'));
+    expect(faceOf(copy())).toBe('Couldn’t copy');
+    expect(toasts().length).toBe(before);
+    // With the view drawn but hidden, as `ya` pressed from the diff finds it, a toast says it.
+    view.shown(false);
+    await act(() => copyPromptOf(tab.id, 'The prompt'));
+    expect(toasts().at(-1)).toBe('Couldn’t copy the prompt');
+    expect(notice()).toMatchObject({ tone: 'danger', details: 'The clipboard is busy.' });
+    answers.copyFails = false;
+    await act(() => copyPromptOf(tab.id, 'The prompt'));
+    expect(toasts().at(-1)).toBe('Copied prompt');
+    expect(faceOf(copy())).not.toBe('Copied');
+    // And with none drawn at all, as from another state.
+    withdraw('Copied prompt', '');
+    view.unmount();
+    await act(() => copyPromptOf(tab.id, 'The prompt'));
+    expect(toasts().at(-1)).toBe('Copied prompt');
+  });
+
+  it('offers to look again where main reads the ref once, checking until main has', async () => {
+    const tab = tabOf();
+    act(() => states.set(tab.id, stateOf(tab, { found: 'none', overview: null, watching: false })));
+    const view = render(tab);
+    await until(() => buttonOf(view, 'Check again') !== undefined);
+    expect(buttonOf(view, 'Install overview skill')).toBeUndefined();
+    const again = buttonOf(view, 'Check again');
+    expect(faceOf(again)).toBe('Check again');
+    act(() => readAgain(tab.id));
+    expect(again?.getAttribute('aria-busy')).toBe('true');
+    expect(faceOf(again)).toBe('Checking…');
+    await until(() => bridge.calls.some(([channel]) => channel === 'overview.retry'));
+    await act(async () => {
+      answers.retried();
+      await Promise.resolve();
+    });
+    await until(() => again?.getAttribute('aria-busy') === null);
+    expect(faceOf(again)).toBe('Check again');
   });
 });
 
@@ -475,21 +576,25 @@ describe('an overview that can’t be shown', () => {
     const view = render(tab);
     checking.take(state);
     await until(() => view.querySelector('[data-lo-overview="invalid"]') !== null);
-    expect(view.querySelector('h2')?.textContent).toBe('This overview can’t be read');
-    const rows = [...view.querySelectorAll('.lo-ovstate__report li')].map((each) =>
-      [...each.children].map((cell) => cell.textContent),
+    expect(problemTitle(view, 'invalid')).toBe('Can’t show this overview');
+    expect(view.textContent).toContain('It has 1 problem.');
+    act(() => buttonOf(view, 'Details')?.click());
+    const details = view.querySelector('.problem-details')?.textContent ?? '';
+    expect(details).toMatch(/^ccccccc · ravi-k · 2 d ago\nLine 11 · .*chart/);
+    // In the view's own well, with its hairline, as every view's Details is.
+    expect(view.querySelector('.problem-details')?.parentElement?.className).toContain(
+      'inset-ring-border',
     );
-    expect(rows[0]?.[0]).toBe('line 11');
-    expect(rows[0]?.[1]).toContain('chart');
-    const copy = [...view.querySelectorAll('button')].find((each) =>
-      each.textContent?.startsWith('Copy a prompt to fix it'),
-    );
+    const copy = buttonOf(view, 'Copy prompt');
     const before = bridge.calls.length;
     act(() => copy?.click());
     await until(() => bridge.calls.slice(before).some(([channel]) => channel === 'tab.copy'));
     const copied = bridge.calls.slice(before).find(([channel]) => channel === 'tab.copy')?.[1];
     expect(JSON.stringify(copied)).toContain('Fix the Lo overview for this pull request:');
     expect(JSON.stringify(copied)).not.toContain('chart');
+    // It says so itself, at its own width, and no toast says it again.
+    await until(() => faceOf(copy) === 'Copied');
+    expect(notices().map((note) => note.title)).not.toContain('Copied prompt');
     expect(openings.get(tab.id)).toMatchObject({ on: 'diff' });
   });
 
@@ -510,12 +615,15 @@ describe('an overview that can’t be shown', () => {
       });
     });
     const view = render(tab);
-    expect(view.querySelector('h2')?.textContent).toBe('This overview needs a newer Lo');
-    expect(view.textContent).toContain("It's written in format 3, and this Lo reads format 1.");
-    expect(view.textContent).toContain('Get a newer Lo');
+    expect(problemTitle(view, 'newer')).toBe('Can’t show this overview');
+    expect(view.textContent).toContain('It needs a newer version of Lo.');
+    act(() => buttonOf(view, 'Details')?.click());
+    expect(view.querySelector('.problem-details')?.textContent).toContain(
+      'Format 3. This version reads format 1.',
+    );
   });
 
-  it('runs a check for updates from "Get a newer Lo", and opens no page itself', () => {
+  it('runs a check for updates from its button, and opens no page itself', () => {
     const tab = tabOf();
     const commit = commitOf();
     act(() => {
@@ -532,43 +640,14 @@ describe('an overview that can’t be shown', () => {
       });
     });
     const view = render(tab);
-    const get = [...view.querySelectorAll('button')].find(
-      (each) => each.textContent === 'Get a newer Lo',
-    );
+    const get = buttonOf(view, 'Check for updates');
     expect(checkUpdates).not.toHaveBeenCalled();
     act(() => get?.click());
     expect(checkUpdates).toHaveBeenCalledTimes(1);
     expect(bridge.calls.filter(([channel]) => channel === 'tab.openExternal')).toEqual([]);
   });
 
-  it('opens the releases page on "Open the releases page", the way on for a Lo that can’t check', () => {
-    const tab = tabOf();
-    const commit = commitOf();
-    act(() => {
-      states.set(tab.id, stateOf(tab, { overview: commit }));
-      checked.set(tab.id, {
-        kind: 'checked',
-        key: 'k',
-        commit,
-        parsed: undefined,
-        checked: { outcome: { kind: 'newer', format: 3 }, findings: [] },
-        figures: new Map(),
-        coming: [],
-        code: { kind: 'none' },
-      });
-    });
-    const view = render(tab);
-    const open = [...view.querySelectorAll('button')].find(
-      (each) => each.textContent === 'Open the releases page',
-    );
-    act(() => open?.click());
-    expect(bridge.calls.filter(([channel]) => channel === 'tab.openExternal')).toEqual([
-      ['tab.openExternal', { url: 'https://github.com/withlo/lo/releases' }],
-    ]);
-    expect(checkUpdates).not.toHaveBeenCalled();
-  });
-
-  it('says when it couldn’t be read and when Lo tries again, with Retry now', async () => {
+  it('says when it couldn’t be fetched and when it’s fetched again, with Try now, busy once pressed', async () => {
     const tab = tabOf();
     act(() =>
       states.set(
@@ -581,13 +660,19 @@ describe('an overview that can’t be shown', () => {
       ),
     );
     const view = render(tab);
-    expect(view.querySelector('h2')?.textContent).toBe('Couldn’t fetch the overview');
-    expect(view.textContent).toMatch(/Trying again in [78] s\./);
-    const retry = [...view.querySelectorAll('button')].find(
-      (each) => each.textContent === 'Retry now',
+    expect(view.querySelector('[role="alert"] > p:first-child')?.textContent).toBe(
+      'Can’t fetch the overview',
     );
+    // The count is for the eye: a screen reader hears the wait as first drawn, spelled out, so the
+    // alert isn't read each second.
+    expect(view.querySelector('[role="alert"]')?.textContent).toMatch(
+      /^Can’t fetch the overviewOffline\. Retrying in ([78]) sin \1 seconds\.$/,
+    );
+    const retry = buttonOf(view, 'Try now');
+    expect(retry?.getAttribute('aria-busy')).toBeNull();
     act(() => retry?.click());
     await until(() => bridge.calls.some(([channel]) => channel === 'overview.retry'));
+    expect(retry?.getAttribute('aria-busy')).toBe('true');
   });
 });
 
@@ -668,9 +753,10 @@ describe('an overview on screen', () => {
   it('keeps every node, its folds open and focus where it was, when it’s checked again or copied', async () => {
     const tab = tabOf();
     const checking = checkingFor(tab);
-    act(() => states.set(tab.id, stateOf(tab)));
+    // The local copy couldn't be fetched: each code block says so in its code's place.
+    act(() => states.set(tab.id, stateOf(tab, { code: 'failed' })));
     const view = render(tab);
-    checking.take(stateOf(tab));
+    checking.take(stateOf(tab, { code: 'failed' }));
     await until(() => view.querySelector('[data-lo-overview="shown"]') !== null);
     // Seen once its blocks have drawn, or at the bound: the tab's placeholder goes.
     await until(() => view.querySelector('.lo-ov.is-drawing') === null);
@@ -702,14 +788,14 @@ describe('an overview on screen', () => {
 
   it.each([
     [
-      'rozed-bot wrote this overview just now · describes r2 57cc4a6 · From the base repository',
+      'rozed-bot wrote this overview just now · written for r2 · from fork',
       'rozed-bot wrote this ov…',
     ],
-    ['” · describes r2 57cc4a6', 'describes r2 57cc4a6'],
+    ['” · written for r2', 'written for r2'],
     ['\u202Erozed-bot\u202C', 'rozed-bot'],
     ['👩‍👩‍👧‍👦'.repeat(30), `${'👩‍👩‍👧‍👦'.repeat(23)}…`],
   ])(
-    'draws the name a commit gives its author after Lo’s words, quoted, plain and on its own: %s',
+    'draws the name a commit gives its author quoted, plain and on its own: %s',
     async (name, drawn) => {
       const tab = tabOf();
       const commit = { ...commitOf(), byline: { login: null, name, at: Date.now() - 60_000 } };
@@ -720,9 +806,7 @@ describe('an overview on screen', () => {
       await until(() => view.querySelector('[data-lo-overview="shown"]') !== null);
       const byline = view.querySelector<HTMLElement>('[data-lo-byline]');
       if (!byline) throw new Error('no byline');
-      expect(byline.textContent).toMatch(
-        new RegExp(`^Written a minute ago by the commit author “${drawn}”·describes`),
-      );
+      expect(byline.textContent).toMatch(new RegExp(`^“${drawn}” · 1 min ago·written for`));
       // Nothing in it closes Lo's quotes, or sets a part apart as the byline does, and it's cut
       // short.
       expect(byline.querySelector('[data-lo-commit-name]')?.textContent).toBe(`“${drawn}”`);
@@ -731,7 +815,7 @@ describe('an overview on screen', () => {
       expect(byline.querySelector('.lo-ov-byline__figure')).not.toBeNull();
       expect(
         [...byline.querySelectorAll('strong')].some((each) =>
-          /rozed|57cc/.test(each.textContent ?? ''),
+          /rozed|written/.test(each.textContent ?? ''),
         ),
       ).toBe(false);
     },
@@ -747,7 +831,7 @@ describe('an overview on screen', () => {
     const article = view.querySelector('.lo-ov__article');
     act(() => states.set(tab.id, stateOf(tab, { newer: { ...commitOf(), id: 'f'.repeat(40) } })));
     expect(view.querySelector('.lo-ov-byline')?.textContent).toContain(
-      'A newer overview was pushed·Load it',
+      'Overview updated·Show latest',
     );
     // Offered, never put in place of the one on screen.
     expect(view.querySelector('.lo-ov__article')).toBe(article);

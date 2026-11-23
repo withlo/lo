@@ -22,6 +22,7 @@ import {
   CodeBody,
   CodeFlag,
   CodeNote,
+  CodeSkeleton,
   Held,
   useNear,
   useNearness,
@@ -45,17 +46,16 @@ import { onStep, setStep, stepOf } from './blocks.ts';
 import type { CodeRead } from './checking.ts';
 import { drawnLines } from './copying.ts';
 import { useFirstDraw, type FirstDraw } from './drawing.ts';
-import { revisionAt } from './facts.ts';
 import { holdFile, type FileCode, type FileHold } from './files.ts';
 import { keyOf } from './labels.ts';
 import { blockChange, linesIn, type BlockChange } from './mapping.ts';
 import { CompareButton } from './OutOfDate.tsx';
 import { usePage } from './page.ts';
-import { shortId } from './says.ts';
 import { fileSince } from './since.ts';
 import { flagWords, labelOf } from './stale.ts';
 import { revisions } from './store.ts';
-import { nameOf, showsOf, type Shows, type Target, type Words } from './targets.ts';
+import type { CodeCause } from '../contract.ts';
+import { CANT_SHOW, causeWords, showsOf, type Shows, type Target, type Words } from './targets.ts';
 import {
   blockIdOf,
   blockKey,
@@ -87,6 +87,8 @@ export interface CodeContext {
   /** The number Lo gave the overview's tree, which its blocks' ids carry. */
   readonly tree: number;
   readonly commit: string;
+  /** The commit the overview describes as Lo names it: `r3`, or its short id. */
+  readonly written: string;
   readonly head?: string | undefined;
   readonly read: CodeRead;
   readonly target: (target: CodeRange) => Target;
@@ -117,12 +119,12 @@ function rowsOf(target: CodeRange): number {
 /** A `:::code` block: the lines it names, at the commit the overview describes. */
 export function ExcerptBlock({ node, context }: { node: Excerpt; context: CodeContext }) {
   const { target } = node;
-  const shows = showsOf(target, context.target(target), context.read, context.commit);
+  const shows = showsOf(target, context.target(target), context.read, context.written);
   // Why main couldn't read the code, until the code is read again.
-  const [failed, setFailed] = useState<{ read: CodeRead; why: string } | undefined>(undefined);
+  const [failed, setFailed] = useState<{ read: CodeRead; why: CodeCause } | undefined>(undefined);
   const { read } = context;
   const unread = failed?.read === read ? failed.why : undefined;
-  const failing = useCallback((why: string) => setFailed({ read, why }), [read]);
+  const failing = useCallback((why: CodeCause) => setFailed({ read, why }), [read]);
   const variant: CodeBlockVariant = shows.kind === 'note' ? shows.variant : 'code';
   // Which of its lines changed by the head on screen, said with its code, as it's drawn. After a
   // newer push is loaded, what it said of the last head stays until it's said of the new one.
@@ -162,8 +164,12 @@ export function ExcerptBlock({ node, context }: { node: Excerpt; context: CodeCo
             <CodeNote title={shows.title}>
               <Said words={shows.words} />
             </CodeNote>
+          ) : shows.kind === 'waiting' ? (
+            <CodeSkeleton rows={rowsOf(target)} />
           ) : unread !== undefined ? (
-            <CodeNote title="Lo couldn’t read this code.">{unread}</CodeNote>
+            <CodeNote title={CANT_SHOW}>
+              <Said words={causeWords(unread, target.path, context.written)} />
+            </CodeNote>
           ) : (
             <ExcerptCode
               tab={context.tab}
@@ -225,7 +231,7 @@ function ExcerptCode({
   commit: string;
   head: string | undefined;
   target: CodeRange;
-  unread: (why: string) => void;
+  unread: (why: CodeCause) => void;
   changed: (changed: Changed | undefined) => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
@@ -432,11 +438,7 @@ function Flag({
   const known = useTabState(revisions, tab);
   const words = flagWords(change, { written: labelOf(known, commit), now: labelOf(known, head) });
   if (words === undefined) return null;
-  return (
-    <CodeFlag action={<CompareButton tab={tab} from={commit} to={head} variant="ghost" />}>
-      {words}
-    </CodeFlag>
-  );
+  return <CodeFlag action={<CompareButton tab={tab} from={commit} to={head} />}>{words}</CodeFlag>;
 }
 
 /** A `:::walkthrough` block: its steps beside the current one's file, its lines marked. */
@@ -453,7 +455,7 @@ export function WalkthroughBlock({
   const goTo = useCallback((next: number) => setStep(node, next), [node]);
   const step = node.steps[at];
   const shows =
-    step && showsOf(step.target, context.target(step.target), context.read, context.commit);
+    step && showsOf(step.target, context.target(step.target), context.read, context.written);
   return (
     <Held>
       <Walkthrough
@@ -465,8 +467,15 @@ export function WalkthroughBlock({
           shows &&
           (shows.kind === 'note' ? (
             <Note shows={shows} tab={context.tab} path={step.target.path} />
+          ) : shows.kind === 'waiting' ? (
+            <CodeSkeleton rows={rowsOf(step.target)} />
           ) : (
-            <StepCode tab={context.tab} commit={context.commit} target={step.target} />
+            <StepCode
+              tab={context.tab}
+              commit={context.commit}
+              target={step.target}
+              written={context.written}
+            />
           ))
         }
       />
@@ -477,14 +486,25 @@ export function WalkthroughBlock({
 /** A file read whole for a walkthrough's step: its lines and highlighting, or why it wasn't. */
 type StepFile =
   | { path: string; lines: string[]; tokens: Promise<Uint32Array | undefined> }
-  | { path: string; unread: string };
+  | { path: string; unread: CodeCause };
 
 /**
  * The current step's file, whole, at the commit the overview describes, its lines marked and near
  * the top of its box, which scrolls on its own. Read near the screen, drawn once it's in, and let
  * go far from it; another step in the same file marks its lines in the same view.
  */
-function StepCode({ tab, commit, target }: { tab: string; commit: string; target: CodeRange }) {
+function StepCode({
+  tab,
+  commit,
+  target,
+  written,
+}: {
+  tab: string;
+  commit: string;
+  target: CodeRange;
+  /** The revision the overview describes, as Lo names it. */
+  written: string;
+}) {
   const box = useRef<HTMLDivElement>(null);
   const near = useNear(box);
   const page = usePage();
@@ -561,7 +581,11 @@ function StepCode({ tab, commit, target }: { tab: string; commit: string; target
   }, [lines, path, id, start, end]);
 
   if (file && 'unread' in file) {
-    return <CodeNote title="Lo couldn’t read this code.">{file.unread}</CodeNote>;
+    return (
+      <CodeNote title={CANT_SHOW}>
+        <Said words={causeWords(file.unread, path, written)} />
+      </CodeNote>
+    );
   }
   return <div ref={box} className="h-full" data-lo-code={lines ? 'drawn' : 'waiting'} />;
 }
@@ -613,27 +637,24 @@ function Action({
   return null;
 }
 
-/** "Find a file named cache.ts": the file finder, with the name typed. */
+/** "Go to file…": the file finder, with the name the block gave typed. */
 function FindButton({ name }: { name: string }) {
   const keys = keyOf('tree.find');
   return (
     <Button size="sm" onClick={() => findFile(name)}>
-      Find a file named {name}
+      Go to file…
       {keys !== undefined && <Key keys={keys} quiet decorative />}
     </Button>
   );
 }
 
-/** "Open cache.ts at r5": the file whole, at the newest push the tab shows. */
+/** "Open whole file": the file whole, at the newest push the tab shows. */
 function LatestButton({ tab, path }: { tab: string; path: string }) {
   const pull = usePull(tab);
-  const known = useTabState(revisions, tab);
-  const head = pull?.shown ?? undefined;
-  if (head === undefined) return null;
-  const number = revisionAt(known, head)?.number;
+  if ((pull?.shown ?? undefined) === undefined) return null;
   return (
     <Button size="sm" onClick={() => showFile('whole', tab, path)}>
-      Open {nameOf(path)} at {number === undefined ? shortId(head) : `r${number}`}
+      Open whole file
     </Button>
   );
 }

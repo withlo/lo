@@ -11,6 +11,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { parseArtifact, type CodeRange } from '@lo/artifact';
 
 import { cleanUp, click, render, rerender } from '../../test/dom.ts';
+import { commandsOf, defineCommands, holdRegistry, Registry } from '../commands/index.ts';
+import { TOOLTIP_DELAY, TooltipGroup } from '../Tooltip.tsx';
 import { FakeResizeObserver, resize } from '../../test/figures.ts';
 import {
   CodeBlock,
@@ -105,8 +107,8 @@ describe('a code block', () => {
     const page = render(
       <CodeBlock target={TARGET} variant="unresolved">
         <CodeBody rows={1}>
-          <CodeNote title="This reference doesn’t resolve." action={<button>Find</button>}>
-            There’s no file.
+          <CodeNote title="Can’t show this code" action={<button>Find</button>}>
+            It isn’t in r3.
           </CodeNote>
         </CodeBody>
       </CodeBlock>,
@@ -115,8 +117,8 @@ describe('a code block', () => {
       'lo-codeblock lo-codeblock--unresolved',
     );
     const note = page.querySelector('.lo-codeblock__msg')!;
-    expect(note.querySelector('strong')?.textContent).toBe('This reference doesn’t resolve.');
-    expect(note.textContent).toContain('There’s no file.');
+    expect(note.querySelector('strong')?.textContent).toBe('Can’t show this code');
+    expect(note.textContent).toContain('It isn’t in r3.');
     expect(note.querySelector('button')?.textContent).toBe('Find');
     rerender(
       page,
@@ -135,7 +137,7 @@ describe('a plain fenced block', () => {
     );
     const block = page.querySelector('.lo-codeblock--illustration')!;
     expect(block.querySelector('.lo-codeblock__head')?.textContent).toBe(
-      'Illustration · not code from this PR',
+      'Illustration · not from this pull request',
     );
     expect(block.querySelector('pre')?.textContent).toBe('const a = 1;\n  indented();');
     expect(block.querySelector('.lo-codeblock__lines, .cm-gutters')).toBeNull();
@@ -207,17 +209,60 @@ describe('a walkthrough', () => {
     expect(page.querySelector('.lo-walk__view .code')).not.toBeNull();
   });
 
-  it('moves by Previous and Next, which stop at the ends', () => {
+  it('moves by Previous and Next, which stop at the ends, dimmed with why', () => {
     const first = drawn(0);
     const [previous, next] = first.page.querySelectorAll<HTMLButtonElement>('.lo-walk__nav button');
-    expect(previous?.disabled).toBe(true);
+    expect(previous?.getAttribute('aria-disabled')).toBe('true');
+    expect(previous?.getAttribute('aria-description')).toBe('First step');
+    click(previous!);
+    expect(first.step).not.toHaveBeenCalled();
     click(next!);
     expect(first.step).toHaveBeenCalledWith(1);
     const last = drawn(2);
     const buttons = last.page.querySelectorAll<HTMLButtonElement>('.lo-walk__nav button');
-    expect(buttons[1]?.disabled).toBe(true);
+    expect(buttons[1]?.getAttribute('aria-disabled')).toBe('true');
+    expect(buttons[1]?.getAttribute('aria-description')).toBe('Last step');
     click(buttons[0]!);
     expect(last.step).toHaveBeenCalledWith(1);
+  });
+
+  it('gives the keys that step it as the keymap has them, in its buttons’ tooltips', () => {
+    vi.useFakeTimers();
+    const steps = defineCommands('overview', {
+      previousStep: { label: 'Previous step', group: 'Overview', keys: ['left'] },
+      nextStep: { label: 'Next step', group: 'Overview', keys: ['right'] },
+    });
+    const registry = new Registry({
+      system: 'mac',
+      commands: commandsOf(steps).map((each) => ({ ...each, handler: { run: () => {} } })),
+    });
+    registry.setKeymap('bind l overview.nextStep');
+    const release = holdRegistry(registry);
+    try {
+      const page = render(
+        <TooltipGroup>
+          <OverviewDocument
+            tree={walkthrough}
+            views={{
+              walkthrough: (node) => (
+                <Walkthrough node={node} current={0} step={() => {}} code={null} />
+              ),
+            }}
+          />
+        </TooltipGroup>,
+      );
+      const next = page.querySelectorAll<HTMLButtonElement>('.lo-walk__nav button')[1]!;
+      act(() => {
+        next.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: page }));
+        next.dispatchEvent(new MouseEvent('mouseenter', { relatedTarget: page }));
+        next.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+        vi.advanceTimersByTime(TOOLTIP_DELAY);
+      });
+      expect(page.querySelector('.tooltip')?.textContent).toBe('Next stepl');
+    } finally {
+      release();
+      vi.useRealTimers();
+    }
   });
 
   it('moves to a step clicked, but not for a link in it', () => {
@@ -272,7 +317,7 @@ describe('a held block', () => {
       'lo-held__more',
     ]);
     const more = page.querySelector('.lo-held__more button')!;
-    expect(more.textContent).toBe('Show the whole block');
+    expect(more.textContent).toBe('Show whole block');
     click(more);
     expect(box.className).toBe('lo-held');
     expect(box.style.height).toBe('300px');

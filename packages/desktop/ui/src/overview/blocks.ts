@@ -6,14 +6,19 @@
 
 import type { OverviewBlock } from '@lo/artifact';
 
+import type { Target } from '../commands/targets.ts';
 import { secureLink } from '../markdown/links.ts';
 import { isRecord } from '../markdown/scope.ts';
 
-/** A key, or keys that each do it, and what it does: `{ keys: [['←'], ['→']], label: 'Step' }`. */
+/**
+ * One of the buttons on a focused block's chip: a command of the overview's that runs on the block,
+ * by its id, which the chip draws with its label and its key.
+ */
 export interface BlockHint {
-  /** Each key that does it, as `Key` shows one: `['⏎']`, or `[']', 'b']` for a sequence. */
-  keys: readonly (readonly string[])[];
-  label: string;
+  /** The command, by its id: `overview.follow`. */
+  readonly command: string;
+  /** What it runs on, as a key pressed on the block would: the block, as the app names it. */
+  readonly target?: Target | undefined;
 }
 
 /**
@@ -48,19 +53,22 @@ export function isStop(block: OverviewBlock): boolean {
   }
 }
 
-/** What a focused block's chip says, by its kind. */
+/**
+ * What a focused block's chip offers, by its kind: the commands its keys run there. A fold's one
+ * command reads as what it does to the fold, "Expand" or "Collapse".
+ */
 export function blockHints(block: OverviewBlock): readonly BlockHint[] {
   switch (block.kind) {
     case 'excerpt':
-      return [GO_TO_CODE, OPEN_BESIDE];
+      return [FOLLOW, BESIDE];
     case 'walkthrough':
-      return [{ keys: [['←'], ['→']], label: 'Step' }, GO_TO_CODE, OPEN_BESIDE];
+      return [STEP, FOLLOW, BESIDE];
     case 'figure':
-      return block.parts.length > 0 ? [{ keys: [['Tab']], label: 'Next part' }, FOLLOW] : [];
+      return block.parts.length > 0 ? [LINK, FOLLOW] : [];
     case 'tabs':
-      return [{ keys: [['←'], ['→']], label: 'Switch tabs' }];
+      return [STEP];
     case 'details':
-      return [{ keys: [['⏎']], label: 'Open or close' }];
+      return [FOLLOW];
     case 'paragraph':
     case 'list':
     case 'table':
@@ -68,7 +76,7 @@ export function blockHints(block: OverviewBlock): readonly BlockHint[] {
     case 'alert':
     case 'footnotes':
     case 'glossary':
-      return [{ keys: [['Tab']], label: 'Next link' }, FOLLOW];
+      return [LINK, FOLLOW];
     case 'heading':
     case 'code':
     case 'rule':
@@ -80,9 +88,10 @@ export function blockHints(block: OverviewBlock): readonly BlockHint[] {
   }
 }
 
-const GO_TO_CODE: BlockHint = { keys: [['⏎']], label: 'Go to code' };
-const OPEN_BESIDE: BlockHint = { keys: [['o']], label: 'Open beside' };
-const FOLLOW: BlockHint = { keys: [['⏎']], label: 'Follow' };
+const FOLLOW: BlockHint = { command: 'overview.follow' };
+const BESIDE: BlockHint = { command: 'overview.beside' };
+const STEP: BlockHint = { command: 'overview.nextStep' };
+const LINK: BlockHint = { command: 'overview.nextLink' };
 
 /**
  * Whether `block` holds a link, however deep: one the overview draws as a link, so a web page only

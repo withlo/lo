@@ -211,9 +211,9 @@ describe('holdFile', () => {
 
   it('never keeps a failed read, nor one let go before it’s in', async () => {
     const tab = tabOf();
-    texts.set('gone.ts', { kind: 'unread', why: 'It isn’t text.' });
+    texts.set('gone.ts', { kind: 'unread', why: 'binary' });
     const failed = holdFile(tab, COMMIT, 'gone.ts');
-    expect(await failed.code).toEqual({ kind: 'unread', why: 'It isn’t text.' });
+    expect(await failed.code).toEqual({ kind: 'unread', why: 'binary' });
     const held = heldFiles();
     failed.release();
     expect(heldFiles()).toBe(held - 1);

@@ -399,6 +399,8 @@ interface ReadState {
   failures: number;
   /** When it may be read again after those failures. */
   retryAt: number | undefined;
+  /** The same, by the wall clock, as worked out once when it failed, for what shows the wait. */
+  retryWall: number | undefined;
   /** How many times it was made due at once whatever its stamp. A run that started before the last time doesn't stamp its value, so it's read again. */
   generation: number;
   /** The `generation` of the newest run that finished with all of the value and started at that generation: every mark up to it is past. */
@@ -1016,6 +1018,7 @@ export class Poller {
       fetchedAt: undefined,
       failures: 0,
       retryAt: undefined,
+      retryWall: undefined,
       generation: 0,
       finished: undefined,
       landed: undefined,
@@ -1056,6 +1059,17 @@ export class Poller {
     const read = this.#pulls.get(pull.key)?.reads.get(kind.name);
     if (read?.value === undefined || read.fetchedAt === undefined) return undefined;
     return { value: unchecked<T>(read.value), fetchedAt: read.fetchedAt };
+  }
+
+  /**
+   * When the read of `kind` kept for `pull` may run again after failing, as `Date.now()` counts,
+   * in whole milliseconds: the same each time it's asked, as worked out when the read failed.
+   * Nothing while it isn't waiting on a failure, or once its wait is over.
+   */
+  readRetryAt<T>(pull: PullRef, kind: ReadKind<T>): number | undefined {
+    const read = this.#pulls.get(pull.key)?.reads.get(kind.name);
+    if (read?.retryAt === undefined || read.retryAt <= this.#config.monotonic()) return undefined;
+    return read.retryWall;
   }
 
   /**
@@ -1318,6 +1332,7 @@ export class Poller {
     if (forgetFailures) {
       read.failures = 0;
       read.retryAt = undefined;
+      read.retryWall = undefined;
     }
     this.#wake();
     this.#changed();
@@ -2280,7 +2295,9 @@ export class Poller {
     if (!read) return;
     const { openInterval, detailsMaxAge, jitter, random } = this.#config;
     read.failures += 1;
-    read.retryAt = now + backoff(read.failures, openInterval, detailsMaxAge, jitter, random());
+    const wait = backoff(read.failures, openInterval, detailsMaxAge, jitter, random());
+    read.retryAt = now + wait;
+    read.retryWall = Math.round(this.#config.now() + wait);
   }
 
   /**
@@ -2511,6 +2528,7 @@ export class Poller {
         if (complete) {
           read.failures = 0;
           read.retryAt = undefined;
+          read.retryWall = undefined;
         }
         if (changed) put(outcome.name, value, stamped);
         else if (restamped) {

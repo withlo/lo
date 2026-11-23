@@ -14,6 +14,7 @@ import {
   showTabOf,
   tabState,
   useActiveTab,
+  useRunLayers,
   useTabState,
   type PullView,
 } from './shared.ts';
@@ -116,6 +117,31 @@ describe('a stack’s tab on screen', () => {
     expect(closed).toEqual(['fd:2213']);
     showTabs({ tabs: [bat], active: 'bat' });
     expect(closed).toEqual(['fd:2213', 'fd']);
+  });
+});
+
+/** The layers the run view `id` spans, as the empty states of other views name them. */
+function Layers({ id }: { id: string }) {
+  return useRunLayers(id);
+}
+
+describe('a run of a stack’s layers on screen as one diff', () => {
+  it('names its layers by their places in its tab’s stack, once the stack holds them', () => {
+    const run = { layers: [2213, 2214], start: 'a'.repeat(40), from: 2213 };
+    showTabs({ tabs: [{ ...fd, run }, bat], active: 'fd' });
+    const shown = render(<Layers id="fd:2213-2214" />);
+    expect(shown.text()).toBe('these layers');
+    const stack = { layers: [2212, 2213, 2214], root: 'main' };
+    act(() => showTabs({ tabs: [{ ...fd, run, stack }, bat], active: 'fd' }));
+    expect(shown.text()).toBe('layers 2–3');
+    // A stack that has lost one of them names neither.
+    act(() =>
+      showTabs({
+        tabs: [{ ...fd, run, stack: { ...stack, layers: [2212, 2213] } }, bat],
+        active: 'fd',
+      }),
+    );
+    expect(shown.text()).toBe('these layers');
   });
 });
 

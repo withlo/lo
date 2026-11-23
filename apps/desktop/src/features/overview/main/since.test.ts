@@ -179,17 +179,17 @@ describe('SinceReads', () => {
       kind: 'changed',
       path: 'data.bin',
       pushed: true,
-      texts: { why: 'It isn’t text.' },
+      texts: { why: 'binary' },
     });
     expect(await file('huge.txt')).toEqual({
       kind: 'changed',
       path: 'huge.txt',
       pushed: true,
-      texts: { why: `It’s larger than ${LIMITS.file / 2 ** 20} MB, the most Lo reads of a file.` },
+      texts: { why: 'tooLarge' },
     });
     expect(await file('src/nothing.ts')).toEqual({
       kind: 'unread',
-      why: 'There’s no file at that path at the overview’s commit.',
+      why: 'noFile',
     });
   });
 
@@ -247,7 +247,7 @@ describe('SinceReads', () => {
     expect(await since.file(local, clone, first, second, 'src/parser.ts')).toMatchObject({
       kind: 'changed',
       pushed: true,
-      texts: { why: 'Lo downloaded as much of this overview’s code as it downloads for one.' },
+      texts: { why: 'spent' },
     });
   });
 
@@ -264,7 +264,7 @@ describe('SinceReads', () => {
     for (const path of ['src/format.ts', 'src/gone.ts', 'src/old.ts']) {
       expect(await since.file(local, clone, first, second, path)).toEqual({
         kind: 'unread',
-        why: 'Lo couldn’t tell where the file went since.',
+        why: 'unknown',
       });
     }
     expect(await since.file(local, clone, first, second, 'README.md')).toMatchObject({
@@ -294,12 +294,12 @@ describe('SinceReads', () => {
     expect(await since.count(noGit, opened, first, second)).toEqual({ kind: 'noGit' });
     expect(await since.file(noGit, opened, first, second, 'README.md')).toEqual({
       kind: 'unread',
-      why: 'Lo needs git to read the code.',
+      why: 'noGit',
     });
     const failed: LocalState = { kind: 'failed', failure: 'auth', message: 'Signed out.' };
     expect(await since.count(failed, opened, first, second)).toEqual({
       kind: 'failed',
-      why: 'The pull request’s local copy couldn’t be fetched: Signed out.',
+      why: 'notFetched',
     });
 
     // A copy that hasn't fetched the head yet, as just after a newer push is loaded.
@@ -346,7 +346,7 @@ describe('SinceReads', () => {
     ).toEqual({ kind: 'waiting' });
     expect(
       await new SinceReads().count(local, () => Promise.resolve(clone), missing, second),
-    ).toEqual({ kind: 'failed', why: 'GitHub no longer has the commit the overview describes.' });
+    ).toEqual({ kind: 'failed', why: 'noCommit' });
   });
 
   it('stops its reads as the tab closes', async () => {
