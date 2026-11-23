@@ -849,7 +849,9 @@ class View implements DiffView {
    * The box moved or changed size, as when a banner over it comes or goes: the content goes back
    * where it was on the page, by scrolling. A box that moved up further than the scroll can go
    * back, as a banner that leaves while the diff is at its top, takes the content with it: the
-   * first file takes the room, and no blank band is left over it.
+   * first file takes the room, and no blank band is left over it. A box that moved down, as a
+   * banner comes, takes the content with it where keeping it still would put the cursor's row
+   * out of the box's top, as the first file's header at the top would go: the scroll stays.
    */
   readonly #keepPlace = (): void => {
     this.#reach();
@@ -859,7 +861,7 @@ class View implements DiffView {
     // Not seen yet, or seen on a box still on the move, it's where it's laid out.
     if (this.#seen !== 'yes') this.#placed = this.#contentTop();
     const moved = this.#contentTop() - this.#placed;
-    const kept = Math.abs(moved) >= 0.5;
+    const kept = Math.abs(moved) >= 0.5 && !this.#hidesCursor(moved);
     // The scroll stops at the top: what it can't take of a move up, the content goes up with.
     if (kept) this.#scrollBy(Math.max(moved, -this.dom.scrollTop));
     // A jump's line goes where it belongs after, as after the browser pulled the scroll back to
@@ -877,6 +879,19 @@ class View implements DiffView {
     this.#aligner.anchorHere();
     this.#trimRoom();
   };
+
+  /**
+   * Whether scrolling down by `by` pixels would take the cursor's row, on screen now, up out of the
+   * box's top.
+   */
+  #hidesCursor(by: number): boolean {
+    if (by <= 0) return false;
+    const pane = this.#panes().includes(this.#lastPane) ? this.#lastPane : this.#activePane();
+    const view = this.#viewOf(pane);
+    const top = view.documentTop + view.lineBlockAt(view.state.selection.main.head).top;
+    const box = this.dom.getBoundingClientRect();
+    return top >= box.top && top < box.bottom && top - by < box.top;
+  }
 
   /** Scrolls the box by `by` pixels, a scroll of the view's own. */
   #scrollBy(by: number): void {

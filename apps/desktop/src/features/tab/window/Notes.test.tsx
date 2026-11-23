@@ -3,7 +3,7 @@
 // leaves, one arriving behind the one shown said to a screen reader; and a read that fails after
 // the view was drawn, which leaves the view and says why in the header's chip.
 
-import { Banner } from '@lo/ui';
+import { Banner, PRHeader } from '@lo/ui';
 import { holdRegistry } from '@lo/ui/commands';
 import { act, createElement, useSyncExternalStore, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -13,7 +13,8 @@ import { createRegistry } from '../../../window/commands/registry.ts';
 import { defineView, Slots } from '../../../window/slots.tsx';
 import type { PullView } from '../contract.ts';
 import feature from './index.ts';
-import { Banners, blocked, TabFailed, useHeaderConnection } from './Notes.tsx';
+import { blocked } from './banners.ts';
+import { Banners, TabFailed, useHeaderConnection } from './Notes.tsx';
 import { banners, type BannerSaid, type PullTab } from './shared.ts';
 
 vi.mock('./main.ts', () => ({ main: () => ({ reload: () => Promise.resolve() }) }));
@@ -224,12 +225,56 @@ function Chip({ view }: { view: PullView }) {
   return <p>{chip ? `${chip.kind} ${chip.tone} ${chip.label}` : 'none'}</p>;
 }
 
+/** The header with `view`'s chip, which opens its details. */
+function Header({ view }: { view: PullView }) {
+  return <PRHeader number={80} connection={useHeaderConnection(TAB, view)} />;
+}
+
+/** What the chip's details say on their line, a line each, once it's pressed. */
+async function chipLines(view: PullView): Promise<string[]> {
+  // The window's root, which the details are drawn into.
+  let root = document.getElementById('root');
+  if (!root) {
+    const made = document.body.appendChild(document.createElement('div'));
+    made.id = 'root';
+    onTestFinished(() => made.remove());
+    root = made;
+  }
+  const host = draw(<Header view={view} />);
+  click(host.querySelector('header button'));
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+  const line = [...root.querySelectorAll('[role="dialog"]')].at(-1)?.querySelector('p');
+  return [...(line?.childNodes ?? [])].map((part) => part.textContent ?? '');
+}
+
 describe('a read that fails after the view was drawn', () => {
-  it('leaves the view, and says why in the header’s chip', () => {
+  it('leaves the view, and says why in the header’s chip', async () => {
     expect(blocked(failedRead)).toBe(false);
     expect(draw(<TabFailed tab={TAB} view={failedRead} />).textContent).toBe('');
     // Amber while it counts down to trying again.
     expect(draw(<Chip view={failedRead} />).textContent).toBe('failed warn GitHub error');
+    // Where GitHub didn't answer, it says so.
+    const unanswered: PullView = {
+      ...failedRead,
+      problem: { kind: 'failed', cause: { kind: 'timeout' }, retryAt: null },
+    };
+    expect(draw(<Chip view={unanswered} />).textContent).toBe('failed danger No response');
+    // When GitHub last confirmed what's on screen goes under the line, in every state.
+    const checked = Date.now() - 4 * 60_000;
+    expect(await chipLines({ ...unanswered, checked })).toEqual([
+      'GitHub didn’t respond.',
+      'Checked 4 min ago',
+    ]);
+    const signedOut: PullView = {
+      ...failedRead,
+      problem: null,
+      connection: { kind: 'signedOut', login: 'rozed-bot' },
+      checked,
+    };
+    expect(await chipLines(signedOut)).toEqual(['rozed-bot is signed out.', 'Checked 4 min ago']);
     // Before anything was drawn, the failure takes the view's place, and the chip says nothing.
     const first = { ...failedRead, shown: null };
     expect(blocked(first)).toBe(true);

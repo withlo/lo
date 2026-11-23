@@ -91,7 +91,7 @@ export interface Failure {
 export function failureOf(error: unknown): Failure {
   if (!(error instanceof GitError)) {
     const message = error instanceof Error ? error.message : String(error);
-    return { failure: 'other', said: message, message, retry: true };
+    return { failure: 'local', said: message, message, retry: true };
   }
   const { detail, message } = error;
   const said = error.said();
@@ -104,14 +104,14 @@ export function failureOf(error: unknown): Failure {
       return { failure: 'unavailable', said, message, retry: false };
     case 'invalid':
     case 'tooLarge':
-      return { failure: 'other', said, message, retry: false };
+      return { failure: 'local', said, message, retry: false };
     case 'busy': {
       const failure =
         detail.held === 'tabs'
           ? 'heldByTabs'
           : detail.held === 'servers'
             ? 'heldByServers'
-            : 'other';
+            : 'local';
       return { failure, said, message, retry: true };
     }
     case 'notFetched':
@@ -122,10 +122,10 @@ export function failureOf(error: unknown): Failure {
     case 'readOnly':
     case 'git':
     case 'io':
-      return { failure: 'other', said, message, retry: true };
+      return { failure: 'local', said, message, retry: true };
     default:
       detail satisfies never;
-      return { failure: 'other', said, message, retry: true };
+      return { failure: 'local', said, message, retry: true };
   }
 }
 

@@ -506,11 +506,10 @@ function footOf(
  */
 function lineOf(
   view: MergeView | undefined,
-  now: number,
   queue: InQueue | undefined,
   ended: 'merged' | 'closed' | undefined,
 ): HeaderLine | undefined {
-  const line = headerLine(view, now, queue);
+  const line = headerLine(view, queue);
   if (!line || ended === undefined) return line;
   return {
     kind: ended,
@@ -591,7 +590,7 @@ export function MergeHeader({ tab }: { tab: PullTab }) {
       : state === 'closed'
         ? 'closed'
         : undefined;
-  const line = lineOf(view, now, queue, ended);
+  const line = lineOf(view, queue, ended);
   const landed = useLanded(line?.kind);
   if (!line) return null;
   const keys = keyOf('merge.panel');

@@ -3661,6 +3661,38 @@ describe('its place on the page', () => {
     expect(page.dom().scrollTop).toBe(30);
   });
 
+  test('moves down with a banner coming, rather than put the cursor’s row out of its top', () => {
+    const watch = observers();
+    const page = boxed(0);
+    // The editors' text is laid out from the box's top, less the scroll.
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element,
+    ) {
+      if (this.classList.contains('lo-diffview')) return new DOMRect(0, page.box.top, 800, 600);
+      if (this.classList.contains('cm-content')) {
+        return new DOMRect(0, page.box.top - page.dom().scrollTop, 400, 4000);
+      }
+      return new DOMRect();
+    });
+    open();
+    page.frame();
+    page.frame();
+    page.frame();
+    // At its top, the cursor on the first file's header: the scroll stays at the top, and the
+    // content goes down with the box.
+    page.box.top = 34;
+    watch.resize(page.dom(), 566, 800);
+    expect(page.dom().scrollTop).toBe(0);
+    // Read further down, with the cursor's row above the screen, the rows stay still, by the scroll.
+    page.box.top = 0;
+    watch.resize(page.dom(), 600, 800);
+    page.dom().scrollTop = 200;
+    page.dom().dispatchEvent(new Event('scroll'));
+    page.box.top = 34;
+    watch.resize(page.dom(), 566, 800);
+    expect(page.dom().scrollTop).toBe(234);
+  });
+
   test('first seen under a banner still opening, follows its box until it’s still, with no scroll', () => {
     const watch = observers();
     const page = boxed(26);

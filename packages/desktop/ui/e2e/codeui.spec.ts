@@ -167,8 +167,10 @@ test('a status item opens its details from the keyboard, which take focus, close
   await page.keyboard.press('Enter');
   const details = page.getByRole('dialog');
   await expect(details).toBeVisible();
-  // The one thing to do has focus, and `Tab` reaches the log's button.
+  // The one thing to do has focus, and `Tab` reaches Details after it, then the log's button.
   await expect(details.getByRole('button', { name: 'Restart' })).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(details.getByRole('button', { name: 'Details' })).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(details.getByRole('button', { name: 'Show log' })).toBeFocused();
   await page.keyboard.press('Escape');

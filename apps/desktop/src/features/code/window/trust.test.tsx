@@ -335,8 +335,8 @@ describe('asking to trust', () => {
     const alert = () => [...shown.querySelectorAll('[role="alert"] p')].map((p) => p.textContent);
     expect(alert()).toEqual(['Couldn’t trust rozed-dev/e2e', 'settings.json has an error.']);
     expect([...shown.querySelectorAll('button')].map(said)).toEqual([
-      'Details',
       'Open settings.json',
+      'Details',
       'Trust repo…',
     ]);
     expect(button(shown, 'Trust repo…')?.getAttribute('aria-disabled')).toBeNull();

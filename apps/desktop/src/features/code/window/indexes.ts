@@ -60,12 +60,13 @@ const WHY: Readonly<Record<PartialWhy, string>> = {
 };
 
 /**
- * The index's item: how far it has got while it builds, its name once it's ready, with how much a
- * partial one has, and why, in its details. A ring while it waits for the local copy, and nothing
+ * The index's item for `repository`'s code: how far it has got while it builds, with what it
+ * indexes in its details, its name once it's ready, with how much a partial one has, and why, in its
+ * details. A ring while it waits for the local copy, and nothing
  * without git, which the local copy's item says. One that failed is amber while it waits to be
  * built again, as it does by itself, and red once it doesn't.
  */
-export function indexItem(state: IndexState | null): IndexItem | undefined {
+export function indexItem(state: IndexState | null, repository: string): IndexItem | undefined {
   switch (state?.kind) {
     case undefined:
     case 'noGit':
@@ -74,11 +75,11 @@ export function indexItem(state: IndexState | null): IndexItem | undefined {
       return { ball: 'off', text: 'Code index' };
     case 'building':
       return state.total === 0
-        ? { ball: 'working', text: 'Indexing code…', lines: ['Starting…'] }
+        ? { ball: 'working', text: 'Indexing code…', lines: [`Indexing ${repository}…`] }
         : {
             ball: 'working',
             text: `Indexing code · ${count(state.done)} / ${count(state.total)}`,
-            lines: [`${count(state.done)} / ${count(state.total)} files`],
+            lines: [`Indexing ${repository} · ${count(state.done)} / ${count(state.total)} files`],
           };
     case 'ready': {
       const { partial } = state;

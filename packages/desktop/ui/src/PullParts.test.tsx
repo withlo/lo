@@ -70,6 +70,15 @@ describe('PRHeader', () => {
     expect(markup).not.toContain('Acting as');
   });
 
+  it('holds no places for a pull request it can’t show, and names it by its repo and number', () => {
+    const markup = renderToStaticMarkup(
+      <PRHeader number={9999} missing={{ repo: 'rozed-dev/e2e' }} />,
+    );
+    expect(markup).not.toContain('skeleton');
+    expect(markup).toMatch(/<h1[^>]*>rozed-dev\/e2e<\/h1>/);
+    expect(markup).toContain('#9999');
+  });
+
   it('says when it reads without signing in, and names a deleted author', () => {
     const markup = renderToStaticMarkup(
       <PRHeader

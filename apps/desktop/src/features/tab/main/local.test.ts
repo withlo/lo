@@ -120,8 +120,9 @@ describe('failureOf', () => {
   it('tries again when waiting may help, as @lo/git says', () => {
     expect(failureOf(fetchFailing('network'))).toMatchObject({ failure: 'network', retry: true });
     expect(failureOf(fetchFailing('timedOut'))).toMatchObject({ failure: 'timedOut', retry: true });
+    // A failure on this computer is the copy's own, not GitHub's.
     expect(failureOf(new GitError({ kind: 'busy', message: 'held' }))).toMatchObject({
-      failure: 'other',
+      failure: 'local',
       retry: true,
     });
     // A copy that can't be trusted, held open, says by what, with why it can't be trusted.
@@ -131,7 +132,7 @@ describe('failureOf', () => {
     // Git's own words are what Details holds.
     expect(failureOf(fetchFailing('network')).said).toBe('fatal: …');
     expect(failureOf(new Error('something else'))).toEqual({
-      failure: 'other',
+      failure: 'local',
       said: 'something else',
       message: 'something else',
       retry: true,

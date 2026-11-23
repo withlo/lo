@@ -129,7 +129,7 @@ const status = (change: Partial<PollStatus> = {}): PollStatus => ({
 
 describe('how a tab stands with GitHub', () => {
   it('is live when nothing is wrong', () => {
-    expect(connectionOf('rozed-bot', status(), 1)).toEqual({ kind: 'live' });
+    expect(connectionOf('rozed-bot', status())).toEqual({ kind: 'live' });
   });
 
   it('says the worst of what is: signed out, then the limit used up, then offline, then a low limit', () => {
@@ -144,24 +144,20 @@ describe('how a tab stands with GitHub', () => {
       low: { resource: 'core', remaining: 50, limit: 5000, reset: 7_000 },
     };
     expect(
-      connectionOf('rozed-bot', status({ signedOut: true, offline, rateLimit: paused }), 1),
+      connectionOf('rozed-bot', status({ signedOut: true, offline, rateLimit: paused })),
     ).toEqual({ kind: 'signedOut', login: 'rozed-bot' });
-    expect(connectionOf('rozed-bot', status({ offline, rateLimit: paused }), 1)).toEqual({
+    expect(connectionOf('rozed-bot', status({ offline, rateLimit: paused }))).toEqual({
       kind: 'rateLimited',
       login: 'rozed-bot',
       until: 9_000,
       secondary: true,
     });
-    expect(connectionOf('rozed-bot', status({ offline, rateLimit: low }), 1_500)).toEqual({
+    expect(connectionOf('rozed-bot', status({ offline, rateLimit: low }))).toEqual({
       kind: 'offline',
-      savedAt: 1_500,
       retryAt: 2_000,
       error: 'GitHub can’t be reached',
     });
-    expect(connectionOf('rozed-bot', status({ offline }), undefined)).toMatchObject({
-      savedAt: null,
-    });
-    expect(connectionOf('rozed-bot', status({ rateLimit: low }), 1)).toEqual({
+    expect(connectionOf('rozed-bot', status({ rateLimit: low }))).toEqual({
       kind: 'limitLow',
       remaining: 50,
       reset: 7_000,

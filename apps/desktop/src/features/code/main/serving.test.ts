@@ -285,7 +285,7 @@ describe('following views for servers', () => {
     const cases: Found[] = [
       { kind: 'waiting', count: 4 },
       { kind: 'refused', why },
-      { kind: 'missing', needs: 'Go 1.24 or later' },
+      { kind: 'missing', needs: 'Go 1.24 or newer' },
       { kind: 'failed' },
       { kind: 'stopped' },
     ];

@@ -17,6 +17,7 @@ import {
   type Run,
   type Tab,
 } from '../contract.ts';
+import { blocked } from './banners.ts';
 import { makeTabState, type TabState, useKept } from './kept.ts';
 import { main } from './main.ts';
 import {
@@ -240,6 +241,15 @@ export { withoutBidi } from '../../../ipc/cause.ts';
 /** What main last said of a view of a pull request's tab, re-rendering when it changes. */
 export function usePull(tab: string): PullView | undefined {
   return useStore(pullsStore, (state) => state.views.get(tab));
+}
+
+/**
+ * Whether tab `tab` can't show its pull request now, so why takes its view's place, and what's
+ * around the view, such as the files beside it, has nothing to show or act on. Re-renders when that
+ * changes.
+ */
+export function useBlocked(tab: string): boolean {
+  return useStore(pullsStore, (state) => blocked(state.views.get(tab)));
 }
 
 /** A pull request's tab's local copy, re-rendering when it changes. */

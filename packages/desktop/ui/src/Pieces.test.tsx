@@ -388,6 +388,74 @@ describe('Problem', () => {
   });
 });
 
+describe('Problem in a status item’s details', () => {
+  it('stacks what failed, why, the command and the buttons, with no box of its own', async () => {
+    const copy = vi.fn<(text: string) => Promise<void>>(() => Promise.resolve());
+    const host = render(
+      <CopyRoute copy={copy}>
+        <Problem
+          layout="details"
+          title="Can’t find Git"
+          reason="Lo needs Git to fetch the local copy."
+          commands={['xcode-select --install']}
+          action={{ label: 'Check again', onClick: () => {} }}
+          details="spawn git ENOENT"
+        />
+      </CopyRoute>,
+    );
+    const problem = host.firstElementChild!;
+    // The popover is its box: no border or ground of its own.
+    expect(problem.className).not.toMatch(/border|bg-/);
+    // The title on its row after a red triangle, then the reason under it, across the width.
+    const alert = host.querySelector('[role="alert"]')!;
+    expect([...alert.querySelectorAll('p')].map((line) => line.textContent)).toEqual([
+      'Can’t find Git',
+      'Lo needs Git to fetch the local copy.',
+    ]);
+    expect(alert.querySelector('p svg')?.getAttribute('class')).toContain('text-danger');
+    // The command whole in its own well, on a line that scrolls, with Copy at its end.
+    const command = [...host.querySelectorAll('pre')].find(
+      (pre) => pre.textContent === 'xcode-select --install',
+    );
+    const well = command?.parentElement;
+    expect(well?.className).toContain('bg-bg-well');
+    expect(well?.className).toContain('px-8 py-6');
+    expect(command?.className).toContain('whitespace-pre');
+    expect(command?.className).toContain('overflow-x-auto');
+    const copyButton = well?.querySelector(':scope > pre ~ button');
+    expect(copyButton?.textContent).toMatch(/^Copy/);
+    await act(async () => {
+      copyButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(copy).toHaveBeenCalledWith('xcode-select --install');
+    // Then the buttons, the one thing to do first and Details after.
+    const row = [...host.querySelectorAll('button')]
+      .filter((button) => !well?.contains(button))
+      .map((button) => button.textContent);
+    expect(row).toEqual(['Check again', 'Details']);
+    expect(await missingRules(host)).toEqual([]);
+  });
+
+  it('is amber while it’s a wait, as its item’s ball is', () => {
+    const host = render(
+      <Problem
+        layout="details"
+        tone="warn"
+        title="Can’t fetch the local copy"
+        reason="GitHub didn’t respond."
+      />,
+    );
+    expect(host.querySelector('[role="alert"] svg')?.getAttribute('class')).toContain(
+      'text-warning',
+    );
+    cleanUp();
+    const inline = render(<Problem tone="warn" title="Can’t fetch the local copy" />);
+    expect(inline.firstElementChild?.className).toContain('bg-warning-bg');
+    expect(inline.firstElementChild?.className).not.toContain('danger');
+  });
+});
+
 describe('CopyButton', () => {
   it('reads Copied for two seconds, and not at all when nothing was copied', async () => {
     vi.useFakeTimers();

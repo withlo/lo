@@ -285,7 +285,7 @@ describe("the tab feature's contract", () => {
         head: { branch: 'app/head', fork: null },
         base: { branch: 'app/base' },
       },
-      connection: { kind: 'offline', savedAt: 1, retryAt: null, error: 'offline' },
+      connection: { kind: 'offline', retryAt: null, error: 'offline' },
       problem: null,
       shown: '5530830f535b2947f1b50a184dc58a9c7b2845ad',
       newer: null,

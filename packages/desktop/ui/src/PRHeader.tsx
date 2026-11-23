@@ -40,6 +40,11 @@ export interface PRHeaderProps {
   number: number;
   /** Its title and state, once known. Until then the header holds their places. */
   title?: string | undefined;
+  /**
+   * The pull request can't be shown, so what isn't known won't come: the header holds no places,
+   * and names it by `repo` and its number, as text, where it has no title.
+   */
+  missing?: { repo: string } | undefined;
   state?: PullRequestState | undefined;
   /** The author's login: null for an account GitHub deleted, and nothing while it isn't known. */
   author?: string | null | undefined;
@@ -79,6 +84,7 @@ const chip = cva(
 export function PRHeader({
   number,
   title,
+  missing,
   state,
   author,
   head,
@@ -91,15 +97,17 @@ export function PRHeader({
   return (
     <header className="pr-header h-header-h min-w-0 flex-none bg-bg-chrome ps-16 pe-12 pb-6">
       <div className="flex min-w-0 items-center gap-12">
-        {state === undefined ? (
-          <Skeleton className="w-48 flex-none" />
-        ) : (
+        {state !== undefined ? (
           <StatePill state={state} />
-        )}
-        {title === undefined ? (
-          <Skeleton className="w-tab-w max-w-full min-w-0" />
         ) : (
-          <h1 className="lo-selectable min-w-0 truncate text-fg text-title">{title}</h1>
+          missing === undefined && <Skeleton className="w-48 flex-none" />
+        )}
+        {title !== undefined || missing !== undefined ? (
+          <h1 className="lo-selectable min-w-0 truncate text-fg text-title">
+            {title ?? missing?.repo}
+          </h1>
+        ) : (
+          <Skeleton className="w-tab-w max-w-full min-w-0" />
         )}
         <span className="lo-num flex-none pr-number text-fg-muted">#{number}</span>
         <span className="min-w-8 flex-1" />
@@ -125,7 +133,7 @@ export function PRHeader({
       <div className="flex min-w-0 items-center gap-12">
         <span className="flex min-w-0 items-center gap-6 whitespace-nowrap text-fg-muted text-small">
           {head === undefined || base === undefined ? (
-            <Skeleton className="w-tab-w" />
+            missing === undefined && <Skeleton className="w-tab-w" />
           ) : (
             <>
               {author === undefined ? (

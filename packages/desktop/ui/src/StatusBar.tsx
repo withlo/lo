@@ -236,9 +236,12 @@ export function StatusLine({ children }: { children: ReactNode }) {
   );
 }
 
-/** What a status item's details offer to do, in a row under their line. */
-export function StatusActions({ children }: { children: ReactNode }) {
-  return <div className="flex flex-wrap gap-6">{children}</div>;
+/**
+ * What a status item's details offer to do, in a row under their line. `flush` when the first is a
+ * ghost button, as Details alone is: its text sits on the line's edge, as the line's does.
+ */
+export function StatusActions({ children, flush }: { children: ReactNode; flush?: boolean }) {
+  return <div className={`flex flex-wrap gap-6 ${flush ? '-ms-8' : ''}`}>{children}</div>;
 }
 
 /**

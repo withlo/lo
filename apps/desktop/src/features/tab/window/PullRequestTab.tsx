@@ -10,14 +10,8 @@ import { useState, useSyncExternalStore } from 'react';
 
 import { registry } from '../../../window/commands/registry.ts';
 import { Slot, useViews } from '../../../window/slots.tsx';
-import {
-  Banners,
-  blocked,
-  LimitItem,
-  LocalItem,
-  TabFailed,
-  useHeaderConnection,
-} from './Notes.tsx';
+import { blocked } from './banners.ts';
+import { Banners, LimitItem, LocalItem, TabFailed, useHeaderConnection } from './Notes.tsx';
 import {
   header,
   headerStatus,
@@ -108,6 +102,7 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
       <PRHeader
         number={tab.number}
         title={heading?.title ?? tab.title}
+        missing={failed ? { repo: `${tab.owner}/${tab.repo}` } : undefined}
         state={heading?.state ?? tab.state}
         author={heading?.author}
         head={heading?.head}
@@ -120,19 +115,27 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
               : { login: acting.login }
         }
         connection={connection}
-        status={<Slot slot={headerStatus} props={{ tab }} />}
+        // A pull request the tab can't show has no merge status, review or revisions to offer, and
+        // nothing for its views and panels to show: their controls stay, dimmed and inert.
+        status={failed ? undefined : <Slot slot={headerStatus} props={{ tab }} />}
       >
-        <Slot slot={header} props={{ tab }} />
+        {!failed && <Slot slot={header} props={{ tab }} />}
         <span className="min-w-8 flex-1" />
-        <ViewSwitch tab={tab} views={middles} shown={shownMiddle?.id} />
-        {rights.length > 0 && <RightToggle tab={tab} views={rights} />}
+        <div
+          className={`flex flex-none items-center gap-12 ${failed ? 'controls-off' : ''}`}
+          inert={failed}
+        >
+          <ViewSwitch tab={tab} views={middles} shown={shownMiddle?.id} />
+          {rights.length > 0 && <RightToggle tab={tab} views={rights} />}
+        </div>
       </PRHeader>
       <Banners tab={tab} view={view} />
       <div className="flex min-h-0 flex-1">
         {showLeft && (
           <aside
-            className="flex w-panel-left-w min-w-0 flex-none flex-col bg-bg-chrome"
+            className={`flex w-panel-left-w min-w-0 flex-none flex-col bg-bg-chrome ${failed ? 'controls-off' : ''}`}
             aria-label="Files"
+            inert={failed}
           >
             <Slot slot={left} props={{ tab }} />
           </aside>
@@ -188,8 +191,9 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
         start={
           <>
             <LocalItem tab={tab} local={local} view={view} />
-            <LimitItem connection={view?.connection} />
             <Slot slot={status} props={{ tab }} />
+            {/* Last, as it comes and goes, so the items that stay keep their places. */}
+            <LimitItem connection={view?.connection} />
           </>
         }
         end={<FocusedMode />}

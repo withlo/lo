@@ -10,7 +10,7 @@ import { currentMenu, openMenu } from '../../../window/commands/menus.tsx';
 import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { useViewedMarks } from '../../revisions/window/shared.ts';
 import { changeSetting, useSetting } from '../../settings/window/shared.ts';
-import { useTabState, type PullTab } from '../../tab/window/shared.ts';
+import { useBlocked, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import { fileKey, PATH_LIMIT, type TreeState } from '../contract.ts';
 import { mode as modeSetting } from '../settings.ts';
 import { type FileThreads, useCounts } from './counts.ts';
@@ -193,6 +193,8 @@ export function Files({
   );
   const viewedCount = useViewedCount(tab.id);
   const loading = !state || (state.listing.kind === 'loading' && state.changes === null);
+  // A pull request the tab can't show has no files to wait for.
+  const none = useBlocked(tab.id);
 
   return (
     <FileTreePanel
@@ -207,7 +209,7 @@ export function Files({
       waiting={loading}
       note={noteOf(state, model?.omitted ?? 0)}
     >
-      {loading ? (
+      {none ? null : loading ? (
         <Loading />
       ) : (
         <FileTree

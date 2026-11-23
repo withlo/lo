@@ -185,6 +185,17 @@ export function failureOf(
   }
 }
 
+/**
+ * Whether a tab can't show its pull request now, so why, or the account to open it as, takes its
+ * view's place, and what's around the view has nothing to act on.
+ */
+export function blocked(view: PullView | undefined): boolean {
+  const problem = view?.problem;
+  if (problem === null || problem === undefined) return false;
+  // A read that failed after the view was drawn leaves it as it was: the header's chip says why.
+  return problem.kind !== 'failed' || view?.shown === null;
+}
+
 /** Which account to open a pull request as, when more than one can see it and none was chosen. */
 export interface AccountChoice {
   readonly title: string;
@@ -198,7 +209,7 @@ export function accountChoice(view: PullView | undefined, shown: Shown): Account
   const { logins } = view.problem;
   return {
     title: `Choose an account for #${shown.number}`,
-    line: `${logins.length} of your accounts can see it. Remembered for every ${shown.owner} repo.`,
+    line: `${logins.length} of your accounts can see it. The choice is remembered for every ${shown.owner} repo.`,
     logins,
   };
 }
@@ -214,8 +225,6 @@ export interface ConnectionNote {
   readonly line: string;
   /** When Lo tries again by itself, which the line counts down to. */
   readonly retryAt?: number | undefined;
-  /** When what's shown was last read from GitHub, for "Checked 5 min ago". */
-  readonly checked?: number | undefined;
   /** What GitHub or the network said, as it came, for Details. */
   readonly details?: string | undefined;
   /** The one thing to do about it, if there's anything. */
@@ -254,7 +263,6 @@ export function connectionNote(
         label: 'Offline',
         line: explain({ kind: 'offline' }) ?? 'Offline.',
         retryAt: connection.retryAt ?? undefined,
-        checked: connection.savedAt ?? undefined,
         details: connection.error === '' ? undefined : connection.error,
         action: connection.retryAt === null ? retry : tryNow,
       };
@@ -274,6 +282,8 @@ export interface LocalNote {
   readonly label: string;
   /** The details' one line, for a copy that's there: the commit it's at. */
   readonly at?: string | undefined;
+  /** The details' one line while it fetches: what, and how far, in Lo's words. */
+  readonly line?: string | undefined;
   /** What Git last said of how far it has got while it fetches, as it came, for Details. */
   readonly said?: string | undefined;
   /** Why it can't be fetched, for its details, with what to do about it. */
@@ -326,11 +336,13 @@ export function localNote(
       };
     }
     case 'fetching': {
-      // Its details say the same, in Lo's words, with Git's own line behind Details.
+      // Its details name what it fetches, in Lo's words, with Git's own line behind Details.
       const percent = percentOf(local.progress);
+      const how = (what: string) => (percent === undefined ? `${what}…` : `${what} · ${percent}`);
       return {
         ball: 'working',
-        label: percent === undefined ? 'Fetching local copy…' : `Fetching local copy · ${percent}`,
+        label: how('Fetching local copy'),
+        line: how(`Fetching ${repository}`),
         said: local.progress ?? undefined,
       };
     }
@@ -432,10 +444,12 @@ function fetchReason(
       return 'This revision’s commit is no longer on GitHub.';
     case 'tooLarge':
       return 'The download is too large.';
+    case 'other':
+      return explain({ kind: 'github' });
     case 'heldByTabs':
     case 'heldByServers':
     case 'tokenRefused':
-    case 'other':
+    case 'local':
       return undefined;
     default:
       failure satisfies never;

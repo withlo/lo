@@ -10,7 +10,6 @@ import {
   Button,
   Collapse,
   ContextMenu,
-  CopyButton,
   Countdown,
   EmptyState,
   Problem,
@@ -19,7 +18,6 @@ import {
   StatusLine,
   Swap,
   handOffFocus,
-  useCopy,
   useDetails,
   type BannerPlace,
   type BannerProps,
@@ -38,6 +36,7 @@ import {
 } from 'react';
 
 import { focusMiddle, registry } from '../../../window/commands/registry.ts';
+import { explain } from '../../../window/explain.ts';
 import { client } from '../../../window/ipc.ts';
 import { useViews, type View } from '../../../window/slots.tsx';
 import { useRevisions } from '../../revisions/window/shared.ts';
@@ -47,6 +46,7 @@ import {
   accountChoice,
   ago,
   bannersFor,
+  blocked,
   connectionNote,
   failureOf,
   localNote,
@@ -114,22 +114,6 @@ function reasonOf(detail: string | undefined, retryAt: number | undefined): Reac
   );
 }
 
-/** A reason, then what it says to run, each as code with Copy: how to install Git. */
-function Commands({ reason, commands }: { reason: ReactNode; commands: readonly string[] }) {
-  const copy = useCopy();
-  return (
-    <>
-      {reason}
-      {commands.map((command) => (
-        <span key={command} className="ms-8 inline-flex items-center gap-4 align-middle">
-          <code className="break-all text-fg code-small select-text">{command}</code>
-          <CopyButton size="sm" variant="ghost" onCopy={() => copy(command)} />
-        </span>
-      ))}
-    </>
-  );
-}
-
 /** The pull request a tab's view opened on, when the view on screen is another layer of its stack. */
 function useOwn(tab: PullTab): number | undefined {
   const held = useTabs().tabs.find((each) => viewIds([each]).includes(tab.id));
@@ -177,7 +161,7 @@ const choosing = tabState<boolean>(() => false);
 
 /** Why tab `tab` can't be opened as an account now: `true` where it can. */
 export function choosable(tab: PullTab): true | string {
-  return accountChoice(pullOf(tab.id), tab) ? true : 'There’s no account to choose';
+  return accountChoice(pullOf(tab.id), tab) ? true : 'No account to choose';
 }
 
 /**
@@ -262,14 +246,6 @@ function Accounts({
   );
 }
 
-/** Whether a tab can't show its pull request now, so its failure takes the view's place. */
-export function blocked(view: PullView | undefined): boolean {
-  const problem = view?.problem;
-  if (problem === null || problem === undefined) return false;
-  // A read that failed after the view was drawn leaves it as it was: the header's chip says why.
-  return problem.kind !== 'failed' || view?.shown === null;
-}
-
 /** The time now, ticking each minute while `ticking`, for "Checked 5 min ago". */
 function useNow(ticking: boolean): number {
   const [now, setNow] = useState(() => Date.now());
@@ -281,61 +257,59 @@ function useNow(ticking: boolean): number {
   return ticking ? now : Date.now();
 }
 
-/** The header's chip for a tab whose read failed after its view was drawn, which stays. */
-const READ_FAILED = 'GitHub error';
+/**
+ * The header's chip for a tab whose read failed after its view was drawn, which stays: "No
+ * response" where GitHub didn't answer, else "GitHub error".
+ */
+function readFailed(view: PullView | undefined): string {
+  return view?.problem?.kind === 'failed' && view.problem.cause.kind === 'timeout'
+    ? 'No response'
+    : 'GitHub error';
+}
 
 /**
  * The header's chip for how tab `tab` stands with GitHub, when it isn't as usual: a word or two,
- * whose details say why, when the tab last heard from GitHub, and the one thing to do about it.
- * A read that failed after the view was drawn says so here too, as the view stays: amber while it
- * counts down to trying again, red once it doesn't.
+ * whose details say why, when GitHub last confirmed what's on screen, and the one thing to do
+ * about it. A read that failed after the view was drawn says so here too, as the view stays: amber
+ * while it counts down to trying again, red once it doesn't.
  */
 export function useHeaderConnection(
   tab: PullTab,
   view: PullView | undefined,
 ): HeaderConnection | undefined {
   const connection = view?.connection;
-  const now = useNow(connection?.kind === 'offline');
+  // "Checked" goes under the line while there's a view it's about.
+  const checked = view?.shown === null ? undefined : view?.checked;
+  const now = useNow(checked !== undefined);
   const note = connectionNote(connection, systemClock(now));
   const failed = note || blocked(view) ? undefined : failureOf(view, tab);
-  if (failed) {
-    const [action] = failed.actions;
-    return {
-      kind: 'failed',
-      tone: failed.retryAt === undefined ? 'danger' : 'warn',
-      label: READ_FAILED,
-      container: container(),
-      details: (
-        <>
-          <StatusLine>{reasonOf(failed.detail, failed.retryAt)}</StatusLine>
-          {(action || failed.details !== undefined) && (
-            <ConnectionActions
-              details={failed.details}
-              action={action && { label: action.label, onClick: () => run(tab.id, action.do) }}
-            />
-          )}
-        </>
-      ),
-    };
-  }
-  if (!note) return undefined;
-  const { action } = note;
+  const said = failed
+    ? {
+        kind: 'failed' as const,
+        tone: failed.retryAt === undefined ? ('danger' as const) : ('warn' as const),
+        label: readFailed(view),
+        line: failed.detail,
+        retryAt: failed.retryAt,
+        details: failed.details,
+        action: failed.actions[0],
+      }
+    : note;
+  if (!said) return undefined;
+  const { action } = said;
   return {
-    kind: note.kind,
-    tone: note.tone,
-    label: note.label,
+    kind: said.kind,
+    tone: said.tone,
+    label: said.label,
     container: container(),
     details: (
       <>
         <StatusLine>
-          {reasonOf(note.line, note.retryAt)}
-          {note.checked !== undefined && (
-            <span className="block">Checked {ago(note.checked, now)}</span>
-          )}
+          {reasonOf(said.line, said.retryAt)}
+          {checked !== undefined && <span className="block">Checked {ago(checked, now)}</span>}
         </StatusLine>
-        {(action || note.details !== undefined) && (
+        {(action || said.details !== undefined) && (
           <ConnectionActions
-            details={note.details}
+            details={said.details}
             action={action && { label: action.label, onClick: () => run(tab.id, action.do) }}
           />
         )}
@@ -355,7 +329,7 @@ function ConnectionActions({
   const { more, shown } = useDetails(details, 'pt-2');
   return (
     <>
-      <StatusActions>
+      <StatusActions flush={!action}>
         {action && (
           <Button variant="secondary" size="sm" onClick={action.onClick}>
             {action.label}
@@ -387,17 +361,12 @@ export function LocalItem({
   const details =
     problem !== undefined ? (
       <Problem
+        layout="details"
+        // Amber while it waits, as its ball is: red only once it failed.
+        tone={note.ball === 'failed' ? 'danger' : 'warn'}
         title={problem.title}
-        reason={
-          problem.commands === undefined ? (
-            reasonOf(problem.detail, problem.retryAt)
-          ) : (
-            <Commands
-              reason={reasonOf(problem.detail, problem.retryAt)}
-              commands={problem.commands}
-            />
-          )
-        }
+        reason={reasonOf(problem.detail, problem.retryAt)}
+        commands={problem.commands}
         action={
           problem.actions[0] && {
             label: problem.actions[0].label,
@@ -413,8 +382,8 @@ export function LocalItem({
       <StatusLine>
         At <code className="text-fg code-small">{note.at}</code>
       </StatusLine>
-    ) : note.ball === 'working' ? (
-      <Fetching line={note.label} said={note.said} />
+    ) : note.line !== undefined ? (
+      <Fetching line={note.line} said={note.said} />
     ) : undefined;
   return (
     <StatusItem ball={note.ball} details={details} label={note.label} container={container()}>
@@ -429,7 +398,7 @@ function Fetching({ line, said }: { line: string; said: string | undefined }) {
   return (
     <>
       <StatusLine>{line}</StatusLine>
-      {said !== undefined && <StatusActions>{more}</StatusActions>}
+      {said !== undefined && <StatusActions flush>{more}</StatusActions>}
       {shown}
     </>
   );
@@ -444,7 +413,10 @@ export function LimitItem({ connection }: { connection: Connection | undefined }
       label="Rate limit low"
       container={container()}
       details={
-        <StatusLine>{connection.remaining.toLocaleString('en-US')} requests left</StatusLine>
+        <StatusLine>
+          {connection.remaining.toLocaleString('en-US')} requests left.{' '}
+          {explain({ kind: 'rateLimit', resets: connection.reset })}
+        </StatusLine>
       }
     >
       Rate limit low

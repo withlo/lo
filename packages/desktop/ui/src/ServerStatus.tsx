@@ -47,7 +47,7 @@ export type ServerState =
   | { kind: 'notAnswering' }
   | { kind: 'failed'; why: ServerFailure }
   /**
-   * The toolchain it needs isn't installed: `needs` names it ("Go 1.24 or later", "a JDK"), and
+   * The toolchain it needs isn't installed: `needs` names it ("Go 1.24 or newer", "a JDK"), and
    * `install` is a command that installs it, when there is one. `plural` when `needs` names them,
    * as "Apple’s Command Line Tools" does.
    */
@@ -462,6 +462,7 @@ export function ServerStatus({
         {says !== undefined && <StatusLine>{says}</StatusLine>}
         {stopped !== undefined && (
           <Problem
+            layout="details"
             title={
               <>
                 Can’t run <ShownText text={name} />
@@ -475,6 +476,7 @@ export function ServerStatus({
         {install !== undefined && <CopyStatus said={copied} />}
         {trust?.failure && (
           <Problem
+            layout="details"
             title={<ShownText text={trust.failure.title} />}
             reason={
               trust.failure.message === '' ? undefined : (
@@ -491,7 +493,7 @@ export function ServerStatus({
           />
         )}
         {(restartInRow || onShowLog || trust) && (
-          <StatusActions>
+          <StatusActions flush={!restartInRow && (onShowLog !== undefined || state.kind !== 'off')}>
             {restartInRow && (
               <Button ref={fix ? undefined : first} variant="secondary" size="sm" onClick={restart}>
                 {restartLabel(state)}

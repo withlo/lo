@@ -161,8 +161,8 @@ describe('ServerStatus', () => {
       'Rust can’t use the local copy',
     );
     expect(say('TypeScript', MEMORY)).toBe('TypeScript isn’t running');
-    expect(say('Go', { kind: 'missing', needs: 'Go 1.24 or later' })).toBe(
-      'Go needs Go 1.24 or later',
+    expect(say('Go', { kind: 'missing', needs: 'Go 1.24 or newer' })).toBe(
+      'Go needs Go 1.24 or newer',
     );
     // An untrusted repo has none of them on, whichever server is named.
     expect(say('TypeScript', { kind: 'off' })).toBe('Language servers off');
@@ -227,10 +227,10 @@ describe('ServerStatus', () => {
     ]);
     expect(open.textContent).not.toContain('tsserver 5.6.3');
     const buttons = [...open.querySelectorAll('button')];
-    expect(buttons.map(says)).toEqual(['Details', 'Restart', 'Show log']);
+    expect(buttons.map(says)).toEqual(['Restart', 'Details', 'Show log']);
     // Restart is the one thing to do; it has focus as the details open.
-    expect(document.activeElement).toBe(buttons[1]);
-    click(buttons[0]!);
+    expect(document.activeElement).toBe(buttons[0]);
+    click(buttons[1]!);
     expect(open.textContent).toContain('4 GB, 3,880 files');
     expect(open.getAttribute('data-lo-scope')).toBe('dialog');
   });
@@ -304,7 +304,7 @@ describe('ServerStatus', () => {
     const host = render(
       <ServerStatus
         name="Go"
-        state={{ kind: 'missing', needs: 'Go 1.24 or later', install: 'brew install go' }}
+        state={{ kind: 'missing', needs: 'Go 1.24 or newer', install: 'brew install go' }}
         onRestart={() => undefined}
       />,
     );
@@ -314,12 +314,12 @@ describe('ServerStatus', () => {
     const alert = open.querySelector('[role="alert"]');
     expect([...(alert?.querySelectorAll('p') ?? [])].map((line) => line.textContent)).toEqual([
       'Can’t run Go',
-      'It needs Go 1.24 or later.',
+      'It needs Go 1.24 or newer.',
     ]);
     const buttons = [...open.querySelectorAll('button')];
     // The command is behind Details, and the Problem's one button copies it; Restart follows.
-    expect(buttons.map(says)).toEqual(['Details', 'Copy command', 'Restart']);
-    click(buttons[0]!);
+    expect(buttons.map(says)).toEqual(['Copy command', 'Details', 'Restart']);
+    click(buttons[1]!);
     expect(open.textContent).toContain('brew install go');
   });
 
@@ -422,8 +422,8 @@ describe('ServerStatus', () => {
     await settle();
     // What it said is its own sentence, so it's behind Details, and the Problem holds the button.
     const buttons = [...details()!.querySelectorAll('button')];
-    expect(buttons.map(says)).toEqual(['Details', 'Try again']);
-    click(buttons[0]!);
+    expect(buttons.map(says)).toEqual(['Try again', 'Details']);
+    click(buttons[1]!);
     expect(details()?.textContent).toContain("Lo couldn't download Pyright (GitHub returned 502).");
   });
 
@@ -716,10 +716,10 @@ describe('ServerStatus', () => {
     expect(details()).toBeNull();
   });
 
-  it('draws a wider card for its details than a menu, and keeps it inside a narrow window', async () => {
+  it('draws its details as wide as they say, 280 to 420 px, and inside a narrow window', async () => {
     const css = await buildCss(['status-details']);
     expect(declarations(css, 'status-details')).toBe(
-      'width: 360px; max-width: calc(100vw - var(--lo-sp-32));',
+      'width: max-content; min-width: min(280px, calc(100vw - var(--lo-sp-32))); max-width: min(420px, calc(100vw - var(--lo-sp-32)));',
     );
   });
 

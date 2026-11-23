@@ -177,7 +177,7 @@ describe('a pull request’s tab that can’t show it', () => {
     expect(failureOf(asking, E2E)).toBe(undefined);
     expect(accountChoice(asking, E2E)).toEqual({
       title: 'Choose an account for #9',
-      line: '2 of your accounts can see it. Remembered for every rozed-dev repo.',
+      line: '2 of your accounts can see it. The choice is remembered for every rozed-dev repo.',
       logins: ['rozed-bot', 'other'],
     });
     expect(accountChoice(view(), E2E)).toBe(undefined);
@@ -217,25 +217,19 @@ describe('how a tab stands with GitHub', () => {
     expect(paused(true, null)).toEqual(paused(false, 'rozed-bot'));
   });
 
-  it('says offline, when it last heard from GitHub, and when it tries again', () => {
+  it('says offline, and when it tries again', () => {
     expect(
-      connectionNote(
-        { kind: 'offline', savedAt: at(-2 * 3_600), retryAt: at(2 * 60), error: 'ENOTFOUND' },
-        clockAt,
-      ),
+      connectionNote({ kind: 'offline', retryAt: at(2 * 60), error: 'ENOTFOUND' }, clockAt),
     ).toEqual({
       kind: 'offline',
       tone: 'warn',
       label: 'Offline',
       line: 'Offline.',
       retryAt: at(2 * 60),
-      checked: at(-2 * 3_600),
       details: 'ENOTFOUND',
       action: { label: 'Try now', do: { kind: 'retry' } },
     });
-    expect(
-      connectionNote({ kind: 'offline', savedAt: null, retryAt: null, error: '' }, clockAt),
-    ).toEqual({
+    expect(connectionNote({ kind: 'offline', retryAt: null, error: '' }, clockAt)).toEqual({
       kind: 'offline',
       tone: 'warn',
       label: 'Offline',
@@ -253,22 +247,25 @@ describe('the local copy’s item', () => {
   it('is a ring until it fetches, then counts, then is filled at its head', () => {
     expect(local(undefined)).toBe(undefined);
     expect(local({ kind: 'waiting' })).toEqual({ ball: 'off', label: 'Local copy' });
-    // Its details say the same, with what Git said behind Details.
+    // Its details name what it fetches, with what Git said behind Details.
     expect(
       local({ kind: 'fetching', progress: 'Receiving objects: 44% (543/1234)', attempt: 1 }),
     ).toEqual({
       ball: 'working',
       label: 'Fetching local copy · 44%',
+      line: 'Fetching rozed-dev/e2e · 44%',
       said: 'Receiving objects: 44% (543/1234)',
     });
     expect(local({ kind: 'fetching', progress: 'Enumerating objects: 12', attempt: 1 })).toEqual({
       ball: 'working',
       label: 'Fetching local copy…',
+      line: 'Fetching rozed-dev/e2e…',
       said: 'Enumerating objects: 12',
     });
     expect(local({ kind: 'fetching', progress: null, attempt: 1 })).toEqual({
       ball: 'working',
       label: 'Fetching local copy…',
+      line: 'Fetching rozed-dev/e2e…',
     });
     expect(local(ready)).toEqual({ ball: 'ready', label: 'Local copy', at: '5530830' });
     // Offline, it's there all the same: only the header's chip says offline.
@@ -306,6 +303,15 @@ describe('the local copy’s item', () => {
       detail: 'rozed-dev/e2e doesn’t exist, or rozed-bot can’t see it.',
       actions: [{ label: 'Try again', do: { kind: 'retry' } }],
     });
+    // A fetch that failed for a reason Git didn't name is GitHub's; one on this computer has no
+    // reason line, and Git's words are behind Details.
+    expect(
+      local({ kind: 'failed', failure: 'other', details: 'fatal: bad pack header' }),
+    ).toMatchObject({
+      ball: 'failed',
+      problem: { detail: 'GitHub returned an error.', details: 'fatal: bad pack header' },
+    });
+    expect(local({ kind: 'failed', failure: 'local' })?.problem?.detail).toBe(undefined);
     expect(local({ kind: 'failed', failure: 'auth' })?.problem?.actions).toEqual([
       { label: 'Sign in with GitHub…', do: { kind: 'signIn' } },
     ]);
@@ -384,10 +390,7 @@ describe('the local copy’s item', () => {
       retryAt: clock.now + 12_000,
     };
     expect(
-      local(
-        retrying,
-        view({ connection: { kind: 'offline', savedAt: null, retryAt: null, error: 'x' } }),
-      ),
+      local(retrying, view({ connection: { kind: 'offline', retryAt: null, error: 'x' } })),
     ).toEqual({ ball: 'warn', label: 'Local copy' });
     expect(local(retrying)?.problem?.detail).toBe('Offline.');
   });

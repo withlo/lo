@@ -136,6 +136,20 @@ test("says why a pull request GitHub doesn't have, or one no account can see, ca
   // The tab isn't busy: it's opened all it can.
   await expect(strip(page).getByRole('tab', { selected: true })).toHaveText('e2e #9999');
   await expect(strip(page).getByRole('tab', { selected: true })).not.toHaveAttribute('aria-busy');
+  // Around it, nothing waits or acts: the header names what was asked for and holds no places, with
+  // no merge status, review or revisions, and the view's controls and the files are inert, with no
+  // files to wait for.
+  const header = page.locator('[data-lo-pull] header');
+  await expect(header.getByRole('heading', { level: 1 })).toHaveText('rozed-dev/e2e');
+  await expect(header).toContainText('#9999');
+  await expect(header.locator('.skeleton')).toHaveCount(0);
+  for (const gone of [/^Checking/, /^Submit review/, /^Revisions/, /^Sign in to see revisions/]) {
+    await expect(header.getByRole('button', { name: gone })).toHaveCount(0);
+  }
+  await expect(header.locator('[inert]')).toHaveCount(1);
+  const files = page.getByRole('complementary', { name: 'Files' });
+  await expect(files).toHaveAttribute('inert', '');
+  await expect(files.locator('.skeleton')).toHaveCount(0);
 
   await open(page, { owner: 'rozed-dev', repo: 'gone', number: 1 });
   const gone = page.locator('[data-lo-failed]');

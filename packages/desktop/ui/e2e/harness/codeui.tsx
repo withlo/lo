@@ -196,7 +196,7 @@ const STATES: { name: string; state: ServerState }[] = [
     name: 'Java',
     state: { kind: 'failed', why: { kind: 'memory', limit: '4 GB', files: 3880 } },
   },
-  { name: 'Go', state: { kind: 'missing', needs: 'Go 1.24 or later', install: 'brew install go' } },
+  { name: 'Go', state: { kind: 'missing', needs: 'Go 1.24 or newer', install: 'brew install go' } },
 ];
 
 /** The hover with everything that used to be a stop for Tab, between two buttons that are. */

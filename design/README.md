@@ -442,12 +442,16 @@ that floats.
 - **`Problem`** is something that went wrong, in one shape: what failed, why, the one thing to do,
   and the raw text behind Details with Copy. The action's label starts with a verb, and is a node,
   so a name that's code stays code in it: "Open `settings.json`". `layout="view"` takes a failed
-  view's place; `layout="inline"` sits by the control whose action failed. A failed view that can
-  also be left offers its other ways on as `others`, drawn quieter after the action: "Open on
-  GitHub", "Close tab". It's said once: no toast repeats it. A screen reader hears what failed and
-  why as an alert, and not the buttons. Anything else that says what failed, such as a comment box's
-  note, puts the raw text behind the same Details and Copy with `useDetails(details)`, which gives
-  the button and the text it opens to draw where they go.
+  view's place; `layout="inline"` sits by the control whose action failed; `layout="details"` goes
+  in a status item's details, which are its box, so it has no border or ground: the title on its row
+  after the triangle, the reason the details' width, each command whole in its own well with Copy at
+  its end (`commands`), then the action and Details after it. Its `tone` is the item's ball's:
+  `warn` while it waits, as to try again, `danger` only once it failed. A failed view that can also
+  be left offers its other ways on as `others`, drawn quieter after the action: "Open on GitHub",
+  "Close tab". It's said once: no toast repeats it. A screen reader hears what failed and why as an
+  alert, and not the buttons. Anything else that says what failed, such as a comment box's note,
+  puts the raw text behind the same Details and Copy with `useDetails(details)`, which gives the
+  button and the text it opens to draw where they go.
 - **Nothing in a `Problem` changes on a timer except through `Countdown`.** A retry's wait is
   `Retrying <Countdown at={retryAt} />.`: it counts "in 8 s" down for the eye, and a screen reader
   hears the wait as it stood when first drawn, spelled out ("in 8 seconds"), and nothing after, so
@@ -472,8 +476,10 @@ that floats.
   banner that arrives takes the front, even once "+1" chose another. Focus stays in the row as they
   do, whatever takes one away (`handOffFocus`, in `keyboard.md`). The row says each banner once, as
   it arrives or comes to the front: politely, or assertively for `danger`. A title that changes in
-  place isn't said again. An action that can be busy takes `busy` (`false` at rest) and `working`,
-  as a `Button` does.
+  place isn't said again. The diff under the row keeps its rows still as a banner comes, by
+  scrolling, unless that would put the cursor's row out of its top, as the first file's header at
+  the top would go: then it stays at the top and its content moves down with the row. An action that
+  can be busy takes `busy` (`false` at rest) and `working`, as a `Button` does.
 
 Base UI's popup parts (dialog, menu, popover, tooltip, toast and the like) are imported only by
 these pieces. `ui:lint` runs `scripts/check-popups.ts`, which fails on an import anywhere else, so a
@@ -511,15 +517,20 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
 - One window, a tab per PR (a whole stack in one tab). Rows top to bottom: tab strip
   (`lo-tabbar-h`), PR header, banners, body, status bar (`lo-statusbar-h`).
 - Each thing the tab says has one place. A pull request it can't show is a `Problem` in place of the
-  view. How the tab stands with GitHub (offline, signed out, the rate limit, a read that failed
-  after the view was drawn, which stays) is the PR header's chip, whose details say why, when it
-  last heard from GitHub, and the one thing to do. Offline is said there alone. A change to the pull
-  request is the banner.
+  view, and nothing around it waits or acts: the header names the repo and number as text, with no
+  places held, no merge status, review or revisions, and the view's controls, the panel toggles and
+  the files are dimmed and inert (`controls-off`), with no files. How the tab stands with GitHub
+  (offline, signed out, the rate limit, a read that failed after the view was drawn, which stays) is
+  the PR header's chip, whose details say why, then "Checked 4 min ago" while there's a view it's
+  about, and the one thing to do. Offline is said there alone, and the merge status never says when
+  it was checked. A change to the pull request is the banner.
 - The status bar holds `StatusItem`s: a ball and a label. A ring while it's off or not there yet, a
   spinner at work, filled once ready, amber while it waits or holds back, red only once it failed,
   and not while it waits to try again. A click opens its details: one line of state and its actions,
-  or a `Problem` once it failed; work under way says how far it has got there. Items keep their
-  place: one that has nothing to say yet shows its ring.
+  or a `Problem` once it failed; work under way names what it works on and how far it has got there
+  ("Fetching rozed-dev/e2e · 62%"), not the label again. The details are as wide as they say, 280 to
+  420 px. Items keep their place: one that has nothing to say yet shows its ring, and one that comes
+  and goes, as "Rate limit low", goes last on the left.
 - The body is left panel (stack, then files), the middle sheet, and the threads panel. Each panel
   opens and closes with a key.
 - The window never scrolls. Panes do. The shell hides what overflows it and puts itself back if a

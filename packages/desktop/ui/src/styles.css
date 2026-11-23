@@ -760,10 +760,21 @@
   }
 }
 
-/* A status item's details, over it in the status bar: a language server's, the local copy's. */
+/* What has nothing to act on, as a tab's view controls and its files while it can't show its pull
+   request: what's in it is dimmed over the element's own ground. The element is `inert` too. */
+@utility controls-off {
+  & > * {
+    opacity: 0.45;
+  }
+}
+
+/* A status item's details, over it in the status bar: a language server's, the local copy's. As
+   wide as what they say, between a floor that keeps a short line from looking lost and a ceiling
+   past which a reason wraps and a command scrolls. */
 @utility status-details {
-  width: 360px;
-  max-width: calc(100vw - var(--lo-sp-32));
+  width: max-content;
+  min-width: min(280px, calc(100vw - var(--lo-sp-32)));
+  max-width: min(420px, calc(100vw - var(--lo-sp-32)));
 }
 
 /* The branches in a run's bar, which the bar leaves out when it's under 1,000px wide, as the
