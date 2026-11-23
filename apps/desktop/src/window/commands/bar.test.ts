@@ -5,6 +5,8 @@ import {
   KEY_EVENT,
   parseKeys,
   Registry,
+  SCOPE_ATTRIBUTE,
+  setScopeSource,
   systemStrokes,
   type Target,
 } from '@lo/ui/commands';
@@ -229,6 +231,75 @@ describe('a click in the app menu', () => {
     expect(registry.isPending()).toBe(false);
     expect(registry.handle(key('i'), place).kind).toBe('pass');
     expect(ran).toEqual(['threads']);
+  });
+});
+
+/** A diff on the page, whose cursor is at `target`, until the function it gives is called. */
+function diffAt(target: Target, inert = false): () => void {
+  const holder = document.createElement('div');
+  if (inert) holder.setAttribute('inert', '');
+  const diff = document.createElement('div');
+  diff.setAttribute(SCOPE_ATTRIBUTE, 'diff');
+  holder.append(diff);
+  document.body.append(holder);
+  const stop = setScopeSource(diff, { target: () => target });
+  return () => {
+    stop();
+    holder.remove();
+  };
+}
+
+describe('a step the app menu shares with a key in the diff', () => {
+  const steps = defineCommands('diff', {
+    nextFile: {
+      label: 'Next file',
+      group: 'Go',
+      keys: ['] f'],
+      targets: ['line'],
+      vim: 'motion',
+      when: { scope: 'diff' },
+      bar: { menu: 'Go', section: 'steps', order: 30 },
+    },
+  });
+  const ran: Target[] = [];
+  const registry = new Registry({
+    system: 'mac',
+    commands: handlers(steps, { nextFile: { run: (target) => void ran.push(target) } }),
+  });
+  const none: Target = { kind: 'none' };
+  const header: Target = { kind: 'header', file: 'b.ts', side: 'new' };
+  const line: Target = { kind: 'line', at: { file: 'a.ts', side: 'new', line: 4 } };
+
+  const enabled = (focused: Target) => barItems(registry, focused)[0]?.enabled;
+
+  it('can run from a file’s header, as its key goes from one as from a line', () => {
+    ran.length = 0;
+    expect(enabled(header)).toBe(true);
+    expect(runFromBar(registry, 'diff.nextFile', header)).toBe(true);
+    expect(ran).toEqual([header]);
+  });
+
+  it('goes from the diff’s cursor with focus outside it, as its key would there', () => {
+    ran.length = 0;
+    const gone = diffAt(line);
+    expect(enabled(none)).toBe(true);
+    expect(runFromBar(registry, 'diff.nextFile', none)).toBe(true);
+    expect(ran).toEqual([line]);
+    gone();
+    // With the cursor on a header, too.
+    const onHeader = diffAt(header);
+    expect(enabled(none)).toBe(true);
+    onHeader();
+  });
+
+  it('can’t run with no diff on screen: none, or one kept hidden under another view', () => {
+    ran.length = 0;
+    expect(enabled(none)).toBe(false);
+    const hidden = diffAt(line, true);
+    expect(enabled(none)).toBe(false);
+    expect(runFromBar(registry, 'diff.nextFile', none)).toBe("Next file doesn't apply here.");
+    hidden();
+    expect(ran).toEqual([]);
   });
 });
 

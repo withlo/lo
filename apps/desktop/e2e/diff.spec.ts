@@ -490,6 +490,34 @@ test('Find…, by its key in the diff or from the app menu wherever focus is, op
   await expect(field).toBeFocused();
 });
 
+test('Go’s steps through files and threads are on in the app menu wherever their keys would run, at a header and with focus outside the diff, and go from the diff’s cursor', async ({
+  app,
+  page,
+}) => {
+  if (process.platform !== 'darwin') await keepMenus(app);
+  await drawn(page);
+  const steps = ['diff.nextFile', 'diff.previousFile', 'diff.nextThread', 'diff.previousThread'];
+  const on = async () => {
+    const enabled: (boolean | null)[] = [];
+    for (const id of steps) enabled.push(await barItem(app, page, id, 'enabled'));
+    return enabled;
+  };
+  const path = async () => (await cursor(page))?.path;
+  // In the code, at the first file's header, where `] f` goes from as from a line.
+  await focusDiff(page);
+  await expect.poll(on).toEqual([true, true, true, true]);
+  const first = await path();
+  await clickBarItem(app, page, 'diff.nextFile');
+  await expect.poll(path).not.toBe(first);
+  // With focus in the tree, from the diff's cursor, as `] f` in the diff would.
+  const second = await path();
+  await page.locator('[role="tree"][data-lo-scope="tree"]').focus();
+  await expect.poll(on).toEqual([true, true, true, true]);
+  await clickBarItem(app, page, 'diff.nextFile');
+  await expect.poll(path).not.toBe(second);
+  expect(await path()).not.toBe(first);
+});
+
 test.describe('with Vim keys on', () => {
   test.use({ settings: DIFF_FIRST_VIM });
 

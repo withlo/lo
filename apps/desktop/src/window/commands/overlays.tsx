@@ -299,8 +299,9 @@ function CommandPalette({
       }}
       onRun={(match) => {
         const target = open?.target ?? { kind: 'none' };
+        // As its key would run it, there, so a motion goes from a header as from a line.
         closeOverlay(() => {
-          registry().run(match.item.id, target);
+          registry().run(match.item.id, target, undefined, true);
         });
       }}
       renderItem={({ item, marks }) => (

@@ -277,6 +277,36 @@ describe('the palette', () => {
     );
   });
 
+  it('lists one of Lo’s motions on a file’s header, as its key goes from one as from a line', () => {
+    const steps = new Registry({
+      system: 'mac',
+      commands: handlers(
+        defineCommands('diff', {
+          nextThread: {
+            label: 'Next thread',
+            group: 'Go',
+            keys: ['] t'],
+            targets: ['line'],
+            vim: 'motion',
+            when: { scope: 'diff' },
+          },
+          reply: {
+            label: 'Reply',
+            group: 'Comments',
+            keys: ['r'],
+            targets: ['line'],
+            when: { scope: 'diff' },
+          },
+        }),
+        { nextThread: run, reply: run },
+      ),
+    });
+    const header: Target = { kind: 'header', file: 'a.ts', side: 'new' };
+    // A command that isn't a motion still needs the line it's declared for.
+    expect(paletteItems(steps, 'diff', header).map((item) => item.id)).toEqual(['diff.nextThread']);
+    expect(idsOf(helpHere(steps, 'diff', header, vim))).toEqual(['diff.nextThread']);
+  });
+
   it('shows each command’s first key in this system’s form', () => {
     const items = paletteItems(registry('linux'), 'window', NO_TARGET);
     expect(items.find((item) => item.id === 'diff.palette')).toEqual({

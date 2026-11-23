@@ -187,8 +187,8 @@ function appliesIn(command: Command, scope: string): boolean {
 
 /**
  * The keys that work in what had focus, keyboard shortcuts' first tab, "Here": every command whose
- * keys apply in `scope` and can run on `target` now, by group. One that the registry never runs,
- * one of Vim's or an editor's own, is there wherever it applies.
+ * keys apply in `scope` and can run on `target` now, as its key would, by group. One that the
+ * registry never runs, one of Vim's or an editor's own, is there wherever it applies.
  */
 export function helpHere(
   registry: Registry,
@@ -199,7 +199,7 @@ export function helpHere(
   const commands = listedCommands(registry, options).filter(
     (command) =>
       appliesIn(command, scope) &&
-      (isOwned(command) || registry.enabled(command.id, target) === true),
+      (isOwned(command) || registry.enabled(command.id, target, true) === true),
   );
   return grouped(registry, commands, options.vim);
 }
@@ -266,8 +266,8 @@ const PALETTE = 'keys.palette';
 
 /**
  * The palette's commands, for what had focus before it opened: `scope` and `target`. Every command
- * on this system that applies there and can run on the target now, in the groups' order, but Vim's
- * own keys and an editor's, which nothing here runs, and the palette's own.
+ * on this system that applies there and can run on the target now, as its key would, in the groups'
+ * order, but Vim's own keys and an editor's, which nothing here runs, and the palette's own.
  */
 export function paletteItems(registry: Registry, scope: string, target: Target): PaletteItem[] {
   const commands = registry
@@ -278,7 +278,7 @@ export function paletteItems(registry: Registry, scope: string, target: Target):
         command.id !== PALETTE &&
         onSystem(registry, command) &&
         appliesIn(command, scope) &&
-        registry.enabled(command.id, target) === true,
+        registry.enabled(command.id, target, true) === true,
     );
   return groups.flatMap((group) =>
     commands

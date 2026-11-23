@@ -210,9 +210,12 @@ export class Registry {
     }
   }
 
-  /** `true` if `id` can run on `target` now, or why not. */
-  enabled(id: string, target: Target): true | string {
-    const ready = this.prepare(id, target);
+  /**
+   * `true` if `id` can run on `target` now, or why not. `asKey` asks as `run`'s does: whether it
+   * can run as its key would run it.
+   */
+  enabled(id: string, target: Target, asKey = false): true | string {
+    const ready = this.prepare(id, target, asKey);
     return typeof ready === 'string' ? ready : true;
   }
 
@@ -298,11 +301,12 @@ export class Registry {
    * Runs `id` on `target`, as a key, a menu or the palette asks, with the `count` typed before its
    * keys for a command that takes one: `true`, or why it didn't. A `jump` command records where the tab is in its
    * history first. A command that can't run is reported to `onRefused`, and a handler that throws
-   * or rejects to `onError`, never thrown to the caller. `moving` is one of Lo's motions run from its
-   * key, in a code view with no Vim: it goes from the cursor, wherever that is.
+   * or rejects to `onError`, never thrown to the caller. `asKey` runs it as its key would, as the
+   * key itself, the app menu and the palette ask: one of Lo's motions goes from the cursor, wherever
+   * that is, a file's header as a line.
    */
-  run(id: string, target: Target, count?: number, moving = false): true | string {
-    const ready = this.prepare(id, target, moving);
+  run(id: string, target: Target, count?: number, asKey = false): true | string {
+    const ready = this.prepare(id, target, asKey);
     if (typeof ready === 'string') {
       this.onRefused?.(ready, id);
       return ready;
@@ -398,7 +402,7 @@ export class Registry {
         }
         // A count Vim held is the command's now, and Vim drops it.
         if (outcome.count !== undefined && isKeySource(source)) this.clear(source);
-        this.run(outcome.command.id, target, outcome.count, outcome.command.vim === 'motion');
+        this.run(outcome.command.id, target, outcome.count, true);
         return STOP;
       }
       case 'arrow':
@@ -594,7 +598,7 @@ export class Registry {
   private prepare(
     id: string,
     target: Target,
-    moving = false,
+    asKey = false,
   ): { command: Command; handler: Handler; target: Target } | string {
     const command = this.byId.get(id);
     if (!command) return `There's no command called ${id}.`;
@@ -604,9 +608,10 @@ export class Registry {
         ? `${command.label} is its editor's own key.`
         : `${command.label} is Vim's.`;
     }
-    // A motion's key moves the cursor from a header as from a line, as Vim runs it: what it's
-    // declared to act on is where a menu offers it.
-    const fitted = fit(command.targets ?? ['none'], target) ?? (moving ? target : undefined);
+    // A motion's key moves the cursor from a header as from a line, as Vim runs it, and so does
+    // what stands in for its key: what it's declared to act on is where a right-click menu offers it.
+    const fromHeader = asKey && command.vim === 'motion' && target.kind === 'header';
+    const fitted = fit(command.targets ?? ['none'], target) ?? (fromHeader ? target : undefined);
     if (!fitted) return `${command.label} doesn't apply here.`;
     let enabled: true | string;
     try {
