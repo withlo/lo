@@ -238,7 +238,7 @@ export default defineFeature(contract, {
         } catch (error) {
           // An image error names a host at most; anything else is Lo's own mistake.
           const why = error instanceof ImageError ? error.message : String(error);
-          const what = asked.kind === 'post' ? 'an image' : `${asked.login}'s avatar`;
+          const what = asked.kind === 'post' ? 'an image' : `${asked.login}’s avatar`;
           log(`${what} wasn't shown: ${why}`);
           return undefined;
         }

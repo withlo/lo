@@ -95,7 +95,7 @@ export class OtherAccount extends GhError {
   readonly other: string;
 
   constructor(login: string, other: string) {
-    super(`gh's token for ${login} is ${other}'s.`);
+    super(`gh’s token for ${login} is ${other}’s.`);
     this.other = other;
   }
 }
@@ -205,12 +205,12 @@ function tokenFromGh(
   return async (login) => {
     const found = await gh.find();
     if (found.kind === 'missing') {
-      tell(login, "Lo can't find gh, GitHub's command-line tool.");
+      tell(login, 'Lo can’t find gh, GitHub’s command-line tool.');
       return undefined;
     }
     if (found.kind === 'distrusted') {
       const distrust = describeDistrust(found.distrust);
-      tell(login, `Lo found gh at ${found.program}, but ${distrust}, so Lo won't run it.`);
+      tell(login, `Lo found gh at ${found.program}, but ${distrust}, so Lo won’t run it.`);
       return undefined;
     }
     let listed: GhAccount[];
@@ -218,7 +218,7 @@ function tokenFromGh(
     try {
       listed = await gh.accounts(found.program);
       if (!listed.some((account) => sameLogin(account.login, login))) {
-        tell(login, `gh isn't signed in to ${login}${why === 'again' ? ' any more' : ''}.`);
+        tell(login, `gh isn’t signed in to ${login}${why === 'again' ? ' any more' : ''}.`);
         return undefined;
       }
       token = await gh.token(found.program, login);
@@ -239,7 +239,7 @@ function tokenFromGh(
       throw error;
     }
     if (!sameLogin(user.user.login, login)) {
-      tell(login, `gh's token for ${login} is ${user.user.login}'s.`);
+      tell(login, `gh’s token for ${login} is ${user.user.login}’s.`);
       return undefined;
     }
     return token;

@@ -23,7 +23,7 @@ export function unlistedWords(why: Unlisted): TreeWords {
     case 'failed':
       return { title, reason: explain(why.cause) };
     default:
-      throw new Error(`A reason Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
+      throw new Error(`A reason Lo doesn’t know: ${JSON.stringify(why satisfies never)}`);
   }
 }
 
@@ -42,7 +42,7 @@ export function problemWords(problem: TreeProblem): TreeWords {
     case 'github':
       return { title, reason: explain(why.cause) };
     default:
-      throw new Error(`A problem Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
+      throw new Error(`A problem Lo doesn’t know: ${JSON.stringify(why satisfies never)}`);
   }
 }
 

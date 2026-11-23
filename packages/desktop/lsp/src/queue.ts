@@ -133,7 +133,7 @@ export class Queue {
     if (this.#closed !== undefined) return Promise.resolve({ ok: false, why: this.#closed });
     if (ask.signal?.aborted) return Promise.resolve({ ok: false, why: 'cancelled' });
     if (!(ask.deadline > 0 && ask.deadline <= LONGEST_DEADLINE)) {
-      throw new Error(`a request's deadline must be 1 ms to a day: ${ask.deadline}`);
+      throw new Error(`a request’s deadline must be 1 ms to a day: ${ask.deadline}`);
     }
     if (ask.key !== undefined) {
       for (const entry of [...this.#waiting, ...this.#sent]) {

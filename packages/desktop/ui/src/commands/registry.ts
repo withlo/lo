@@ -601,18 +601,18 @@ export class Registry {
     asKey = false,
   ): { command: Command; handler: Handler; target: Target } | string {
     const command = this.byId.get(id);
-    if (!command) return `There's no command called ${id}.`;
+    if (!command) return `There’s no command called ${id}.`;
     const { handler } = command;
     if (!handler) {
       return command.editor
-        ? `${command.label} is its editor's own key.`
-        : `${command.label} is Vim's.`;
+        ? `${command.label} is its editor’s own key.`
+        : `${command.label} is Vim’s.`;
     }
     // A motion's key moves the cursor from a header as from a line, as Vim runs it, and so does
     // what stands in for its key: what it's declared to act on is where a right-click menu offers it.
     const fromHeader = asKey && command.vim === 'motion' && target.kind === 'header';
     const fitted = fit(command.targets ?? ['none'], target) ?? (fromHeader ? target : undefined);
-    if (!fitted) return `${command.label} doesn't apply here.`;
+    if (!fitted) return `${command.label} doesn’t apply here.`;
     let enabled: true | string;
     try {
       enabled = handler.enabled?.(fitted) ?? true;

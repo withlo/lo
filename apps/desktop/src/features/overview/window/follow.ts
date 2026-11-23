@@ -544,7 +544,7 @@ export function scroll(overview: DrawnOverview, how: Scroll): void {
       return;
     default:
       how satisfies never;
-      throw new Error(`A scroll Lo doesn't know: ${String(how)}.`);
+      throw new Error(`A scroll Lo doesn’t know: ${String(how)}.`);
   }
 }
 

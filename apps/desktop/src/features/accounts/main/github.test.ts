@@ -307,7 +307,7 @@ describe('accounts', () => {
     for (const table of ['accounts', 'grants', 'answers', 'recent', 'owners']) {
       expect(rows(database, `SELECT count(*) AS n FROM accounts_${table}`)).toEqual([{ n: 0 }]);
     }
-    await expect(github.poller(LOGIN)).rejects.toThrow("Lo isn't signed in to rozed-bot");
+    await expect(github.poller(LOGIN)).rejects.toThrow('Lo isn’t signed in to rozed-bot');
     // A stopped poller asks GitHub nothing more.
     await vi.advanceTimersByTimeAsync(10 * 60_000);
   });

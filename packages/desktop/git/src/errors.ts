@@ -189,35 +189,35 @@ function describeOr(detail: GitErrorDetail): string {
   try {
     return describe(detail);
   } catch {
-    return "git failed in a way Lo couldn't describe";
+    return 'git failed in a way Lo couldn’t describe';
   }
 }
 
 function describe(detail: GitErrorDetail): string {
   switch (detail.kind) {
     case 'fetch':
-      return `can't fetch ${detail.what}: ${explain(detail.failure, detail.message)}`;
+      return `can’t fetch ${detail.what}: ${explain(detail.failure, detail.message)}`;
     case 'unavailable':
       return `commit ${detail.oid.slice(0, 7)} is no longer available`;
     case 'notFetched':
-      return `commit ${detail.oid.slice(0, 7)} isn't in the local copy`;
+      return `commit ${detail.oid.slice(0, 7)} isn’t in the local copy`;
     case 'notDownloaded': {
       const [first = ''] = detail.oids;
       return detail.oids.length === 1
-        ? `file ${first.slice(0, 7)} isn't in the local copy yet`
-        : `${detail.oids.length} files aren't in the local copy yet, such as ${first.slice(0, 7)}`;
+        ? `file ${first.slice(0, 7)} isn’t in the local copy yet`
+        : `${detail.oids.length} files aren’t in the local copy yet, such as ${first.slice(0, 7)}`;
     }
     case 'tooManyAttributeFiles':
       return `${detail.found} .gitattributes files apply, more than the ${detail.limit} Lo reads`;
     case 'baseNotAncestor':
       return (
-        `commit ${detail.base.slice(0, 7)} isn't an ancestor of ${detail.head.slice(0, 7)}, so ` +
-        `it can't be its base`
+        `commit ${detail.base.slice(0, 7)} isn’t an ancestor of ${detail.head.slice(0, 7)}, so ` +
+        `it can’t be its base`
       );
     case 'diskFull':
       return 'the disk is full';
     case 'invalid':
-      return `\`${detail.value}\` isn't a valid ${detail.what}`;
+      return `\`${detail.value}\` isn’t a valid ${detail.what}`;
     case 'tooLarge':
       if (detail.blob !== undefined) {
         const { oid, size } = detail.blob;
@@ -229,13 +229,13 @@ function describe(detail: GitErrorDetail): string {
     case 'busy':
       return detail.message;
     case 'readOnly':
-      return `${detail.name}'s local copy was opened to read offline, so it can't ${detail.what}`;
+      return `${detail.name}’s local copy was opened to read offline, so it can’t ${detail.what}`;
     case 'git':
       return `\`${detail.command}\` failed: ${detail.message}`;
     case 'io':
       return `${detail.context}: ${detail.message}`;
     default:
-      throw new Error(`a git error Lo doesn't know: ${JSON.stringify(detail satisfies never)}`);
+      throw new Error(`a git error Lo doesn’t know: ${JSON.stringify(detail satisfies never)}`);
   }
 }
 
@@ -250,21 +250,21 @@ function explain(failure: FetchFailure, message: string): string {
       reason = 'GitHub is limiting requests for now';
       break;
     case 'certificate':
-      reason = "the server's certificate didn't verify, so Lo sent it nothing";
+      reason = 'the server’s certificate didn’t verify, so Lo sent it nothing';
       break;
     case 'auth':
       reason = 'GitHub wants an account that can see the repository; sign in with one';
       break;
     case 'tokenRefused':
       reason =
-        "GitHub refused the account's token, which may have just expired; Lo tries again with " +
+        'GitHub refused the account’s token, which may have just expired; Lo tries again with ' +
         'its renewed token';
       break;
     case 'repoNotFound':
-      reason = "the repository doesn't exist, or the account can't see it";
+      reason = 'the repository doesn’t exist, or the account can’t see it';
       break;
     case 'refNotFound':
-      reason = "GitHub doesn't have it";
+      reason = 'GitHub doesn’t have it';
       break;
     case 'timedOut':
     case 'tooLarge':
@@ -272,7 +272,7 @@ function explain(failure: FetchFailure, message: string): string {
       return message;
     default:
       throw new Error(
-        `a fetch failure Lo doesn't know: ${JSON.stringify(failure satisfies never)}`,
+        `a fetch failure Lo doesn’t know: ${JSON.stringify(failure satisfies never)}`,
       );
   }
   // git's last line usually says what happened, such as "Could not resolve host: github.com".

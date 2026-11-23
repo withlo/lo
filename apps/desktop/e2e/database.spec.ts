@@ -59,7 +59,7 @@ test("a database a newer Lo wrote isn't opened, and Lo says why", async () => {
   await expect(started).rejects.toMatchObject({
     code: 1,
     stderr: expect.stringContaining(
-      "Lo couldn't start. Lo's database was last opened by a newer version of Lo",
+      "Lo couldn't start. Lo’s database was last opened by a newer version of Lo",
     ),
   });
   expect(rows(file, "SELECT name FROM sqlite_schema WHERE type = 'table'")).toEqual([

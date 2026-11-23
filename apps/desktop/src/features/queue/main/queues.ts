@@ -135,7 +135,7 @@ export class Queues {
       return tabs.open({ kind: 'queue', owner, repo, branch, login });
     }
     const pull = tabs.pull(id);
-    if (!pull) throw new IpcError('missing', "There's no pull request's tab with that id.");
+    if (!pull) throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
     const { acting, repository } = pull;
     if (acting === undefined) {
       throw new IpcError('unavailable', 'Lo is still working out which account this tab uses.');
@@ -155,7 +155,7 @@ export class Queues {
   /** Opens pull request `number` of the merge queue's tab `id` in a tab, as the queue's account. */
   open(id: string, number: number): string {
     const shown = this.#queueTab(id);
-    if (!shown) throw new IpcError('missing', "There's no merge queue's tab with that id.");
+    if (!shown) throw new IpcError('missing', 'There’s no merge queue’s tab with that id.');
     const { owner, repo, login } = shown;
     return this.#options.tabs.open({ kind: 'pull', owner, repo, number }, { login });
   }

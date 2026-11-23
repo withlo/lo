@@ -105,7 +105,7 @@ export class CommentableReads {
     previous: string | null,
   ): Promise<Commentable> {
     const info = this.#options.view(id);
-    if (!info) throw new IpcError('missing', "There's no pull request's tab with that id.");
+    if (!info) throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
     if (info.run) throw new IpcError('refused', 'A run of layers takes no comments.');
     if (info.acting?.kind !== 'account') throw new IpcError('refused', 'Sign in to comment.');
     const { login } = info.acting;

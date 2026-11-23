@@ -5,6 +5,7 @@
 // what `e` did goes back: where the cursor went, and what's on screen, are the reader's.
 
 import { type ViewedToggle, ViewedMarks } from '@lo/review';
+import { clock } from '@lo/ui';
 
 import {
   changedFiles,
@@ -169,7 +170,7 @@ const refused = (why: string): { kind: 'refused'; why: string } => ({ kind: 'ref
 /** A time later today, or on another day, as the system writes one, for when a pause ends. */
 function timeOf(at: number): string {
   const when = new Date(at);
-  const time = when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const time = clock(at);
   return when.toDateString() === new Date().toDateString()
     ? time
     : `${when.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;

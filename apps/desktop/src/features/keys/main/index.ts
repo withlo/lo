@@ -77,7 +77,7 @@ export default defineFeature(contract, {
       });
     },
     async readKeymap() {
-      if (!keymap) throw new IpcError('unavailable', "Lo isn't watching the keymap file.");
+      if (!keymap) throw new IpcError('unavailable', 'Lo isn’t watching the keymap file.');
       // Checked as a push is, so the window gets nothing but what the contract says.
       return keymapFile.parse(await keymap.latest());
     },

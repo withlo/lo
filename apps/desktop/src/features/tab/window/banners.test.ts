@@ -1,16 +1,14 @@
+import { clock as timeOfDay } from '@lo/ui';
 import { describe, expect, it } from 'vitest';
 
 import type { Cause } from '../../../ipc/cause.ts';
-import { timeOfDay } from '../../../window/explain.ts';
 import type { LocalState, PullView } from '../contract.ts';
 import {
   accountChoice,
-  ago,
   bannersFor,
   connectionNote,
   failureOf,
   localNote,
-  span,
   type Clock,
 } from './banners.ts';
 
@@ -508,34 +506,5 @@ describe('the tab’s banner', () => {
     expect(bannersFor(newer, null, [{ head: HEAD, number: null, pusher: 'ravi-k' }])).toEqual(
       outOfDate,
     );
-  });
-});
-
-describe('a wait', () => {
-  it('reads in seconds under a minute, and in whole minutes or hours after, rounded up', () => {
-    expect([0, 999, 12_000, 60_000, 61_000, 3_599_000, 3_600_000, 7_200_000].map(span)).toEqual([
-      '1 s',
-      '1 s',
-      '12 s',
-      '1 min',
-      '2 min',
-      '1 h',
-      '1 h',
-      '2 h',
-    ]);
-  });
-
-  it('reads how long ago in the same units', () => {
-    const NOW = 1_000_000_000;
-    const before = (seconds: number) => ago(NOW - seconds * 1000, NOW);
-    expect(before(0)).toBe('just now');
-    expect(before(59)).toBe('just now');
-    expect(before(60)).toBe('1 min ago');
-    expect(before(150)).toBe('2 min ago');
-    expect(before(3_600)).toBe('1 h ago');
-    expect(before(7_300)).toBe('2 h ago');
-    expect(before(86_400 + 3)).toBe('1 d ago');
-    // A clock that went back.
-    expect(ago(NOW + 5000, NOW)).toBe('just now');
   });
 });

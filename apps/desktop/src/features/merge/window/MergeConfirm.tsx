@@ -803,7 +803,7 @@ function shownOf(
     }
     default:
       dialog satisfies never;
-      throw new Error(`a dialog Lo doesn't know: ${JSON.stringify(dialog)}`);
+      throw new Error(`a dialog Lo doesn’t know: ${JSON.stringify(dialog)}`);
   }
 }
 

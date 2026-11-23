@@ -100,7 +100,7 @@ export function createServices(): Services {
       for (const service of defined) {
         if (!values.has(service.id)) {
           throw new Error(
-            `The ${service.feature} feature defines ${service.id} in its service.ts, but doesn't provide it.`,
+            `The ${service.feature} feature defines ${service.id} in its service.ts, but doesn’t provide it.`,
           );
         }
       }
@@ -114,7 +114,7 @@ export function createServices(): Services {
     use<T>(service: Service<T>): T {
       if (!ready) {
         throw new Error(
-          `${service.id} was used while features were still providing theirs. Use a service in start or a handler, so it doesn't matter which feature provides first.`,
+          `${service.id} was used while features were still providing theirs. Use a service in start or a handler, so it doesn’t matter which feature provides first.`,
         );
       }
       if (!values.has(service.id)) throw new Error(`No feature provides ${service.id}.`);

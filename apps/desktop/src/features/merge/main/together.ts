@@ -152,7 +152,7 @@ export function takingOf(view: TakingView): Taking {
       return { kind: 'refused', why: where.text, again: where.listAgain };
     default:
       where satisfies never;
-      throw new Error(`a place Lo doesn't know: ${JSON.stringify(where)}`);
+      throw new Error(`a place Lo doesn’t know: ${JSON.stringify(where)}`);
   }
 }
 
@@ -243,7 +243,7 @@ export function togetherOf(taking: Taking): Together | null {
       return null;
     default:
       taking satisfies never;
-      throw new Error(`a merge Lo doesn't know: ${JSON.stringify(taking)}`);
+      throw new Error(`a merge Lo doesn’t know: ${JSON.stringify(taking)}`);
   }
 }
 
@@ -271,7 +271,7 @@ export function placementOf(taking: Taking): Placement {
       return { kind: 'refused', why: taking.why, again: taking.again ?? false };
     default:
       taking satisfies never;
-      throw new Error(`a merge Lo doesn't know: ${JSON.stringify(taking)}`);
+      throw new Error(`a merge Lo doesn’t know: ${JSON.stringify(taking)}`);
   }
 }
 

@@ -92,7 +92,7 @@ export class SignIns {
       if (!USER_CODE.test(codes.userCode)) {
         return this.#end(
           running,
-          failed(id, 'refused', "GitHub's answer had a code Lo can't show."),
+          failed(id, 'refused', 'GitHub’s answer had a code Lo can’t show.'),
         );
       }
       running.codes = codes;
@@ -206,15 +206,15 @@ function failure(id: number, error: unknown, log: (message: string) => void): Si
         return failed(id, 'missingScopes', error.message);
       default:
         detail satisfies never;
-        return failed(id, 'failed', "The sign-in ended in a way Lo doesn't know.");
+        return failed(id, 'failed', 'The sign-in ended in a way Lo doesn’t know.');
     }
   }
   if (error instanceof GithubError) {
     if (error.detail.kind === 'network') {
-      return failed(id, 'offline', `Lo couldn't reach GitHub: ${error.message}`);
+      return failed(id, 'offline', `Lo couldn’t reach GitHub: ${error.message}`);
     }
     return failed(id, 'refused', `GitHub refused the sign-in: ${error.message}`);
   }
   log(`signing in: ${error instanceof Error ? error.message : String(error)}`);
-  return failed(id, 'failed', "Lo couldn't keep the account. Try signing in again.");
+  return failed(id, 'failed', 'Lo couldn’t keep the account. Try signing in again.');
 }

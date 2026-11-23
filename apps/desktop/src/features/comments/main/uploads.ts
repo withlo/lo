@@ -116,7 +116,7 @@ export class Uploads {
     bytes: Uint8Array,
   ): Promise<UploadOutcome> {
     const info = this.#options.view(id);
-    if (!info) throw new IpcError('missing', "There's no pull request's tab with that id.");
+    if (!info) throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
     if (this.#stopped) throw new IpcError('refused', 'Lo is quitting.');
     if (info.run) return { kind: 'refused', refusal: { kind: 'run' } };
     const acting = info.acting;
@@ -140,7 +140,7 @@ export class Uploads {
    */
   async check(id: string): Promise<AttachCheck> {
     const info = this.#options.view(id);
-    if (!info) throw new IpcError('missing', "There's no pull request's tab with that id.");
+    if (!info) throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
     const { acting } = info;
     if (this.#stopped || info.run || acting?.kind !== 'account') return { kind: 'unknown' };
     const { login } = acting;

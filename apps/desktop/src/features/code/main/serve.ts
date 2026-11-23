@@ -71,7 +71,7 @@ export async function answerMessage(
     const id = idOf(message);
     return id === undefined
       ? undefined
-      : fail(id, 'invalid', `The question can't be read: ${problem}.`);
+      : fail(id, 'invalid', `The question can’t be read: ${problem}.`);
   }
   const parsed = request.safeParse(message);
   if (!parsed.success) {
@@ -80,14 +80,14 @@ export async function answerMessage(
   }
   const { id, job, input } = parsed.data;
   const name = questionOf(job);
-  if (name === undefined) return fail(id, 'unavailable', `There's no question named ${job}.`);
+  if (name === undefined) return fail(id, 'unavailable', `There’s no question named ${job}.`);
   const checked = contract.jobs[name].input.safeParse(input);
   if (!checked.success) {
     const where = checked.error.issues.map((issue) => issue.path.join('.') || 'input');
     return fail(id, 'invalid', `${job} got malformed input (${where.join(', ')}).`);
   }
   if (!options.isOpen(checked.data.view)) {
-    return fail(id, 'refused', "That view isn't open.");
+    return fail(id, 'refused', 'That view isn’t open.');
   }
   try {
     // Each answerer takes its own question's input, which its schema just checked.

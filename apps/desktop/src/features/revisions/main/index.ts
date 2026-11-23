@@ -42,7 +42,7 @@ function changed(id: string): void {
 
 function tabOf(id: string): RevisionsTab {
   const tab = followed.get(id);
-  if (!tab) throw new IpcError('missing', "There's no pull request's tab with that id.");
+  if (!tab) throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
   return tab;
 }
 

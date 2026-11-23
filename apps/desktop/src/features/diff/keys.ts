@@ -19,7 +19,7 @@ export default defineCommands('diff', {
    */
   show: {
     label: 'Diff',
-    control: "Diff in the pull request's header",
+    control: 'Diff in the pull request’s header',
     group: 'View',
     keys: [],
     bar: { menu: 'View', section: 'views', order: 20 },
@@ -109,7 +109,7 @@ export default defineCommands('diff', {
     label: 'Mark viewed',
     description: 'Collapses the file and goes to the next one not viewed.',
     group: 'Review',
-    control: "the viewed ball in a file's header",
+    control: 'the viewed ball in a file’s header',
     keys: ['e'],
     targets: ['line', 'header'],
     overVim: true,
@@ -185,7 +185,7 @@ export default defineCommands('diff', {
   toggleFile: {
     label: 'Collapse file',
     group: 'View',
-    control: "the row under a file's header",
+    control: 'the row under a file’s header',
     keys: ['z a'],
     targets: ['line', 'header'],
     when: normal,
@@ -222,7 +222,7 @@ export default defineCommands('diff', {
   loadWhole: {
     label: 'Show large file',
     group: 'Code',
-    control: "the button in the whole file's note on a large file",
+    control: 'the button in the whole file’s note on a large file',
     keys: ['z a'],
     targets: ['header', 'line'],
     when: { scope: 'file', mode: 'normal' },

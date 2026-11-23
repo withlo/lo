@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import type { ComparisonView, RevisionRow } from '../contract.ts';
 import {
-  ago,
   BASE,
   comparisonLabel,
   endsOf,
@@ -82,7 +81,7 @@ describe('the revision picker', () => {
     });
     expect(rows[1]).toMatchObject({
       forced: true,
-      meta: `ravi-k · 6 hours ago or earlier · 4444444`,
+      meta: `ravi-k · 6 h ago or earlier · 4444444`,
       tags: [{ label: 'Last opened', kind: 'seen' }],
     });
     expect(rows[3]?.tags).toEqual([{ label: 'Your review', kind: 'review' }]);
@@ -256,12 +255,5 @@ describe('labels', () => {
   it('names revisions by number, and the base as such', () => {
     expect(comparisonLabel(view(), { from: null, to: head('3') })).toBe('base → r3');
     expect(comparisonLabel(view(), { from: head('9'), to: head('3') })).toBe('9999999 → r3');
-  });
-
-  it('says how long ago in words', () => {
-    expect(ago(NOW - 10_000, NOW)).toBe('just now');
-    expect(ago(NOW - 40 * MINUTE, NOW)).toBe('40 min ago');
-    expect(ago(NOW - 60 * MINUTE, NOW)).toBe('1 hour ago');
-    expect(ago(NOW - 3 * 24 * 60 * MINUTE, NOW)).toBe('3 days ago');
   });
 });

@@ -55,7 +55,7 @@ export function failureMessage(failure: Failure): string {
     case 'memoryUnread':
       return 'Lo couldn’t read how much memory it used, so it stopped it.';
     default:
-      throw new Error(`a failure Lo doesn't know: ${JSON.stringify(failure satisfies never)}`);
+      throw new Error(`a failure Lo doesn’t know: ${JSON.stringify(failure satisfies never)}`);
   }
 }
 

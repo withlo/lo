@@ -14,11 +14,11 @@ import { dirname } from 'node:path';
 import { KEYMAP_SIZE_LIMIT, type KeymapFile, type KeymapProblem } from '../contract.ts';
 
 /** What a new keymap file says: only comments, so a copy of it changes no key. */
-export const keymapHeader = `# Lo's keymap. Lo applies a change as soon as you save the file.
+export const keymapHeader = `# Lo’s keymap. Lo applies a change as soon as you save the file.
 #
 #   bind <keys> <command>              add keys to a command: bind x diff.markViewed
 #   unbind <keys> [<command>]          take keys away: unbind e
-#   vim <mode> <keys> <what they do>   map Vim's keys in code views: vim normal Y y$
+#   vim <mode> <keys> <what they do>   map Vim’s keys in code views: vim normal Y y$
 #
 # <keys> are written like ctrl+o, cmd+shift+p and ] f (a space between the keys of a sequence).
 # Press ? in Lo to see every key and the name of each command.

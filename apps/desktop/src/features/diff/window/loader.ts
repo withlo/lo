@@ -24,6 +24,7 @@ import {
 } from '../jobs.ts';
 import { changeOf, inOrder } from './files.ts';
 import { FileIds } from './ids.ts';
+import { tooLargeReason } from './whole.ts';
 
 /** What the loader asks main and the background process for. */
 export interface LoaderWork {
@@ -645,7 +646,11 @@ export class Loader {
         this.#fail(
           run,
           entry,
-          text ? { reason: text.reason, details: text.why } : { details: NO_ANSWER },
+          text === undefined
+            ? { details: NO_ANSWER }
+            : text.tooLarge === undefined
+              ? { reason: text.reason, details: text.why }
+              : { reason: tooLargeReason(text.tooLarge) },
         );
       }
     });

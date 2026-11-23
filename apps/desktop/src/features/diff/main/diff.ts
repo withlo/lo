@@ -29,7 +29,7 @@ import {
   readPullFiles,
   RepoRef,
 } from '@lo/github';
-import { LARGE_FILE_BYTES, MAX_SHOWN_BYTES, tooLargeToShow } from '@lo/review';
+import { LARGE_FILE_BYTES, MAX_SHOWN_BYTES, tooLargeToShow, type TooLarge } from '@lo/review';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import type { Comparing, OnScreen, Since } from '../../revisions/service.ts';
@@ -112,6 +112,16 @@ interface At {
 }
 
 const decoder = new TextDecoder('utf-8', { ignoreBOM: true });
+
+/** A side of a file too large to show, with the limit it's over, which the window words. */
+class TooLargeSide extends Error {
+  readonly why: TooLarge;
+
+  constructor(why: TooLarge) {
+    super('It’s too large to show.');
+    this.why = why;
+  }
+}
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -434,7 +444,11 @@ export class DiffTab {
           new: await this.#read(repo, file.new?.blob),
         });
       } catch (error) {
-        texts.push({ kind: 'missing', why: describe(error) });
+        texts.push(
+          error instanceof TooLargeSide
+            ? { kind: 'missing', why: error.message, tooLarge: error.why }
+            : { kind: 'missing', why: describe(error) },
+        );
       }
     }
     return texts;
@@ -547,13 +561,7 @@ export class DiffTab {
     if (bytes === undefined) throw new Error('The local copy doesn’t have it.');
     // A minified bundle on one line is as slow to lay out as it is large.
     const tooLarge = tooLargeToShow(bytes.length, [bytes]);
-    if (tooLarge !== undefined) {
-      throw new Error(
-        tooLarge.kind === 'size'
-          ? `It’s ${Math.round(bytes.length / 1024 ** 2)} MB, over the 50 MB limit.`
-          : 'It has a line over 1 MB long.',
-      );
-    }
+    if (tooLarge !== undefined) throw new TooLargeSide(tooLarge);
     return decoder.decode(bytes);
   }
 

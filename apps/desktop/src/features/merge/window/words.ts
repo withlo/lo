@@ -4,7 +4,7 @@
 // branches and check names, is drawn as text without the characters that turn text around, which
 // the components take out, or `MergeHeader` where it draws the text itself. Nothing here draws.
 
-import type { MergeKind } from '@lo/ui';
+import { about, ago, type MergeKind } from '@lo/ui';
 
 import { explain, offlineLabel, type Cause } from '../../../window/explain.ts';
 import type {
@@ -316,19 +316,6 @@ function readyDetail(action: Action, base: string): string {
 export const STALE_AFTER = 10 * 60_000;
 
 /**
- * How long ago `at` was, from `now`, in its largest whole unit: "just now", "12 min ago", "2 h
- * ago", "3 d ago".
- */
-export function ago(at: number, now: number): string {
-  const minutes = Math.floor(Math.max(0, now - at) / 60_000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} h ago`;
-  return `${Math.floor(hours / 24)} d ago`;
-}
-
-/**
  * Why the first read of a view's merge status failed: why the poller can't read now, by its cause,
  * or else what main said.
  */
@@ -434,16 +421,6 @@ function knownLine(state: MergeState): HeaderLine {
 }
 
 /**
- * A length of time GitHub estimates, in seconds, in its largest whole unit: "12 min", "2 h", "3 d".
- */
-export function duration(seconds: number): string {
-  const minutes = Math.max(1, Math.round(seconds / 60));
-  if (minutes < 60) return `${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  return hours < 24 ? `${hours} h` : `${Math.floor(hours / 24)} d`;
-}
-
-/**
  * `line`, from GitHub's read of a queued pull request, with what Lo last read of its entry in the
  * queue: its place, which that read has fresher, and when it should merge; once it failed there,
  * that it's leaving, and which checks failed; and once the queue no longer lists it, that it left,
@@ -470,7 +447,7 @@ function queuedLine(line: HeaderLine, state: MergeState, queue: InQueue | undefi
     ...line,
     verdict: `Queued, ${ordinal(place.position)}`,
     detail:
-      place.timeToMerge === null ? line.detail : `merges in about ${duration(place.timeToMerge)}`,
+      place.timeToMerge === null ? line.detail : `merges in ${about(place.timeToMerge * 1000)}`,
   };
 }
 

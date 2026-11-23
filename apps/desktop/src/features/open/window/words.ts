@@ -19,7 +19,7 @@ export function notPullLine(why: NotPull): string | undefined {
     case 'long':
       return undefined;
     default:
-      throw new Error(`A link Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
+      throw new Error(`A link Lo doesn’t know: ${JSON.stringify(why satisfies never)}`);
   }
 }
 
@@ -44,7 +44,7 @@ export function refusalReason(why: Refusal): string | undefined {
     case 'cameBack':
       return 'The browser sent it straight back.';
     default:
-      throw new Error(`A refusal Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
+      throw new Error(`A refusal Lo doesn’t know: ${JSON.stringify(why satisfies never)}`);
   }
 }
 
@@ -119,7 +119,7 @@ export function blockedWords(
     case 'unknown':
       return { title: cant, reason: undefined, way: undefined };
     default:
-      throw new Error(`A block Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
+      throw new Error(`A block Lo doesn’t know: ${JSON.stringify(why satisfies never)}`);
   }
 }
 
@@ -135,7 +135,7 @@ export function wayLabel(way: BlockedWay): string {
     case 'retry':
       return 'Try again';
     default:
-      throw new Error(`A way on Lo doesn't know: ${JSON.stringify(way satisfies never)}`);
+      throw new Error(`A way on Lo doesn’t know: ${JSON.stringify(way satisfies never)}`);
   }
 }
 

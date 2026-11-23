@@ -47,7 +47,7 @@ export function createRegistry(commands: readonly Command[], system: System): Re
 
 /** The window's registry. */
 export function registry(): Registry {
-  if (!current) throw new Error("The window's registry isn't built yet.");
+  if (!current) throw new Error('The window’s registry isn’t built yet.');
   return current;
 }
 

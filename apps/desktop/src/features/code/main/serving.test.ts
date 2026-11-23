@@ -368,7 +368,7 @@ describe('following views for servers', () => {
     await settle();
     expect(published.at(-1)?.servers[0]?.state).toEqual({
       kind: 'failed',
-      why: { kind: 'error', message: "Lo couldn't check out this PR's head: the disk is full" },
+      why: { kind: 'error', message: 'Lo couldn’t check out this PR’s head: the disk is full' },
     });
     fail = false;
     await serving.restart('v1', 'typescript');
@@ -564,7 +564,7 @@ describe('following views for servers', () => {
       why: {
         kind: 'error',
         message:
-          "Lo couldn't check out this PR's head: the checkout Lo made again isn't usable either",
+          'Lo couldn’t check out this PR’s head: the checkout Lo made again isn’t usable either',
       },
     });
     usable = true;

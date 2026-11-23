@@ -68,7 +68,7 @@ export async function answer(
     const id = idOf(message);
     return id === undefined
       ? undefined
-      : fail(id, 'invalid', `The job request can't be read: ${problem}.`);
+      : fail(id, 'invalid', `The job request can’t be read: ${problem}.`);
   }
   const parsed = request.safeParse(message);
   if (!parsed.success) {
@@ -77,7 +77,7 @@ export async function answer(
   }
   const { id, job, input } = parsed.data;
   const found = findJob(runners, job);
-  if (!found) return fail(id, 'unavailable', `There's no job named ${job}.`);
+  if (!found) return fail(id, 'unavailable', `There’s no job named ${job}.`);
   const checked = found.spec.input.safeParse(input);
   if (!checked.success) {
     const where = checked.error.issues.map((issue) => issue.path.join('.') || 'input');

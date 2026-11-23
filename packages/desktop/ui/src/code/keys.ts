@@ -284,7 +284,7 @@ export function setVimKeys(keys: readonly VimKey[]): void {
   installVim();
   for (const key of keys) {
     if (key.kind === 'motion' && !Object.hasOwn(diffMotions, key.command)) {
-      throw new Error(`No code view runs ${key.command} as a motion: diffMotions doesn't list it.`);
+      throw new Error(`No code view runs ${key.command} as a motion: diffMotions doesn’t list it.`);
     }
   }
   for (const { keys: lhs, context } of mapped.toReversed()) {

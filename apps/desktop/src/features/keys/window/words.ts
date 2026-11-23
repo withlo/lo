@@ -1,15 +1,12 @@
 // The keymap file's problems and the failures of opening it, in words: main sends each as a kind,
 // with what the system said, and the window writes the sentence.
 
+import { bytes } from '@lo/ui';
+
 import { IpcError } from '../../../ipc/contract.ts';
 import { NO_TEXT_APP, TEXT_APP_QUERY, UNSUPPORTED } from '../../../window/explain.ts';
 import type { KeymapFile as Shown, KeymapProblem } from '../../../window/commands/keymap.ts';
-import type { KeymapFile } from '../contract.ts';
-
-/** `bytes` in megabytes, rounded up to a tenth, so a file just over the limit reads as over it. */
-function megabytes(bytes: number): string {
-  return `${(Math.ceil((bytes / 1024 ** 2) * 10) / 10).toLocaleString()} MB`;
-}
+import { KEYMAP_SIZE_LIMIT, type KeymapFile } from '../contract.ts';
 
 /** The refusal on a dimmed "Open keymap file" for a file Lo can't read. */
 const CANT_OPEN = 'The keymap file can’t be opened';
@@ -29,7 +26,9 @@ export function keymapWords(file: KeymapFile): Shown {
     case 'notFile':
       return reading('It isn’t a file.');
     case 'tooLarge':
-      return reading(`It’s ${megabytes(problem.size)}, over the 1 MB limit.`);
+      return reading(
+        `It’s ${bytes(problem.size, 'up')}, over the ${bytes(KEYMAP_SIZE_LIMIT)} limit.`,
+      );
     case 'notText':
       return reading('It isn’t text.');
     case 'brokenLink':
@@ -48,7 +47,7 @@ export function keymapWords(file: KeymapFile): Shown {
       };
     default:
       throw new Error(
-        `A keymap problem Lo doesn't know: ${JSON.stringify(problem satisfies never)}`,
+        `A keymap problem Lo doesn’t know: ${JSON.stringify(problem satisfies never)}`,
       );
   }
 }

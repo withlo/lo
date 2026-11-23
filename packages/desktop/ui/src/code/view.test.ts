@@ -2425,7 +2425,7 @@ describe("Lo's motions", () => {
     const shown = open();
     const unknown: VimKey = { kind: 'motion', command: 'tree.nextFolder', keys: ']d' };
     expect(() => shown.setVimKeys([...motions, unknown])).toThrow(
-      "No code view runs tree.nextFolder as a motion: diffMotions doesn't list it.",
+      'No code view runs tree.nextFolder as a motion: diffMotions doesn’t list it.',
     );
     // The keys in place before stay.
     shown.reveal(onLine('a', 'new', 1));

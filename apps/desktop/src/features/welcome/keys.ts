@@ -22,7 +22,7 @@ export default defineCommands(
      */
     continue: {
       label: 'Continue',
-      control: "The main button in the welcome's foot",
+      control: 'The main button in the welcome’s foot',
       group: 'App',
       keys: ['enter'],
       when: { scope: 'welcome' },

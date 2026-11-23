@@ -129,7 +129,7 @@ function offerOf(
     }
     default:
       start satisfies never;
-      throw new Error(`A start Lo doesn't know: ${JSON.stringify(start)}.`);
+      throw new Error(`A start Lo doesn’t know: ${JSON.stringify(start)}.`);
   }
 }
 
@@ -163,6 +163,6 @@ function missingNote(start: LayerStart): Note | undefined {
       return undefined;
     default:
       start satisfies never;
-      throw new Error(`A start Lo doesn't know: ${JSON.stringify(start)}.`);
+      throw new Error(`A start Lo doesn’t know: ${JSON.stringify(start)}.`);
   }
 }

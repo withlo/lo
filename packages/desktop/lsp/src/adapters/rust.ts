@@ -132,7 +132,7 @@ export function launchRustAnalyzer(
 ): Launch {
   const entry = Object.hasOwn(manifest, RUST_ANALYZER.id) ? manifest[RUST_ANALYZER.id] : undefined;
   if (entry === undefined) {
-    throw new Error(`Lo's list of language servers has no ${RUST_ANALYZER.id}.`);
+    throw new Error(`Lo’s list of language servers has no ${RUST_ANALYZER.id}.`);
   }
   // `<sysroot>/bin/<program>` is the toolchain's layout, so the sysroot is two folders up.
   const sysroot = dirname(dirname(toolchain.installed.entry));

@@ -4,10 +4,9 @@
 // they're tested without a window.
 
 import { REVIEW_EVENTS, YourReview, type ReviewRefusal } from '@lo/review';
-import type { DialogState } from '@lo/ui';
+import { ago, clock, type DialogState } from '@lo/ui';
 import type { System } from '@lo/ui/commands';
 
-import { clockOf } from '../../../window/time.ts';
 import type { PendingReviewRow } from '../../comments/contract.ts';
 import type { ComparisonView } from '../../revisions/contract.ts';
 import {
@@ -52,24 +51,9 @@ export function subtitleOf(view: DialogView, label: (head: string) => string): s
   return `${view.repo} #${view.number} · ${label(view.on)}`;
 }
 
-/** How long ago `at` was, in its largest whole unit: "just now", "12 min ago", "2 h ago". */
-export function agoOf(at: number, now: number): string {
-  const seconds = Math.max(0, Math.floor((now - at) / 1000));
-  if (seconds < 60) return 'just now';
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} h ago`;
-  const days = Math.floor(hours / 24);
-  if (days <= 30) return `${days} d ago`;
-  const when = new Date(at);
-  const year = when.getFullYear() === new Date(now).getFullYear() ? undefined : 'numeric';
-  return when.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year });
-}
-
 /** The line over the summary's foot for a summary kept from before: "Draft from 12 min ago". */
 export function draftLine(savedAt: number, now: number): string {
-  return `Draft from ${agoOf(savedAt, now)}`;
+  return `Draft from ${ago(savedAt, now)}`;
 }
 
 /** The comments your pending review holds, as the dialog counts them. */
@@ -239,7 +223,7 @@ export function reasonOf(
 
 /** Why nothing goes while GitHub asked Lo to hold off writing, until `until`. */
 export function pausedReason(until: number): string {
-  return `GitHub’s rate limit resets at ${clockOf(until)}`;
+  return `GitHub’s rate limit resets at ${clock(until)}`;
 }
 
 /** What went wrong, as the line above the dialog's buttons says it. */

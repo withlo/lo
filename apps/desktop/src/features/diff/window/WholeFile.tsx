@@ -5,8 +5,7 @@
 // tree and the file finder, and `⌃o` goes back through the tab's history to where it was opened
 // from. Keys in it act on the cursor's line, or on the file while it shows a note.
 
-import { sizeText } from '@lo/review';
-import { Button, Key, Spinner, Tag, useControl } from '@lo/ui';
+import { Button, bytes, Key, Spinner, Tag, useControl } from '@lo/ui';
 import { keyLabels, NO_TARGET, setScopeSource, type Target } from '@lo/ui/commands';
 import { createFileView, type FileView, type Mark } from '@lo/ui/code';
 import { useEffect, useRef, type ReactNode } from 'react';
@@ -479,7 +478,7 @@ function Note({
     case 'large':
       return (
         <Said
-          title={`${sizeText(content.size)} file`}
+          title={`${bytes(content.size)} file`}
           actions={
             <>
               <Button variant="primary" onClick={() => registry().run('diff.loadWhole', header)}>
@@ -494,7 +493,7 @@ function Note({
     case 'binary':
       return (
         <Said title="Can’t show this file" actions={github}>
-          It’s a binary file, {sizeText(content.size)}.
+          It’s a binary file, {bytes(content.size)}.
         </Said>
       );
     case 'tooLarge':
@@ -560,7 +559,7 @@ function Refused({ why, tab }: { why: WholeRefusal; tab: PullTab }) {
         </>
       );
     default:
-      throw new Error(`A refusal Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
+      throw new Error(`A refusal Lo doesn’t know: ${JSON.stringify(why satisfies never)}`);
   }
 }
 

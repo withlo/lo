@@ -14,7 +14,7 @@ const unavailable = (channel: unknown): Result<never> => ({
   ok: false,
   error: {
     code: 'unavailable',
-    message: `There's no request named ${typeof channel === 'string' ? channel : 'like that'}.`,
+    message: `There’s no request named ${typeof channel === 'string' ? channel : 'like that'}.`,
   },
 });
 
@@ -33,7 +33,7 @@ const bridge: Bridge = {
   subscribe(topic, listener) {
     if (typeof topic !== 'string' || !channelName.test(topic)) {
       throw new TypeError(
-        `There's no topic named ${typeof topic === 'string' ? topic : 'like that'}.`,
+        `There’s no topic named ${typeof topic === 'string' ? topic : 'like that'}.`,
       );
     }
     if (typeof listener !== 'function') throw new TypeError('A subscription needs a listener.');

@@ -112,12 +112,13 @@ export type DiffState = z.output<typeof diffState>;
 /**
  * A file's texts, as `diff.texts` replies: both sides from the local copy, `null` for a side it
  * isn't on; GitHub's patch of it; or why it can't be had: `why` as it was said, and `reason`, the
- * cause in the window's words, where it's known.
+ * cause in the window's words, where it's known, or `tooLarge`, the limit a side is over, which the
+ * window words.
  */
 export type FileText =
   | { kind: 'texts'; old: string | null; new: string | null }
   | { kind: 'patch'; patch: string }
-  | { kind: 'missing'; why: string; reason?: string };
+  | { kind: 'missing'; why: string; reason?: string; tooLarge?: TooLarge };
 
 /** The most files one `diff.texts` asks for. */
 export const TEXTS_LIMIT = 2000;

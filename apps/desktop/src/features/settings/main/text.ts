@@ -75,6 +75,7 @@ const BOM = '\uFEFF';
  * wrote, or changed even by a word, isn't one of these and stays.
  */
 const RETIRED_HEADERS = [
+  // oxlint-disable-next-line lo/no-straight-apostrophe -- as an older Lo wrote it, to find it.
   `// Lo's settings. Lo applies only these from this file and ignores the rest: "theme",
 // "ui_font_family", "ui_font_size", "buffer_font_family" and "buffer_font_size".
 // A theme's file goes in ~/.config/lo/themes, and "theme" names it. Lo's README says more.
@@ -134,7 +135,7 @@ function read(text: string): Tree {
       problem: `Line ${line}, column ${column} isn’t valid JSON.`,
       reason: '`settings.json` isn’t valid JSON.',
       details: `${printParseErrorCode(first.error)} at line ${line}, column ${column}`,
-      cause: `The settings file isn't valid JSON (${what(first)} at line ${line}, column ${column}).`,
+      cause: `The settings file isn’t valid JSON (${what(first)} at line ${line}, column ${column}).`,
     };
   }
   if (root === undefined) return { ok: true, root, values: {}, repeated: [] };
@@ -220,9 +221,9 @@ function what(error: ParseError): string {
   const code = printParseErrorCode(error.error);
   switch (code) {
     case 'InvalidSymbol':
-      return "Lo found something JSON doesn't have";
+      return 'Lo found something JSON doesn’t have';
     case 'InvalidNumberFormat':
-      return "a number isn't written as JSON writes one";
+      return 'a number isn’t written as JSON writes one';
     case 'PropertyNameExpected':
       return 'Lo expected a key in double quotes';
     case 'ValueExpected':
@@ -238,23 +239,23 @@ function what(error: ParseError): string {
     case 'EndOfFileExpected':
       return 'Lo expected nothing more after the object';
     case 'UnexpectedEndOfComment':
-      return "a /* comment isn't closed";
+      return 'a /* comment isn’t closed';
     case 'UnexpectedEndOfString':
-      return "a string isn't closed";
+      return 'a string isn’t closed';
     case 'UnexpectedEndOfNumber':
       return 'a number ends too soon';
     case 'InvalidUnicode':
-      return "a \\u escape isn't four hex digits";
+      return 'a \\u escape isn’t four hex digits';
     case 'InvalidEscapeCharacter':
-      return "a string has a \\ escape JSON doesn't";
+      return 'a string has a \\ escape JSON doesn’t';
     case 'InvalidCharacter':
       return 'a string holds a tab or another control character, which JSON writes escaped';
     case 'InvalidCommentToken':
     case '<unknown ParseErrorCode>':
-      return "Lo found something it can't read";
+      return 'Lo found something it can’t read';
     default:
       code satisfies never;
-      return "Lo found something it can't read";
+      return 'Lo found something it can’t read';
   }
 }
 
@@ -358,7 +359,7 @@ export function editSettings(text: string, key: string, value: Json): string {
     !isDeepStrictEqual(after.repeated, tree.repeated)
   ) {
     throw new SettingsUneditable(
-      "the new value, written into the settings file, wouldn't read back as Settings shows it, so Lo left the file as it was",
+      'the new value, written into the settings file, wouldn’t read back as Settings shows it, so Lo left the file as it was',
     );
   }
   return changed;

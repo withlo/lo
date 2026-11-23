@@ -78,7 +78,7 @@ interface Running {
 let running: Running | undefined;
 
 function feature(): Running {
-  if (!running) throw new Error("The accounts feature hasn't provided GitHub yet.");
+  if (!running) throw new Error('The accounts feature hasn’t provided GitHub yet.');
   return running;
 }
 
@@ -110,10 +110,10 @@ function waitingFor(id: number): { userCode: string; page: string } {
   const { signIns, settings } = feature();
   const waiting = signIns.waiting(id);
   if (waiting === undefined) {
-    throw new IpcError('over', "This sign-in isn't waiting for its code any more.");
+    throw new IpcError('over', 'This sign-in isn’t waiting for its code any more.');
   }
   if (waiting.page !== `${settings.urls.web.replace(/\/+$/, '')}/login/device`) {
-    throw new IpcError('refused', `Lo won't open ${waiting.page}.`);
+    throw new IpcError('refused', `Lo won’t open ${waiting.page}.`);
   }
   return waiting;
 }
@@ -168,7 +168,7 @@ export default defineFeature(contract, {
     async remove({ login }) {
       const accounts = await feature().github.accounts();
       if (!accounts.some(({ account }) => sameLogin(account.login, login))) {
-        throw new IpcError('missing', `Lo isn't signed in to ${login}.`);
+        throw new IpcError('missing', `Lo isn’t signed in to ${login}.`);
       }
       try {
         await feature().github.remove(login);
@@ -199,7 +199,7 @@ export default defineFeature(contract, {
         await openPage(page);
       } catch (error) {
         log(`opening GitHub's page: ${String(error)}`);
-        throw new IpcError('unopened', `Lo couldn't open ${page}. Open it in your browser.`);
+        throw new IpcError('unopened', `Lo couldn’t open ${page}. Open it in your browser.`);
       }
     },
     async ghAccounts() {
@@ -226,7 +226,7 @@ export default defineFeature(contract, {
       const state = (await service.accounts()).find(({ account }) =>
         sameLogin(account.login, login),
       );
-      if (state === undefined) throw new IpcError('missing', `Lo isn't signed in to ${login}.`);
+      if (state === undefined) throw new IpcError('missing', `Lo isn’t signed in to ${login}.`);
       if (state.signedOut !== undefined) {
         throw new IpcError('signedOut', `${state.account.login} is signed out.`);
       }

@@ -97,7 +97,7 @@ export function commandScript(launch: Launch): string {
 /** The program, its arguments and its environment, quoted, before the link. */
 function programLine({ program, args, env = {} }: Extract<Launch, { kind: 'program' }>): string {
   const set = Object.entries(env).map(([name, value]) => {
-    if (!/^[A-Z_][A-Z0-9_]*$/.test(name)) throw new Error(`Not a variable's name: ${name}`);
+    if (!/^[A-Z_][A-Z0-9_]*$/.test(name)) throw new Error(`Not a variable’s name: ${name}`);
     return `${name}=${value}`;
   });
   const words = set.length > 0 ? ['/usr/bin/env', ...set, program, ...args] : [program, ...args];

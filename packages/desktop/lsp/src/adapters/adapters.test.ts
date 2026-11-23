@@ -137,7 +137,7 @@ test('each starts as Lo’s Node, its heap capped, then its own entry point, wit
   }
   expect(() =>
     launchOnNode(VTSLS, { folder: 'node', entry: 'node/bin/node' }, installed(VTSLS)),
-  ).toThrow("node/bin/node isn't an absolute path");
+  ).toThrow('node/bin/node isn’t an absolute path');
   expect(() => launchOnNode({ ...VTSLS, id: 'tsserver' }, NODE, installed(VTSLS))).toThrow(
     'has no tsserver',
   );
@@ -418,7 +418,7 @@ describe('php-lsp', () => {
       undefined,
     ]);
     expect(() => launchNative(PHP_LSP, { folder: 'php-lsp', entry: 'php-lsp/php-lsp' })).toThrow(
-      "php-lsp/php-lsp isn't an absolute path",
+      'php-lsp/php-lsp isn’t an absolute path',
     );
     expect(() => launchNative({ ...PHP_LSP, id: 'phpactor' }, PHP_LSP_INSTALLED)).toThrow(
       'has no phpactor',
@@ -494,14 +494,14 @@ describe('Roslyn', () => {
     ]);
     expect(launch.workspace).toBe(csharpWorkspace);
     expect(() => launchRoslyn({ folder: 'roslyn', entry: 'roslyn/server.dll' }, DOTNET)).toThrow(
-      "roslyn/server.dll isn't an absolute path",
+      'roslyn/server.dll isn’t an absolute path',
     );
     expect(() =>
       launchRoslyn(ROSLYN_INSTALLED, {
         ...DOTNET,
         installed: { folder: 'dotnet', entry: 'dotnet/dotnet' },
       }),
-    ).toThrow("dotnet/dotnet isn't an absolute path");
+    ).toThrow('dotnet/dotnet isn’t an absolute path');
     expect(() => launchRoslyn(ROSLYN_INSTALLED, DOTNET, {})).toThrow('has no roslyn');
   });
 

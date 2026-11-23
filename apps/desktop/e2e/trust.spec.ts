@@ -292,7 +292,7 @@ test('says in the item’s details why it couldn’t trust the repo, offers the 
   await expect(failed).toContainText('settings.json has an error.');
   expect(await dialogsAsked(app)).toHaveLength(1);
   // Said there, and not again in a note in the corner.
-  await expect(page.getByText("Lo didn't change code.trusted")).toHaveCount(0);
+  await expect(page.getByText('Lo didn’t change code.trusted')).toHaveCount(0);
   expect(readFileSync(path, 'utf8')).toBe('{ "code.trusted": [\n');
   await expect(status(page, id)).resolves.toMatchObject({ trust: { kind: 'untrusted' } });
 

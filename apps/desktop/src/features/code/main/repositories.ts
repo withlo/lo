@@ -34,7 +34,7 @@ export async function readRepositories(
   signal: AbortSignal | undefined,
 ): Promise<PullRequestRepositories> {
   const info = reading.pull(id);
-  if (!info?.acting) throw new Error("The view is closed, or doesn't know who it acts as yet.");
+  if (!info?.acting) throw new Error('The view is closed, or doesn’t know who it acts as yet.');
   const pull = new PullRef(info.repository.owner, info.repository.name, info.number);
   if (info.acting.kind === 'anonymous') return readPullRequestRepositories(reading.anonymous, pull);
   const poller = await reading.poller(info.acting.login);

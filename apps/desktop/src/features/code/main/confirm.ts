@@ -244,7 +244,7 @@ export class TrustAsker<W extends AskWindow = AskWindow> {
     const { request, window, gone } = asked;
     const options = this.#options;
     const view = options.view(request.view);
-    if (!view) throw new IpcError('missing', "There's no pull request's tab with that id.");
+    if (!view) throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
     if (!sameName(view.repo, request.repo)) {
       throw new IpcError('invalid', `That tab is of ${view.repo}, not ${request.repo}.`);
     }

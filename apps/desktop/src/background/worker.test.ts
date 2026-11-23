@@ -35,7 +35,7 @@ describe('workers', () => {
       ok: false,
       error: {
         code: 'busy',
-        message: "sample.double couldn't start within 200 ms; try again later.",
+        message: 'sample.double couldn’t start within 200 ms; try again later.',
       },
     });
     expect(Date.now() - started).toBeLessThan(5000);

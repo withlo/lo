@@ -121,6 +121,6 @@ export function aloneOrBottom(
       return placed.text;
     default:
       placed satisfies never;
-      throw new Error(`a place Lo doesn't know: ${JSON.stringify(placed)}`);
+      throw new Error(`a place Lo doesn’t know: ${JSON.stringify(placed)}`);
   }
 }

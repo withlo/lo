@@ -217,7 +217,7 @@ export class Gh {
     const printed = await this.#run(
       program,
       ['auth', 'token', '--hostname', HOST, `--user=${login}`],
-      `read ${login}'s token`,
+      `read ${login}’s token`,
       TOKEN_LIMIT,
     );
     const token = new Token(printed.toString('utf8'));
@@ -250,7 +250,7 @@ export class Gh {
     } catch (error) {
       if (signal.aborted) throw signal.reason;
       if (error instanceof GitError && error.detail.kind === 'tooSlow') {
-        throw new GhError(`gh didn't ${what} within ${timeout / 1000} s, so Lo stopped it.`, {
+        throw new GhError(`gh didn’t ${what} within ${timeout / 1000} s, so Lo stopped it.`, {
           cause: error,
           trouble: 'tooSlow',
         });
@@ -260,7 +260,7 @@ export class Gh {
           cause: error,
         });
       }
-      throw new GhError(`Lo couldn't run gh at ${program}.`, {
+      throw new GhError(`Lo couldn’t run gh at ${program}.`, {
         cause: error,
         trouble: 'run',
         said: error instanceof Error ? error.message : String(error),
@@ -273,7 +273,7 @@ export class Gh {
       if (said.includes('unknown flag: --json')) {
         throw new GhError('Lo needs a newer gh to list its accounts.', { trouble: 'tooOld', said });
       }
-      throw new GhError(said === '' ? `gh couldn't ${what}.` : `gh couldn't ${what}: ${said}`, {
+      throw new GhError(said === '' ? `gh couldn’t ${what}.` : `gh couldn’t ${what}: ${said}`, {
         said,
       });
     }
@@ -320,7 +320,7 @@ export function parseStatus(printed: string): GhAccount[] {
   }
   const hosts = field(json, 'hosts');
   if (hosts === undefined || typeof hosts !== 'object' || hosts === null) {
-    throw new GhError("gh's list of accounts isn't what Lo expects.");
+    throw new GhError('gh’s list of accounts isn’t what Lo expects.');
   }
   const entries = field(hosts, HOST);
   const accounts: GhAccount[] = [];

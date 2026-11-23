@@ -3,7 +3,7 @@
 // done, and what the auto-merge watch says of a push after your approval. Pure functions, so
 // they're tested without a window.
 
-import type { StepState } from '@lo/ui';
+import { ago, type StepState } from '@lo/ui';
 
 import type { RevisionRow } from '../../revisions/contract.ts';
 import type {
@@ -19,7 +19,6 @@ import type {
   Watched,
 } from '../contract.ts';
 import {
-  ago,
   capitalized,
   confirmLabel,
   counted,

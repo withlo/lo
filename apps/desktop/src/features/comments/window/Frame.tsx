@@ -9,6 +9,7 @@
 // be before it's on screen.
 
 import {
+  ago,
   CommentBoxFootBar,
   CommentBoxHeadBar,
   CommentBoxNotes,
@@ -39,7 +40,6 @@ import {
   takenDown,
 } from './boxes.ts';
 import { boxKeys } from './boxkeys.ts';
-import { ago } from './Card.tsx';
 import { Preview as Rendering } from './Preview.tsx';
 import { Dropzone, UploadRows, useUploads } from './Attached.tsx';
 import { holdText, takeAddresses, UPLOADING } from './uploads.ts';

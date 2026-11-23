@@ -111,7 +111,7 @@ describe('the syntax index', () => {
     });
     await vi.waitFor(() => expect(index.state('t1')).toMatchObject({ kind: 'failed' }));
     const failed = index.state('t1');
-    expect(failed).toMatchObject({ message: "The pull request's local copy isn't open." });
+    expect(failed).toMatchObject({ message: 'The pull request’s local copy isn’t open.' });
     const retryAt = failed?.kind === 'failed' ? failed.retryAt : null;
     expect(retryAt).toBeGreaterThanOrEqual(before + 5_000);
     // "Try now": built again before the wait ends.

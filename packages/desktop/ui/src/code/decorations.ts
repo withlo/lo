@@ -124,7 +124,7 @@ export function fileRow(file: ViewFile, note: FileNote): FileRow | undefined {
       return undefined;
     default:
       note satisfies never;
-      throw new Error(`A note Lo doesn't know: ${JSON.stringify(note)}.`);
+      throw new Error(`A note Lo doesn’t know: ${JSON.stringify(note)}.`);
   }
 }
 

@@ -224,6 +224,10 @@ describe('a file too large to show', () => {
     expect(tooLargeReason({ kind: 'size', size: 60 * 1024 ** 2 })).toBe(
       'It’s 60 MB, over the 50 MB limit.',
     );
+    // Just over the limit, it never reads as the limit itself.
+    expect(tooLargeReason({ kind: 'size', size: 50 * 1024 ** 2 + 1 })).toBe(
+      'It’s 50.1 MB, over the 50 MB limit.',
+    );
     expect(tooLargeReason({ kind: 'size', size: null })).toBe('It’s over the 50 MB limit.');
     expect(tooLargeReason({ kind: 'longLine' })).toBe('It has a line over 1 MB long.');
   });

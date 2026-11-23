@@ -127,7 +127,7 @@ export function stopOrder(features: readonly Feature[]): Feature[] {
     );
     if (!next) {
       const names = left.map((feature) => feature.contract.feature).join(', ');
-      throw new Error(`${names} use each other's services, so none of them can stop first.`);
+      throw new Error(`${names} use each other’s services, so none of them can stop first.`);
     }
     order.push(next);
     left.splice(left.indexOf(next), 1);
@@ -258,10 +258,10 @@ export function createRouter(
 
     async answer(name, sender, input, caller = { windowId: undefined }) {
       if (sender === undefined || !options.isAllowedSender(sender)) {
-        return fail('forbidden', `${name} answers only Lo's own page.`);
+        return fail('forbidden', `${name} answers only Lo’s own page.`);
       }
       const request = requests.get(name);
-      if (!request) return fail('unavailable', `There's no request named ${name}.`);
+      if (!request) return fail('unavailable', `There’s no request named ${name}.`);
       const parsed = request.input.safeParse(input);
       if (!parsed.success) {
         const where = parsed.error.issues.map((issue) => issue.path.join('.') || 'input');

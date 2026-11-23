@@ -76,7 +76,7 @@ function reasonText(reason: Reason, context: ReasonContext): string[] {
     case 'inAnotherStack':
       return [`#${reason.pr} is in another GitHub stack`];
     default:
-      throw new Error(`a reason Lo doesn't know: ${JSON.stringify(reason satisfies never)}`);
+      throw new Error(`a reason Lo doesn’t know: ${JSON.stringify(reason satisfies never)}`);
   }
 }
 
@@ -90,7 +90,7 @@ function gapText(gap: Gap, { repository }: ReasonContext): string {
     case 'rulesets':
       return `Couldn’t read ${repository}’s branch rules`;
     default:
-      throw new Error(`a gap Lo doesn't know: ${JSON.stringify(gap satisfies never)}`);
+      throw new Error(`a gap Lo doesn’t know: ${JSON.stringify(gap satisfies never)}`);
   }
 }
 

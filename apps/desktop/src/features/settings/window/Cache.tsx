@@ -1,7 +1,7 @@
 // Settings' Storage rows: how much room the cache takes against its limit, with "Clear cache" and
 // the button that shows its folder, and the limit itself.
 
-import { Button, formatBytes, Input, Meter, Problem, Setting, SettingsCommand } from '@lo/ui';
+import { Button, bytes, Input, Meter, Problem, Setting, SettingsCommand } from '@lo/ui';
 import { useEffect, useState } from 'react';
 import { useStore } from 'zustand';
 
@@ -92,7 +92,7 @@ function Usage({
         <Meter value={usage.used} max={limit} label="Room the local copies take" />
       </div>
       <span className="flex-none text-fg-muted tabular-nums text-small">
-        {formatBytes(usage.used)} of {formatBytes(limit)}
+        {bytes(usage.used)} of {bytes(limit)}
       </span>
     </div>
   );

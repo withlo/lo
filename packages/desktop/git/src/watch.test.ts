@@ -120,19 +120,19 @@ test('a stopped fetch says which limit it ran out', () => {
   expect(
     stopped('start', 'GitHub was still preparing what to send (counting objects, 50% of 2)'),
   ).toBe(
-    "can't fetch pull request #1: GitHub took longer than 2 min to start sending, so Lo stopped " +
+    'can’t fetch pull request #1: GitHub took longer than 2 min to start sending, so Lo stopped ' +
       'it while GitHub was still preparing what to send (counting objects, 50% of 2)',
   );
   expect(stopped('stall', 'receiving objects, 45% of 5608')).toBe(
-    "can't fetch pull request #1: it got no further for 2 min, so Lo stopped it while receiving " +
+    'can’t fetch pull request #1: it got no further for 2 min, so Lo stopped it while receiving ' +
       'objects, 45% of 5608',
   );
   expect(stopped('connect', 'connecting to GitHub')).toBe(
-    "can't fetch pull request #1: the network failed (GitHub didn't answer within 2 min, so Lo " +
+    'can’t fetch pull request #1: the network failed (GitHub didn’t answer within 2 min, so Lo ' +
       'stopped connecting)',
   );
   expect(stopped('size', 'receiving objects', 50 * 1024 * 1024)).toBe(
-    "can't fetch pull request #1: it's more than 50 MB, so Lo stopped downloading it",
+    'can’t fetch pull request #1: it’s more than 50 MB, so Lo stopped downloading it',
   );
   const tooLarge = stoppedError({ reason: 'size', limit: 1, doing: '', pid: 1 }, 'x');
   expect(tooLarge.isRetryable()).toBe(false);

@@ -21,7 +21,7 @@ export default defineCommands(
   {
     show: {
       label: 'Merge queue',
-      control: "See the queue in a queued pull request's merge panel",
+      control: 'See the queue in a queued pull request’s merge panel',
       group: 'Merge',
       keys: ['g q'],
       overVim: true,
@@ -29,7 +29,7 @@ export default defineCommands(
     },
     down: {
       label: 'Next pull request',
-      control: "Next in the merge queue's status bar",
+      control: 'Next in the merge queue’s status bar',
       group: 'Merge',
       keys: ['j', 'down'],
       when: queue,
@@ -37,7 +37,7 @@ export default defineCommands(
     },
     up: {
       label: 'Previous pull request',
-      control: "Previous in the merge queue's status bar",
+      control: 'Previous in the merge queue’s status bar',
       group: 'Merge',
       keys: ['k', 'up'],
       when: queue,
@@ -97,14 +97,14 @@ export default defineCommands(
     /** Shows the queue of the next branch the header's switch lists, round the end. */
     nextBranch: {
       label: 'Next branch',
-      control: "the branch switch in the merge queue's header",
+      control: 'the branch switch in the merge queue’s header',
       group: 'Merge',
       keys: ['tab'],
       when: queue,
     },
     previousBranch: {
       label: 'Previous branch',
-      control: "the branch switch in the merge queue's header",
+      control: 'the branch switch in the merge queue’s header',
       group: 'Merge',
       keys: ['shift+tab'],
       when: queue,

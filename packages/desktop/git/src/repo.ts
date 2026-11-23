@@ -289,7 +289,7 @@ export class Repo {
           error.detail.message.includes(branch);
         if (!gone || apiBase === undefined) throw error;
         this.#cache.note(
-          `${this.name}: ${what}'s base branch ${pull.baseBranch} is gone, so using ${apiBase}`,
+          `${this.name}: ${what}’s base branch ${pull.baseBranch} is gone, so using ${apiBase}`,
         );
         await this.#fetch(what, [headSpec, `+${apiBase}:${base}`]).catch((cause: unknown) => {
           if (isLostCommit(cause, apiBase))
@@ -312,8 +312,8 @@ export class Repo {
       try {
         await this.#fetchById(what, api, revisionRef(number, api));
         this.#cache.note(
-          `${this.name}: GitHub's API says ${what}'s head is ${api}, but ` +
-            `refs/pull/${number}/head is ${pullHead}; using the API's`,
+          `${this.name}: GitHub’s API says ${what}’s head is ${api}, but ` +
+            `refs/pull/${number}/head is ${pullHead}; using the API’s`,
         );
         return { head: api, headSource: { kind: 'api', pullRef: pullHead }, baseTip, baseSource };
       } catch (error) {
@@ -345,7 +345,7 @@ export class Repo {
    */
   async fetchCommits(number: number, heads: readonly Oid[]): Promise<Oid[]> {
     checkNumber(number);
-    return this.#locked(`fetching pull request #${number}'s revisions`, () =>
+    return this.#locked(`fetching pull request #${number}’s revisions`, () =>
       this.#fetchPinned(number, heads, 'revisions'),
     );
   }
@@ -357,7 +357,7 @@ export class Repo {
    */
   async fetchRevisionBases(number: number, tips: readonly Oid[]): Promise<Oid[]> {
     checkNumber(number);
-    return this.#locked(`fetching the bases of pull request #${number}'s revisions`, async () => {
+    return this.#locked(`fetching the bases of pull request #${number}’s revisions`, async () => {
       const lost = await this.#fetchPinned(number, tips, 'revisionBases');
       const prefix = pullRef(number, 'revision-bases/');
       const pinned = await this.#refs(prefix);
@@ -1451,7 +1451,7 @@ export class Repo {
     return this.#locked(`checking out pull request #${number}`, async () => {
       if (!(await this.#cache.linkFree(folder))) throw linkInTheWay(folder);
       if (!(await this.hasCommit(head))) throw new GitError({ kind: 'notFetched', oid: head });
-      await this.#downloadTree(`pull request #${number}'s files`, head);
+      await this.#downloadTree(`pull request #${number}’s files`, head);
       const gitDir = await checkoutGitDir(this.folder, folder);
       if (gitDir !== undefined) {
         try {
@@ -1653,7 +1653,7 @@ export class Repo {
       throw new GitError({
         kind: 'git',
         command: 'git fetch',
-        message: `${notCommit} isn't a commit`,
+        message: `${notCommit} isn’t a commit`,
       });
     }
     await this.#pin(pinned.map((oid) => [pinRef(pins, number, oid), oid]));
@@ -1757,7 +1757,7 @@ export class Repo {
       if (!isFetchFailure(error, 'tokenRefused')) throw error;
       const renewed = await this.#currentToken();
       if (renewed === undefined || (token !== undefined && renewed.equals(token))) throw error;
-      this.#cache.note(`${this.name}: the account's token was renewed while fetching ${what}`);
+      this.#cache.note(`${this.name}: the account’s token was renewed while fetching ${what}`);
       return this.#fetchAs(what, refspecs, options, renewed);
     }
   }
@@ -1950,12 +1950,12 @@ function describePins(pins: Pins, number: number, missing: readonly Oid[]): stri
   const [only] = missing;
   if (pins === 'revisions') {
     return missing.length === 1 && only !== undefined
-      ? `pull request #${number}'s revision ${only.slice(0, 7)}`
-      : `${missing.length} of pull request #${number}'s revisions`;
+      ? `pull request #${number}’s revision ${only.slice(0, 7)}`
+      : `${missing.length} of pull request #${number}’s revisions`;
   }
   return missing.length === 1 && only !== undefined
-    ? `a base of pull request #${number}'s revisions, ${only.slice(0, 7)}`
-    : `${missing.length} bases of pull request #${number}'s revisions`;
+    ? `a base of pull request #${number}’s revisions, ${only.slice(0, 7)}`
+    : `${missing.length} bases of pull request #${number}’s revisions`;
 }
 
 /** Whether every folder on the way to `names` in `checkout` is a folder itself, not a link. */

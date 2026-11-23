@@ -2,7 +2,7 @@
 // closes. What each status item shows follows from it, as plain functions tested alone; "Restart"
 // and the log only ask main.
 
-import type { ServerState as ItemState } from '@lo/ui';
+import { bytes, type ServerState as ItemState } from '@lo/ui';
 import type { NoTarget, TabTarget } from '@lo/ui/commands';
 import { createStore } from 'zustand/vanilla';
 
@@ -48,12 +48,6 @@ export function catchUpServers(view: string): void {
     .finally(() => asked.delete(view));
 }
 
-/** Bytes as the status item counts them. */
-function gigabytes(bytes: number): string {
-  const value = bytes / 1024 ** 3;
-  return Number.isInteger(value) ? `${value} GB` : `${Math.round(bytes / 1024 ** 2)} MB`;
-}
-
 /** What a server's item shows for what main said of it. */
 export function itemState(state: ServerState): ItemState {
   switch (state.kind) {
@@ -72,7 +66,7 @@ export function itemState(state: ServerState): ItemState {
       const { why } = state;
       switch (why.kind) {
         case 'memory':
-          return { kind: 'failed', why: { kind: 'memory', limit: gigabytes(why.cap) } };
+          return { kind: 'failed', why: { kind: 'memory', limit: bytes(why.cap) } };
         case 'download':
         case 'error':
           return { kind: 'failed', why };
@@ -124,12 +118,12 @@ const COPY_LIMIT = 1024 * 1024;
 export function copiedLog(lines: readonly string[]): string {
   const encoder = new TextEncoder();
   const kept: string[] = [];
-  let bytes = 0;
+  let used = 0;
   for (const line of lines.toReversed()) {
     const size = encoder.encode(line).length + 1;
-    if (bytes + size > COPY_LIMIT) break;
+    if (used + size > COPY_LIMIT) break;
     kept.push(line);
-    bytes += size;
+    used += size;
   }
   return kept.toReversed().join('\n');
 }

@@ -305,7 +305,7 @@ test('refuses base branches that arent branch names', async () => {
   const names = ['', 'a..b', 'with space', 'trunk:refs/heads/x', 'x.lock', '-x', 'a~1'];
   const failures = [];
   for (const name of names) failures.push(await failureOf(repo.fetchPull(refs(1, name))));
-  expect(failures).toEqual(names.map(() => expect.stringContaining("isn't a valid branch name")));
+  expect(failures).toEqual(names.map(() => expect.stringContaining('isn’t a valid branch name')));
 });
 
 test('fetches a commit by id and pins it', async () => {
@@ -350,7 +350,7 @@ test('a missing pull request is a fetch error', async () => {
     failure: 'refNotFound',
   });
   expect(error.isRetryable()).toBe(false);
-  expect(error.message).toMatch(/^can't fetch pull request #9: GitHub doesn't have it/);
+  expect(error.message).toMatch(/^can’t fetch pull request #9: GitHub doesn’t have it/);
 });
 
 test('a missing repository is a fetch error', async () => {

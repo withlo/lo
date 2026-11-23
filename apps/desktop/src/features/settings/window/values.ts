@@ -91,7 +91,7 @@ export function refusalLine(
       return `Couldn’t change ${nameOf(setting)}`;
     default:
       throw new Error(
-        `A refusal Lo doesn't know: ${JSON.stringify(refusal.cause satisfies never)}`,
+        `A refusal Lo doesn’t know: ${JSON.stringify(refusal.cause satisfies never)}`,
       );
   }
 }

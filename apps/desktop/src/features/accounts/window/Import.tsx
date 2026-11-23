@@ -132,7 +132,7 @@ function failureWords(
     case 'failed':
       return { reason: explain(why.cause), details: why.details };
     default:
-      throw new Error(`An import failure Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
+      throw new Error(`An import failure Lo doesn’t know: ${JSON.stringify(why satisfies never)}`);
   }
 }
 
@@ -329,7 +329,7 @@ function unlisted(listing: Unlisted | undefined): {
     case 'failed':
       break;
     default:
-      throw new Error(`A listing Lo doesn't know: ${JSON.stringify(listing satisfies never)}`);
+      throw new Error(`A listing Lo doesn’t know: ${JSON.stringify(listing satisfies never)}`);
   }
   const { details, why } = listing;
   switch (why) {
@@ -354,7 +354,7 @@ function unlisted(listing: Unlisted | undefined): {
     case 'other':
       return { problem: { title: reading, details }, again: 'Try again' };
     default:
-      throw new Error(`A failure Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
+      throw new Error(`A failure Lo doesn’t know: ${JSON.stringify(why satisfies never)}`);
   }
 }
 
@@ -395,7 +395,7 @@ function view(step: Step, doing: Doing): Shown {
     case 'done':
       break;
     default:
-      throw new Error(`An import step Lo doesn't know: ${JSON.stringify(step satisfies never)}`);
+      throw new Error(`An import step Lo doesn’t know: ${JSON.stringify(step satisfies never)}`);
   }
 
   const { found } = step;

@@ -30,19 +30,19 @@ export async function openSettingsFile(
       ok: false,
       reason:
         errorCode(error) === 'ENOENT'
-          ? "There's no settings file yet."
-          : "Lo couldn't find the settings file.",
+          ? 'There’s no settings file yet.'
+          : 'Lo couldn’t find the settings file.',
     };
   }
   const info = await stat(resolved).catch(() => undefined);
   if (!info?.isFile()) {
-    return { ok: false, reason: "The settings file isn't a plain file, so Lo didn't open it." };
+    return { ok: false, reason: 'The settings file isn’t a plain file, so Lo didn’t open it.' };
   }
   if ((info.mode & 0o111) !== 0) {
     return {
       ok: false,
       reason:
-        "The settings file is executable, so Lo won't open it, which could run it. Clear its execute permission to open it from here.",
+        'The settings file is executable, so Lo won’t open it, which could run it. Clear its execute permission to open it from here.',
     };
   }
   if (info.size > SETTINGS_SIZE_LIMIT) {
@@ -56,14 +56,14 @@ export async function openSettingsFile(
   if (!opener) {
     const reason =
       options.platform === 'linux'
-        ? "Lo couldn't find the app for text files (`xdg-mime query default text/plain`), so it didn't open the settings file."
-        : "Lo can't open the settings file on this system.";
+        ? 'Lo couldn’t find the app for text files (`xdg-mime query default text/plain`), so it didn’t open the settings file.'
+        : 'Lo can’t open the settings file on this system.';
     return { ok: false, reason };
   }
   try {
     await options.launch(opener.command, opener.args);
   } catch {
-    return { ok: false, reason: "Lo couldn't open the settings file in a text editor." };
+    return { ok: false, reason: 'Lo couldn’t open the settings file in a text editor.' };
   }
   return { ok: true };
 }

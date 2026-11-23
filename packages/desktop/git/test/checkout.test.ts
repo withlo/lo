@@ -268,7 +268,7 @@ test('hashes a checkouts files as git would', async () => {
     await expect.soft(hash(path)).rejects.toThrow(GitError);
   }
   // Nor in a folder that isn't one of the clone's checkouts, such as another repository.
-  await expect(hash('README.md', f.remote.work)).rejects.toThrow("isn't a valid checkout");
+  await expect(hash('README.md', f.remote.work)).rejects.toThrow('isn’t a valid checkout');
 });
 
 test('a checkout never writes through a link in the cache', async () => {

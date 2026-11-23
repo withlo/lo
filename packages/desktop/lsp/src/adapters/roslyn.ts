@@ -149,9 +149,9 @@ export function launchRoslyn(
   manifest: Manifest = MANIFEST,
 ): Launch {
   const pinned = Object.hasOwn(manifest, ROSLYN.id) ? manifest[ROSLYN.id] : undefined;
-  if (pinned === undefined) throw new Error(`Lo's list of language servers has no ${ROSLYN.id}.`);
+  if (pinned === undefined) throw new Error(`Lo’s list of language servers has no ${ROSLYN.id}.`);
   for (const path of [dotnet.installed.entry, installed.entry]) {
-    if (!isAbsolute(path)) throw new Error(`${path} isn't an absolute path.`);
+    if (!isAbsolute(path)) throw new Error(`${path} isn’t an absolute path.`);
   }
   return {
     program: dotnet.installed.entry,
@@ -277,8 +277,8 @@ export async function inCheckout(root: string, paths: readonly string[]): Promis
 export function csharpProject(sources: readonly string[]): string {
   const items = sources.map((path) => `    <Compile Include="${xml(msbuild(path))}" />`);
   return `<Project>
-  <!-- Lo's project for its C# language server: the checkout's .cs files, read against .NET's own
-       reference assemblies, with nothing else of the checkout's. -->
+  <!-- Lo’s project for its C# language server: the checkout’s .cs files, read against .NET’s own
+       reference assemblies, with nothing else of the checkout’s. -->
   <PropertyGroup>
     <ImportDirectoryBuildProps>false</ImportDirectoryBuildProps>
     <ImportDirectoryBuildTargets>false</ImportDirectoryBuildTargets>
@@ -310,7 +310,7 @@ export function csharpProject(sources: readonly string[]): string {
 ${items.join('\n')}
   </ItemGroup>
   <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
-  <!-- The SDK's own analyzers and source generators, which the compiler would load, removed once
+  <!-- The SDK’s own analyzers and source generators, which the compiler would load, removed once
        the SDK has added them. -->
   <Target Name="LoWithoutAnalyzers" BeforeTargets="CoreCompile">
     <ItemGroup>

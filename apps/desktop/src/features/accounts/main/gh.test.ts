@@ -168,7 +168,7 @@ describe('running gh', () => {
     });
     const started = Date.now();
     await expect(gh.accounts(program)).rejects.toThrow(
-      "gh didn't list its accounts within 0.2 s, so Lo stopped it.",
+      'gh didn’t list its accounts within 0.2 s, so Lo stopped it.',
     );
     expect(Date.now() - started).toBeLessThan(10_000);
   });
@@ -197,7 +197,7 @@ describe('running gh', () => {
     const error: unknown = await gh.token(program, 'nobody').catch((thrown: unknown) => thrown);
     expect(error).toBeInstanceOf(GhError);
     expect(error).toMatchObject({
-      message: "gh couldn't read nobody's token: no oauth token found for github.com",
+      message: 'gh couldn’t read nobody’s token: no oauth token found for github.com',
       trouble: 'other',
       said: 'no oauth token found for github.com',
     });

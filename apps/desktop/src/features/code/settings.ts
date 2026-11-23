@@ -97,7 +97,7 @@ const NAMED = 5;
 
 /** What an entry the setting can't read is, for what Lo says of it. */
 function described(entry: unknown, at: number): string {
-  const which = `code.trusted's entry ${at + 1}`;
+  const which = `code.trusted’s entry ${at + 1}`;
   if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return which;
   const repo = 'repo' in entry && typeof entry.repo === 'string' ? entry.repo : undefined;
   return repo === undefined ? which : `${which} (${repo.slice(0, 140)})`;
@@ -108,16 +108,16 @@ function why(entry: object): string {
   if (!('id' in entry)) return 'has no id, which Lo checks the repository by';
   if ('pull' in entry) {
     const issue = pullEntry.safeParse(entry).error?.issues[0];
-    return `isn't a pull request Lo reads${issue ? `: ${issueText(issue)}` : ''}`;
+    return `isn’t a pull request Lo reads${issue ? `: ${issueText(issue)}` : ''}`;
   }
   const issue = repoEntry.safeParse(entry).error?.issues[0];
-  return `isn't a repository Lo reads${issue ? `: ${issueText(issue)}` : ''}`;
+  return `isn’t a repository Lo reads${issue ? `: ${issueText(issue)}` : ''}`;
 }
 
 /** A Zod issue in a few words, naming where it is. */
 function issueText(issue: z.core.$ZodIssue): string {
   if (issue.code === 'unrecognized_keys')
-    return `it has ${issue.keys.join(', ')}, which Lo doesn't know`;
+    return `it has ${issue.keys.join(', ')}, which Lo doesn’t know`;
   const where = issue.path.join('.');
   return where === '' ? issue.message : `${where} ${issue.message}`;
 }
@@ -165,7 +165,7 @@ export function readTrusted(value: readonly unknown[]): {
     }
     const object = typeof entry === 'object' && entry !== null && !Array.isArray(entry);
     ignored.push(
-      `${described(entry, at)} ${object ? why(entry) : "isn't an object"}, so Lo ignores it.`,
+      `${described(entry, at)} ${object ? why(entry) : 'isn’t an object'}, so Lo ignores it.`,
     );
   }
   const problems = ignored.slice(0, NAMED);

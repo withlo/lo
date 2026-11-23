@@ -119,7 +119,7 @@ export default defineCommands('tab', {
     keys: ['`'],
     overVim: true,
     when: { except: ['menu', 'dialog', 'palette', 'box'], mode: 'normal' },
-    control: "Overview, Diff and Timeline in the pull request's header",
+    control: 'Overview, Diff and Timeline in the pull request’s header',
   },
   previousView: {
     label: 'Previous view',
@@ -127,7 +127,7 @@ export default defineCommands('tab', {
     keys: ['~'],
     overVim: true,
     when: { except: ['menu', 'dialog', 'palette', 'box'], mode: 'normal' },
-    control: "Overview, Diff and Timeline in the pull request's header",
+    control: 'Overview, Diff and Timeline in the pull request’s header',
   },
   /**
    * Opens the pull request on screen on GitHub, in the browser: its page, from anywhere in its tab,

@@ -130,7 +130,7 @@ function useMiddle(
   }, [shown]);
 }
 
-/** The time, again each minute while the view is on screen, for "3 days ago". */
+/** The time, again each minute while the view is on screen, for "3 d ago". */
 function useNow(shown: boolean): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {

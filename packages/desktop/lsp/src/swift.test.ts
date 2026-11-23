@@ -194,7 +194,7 @@ describe('the toolchains pinned', () => {
     const download = pinned?.platforms['linux-x64'];
     const changed = { ...pinned, platforms: { 'linux-x64': { ...download, unpacked: undefined } } };
     expect(() => parseToolchains({ 'swift-ubuntu2604': changed })).toThrow(
-      /doesn't say what it unpacks to/,
+      /doesn’t say what it unpacks to/,
     );
   });
 

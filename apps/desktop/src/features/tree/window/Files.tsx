@@ -77,7 +77,7 @@ function drawn(
       };
     default:
       row satisfies never;
-      throw new Error(`A row Lo doesn't know: ${JSON.stringify(row)}.`);
+      throw new Error(`A row Lo doesn’t know: ${JSON.stringify(row)}.`);
   }
 }
 

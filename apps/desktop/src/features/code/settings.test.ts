@@ -37,7 +37,7 @@ describe('the trusted entries', () => {
     const { entries, problems } = readTrusted([noId, PULL]);
     expect(entries).toEqual([{ kind: 'pull', ...PULL }]);
     expect(problems).toEqual([
-      "code.trusted's entry 1 (rozed-dev/e2e) has no id, which Lo checks the repository by, so Lo ignores it.",
+      'code.trusted’s entry 1 (rozed-dev/e2e) has no id, which Lo checks the repository by, so Lo ignores it.',
     ]);
   });
 
@@ -65,7 +65,7 @@ describe('the trusted entries', () => {
     ]);
     expect(entries).toEqual([]);
     expect(problems).toHaveLength(6);
-    expect(problems[0]).toBe("code.trusted's entry 1 isn't an object, so Lo ignores it.");
+    expect(problems[0]).toBe('code.trusted’s entry 1 isn’t an object, so Lo ignores it.');
     expect(problems[5]).toBe('Lo ignores 3 more entries of code.trusted.');
   });
 

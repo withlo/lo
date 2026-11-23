@@ -310,7 +310,7 @@ class WholeFile implements FileView {
       case 'none':
         return undefined;
       default:
-        throw new Error(`A target Lo doesn't know: ${JSON.stringify(at satisfies never)}`);
+        throw new Error(`A target Lo doesn’t know: ${JSON.stringify(at satisfies never)}`);
     }
   }
 

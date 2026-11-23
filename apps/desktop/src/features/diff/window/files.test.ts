@@ -76,7 +76,7 @@ describe('the files as the view gets them', () => {
 
   it('show a binary file’s two sizes, and why a file starts as it does', () => {
     const binary = headerOf(entry('d0', 'logo.png', 'binary').versions);
-    expect(binary.tags).toEqual(['binary · 2.0 KiB → 3.0 MiB']);
+    expect(binary.tags).toEqual(['binary · 2 KB → 3 MB']);
     // With no text to count, it draws no counts.
     expect(binary.counted).toBe(false);
     expect(headerOf(entry('d0', 'big.txt', 'large').versions)).not.toHaveProperty('tags');

@@ -2563,7 +2563,7 @@ class View implements DiffView {
         this.#toggleFile(file);
         return;
       default:
-        throw new Error(`A fold Lo doesn't know: ${JSON.stringify(how satisfies never)}`);
+        throw new Error(`A fold Lo doesn’t know: ${JSON.stringify(how satisfies never)}`);
     }
   }
 
@@ -2869,7 +2869,7 @@ class View implements DiffView {
   #boxPlace(at: Place | Span | { thread: string } | OnFile): At {
     if ('thread' in at) {
       const place = this.#threadPlace(at.thread);
-      if (!place) throw new Error(`There's no thread ${at.thread} in the view.`);
+      if (!place) throw new Error(`There’s no thread ${at.thread} in the view.`);
       return place;
     }
     const file = this.#fileOf(at.file);
@@ -3886,7 +3886,7 @@ class View implements DiffView {
   /** The index of the file the caller calls `id`. */
   #fileOf(id: string): number {
     const file = this.#index.get(id);
-    if (file === undefined) throw new Error(`There's no file ${id} in the view.`);
+    if (file === undefined) throw new Error(`There’s no file ${id} in the view.`);
     return file;
   }
 

@@ -74,7 +74,7 @@ export function readTestServers(file: string): Adapter[] {
   const parsed = manifest.safeParse(JSON.parse(readFileSync(file, 'utf8')));
   if (!parsed.success) {
     throw new Error(
-      `LO_TEST_SERVERS names a manifest Lo can't use: ${z.prettifyError(parsed.error)}`,
+      `LO_TEST_SERVERS names a manifest Lo can’t use: ${z.prettifyError(parsed.error)}`,
     );
   }
   return parsed.data.servers.map((each): Adapter => ({

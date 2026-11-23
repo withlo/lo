@@ -62,7 +62,7 @@ export function openDatabase(path: string): Database {
   if (!sqlite) {
     throw new StartupError(
       { kind: 'noSqlite' },
-      "This build of Lo has no SQLite (Node's node:sqlite module), which it keeps its data in.",
+      'This build of Lo has no SQLite (Node’s node:sqlite module), which it keeps its data in.',
     );
   }
   // Each of these is Node's default too, set here so a change of default can't loosen them.
@@ -112,7 +112,7 @@ export function openDatabase(path: string): Database {
         const result = work();
         if (isThenable(result)) {
           throw new TypeError(
-            "A transaction's work must be synchronous: it would be committed before it finished.",
+            'A transaction’s work must be synchronous: it would be committed before it finished.',
           );
         }
         db.exec('COMMIT');

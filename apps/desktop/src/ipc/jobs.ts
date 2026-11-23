@@ -45,10 +45,10 @@ export function defineJobs<const Group extends string, Specs extends Record<stri
   options: { from?: 'main' } = {},
 ): JobContract<Group, Specs> {
   if (!groupName.test(group)) {
-    throw new Error(`A job group's name is lowercase letters and digits, not "${group}".`);
+    throw new Error(`A job group’s name is lowercase letters and digits, not "${group}".`);
   }
   for (const name of Object.keys(specs)) {
-    if (!jobName.test(name)) throw new Error(`${group}: "${name}" isn't a job name (camelCase).`);
+    if (!jobName.test(name)) throw new Error(`${group}: "${name}" isn’t a job name (camelCase).`);
   }
   return options.from === undefined ? { group, jobs: specs } : { group, jobs: specs, from: 'main' };
 }
@@ -155,7 +155,7 @@ export function plainDataProblem(value: unknown): string | undefined {
     ) {
       bytes += item.buffer.byteLength;
       return bytes > BYTES_LIMIT
-        ? `it holds more than ${BYTES_LIMIT / (1024 * 1024)} MiB of bytes`
+        ? `it holds more than ${BYTES_LIMIT / 1024 ** 2} MB of bytes`
         : undefined;
     }
     if (Array.isArray(item)) {

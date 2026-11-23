@@ -90,7 +90,7 @@ export function checkViews(
       if (ids.has(id)) throw new Error(`${path} has two views named ${id}.`);
       if (!slots.includes(slot)) {
         throw new Error(
-          `${path} puts the view ${id} in ${slot.id}, which no feature's window/shared.ts exports.`,
+          `${path} puts the view ${id} in ${slot.id}, which no feature’s window/shared.ts exports.`,
         );
       }
       ids.add(id);

@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest';
 
 import type { Entry, LeftEntry, QueueRead, WaitingEntry } from '../contract.ts';
 import {
-  ago,
   focusedRow,
   inQueue,
   itemsOf,
@@ -249,16 +248,6 @@ describe('those that left', () => {
     expect(nobody).toEqual({ kind: 'removed', by: undefined });
     // Without GitHub's word for it, why isn't known.
     expect(other).toEqual({ kind: 'unknown' });
-  });
-
-  it('say how long ago they left, in the largest whole unit, and the date after a month', () => {
-    expect(ago(NOW - 20_000, NOW)).toBe('just now');
-    expect(ago(NOW - 59 * 60_000, NOW)).toBe('59 min ago');
-    expect(ago(NOW - 23 * 3_600_000, NOW)).toBe('23 h ago');
-    expect(ago(NOW - 24 * 3_600_000, NOW)).toBe('1 d ago');
-    expect(ago(NOW - 72 * 3_600_000, NOW)).toBe('3 d ago');
-    expect(ago(NOW - 40 * 24 * 3_600_000, NOW)).toBe('Oct 7');
-    expect(ago(NOW - 400 * 24 * 3_600_000, NOW)).toBe('Oct 12, 2025');
   });
 });
 

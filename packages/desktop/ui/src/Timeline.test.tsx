@@ -79,7 +79,7 @@ describe('Timeline', () => {
   it('is one list of rows, each with its marker on the rail', () => {
     const host = render(
       <Timeline>
-        <TimelineEvent glyph="tag" when="3 days ago">
+        <TimelineEvent glyph="tag" when="3 d ago">
           <TimelineName>ravi-k</TimelineName> added <Label color="8b6fd6">needs-load-test</Label>
         </TimelineEvent>
         <TimelineRow marker={{ login: 'tess-okafor' }}>a box</TimelineRow>
@@ -87,7 +87,7 @@ describe('Timeline', () => {
     );
     expect(host.querySelector('ol')?.getAttribute('aria-label')).toBe('Timeline');
     expect(host.querySelectorAll('ol > li')).toHaveLength(2);
-    expect(row(host, 0).textContent).toBe('ravi-k added needs-load-test3 days ago');
+    expect(row(host, 0).textContent).toBe('ravi-k added needs-load-test3 d ago');
     // A glyph's disc is decoration; a person's avatar is too, beside their login.
     expect(row(host, 0).querySelector('[aria-hidden="true"]')).not.toBeNull();
     expect(row(host, 1).textContent).toBe('TOa box');
@@ -118,7 +118,7 @@ describe('Timeline', () => {
       <Timeline>
         <TimelineDescription
           author="ravi-k"
-          when="3 days ago"
+          when="3 d ago"
           draft
           body={<p>GraphQL requests are now limited by what they cost.</p>}
           labels={[
@@ -135,7 +135,7 @@ describe('Timeline', () => {
     );
     const card = row(host);
     for (const said of [
-      'ravi-k opened this 3 days ago',
+      'ravi-k opened this 3 d ago',
       'Author',
       'Draft',
       'GraphQL requests are now limited by what they cost.',
@@ -172,7 +172,7 @@ describe('Timeline', () => {
     const body = <p data-testid="body">The 429s flatten out once the ceiling kicks in.</p>;
     const open = render(
       <Timeline>
-        <TimelineComment author="jun-park" when="2 days ago" byAuthor body={body} />
+        <TimelineComment author="jun-park" when="2 d ago" byAuthor body={body} />
       </Timeline>,
     );
     expect(row(open).textContent).toContain('jun-park commented');
@@ -183,7 +183,7 @@ describe('Timeline', () => {
       <Timeline>
         <TimelineComment
           author="jun-park"
-          when="2 days ago"
+          when="2 d ago"
           body={body}
           hidden={{ reason: 'outdated', onShow }}
         />
@@ -202,7 +202,7 @@ describe('Timeline', () => {
       <Timeline>
         <TimelineReview
           author="tess-okafor"
-          when="2 days ago"
+          when="2 d ago"
           verdict="changes"
           revision="r2"
           body={<p>Close. Two things before I'm happy.</p>}
@@ -236,7 +236,7 @@ describe('Timeline', () => {
       <Timeline>
         <TimelinePush
           actor="ravi-k"
-          when="2 days ago"
+          when="2 d ago"
           revision="r2"
           commits={[
             { oid: '3e0b7c1aaaaaaaa', headline: 'Weight list fields by their page size' },
@@ -289,13 +289,13 @@ describe('Timeline', () => {
   it("says a commit's checks by their state and revision", () => {
     const host = render(
       <Timeline>
-        <TimelineChecks state="failed" revision="r2" when="2 days ago" />
+        <TimelineChecks state="failed" revision="r2" when="2 d ago" />
         <TimelineChecks state="running" revision="r5" when="now" />
         <TimelineChecks state="passed" />
       </Timeline>,
     );
     expect([0, 1, 2].map((at) => row(host, at).textContent)).toEqual([
-      'Checks failed · r22 days ago',
+      'Checks failed · r22 d ago',
       'Checks running · r5now',
       'Checks passed',
     ]);
@@ -463,7 +463,7 @@ describe('Timeline', () => {
       <Timeline end={<TimelineEnd marker={{ login: 'a' }}>box</TimelineEnd>}>
         <TimelineDescription
           author="ravi-k"
-          when="3 days ago"
+          when="3 d ago"
           draft
           labels={[{ name: 'api', color: '4a8fdc' }]}
           reviewers={[{ login: 'jun-park', state: 'approved' }]}

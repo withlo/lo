@@ -89,7 +89,7 @@ export function placeJson(place: StoredPlace): string {
     case 'summary':
       return JSON.stringify({ kind: place.kind });
     default:
-      throw new Error(`a draft's place Lo doesn't know: ${JSON.stringify(place satisfies never)}`);
+      throw new Error(`a draft’s place Lo doesn’t know: ${JSON.stringify(place satisfies never)}`);
   }
 }
 

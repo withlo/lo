@@ -27,7 +27,7 @@ export default defineCommands('accounts', {
    */
   signOut: {
     label: 'Sign out…',
-    control: "Sign out… on each account's row of Settings › Accounts",
+    control: 'Sign out… on each account’s row of Settings › Accounts',
     group: 'App',
     keys: [],
   },

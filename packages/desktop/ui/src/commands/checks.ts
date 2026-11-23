@@ -161,13 +161,13 @@ export function checkIds(features: readonly Declarations[]): string[] {
   /** Each scope a feature declares, and the feature. */
   const declared = new Map<string, string>();
   for (const { feature, scopes } of features) {
-    if (!NAME.test(feature)) problems.push(`"${feature}" isn't a feature's name, such as diff.`);
+    if (!NAME.test(feature)) problems.push(`"${feature}" isn’t a feature’s name, such as diff.`);
     if (names.has(feature)) problems.push(`Two features are called ${feature}.`);
     names.add(feature);
     for (const scope of scopes) {
       const other = declared.get(scope);
       if (!NAME.test(scope)) {
-        problems.push(`${feature} declares the scope "${scope}", which isn't a scope's name.`);
+        problems.push(`${feature} declares the scope "${scope}", which isn’t a scope’s name.`);
       } else if (builtIn.has(scope)) {
         problems.push(`${feature} declares the scope ${scope}, which the engine already has.`);
       } else if (other !== undefined) {
@@ -180,7 +180,7 @@ export function checkIds(features: readonly Declarations[]): string[] {
   const ids = new Set<string>();
   for (const command of features.flatMap(commandsOf)) {
     if (!isCommandId(command.id)) {
-      problems.push(`"${command.id}" isn't a command's id, such as diff.markViewed.`);
+      problems.push(`"${command.id}" isn’t a command’s id, such as diff.markViewed.`);
     }
     if (ids.has(command.id)) problems.push(`Two commands are called ${command.id}.`);
     ids.add(command.id);
@@ -209,11 +209,11 @@ export function checkHandlers(
   for (const command of given) {
     const declaration = declared.get(command.id);
     if (!declaration) {
-      problems.push(`${command.id} is in the window's commands, but no keys.ts declares it.`);
+      problems.push(`${command.id} is in the window’s commands, but no keys.ts declares it.`);
       continue;
     }
     if (!sameDeclaration(command, declaration)) {
-      problems.push(`${command.id} in the window's commands isn't as its keys.ts declares it.`);
+      problems.push(`${command.id} in the window’s commands isn’t as its keys.ts declares it.`);
     }
     if (command.handler) counts.set(command.id, (counts.get(command.id) ?? 0) + 1);
   }
@@ -221,7 +221,7 @@ export function checkHandlers(
     const count = counts.get(id) ?? 0;
     if (isOwned(command)) {
       if (count > 0) {
-        const whose = command.editor ? "its scope's editor's own key" : "one of Vim's own keys";
+        const whose = command.editor ? 'its scope’s editor’s own key' : 'one of Vim’s own keys';
         problems.push(`${id} is ${whose}, which nothing runs, but has a handler.`);
       }
     } else if (count === 0) {
@@ -295,15 +295,15 @@ export function checkBar(
     if (!bar) return [];
     const menu = menus.find((each) => each.menu === bar.menu);
     if (!menu)
-      return [`${command.id} is in the app menu's ${bar.menu} menu, which it doesn't have.`];
+      return [`${command.id} is in the app menu’s ${bar.menu} menu, which it doesn’t have.`];
     const problems = menu.sections.includes(bar.section)
       ? []
       : [
-          `${command.id} is in the ${bar.menu} menu's ${bar.section} section, which it doesn't have.`,
+          `${command.id} is in the ${bar.menu} menu’s ${bar.section} section, which it doesn’t have.`,
         ];
     if (bar.instead !== undefined && !inBar.has(bar.instead)) {
       problems.push(
-        `${command.id} takes the place of ${bar.instead} in the app menu, which isn't in it.`,
+        `${command.id} takes the place of ${bar.instead} in the app menu, which isn’t in it.`,
       );
     }
     return problems;
@@ -324,11 +324,11 @@ export function checkToggles(
     const checked = handled.get(command.id)?.checked !== undefined;
     if (command.toggle !== undefined && !checked) {
       return [
-        `${command.id} is a ${command.toggle}, but its handler doesn't say when it's checked.`,
+        `${command.id} is a ${command.toggle}, but its handler doesn’t say when it’s checked.`,
       ];
     }
     if (command.toggle === undefined && checked) {
-      return [`${command.id} says when it's checked, but isn't declared a switch or a choice.`];
+      return [`${command.id} says when it’s checked, but isn’t declared a switch or a choice.`];
     }
     return [];
   });
@@ -402,7 +402,7 @@ export function checkEditingKeys(
   const views = new Set<string>(codeScopes);
   for (const scope of fieldless) {
     if (views.has(scope)) {
-      problems.push(`${scope} is listed as holding no field, but it's a code view.`);
+      problems.push(`${scope} is listed as holding no field, but it’s a code view.`);
     } else if (!known.has(scope)) {
       problems.push(`${scope} is listed as holding no field, but no feature declares it.`);
     }
@@ -467,7 +467,7 @@ function sampleTarget(kind: TargetKind): Target {
       return NO_TARGET;
     default:
       kind satisfies never;
-      throw new Error(`There's no target of kind ${String(kind)}.`);
+      throw new Error(`There’s no target of kind ${String(kind)}.`);
   }
 }
 
@@ -495,7 +495,7 @@ export function checkMenus(features: readonly Declarations[]): string[] {
     }
     if (command.bar && on.includes('mac') && !hasKey(command, 'mac')) {
       problems.push(
-        `${command.id} is in the app menu's ${command.bar.menu} menu, with no key on macOS.`,
+        `${command.id} is in the app menu’s ${command.bar.menu} menu, with no key on macOS.`,
       );
     }
   }
@@ -632,7 +632,7 @@ export function checkVim(features: readonly Declarations[], vim: VimKeys = vimDe
   for (const { binding, site, vim: theirs } of meetings) {
     if (binding.command.overVim) continue;
     found.add(
-      `${quoted(binding.strokes, site.system)} (${binding.command.id}) meets Vim's \`${theirs}\` without overVim`,
+      `${quoted(binding.strokes, site.system)} (${binding.command.id}) meets Vim’s \`${theirs}\` without overVim`,
       site,
     );
   }
@@ -640,7 +640,7 @@ export function checkVim(features: readonly Declarations[], vim: VimKeys = vimDe
   const over = new Set(meetings.map((meeting) => meeting.binding.command));
   for (const command of commands) {
     if (command.overVim && command.vim !== 'own' && !over.has(command)) {
-      problems.push(`${command.id} says overVim, but none of its keys meets one of Vim's.`);
+      problems.push(`${command.id} says overVim, but none of its keys meets one of Vim’s.`);
     }
   }
   for (const command of commands.filter((each) => each.vim === 'own')) {
@@ -651,7 +651,7 @@ export function checkVim(features: readonly Declarations[], vim: VimKeys = vimDe
         );
         if (!known) {
           problems.push(
-            `${command.id} is declared as Vim's own, but ${quoted(strokes, system)} isn't one of Vim's keys.`,
+            `${command.id} is declared as Vim’s own, but ${quoted(strokes, system)} isn’t one of Vim’s keys.`,
           );
         }
       }

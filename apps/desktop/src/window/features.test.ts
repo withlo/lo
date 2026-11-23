@@ -40,7 +40,7 @@ it("collects features' views, each named under its own folder's name, once", () 
 
 it('puts views only in slots a window/shared.ts exports', () => {
   expect(() => checkViews({ '../features/diff/window/index.ts': { views: [diff] } }, [])).toThrow(
-    "../features/diff/window/index.ts puts the view diff.diff in tab.middle, which no feature's window/shared.ts exports.",
+    '../features/diff/window/index.ts puts the view diff.diff in tab.middle, which no feature’s window/shared.ts exports.',
   );
 });
 

@@ -1,9 +1,8 @@
+import { clock } from '@lo/ui';
 import { expect, test } from 'vitest';
 
-import { clockOf } from '../../../window/time.ts';
 import type { DialogView } from '../contract.ts';
 import {
-  agoOf,
   dialogKey,
   otherRevisionOf,
   pausedUntil,
@@ -138,7 +137,7 @@ test('the dialog asks with "Submit review", dimmed with why while what can’t g
   );
   expect(
     stepOf(input({ refusal: { kind: 'paused', until: 5_000 } }), label, 1_000).primary.off,
-  ).toBe(`GitHub’s rate limit resets at ${clockOf(5_000)}`);
+  ).toBe(`GitHub’s rate limit resets at ${clock(5_000)}`);
   expect(
     stepOf(input({ refusal: { kind: 'paused', until: 5_000 } }), label, 5_000).primary.off,
   ).toBeUndefined();
@@ -246,16 +245,6 @@ test('the banner shows while your pending review is on another revision than the
     title: 'Your pending review’s revision is no longer on GitHub',
     show: undefined,
   });
-});
-
-test('a summary kept from before says how long ago, in its largest whole unit', () => {
-  const now = Date.parse('2026-11-22T12:00:00Z');
-  expect(agoOf(now - 30_000, now)).toBe('just now');
-  expect(agoOf(now - 12 * 60_000 - 59_000, now)).toBe('12 min ago');
-  expect(agoOf(now - 2 * 3_600_000 - 50 * 60_000, now)).toBe('2 h ago');
-  expect(agoOf(now - 3 * 86_400_000, now)).toBe('3 d ago');
-  expect(agoOf(Date.parse('2026-09-12T12:00:00Z'), now)).toBe('Sep 12');
-  expect(agoOf(Date.parse('2025-09-12T12:00:00Z'), now)).toBe('Sep 12, 2025');
 });
 
 test('while GitHub asks Lo to hold off, nothing is submitted until the time it gave', () => {

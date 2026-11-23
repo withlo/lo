@@ -114,7 +114,7 @@ test('a fetch github keeps alive without a pack stops at its limit', async () =>
   expect(took).toBeLessThan(limit * 3);
   expect(error.detail).toMatchObject({ kind: 'fetch', failure: 'timedOut' });
   expect(error.message).toBe(
-    "can't fetch pull request #1: GitHub took longer than 3 s to start sending, so Lo stopped it " +
+    'can’t fetch pull request #1: GitHub took longer than 3 s to start sending, so Lo stopped it ' +
       'while GitHub was still preparing what to send (counting objects, 50% of 2)',
   );
   expect(error.isRetryable()).toBe(true);
@@ -148,7 +148,7 @@ test('a fetch is preparing once gits trace says github answered', async () => {
 
   // Past the connect limit, as it had connected.
   expect(error.message).toBe(
-    "can't fetch pull request #1: GitHub took longer than 2 s to start sending, so Lo stopped it " +
+    'can’t fetch pull request #1: GitHub took longer than 2 s to start sending, so Lo stopped it ' +
       'while GitHub was still working out what to send',
   );
   const preparing = activities.filter((activity) => activity.kind === 'preparing');
@@ -214,7 +214,7 @@ test('a fetch that stops getting further stops at its stall limit', async () => 
   expect(Date.now() - began).toBeLessThan(10_000);
   expect(error.detail).toMatchObject({ kind: 'fetch', failure: 'timedOut' });
   expect(error.message).toMatch(
-    /^can't fetch pull request #1: it got no further for 1 s, so Lo stopped it while receiving objects, /,
+    /^can’t fetch pull request #1: it got no further for 1 s, so Lo stopped it while receiving objects, /,
   );
   expect(await noProcessSoon(`127.0.0.1:${github.port}`)).toEqual([]);
   expect(tracesLeft(cache.root)).toEqual([]);
@@ -300,7 +300,7 @@ test('a small download whose files github keeps alive stops at the usual start l
   expect(took).toBeLessThan(limit * 5);
   expect(error.detail).toMatchObject({ kind: 'fetch', failure: 'timedOut' });
   expect(error.message).toBe(
-    "can't fetch 3 files: GitHub took longer than 1 s to start sending, so Lo stopped it while " +
+    'can’t fetch 3 files: GitHub took longer than 1 s to start sending, so Lo stopped it while ' +
       'GitHub was still preparing what to send (counting objects, 50% of 2)',
   );
   // The tab is told what the download is waiting on.
@@ -320,7 +320,7 @@ test('a big download whose files github keeps alive stops at a first fetchs limi
   expect(took).toBeGreaterThanOrEqual(limit);
   expect(took).toBeLessThan(limit * 5);
   expect(error.message).toBe(
-    "can't fetch 501 files: GitHub took longer than 2 s to start sending, so Lo stopped it while " +
+    'can’t fetch 501 files: GitHub took longer than 2 s to start sending, so Lo stopped it while ' +
       'GitHub was still preparing what to send (counting objects, 50% of 2)',
   );
 });
@@ -339,7 +339,7 @@ test('a checkout whose files github keeps alive stops at a first fetchs limit', 
   expect(took).toBeLessThan(limit * 5);
   expect(error.detail).toMatchObject({ kind: 'fetch', failure: 'timedOut' });
   expect(error.message).toBe(
-    "can't fetch pull request #1's files: GitHub took longer than 2 s to start sending, so Lo " +
+    'can’t fetch pull request #1’s files: GitHub took longer than 2 s to start sending, so Lo ' +
       'stopped it while GitHub was still preparing what to send (counting objects, 50% of 2)',
   );
 });
@@ -391,7 +391,7 @@ test('a fetch that never connects stops at the connect limit', async () => {
   expect(silent.connections()).toBeGreaterThan(0);
   expect(error.detail).toMatchObject({ kind: 'fetch', failure: 'network' });
   expect(error.message).toBe(
-    "can't fetch pull request #1: the network failed (GitHub didn't answer within 1 s, so Lo " +
+    'can’t fetch pull request #1: the network failed (GitHub didn’t answer within 1 s, so Lo ' +
       'stopped connecting)',
   );
   expect(error.isRetryable()).toBe(true);
@@ -773,7 +773,7 @@ test('a download that brings more than it may is stopped part way', async () => 
 
   expect(error.detail).toMatchObject({ kind: 'fetch', what: 'the figures', failure: 'tooLarge' });
   expect(error.message).toBe(
-    "can't fetch the figures: it's more than 1 MB, so Lo stopped downloading it",
+    'can’t fetch the figures: it’s more than 1 MB, so Lo stopped downloading it',
   );
   expect(await noProcessSoon(`127.0.0.1:${server.port}`)).toEqual([]);
   // What came in goes with it.
@@ -868,7 +868,7 @@ test('a large file that stops coming in stops at the stall limit', async () => {
   expect(Date.now() - began).toBeLessThan(10_000);
   expect(error.detail).toMatchObject({ kind: 'fetch', failure: 'timedOut' });
   expect(error.message).toBe(
-    "can't fetch the figure: it got no further for 1 s, so Lo stopped it while receiving objects",
+    'can’t fetch the figure: it got no further for 1 s, so Lo stopped it while receiving objects',
   );
   // The tab heard the bytes come in.
   const receiving = activities.filter(

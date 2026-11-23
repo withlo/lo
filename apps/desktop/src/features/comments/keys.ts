@@ -127,7 +127,7 @@ export default defineCommands(
     /** A reply box in the thread, right after its card. */
     reply: {
       label: 'Reply',
-      control: "Reply on a thread's card",
+      control: 'Reply on a thread’s card',
       group: 'Comments',
       keys: ['r'],
       targets: ['line', 'header', 'thread'],
@@ -138,7 +138,7 @@ export default defineCommands(
     /** Resolves the thread, or unresolves it once it's resolved, where GitHub lets you. */
     resolve: {
       label: 'Resolve thread',
-      control: "Resolve on a thread's card",
+      control: 'Resolve on a thread’s card',
       group: 'Comments',
       keys: ['x'],
       targets: ['line', 'header', 'thread'],
@@ -173,7 +173,7 @@ export default defineCommands(
     /** Drops the box's draft, and the box, as its "Discard draft" does. */
     discard: {
       label: 'Discard draft',
-      control: "Discard draft in a comment box's foot",
+      control: 'Discard draft in a comment box’s foot',
       group: 'Comments',
       keys: [],
       targets: ['box'],
@@ -193,7 +193,7 @@ export default defineCommands(
      */
     sendAnyway: {
       label: 'Send again',
-      control: "Try again in a comment box's note",
+      control: 'Try again in a comment box’s note',
       group: 'Comments',
       keys: [],
       targets: ['box'],
@@ -206,7 +206,7 @@ export default defineCommands(
      */
     checkAgain: {
       label: 'Check again',
-      control: "Check again in a comment box's note",
+      control: 'Check again in a comment box’s note',
       group: 'Comments',
       keys: [],
       targets: ['box'],
@@ -219,7 +219,7 @@ export default defineCommands(
      */
     moveToFile: {
       label: 'Move comment to file',
-      control: "Move comment to file in a comment box's note",
+      control: 'Move comment to file in a comment box’s note',
       group: 'Comments',
       keys: [],
       targets: ['box'],
@@ -232,7 +232,7 @@ export default defineCommands(
      */
     showLatest: {
       label: 'Show latest',
-      control: "Show latest in a comment box's note",
+      control: 'Show latest in a comment box’s note',
       group: 'View',
       keys: [],
       targets: ['box'],
@@ -246,7 +246,7 @@ export default defineCommands(
      */
     addToReview: {
       label: 'Add to review',
-      control: "Add to review in a comment box's foot",
+      control: 'Add to review in a comment box’s foot',
       group: 'Comments',
       keys: ['cmd+enter'],
       editor: true,
@@ -259,7 +259,7 @@ export default defineCommands(
     postNow: {
       label: 'Send now',
       description: 'Sends at once, outside your pending review.',
-      control: "Send now in a comment box's foot",
+      control: 'Send now in a comment box’s foot',
       group: 'Comments',
       keys: ['alt+enter'],
       editor: true,
@@ -268,7 +268,7 @@ export default defineCommands(
     /** In the box's editor: shows the preview in the editor's place, or the editor again. */
     preview: {
       label: 'Preview',
-      control: "Write and Preview in a comment box's head",
+      control: 'Write and Preview in a comment box’s head',
       group: 'Comments',
       keys: ['cmd+shift+v'],
       editor: true,
@@ -277,7 +277,7 @@ export default defineCommands(
     /** In the box's editor: asks for files to attach, where the box takes them. */
     attach: {
       label: 'Attach files…',
-      control: "Attach files… in a comment box's foot",
+      control: 'Attach files… in a comment box’s foot',
       group: 'Comments',
       keys: ['cmd+shift+a'],
       editor: true,
@@ -298,7 +298,7 @@ export default defineCommands(
      */
     close: {
       label: 'Close comment box',
-      control: "Close comment box in a comment box's head",
+      control: 'Close comment box in a comment box’s head',
       group: 'Comments',
       keys: ['esc'],
       editor: true,
@@ -330,7 +330,7 @@ export default defineCommands(
     },
     nextThread: {
       label: 'Next thread',
-      control: "Next in the threads panel's foot",
+      control: 'Next in the threads panel’s foot',
       group: 'Comments',
       keys: ['j', 'down'],
       when: panel,
@@ -338,7 +338,7 @@ export default defineCommands(
     },
     previousThread: {
       label: 'Previous thread',
-      control: "Previous in the threads panel's foot",
+      control: 'Previous in the threads panel’s foot',
       group: 'Comments',
       keys: ['k', 'up'],
       when: panel,
@@ -360,7 +360,7 @@ export default defineCommands(
     /** Resolves the thread the keyboard is on, or unresolves it, as `x` in the diff does. */
     resolveInPanel: {
       label: 'Resolve thread',
-      control: "Resolve in the threads panel's foot",
+      control: 'Resolve in the threads panel’s foot',
       group: 'Comments',
       keys: ['x'],
       targets: ['thread'],
@@ -369,7 +369,7 @@ export default defineCommands(
     /** Lists the unresolved threads, every thread, or yours, round the end. */
     filterThreads: {
       label: 'Next thread filter',
-      control: "the filter over the threads panel's list",
+      control: 'the filter over the threads panel’s list',
       group: 'Comments',
       keys: ['f'],
       when: panel,

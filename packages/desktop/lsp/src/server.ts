@@ -657,7 +657,7 @@ export class Server {
         });
         const folder = await realpath(workspace.folder);
         if (!isInside(home, folder) || this.#roots.some((each) => isInside(each, folder))) {
-          throw new Error(`a server's workspace must be in its home: ${workspace.folder}`);
+          throw new Error(`a server’s workspace must be in its home: ${workspace.folder}`);
         }
         this.#workspace = { ...workspace, folder };
         if (this.#stopRequested) return;

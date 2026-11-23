@@ -417,7 +417,7 @@ function overviewExtension(views: OverviewViews | undefined): MarkdownExtension<
           return <Glossary node={node} />;
         default:
           node satisfies never;
-          throw new Error(`A kind of overview block Lo doesn't know: ${JSON.stringify(node)}.`);
+          throw new Error(`A kind of overview block Lo doesn’t know: ${JSON.stringify(node)}.`);
       }
     },
     link: (target, children) => {
@@ -428,7 +428,7 @@ function overviewExtension(views: OverviewViews | undefined): MarkdownExtension<
           return <Term term={target}>{children}</Term>;
         default:
           target satisfies never;
-          throw new Error(`A kind of overview link Lo doesn't know: ${JSON.stringify(target)}.`);
+          throw new Error(`A kind of overview link Lo doesn’t know: ${JSON.stringify(target)}.`);
       }
     },
     details: (node) => <Fold node={node} kind="More detail" />,

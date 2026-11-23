@@ -160,7 +160,7 @@ function Shape({ glyph }: { glyph: Exclude<CheckGlyph, 'running' | 'pending' | '
       );
     default:
       glyph satisfies never;
-      throw new Error(`A checklist icon Lo doesn't know: ${String(glyph)}.`);
+      throw new Error(`A checklist icon Lo doesn’t know: ${String(glyph)}.`);
   }
 }
 

@@ -23,14 +23,14 @@ export default defineCommands(
     /** Downloads the newer Lo on offer, to install as Lo quits. */
     install: {
       label: 'Update Lo',
-      control: "Update on the update's toast, and in Settings › About",
+      control: 'Update on the update’s toast, and in Settings › About',
       group: 'App',
       keys: [],
     },
     /** Quits, installs the downloaded update and starts Lo again. */
     restart: {
       label: 'Restart to update',
-      control: "Restart to update on the update's toast, and in Settings › About",
+      control: 'Restart to update on the update’s toast, and in Settings › About',
       group: 'App',
       keys: [],
       bar: { menu: 'Lo', section: 'app', order: 10, instead: 'updates.check' },
@@ -38,7 +38,7 @@ export default defineCommands(
     /** Moves Lo to Applications, where it can update itself, and starts it again from there. */
     move: {
       label: 'Move Lo to Applications',
-      control: "Move Lo to Applications on the update's toast, and in Settings › About",
+      control: 'Move Lo to Applications on the update’s toast, and in Settings › About',
       group: 'App',
       keys: [],
       when: { system: 'mac' },
@@ -47,7 +47,7 @@ export default defineCommands(
     later: {
       label: 'Hide update',
       description: 'It comes back after a restart.',
-      control: "Hide on the update's toast",
+      control: 'Hide on the update’s toast',
       group: 'App',
       keys: [],
     },
@@ -57,7 +57,7 @@ export default defineCommands(
      */
     whatsNew: {
       label: 'What’s new',
-      control: "What’s new on the update's toast, and in Settings › About",
+      control: 'What’s new on the update’s toast, and in Settings › About',
       group: 'App',
       keys: [],
       bar: { menu: 'Help', section: 'news', order: 10 },
@@ -66,14 +66,14 @@ export default defineCommands(
     download: {
       label: 'Download update',
       description: 'Opens the update’s page in the browser.',
-      control: "Download update on the update's toast, and in Settings › About",
+      control: 'Download update on the update’s toast, and in Settings › About',
       group: 'App',
       keys: [],
     },
     /** Copies the command that updates Lo through Homebrew. */
     copy: {
       label: 'Copy Homebrew command',
-      control: "Copy on the update's toast, and in Settings › About",
+      control: 'Copy on the update’s toast, and in Settings › About',
       group: 'App',
       keys: [],
     },
@@ -83,7 +83,7 @@ export default defineCommands(
      */
     focus: {
       label: 'Go to update',
-      control: "The update's toast, whose buttons a click reaches",
+      control: 'The update’s toast, whose buttons a click reaches',
       group: 'App',
       keys: [],
     },

@@ -2,7 +2,7 @@
 // revisions: their labels, the rows, the ends a key moves, the shortcuts and the note. Pure
 // functions of what main sent, so they're tested without a window.
 
-import type { RevisionPickerRow, RevisionShortcut, RevisionTag } from '@lo/ui';
+import { ago, type RevisionPickerRow, type RevisionShortcut, type RevisionTag } from '@lo/ui';
 
 import { explain } from '../../../window/explain.ts';
 import type { Compared, ComparisonView, RevisionRow, RevisionsProblem } from '../contract.ts';
@@ -71,7 +71,7 @@ export function problemWords(
     case 'unknown':
       return { title, reason: undefined };
     default:
-      throw new Error(`A reason Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
+      throw new Error(`A reason Lo doesn’t know: ${JSON.stringify(why satisfies never)}`);
   }
 }
 
@@ -90,18 +90,6 @@ export function reasonOf(view: ComparisonView, compared: Compared): string | und
   if (compared.from === view.markers.review) return 'since your review';
   if (compared.from === view.markers.lastSeen) return 'since last opened';
   return undefined;
-}
-
-/** How long ago `at` was, in words, from `now`. */
-export function ago(at: number, now: number): string {
-  const seconds = Math.max(0, Math.round((now - at) / 1000));
-  if (seconds < 60) return 'just now';
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
-  const days = Math.round(hours / 24);
-  return `${days} ${days === 1 ? 'day' : 'days'} ago`;
 }
 
 /** What a revision's push did, as its row says it. */

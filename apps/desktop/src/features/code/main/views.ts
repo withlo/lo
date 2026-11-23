@@ -79,7 +79,7 @@ interface Followed {
 
 /** What Lo says of a read that failed. */
 export const UNREAD =
-  "Lo couldn't check with GitHub that this is the repo you trusted. It tries again by itself.";
+  'Lo couldn’t check with GitHub that this is the repo you trusted. It tries again by itself.';
 
 /** The key a view's pull request's reads are kept by: its repository's name in any case, and number. */
 function keyOf(view: { readonly repo: string; readonly number: number }): string {

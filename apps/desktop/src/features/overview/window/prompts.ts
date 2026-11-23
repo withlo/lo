@@ -93,7 +93,7 @@ export function promptOf(facts: PromptFacts): string | undefined {
         'Fix the Lo overview for this pull request:',
         link,
         '',
-        `Lo can't read the overview at ${ref}. Use the lo-overview`,
+        `Lo can’t read the overview at ${ref}. Use the lo-overview`,
         'skill: run its checker on the overview, fix each problem it',
         'reports, and run it again until it passes; then push to',
         `${ref}.`,
@@ -103,13 +103,13 @@ export function promptOf(facts: PromptFacts): string | undefined {
         'Make the Lo overview for this pull request smaller:',
         link,
         '',
-        `The overview at ${ref} is past Lo's limits. Use the`,
+        `The overview at ${ref} is past Lo’s limits. Use the`,
         'lo-overview skill: make its figures smaller, as SVG where',
         'they can be, and cut what it holds that it doesn’t show,',
         `until the checker passes; then push to ${ref}.`,
       ].join('\n');
     default:
       facts.kind satisfies never;
-      throw new Error(`A kind of prompt Lo doesn't know: ${String(facts.kind)}.`);
+      throw new Error(`A kind of prompt Lo doesn’t know: ${String(facts.kind)}.`);
   }
 }

@@ -99,7 +99,7 @@ export {
 export { Button, type ButtonProps } from './Button.tsx';
 export { Input, type InputProps } from './Input.tsx';
 export { Meter, type MeterProps } from './Meter.tsx';
-export { formatBytes } from './bytes.ts';
+export { about, ago, bytes, clock, duration } from './formats.ts';
 export {
   Setting,
   SettingsCommand,

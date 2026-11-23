@@ -51,11 +51,11 @@ export function storeWorker(entry: string | URL, path: string): SymbolStore {
       if (!waiting) return;
       pending.delete(reply.id);
       if (reply.ok) waiting.resolve(reply.value);
-      else waiting.reject(new Error(`The syntax index's store failed: ${reply.message}`));
+      else waiting.reject(new Error(`The syntax index’s store failed: ${reply.message}`));
     });
-    made.once('error', (error) => lost(`The syntax index's store stopped: ${error.message}`));
+    made.once('error', (error) => lost(`The syntax index’s store stopped: ${error.message}`));
     made.once('exit', () => {
-      if (worker === made) lost("The syntax index's store stopped.");
+      if (worker === made) lost('The syntax index’s store stopped.');
     });
     worker = made;
     return made;

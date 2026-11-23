@@ -27,7 +27,7 @@ export const INSTALL_LIMIT = 15_000;
 export const CHECK_LIMIT = 60_000;
 
 /** What Lo's log says of a check Lo gave up on. */
-const UNANSWERED = `the feed didn't answer within ${CHECK_LIMIT / 1000} s`;
+const UNANSWERED = `the feed didn’t answer within ${CHECK_LIMIT / 1000} s`;
 
 /** A failure, as Lo's log says it. */
 function logged({ why, details }: Failed): string {
@@ -258,7 +258,7 @@ export class Updates {
         return `Lo ${state.version} is ready`;
       default:
         throw new Error(
-          `An update state Lo doesn't know: ${JSON.stringify(state satisfies never)}`,
+          `An update state Lo doesn’t know: ${JSON.stringify(state satisfies never)}`,
         );
     }
   }

@@ -67,10 +67,10 @@ describe('running a command', () => {
 
   test('says why it didn’t run', () => {
     const { registry, ran } = setup();
-    expect(registry.run('diff.reply', place(4))).toBe("Reply doesn't apply here.");
-    expect(registry.run('diff.comment', { kind: 'none' })).toBe("Comment doesn't apply here.");
-    expect(registry.run('vim.down', place(1))).toBe("Line down is Vim's.");
-    expect(registry.run('diff.nope', place(1))).toBe("There's no command called diff.nope.");
+    expect(registry.run('diff.reply', place(4))).toBe('Reply doesn’t apply here.');
+    expect(registry.run('diff.comment', { kind: 'none' })).toBe('Comment doesn’t apply here.');
+    expect(registry.run('vim.down', place(1))).toBe('Line down is Vim’s.');
+    expect(registry.run('diff.nope', place(1))).toBe('There’s no command called diff.nope.');
     expect(ran).toEqual([]);
   });
 
@@ -224,7 +224,7 @@ describe('keys', () => {
     expect(ran).toEqual([['diff.nextFile', header]]);
     expect(refused).toEqual([]);
     // Asked for any other way, it acts on what it's declared to.
-    expect(registry.run('diff.nextFile', header)).toBe("Next file doesn't apply here.");
+    expect(registry.run('diff.nextFile', header)).toBe('Next file doesn’t apply here.');
   });
 
   test('a held key goes back to the code view when the next doesn’t complete a sequence', () => {

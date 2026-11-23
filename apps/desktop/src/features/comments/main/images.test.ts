@@ -404,7 +404,7 @@ describe('Images', () => {
       throw new Error(`refused authorization: token ${TOKEN}`);
     });
     const { message } = await refusal(loader.load(post(ATTACHMENT)));
-    expect(message).toBe("Lo couldn't reach github.com");
+    expect(message).toBe('Lo couldn’t reach github.com');
     expect(message).not.toContain(TOKEN);
   });
 

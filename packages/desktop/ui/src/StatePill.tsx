@@ -77,6 +77,6 @@ export function StateIcon({ state }: { state: PullRequestState }) {
       );
     default:
       state satisfies never;
-      throw new Error(`A pull request state Lo doesn't know: ${String(state)}.`);
+      throw new Error(`A pull request state Lo doesn’t know: ${String(state)}.`);
   }
 }

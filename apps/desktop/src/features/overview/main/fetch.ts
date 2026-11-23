@@ -84,7 +84,7 @@ export async function readOverview(
   const tree = await github((client) => repoTree(client, repository, sha));
   const entries = listedEntries(tree.items);
   if (!entries)
-    throw new Unexpected("GitHub's listing of the overview named an object no ID names.");
+    throw new Unexpected('GitHub’s listing of the overview named an object no ID names.');
   const read = await readsText(entries, tree.truncated);
   if (read) {
     const text = entryAt(entries, 'artifact.md');
@@ -188,7 +188,7 @@ async function fetchNew(
   });
   if (answer.kept) return answer.bytes;
   if (!blobs.put(id, answer.bytes)) {
-    throw new Unexpected(`GitHub sent a file of the overview that isn't the one its ID names.`);
+    throw new Unexpected(`GitHub sent a file of the overview that isn’t the one its ID names.`);
   }
   return answer.bytes;
 }

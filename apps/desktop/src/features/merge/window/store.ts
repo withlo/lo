@@ -133,7 +133,7 @@ export function placementOf(id: string): Placement | undefined {
       return undefined;
     default:
       place satisfies never;
-      throw new Error(`A place Lo doesn't know: ${JSON.stringify(place)}`);
+      throw new Error(`A place Lo doesn’t know: ${JSON.stringify(place)}`);
   }
 }
 

@@ -36,7 +36,7 @@ let kept: Settings | undefined;
 const clearers = new Set<() => void>();
 
 function settings(): Settings {
-  if (!kept) throw new IpcError('unavailable', "Lo isn't keeping the settings file yet.");
+  if (!kept) throw new IpcError('unavailable', 'Lo isn’t keeping the settings file yet.');
   return kept;
 }
 

@@ -59,7 +59,7 @@ describe('plainDataProblem', () => {
     const buffer = new Uint8Array(BYTES_LIMIT / 2);
     expect(plainDataProblem([buffer, buffer.subarray(0, 1)])).toBe(undefined);
     expect(plainDataProblem([buffer, buffer.subarray(0, 1), new Uint8Array(1)])).toBe(
-      'it holds more than 256 MiB of bytes',
+      'it holds more than 256 MB of bytes',
     );
   });
 });

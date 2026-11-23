@@ -176,7 +176,7 @@ function whyOf(
       return { why: { kind: 'unknown' }, at, partial: true };
     default:
       found satisfies never;
-      throw new Error(`A reason for leaving the queue Lo doesn't know: ${JSON.stringify(found)}`);
+      throw new Error(`A reason for leaving the queue Lo doesn’t know: ${JSON.stringify(found)}`);
   }
 }
 

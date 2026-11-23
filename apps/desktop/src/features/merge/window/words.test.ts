@@ -12,7 +12,6 @@ import type {
   Together,
 } from '../contract.ts';
 import {
-  ago,
   cantAutoMerge,
   cantMerge,
   cantOverride,
@@ -20,7 +19,6 @@ import {
   confirmLabel,
   confirmTitle,
   doneLine,
-  duration,
   headerLine,
   layerLine,
   methodNote,
@@ -239,14 +237,6 @@ test('a status Lo couldn’t read again, or hasn’t for long, says when it was 
   });
   // A merge stays merged.
   expect(rowsOf(state({ verdict: 'merged', readAt: 0 }), NOW).at(-1)?.key).not.toBe('stale');
-});
-
-test('how long ago reads in its largest whole unit', () => {
-  expect(
-    [0, 59_000, 60_000, 90 * 60_000, 2 * 3_600_000, 25 * 3_600_000, 3 * 86_400_000].map((age) =>
-      ago(NOW - age, NOW),
-    ),
-  ).toEqual(['just now', 'just now', '1 min ago', '1 h ago', '2 h ago', '1 d ago', '3 d ago']);
 });
 
 test('the panel has a row for each reason, checks of a state together with their runs', () => {
@@ -482,16 +472,6 @@ test('a queued pull request’s place, as Lo last read its queue, says when it s
   expect(headerLine({ kind: 'known', state: state() }, { place, left: null })).toMatchObject({
     verdict: 'Ready to merge',
   });
-});
-
-test('GitHub’s estimates read in their largest whole unit', () => {
-  expect([20, 720, 3600, 3900, 7200].map(duration)).toEqual([
-    '1 min',
-    '12 min',
-    '1 h',
-    '1 h',
-    '2 h',
-  ]);
 });
 
 test('a refusal for GitHub giving no answer says its cause as a dimmed control does, else main’s words', () => {

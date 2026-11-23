@@ -28,5 +28,5 @@ test('refuses anything else', () => {
       return String(error);
     }
   });
-  expect(said).toEqual(notIds.map(() => expect.stringContaining("isn't a valid commit ID")));
+  expect(said).toEqual(notIds.map(() => expect.stringContaining('isn’t a valid commit ID')));
 });

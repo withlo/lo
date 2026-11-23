@@ -410,7 +410,7 @@ export class Submitter {
    */
   async submit(id: string, event: ReviewEvent, body: string): Promise<SubmitOutcome> {
     const info = this.#options.view(id);
-    if (!info) throw new IpcError('missing', "There's no pull request's tab with that id.");
+    if (!info) throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
     if (info.run) return { kind: 'refused', refusal: { kind: 'run' } };
     const target = this.#targetOf(id);
     if (!target) return { kind: 'refused', refusal: { kind: 'signIn' } };
@@ -728,7 +728,7 @@ export class Submitter {
   /** View `id` and what it submits as and on, or the refusal of one that can't. */
   #writing(id: string): { info: PullTabInfo; target: Target } {
     const info = this.#options.view(id);
-    if (!info) throw new IpcError('missing', "There's no pull request's tab with that id.");
+    if (!info) throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
     if (info.run) throw new IpcError('refused', IN_A_LAYER);
     const target = this.#targetOf(id);
     if (!target) throw new IpcError('refused', SIGN_IN);

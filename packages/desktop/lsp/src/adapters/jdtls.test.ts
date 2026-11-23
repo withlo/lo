@@ -112,7 +112,7 @@ describe('JDT LS', () => {
 
   test('refuses what it can’t start', () => {
     expect(() => launchJdtls({ folder: 'jdtls', entry: 'jdtls/launcher.jar' }, JDK, USE)).toThrow(
-      "jdtls isn't an absolute path",
+      'jdtls isn’t an absolute path',
     );
     expect(() => launchJdtls(INSTALLED, JDK, { ...USE, variables: {} }, 'darwin-arm64')).toThrow(
       'doesn’t say where its home is',

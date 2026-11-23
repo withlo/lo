@@ -65,7 +65,7 @@ export function startupWords(failure: StartupFailure): { body: string; detail: s
       };
     default:
       throw new Error(
-        `A startup failure Lo doesn't know: ${JSON.stringify(failure satisfies never)}`,
+        `A startup failure Lo doesn’t know: ${JSON.stringify(failure satisfies never)}`,
       );
   }
 }

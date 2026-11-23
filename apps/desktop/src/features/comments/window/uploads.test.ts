@@ -23,7 +23,6 @@ import {
   keepUploadsOf,
   metadataNote,
   placeholderFor,
-  sizeText,
   takeAddresses,
   takeProgress,
   clearStranded,
@@ -199,12 +198,7 @@ describe('the text', () => {
     }
   });
 
-  test('sizes and what Lo took out read as people say them', () => {
-    expect([sizeText(512), sizeText(217_088), sizeText(3_565_158)]).toEqual([
-      '512 B',
-      '212 KB',
-      '3.4 MB',
-    ]);
+  test('what Lo took out reads as people say it', () => {
     const removed = { location: true, other: true, embedded: false };
     expect(metadataNote('shot.jpg', { kind: 'image', removed })).toBe(
       'shot.jpg · location and metadata removed',

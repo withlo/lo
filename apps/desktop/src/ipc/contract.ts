@@ -53,14 +53,14 @@ export function defineContract<
   { requests, topics }: { requests: Requests; topics: Topics },
 ): Contract<Feature, Requests, Topics> {
   if (!featureName.test(feature)) {
-    throw new Error(`A feature's name is lowercase letters and digits, not "${feature}".`);
+    throw new Error(`A feature’s name is lowercase letters and digits, not "${feature}".`);
   }
   for (const name of [...Object.keys(requests), ...Object.keys(topics)]) {
     if (!memberName.test(name)) {
-      throw new Error(`${feature}: "${name}" isn't a request or topic name (camelCase).`);
+      throw new Error(`${feature}: "${name}" isn’t a request or topic name (camelCase).`);
     }
     if (name === 'subscribe') {
-      throw new Error(`${feature}: "subscribe" is taken by the window's client.`);
+      throw new Error(`${feature}: "subscribe" is taken by the window’s client.`);
     }
     if (Object.hasOwn(requests, name) && Object.hasOwn(topics, name)) {
       throw new Error(`${feature}: "${name}" is both a request and a topic.`);

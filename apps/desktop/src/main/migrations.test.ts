@@ -48,7 +48,7 @@ describe('readMigrations', () => {
   });
 
   it.each([
-    ['a misnamed file', { '../features/notes/migrations/notes.sql': '' }, "isn't named like"],
+    ['a misnamed file', { '../features/notes/migrations/notes.sql': '' }, 'isn’t named like'],
     ['a gap', { '../features/notes/migrations/002-tags.sql': '' }, 'without gaps or repeats'],
     [
       'a repeat',
@@ -108,7 +108,7 @@ describe('migrate', () => {
     const edited = { ...notes, '../features/notes/migrations/002-tags.sql': '-- edited' };
     expect(() => migrate(db, { ...edited, ...pins })).toThrow(StartupError);
     expect(() => migrate(db, { ...edited, ...pins })).toThrow(
-      "notes's migration 002-tags.sql has changed since it ran",
+      'notes’s migration 002-tags.sql has changed since it ran',
     );
     expect(tables(db)).not.toContain('pins_pins');
   });
@@ -122,7 +122,7 @@ describe('migrate', () => {
     };
     expect(() => migrate(db, older)).toThrow(StartupError);
     expect(() => migrate(db, older)).toThrow(
-      "a newer version of Lo: it holds notes's migration 002",
+      'a newer version of Lo: it holds notes’s migration 002',
     );
     expect(recorded(db)).toHaveLength(3);
   });

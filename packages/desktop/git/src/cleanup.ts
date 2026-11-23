@@ -484,7 +484,7 @@ async function removeOldPacks(host: CleanupHost, clone: CloneName, now: number) 
       const written = (await lstat(path).catch(() => undefined))?.mtimeMs;
       if (written !== undefined && now - written > TEMPORARIES_KEPT_FOR) {
         await rm(path, { force: true }).catch((error: unknown) => {
-          host.note(`can't remove ${path}: ${String(error)}`);
+          host.note(`can’t remove ${path}: ${String(error)}`);
         });
       }
     }
@@ -529,9 +529,9 @@ export async function collectReplays(host: CleanupHost, clone: CloneName): Promi
       .arg('prune', '--expire=now')
       .run(undefined, { timeout: REPACK_LIMIT, signal });
   } catch (error) {
-    const what = `removing ${clone.owner}/${clone.name}'s replayed trees`;
+    const what = `removing ${clone.owner}/${clone.name}’s replayed trees`;
     if (gaveWay(host, signal, what)) removeLeftByMaintenance(host, gitDir, started);
-    else host.note(`can't remove ${clone.owner}/${clone.name}'s replayed trees: ${String(error)}`);
+    else host.note(`can’t remove ${clone.owner}/${clone.name}’s replayed trees: ${String(error)}`);
   } finally {
     held.release();
   }
@@ -616,7 +616,7 @@ async function removeOldTemporaries(host: CleanupHost, now: number): Promise<voi
     if (found === undefined || now - found.mtimeMs <= TEMPORARIES_KEPT_FOR) continue;
     // A link is removed itself, never what it points at.
     await rm(path, { recursive: true, force: true }).catch((error: unknown) => {
-      host.note(`can't remove ${path}: ${String(error)}`);
+      host.note(`can’t remove ${path}: ${String(error)}`);
     });
   }
 }
@@ -782,10 +782,10 @@ export async function keepUnder(host: CleanupHost, cap: number): Promise<string[
       release();
     }
   }
-  if (trimmed > 0) host.note(`removed ${trimmed} checkouts past the cache's cap`);
-  if (emptied > 0) host.note(`removed ${emptied} language servers' homes past the cache's cap`);
+  if (trimmed > 0) host.note(`removed ${trimmed} checkouts past the cache’s cap`);
+  if (emptied > 0) host.note(`removed ${emptied} language servers' homes past the cache’s cap`);
   if (removed.length > 0) {
-    host.note(`removed the least recently used clones past the cache's cap: ${removed.join(', ')}`);
+    host.note(`removed the least recently used clones past the cache’s cap: ${removed.join(', ')}`);
   }
   if (total > cap) host.note(`the cache is still over its cap of ${cap} bytes, at ${total}`);
   return removed;
@@ -1033,7 +1033,7 @@ export async function repackClone(
     if (gaveWay(host, signal, `repacking ${clone.owner}/${clone.name}`)) {
       removeLeftByMaintenance(host, folder, started);
     } else {
-      host.note(`can't repack ${clone.owner}/${clone.name}: ${String(error)}`);
+      host.note(`can’t repack ${clone.owner}/${clone.name}: ${String(error)}`);
     }
     return false;
   } finally {

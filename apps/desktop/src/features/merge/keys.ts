@@ -40,7 +40,7 @@ export default defineCommands(
       keys: ['j', 'down'],
       when: panel,
       repeat: true,
-      control: "Next reason under the merge panel's reasons",
+      control: 'Next reason under the merge panel’s reasons',
     },
     up: {
       label: 'Previous reason',
@@ -48,7 +48,7 @@ export default defineCommands(
       keys: ['k', 'up'],
       when: panel,
       repeat: true,
-      control: "Previous reason under the merge panel's reasons",
+      control: 'Previous reason under the merge panel’s reasons',
     },
     /**
      * Opens the page of the reason the keyboard is on, or the one right-clicked: a check's run, or
@@ -67,14 +67,14 @@ export default defineCommands(
       group: 'Merge',
       keys: ['tab'],
       when: panel,
-      control: "the merge panel's Method choice",
+      control: 'the merge panel’s Method choice',
     },
     previousMethod: {
       label: 'Previous merge method',
       group: 'Merge',
       keys: ['shift+tab'],
       when: panel,
-      control: "the merge panel's Method choice",
+      control: 'the merge panel’s Method choice',
     },
     /** Goes to the squash commit's title, to change what GitHub would write. */
     edit: {
@@ -82,7 +82,7 @@ export default defineCommands(
       group: 'Merge',
       keys: ['e'],
       when: panel,
-      control: "the merge panel's Commit title field",
+      control: 'the merge panel’s Commit title field',
     },
     /** Closes the panel and goes to the next unresolved thread in the diff. */
     nextThread: {
@@ -90,7 +90,7 @@ export default defineCommands(
       group: 'Merge',
       keys: ['] t'],
       when: panel,
-      control: "Next thread on the merge panel's unresolved threads reason",
+      control: 'Next thread on the merge panel’s unresolved threads reason',
     },
     /**
      * Plans the merge the panel offers, and opens the dialog that confirms it in the panel's place:
@@ -103,7 +103,7 @@ export default defineCommands(
       keys: ['enter'],
       when: panel,
       bar: { menu: 'Review', section: 'merge', order: 10 },
-      control: "the merge panel's main button",
+      control: 'the merge panel’s main button',
     },
     /**
      * Plans auto-merge, for the dialog to confirm, when only waits block the merge: GitHub merges
@@ -114,7 +114,7 @@ export default defineCommands(
       group: 'Merge',
       keys: ['a'],
       when: panel,
-      control: "the merge panel's auto-merge button",
+      control: 'the merge panel’s auto-merge button',
     },
     /**
      * Plans a merge past the base branch's rules, for an account GitHub lets bypass them, and opens
@@ -159,7 +159,7 @@ export default defineCommands(
       group: 'Merge',
       keys: ['esc'],
       when: panel,
-      control: "the merge panel's ×",
+      control: 'the merge panel’s ×',
     },
     /** Leaves the commit's fields for the panel, keeping what was typed. */
     leaveCommit: {

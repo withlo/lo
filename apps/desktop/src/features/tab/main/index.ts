@@ -65,7 +65,7 @@ function tabsOf({ database, publish }: FeatureContext<typeof contract>): TabList
 
 /** The watcher, which starts with the feature. */
 function watching(): Watcher {
-  if (!watcher) throw new IpcError('unavailable', "Lo hasn't started its tabs yet.");
+  if (!watcher) throw new IpcError('unavailable', 'Lo hasn’t started its tabs yet.');
   return watcher;
 }
 
@@ -73,7 +73,7 @@ function watching(): Watcher {
 function pullTab(id: string): Watcher {
   const running = watching();
   if (!running.has(id)) {
-    throw new IpcError('missing', "There's no pull request's tab with that id.");
+    throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
   }
   return running;
 }

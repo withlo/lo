@@ -326,7 +326,7 @@ export class Cache {
   async madeClone(): Promise<void> {
     if (this.#closing.signal.aborted) return;
     await this.#keepUnder().catch((error: unknown) => {
-      this.note(`can't keep the cache under its cap: ${String(error)}`);
+      this.note(`can’t keep the cache under its cap: ${String(error)}`);
     });
   }
 
@@ -384,7 +384,7 @@ export class Cache {
         if (tooManyPacks) await repackClone(this, { owner, name }, GEOMETRIC_LIMIT);
         if (collect) await collectReplays(this, { owner, name });
       }).catch((error: unknown) => {
-        this.note(`can't look after ${key}: ${String(error)}`);
+        this.note(`can’t look after ${key}: ${String(error)}`);
       });
     }, this.maintenance.idleFor);
     timer.unref();
@@ -485,7 +485,7 @@ export class Cache {
       void this.#keepUnder()
         .then(() => this.#deleted())
         .catch((error: unknown) => {
-          this.note(`can't keep the cache under its cap: ${String(error)}`);
+          this.note(`can’t keep the cache under its cap: ${String(error)}`);
         });
     }, this.maintenance.idleFor);
     this.#capCheck.unref();
@@ -615,7 +615,7 @@ export class Cache {
           if (lock.users > 0 || lock.servers > 0) {
             throw new GitError({
               kind: 'busy',
-              message: `${owner}/${name}'s local copy can't be trusted, since ${reason}`,
+              message: `${owner}/${name}’s local copy can’t be trusted, since ${reason}`,
               held: lock.users > 0 ? 'tabs' : 'servers',
             });
           }

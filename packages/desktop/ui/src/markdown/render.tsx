@@ -176,7 +176,7 @@ function noteText(note: Note): string {
       return 'Rest shown as plain text';
     default:
       note satisfies never;
-      throw new Error(`A note Lo doesn't know: ${JSON.stringify(note)}.`);
+      throw new Error(`A note Lo doesn’t know: ${JSON.stringify(note)}.`);
   }
 }
 
@@ -300,7 +300,7 @@ export function firstImages<X extends Extension>(
           break;
         default:
           node satisfies never;
-          throw new Error(`A kind of text Lo doesn't know: ${JSON.stringify(node)}.`);
+          throw new Error(`A kind of text Lo doesn’t know: ${JSON.stringify(node)}.`);
       }
     }
   };
@@ -334,7 +334,7 @@ export function firstImages<X extends Extension>(
           break;
         default:
           node satisfies never;
-          throw new Error(`A kind of block Lo doesn't know: ${JSON.stringify(node)}.`);
+          throw new Error(`A kind of block Lo doesn’t know: ${JSON.stringify(node)}.`);
       }
     }
   };
@@ -352,7 +352,7 @@ export function drawBlocks<X extends Extension>(
 export function drawBlock<X extends Extension>(node: Block<X>, r: Rendering<X>): ReactNode {
   if (!isPlainBlock(node)) {
     if (!r.extension.block) {
-      throw new Error(`A kind of block Lo doesn't draw here: ${JSON.stringify(node.kind)}.`);
+      throw new Error(`A kind of block Lo doesn’t draw here: ${JSON.stringify(node.kind)}.`);
     }
     return r.extension.block(node);
   }
@@ -393,7 +393,7 @@ export function drawBlock<X extends Extension>(node: Block<X>, r: Rendering<X>):
       return footnotes(plain, r);
     default:
       plain satisfies never;
-      throw new Error(`A kind of block Lo doesn't know: ${JSON.stringify(node.kind)}.`);
+      throw new Error(`A kind of block Lo doesn’t know: ${JSON.stringify(node.kind)}.`);
   }
 }
 
@@ -417,7 +417,7 @@ function heading<X extends Extension>(node: Heading<X>, r: Rendering<X>): ReactN
       return <h6 {...props}>{content}</h6>;
     default:
       node.level satisfies never;
-      throw new Error(`A heading level Lo doesn't know: ${JSON.stringify(node.level)}.`);
+      throw new Error(`A heading level Lo doesn’t know: ${JSON.stringify(node.level)}.`);
   }
 }
 
@@ -436,7 +436,7 @@ function alertTone(kind: Alert['type']): { label: string; box: string; word: str
       return { label: 'Caution', box: 'border-danger-border bg-danger-bg', word: 'text-danger' };
     default:
       kind satisfies never;
-      throw new Error(`A kind of alert Lo doesn't know: ${JSON.stringify(kind)}.`);
+      throw new Error(`A kind of alert Lo doesn’t know: ${JSON.stringify(kind)}.`);
   }
 }
 
@@ -503,7 +503,7 @@ function alignment(align: Table['align'][number] | undefined): string | undefine
       return undefined;
     default:
       align satisfies never;
-      throw new Error(`An alignment Lo doesn't know: ${JSON.stringify(align)}.`);
+      throw new Error(`An alignment Lo doesn’t know: ${JSON.stringify(align)}.`);
   }
 }
 
@@ -684,7 +684,7 @@ export function drawInlines<X extends Extension>(
 function drawInline<X extends Extension>(node: Inline<X>, r: Rendering<X>): ReactNode {
   if (!isPlainInline(node)) {
     if (!r.extension.inline) {
-      throw new Error(`A kind of text Lo doesn't draw here: ${JSON.stringify(node.kind)}.`);
+      throw new Error(`A kind of text Lo doesn’t draw here: ${JSON.stringify(node.kind)}.`);
     }
     return r.extension.inline(node);
   }
@@ -740,7 +740,7 @@ function drawInline<X extends Extension>(node: Inline<X>, r: Rendering<X>): Reac
       );
     default:
       plain satisfies never;
-      throw new Error(`A kind of text Lo doesn't know: ${JSON.stringify(node.kind)}.`);
+      throw new Error(`A kind of text Lo doesn’t know: ${JSON.stringify(node.kind)}.`);
   }
 }
 

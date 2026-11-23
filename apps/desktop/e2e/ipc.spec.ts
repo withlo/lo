@@ -53,7 +53,7 @@ test('the page gets invoke and subscribe, and nothing else, and a malformed requ
         return error instanceof Error ? error.message : 'thrown';
       }
     });
-    expect(subscribed).toBe("There's no topic named ELECTRON_RENDERER_EVENT.");
+    expect(subscribed).toBe('There’s no topic named ELECTRON_RENDERER_EVENT.');
   });
 });
 
@@ -127,7 +127,7 @@ test("a page that isn't Lo's gets nothing from main, even with the bridge", asyn
   );
   expect(reply).toEqual({
     ok: false,
-    error: { code: 'forbidden', message: "app.info answers only Lo's own page." },
+    error: { code: 'forbidden', message: 'app.info answers only Lo’s own page.' },
   });
 });
 

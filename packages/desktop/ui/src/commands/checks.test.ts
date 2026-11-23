@@ -95,8 +95,8 @@ describe('ids', () => {
         },
       ]),
     ).toEqual([
-      `"my-diff" isn't a feature's name, such as diff.`,
-      `"my-diff.a" isn't a command's id, such as diff.markViewed.`,
+      `"my-diff" isn’t a feature’s name, such as diff.`,
+      `"my-diff.a" isn’t a command’s id, such as diff.markViewed.`,
     ]);
   });
 
@@ -115,7 +115,7 @@ describe('ids', () => {
       ]),
     ).toEqual([
       'tree declares the scope box, which the engine already has.',
-      `tree declares the scope "Bad", which isn't a scope's name.`,
+      `tree declares the scope "Bad", which isn’t a scope’s name.`,
       'tree and files both declare the scope tree.',
       'diff.a names the scope tre, which no feature declares.',
     ]);
@@ -160,8 +160,8 @@ describe('handlers', () => {
       }),
     ];
     expect(checkHandlers([declared], given)).toEqual([
-      "diff.reply in the window's commands isn't as its keys.ts declares it.",
-      "edit.undo is in the window's commands, but no keys.ts declares it.",
+      'diff.reply in the window’s commands isn’t as its keys.ts declares it.',
+      'edit.undo is in the window’s commands, but no keys.ts declares it.',
     ]);
   });
 
@@ -172,7 +172,7 @@ describe('handlers', () => {
       { ...down!, handler: run },
     ];
     expect(checkHandlers([declared], given)).toEqual([
-      "diff.down is one of Vim's own keys, which nothing runs, but has a handler.",
+      'diff.down is one of Vim’s own keys, which nothing runs, but has a handler.',
     ]);
   });
 });
@@ -293,7 +293,7 @@ describe('text-editing keys', () => {
   test('fail a scope listed as holding no field that nothing declares, or that’s a code view', () => {
     expect(checkEditingKeys([lists], ['list', 'tree', 'form', 'lsit', 'box'])).toEqual([
       'lsit is listed as holding no field, but no feature declares it.',
-      "box is listed as holding no field, but it's a code view.",
+      'box is listed as holding no field, but it’s a code view.',
       '`cmd+a` and `ctrl+a` (lists.everywhere) edit text, which a field that has focus keeps: give the command scopes that hold no field, or editsField if it edits that field itself.',
       '`alt+left` (lists.unscoped) edits text, which a field that has focus keeps: give the command scopes that hold no field, or editsField if it edits that field itself.',
     ]);
@@ -363,7 +363,7 @@ describe('menu items', () => {
       ]),
     ).toEqual([
       'diff.copy is in the right-click menu of a line, with no key on macOS.',
-      "diff.ship is in the app menu's Review menu, with no key on macOS.",
+      'diff.ship is in the app menu’s Review menu, with no key on macOS.',
     ]);
   });
 
@@ -600,7 +600,7 @@ describe('Vim’s keys', () => {
         }),
       ]),
     ).toEqual([
-      "`e` (diff.markViewed) meets Vim's `e` without overVim, in diff (normal), on macOS and Linux.",
+      '`e` (diff.markViewed) meets Vim’s `e` without overVim, in diff (normal), on macOS and Linux.',
     ]);
   });
 
@@ -617,10 +617,10 @@ describe('Vim’s keys', () => {
       }),
     ]);
     expect(problems).toContain(
-      "`g` (diff.go) meets Vim's `g g` without overVim, in peek (normal), on macOS and Linux.",
+      '`g` (diff.go) meets Vim’s `g g` without overVim, in peek (normal), on macOS and Linux.',
     );
     expect(problems).toContain(
-      "`y l` (diff.link) meets Vim's `y` without overVim, in peek (normal), on macOS and Linux.",
+      '`y l` (diff.link) meets Vim’s `y` without overVim, in peek (normal), on macOS and Linux.',
     );
   });
 
@@ -654,7 +654,7 @@ describe('Vim’s keys', () => {
     expect(
       checkVim([feature({ files: { label: 'Files', group: 'Go', keys: ['cmd+p'] } })]),
     ).toEqual([
-      "`ctrl+p` (diff.files) meets Vim's `ctrl+p` without overVim, in diff (normal), diff (visual), file (normal), file (visual), peek (normal), peek (visual), box (normal) and box (visual), on Linux.",
+      '`ctrl+p` (diff.files) meets Vim’s `ctrl+p` without overVim, in diff (normal), diff (visual), file (normal), file (visual), peek (normal), peek (visual), box (normal) and box (visual), on Linux.',
     ]);
   });
 
@@ -663,13 +663,13 @@ describe('Vim’s keys', () => {
       checkVim([
         feature({ next: { label: 'Next block', group: 'View', keys: ['] b'], overVim: true } }),
       ]),
-    ).toEqual(["diff.next says overVim, but none of its keys meets one of Vim's."]);
+    ).toEqual(['diff.next says overVim, but none of its keys meets one of Vim’s.']);
   });
 
   test('fail a key declared as Vim’s own that isn’t', () => {
     expect(
       checkVim([feature({ down: { label: 'Down', group: 'Go', keys: ['] b'], vim: 'own' } })]),
-    ).toEqual(["diff.down is declared as Vim's own, but `] b` isn't one of Vim's keys."]);
+    ).toEqual(['diff.down is declared as Vim’s own, but `] b` isn’t one of Vim’s keys.']);
   });
 
   test('find where each key meets Vim’s, for the docs', () => {
@@ -751,9 +751,9 @@ describe('the app menu', () => {
         menus,
       ),
     ).toEqual([
-      "diff.nowhere is in the app menu's Lo menu, which it doesn't have.",
-      "diff.stray is in the File menu's quit section, which it doesn't have.",
-      "diff.instead takes the place of diff.gone in the app menu, which isn't in it.",
+      'diff.nowhere is in the app menu’s Lo menu, which it doesn’t have.',
+      'diff.stray is in the File menu’s quit section, which it doesn’t have.',
+      'diff.instead takes the place of diff.gone in the app menu, which isn’t in it.',
     ]);
   });
 
@@ -771,8 +771,8 @@ describe('the app menu', () => {
       plain: { run() {}, checked: () => false },
     });
     expect(checkToggles([toggles], given)).toEqual([
-      "diff.inline is a choice, but its handler doesn't say when it's checked.",
-      "diff.plain says when it's checked, but isn't declared a switch or a choice.",
+      'diff.inline is a choice, but its handler doesn’t say when it’s checked.',
+      'diff.plain says when it’s checked, but isn’t declared a switch or a choice.',
     ]);
   });
 });

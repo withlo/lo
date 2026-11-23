@@ -154,7 +154,7 @@ test('a failed lazy download is a fetch error', () => {
       'github.com\nfatal: could not fetch 6178079 from promisor remote',
   );
   expect(error.isRetryable()).toBe(true);
-  expect(error.message).toMatch(/^can't fetch the files to show: the network failed/);
+  expect(error.message).toMatch(/^can’t fetch the files to show: the network failed/);
 });
 
 test('other git failures stay git errors', () => {
@@ -170,7 +170,7 @@ test('messages say what failed and why', () => {
     'pull request #12',
   );
   expect(error.message).toBe(
-    "can't fetch pull request #12: the repository doesn't exist, or the account can't see it " +
+    'can’t fetch pull request #12: the repository doesn’t exist, or the account can’t see it ' +
       "(fatal: repository 'https://github.com/a/b.git/' not found)",
   );
   const oid = '22c70acc6992c0c51cb68527b87adf114d01acbc';
@@ -178,7 +178,7 @@ test('messages say what failed and why', () => {
     'commit 22c70ac is no longer available',
   );
   expect(new GitError({ kind: 'notFetched', oid }).message).toBe(
-    "commit 22c70ac isn't in the local copy",
+    'commit 22c70ac isn’t in the local copy',
   );
   const timedOut = new GitError({
     kind: 'fetch',
@@ -189,12 +189,12 @@ test('messages say what failed and why', () => {
       'working out what to send',
   });
   expect(timedOut.message).toBe(
-    "can't fetch pull request #11758: GitHub took longer than 2 min to start sending, so Lo " +
+    'can’t fetch pull request #11758: GitHub took longer than 2 min to start sending, so Lo ' +
       'stopped it while GitHub was still working out what to send',
   );
   const head = '6178079fd3a1b8f5f2a8a3e5c0b7a6a0f0e1d2c3';
   expect(new GitError({ kind: 'baseNotAncestor', base: oid, head }).message).toBe(
-    "commit 22c70ac isn't an ancestor of 6178079, so it can't be its base",
+    'commit 22c70ac isn’t an ancestor of 6178079, so it can’t be its base',
   );
 });
 
@@ -206,7 +206,7 @@ test('an error Lo can’t put in words keeps its detail and cause, with a plain 
   for (const given of details) {
     const cause = new Error('the failure it reports');
     const error = new GitError(given, { cause });
-    expect(error.message).toBe("git failed in a way Lo couldn't describe");
+    expect(error.message).toBe('git failed in a way Lo couldn’t describe');
     expect(error.detail).toBe(given);
     expect(error.cause).toBe(cause);
   }

@@ -143,14 +143,14 @@ export function serverEnvironment(options: EnvironmentOptions): Record<string, s
   const { home, roots, path, variables = {}, allowed = [], git, homeFolders = {} } = options;
   const inside = (folder: string) => roots.some((root) => isInside(root, folder));
   if (!isAbsolute(home) || inside(home)) {
-    throw new Error(`a server's home must be an absolute path outside its checkout: ${home}`);
+    throw new Error(`a server’s home must be an absolute path outside its checkout: ${home}`);
   }
   for (const folder of path) {
     if (!isAbsolute(folder) || folder.includes(':') || folder.includes('\0')) {
-      throw new Error(`a folder on a server's PATH must be an absolute path: ${folder}`);
+      throw new Error(`a folder on a server’s PATH must be an absolute path: ${folder}`);
     }
     if (inside(folder)) {
-      throw new Error(`a folder on a server's PATH must be outside its checkout: ${folder}`);
+      throw new Error(`a folder on a server’s PATH must be outside its checkout: ${folder}`);
     }
   }
   const env: Record<string, string> = {};
@@ -158,7 +158,7 @@ export function serverEnvironment(options: EnvironmentOptions): Record<string, s
   if (gitNames.length === 0) throw new Error('a server needs git’s variables');
   for (const name of gitNames) {
     if (!name.startsWith('GIT_') || !NAME.test(name)) {
-      throw new Error(`git's variables are each GIT_*: ${name}`);
+      throw new Error(`git’s variables are each GIT_*: ${name}`);
     }
     env[name] = checkedValue(name, git[name]);
   }
@@ -176,7 +176,7 @@ export function serverEnvironment(options: EnvironmentOptions): Record<string, s
     checkName(name);
     const within = checkedValue(name, homeFolders[name]);
     if (Object.hasOwn(variables, name) || !isPlainPath(within)) {
-      throw new Error(`the variable ${name} must name one folder inside the server's home`);
+      throw new Error(`the variable ${name} must name one folder inside the server’s home`);
     }
     env[name] = join(home, ...within.split('/'));
   }

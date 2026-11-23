@@ -21,7 +21,7 @@ export async function readBodies(
   { description }: BodiesOptions,
 ): Promise<RenderedBodies> {
   const info = sources.pull(id);
-  if (!info) throw new IpcError('missing', "There's no pull request's tab with that id.");
+  if (!info) throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
   if (info.run) throw new IpcError('refused', 'A run of layers has no posts of its own.');
   const { acting } = info;
   if (acting?.kind === 'anonymous') throw new IpcError('refused', 'Sign in to see comments.');

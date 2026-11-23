@@ -22,7 +22,7 @@ export default defineCommands('keys', {
   /** In the palette, shows the highlighted command in keyboard shortcuts. */
   showKey: {
     label: 'Show key',
-    control: "Show key in the command palette's foot",
+    control: 'Show key in the command palette’s foot',
     group: 'App',
     keys: ['alt+enter'],
     when: { scope: 'palette' },

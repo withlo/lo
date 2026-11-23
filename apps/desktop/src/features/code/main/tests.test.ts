@@ -77,13 +77,13 @@ describe('test servers', () => {
     const relative = manifest({
       servers: [{ id: 'ts', name: 'TS', languages: {}, program: 'node', args: [] }],
     });
-    expect(() => readTestServers(relative)).toThrow("Lo can't use");
+    expect(() => readTestServers(relative)).toThrow('Lo can’t use');
     const unknown = manifest({
       servers: [
         { id: 'ts', name: 'TS', languages: { cobol: 'cobol' }, program: '/bin/x', args: [] },
       ],
     });
-    expect(() => readTestServers(unknown)).toThrow("Lo can't use");
+    expect(() => readTestServers(unknown)).toThrow('Lo can’t use');
   });
 
   it('take the place of Lo’s own servers, which a test run never starts', () => {

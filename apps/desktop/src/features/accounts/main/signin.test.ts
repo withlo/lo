@@ -272,7 +272,7 @@ describe('signing in with GitHub', () => {
       kind: 'failed',
       id: 1,
       why: 'failed',
-      message: "Lo couldn't keep the account. Try signing in again.",
+      message: 'Lo couldn’t keep the account. Try signing in again.',
     });
     expect(logged).toEqual(['signing in: the database is locked']);
   });

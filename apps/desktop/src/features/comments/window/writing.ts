@@ -6,9 +6,9 @@
 // stands, and why a change to a thread, or to a comment, wasn't made.
 
 import { CommentableLines, Line, lineRefText, type Lines, type Screen } from '@lo/review';
+import { clock } from '@lo/ui';
 import type { OnFile, Place, Span } from '@lo/ui/code';
 
-import { clockOf } from '../../../window/time.ts';
 import type { DrawnDiff, ThreadedFile } from '../../diff/window/shared.ts';
 import type { CommentOnHead, FileWhy } from '../../overview/window/shared.ts';
 import type {
@@ -153,7 +153,7 @@ export function placeKey(place: DraftPlaceRow): string {
     case 'edit':
       return JSON.stringify([place.kind, place.thread, place.comment]);
     default:
-      throw new Error(`a draft's place Lo doesn't know: ${JSON.stringify(place satisfies never)}`);
+      throw new Error(`a draft’s place Lo doesn’t know: ${JSON.stringify(place satisfies never)}`);
   }
 }
 
@@ -325,7 +325,7 @@ export function actText(refusal: ActRefusal, doing: Doing, login = ACCOUNT): str
     case 'noBase':
       return NO_BASE.slice(0, -1);
     case 'paused':
-      return `GitHub’s rate limit resets at ${clockOf(refusal.until)}`;
+      return `GitHub’s rate limit resets at ${clock(refusal.until)}`;
     case 'signIn':
       return SIGN_IN;
     case 'run':
@@ -353,7 +353,7 @@ export function refusalNote(
       return note('Those lines aren’t in the diff.', ['onFile']);
     case 'paused':
       return note(
-        `GitHub’s rate limit resets at ${clockOf(refusal.until)}.`,
+        `GitHub’s rate limit resets at ${clock(refusal.until)}.`,
         undefined,
         COULDNT[doing],
       );
@@ -614,7 +614,7 @@ function whyWords(why: BlockWhy, names: BlockRevisions): BoxWhere {
       return { head: 'File', why: 'This pull request deletes this file.' };
     default:
       why satisfies never;
-      throw new Error(`Lo doesn't know why a comment goes elsewhere: ${String(why)}`);
+      throw new Error(`Lo doesn’t know why a comment goes elsewhere: ${String(why)}`);
   }
 }
 

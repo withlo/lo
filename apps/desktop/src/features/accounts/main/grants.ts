@@ -69,7 +69,7 @@ export async function keychainProblem(
   keychain: Keychain,
 ): Promise<string | undefined> {
   if (!(await storage.isAsyncEncryptionAvailable())) {
-    return "Lo can't reach the system's keychain to keep your GitHub token safe.";
+    return 'Lo can’t reach the system’s keychain to keep your GitHub token safe.';
   }
   if (keychain.testRun) return undefined;
   if (keychain.mockKeychain) {
@@ -140,7 +140,7 @@ export class Grants implements Secrets {
       // A keyring's key that stopped answering leaves Chromium encrypting with its built-in one,
       // so the grant can't be read for want of a keyring, not for anything wrong with it.
       if (await this.#builtInKeyOnly()) throw new NoKeychain(NO_KEYRING, { cause: error });
-      throw new Error(`the keychain couldn't decrypt the token: ${describe(error)}`, {
+      throw new Error(`the keychain couldn’t decrypt the token: ${describe(error)}`, {
         cause: error,
       });
     }

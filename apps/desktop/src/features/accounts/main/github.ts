@@ -134,7 +134,7 @@ export class Github implements GithubAccess {
   async poller(login: string): Promise<Poller> {
     await this.#loaded;
     const poller = this.#pollers.get(login.toLowerCase());
-    if (!poller) throw new Error(`Lo isn't signed in to ${login}`);
+    if (!poller) throw new Error(`Lo isn’t signed in to ${login}`);
     return poller;
   }
 
@@ -207,7 +207,7 @@ export class Github implements GithubAccess {
   async remove(login: string): Promise<void> {
     const accounts = await this.#loaded;
     const account = accounts.account(login);
-    if (!account) throw new Error(`Lo isn't signed in to ${login}`);
+    if (!account) throw new Error(`Lo isn’t signed in to ${login}`);
     try {
       await accounts.remove(account.login);
     } finally {
@@ -348,7 +348,7 @@ export class Github implements GithubAccess {
         break;
       default:
         throw new Error(
-          `an accounts event Lo doesn't know: ${JSON.stringify(event satisfies never)}`,
+          `an accounts event Lo doesn’t know: ${JSON.stringify(event satisfies never)}`,
         );
     }
   }

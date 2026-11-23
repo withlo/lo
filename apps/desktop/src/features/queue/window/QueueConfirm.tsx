@@ -203,7 +203,7 @@ function shownOf(dialog: QueueDialog): Shown {
       };
     default:
       step satisfies never;
-      throw new Error(`a step Lo doesn't know: ${JSON.stringify(step)}`);
+      throw new Error(`a step Lo doesn’t know: ${JSON.stringify(step)}`);
   }
 }
 
