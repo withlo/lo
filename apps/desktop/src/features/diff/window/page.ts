@@ -14,11 +14,13 @@ export interface PageInfo {
 }
 
 let page: Promise<PageInfo> | undefined;
+/** What `app.info` said, once it has: a view drawn after that has it from its first frame. */
+let said: PageInfo | undefined;
 
 function pageInfo(): Promise<PageInfo> {
   page ??= client(app)
     .info()
-    .then(({ nonce, packaged }) => ({ nonce, packaged }));
+    .then(({ nonce, packaged }) => (said = { nonce, packaged }));
   return page;
 }
 
@@ -28,7 +30,7 @@ function pageInfo(): Promise<PageInfo> {
  * taken to run as it ships.
  */
 export function usePage(): PageInfo | undefined {
-  const [found, setFound] = useState<PageInfo>();
+  const [found, setFound] = useState<PageInfo | undefined>(said);
   useEffect(() => {
     let live = true;
     pageInfo()

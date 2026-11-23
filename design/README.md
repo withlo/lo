@@ -282,7 +282,9 @@ its last, as the step appears. Where one would play again on a step the reader c
 
 ## Waiting
 
-Lo waits in three ways. Use the first that fits, and never two for one wait.
+Lo waits in three ways. Use the first that fits, and never two for one wait. Never replace drawn
+content with a wait: what's drawn stays until what replaces it is ready, marked as at work where it
+says so (a `Spinner` in its bar), and then the new content takes its place in one Swap.
 
 | When                                 | What shows                                                                                                                                        | Component                        |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |

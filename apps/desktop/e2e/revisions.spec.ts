@@ -164,6 +164,59 @@ test('the picker lists the revisions and compares two, across the rebase', async
   await expect(row(page, 'src/format.ts')).not.toHaveClass(/text-fg-dim/);
 });
 
+test('keeps the diff on screen while another comparison loads, and draws it in the first frame its tab comes back in', async ({
+  page,
+}) => {
+  await shown(page);
+  await expect.poll(() => diffFiles(page)).toHaveLength(7);
+  // From here on, after each change to the page: whether the pull request was on it with no diff
+  // drawn, and whether the diff drawn was marked as at work.
+  await page.evaluate(() => {
+    const seen = { bare: 0, held: 0 };
+    new MutationObserver(() => {
+      const pull = document.querySelector('[data-lo-pull]');
+      if (pull && !pull.querySelector('.lo-diffview')) seen.bare += 1;
+      if (document.querySelector('[data-lo-diff][data-lo-held]')) seen.held += 1;
+    }).observe(document.body, { subtree: true, childList: true, attributes: true });
+    Object.assign(window, { seen });
+  });
+  const seen = () =>
+    page.evaluate(() => {
+      const counts: unknown = Reflect.get(window, 'seen');
+      return {
+        bare: Number(Reflect.get(Object(counts), 'bare')),
+        held: Number(Reflect.get(Object(counts), 'held')),
+      };
+    });
+
+  // r1 → r2: the whole pull request stays, marked as at work and taking no input, until the
+  // comparison takes its place.
+  await page.locator('.lo-diffview').click();
+  await page.keyboard.press('g');
+  await page.keyboard.press('v');
+  await expect(picker(page)).toBeFocused();
+  await page.keyboard.press('j');
+  await page.keyboard.press(' ');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => diffFiles(page), { timeout: 20_000 }).toEqual(['src/parser.ts']);
+  await expect(page.locator('[data-lo-diff][data-lo-held]')).toHaveCount(0);
+  const compared = await seen();
+  expect(compared.bare).toBe(0);
+  expect(compared.held).toBeGreaterThan(0);
+
+  // Away to Settings, and back: the diff is there in the frame the tab is.
+  const opened = await page.evaluate(() => window.lo.invoke('tab.open', { kind: 'settings' }));
+  expect(opened.ok).toBe(true);
+  await expect(page.locator('[data-lo-pull]')).toHaveCount(0);
+  await page
+    .getByRole('tablist', { name: 'Tabs' })
+    .getByRole('tab', { name: new RegExp(`#${APP_PULL.number}`) })
+    .click();
+  await expect(page.locator('[data-lo-pull] .lo-diffview')).toBeVisible();
+  expect(await diffFiles(page)).toEqual(['src/parser.ts']);
+  expect((await seen()).bare).toBe(0);
+});
+
 /**
  * Closes the first copy of Lo, which made the database, and notes that the reader left the pull
  * request at its first push; then starts Lo again on the same data, fetching from `remote`, and
