@@ -96,7 +96,7 @@ const nextMatch = jump(findNext);
 const previousMatch = jump(findPrevious);
 
 /** Opens the search, or puts focus back in its field. */
-function openSearch(view: EditorView): boolean {
+export function openSearch(view: EditorView): boolean {
   return openSearchPanel(view);
 }
 

@@ -190,6 +190,7 @@ export default defineCommands(
     /** The file in the pull request's changes on GitHub, or for an unchanged file, at the head. */
     openOnGithub: {
       label: 'Open on GitHub',
+      description: 'The file, in the pull request’s changes.',
       group: 'Code',
       keys: ['g x'],
       targets: ['file'],

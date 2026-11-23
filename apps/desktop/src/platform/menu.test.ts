@@ -26,7 +26,21 @@ const items: BarItem[] = [
   item('diff.inline', 'View', 'diff', 5, { label: 'Inline' }),
 ];
 
-const options: MenuOptions = { name: 'Lo', devTools: false, run: () => undefined };
+const options: MenuOptions = {
+  name: 'Lo',
+  devTools: false,
+  run: () => undefined,
+  redraw: () => undefined,
+};
+
+/** Clicks `on`, by its key or not, as Electron would. */
+const clickOn = (on: MenuItemConstructorOptions | undefined, triggeredByAccelerator: boolean) =>
+  on?.click?.(
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- only the event is read.
+    {} as Parameters<NonNullable<MenuItemConstructorOptions['click']>>[0],
+    undefined,
+    { triggeredByAccelerator, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false },
+  );
 
 function menuOf(template: MenuItemConstructorOptions[], label: string) {
   const found = template.find((each) => each.label === label);
@@ -189,17 +203,36 @@ describe('the app menu', () => {
 
   it('runs a command on a click, and nothing when a key triggered the item', () => {
     const forward = menuOf(template, 'Go')?.[1];
-    const click = (triggeredByAccelerator: boolean) =>
-      forward?.click?.(
-        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- only the event is read.
-        {} as Parameters<NonNullable<MenuItemConstructorOptions['click']>>[0],
-        undefined,
-        { triggeredByAccelerator, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false },
-      );
-    click(true);
+    clickOn(forward, true);
     expect(run).toEqual([]);
-    click(false);
+    clickOn(forward, false);
     expect(run).toEqual(['keys.forward']);
+  });
+
+  it('draws the menu again after a click on a check or a radio item, by its key or not, and only then', () => {
+    let redrawn = 0;
+    const ran: string[] = [];
+    const view = menuOf(
+      menuTree(
+        'mac',
+        [
+          item('tab.leftPanel', 'View', 'panels', 10, { toggle: 'switch', checked: true }),
+          item('diff.inline', 'View', 'diff', 20, { toggle: 'choice', checked: true }),
+          item('keys.palette', 'View', 'palette', 10),
+        ],
+        { ...options, run: (id) => ran.push(id), redraw: () => (redrawn += 1) },
+      ),
+      'View',
+    );
+    const byId = (id: string) => view?.find((each) => each.id === id);
+    clickOn(byId('tab.leftPanel'), false);
+    clickOn(byId('tab.leftPanel'), true);
+    clickOn(byId('diff.inline'), false);
+    expect(redrawn).toBe(3);
+    expect(ran).toEqual(['tab.leftPanel', 'diff.inline']);
+    clickOn(byId('keys.palette'), false);
+    expect(redrawn).toBe(3);
+    expect(ran).toEqual(['tab.leftPanel', 'diff.inline', 'keys.palette']);
   });
 
   it('offers the developer tools only when asked', () => {

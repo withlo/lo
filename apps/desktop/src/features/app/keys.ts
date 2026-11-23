@@ -42,6 +42,7 @@ export default defineCommands('app', {
     group: 'View',
     keys: ['f11'],
     bar: { menu: 'View', section: 'screen', order: 10 },
+    toggle: 'switch',
     when: { system: 'linux' },
   },
   /**

@@ -118,6 +118,7 @@ import {
   idle,
   installVim,
   onVimMode,
+  openFind,
   ownChange,
   passToVim,
   selectedLines,
@@ -2573,11 +2574,21 @@ class View implements DiffView {
   }
 
   focus(): void {
-    // Where `reveal` last put the cursor, or the editor that had focus last.
+    this.#focusPane();
+  }
+
+  find(): void {
+    openFind(this.#focusPane());
+  }
+
+  /** Focuses the editor where `reveal` last put the cursor, or the one that had focus last. */
+  #focusPane(): EditorView {
     const pane = this.#panes().includes(this.#lastPane) ? this.#lastPane : this.#activePane();
-    this.#viewOf(pane).focus();
+    const view = this.#viewOf(pane);
+    view.focus();
     // Said now: CodeMirror hears of focus a little later.
     this.#tell(pane);
+    return view;
   }
 
   destroy(): void {

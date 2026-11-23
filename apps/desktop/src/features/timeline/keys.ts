@@ -124,6 +124,7 @@ export default defineCommands(
      */
     openOnGithub: {
       label: 'Open on GitHub',
+      description: 'The event, where it happened.',
       group: 'Tabs',
       keys: ['g x'],
       targets: ['row'],

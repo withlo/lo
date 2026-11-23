@@ -61,6 +61,78 @@ export async function closedPort(): Promise<number> {
   return address.port;
 }
 
+/** Keeps each menu main pops up, as Linux's app menu is, rather than showing it on the desktop. */
+export async function keepMenus(app: ElectronApplication): Promise<void> {
+  await app.evaluate(({ Menu }) => {
+    Reflect.set(globalThis, 'keptMenus', 0);
+    Reflect.set(Menu.prototype, 'popup', function popup(this: Electron.Menu) {
+      Reflect.set(globalThis, 'keptMenu', this);
+      Reflect.set(globalThis, 'keptMenus', Number(Reflect.get(globalThis, 'keptMenus')) + 1);
+    });
+  });
+}
+
+/** On Linux, opens the app menu with `F10`, and waits for main to have popped it up. */
+async function popUp(app: ElectronApplication, page: Page): Promise<void> {
+  const count = () => app.evaluate(() => Number(Reflect.get(globalThis, 'keptMenus')));
+  const before = await count();
+  await page.keyboard.press('F10');
+  await expect.poll(count).toBeGreaterThan(before);
+}
+
+/**
+ * Whether the app menu's item for command `id` is checked as it shows now, or with `enabled`,
+ * whether it can be chosen; null with no such item. On macOS it's the menu bar's, and on Linux the
+ * menu `F10` opens, which `keepMenus` keeps.
+ */
+export async function barItem(
+  app: ElectronApplication,
+  page: Page,
+  id: string,
+  state: 'checked' | 'enabled' = 'checked',
+): Promise<boolean | null> {
+  if (process.platform !== 'darwin') await popUp(app, page);
+  return app.evaluate(
+    ({ Menu }, asked) => {
+      const menu: unknown = asked.mac
+        ? Menu.getApplicationMenu()
+        : Reflect.get(globalThis, 'keptMenu');
+      const item = menu instanceof Menu ? menu.getMenuItemById(asked.id) : null;
+      return item ? item[asked.state] : null;
+    },
+    { id, state, mac: process.platform === 'darwin' },
+  );
+}
+
+/** Clicks the app menu's item for command `id`, as a click or as its key does it. */
+export async function clickBarItem(
+  app: ElectronApplication,
+  page: Page,
+  id: string,
+  byKey = false,
+): Promise<void> {
+  if (process.platform !== 'darwin') await popUp(app, page);
+  await app.evaluate(
+    ({ BrowserWindow, Menu }, asked) => {
+      const window = BrowserWindow.getAllWindows()[0];
+      const menu: unknown = asked.mac
+        ? Menu.getApplicationMenu()
+        : Reflect.get(globalThis, 'keptMenu');
+      const event = {
+        triggeredByAccelerator: asked.byKey,
+        shiftKey: false,
+        ctrlKey: false,
+        altKey: false,
+        metaKey: false,
+      };
+      if (menu instanceof Menu) {
+        menu.getMenuItemById(asked.id)?.click(event, window, window?.webContents);
+      }
+    },
+    { id, mac: process.platform === 'darwin', byKey },
+  );
+}
+
 /**
  * The middle of the window while no pull request or Settings is open: the Recent list, where keys
  * go back to with `Esc`.

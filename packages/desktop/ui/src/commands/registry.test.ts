@@ -144,6 +144,29 @@ describe('running a command', () => {
     ]);
   });
 
+  test('tells onRun of each command that ran, by key or not, and again once one it waits on settles', async () => {
+    const waited = Promise.withResolvers<void>();
+    const commands = testCommands().map((command): Command =>
+      command.id === 'keys.help' ? { ...command, handler: { run: () => waited.promise } } : command,
+    );
+    const { registry, press } = setup({ commands });
+    const told: string[] = [];
+    const stop = registry.onRun((id) => told.push(id));
+    registry.run('diff.markViewed', place(3));
+    press(['cmd+shift+p'], scope('diff'));
+    registry.run('keys.help', { kind: 'none' });
+    expect(told).toEqual(['diff.markViewed', 'keys.palette', 'keys.help']);
+    waited.resolve();
+    await waited.promise;
+    await Promise.resolve();
+    expect(told).toEqual(['diff.markViewed', 'keys.palette', 'keys.help', 'keys.help']);
+    // A command that can't run didn't.
+    registry.run('diff.nope', { kind: 'none' });
+    stop();
+    registry.run('diff.markViewed', place(3));
+    expect(told).toHaveLength(4);
+  });
+
   test('a jump records where the tab is first, so ⌃o comes back', () => {
     let here: Entry = { view: 'diff', at: place(10, 'old') };
     const { registry, ran } = setup({ here: () => here });

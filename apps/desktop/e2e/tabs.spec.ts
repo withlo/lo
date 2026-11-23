@@ -9,10 +9,13 @@ import {
 import {
   appEnvironment,
   appFolder,
+  barItem,
+  clickBarItem,
   closedPort,
   dataFolder,
   drawnWindow,
   expect,
+  keepMenus,
   test as base,
 } from './app.ts';
 
@@ -484,6 +487,54 @@ test('macOS’s File, View and Window menus list the pull request’s page and l
       'Window: Next tab Command+Shift+]',
       'Window: Previous tab Command+Shift+[',
     ]);
+});
+
+test('the app menu checks what’s on however it was switched: from the menu, by key, by a key the menu took, and by the header’s controls', async ({
+  app,
+  page,
+}) => {
+  if (!mac) await keepMenus(app);
+  await open(page, pull('withlo', 'panels', 7));
+  await expect(shown(page)).toHaveText('panels #7');
+  const files = page.getByRole('complementary', { name: 'Files' });
+  const left = () => barItem(app, page, 'tab.leftPanel');
+  await expect(files).toBeVisible();
+  await expect.poll(left).toBe(true);
+
+  await test.step('from the menu, whose item Electron unticks itself', async () => {
+    await clickBarItem(app, page, 'tab.leftPanel');
+    await expect(files).toBeHidden();
+    await expect.poll(left).toBe(false);
+  });
+
+  await test.step('by key, after the menu did it', async () => {
+    await page.keyboard.press(`${cmd}+Backslash`);
+    await expect(files).toBeVisible();
+    await expect.poll(left).toBe(true);
+  });
+
+  await test.step('by a key the menu took, as from a dialog: nothing runs, and the tick stays', async () => {
+    await clickBarItem(app, page, 'tab.leftPanel', true);
+    await expect.poll(left).toBe(true);
+    await expect(files).toBeVisible();
+  });
+
+  await test.step('by the header’s view switch and threads toggle', async () => {
+    const views = page.getByRole('tablist', { name: 'View' });
+    await views.getByRole('tab').filter({ hasText: 'Timeline' }).click();
+    await expect.poll(() => barItem(app, page, 'timeline.show')).toBe(true);
+    await views.getByRole('tab').filter({ hasText: 'Diff' }).click();
+    await expect.poll(() => barItem(app, page, 'diff.show')).toBe(true);
+    expect(await barItem(app, page, 'timeline.show')).toBe(false);
+    const threads = page.locator('[data-lo-right-toggle]');
+    const right = () => barItem(app, page, 'tab.rightPanel');
+    await threads.click();
+    await expect(threads).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(right).toBe(true);
+    await threads.click();
+    await expect(threads).toHaveAttribute('aria-pressed', 'false');
+    await expect.poll(right).toBe(false);
+  });
 });
 
 // One tab; eight at 1440 px, the most that fit before "more" appears; forty at 1440 px, where most

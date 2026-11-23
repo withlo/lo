@@ -13,11 +13,14 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test';
 
 import {
   appFolder,
+  barItem,
   browsed,
+  clickBarItem,
   dataFolder,
   DIFF_FIRST,
   DIFF_FIRST_VIM,
   expect,
+  keepMenus,
   KEYCHAIN,
   settingsPath,
   tabBanners,
@@ -253,6 +256,9 @@ async function press(page: Page, ...keys: string[]): Promise<void> {
   for (const key of keys) await page.keyboard.press(key);
 }
 
+/** Find…'s key: `⌘F`, and on Linux, where Ctrl+F is Vim's page down, Ctrl+Shift+F. */
+const FIND = process.platform === 'darwin' ? 'Meta+KeyF' : 'Control+Shift+KeyF';
+
 /** Puts the cursor in the diff, at the first header, on the new side, or inline. */
 async function focusDiff(page: Page): Promise<void> {
   const added = page.locator('.lo-diffview .cm-editor:visible').last();
@@ -463,8 +469,37 @@ test('answers its keys: files, changes, sides, layout, whitespace and folds, Esc
   }
 });
 
+test('Find…, by its key in the diff or from the app menu wherever focus is, opens the search at the foot of the diff’s code, and is dimmed with no diff on screen', async ({
+  app,
+  page,
+}) => {
+  if (process.platform !== 'darwin') await keepMenus(app);
+  await expect.poll(() => barItem(app, page, 'diff.find', 'enabled')).toBe(false);
+  await drawn(page);
+  await expect.poll(() => barItem(app, page, 'diff.find', 'enabled')).toBe(true);
+  const field = page.locator('.lo-codesearch__field');
+  await focusDiff(page);
+  await press(page, FIND);
+  await expect(field).toBeFocused();
+  await press(page, 'Escape');
+  await expect(field).toHaveCount(0);
+  // From the tree, the menu's Find… opens it in the diff, with focus in it.
+  await page.locator('[role="tree"][data-lo-scope="tree"]').focus();
+  await clickBarItem(app, page, 'diff.find');
+  await expect(field).toBeFocused();
+});
+
 test.describe('with Vim keys on', () => {
   test.use({ settings: DIFF_FIRST_VIM });
+
+  test('Find… opens Vim’s prompt, as `/` does', async ({ page }) => {
+    await drawn(page);
+    await focusDiff(page);
+    await press(page, FIND);
+    await expect(page.locator('.cm-vim-panel input')).toBeFocused();
+    await press(page, 'Escape');
+    await expect(page.locator('.cm-vim-panel')).toHaveCount(0);
+  });
 
   test('Vim’s mode shows in the status bar while the diff has focus, and its cursor hides no header', async ({
     page,

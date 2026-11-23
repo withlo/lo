@@ -14,60 +14,61 @@ menu: Go, Review, Comments, Code, View, Merge, Tabs and App. Each command's ID i
 
 ## Go
 
-| Command            | Keys          | Where                                                                                                   | ID                       |
-| ------------------ | ------------- | ------------------------------------------------------------------------------------------------------- | ------------------------ |
-| Next change        | `] c`         | In `diff`; in code views with Vim keys on, Vim's motion                                                 | `diff.nextChange`        |
-| Previous change    | `[ c`         | In `diff`; in code views with Vim keys on, Vim's motion                                                 | `diff.previousChange`    |
-| Next file          | `] f`         | In `diff`; in code views with Vim keys on, Vim's motion                                                 | `diff.nextFile`          |
-| Previous file      | `[ f`         | In `diff`; in code views with Vim keys on, Vim's motion                                                 | `diff.previousFile`      |
-| Next thread        | `] t`         | In `diff`; in code views with Vim keys on, Vim's motion                                                 | `diff.nextThread`        |
-| Previous thread    | `[ t`         | In `diff`; in code views with Vim keys on, Vim's motion                                                 | `diff.previousThread`    |
-| Go to moved code   | `g m`         | In `diff`; in code views, only in normal mode                                                           | `diff.otherEnd`          |
-| Go to other side   | `Tab`         | In `diff`; in code views, only in normal mode                                                           | `diff.otherSide`         |
-| Next line          | `j`           | Vim's own key, in code views                                                                            | `diff.down`              |
-| Previous line      | `k`           | Vim's own key, in code views                                                                            | `diff.up`                |
-| Select lines       | `v`           | Vim's own key, in code views                                                                            | `diff.select`            |
-| Find…              | `/`           | Vim's own key, in code views                                                                            | `diff.search`            |
-| Next match         | `n`           | Vim's own key, in code views                                                                            | `diff.nextMatch`         |
-| Previous match     | `N`           | Vim's own key, in code views                                                                            | `diff.previousMatch`     |
-| Go to view         | `Esc`         | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode                  | `keys.escape`            |
-| Back               | `⌃o`          | Anywhere but `box`                                                                                      | `keys.back`              |
-| Forward            | `⌃i`          | Anywhere but `box`                                                                                      | `keys.forward`           |
-| Next block         | `] b`         | In `overview`                                                                                           | `overview.nextBlock`     |
-| Previous block     | `[ b`         | In `overview`                                                                                           | `overview.previousBlock` |
-| Go to code         | `⏎`           | In `overview`                                                                                           | `overview.follow`        |
-| Next link          | `Tab`         | In `overview`                                                                                           | `overview.nextLink`      |
-| Previous link      | `⇧Tab`        | In `overview`                                                                                           | `overview.previousLink`  |
-| Next step          | `→`           | In `overview`                                                                                           | `overview.nextStep`      |
-| Previous step      | `←`           | In `overview`                                                                                           | `overview.previousStep`  |
-| Scroll down        | `j`, `↓`      | In `overview`                                                                                           | `overview.scrollDown`    |
-| Scroll up          | `k`, `↑`      | In `overview`                                                                                           | `overview.scrollUp`      |
-| Go to top          | `g g`, `Home` | In `overview`                                                                                           | `overview.top`           |
-| Go to bottom       | `G`, `End`    | In `overview`                                                                                           | `overview.bottom`        |
-| Page down          | `PgDn`        | In `overview`                                                                                           | `overview.pageDown`      |
-| Page up            | `PgUp`        | In `overview`                                                                                           | `overview.pageUp`        |
-| Next layer         | `] s`         | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode                  | `stacks.nextLayer`       |
-| Previous layer     | `[ s`         | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode                  | `stacks.previousLayer`   |
-| Go to stack        | `-`           | In `tree`                                                                                               | `stacks.focus`           |
-| Go to files        | `+`           | In `stack`                                                                                              | `stacks.files`           |
-| Next layer         | `j`, `↓`      | In `stack`                                                                                              | `stacks.down`            |
-| Previous layer     | `k`, `↑`      | In `stack`                                                                                              | `stacks.up`              |
-| Show layer         | `⏎`           | In `stack`                                                                                              | `stacks.show`            |
-| Next event         | `j`, `↓`      | In `timeline`                                                                                           | `timeline.down`          |
-| Previous event     | `k`, `↑`      | In `timeline`                                                                                           | `timeline.up`            |
-| Next link          | `Tab`         | In `timeline`                                                                                           | `timeline.nextLink`      |
-| Previous link      | `⇧Tab`        | In `timeline`                                                                                           | `timeline.previousLink`  |
-| Go to file…        | `⌘P`          | Anywhere but `dialog` and `palette`                                                                     | `tree.find`              |
-| Changed files only | `Tab`         | In `palette`                                                                                            | `tree.findChanged`       |
-| Open whole file    | `⌘⏎`          | In `palette`                                                                                            | `tree.findWhole`         |
-| Go to files        | `-`           | Anywhere but `menu`, `dialog`, `palette`, `box`, `tree` and `stack`; in code views, only in normal mode | `tree.focus`             |
-| Next row           | `j`, `↓`      | In `tree`                                                                                               | `tree.down`              |
-| Previous row       | `k`, `↑`      | In `tree`                                                                                               | `tree.up`                |
-| Go to top          | `g g`, `Home` | In `tree`                                                                                               | `tree.top`               |
-| Go to bottom       | `G`, `End`    | In `tree`                                                                                               | `tree.bottom`            |
-| Page down          | `PgDn`        | In `tree`                                                                                               | `tree.pageDown`          |
-| Page up            | `PgUp`        | In `tree`                                                                                               | `tree.pageUp`            |
-| Show file          | `⏎`           | In `tree`                                                                                               | `tree.show`              |
+| Command            | Keys              | Where                                                                                                   | ID                       |
+| ------------------ | ----------------- | ------------------------------------------------------------------------------------------------------- | ------------------------ |
+| Next change        | `] c`             | In `diff`; in code views with Vim keys on, Vim's motion                                                 | `diff.nextChange`        |
+| Previous change    | `[ c`             | In `diff`; in code views with Vim keys on, Vim's motion                                                 | `diff.previousChange`    |
+| Next file          | `] f`             | In `diff`; in code views with Vim keys on, Vim's motion                                                 | `diff.nextFile`          |
+| Previous file      | `[ f`             | In `diff`; in code views with Vim keys on, Vim's motion                                                 | `diff.previousFile`      |
+| Next thread        | `] t`             | In `diff`; in code views with Vim keys on, Vim's motion                                                 | `diff.nextThread`        |
+| Previous thread    | `[ t`             | In `diff`; in code views with Vim keys on, Vim's motion                                                 | `diff.previousThread`    |
+| Go to moved code   | `g m`             | In `diff`; in code views, only in normal mode                                                           | `diff.otherEnd`          |
+| Go to other side   | `Tab`             | In `diff`; in code views, only in normal mode                                                           | `diff.otherSide`         |
+| Next line          | `j`               | Vim's own key, in code views                                                                            | `diff.down`              |
+| Previous line      | `k`               | Vim's own key, in code views                                                                            | `diff.up`                |
+| Select lines       | `v`               | Vim's own key, in code views                                                                            | `diff.select`            |
+| Find…              | `/`               | Vim's own key, in code views                                                                            | `diff.search`            |
+| Find…              | `⌘F` (macOS only) | In `diff` and `file`                                                                                    | `diff.find`              |
+| Next match         | `n`               | Vim's own key, in code views                                                                            | `diff.nextMatch`         |
+| Previous match     | `N`               | Vim's own key, in code views                                                                            | `diff.previousMatch`     |
+| Go to view         | `Esc`             | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode                  | `keys.escape`            |
+| Back               | `⌃o`              | Anywhere but `box`                                                                                      | `keys.back`              |
+| Forward            | `⌃i`              | Anywhere but `box`                                                                                      | `keys.forward`           |
+| Next block         | `] b`             | In `overview`                                                                                           | `overview.nextBlock`     |
+| Previous block     | `[ b`             | In `overview`                                                                                           | `overview.previousBlock` |
+| Go to code         | `⏎`               | In `overview`                                                                                           | `overview.follow`        |
+| Next link          | `Tab`             | In `overview`                                                                                           | `overview.nextLink`      |
+| Previous link      | `⇧Tab`            | In `overview`                                                                                           | `overview.previousLink`  |
+| Next step          | `→`               | In `overview`                                                                                           | `overview.nextStep`      |
+| Previous step      | `←`               | In `overview`                                                                                           | `overview.previousStep`  |
+| Scroll down        | `j`, `↓`          | In `overview`                                                                                           | `overview.scrollDown`    |
+| Scroll up          | `k`, `↑`          | In `overview`                                                                                           | `overview.scrollUp`      |
+| Go to top          | `g g`, `Home`     | In `overview`                                                                                           | `overview.top`           |
+| Go to bottom       | `G`, `End`        | In `overview`                                                                                           | `overview.bottom`        |
+| Page down          | `PgDn`            | In `overview`                                                                                           | `overview.pageDown`      |
+| Page up            | `PgUp`            | In `overview`                                                                                           | `overview.pageUp`        |
+| Next layer         | `] s`             | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode                  | `stacks.nextLayer`       |
+| Previous layer     | `[ s`             | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode                  | `stacks.previousLayer`   |
+| Go to stack        | `-`               | In `tree`                                                                                               | `stacks.focus`           |
+| Go to files        | `+`               | In `stack`                                                                                              | `stacks.files`           |
+| Next layer         | `j`, `↓`          | In `stack`                                                                                              | `stacks.down`            |
+| Previous layer     | `k`, `↑`          | In `stack`                                                                                              | `stacks.up`              |
+| Show layer         | `⏎`               | In `stack`                                                                                              | `stacks.show`            |
+| Next event         | `j`, `↓`          | In `timeline`                                                                                           | `timeline.down`          |
+| Previous event     | `k`, `↑`          | In `timeline`                                                                                           | `timeline.up`            |
+| Next link          | `Tab`             | In `timeline`                                                                                           | `timeline.nextLink`      |
+| Previous link      | `⇧Tab`            | In `timeline`                                                                                           | `timeline.previousLink`  |
+| Go to file…        | `⌘P`              | Anywhere but `dialog` and `palette`                                                                     | `tree.find`              |
+| Changed files only | `Tab`             | In `palette`                                                                                            | `tree.findChanged`       |
+| Open whole file    | `⌘⏎`              | In `palette`                                                                                            | `tree.findWhole`         |
+| Go to files        | `-`               | Anywhere but `menu`, `dialog`, `palette`, `box`, `tree` and `stack`; in code views, only in normal mode | `tree.focus`             |
+| Next row           | `j`, `↓`          | In `tree`                                                                                               | `tree.down`              |
+| Previous row       | `k`, `↑`          | In `tree`                                                                                               | `tree.up`                |
+| Go to top          | `g g`, `Home`     | In `tree`                                                                                               | `tree.top`               |
+| Go to bottom       | `G`, `End`        | In `tree`                                                                                               | `tree.bottom`            |
+| Page down          | `PgDn`            | In `tree`                                                                                               | `tree.pageDown`          |
+| Page up            | `PgUp`            | In `tree`                                                                                               | `tree.pageUp`            |
+| Show file          | `⏎`               | In `tree`                                                                                               | `tree.show`              |
 
 ## Review
 
@@ -414,6 +415,8 @@ These keys are on one system only:
 | Quit Lo                 | `Ctrl+Q`                                                        | Linux | Anywhere                                    | `app.quit`       |
 | Full screen             | `F11`                                                           | Linux | Anywhere                                    | `app.fullScreen` |
 | About Lo                | None: the app menu, its right-click menu or the command palette | Linux | Anywhere                                    | `app.about`      |
+| Find…                   | `⌘F`                                                            | macOS | In `diff` and `file`                        | `diff.find`      |
+| Find…                   | `Ctrl+Shift+F`                                                  | Linux | In `diff` and `file`                        | `diff.find`      |
 | Show menu               | `F10`                                                           | Linux | Anywhere but `menu`, `dialog` and `palette` | `keys.appMenu`   |
 | Open pull request…      | `⌘O`                                                            | macOS | Anywhere but `dialog` and `palette`         | `open.box`       |
 | Move Lo to Applications | None: its control or the command palette                        | macOS | Anywhere                                    | `updates.move`   |

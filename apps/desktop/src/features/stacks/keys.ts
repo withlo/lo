@@ -148,6 +148,7 @@ export default defineCommands(
     },
     openOnGithub: {
       label: 'Open on GitHub',
+      description: 'The layer’s pull request.',
       group: 'Tabs',
       keys: ['g x'],
       targets: ['layer'],

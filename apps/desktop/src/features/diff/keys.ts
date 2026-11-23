@@ -269,6 +269,7 @@ export default defineCommands('diff', {
    */
   openOnGithub: {
     label: 'Open on GitHub',
+    description: 'The line or file, in the pull request’s changes.',
     group: 'Code',
     keys: ['g x'],
     targets: ['line', 'header'],
@@ -292,6 +293,21 @@ export default defineCommands('diff', {
   up: { label: 'Previous line', group: 'Go', keys: ['k'], vim: 'own', when: code },
   select: { label: 'Select lines', group: 'Go', keys: ['v'], vim: 'own', when: code },
   search: { label: 'Find…', group: 'Go', keys: ['/'], vim: 'own', when: code },
+  /**
+   * Opens the search in the code on screen, a file whole's or the diff's, as `/` does there, with
+   * focus in it: the app menu's Find…, which works wherever focus is. On Linux, Ctrl+F is Vim's
+   * page down, so it's Ctrl+Shift+F there, as in a terminal, whose program keeps Ctrl+F.
+   */
+  find: {
+    label: 'Find…',
+    group: 'Go',
+    keys: [
+      { keys: 'cmd+f', on: 'mac' },
+      { keys: 'cmd+shift+f', on: 'linux' },
+    ],
+    when: code,
+    bar: { menu: 'Edit', section: 'find', order: 10 },
+  },
   nextMatch: { label: 'Next match', group: 'Go', keys: ['n'], vim: 'own', when: code },
   previousMatch: { label: 'Previous match', group: 'Go', keys: ['N'], vim: 'own', when: code },
 });

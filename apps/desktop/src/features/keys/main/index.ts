@@ -37,15 +37,27 @@ let keymap: KeymapWatch | undefined;
 let tree: MenuItemConstructorOptions[] = [];
 
 /**
- * Makes the app menu from the commands the window lists. On macOS it's the menu bar, in place of
- * whatever was there, Electron's default included. Lo's window on Linux has no menu bar, so there
- * the menu is kept for the window to open from its tab strip, and Electron's goes with nothing in
- * its place: a menu set there would take keys the page didn't, though it never shows.
+ * Sets the app menu from `tree`. On macOS it's the menu bar, in place of whatever was there,
+ * Electron's default included. Lo's window on Linux has no menu bar, so there the menu is kept for
+ * the window to open from its tab strip, and Electron's goes with nothing in its place: a menu set
+ * there would take keys the page didn't, though it never shows.
  */
+function draw(): void {
+  Menu.setApplicationMenu(process.platform === 'darwin' ? Menu.buildFromTemplate(tree) : null);
+}
+
+/**
+ * Draws the menu bar again as the window last listed its commands, once the click that flipped a
+ * check in it is over. Linux's menu is made afresh each time it opens.
+ */
+function redraw(): void {
+  if (process.platform === 'darwin') setImmediate(draw);
+}
+
+/** Makes the app menu from the commands the window lists. */
 function setMenu(items: readonly BarItem[], run: (id: string) => void): void {
-  tree = appMenu(process.platform, items, { name: app.name, devTools: tools, run });
-  const mac = process.platform === 'darwin';
-  Menu.setApplicationMenu(mac ? Menu.buildFromTemplate(tree) : null);
+  tree = appMenu(process.platform, items, { name: app.name, devTools: tools, run, redraw });
+  draw();
 }
 
 export default defineFeature(contract, {

@@ -23,7 +23,7 @@ import type { JumpTo, Mode, VimKey } from './api.ts';
 import { diffMotions } from './api.ts';
 import { installJumps, type JumpSink, sendJumps } from './jumps.ts';
 import { type ModeName, onVim, sayMode, switchWith, vimOn } from './mode.ts';
-import { passPlain, plainPending } from './plain.ts';
+import { openSearch, passPlain, plainPending } from './plain.ts';
 import { defineScreenKeys } from './screen.ts';
 
 export { onVim, setVim, vimOn } from './mode.ts';
@@ -429,6 +429,20 @@ export function leaveToNormal(view: EditorView): void {
   if (!vimOn() || !cm || !hasVim(cm)) return;
   if (cm.state.vim.insertMode) Vim.exitInsertMode(cm, true);
   else if (cm.state.vim.visualMode) Vim.exitVisualMode(cm, true);
+}
+
+/**
+ * Opens the search in `view`, which has focus, as `/` does there: Vim's prompt with Vim keys on,
+ * dropping whatever was typed towards a command, or the search field at the foot of the code with
+ * them off.
+ */
+export function openFind(view: EditorView): void {
+  if (!vimOn()) {
+    openSearch(view);
+    return;
+  }
+  clearVim(view);
+  passToVim(view, ['/']);
 }
 
 /**

@@ -54,6 +54,7 @@ import {
   handlingKey,
   installVim,
   onVimMode,
+  openFind,
   passToVim,
   selectedLines,
   setVimKeys,
@@ -491,6 +492,11 @@ class WholeFile implements FileView {
     this.#view.focus();
     // Said now: CodeMirror hears of focus a little later.
     this.#tell();
+  }
+
+  find(): void {
+    this.focus();
+    openFind(this.#view);
   }
 
   destroy(): void {

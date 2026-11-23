@@ -1,4 +1,5 @@
 export {
+  STRIP_ATTRIBUTE,
   TabBar,
   type PullTab,
   type RecentTab,

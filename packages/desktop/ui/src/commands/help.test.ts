@@ -201,6 +201,36 @@ describe('keyboard shortcuts', () => {
     expect(merged?.keys).toEqual([['n'], ['j']]);
   });
 
+  it('keeps commands with one label apart where their descriptions say they do different things', () => {
+    const apart = new Registry({
+      system: 'mac',
+      commands: handlers(
+        defineCommands('tab', {
+          page: {
+            label: 'Open',
+            description: 'The page.',
+            group: 'Tabs',
+            keys: ['g x'],
+            when: { scope: 'diff' },
+          },
+          row: {
+            label: 'Open',
+            description: 'The row.',
+            group: 'Tabs',
+            keys: ['g x'],
+            when: { scope: 'tree' },
+          },
+        }),
+        { page: run, row: run },
+      ),
+    });
+    const rows = helpAll(apart, vim).flatMap((group) => group.rows);
+    expect(rows.map((row) => [row.ids, row.description])).toEqual([
+      [['tab.page'], 'The page.'],
+      [['tab.row'], 'The row.'],
+    ]);
+  });
+
   it('narrows to the commands, descriptions, groups, ids or keys typed', () => {
     const groups = helpAll(registry(), vim);
     const ids = (query: string) => idsOf(filterHelp(groups, query));

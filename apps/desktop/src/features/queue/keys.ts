@@ -112,6 +112,7 @@ export default defineCommands(
     /** The pull request on GitHub, or the queue itself while the keyboard is on none. */
     openOnGithub: {
       label: 'Open on GitHub',
+      description: 'The pull request, or the queue.',
       group: 'Merge',
       keys: ['g x'],
       targets: ['row', 'none'],

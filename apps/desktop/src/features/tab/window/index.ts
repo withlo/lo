@@ -1,7 +1,8 @@
 import { handlers, type History, type NoTarget, type TabTarget } from '@lo/ui/commands';
 import { createElement } from 'react';
 
-import { announce, fail } from '../../../window/commands/notices.tsx';
+import { menuStale } from '../../../window/commands/bar.ts';
+import { announce, fail, saidBy } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
 import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
@@ -99,14 +100,23 @@ async function copyLink(): Promise<void> {
   try {
     await main().copy({ text });
   } catch (error) {
-    console.error('Couldn’t copy the link:', error);
-    fail(
-      'Couldn’t copy the link',
-      error instanceof Error && error.message !== '' ? error.message : undefined,
-    );
+    console.error("Lo couldn't copy the link:", error);
+    fail('Couldn’t copy the link', saidBy(error));
     return;
   }
   announce('Copied link');
+}
+
+/** Opens the pull request on screen on GitHub, and says so if that failed. */
+async function openOnGithub(): Promise<void> {
+  const url = linkOnScreen();
+  if (url === '') return;
+  try {
+    await main().openExternal({ url });
+  } catch (error) {
+    console.error("Lo couldn't open the pull request on GitHub:", error);
+    fail('Couldn’t open GitHub’s page', saidBy(error));
+  }
 }
 
 /** Whether the pull request on screen has a left panel to show, and shows it. */
@@ -185,16 +195,7 @@ export default {
     },
     nextView: { run: () => stepMiddle(1), enabled: middleSteps },
     previousView: { run: () => stepMiddle(-1), enabled: middleSteps },
-    openOnGithub: {
-      run: () => {
-        const url = linkOnScreen();
-        if (url === '') return;
-        main()
-          .openExternal({ url })
-          .catch((error: unknown) => console.error("Lo couldn't open the pull request:", error));
-      },
-      enabled: linkable,
-    },
+    openOnGithub: { run: openOnGithub, enabled: linkable },
     copyLink: { run: copyLink, enabled: linkable },
     // Main closes the tab on screen as it has it, so two quick presses close two tabs.
     close: {
@@ -222,6 +223,8 @@ export default {
     tabs.subscribe('files', showFiles);
     tabs.subscribe('local', showLocal);
     tabsStore.subscribe(catchUp);
+    // The app menu's checks, and what it dims, follow the tabs and their panels however they move.
+    for (const store of [tabsStore, panels, rightPanel]) store.subscribe(() => menuStale());
     tabs
       .list()
       .then(showTabs)

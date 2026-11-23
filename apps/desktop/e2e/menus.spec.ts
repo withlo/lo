@@ -32,6 +32,33 @@ function nativeMenus(app: ElectronApplication): Promise<string[]> {
   });
 }
 
+/**
+ * Records the app menu main pops up on Linux, rather than showing it: its menus' names, then where
+ * it opened, `@ x,y`.
+ */
+async function recordAppMenus(app: ElectronApplication): Promise<void> {
+  await app.evaluate(({ Menu }) => {
+    const shown: string[] = [];
+    Reflect.set(globalThis, 'appMenus', shown);
+    Reflect.set(
+      Menu.prototype,
+      'popup',
+      function popup(this: Electron.Menu, options?: Electron.PopupOptions) {
+        const names = this.items.map((item) => item.label).join(' ');
+        shown.push(`${names} @ ${options?.x ?? '?'},${options?.y ?? '?'}`);
+      },
+    );
+  });
+}
+
+/** The app menus main has popped up since `recordAppMenus`. */
+function appMenus(app: ElectronApplication): Promise<string[]> {
+  return app.evaluate(() => {
+    const shown: unknown = Reflect.get(globalThis, 'appMenus');
+    return Array.isArray(shown) ? shown.map((menu) => String(menu)) : [];
+  });
+}
+
 test('a right-click lists Back and Forward with their keys in this system’s form, and on Linux About Lo, and Open licenses, which have none, and a screen reader hears an item’s name and key, not its key caps', async ({
   page,
 }) => {
@@ -134,6 +161,43 @@ for (const key of ['Shift+F10', 'ContextMenu']) {
     await expect(middle).toBeFocused();
   });
 }
+
+test('on Linux, the app menu opens under the menu button by a click and by F10, with the menus macOS’s menu bar has, keeping focus where it was; opened from the strip by the keyboard, it gives focus back to what had it', async ({
+  app,
+  page,
+}) => {
+  test.skip(mac, 'macOS’s app menu is its menu bar.');
+  await recordAppMenus(app);
+  const button = page.getByRole('button', { name: 'Show menu' });
+  await expect(button).toHaveAttribute('aria-haspopup', 'menu');
+  const box = await button.boundingBox();
+  const under = `@ ${Math.round(box?.x ?? 0)},${Math.round((box?.y ?? 0) + (box?.height ?? 0))}`;
+  const middle = middleOf(page);
+  await middle.focus();
+
+  await test.step('a click opens it under the button, and focus stays where it was', async () => {
+    await button.click();
+    await expect.poll(() => appMenus(app)).toHaveLength(1);
+    const [shown] = await appMenus(app);
+    expect(shown).toMatch(/(^| )File Edit View Go Review Window Help @ /);
+    expect(shown?.endsWith(under)).toBe(true);
+    await expect(middle).toBeFocused();
+  });
+
+  await test.step('F10 opens it too, and focus stays where it was', async () => {
+    await page.keyboard.press('F10');
+    await expect.poll(() => appMenus(app)).toHaveLength(2);
+    await expect(middle).toBeFocused();
+  });
+
+  await test.step('from the strip by the keyboard, it acts on what had focus before, which gets it back', async () => {
+    await button.focus();
+    await expect(button).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect.poll(() => appMenus(app)).toHaveLength(3);
+    await expect(middle).toBeFocused();
+  });
+});
 
 test('a right-click in a code view’s text gets Lo’s menu, and one in a comment box the Edit menu; and one in a text field gets the system’s Edit menu, not Lo’s', async ({
   app,

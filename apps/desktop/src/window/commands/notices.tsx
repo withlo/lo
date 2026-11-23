@@ -180,6 +180,12 @@ export function fail(line: string, details?: string): void {
   show({ title: line, body: '', tone: 'danger', details });
 }
 
+/** What main or the system said of `error`, as it came, for behind Details: nothing if it's empty. */
+export function saidBy(error: unknown): string | undefined {
+  const said = error instanceof Error ? error.message : String(error);
+  return said === '' ? undefined : said;
+}
+
 /**
  * Says that something asked for failed, where nothing in view can hold it, as for a command run
  * from the menu or a toast that has gone: the error's shape, `title` what failed ("Couldn’t open

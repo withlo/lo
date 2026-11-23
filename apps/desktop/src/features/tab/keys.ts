@@ -135,6 +135,7 @@ export default defineCommands('tab', {
    */
   openOnGithub: {
     label: 'Open on GitHub',
+    description: 'The pull request’s page.',
     group: 'Tabs',
     keys: [],
     bar: { menu: 'File', section: 'pull', order: 10 },

@@ -166,7 +166,7 @@ export default defineCommands(
     trustPull: {
       label: 'Trust pull request…',
       group: 'Code',
-      control: 'Trust this PR… on the banner about language servers, and on their status item',
+      control: 'Trust pull request… on the banner about language servers, and on their status item',
       keys: [],
     },
     /** Stops trusting what trusts the pull request on screen: language servers stop on it. */

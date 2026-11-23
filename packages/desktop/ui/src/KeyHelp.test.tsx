@@ -281,6 +281,23 @@ describe('KeyHelp', () => {
     );
   });
 
+  it('says what is wrong with the file and its lines as one error', () => {
+    const page = render(
+      <KeyHelp
+        open
+        onOpenChange={() => {}}
+        {...lists}
+        errors={[{ line: 4, message: 'No command `nope.nothing`' }]}
+        problem={{ title: 'Can’t read the keymap file', reason: 'It isn’t text.' }}
+      />,
+    );
+    const alerts = page.querySelectorAll('[role="alert"]');
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]?.textContent).toBe(
+      'Can’t read the keymap file It isn’t text.Line 4 · No command nope.nothing',
+    );
+  });
+
   it('offers to open the keymap file when it can', () => {
     const none = render(<KeyHelp open onOpenChange={() => {}} {...lists} />);
     expect(none.textContent).not.toContain('Open keymap file');

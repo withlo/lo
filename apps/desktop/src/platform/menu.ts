@@ -154,6 +154,11 @@ export interface MenuOptions {
   readonly devTools: boolean;
   /** Runs a command a click chose, through the window's registry. */
   readonly run: (id: string) => void;
+  /**
+   * Draws the menu again from the tree as the window last listed it. Electron flips a check box's
+   * or a radio item's mark itself, on a click or its key, whatever the command then does.
+   */
+  readonly redraw: () => void;
 }
 
 /** The app menu on `platform`, from the commands the window lists. */
@@ -202,9 +207,7 @@ export function menuTree(
     const submenu = separated(
       parts.map((part) => {
         if ('section' in part) {
-          return inSection(items, menu, part.section).map((item) =>
-            loItem(item, system, options.run),
-          );
+          return inSection(items, menu, part.section).map((item) => loItem(item, system, options));
         }
         if (part.on !== undefined && part.on !== system) return [];
         if (part.dev && !options.devTools) return [];
@@ -218,12 +221,12 @@ export function menuTree(
   });
 }
 
-/** A command's item: its label, key and state, and a check where it's a switch or a choice. */
-function loItem(
-  item: BarItem,
-  system: System,
-  run: (id: string) => void,
-): MenuItemConstructorOptions {
+/**
+ * A command's item: its label, key and state, and a check where it's a switch or a choice. A click
+ * on a check has the menu drawn again as the window last said, so its mark shows what's on until
+ * the window says what the command changed, not what Electron flipped it to.
+ */
+function loItem(item: BarItem, system: System, options: MenuOptions): MenuItemConstructorOptions {
   const accelerator = item.key && acceleratorOf(item.key);
   const toggle: MenuItemConstructorOptions =
     item.toggle === undefined
@@ -236,7 +239,8 @@ function loItem(
     ...toggle,
     ...(accelerator ? { accelerator } : {}),
     click(_menuItem, _window, event) {
-      if (!event.triggeredByAccelerator) run(item.id);
+      if (item.toggle !== undefined) options.redraw();
+      if (!event.triggeredByAccelerator) options.run(item.id);
     },
   };
 }

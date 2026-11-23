@@ -88,8 +88,12 @@ in Settings.
   by name in its `bar`: the menu, the section and its order there. A test fails on a command that
   names a menu or a section the list doesn't have.
 - **A switch shows a check, and a choice a radio mark,** for what's on now. A command declared a
-  `toggle` says when it's checked, and a test fails on one that doesn't.
-- **Linux gets the same tree,** from the menu button at the end of the tab strip, or `F10`.
+  `toggle` says when it's checked, and a test fails on one that doesn't. The window sends the menu
+  again after every command that runs and every click in the page, and a click on a check or radio
+  item in the menu has main draw it again from what the window last sent, so the mark never drifts.
+- **Linux gets the same tree,** from the menu button at the end of the tab strip, or `F10`. It acts
+  on what has focus, as a menu bar does: opened from the strip by the keyboard, it acts on what had
+  focus before the strip, which gets focus back.
 
 ## Focus
 
@@ -125,11 +129,13 @@ in Settings.
 ## Linux
 
 Ctrl takes the place of `⌘` in every key. Vim's `⌃` keys keep their meanings, so two keys differ
-from what that rule would give, on both systems:
+from what that rule would give, on both systems, and one on Linux alone:
 
 - **`⌘L` opens a PR,** the browser's "type an address" key. `⌘O` would become Ctrl+O, which is `⌃o`
   (back), so it stays a macOS alias only.
 - **`⌥⏎` shows a command's key in the palettes.** `⌃⏎` would be the same as `⌘⏎`, the other way.
+- **Find… is Ctrl+Shift+F,** as in a terminal, whose program keeps Ctrl+F. Ctrl+F is Vim's `⌃f`, a
+  page down. With Vim keys off, a code view's own Ctrl+F opens its search, as `/` does.
 
 `⌃⇥` and `⌃⇧⇥` also move to the next and previous tab, on both systems, beside `⌘⇧]` and `⌘⇧[`.
 

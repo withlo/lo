@@ -69,6 +69,15 @@ function drawnNow(): true | string {
   return typeof drawn === 'string' ? drawn : true;
 }
 
+/** The code Find… searches, a file whole on screen or the diff, or why there's none. */
+function findable(): { find(): void } | string {
+  const tab = activeTab();
+  const whole = tab?.kind === 'pull' ? wholeDrawn(tab.id) : undefined;
+  if (whole) return whole.view() ?? 'Go to the diff first';
+  const drawn = onScreen();
+  return typeof drawn === 'string' ? drawn : drawn.view;
+}
+
 /** The whole file on screen, as the keys act on it. */
 interface WholeOn {
   readonly tab: PullTab;
@@ -281,6 +290,16 @@ export default {
       },
     },
     otherSide: { run: withDiff(({ view }) => view.otherSide()), enabled: drawnNow },
+    find: {
+      run() {
+        const code = findable();
+        if (typeof code !== 'string') code.find();
+      },
+      enabled() {
+        const code = findable();
+        return typeof code === 'string' ? code : true;
+      },
+    },
     sideBySide: {
       run: withDiff((drawn) => setLayout(drawn, 'split')),
       enabled: layoutNow,

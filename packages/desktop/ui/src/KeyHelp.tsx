@@ -157,10 +157,9 @@ export function KeyHelp({
         </>
       }
     >
-      {problem !== undefined && (
-        <Problem title={problem.title} reason={problem.reason} details={problem.details} />
+      {(problem !== undefined || errors.length > 0) && (
+        <KeymapTrouble problem={problem} errors={errors} />
       )}
-      {errors.length > 0 && <KeymapLines errors={errors} />}
       <Input
         ref={search}
         type="search"
@@ -297,26 +296,39 @@ function lines(n: number, more = false): string {
 }
 
 /**
- * The keymap file's lines Lo can't use, as an error: how many, and a line for each of the first
- * few with its number and why, then how many more. The foot's "Open keymap file" opens it.
+ * What's wrong with the keymap file, as one error: the file as a whole, its title, why, and what
+ * the system said, behind Details; and its lines Lo can't use, how many, then a line for each of
+ * the first few with its number and why, then how many more. The foot's "Open keymap file" opens
+ * it.
  */
-function KeymapLines({ errors }: { errors: readonly KeymapError[] }) {
+function KeymapTrouble({
+  problem,
+  errors,
+}: {
+  problem: KeyHelpProblem | undefined;
+  errors: readonly KeymapError[];
+}) {
   const count = errors.length;
   const more = count - ERRORS_SHOWN;
+  const why = problem?.reason;
   return (
     <Problem
-      title={`Can’t use ${lines(count)} of the keymap file`}
+      title={problem?.title ?? `Can’t use ${lines(count)} of the keymap file`}
       reason={
-        <>
-          {errors.slice(0, ERRORS_SHOWN).map((error) => (
-            <span key={`${error.line} ${error.message}`} className="block">
-              Line <span className="lo-num">{error.line.toLocaleString('en')}</span> ·{' '}
-              <Ticks text={error.message} />
-            </span>
-          ))}
-          {more > 0 && <span className="block">{lines(more, true)}</span>}
-        </>
+        why === undefined && count === 0 ? undefined : (
+          <>
+            {why !== undefined && <span className="block">{why}</span>}
+            {errors.slice(0, ERRORS_SHOWN).map((error) => (
+              <span key={`${error.line} ${error.message}`} className="block">
+                Line <span className="lo-num">{error.line.toLocaleString('en')}</span> ·{' '}
+                <Ticks text={error.message} />
+              </span>
+            ))}
+            {more > 0 && <span className="block">{lines(more, true)}</span>}
+          </>
+        )
       }
+      details={problem?.details}
     />
   );
 }

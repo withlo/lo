@@ -119,13 +119,18 @@ function listedCommands(registry: Registry, options: HelpOptions): Command[] {
     );
 }
 
-/** `commands` as rows in the groups' order, those of one group with one label as one row. */
+/**
+ * `commands` as rows in the groups' order, those of one group with one label and description as one
+ * row: commands named alike that do different things say what each does apart.
+ */
 function grouped(registry: Registry, commands: readonly Command[], vim: boolean): HelpGroup[] {
   return groups.flatMap((group): HelpGroup[] => {
     const rows: HelpRow[] = [];
     for (const command of commands.filter((each) => each.group === group)) {
       const keys = liveKeys(registry, command);
-      const at = rows.findIndex((row) => row.label === command.label);
+      const at = rows.findIndex(
+        (row) => row.label === command.label && row.description === command.description,
+      );
       const same = rows[at];
       if (same) {
         const known = new Set(same.keys.map((each) => each.join(' ')));
@@ -133,7 +138,6 @@ function grouped(registry: Registry, commands: readonly Command[], vim: boolean)
           ...same,
           ids: [...same.ids, command.id],
           keys: [...same.keys, ...keys.filter((each) => !known.has(each.join(' ')))],
-          description: same.description ?? command.description,
         };
         continue;
       }

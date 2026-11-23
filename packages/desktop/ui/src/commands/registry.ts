@@ -94,6 +94,7 @@ export class Registry {
   private readonly onError: (error: unknown, command: Command | undefined) => void;
   private readonly onRefused: ((reason: string, id: string) => void) | undefined;
   private readonly listeners = new Set<() => void>();
+  private readonly runs = new Set<(id: string) => void>();
   private keymap: Keymap = { lines: [], errors: [] };
   /** The keymap's errors: its lines that can't be read, then those that don't apply. */
   private errors: readonly KeymapError[] = [];
@@ -184,6 +185,29 @@ export class Registry {
     return () => {
       this.listeners.delete(listener);
     };
+  }
+
+  /**
+   * Calls `listener` with a command's id each time one runs, however it was asked to: once its
+   * handler has returned, and again once the promise it returned, if any, settles. Returns a
+   * function that stops it.
+   */
+  onRun(listener: (id: string) => void): () => void {
+    this.runs.add(listener);
+    return () => {
+      this.runs.delete(listener);
+    };
+  }
+
+  /** Tells the run listeners that `id` ran, or finished running. */
+  private ran(id: string): void {
+    for (const listener of this.runs) {
+      try {
+        listener(id);
+      } catch (error) {
+        this.onError(error, this.byId.get(id));
+      }
+    }
   }
 
   /** `true` if `id` can run on `target` now, or why not. */
@@ -291,13 +315,16 @@ export class Registry {
     try {
       const result = handler.run(ready.target, command.count === undefined ? undefined : count);
       if (result !== undefined) {
-        result.catch((error: unknown) => {
-          this.onError(error, command);
-        });
+        result
+          .catch((error: unknown) => {
+            this.onError(error, command);
+          })
+          .finally(() => this.ran(id));
       }
     } catch (error) {
       this.onError(error, command);
     }
+    this.ran(id);
     return true;
   }
 
