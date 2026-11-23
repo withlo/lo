@@ -82,7 +82,7 @@ async function state(page: Page, id: string): Promise<unknown> {
 }
 
 const strip = (page: Page) => page.getByRole('tablist', { name: 'Pull requests' });
-const status = (page: Page) => page.locator('footer[aria-label="Status"]');
+const status = (page: Page) => page.locator('footer[aria-label="Status bar"]');
 
 test('opens a pull request with its header, and fetches its local copy at the head it opened at', async ({
   page,
@@ -125,19 +125,24 @@ test("says why a pull request GitHub doesn't have, or one no account can see, ca
   page,
 }) => {
   await open(page, { ...E2E, number: 9999 });
-  const banner = page.getByRole('alert').filter({ hasText: 'Can’t open #9999' });
-  await expect(banner).toContainText('It doesn’t exist, or rozed-bot can’t see it.');
+  // In place of the tab's view, with no banner over it.
+  const failed = page.locator('[data-lo-failed]');
+  const why = failed.getByRole('alert').filter({ hasText: 'Can’t open #9999' });
+  await expect(why).toContainText('It doesn’t exist, or rozed-bot can’t see it.');
+  await expect(tabBanners(page)).toHaveCount(0);
   // Nothing to try again: it can be looked for on GitHub, or closed.
-  await expect(banner.getByRole('button', { name: 'Open on GitHub' })).toBeVisible();
-  await expect(banner.getByRole('button', { name: 'Close tab' })).toBeVisible();
+  await expect(failed.getByRole('button', { name: 'Open on GitHub' })).toBeVisible();
+  await expect(failed.getByRole('button', { name: 'Close tab' })).toBeVisible();
   // The tab isn't busy: it's opened all it can.
   await expect(strip(page).getByRole('tab', { selected: true })).toHaveText('e2e #9999');
   await expect(strip(page).getByRole('tab', { selected: true })).not.toHaveAttribute('aria-busy');
 
   await open(page, { owner: 'rozed-dev', repo: 'gone', number: 1 });
-  const gone = page.getByRole('alert').filter({ hasText: 'Can’t open #1' });
+  const gone = page.locator('[data-lo-failed]');
   // Signed in, but no account can see it: nothing to sign in with.
-  await expect(gone).toContainText('It doesn’t exist, or none of your accounts can see it.');
+  await expect(gone.getByRole('alert').filter({ hasText: 'Can’t open #1' })).toContainText(
+    'It doesn’t exist, or none of your accounts can see it.',
+  );
   await expect(gone.getByRole('button', { name: 'Close tab' })).toBeVisible();
   await expect(page.locator('header').first()).toContainText('Not signed in');
 });
@@ -174,11 +179,15 @@ test('comes back offline with what it saved and what it fetched', async ({
   try {
     const shown = await drawnWindow(again);
     await expect(shown.getByRole('heading', { level: 1 })).toHaveText(TITLE);
-    await expect(shown.getByRole('status').filter({ hasText: "You're offline." })).toContainText(
-      'Showing what Lo saved',
-      { timeout: 30_000 },
-    );
-    await expect(shown.locator('header').first()).toContainText('Offline');
+    // The header's chip says it, once, and its details say when Lo last heard from GitHub.
+    const chip = shown.locator('header').first().getByRole('button', { name: 'Offline' });
+    await expect(chip).toBeVisible({ timeout: 30_000 });
+    await expect(tabBanners(shown)).toHaveCount(0);
+    await chip.click();
+    const details = shown.getByRole('dialog');
+    await expect(details).toContainText('Offline.');
+    await expect(details).toContainText(/Checked (just now|\d+ (min|h) ago)/);
+    await expect(details.getByRole('button', { name: /^Try (now|again)$/ })).toBeVisible();
     await expect
       .poll(() => state(shown, id), { timeout: 20_000 })
       .toMatchObject({

@@ -39,6 +39,10 @@ const bridge = installBridge({
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
+  // Where the window puts the items' details, as its page has.
+  const root = document.createElement('div');
+  root.id = 'root';
+  document.body.append(root);
   feature.start?.();
 });
 
@@ -104,9 +108,18 @@ function offItem(id: string, change: Partial<Status> = {}): HTMLElement {
 /** The item's details, open over it, or nothing while they're closed. */
 const details = () => document.querySelector<HTMLElement>('.status-details') ?? undefined;
 
+/** Lets the details mount, and take focus as they do. */
+async function settle(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
 /** Opens the item's details, as a click on it does, and gives them. */
-function open(page: HTMLElement): HTMLElement {
+async function open(page: HTMLElement): Promise<HTMLElement> {
   act(() => page.querySelector('button')?.click());
+  await settle();
   const shown = details();
   expect(shown).toBeDefined();
   return shown ?? page;
@@ -126,7 +139,7 @@ describe('the Language servers item', () => {
   it('says language servers are off for a repository nothing trusts, and only asks main', async () => {
     const page = offItem('t1');
     expect(page.textContent).toBe('Language servers off');
-    const shown = open(page);
+    const shown = await open(page);
     // One fact, in one line, and one button.
     expect(shown.querySelector('p')?.textContent).toBe(
       'Language servers are off for rozed-dev/e2e',
@@ -144,7 +157,9 @@ describe('the Language servers item', () => {
   });
 
   it('offers a fork’s pull request alone', async () => {
-    const shown = open(offItem('t2', { pull: 97, head: { kind: 'fork', repo: 'rozed-bot/e2e' } }));
+    const shown = await open(
+      offItem('t2', { pull: 97, head: { kind: 'fork', repo: 'rozed-bot/e2e' } }),
+    );
     expect(shown.textContent).toContain('Language servers are off for the fork rozed-bot/e2e');
     act(() => button(shown, 'Trust pull request…')?.click());
     await until(() =>
@@ -154,8 +169,8 @@ describe('the Language servers item', () => {
     );
   });
 
-  it('offers nothing to trust for a fork GitHub no longer has', () => {
-    const shown = open(offItem('t10', { head: { kind: 'gone' } }));
+  it('offers nothing to trust for a fork GitHub no longer has', async () => {
+    const shown = await open(offItem('t10', { head: { kind: 'gone' } }));
     expect(shown.textContent).toBe('Language servers are off for a fork that no longer exists');
     expect(shown.querySelector('button')).toBeNull();
   });
@@ -188,6 +203,7 @@ describe('the Language servers item', () => {
     onTestFinished(() => elsewhere.remove());
     elsewhere.focus();
     act(() => offerOnce('t3'));
+    await settle();
     expect(details()?.textContent).toContain('Language servers are off for rozed-dev/e2e');
     expect(document.activeElement).toBe(elsewhere);
     // Main keeps that it was offered, for every tab of the repository.
@@ -199,18 +215,25 @@ describe('the Language servers item', () => {
     act(() => offerOnce('t3'));
     expect(offered.get('t3')).toBe('closed');
     // A click opens them as ever, and they take focus then.
-    open(page);
+    await open(page);
     expect(offered.get('t3')).toBe('open');
   });
 
   it('doesn’t open by itself where it was offered, while Lo asks, or where nothing can be trusted', () => {
+    // Nor where there's no item, as where Lo has no language server for what the view shows.
+    act(() => bridge.push('code.status', statusOf('t15')));
+    act(() => offerOnce('t15'));
+    expect(offered.get('t15')).toBe('closed');
     for (const [id, change] of [
       ['t11', { dismissed: true }],
       ['t12', { trusting: 'asking' }],
       ['t13', { head: { kind: 'gone' } }],
       ['t14', { trust: { kind: 'trusted', by: 'repo' } }],
     ] as const) {
-      act(() => bridge.push('code.status', statusOf(id, change)));
+      act(() => {
+        bridge.push('code.served', off(id));
+        bridge.push('code.status', statusOf(id, change));
+      });
       act(() => offerOnce(id));
       expect(offered.get(id)).toBe('closed');
     }
@@ -220,6 +243,12 @@ describe('the Language servers item', () => {
     states.set('t9', statusOf('t9'));
     const page = draw(<ServerItems tab={tabOf('t9')} />);
     await until(() => page.textContent === 'Language servers off');
+    expect(
+      bridge.calls.some(
+        ([channel, input]) =>
+          channel === 'code.state' && Reflect.get(Object(input), 'view') === 't9',
+      ),
+    ).toBe(true);
   });
 });
 /** How many times the window asked main for `channel`. */
@@ -233,13 +262,14 @@ const says = (control: HTMLElement | undefined) => control && said(control);
 describe('asking to trust', () => {
   it('waits while main reads, asks and saves, saying how far it has got, and asks once', async () => {
     const page = offItem('t4');
-    const shown = open(page);
+    const shown = await open(page);
     // What it will say waits unseen beside its label, so pressing it keeps its width.
     const idle = trustButton(shown);
     expect(says(idle)).toBe('Trust repo…');
     const unseen = () =>
       [...(idle?.querySelectorAll('.invisible') ?? [])].map((face) => face.textContent);
-    expect(unseen()).toEqual(['Waiting…', 'Trusting…']);
+    // Its widest words hold their room from the start.
+    expect(unseen()).toContain('Trusting…');
     act(() => bridge.push('code.status', statusOf('t4', { trusting: 'reading' })));
     const trust = trustButton(details());
     expect(trust).toBe(idle);
@@ -269,7 +299,7 @@ describe('asking to trust', () => {
   });
 
   it('says why it failed, offers the settings file when that’s the cause, and asks again', async () => {
-    const shown = open(offItem('t5'));
+    const shown = await open(offItem('t5'));
     const why =
       "The settings file isn't valid JSON (Expected ',' or '}' after property value in JSON at position 20).";
     answerTrust = () => {
@@ -282,8 +312,8 @@ describe('asking to trust', () => {
     const alert = () => [...shown.querySelectorAll('[role="alert"] p')].map((p) => p.textContent);
     expect(alert()).toEqual(['Couldn’t trust rozed-dev/e2e', 'settings.json has an error.']);
     expect([...shown.querySelectorAll('button')].map(said)).toEqual([
-      'Open settings.json',
       'Details',
+      'Open settings.json',
       'Trust repo…',
     ]);
     expect(button(shown, 'Trust repo…')?.getAttribute('aria-disabled')).toBeNull();
@@ -310,7 +340,7 @@ describe('asking to trust', () => {
   });
 
   it('stops saying the settings file kept it from trusting once the settings change', async () => {
-    const shown = open(offItem('t7'));
+    const shown = await open(offItem('t7'));
     answerTrust = () => {
       throw new IpcError('settingsFile', "The settings file isn't valid JSON (x). Fix that.");
     };
@@ -360,7 +390,7 @@ describe('asking to trust', () => {
   });
 
   it('says so when main is asking about another repo, and asks it again once pressed again', async () => {
-    const shown = open(offItem('t8'));
+    const shown = await open(offItem('t8'));
     const elsewhere = 'Answer the question about rozed-dev/other first.';
     answerTrust = () => {
       throw new IpcError('asking', 'rozed-dev/other');
@@ -376,7 +406,7 @@ describe('asking to trust', () => {
   });
 
   it('never waits on an answer main doesn’t give, as after a reload, but on what main says', async () => {
-    const shown = open(offItem('t6'));
+    const shown = await open(offItem('t6'));
     // Main never answers this one.
     answerTrust = () => new Promise(() => undefined);
     const before = asked('code.trust');

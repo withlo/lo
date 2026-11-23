@@ -35,6 +35,10 @@ const header = (
   </PRHeader>
 );
 
+/** A status item with a ball in `state`, as markup. */
+const ball = (state: StatusBallState) =>
+  renderToStaticMarkup(<StatusItem ball={state}>a</StatusItem>);
+
 describe('PRHeader', () => {
   it('shows the state, title and number, who acts, the connection and the branches', () => {
     const markup = renderToStaticMarkup(header);
@@ -175,8 +179,6 @@ describe('StatusBar', () => {
   });
 
   it('draws each state as its own ball: a ring off, a spinner at work, filled, amber and red', () => {
-    const ball = (state: StatusBallState) =>
-      renderToStaticMarkup(<StatusItem ball={state}>a</StatusItem>);
     expect(ball('off')).toContain('data-ball="off"');
     expect(ball('off')).toContain('hollow');
     expect(ball('working')).toContain('spinner');

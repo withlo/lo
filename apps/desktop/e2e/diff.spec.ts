@@ -19,6 +19,7 @@ import {
   DIFF_FIRST_VIM,
   expect,
   KEYCHAIN,
+  rowOver,
   settingsPath,
   tabBanners,
   test as base,
@@ -318,7 +319,7 @@ test('answers its keys: files, changes, sides, layout, whitespace and folds, Esc
   const clipboard = () => app.evaluate(({ clipboard: board }) => board.readText());
 
   await test.step('a key held shows in the status bar, and no mode does, with Vim keys off', async () => {
-    const status = page.locator('footer[aria-label="Status"]');
+    const status = page.locator('footer[aria-label="Status bar"]');
     await expect(status.locator('.mode-chip')).toHaveCount(0);
     const held = status.locator('[title="Keys typed so far"]');
     await press(page, 'g');
@@ -471,7 +472,7 @@ test.describe('with Vim keys on', () => {
   }) => {
     await drawn(page);
     await focusDiff(page);
-    const status = page.locator('footer[aria-label="Status"]');
+    const status = page.locator('footer[aria-label="Status bar"]');
     await expect(status).toContainText('NORMAL');
     await press(page, 'Shift+V');
     await expect(status).toContainText('V-LINE');
@@ -1360,14 +1361,11 @@ test.describe('when the local copy comes after GitHub’s diff, on a file the re
   });
 });
 
-/**
- * Opens #80 in a short window, GitHub's diff with the banner over it that says the local copy
- * couldn't be fetched, which can come after GitHub's diff.
- */
+/** Opens #80 in a short window, GitHub's diff with a banner's row over it. */
 async function underBanner(app: ElectronApplication, page: Page): Promise<void> {
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setSize(1100, 440));
   await drawn(page, 'github', { moves: false });
-  await expect(tabBanners(page)).toBeVisible({ timeout: 20_000 });
+  await rowOver(page);
 }
 
 /** Where the first row below `view`'s top is on the page now, and how to read it again. */
@@ -1413,7 +1411,9 @@ async function bannerBack(page: Page): Promise<void> {
 test.describe('when a banner over the diff goes', () => {
   test.use({ cassette: 'app_e2e_late', lateRemote: true });
 
-  test('leaves the diff where it is on the page, even at its top', async ({ page }) => {
+  test('at its top, takes the room a banner leaves, and moves no more as the local copy’s diff comes', async ({
+    page,
+  }) => {
     const id = await drawn(page, 'github', { moves: false });
     // Where the first file's header is on the page, read as frames start, once two running agree:
     // a read between a change and the view making up for it, before the frame is painted, would
@@ -1437,12 +1437,10 @@ test.describe('when a banner over the diff goes', () => {
             requestAnimationFrame(tick);
           }),
       );
-    // The banner says the local copy's fetch failed, over the diff, which is at its top: there's
-    // less to scroll up than the banner is tall. The banner can come after GitHub's diff, which
-    // then scrolls to stay where it was, so the reader goes back to the top.
-    await expect(tabBanners(page)).toBeVisible({ timeout: 20_000 });
-    // Two frames on, the view has made up for the banner coming, which it does as a frame is laid
-    // out: a scroll to the top before then would be taken back.
+    // A banner's row over the diff, which is at its top: there's less to scroll up than the row is
+    // tall. Two frames on, the view has made up for the row coming, which it does as a frame is
+    // laid out: a scroll to the top before then would be taken back.
+    const gone = await rowOver(page, 34);
     await page.evaluate(
       () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
     );
@@ -1450,15 +1448,20 @@ test.describe('when a banner over the diff goes', () => {
       view.scrollTop = 0;
     });
     await page.waitForTimeout(300);
-    expect(await page.locator('.lo-diffview').evaluate((view) => view.scrollTop)).toBeLessThan(30);
     const before = await at();
+
+    // The row goes: the first file takes its room, with no band left over it.
+    await gone();
+    await page.waitForTimeout(300);
+    expect(Math.abs((await at()) - (before - 34))).toBeLessThanOrEqual(1);
+    expect(await page.locator('.lo-diffview').evaluate((view) => view.scrollTop)).toBe(0);
+    const after = await at();
     await watchStill(page);
 
+    // The local copy's diff then takes GitHub's place, which on a busy machine comes well after:
+    // nothing moves meanwhile.
     writeAppRemote(test.info().outputPath('remote'));
     await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
-    await expect(tabBanners(page)).toHaveCount(0, { timeout: 30_000 });
-    // The local copy's diff then takes GitHub's place, which on a busy machine comes well after
-    // the banner goes: nothing moves meanwhile either.
     const status = page.locator('footer');
     await expect(status.getByText('GitHub’s diff', { exact: true })).toHaveCount(0, {
       timeout: 30_000,
@@ -1473,7 +1476,7 @@ test.describe('when a banner over the diff goes', () => {
     });
 
     expect(moved).toEqual([]);
-    expect(Math.abs((await at()) - before)).toBeLessThanOrEqual(1);
+    expect(Math.abs((await at()) - after)).toBeLessThanOrEqual(1);
   });
 
   test('leaves the diff where it is on the page as the banner goes or comes, with a line held, a scroll in the frame, at its end, and files above closed', async ({
@@ -1540,7 +1543,7 @@ test.describe('when a banner over the diff goes', () => {
       const view = page.locator('.lo-diffview');
       // At the end, the files above close, as the local copy's say would: the view keeps what's on
       // screen in place, which takes the scroll back to the new end.
-      await page.evaluate(() => document.querySelector<HTMLElement>('[data-lo-banners]')?.remove());
+      await page.evaluate(() => document.querySelector('[data-lo-test-row]')?.remove());
       await page.waitForTimeout(300);
       await view.evaluate((each) => {
         each.scrollTop = each.scrollHeight;

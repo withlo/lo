@@ -1,5 +1,5 @@
 import { cva } from 'class-variance-authority';
-import { useId, useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode, type Ref } from 'react';
 
 import { Button } from './Button.tsx';
 import { Collapse } from './Collapse.tsx';
@@ -22,6 +22,8 @@ export interface ProblemAction {
   busy?: boolean | undefined;
   /** What the button says while busy: "Trying again…". */
   working?: string | undefined;
+  /** The button, for what gives it focus, as details that open on the one thing to do. */
+  ref?: Ref<HTMLButtonElement> | undefined;
 }
 
 export interface ProblemProps {
@@ -88,6 +90,7 @@ export function Problem({
       key={key}
       variant={main ? (view ? 'primary' : 'secondary') : 'ghost'}
       size={view ? 'md' : 'sm'}
+      ref={each.ref}
       busy={each.busy}
       working={each.working}
       onClick={each.onClick}

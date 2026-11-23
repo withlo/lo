@@ -218,10 +218,11 @@ describe('how a tab stands with GitHub', () => {
   });
 });
 
-describe('the local copy’s item', () => {
-  const local = (state: LocalState | undefined, pull: PullView = view()) =>
-    localNote(state, pull, E2E);
+/** The local copy's item for #9, as `pull` stands. */
+const local = (state: LocalState | undefined, pull: PullView = view()) =>
+  localNote(state, pull, E2E);
 
+describe('the local copy’s item', () => {
   it('is a ring until it fetches, then counts, then is filled at its head', () => {
     expect(local(undefined)).toBe(undefined);
     expect(local({ kind: 'waiting' })).toEqual({ ball: 'off', label: 'Local copy' });

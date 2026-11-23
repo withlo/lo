@@ -373,15 +373,29 @@ export async function sizeWindow(
   );
 }
 
-/**
- * The banners over a pull request's tab but the one saying language servers are off, which a tab of
- * a repository nobody trusts shows, as every test's is: what a test that isn't about trust waits
- * for, or for none of.
- */
+/** The banner over a pull request's tab, while it has one: what a test waits for, or for none of. */
 export function tabBanners(page: Page): Locator {
-  return page
-    .locator('[data-lo-banners] > *')
-    .filter({ hasNotText: /^Language servers are off for/ });
+  return page.locator('[data-lo-banners] > *');
+}
+
+/**
+ * Puts a row `height` pixels tall where the tab's banner goes, over its view, as a banner coming
+ * does to what's under it: for a test of what stays where as one comes and goes, since no banner of
+ * Lo's comes or goes on cue. Gives what takes it away again, as the banner going.
+ */
+export async function rowOver(page: Page, height = 34): Promise<() => Promise<void>> {
+  await page.evaluate((tall) => {
+    const row = document.createElement('div');
+    row.dataset.loTestRow = '';
+    row.style.height = `${tall}px`;
+    const shown = [...document.querySelectorAll<HTMLElement>('[data-lo-banners]')].find(
+      (each) => each.offsetParent !== null,
+    );
+    shown?.prepend(row);
+  }, height);
+  return async () => {
+    await page.evaluate(() => document.querySelector('[data-lo-test-row]')?.remove());
+  };
 }
 
 /**

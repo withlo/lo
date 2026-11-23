@@ -3614,9 +3614,6 @@ function boxed(top: number) {
     },
     /** The view's box. */
     dom: () => parent!.querySelector<HTMLElement>('.lo-diffview')!,
-    /** How much room is above the first file. */
-    room: () =>
-      Number.parseFloat(parent!.querySelector<HTMLElement>('.lo-diffslack')?.style.height || '0'),
   };
 }
 
@@ -3635,11 +3632,30 @@ describe('its place on the page', () => {
     page.box.top = 0;
     page.frame();
     watch.resize(page.dom(), 600, 800);
-    expect(page.room()).toBe(0);
+    expect(page.dom().scrollTop).toBe(0);
     // From there, once the box has been still, a banner coming leaves the diff where it was seen,
     // by the scroll.
     page.frame();
     page.frame();
+    page.box.top = 30;
+    watch.resize(page.dom(), 570, 800);
+    expect(page.dom().scrollTop).toBe(30);
+  });
+
+  test('at its top, takes the room a banner leaves, with no band above the first file', () => {
+    const watch = observers();
+    const page = boxed(30);
+    open();
+    page.frame();
+    page.frame();
+    page.frame();
+    // Scrolled a little, the scroll takes what it can of the banner going, and the box the rest.
+    page.dom().scrollTop = 10;
+    page.dom().dispatchEvent(new Event('scroll'));
+    page.box.top = 0;
+    watch.resize(page.dom(), 600, 800);
+    expect(page.dom().scrollTop).toBe(0);
+    // Coming back, it leaves the diff where it was, by the scroll.
     page.box.top = 30;
     watch.resize(page.dom(), 570, 800);
     expect(page.dom().scrollTop).toBe(30);
@@ -3656,7 +3672,7 @@ describe('its place on the page', () => {
       page.frame();
       watch.resize(page.dom(), 600 - top, 800);
       expect(page.dom().scrollTop).toBe(0);
-      expect(page.room()).toBe(0);
+      expect(page.dom().scrollTop).toBe(0);
     }
     // Still for two frames, its place is kept from there.
     page.frame();
@@ -3686,14 +3702,14 @@ describe('its place on the page', () => {
     page.box.top = 0;
     watch.resize(page.dom(), 600, 800);
     page.frame();
-    expect(page.room()).toBe(0);
+    expect(page.dom().scrollTop).toBe(0);
     // Shown, in a frame that then tells of a banner that went in it.
     page.box.top = 30;
     shown.seen();
     page.box.top = 0;
     page.frame();
     watch.resize(page.dom(), 600, 800);
-    expect(page.room()).toBe(0);
+    expect(page.dom().scrollTop).toBe(0);
     page.frame();
     page.frame();
     page.box.top = 30;

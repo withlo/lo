@@ -176,7 +176,7 @@ export function StatusActions({ children }: { children: ReactNode }) {
  */
 export function StatusKeys({ keys }: { keys: string }) {
   return (
-    <span className="flex-none text-fg code-key" title="Keys typed">
+    <span className="flex-none text-fg code-key" title="Keys typed so far">
       {keys}
     </span>
   );

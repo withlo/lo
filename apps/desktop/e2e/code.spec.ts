@@ -1,10 +1,10 @@
-// The syntax index in the app: Lo started on the replay server, as rozed-bot, opens
+// The code index in the app: Lo started on the replay server, as rozed-bot, opens
 // rozed-dev/e2e#80, which nothing trusts, and builds its index from the local copy, which the
 // status bar says while it builds and once it's ready. The code port main hands the page answers a
 // definition from it, and refuses a view that isn't open. Once the repo is trusted, a language
 // server, here the fake one, runs on the PR's head, its answer to a definition comes first, and
 // "Restart" in its status item starts it again; killed, it shows as failed until restarted, and
-// "Stop trusting this repo" stops it. GitHub answers from `app_e2e`, and, once the repo
+// "Stop trusting" stops it. GitHub answers from `app_e2e`, and, once the repo
 // is trusted, from `pull_request_repositories_e2e`.
 
 import { writeFileSync } from 'node:fs';
@@ -115,7 +115,7 @@ test('builds the syntax index of a PR nothing trusts, says so in the status bar,
   test.setTimeout(120_000);
   await catchCodePort(app, page);
   const id = await open(page);
-  const status = page.locator('footer[aria-label="Status"]');
+  const status = page.locator('footer[aria-label="Status bar"]');
 
   await test.step('the status bar says the index is building, then ready', async () => {
     const states: string[] = [];
@@ -131,7 +131,7 @@ test('builds the syntax index of a PR nothing trusts, says so in the status bar,
       )
       .toEqual({ kind: 'ready', partial: null });
     expect(states.some((state) => state.includes('"building"'))).toBe(true);
-    await expect(status.getByText('Syntax index', { exact: true })).toBeVisible();
+    await expect(status.getByText('Code index', { exact: true })).toBeVisible();
   });
 
   await test.step('the code port answers a definition from the index', async () => {
@@ -234,7 +234,7 @@ trusting(
     test.setTimeout(120_000);
     await catchCodePort(app, page);
     const id = await open(page);
-    const status = page.locator('footer[aria-label="Status"]');
+    const status = page.locator('footer[aria-label="Status bar"]');
     const started = () => servers.seen().filter((seen) => seen.event === 'started');
 
     await test.step('nothing runs until the repo is trusted', async () => {
@@ -311,17 +311,17 @@ trusting(
     await test.step('killed, it shows as failed, and “Restart” beside it starts it again', async () => {
       process.kill(-(started().at(-1)?.pid ?? 0), 'SIGKILL');
       await expect(
-        status.getByRole('button', { name: 'TypeScript failed', exact: true }),
+        status.getByRole('button', { name: 'TypeScript isn’t running', exact: true }),
       ).toBeVisible({ timeout: 20_000 });
       await status.getByRole('button', { name: 'Restart TypeScript', exact: true }).click();
       await expect.poll(() => started().length, { timeout: 20_000 }).toBe(3);
       await answered();
     });
 
-    await test.step('“Stop trusting this repo” stops it', async () => {
+    await test.step('“Stop trusting” stops it', async () => {
       const pid = started().at(-1)?.pid ?? 0;
       await status.getByRole('button', { name: 'TypeScript', exact: true }).click();
-      await page.getByRole('button', { name: 'Stop trusting this repo', exact: true }).click();
+      await page.getByRole('button', { name: 'Stop trusting', exact: true }).click();
       await expect.poll(() => running(pid), { timeout: 20_000 }).toBe(false);
       await expect(
         status.getByRole('button', { name: 'Language servers off', exact: true }),

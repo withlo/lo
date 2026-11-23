@@ -605,10 +605,9 @@ class View implements DiffView {
     );
     this.dom.addEventListener('scroll', this.#watchFile, { passive: true });
     // When the box moves on the page, as a banner over it comes or goes, what's on screen stays
-    // put: the scroll takes the move, and at the very top, room above the first file does. That's
-    // from the first frame it's seen in: until then, its place is wherever it's laid out.
-    this.#slack.className = 'lo-diffslack';
-    this.dom.prepend(this.#slack);
+    // put: the scroll takes the move, as far as it can. At the very top it can't, and the first
+    // file follows the box: it takes the room a banner leaves. That's from the first frame it's
+    // seen in: until then, its place is wherever it's laid out.
     this.#placed = this.#contentTop();
     this.#scrolled = this.dom.scrollTop;
     this.#boxHeight = this.dom.clientHeight;
@@ -764,9 +763,6 @@ class View implements DiffView {
   /** The reader's key, click or wheel is being handled. */
   #hearing = false;
 
-  /** Room above the first file that keeps what's on screen in place as the box moves up. */
-  readonly #slack = document.createElement('div');
-  #slackHeight = 0;
   /**
    * Room after the last file, as the box's padding, which a jump makes so a line near the end
    * comes to the top as it would anywhere else. It goes as it leaves the screen, which moves
@@ -827,9 +823,9 @@ class View implements DiffView {
     });
   }
 
-  /** Where the content's top is on the page now, room above it included. */
+  /** Where the content's top is on the page now. */
   #contentTop(): number {
-    return this.dom.getBoundingClientRect().top - this.dom.scrollTop + this.#slackHeight;
+    return this.dom.getBoundingClientRect().top - this.dom.scrollTop;
   }
 
   /**
@@ -851,8 +847,9 @@ class View implements DiffView {
 
   /**
    * The box moved or changed size, as when a banner over it comes or goes: the content goes back
-   * where it was on the page, by scrolling, or at the very top by room added above the first
-   * file, which a box moving back down takes away again.
+   * where it was on the page, by scrolling. A box that moved up further than the scroll can go
+   * back, as a banner that leaves while the diff is at its top, takes the content with it: the
+   * first file takes the room, and no blank band is left over it.
    */
   readonly #keepPlace = (): void => {
     this.#reach();
@@ -863,16 +860,8 @@ class View implements DiffView {
     if (this.#seen !== 'yes') this.#placed = this.#contentTop();
     const moved = this.#contentTop() - this.#placed;
     const kept = Math.abs(moved) >= 0.5;
-    if (kept && moved > 0) {
-      const taken = Math.min(this.#slackHeight, moved);
-      this.#setSlack(this.#slackHeight - taken);
-      this.#scrollBy(moved - taken);
-    } else if (kept) {
-      const up = -moved;
-      const room = this.dom.scrollTop;
-      this.#scrollBy(-Math.min(up, room));
-      if (up > room) this.#setSlack(this.#slackHeight + up - room);
-    }
+    // The scroll stops at the top: what it can't take of a move up, the content goes up with.
+    if (kept) this.#scrollBy(Math.max(moved, -this.dom.scrollTop));
     // A jump's line goes where it belongs after, as after the browser pulled the scroll back to
     // the end as the box grew, which leaves the content where it was.
     const jumped = this.#keepJumped();
@@ -884,7 +873,7 @@ class View implements DiffView {
     // it's meant to be: that place stays, so the next move makes up for it rather than adding to
     // it. A scroll that couldn't go as far, at either end, leaves the content where it is now.
     if (Math.abs(this.#contentTop() - this.#placed) >= 1) this.#placed = this.#contentTop();
-    // Room added above moves no scroll the pass would see: it keeps what's on screen as it is now.
+    // What's on screen is where it is now, for the pass that lines the columns up.
     this.#aligner.anchorHere();
     this.#trimRoom();
   };
@@ -894,11 +883,6 @@ class View implements DiffView {
     const before = this.dom.scrollTop;
     this.dom.scrollTop = before + by;
     this.#ownScroll += this.dom.scrollTop - before;
-  }
-
-  #setSlack(height: number): void {
-    this.#slackHeight = Math.max(0, height);
-    this.#slack.style.height = `${this.#slackHeight}px`;
   }
 
   #setRoom(height: number): void {

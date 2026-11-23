@@ -449,13 +449,13 @@ export function Banners({ tab, view }: { tab: PullTab; view: PullView | undefine
       <Held entry={entry} tab={tab} drawn={drawn} />
     );
   return (
-    <Collapse open={entry !== undefined} className="flex-none">
-      <div className="flex flex-col" data-lo-banners>
+    <div className="flex flex-none flex-col" data-lo-banners>
+      <Collapse open={entry !== undefined}>
         <BannerMoreProvider value={more}>
           <Swap id={entry?.id ?? 'none'}>{body}</Swap>
         </BannerMoreProvider>
-      </div>
-    </Collapse>
+      </Collapse>
+    </div>
   );
 }
 

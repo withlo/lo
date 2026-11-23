@@ -427,6 +427,7 @@ export function ServerStatus({
     install !== undefined
       ? {
           label: <CopyFaces said={copied}>Copy command</CopyFaces>,
+          ref: first,
           onClick: () => {
             Promise.resolve()
               .then(() => copy(install))
@@ -437,7 +438,7 @@ export function ServerStatus({
           },
         }
       : stopped !== undefined && again
-        ? { label: restartLabel(state), onClick: restart }
+        ? { label: restartLabel(state), onClick: restart, ref: first }
         : undefined;
   // Restart goes in the row under the line, unless the Problem holds it.
   const restartInRow = again !== undefined && (stopped === undefined || install !== undefined);
@@ -497,13 +498,13 @@ export function ServerStatus({
         {(restartInRow || onShowLog || trust) && (
           <StatusActions>
             {restartInRow && (
-              <Button ref={first} variant="secondary" size="sm" onClick={restart}>
+              <Button ref={fix ? undefined : first} variant="secondary" size="sm" onClick={restart}>
                 {restartLabel(state)}
               </Button>
             )}
             {onShowLog && (
               <Button
-                ref={restartInRow ? undefined : first}
+                ref={restartInRow || fix ? undefined : first}
                 variant="ghost"
                 size="sm"
                 onClick={() => {
@@ -516,7 +517,7 @@ export function ServerStatus({
             )}
             {trust && (
               <Button
-                ref={restartInRow || onShowLog ? undefined : first}
+                ref={restartInRow || fix || onShowLog ? undefined : first}
                 variant={state.kind === 'off' ? 'secondary' : 'ghost'}
                 size="sm"
                 busy={trust.busy !== undefined}

@@ -13,6 +13,7 @@ import { activeTab, tabState } from '../../tab/window/shared.ts';
 import type { Status } from '../contract.ts';
 import { readTrusted, trusted } from '../settings.ts';
 import { main } from './main.ts';
+import { servers } from './servers.ts';
 
 /** Where each view stands, once main has said. */
 export const statuses = tabState<Status | null>(() => null);
@@ -207,11 +208,13 @@ export const offered = tabState<'closed' | 'offered' | 'open'>(() => 'closed');
 /**
  * Opens the Language servers item's offer on view `view`, once for its repository: where nothing
  * trusts it and it can be trusted, the first time the reader asks for what a language server
- * would answer. Main keeps that it was offered, for every tab of the repository.
+ * would answer. Main keeps that it was offered, for every tab of the repository. Not while the
+ * item isn't there, as where Lo has no language server for what the view shows.
  */
 export function offerOnce(view: string): void {
   const status = statuses.get(view);
   if (!status || status.dismissed || status.trusting !== undefined) return;
+  if (servers.get(view)?.off !== true) return;
   const offer = offerOf(status);
   if (offer?.pull === undefined) return;
   offered.set(view, 'offered');

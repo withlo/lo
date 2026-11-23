@@ -25,8 +25,8 @@ import {
   DIFF_FIRST,
   expect,
   KEYCHAIN,
+  rowOver,
   sizeWindow,
-  tabBanners,
   test as base,
 } from './app.ts';
 
@@ -1621,8 +1621,8 @@ test.describe('while the local copy comes late', () => {
       await overviewTab(page).click();
       const shown = overview(page, 'shown');
       await expect(shown).toBeVisible();
-      // The banner says the local copy couldn't be fetched, over the overview.
-      await expect(tabBanners(page)).toBeVisible({ timeout: 20_000 });
+      // A banner comes over the overview, and the local copy can't be fetched.
+      const gone = await rowOver(page);
       await expect
         .poll(() => current(page, id), { timeout: 20_000 })
         .toMatchObject({ code: 'failed' });
@@ -1639,9 +1639,9 @@ test.describe('while the local copy comes late', () => {
       await expect(fold.locator('summary')).toHaveAttribute('data-focused', 'true');
 
       // The banner goes, the local copy comes, and the overview is checked again with its code.
+      await gone();
       writeAppRemote(test.info().outputPath('remote'));
       await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
-      await expect(tabBanners(page)).toHaveCount(0, { timeout: 30_000 });
       await expect
         .poll(() => current(page, id), { timeout: 30_000 })
         .toMatchObject({ code: 'ready' });

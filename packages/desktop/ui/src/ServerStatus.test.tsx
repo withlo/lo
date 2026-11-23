@@ -53,13 +53,11 @@ function say(name: string, state: ServerState): string {
   return words(render(<ServerStatus name={name} state={state} />));
 }
 
-/** Whether an item for a server in `state` has a ring turning, and the class of its dot if it has one. */
-function marks(state: ServerState): { spinner: boolean; dot: string } {
+/** How an item for a server in `state` draws its ball: a spinner while at work, or its state. */
+function ball(state: ServerState): string | undefined {
   const own = item(render(<ServerStatus name="TypeScript" state={state} />));
-  return {
-    spinner: own.querySelector('.spinner') !== null,
-    dot: own.querySelector('.rounded-full:not(.spinner)')?.className ?? '',
-  };
+  if (own.querySelector('.spinner') !== null) return 'working';
+  return own.querySelector('[data-ball]')?.getAttribute('data-ball') ?? undefined;
 }
 
 /**
@@ -69,7 +67,7 @@ function marks(state: ServerState): { spinner: boolean; dot: string } {
 function Redrawn({ before = false, around = false }: { before?: boolean; around?: boolean }) {
   const [drawn, setDrawn] = useState(0);
   return (
-    <footer aria-label="Status">
+    <footer aria-label="Status bar">
       {(before || around) && (
         <button type="button" id="before">
           Before
@@ -93,7 +91,7 @@ function Redrawn({ before = false, around = false }: { before?: boolean; around?
 /** A bar of three items, the middle one a server's, drawn only while `withServer`. */
 function bar(withServer: boolean) {
   return (
-    <footer aria-label="Status">
+    <footer aria-label="Status bar">
       <button type="button" id="before">
         Before
       </button>
@@ -141,32 +139,41 @@ const offItem = (trust: ServerTrust) => (
 );
 describe('ServerStatus', () => {
   it('says each state in the one phrase that fits, with its numbers', () => {
-    // In the units Settings counts in.
+    // In the units Settings counts in, the whole's unit once where they share one.
     expect(say('TypeScript', { kind: 'downloading', done: 12_300_000, total: 40_100_000 })).toBe(
-      'TypeScript downloading · 11.7 MB of 38.2 MB',
+      'Downloading TypeScript · 11.7 / 38.2 MB',
     );
-    expect(say('Java', { kind: 'unpacking' })).toBe('Java unpacking');
-    expect(say('Go', { kind: 'building' })).toBe('Go building');
-    expect(say('Go', { kind: 'waiting', count: 4, next: false })).toBe('Go waiting');
-    expect(say('PHP', { kind: 'waiting', count: 4, next: true })).toBe('PHP waiting · next');
-    expect(say('TypeScript', { kind: 'starting' })).toBe('TypeScript starting');
-    expect(say('TypeScript', { kind: 'indexing', percent: 40 })).toBe('TypeScript indexing 40%');
-    expect(say('TypeScript', { kind: 'indexing' })).toBe('TypeScript indexing');
+    expect(say('TypeScript', { kind: 'downloading', done: 900_000, total: 40_100_000 })).toBe(
+      'Downloading TypeScript · 879 KB / 38.2 MB',
+    );
+    expect(say('Java', { kind: 'unpacking' })).toBe('Installing Java…');
+    expect(say('Go', { kind: 'building' })).toBe('Building Go…');
+    expect(say('Go', { kind: 'waiting', count: 4, next: false })).toBe('Go · waiting to start');
+    expect(say('PHP', { kind: 'waiting', count: 4, next: true })).toBe('PHP · waiting to start');
+    expect(say('TypeScript', { kind: 'starting' })).toBe('Starting TypeScript…');
+    expect(say('TypeScript', { kind: 'indexing', percent: 40 })).toBe(
+      'Indexing with TypeScript · 40%',
+    );
+    expect(say('TypeScript', { kind: 'indexing' })).toBe('Indexing with TypeScript…');
     expect(say('TypeScript', { kind: 'ready' })).toBe('TypeScript');
-    expect(say('TypeScript', { kind: 'notAnswering' })).toBe('TypeScript not answering');
-    expect(say('Rust', { kind: 'refused', why: 'Lo won’t run it.' })).toBe('Rust refused');
-    expect(say('TypeScript', MEMORY)).toBe('TypeScript failed');
-    expect(say('Go', { kind: 'missing', needs: 'Go 1.24 or later' })).toBe('Go toolchain missing');
+    expect(say('TypeScript', { kind: 'notAnswering' })).toBe('TypeScript isn’t responding');
+    expect(say('Rust', { kind: 'refused', why: 'Lo won’t run it.' })).toBe(
+      'Rust can’t use the local copy',
+    );
+    expect(say('TypeScript', MEMORY)).toBe('TypeScript isn’t running');
+    expect(say('Go', { kind: 'missing', needs: 'Go 1.24 or later' })).toBe(
+      'Go needs Go 1.24 or later',
+    );
     // An untrusted repo has none of them on, whichever server is named.
     expect(say('TypeScript', { kind: 'off' })).toBe('Language servers off');
   });
 
   it('keeps a progress report to the scale it is on', () => {
     const host = render(<ServerStatus name="Rust" state={{ kind: 'indexing', percent: 140.4 }} />);
-    expect(words(host)).toBe('Rust indexing 100%');
+    expect(words(host)).toBe('Indexing with Rust · 100%');
   });
 
-  it('marks a server coming up with a ring turning, and the rest with a dot and a word', () => {
+  it('draws its ball: a spinner at work, filled once ready, amber waiting, red once it can’t run', () => {
     for (const state of [
       { kind: 'downloading', done: 1, total: 2 },
       { kind: 'unpacking' },
@@ -174,24 +181,17 @@ describe('ServerStatus', () => {
       { kind: 'starting' },
       { kind: 'indexing' },
     ] as const) {
-      expect(marks(state).spinner).toBe(true);
+      expect(ball(state)).toBe('working');
     }
-    expect(marks({ kind: 'ready' }).dot).toContain('bg-success');
-    expect(marks(MEMORY).dot).toContain('bg-danger');
-    expect(marks({ kind: 'missing', needs: 'a JDK' }).dot).toContain('bg-warning');
-    expect(marks({ kind: 'notAnswering' }).dot).toContain('bg-warning');
-    // Waiting is amber, as GitHub's waiting is, and not a failure.
-    expect(marks({ kind: 'waiting', count: 4, next: false }).dot).toContain('bg-warning');
-    expect(marks({ kind: 'ready' }).spinner).toBe(false);
-    // Refused is settled, as off is: nothing to wait for or mend.
-    expect(marks({ kind: 'refused', why: 'Lo won’t run it.' })).toEqual({
-      spinner: false,
-      dot: expect.stringContaining('bg-fg-dim'),
-    });
-    expect(marks({ kind: 'off' })).toEqual({
-      spinner: false,
-      dot: expect.stringContaining('bg-fg-dim'),
-    });
+    expect(ball({ kind: 'ready' })).toBe('ready');
+    expect(ball(MEMORY)).toBe('failed');
+    expect(ball({ kind: 'missing', needs: 'a JDK' })).toBe('failed');
+    expect(ball({ kind: 'notAnswering' })).toBe('failed');
+    // Waiting holds back, and isn't a failure.
+    expect(ball({ kind: 'waiting', count: 4, next: false })).toBe('warn');
+    // Refused is settled, as off is: a ring, with nothing to wait for or mend.
+    expect(ball({ kind: 'refused', why: 'Lo won’t run it.' })).toBe('off');
+    expect(ball({ kind: 'off' })).toBe('off');
   });
 
   it('is a button that opens details, so it’s reached and opened by keyboard', () => {
@@ -219,19 +219,19 @@ describe('ServerStatus', () => {
     click(item(host));
     await settle();
     const open = details()!;
-    expect(open.textContent).toContain('TypeScript stopped');
-    expect(open.textContent).toContain('tsserver 5.6.3');
-    expect(open.textContent).toContain(
-      "It ran out of memory at 4 GB while loading 3,880 files. Peek, references and hovers fall back to the syntax index until it's back.",
-    );
-    // The heading names the dialog.
-    expect(open.getAttribute('aria-labelledby')).not.toBeNull();
+    // An Error: a title, the reason the guide gives, and its numbers behind Details.
+    const alert = open.querySelector('[role="alert"]');
+    expect([...(alert?.querySelectorAll('p') ?? [])].map((line) => line.textContent)).toEqual([
+      'Can’t run TypeScript',
+      'It ran out of memory.',
+    ]);
+    expect(open.textContent).not.toContain('tsserver 5.6.3');
     const buttons = [...open.querySelectorAll('button')];
-    expect(buttons.map((button) => button.textContent)).toEqual(['Restart', 'Show the log']);
-    // The one thing to do is the main button, and has focus as the details open.
-    expect(buttons[0]?.className).toContain('bg-accent');
-    expect(buttons[1]?.className).not.toContain('bg-accent');
-    expect(document.activeElement).toBe(buttons[0]);
+    expect(buttons.map(says)).toEqual(['Details', 'Restart', 'Show log']);
+    // Restart is the one thing to do; it has focus as the details open.
+    expect(document.activeElement).toBe(buttons[1]);
+    click(buttons[0]!);
+    expect(open.textContent).toContain('4 GB, 3,880 files');
     expect(open.getAttribute('data-lo-scope')).toBe('dialog');
   });
 
@@ -243,9 +243,7 @@ describe('ServerStatus', () => {
     );
     click(item(host));
     await settle();
-    click(
-      [...details()!.querySelectorAll('button')].find((b) => b.textContent === 'Show the log')!,
-    );
+    click([...details()!.querySelectorAll('button')].find((b) => b.textContent === 'Show log')!);
     expect(onShowLog).toHaveBeenCalledTimes(1);
     expect(onRestart).not.toHaveBeenCalled();
     await settle();
@@ -261,7 +259,10 @@ describe('ServerStatus', () => {
     const onRestart = vi.fn<() => void>();
     const host = render(<ServerStatus name="TypeScript" state={MEMORY} onRestart={onRestart} />);
     const buttons = [...host.querySelectorAll('button')];
-    expect(buttons.map((button) => button.textContent)).toEqual(['TypeScript failed', 'Restart']);
+    expect(buttons.map((button) => button.textContent)).toEqual([
+      'TypeScript isn’t running',
+      'Restart',
+    ]);
     // Named for its server, since a bar holds one for each that fails.
     expect(buttons[1]?.getAttribute('aria-label')).toBe('Restart TypeScript');
     // The failed item is tinted, and says why in words besides: a color never stands alone.
@@ -285,7 +286,7 @@ describe('ServerStatus', () => {
         onRestart={() => undefined}
       />,
     );
-    expect(host.querySelectorAll('button')[1]?.getAttribute('aria-label')).toBe('Retry Python');
+    expect(host.querySelectorAll('button')[1]?.getAttribute('aria-label')).toBe('Try again Python');
   });
 
   it('keeps focus on its item when the Restart beside it goes with the failure', () => {
@@ -295,11 +296,11 @@ describe('ServerStatus', () => {
     focus(restart);
     click(restart);
     expect(host.querySelectorAll('button')).toHaveLength(1);
-    expect(host.textContent).toBe('TypeScript starting');
+    expect(host.textContent).toBe('Starting TypeScript…');
     expect(document.activeElement).toBe(item(host));
   });
 
-  it('says what a missing toolchain needs and how to install it', async () => {
+  it('says what a missing toolchain needs, and copies the command that installs it', async () => {
     const host = render(
       <ServerStatus
         name="Go"
@@ -310,13 +311,16 @@ describe('ServerStatus', () => {
     click(item(host));
     await settle();
     const open = details()!;
-    expect(open.textContent).toContain('Go toolchain missing');
-    expect(open.textContent).toContain(
-      'Go needs Go 1.24 or later. Install it with brew install go. Until then, peek, references and hovers use the syntax index.',
-    );
-    expect(open.querySelector('code')?.textContent).toBe('brew install go');
-    // Not stopped by anything: no main button.
-    expect(open.querySelector('button')?.className).not.toContain('bg-accent');
+    const alert = open.querySelector('[role="alert"]');
+    expect([...(alert?.querySelectorAll('p') ?? [])].map((line) => line.textContent)).toEqual([
+      'Can’t run Go',
+      'It needs Go 1.24 or later.',
+    ]);
+    const buttons = [...open.querySelectorAll('button')];
+    // The command is behind Details, and the Problem's one button copies it; Restart follows.
+    expect(buttons.map(says)).toEqual(['Details', 'Copy command', 'Restart']);
+    click(buttons[0]!);
+    expect(open.textContent).toContain('brew install go');
   });
 
   it('says why one waits for room, and offers to start it next unless it is next already', async () => {
@@ -334,13 +338,9 @@ describe('ServerStatus', () => {
     click(item(host));
     await settle();
     const open = details()!;
-    expect(open.textContent).toContain('Go waiting');
-    expect(open.textContent).toContain(
-      "Lo runs 4 language servers at once at most, and they're all in use on screen. Go is in line, and starts when its turn comes. Until then, peek, references and hovers use the syntax index.",
-    );
+    expect(open.querySelector('p')?.textContent).toBe('At most 4 language servers run at once.');
     const buttons = [...open.querySelectorAll('button')];
-    expect(buttons.map((button) => button.textContent)).toEqual(['Start next', 'Show the log']);
-    expect(buttons[0]?.className).not.toContain('bg-accent');
+    expect(buttons.map((button) => button.textContent)).toEqual(['Start next', 'Show log']);
     click(buttons[0]!);
     expect(onRestart).toHaveBeenCalledTimes(1);
     cleanUp();
@@ -355,15 +355,12 @@ describe('ServerStatus', () => {
     );
     click(item(next));
     await settle();
-    expect(details()?.textContent).toContain(
-      'PHP is next in line, and starts when one of them stops.',
-    );
     expect([...details()!.querySelectorAll('button')].map((button) => button.textContent)).toEqual([
-      'Show the log',
+      'Show log',
     ]);
   });
 
-  it('says why one was refused, what answers instead, and offers no Restart', async () => {
+  it('says why one was refused, and offers no Restart', async () => {
     const why =
       'The checkout’s .cargo/config.toml has an [env] table, so Lo won’t run rust-analyzer on it.';
     const host = render(
@@ -378,12 +375,9 @@ describe('ServerStatus', () => {
     click(item(host));
     await settle();
     const open = details()!;
-    expect(open.textContent).toContain('Rust refused');
-    expect(open.textContent).toContain(
-      `${why} Peek, references and hovers use the syntax index instead.`,
-    );
+    expect(open.querySelector('p')?.textContent).toBe(why);
     expect([...open.querySelectorAll('button')].map((button) => button.textContent)).toEqual([
-      'Show the log',
+      'Show log',
     ]);
   });
 
@@ -391,11 +385,11 @@ describe('ServerStatus', () => {
     const host = render(<ServerStatus name="Java" state={{ kind: 'missing', needs: 'a JDK' }} />);
     click(item(host));
     await settle();
-    expect(details()?.textContent).toContain('Java needs a JDK. Until then, peek,');
-    expect(details()?.querySelector('code')).toBeNull();
+    expect(details()?.textContent).toBe('Can’t run Java It needs a JDK.');
+    expect(details()?.querySelector('button')).toBeNull();
   });
 
-  it('says to install them, for what it needs that is named as more than one', async () => {
+  it('says “They need” for what it needs that is named as more than one', async () => {
     const host = render(
       <ServerStatus
         name="Swift"
@@ -409,12 +403,10 @@ describe('ServerStatus', () => {
     );
     click(item(host));
     await settle();
-    expect(details()?.textContent).toContain(
-      'Swift needs Apple’s Command Line Tools. Install them with xcode-select --install. Until then,',
-    );
+    expect(details()?.textContent).toContain('They need Apple’s Command Line Tools.');
   });
 
-  it('offers to retry a download that failed, in place of restarting', async () => {
+  it('offers to try a download that failed again, in place of restarting', async () => {
     const host = render(
       <ServerStatus
         name="Python"
@@ -425,16 +417,17 @@ describe('ServerStatus', () => {
         onRestart={() => undefined}
       />,
     );
-    expect(host.textContent).toBe('Python failedRetry');
+    expect(host.textContent).toBe('Python isn’t runningTry again');
     click(item(host));
     await settle();
+    // What it said is its own sentence, so it's behind Details, and the Problem holds the button.
+    const buttons = [...details()!.querySelectorAll('button')];
+    expect(buttons.map(says)).toEqual(['Details', 'Try again']);
+    click(buttons[0]!);
     expect(details()?.textContent).toContain("Lo couldn't download Pyright (GitHub returned 502).");
-    expect([...details()!.querySelectorAll('button')].map((button) => button.textContent)).toEqual([
-      'Retry',
-    ]);
   });
 
-  it('says a failure of any other kind in the words it was given', async () => {
+  it('says a failure of any other kind with no reason, and its words behind Details', async () => {
     const host = render(
       <ServerStatus
         name="Rust"
@@ -443,12 +436,12 @@ describe('ServerStatus', () => {
     );
     click(item(host));
     await settle();
-    expect(details()?.textContent).toContain('It exited with code 101. Peek, references');
-    // Without handlers there are no buttons to offer.
-    expect(details()?.querySelector('button')).toBeNull();
+    expect(details()?.querySelector('[role="alert"]')?.textContent).toBe('Can’t run Rust');
+    // Without handlers there's nothing to offer but Details.
+    expect([...details()!.querySelectorAll('button')].map(says)).toEqual(['Details']);
   });
 
-  it('says a failure with no count of files, and what a server coming up falls back to', async () => {
+  it('says a memory failure with no count of files, and nothing more of a server coming up', async () => {
     const host = render(
       <ServerStatus
         name="Java"
@@ -457,19 +450,19 @@ describe('ServerStatus', () => {
     );
     click(item(host));
     await settle();
-    expect(details()?.textContent).toContain('It ran out of memory at 4 GB. Peek, references');
+    click(details()!.querySelector('button')!);
+    expect(details()?.textContent).toContain('It ran out of memory.');
+    expect(details()?.textContent).toContain('4 GB');
+    expect(details()?.textContent).not.toContain('files');
     cleanUp();
 
     const starting = render(<ServerStatus name="Java" state={{ kind: 'starting' }} />);
     click(item(starting));
     await settle();
-    expect(details()?.textContent).toContain('Java starting');
-    expect(details()?.textContent).toContain(
-      "Peek, references and hovers use the syntax index until it's ready.",
-    );
+    expect(details()?.textContent).toBe('');
   });
 
-  it('says nothing more of a ready server than its name and version', async () => {
+  it('says nothing more of a ready server than its version', async () => {
     const host = render(
       <ServerStatus
         name="TypeScript"
@@ -481,26 +474,27 @@ describe('ServerStatus', () => {
     click(item(host));
     await settle();
     const open = details()!;
-    expect(open.textContent).toBe('TypeScript readytsserver 5.6.3Show the log');
-    expect(open.querySelector('p')).toBeNull();
+    expect(open.textContent).toBe('tsserver 5.6.3Show log');
+    // The details are named for the item, as it says itself.
+    expect(open.getAttribute('aria-label')).toBe('TypeScript');
   });
 
-  it('says why language servers are off, and offers to trust the repo', async () => {
+  it('says what language servers are off for, in the line it’s given, and offers to trust it', async () => {
     const onChoose = vi.fn<() => void>();
     const host = render(
       <ServerStatus
         name="TypeScript"
         state={{ kind: 'off' }}
+        line="Language servers are off for rozed-dev/e2e"
         trust={{ action: 'repo', onChoose }}
       />,
     );
+    expect(words(host)).toBe('Language servers off');
     click(item(host));
     await settle();
     const open = details()!;
-    expect(open.textContent).toContain('Language servers off');
-    expect(open.textContent).toContain(
-      'Lo runs language servers only on repos you trust. Until then, peek, references and hovers use the syntax index.',
-    );
+    // One fact, about the repo: never Lo as its subject.
+    expect(open.querySelector('p')?.textContent).toBe('Language servers are off for rozed-dev/e2e');
     const buttons = [...open.querySelectorAll('button')];
     expect(buttons.map(says)).toEqual(['Trust repo…']);
     // The one thing to do has focus, though it has no Restart, and isn't the main button: it asks.
@@ -511,6 +505,29 @@ describe('ServerStatus', () => {
     await settle();
     // The details stay open, to say how asking goes.
     expect(item(host).getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('opens unasked, as an offer, leaving focus where the reader is', async () => {
+    const elsewhere = render(
+      <button type="button" id="elsewhere">
+        Elsewhere
+      </button>,
+    );
+    const away = elsewhere.querySelector<HTMLElement>('#elsewhere')!;
+    focus(away);
+    render(
+      <ServerStatus
+        name="TypeScript"
+        state={{ kind: 'off' }}
+        line="Language servers are off for rozed-dev/e2e"
+        trust={{ action: 'repo', onChoose: () => undefined }}
+        open
+        quiet
+      />,
+    );
+    await settle();
+    expect(details()?.textContent).toContain('Language servers are off for rozed-dev/e2e');
+    expect(document.activeElement).toBe(away);
   });
 
   it('waits while Lo trusts, keeping focus, then says why it didn’t, with what helps', async () => {
@@ -557,15 +574,11 @@ describe('ServerStatus', () => {
 
   it('puts the trust choice after Restart and the log', async () => {
     const stop: ServerTrust = { action: 'stop', onChoose: () => undefined };
-    expect(await labels(stop, { kind: 'ready' })).toEqual([
-      'Restart',
-      'Show the log',
-      'Stop trusting this repo',
-    ]);
+    expect(await labels(stop, { kind: 'ready' })).toEqual(['Restart', 'Show log', 'Stop trusting']);
     expect(await labels({ action: 'pr', onChoose: () => undefined }, { kind: 'off' })).toEqual([
       'Restart',
-      'Show the log',
-      'Trust this PR…',
+      'Show log',
+      'Trust pull request…',
     ]);
   });
 
@@ -582,7 +595,7 @@ describe('ServerStatus', () => {
     await settle();
     // With only this to press, it has focus as the details open.
     const only = details()!.querySelector('button')!;
-    expect(says(only)).toBe('Stop trusting this repo');
+    expect(says(only)).toBe('Stop trusting');
     expect(document.activeElement).toBe(only);
     click(only);
     expect(onChoose).toHaveBeenCalledTimes(1);
@@ -592,32 +605,39 @@ describe('ServerStatus', () => {
     const host = render(
       <ServerStatus
         name={'Type\u200BScript'}
-        state={{ kind: 'failed', why: { kind: 'error', message: 'It said evil\u202Elive.' } }}
-        version={'tsserver 5.\u202E6'}
+        state={{ kind: 'refused', why: 'It said evil\u202Elive.' }}
         onRestart={() => undefined}
       />,
     );
-    expect(host.textContent).toBe('TypeU+200BScript failedRestart');
-    expect(host.querySelectorAll('button')[1]?.getAttribute('aria-label')).toBe(
-      'Restart Type\u2039U+200B\u203AScript',
-    );
+    expect(host.textContent).toBe('TypeU+200BScript can’t use the local copy');
     click(item(host));
     await settle();
     expect(details()?.textContent).not.toMatch(/\p{Cf}/u);
     expect(details()?.textContent).toContain('It said evilU+202Elive.');
-    expect(details()?.textContent).toContain('tsserver 5.U+202E6');
+    cleanUp();
+    const failed = render(
+      <ServerStatus
+        name={'Type\u200BScript'}
+        state={MEMORY}
+        version={'tsserver 5.\u202E6'}
+        onRestart={() => undefined}
+      />,
+    );
+    expect(failed.textContent).toBe('TypeU+200BScript isn’t runningRestart');
+    expect(failed.querySelectorAll('button')[1]?.getAttribute('aria-label')).toBe(
+      'Restart Type\u2039U+200B\u203AScript',
+    );
+    click(item(failed));
+    await settle();
+    expect(details()?.textContent).not.toMatch(/\p{Cf}/u);
+    expect(details()?.textContent).toContain('Can’t run TypeU+200BScript');
     cleanUp();
     const missing = render(
-      <ServerStatus
-        name="Go"
-        state={{ kind: 'missing', needs: 'Go\u202E 1.24', install: 'brew\u200B install go' }}
-      />,
+      <ServerStatus name="Go" state={{ kind: 'missing', needs: 'Go\u202E 1.24' }} />,
     );
     click(item(missing));
     await settle();
-    expect(details()?.textContent).toContain(
-      'Go needs GoU+202E 1.24. Install it with brewU+200B install go.',
-    );
+    expect(details()?.textContent).toContain('It needs GoU+202E 1.24.');
   });
 
   it('hands focus to the next item when it is drawn again and had focus in its details', async () => {
@@ -697,8 +717,8 @@ describe('ServerStatus', () => {
   });
 
   it('draws a wider card for its details than a menu, and keeps it inside a narrow window', async () => {
-    const css = await buildCss(['server-details']);
-    expect(declarations(css, 'server-details')).toBe(
+    const css = await buildCss(['status-details']);
+    expect(declarations(css, 'status-details')).toBe(
       'width: 360px; max-width: calc(100vw - var(--lo-sp-32));',
     );
   });
