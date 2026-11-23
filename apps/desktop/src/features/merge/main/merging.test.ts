@@ -416,7 +416,10 @@ function setup(options: Setup = {}) {
         view = { ...view, acting };
       },
       offline: () => {
-        status = { ...status, offline: { error: 'down', since: NOW, retryAt: NOW } };
+        status = {
+          ...status,
+          offline: { error: 'down', since: NOW, retryAt: NOW, cause: { kind: 'offline' } },
+        };
       },
       signedOut: () => {
         status = { ...status, signedOut: true };

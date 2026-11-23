@@ -314,7 +314,9 @@ test('a first read the poller can’t answer now fails with why, and the threads
   reading.follow('t1');
   await settled();
   expect(threads.at(-1)?.status).toBe('loading');
-  github.change({ offline: { since: 0, retryAt: 1, error: 'The network is down.' } });
+  github.change({
+    offline: { since: 0, retryAt: 1, cause: { kind: 'offline' }, error: 'The network is down.' },
+  });
   expect(threads.at(-1)).toMatchObject({
     status: 'failed',
     problem: 'GitHub can’t be reached: The network is down.',

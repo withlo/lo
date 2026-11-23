@@ -36,7 +36,7 @@ import {
 } from 'react';
 
 import { focusMiddle, registry } from '../../../window/commands/registry.ts';
-import { explain } from '../../../window/explain.ts';
+import { chipLabel, explain } from '../../../window/explain.ts';
 import { client } from '../../../window/ipc.ts';
 import { useViews, type View } from '../../../window/slots.tsx';
 import { useRevisions } from '../../revisions/window/shared.ts';
@@ -259,12 +259,11 @@ function useNow(ticking: boolean): number {
 
 /**
  * The header's chip for a tab whose read failed after its view was drawn, which stays: "No
- * response" where GitHub didn't answer, else "GitHub error".
+ * response" where GitHub didn't answer, "Offline" where nothing reached it, else "GitHub error".
  */
 function readFailed(view: PullView | undefined): string {
-  return view?.problem?.kind === 'failed' && view.problem.cause.kind === 'timeout'
-    ? 'No response'
-    : 'GitHub error';
+  const problem = view?.problem;
+  return problem?.kind === 'failed' ? chipLabel(problem.cause, 'GitHub error') : 'GitHub error';
 }
 
 /**

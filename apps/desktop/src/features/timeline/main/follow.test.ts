@@ -208,7 +208,14 @@ describe('TimelineTab', () => {
     expect(timelines.length, 'nothing new, nothing said').toBe(told);
     // GitHub can't be reached, as the poller says, not a read: no read fails for it. The tab's
     // banner says the wait, so no time is said here.
-    polled.goes({ offline: { since: 0, retryAt: 2_000_000, error: 'getaddrinfo ENOTFOUND.' } });
+    polled.goes({
+      offline: {
+        since: 0,
+        retryAt: 2_000_000,
+        cause: { kind: 'offline' },
+        error: 'getaddrinfo ENOTFOUND.',
+      },
+    });
     expect(timelines.at(-1)).toMatchObject({
       status: 'failed',
       cause: { kind: 'offline' },
@@ -265,7 +272,9 @@ describe('TimelineTab', () => {
     await vi.waitFor(() => expect(timelines.at(-1)?.status).toBe('failed'));
     // GitHub goes unreachable while it waits: no read will answer.
     const offline = tab.retry();
-    polled.goes({ offline: { since: 0, retryAt: 2_000_000, error: 'Offline.' } });
+    polled.goes({
+      offline: { since: 0, retryAt: 2_000_000, cause: { kind: 'offline' }, error: 'Offline.' },
+    });
     await offline;
     // Stalled, it asks for nothing.
     polled.readAfresh.mockClear();
@@ -288,7 +297,9 @@ describe('TimelineTab', () => {
 
   it('shows what it saved when it opens offline, failing only once that has been read', async () => {
     const polled = pollerOf(timeline('Saved'));
-    polled.goes({ offline: { since: 0, retryAt: 2_000_000, error: 'Offline.' } });
+    polled.goes({
+      offline: { since: 0, retryAt: 2_000_000, cause: { kind: 'offline' }, error: 'Offline.' },
+    });
     const { tab, timelines } = tabOf(polled.poller);
     tab.update(info());
     expect(tab.show().timeline.status).toBe('loading');
@@ -298,13 +309,20 @@ describe('TimelineTab', () => {
     // With nothing saved, it says so once the cache has answered.
     const empty = pollerOf(timeline('Saved'));
     empty.empty();
-    empty.goes({ offline: { since: 0, retryAt: 2_000_000, error: 'read ECONNRESET' } });
+    empty.goes({
+      offline: {
+        since: 0,
+        retryAt: 2_000_000,
+        cause: { kind: 'timeout' },
+        error: 'read ECONNRESET',
+      },
+    });
     const opened = tabOf(empty.poller);
     opened.tab.update(info());
     opened.tab.show();
     await vi.waitFor(() => expect(opened.timelines.at(-1)?.status).toBe('failed'));
     expect(opened.timelines.at(-1)).toMatchObject({
-      cause: { kind: 'offline' },
+      cause: { kind: 'timeout' },
       details: 'read ECONNRESET',
       stalled: true,
     });

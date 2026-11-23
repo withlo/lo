@@ -82,7 +82,10 @@ function fakePoller(facts: MergeFacts | Error) {
     listening: () => listeners.size,
     /** GitHub can't be reached, or, with nothing, it can again. */
     offline(error: string | undefined) {
-      status.offline = error === undefined ? undefined : { since: 0, retryAt: 0, error };
+      status.offline =
+        error === undefined
+          ? undefined
+          : { since: 0, retryAt: 0, cause: { kind: 'offline' }, error };
       for (const listener of changes) listener();
     },
     /** GitHub gives `next` on a read again. */

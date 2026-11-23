@@ -14,10 +14,12 @@ import {
   type PullRequest,
   type PullSummary,
   type PullToOpen,
+  type RepoAccount,
   saidBy,
 } from '@lo/github';
 
 import { detailsOf, githubCause } from '../../../ipc/cause.ts';
+import type { AccountState } from '../../accounts/service.ts';
 
 import type { Connection, Files, Header, Problem, PullState } from '../contract.ts';
 
@@ -128,7 +130,7 @@ function viewedOf(state: string): Files['files'][number]['viewed'] {
 
 /**
  * How what a tab shows stands, from its account's poller: signed out, the rate limit used up,
- * GitHub out of reach, the rate limit low, or live.
+ * GitHub out of reach, with why as the poller has it, the rate limit low, or live.
  */
 export function connectionOf(login: string, status: PollStatus): Connection {
   if (status.signedOut) return { kind: 'signedOut', login };
@@ -145,6 +147,7 @@ export function connectionOf(login: string, status: PollStatus): Connection {
     return {
       kind: 'offline',
       retryAt: Math.max(0, Math.round(offline.retryAt)),
+      cause: githubCause(offline.cause),
       error: offline.error,
     };
   }
@@ -174,20 +177,46 @@ export function rateLimitedUntil(error: unknown, now: number): number | undefine
 }
 
 /**
+ * Who a tab reads its pull request as: an account, or nobody, with whether any account is signed
+ * in, and one GitHub signed out, if one is, which a read GitHub refuses names.
+ */
+export type ReadAs =
+  | { readonly kind: 'account'; readonly login: string }
+  | {
+      readonly kind: 'anonymous';
+      readonly signedIn: boolean;
+      readonly signedOut?: string | undefined;
+    };
+
+/**
+ * An account GitHub signed out, before `found` checked which accounts can see the repository or as
+ * it did: what a read as nobody that GitHub refuses names, since signing in to it again may show
+ * the pull request. Nothing while every account is signed in.
+ */
+export function signedOutOf(
+  accounts: readonly Pick<AccountState, 'account' | 'signedOut'>[],
+  found: Pick<RepoAccount, 'problems'> | undefined,
+): string | undefined {
+  const refused = found?.problems.find(({ error }) => error.isUnauthorized());
+  return refused?.login ?? accounts.find((each) => each.signedOut !== undefined)?.account.login;
+}
+
+/**
  * What reading the pull request to open it ran into, as a problem the tab shows, with its cause
  * and what GitHub said: not there, or the account can't see it (or, read without one, with
- * `signedIn` saying whether any account is); blocked until the account's authorized, with
- * GitHub's link; or anything else, which Lo tries again at `retryAt`. Nothing for an error the
- * poller's status says already: GitHub out of reach, the rate limit or a refused token.
+ * `signedIn` saying whether any account is, and `signedOut` an account GitHub signed out, which
+ * signing in to again may show it); blocked until the account's authorized, with GitHub's link; or
+ * anything else, which Lo tries again at `retryAt`. Nothing for an error the poller's status says
+ * already: GitHub out of reach, the rate limit or a refused token.
  */
 export function problemOf(
   error: unknown,
   pull: PullRef,
-  acting: { kind: 'account'; login: string } | { kind: 'anonymous'; signedIn: boolean },
+  acting: ReadAs,
   retryAt: number | undefined,
 ): Problem {
   const github = githubErrorIn(error);
-  const login = acting.kind === 'account' ? acting.login : undefined;
+  const login = acting.kind === 'account' ? acting.login : acting.signedOut;
   const cause = githubCause(causeOf(error, { owner: pull.repo.owner, login }));
   const details = detailsOf(saidBy(error));
   if (github) {
@@ -200,7 +229,9 @@ export function problemOf(
         cause:
           acting.kind === 'account'
             ? { kind: 'hidden', login: acting.login }
-            : { kind: 'private', signedIn: acting.signedIn },
+            : acting.signedOut === undefined
+              ? { kind: 'private', signedIn: acting.signedIn }
+              : { kind: 'signedOut', login: acting.signedOut },
         details,
       };
     }

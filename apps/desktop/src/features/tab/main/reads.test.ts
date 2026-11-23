@@ -132,8 +132,13 @@ describe('how a tab stands with GitHub', () => {
     expect(connectionOf('rozed-bot', status())).toEqual({ kind: 'live' });
   });
 
-  it('says the worst of what is: signed out, then the limit used up, then offline, then a low limit', () => {
-    const offline = { since: 1, retryAt: 2_000.4, error: 'GitHub can’t be reached' };
+  it('says the worst of what is: signed out, then the limit used up, then no answer with why, then a low limit', () => {
+    const offline = {
+      since: 1,
+      retryAt: 2_000.4,
+      cause: { kind: 'timeout' as const },
+      error: 'GitHub can’t be reached',
+    };
     const paused = {
       kind: 'paused' as const,
       until: 9_000,
@@ -155,6 +160,7 @@ describe('how a tab stands with GitHub', () => {
     expect(connectionOf('rozed-bot', status({ offline, rateLimit: low }))).toEqual({
       kind: 'offline',
       retryAt: 2_000,
+      cause: { kind: 'timeout' },
       error: 'GitHub can’t be reached',
     });
     expect(connectionOf('rozed-bot', status({ rateLimit: low }))).toEqual({

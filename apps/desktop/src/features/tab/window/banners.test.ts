@@ -219,7 +219,10 @@ describe('how a tab stands with GitHub', () => {
 
   it('says offline, and when it tries again', () => {
     expect(
-      connectionNote({ kind: 'offline', retryAt: at(2 * 60), error: 'ENOTFOUND' }, clockAt),
+      connectionNote(
+        { kind: 'offline', retryAt: at(2 * 60), cause: { kind: 'offline' }, error: 'ENOTFOUND' },
+        clockAt,
+      ),
     ).toEqual({
       kind: 'offline',
       tone: 'warn',
@@ -229,13 +232,46 @@ describe('how a tab stands with GitHub', () => {
       details: 'ENOTFOUND',
       action: { label: 'Try now', do: { kind: 'retry' } },
     });
-    expect(connectionNote({ kind: 'offline', retryAt: null, error: '' }, clockAt)).toEqual({
+    expect(
+      connectionNote(
+        { kind: 'offline', retryAt: null, cause: { kind: 'offline' }, error: '' },
+        clockAt,
+      ),
+    ).toEqual({
       kind: 'offline',
       tone: 'warn',
       label: 'Offline',
       line: 'Offline.',
       action: { label: 'Try again', do: { kind: 'retry' } },
     });
+  });
+
+  it('says “No response” where GitHub took a read and never answered, and why else it gave none', () => {
+    const unanswered = (cause: Cause) =>
+      connectionNote(
+        { kind: 'offline', retryAt: at(20), cause, error: "the answer didn't begin within 15 s" },
+        clockAt,
+      );
+    expect(unanswered({ kind: 'timeout' })).toEqual({
+      kind: 'failed',
+      tone: 'warn',
+      label: 'No response',
+      line: 'GitHub didn’t respond.',
+      retryAt: at(20),
+      details: "the answer didn't begin within 15 s",
+      action: { label: 'Try now', do: { kind: 'retry' } },
+    });
+    // Nothing reached GitHub: offline, with the reason that kept it away.
+    expect(unanswered({ kind: 'proxy', why: 'refused' })).toMatchObject({
+      kind: 'offline',
+      label: 'Offline',
+      line: 'The proxy couldn’t connect to GitHub.',
+    });
+    expect(unanswered({ kind: 'certificate' })).toMatchObject({
+      label: 'Offline',
+      line: 'GitHub’s certificate couldn’t be verified.',
+    });
+    expect(unanswered({ kind: 'unknown' })).toMatchObject({ label: 'Offline', line: undefined });
   });
 });
 
@@ -390,7 +426,12 @@ describe('the local copy’s item', () => {
       retryAt: clock.now + 12_000,
     };
     expect(
-      local(retrying, view({ connection: { kind: 'offline', retryAt: null, error: 'x' } })),
+      local(
+        retrying,
+        view({
+          connection: { kind: 'offline', retryAt: null, cause: { kind: 'offline' }, error: 'x' },
+        }),
+      ),
     ).toEqual({ ball: 'warn', label: 'Local copy' });
     expect(local(retrying)?.problem?.detail).toBe('Offline.');
   });

@@ -91,6 +91,17 @@ export function explain(cause: Cause, system: System = currentSystem()): string 
 }
 
 /**
+ * What the header's chip calls `cause`, why a read of GitHub's got no answer or failed: "Offline"
+ * only where no connection reached GitHub, and "No response" where GitHub didn't answer in time.
+ * Any other cause is `otherwise`.
+ */
+export function chipLabel(cause: Cause, otherwise: string): string {
+  if (cause.kind === 'offline') return 'Offline';
+  if (cause.kind === 'timeout') return 'No response';
+  return otherwise;
+}
+
+/**
  * Whether trying again can't help with `cause` until something changes elsewhere, so its error has
  * no "Try again": the rate limit until it resets, a proxy that wants what Lo can't give, and work
  * that ran out of memory, which fails the same way again.

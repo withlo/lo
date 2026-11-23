@@ -206,7 +206,12 @@ class FakePoller implements ActPoller {
   status() {
     return {
       offline: this.offline
-        ? { since: 0, retryAt: 0, error: 'GitHub can’t be reached.' }
+        ? {
+            since: 0,
+            retryAt: 0,
+            cause: { kind: 'offline' as const },
+            error: 'GitHub can’t be reached.',
+          }
         : undefined,
       signedOut: this.signedOut,
     };

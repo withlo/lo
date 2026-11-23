@@ -874,7 +874,14 @@ status bar.
   diff was drawn at the head on screen from that start (`drawn`); a new start clears it.
 - A tab says it's offline once GitHub has been out of reach for 25 s, so a blip says nothing. A
   build run from source takes another wait from `LO_OFFLINE_AFTER_MS`, for its tests; a packaged
-  build ignores it.
+  build ignores it. Out of reach carries why, as `causeOf` names it, from the poller's status or the
+  tab's own read: only no connection at all is offline, and a read GitHub took and never answered is
+  no answer in time.
+- A read that waits on GitHub (out of reach, the rate limit, a refused token) leaves what the tab
+  kept on screen, and the header's chip says why. With nothing kept to show, the tab can't open its
+  pull request: it says why in place of its view, with the read's cause, until the read that's due
+  opens it. Read as nobody while an account is signed out, a read GitHub refuses or finds nothing
+  for names that account, since signing in to it again may open it.
 - The window gets what it shows on `tab.pull`, `tab.files` and `tab.local`, each sent only when it
   changes, and asks for all three with `tab.state`. None of it holds a token. `tab.copy` puts up to
   1 MiB of text on the clipboard, and `tab.openExternal` opens pages on `https://github.com/` only,

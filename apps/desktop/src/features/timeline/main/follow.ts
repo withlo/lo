@@ -149,7 +149,7 @@ export class TimelineTab {
     // A tab that opens offline shows what it saved, once it's read that: nothing fails before.
     if (status?.offline && this.#landed) {
       return {
-        cause: { kind: 'offline' },
+        cause: githubCause(status.offline.cause),
         details: detailsOf(status.offline.error),
         retryAt: undefined,
         stalled: true,

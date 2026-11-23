@@ -237,7 +237,7 @@ describe('changing your comment on the pull request', () => {
     expect(deleteAsking()).toBeUndefined();
     expect(notice()?.title).toBe('This comment isn’t yours');
     said.pull = pull({
-      connection: { kind: 'offline', retryAt: null, error: 'reset' },
+      connection: { kind: 'offline', retryAt: null, cause: { kind: 'timeout' }, error: 'reset' },
     });
     removeOnPull(tab(), comment());
     expect(deleteAsking()).toBeUndefined();
