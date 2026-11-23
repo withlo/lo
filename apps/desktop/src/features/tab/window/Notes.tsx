@@ -36,7 +36,7 @@ import {
 } from 'react';
 
 import { focusMiddle, registry } from '../../../window/commands/registry.ts';
-import { explain } from '../../../window/explain.ts';
+import { chipLabel, explain } from '../../../window/explain.ts';
 import { client } from '../../../window/ipc.ts';
 import { useViews, type View } from '../../../window/slots.tsx';
 import { useRevisions } from '../../revisions/window/shared.ts';
@@ -258,20 +258,20 @@ function useNow(ticking: boolean): number {
 }
 
 /**
- * The header's chip for a tab whose read failed after its view was drawn, which stays: "No
- * response" where GitHub didn't answer, else "GitHub error".
+ * The header's chip for a tab whose read failed after its view was drawn, which stays: what
+ * `chipLabel` calls its cause, else "GitHub error".
  */
 function readFailed(view: PullView | undefined): string {
-  return view?.problem?.kind === 'failed' && view.problem.cause.kind === 'timeout'
-    ? 'No response'
-    : 'GitHub error';
+  const problem = view?.problem;
+  return problem?.kind === 'failed' ? chipLabel(problem.cause, 'GitHub error') : 'GitHub error';
 }
 
 /**
  * The header's chip for how tab `tab` stands with GitHub, when it isn't as usual: a word or two,
  * whose details say why, when GitHub last confirmed what's on screen, and the one thing to do
  * about it. A read that failed after the view was drawn says so here too, as the view stays: amber
- * while it counts down to trying again, red once it doesn't.
+ * while it counts down to trying again, red once it doesn't. There's none while the tab's view is
+ * its problem, which says why.
  */
 export function useHeaderConnection(
   tab: PullTab,
@@ -281,8 +281,10 @@ export function useHeaderConnection(
   // "Checked" goes under the line while there's a view it's about.
   const checked = view?.shown === null ? undefined : view?.checked;
   const now = useNow(checked !== undefined);
+  // While the tab's view is its problem, the problem says why, once.
+  if (blocked(view)) return undefined;
   const note = connectionNote(connection, systemClock(now));
-  const failed = note || blocked(view) ? undefined : failureOf(view, tab);
+  const failed = note ? undefined : failureOf(view, tab);
   const said = failed
     ? {
         kind: 'failed' as const,

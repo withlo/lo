@@ -36,7 +36,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { Forest } from '../../stacks/service.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
-import type { JobView, Method, MergePlan, Planned } from '../contract.ts';
+import {
+  confirmed as confirmedSchema,
+  planned as plannedSchema,
+  type JobView,
+  type Method,
+  type MergePlan,
+  type Planned,
+} from '../contract.ts';
 import { FRESH_FOR, Merging, type MergingPoller } from './merging.ts';
 import { factsOf, HEAD } from './test/facts.ts';
 import { MergeTurns } from './turns.ts';
@@ -416,7 +423,10 @@ function setup(options: Setup = {}) {
         view = { ...view, acting };
       },
       offline: () => {
-        status = { ...status, offline: { error: 'down', since: NOW, retryAt: NOW } };
+        status = {
+          ...status,
+          offline: { error: 'down', since: NOW, retryAt: NOW, cause: { kind: 'offline' } },
+        };
       },
       signedOut: () => {
         status = { ...status, signedOut: true };
@@ -599,6 +609,21 @@ describe('at the press', () => {
         sent: [],
       });
     }
+  });
+
+  it('sends why GitHub gives no answer as its cause, for the window to word, at the press and the plan', async () => {
+    const run = setup();
+    const plan = planOf(await run.merging.plan(ID, SQUASH));
+    run.set.offline();
+    const confirmed = await run.merging.confirm(plan.key);
+    expect(confirmed).toMatchObject({
+      kind: 'refused',
+      refusal: { kind: 'offline', text: '', cause: { kind: 'offline' } },
+    });
+    expect(confirmedSchema.safeParse(confirmed).success).toBe(true);
+    const planned = await run.merging.plan(ID, SQUASH);
+    expect(planned).toEqual({ kind: 'refused', why: '', again: false, cause: { kind: 'offline' } });
+    expect(plannedSchema.safeParse(planned).success).toBe(true);
   });
 
   it('offers the newer push the tab knows of, from the head on screen', async () => {

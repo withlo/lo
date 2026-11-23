@@ -72,6 +72,7 @@ import {
   outcomeTitle,
   pushWarning,
   queueLine,
+  refusalText,
   saidOf,
   skipsOf,
   troubleLine,
@@ -780,12 +781,13 @@ function shownOf(
       const auto = plan.kind === 'autoMerge' || plan.kind === 'whenReady';
       const unconfirmed = auto ? 'Auto-merge not confirmed' : 'Merge not confirmed';
       // Main names the state, which the title says: the reason is what's known of why.
+      const text = refusalText(refusal);
       const said =
-        refusal.text === '' || refusal.text.endsWith('not confirmed')
+        text === '' || text.endsWith('not confirmed')
           ? unsettled
             ? troubleLine()
             : ''
-          : withoutBidi(refusal.text);
+          : withoutBidi(text);
       const trouble = troubleOf(plan, refusal, unsettled ? unconfirmed : failedTitle(plan), said);
       return {
         title: confirmTitle(plan),

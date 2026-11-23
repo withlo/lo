@@ -87,7 +87,12 @@ describe('what a tab’s overview is', () => {
   });
 
   it('failed when the ref couldn’t be read and there’s nothing to show, but none still stands', () => {
-    const problem = { kind: 'offline', message: 'down', retryAt: 5 } as const;
+    const problem = {
+      kind: 'offline',
+      cause: { kind: 'offline' },
+      message: 'down',
+      retryAt: 5,
+    } as const;
     expect(standingOf(stateOf({ problem }), undefined)).toEqual({ kind: 'failed', problem });
     expect(standingOf(stateOf({ problem, found: 'none' }), undefined).kind).toBe('none');
   });

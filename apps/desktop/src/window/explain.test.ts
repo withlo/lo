@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { explain, gitWords, REMEDY_LABELS, remedyOf, waitsOut } from './explain.ts';
+import {
+  chipLabel,
+  explain,
+  gitWords,
+  offlineLabel,
+  REMEDY_LABELS,
+  remedyOf,
+  waitsOut,
+} from './explain.ts';
 
 describe('explain', () => {
   it('words each cause as the guide does', () => {
@@ -74,6 +82,31 @@ describe('the causes beyond GitHub’s answer', () => {
     expect(remedyOf({ kind: 'private', signedIn: true })).toBe('tryAgain');
     expect(remedyOf({ kind: 'github' })).toBe('tryAgain');
     expect(REMEDY_LABELS.signInAgain).toBe('Sign in again');
+  });
+});
+
+describe('chipLabel', () => {
+  it('calls only no connection “Offline”, and GitHub not answering in time “No response”', () => {
+    expect(chipLabel({ kind: 'offline' }, 'GitHub error')).toBe('Offline');
+    expect(chipLabel({ kind: 'timeout' }, 'Offline')).toBe('No response');
+    expect(chipLabel({ kind: 'github' }, 'GitHub error')).toBe('GitHub error');
+    expect(chipLabel({ kind: 'proxy', why: 'refused' }, 'Offline')).toBe('Offline');
+  });
+
+  it('names a sign-in that can’t be read, and leaves a cause Lo can’t tell to `otherwise`', () => {
+    expect(chipLabel({ kind: 'unreadable', login: 'rozed-bot' }, 'Offline')).toBe(
+      'Can’t read the sign-in',
+    );
+    expect(chipLabel({ kind: 'unknown' }, 'GitHub error')).toBe('GitHub error');
+  });
+});
+
+describe('offlineLabel', () => {
+  it('calls GitHub out of reach for a cause Lo can’t tell “Can’t reach GitHub”, else as a chip does', () => {
+    expect(offlineLabel({ kind: 'unknown' })).toBe('Can’t reach GitHub');
+    expect(offlineLabel({ kind: 'timeout' })).toBe('No response');
+    expect(offlineLabel({ kind: 'unreadable', login: 'rozed-bot' })).toBe('Can’t read the sign-in');
+    expect(offlineLabel({ kind: 'proxy', why: 'refused' })).toBe('Offline');
   });
 });
 

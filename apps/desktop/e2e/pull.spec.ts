@@ -1,11 +1,13 @@
 // A pull request's tab in the app: Lo started on the replay server, as rozed-bot, opens
 // rozed-dev/e2e#80 with its header and its local copy, fetched from the same pull request built on
-// this machine; says so in a banner when a pull request can't be opened; comes back offline with
-// what it saved; and never gives the window the token.
+// this machine; says why in place of its view when a pull request can't be opened, whatever GitHub
+// answers; comes back offline with what it saved; and never gives the window the token.
 
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
+import { createServer as createHttpServer } from 'node:http';
 import { createServer, type Socket } from 'node:net';
+import { buffer } from 'node:stream/consumers';
 
 import { APP_PULL, writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
@@ -159,6 +161,210 @@ test("says why a pull request GitHub doesn't have, or one no account can see, ca
   );
   await expect(gone.getByRole('button', { name: 'Close tab' })).toBeVisible();
   await expect(page.locator('header').first()).toContainText('Not signed in');
+});
+
+/**
+ * How GitHub answers, behind the replay: as recorded; refusing every request's token but the one
+ * that asks whose it is (`refused`), as for a token GitHub revoked after Lo signed in with it; with
+ * the rate limit used up (`limited`); or never (`silent`), holding each connection open.
+ */
+type Answering = 'recorded' | 'refused' | 'limited' | 'silent';
+
+/** When the rate limit `limited` staged resets, in seconds since the Unix epoch. */
+const RESET = Math.floor(Date.now() / 1000) + 3600;
+
+/** GitHub's own answer to each request it doesn't answer as recorded, as `answering` stages it. */
+function staged(
+  answering: Exclude<Answering, 'recorded' | 'silent'>,
+  path: string,
+): { status: number; headers: Record<string, string>; body: string } | undefined {
+  const headers = { 'content-type': 'application/json; charset=utf-8' };
+  switch (answering) {
+    case 'refused':
+      return path === '/api/user'
+        ? undefined
+        : {
+            status: 401,
+            headers,
+            body: JSON.stringify({
+              message: 'Bad credentials',
+              documentation_url: 'https://docs.github.com/rest',
+            }),
+          };
+    case 'limited':
+      return {
+        status: 403,
+        headers: {
+          ...headers,
+          'x-ratelimit-limit': '60',
+          'x-ratelimit-remaining': '0',
+          'x-ratelimit-reset': String(RESET),
+          'x-ratelimit-resource': 'core',
+        },
+        body: JSON.stringify({
+          message: 'API rate limit exceeded for 127.0.0.1.',
+          documentation_url: 'https://docs.github.com/rest',
+        }),
+      };
+    default:
+      answering satisfies never;
+      throw new Error(`Answering GitHub doesn't know: ${String(answering)}`);
+  }
+}
+
+/**
+ * `test`, with GitHub answering as the test stages it, from a server in front of the replay, and
+ * Lo saying it's offline once that has lasted a second. With `account` false, Lo starts with no
+ * account.
+ */
+const onStaged = test.extend<{
+  /** How GitHub answers as Lo starts. */
+  answering: Answering;
+  /** How GitHub answers now, which a test changes as it goes. */
+  stage: { answering: Answering };
+  account: boolean;
+}>({
+  answering: ['recorded', { option: true }],
+  account: [true, { option: true }],
+  stage: async ({ answering }, use) => {
+    await use({ answering });
+  },
+  launch: async ({ github, remote, tokenFile, stage, account }, use) => {
+    const origin = new URL(github.urls.api).origin;
+    const held = new Set<Socket>();
+    const front = createHttpServer((incoming, outgoing) => {
+      void (async () => {
+        const body = await buffer(incoming);
+        const { answering } = stage;
+        if (answering === 'silent') {
+          held.add(incoming.socket);
+          return;
+        }
+        const path = new URL(incoming.url ?? '/', origin).pathname;
+        const own = answering === 'recorded' ? undefined : staged(answering, path);
+        if (own) {
+          outgoing.writeHead(own.status, own.headers);
+          outgoing.end(own.body);
+          return;
+        }
+        const headers = new Headers();
+        for (const [name, value] of Object.entries(incoming.headers)) {
+          if (typeof value === 'string' && name !== 'host') headers.set(name, value);
+        }
+        const method = incoming.method ?? 'GET';
+        const response = await fetch(`${origin}${incoming.url ?? '/'}`, {
+          method,
+          headers,
+          body: method === 'GET' || method === 'HEAD' ? undefined : new Uint8Array(body),
+          redirect: 'manual',
+        });
+        const out: Record<string, string> = {};
+        response.headers.forEach((value, name) => {
+          if (!['content-length', 'content-encoding', 'transfer-encoding'].includes(name)) {
+            out[name] = value;
+          }
+        });
+        outgoing.writeHead(response.status, out);
+        outgoing.end(Buffer.from(await response.arrayBuffer()));
+      })().catch(() => {
+        // The test has ended, and the replay server with it: the request goes unanswered.
+        outgoing.destroy();
+      });
+    });
+    await new Promise<void>((resolve) => front.listen(0, '127.0.0.1', resolve));
+    const address = front.address();
+    if (address === null || typeof address === 'string') throw new Error('no port');
+    await use({
+      args: [appFolder, ...KEYCHAIN],
+      env: {
+        LO_GITHUB: `http://127.0.0.1:${address.port}`,
+        ...(account ? { LO_TEST_TOKEN_FILE: tokenFile } : {}),
+        LO_GIT_REMOTE: remote,
+        LO_OFFLINE_AFTER_MS: '1000',
+      },
+    });
+    for (const socket of held) socket.destroy();
+    front.closeAllConnections();
+    await new Promise((resolve) => front.close(resolve));
+  },
+});
+
+/** Opens `pull`'s tab, as whoever can open it, and returns its id. */
+async function openAs(page: Page, pull: Opening): Promise<string> {
+  const reply = await page.evaluate(
+    (input) => window.lo.invoke('tab.open', { kind: 'pull', ...input }),
+    pull,
+  );
+  if (!reply.ok || typeof reply.value !== 'string') throw new Error(JSON.stringify(reply));
+  return reply.value;
+}
+
+onStaged.describe('opened with nobody signed in, while the rate limit is used up', () => {
+  onStaged.use({ account: false, answering: 'limited' });
+
+  onStaged(
+    'says why in place of its view, with when the limit resets, and offers a sign-in',
+    async ({ page }) => {
+      await openAs(page, E2E);
+      const failed = page.locator('[data-lo-failed]');
+      const why = failed.getByRole('alert').filter({ hasText: 'Can’t open #80' });
+      await expect(why).toContainText('GitHub’s rate limit resets at', { timeout: 20_000 });
+      // Nothing to try until it resets, but signing in reads past it, under the account's own limit.
+      await expect(failed.getByRole('button', { name: /^Try/ })).toHaveCount(0);
+      const signIn = failed.getByRole('button', { name: 'Sign in with GitHub…' });
+      await expect(signIn).toBeVisible();
+      // The problem says the limit, once: no chip in the header, and nothing around the view waits.
+      const header = page.locator('[data-lo-pull] header');
+      await expect(header.getByRole('button', { name: /^Rate limit/ })).toHaveCount(0);
+      await expect(header.locator('.skeleton')).toHaveCount(0);
+      await expect(page.getByText('Opening pull request…')).toHaveCount(0);
+      await expect(page.getByRole('complementary', { name: 'Files' })).toHaveAttribute('inert', '');
+      await signIn.click();
+      await expect(page.getByTestId('sign-in')).toBeVisible();
+    },
+  );
+});
+
+onStaged.describe('opened while GitHub refuses the account’s token', () => {
+  onStaged.use({ answering: 'refused' });
+
+  onStaged(
+    'says the account is signed out in place of its view, with Sign in again',
+    async ({ page }) => {
+      await open(page, E2E);
+      const failed = page.locator('[data-lo-failed]');
+      const why = failed.getByRole('alert').filter({ hasText: 'Can’t open #80' });
+      await expect(why).toContainText('rozed-bot is signed out.', { timeout: 20_000 });
+      await expect(failed.getByRole('button', { name: 'Sign in again' })).toBeVisible();
+      await expect(page.getByText('Opening pull request…')).toHaveCount(0);
+    },
+  );
+});
+
+onStaged.describe('opened with nobody signed in, then GitHub takes reads and never answers', () => {
+  onStaged.use({ account: false });
+
+  onStaged(
+    'says “No response” in the header’s chip, not “Offline”, and the view stays',
+    async ({ page, stage }) => {
+      // A request GitHub never answers is given up on after 15 s.
+      onStaged.setTimeout(60_000);
+      const id = await openAs(page, E2E);
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText(TITLE);
+
+      stage.answering = 'silent';
+      await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
+      const header = page.locator('header').first();
+      const chip = header.getByRole('button', { name: 'No response' });
+      await expect(chip).toBeVisible({ timeout: 30_000 });
+      await expect(header.getByRole('button', { name: 'Offline' })).toHaveCount(0);
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText(TITLE);
+      await chip.click();
+      const details = page.getByRole('dialog');
+      await expect(details).toContainText('GitHub didn’t respond.');
+      await expect(details).not.toContainText('Offline');
+    },
+  );
 });
 
 test('comes back offline with what it saved and what it fetched', async ({

@@ -879,7 +879,24 @@ status bar.
   diff was drawn at the head on screen from that start (`drawn`); a new start clears it.
 - A tab says it's offline once GitHub has been out of reach for 25 s, so a blip says nothing. A
   build run from source takes another wait from `LO_OFFLINE_AFTER_MS`, for its tests; a packaged
-  build ignores it.
+  build ignores it. Out of reach carries why, as `causeOf` names it, from the poller's status or the
+  tab's own read: only no connection at all is offline, and a read GitHub took and never answered is
+  no answer in time.
+- A read that waits on GitHub (out of reach, the rate limit, a refused token) leaves what the tab
+  kept on screen, and the header's chip says why. With nothing kept to show, the tab can't open its
+  pull request: it says why in place of its view, with the read's cause, until the read that's due
+  opens it. Out of reach, it stays on its loading view until that has lasted, as the chip waits, so
+  a blip says nothing. Read as nobody while an account is signed out, a read GitHub refuses or finds
+  nothing for names that account, since signing in to it again may open it: the one remembered for
+  the repository or its owner, else one GitHub refused as Lo checked which can see it, else the only
+  account there is, and none where other accounts are signed in. An account added, or signed in
+  again, has a tab read as nobody under the rate limit work out its account again, and has the
+  others name the signed-out account afresh.
+- What says GitHub gave no answer, anywhere, says why, by the cause `causeOf` gave it, which crosses
+  as data for the window to word with `offlineLabel`, `chipLabel` and `explain`: the tab's
+  connection, merge's `Off` and its refusals for it, the queue's `ActWhy` while its poller can't
+  reach GitHub, the overview's `offline` problem, and the stall of a poller that can't read now,
+  which the merge status and the review threads carry. Main words none of it.
 - The window gets what it shows on `tab.pull`, `tab.files` and `tab.local`, each sent only when it
   changes, and asks for all three with `tab.state`. None of it holds a token. `tab.copy` puts up to
   1 MiB of text on the clipboard, and `tab.openExternal` opens pages on `https://github.com/` only,

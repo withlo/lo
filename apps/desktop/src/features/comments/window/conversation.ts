@@ -10,7 +10,7 @@ import { changeRefusal } from '@lo/review';
 import { refuse } from '../../../window/commands/notices.tsx';
 import type { PullTab } from '../../tab/window/shared.ts';
 import type { EditPlaceRow } from '../contract.ts';
-import { COULDNT_EDIT, failed, OFFLINE_ACT, setAsking, unfailed } from './acts.ts';
+import { COULDNT_EDIT, failed, setAsking, unfailed } from './acts.ts';
 import {
   bringToTimeline,
   canWrite,
@@ -116,8 +116,9 @@ export async function editOnPull(tab: PullTab, comment: PullComment): Promise<vo
 export function removeOnPull(tab: PullTab, comment: PullComment): void {
   if (!may(tab, comment, 'delete')) return;
   // Nothing would go: it's refused now, not after the question.
-  if (offline(tab.id)) {
-    refuse(OFFLINE_ACT);
+  const away = offline(tab.id);
+  if (away !== undefined) {
+    refuse(away);
     return;
   }
   setAsking({

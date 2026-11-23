@@ -314,13 +314,17 @@ test('a first read the poller can’t answer now fails with why, and the threads
   reading.follow('t1');
   await settled();
   expect(threads.at(-1)?.status).toBe('loading');
-  github.change({ offline: { since: 0, retryAt: 1, error: 'The network is down.' } });
+  github.change({
+    offline: { since: 0, retryAt: 1, cause: { kind: 'offline' }, error: 'The network is down.' },
+  });
+  // Why, as a cause, for the window to word.
   expect(threads.at(-1)).toMatchObject({
     status: 'failed',
-    problem: 'GitHub can’t be reached: The network is down.',
+    problem: null,
+    stall: { kind: 'offline' },
   });
   github.send({ kind: 'read', name: REVIEW_THREADS.name, pull: PULL });
-  expect(threads.at(-1)).toMatchObject({ status: 'ready', problem: null });
+  expect(threads.at(-1)).toMatchObject({ status: 'ready', problem: null, stall: undefined });
   reading.stop();
   expect(github.watchers.size).toBe(0);
 
@@ -337,10 +341,11 @@ test('a first read the poller can’t answer now fails with why, and the threads
     again.reading.follow('t1');
     await settled();
     expect(again.threads.at(-1)?.status).toBe('failed');
-    // The time of day the limit resets, never a timestamp; the account by its login.
-    expect(again.threads.at(-1)?.problem).toMatch(
-      /^GitHub’s rate limit resets at .+\.$|^\S+ is signed out\.$/,
+    // When the limit resets; the account by its login.
+    expect(again.threads.at(-1)?.stall).toEqual(
+      status.signedOut
+        ? { kind: 'signedOut', login: 'rozed-bot' }
+        : { kind: 'rateLimit', resets: 0 },
     );
-    expect(again.threads.at(-1)?.problem).not.toContain('1970');
   }
 });

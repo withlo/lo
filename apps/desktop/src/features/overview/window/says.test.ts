@@ -151,8 +151,18 @@ describe('an overview in a newer format', () => {
 describe('a ref that couldn’t be fetched', () => {
   it('says why, and when it’s fetched again, to count down, with GitHub’s words left for Details', () => {
     const at = 1_000_000;
-    expect(problemReason({ kind: 'offline', message: 'ECONNRESET', retryAt: at })).toEqual({
+    const offline = { kind: 'offline', message: 'ECONNRESET', retryAt: at } as const;
+    expect(problemReason({ ...offline, cause: { kind: 'offline' } })).toEqual({
       cause: 'Offline.',
+      retryAt: at,
+    });
+    // GitHub out of reach says why, as the header's chip does: a hang isn't "Offline.".
+    expect(problemReason({ ...offline, cause: { kind: 'timeout' } })).toEqual({
+      cause: 'GitHub didn’t respond.',
+      retryAt: at,
+    });
+    expect(problemReason({ ...offline, cause: { kind: 'unknown' } })).toEqual({
+      cause: '',
       retryAt: at,
     });
     expect(problemReason({ kind: 'failed', message: 'GitHub answered 502.', retryAt: at })).toEqual(

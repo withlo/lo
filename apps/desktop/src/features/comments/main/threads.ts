@@ -23,6 +23,7 @@ import {
 } from '@lo/github';
 import { pendingReviewFrom, threadFromGithub } from '@lo/review';
 
+import { githubCause, type Cause } from '../../../ipc/cause.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
 import {
   BODY_LIMIT,
@@ -88,16 +89,15 @@ function sameCompared(a: Compared | null, b: Compared | null): boolean {
 }
 
 /**
- * Why no read can be answered now, as `status` says: GitHub can't be reached, `login` is signed
- * out, or the rate limit holds every read until it resets, at a time of day on this computer.
+ * Why no read can be answered now, as `status` says, for the window to word: GitHub gives no
+ * answer, by why, `login` is signed out, or the rate limit holds every read until it resets.
  * Nothing when reads go on.
  */
-export function stallOf(status: PollStatus, login: string): string | undefined {
-  if (status.signedOut) return `${login} is signed out.`;
-  if (status.offline) return `GitHub can’t be reached: ${status.offline.error}`;
+export function stallOf(status: PollStatus, login: string): Cause | undefined {
+  if (status.signedOut) return { kind: 'signedOut', login };
+  if (status.offline) return githubCause(status.offline.cause);
   if (status.rateLimit.kind === 'paused') {
-    const time = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
-    return `GitHub’s rate limit resets at ${time.format(status.rateLimit.until)}.`;
+    return { kind: 'rateLimit', resets: Math.round(status.rateLimit.until) };
   }
   return undefined;
 }
@@ -204,7 +204,14 @@ export class ThreadReads {
     }
     const status = run ? 'run' : info.acting?.kind === 'anonymous' ? 'signIn' : undefined;
     if (status && followed.threads.status !== status) {
-      followed.threads = { ...followed.threads, status, threads: [], missing: 0, problem: null };
+      followed.threads = {
+        ...followed.threads,
+        status,
+        threads: [],
+        missing: 0,
+        problem: null,
+        stall: undefined,
+      };
       this.#sendThreads(followed);
     }
     this.compared(id);
@@ -332,8 +339,11 @@ export class ThreadReads {
   #stalled(followed: Followed, poller: ThreadsPoller): void {
     if (!this.#current(followed) || followed.poller !== poller) return;
     if (followed.threadsRead || followed.threads.status !== 'loading') return;
-    const why = stallOf(poller.status(), followed.login ?? 'The account');
-    if (why !== undefined) this.#fail(followed, why);
+    const stall = stallOf(poller.status(), followed.login ?? '');
+    if (stall === undefined) return;
+    this.#options.log(`${followed.pull.toString()}: can't read now (${stall.kind})`);
+    followed.threads = { ...followed.threads, status: 'failed', problem: null, stall };
+    this.#sendThreads(followed);
   }
 
   #heard(followed: Followed, poller: ThreadsPoller, event: PollEvent): void {
@@ -377,6 +387,7 @@ export class ThreadReads {
       threads: threadRows(list),
       missing: list.missing,
       problem: null,
+      stall: undefined,
     };
     this.#sendThreads(followed);
   }
@@ -390,7 +401,12 @@ export class ThreadReads {
 
   #fail(followed: Followed, problem: string): void {
     this.#options.log(`${followed.pull.toString()}: ${problem}`);
-    followed.threads = { ...followed.threads, status: 'failed', problem: problem.slice(0, 4096) };
+    followed.threads = {
+      ...followed.threads,
+      status: 'failed',
+      problem: problem.slice(0, 4096),
+      stall: undefined,
+    };
     this.#sendThreads(followed);
   }
 

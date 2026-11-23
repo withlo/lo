@@ -336,8 +336,9 @@ export type Header = z.output<typeof header>;
 
 /**
  * How what a tab shows stands with GitHub, worst first: the account is signed out, the rate limit
- * is used up or GitHub asked Lo to slow down, GitHub can't be reached, or the rate limit is low, so
- * Lo asks less often. `live` when none of these is so.
+ * is used up or GitHub asked Lo to slow down, GitHub gives no answer (`offline`, with its `cause`:
+ * no connection at all, no answer in time, a proxy in the way, and so on), or the rate limit is
+ * low, so Lo asks less often. `live` when none of these is so.
  */
 export const connection = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('live') }),
@@ -352,6 +353,7 @@ export const connection = z.discriminatedUnion('kind', [
   z.strictObject({
     kind: z.literal('offline'),
     retryAt: time.nullable(),
+    cause,
     error: z.string(),
   }),
   z.strictObject({ kind: z.literal('limitLow'), remaining: z.number().int(), reset: time }),

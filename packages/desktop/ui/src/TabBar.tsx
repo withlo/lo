@@ -16,6 +16,7 @@ import { Button } from './Button.tsx';
 import type { CommandControl } from './commands/control.ts';
 import { ContextMenu, type ContextMenuAnchor } from './ContextMenu.tsx';
 import { withoutBidi } from './controls.ts';
+import { useGiveUp } from './giveUp.ts';
 import { motionReduced, whenSettled } from './motion.ts';
 import { Skeleton, Spinner } from './Spinner.tsx';
 import { Tooltip } from './Tooltip.tsx';
@@ -138,8 +139,15 @@ const tab = cva(
   },
 );
 
-/** What a tab says, in one row. */
-const LABEL = 'flex min-w-0 flex-1 items-center gap-6';
+/** What a tab says, in one row, which gives up its mark where its number wouldn't fit beside it. */
+const LABEL = 'give-up flex min-w-0 flex-1 items-center gap-6';
+
+/**
+ * What a tab gives up, measured, once its title, stack count and repository have gone as far as they
+ * go: its mark, the state's ball or the spinner in its place, so its number stays whole and clear of
+ * its close button on every system.
+ */
+const LABEL_STEPS = ['mark'] as const;
 
 /** The attribute the strip's row has, its tabs and what's at its end, for finding focus in it. */
 export const STRIP_ATTRIBUTE = 'data-lo-strip';
@@ -910,6 +918,8 @@ function TabItem({
   const { id } = item;
   const loading = item.kind === 'pull' && isLoading(item);
   const closable = item.kind !== 'recent';
+  const label = useRef<HTMLSpanElement>(null);
+  useGiveUp(label, LABEL_STEPS);
   return (
     <div
       role="tab"
@@ -928,7 +938,7 @@ function TabItem({
         .filter(Boolean)
         .join(' ')}
     >
-      <span className={LABEL} data-tab-label>
+      <span ref={label} className={LABEL} data-tab-label>
         <TabLabel
           tab={item}
           selected={selected}
@@ -973,7 +983,8 @@ function isLoading(item: PullTab): boolean {
 /**
  * What a tab says: a pull request's state, place, stack and title, or the name of one of Lo's own.
  * As the tab narrows, its title goes first, then its stack's count, then its repository's name
- * shortens, but never past its first letter and an ellipsis, and never past half the tab; its
+ * shortens, but never past its first letter and an ellipsis, and never past half the tab, then its
+ * state's ball, or the spinner in its place, goes where its number wouldn't fit beside it; its
  * number stays whole. The marks, the state's ball and the stack's count, are named in a tooltip
  * and to a screen reader.
  */
@@ -984,13 +995,16 @@ function TabLabel({ tab: item, selected, fade }: { tab: Tab; selected: boolean; 
       return (
         <>
           {isLoading(item) ? (
-            <Spinner size="xs" />
+            <span data-gives="mark" className="flex flex-none">
+              <Spinner size="xs" />
+            </span>
           ) : (
             item.state && (
               <Tooltip label={STATE_NAMES[item.state]}>
                 <span
                   role="img"
                   aria-label={STATE_NAMES[item.state]}
+                  data-gives="mark"
                   className={state({ state: item.state })}
                 />
               </Tooltip>

@@ -40,6 +40,7 @@ import {
   nextLabel,
   problemAction,
   problemKey,
+  reasonOf,
   workingWord,
   workKey,
   type RowProblem,
@@ -241,7 +242,7 @@ function RowNote({ problem }: { problem: RowProblem }) {
   return (
     <Problem
       title={withoutBidi(problem.title)}
-      reason={problem.why === '' ? undefined : withoutBidi(problem.why)}
+      reason={reasonOf(problem)}
       details={problem.details}
       action={
         label === undefined

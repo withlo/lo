@@ -406,6 +406,7 @@ test('offline it backs off and answers from the cache with its age', async () =>
   expect(t.status().offline).toEqual({
     since: wall(0),
     retryAt: wall(20),
+    cause: { kind: 'offline' },
     error: NETWORK_DOWN,
   });
   expect(t.poller.pullRequest(pr(1))?.offlineAge).toBe(3 * 3600 * 1000);
@@ -443,6 +444,13 @@ test('offline it backs off and answers from the cache with its age', async () =>
   expect(t.status()).toEqual(QUIET);
   const current = t.poller.pullRequest(pr(1));
   expect([current?.fetchedAt, current?.offlineAge]).toEqual([wall(1200), undefined]);
+});
+
+test('a request GitHub never answers backs off as no answer in time, not as no connection', async () => {
+  const t = await Polling.start('no_answer', recorded(), { delay: 60_000 });
+  void t.poller.setOpen(pr(1));
+  await t.runUntil(15);
+  expect(t.status().offline).toMatchObject({ since: wall(15), cause: { kind: 'timeout' } });
 });
 
 test('offline says when the next try really is', async () => {

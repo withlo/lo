@@ -150,7 +150,7 @@ describe('a pull request’s tab that can’t show it', () => {
     expect(stopped?.actions).toEqual([{ label: 'Try again', do: { kind: 'retry' } }]);
   });
 
-  it('offers what the cause calls for: a sign-in, or nothing while the rate limit holds', () => {
+  it('offers what the cause calls for: a sign-in, or nothing while the rate limit holds an account', () => {
     const failed = (cause: Cause) =>
       failureOf(view({ problem: { kind: 'failed', cause, retryAt: clock.now + 5_000 } }), E2E);
     // The reset time is the reason: no countdown to the next try, and nothing to press.
@@ -158,6 +158,23 @@ describe('a pull request’s tab that can’t show it', () => {
       detail: `GitHub’s rate limit resets at ${timeOfDay(clock.now + 25 * 60_000)}.`,
       retryAt: undefined,
       actions: [],
+    });
+    // Read as nobody, a sign-in reads past it, under the account's own limit.
+    const nobody = failureOf(
+      view({
+        acting: { kind: 'anonymous' },
+        problem: {
+          kind: 'failed',
+          cause: { kind: 'rateLimit', resets: clock.now + 25 * 60_000 },
+          retryAt: clock.now + 25 * 60_000,
+        },
+      }),
+      E2E,
+    );
+    expect(nobody).toMatchObject({
+      detail: `GitHub’s rate limit resets at ${timeOfDay(clock.now + 25 * 60_000)}.`,
+      retryAt: undefined,
+      actions: [{ label: 'Sign in with GitHub…', do: { kind: 'signIn' } }],
     });
     expect(failed({ kind: 'signedOut', login: 'rozed-bot' })).toMatchObject({
       detail: 'rozed-bot is signed out.',
@@ -219,7 +236,10 @@ describe('how a tab stands with GitHub', () => {
 
   it('says offline, and when it tries again', () => {
     expect(
-      connectionNote({ kind: 'offline', retryAt: at(2 * 60), error: 'ENOTFOUND' }, clockAt),
+      connectionNote(
+        { kind: 'offline', retryAt: at(2 * 60), cause: { kind: 'offline' }, error: 'ENOTFOUND' },
+        clockAt,
+      ),
     ).toEqual({
       kind: 'offline',
       tone: 'warn',
@@ -229,12 +249,54 @@ describe('how a tab stands with GitHub', () => {
       details: 'ENOTFOUND',
       action: { label: 'Try now', do: { kind: 'retry' } },
     });
-    expect(connectionNote({ kind: 'offline', retryAt: null, error: '' }, clockAt)).toEqual({
+    expect(
+      connectionNote(
+        { kind: 'offline', retryAt: null, cause: { kind: 'offline' }, error: '' },
+        clockAt,
+      ),
+    ).toEqual({
       kind: 'offline',
       tone: 'warn',
       label: 'Offline',
       line: 'Offline.',
       action: { label: 'Try again', do: { kind: 'retry' } },
+    });
+  });
+
+  it('says “No response” where GitHub took a read and never answered, and why else it gave none', () => {
+    const unanswered = (cause: Cause) =>
+      connectionNote(
+        { kind: 'offline', retryAt: at(20), cause, error: "the answer didn't begin within 15 s" },
+        clockAt,
+      );
+    expect(unanswered({ kind: 'timeout' })).toEqual({
+      kind: 'failed',
+      tone: 'warn',
+      label: 'No response',
+      line: 'GitHub didn’t respond.',
+      retryAt: at(20),
+      details: "the answer didn't begin within 15 s",
+      action: { label: 'Try now', do: { kind: 'retry' } },
+    });
+    // Nothing reached GitHub: offline, with the reason that kept it away.
+    expect(unanswered({ kind: 'proxy', why: 'refused' })).toMatchObject({
+      kind: 'offline',
+      label: 'Offline',
+      line: 'The proxy couldn’t connect to GitHub.',
+    });
+    expect(unanswered({ kind: 'certificate' })).toMatchObject({
+      label: 'Offline',
+      line: 'GitHub’s certificate couldn’t be verified.',
+    });
+    // A sign-in that can't be read, and a failure Lo can't name, are no connection lost.
+    expect(unanswered({ kind: 'unreadable', login: 'rozed-bot' })).toMatchObject({
+      kind: 'failed',
+      label: 'Can’t read the sign-in',
+    });
+    expect(unanswered({ kind: 'unknown' })).toMatchObject({
+      kind: 'failed',
+      label: 'Can’t reach GitHub',
+      line: undefined,
     });
   });
 });
@@ -390,7 +452,12 @@ describe('the local copy’s item', () => {
       retryAt: clock.now + 12_000,
     };
     expect(
-      local(retrying, view({ connection: { kind: 'offline', retryAt: null, error: 'x' } })),
+      local(
+        retrying,
+        view({
+          connection: { kind: 'offline', retryAt: null, cause: { kind: 'offline' }, error: 'x' },
+        }),
+      ),
     ).toEqual({ ball: 'warn', label: 'Local copy' });
     expect(local(retrying)?.problem?.detail).toBe('Offline.');
   });

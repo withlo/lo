@@ -244,7 +244,7 @@ describe('what e refuses before anything is sent', () => {
     expect(await refused('src/b.ts')).toMatch(/^GitHub’s rate limit resets at /);
 
     said.pull = pull({
-      connection: { kind: 'offline', retryAt: null, error: 'offline' },
+      connection: { kind: 'offline', retryAt: null, cause: { kind: 'offline' }, error: 'offline' },
     });
     expect(await refused('src/a.ts')).toBe('Offline');
   });

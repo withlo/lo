@@ -289,7 +289,10 @@ function setup(options: Setup = {}) {
         view = { ...view, latest: head };
       },
       offline: () => {
-        status = { ...status, offline: { error: 'down', since: NOW, retryAt: NOW } };
+        status = {
+          ...status,
+          offline: { error: 'down', since: NOW, retryAt: NOW, cause: { kind: 'offline' } },
+        };
       },
       converting: (prs: number[]) => {
         converting = prs;
@@ -500,7 +503,7 @@ describe('the press', () => {
     const offlineKey = (await offline.plan()).key;
     offline.set.offline();
     await expect(offline.shipping.confirm(offlineKey)).resolves.toMatchObject({
-      refusal: { kind: 'offline' },
+      refusal: { kind: 'offline', text: '', cause: { kind: 'offline' } },
     });
     const screen = setup();
     const screenKey = (await screen.plan()).key;

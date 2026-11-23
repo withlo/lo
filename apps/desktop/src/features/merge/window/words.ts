@@ -6,6 +6,7 @@
 
 import type { MergeKind } from '@lo/ui';
 
+import { explain, offlineLabel, type Cause } from '../../../window/explain.ts';
 import type {
   Action,
   Blocker,
@@ -328,6 +329,14 @@ export function ago(at: number, now: number): string {
 }
 
 /**
+ * Why the first read of a view's merge status failed: why the poller can't read now, by its cause,
+ * or else what main said.
+ */
+export function failedWhy(view: Extract<MergeView, { kind: 'failed' }>): string {
+  return view.stall === undefined ? view.why : (explain(view.stall) ?? '');
+}
+
+/**
  * Whether `state` may be out of date at `now`, and why: Lo couldn't read it again (`why`), or it's
  * gone unread past {@link STALE_AFTER}. Nothing while it's current, or once it merged.
  */
@@ -336,8 +345,12 @@ export function staleness(
   now: number,
 ): { readonly ago: string; readonly why: string | undefined } | undefined {
   if (state.verdict === 'merged') return undefined;
-  if (state.stale === null && now - state.readAt < STALE_AFTER) return undefined;
-  return { ago: ago(state.readAt, now), why: state.stale ?? undefined };
+  const { stall, stale } = state;
+  if (stall === null && stale === null && now - state.readAt < STALE_AFTER) return undefined;
+  return {
+    ago: ago(state.readAt, now),
+    why: stall === null ? (stale ?? undefined) : explain(stall),
+  };
 }
 
 /** The verdict of a status that couldn't be read. */
@@ -872,7 +885,7 @@ function clock(at: number): string {
 export function offWords(off: Off, who: Who = SOMEONE): string {
   switch (off.kind) {
     case 'offline':
-      return 'Offline';
+      return offlineLabel(off.cause);
     case 'paused':
       return `GitHub’s rate limit resets at ${clock(off.until)}`;
     case 'signedOut':
@@ -881,6 +894,19 @@ export function offWords(off: Off, who: Who = SOMEONE): string {
       off satisfies never;
       return 'Offline';
   }
+}
+
+/**
+ * What a refusal says: GitHub giving no answer, by its `cause`, as {@link offWords} says it, else
+ * main's `text`, which is a refused plan's `why`.
+ */
+export function refusalText(refusal: {
+  readonly text: string;
+  readonly cause?: Cause | undefined;
+}): string {
+  return refusal.cause === undefined
+    ? refusal.text
+    : offWords({ kind: 'offline', cause: refusal.cause });
 }
 
 /** The titles of the reasons in `rows` that `keep` keeps, a line each, as a dimmed control's reason. */
@@ -1433,7 +1459,7 @@ export function outcomeTitle(job: JobView): string | undefined {
 /** The reason under {@link outcomeTitle}, in the core's words, and what GitHub showed since. */
 export function outcomeDetail(job: JobView): string {
   const said: string[] = [];
-  if (job.state.kind === 'refused') said.push(job.state.refusal.text);
+  if (job.state.kind === 'refused') said.push(refusalText(job.state.refusal));
   if (job.state.kind === 'unknown') {
     said.push(job.state.text);
     if (job.state.shows === 'open') said.push(`#${job.number} is still open.`);

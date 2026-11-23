@@ -20,6 +20,7 @@ import { formatBytes } from '@lo/ui';
 import type { Composer } from '@lo/ui/code';
 
 import { clockOf } from '../../../window/time.ts';
+import { offlineLabel } from '../../../window/explain.ts';
 import { pullOf, runOf } from '../../tab/window/shared.ts';
 import {
   ATTACHMENT_LIMIT,
@@ -29,7 +30,7 @@ import {
 } from '../contract.ts';
 import type { Prepared } from '../jobs.ts';
 import { commentsJobs, main } from './main.ts';
-import { type BoxNote, IN_A_LAYER, OFFLINE } from './writing.ts';
+import { type BoxNote, IN_A_LAYER } from './writing.ts';
 
 /** The most files a box attaches at once. */
 export const FILES_AT_ONCE = 10;
@@ -385,7 +386,7 @@ export function whyNoAttach(view: string): string | undefined {
   if (runOf(view)) return IN_A_LAYER;
   const off = uploadsOff(view);
   if (off !== undefined) return offNote(off, pull.acting.login).text;
-  if (pull.connection.kind === 'offline') return OFFLINE;
+  if (pull.connection.kind === 'offline') return offlineLabel(pull.connection.cause);
   return undefined;
 }
 

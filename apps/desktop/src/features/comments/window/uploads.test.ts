@@ -38,7 +38,9 @@ vi.mock('../../tab/window/shared.ts', async (original) => ({
   ...(await original<typeof TabShared>()),
   pullOf: () => ({
     acting: { kind: 'account', login: 'rozed-bot' },
-    connection: { kind: said.offline ? 'offline' : 'live' },
+    connection: said.offline
+      ? { kind: 'offline', retryAt: null, cause: { kind: 'offline' }, error: '' }
+      : { kind: 'live' },
   }),
   runOf: () => undefined,
 }));

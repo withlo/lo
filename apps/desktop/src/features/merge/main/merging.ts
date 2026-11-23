@@ -85,6 +85,7 @@ import {
   type MergeSnapshot,
 } from '@lo/review';
 
+import { githubCause } from '../../../ipc/cause.ts';
 import type { Converting, Forest } from '../../stacks/service.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
 import type {
@@ -366,20 +367,26 @@ function askerOf(plan: Pick<SentPlan, 'login' | 'owner'>): Asker {
 export function offOf(poller: Pick<Poller, 'status' | 'writesHeldUntil'>): Off | null {
   const status = poller.status();
   if (status.signedOut) return { kind: 'signedOut' };
-  if (status.offline) return { kind: 'offline' };
+  if (status.offline) return { kind: 'offline', cause: githubCause(status.offline.cause) };
   const until = poller.writesHeldUntil();
   return until === undefined ? null : { kind: 'paused', until: Math.max(0, Math.round(until)) };
 }
 
-/** Why nothing merges now, for `off`, as `login`: the reason on the dimmed control. */
-export function offText(off: Off, login: string): string {
+/**
+ * Why nothing merges now, for `off`, as `login`, as a refusal of Lo's own: GitHub giving no answer
+ * crosses as its cause, with no text, for the window to word as its `offWords` does; the rest in
+ * the words of the reason on the dimmed control.
+ */
+export function offRefusal(off: Off, login: string): Refusal {
   switch (off.kind) {
     case 'offline':
-      return 'Offline';
+      return own('offline', '', { cause: off.cause });
     case 'paused':
-      return `GitHub’s rate limit resets at ${clock(off.until)}`;
+      return own('paused', `GitHub’s rate limit resets at ${clock(off.until)}`, {
+        until: off.until,
+      });
     case 'signedOut':
-      return `${login} is signed out`;
+      return own('signedOut', `${login} is signed out`);
     default:
       off satisfies never;
       throw new Error(`a reason Lo doesn't know: ${JSON.stringify(off)}`);
@@ -660,7 +667,10 @@ export class Merging {
       return refuse(describe(error));
     }
     const off = offOf(poller);
-    if (off) return refuse(offText(off, login));
+    if (off) {
+      const { text, cause } = offRefusal(off, login);
+      return cause === undefined ? refuse(text) : { kind: 'refused', why: '', again: false, cause };
+    }
     const pull = new PullRef(view.repository.owner, view.repository.name, view.number);
     const cached = poller.cachedRead(pull, MERGE_FACTS) ?? (await poller.mergeFacts(pull));
     // The merge status reads "Checking…" until then.
@@ -803,13 +813,7 @@ export class Merging {
       return refused(own('account', 'This tab’s account has changed.'));
     }
     const off = offOf(poller);
-    if (off) {
-      return refused(
-        own(off.kind, offText(off, acting.login), {
-          until: off.kind === 'paused' ? off.until : null,
-        }),
-      );
-    }
+    if (off) return refused(offRefusal(off, acting.login));
     // The control is busy until it's read.
     const facts = poller.cachedRead(pull, MERGE_FACTS)?.value;
     if (!facts || !isFullSha(facts.pullRequest.head)) return refused(own('unread', ''));
@@ -852,11 +856,7 @@ export class Merging {
   ): Exclude<Confirmed, { kind: 'again' }> {
     if (this.#stopped) return refused(own('stopped', ''));
     const off = offOf(poller);
-    if (off) {
-      return refused(
-        own(off.kind, offText(off, login), { until: off.kind === 'paused' ? off.until : null }),
-      );
-    }
+    if (off) return refused(offRefusal(off, login));
     const facts = poller.cachedRead(pull, MERGE_FACTS)?.value;
     if (!facts || !isFullSha(facts.pullRequest.head)) return refused(own('unread', ''));
     const before = this.#sent.get(pull.key);
@@ -1314,11 +1314,7 @@ export class Merging {
     const tab = this.#tabHolds(kept);
     if (tab) return tab;
     const off = offOf(poller);
-    if (off) {
-      return own(off.kind, offText(off, plan.login), {
-        until: off.kind === 'paused' ? off.until : null,
-      });
-    }
+    if (off) return offRefusal(off, plan.login);
     const view = this.#options.view(plan.id);
     const head = this.#options.headOnScreen(plan.id) ?? '';
     // The tab knows of a newer push than the one on screen.

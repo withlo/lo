@@ -36,6 +36,7 @@ import {
   leaveAct,
   nextLabel,
   ordinal,
+  reasonOf,
   tryAgain,
   workingWord,
   type Failure,
@@ -142,7 +143,7 @@ function FailureLine({ failure }: { failure: Failure }) {
   return (
     <Problem
       title={withoutBidi(failure.title)}
-      reason={failure.why === '' ? undefined : withoutBidi(failure.why)}
+      reason={reasonOf(failure)}
       details={failure.details}
     />
   );

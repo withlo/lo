@@ -15,7 +15,7 @@
 
 import { writeFileSync } from 'node:fs';
 
-import { cassette as recorded, Replay } from '@lo/testing';
+import { cassette as recorded } from '@lo/testing';
 import { COMMENTS_PULL, writeCommentsRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import {
@@ -36,15 +36,37 @@ import {
   test as base,
 } from './app.ts';
 import { type BodiesServer, serveBodies } from './bodies.ts';
+import { Staged } from './staged.ts';
 
 /** A stand-in token, never a real one: the cassettes were recorded with the same. */
 const TOKEN = 'gho_FAKE_E2E_ACCOUNT';
 
 const cmd = process.platform === 'darwin' ? 'Meta' : 'Control';
 
+/** The writes the recordings sent, by their GraphQL operations. */
+const WRITES = new Set(['AddPullRequestReview', 'SubmitPullRequestReview']);
+
+/**
+ * The cassette `name` a stage at a time, a stage ending with each write (`./staged.ts`): however
+ * often Lo reads, as it does at once when its window comes to the front again, a read never gets
+ * an answer from past a write Lo hasn't sent, nor one from before a write it has, and one Lo makes
+ * sooner than recorded, as of an image in a thread, gets its first answer. The pending review's
+ * submissions answer from the start, whichever verdict Lo sends: `app_comments_write_others`
+ * answers those the recording never sent after everything it recorded.
+ */
+function staged(name: string): Staged {
+  const submissions = recorded(name)
+    .interactions.map(({ interaction }) => interaction)
+    .filter(({ request }) => request.operation === 'SubmitPullRequestReview');
+  return new Staged(name, ({ operation }) => WRITES.has(operation ?? ''), {
+    first: submissions,
+    sooner: true,
+  });
+}
+
 const test = base.extend<{
   cassette: string;
-  /** The GraphQL operation whose connection drops once its request has come, if any. */
+  /** The GraphQL operation whose connection drops once GitHub has its request, if any. */
   cut: string | undefined;
   github: ReplayServer;
   front: BodiesServer;
@@ -54,8 +76,7 @@ const test = base.extend<{
   cassette: ['app_comments', { option: true }],
   cut: [undefined, { option: true }],
   github: async ({ cassette }, use) => {
-    const answers = recorded(cassette).interactions.map(({ interaction }) => interaction);
-    const server = await serveReplay(new Replay(cassette, answers));
+    const server = await serveReplay(staged(cassette));
     await use(server);
     await server.close();
   },

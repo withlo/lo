@@ -16,7 +16,13 @@ import {
 } from '../attachments.ts';
 import { readRenderedBodies, type RenderedBodies, type RenderedBodiesOptions } from '../bodies.ts';
 import type { Conditional, GithubClient, HeardLimit, RequestGate, TooFast } from '../client.ts';
-import { GithubError, MAX_RETRY_AFTER, type GithubErrorDetail } from '../errors.ts';
+import {
+  causeOf,
+  GithubError,
+  MAX_RETRY_AFTER,
+  type GithubCause,
+  type GithubErrorDetail,
+} from '../errors.ts';
 import { unchecked } from '../json.ts';
 import { readMergeFacts, type MergeFacts } from '../merge.ts';
 import type {
@@ -165,6 +171,11 @@ export interface Offline {
   since: number;
   /** When the next request will try. */
   retryAt: number;
+  /**
+   * Why, as the guide's causes name it ({@link causeOf}): no connection at all (`offline`), no
+   * answer in time (`timeout`), a proxy or certificate in the way, or a token that can't be read.
+   */
+  cause: GithubCause;
   /** What went wrong, as GitHub or the system said it, for Details. */
   error: string;
 }
@@ -2255,7 +2266,7 @@ export class Poller {
       if (detail.kind === 'network' || detail.kind === 'tokenUnavailable') {
         if (read === undefined) this.#schedule(target)?.serve(ticket);
         const failure = new GithubError(detail);
-        this.#backOff(failure.message, failure.said(), now, wall);
+        this.#backOff(failure, failure.said(), now, wall);
       } else if (detail.kind === 'rateLimited') {
         // Taken in from the client above, as it heard it.
       } else if (detail.kind === 'unauthorized' && this.#accounts.isSignedOut(this.#login)) {
@@ -2548,17 +2559,24 @@ export class Poller {
 
   /**
    * Waits longer each time before trying again, while GitHub can't be reached or the account's
-   * token can't be read, and says so in the status, with what GitHub or the system `said`.
+   * token can't be read, and says so in the status: why, from `error`, with what GitHub or the
+   * system `said`.
    */
-  #backOff(error: string, said: string, now: number, wall: number): void {
+  #backOff(error: unknown, said: string, now: number, wall: number): void {
     const attempts = (this.#offline?.attempts ?? 0) + 1;
     const { offlineFirstWait, offlineMaxWait, jitter, random } = this.#config;
     const wait = backoff(attempts, offlineFirstWait, offlineMaxWait, jitter, random());
-    this.#log(`${error}; trying again in ${Math.round(wait / 1000)} s`);
+    const message = error instanceof Error ? error.message : String(error);
+    this.#log(`${message}; trying again in ${Math.round(wait / 1000)} s`);
     this.#offline = {
       attempts,
       retryAt: now + wait,
-      status: { since: this.#offline?.status.since ?? wall, retryAt: wall + wait, error: said },
+      status: {
+        since: this.#offline?.status.since ?? wall,
+        retryAt: wall + wait,
+        cause: causeOf(error, { login: this.#login }),
+        error: said,
+      },
     };
     this.#changed();
   }
@@ -2581,7 +2599,7 @@ export class Poller {
       this.#signedOut = true;
     } else {
       this.#schedule(target)?.serve(ticket);
-      this.#backOff(message, message, this.#config.monotonic(), this.#config.now());
+      this.#backOff(error, message, this.#config.monotonic(), this.#config.now());
     }
     this.#refreshStatus();
   }

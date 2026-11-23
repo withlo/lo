@@ -91,6 +91,48 @@ export function explain(cause: Cause, system: System = currentSystem()): string 
 }
 
 /**
+ * What a chip, or a dimmed control's reason, calls `cause`, why GitHub gave no answer or a read
+ * failed: "Offline" only where no connection reached GitHub, "No response" where GitHub didn't
+ * answer in time, and "Can’t read the sign-in" where the account's sign-in can't be read. Any other
+ * cause is `otherwise`.
+ */
+export function chipLabel(cause: Cause, otherwise: string): string {
+  switch (cause.kind) {
+    case 'offline':
+      return 'Offline';
+    case 'timeout':
+      return 'No response';
+    case 'unreadable':
+      return 'Can’t read the sign-in';
+    case 'unknown':
+    case 'proxy':
+    case 'github':
+    case 'rateLimit':
+    case 'signedOut':
+    case 'hidden':
+    case 'private':
+    case 'sso':
+    case 'unapproved':
+    case 'certificate':
+    case 'diskFull':
+    case 'tooSlow':
+    case 'memory':
+      return otherwise;
+    default:
+      throw new Error(`A cause Lo doesn't know: ${JSON.stringify(cause satisfies never)}`);
+  }
+}
+
+/**
+ * What a chip, or a dimmed control's reason, calls GitHub giving the connection no answer, for
+ * `cause`: as {@link chipLabel} says, "Can’t reach GitHub" where Lo can't tell why, and "Offline"
+ * for the rest, such as a proxy that refused.
+ */
+export function offlineLabel(cause: Cause): string {
+  return cause.kind === 'unknown' ? 'Can’t reach GitHub' : chipLabel(cause, 'Offline');
+}
+
+/**
  * Whether trying again can't help with `cause` until something changes elsewhere, so its error has
  * no "Try again": the rate limit until it resets, a proxy that wants what Lo can't give, and work
  * that ran out of memory, which fails the same way again.

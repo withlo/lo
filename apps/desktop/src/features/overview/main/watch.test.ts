@@ -690,6 +690,7 @@ describe('failing', () => {
     await settle();
     expect(last()?.problem).toEqual({
       kind: 'offline',
+      cause: { kind: 'offline' },
       message: expect.stringContaining('fetch failed'),
       retryAt: Date.now() + 5_000,
     });

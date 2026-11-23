@@ -17,6 +17,7 @@ import {
   problemOf,
   rateLimitedUntil,
   readPull,
+  signedOutOf,
   summaryState,
   withSummary,
 } from './reads.ts';
@@ -132,8 +133,13 @@ describe('how a tab stands with GitHub', () => {
     expect(connectionOf('rozed-bot', status())).toEqual({ kind: 'live' });
   });
 
-  it('says the worst of what is: signed out, then the limit used up, then offline, then a low limit', () => {
-    const offline = { since: 1, retryAt: 2_000.4, error: 'GitHub can’t be reached' };
+  it('says the worst of what is: signed out, then the limit used up, then no answer with why, then a low limit', () => {
+    const offline = {
+      since: 1,
+      retryAt: 2_000.4,
+      cause: { kind: 'timeout' as const },
+      error: 'GitHub can’t be reached',
+    };
     const paused = {
       kind: 'paused' as const,
       until: 9_000,
@@ -155,6 +161,7 @@ describe('how a tab stands with GitHub', () => {
     expect(connectionOf('rozed-bot', status({ offline, rateLimit: low }))).toEqual({
       kind: 'offline',
       retryAt: 2_000,
+      cause: { kind: 'timeout' },
       error: 'GitHub can’t be reached',
     });
     expect(connectionOf('rozed-bot', status({ rateLimit: low }))).toEqual({
@@ -246,5 +253,56 @@ describe('what reading it ran into', () => {
     expect(rateLimitedUntil(limited({ retryAfter: 30 }), 5)).toBe(30_005);
     expect(rateLimitedUntil(limited({}), 5)).toBe(60_005);
     expect(rateLimitedUntil(network, 5)).toBe(undefined);
+  });
+});
+
+/** Accounts by login, those in `out` signed out. */
+function accounts(logins: string[], out: string[]) {
+  return logins.map((login) => ({
+    account: { login },
+    signedOut: out.includes(login) ? ('refused' as const) : undefined,
+  }));
+}
+
+/** What checking which accounts can see the repository found: who's remembered, and who GitHub refused. */
+function found(remembered: { repo?: string; owner?: string }, refused: string[] = []) {
+  return {
+    remembered,
+    problems: refused.map((login) => ({
+      login,
+      error: new GithubError({ kind: 'unauthorized', message: 'Bad credentials' }),
+    })),
+  };
+}
+
+describe('signedOutOf', () => {
+  it('names the account remembered for the repository, then its owner’s, when it’s signed out', () => {
+    const both = accounts(['ravi-k', 'rozed-bot'], ['ravi-k', 'rozed-bot']);
+    expect(signedOutOf(both, found({ repo: 'rozed-bot', owner: 'ravi-k' }))).toBe('rozed-bot');
+    expect(signedOutOf(both, found({ owner: 'Ravi-K' }))).toBe('ravi-k');
+    // Signed in, the remembered account isn't what keeps the pull request out of sight.
+    const one = accounts(['ravi-k', 'rozed-bot'], ['rozed-bot']);
+    expect(signedOutOf(one, found({ owner: 'ravi-k' }))).toBeUndefined();
+  });
+
+  it('names an account GitHub refused as it checked, while it’s still signed out', () => {
+    const two = accounts(['ravi-k', 'rozed-bot'], ['rozed-bot']);
+    expect(signedOutOf(two, found({}, ['rozed-bot']))).toBe('rozed-bot');
+    expect(signedOutOf(accounts(['ravi-k', 'rozed-bot'], []), found({}, ['rozed-bot']))).toBe(
+      undefined,
+    );
+  });
+
+  it('names the only account there is, and no other one that nothing ties to the repository', () => {
+    expect(signedOutOf(accounts(['rozed-bot'], ['rozed-bot']), found({}))).toBe('rozed-bot');
+    expect(signedOutOf(accounts(['rozed-bot'], ['rozed-bot']), undefined)).toBe('rozed-bot');
+    expect(signedOutOf(accounts(['rozed-bot'], []), undefined)).toBeUndefined();
+    // Another signed in, or two signed out: nothing says which could see it.
+    expect(signedOutOf(accounts(['ravi-k', 'rozed-bot'], ['rozed-bot']), found({}))).toBe(
+      undefined,
+    );
+    expect(
+      signedOutOf(accounts(['ravi-k', 'rozed-bot'], ['ravi-k', 'rozed-bot']), found({})),
+    ).toBeUndefined();
   });
 });

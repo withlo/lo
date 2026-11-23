@@ -532,8 +532,14 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
   the files are dimmed and inert (`controls-off`), with no files. How the tab stands with GitHub
   (offline, signed out, the rate limit, a read that failed after the view was drawn, which stays) is
   the PR header's chip, whose details say why, then "Checked 4 min ago" while there's a view it's
-  about, and the one thing to do. Offline is said there alone, and the merge status never says when
-  it was checked. A change to the pull request is the banner.
+  about, and the one thing to do. Its words follow the cause: "Offline" only where no connection
+  reached GitHub, "No response" where GitHub took a read and never answered, "Can’t read the
+  sign-in" where the account's sign-in can't be read, and "Can’t reach GitHub" where Lo can't tell
+  why it's out of reach; a read that failed for a cause Lo can't tell is "GitHub error". A control
+  that's off while GitHub gives no answer says it the same way. While the tab's view is its
+  `Problem`, as when it can't open, there's no chip: the `Problem` says why, once. Offline is said
+  there alone, in the chip or in the `Problem`, and the merge status never says when it was checked.
+  A change to the pull request is the banner.
 - The status bar holds `StatusItem`s: a ball and a label. A ring while it's off or not there yet, a
   spinner at work, filled once ready, amber while it waits or holds back, red only once it failed,
   and not while it waits to try again. A click opens its details: one line of state and its actions,
