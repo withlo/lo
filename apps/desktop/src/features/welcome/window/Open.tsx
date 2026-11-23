@@ -19,7 +19,7 @@ import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'reac
 import { refuse } from '../../../window/commands/notices.tsx';
 import { client } from '../../../window/ipc.ts';
 import { contract as open, type NotPull } from '../../open/contract.ts';
-import { isNotPull, NotPullNote } from '../../open/window/shared.ts';
+import { isNotPull, NotPullNote, notPullWords } from '../../open/window/shared.ts';
 import { openPublic } from './actions.ts';
 import { StepHeading } from './Heading.tsx';
 import { keyOf } from './labels.ts';
@@ -200,6 +200,10 @@ export function OpenStep({ shown }: { shown: boolean }): ReactNode {
             </div>
           )}
         </Collapse>
+        {/* There all along, so the note is read as it comes; the Problem is an alert of its own. */}
+        <span role="status" className="sr-only">
+          {failure?.kind === 'notPull' ? notPullWords(failure.why) : ''}
+        </span>
       </form>
       <SetupList label="Sample pull request">
         <SetupItem icon={<PullIcon />} title={SAMPLE.title} description={SAMPLE.where}>

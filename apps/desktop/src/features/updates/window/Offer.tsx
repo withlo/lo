@@ -10,20 +10,13 @@
 // presses a button. When a toast goes while one of its buttons has focus, as it does on pressing
 // Update or Hide, focus goes back to the middle of the window, rather than to nowhere.
 
-import { Button, Meter, Problem, Spinner, Toast } from '@lo/ui';
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type KeyboardEvent as KeyEvent,
-  type ReactNode,
-} from 'react';
+import { Button, CopyButton, Meter, Problem, Spinner, Toast, useCopy } from '@lo/ui';
+import { useLayoutEffect, useRef, type KeyboardEvent as KeyEvent, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
 import { focusMiddle } from '../../../window/commands/registry.ts';
 import { BREW_UPGRADE, type UpdateState } from '../contract.ts';
-import { copyBrewCommand, install, later, move, openPage, restart } from './actions.ts';
+import { install, later, move, openPage, restart } from './actions.ts';
 import { updatesStore } from './store.ts';
 import { downloadingText, failureReason, failureWay } from './words.ts';
 
@@ -131,29 +124,16 @@ function wrap(event: KeyEvent, box: HTMLElement | null): void {
   (event.shiftKey ? last : first).focus();
 }
 
-/** How long "Copied" stays on the button, in ms. */
-export const COPIED_TIME = 2000;
-
-/** The command that updates Lo through Homebrew, with the button that copies it. */
+/**
+ * The command that updates Lo through Homebrew, with the button that copies it, which answers on
+ * itself: "Copied", or "Couldn’t copy".
+ */
 function BrewCommand() {
-  const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    if (!copied) return undefined;
-    const timer = setTimeout(() => setCopied(false), COPIED_TIME);
-    return () => clearTimeout(timer);
-  }, [copied]);
+  const copy = useCopy();
   return (
     <div className="mt-8 flex items-center gap-8 rounded-sm bg-bg-well py-6 ps-8 pe-6 text-fg inset-ring inset-ring-border">
       <code className="min-w-0 flex-1 break-all code-small select-text">{BREW_UPGRADE}</code>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => {
-          void copyBrewCommand().then(setCopied);
-        }}
-      >
-        {copied ? 'Copied' : 'Copy'}
-      </Button>
+      <CopyButton size="sm" onCopy={() => copy(BREW_UPGRADE)} />
     </div>
   );
 }

@@ -371,6 +371,11 @@ describe('Problem', () => {
     expect(well?.className).toContain('rounded-sm');
     expect(well?.className).toContain('p-12');
     expect(well?.className).toContain('text-start');
+    // Its fill is the view's own ground, so a hairline draws it, as the overview's wells have.
+    expect(well?.className).toContain('inset-ring inset-ring-border');
+    const css = await buildCss(['bg-bg-well', 'inset-ring-border']);
+    expect(declarations(css, 'bg-bg-well')).toContain('var(--lo-bg-well)');
+    expect(css).toContain('var(--lo-border)');
     expect(well?.querySelector(':scope > pre ~ button')?.textContent).toMatch(/^Copy/);
     // 12 px under the buttons, inside what opens, and in the column the alert sets the width of,
     // adding none of its own.

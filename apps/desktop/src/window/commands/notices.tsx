@@ -1,13 +1,16 @@
 // The window's notes: toasts at the bottom of the window that go by themselves. Up to three stack,
-// the newest lowest, each with four seconds of its own, so a second note never wipes out the
-// first. A key pressed for a command that can't run, with no control in view to say why, says the
-// reason here, alone. Something asked for that finished, such as a GitHub stack made, says so here
-// too, in a line.
+// the newest lowest, each with time of its own, so a second note never wipes out the first: four
+// seconds, or eight for one with a button or Details, which also stays while its Details is open.
+// A key pressed for a command that can't run, with no control in view to say why, says the reason
+// here, alone. Something asked for that finished, such as a GitHub stack made, says so here too,
+// in a line.
 //
 // A note is one line: the result, or the reason. `refuse` and `announce` with nothing after the
 // line are the two to use. A title with a body under it is the older shape, still drawn for the
 // callers that have it, and the shape of the one failure a note may hold: one with nothing in view
-// to hold it, which keeps main's words behind Details.
+// to hold it, which keeps main's words behind Details. Its icon says which a note is: a tick for
+// what's done, a failure's for what failed, a warning's for what can't be done here at all, and an
+// info icon for the rest.
 
 import {
   Ticks,
@@ -203,8 +206,8 @@ function lineOf(note: Note): ReactNode {
 }
 
 /**
- * A note's toast: a tick and what's done, a failure's icon and what failed, for one with Details,
- * a warning's for what can't be done here at all, or else an info icon and the reason.
+ * A note's toast: a tick and what's done; its `tone`'s icon where it has one, a failure's or a
+ * warning's; a failure's for one with Details; or else an info icon and the reason.
  */
 function toastOf(id: string, note: Note): StackedToast {
   return {
@@ -217,8 +220,8 @@ function toastOf(id: string, note: Note): StackedToast {
 }
 
 /**
- * The window's notes, as a stack of toasts: an info icon and the reason, or a tick and what's
- * done. `waiting` holds the toasts that stay until they're acted on, below the stack.
+ * The window's notes, as a stack of toasts, each with its tone's icon: see {@link toastOf}.
+ * `waiting` holds the toasts that stay until they're acted on, below the stack.
  */
 export function Notices({ waiting }: { waiting?: ReactNode }) {
   const notes = useSyncExternalStore(subscribe, () => shown);

@@ -60,8 +60,14 @@ const problem = cva('min-w-0 text-ui', {
  */
 export function Problem({ title, reason, action, details, layout = 'inline' }: ProblemProps) {
   const view = layout === 'view';
-  // In a view, the text sits 12 px under the buttons, in a roomier well; inline, under the line.
-  const { more, shown } = useDetails(details, view ? 'pt-12' : 'pt-8', view ? 'p-12' : 'p-8');
+  // In a view, the text sits 12 px under the buttons, in a roomier well with a hairline, since
+  // the well's fill is the view's own ground, as the overview's other wells have; inline, under
+  // the line, on the problem's own fill.
+  const { more, shown } = useDetails(
+    details,
+    view ? 'pt-12' : 'pt-8',
+    view ? 'p-12 inset-ring inset-ring-border' : 'p-8',
+  );
   const act = action && (
     <Button
       variant={view ? 'primary' : 'secondary'}
@@ -128,14 +134,14 @@ export function Problem({ title, reason, action, details, layout = 'inline' }: P
 
 /**
  * The raw text behind Details, wherever something that failed shows it: `more`, the Details button
- * that opens it, and `shown`, what opens, the text with Copy in a well padded by `padding`, under a
- * gap of `gap` inside what opens, so a closed one takes no room. `open` says whether it's open.
- * Nothing for no `details`.
+ * that opens it, and `shown`, what opens, the text with Copy in a well, under a gap of `gap` inside
+ * what opens, so a closed one takes no room. `well` is the well's padding, and a hairline where
+ * its fill is the surface it sits on. `open` says whether it's open. Nothing for no `details`.
  */
 export function useDetails(
   details: string | undefined,
   gap?: string,
-  padding = 'p-8',
+  well = 'p-8',
 ): { more: ReactNode; shown: ReactNode; open: boolean } {
   const copy = useCopy();
   const [detailed, setDetailed] = useState(false);
@@ -156,7 +162,7 @@ export function useDetails(
     <div id={id}>
       <Collapse open={detailed}>
         <div className={gap}>
-          <div className={`flex items-start gap-8 rounded-sm bg-bg-well text-start ${padding}`}>
+          <div className={`flex items-start gap-8 rounded-sm bg-bg-well text-start ${well}`}>
             <pre className="m-0 problem-details min-w-0 flex-1 overflow-auto wrap-anywhere whitespace-pre-wrap text-fg-muted code-small">
               {details}
             </pre>

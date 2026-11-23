@@ -10,7 +10,7 @@ import { followLink as follow } from './actions.ts';
 import { openBox as openTheBox, openText, type OpenedHere } from './box.ts';
 import { checkCommand, commandStore, installCommand as install } from './command.ts';
 import { InstallResult as Result } from './InstallResult.tsx';
-import { NotPullNote as Note } from './Note.tsx';
+import { NotPullNote as Note, notPullWords as wordsOf } from './Note.tsx';
 import { isNotPull as notPull } from './words.ts';
 
 export type { CommandState, Installed } from '../contract.ts';
@@ -44,6 +44,14 @@ export function isNotPull(why: Refusal): why is NotPull {
  */
 export function NotPullNote(props: { why: NotPull; id?: string | undefined }): ReactNode {
   return createElement(Note, props);
+}
+
+/**
+ * What {@link NotPullNote} says, for the live region its host keeps there all along, so a screen
+ * reader hears it as it comes.
+ */
+export function notPullWords(why: NotPull): string {
+  return wordsOf(why);
 }
 
 /**

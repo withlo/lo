@@ -428,7 +428,10 @@ describe('walking it', () => {
     expect(button('Back').disabled).toBe(true);
     click(button('Continue'));
     expect(stepOnScreen()).toBe('keys');
-    expect(screen()?.querySelector('[role="status"].sr-only')?.textContent).toBe('Step 2 of 4');
+    // The dots' own region, beside them.
+    expect(screen()?.querySelector('[role="img"] + [role="status"].sr-only')?.textContent).toBe(
+      'Step 2 of 4',
+    );
     click(button('Back'));
     expect(stepOnScreen()).toBe('account');
   });
@@ -831,14 +834,20 @@ describe('opening a pull request', () => {
     });
     await goTo('open');
     const field = type('owner/repo#1');
+    const region = () => field.form?.querySelector(':scope > [role="status"]');
+    expect(region()?.textContent).toBe('');
     click(button('Open', onScreen()));
     await settle();
     // A warning, not a failure: the box's note, with what a link looks like.
     expect(onScreen().querySelector('[role="alert"]')).toBeNull();
     const note = document.getElementById(field.getAttribute('aria-describedby') ?? '');
     expect(note?.querySelector('svg.text-warning')).not.toBeNull();
-    expect(note?.querySelector('[role="status"]')?.textContent).toBe(
+    expect(note?.textContent).toBe(
       'Not a pull request linkA pull request link looks like https://github.com/owner/repo/pull/123.',
+    );
+    // Said by a region that was there before it, so a screen reader reads it as it comes.
+    expect(region()?.textContent).toBe(
+      'Not a pull request link. A pull request link looks like https://github.com/owner/repo/pull/123.',
     );
     expect(note?.querySelector('.code-small')?.textContent).toBe(
       'https://github.com/owner/repo/pull/123',

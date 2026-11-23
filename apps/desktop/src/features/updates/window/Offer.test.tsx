@@ -5,12 +5,14 @@
 // has it, and that gives it back to the middle when it goes with focus in it; and the toast region
 // keeping it below a note that passes.
 
+import { COPIED_MS, CopyRoute } from '@lo/ui';
 import { endsTab, findScope, NO_TARGET } from '@lo/ui/commands';
 import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { IpcError } from '../../../ipc/contract.ts';
+import { client } from '../../../window/ipc.ts';
 import {
   notice,
   notices,
@@ -22,11 +24,12 @@ import { createRegistry, registry } from '../../../window/commands/registry.ts';
 import { Slots } from '../../../window/slots.tsx';
 import { installBridge } from '../../../window/test/bridge.ts';
 import { Slot } from '../../../window/slots.tsx';
+import { contract as tabs } from '../../tab/contract.ts';
 import { toasts } from '../../tab/window/shared.ts';
 import { BREW_UPGRADE, RELEASES, releasePage, type Failed, type UpdateState } from '../contract.ts';
 import feature from './index.ts';
 import { hear } from './actions.ts';
-import { COPIED_TIME, GUARD_TIME, Offer, UpdateToast } from './Offer.tsx';
+import { GUARD_TIME, Offer, UpdateToast } from './Offer.tsx';
 import { showHow, showState, updatesStore } from './store.ts';
 
 /** What main answers on each channel, as `main` has it: a test changes what a channel says. */
@@ -110,7 +113,10 @@ function draw(node: ReactNode, options: { settled?: boolean } = {}): HTMLElement
   const host = document.createElement('div');
   document.body.append(host);
   const root = createRoot(host);
-  act(() => root.render(node));
+  // Copied through main, as the window's own route does.
+  act(() =>
+    root.render(<CopyRoute copy={(text) => client(tabs).copy({ text })}>{node}</CopyRoute>),
+  );
   onTestFinished(() => {
     act(() => root.unmount());
     host.remove();
@@ -120,18 +126,29 @@ function draw(node: ReactNode, options: { settled?: boolean } = {}): HTMLElement
 }
 
 /** What a toast says, in order: its title, its body and its buttons. */
+/** What a button says now: for one with faces, as Copy has, the face that shows. */
+function said(button: Element | null): string | undefined {
+  if (button === null) return undefined;
+  const faces = [...button.querySelectorAll('.inline-grid > span')];
+  if (faces.length === 0) return button.textContent;
+  return faces.find((face) => !face.classList.contains('invisible'))?.textContent;
+}
+
 function toastOf(page: HTMLElement) {
   const card = page.querySelector('.toast');
   if (!card) return undefined;
   const [mark, title] = [...card.children];
   // What the body says, without the bar, which says nothing in words.
   const body = card.querySelector('.text-fg-muted')?.cloneNode(true);
-  if (body instanceof Element)
+  if (body instanceof Element) {
     for (const bar of body.querySelectorAll('[role="meter"]')) bar.remove();
+    // A Copy button's faces that don't show, which hold its width.
+    for (const hidden of body.querySelectorAll('.invisible')) hidden.remove();
+  }
   return {
     title: title?.textContent,
     body: body?.textContent ?? undefined,
-    buttons: [...card.querySelectorAll('button')].map((button) => button.textContent),
+    buttons: [...card.querySelectorAll('button')].map(said),
     tone: /text-(info|success|warning|danger)/.exec(mark?.className ?? '')?.[1],
     mark: mark?.querySelector('svg.lo-i[aria-hidden="true"], .spinner') !== null,
   };
@@ -141,7 +158,7 @@ function toastOf(page: HTMLElement) {
 const asked = () => bridge.calls.slice();
 
 const button = (page: HTMLElement, name: string) =>
-  [...page.querySelectorAll('button')].find((each) => each.textContent === name);
+  [...page.querySelectorAll('button')].find((each) => said(each) === name);
 
 /** The button a toast has by `name`, which the test fails without. */
 function pressable(page: HTMLElement, name: string): HTMLButtonElement {
@@ -324,9 +341,28 @@ describe('the buttons', () => {
     expect(asked()).toEqual([['tab.copy', { text: BREW_UPGRADE }]]);
     expect(button(page, 'Copied')).toBeDefined();
     act(() => {
-      vi.advanceTimersByTime(COPIED_TIME);
+      vi.advanceTimersByTime(COPIED_MS);
     });
     expect(button(page, 'Copy')).toBeDefined();
+  });
+
+  it('copy: says on the button that it couldn’t copy, with no note, holding its width', async () => {
+    vi.useFakeTimers();
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    answers['tab.copy'] = () => {
+      throw new IpcError('failed', 'The clipboard is busy.');
+    };
+    const page = draw(<UpdateToast state={offer('brew')} />);
+    const copy = button(page, 'Copy');
+    await act(async () => copy?.click());
+    // Every face is in the button throughout, the one shown visible, so it's as wide as the widest.
+    const faces = [...(copy?.querySelectorAll('.inline-grid > span') ?? [])];
+    expect(faces.map((face) => face.textContent)).toEqual(['Copy', 'Copied', 'Couldn’t copy']);
+    expect(faces.map((face) => face.classList.contains('invisible'))).toEqual([true, true, false]);
+    expect(notice()).toBeUndefined();
   });
 });
 
@@ -409,7 +445,7 @@ describe('focus', () => {
     // Pressed with the key, once the moment after focus came has passed.
     settle();
     await act(async () => button(page, 'Copy')?.click());
-    expect(document.activeElement?.textContent).toBe('Copied');
+    expect(said(document.activeElement)).toBe('Copied');
   });
 });
 
@@ -540,7 +576,7 @@ describe('a press in the moment after a toast comes or changes', () => {
     expect(asked()).toEqual([['tab.copy', { text: BREW_UPGRADE }]]);
     // "Copied" is the same toast: pressing again isn't held.
     act(() => {
-      vi.advanceTimersByTime(COPIED_TIME);
+      vi.advanceTimersByTime(COPIED_MS);
     });
     await act(async () => button(page, 'Copy')?.click());
     expect(asked()).toHaveLength(2);

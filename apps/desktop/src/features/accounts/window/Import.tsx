@@ -212,11 +212,20 @@ export function ImportView({ open, container }: { open: boolean; container: HTML
         (results) => {
           if (turn !== opened.current) return;
           const failures = results.flatMap((result) => (result.ok ? [] : [result]));
+          // Those refused for good stay refused, with why, through every try after: none of them
+          // can be chosen again until GitHub CLI is read again.
+          const forGood = failures.filter(({ why }) => !canRetry(why));
+          if (forGood.length > 0) {
+            setRefused(
+              (was) => new Map([...was, ...forGood.map(({ login, why }) => [login, why] as const)]),
+            );
+            setChosen(
+              (was) => new Set([...was].filter((login) => !forGood.some((f) => f.login === login))),
+            );
+          }
           // Nothing imported, and trying again would only hear the same: back to choosing, with
           // those accounts out of it and why in their place.
-          if (failures.length === results.length && failures.every(({ why }) => !canRetry(why))) {
-            setRefused(new Map(failures.map(({ login, why }) => [login, why])));
-            setChosen(new Set(logins.filter((login) => !failures.some((f) => f.login === login))));
+          if (failures.length === results.length && forGood.length === failures.length) {
             setStep({ kind: 'choosing', found });
             return;
           }
@@ -376,54 +385,65 @@ function view(step: Step, doing: Doing): Shown {
   const results = step.kind === 'done' ? step.results : [];
   const imported = results.filter((result) => result.ok).map(({ login }) => login);
   const failed = results.flatMap((result) => (result.ok ? [] : [result]));
-  // What the accounts chosen can't do stays while they're imported, so the body holds still; so
-  // does why an import refused an account for good.
+  // Why an import refused an account for good, in its place from then on, except where this
+  // import's own failure says it.
+  const refusals = accounts.flatMap((account) => {
+    const why = refused.get(account.login);
+    if (why === undefined || failed.some(({ login }) => login === account.login)) return [];
+    const { reason } = failureWords(account.login, why);
+    return reason === undefined ? [] : [{ login: account.login, line: reason }];
+  });
+  // What the accounts chosen can't do stays while they're imported, so the body holds still.
   const warnings =
     step.kind === 'choosing' || step.kind === 'importing'
       ? accounts.flatMap((account) => {
-          const why = refused.get(account.login);
-          if (why !== undefined) {
-            const { reason } = failureWords(account.login, why);
-            return reason === undefined
-              ? []
-              : [{ login: account.login, line: reason, signIn: false }];
-          }
-          if (!chosen.has(account.login)) return [];
+          if (!chosen.has(account.login) || refused.has(account.login)) return [];
           const lack = lacking(account);
           return lack === undefined ? [] : [{ login: account.login, ...lack }];
         })
       : [];
   const body = (
     <>
-      <ul className="m-0 flex list-none flex-col p-0" aria-label="GitHub CLI’s accounts">
-        {accounts.map((account, index) => (
-          <li
-            key={account.login}
-            className={
-              index === 0
-                ? 'flex items-center gap-12 py-8'
-                : 'flex items-center gap-12 border-t border-border-subtle py-8'
-            }
-          >
-            <Avatar login={account.login} />
-            <div className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate text-ui-strong">{account.login}</span>
-              <span className="text-fg-muted text-small">github.com · {notes(account)}</span>
-            </div>
-            <Switch
-              aria-label={`Import ${account.login}`}
-              checked={chosen.has(account.login)}
-              disabled={!account.usable || refused.has(account.login) || step.kind !== 'choosing'}
-              onCheckedChange={(on) => {
-                const next = new Set(chosen);
-                if (on) next.add(account.login);
-                else next.delete(account.login);
-                choose(next);
-              }}
-            />
-          </li>
-        ))}
-      </ul>
+      <div className="flex flex-col">
+        <ul className="m-0 flex list-none flex-col p-0" aria-label="GitHub CLI’s accounts">
+          {accounts.map((account, index) => (
+            <li
+              key={account.login}
+              className={
+                index === 0
+                  ? 'flex items-center gap-12 py-8'
+                  : 'flex items-center gap-12 border-t border-border-subtle py-8'
+              }
+            >
+              <Avatar login={account.login} />
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-ui-strong">{account.login}</span>
+                <span className="text-fg-muted text-small">github.com · {notes(account)}</span>
+              </div>
+              <Switch
+                aria-label={`Import ${account.login}`}
+                checked={chosen.has(account.login)}
+                disabled={!account.usable || refused.has(account.login) || step.kind !== 'choosing'}
+                onCheckedChange={(on) => {
+                  const next = new Set(chosen);
+                  if (on) next.add(account.login);
+                  else next.delete(account.login);
+                  choose(next);
+                }}
+              />
+            </li>
+          ))}
+        </ul>
+        {/* There through every step, so what an import refused is said as it comes, after
+          "Importing…": a region drawn with its words already in it is read by nobody. */}
+        <div role="status" className="flex flex-col gap-12 not-empty:mt-12">
+          {refusals.map((refusal) => (
+            <Callout key={refusal.login} tone="warning">
+              {refusal.line}
+            </Callout>
+          ))}
+        </div>
+      </div>
       {warnings.map((warning) => (
         <Callout key={warning.login} tone="warning">
           <div className="flex items-center gap-8">

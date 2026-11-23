@@ -534,9 +534,10 @@ describe('importing from gh', () => {
     click(button(dialog('import-gh'), 'Import 1 account'));
     await settle();
     const shown = dialog('import-gh');
-    // No failure to try again: the account is out of the choice, with why in its place.
+    // No failure to try again: the account is out of the choice, with why in its place, said
+    // as it comes by a region that was there while it imported.
     expect(shown?.querySelector('[role="alert"]')).toBeNull();
-    expect(shown?.textContent).toContain(
+    expect(shown?.querySelector('[role="status"]')?.textContent).toBe(
       'GitHub CLI’s sign-in for rozed-bot belongs to someone-else.',
     );
     const switches = [...(shown?.querySelectorAll('[role="switch"]') ?? [])];
@@ -560,23 +561,34 @@ describe('importing from gh', () => {
     const bridge = installBridge({
       'accounts.keyring': () => null,
       'accounts.ghAccounts': () => listing,
-      'accounts.importGh': () => [
-        { ok: false, login: 'rozed-bot', why: { kind: 'unknown', details: 'fetch failed' } },
-        { ok: false, login: 'someone-else', why: { kind: 'otherAccount', other: 'rozed-bot' } },
-      ],
+      // Each account asked for fails as it did before.
+      'accounts.importGh': (input) =>
+        [
+          { ok: false, login: 'rozed-bot', why: { kind: 'unknown', details: 'fetch failed' } },
+          { ok: false, login: 'someone-else', why: { kind: 'otherAccount', other: 'rozed-bot' } },
+        ].filter(({ login }) => JSON.stringify(input).includes(`"${login}"`)),
     });
     render();
     act(() => openImport());
     await settle();
+    const region = () => dialog('import-gh')?.querySelector('[role="status"]');
     click(dialog('import-gh')?.querySelectorAll('[role="switch"]')[1] ?? document.body);
     click(button(dialog('import-gh'), 'Import 2 accounts'));
     await settle();
+    // Each failure is its own error while this import's failures show.
+    expect(region()?.textContent).toBe('');
     click(button(dialog('import-gh'), 'Try again'));
     await settle();
     expect(bridge.calls.filter(([channel]) => channel === 'accounts.importGh')).toEqual([
       ['accounts.importGh', { logins: ['rozed-bot', 'someone-else'] }],
       ['accounts.importGh', { logins: ['rozed-bot'] }],
     ]);
+    // The one refused for good before is still out of the choice, with why.
+    expect(region()?.textContent).toBe(
+      'GitHub CLI’s sign-in for someone-else belongs to rozed-bot.',
+    );
+    const switches = [...(dialog('import-gh')?.querySelectorAll('[role="switch"]') ?? [])];
+    expect(switches[1]?.getAttribute('aria-checked')).toBe('false');
   });
 });
 
