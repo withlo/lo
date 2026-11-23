@@ -18,7 +18,7 @@ import { MERGE_PULLS, writeMergeRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { Page } from '@playwright/test';
 
-import { appFolder, expect, KEYCHAIN, test as base } from './app.ts';
+import { appFolder, expect, KEYCHAIN, tabBanners, test as base } from './app.ts';
 import { type Asked, Staged } from './staged.ts';
 
 const { pulls } = MERGE_PULLS[10];
@@ -229,9 +229,11 @@ test.describe('when someone pushes once auto-merge is on', () => {
     await ship(page, number);
     await page.keyboard.press('Enter');
     // The tab's banner says it in one line, and offers the push.
-    await expect(page.getByText(/after your approval · Auto-merge is off/)).toBeVisible({
-      timeout: MERGING,
-    });
+    await expect(tabBanners(page).getByText(/after your approval · Auto-merge is off/)).toBeVisible(
+      {
+        timeout: MERGING,
+      },
+    );
     expect(writes(github, 'AddPullRequestReview')).toBe(1);
     expect(writes(github, 'EnablePullRequestAutoMerge')).toBe(1);
     expect(writes(github, 'DisablePullRequestAutoMerge')).toBe(1);

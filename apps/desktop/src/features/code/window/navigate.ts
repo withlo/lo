@@ -51,7 +51,7 @@ import {
 import { port } from './main.ts';
 import { say } from './said.ts';
 import { servers } from './servers.ts';
-import { statuses } from './status.ts';
+import { offerOnce, statuses } from './status.ts';
 
 /** The references panel's id among the right panel's views. */
 export const REFERENCES = 'code.references';
@@ -251,6 +251,17 @@ function showCode(open: OpenPeek, index: number, code: PeekCode): void {
 
 /** `gd`: the definitions of the word at the cursor, in a peek under its line. */
 export async function definition(target: LineTarget): Promise<void> {
+  const on = onCode();
+  try {
+    await define(target);
+  } finally {
+    // The first `g d` in a repo nothing trusts offers to trust it, once, over its answer.
+    if (typeof on !== 'string') offerOnce(on.tab);
+  }
+}
+
+/** Finds the definitions of the name at `target`, and shows them in a peek under its line. */
+async function define(target: LineTarget): Promise<void> {
   const asked = ask(target);
   if (!asked) return;
   const { tab, view, at, file } = asked;

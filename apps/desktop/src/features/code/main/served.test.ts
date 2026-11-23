@@ -234,8 +234,8 @@ describe('definitions', () => {
       ],
       [not({ kind: 'refused', name, why }), why],
       [
-        not({ kind: 'missing', name, needs: 'Go 1.24 or later' }),
-        'TypeScript needs Go 1.24 or later.',
+        not({ kind: 'missing', name, needs: 'Go 1.24 or newer' }),
+        'TypeScript needs Go 1.24 or newer.',
       ],
       [not({ kind: 'failed', name }), 'TypeScript failed. Restart it from the status bar.'],
       [not({ kind: 'stopped', name }), 'TypeScript stopped.'],

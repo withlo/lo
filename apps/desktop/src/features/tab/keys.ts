@@ -1,7 +1,7 @@
 // The tab strip's keys: a tab by its place, the next and previous tab, moving one, the tabs that
 // don't fit and closing one. They work wherever focus is, a text field included, but not under a
 // dialog or a palette, which hold the keys while they're open. And a pull request's tab's: its left
-// and right panels, and its middle views.
+// and right panels, its middle views, and the account to open it as.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -146,6 +146,40 @@ export default defineCommands('tab', {
     group: 'Tabs',
     keys: [],
     bar: { menu: 'File', section: 'pull', order: 20 },
+  },
+  /**
+   * Opens the pull request on screen as an account that can see it, where more than one can and
+   * none was chosen for its repo's owner, which Lo then remembers: the account the target names, a
+   * row of the tab's choice by its login, or, with none or another list's row, as from the palette
+   * or the File menu, the menu of them. It's done once for an owner, so it has no key.
+   */
+  chooseAccount: {
+    label: 'Choose account…',
+    control: 'Open as and Choose account… where a pull request’s tab needs an account chosen',
+    group: 'Tabs',
+    keys: [],
+    targets: ['row', 'none'],
+    when: outside,
+    bar: { menu: 'File', section: 'open', order: 20 },
+  },
+  /**
+   * Shows the next of the pull request's banners, as the banner's "+1" does: the tab shows one at a
+   * time. Done once in a while, so it has no key; the keymap file can give it one.
+   */
+  nextBanner: {
+    label: 'Next message',
+    description: 'The next one under the pull request’s header.',
+    control: '"+1" on the banner under the pull request’s header',
+    group: 'Tabs',
+    keys: [],
+  },
+  /** Dismisses the pull request's banner on screen, as its Dismiss does, where it has one. */
+  dismissBanner: {
+    label: 'Dismiss message',
+    description: 'The one under the pull request’s header, for good.',
+    control: 'Dismiss on the banner under the pull request’s header',
+    group: 'Tabs',
+    keys: [],
   },
   /**
    * The tab on screen, or the one right-clicked. On Linux it's Ctrl+W, over Vim's window keys,

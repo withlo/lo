@@ -5,11 +5,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
 import { buildCss, hasRule } from '../scripts/stylesheet.ts';
-import { Banner } from './Banner.tsx';
+import { Banner, BannerPlaceProvider } from './Banner.tsx';
 import { PRHeader } from './PRHeader.tsx';
 import { Skeleton, Spinner } from './Spinner.tsx';
 import { StatePill } from './StatePill.tsx';
-import { StatusBar, StatusItem } from './StatusBar.tsx';
+import { StatusBar, StatusItem, type StatusBallState } from './StatusBar.tsx';
 
 /** Every class in `markup` but the design system's own and `group`. */
 function classesIn(markup: string): string[] {
@@ -29,11 +29,20 @@ const header = (
     head={{ branch: 'app/head', fork: 'someone/e2e' }}
     base={{ branch: 'app/base' }}
     acting={{ login: 'rozed-bot' }}
-    connection={{ tone: 'warn', label: 'Offline', detail: 'saved 14:02' }}
+    connection={{
+      kind: 'offline',
+      tone: 'warn',
+      label: 'Offline',
+      details: <p>Checked 5 min ago</p>,
+    }}
   >
     <span>Comparing</span>
   </PRHeader>
 );
+
+/** A status item with a ball in `state`, as markup. */
+const ball = (state: StatusBallState) =>
+  renderToStaticMarkup(<StatusItem ball={state}>a</StatusItem>);
 
 describe('PRHeader', () => {
   it('shows the state, title and number, who acts, the connection and the branches', () => {
@@ -43,7 +52,9 @@ describe('PRHeader', () => {
     expect(markup).toContain('Read empty input as no lines</h1>');
     expect(markup).toContain('#78</span>');
     expect(markup).toContain('Offline');
-    expect(markup).toContain('· saved 14:02');
+    // The chip is a word or two, and a button that opens what's behind it.
+    expect(markup).not.toContain('Checked 5 min ago');
+    expect(markup).toMatch(/<button type="button"[^>]*chip-warn[^>]*>.*Offline<\/button>/);
     expect(markup).toContain('Acting as rozed-bot');
     expect(markup).toContain('wants to merge');
     expect(markup).toContain('someone/e2e:app/head');
@@ -57,6 +68,15 @@ describe('PRHeader', () => {
     expect(markup.match(/skeleton/g)).toHaveLength(3);
     expect(markup).not.toContain('Offline');
     expect(markup).not.toContain('Acting as');
+  });
+
+  it('holds no places for a pull request it can’t show, and names it by its repo and number', () => {
+    const markup = renderToStaticMarkup(
+      <PRHeader number={9999} missing={{ repo: 'rozed-dev/e2e' }} />,
+    );
+    expect(markup).not.toContain('skeleton');
+    expect(markup).toMatch(/<h1[^>]*>rozed-dev\/e2e<\/h1>/);
+    expect(markup).toContain('#9999');
   });
 
   it('says when it reads without signing in, and names a deleted author', () => {
@@ -94,44 +114,54 @@ describe('StatePill', () => {
 });
 
 /** A banner whose action can be busy, and is now or isn't. */
-const trusting = (busy: boolean) =>
+const showing = (busy: boolean) =>
   renderToStaticMarkup(
     <Banner
-      tone="warn"
-      title="Language servers are off for withlo/lo."
-      actions={[{ label: 'Trust this repo', busy, working: 'Trusting', onClick: () => {} }]}
+      tone="info"
+      title="ravi-k pushed r5"
+      action={{ label: 'Show r5', busy, working: 'Showing…', onClick: () => {} }}
     />,
   );
 
 describe('Banner', () => {
-  it('leads with what happened, then what to do, with its buttons', () => {
-    const retry = vi.fn<() => void>();
+  it('leads with what changed, then its one button and Dismiss', () => {
+    const show = vi.fn<() => void>();
     const markup = renderToStaticMarkup(
       <Banner
-        tone="warn"
-        title="You're offline."
-        detail="Showing what Lo saved 2 hours ago."
-        actions={[{ label: 'Try again', onClick: retry }]}
+        tone="info"
+        title="ravi-k pushed r5"
+        action={{ label: 'Show r5', onClick: show }}
         onDismiss={() => {}}
       />,
     );
     expect(markup).toContain('role="status"');
-    expect(markup).toContain('banner-warn');
-    expect(markup).toContain('<strong class="font-semibold">You&#x27;re offline.</strong>');
-    expect(markup).toContain('Showing what Lo saved 2 hours ago.');
-    expect(markup).toMatch(/<button type="button" class="[^"]*">Try again<\/button>/);
+    expect(markup).toContain('banner-info');
+    expect(markup).toContain('<strong class="font-semibold">ravi-k pushed r5</strong>');
+    expect(markup).toMatch(/<button type="button" class="[^"]*"[^>]*>Show r5<\/button>/);
     expect(markup).toContain('aria-label="Dismiss"');
+  });
+
+  it('offers the next of those that wait behind it, with how many there are', () => {
+    const next = vi.fn<() => void>();
+    const markup = renderToStaticMarkup(
+      <BannerPlaceProvider value={{ more: { count: 2, next }, row: { current: null } }}>
+        <Banner tone="info" title="ravi-k pushed r5" />
+      </BannerPlaceProvider>,
+    );
+    expect(markup).toContain('aria-label="Next, 2 more"');
+    expect(markup).toContain('+2');
+    expect(renderToStaticMarkup(<Banner tone="info" title="a" />)).not.toContain('more');
   });
 
   it('holds room for an action’s wait while it rests, and says the wait while busy', () => {
     // Both faces are there at rest, so the button is as wide then as while it works.
-    expect(trusting(false)).toContain('Trusting');
-    expect(trusting(false)).not.toContain('aria-busy="true"');
-    expect(trusting(true)).toContain('aria-busy="true"');
+    expect(showing(false)).toContain('Showing…');
+    expect(showing(false)).not.toContain('aria-busy="true"');
+    expect(showing(true)).toContain('aria-busy="true"');
   });
 
   it('is an alert when it’s about danger, and has no buttons when it offers nothing', () => {
-    const markup = renderToStaticMarkup(<Banner tone="danger" title="The disk is full." />);
+    const markup = renderToStaticMarkup(<Banner tone="danger" title="Merge refused" />);
     expect(markup).toContain('role="alert"');
     expect(markup).not.toContain('<button');
   });
@@ -141,26 +171,39 @@ describe('StatusBar', () => {
   it('puts background work at the start, and where you are at the end', () => {
     const markup = renderToStaticMarkup(
       <StatusBar
-        start={
-          <StatusItem dot="ok" title="At 5530830">
-            Local copy
-          </StatusItem>
-        }
+        start={<StatusItem ball="ready">Local copy</StatusItem>}
         end={<span>NORMAL</span>}
       />,
     );
-    expect(markup).toContain('aria-label="Status"');
+    expect(markup).toContain('aria-label="Status bar"');
     expect(markup.indexOf('Local copy')).toBeLessThan(markup.indexOf('NORMAL'));
     expect(markup).toContain('bg-success');
+    // Text with nothing behind it has no tooltip.
+    expect(markup).not.toContain('title=');
   });
 
-  it('makes an item that does something a button', () => {
-    const markup = renderToStaticMarkup(
-      <StatusItem dot="busy" onClick={() => {}}>
-        Load the newer push
+  it('draws each state as its own ball: a ring off, a spinner at work, filled, amber and red', () => {
+    expect(ball('off')).toContain('data-ball="off"');
+    expect(ball('off')).toContain('hollow');
+    expect(ball('working')).toContain('spinner');
+    expect(ball('working')).not.toContain('data-ball');
+    expect(ball('ready')).toContain('bg-success');
+    expect(ball('warn')).toContain('bg-warning');
+    expect(ball('failed')).toContain('bg-danger');
+  });
+
+  it('makes an item with details a button that opens them, and one that does something a button', () => {
+    const detailed = renderToStaticMarkup(
+      <StatusItem ball="ready" details={<p>At a1b2c3d</p>}>
+        Local copy
       </StatusItem>,
     );
-    expect(markup).toMatch(/^<button type="button"[^>]*>.*Load the newer push<\/button>$/);
+    expect(detailed).toMatch(/^<button type="button"[^>]*>.*Local copy<\/span><\/button>$/);
+    expect(detailed).not.toContain('a1b2c3d');
+    const markup = renderToStaticMarkup(
+      <StatusItem onClick={() => {}}>2 pending comments</StatusItem>,
+    );
+    expect(markup).toMatch(/^<button type="button"[^>]*>.*2 pending comments<\/span><\/button>$/);
   });
 });
 
@@ -172,21 +215,26 @@ describe('the parts’ styles', () => {
         <PRHeader
           number={1}
           acting="anonymous"
-          connection={{ tone: 'danger', label: 'Signed out' }}
+          connection={{ kind: 'signedOut', tone: 'danger', label: 'Signed out' }}
         />
-        <Banner
-          tone="info"
-          title="a"
-          actions={[{ label: 'b', onClick: () => {} }]}
-          onDismiss={() => {}}
-        />
+        <BannerPlaceProvider value={{ more: { count: 1, next: () => {} }, row: { current: null } }}>
+          <Banner
+            tone="info"
+            title="a"
+            action={{ label: 'b', onClick: () => {} }}
+            onDismiss={() => {}}
+          />
+        </BannerPlaceProvider>
         <Banner tone="danger" title="a" />
-        <StatusBar start={<StatusItem dot="busy">a</StatusItem>} />
-        <StatusItem dot="warn" onClick={() => {}}>
+        <StatusBar start={<StatusItem ball="working">a</StatusItem>} />
+        <StatusItem ball="warn" onClick={() => {}}>
           a
         </StatusItem>
-        <StatusItem dot="fail">a</StatusItem>
-        <StatusItem dot="idle">a</StatusItem>
+        <StatusItem ball="failed" details={<p>a</p>}>
+          a
+        </StatusItem>
+        <StatusItem ball="off">a</StatusItem>
+        <StatusItem ball="ready">a</StatusItem>
         <StatePill state="draft" />
         <StatePill state="merged" />
         <StatePill state="closed" />

@@ -128,13 +128,9 @@ function viewedOf(state: string): Files['files'][number]['viewed'] {
 
 /**
  * How what a tab shows stands, from its account's poller: signed out, the rate limit used up,
- * GitHub out of reach (with when what's shown was saved), the rate limit low, or live.
+ * GitHub out of reach, the rate limit low, or live.
  */
-export function connectionOf(
-  login: string,
-  status: PollStatus,
-  savedAt: number | undefined,
-): Connection {
+export function connectionOf(login: string, status: PollStatus): Connection {
   if (status.signedOut) return { kind: 'signedOut', login };
   const { rateLimit, offline } = status;
   if (rateLimit.kind === 'paused') {
@@ -148,7 +144,6 @@ export function connectionOf(
   if (offline) {
     return {
       kind: 'offline',
-      savedAt: savedAt === undefined ? null : Math.round(savedAt),
       retryAt: Math.max(0, Math.round(offline.retryAt)),
       error: offline.error,
     };

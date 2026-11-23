@@ -374,11 +374,7 @@ export function SaidStatus({ tab }: { tab: PullTab }): ReactNode {
   const message = useTabState(said, tab.id);
   return (
     <span role="status" className="inline-flex min-w-0">
-      {message && (
-        <StatusItem key={message.count} dot="idle">
-          <span className="truncate">{message.text}</span>
-        </StatusItem>
-      )}
+      {message && <StatusItem key={message.count}>{message.text}</StatusItem>}
     </span>
   );
 }

@@ -544,7 +544,7 @@ test.describe('with Vim keys on', () => {
   }) => {
     await open(page);
     await onLineTwo(page);
-    const status = page.locator('footer[aria-label="Status"]');
+    const status = page.locator('footer[aria-label="Status bar"]');
     await expect(status).toContainText('NORMAL');
     // `v` then `c`: on the lines selected.
     for (const key of ['v', 'j', 'c']) await page.keyboard.press(key);

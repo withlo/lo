@@ -1,7 +1,7 @@
-// The code feature in the window: trust, the syntax index, language servers and code features.
-// The banner on a view nothing trusts, Settings' Trusted row, and the palette's trust commands,
-// each of which only asks main; the index's item in the status bar, and each language server's,
-// with its log; Settings' Type hints and Toolchains rows; and `gd`, `gr`, `K`, `gh` and `gO`, with
+// The code feature in the window: trust, the code index, language servers and code features.
+// Settings' Trusted row and the palette's trust commands, which only ask main; the index's item in
+// the status bar, and each language server's, with its log, or the one that offers trust on a view
+// nothing trusts; Settings' Type hints and Toolchains rows; and `gd`, `gr`, `K`, `gh` and `gO`, with
 // the peek's and the references panel's keys, which ask main over the code port and show what it
 // answers in the diff's code views, the right panel and over the window.
 
@@ -17,7 +17,7 @@ import {
   settingRow,
   watchSetting,
 } from '../../settings/window/shared.ts';
-import { banners, dialogs, onClosed, right, status as statusBar } from '../../tab/window/shared.ts';
+import { dialogs, onClosed, right, status as statusBar } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
 import { hints } from '../settings.ts';
 import { CodeOverlays, ReferencesPanel, SaidStatus } from './Code.tsx';
@@ -52,18 +52,14 @@ import {
 import {
   askable,
   askToTrust,
-  bannerOf,
-  dismissBanner,
   onScreen,
   settingsChanged,
   stopTrusting,
   takeStatus,
-  trustSwitch,
   untrustable,
 } from './status.ts';
 import Toolchains from './Toolchains.tsx';
 import Trusted from './Trusted.tsx';
-import { TrustBanner } from './TrustBanner.tsx';
 
 /** Runs `act` on the view on screen's status, which `enabled` has checked. */
 function onView(act: (status: Exclude<ReturnType<typeof onScreen>, string>) => Promise<void>) {
@@ -101,14 +97,6 @@ export default {
       run: onView(stopTrusting),
       enabled: () => untrustable(onScreen()),
     },
-    dismiss: {
-      run: onView(dismissBanner),
-      enabled: () => {
-        const status = onScreen();
-        if (typeof status === 'string') return status;
-        return bannerOf(status) ? true : "There's no banner about language servers on screen.";
-      },
-    },
     restart: {
       async run(target) {
         const shown = serversFor(target);
@@ -137,13 +125,6 @@ export default {
     },
   }),
   views: [
-    // After the stack's offer of where the diff starts, which is about what's on screen now.
-    defineView(banners, {
-      id: 'code.banner',
-      order: 20,
-      render: ({ tab }) => createElement(TrustBanner, { tab }),
-      ...trustSwitch,
-    }),
     settingRow(hints, { order: 10, command: 'code.hints' }),
     Trusted,
     Running,
@@ -181,7 +162,7 @@ export default {
   ],
   start() {
     main().subscribe('status', takeStatus);
-    // Fixed, the settings file no longer keeps Lo from trusting, so the banner stops saying it does.
+    // Fixed, the settings file no longer keeps Lo from trusting, so the item stops saying it does.
     onSettingsChange(settingsChanged);
     main().subscribe('indexed', takeIndex);
     main().subscribe('served', takeServers);

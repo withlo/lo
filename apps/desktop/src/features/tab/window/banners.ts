@@ -1,18 +1,20 @@
-// What a pull request's tab says in its banners, most urgent first, in the design's words: what
-// happened, then what to do, with what each banner offers to do. The tab shows two at most; the
-// rest are in the status bar. Nothing here draws anything.
+// What a pull request's tab says of itself, in the design's words, and where each thing is said,
+// once: a tab that can't show its pull request says why in place of its view; how it stands with
+// GitHub is the header's chip and its details; its local copy is its status bar item and its
+// details; and a change to the pull request, a newer push, is its banner. Nothing here draws
+// anything.
 
 import { explain, gitWords, REMEDY_LABELS, remedyOf } from '../../../window/explain.ts';
-import type { FetchFailure, LocalState, PullView } from '../contract.ts';
+import type { Connection, FetchFailure, LocalState, PullView } from '../contract.ts';
 
-/** What a banner's button does. */
+/** What a button the tab offers does. */
 export type BannerDo =
   | { kind: 'retry' }
   | { kind: 'reload' }
   /** Clears Lo's cache of local copies, then tries again. */
   | { kind: 'clearCache' }
   | { kind: 'choose'; login: string }
-  /** Signs in with GitHub, for a pull request no account signed in can see. */
+  /** Signs in with GitHub: for an account GitHub signed out, or a pull request none can see. */
   | { kind: 'signIn' }
   /** Closes the tab. */
   | { kind: 'close' }
@@ -21,8 +23,9 @@ export type BannerDo =
   /** Shows another layer of the tab's stack: the pull request the tab opened on. */
   | { kind: 'layer'; number: number };
 
+/** Something the tab says, in one shape wherever it shows: a banner, a view, an item's details. */
 export interface BannerSpec {
-  /** Which banner it is, so it keeps its place as it changes. */
+  /** Which it is, so it keeps its place as it changes. */
   readonly id: string;
   readonly tone: 'info' | 'warn' | 'danger';
   readonly title: string;
@@ -32,8 +35,11 @@ export interface BannerSpec {
    * page that lists newer packages, which Lo shows to copy since it opens no page off GitHub.
    */
   readonly commands?: readonly string[] | undefined;
+  /** When Lo tries again by itself, which the line counts down to after the detail. */
+  readonly retryAt?: number | undefined;
   /** What GitHub or Git said, as it came, for Details: never in the title or the line. */
   readonly details?: string | undefined;
+  /** The first is the one thing to do about it; a failed view offers the rest beside it. */
   readonly actions: readonly { readonly label: string; readonly do: BannerDo }[];
 }
 
@@ -43,9 +49,6 @@ export interface Shown {
   readonly repo: string;
   readonly number: number;
 }
-
-/** The most banners a tab shows at once. */
-export const MOST_BANNERS = 2;
 
 /** How times read: the clock, and how long until or since. */
 export interface Clock {
@@ -67,36 +70,25 @@ function timeFormat(): Intl.DateTimeFormat {
   return format;
 }
 
-/** "12 s", "4 minutes", "2 hours": a wait, for what counts down, rounded up. */
+/** "12 s", "4 min", "2 h": a wait, for what counts down, rounded up. */
 export function span(milliseconds: number): string {
   const seconds = Math.max(1, Math.ceil(milliseconds / 1000));
   if (seconds < 60) return `${seconds} s`;
   return whole(Math.ceil(seconds / 60) * 60) ?? `${seconds} s`;
 }
 
-/** How long before `now` `then` was, in words: "just now", "5 minutes ago", "2 hours ago". */
+/** How long before `now` `then` was: "just now", "5 min ago", "2 h ago". */
 export function ago(then: number, now: number): string {
   const said = whole(Math.floor(Math.max(0, now - then) / 1000));
   return said === undefined ? 'just now' : `${said} ago`;
 }
 
-/** How long after `now` `then` is, in words: "in a moment", "in 5 minutes". */
-export function inWords(then: number, now: number): string {
-  const said = whole(Math.floor(Math.max(0, then - now) / 1000));
-  return said === undefined ? 'in a moment' : `in ${said}`;
-}
-
 /** `seconds` in the largest whole unit, or nothing under a minute. */
 function whole(seconds: number): string | undefined {
   if (seconds < 60) return undefined;
-  const [count, unit] =
-    seconds < 3_600
-      ? [Math.floor(seconds / 60), 'minute']
-      : seconds < 86_400
-        ? [Math.floor(seconds / 3_600), 'hour']
-        : [Math.floor(seconds / 86_400), 'day'];
-  if (count === 1) return unit === 'hour' ? 'an hour' : `a ${unit}`;
-  return `${count} ${unit}s`;
+  if (seconds < 3_600) return `${Math.floor(seconds / 60)} min`;
+  if (seconds < 86_400) return `${Math.floor(seconds / 3_600)} h`;
+  return `${Math.floor(seconds / 86_400)} d`;
 }
 
 /** "abc1234": a commit by the start of its ID. */
@@ -104,234 +96,203 @@ export function short(oid: string): string {
   return oid.slice(0, 7);
 }
 
+const retry = { label: 'Try again', do: { kind: 'retry' } } as const;
+const tryNow = { label: 'Try now', do: { kind: 'retry' } } as const;
+
 /**
- * Every banner a pull request's tab could show now, most urgent first: why it can't show its pull
- * request, then how it stands with GitHub, then its local copy, then a newer push. `own` is the
- * pull request the tab opened on, when the view on screen is another layer of its stack, which a
- * layer that can't be opened, such as one deleted since the tab showed it, offers to go back to.
+ * Why a tab can't show its pull request, which takes the place of its view, or nothing while it
+ * can: GitHub has no such pull request or won't show it, an organization blocks the account, or
+ * reading it failed. `own` is the pull request the tab opened on, when the view on screen is
+ * another layer of its stack, which a layer that can't be opened, such as one deleted since the tab
+ * showed it, offers to go back to. Several accounts that could see it are a choice, not a failure:
+ * see {@link accountChoice}.
  */
-export function bannersFor(
+export function failureOf(
   view: PullView | undefined,
-  local: LocalState | undefined,
   shown: Shown,
-  clock: Clock,
   own?: number,
-): BannerSpec[] {
-  const banners: BannerSpec[] = [];
+): BannerSpec | undefined {
   const repository = `${shown.owner}/${shown.repo}`;
-  const retry = { label: 'Try again', do: { kind: 'retry' } } as const;
-  const tryNow = { label: 'Try now', do: { kind: 'retry' } } as const;
-  const cantOpen = `Can’t open #${shown.number}`;
+  const title = `Can’t open #${shown.number}`;
   const problem = view?.problem;
-  if (problem) {
-    switch (problem.kind) {
-      case 'notFound': {
-        // Missing, or hidden from whoever asked: signing in may show it, and GitHub's page says
-        // which; or the tab can go.
-        const remedy = remedyOf(problem.cause);
-        const signIn =
-          remedy === 'signIn' || remedy === 'signInAgain'
-            ? [{ label: REMEDY_LABELS[remedy], do: { kind: 'signIn' } } as const]
-            : [];
-        const page = `https://github.com/${repository}/pull/${shown.number}`;
-        banners.push({
-          id: 'notFound',
-          tone: 'danger',
-          title: cantOpen,
-          detail: explain(problem.cause),
-          details: problem.details,
-          actions:
-            own === undefined
-              ? [
-                  ...signIn,
-                  { label: 'Open on GitHub', do: { kind: 'link', url: page } },
-                  { label: 'Close tab', do: { kind: 'close' } },
-                ]
-              : [{ label: `Show #${own}`, do: { kind: 'layer', number: own } }],
-        });
-        break;
-      }
-      case 'blocked':
-        banners.push({
-          id: 'blocked',
-          tone: 'danger',
-          title: cantOpen,
-          detail: explain(problem.cause),
-          details: problem.details,
-          actions: [
-            ...problem.links.map((link) => ({
-              label: link.label,
-              do: { kind: 'link', url: link.url } as const,
-            })),
-            retry,
-          ],
-        });
-        break;
-      case 'ask':
-        banners.push({
-          id: 'ask',
-          tone: 'info',
-          title: `More than one account can see ${repository}.`,
-          detail:
-            "Choose which to review it as. Lo remembers your choice for the repository's owner.",
-          actions: problem.logins.map((login) => ({
-            label: `Use ${login}`,
-            do: { kind: 'choose', login } as const,
-          })),
-        });
-        break;
-      case 'failed': {
-        // What it offers follows the cause: a sign-in, or nothing while the rate limit holds,
-        // whose reset time the reason says; else Try again, or Try now while Lo waits to.
-        const remedy = remedyOf(problem.cause);
-        const at = remedy === 'tryAgain' ? problem.retryAt : null;
-        banners.push({
-          id: 'failed',
-          tone: 'danger',
-          title: cantOpen,
-          detail: line(explain(problem.cause), at === null ? undefined : retrying(at, clock)),
-          details: problem.details,
-          actions:
-            remedy === 'none'
-              ? []
-              : remedy === 'tryAgain'
-                ? [at === null ? retry : tryNow]
-                : [{ label: REMEDY_LABELS[remedy], do: { kind: 'signIn' } }],
-        });
-        break;
-      }
-      default:
-        problem satisfies never;
+  switch (problem?.kind) {
+    case 'notFound': {
+      // Missing, or hidden from whoever asked: signing in may show it, and GitHub's page says
+      // which; or the tab can go.
+      const remedy = remedyOf(problem.cause);
+      const signIn =
+        remedy === 'signIn' || remedy === 'signInAgain'
+          ? [{ label: REMEDY_LABELS[remedy], do: { kind: 'signIn' } } as const]
+          : [];
+      const page = `https://github.com/${repository}/pull/${shown.number}`;
+      return {
+        id: 'notFound',
+        tone: 'danger',
+        title,
+        detail: explain(problem.cause),
+        details: problem.details,
+        actions:
+          own === undefined
+            ? [
+                ...signIn,
+                { label: 'Open on GitHub', do: { kind: 'link', url: page } },
+                { label: 'Close tab', do: { kind: 'close' } },
+              ]
+            : [{ label: `Show #${own}`, do: { kind: 'layer', number: own } }],
+      };
     }
+    case 'blocked':
+      return {
+        id: 'blocked',
+        tone: 'danger',
+        title,
+        detail: explain(problem.cause),
+        details: problem.details,
+        actions: [
+          ...problem.links.map((link) => ({
+            label: link.label,
+            do: { kind: 'link', url: link.url } as const,
+          })),
+          retry,
+        ],
+      };
+    case 'failed': {
+      // What it offers follows the cause: a sign-in, or nothing while the rate limit holds, whose
+      // reset time the reason says; else Try again, or Try now while Lo waits to.
+      const remedy = remedyOf(problem.cause);
+      const at = remedy === 'tryAgain' ? problem.retryAt : null;
+      return {
+        id: 'failed',
+        tone: 'danger',
+        title,
+        detail: explain(problem.cause),
+        retryAt: at ?? undefined,
+        details: problem.details,
+        actions:
+          remedy === 'none'
+            ? []
+            : remedy === 'tryAgain'
+              ? [at === null ? retry : tryNow]
+              : [{ label: REMEDY_LABELS[remedy], do: { kind: 'signIn' } }],
+      };
+    }
+    case 'ask':
+    case undefined:
+      return undefined;
+    default:
+      problem satisfies never;
+      return undefined;
   }
-  const connection = view?.connection;
+}
+
+/**
+ * Whether a tab can't show its pull request now, so why, or the account to open it as, takes its
+ * view's place, and what's around the view has nothing to act on.
+ */
+export function blocked(view: PullView | undefined): boolean {
+  const problem = view?.problem;
+  if (problem === null || problem === undefined) return false;
+  // A read that failed after the view was drawn leaves it as it was: the header's chip says why.
+  return problem.kind !== 'failed' || view?.shown === null;
+}
+
+/** Which account to open a pull request as, when more than one can see it and none was chosen. */
+export interface AccountChoice {
+  readonly title: string;
+  readonly line: string;
+  readonly logins: readonly string[];
+}
+
+/** The choice of account a tab waits on, which takes the place of its view, or nothing. */
+export function accountChoice(view: PullView | undefined, shown: Shown): AccountChoice | undefined {
+  if (view?.problem?.kind !== 'ask') return undefined;
+  const { logins } = view.problem;
+  return {
+    title: `Choose an account for #${shown.number}`,
+    line: `${logins.length} of your accounts can see it. The choice is remembered for every ${shown.owner} repo.`,
+    logins,
+  };
+}
+
+/** How a tab stands with GitHub, when it isn't as usual: the header's chip, and its details. */
+export interface ConnectionNote {
+  /** What's wrong, which picks the chip's icon. */
+  readonly kind: 'signedOut' | 'rateLimited' | 'offline';
+  readonly tone: 'warn' | 'danger';
+  /** The chip's one or two words: "Offline". */
+  readonly label: string;
+  /** Its details' line, from the guide's causes: "GitHub’s rate limit resets at 14:05." */
+  readonly line: string;
+  /** When Lo tries again by itself, which the line counts down to. */
+  readonly retryAt?: number | undefined;
+  /** What GitHub or the network said, as it came, for Details. */
+  readonly details?: string | undefined;
+  /** The one thing to do about it, if there's anything. */
+  readonly action?: { readonly label: string; readonly do: BannerDo } | undefined;
+}
+
+/**
+ * How the tab stands with GitHub, for the header's chip, or nothing while all is well. The rate
+ * limit running low is the status bar's to say, since it changes nothing on screen.
+ */
+export function connectionNote(
+  connection: Connection | undefined,
+  clock: Clock,
+): ConnectionNote | undefined {
   switch (connection?.kind) {
     case 'signedOut':
-      banners.push({
-        id: 'signedOut',
+      return {
+        kind: 'signedOut',
         tone: 'danger',
-        title: `${connection.login} is signed out.`,
-        detail: `GitHub refused ${connection.login}'s token. Sign in to it again to see what's changed.`,
-        actions: [],
-      });
-      break;
-    case 'rateLimited': {
-      const whose = connection.login === null ? 'without signing in' : `for ${connection.login}`;
-      banners.push({
-        id: 'rateLimited',
+        label: 'Signed out',
+        line: `${connection.login} is signed out.`,
+        action: { label: 'Sign in again', do: { kind: 'signIn' } },
+      };
+    case 'rateLimited':
+      // One wording, whoever the limit is for, and whether GitHub asked Lo to slow down.
+      return {
+        kind: 'rateLimited',
         tone: 'warn',
-        title: connection.secondary
-          ? 'GitHub asked Lo to slow down.'
-          : `GitHub's rate limit ${whose} is used up.`,
-        detail: `Nothing updates until it resets at ${clock.time(connection.until)}, ${inWords(connection.until, clock.now)}.`,
-        actions: [],
-      });
-      break;
-    }
-    case 'offline': {
-      const saved =
-        connection.savedAt === null
-          ? "Lo can't reach GitHub."
-          : `Showing what Lo saved ${ago(connection.savedAt, clock.now)}.`;
-      const again =
-        connection.retryAt === null
-          ? ''
-          : ` Lo tries again ${inWords(connection.retryAt, clock.now)}.`;
-      banners.push({
-        id: 'offline',
+        label: 'Rate limit reached',
+        line: `GitHub’s rate limit resets at ${clock.time(connection.until)}.`,
+      };
+    case 'offline':
+      return {
+        kind: 'offline',
         tone: 'warn',
-        title: "You're offline.",
-        detail: `${saved}${again}`,
-        actions: [retry],
-      });
-      break;
-    }
+        label: 'Offline',
+        line: explain({ kind: 'offline' }) ?? 'Offline.',
+        retryAt: connection.retryAt ?? undefined,
+        details: connection.error === '' ? undefined : connection.error,
+        action: connection.retryAt === null ? retry : tryNow,
+      };
     case 'live':
     case 'limitLow':
     case undefined:
-      break;
+      return undefined;
     default:
       connection satisfies never;
+      return undefined;
   }
-  const offline = connection?.kind === 'offline';
-  const login = view?.acting?.kind === 'account' ? view.acting.login : undefined;
-  switch (local?.kind) {
-    case 'noGit': {
-      const words = gitWords(local.git);
-      banners.push({
-        id: 'noGit',
-        tone: 'warn',
-        title: words.title,
-        detail: words.reason,
-        commands: words.page === undefined ? words.commands : [...words.commands, words.page],
-        details: words.details,
-        actions: [{ label: 'Check again', do: { kind: 'retry' } }],
-      });
-      break;
-    }
-    case 'fetching':
-      banners.push({
-        id: 'local',
-        tone: 'info',
-        title: `Fetching a local copy of ${repository}.`,
-        detail: local.progress === null ? undefined : capitalized(local.progress),
-        actions: [],
-      });
-      break;
-    case 'retrying': {
-      // Offline says it already, and the fetch tries again with it.
-      if (offline && local.failure === 'network') break;
-      const held = heldBy(local.failure, repository);
-      // A copy held for its tabs or servers is made again once they let go, whenever that is: it
-      // says what it waits for, with no time and nothing to press.
-      banners.push({
-        id: 'local',
-        tone: 'warn',
-        title: held === undefined ? CANT_FETCH : CANT_USE,
-        detail:
-          held ??
-          line(fetchReason(local.failure, repository, login), retrying(local.retryAt, clock)),
-        details: local.details,
-        actions: held === undefined ? [tryNow] : [],
-      });
-      break;
-    }
-    case 'failed': {
-      const held = heldBy(local.failure, repository);
-      banners.push({
-        id: 'local',
-        tone: 'danger',
-        title: held === undefined ? CANT_FETCH : CANT_USE,
-        detail: held ?? fetchReason(local.failure, repository, login),
-        details: local.details,
-        actions:
-          local.failure === 'diskFull'
-            ? [{ label: 'Clear cache', do: { kind: 'clearCache' } }]
-            : local.failure === 'auth'
-              ? [{ label: 'Sign in with GitHub…', do: { kind: 'signIn' } }]
-              : held === undefined
-                ? [retry]
-                : [],
-      });
-      break;
-    }
-    case 'waiting':
-    case 'ready':
-    case undefined:
-      break;
-    default:
-      local satisfies never;
-  }
-  if (view?.newer && view.shown) {
-    banners.push({
-      id: 'newer',
-      tone: 'info',
-      title: 'There’s a newer push.',
-      detail: `You're reading ${short(view.shown)}, and it stays on screen until you load the newer one.`,
-      actions: [{ label: 'Load the newer push', do: { kind: 'reload' } }],
-    });
-  }
-  return banners;
+}
+
+/** The local copy, as its status bar item says it: its ball, its label and its details. */
+export interface LocalNote {
+  readonly ball: 'off' | 'working' | 'ready' | 'warn' | 'failed';
+  readonly label: string;
+  /** The details' one line, for a copy that's there: the commit it's at. */
+  readonly at?: string | undefined;
+  /** The details' one line while it fetches: what, and how far, in Lo's words. */
+  readonly line?: string | undefined;
+  /** What Git last said of how far it has got while it fetches, as it came, for Details. */
+  readonly said?: string | undefined;
+  /** Why it can't be fetched, for its details, with what to do about it. */
+  readonly problem?: BannerSpec | undefined;
+}
+
+/** "62%": how far a fetch has got, from what git said of it, if it said. */
+function percentOf(progress: string | null): string | undefined {
+  return progress?.match(/(\d+)%/)?.[0];
 }
 
 /** The title of a local copy that can't be fetched, for as long as it can't. */
@@ -340,15 +301,105 @@ const CANT_FETCH = 'Can’t fetch the local copy';
 /** The title of a local copy that can't be trusted and can't be made again yet. */
 const CANT_USE = 'Can’t use the local copy';
 
-/** A reason and what follows it, on one line: nothing when there's neither. */
-function line(...parts: readonly (string | undefined)[]): string | undefined {
-  const said = parts.filter((part) => part !== undefined && part !== '');
-  return said.length === 0 ? undefined : said.join(' ');
-}
-
-/** "Retrying in 20 s.": the wait before Lo tries again by itself. */
-function retrying(at: number, clock: Clock): string {
-  return `Retrying in ${span(at - clock.now)}.`;
+/**
+ * The local copy's item for the tab showing `shown`, as `view` stands, or nothing before the tab
+ * has one. A fetch that stopped because GitHub can't be reached only waits: the header's chip says
+ * the tab is offline, and the fetch tries again with it. Its ball is amber while it waits, red only
+ * once it failed.
+ */
+export function localNote(
+  local: LocalState | undefined,
+  view: PullView | undefined,
+  shown: Shown,
+): LocalNote | undefined {
+  const repository = `${shown.owner}/${shown.repo}`;
+  const login = view?.acting?.kind === 'account' ? view.acting.login : undefined;
+  switch (local?.kind) {
+    case undefined:
+      return undefined;
+    case 'waiting':
+      return { ball: 'off', label: 'Local copy' };
+    case 'noGit': {
+      const words = gitWords(local.git);
+      return {
+        ball: 'failed',
+        label: words.title,
+        problem: {
+          id: 'noGit',
+          tone: 'warn',
+          title: words.title,
+          detail: words.reason,
+          commands: words.page === undefined ? words.commands : [...words.commands, words.page],
+          details: words.details,
+          actions: [{ label: 'Check again', do: { kind: 'retry' } }],
+        },
+      };
+    }
+    case 'fetching': {
+      // Its details name what it fetches, in Lo's words, with Git's own line behind Details.
+      const percent = percentOf(local.progress);
+      const how = (what: string) => (percent === undefined ? `${what}…` : `${what} · ${percent}`);
+      return {
+        ball: 'working',
+        label: how('Fetching local copy'),
+        line: how(`Fetching ${repository}`),
+        said: local.progress ?? undefined,
+      };
+    }
+    case 'ready':
+      // Offline, it's there all the same: the header's chip says the tab is offline.
+      return { ball: 'ready', label: 'Local copy', at: short(local.head) };
+    case 'retrying': {
+      // A fetch waiting for GitHub to be reached again: the chip says why.
+      if (view?.connection.kind === 'offline' && local.failure === 'network') {
+        return { ball: 'warn', label: 'Local copy' };
+      }
+      const held = heldBy(local.failure, repository);
+      const title = held === undefined ? CANT_FETCH : CANT_USE;
+      // A copy held for its tabs or servers is made again once they let go, whenever that is: it
+      // says what it waits for, with no time and nothing to press. Either way it's a wait.
+      return {
+        ball: 'warn',
+        label: title,
+        problem: {
+          id: 'local',
+          tone: 'warn',
+          title,
+          detail: held ?? fetchReason(local.failure, repository, login),
+          retryAt: held === undefined ? local.retryAt : undefined,
+          details: local.details,
+          actions: held === undefined ? [tryNow] : [],
+        },
+      };
+    }
+    case 'failed': {
+      const held = heldBy(local.failure, repository);
+      const title = held === undefined ? CANT_FETCH : CANT_USE;
+      // One held for its tabs or servers waits for them, so it's a wait, not a failure.
+      return {
+        ball: held === undefined ? 'failed' : 'warn',
+        label: title,
+        problem: {
+          id: 'local',
+          tone: held === undefined ? 'danger' : 'warn',
+          title,
+          detail: held ?? fetchReason(local.failure, repository, login),
+          details: local.details,
+          actions:
+            local.failure === 'diskFull'
+              ? [{ label: 'Clear cache', do: { kind: 'clearCache' } }]
+              : local.failure === 'auth'
+                ? [{ label: 'Sign in with GitHub…', do: { kind: 'signIn' } }]
+                : held === undefined
+                  ? [retry]
+                  : [],
+        },
+      };
+    }
+    default:
+      local satisfies never;
+      return undefined;
+  }
 }
 
 /**
@@ -393,10 +444,12 @@ function fetchReason(
       return 'This revision’s commit is no longer on GitHub.';
     case 'tooLarge':
       return 'The download is too large.';
+    case 'other':
+      return explain({ kind: 'github' });
     case 'heldByTabs':
     case 'heldByServers':
     case 'tokenRefused':
-    case 'other':
+    case 'local':
       return undefined;
     default:
       failure satisfies never;
@@ -404,6 +457,46 @@ function fetchReason(
   }
 }
 
-function capitalized(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1);
+/** A revision as the tab's banner names it: its head, its number, and who pushed it. */
+export interface Pushed {
+  readonly head: string;
+  readonly number: number | null;
+  readonly pusher: string | null;
+}
+
+/**
+ * The tab's own banners, for a change to its pull request: a newer push than the one on screen,
+ * until it's shown or the reader dismisses it. `dismissed` is the newer push the reader dismissed.
+ * Where `revisions` name the push and who pushed it, the banner does too: "ravi-k pushed r5", with
+ * "Show r5". Otherwise it says the revision shown is out of date.
+ */
+export function bannersFor(
+  view: PullView | undefined,
+  dismissed?: string | null,
+  revisions?: readonly Pushed[],
+): BannerSpec[] {
+  const newer = view?.newer;
+  if (!newer || !view.shown || newer === dismissed) return [];
+  const pushed = revisions?.find((each) => each.head.toLowerCase() === newer.toLowerCase());
+  const reload: BannerDo = { kind: 'reload' };
+  const number = pushed?.number ?? null;
+  const pusher = pushed?.pusher ?? null;
+  if (number !== null && pusher !== null) {
+    return [
+      {
+        id: 'newer',
+        tone: 'info',
+        title: `${pusher} pushed r${number}`,
+        actions: [{ label: `Show r${number}`, do: reload }],
+      },
+    ];
+  }
+  return [
+    {
+      id: 'newer',
+      tone: 'info',
+      title: 'This revision is out of date',
+      actions: [{ label: 'Show latest', do: reload }],
+    },
+  ];
 }

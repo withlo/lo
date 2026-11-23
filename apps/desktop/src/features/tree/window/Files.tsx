@@ -10,7 +10,7 @@ import { currentMenu, openMenu } from '../../../window/commands/menus.tsx';
 import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { useViewedMarks } from '../../revisions/window/shared.ts';
 import { changeSetting, useSetting } from '../../settings/window/shared.ts';
-import { useTabState, type PullTab } from '../../tab/window/shared.ts';
+import { useBlocked, useTabState, type PullTab } from '../../tab/window/shared.ts';
 import { fileKey, PATH_LIMIT, type TreeState } from '../contract.ts';
 import { mode as modeSetting } from '../settings.ts';
 import { type FileThreads, useCounts } from './counts.ts';
@@ -195,6 +195,8 @@ export function Files({
   );
   const viewedCount = useViewedCount(tab.id);
   const loading = !state || (state.listing.kind === 'loading' && state.changes === null);
+  // A pull request the tab can't show has no files to wait for.
+  const none = useBlocked(tab.id);
   // While the diff holds the view it drew, the tree holds the rows it drew with it, taking no
   // input, so neither drops to what the next is still working out: the next come in together.
   const diffHolds = useTabState(diffHeld, tab.id);
@@ -216,7 +218,7 @@ export function Files({
       waiting={loading && !holding}
       note={noteOf(state, model?.omitted ?? 0)}
     >
-      {loading && !holding ? (
+      {none ? null : loading && !holding ? (
         <Loading />
       ) : (
         <FileTree

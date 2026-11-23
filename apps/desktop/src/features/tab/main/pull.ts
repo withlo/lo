@@ -133,7 +133,7 @@ export class PullTab {
    * has said: a poll's summary doesn't, so the header's guess from one isn't taken.
    */
   #fork: RepoRef | null | undefined;
-  /** When GitHub last confirmed what the header shows, for "saved" while offline. */
+  /** When GitHub last confirmed what the header shows, for "Checked 5 min ago" while it's stale. */
   #savedAt: number | undefined;
   #problem: Problem | undefined;
   /** Whether any account is signed in, as the last choice of account found. */
@@ -619,7 +619,6 @@ export class PullTab {
         this.#anonymousOfflineSince ??= now;
         this.#anonymousConnection = {
           kind: 'offline',
-          savedAt: null,
           retryAt,
           error: saidBy(error),
         };
@@ -908,9 +907,9 @@ export class PullTab {
       const status = poller.status();
       const since = status.offline?.since;
       if (since !== undefined && !this.#lasted(since)) {
-        return connectionOf(acting.login, { ...status, offline: undefined }, this.#savedAt);
+        return connectionOf(acting.login, { ...status, offline: undefined });
       }
-      return connectionOf(acting.login, status, this.#savedAt);
+      return connectionOf(acting.login, status);
     }
     const since = this.#anonymousOfflineSince;
     if (this.#anonymousConnection.kind === 'offline' && since !== undefined) {
@@ -939,16 +938,24 @@ export class PullTab {
   #view(): PullView {
     const latest = this.#latest;
     const shown = this.#shown;
+    const connection = this.#connection();
+    const problem = this.#problem ?? null;
+    // Only while what's shown may be out of date, so a read that confirms it changes nothing sent.
+    const stale = connection.kind !== 'live' && connection.kind !== 'limitLow';
+    const checked = this.#savedAt;
     return {
       id: this.id,
       loading:
         this.#opening !== undefined && this.#header === undefined && this.#problem === undefined,
       acting: this.#acting ?? null,
       header: this.#header ?? null,
-      connection: this.#connection(),
-      problem: this.#problem ?? null,
+      connection,
+      problem,
       shown: shown ?? null,
       newer: latest !== undefined && shown !== undefined && latest !== shown ? latest : null,
+      ...((stale || problem?.kind === 'failed') && checked !== undefined
+        ? { checked: Math.round(checked) }
+        : {}),
     };
   }
 

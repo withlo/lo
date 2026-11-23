@@ -336,8 +336,8 @@ export type Header = z.output<typeof header>;
 
 /**
  * How what a tab shows stands with GitHub, worst first: the account is signed out, the rate limit
- * is used up or GitHub asked Lo to slow down, GitHub can't be reached (what's shown is from
- * `savedAt`), or the rate limit is low, so Lo asks less often. `live` when none of these is so.
+ * is used up or GitHub asked Lo to slow down, GitHub can't be reached, or the rate limit is low, so
+ * Lo asks less often. `live` when none of these is so.
  */
 export const connection = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('live') }),
@@ -351,7 +351,6 @@ export const connection = z.discriminatedUnion('kind', [
   }),
   z.strictObject({
     kind: z.literal('offline'),
-    savedAt: time.nullable(),
     retryAt: time.nullable(),
     error: z.string(),
   }),
@@ -389,8 +388,8 @@ export type Problem = z.output<typeof problem>;
 
 /**
  * A pull request's tab as main has it, sent each time it changes: who it acts as, its header, how
- * it stands with GitHub, why it can't be shown, the head on screen, and a newer push on GitHub,
- * once there is one. The head on screen is the one GitHub had when the tab opened, and stays until
+ * it stands with GitHub, why it can't be shown, the head on screen, a newer push on GitHub, once
+ * there is one, and when GitHub last confirmed what's shown, while that may be out of date. The head on screen is the one GitHub had when the tab opened, and stays until
  * the newer push is loaded, so nothing moves under the reader. `loading` while Lo is still finding
  * out what to show, with nothing to show yet.
  */
@@ -403,6 +402,12 @@ export const pull = z.strictObject({
   problem: problem.nullable(),
   shown: oid.nullable(),
   newer: oid.nullable(),
+  /**
+   * When GitHub last confirmed what's shown, while what's shown may be out of date: offline, signed
+   * out, the rate limit reached, or its last read failed. Nothing while it's live, or before GitHub
+   * confirmed anything.
+   */
+  checked: time.optional(),
 });
 export type PullView = z.output<typeof pull>;
 
@@ -423,7 +428,8 @@ export type Files = z.output<typeof files>;
 /**
  * Why fetching the local copy failed, in `@lo/git`'s words, or that the disk is full, or that a
  * copy that can't be trusted is held open, by the repository's tabs or its language servers, so
- * it can't be made again yet.
+ * it can't be made again yet. `other` is a fetch from GitHub that failed for a reason Git didn't
+ * name; `local`, a failure on this computer, such as Git's own or the file system's.
  */
 export const fetchFailure = z.enum([
   'network',
@@ -440,6 +446,7 @@ export const fetchFailure = z.enum([
   'heldByTabs',
   'heldByServers',
   'other',
+  'local',
 ]);
 export type FetchFailure = z.output<typeof fetchFailure>;
 
@@ -456,7 +463,8 @@ export type Compared = z.output<typeof compared>;
  *
  * - `waiting` until Lo knows what to fetch and has git;
  * - `noGit` when Lo has no git it can run, with why, and how to get one;
- * - `fetching`, with what git is doing, on the `attempt`th try;
+ * - `fetching`, on the `attempt`th try, with how far git has got as it says it (`progress`),
+ *   once it has said;
  * - `ready`, with the head on screen, the base branch's tip it was fetched with, and where the
  *   pull request's changes start: where the two branched, or, for a stack's layer the stacks
  *   feature compares with another commit, `from`, where the head and that commit meet;

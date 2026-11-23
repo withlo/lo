@@ -455,7 +455,7 @@ test('⌃o and ⌃i walk the history of the tab on screen, and each tab keeps it
   ).toBe(0);
 });
 
-test('macOS’s File, View and Window menus list the pull request’s page and link, closing a tab, the panels, checked when shown, and stepping through tabs', async ({
+test('macOS’s File, View and Window menus list choosing an account, the pull request’s page and link, closing a tab, the panels, checked when shown, and stepping through tabs', async ({
   app,
   page,
 }) => {
@@ -479,6 +479,7 @@ test('macOS’s File, View and Window menus list the pull request’s page and l
   await expect
     .poll(items)
     .toEqual([
+      'File: Choose account… ',
       'File: Open on GitHub ',
       'File: Copy link ',
       'File: Close tab Command+W',

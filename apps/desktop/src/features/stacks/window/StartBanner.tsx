@@ -18,7 +18,7 @@ export function StartBanner({ tab }: { tab: PullTab }) {
     <Banner
       tone="info"
       title={offer.title}
-      actions={[{ label: offer.action, onClick: () => applyOffer(tab.id, offer) }]}
+      action={{ label: offer.action, onClick: () => applyOffer(tab.id, offer) }}
     />
   );
 }

@@ -145,6 +145,11 @@ export function revisionsOf(tab: string): ComparisonView | undefined {
   return views.get(tab);
 }
 
+/** Calls `listener` when any tab's revisions may have changed. Returns a function that stops it. */
+export function onRevisions(listener: () => void): () => void {
+  return views.subscribe(listener);
+}
+
 /** Tab `tab`'s revisions and what it compares, re-rendering as they change. */
 export function useRevisions(tab: string): ComparisonView | undefined {
   return useTabState(views, tab);

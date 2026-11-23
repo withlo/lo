@@ -13,6 +13,7 @@ import keys from '../keys.ts';
 import { follow } from './follow.ts';
 import { main } from './main.ts';
 import { moreStore, setMoreOpen } from './more.ts';
+import { choosable, chooseAccount } from './Notes.tsx';
 import { inStrip, movable, stepTab } from './order.ts';
 import { middleIds, panels, rightPanel, stepAmong, toggleRight, viewCounts } from './panels.ts';
 import { PullRequestTab } from './PullRequestTab.tsx';
@@ -119,6 +120,22 @@ async function openOnGithub(): Promise<void> {
   }
 }
 
+/** The banner row's button `kind`, "+1" or Dismiss, on the banner the tab on screen shows. */
+function bannerButton(kind: 'more' | 'dismiss'): HTMLElement | undefined {
+  const found = document.querySelectorAll<HTMLElement>(
+    `[data-lo-banners] [data-lo-banner="${kind}"]`,
+  );
+  return [...found].find((button) => button.closest('[inert]') === null);
+}
+
+/** Whether the banner on screen has the button `kind`, or why not. */
+function pressable(kind: 'more' | 'dismiss'): true | string {
+  if (bannerButton(kind)) return true;
+  const shown = document.querySelector('[data-lo-banners] :is([role="status"], [role="alert"])');
+  if (!shown) return 'No messages';
+  return kind === 'more' ? 'No other messages' : 'This message can’t be dismissed';
+}
+
 /** Whether the pull request on screen has a left panel to show, and shows it. */
 function leftShown(): boolean {
   const tab = pullOnScreen();
@@ -197,6 +214,22 @@ export default {
     previousView: { run: () => stepMiddle(-1), enabled: middleSteps },
     openOnGithub: { run: openOnGithub, enabled: linkable },
     copyLink: { run: copyLink, enabled: linkable },
+    // As a click on the banner's own button, which hands focus on as it does.
+    nextBanner: { run: () => bannerButton('more')?.click(), enabled: () => pressable('more') },
+    dismissBanner: {
+      run: () => bannerButton('dismiss')?.click(),
+      enabled: () => pressable('dismiss'),
+    },
+    chooseAccount: {
+      run: (target) => {
+        const tab = pullOnScreen();
+        if (typeof tab !== 'string') chooseAccount(tab, target.kind === 'row' ? target.row : null);
+      },
+      enabled: () => {
+        const tab = pullOnScreen();
+        return typeof tab === 'string' ? tab : choosable(tab);
+      },
+    },
     // Main closes the tab on screen as it has it, so two quick presses close two tabs.
     close: {
       run: (target) => main().close(target.kind === 'tab' ? { id: target.tab } : {}),
