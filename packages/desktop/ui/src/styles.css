@@ -831,8 +831,10 @@
     z-index: -1;
     border-radius: var(--lo-r-sm);
   }
+  /* A third of the ghost hover, so a tab under the pointer stays quieter than the one on screen,
+     the only one that looks current. */
   &:hover::before {
-    background-color: var(--lo-hover);
+    background-color: color-mix(in srgb, var(--lo-hover) 33%, transparent);
   }
 }
 

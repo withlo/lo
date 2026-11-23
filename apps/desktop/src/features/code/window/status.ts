@@ -27,6 +27,11 @@ export interface TrustFailure {
   readonly message: string;
   /** A name in `message` that's code, such as `settings.json`, which shows as code where it can. */
   readonly code?: string | undefined;
+  /**
+   * Whether it's a refusal of main's own, whose reason has no full stop where it's said as one, in
+   * the banner or a note; an error's body line adds it.
+   */
+  readonly refusal?: boolean | undefined;
   /** What GitHub, the settings file or the system said, as it came, for Details. */
   readonly details?: string | undefined;
   /** Whether what the settings file holds kept Lo from saving it, which editing the file fixes. */
@@ -128,6 +133,7 @@ export function busyLabel(status: Status): string | undefined {
 export function trustFailureWords(error: unknown): {
   message: string;
   code?: string;
+  refusal?: boolean;
   details?: string;
 } {
   if (!(error instanceof IpcError)) return { message: '' };
@@ -149,7 +155,7 @@ export function trustFailureWords(error: unknown): {
       // A refusal of main's own, such as the question already asked about another view, says
       // itself; the rest, whose cause isn't known, have their text behind Details.
       return error.code === 'asking'
-        ? { message: `Answer the question about ${error.message} first.` }
+        ? { message: `Answer the question about ${error.message} first`, refusal: true }
         : { message: '', details: said };
   }
 }

@@ -380,7 +380,10 @@ export function heardWatched(watched: Watched): void {
     tab?.kind === 'pull' && pullKey(tab.owner, tab.repo, tab.number) === key ? tab : undefined;
   if (here) return;
   const words = watchedWords(watched, undefined, () => undefined);
-  notify(withoutBidi(`#${watched.number}: ${words.title}`), withoutBidi(words.detail ?? ''));
+  // Auto-merge left on is a failure; the rest is news that wants a look.
+  notify(withoutBidi(`#${watched.number}: ${words.title}`), withoutBidi(words.detail ?? ''), {
+    tone: words.tone === 'danger' ? 'danger' : 'warning',
+  });
 }
 
 /** Dismisses what the auto-merge watch said of the pull request `key` names. */

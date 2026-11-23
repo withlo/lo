@@ -413,6 +413,7 @@ describe('asking to trust', () => {
   });
 
   it('says so when main is asking about another repo, and asks it again once pressed again', async () => {
+    // A refusal's reason, as an error's body line in the details: a sentence, with its full stop.
     const shown = await open(offItem('t8'));
     const elsewhere = 'Answer the question about rozed-dev/other first.';
     answerTrust = () => {

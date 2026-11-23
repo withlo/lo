@@ -2,6 +2,8 @@
 // chose, the row the keyboard is on and the file on screen. Each is kept with its tab and goes when
 // the tab closes.
 
+import type { FileTreeRow } from '@lo/ui';
+
 import { tabState } from '../../tab/window/shared.ts';
 import {
   type Changed,
@@ -40,6 +42,20 @@ export interface Held {
  * compared, leaves it behind.
  */
 export const held = tabState<Held | undefined>(() => undefined);
+
+/**
+ * Whether each tab's diff holds the view it drew while the next is on its way: the tree holds the
+ * rows it drew too, and the next come in the frame the next view does.
+ */
+export const diffHeld = tabState<boolean>(() => false);
+
+/**
+ * The rows each tab's tree last drew while its diff held nothing, and whether they compared
+ * revisions: what it holds while the diff does, though the tab went off screen and came back.
+ */
+export const drawnRows = tabState<
+  { readonly rows: readonly FileTreeRow[]; readonly comparing: boolean } | undefined
+>(() => undefined);
 
 /** The folders main sent of a tab's tree, by key, for the commit they're of. */
 export interface Folders {

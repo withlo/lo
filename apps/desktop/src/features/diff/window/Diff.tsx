@@ -5,15 +5,18 @@
 // say of themselves changing doesn't reorder them under the reader. A new order, or other files,
 // is a new view, which puts the cursor's line back where it was on the page, or else what was at
 // the top of the screen. What's drawn stays while the next view's files load, or while main waits
-// for what they need, marked as at work in the diff bar, and the next takes its place in one Swap;
-// a tab that comes back on screen meanwhile draws it again, from what the loader kept of it. A view
-// is drawn before the frame it's first seen in, so a tab coming back on screen shows its code at
-// once.
+// for what they need, marked as at work in the diff bar and taking no input, with the bar's line
+// and the tree held with it; a tab that comes back on screen meanwhile draws it again, from what
+// the loader kept of it. The next is drawn in a layer of its own over it, unseen until its editors
+// have laid it out, and then takes its place in one Swap, in the frame the bar's line and the tree
+// change in: no frame shows the box empty. A view is drawn before the frame it's first seen in, so
+// a tab coming back on screen shows its code at once.
 // What arrives after it's drawn goes into the view in place (`drawing.ts`). The tree follows the
 // file on screen, and asks the diff to show the files it picks.
 
-import { HintButton, Spinner, Swap } from '@lo/ui';
+import { HintButton, Spinner, motionReduced, swapIn, whenSettled } from '@lo/ui';
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 
 import { Slot } from '../../../window/slots.tsx';
 import {
@@ -24,9 +27,9 @@ import {
 } from '../../revisions/window/shared.ts';
 import { useSetting } from '../../settings/window/shared.ts';
 import { MiddlePlaceholder, tabState, usePull, type PullTab } from '../../tab/window/shared.ts';
-import { orderIn, useOrderMode } from '../../tree/window/shared.ts';
+import { holdTree, orderIn, useOrderMode } from '../../tree/window/shared.ts';
 import { layout as layoutSetting, whitespace as whitespaceSetting } from '../settings.ts';
-import { draw, type Drawing, type Place } from './drawing.ts';
+import { draw, type DrawOptions, type Drawing, type Place } from './drawing.ts';
 import { inOrder, keepsBox, keptOrder, type KeptOrder, viewKey } from './files.ts';
 import type { Snapshot } from './loader.ts';
 import { usePage } from './page.ts';
@@ -98,7 +101,12 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
   const nonceValue = page?.nonce;
   const packaged = page?.packaged ?? true;
   const box = useRef<HTMLDivElement>(null);
+  /** The view on screen. */
   const view = useRef<Kept>(undefined);
+  /** The next view, drawn unseen over it until its editors have laid it out. */
+  const coming = useRef<{ made: Kept; frame: number }>(undefined);
+  /** Views the one on screen fades in over, until it has. */
+  const going = useRef(new Set<Kept>());
   useEffect(() => loader.setWhitespace(whitespace === 'show'), [loader, whitespace]);
   // The tab's places in the diff and the whole-file view, for `⌃o` and `⌃i`.
   useEffect(() => placesFor(tab.id), [tab.id]);
@@ -160,22 +168,23 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
   // Drawn before the frame it's first seen in. Until there's a view to draw, the one drawn stays,
   // held: it hears nothing more of the loader, which has started on the next, and takes no input.
   // A tab that comes back on screen meanwhile draws the one it had again, held, from what the
-  // loader kept of it. The next is drawn in the frame the last is taken down in, and fades in over
-  // it, in one Swap.
+  // loader kept of it. The next is drawn over it, unseen; once its editors have measured it, in the
+  // next frame, it fades in over it in one Swap, and the bar's line and the tree change with it.
   const drawable = key !== undefined && nonceValue !== undefined && settled;
-  /** What the view drawn shows, held or not, by its key: what the Swap names. */
+  const want = drawable ? key : undefined;
+  /** What the view on screen shows, held or not, by its key. */
   const [drawnKey, setDrawnKey] = useState<string>();
   const restorable =
-    !drawable && drawnKey === undefined && again !== undefined && nonceValue !== undefined;
-  const stale = (drawnKey !== undefined || restorable) && !drawable;
+    want === undefined && drawnKey === undefined && again !== undefined && nonceValue !== undefined;
+  const stale = restorable || (drawnKey !== undefined && drawnKey !== want);
   useLayoutEffect(() => {
     const parent = box.current;
     const drawing = latest.current;
-    if (!parent || nonceValue === undefined || !drawing.entries || key === undefined || !settled) {
+    dropComing(coming);
+    if (!parent || nonceValue === undefined || !drawing.entries || want === undefined) {
       const last = view.current;
       if (last) {
-        if (!last.stopped) last.stop();
-        last.stopped = true;
+        stop(last);
         return;
       }
       // Nothing drawn, as the tab comes back on screen before what's next is ready: the view it
@@ -183,8 +192,7 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
       const copy = loader.heldCopy();
       const kept = drawing.held;
       if (!parent || !copy || !kept || nonceValue === undefined) return;
-      const made: Kept = draw({
-        parent,
+      const made = drawIn(parent, {
         tab,
         loader: copy,
         entries: kept.entries,
@@ -199,22 +207,18 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
         marks: drawing.marks,
         held: true,
       });
-      made.stop();
-      made.stopped = true;
+      stop(made);
       view.current = made;
       setDrawnKey(kept.key);
       return;
     }
-    const at = key.slice(0, key.indexOf('|'));
+    const at = want.slice(0, want.indexOf('|'));
     // Another comparison than the last view's: the cursor's file at the top, if this one has it.
     const before = places.get(tab.id);
     const last = compared.get(tab.id);
     const another = last !== undefined && last !== drawing.comparison;
     compared.set(tab.id, drawing.comparison);
-    const replaced = view.current;
-    if (replaced) takeDown(replaced);
-    const made: Kept = draw({
-      parent,
+    const made = drawIn(parent, {
       tab,
       loader,
       entries: drawing.entries,
@@ -229,10 +233,26 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
       onTop: another ? cursorFile(before) : undefined,
       marks: drawing.marks,
     });
-    view.current = made;
-    setDrawnKey(key);
+    const under = view.current;
+    if (!under) {
+      // The first is just there.
+      view.current = made;
+      setDrawnKey(want);
+      return;
+    }
+    // Over the view on screen, unseen, until the editors have measured it in the next frame; then
+    // in its place, with the bar's line and the tree, before that frame is drawn.
+    made.layer.classList.add(...UNSEEN);
+    const frame = requestAnimationFrame(() => {
+      coming.current = undefined;
+      view.current = made;
+      flushSync(() => setDrawnKey(want));
+      made.layer.classList.remove(...UNSEEN);
+      fadeOver(made, under, going.current);
+    });
+    coming.current = { made, frame };
     // A new view only for new files, or a new order of them; one held, as the tab comes back.
-  }, [key, nonceValue, settled, restorable]);
+  }, [want, nonceValue, restorable]);
 
   // The box stays while a view is drawn in it, held or not, until there's nothing to draw and the
   // loader has said why: a wait for what's next, such as the local copy, leaves the view held.
@@ -240,19 +260,20 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
   const revisionsOf = useRevisions(tab.id);
   const said = waitingSays(snapshot, pull, revisionsOf);
   const showsBox = keepsBox({ drawable, held: stale, said, waiting: snapshot.state?.waiting });
+  const holding = stale && showsBox;
   useLayoutEffect(() => {
     if (showsBox) return;
-    const last = view.current;
-    view.current = undefined;
-    if (last) takeDown(last);
+    takeAllDown(view, coming, going.current);
     setDrawnKey(undefined);
   }, [showsBox]);
+  // The tree holds the rows it drew while the diff holds its view, and changes with it.
+  useLayoutEffect(() => {
+    holdTree(tab.id, holding);
+  }, [holding, tab.id]);
   // Taken down with the tab.
   useLayoutEffect(
     () => () => {
-      const last = view.current;
-      view.current = undefined;
-      if (last) takeDown(last);
+      takeAllDown(view, coming, going.current);
     },
     [],
   );
@@ -288,25 +309,26 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
         slot={notes}
         props={{
           tab,
+          held: holding,
           end: (
             <>
-              {stale && showsBox && <Spinner size="xs" />}
+              {holding && <Spinner size="xs" />}
               <ChangeJumps tab={tab.id} />
             </>
           ),
         }}
       />
       {showsBox ? (
-        <Swap id={drawnKey} keep className="flex min-h-0 flex-1 flex-col">
-          <div
-            ref={box}
-            className="min-h-0 flex-1"
-            data-lo-diff={tab.id}
-            data-lo-held={stale || undefined}
-            aria-busy={stale || undefined}
-            inert={stale}
-          />
-        </Swap>
+        // Each view is drawn in a layer of its own, the next over the last until it's in its place.
+        // The next, drawn, can take focus as it's drawn, unseen, so the box takes input again then.
+        <div
+          ref={box}
+          className="relative min-h-0 flex-1"
+          data-lo-diff={tab.id}
+          data-lo-held={stale || undefined}
+          aria-busy={stale || undefined}
+          inert={stale && want === undefined}
+        />
       ) : (
         <Waiting tab={tab} said={said} threads={saysWaiting} />
       )}
@@ -314,8 +336,53 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
   );
 }
 
-/** A view drawn, and whether it has stopped hearing the loader while it stays, stale. */
-type Kept = Drawing & { stopped?: boolean };
+/**
+ * A view drawn, in its layer of the box, and whether it has stopped hearing the loader while it
+ * stays, stale.
+ */
+type Kept = Drawing & { layer: HTMLElement; stopped?: boolean };
+
+/** A view's layer: the whole box, over the page, so the one under it shows nowhere through it. */
+const LAYER = 'absolute inset-0 bg-bg';
+
+/** A layer drawn but not yet seen, over the view on screen. */
+const UNSEEN = ['opacity-0', 'pointer-events-none'];
+
+/** Draws a view in a new layer of `parent`, over whatever's there. */
+function drawIn(parent: HTMLElement, options: Omit<DrawOptions, 'parent'>): Kept {
+  const layer = document.createElement('div');
+  layer.className = LAYER;
+  parent.append(layer);
+  return Object.assign(draw({ ...options, parent: layer }), { layer });
+}
+
+/**
+ * Brings `made` in over `under`, the view it takes the place of, which takes no more input: in a
+ * Swap, after which `under` goes, or at once where moves are off. `going` holds the views a Swap
+ * still runs over, which go at once as another starts.
+ */
+function fadeOver(made: Kept, under: Kept, going: Set<Kept>): void {
+  for (const each of going) takeDown(each);
+  going.clear();
+  stop(under);
+  under.layer.inert = true;
+  under.layer.setAttribute('aria-hidden', 'true');
+  if (motionReduced()) {
+    takeDown(under);
+    return;
+  }
+  going.add(under);
+  swapIn(made.layer);
+  whenSettled(made.layer, () => {
+    if (going.delete(under)) takeDown(under);
+  });
+}
+
+/** Stops a view hearing the loader, which has started on the next. */
+function stop(made: Kept): void {
+  if (!made.stopped) made.stop();
+  made.stopped = true;
+}
 
 /** The view drawn, unless it's stale: what comes now is the next one's, and isn't for it. */
 function live(made: Kept | undefined): Kept | undefined {
@@ -324,9 +391,32 @@ function live(made: Kept | undefined): Kept | undefined {
 
 /** Takes a view off the page, stopping it first unless it has stopped already. */
 function takeDown(made: Kept): void {
-  if (!made.stopped) made.stop();
-  made.stopped = true;
+  stop(made);
   made.view.destroy();
+  made.layer.remove();
+}
+
+/** Takes down the view `coming`, unseen yet, if there is one. */
+function dropComing(coming: { current: { made: Kept; frame: number } | undefined }): void {
+  const next = coming.current;
+  if (!next) return;
+  coming.current = undefined;
+  cancelAnimationFrame(next.frame);
+  takeDown(next.made);
+}
+
+/** Takes down every view in the box: the one on screen, the one coming and those going. */
+function takeAllDown(
+  view: { current: Kept | undefined },
+  coming: { current: { made: Kept; frame: number } | undefined },
+  going: Set<Kept>,
+): void {
+  dropComing(coming);
+  for (const each of going) takeDown(each);
+  going.clear();
+  const last = view.current;
+  view.current = undefined;
+  if (last) takeDown(last);
 }
 
 /** What makes a view of `ready`'s files, in the order of `entries`, a new one. */

@@ -46,7 +46,8 @@ export function ServerItems({ tab }: { tab: PullTab }) {
             failure: failure
               ? {
                   title: failureTitle(status, failure),
-                  message: failure.message,
+                  // As an error's body line, a refusal's reason ends as a sentence does.
+                  message: failure.refusal === true ? `${failure.message}.` : failure.message,
                   code: failure.code,
                   details: failure.details,
                   fix: failure.file

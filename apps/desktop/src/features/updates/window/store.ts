@@ -25,6 +25,11 @@ export interface UpdatesWindowState {
   readonly checkedAt: number | undefined;
   /** Why the last check Settings asked for failed, when it did. */
   readonly failed: Failed | undefined;
+  /**
+   * The offer is in view under Settings › About's Lo row, which says it whole, so its toast steps
+   * aside meanwhile rather than say it twice.
+   */
+  readonly offerInView: boolean;
 }
 
 export const updatesStore = createStore<UpdatesWindowState>()(() => ({
@@ -35,6 +40,7 @@ export const updatesStore = createStore<UpdatesWindowState>()(() => ({
   checking: false,
   checkedAt: undefined,
   failed: undefined,
+  offerInView: false,
 }));
 
 /** Shows where updates stand, as main says. */

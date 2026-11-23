@@ -20,7 +20,8 @@ export interface ContextMenuItem {
   readonly shortcut?: string | undefined;
   /**
    * Why it can't be done now. The item is greyed, says so, and does nothing when chosen; the
-   * arrows still reach it, so its reason can be read.
+   * arrows still reach it, so its reason can be read. `''` greys it with nothing to say, where
+   * the greyed label says it all: Back with nowhere to go.
    */
   readonly disabled?: string | undefined;
 }
@@ -170,13 +171,13 @@ export function ContextMenu({
                   >
                     <span className="flex min-w-0 flex-1 flex-col">
                       <span>{item.label}</span>
-                      {item.disabled !== undefined && (
+                      {item.disabled && (
                         <span className="text-fg-muted text-micro">{item.disabled}</span>
                       )}
                     </span>
                     {item.keys && item.keys.length > 0 && (
                       // On the label's line, where it is in a row with no reason under it.
-                      <span className={keyBox({ reason: item.disabled !== undefined })}>
+                      <span className={keyBox({ reason: Boolean(item.disabled) })}>
                         <Key
                           keys={item.keys}
                           decorative

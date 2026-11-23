@@ -105,7 +105,7 @@ test.describe('on the welcome screen', () => {
     // The step says so, and nothing else says it again.
     await expect(step(page)).toContainText('Installed');
     await expect(step(page).getByRole('button')).toHaveCount(0);
-    await expect(toast(page, 'Installed the overview skill')).toHaveCount(0);
+    await expect(toast(page, 'Installed overview skill')).toHaveCount(0);
     expect(isSkill(claudeSkill(home))).toBe(true);
     expect(existsSync(join(home, '.agents'))).toBe(false);
   });
@@ -215,7 +215,7 @@ test.describe('as a command', () => {
     await expect(option.locator('kbd')).toHaveCount(0);
     await page.keyboard.press('Enter');
     await expect(palette).toBeHidden();
-    await expect(toast(page, 'Installed the overview skill')).toBeVisible();
+    await expect(toast(page, 'Installed overview skill')).toBeVisible();
     expect(isSkill(claudeSkill(home))).toBe(true);
     expect(existsSync(join(home, '.agents'))).toBe(false);
   });
@@ -239,7 +239,7 @@ test.describe('as a command', () => {
       );
       item?.click({ triggeredByAccelerator: false });
     });
-    await expect(toast(page, 'Installed the overview skill')).toBeVisible();
+    await expect(toast(page, 'Installed overview skill')).toBeVisible();
     expect(isSkill(claudeSkill(home))).toBe(true);
     expect(existsSync(join(home, '.agents'))).toBe(false);
   });

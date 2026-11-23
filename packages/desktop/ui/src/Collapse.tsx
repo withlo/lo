@@ -131,9 +131,11 @@ export function Swap({ id, keep = false, children, className }: SwapProps) {
 
 /**
  * Starts the Swap move on `element` afresh, and takes it off once it has run, so the box's own
- * classes stay as React drew them. Returns a function that stops listening for its end.
+ * classes stay as React drew them: for an element drawn outside React, such as a code view, laid
+ * over what it replaces, which goes once the move has run. Returns a function that stops
+ * listening for its end.
  */
-function swapIn(element: HTMLElement): () => void {
+export function swapIn(element: HTMLElement): () => void {
   element.classList.remove(SWAP_CLASS);
   // Read once, so the move starts again rather than going on from where the last one was.
   void element.getBoundingClientRect();

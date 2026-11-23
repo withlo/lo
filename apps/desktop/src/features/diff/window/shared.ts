@@ -45,9 +45,11 @@ export type { DiffThreads, DrawnDiff, ThreadCounts, ThreadedFile, Threader } fro
 /**
  * Over a pull request's tab's diff, the same height from its first frame on: a note on what it
  * compares, such as "r3 → r5, since you last looked". A view here draws one line, so what's below
- * never moves when its text changes, and ends it with `end`, the diff's own controls.
+ * never moves when its text changes, and ends it with `end`, the diff's own controls. While the
+ * diff is `held`, drawn as it was while the next is on its way, the line stays as it was too, and
+ * changes in the frame the next view comes in.
  */
-export const notes = defineSlot<{ tab: PullTab; end?: ReactNode }>('diff.notes');
+export const notes = defineSlot<{ tab: PullTab; end?: ReactNode; held?: boolean }>('diff.notes');
 
 /**
  * Shows pull request's tab `tab`'s diff in its middle, as `` ` `` and `~` step to it, such as when

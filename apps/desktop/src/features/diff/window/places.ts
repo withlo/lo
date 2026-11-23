@@ -6,7 +6,7 @@
 
 import { KEY_EVENT, type Side, type Target } from '@lo/ui/commands';
 
-import { notify, withdraw } from '../../../window/commands/notices.tsx';
+import { refuse, withdraw } from '../../../window/commands/notices.tsx';
 import { here, registry } from '../../../window/commands/registry.ts';
 import {
   compareAgain,
@@ -19,7 +19,7 @@ import { fileKey, type TreePath } from '../../tree/contract.ts';
 import { onShowFile, pathOf } from '../../tree/window/shared.ts';
 import type { Version } from '../contract.ts';
 import { keyOf } from './loader.ts';
-import { drawnFor, loaderOf, revealWhenDrawn } from './tabs.ts';
+import { drawnFor, loaderOf, onDrawn, revealWhenDrawn } from './tabs.ts';
 import { drawnName, keepWanted, shown, wantPlace, wantThread } from './wanted.ts';
 import { changeAt, changedIn, DIFF_VIEW, known, opened, versionOf, WHOLE_VIEW } from './whole.ts';
 
@@ -103,11 +103,11 @@ export function showThread(tab: string, thread: string, when: ShowWhen): boolean
 const waiting = new Map<string, () => void>();
 
 /**
- * What the notes say while a place waits for the diff's files, and when the reader moves on before
- * they're read. One dropped as it waited too long says nothing more: the first note said why.
+ * What the note says while a place waits for the diff's files. The reader moving on before they're
+ * read isn't a failure: the note goes, and nothing more is said. One dropped as it waited too long
+ * says nothing more either: the note said why.
  */
-const WAITING = { title: 'Reading changed files…', body: '' };
-const STOPPED = 'Couldn’t read the changed files';
+const WAITING = 'Reading changed files…';
 
 /**
  * What the reader does that drops a place waiting for the diff's files, as they've moved on: a key,
@@ -124,8 +124,8 @@ const INPUT = [KEY_EVENT, 'pointerdown', 'wheel'] as const;
  * head, so it opens at the head. Without a line, the file's top. Where the tab was is recorded in
  * its history first, as a jump's place, and focus goes to the code. Until the diff's files are
  * known, which has the file isn't: a note says it waits for them, for up to `holdLimit()`. Past
- * that, or once the reader does anything else, it's dropped, and a note says so; a later place
- * asked for in the tab takes its place.
+ * that it's dropped; once the reader does anything else, it's dropped and the note goes with it. A
+ * later place asked for in the tab takes its place.
  */
 export function showPlace(
   tab: string,
@@ -141,23 +141,22 @@ export function showPlace(
     place(tab, path, line, marked, side);
     return;
   }
-  notify(WAITING.title, WAITING.body);
+  refuse(WAITING);
   const stop = () => {
     listening();
     clearTimeout(bound);
     for (const type of INPUT) window.removeEventListener(type, moved, true);
     if (waiting.get(tab) === stop) waiting.delete(tab);
   };
-  const drop = (why?: string) => {
+  const moved = () => {
     stop();
-    if (why !== undefined) notify(why, '');
+    withdraw(WAITING, '');
   };
-  const moved = () => drop(STOPPED);
-  const bound = setTimeout(() => drop(), holdLimit());
+  const bound = setTimeout(stop, holdLimit());
   const listening = loader.subscribe(() => {
     if (!loader.snapshot().state?.files) return;
     stop();
-    withdraw(WAITING.title, WAITING.body);
+    withdraw(WAITING, '');
     place(tab, path, line, marked, side);
   });
   // Not the key or click that asked for the place: the window has heard it already.
@@ -277,19 +276,47 @@ function revealWhole(tab: string, target: Target): boolean {
   return true;
 }
 
+/**
+ * Whether tab `tab`'s diff could still show `target`, in `within`, asked without showing it: a
+ * file the comparison on screen has, drawn or read. A place in another comparison is compared
+ * again first, and what can't be told counts as there: while another comparison is coming or the
+ * files load, as a diff held while the next one loads, where GitHub listed only some, or with one
+ * file drawn beside the overview.
+ */
+function inDiff(tab: string, target: Target, within: string | undefined): boolean {
+  if (within !== undefined && within !== comparisonHere(tab)) return true;
+  const file = placeOf(target)?.file;
+  const drawn = drawnFor(tab);
+  const { ready } = loaderOf(tab).snapshot();
+  if (file === undefined || !drawn || drawn.beside || !ready || ready.partial) return true;
+  if (comparisonComing(tab) !== undefined) return true;
+  return drawn.order.includes(file) || ready.entries.some((entry) => entry.id === file);
+}
+
 /** The tabs whose history can reveal places in the diff and the whole-file view. */
 const registered = new Set<string>();
+
+/** Stops dropping the places that are gone as each diff is drawn, once it's started. */
+let dropping: (() => void) | undefined;
 
 /**
  * Lets tab `tab`'s history reveal its places in the diff and the whole-file view for as long as
  * the tab is open, whichever of them is on screen: `⌃o` from a whole file goes back to the diff.
+ * As each diff is drawn, as when the comparison on screen changes or a push removes a file, the
+ * places it no longer has are dropped, so Back goes to the nearest one still there.
  */
 export function placesFor(tab: string): void {
   if (registered.has(tab)) return;
   registered.add(tab);
   const { history } = registry();
-  history.register(tab, 'diff', (target, within) => revealInDiff(tab, target, within));
+  history.register(
+    tab,
+    'diff',
+    (target, within) => revealInDiff(tab, target, within),
+    (target, within) => inDiff(tab, target, within),
+  );
   history.register(tab, 'file', (target) => revealWhole(tab, target));
+  dropping ??= onDrawn((id) => registry().history.dropGone(id));
 }
 
 /** Forgets the tabs that closed, those not in `open`: their history goes with them. */

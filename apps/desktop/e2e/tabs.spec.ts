@@ -415,13 +415,24 @@ test('⌃o and ⌃i walk the history of the tab on screen, and each tab keeps it
   await page.keyboard.press('Control+O');
   await expect.poll(revealed).toEqual(['first two.ts', 'first one.ts']);
 
-  // The second tab has been nowhere.
+  // The second tab has been nowhere: its Back and Forward are dimmed, and their keys do nothing.
   await page.keyboard.press(`${cmd}+Digit2`);
   await expect(shown(page)).toHaveText('b #2');
   await page.keyboard.press('Control+O');
-  await expect(said(page, "There's nowhere to go back to.")).toBeVisible();
   await page.keyboard.press('Control+I');
-  await expect(said(page, "There's nowhere to go forward to.")).toBeVisible();
+  // A right-click in the middle of the window, on nothing in particular, lists them.
+  const middle = await page.evaluate(() => ({ x: innerWidth / 2, y: innerHeight / 2 }));
+  await page.mouse.click(middle.x, middle.y, { button: 'right' });
+  const menu = page.getByRole('menu', { name: 'Actions' });
+  for (const name of ['Back', 'Forward']) {
+    await expect(menu.getByRole('menuitem', { name, exact: true })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+  }
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await expect.poll(revealed).toEqual(['first two.ts', 'first one.ts']);
 
   // Back in the first, forward goes where it went back from.
   await page.keyboard.press(`${cmd}+Digit1`);

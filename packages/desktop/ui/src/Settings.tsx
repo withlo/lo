@@ -361,7 +361,7 @@ export function SettingsCommand({
       <Button
         {...button}
         disabled={off !== undefined}
-        aria-describedby={off === undefined ? undefined : why}
+        aria-describedby={off ? why : undefined}
         hint={off ?? control.label}
         hintKeys={off === undefined ? control.keys : undefined}
         hintShortcut={off === undefined ? control.shortcut : undefined}
@@ -369,7 +369,7 @@ export function SettingsCommand({
       >
         {children ?? control.label}
       </Button>
-      {off !== undefined && (
+      {off && (
         <span id={why} className="sr-only">
           {off}
         </span>

@@ -1,7 +1,17 @@
 // The overview skill's rows: the step on the welcome screen, and the rows in Settings ›
 // Integrations, for installing it and for the command that installs it from a terminal.
 
-import { Button, Key, keyAria, Problem, Setting, SetupItem } from '@lo/ui';
+import {
+  Button,
+  CopyFaces,
+  CopyStatus,
+  Key,
+  keyAria,
+  Problem,
+  Setting,
+  SetupItem,
+  Ticks,
+} from '@lo/ui';
 import { Fragment, useEffect } from 'react';
 import { useStore } from 'zustand';
 
@@ -11,11 +21,13 @@ import { keyOf } from './labels.ts';
 import {
   checkSkill,
   copyInstallCommand,
+  drawCopyButton,
+  FAILED,
   INSTALL_COMMAND,
   installSkill,
   skillStore,
 } from './skill.ts';
-import { ABOUT, installedEverywhere, installLabel, standing } from './words.ts';
+import { ABOUT, installedEverywhere, installLabel, notSetUp, standing } from './words.ts';
 
 function SkillIcon() {
   return (
@@ -77,11 +89,7 @@ const install = () => void installSkill(undefined, 'row');
 /** An install main couldn't be asked for, on the row that asked, with a way to try again. */
 function InstallFailed({ details }: { details: string }) {
   return (
-    <Problem
-      title="Couldn’t install the overview skill"
-      action={{ label: 'Try again', onClick: install }}
-      details={details}
-    />
+    <Problem title={FAILED} action={{ label: 'Try again', onClick: install }} details={details} />
   );
 }
 
@@ -101,11 +109,20 @@ export function SkillStep() {
         failed !== undefined ? (
           <InstallFailed details={failed} />
         ) : stopped.length > 0 ? (
-          <p className="text-fg-muted text-small">{stopped.join(' ')}</p>
+          <p className="text-fg-muted text-small">
+            <Ticks text={stopped.join(' ')} />
+          </p>
         ) : undefined
       }
     >
-      <Button size="sm" busy={installing} working="Installing…" onClick={install}>
+      <Button
+        size="sm"
+        busy={installing}
+        working="Installing…"
+        disabled={notSetUp(state) !== undefined}
+        hint={notSetUp(state)}
+        onClick={install}
+      >
         Install
       </Button>
     </SetupItem>
@@ -138,7 +155,9 @@ function Skill({ label, description }: { label: string; description: string }) {
                     {each.why !== undefined && (
                       <>
                         {' '}
-                        <span className="block">{each.why}</span>
+                        <span className="block">
+                          <Ticks text={each.why} />
+                        </span>
                       </>
                     )}
                   </li>
@@ -149,7 +168,13 @@ function Skill({ label, description }: { label: string; description: string }) {
         )
       }
     >
-      <Button busy={installing} working="Installing…" onClick={install}>
+      <Button
+        busy={installing}
+        working="Installing…"
+        disabled={notSetUp(state) !== undefined}
+        hint={notSetUp(state)}
+        onClick={install}
+      >
         {installLabel(state)}
       </Button>
     </Setting>
@@ -174,7 +199,8 @@ function InstallCommand({ label, description }: { label: string; description: st
   useKeys();
   const copied = useStore(skillStore, (state) => state.copied);
   useEffect(() => {
-    skillStore.setState({ copied: false });
+    skillStore.setState({ copied: undefined });
+    return drawCopyButton();
   }, []);
   const keys = keyOf('overview.copyInstallCommand');
   return (
@@ -184,18 +210,11 @@ function InstallCommand({ label, description }: { label: string; description: st
       below={<span className="break-all text-fg code-small select-all">{INSTALL_COMMAND}</span>}
     >
       <Button {...keyAria(keys, undefined)} onClick={() => void copyInstallCommand()}>
-        {/* Both labels take the room of the longer, so the button and the row hold still. */}
-        <span className="inline-grid justify-items-center">
-          <span className="col-start-1 row-start-1">{copied ? 'Copied' : 'Copy'}</span>
-          <span className="invisible col-start-1 row-start-1" aria-hidden="true">
-            Copied
-          </span>
-        </span>
+        {/* Each face takes the room of the widest, so the button and the row hold still. */}
+        <CopyFaces said={copied}>Copy</CopyFaces>
         {keys !== undefined && <Key keys={keys} quiet decorative />}
       </Button>
-      <span role="status" className="sr-only">
-        {copied ? 'Copied the command.' : ''}
-      </span>
+      <CopyStatus said={copied} />
     </Setting>
   );
 }

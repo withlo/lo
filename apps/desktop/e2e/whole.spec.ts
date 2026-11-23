@@ -250,6 +250,26 @@ test('a file the pull request leaves alone opens whole from the tree, and Back r
   expect(refused).toEqual([]);
 });
 
+test('a file opened whole from the tree while the overview shows has a Back to it', async ({
+  page,
+}) => {
+  const refused = refusals(page);
+  await drawn(page);
+  // The overview, the view before the diff.
+  await page.locator('[data-lo-middle]').focus();
+  await press(page, '~');
+  const overview = page.locator('[data-lo-middle-view="overview.view"]');
+  await expect(overview).toBeVisible();
+  await row(page, 'README.md').click();
+  await expect(code(page)).toContainText('# App fixture');
+  const back = whole(page).getByRole('button', { name: /^Back/ });
+  await expect(back).not.toHaveAttribute('aria-disabled', 'true');
+  await back.click();
+  await expect(overview).toBeVisible();
+  await expect(code(page)).toBeHidden();
+  expect(refused).toEqual([]);
+});
+
 test('the finder’s ⌘⏎ opens any file whole, and ~ and ` step only through the views the header lists', async ({
   page,
 }) => {

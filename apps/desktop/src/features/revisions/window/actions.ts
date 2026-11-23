@@ -1,9 +1,9 @@
 // What the revisions' keys do: open the picker on the pull request on screen, move in it, set an
 // end, and compare. A comparison goes to main, which says once it's on screen.
 
-import { notify } from '../../../window/commands/notices.tsx';
 import { activeTab } from '../../tab/window/shared.ts';
 import type { Compared } from '../contract.ts';
+import { compareFailed } from './failed.ts';
 import { main } from './main.ts';
 import {
   comparedOf,
@@ -99,7 +99,7 @@ async function compare(id: string, compared: Compared): Promise<void> {
   try {
     await main().compare({ id, ...compared });
   } catch (error) {
-    notify('Compare revisions', error instanceof Error ? error.message : String(error));
+    compareFailed(view, compared, error);
   }
 }
 

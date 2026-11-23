@@ -21,7 +21,7 @@ import {
 } from 'react';
 
 import { useMenuTarget } from '../../../window/commands/menus.tsx';
-import { setMiddle } from '../../../window/commands/registry.ts';
+import { registry, setMiddle } from '../../../window/commands/registry.ts';
 import { DiffBeside, showDiff } from '../../diff/window/shared.ts';
 import { afterHold } from '../../revisions/window/shared.ts';
 import { useKnownSetting } from '../../settings/window/shared.ts';
@@ -258,9 +258,11 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
     if (own && !placed && focusIsFree(own)) take();
     return setMiddle({
       focus: take,
+      // The block the reader is at, or with none, the overview itself: a file opened from here
+      // still has a way back.
       here: () => {
         const now = drawnIn(tab.id);
-        return now && hereIn(now);
+        return (now && hereIn(now)) ?? { view: 'overview', at: NO_TARGET };
       },
       escape: () => {
         if (closeCards()) return true;
@@ -277,6 +279,8 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
     const element = root.current;
     if (!shown || waiting || !tree || generation === undefined || !element) return undefined;
     trees.set(tab.id, generation);
+    // The places in blocks this overview doesn't have are gone from the tab's history.
+    registry().history.dropGone(tab.id);
     const drawn: DrawnOverview = {
       tab: tab.id,
       tree,

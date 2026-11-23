@@ -1,6 +1,7 @@
 import { handlers } from '@lo/ui/commands';
 import { createElement } from 'react';
 
+import { announce, fail } from '../../../window/commands/notices.tsx';
 import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
 import { defineView } from '../../../window/slots.tsx';
@@ -136,10 +137,18 @@ export default {
       },
     },
     copyPath: {
+      // Said in a note, as no button in view says it.
       run: async (target) => {
         const tab = pullOnScreen();
         const path = typeof tab === 'string' ? pathOfKey(target.file) : pathOf(tab.id, target.file);
-        await tabs().copy({ text: path.text });
+        try {
+          await tabs().copy({ text: path.text });
+        } catch (error) {
+          console.error("Lo couldn't copy the path:", error);
+          fail('Couldn’t copy the path', error instanceof Error ? error.message : undefined);
+          return;
+        }
+        announce('Copied path');
       },
     },
     openOnGithub: {

@@ -72,7 +72,7 @@ describe('what the status bar says', () => {
     expect(notYet({ kind: 'failed', failure: 'diskFull', details: 'the disk is full' })).toBe(
       'notFetched',
     );
-    expect(NOT_YET.notFetched).toBe('The local copy couldn’t be fetched');
+    expect(NOT_YET.notFetched).toBe('Can’t fetch the local copy');
     expect(
       notYet({ kind: 'ready', head: HEAD, base: HEAD, mergeBase: HEAD, offline: false }),
     ).toBeUndefined();

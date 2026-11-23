@@ -48,16 +48,14 @@ test('the palette runs the highlighted command with ⏎', async ({ page }) => {
 
 test('⌥⏎ in the palette shows the highlighted command in key help', async ({ page }) => {
   const palette = await openPalette(page);
-  await page.keyboard.type('forward');
-  await expect(palette.getByRole('option').first()).toContainText('Forward');
+  // Back and Forward, with nowhere to go, aren't offered.
+  await page.keyboard.type('every key');
+  await expect(palette.getByRole('option').first()).toContainText('Every key');
   await page.keyboard.press('Alt+Enter');
   await expect(palette).toBeHidden();
   const help = page.getByRole('dialog', { name: 'Every key' });
   await expect(help).toBeVisible();
-  await expect(help.locator('[aria-current="true"]')).toHaveAttribute(
-    'data-command',
-    'keys.forward',
-  );
+  await expect(help.locator('[aria-current="true"]')).toHaveAttribute('data-command', 'keys.help');
 });
 
 test('the palette says an action’s key as aria-keyshortcuts, with its key caps hidden', async ({

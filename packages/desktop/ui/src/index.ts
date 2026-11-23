@@ -134,7 +134,7 @@ export {
   type TooltipGroupProps,
   type TooltipProps,
 } from './Tooltip.tsx';
-export { Collapse, Swap, type CollapseProps, type SwapProps } from './Collapse.tsx';
+export { Collapse, Swap, swapIn, type CollapseProps, type SwapProps } from './Collapse.tsx';
 export { besideIn, handOffFocus, type FocusTarget } from './focus.ts';
 export { Problem, type ProblemAction, type ProblemProps, useDetails } from './Problem.tsx';
 export { Countdown, countdownSaid, countdownWords, type CountdownProps } from './Countdown.tsx';

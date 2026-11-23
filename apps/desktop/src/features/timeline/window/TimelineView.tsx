@@ -26,7 +26,7 @@ import {
   type ProblemAction,
   type TimelineHidden,
 } from '@lo/ui';
-import { keyLabels, NO_TARGET, setScopeSource } from '@lo/ui/commands';
+import { keyLabels, NO_TARGET, setScopeSource, type Entry } from '@lo/ui/commands';
 import {
   useEffect,
   useLayoutEffect,
@@ -56,6 +56,7 @@ import {
 import { showDiff } from '../../diff/window/shared.ts';
 import {
   MiddlePlaceholder,
+  showMiddle,
   usePull,
   useRunLayers,
   useTabState,
@@ -105,13 +106,27 @@ function focusIsFree(own: HTMLElement | null): boolean {
   );
 }
 
-/** While `shown`, makes `element` the middle view `Esc` gives focus back to, and gives it focus. */
-function useMiddle(shown: boolean, own: () => HTMLElement | null, focus: () => void): void {
+/** The id of the timeline among the tab's middle views. */
+export const TIMELINE_VIEW = 'timeline.view';
+
+/** The timeline as a place in its tab's history: it keeps no place within it. */
+const TIMELINE_HERE: Entry = { view: 'timeline', at: NO_TARGET };
+
+/**
+ * While `shown`, makes `element` the middle view `Esc` gives focus back to, and gives it focus,
+ * with `place` as where the tab is in it, for history.
+ */
+function useMiddle(
+  shown: boolean,
+  own: () => HTMLElement | null,
+  focus: () => void,
+  place?: Entry,
+): void {
   useEffect(() => {
     if (!shown) return undefined;
     if (focusIsFree(own())) focus();
-    return setMiddle({ focus, here: () => undefined });
-    // `own` and `focus` only read refs.
+    return setMiddle({ focus, here: () => place });
+    // `own` and `focus` only read refs, and `place` is the same throughout.
   }, [shown]);
 }
 
@@ -357,10 +372,16 @@ function Rows({ tab, shown, rows }: { tab: PullTab; shown: boolean; rows: readon
   const edits = useEditsOnPull(tab.id);
   useHolding(tab.id, shown, root, rows);
   useKeptRow(tab.id, rows);
+  // The timeline is a place in the tab's history, so a file opened from it has a way back.
+  useEffect(
+    () => registry().history.register(tab.id, 'timeline', () => showMiddle(tab.id, TIMELINE_VIEW)),
+    [tab.id],
+  );
   useMiddle(
     shown,
     () => root.current,
     () => list.current?.focus({ preventScroll: true }),
+    TIMELINE_HERE,
   );
   const { owner, repo, number } = tab;
   const pull = useMemo<PostPull>(() => ({ owner, repo, number }), [owner, repo, number]);
