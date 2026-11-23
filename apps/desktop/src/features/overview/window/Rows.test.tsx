@@ -221,6 +221,10 @@ describe('the welcome screen’s step', () => {
     expect(step()?.textContent).toContain(
       '~/.agents/skills/lo-overview holds another skill. Move it, then install again.',
     );
+    // A path is code.
+    expect(
+      [...(step()?.querySelectorAll('.code-small') ?? [])].map((each) => each.textContent),
+    ).toContain('~/.agents/skills/lo-overview');
     answers['overview.installSkill'] = () => {
       throw new IpcError('internal', 'overview.installSkill failed.');
     };

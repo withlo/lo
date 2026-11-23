@@ -43,6 +43,8 @@ afterEach(() => {
 });
 
 const status = () => document.querySelector('[role="status"]');
+/** The file a file place is in. */
+const fileOf = (at: { kind: string; file?: string }) => (at.kind === 'file' ? at.file : '');
 const region = () => document.querySelector('.toast-floating');
 
 /** A toast's parts, as a screen reader hears them in order. */
@@ -366,40 +368,51 @@ describe('a command that did nothing', () => {
     expect(notices()).toEqual([]);
   });
 
-  it('says why when Back or Forward finds what it would show gone', () => {
+  it('skips a place that’s gone, and with none left, dims Back and says nothing', () => {
     const { history } = registry();
-    let there = false;
-    history.register('', 'diff', () => there);
+    const gone = new Set<string>();
+    const shown: string[] = [];
+    history.register(
+      '',
+      'diff',
+      (at) => {
+        shown.push(fileOf(at) ?? '');
+        return true;
+      },
+      (at) => !gone.has(fileOf(at) ?? ''),
+    );
     history.record({ view: 'diff', at: { kind: 'file', file: 'a.ts' } });
     history.record({ view: 'diff', at: { kind: 'file', file: 'b.ts' } });
-    // Their files gone, as a push removes them: Back is ready, and finds nowhere to go.
-    expect(registry().enabled('keys.back', NO_TARGET)).toBe(true);
+    // A push removes b.ts: Back goes past it, to a.ts.
+    gone.add('b.ts');
     act(() => {
       registry().run('keys.back', NO_TARGET);
     });
-    expect(notices().map((note) => note.title)).toEqual(['What you saw before this is gone']);
-    there = true;
-    act(() => {
-      registry().run('keys.back', NO_TARGET);
-      registry().run('keys.back', NO_TARGET);
-    });
-    there = false;
+    expect(shown).toEqual(['a.ts']);
+    // Forward from a.ts has only b.ts, which is gone: it's dimmed, and says nothing when pressed.
+    expect(registry().enabled('keys.forward', NO_TARGET)).toBe('');
     act(() => {
       registry().run('keys.forward', NO_TARGET);
     });
-    expect(notices().at(-1)?.title).toBe('What you went back from is gone');
+    expect(shown).toEqual(['a.ts']);
+    expect(notices()).toEqual([]);
   });
 
-  it('says why when Back would go only where the cursor is now', () => {
+  it('skips where the cursor is, and with nowhere else, dims Back and says nothing', () => {
     const { history } = registry();
     const at = { view: 'diff', at: { kind: 'file', file: 'a.ts' } } as const;
     history.register('', 'diff', () => true);
     history.record(at);
-    const stop = setMiddle({ focus: () => undefined, here: () => at });
+    let cursor: typeof at | undefined;
+    const stop = setMiddle({ focus: () => undefined, here: () => cursor });
+    expect(registry().enabled('keys.back', NO_TARGET)).toBe(true);
+    // The cursor goes back to the place by hand: Back from there has nowhere to go.
+    cursor = at;
+    expect(registry().enabled('keys.back', NO_TARGET)).toBe('');
     act(() => {
       registry().run('keys.back', NO_TARGET);
     });
     stop();
-    expect(notices().map((note) => note.title)).toEqual(['You’re already where Back goes']);
+    expect(notices()).toEqual([]);
   });
 });

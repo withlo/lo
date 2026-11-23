@@ -76,7 +76,7 @@ describe('standing', () => {
 describe('standing, with what stops an install', () => {
   const link: SkillRefusal = { kind: 'link', path: '~/.claude/skills/lo-overview' };
   const LINK =
-    "~/.claude/skills/lo-overview is a link, and Lo doesn't install the skill through links. Remove it, then install again.";
+    "`~/.claude/skills/lo-overview` is a link, and Lo doesn't install the skill through links. Remove it, then install again.";
 
   it('says a skill reached through a link is installed, and that Lo can’t update it', () => {
     expect(standing(state({ installed: true, blocked: link }))[0]).toEqual({
@@ -92,7 +92,7 @@ describe('standing, with what stops an install', () => {
       { line: 'Claude Code · not installed', why: LINK },
       {
         line: 'Codex · not installed',
-        why: "~/.agents isn't a folder, so the skill can't go there. Remove it, then install again.",
+        why: '`~/.agents` is a file, not a folder. Remove it, then install again.',
       },
     ]);
   });
@@ -155,51 +155,51 @@ describe('refusalWords', () => {
     ],
     [
       { kind: 'link', path: '/h/.claude/skills/lo-overview' },
-      "/h/.claude/skills/lo-overview is a link, and Lo doesn't install the skill through links. Remove it, then install again.",
+      "`/h/.claude/skills/lo-overview` is a link, and Lo doesn't install the skill through links. Remove it, then install again.",
     ],
     [
       { kind: 'notFolder', path: '/h/.claude/skills/lo-overview' },
-      "/h/.claude/skills/lo-overview isn't a folder, so the skill can't go there. Remove it, then install again.",
+      '`/h/.claude/skills/lo-overview` is a file, not a folder. Remove it, then install again.',
     ],
     [
       { kind: 'notFile', path: '/h/.claude/skills/lo-overview/SKILL.md' },
-      "/h/.claude/skills/lo-overview/SKILL.md isn't a file, so the skill can't go there. Remove it, then install again.",
+      "`/h/.claude/skills/lo-overview/SKILL.md` isn't a file, so the skill can't go there. Remove it, then install again.",
     ],
     [
       { kind: 'otherSkill', path: '/h/skills/lo-overview', name: 'review' },
-      '/h/skills/lo-overview holds another skill, "review". Move it, then install again.',
+      '`/h/skills/lo-overview` holds another skill, "review". Move it, then install again.',
     ],
     [
       { kind: 'otherSkill', path: '/h/skills/lo-overview', name: null },
-      '/h/skills/lo-overview holds another skill. Move it, then install again.',
+      '`/h/skills/lo-overview` holds another skill. Move it, then install again.',
     ],
     [
       { kind: 'otherFiles', path: '/h/skills/lo-overview' },
-      "/h/skills/lo-overview holds files that aren't the skill's. Move them, then install again.",
+      "`/h/skills/lo-overview` holds files that aren't the skill's. Move them, then install again.",
     ],
     [
       failed({ code: 'EACCES', path: '~/.claude/skills' }),
-      "Lo doesn't have permission to use ~/.claude/skills. Change its permissions, then install again.",
+      "Lo doesn't have permission to use `~/.claude/skills`. Change its permissions, then install again.",
     ],
     [
       failed({ code: 'EPERM', path: null }),
-      "Lo doesn't have permission to use ~/.claude/skills. Change its permissions, then install again.",
+      "Lo doesn't have permission to use `~/.claude/skills`. Change its permissions, then install again.",
     ],
     [
       failed({ code: 'EROFS', path: '~/.claude' }),
-      "~/.claude is read-only, so the skill can't go there. Make it writable, then install again.",
+      "`~/.claude` is read-only, so the skill can't go there. Make it writable, then install again.",
     ],
     [
       failed({ code: 'ENOSPC', path: null }),
-      "The disk is full, so Lo couldn't write in ~/.claude/skills. Free some space, then install again.",
+      "The disk is full, so Lo couldn't write in `~/.claude/skills`. Free some space, then install again.",
     ],
     [
       failed({ code: 'EIO', path: null, detail: 'EIO: i/o error, mkdir.' }),
-      "Lo couldn't write in ~/.claude/skills: EIO: i/o error, mkdir. Fix that, then install again.",
+      "Lo couldn't write in `~/.claude/skills`: EIO: i/o error, mkdir. Fix that, then install again.",
     ],
     [
       failed({ code: null, path: null, detail: 'Something odd' }),
-      "Lo couldn't write in ~/.claude/skills: Something odd. Fix that, then install again.",
+      "Lo couldn't write in `~/.claude/skills`: Something odd. Fix that, then install again.",
     ],
   ];
 
@@ -247,7 +247,7 @@ describe('installWords', () => {
     expect(said.done).toBe('Installed overview skill for Claude Code');
     expect(said.failed).toEqual([
       {
-        title: 'Couldn’t install the overview skill for Codex',
+        title: 'Couldn’t install Codex’s overview skill',
         body: refusalWords(link, state()),
       },
     ]);
@@ -257,7 +257,7 @@ describe('installWords', () => {
     const said = installWords([{ kind: 'refused', agent: 'codex', why: link }], state());
     expect(said.done).toBeUndefined();
     expect(said.failed.map((each) => each.title)).toEqual([
-      'Couldn’t install the overview skill for Codex',
+      'Couldn’t install Codex’s overview skill',
     ]);
   });
 });

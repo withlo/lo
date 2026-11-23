@@ -11,6 +11,9 @@ function block(id: string): Entry {
   return { view: 'overview', at: { kind: 'block', block: id } };
 }
 
+/** The file a line place is in. */
+const fileOf = (at: Target) => (at.kind === 'line' ? at.at.file : '');
+
 /** A view that reveals whatever it's asked to and remembers it, like a live diff view. */
 function viewer(
   history: History,
@@ -252,5 +255,64 @@ describe('history', () => {
     stop();
     history.record(line('a.ts', 'new', 3));
     expect(heard).toBe(7);
+  });
+
+  test('drops the places a view says are gone, keeping the one the tab is at, and skips them', () => {
+    const history = new History();
+    const gone = new Set<string>();
+    const shown: string[] = [];
+    history.register(
+      '',
+      'diff',
+      (at) => {
+        shown.push(fileOf(at));
+        return true;
+      },
+      (at) => !gone.has(fileOf(at)),
+    );
+    for (const file of ['a.ts', 'b.ts', 'c.ts', 'd.ts']) history.record(line(file, 'new', 1));
+    expect(history.back()).toEqual(line('d.ts', 'new', 1));
+    expect(history.back()).toEqual(line('c.ts', 'new', 1));
+    // A push removes b.ts and d.ts, and c.ts, where the tab is: Back and Forward skip what's gone.
+    gone.add('b.ts');
+    gone.add('d.ts');
+    expect(history.canForward()).toBe(false);
+    expect(history.canBack()).toBe(true);
+    gone.add('c.ts');
+    let heard = 0;
+    history.subscribe(() => {
+      heard += 1;
+    });
+    history.dropGone('');
+    expect(heard).toBe(1);
+    // Gone from the list but the place the tab is at, which the walk goes on from.
+    expect(history.entries().map((entry) => fileOf(entry.at))).toEqual(['a.ts', 'c.ts']);
+    expect(history.back()).toEqual(line('a.ts', 'new', 1));
+    expect(shown).toEqual(['d.ts', 'c.ts', 'a.ts']);
+    // Left, c.ts goes too; then there's nothing more to drop, which says nothing.
+    history.dropGone('');
+    expect(history.entries().map((entry) => fileOf(entry.at))).toEqual(['a.ts']);
+    // Heard as it dropped them, as it went back, and as it dropped c.ts.
+    expect(heard).toBe(3);
+    history.dropGone('');
+    expect(heard).toBe(3);
+  });
+
+  test('skips a place that’s where the tab is now, either way', () => {
+    const history = new History();
+    viewer(history, '', 'diff');
+    history.record(line('a.ts', 'new', 1));
+    history.record(line('b.ts', 'new', 1));
+    // The cursor has gone back to a.ts by hand: Back from b.ts's end goes nowhere new.
+    const here = line('a.ts', 'new', 1);
+    expect(history.canBack(here)).toBe(true);
+    expect(history.back(here)).toEqual(line('b.ts', 'new', 1));
+    expect(history.canBack(here)).toBe(false);
+    expect(history.back(here)).toBeUndefined();
+    // Forward from b.ts goes to a.ts, kept as Back left it, unless the cursor is there already.
+    expect(history.canForward()).toBe(true);
+    expect(history.canForward(here)).toBe(false);
+    expect(history.forward(here)).toBeUndefined();
+    expect(history.forward()).toEqual(line('a.ts', 'new', 1));
   });
 });

@@ -21,7 +21,7 @@ import {
 } from 'react';
 
 import { useMenuTarget } from '../../../window/commands/menus.tsx';
-import { setMiddle } from '../../../window/commands/registry.ts';
+import { registry, setMiddle } from '../../../window/commands/registry.ts';
 import { DiffBeside, showDiff } from '../../diff/window/shared.ts';
 import { afterHold } from '../../revisions/window/shared.ts';
 import { useKnownSetting } from '../../settings/window/shared.ts';
@@ -279,6 +279,8 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
     const element = root.current;
     if (!shown || waiting || !tree || generation === undefined || !element) return undefined;
     trees.set(tab.id, generation);
+    // The places in blocks this overview doesn't have are gone from the tab's history.
+    registry().history.dropGone(tab.id);
     const drawn: DrawnOverview = {
       tab: tab.id,
       tree,

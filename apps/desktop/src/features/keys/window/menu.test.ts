@@ -7,7 +7,7 @@ import { defineCommands, handlers } from '@lo/ui/commands';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { menuStale } from '../../../window/commands/bar.ts';
-import { createRegistry } from '../../../window/commands/registry.ts';
+import { createRegistry, registry, setMiddle } from '../../../window/commands/registry.ts';
 import { installBridge } from '../../../window/test/bridge.ts';
 import { z } from 'zod';
 
@@ -62,6 +62,8 @@ const settle = () => new Promise<void>((resolve) => queueMicrotask(resolve));
 
 /** Whether the stand-in's item was enabled in the menu last sent. */
 const enabled = () => sent.at(-1)?.find((item) => item.id === 'stand.restart')?.enabled;
+/** Whether Back was enabled in the menu last sent. */
+const back = () => sent.at(-1)?.find((item) => item.id === 'keys.back')?.enabled;
 
 describe('the app menu', () => {
   it('is sent as the window starts, with a command that can’t run greyed', () => {
@@ -87,5 +89,27 @@ describe('the app menu', () => {
     await settle();
     expect(sent).toHaveLength(before + 2);
     expect(enabled()).toBe(false);
+  });
+
+  it('dims Back as the history and the cursor leave it nowhere to go, after the key or click that did', async () => {
+    const { history } = registry();
+    const at = { view: 'diff', at: { kind: 'file', file: 'a.ts' } } as const;
+    let cursor: typeof at | undefined;
+    const stop = setMiddle({ focus: () => undefined, here: () => cursor });
+    history.register('', 'diff', () => true);
+    history.record(at);
+    await settle();
+    expect(back()).toBe(true);
+    // The cursor goes to the one place before by a key: once it's let go, Back is dimmed.
+    cursor = at;
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'k' }));
+    await settle();
+    expect(back()).toBe(false);
+    // And by a click away from it, ready again.
+    cursor = undefined;
+    window.dispatchEvent(new Event('pointerup'));
+    await settle();
+    expect(back()).toBe(true);
+    stop();
   });
 });

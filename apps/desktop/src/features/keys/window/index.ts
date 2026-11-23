@@ -37,10 +37,13 @@ function syncMenu(menu: Client<typeof contract>): void {
   };
   registry().subscribe(soon);
   onMenuStale(soon);
-  // Back and Forward dim where the tab's history has nowhere to go.
+  // Back and Forward dim where the tab's history has nowhere to go, and where the cursor is counts:
+  // it moves with a key or a click, so the menu looks again after each.
   registry().history.subscribe(soon);
   window.addEventListener('focusin', soon);
   window.addEventListener('focusout', soon);
+  window.addEventListener('keyup', soon, true);
+  window.addEventListener('pointerup', soon, true);
   send();
 }
 
@@ -81,13 +84,6 @@ async function openKeymap(): Promise<void> {
   }
 }
 
-/** Why Back stays: the one place before is where the cursor is now. */
-const BACK_HERE = 'You’re already where Back goes';
-/** Why Back stays: each file or block it would show again is gone, as a push removes a file. */
-const BACK_GONE = 'What you saw before this is gone';
-/** Why Forward stays, the same way. */
-const FORWARD_GONE = 'What you went back from is gone';
-
 export default {
   commands: handlers(keys, {
     help: { run: toggleHelp },
@@ -103,23 +99,19 @@ export default {
       },
     },
     escape: { run: escapeToMiddle },
-    // With no history, Back and Forward are dimmed, which says it all: their keys do nothing, and
-    // say nothing. Whether they can run follows the history alone, which the app menu hears, not
-    // where the cursor is. Run, and finding nowhere to go after all, they say why.
+    // With nowhere to go, Back and Forward are dimmed, which says it all: their keys do nothing,
+    // and say nothing. A place that's gone, or that's where the cursor is, isn't somewhere to go.
     back: {
       run() {
-        const { history } = registry();
-        const at = here();
-        if (!history.canBack(at)) refuse(BACK_HERE);
-        else if (!history.back(at)) refuse(BACK_GONE);
+        registry().history.back(here());
       },
-      enabled: () => registry().history.canBack() || '',
+      enabled: () => registry().history.canBack(here()) || '',
     },
     forward: {
       run() {
-        if (!registry().history.forward()) refuse(FORWARD_GONE);
+        registry().history.forward(here());
       },
-      enabled: () => registry().history.canForward() || '',
+      enabled: () => registry().history.canForward(here()) || '',
     },
     // A file Lo won't open says why when asked, as any command that can't run does.
     openKeymap: { run: openKeymap, enabled: keymapOpenable },

@@ -1,7 +1,17 @@
 // The overview skill's rows: the step on the welcome screen, and the rows in Settings ›
 // Integrations, for installing it and for the command that installs it from a terminal.
 
-import { Button, CopyFaces, CopyStatus, Key, keyAria, Problem, Setting, SetupItem } from '@lo/ui';
+import {
+  Button,
+  CopyFaces,
+  CopyStatus,
+  Key,
+  keyAria,
+  Problem,
+  Setting,
+  SetupItem,
+  Ticks,
+} from '@lo/ui';
 import { Fragment, useEffect } from 'react';
 import { useStore } from 'zustand';
 
@@ -99,7 +109,9 @@ export function SkillStep() {
         failed !== undefined ? (
           <InstallFailed details={failed} />
         ) : stopped.length > 0 ? (
-          <p className="text-fg-muted text-small">{stopped.join(' ')}</p>
+          <p className="text-fg-muted text-small">
+            <Ticks text={stopped.join(' ')} />
+          </p>
         ) : undefined
       }
     >
@@ -143,7 +155,9 @@ function Skill({ label, description }: { label: string; description: string }) {
                     {each.why !== undefined && (
                       <>
                         {' '}
-                        <span className="block">{each.why}</span>
+                        <span className="block">
+                          <Ticks text={each.why} />
+                        </span>
                       </>
                     )}
                   </li>

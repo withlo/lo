@@ -19,7 +19,7 @@ import { fileKey, type TreePath } from '../../tree/contract.ts';
 import { onShowFile, pathOf } from '../../tree/window/shared.ts';
 import type { Version } from '../contract.ts';
 import { keyOf } from './loader.ts';
-import { drawnFor, loaderOf, revealWhenDrawn } from './tabs.ts';
+import { drawnFor, loaderOf, onDrawn, revealWhenDrawn } from './tabs.ts';
 import { drawnName, keepWanted, shown, wantPlace, wantThread } from './wanted.ts';
 import { changeAt, changedIn, DIFF_VIEW, known, opened, versionOf, WHOLE_VIEW } from './whole.ts';
 
@@ -276,19 +276,46 @@ function revealWhole(tab: string, target: Target): boolean {
   return true;
 }
 
+/**
+ * Whether tab `tab`'s diff could still show `target`, in `within`, asked without showing it: a
+ * file the comparison on screen has. A place in another comparison is compared again first, and
+ * what can't be told, as while the files load, GitHub listed only some, or one file is drawn beside
+ * the overview, counts as there.
+ */
+function inDiff(tab: string, target: Target, within: string | undefined): boolean {
+  if (within !== undefined && within !== comparisonHere(tab)) return true;
+  const file = placeOf(target)?.file;
+  const drawn = drawnFor(tab);
+  if (file === undefined || !drawn || drawn.beside || loaderOf(tab).snapshot().ready?.partial) {
+    return true;
+  }
+  return drawn.order.includes(file);
+}
+
 /** The tabs whose history can reveal places in the diff and the whole-file view. */
 const registered = new Set<string>();
+
+/** Stops dropping the places that are gone as each diff is drawn, once it's started. */
+let dropping: (() => void) | undefined;
 
 /**
  * Lets tab `tab`'s history reveal its places in the diff and the whole-file view for as long as
  * the tab is open, whichever of them is on screen: `⌃o` from a whole file goes back to the diff.
+ * As each diff is drawn, as when the comparison on screen changes or a push removes a file, the
+ * places it no longer has are dropped, so Back goes to the nearest one still there.
  */
 export function placesFor(tab: string): void {
   if (registered.has(tab)) return;
   registered.add(tab);
   const { history } = registry();
-  history.register(tab, 'diff', (target, within) => revealInDiff(tab, target, within));
+  history.register(
+    tab,
+    'diff',
+    (target, within) => revealInDiff(tab, target, within),
+    (target, within) => inDiff(tab, target, within),
+  );
   history.register(tab, 'file', (target) => revealWhole(tab, target));
+  dropping ??= onDrawn((id) => registry().history.dropGone(id));
 }
 
 /** Forgets the tabs that closed, those not in `open`: their history goes with them. */
