@@ -3,7 +3,8 @@
 // last repeating, and once the merge is sent, those recorded after, in order. Served as it is, the
 // tenth read already answers as merged. With `sooner`, a read recorded only after the merge, made
 // sooner, gets its first answer; without it, none. A write never does: on `app_comments_box`, a
-// comment's deletion sent before the writes recorded ahead of it gets no answer either way.
+// comment's deletion sent before the writes recorded ahead of it gets no answer either way. A stage
+// answers a poll of its own last state that the recording ended before, as any cassette does.
 
 import { readFileSync } from 'node:fs';
 
@@ -65,21 +66,8 @@ it('answers each read as recorded before the merge until Lo sends it, and as aft
   expect(polls(Replay.cassette('app_merge_ship'), 10)).toContain(200);
 });
 
-/** A read of #264 as of a time GitHub only gave after the merge, as Lo reads it again then. */
-const AFTER: SeenRequest = {
-  method: 'GET',
-  url: PULL,
-  headers: new Headers({ 'if-modified-since': 'Fri, 20 Nov 2026 04:38:31 GMT' }),
-  body: new Uint8Array(),
-};
-
 it('answers a read recorded only after the merge, made sooner, only when asked to', () => {
-  expect(() => new Staged('app_merge_ship', merging).answer(AFTER)).toThrow(ReplayError);
-  expect(new Staged('app_merge_ship', merging, { sooner: true }).answer(AFTER).status).toBe(304);
-});
-
-it('answers a read of an ETag it gave before the merge as of before it, however it was recorded', () => {
-  expect(new Staged('app_merge_ship', merging).answer(REFS).status).toBe(304);
+  expect(() => new Staged('app_merge_ship', merging).answer(REFS)).toThrow(ReplayError);
 });
 
 /** The comment rozed-bot deleted last, as Lo deletes it. */

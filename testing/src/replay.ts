@@ -36,10 +36,11 @@ export class ReplayError extends Error {
 
 /**
  * Serves a cassette's responses: each request gets the next response recorded for its key, and
- * once only one is left it's repeated, the steady state of a poll. A conditional read that
- * names a validator GitHub gave for a resource, but that the recording never sent, is answered as
- * GitHub would for the resource as the recording left it. A request with no recorded response, or
- * a GraphQL query that changed since it was recorded, throws a {@link ReplayError}.
+ * once only one is left it's repeated, the steady state of a poll. A conditional read the recording
+ * has no answer for, but that polls a resource the recording polled the same way, with the
+ * validator of the last state it recorded, gets a `304`, as GitHub answers a poll of a state that
+ * hasn't changed. A request with no recorded response, or a GraphQL query that changed since it
+ * was recorded, throws a {@link ReplayError}.
  */
 export class Replay {
   /** The cassette's name, for messages. */
@@ -139,12 +140,12 @@ export class Replay {
   }
 
   /**
-   * The answer to a conditional `GET` that names a validator, an ETag or a time, which GitHub gave
-   * for the resource but the recording never sent back: how many times an app polls depends on how
-   * long it runs, so a poll may come that the recording had ended before. It's answered as GitHub
-   * answers for the resource's last recorded state: a `304` when the validator is that state's,
-   * and that state's response when it's an earlier one's. A validator the recording never saw is
-   * as unrecorded as before.
+   * The `304` for a poll the recording ended before. How many times an app polls depends on how
+   * long it runs, so a poll may come after the last one recorded, carrying the ETag or time of the
+   * last answer it got, which no recorded request sent back. It's answered when the recording
+   * polled the resource with the same kind of condition, an ETag or a time, and the validator is
+   * the last recorded state's: that's what GitHub says of a state that hasn't changed. Anything
+   * else is a request the cassette has no answer for.
    */
   #unrecorded(request: SeenRequest): Response | undefined {
     const ifNoneMatch = request.headers.get('if-none-match');
@@ -156,33 +157,20 @@ export class Replay {
     const latest = answers?.findLast(({ response }) => response.status === 200);
     if (!answers || !latest) return undefined;
     // Like GitHub, the ETags decide when the request has any, and the time only when it hasn't.
-    let known: boolean;
     let current: boolean;
     if (ifNoneMatch !== null) {
-      const sent = etags(ifNoneMatch);
-      known =
-        sent.has('*') ||
-        answers.some(
-          ({ request: asked, response }) =>
-            shares(etags(asked.if_none_match), sent) || shares(etags(response.headers.etag), sent),
-        );
-      current = sent.has('*') || shares(etags(latest.response.headers.etag), sent);
+      if (!answers.some(({ request: asked }) => asked.if_none_match != null)) return undefined;
+      current = shares(etags(latest.response.headers.etag), etags(ifNoneMatch));
     } else {
+      if (!answers.some(({ request: asked }) => asked.if_modified_since != null)) return undefined;
       const since = Date.parse(ifModifiedSince ?? '');
-      if (Number.isNaN(since)) return undefined;
-      known = answers.some(
-        ({ request: asked, response }) =>
-          asked.if_modified_since === ifModifiedSince ||
-          response.headers['last-modified'] === ifModifiedSince,
-      );
-      const modified = Date.parse(latest.response.headers['last-modified'] ?? '');
-      current = modified <= since;
+      current = since === Date.parse(latest.response.headers['last-modified'] ?? '');
     }
-    if (!known) return undefined;
-    if (!current) return toResponse(latest.response);
-    // What GitHub says of a state that hasn't changed: its validators, and no content.
-    const headers = { ...latest.response.headers };
-    delete headers['content-type'];
+    if (!current) return undefined;
+    // What GitHub says of a state that hasn't changed: its validators and limits, and no content.
+    const headers = Object.fromEntries(
+      Object.entries(latest.response.headers).filter(([name]) => NOT_MODIFIED_HEADERS.test(name)),
+    );
     return toResponse({ status: 304, headers });
   }
 
@@ -202,6 +190,9 @@ export class Replay {
     return lines.join('\n');
   }
 }
+
+/** The headers of a `304` GitHub sends: the validators, and the API's version and limits. */
+const NOT_MODIFIED_HEADERS = /^(etag|last-modified|x-poll-interval|x-github-.*|x-ratelimit-.*)$/;
 
 /** The ETags in an `If-None-Match` or `ETag` header, weak or strong alike: without any `W/`. */
 function etags(header: string | null | undefined): Set<string> {

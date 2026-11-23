@@ -3,7 +3,8 @@
 // it's sent, those recorded after. However many polls come between, a read never gets an answer
 // from past a write Lo hasn't sent yet, nor one from before a write it has. With `sooner`, a read
 // first recorded after a write, which Lo may make sooner than the recording did, gets the first
-// answer recorded for it until then; a write never does.
+// answer recorded for it until then; a write never does. A stage answers a poll of its own last
+// state that the recording ended before, as any cassette does.
 
 import {
   cassette as recorded,
