@@ -156,6 +156,17 @@ it('skips the approval on your own pull request, says again after a dismissal, a
     'Add #138 to merge queue?',
     'Add to merge queue',
   ]);
+  // Where nothing follows either, the title says why, and promises no approval.
+  const titled = (likely: ShipPlan['likely']) => shipTitle(138, { ...own, likely });
+  expect([
+    titled({ kind: 'alreadyQueued' }),
+    titled({ kind: 'autoMergeAlreadyOn', waitingOn: [] }),
+    titled({ kind: 'stop', stop: { kind: 'noPermission' } }),
+  ]).toEqual([
+    '#138 is already in the merge queue',
+    'Auto-merge is already on for #138',
+    'Can’t merge #138',
+  ]);
   // Otherwise, approved already or not, and before it's planned, they name both.
   const approved = planOf({ approval: { kind: 'alreadyApproved' } });
   expect([shipTitle(138, approved), shipLabel(approved)]).toEqual([

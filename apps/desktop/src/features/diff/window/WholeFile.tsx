@@ -35,6 +35,7 @@ import {
   opened,
   type Opened,
   pathIn,
+  readAgain,
   readOf,
   reads,
   readWhole,
@@ -510,7 +511,17 @@ function Note({
       );
     case 'failed':
       return (
-        <Said title="Can’t show this file" actions={github}>
+        <Said
+          title="Can’t show this file"
+          actions={
+            <>
+              <Button variant="primary" onClick={() => readAgain(tab.id, path, wholeWork(tab.id))}>
+                Try again
+              </Button>
+              {github}
+            </>
+          }
+        >
           {content.why}
         </Said>
       );

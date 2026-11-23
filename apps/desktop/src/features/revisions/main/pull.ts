@@ -299,7 +299,7 @@ export class RevisionsTab {
     }
     if (!revisions) throw new IpcError('unavailable', 'Lo hasn’t read the revisions yet.');
     if (this.#info?.local.kind === 'noGit') {
-      throw new IpcError('unavailable', 'Comparing revisions needs git, which Lo can’t find.');
+      throw new IpcError('unavailable', 'Git wasn’t found');
     }
     const end = revisions.position(to);
     if (end === undefined) throw new IpcError('invalid', `${to} isn’t one of the revisions.`);

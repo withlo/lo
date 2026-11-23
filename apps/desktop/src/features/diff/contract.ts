@@ -178,9 +178,10 @@ export const contract = defineContract('diff', {
      * A whole file from the local copy, for its whole-file view: the head's version of the file at
      * `path` in the head on screen, `at`, or, for `old`, the base's version of a file the
      * comparison changes, by its path in the base. Main reads only those: a path the head's tree
-     * doesn't hold, or that no changed file had in the base, fails as `invalid`, and a head other
-     * than the one on screen as `moved`. A file larger than Lo loads at once comes only when
-     * `large` asks for it anyway.
+     * doesn't hold is refused as `missing`, one the base doesn't as `notInBase`, and one no changed
+     * file had in the base as `unchanged`; a head other than the one on screen fails as `moved`,
+     * and a local copy that couldn't be read as `unavailable`. A file larger than Lo loads at once
+     * comes only when `large` asks for it anyway.
      */
     whole: {
       input: z.strictObject({ id: tabId, at: oid, version, path: treePath, large: z.boolean() }),

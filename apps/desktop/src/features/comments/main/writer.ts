@@ -530,10 +530,7 @@ export class Writer {
     const key = this.#key(target, place);
     const kept = this.#options.drafts.get(login, pull, place);
     const base = kept?.base;
-    if (base == null) {
-      const message = 'The comment’s earlier text is missing.';
-      return Promise.resolve({ kind: 'refused', refusal: { kind: 'github', message } });
-    }
+    if (base == null) return Promise.resolve({ kind: 'refused', refusal: { kind: 'noBase' } });
     const stands = this.#standing(key, kept);
     if (stands === 'waiting' || stands === 'sending' || stands === 'checking') {
       return Promise.resolve({ kind: 'refused', refusal: { kind: 'busy' } });

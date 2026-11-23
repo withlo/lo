@@ -189,6 +189,13 @@ describe('the files panel', () => {
     );
     expect(container.querySelector('[data-key="README.md"]')).toBeNull();
   });
+
+  it('says a stack’s layer shows the first 300 of its changed files, as GitHub compares no more', () => {
+    const { container } = render({ ...LOCAL, partial: true, start: 'a'.repeat(40) });
+    expect(container.querySelector('[role="note"]')?.textContent).toBe(
+      'First 300 changed files shown',
+    );
+  });
 });
 
 describe('a click', () => {

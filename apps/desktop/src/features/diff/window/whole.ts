@@ -229,6 +229,17 @@ export function readWhole(
     .catch((error: unknown) => work.log('Lo couldn’t highlight a file:', error));
 }
 
+/**
+ * Reads tab `tab`'s whole file again, at `path`, as it last read it, once that read failed: what
+ * "Try again" does.
+ */
+export function readAgain(tab: string, path: TreePath, work: WholeWork): void {
+  const read = reads.get(tab);
+  if (read?.content.kind !== 'failed') return;
+  const { key, version, at, from, large } = read;
+  readWhole(tab, { key, version, path }, at, from, large, work);
+}
+
 /** What reading tab `tab`'s whole files asks of main and the background process. */
 export function wholeWork(tab: string): WholeWork {
   return {

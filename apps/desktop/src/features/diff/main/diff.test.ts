@@ -448,10 +448,12 @@ function sized(repo: Repo, size: number, contents: Buffer): Repo {
   return new Proxy(repo, {
     get(target, property) {
       if (property === 'readBlob') return () => Promise.resolve(contents);
-      if (property === 'fileVersion') {
-        return async (rev: Parameters<Repo['fileVersion']>[0], path: Uint8Array) => {
-          const found = await target.fileVersion(rev, path);
-          return found && { ...found, size };
+      if (property === 'fileVersions') {
+        return async (rev: Parameters<Repo['fileVersions']>[0], paths: readonly Uint8Array[]) => {
+          const found = await target.fileVersions(rev, paths);
+          return found.map((each) =>
+            each === undefined || each === 'folder' ? each : { ...each, size },
+          );
         };
       }
       const value: unknown = Reflect.get(target, property, target);
@@ -511,6 +513,24 @@ describe('a whole file', { timeout: 60_000 }, () => {
         why: 'missing',
       });
     }
+  });
+
+  it('fails, for the window to try again, when the local copy can’t say what’s at a path', async () => {
+    const repo = await e2eClone();
+    const broken = new Proxy(repo, {
+      get(target, property) {
+        if (property === 'fileVersions') return () => Promise.reject(new Error('bad pack'));
+        const value: unknown = Reflect.get(target, property, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    const { diff, settled } = diffTab({ clone: () => Promise.resolve(broken) });
+    diff.update(e2eInfo(READY));
+    await settled((each) => each.from === 'local');
+    await expect(diff.whole(APP_PULL.head, 'new', at('README.md'), false)).rejects.toMatchObject({
+      code: 'unavailable',
+      message: '',
+    });
   });
 
   it('waits for the local copy to have the head on screen', async () => {

@@ -33,6 +33,7 @@
     "default-case": "error",
     "lo/no-returned-never": "error",
     "lo/no-scroll-into-view": "error",
+    "lo/no-lo-subject": "error",
     "typescript/consistent-type-imports": "error",
     "typescript/no-explicit-any": "error",
     "import/no-cycle": "error"
@@ -73,6 +74,12 @@
       "files": ["**/e2e/**", "**/*.test.*"],
       "rules": {
         "lo/no-scroll-into-view": "off"
+      }
+    },
+    {
+      "files": ["**/e2e/**", "**/test/**", "**/*.test.*"],
+      "rules": {
+        "lo/no-lo-subject": "off"
       }
     }
   ]

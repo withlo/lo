@@ -355,6 +355,11 @@ describe('a box’s notes', () => {
       text: 'It was deleted elsewhere.',
       offers: ['discard'],
     });
+    expect(refusalNote({ kind: 'noBase' }, 'edit')).toMatchObject({
+      title: 'Couldn’t save the comment',
+      text: 'The comment’s earlier text is missing.',
+      offers: ['discard'],
+    });
     expect(refusalNote({ kind: 'paused', until: 0 }, 'edit').title).toBe(
       'Couldn’t save the comment',
     );

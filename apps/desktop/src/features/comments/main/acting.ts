@@ -126,7 +126,7 @@ export function actRefusal(refusal: ReviewWriteRefusal): ActRefusal {
       return { kind: 'github', message: `${describeReviewRefusal(refusal)}.` };
     default:
       refusal satisfies never;
-      return { kind: 'github', message: 'GitHub refused it.' };
+      return { kind: 'github', message: 'GitHub returned an error.' };
   }
 }
 

@@ -42,7 +42,7 @@ import {
   type StepWords,
 } from './shipWords.ts';
 import { merging, shipping, statuses, type ShipDialog as Dialogue } from './store.ts';
-import { detailsOf, refusalText } from './words.ts';
+import { confirmLabel, detailsOf, refusalText } from './words.ts';
 
 /** A key written in Lo's notation, such as `enter`, as this system shows it. */
 function labels(keys: string): string[] {
@@ -305,6 +305,9 @@ function widestOf(words: readonly (string | undefined)[]): string {
 /** What the main button may say, so it keeps one width from checking to done. */
 const WORDS = [
   shipLabel(),
+  // On your own pull request, what follows the approval it skips.
+  confirmLabel({ kind: 'enqueue', number: 0 }),
+  confirmLabel({ kind: 'autoMerge', number: 0 }),
   CHECKING,
   'Approving…',
   'Merging…',

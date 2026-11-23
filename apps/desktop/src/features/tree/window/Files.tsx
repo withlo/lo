@@ -96,7 +96,11 @@ function noteOf(state: TreeState | undefined, omitted: number): ReactNode {
   }
   if (state.listing.kind === 'changed') notes.push(unlistedWords(state.listing.why));
   if (state.partial) {
-    notes.push({ title: 'First 3,000 changed files shown' });
+    // GitHub lists 3,000 of a pull request's files at most, and compares 300 of a layer's.
+    notes.push({
+      title:
+        state.start === null ? 'First 3,000 changed files shown' : 'First 300 changed files shown',
+    });
   }
   if (state.problem !== null) notes.push(problemWords(state.problem));
   if (notes.length === 0) return undefined;

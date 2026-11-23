@@ -297,11 +297,28 @@ function shipsOnly(plan: ShipPlan | undefined): PlanKind | undefined {
 
 /**
  * The dialog's title, the same in every state once it's planned: "Approve and ship #264?", or on
- * your own pull request, which you can't approve, only what follows: "Merge #264?".
+ * your own pull request, which you can't approve, only what follows: "Merge #264?"; or, where
+ * nothing follows either, why: it's in the merge queue already, auto-merge is on already, or it
+ * can't be merged.
  */
 export function shipTitle(number: number, plan?: ShipPlan): string {
-  const only = shipsOnly(plan);
-  return only === undefined ? `Approve and ship #${number}?` : `${mergeTitle(only, number, 1)}?`;
+  if (plan?.approval.kind !== 'ownPullRequest') return `Approve and ship #${number}?`;
+  switch (plan.likely.kind) {
+    case 'merge':
+    case 'enqueue':
+    case 'autoMerge':
+    case 'enqueueWhenReady':
+      return `${mergeTitle(shipsOnly(plan) ?? 'merge', number, 1)}?`;
+    case 'alreadyQueued':
+      return `#${number} is already in the merge queue`;
+    case 'autoMergeAlreadyOn':
+      return `Auto-merge is already on for #${number}`;
+    case 'stop':
+      return `Can’t merge #${number}`;
+    default:
+      plan.likely satisfies never;
+      return `Can’t merge #${number}`;
+  }
 }
 
 /**

@@ -281,7 +281,7 @@ function sidesOf(id: string): ViewSides {
   const sides = index?.sides(id);
   if (sides) return sides;
   const state = index?.state(id);
-  if (state?.kind === 'noGit') throw new IpcError('unavailable', 'Code features need git.');
+  if (state?.kind === 'noGit') throw new IpcError('unavailable', 'Git wasn’t found');
   throw new IpcError('unavailable', 'Fetching local copy…');
 }
 

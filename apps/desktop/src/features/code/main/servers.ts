@@ -686,7 +686,7 @@ export class ServerPool {
     if (!base) {
       this.#fail(entry, {
         kind: 'failed',
-        why: { kind: 'error', message: 'Code features need git.' },
+        why: { kind: 'error', message: 'Git wasn’t found.' },
       });
       return;
     }

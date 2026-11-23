@@ -491,12 +491,12 @@ describe('editing', () => {
     }
   });
 
-  test('an edit with nothing it started from is refused', async () => {
+  test('an edit with nothing it started from is refused, for the window to offer to discard it', async () => {
     const { made } = writer(poller([]));
     made.save('t1', EDIT, 'Typed');
-    expect(await made.edit('t1', EDIT, 'Typed')).toMatchObject({
+    expect(await made.edit('t1', EDIT, 'Typed')).toEqual({
       kind: 'refused',
-      refusal: { kind: 'github' },
+      refusal: { kind: 'noBase' },
     });
   });
 });

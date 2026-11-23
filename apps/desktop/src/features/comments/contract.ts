@@ -448,6 +448,7 @@ export type UploadProgressRow = z.output<typeof uploadProgress>;
  *   asked;
  * - `gone`: the thread or the comment is gone from GitHub;
  * - `busy`: it's being sent, or Lo is still looking whether it went;
+ * - `noBase`: the edit's draft lost the text it started from, so it can only be discarded;
  * - `paused`, `signIn`, `run` and `github`, as for a comment.
  */
 export type ActRefusal =
@@ -457,6 +458,7 @@ export type ActRefusal =
   | { kind: 'changed' }
   | { kind: 'gone' }
   | { kind: 'busy' }
+  | { kind: 'noBase' }
   | { kind: 'paused'; until: number }
   | { kind: 'signIn' }
   | { kind: 'run' }

@@ -258,6 +258,9 @@ const NO_ANSWER = 'GitHub didn’t respond.';
 /** Why nothing was sent, when Lo couldn't read whether a pending review would take the comment. */
 const NO_PENDING_READ = 'Couldn’t check for a pending review.';
 
+/** Why an edit whose draft lost the text it started from can't be saved: it can only be discarded. */
+const NO_BASE = 'The comment’s earlier text is missing.';
+
 /**
  * Why a box's buttons don't send while nobody knows whether its text is on GitHub already: sending
  * it then could post it twice, so "Check again" comes first.
@@ -319,6 +322,8 @@ export function actText(refusal: ActRefusal, doing: Doing, login = ACCOUNT): str
         : 'That comment was deleted elsewhere';
     case 'busy':
       return AT_WORK[doing];
+    case 'noBase':
+      return NO_BASE.slice(0, -1);
     case 'paused':
       return `GitHub’s rate limit resets at ${clockOf(refusal.until)}`;
     case 'signIn':
@@ -369,6 +374,8 @@ export function refusalNote(
       return note('It was edited elsewhere.', ['discard'], COULDNT.edit);
     case 'gone':
       return note('It was deleted elsewhere.', ['discard'], COULDNT.edit);
+    case 'noBase':
+      return note(NO_BASE, ['discard'], COULDNT.edit);
     case 'theirs':
     case 'notAllowed':
     case 'cantResolve':

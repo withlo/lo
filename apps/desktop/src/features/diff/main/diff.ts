@@ -490,12 +490,15 @@ export class DiffTab {
       kind: 'refused',
       why: version === 'new' ? 'missing' : 'notInBase',
     };
+    // Nothing at the path, or a folder, is `missing`; the local copy failing to say is a failure,
+    // which the view can try again, with no reason, as its cause isn't known.
     const find = async () => {
       try {
-        return await repo.fileVersion(rev, bytes);
+        const [found] = await repo.fileVersions(rev, [bytes]);
+        return found === 'folder' ? undefined : found;
       } catch (error) {
         this.#options.log(`finding a file to show whole: ${describe(error)}`);
-        return undefined;
+        throw new IpcError('unavailable', '');
       }
     };
     const found = await find();
@@ -541,12 +544,14 @@ export class DiffTab {
   async #read(repo: Repo, blob: string | undefined): Promise<string | null> {
     if (blob === undefined) return null;
     const bytes = await repo.readBlob(parseOid(blob), { maxBytes: MAX_SHOWN_BYTES });
-    if (bytes === undefined) throw new Error('The local copy doesn’t have this file’s contents.');
+    if (bytes === undefined) throw new Error('The local copy doesn’t have it.');
     // A minified bundle on one line is as slow to lay out as it is large.
     const tooLarge = tooLargeToShow(bytes.length, [bytes]);
     if (tooLarge !== undefined) {
       throw new Error(
-        tooLarge.kind === 'size' ? 'It’s over the 50 MB limit.' : 'It has a line over 1 MB long.',
+        tooLarge.kind === 'size'
+          ? `It’s ${Math.round(bytes.length / 1024 ** 2)} MB, over the 50 MB limit.`
+          : 'It has a line over 1 MB long.',
       );
     }
     return decoder.decode(bytes);
