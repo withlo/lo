@@ -3,7 +3,8 @@
 // going back after `Tab` lands on the side the jump was made on. Each view registers how it
 // reveals an entry; an entry no view can reveal now (a closed file view, a file a push removed) is
 // skipped. An entry can say what its view showed then, such as the diff's comparison, which the
-// view shows again before the place.
+// view shows again before the place. Whether there's anywhere to go back or forward to is asked
+// without going, so Back and Forward dim where there's nowhere, and who listens hears each change.
 
 import { plainTarget, type Place, type Span, type Target } from './targets.ts';
 
@@ -43,20 +44,36 @@ export class History {
   private current = '';
   /** A view is revealing an entry: the jump it makes to get there is the walk's, not a new one. */
   private revealing = false;
+  private readonly listeners = new Set<() => void>();
 
   constructor(options: { readonly limit?: number } = {}) {
     this.limit = options.limit ?? HISTORY_LIMIT;
   }
 
+  /**
+   * Calls `listener` whenever where `back` or `forward` could go may have changed: a place
+   * recorded, a step back or forward, another tab current, a tab closed, or a view come or gone.
+   * Returns a function that stops it.
+   */
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
   /** Makes `id` the current tab. */
   tab(id: string): void {
+    if (this.current === id) return;
     this.current = id;
+    this.changed();
   }
 
   /** Forgets a closed tab's list and its views. */
   close(id: string): void {
     this.lists.delete(id);
     this.reveals.delete(id);
+    this.changed();
   }
 
   /**
@@ -70,9 +87,12 @@ export class History {
       this.reveals.set(tab, views);
     }
     views.set(view, reveal);
+    this.changed();
     return () => {
       const current = this.reveals.get(tab);
-      if (current?.get(view) === reveal) current.delete(view);
+      if (current?.get(view) !== reveal) return;
+      current.delete(view);
+      this.changed();
     };
   }
 
@@ -87,6 +107,7 @@ export class History {
     list.entries.length = Math.min(list.index + 1, list.entries.length);
     this.push(list, from);
     list.index = list.entries.length;
+    this.changed();
   }
 
   /**
@@ -103,6 +124,7 @@ export class History {
       const entry = list.entries[index];
       if (entry && this.reveal(entry)) {
         list.index = index;
+        this.changed();
         return entry;
       }
     }
@@ -116,10 +138,34 @@ export class History {
       const entry = list.entries[index];
       if (entry && this.reveal(entry)) {
         list.index = index;
+        this.changed();
         return entry;
       }
     }
     return undefined;
+  }
+
+  /**
+   * Whether `back` from `here` has an earlier place to go to that a view is there to reveal, asked
+   * without going. A place its view can no longer show, such as a file a push removed, is found
+   * only by going.
+   */
+  canBack(here?: Entry): boolean {
+    const list = this.list();
+    const { entries } = list;
+    let from = list.index;
+    // Where `back` would keep `here` first: at the end, or as the last place when it's that one.
+    if (from >= entries.length && here) {
+      const last = entries.at(-1);
+      from = last && same(last, here) ? entries.length - 1 : entries.length;
+    }
+    return entries.slice(0, Math.max(0, from)).some((entry) => this.revealable(entry));
+  }
+
+  /** Whether `forward` has a later place to go to that a view is there to reveal, asked without going. */
+  canForward(): boolean {
+    const list = this.list();
+    return list.entries.slice(list.index + 1).some((entry) => this.revealable(entry));
   }
 
   /** The current tab's entries, oldest first. */
@@ -150,6 +196,15 @@ export class History {
       list.entries.splice(0, over);
       list.index = Math.max(0, list.index - over);
     }
+  }
+
+  /** Whether a view of the current tab's is there to reveal `entry`. */
+  private revealable(entry: Entry): boolean {
+    return this.reveals.get(this.current)?.has(entry.view) ?? false;
+  }
+
+  private changed(): void {
+    for (const listener of this.listeners) listener();
   }
 
   private reveal(entry: Entry): boolean {

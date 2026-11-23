@@ -195,7 +195,8 @@ describe('the palette', () => {
     expect(showHighlighted()).toBe('No action is highlighted.');
     act(() => openPalette());
     const input = dialog('Command palette')?.querySelector('input');
-    type(input!, 'forward');
+    // Back and Forward, with nowhere to go, aren't offered.
+    type(input!, 'middle view');
     let shown: true | string = '';
     act(() => {
       shown = showHighlighted();
@@ -203,7 +204,7 @@ describe('the palette', () => {
     expect(shown).toBe(true);
     await vi.waitFor(() =>
       expect(document.querySelector('[aria-current="true"]')?.getAttribute('data-command')).toBe(
-        'keys.forward',
+        'keys.escape',
       ),
     );
   });

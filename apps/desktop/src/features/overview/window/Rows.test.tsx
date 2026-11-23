@@ -21,7 +21,7 @@ import { rows } from '../../settings/window/shared.ts';
 import { setup } from '../../welcome/window/shared.ts';
 import type { SkillAgent, SkillResult, SkillState } from '../contract.ts';
 import feature from './index.ts';
-import { COPIED_FOR, COPY_TITLE, INSTALL_COMMAND, skillStore } from './skill.ts';
+import { COPIED_FOR, INSTALL_COMMAND, skillStore } from './skill.ts';
 
 /** Both agents as main reports them, `changes` over each. */
 function state(claude: Partial<SkillAgent> = {}, codex: Partial<SkillAgent> = {}): SkillState {
@@ -68,9 +68,8 @@ afterEach(() => {
   skillStore.setState({
     state: undefined,
     installing: false,
-    said: undefined,
     failed: undefined,
-    copied: false,
+    copied: undefined,
   });
 });
 
@@ -156,6 +155,19 @@ function button(within: Element | null, text: string): HTMLButtonElement {
   return found;
 }
 
+/** The install command's Copy button. */
+function copyButton(): HTMLButtonElement {
+  return button(commandRow() ?? null, 'Copy');
+}
+
+/** What the Copy button says now: the face of its three that shows. */
+function faceOf(copy: HTMLButtonElement): string | undefined {
+  const shown = [...copy.querySelectorAll('.inline-grid > span')].find(
+    (face) => !face.classList.contains('invisible'),
+  );
+  return shown?.textContent ?? undefined;
+}
+
 function click(element: Element): void {
   act(() => {
     element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -222,19 +234,20 @@ describe('the welcome screen’s step', () => {
     expect(button(step(), 'Try again')).toBeDefined();
   });
 
-  it('says so in a notice when no agent is set up', async () => {
+  it('dims Install with why while no agent is set up, and asks nothing', async () => {
     const asked = main(state({ setUp: false }, { setUp: false }), [
       { kind: 'refused', agent: null, why: { kind: 'nothingSetUp' } },
     ]);
     render();
     await settle();
-    click(button(step(), 'Install'));
+    const dimmed = button(step(), 'Install');
+    expect(dimmed.getAttribute('aria-disabled')).toBe('true');
+    expect(dimmed.getAttribute('aria-description')).toBe('Set up Claude Code or Codex first');
+    const before = notices();
+    click(dimmed);
     await settle();
-    expect(asked.asked()).toEqual([['overview.installSkill', { agents: [] }]]);
-    expect(notice()?.body).toBe(
-      'Lo found neither Claude Code nor Codex set up on this computer. Set one up, then install the skill.',
-    );
-    expect(button(step(), 'Install').disabled).toBe(false);
+    expect(asked.asked()).toEqual([]);
+    expect(notices()).toEqual(before);
   });
 });
 
@@ -254,18 +267,34 @@ describe('Settings’ row', () => {
     expect(button(row(), 'Install for Codex')).toBeDefined();
   });
 
-  it('says in a notice why nothing happened when no agent is set up', async () => {
+  it('dims Install with why while no agent is set up', async () => {
     main(state({ setUp: false }, { setUp: false }), [
       { kind: 'refused', agent: null, why: { kind: 'nothingSetUp' } },
     ]);
     render();
     await settle();
     expect(lines()).toEqual(['Claude Code · not set up', 'Codex · not set up']);
-    click(button(row(), 'Install'));
+    const dimmed = button(row(), 'Install');
+    expect(dimmed.getAttribute('aria-disabled')).toBe('true');
+    expect(dimmed.getAttribute('aria-description')).toBe('Set up Claude Code or Codex first');
+  });
+
+  it('says why alone, with no title, when the command asks while no agent is set up', async () => {
+    const asked = main(state({ setUp: false }, { setUp: false }), [
+      { kind: 'refused', agent: null, why: { kind: 'nothingSetUp' } },
+    ]);
+    render();
     await settle();
-    expect(notice()?.body).toBe(
-      'Lo found neither Claude Code nor Codex set up on this computer. Set one up, then install the skill.',
-    );
+    // The command asks main as it runs, since an agent may have been set up since the rows looked.
+    const command = feature.commands?.find((each) => each.id === 'overview.installSkill');
+    expect(command?.handler?.enabled?.({ kind: 'none' })).toBe(true);
+    await act(async () => {
+      await command?.handler?.run({ kind: 'none' });
+    });
+    await settle();
+    expect(asked.asked()).toEqual([['overview.installSkill', { agents: [] }]]);
+    expect(notice()).toMatchObject({ title: 'Set up Claude Code or Codex first', body: '' });
+    expect(notice()?.tone).toBeUndefined();
   });
 
   it('installs for the rest, and then offers to install again', async () => {
@@ -472,6 +501,8 @@ describe('the command in the app menu', () => {
 
 /** Settings' row for the command that installs the skill from a terminal. */
 const commandRow = () => settingRow('On another computer');
+/** What the command row's Copy button says it did, to a screen reader. */
+const commandStatus = () => commandRow()?.querySelector('[role="status"]')?.textContent;
 /** What the window asked main to put on the clipboard. */
 const copies = () =>
   shared.calls.filter(([channel]) => channel === 'tab.copy').map(([, input]) => input);
@@ -498,7 +529,7 @@ describe('Settings’ row for the command that installs the skill', () => {
     expect(commandRow()?.querySelector('.text-fg-muted')?.textContent).toBe(
       'The overview skill installs from a terminal.',
     );
-    const copy = button(commandRow() ?? null, 'Copy');
+    const copy = copyButton();
     expect([...copy.querySelectorAll('kbd')].map((each) => each.textContent)).toEqual(['y', 'c']);
     expect(copy.getAttribute('aria-description')).toBe('Keys y then c');
   });
@@ -507,11 +538,11 @@ describe('Settings’ row for the command that installs the skill', () => {
     main(state());
     render();
     await settle();
-    click(button(commandRow() ?? null, 'Copy'));
+    click(copyButton());
     await settle();
     expect(copies()).toEqual([{ text: command }]);
-    expect(button(commandRow() ?? null, 'Copied')).toBeDefined();
-    expect(commandRow()?.querySelector('[role="status"]')?.textContent).toBe('Copied the command.');
+    expect(faceOf(copyButton())).toBe('Copied');
+    expect(commandStatus()).toBe('Copied');
   });
 
   it('goes back to "Copy" after a few seconds, and says each copy again', async () => {
@@ -522,45 +553,45 @@ describe('Settings’ row for the command that installs the skill', () => {
     main(state());
     render();
     await settle();
-    const status = () => commandRow()?.querySelector('[role="status"]')?.textContent;
-    click(button(commandRow() ?? null, 'Copy'));
+    click(copyButton());
     await settle();
-    expect(button(commandRow() ?? null, 'Copied')).toBeDefined();
-    expect(status()).toBe('Copied the command.');
+    expect(faceOf(copyButton())).toBe('Copied');
+    expect(commandStatus()).toBe('Copied');
     // Copying again before it went back starts the time again.
     advance(COPIED_FOR - 1000);
-    click(button(commandRow() ?? null, 'Copied'));
+    click(copyButton());
     await settle();
     advance(COPIED_FOR - 1000);
-    expect(button(commandRow() ?? null, 'Copied')).toBeDefined();
+    expect(faceOf(copyButton())).toBe('Copied');
     advance(1000);
-    expect(button(commandRow() ?? null, 'Copy')).toBeDefined();
-    expect(status()).toBe('');
+    expect(faceOf(copyButton())).toBe('Copy');
+    expect(commandStatus()).toBe('');
     // So the next copy is said as the first was.
-    click(button(commandRow() ?? null, 'Copy'));
+    click(copyButton());
     await settle();
-    expect(button(commandRow() ?? null, 'Copied')).toBeDefined();
-    expect(status()).toBe('Copied the command.');
+    expect(faceOf(copyButton())).toBe('Copied');
+    expect(commandStatus()).toBe('Copied');
     expect(copies()).toHaveLength(3);
   });
 
-  it('says so when it can’t copy the command', async () => {
+  it('says on its button when it can’t copy the command, and in no note', async () => {
     const asked = main(state());
     render();
     await settle();
-    click(button(commandRow() ?? null, 'Copy'));
+    click(copyButton());
     await settle();
-    expect(button(commandRow() ?? null, 'Copied')).toBeDefined();
+    expect(faceOf(copyButton())).toBe('Copied');
     answers['tab.copy'] = () => {
       throw new IpcError('unavailable', 'The clipboard is busy.');
     };
-    click(button(commandRow() ?? null, 'Copied'));
+    const before = notices();
+    click(copyButton());
     await settle();
     expect(asked.bridge.calls.filter(([channel]) => channel === 'tab.copy')).toHaveLength(2);
-    expect(notice()).toEqual({ title: COPY_TITLE, body: "Lo couldn't copy the command." });
     // Not "Copied", which would say the clipboard has what it doesn't.
-    expect(button(commandRow() ?? null, 'Copy')).toBeDefined();
-    expect(commandRow()?.querySelector('[role="status"]')?.textContent).toBe('');
+    expect(faceOf(copyButton())).toBe('Couldn’t copy');
+    expect(commandRow()?.querySelector('[role="status"]')?.textContent).toBe('Couldn’t copy');
+    expect(notices()).toEqual(before);
   });
 
   it('copies it with y c, in Settings', async () => {
@@ -575,6 +606,6 @@ describe('Settings’ row for the command that installs the skill', () => {
     });
     await settle();
     expect(copies()).toEqual([{ text: command }]);
-    expect(button(commandRow() ?? null, 'Copied')).toBeDefined();
+    expect(faceOf(copyButton())).toBe('Copied');
   });
 });

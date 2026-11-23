@@ -134,7 +134,7 @@ describe('the keymap file in the window', () => {
     };
     registry().run('keys.openKeymap', NO_TARGET);
     await vi.waitFor(() =>
-      expect(notice()).toEqual({
+      expect(notice()).toMatchObject({
         title: 'Open the keymap file',
         body: "Lo couldn't open the keymap file in a text editor.",
       }),

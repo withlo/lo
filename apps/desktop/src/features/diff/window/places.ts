@@ -6,7 +6,7 @@
 
 import { KEY_EVENT, type Side, type Target } from '@lo/ui/commands';
 
-import { notify, withdraw } from '../../../window/commands/notices.tsx';
+import { fail, refuse, withdraw } from '../../../window/commands/notices.tsx';
 import { here, registry } from '../../../window/commands/registry.ts';
 import {
   compareAgain,
@@ -106,7 +106,7 @@ const waiting = new Map<string, () => void>();
  * What the notes say while a place waits for the diff's files, and when the reader moves on before
  * they're read. One dropped as it waited too long says nothing more: the first note said why.
  */
-const WAITING = { title: 'Reading changed files…', body: '' };
+const WAITING = 'Reading changed files…';
 const STOPPED = 'Couldn’t read the changed files';
 
 /**
@@ -141,7 +141,7 @@ export function showPlace(
     place(tab, path, line, marked, side);
     return;
   }
-  notify(WAITING.title, WAITING.body);
+  refuse(WAITING);
   const stop = () => {
     listening();
     clearTimeout(bound);
@@ -150,14 +150,14 @@ export function showPlace(
   };
   const drop = (why?: string) => {
     stop();
-    if (why !== undefined) notify(why, '');
+    if (why !== undefined) fail(why);
   };
   const moved = () => drop(STOPPED);
   const bound = setTimeout(() => drop(), holdLimit());
   const listening = loader.subscribe(() => {
     if (!loader.snapshot().state?.files) return;
     stop();
-    withdraw(WAITING.title, WAITING.body);
+    withdraw(WAITING, '');
     place(tab, path, line, marked, side);
   });
   // Not the key or click that asked for the place: the window has heard it already.

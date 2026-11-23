@@ -234,9 +234,6 @@ export function threadIn(threads: ThreadsView | undefined, id: string): ThreadRo
   return threads?.threads.find((row) => row.id === id) ?? GONE;
 }
 
-/** What a failed comparison asked for to show a thread says it was for. */
-export const SHOW = 'Show in diff';
-
 /** `⏎` in the panel, or Show in diff from the palette. */
 export function showTarget(target: Target): void {
   const tab = pullOnScreen();
@@ -271,7 +268,7 @@ export function showThread(tab: PullTab, id: string): void {
       show(tab.id, row, 'now');
       return;
     case 'callOff':
-      compareTo(tab.id, plan.compared, SHOW);
+      compareTo(tab.id, plan.compared);
       show(tab.id, row, 'both');
       return;
     case 'coming':
@@ -281,7 +278,7 @@ export function showThread(tab: PullTab, id: string): void {
       // The place it leaves goes in the history first, with what's compared now.
       show(tab.id, row, 'drawn');
       // Said as it's asked for, with the way back, and taken back if a later move calls it off.
-      const asked = compareTo(tab.id, plan.compared, SHOW, {
+      const asked = compareTo(tab.id, plan.compared, {
         title: `Showing ${plan.label} for this thread`,
         body: '',
         action: {

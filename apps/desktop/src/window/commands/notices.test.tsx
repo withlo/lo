@@ -213,10 +213,10 @@ describe('notices', () => {
     expect(text?.querySelector('button')?.textContent).toMatch(/^Copy/);
   });
 
-  it('show a failure as one, a block as a warning, and the rest as news', () => {
+  it('show a failure as one, with Details or not, a block as a warning, and a reason as news', () => {
     act(() => {
       notify('Couldn’t update Lo', '', { details: 'Failed to copy Lo.app' });
-      notify('Couldn’t open #82', 'The browser sent it straight back.', { tone: 'danger' });
+      notify('Couldn’t open #82', 'The browser sent it straight back.');
       notify('Can’t check for updates', 'This copy of Lo is built from source.', {
         tone: 'warning',
       });
@@ -227,7 +227,7 @@ describe('notices', () => {
       'flex-none text-danger',
       'flex-none text-warning',
     ]);
-    act(() => notify('Back', "There's nowhere to go back to."));
+    act(() => refuse('Sign in to comment'));
     const newest = [...(status()?.querySelectorAll('.toast > span:first-child') ?? [])].at(-1);
     expect(newest?.className).toBe('flex-none text-info');
   });
@@ -339,17 +339,30 @@ describe('a command that did nothing', () => {
     expect(status()?.textContent).toBe('');
   });
 
-  it('says where Back and Forward have nowhere to go', () => {
+  it('dims Back and Forward with nowhere to go, and says nothing when their keys are pressed', () => {
+    expect(registry().enabled('keys.back', NO_TARGET)).toBe('');
+    expect(registry().enabled('keys.forward', NO_TARGET)).toBe('');
+    act(() => {
+      registry().run('keys.back', NO_TARGET);
+      registry().run('keys.forward', NO_TARGET);
+    });
+    expect(notices()).toEqual([]);
+    expect(status()?.textContent).toBe('');
+    // A place a view can show again: Back has somewhere to go, and once there, Forward does.
+    const { history } = registry();
+    const shown: unknown[] = [];
+    history.register('', 'diff', (at) => {
+      shown.push(at);
+      return true;
+    });
+    history.record({ view: 'diff', at: { kind: 'file', file: 'a.ts' } });
+    expect(registry().enabled('keys.back', NO_TARGET)).toBe(true);
+    expect(registry().enabled('keys.forward', NO_TARGET)).toBe('');
     act(() => {
       registry().run('keys.back', NO_TARGET);
     });
-    expect(toast()).toMatchObject({ title: 'Back', body: "There's nowhere to go back to." });
-    act(() => {
-      registry().run('keys.forward', NO_TARGET);
-    });
-    expect(toast()).toMatchObject({
-      title: 'Forward',
-      body: "There's nowhere to go forward to.",
-    });
+    expect(shown).toEqual([{ kind: 'file', file: 'a.ts' }]);
+    expect(registry().enabled('keys.back', NO_TARGET)).toBe('');
+    expect(notices()).toEqual([]);
   });
 });

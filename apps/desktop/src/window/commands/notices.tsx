@@ -5,14 +5,14 @@
 // here, alone. Something asked for that finished, such as a GitHub stack made, says so here too,
 // in a line.
 //
-// A note is one line: the result, or the reason. `refuse` and `announce` with nothing after the
-// line are the two to use. A failure is said where it happened, in a `Problem` or on the control
-// that was pressed. Only one with nothing in view to host it is a note, at danger tone, with what
-// main said behind Details where it said something: `fail` for one line, as for a key pressed with
-// no control for it on screen, or the older shape, a title with a body under it, which `notify`
-// still draws for the callers that have it, as for a command run from the menu. Its icon says which
-// a note is: a tick for what's done, a failure's for what failed, a warning's for what can't be
-// done here at all, and an info icon for the rest.
+// A note is one line: the result (`announce`), or the reason (`refuse`). A failure is said where it
+// happened, in a `Problem` or on the control that was pressed. Only one with nothing in view to
+// host it is a note, at danger tone, with what main said behind Details where it said something:
+// `fail` for what failed alone, as for a key pressed with no control for it on screen, and `notify`
+// for what failed with why under it, as for a command run from the menu. What a note says first is
+// what happened, never a command's name. Its icon says which a note is: a tick for what's done, a
+// failure's for what failed, a warning's for what can't be done here at all or wants a look, and an
+// info icon for a reason.
 
 import {
   Ticks,
@@ -32,8 +32,8 @@ import { useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react'
 export const NOTICE_TIME = TOAST_MS;
 
 /**
- * What a note says: a line, and under it, for a note of the older shape, more about it, a line a
- * reason. `done` for what finished.
+ * What a note says: a line, and under it, for a failure that has one, why, a line a reason.
+ * `done` for what finished.
  */
 export interface Note {
   readonly title: string;
@@ -44,9 +44,9 @@ export interface Note {
   /** What main or the system said of a failure, as it came, behind Details. */
   readonly details?: string | undefined;
   /**
-   * Its tone where it isn't the usual one: `danger` for a failure, and `warning` for what can't be
-   * done here at all, as a check for updates on a build from source, which isn't a failure.
-   * Without it, a note with Details is a failure, and the rest are news.
+   * `danger` for a failure, and `warning` for what can't be done here at all, as a check for
+   * updates on a build from source, which isn't a failure, or for news that wants a look. Without
+   * it, a note is a result when it's `done` and a reason when it isn't.
    */
   readonly tone?: 'warning' | 'danger' | undefined;
 }
@@ -157,13 +157,16 @@ export function announce(title: string, body = '', action?: ToastAction): void {
   show({ title, body, done: true, action });
 }
 
-/** What a note of the older shape may carry besides its words. */
+/** What a failure's note may carry besides its words. */
 export interface NoteMore {
-  /** The one thing to do about it. */
+  /** The one thing to do about it: "Try again". */
   readonly action?: ToastAction | undefined;
-  /** What main or the system said of a failure, as it came, behind Details. */
+  /** What main or the system said of it, as it came, behind Details. */
   readonly details?: string | undefined;
-  /** `danger` for a failure with no Details, `warning` for what can't be done here at all. */
+  /**
+   * `danger`, the default, for a failure; `warning` for what can't be done here at all, or for
+   * news that wants a look, such as a push after an approval.
+   */
   readonly tone?: 'warning' | 'danger' | undefined;
 }
 
@@ -178,15 +181,15 @@ export function fail(line: string, details?: string): void {
 }
 
 /**
- * Says `title` with `body` under it, a line a reason: the older shape of a note that says why
- * something didn't happen, with `more.action`, the one thing to do about it, where there's one. A
- * command that can't run uses {@link refuse}. Something that failed says so where it was asked
- * for, not here, unless nothing in view can hold it, as for a command run from the menu or a toast
- * that has gone: then the note is the error, `title` what failed and `body` why, with
- * `more.details`, what main or the system said, behind Details, and its tone says it failed.
+ * Says that something asked for failed, where nothing in view can hold it, as for a command run
+ * from the menu or a toast that has gone: the error's shape, `title` what failed ("Couldn’t open
+ * the licenses"), never a command's name, and `body` why, a line, or `''` where the cause isn't
+ * known; with `more.action`, the one thing to do about it, and `more.details`, what main or the
+ * system said, behind Details. At danger tone, unless `more.tone` says it's a warning. A command
+ * that can't run says why with {@link refuse}, and something that failed in view says so there.
  */
 export function notify(title: string, body: string, more: NoteMore = {}): void {
-  show({ title, body, ...more });
+  show({ title, body, ...more, tone: more.tone ?? 'danger' });
 }
 
 /** Takes back the note `title` and `body` say, if it's showing: what it said is over. */
@@ -219,12 +222,12 @@ function lineOf(note: Note): ReactNode {
 
 /**
  * A note's toast: a tick and what's done; its `tone`'s icon where it has one, a failure's or a
- * warning's; a failure's for one with Details; or else an info icon and the reason.
+ * warning's; or else an info icon and the reason.
  */
 function toastOf(id: string, note: Note): StackedToast {
   return {
     id,
-    tone: note.done ? 'success' : (note.tone ?? (note.details === undefined ? 'info' : 'danger')),
+    tone: note.done ? 'success' : (note.tone ?? 'info'),
     title: lineOf(note),
     action: note.action,
     details: note.details,

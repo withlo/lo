@@ -3,7 +3,7 @@
 // this copy can do about it; and whether Lo checks by itself, which is the `updates.check` setting.
 
 import { Button, Problem, Setting, SettingsCommand } from '@lo/ui';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
 import { ago, defineRow, settingRow } from '../../settings/window/shared.ts';
@@ -30,8 +30,47 @@ function useNow(): number {
   return now;
 }
 
+/** Whether some of `element` is inside the window, as it's drawn now. */
+function onScreen(element: HTMLElement): boolean {
+  const { top, bottom } = element.getBoundingClientRect();
+  return top < window.innerHeight && bottom > 0;
+}
+
+/**
+ * Says while `box`, the offer under the Lo row, is in view, so the toast that says the same steps
+ * aside meanwhile. `drawn` is whether there's an offer to draw: one that comes while the row shows
+ * is watched from then. It's said before the frame is drawn, so the toast doesn't come for a frame
+ * and go. Where the window can't tell, as in a test without layout, it's in view.
+ */
+function useSaysOffer(box: { readonly current: HTMLElement | null }, drawn: boolean): void {
+  useLayoutEffect(() => {
+    const element = drawn ? box.current : null;
+    if (!element) return undefined;
+    const say = (shown: boolean) => {
+      if (updatesStore.getState().offerInView !== shown)
+        updatesStore.setState({ offerInView: shown });
+    };
+    if (typeof IntersectionObserver === 'undefined') {
+      say(true);
+      return () => say(false);
+    }
+    say(onScreen(element));
+    const observer = new IntersectionObserver((entries) => {
+      const last = entries.at(-1);
+      if (last) say(last.isIntersecting);
+    });
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      say(false);
+    };
+  }, [box, drawn]);
+}
+
 /** The update on offer, downloading or ready, and what this copy of Lo can do about it. */
 function OnOffer({ state }: { state: UpdateState }) {
+  const box = useRef<HTMLDivElement>(null);
+  useSaysOffer(box, state.status !== 'idle');
   if (state.status === 'idle') return null;
   const whatsNew = (
     <SettingsCommand command="updates.whatsNew" size="sm" variant="ghost">
@@ -93,7 +132,11 @@ function OnOffer({ state }: { state: UpdateState }) {
       throw new Error(`An update state Lo doesn't know: ${JSON.stringify(state satisfies never)}`);
   }
   return (
-    <div className="flex flex-col gap-8 rounded-md border border-border-subtle p-8">
+    <div
+      ref={box}
+      data-lo-offer=""
+      className="flex flex-col gap-8 rounded-md border border-border-subtle p-8"
+    >
       <div className="flex items-center gap-8">
         <div className="min-w-0 flex-1">
           <div className="lo-num text-ui-strong">{title}</div>

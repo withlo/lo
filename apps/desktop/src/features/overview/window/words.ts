@@ -1,7 +1,7 @@
 // What the window says of the overview skill: where it stands for each agent, what the button does,
 // and how an install went. Plain functions of what main reported, so each wording is tested alone.
 
-import type { Agent, SkillAgent, SkillRefusal, SkillResult, SkillState } from '../contract.ts';
+import type { Agent, SkillAgent, SkillRefusal, SkillState } from '../contract.ts';
 
 /** `names` as a list in a sentence: "A", "A and B", "A, B and C". */
 function list(names: readonly string[]): string {
@@ -104,23 +104,11 @@ export function refusalWords(why: SkillRefusal, state: SkillState): string {
   }
 }
 
-/** What an install did for each agent, in a few sentences: where it installed, and why not. */
-export function resultWords(results: readonly SkillResult[], state: SkillState): string {
-  const name = (agent: Agent) => state.agents.find((each) => each.agent === agent)?.name ?? agent;
-  const skills = (agent: Agent) => state.agents.find((each) => each.agent === agent)?.skills;
-  const installed = results.flatMap((each) =>
-    each.kind === 'installed' ? [`${name(each.agent)} in ${skills(each.agent)}`] : [],
-  );
-  const had = (agent: Agent) => state.agents.find((each) => each.agent === agent)?.installed;
-  const refused = results.flatMap((each) => {
-    if (each.kind !== 'refused') return [];
-    if (each.agent === null) return [refusalWords(each.why, state)];
-    // A skill that is there stays as it was, so it isn't called missing.
-    const said = had(each.agent)
-      ? `Lo left the skill for ${name(each.agent)} as it was.`
-      : `Not installed for ${name(each.agent)}.`;
-    return [`${said} ${refusalWords(each.why, state)}`];
-  });
-  const done = installed.length > 0 ? [`Installed the overview skill for ${list(installed)}.`] : [];
-  return [...done, ...refused].join(' ');
+/**
+ * Why the skill can't be installed while no agent is set up, which dims its buttons and the
+ * command: "Set up Claude Code or Codex first". Nothing while one is, or before Lo knows.
+ */
+export function notSetUp(state: SkillState | undefined): string | undefined {
+  if (state === undefined || state.agents.some((each) => each.setUp)) return undefined;
+  return `Set up ${state.agents.map((each) => each.name).join(' or ')} first`;
 }

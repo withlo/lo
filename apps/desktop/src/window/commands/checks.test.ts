@@ -55,7 +55,7 @@ describe("every feature's commands", () => {
 
   it('wait for a control no more than before: the list only shrinks', () => {
     // Lowered as commands come off the list, so that none can join it.
-    expect(WITHOUT_ROUTE.length).toBeLessThanOrEqual(40);
+    expect(WITHOUT_ROUTE.length).toBeLessThanOrEqual(37);
     expect(new Set(WITHOUT_ROUTE).size).toBe(WITHOUT_ROUTE.length);
   });
 

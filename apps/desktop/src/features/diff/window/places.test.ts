@@ -22,8 +22,11 @@ const seen = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../window/commands/notices.tsx', () => ({
-  notify: (title: string, body: string) => {
-    seen.notes.push(body === '' ? title : `${title} ${body}`);
+  refuse: (reason: string) => {
+    seen.notes.push(reason);
+  },
+  fail: (line: string) => {
+    seen.notes.push(`failed: ${line}`);
   },
   withdraw: (title: string, body: string) => {
     seen.notes.push(`withdrawn: ${body === '' ? title : `${title} ${body}`}`);
@@ -170,7 +173,7 @@ describe('showPlace', () => {
       seen.notes.length = 0;
       showPlace('t1', 'src/parser.ts', 7);
       window.dispatchEvent(input);
-      expect(seen.notes.at(-1)).toBe('Couldn’t read the changed files');
+      expect(seen.notes.at(-1)).toBe('failed: Couldn’t read the changed files');
       diff.take(state([changed('src/parser.ts')]));
       expect(seen.middles).toEqual([]);
     }
@@ -187,7 +190,7 @@ describe('showPlace', () => {
     press(']');
     expect(seen.notes).toEqual(['Reading changed files…']);
     press('b');
-    expect(seen.notes.at(-1)).toBe('Couldn’t read the changed files');
+    expect(seen.notes.at(-1)).toBe('failed: Couldn’t read the changed files');
     diff.take(state([changed('src/parser.ts')]));
     expect(seen.middles).toEqual([]);
   });

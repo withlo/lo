@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import type { SkillAgent, SkillRefusal, SkillResult, SkillState } from '../contract.ts';
+import type { SkillAgent, SkillRefusal, SkillState } from '../contract.ts';
 import {
   agentsToInstall,
   installedEverywhere,
   installLabel,
+  notSetUp,
   refusalWords,
-  resultWords,
   standing,
 } from './words.ts';
 
@@ -211,59 +211,11 @@ describe('refusalWords', () => {
   });
 });
 
-describe('resultWords', () => {
-  const both = state();
-
-  it('says where it installed', () => {
-    expect(resultWords([{ kind: 'installed', agent: 'claude' }], both)).toBe(
-      'Installed the overview skill for Claude Code in ~/.claude/skills.',
-    );
-    expect(
-      resultWords(
-        [
-          { kind: 'installed', agent: 'claude' },
-          { kind: 'installed', agent: 'codex' },
-        ],
-        both,
-      ),
-    ).toBe(
-      'Installed the overview skill for Claude Code in ~/.claude/skills and Codex in ~/.agents/skills.',
-    );
-  });
-
-  it('says what was installed and what was refused, and why', () => {
-    const results: SkillResult[] = [
-      { kind: 'installed', agent: 'claude' },
-      {
-        kind: 'refused',
-        agent: 'codex',
-        why: { kind: 'link', path: '~/.agents/skills/lo-overview' },
-      },
-    ];
-    expect(resultWords(results, both)).toBe(
-      "Installed the overview skill for Claude Code in ~/.claude/skills. Not installed for Codex. ~/.agents/skills/lo-overview is a link, and Lo doesn't install the skill through links. Remove it, then install again.",
-    );
-  });
-
-  it('says a skill an agent has stays as it was when an update is refused, not that it is missing', () => {
-    const results: SkillResult[] = [
-      {
-        kind: 'refused',
-        agent: 'claude',
-        why: { kind: 'link', path: '~/.claude/skills/lo-overview' },
-      },
-    ];
-    expect(resultWords(results, state({ installed: true }))).toBe(
-      "Lo left the skill for Claude Code as it was. ~/.claude/skills/lo-overview is a link, and Lo doesn't install the skill through links. Remove it, then install again.",
-    );
-    expect(resultWords(results, state())).toContain('Not installed for Claude Code.');
-  });
-
-  it('says that none is set up without naming an agent', () => {
-    expect(
-      resultWords([{ kind: 'refused', agent: null, why: { kind: 'nothingSetUp' } }], nothing),
-    ).toBe(
-      'Lo found neither Claude Code nor Codex set up on this computer. Set one up, then install the skill.',
-    );
+describe('notSetUp', () => {
+  it('names the agents to set up while none is, and nothing once one is or before Lo knows', () => {
+    expect(notSetUp(nothing)).toBe('Set up Claude Code or Codex first');
+    expect(notSetUp(state())).toBeUndefined();
+    expect(notSetUp(state({ setUp: false }))).toBeUndefined();
+    expect(notSetUp(undefined)).toBeUndefined();
   });
 });

@@ -190,4 +190,67 @@ describe('history', () => {
     expect(last).toEqual(line('a.ts', 'new', 52));
     expect(history.entries()).toHaveLength(HISTORY_LIMIT);
   });
+
+  test('says whether Back and Forward have anywhere to go, without going, as back and forward find', () => {
+    const history = new History();
+    // Nowhere yet, from anywhere.
+    expect(history.canBack()).toBe(false);
+    expect(history.canBack(line('a.ts', 'new', 5))).toBe(false);
+    expect(history.canForward()).toBe(false);
+    // A place recorded, with no view to reveal it, is nowhere to go.
+    history.record(line('a.ts', 'new', 1));
+    expect(history.canBack(line('a.ts', 'new', 5))).toBe(false);
+    const diff = viewer(history, '', 'diff');
+    expect(history.canBack(line('a.ts', 'new', 5))).toBe(true);
+    expect(diff.shown).toEqual([]);
+    // Back from the very place it would go to goes nowhere, as `back` keeps it once.
+    expect(history.canBack(line('a.ts', 'new', 1))).toBe(false);
+    expect(history.back(line('a.ts', 'new', 1))).toBeUndefined();
+    // Back once, and there's nowhere further back, and somewhere forward.
+    history.record(line('a.ts', 'new', 2));
+    expect(history.back(line('a.ts', 'new', 5))).toEqual(line('a.ts', 'new', 2));
+    expect(history.back()).toEqual(line('a.ts', 'new', 1));
+    expect(history.canBack()).toBe(false);
+    expect(history.canForward()).toBe(true);
+    expect(history.forward()).toEqual(line('a.ts', 'new', 2));
+    expect(history.forward()).toEqual(line('a.ts', 'new', 5));
+    expect(history.canForward()).toBe(false);
+    expect(history.canBack()).toBe(true);
+    // With the view gone, there's nowhere either way.
+    diff.unregister();
+    expect(history.canBack()).toBe(false);
+    // Each tab asks of its own places.
+    viewer(history, 'other', 'diff');
+    history.tab('other');
+    expect(history.canBack(line('b.ts', 'new', 1))).toBe(false);
+  });
+
+  test('tells who listens of each change to where Back and Forward could go', () => {
+    const history = new History();
+    let heard = 0;
+    const stop = history.subscribe(() => {
+      heard += 1;
+    });
+    const diff = viewer(history, '', 'diff');
+    expect(heard).toBe(1);
+    history.record(line('a.ts', 'new', 1));
+    expect(heard).toBe(2);
+    history.back(line('a.ts', 'new', 2));
+    expect(heard).toBe(3);
+    history.forward();
+    expect(heard).toBe(4);
+    // Nowhere to go changes nothing.
+    history.forward();
+    expect(heard).toBe(4);
+    history.tab('other');
+    history.tab('other');
+    expect(heard).toBe(5);
+    history.close('other');
+    expect(heard).toBe(6);
+    diff.unregister();
+    expect(heard).toBe(7);
+    stop();
+    history.record(line('a.ts', 'new', 3));
+    expect(heard).toBe(7);
+  });
 });

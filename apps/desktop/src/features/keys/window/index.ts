@@ -37,6 +37,8 @@ function syncMenu(menu: Client<typeof contract>): void {
   };
   registry().subscribe(soon);
   onMenuStale(soon);
+  // Back and Forward dim where the tab's history has nowhere to go.
+  registry().history.subscribe(soon);
   window.addEventListener('focusin', soon);
   window.addEventListener('focusout', soon);
   send();
@@ -94,15 +96,19 @@ export default {
       },
     },
     escape: { run: escapeToMiddle },
+    // With nowhere to go, Back and Forward are dimmed, which says it all: their keys do nothing,
+    // and say nothing.
     back: {
       run() {
-        if (!registry().history.back(here())) notify('Back', "There's nowhere to go back to.");
+        registry().history.back(here());
       },
+      enabled: () => registry().history.canBack(here()) || '',
     },
     forward: {
       run() {
-        if (!registry().history.forward()) notify('Forward', "There's nowhere to go forward to.");
+        registry().history.forward();
       },
+      enabled: () => registry().history.canForward() || '',
     },
     // A file Lo won't open says why when asked, as any command that can't run does.
     openKeymap: { run: openKeymap, enabled: keymapOpenable },
