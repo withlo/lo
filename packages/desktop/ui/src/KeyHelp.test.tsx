@@ -218,11 +218,19 @@ describe('KeyHelp', () => {
         open
         onOpenChange={() => {}}
         groups={groups}
-        problem="The keymap file is over 1 MiB, so Lo didn't read it."
+        problem={{
+          title: 'Can’t read the keymap file',
+          reason: 'It’s 1.1 MB, over the 1 MB limit.',
+          details: 'EIO',
+        }}
       />,
     );
+    // An error, as every failure is: what failed and why, with what the system said behind Details.
     expect(page.querySelector('[role="alert"]')?.textContent).toBe(
-      "The keymap file is over 1 MiB, so Lo didn't read it.",
+      'Can’t read the keymap file It’s 1.1 MB, over the 1 MB limit.',
+    );
+    expect([...page.querySelectorAll('button')].map((each) => each.textContent)).toContain(
+      'Details',
     );
   });
 
@@ -328,7 +336,7 @@ describe('the styles', () => {
           groups={groups}
           show="keys.back"
           errors={[{ line: 1, message: 'x' }]}
-          problem="x"
+          problem={{ title: 'x', reason: 'y', details: 'z' }}
           onOpenKeymap={() => {}}
         />
       </>,

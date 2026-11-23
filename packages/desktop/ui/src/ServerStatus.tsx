@@ -96,6 +96,8 @@ export interface ServerTrustFailure {
   title: string;
   /** Why, in a sentence, or nothing where the cause isn't known. */
   message: string;
+  /** A name in `message` that's code, such as `settings.json`, which shows as code. */
+  code?: string | undefined;
   /** What the settings file or the system said, as it came, behind Details. */
   details?: string | undefined;
   /** A button that helps, after the reason: "Open settings.json". */
@@ -235,6 +237,19 @@ const item = cva(STATUS_BUTTON, {
     failed: { true: 'bg-danger-bg text-danger', false: '' },
   },
 });
+
+/** `text`, with the name `code` in it shown as code: "`settings.json` has an error." */
+function Coded({ text, code }: { text: string; code?: string | undefined }) {
+  const at = code === undefined ? -1 : text.indexOf(code);
+  if (code === undefined || at === -1) return <ShownText text={text} />;
+  return (
+    <>
+      <ShownText text={text.slice(0, at)} />
+      <code>{code}</code>
+      <ShownText text={text.slice(at + code.length)} />
+    </>
+  );
+}
 
 /** What the button that takes the reader to trust, or to stop, says. */
 function trustLabel(action: ServerTrust['action']): string {
@@ -484,7 +499,9 @@ export function ServerStatus({
           <Problem
             title={<ShownText text={trust.failure.title} />}
             reason={
-              trust.failure.message === '' ? undefined : <ShownText text={trust.failure.message} />
+              trust.failure.message === '' ? undefined : (
+                <Coded text={trust.failure.message} code={trust.failure.code} />
+              )
             }
             action={
               trust.failure.fix && {

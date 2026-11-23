@@ -8,6 +8,7 @@
 
 import { z } from 'zod';
 
+import type { Cause } from '../../ipc/cause.ts';
 import { defineContract, reply } from '../../ipc/contract.ts';
 import { tabId } from '../tab/contract.ts';
 import { nodeId, pullNumber } from './settings.ts';
@@ -236,8 +237,15 @@ export interface ServerLog {
   lines: string[];
 }
 
-/** How asking to trust went: the reader said "Trust", or didn't. */
-export type Asked = 'trusted' | 'cancelled';
+/**
+ * How asking to trust went: the reader said "Trust", or didn't; or what the pull request joins
+ * couldn't be read from GitHub, or took too long (`unread`), by its cause, with what GitHub or the
+ * system said, for Details.
+ */
+export type Asked =
+  | 'trusted'
+  | 'cancelled'
+  | { readonly kind: 'unread'; readonly cause: Cause; readonly details?: string | undefined };
 
 export const contract = defineContract('code', {
   requests: {

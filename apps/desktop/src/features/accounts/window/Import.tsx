@@ -28,7 +28,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 
 import { IpcError } from '../../../ipc/contract.ts';
 import { registry } from '../../../window/commands/registry.ts';
 import { client } from '../../../window/ipc.ts';
-import { explain } from '../../../window/explain.ts';
+import { distrustReason, explain, remedyOf } from '../../../window/explain.ts';
 import { contract as app } from '../../app/contract.ts';
 import type { GhAccount, GhListing, ImportFailure, Imported } from '../contract.ts';
 import { closeDialog, openSignIn } from './dialogs.ts';
@@ -138,10 +138,11 @@ function failureWords(
 
 /**
  * Whether importing the account again could go another way: it failed for want of an answer, or
- * GitHub's error, not for what GitHub CLI holds.
+ * GitHub's error, not for what GitHub CLI holds, nor for a cause trying again can't help with,
+ * such as a sign-in GitHub refused or the rate limit until it resets ({@link remedyOf}).
  */
 function canRetry(why: ImportFailure): boolean {
-  return why.kind === 'failed';
+  return why.kind === 'failed' && remedyOf(why.cause) === 'tryAgain';
 }
 
 /** Sign-ins are kept in the system's keychain, which isn't there, as this system says it. */
@@ -318,7 +319,11 @@ function unlisted(listing: Unlisted | undefined): {
       return { problem: { title: 'Can’t find GitHub CLI' }, again: 'Check again' };
     case 'distrusted':
       return {
-        problem: { title: 'Can’t use GitHub CLI', details: listing.details },
+        problem: {
+          title: 'Can’t use GitHub CLI',
+          reason: distrustReason(listing.why),
+          details: listing.details,
+        },
         again: 'Check again',
       };
     case 'failed':
@@ -326,8 +331,8 @@ function unlisted(listing: Unlisted | undefined): {
     default:
       throw new Error(`A listing Lo doesn't know: ${JSON.stringify(listing satisfies never)}`);
   }
-  const { details } = listing;
-  switch (listing.why) {
+  const { details, why } = listing;
+  switch (why) {
     case 'run':
       return { problem: { title: 'Can’t use GitHub CLI', details }, again: 'Check again' };
     case 'tooOld': {
@@ -349,7 +354,7 @@ function unlisted(listing: Unlisted | undefined): {
     case 'other':
       return { problem: { title: reading, details }, again: 'Try again' };
     default:
-      throw new Error(`A failure Lo doesn't know: ${JSON.stringify(listing.why satisfies never)}`);
+      throw new Error(`A failure Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
   }
 }
 

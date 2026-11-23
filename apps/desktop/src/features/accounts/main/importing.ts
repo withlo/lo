@@ -4,6 +4,7 @@
 // Nothing here calls Electron, so it runs under unit tests with a fake gh and a `fetch` that
 // replays GitHub.
 
+import { describeDistrust } from '@lo/git';
 import {
   causeOf,
   GithubClient,
@@ -39,7 +40,12 @@ export async function listGh(
   const found = await gh.find();
   if (found.kind === 'missing') return { kind: 'missing' };
   if (found.kind === 'distrusted') {
-    return { kind: 'distrusted', program: found.program, details: distrustOf(found) };
+    return {
+      kind: 'distrusted',
+      program: found.program,
+      why: found.distrust.why,
+      details: detailsOf(distrustDetails(found)) ?? found.program,
+    };
   }
   const { program } = found;
   // gh's version never fails, so it's there to name a gh too old to list its accounts.
@@ -73,9 +79,9 @@ export async function listGh(
   }
 }
 
-/** Where a gh Lo passed over is, and why, for Details. */
-function distrustOf(found: Extract<GhLookup, { kind: 'distrusted' }>): string {
-  return `${found.program}, ${found.why}`;
+/** Where a gh Lo passed over is, and what's true of it, for Details, as Git's says it. */
+function distrustDetails(found: Extract<GhLookup, { kind: 'distrusted' }>): string {
+  return `${found.program}\n${describeDistrust(found.distrust)}`;
 }
 
 /** Whether gh could use the account's token when it last checked. */
@@ -127,7 +133,7 @@ export async function importFromGh(
     const why: ImportFailure = {
       kind: 'failed',
       cause: { kind: 'unknown' },
-      details: found.kind === 'distrusted' ? detailsOf(distrustOf(found)) : undefined,
+      details: found.kind === 'distrusted' ? detailsOf(distrustDetails(found)) : undefined,
     };
     return logins.map((login) => ({ ok: false, login, why }));
   }
@@ -203,7 +209,8 @@ function tokenFromGh(
       return undefined;
     }
     if (found.kind === 'distrusted') {
-      tell(login, `Lo found gh at ${found.program}, but ${found.why}, so Lo won't run it.`);
+      const distrust = describeDistrust(found.distrust);
+      tell(login, `Lo found gh at ${found.program}, but ${distrust}, so Lo won't run it.`);
       return undefined;
     }
     let listed: GhAccount[];

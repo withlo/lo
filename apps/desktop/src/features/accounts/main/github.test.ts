@@ -156,6 +156,7 @@ function brief(event: GithubEvent): string {
     case 'signedOut':
       return `signedOut ${event.login}: ${event.why}`;
     case 'removed':
+    case 'added':
     case 'cantSave':
     case 'cantSaveOver':
       return `${event.kind} ${event.login}`;
@@ -219,7 +220,8 @@ describe('accounts', () => {
     github.onChange(changes);
     const client = await github.client(LOGIN);
     await expect(client.user()).rejects.toBeInstanceOf(GithubError);
-    expect(events).toEqual(['signedOut rozed-bot: refused']);
+    // Added, which tabs hear to look again for what nobody could see, then signed out.
+    expect(events).toEqual(['added rozed-bot', 'signedOut rozed-bot: refused']);
     expect(changes).toHaveBeenCalled();
     expect(await github.accounts()).toMatchObject([{ signedOut: 'refused' }]);
     // The refused token is gone, and the account stays signed out until it signs in again.
@@ -344,8 +346,9 @@ describe('polling', () => {
       { login: LOGIN, target: 'rozed-dev/playground#1', name: 'PullRequestCheck' },
       { login: LOGIN, target: 'rozed-dev/playground#1', name: 'PullSummary' },
     ]);
-    expect(events.filter((event) => event.startsWith('seen'))).toHaveLength(1);
-    expect(events[0]).toMatch(/^seen rozed-dev\/playground#1 by rozed-bot: [0-9a-f]{40}/);
+    const seen = events.filter((event) => event.startsWith('seen'));
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatch(/^seen rozed-dev\/playground#1 by rozed-bot: [0-9a-f]{40}/);
     expect(github.recent()).toMatchObject([
       { pull: pr(1), title: 'feat: stack layer A', login: LOGIN, openedAt: START * 1000 },
     ]);
@@ -457,7 +460,7 @@ describe('saving before quitting', () => {
     storage.refusingWrites = false;
     await github.stop(4_000);
     expect(await kept(database, storage)).toBe('gho_FAKE_RENEWED');
-    expect(events).toEqual([]);
+    expect(events).toEqual(['added rozed-bot']);
   });
 
   it("waits for a renewal GitHub is answering, but no longer than it's given", async () => {

@@ -10,6 +10,7 @@ import {
   Button,
   Collapse,
   ContextMenu,
+  CopyButton,
   Countdown,
   EmptyState,
   Problem,
@@ -17,6 +18,7 @@ import {
   StatusItem,
   StatusLine,
   Swap,
+  useCopy,
   useDetails,
   type BannerProps,
   type ContextMenuAnchor,
@@ -102,6 +104,22 @@ function reasonOf(detail: string | undefined, retryAt: number | undefined): Reac
   return (
     <>
       {detail === undefined ? '' : `${detail} `}Retrying <Countdown at={retryAt} />.
+    </>
+  );
+}
+
+/** A reason, then what it says to run, each as code with Copy: how to install Git. */
+function Commands({ reason, commands }: { reason: ReactNode; commands: readonly string[] }) {
+  const copy = useCopy();
+  return (
+    <>
+      {reason}
+      {commands.map((command) => (
+        <span key={command} className="ms-8 inline-flex items-center gap-4 align-middle">
+          <code className="break-all text-fg code-small select-text">{command}</code>
+          <CopyButton size="sm" variant="ghost" onCopy={() => copy(command)} />
+        </span>
+      ))}
     </>
   );
 }
@@ -312,7 +330,16 @@ export function LocalItem({
     problem !== undefined ? (
       <Problem
         title={problem.title}
-        reason={reasonOf(problem.detail, problem.retryAt)}
+        reason={
+          problem.commands === undefined ? (
+            reasonOf(problem.detail, problem.retryAt)
+          ) : (
+            <Commands
+              reason={reasonOf(problem.detail, problem.retryAt)}
+              commands={problem.commands}
+            />
+          )
+        }
         action={
           problem.actions[0] && {
             label: problem.actions[0].label,

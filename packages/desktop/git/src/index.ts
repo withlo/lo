@@ -34,6 +34,7 @@ export {
   defaultPlaces,
   describeDistrust,
   type Distrust,
+  distrustOf,
   findGit,
   type FindOptions,
   gitAt,

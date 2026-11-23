@@ -1,7 +1,7 @@
 // Asking the reader to trust: nothing but "Trust" in main's own dialog, pressed while the window
 // is there, writes an entry, and only the entry that dialog named.
 
-import type { PullRequestRepositories } from '@lo/github';
+import { GithubError, type PullRequestRepositories } from '@lo/github';
 import { describe, expect, it, vi } from 'vitest';
 
 import { IpcError } from '../../../ipc/contract.ts';
@@ -390,10 +390,17 @@ describe('asking to trust', () => {
   });
 
   it('asks nothing when GitHub can’t be read, or there’s no window to ask in', async () => {
-    const failing = asker(views, () => Promise.reject(new Error('offline')));
-    expect(
-      (await refusal(failing.trust.ask({ view: 't1', repo: 'rozed-dev/e2e', pull: null })))?.code,
-    ).toBe('unread');
+    const failing = asker(views, () =>
+      Promise.reject(
+        new GithubError({ kind: 'api', status: 502, message: 'Server Error', errors: [] }),
+      ),
+    );
+    // Not asked: why, by GitHub's cause, with what GitHub said for Details.
+    expect(await failing.trust.ask({ view: 't1', repo: 'rozed-dev/e2e', pull: null })).toEqual({
+      kind: 'unread',
+      cause: { kind: 'github' },
+      details: '502 Bad Gateway\nServer Error',
+    });
     expect(failing.dialogs).toEqual([]);
     const windowless = asker(views);
     expect(
@@ -483,9 +490,10 @@ describe('saying how it goes', () => {
         },
         { readLimit: 1000 },
       );
-      const unread = refusal(reading.trust.ask({ view: 't1', repo: 'rozed-dev/e2e', pull: null }));
+      const unread = reading.trust.ask({ view: 't1', repo: 'rozed-dev/e2e', pull: null });
       await vi.advanceTimersByTimeAsync(1000);
-      expect((await unread)?.code).toBe('unread');
+      // GitHub didn't answer in time.
+      expect(await unread).toEqual({ kind: 'unread', cause: { kind: 'timeout' } });
       expect(given?.aborted).toBe(true);
       expect(reading.dialogs).toEqual([]);
       expect(reading.steps).toEqual(['t1 reading', 't1 over']);

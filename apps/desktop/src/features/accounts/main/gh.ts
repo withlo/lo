@@ -15,9 +15,10 @@ import { delimiter, isAbsolute, join } from 'node:path';
 import {
   Child,
   defaultPlaces,
+  distrustOf,
   GitError,
   isExecutableFile,
-  whyDistrusted,
+  type Distrust,
   type Places,
 } from '@lo/git';
 import { Token } from '@lo/github';
@@ -117,7 +118,7 @@ export class GhError extends Error {
 export type GhLookup =
   | { readonly kind: 'found'; readonly program: string }
   | { readonly kind: 'missing' }
-  | { readonly kind: 'distrusted'; readonly program: string; readonly why: string };
+  | { readonly kind: 'distrusted'; readonly program: string; readonly distrust: Distrust };
 
 /** An account gh is signed in to on github.com, as `gh auth status` lists it. */
 export interface GhAccount {
@@ -179,9 +180,9 @@ export class Gh {
       if (real === undefined || tried.has(real)) continue;
       tried.add(real);
       if (!(await isExecutableFile(candidate))) continue;
-      const distrusted = await whyDistrusted(candidate, this.#places.groups);
-      if (distrusted !== undefined) {
-        passedOver ??= { kind: 'distrusted', program: candidate, why: distrusted };
+      const distrust = await distrustOf(candidate, this.#places.groups);
+      if (distrust !== undefined) {
+        passedOver ??= { kind: 'distrusted', program: candidate, distrust };
         continue;
       }
       return { kind: 'found', program: candidate };

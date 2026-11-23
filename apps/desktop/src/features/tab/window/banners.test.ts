@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import type { Cause } from '../../../ipc/cause.ts';
+import { timeOfDay } from '../../../window/explain.ts';
 import type { LocalState, PullView } from '../contract.ts';
 import {
   accountChoice,
@@ -61,7 +63,9 @@ describe('a pull request’s tab that can’t show it', () => {
       title: 'Can’t open #9',
       detail: 'It doesn’t exist, or rozed-bot can’t see it.',
       details: 'Not Found',
+      // Another account may see it: signing in with one works out the tab's account again.
       actions: [
+        { label: 'Sign in with GitHub…', do: { kind: 'signIn' } },
         {
           label: 'Open on GitHub',
           do: { kind: 'link', url: 'https://github.com/rozed-dev/e2e/pull/9' },
@@ -144,6 +148,25 @@ describe('a pull request’s tab that can’t show it', () => {
     );
     expect(stopped?.retryAt).toBe(undefined);
     expect(stopped?.actions).toEqual([{ label: 'Try again', do: { kind: 'retry' } }]);
+  });
+
+  it('offers what the cause calls for: a sign-in, or nothing while the rate limit holds', () => {
+    const failed = (cause: Cause) =>
+      failureOf(view({ problem: { kind: 'failed', cause, retryAt: clock.now + 5_000 } }), E2E);
+    // The reset time is the reason: no countdown to the next try, and nothing to press.
+    expect(failed({ kind: 'rateLimit', resets: clock.now + 25 * 60_000 })).toMatchObject({
+      detail: `GitHub’s rate limit resets at ${timeOfDay(clock.now + 25 * 60_000)}.`,
+      retryAt: undefined,
+      actions: [],
+    });
+    expect(failed({ kind: 'signedOut', login: 'rozed-bot' })).toMatchObject({
+      detail: 'rozed-bot is signed out.',
+      actions: [{ label: 'Sign in again', do: { kind: 'signIn' } }],
+    });
+    expect(failed({ kind: 'hidden', login: 'rozed-bot' })).toMatchObject({
+      detail: 'It doesn’t exist, or rozed-bot can’t see it.',
+      actions: [{ label: 'Sign in with GitHub…', do: { kind: 'signIn' } }],
+    });
   });
 
   it('asks which account to open it as, when several can see it, rather than failing', () => {
@@ -272,7 +295,17 @@ describe('the local copy’s item', () => {
     expect(local({ kind: 'failed', failure: 'auth' })?.problem?.actions).toEqual([
       { label: 'Sign in with GitHub…', do: { kind: 'signIn' } },
     ]);
-    // A copy held open says what it waits for, with nothing to press.
+    // A copy held open says what it waits for, with nothing to press and no time, even while
+    // main looks again by itself.
+    expect(
+      local({ kind: 'retrying', failure: 'heldByServers', attempt: 1, retryAt: clock.now + 20_000 })
+        ?.problem,
+    ).toMatchObject({
+      title: 'Can’t use the local copy',
+      detail: 'It’s made again once its language servers stop.',
+      retryAt: undefined,
+      actions: [],
+    });
     expect(local({ kind: 'failed', failure: 'heldByTabs' })).toMatchObject({
       label: 'Can’t use the local copy',
       problem: {
@@ -285,14 +318,36 @@ describe('the local copy’s item', () => {
       kind: 'noGit',
       git: { status: 'missing', install: { commands: ['xcode-select --install'], page: null } },
     };
+    // How to install Git is in the item's details, to copy, never only behind Details.
     expect(local(noGit)).toMatchObject({
       ball: 'failed',
       label: 'Can’t find Git',
       problem: {
         title: 'Can’t find Git',
-        details: 'xcode-select --install',
+        commands: ['xcode-select --install'],
+        details: undefined,
         actions: [{ label: 'Check again', do: { kind: 'retry' } }],
       },
+    });
+    const old: LocalState = {
+      kind: 'noGit',
+      git: {
+        status: 'tooOld',
+        program: '/usr/bin/git',
+        version: '2.30.0',
+        minimum: '2.41.0',
+        check: 'version',
+        install: {
+          commands: ['sudo apt install git'],
+          page: 'https://git-scm.com/downloads/linux',
+        },
+      },
+    };
+    expect(local(old)?.problem).toMatchObject({
+      title: 'Can’t use Git 2.30.0',
+      detail: 'Version 2.41.0 or newer is required.',
+      commands: ['sudo apt install git', 'https://git-scm.com/downloads/linux'],
+      details: '/usr/bin/git',
     });
   });
 

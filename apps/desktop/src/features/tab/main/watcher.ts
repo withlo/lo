@@ -57,8 +57,11 @@ export class Watcher {
     const { github, git } = options;
     this.#stop.push(
       github.onEvent((event) => {
-        if (event.kind !== 'removed') return;
-        for (const tab of this.#tabs.values()) tab.accountGone(event.login);
+        if (event.kind === 'removed') {
+          for (const tab of this.#tabs.values()) tab.accountGone(event.login);
+        } else if (event.kind === 'added') {
+          for (const tab of this.#tabs.values()) tab.accountAdded();
+        }
       }),
       git.onCache(() => this.#gitChanged()),
     );

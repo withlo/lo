@@ -68,7 +68,8 @@ describe('finding gh', () => {
     expect(await gh.find()).toEqual({
       kind: 'distrusted',
       program: join(shared, 'gh'),
-      why: `other users can change ${shared}`,
+      // As parts, which the window words as it words Git's.
+      distrust: { why: 'folderWritable', path: shared },
     });
     // A gh the person named is held to the same rule.
     const named = new Gh({

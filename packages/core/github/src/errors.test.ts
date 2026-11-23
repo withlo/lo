@@ -448,7 +448,8 @@ test('a cause is the guides, with what words it', () => {
   expect(causeOf(network('offline'))).toEqual({ kind: 'offline' });
   expect(causeOf(network('lost'))).toEqual({ kind: 'timeout' });
   expect(causeOf(network('tunnel'))).toEqual({ kind: 'proxy', why: 'refused' });
-  expect(causeOf(network('refused'))).toEqual({ kind: 'unknown' });
+  // Refused with no proxy to blame: TLS, so a certificate.
+  expect(causeOf(network('refused'))).toEqual({ kind: 'certificate' });
   const signIn = new GithubError({
     kind: 'network',
     failure: 'refused',
@@ -457,6 +458,13 @@ test('a cause is the guides, with what words it', () => {
   });
   expect(causeOf(signIn)).toEqual({ kind: 'proxy', why: 'signIn' });
   expect(causeOf(api(500))).toEqual({ kind: 'github' });
+  // An answer Lo couldn't read, or whose pages don't fit together, is GitHub's error too.
+  expect(causeOf(new GithubError({ kind: 'decode', message: 'no data' }))).toEqual({
+    kind: 'github',
+  });
+  expect(
+    causeOf(new GithubError({ kind: 'inconsistent', message: 'a cursor that stays' })),
+  ).toEqual({ kind: 'github' });
   expect(causeOf(rateLimit(1_700_000_100))).toEqual({
     kind: 'rateLimit',
     resets: 1_700_000_100_000,

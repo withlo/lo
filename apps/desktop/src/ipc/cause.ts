@@ -50,9 +50,22 @@ export const DETAILS_LIMIT = 4000;
 /** What the source said, as it came, behind Details: GitHub's, Git's or the system's words. */
 export const details = z.string().min(1).max(DETAILS_LIMIT);
 
-/** `text` as Details carries it: nothing when it's empty, and cut to {@link DETAILS_LIMIT}. */
+/**
+ * `text` as Details carries it: without the characters that turn text around
+ * ({@link withoutBidi}), nothing when it's empty, and cut to {@link DETAILS_LIMIT}.
+ */
 export function detailsOf(text: string | undefined): string | undefined {
-  const trimmed = text?.trim();
+  const trimmed = text === undefined ? undefined : withoutBidi(text).trim();
   if (trimmed === undefined || trimmed === '') return undefined;
   return trimmed.length <= DETAILS_LIMIT ? trimmed : `${trimmed.slice(0, DETAILS_LIMIT - 1)}…`;
+}
+
+/**
+ * `text` without the characters that turn the direction of the text after them around until
+ * they're closed (embeddings, overrides and isolates), which a pull request's author could use to
+ * make a title or a file's name read as something else. The marks right-to-left text places numbers
+ * and punctuation with (LRM, RLM, ALM) stay: they change no more than their neighbours.
+ */
+export function withoutBidi(text: string): string {
+  return text.replaceAll(/[\u202A-\u202E\u2066-\u2069]/g, '');
 }

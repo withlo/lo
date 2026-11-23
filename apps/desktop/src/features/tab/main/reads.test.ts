@@ -230,9 +230,10 @@ describe('what reading it ran into', () => {
     const error = new Error('the answer made no sense', {
       cause: new GithubError({ kind: 'decode', message: 'pull.title is missing' }),
     });
+    // An answer Lo couldn't read is GitHub's error, with what was wrong with it behind Details.
     expect(problemOf(error, E2E, account, 1234.6)).toEqual({
       kind: 'failed',
-      cause: { kind: 'unknown' },
+      cause: { kind: 'github' },
       details: "couldn't read GitHub's answer: pull.title is missing",
       retryAt: 1235,
     });

@@ -148,6 +148,9 @@ test.describe('with a keymap file that opening could run', () => {
     chmodSync(path, 0o755);
     const help = await openHelp(page);
     await expect(help.getByRole('alert').first()).toContainText('The keymap file is executable');
+    await expect(help.getByRole('alert').first()).toContainText(
+      'Clear its execute permission to open it from here.',
+    );
     await expect(openKeymap(help)).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(help).toBeHidden();

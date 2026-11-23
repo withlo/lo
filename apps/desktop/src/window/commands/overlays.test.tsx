@@ -108,7 +108,7 @@ describe('key help and the keymap file', () => {
         canOpen: false,
       }),
     );
-    expect(alerts()).toEqual(['Can’t read the keymap fileIt’s 1.1 MB, over the 1 MB limit.']);
+    expect(alerts()).toEqual(['Can’t read the keymap file It’s 1.1 MB, over the 1 MB limit.']);
     act(() =>
       applyKeymapFile({ text: 'bind x nope.nothing\n# fine\nbnid y keys.back', canOpen: true }),
     );
@@ -153,13 +153,21 @@ describe('key help’s button for the keymap file', () => {
       }),
     );
     expect(button()).toBeUndefined();
-    expect(alerts()).toEqual(['Can’t read the keymap fileIt isn’t a file.']);
-    // An executable file's keys apply: only opening it is refused, and that's why there's no button.
+    expect(alerts()).toEqual(['Can’t read the keymap file It isn’t a file.']);
+    // An executable file's keys apply: only opening it is refused, and that's why there's no
+    // button, with what to do about it.
     act(() =>
-      applyKeymapFile({ text: '', canOpen: false, refusal: 'The keymap file is executable' }),
+      applyKeymapFile({
+        text: '',
+        canOpen: false,
+        refusal: 'The keymap file is executable',
+        remedy: 'Clear its execute permission to open it from here.',
+      }),
     );
     expect(button()).toBeUndefined();
-    expect(alerts()).toEqual(['The keymap file is executable']);
+    expect(alerts()).toEqual([
+      'The keymap file is executable Clear its execute permission to open it from here.',
+    ]);
     act(() => applyKeymapFile({ text: '', canOpen: true }));
     expect(button()).toBeDefined();
     expect(alerts()).toEqual([]);

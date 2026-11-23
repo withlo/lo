@@ -512,6 +512,24 @@ describe('importing from gh', () => {
     expect(old).toContain('A newer version is required.');
     expect(old).not.toContain('unknown flag');
     expect(button(dialog('import-gh'), 'Check again')).toBeDefined();
+    act(() => closeDialog());
+    // One passed over says why, as Git's does, with where it is behind Details.
+    installBridge({
+      'accounts.keyring': () => null,
+      'accounts.ghAccounts': () => ({
+        kind: 'distrusted',
+        program: '/opt/shared/gh',
+        why: 'folderWritable',
+        details: '/opt/shared/gh\nother users can change /opt/shared',
+      }),
+    });
+    act(() => openImport());
+    await settle();
+    const passed = dialog('import-gh')?.textContent ?? '';
+    expect(passed).toContain('Can’t use GitHub CLI');
+    expect(passed).toContain('Other users can change its folder.');
+    expect(passed).not.toContain('/opt/shared');
+    expect(button(dialog('import-gh'), 'Check again')).toBeDefined();
   });
 
   it('says GitHub CLI isn’t signed in, with the command that signs it in', async () => {

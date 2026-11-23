@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { cause, details } from '../../ipc/cause.ts';
 import { defineContract, reply } from '../../ipc/contract.ts';
+import { distrustWhy } from '../../ipc/git.ts';
 
 /** A GitHub login: letters, digits and hyphens, at most 39. */
 export const login = z.string().regex(/^[A-Za-z0-9-]{1,39}$/);
@@ -130,8 +131,16 @@ export const ghListing = z.discriminatedUnion('kind', [
   }),
   /** No gh found. */
   z.strictObject({ kind: z.literal('missing') }),
-  /** A gh Lo passed over since someone besides this user or root could change it: where, and why. */
-  z.strictObject({ kind: z.literal('distrusted'), program: z.string(), details }),
+  /**
+   * A gh Lo passed over since someone besides this user or root could change it: where, why, and
+   * what that's true of behind Details.
+   */
+  z.strictObject({
+    kind: z.literal('distrusted'),
+    program: z.string(),
+    why: distrustWhy,
+    details,
+  }),
   /**
    * gh failed: it couldn't be run (`run`), it's too old to list its accounts (`tooOld`, with its
    * `version` when it says), it took too long (`tooSlow`), or anything else (`other`). What gh or

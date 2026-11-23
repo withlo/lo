@@ -23,9 +23,10 @@ import {
   TimelinePush,
   TimelineEnd,
   TimelineReview,
+  type ProblemAction,
   type TimelineHidden,
 } from '@lo/ui';
-import { keyLabels, setScopeSource } from '@lo/ui/commands';
+import { keyLabels, NO_TARGET, setScopeSource } from '@lo/ui/commands';
 import {
   useEffect,
   useLayoutEffect,
@@ -39,7 +40,7 @@ import {
 
 import { useMenuTarget } from '../../../window/commands/menus.tsx';
 import { registry, setMiddle, useKeys } from '../../../window/commands/registry.ts';
-import { explain } from '../../../window/explain.ts';
+import { explain, REMEDY_LABELS, remedyOf } from '../../../window/explain.ts';
 import { avatarImage } from '../../../window/images.ts';
 import {
   deletePullComment,
@@ -168,15 +169,41 @@ function NoneInRun({ tab }: { tab: PullTab }) {
 
 /**
  * A timeline that couldn't be read, with nothing read before: why, by its cause, with what GitHub or
- * the system said behind Details, and when main tries again, counted down, where it knows. Try now, or Try again where it
- * doesn't, reads it at once, busy until main's read has answered. While the account's poller reads
- * nothing, the tab's banner says the wait and has the way to try again, so this has neither.
+ * the system said behind Details, and when main tries again, counted down, where it knows. What it
+ * offers follows the cause: a sign-in, for an account signed out or one that can't see it; nothing,
+ * while the rate limit holds, whose reset time the reason says; else Try now, or Try again where
+ * main doesn't say when, which reads it at once, busy until main's read has answered. While the
+ * account's poller reads nothing, the tab's banner says the wait and has the way to try again, so
+ * this has neither.
  */
 function Failed({ tab, view }: { tab: PullTab; view: TimelineView | undefined }) {
   const [trying, setTrying] = useState(false);
   const cause = view?.cause ? explain(view.cause) : undefined;
-  const retryAt = view?.retryAt ?? undefined;
+  const remedy = view?.cause ? remedyOf(view.cause) : 'tryAgain';
+  const retryAt = remedy === 'tryAgain' ? (view?.retryAt ?? undefined) : undefined;
   const stalled = view?.stalled ?? false;
+  const action: ProblemAction | undefined =
+    stalled || remedy === 'none'
+      ? undefined
+      : remedy === 'tryAgain'
+        ? {
+            label: retryAt === undefined ? REMEDY_LABELS.tryAgain : 'Try now',
+            busy: trying,
+            working: 'Trying…',
+            onClick: () => {
+              setTrying(true);
+              main()
+                .retry({ id: tab.id })
+                .catch((error: unknown) =>
+                  console.error("Lo couldn't read the timeline again:", error),
+                )
+                .finally(() => setTrying(false));
+            },
+          }
+        : {
+            label: REMEDY_LABELS[remedy],
+            onClick: () => registry().run('accounts.addAccount', NO_TARGET),
+          };
   return (
     <Problem
       layout="view"
@@ -191,24 +218,7 @@ function Failed({ tab, view }: { tab: PullTab; view: TimelineView | undefined })
           </>
         )
       }
-      action={
-        stalled
-          ? undefined
-          : {
-              label: retryAt === undefined ? 'Try again' : 'Try now',
-              busy: trying,
-              working: 'Trying…',
-              onClick: () => {
-                setTrying(true);
-                main()
-                  .retry({ id: tab.id })
-                  .catch((error: unknown) =>
-                    console.error("Lo couldn't read the timeline again:", error),
-                  )
-                  .finally(() => setTrying(false));
-              },
-            }
-      }
+      action={action}
       details={view?.details ? withoutBidi(view.details) : undefined}
     />
   );

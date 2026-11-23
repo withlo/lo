@@ -437,6 +437,27 @@ export function describeDistrust(distrust: Distrust): string {
 
 /**
  * Why someone besides this user and root could change the program at `program`, links followed,
+ * as parts, or `undefined` when nobody else can: the rule {@link findGit} holds git to, for the
+ * other programs Lo finds and runs, such as `gh`. A program whose link can't be followed is
+ * `unchecked`, with the system's words. `groups` are the groups that may write to it, as
+ * {@link Places.groups} has them.
+ */
+export async function distrustOf(
+  program: string,
+  groups: readonly number[],
+): Promise<Distrust | undefined> {
+  let real: string;
+  try {
+    real = await realpath(program);
+  } catch (error) {
+    const said = error instanceof Error ? error.message : String(error);
+    return { why: 'unchecked', path: program, said };
+  }
+  return distrustProgram(program, real, groups);
+}
+
+/**
+ * Why someone besides this user and root could change the program at `program`, links followed,
  * or `undefined` when nobody else can: the rule {@link findGit} holds git to, for the other
  * programs Lo finds and runs, such as `gh`. `groups` are the groups that may write to it, as
  * {@link Places.groups} has them.

@@ -847,6 +847,16 @@ test.describe('without git', () => {
   }) => {
     await drawn(page, 'github');
     await expect(page.getByText('GitHub’s diff', { exact: true })).toBeVisible();
+    // The local copy's item says Git can't be found, and its details how to get it, as a command
+    // to copy.
+    const item = page.locator('footer').getByRole('button', { name: 'Can’t find Git' });
+    await expect(item).toBeVisible();
+    await item.click();
+    const details = page.getByRole('dialog', { name: 'Can’t find Git' });
+    await expect(details.locator('code').first()).not.toBeEmpty();
+    await expect(details.getByRole('button', { name: 'Copy' }).first()).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(details).toHaveCount(0);
     // The unchanged lines before src/parser.ts's hunk aren't GitHub's to show.
     await focusDiff(page);
     await press(page, ']', 'f', ']', 'f', ']', 'f', ']', 'f', ']', 'f');

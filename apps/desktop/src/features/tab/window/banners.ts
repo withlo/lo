@@ -4,7 +4,7 @@
 // details; and a change to the pull request, a newer push, is its banner. Nothing here draws
 // anything.
 
-import { explain, gitWords } from '../../../window/explain.ts';
+import { explain, gitWords, REMEDY_LABELS, remedyOf } from '../../../window/explain.ts';
 import type { Connection, FetchFailure, LocalState, PullView } from '../contract.ts';
 
 /** What a button the tab offers does. */
@@ -30,6 +30,11 @@ export interface BannerSpec {
   readonly tone: 'info' | 'warn' | 'danger';
   readonly title: string;
   readonly detail?: string | undefined;
+  /**
+   * What to run, after the line, each as code with Copy: the commands that install Git, and the
+   * page that lists newer packages, which Lo shows to copy since it opens no page off GitHub.
+   */
+  readonly commands?: readonly string[] | undefined;
   /** When Lo tries again by itself, which the line counts down to after the detail. */
   readonly retryAt?: number | undefined;
   /** What GitHub or Git said, as it came, for Details: never in the title or the line. */
@@ -114,9 +119,10 @@ export function failureOf(
     case 'notFound': {
       // Missing, or hidden from whoever asked: signing in may show it, and GitHub's page says
       // which; or the tab can go.
+      const remedy = remedyOf(problem.cause);
       const signIn =
-        problem.cause.kind === 'private' && !problem.cause.signedIn
-          ? [{ label: 'Sign in with GitHub…', do: { kind: 'signIn' } } as const]
+        remedy === 'signIn' || remedy === 'signInAgain'
+          ? [{ label: REMEDY_LABELS[remedy], do: { kind: 'signIn' } } as const]
           : [];
       const page = `https://github.com/${repository}/pull/${shown.number}`;
       return {
@@ -150,16 +156,26 @@ export function failureOf(
           retry,
         ],
       };
-    case 'failed':
+    case 'failed': {
+      // What it offers follows the cause: a sign-in, or nothing while the rate limit holds, whose
+      // reset time the reason says; else Try again, or Try now while Lo waits to.
+      const remedy = remedyOf(problem.cause);
+      const at = remedy === 'tryAgain' ? problem.retryAt : null;
       return {
         id: 'failed',
         tone: 'danger',
         title,
         detail: explain(problem.cause),
-        retryAt: problem.retryAt ?? undefined,
+        retryAt: at ?? undefined,
         details: problem.details,
-        actions: [problem.retryAt === null ? retry : tryNow],
+        actions:
+          remedy === 'none'
+            ? []
+            : remedy === 'tryAgain'
+              ? [at === null ? retry : tryNow]
+              : [{ label: REMEDY_LABELS[remedy], do: { kind: 'signIn' } }],
       };
+    }
     case 'ask':
     case undefined:
       return undefined;
@@ -295,7 +311,8 @@ export function localNote(
           tone: 'warn',
           title: words.title,
           detail: words.reason,
-          details: [...words.commands, words.page, words.details].filter(Boolean).join('\n'),
+          commands: words.page === undefined ? words.commands : [...words.commands, words.page],
+          details: words.details,
           actions: [{ label: 'Check again', do: { kind: 'retry' } }],
         },
       };
@@ -317,6 +334,8 @@ export function localNote(
       }
       const held = heldBy(local.failure, repository);
       const title = held === undefined ? CANT_FETCH : CANT_USE;
+      // A copy held for its tabs or servers is made again once they let go, whenever that is: it
+      // says what it waits for, with no time and nothing to press.
       return {
         ball: 'failed',
         label: title,
@@ -325,9 +344,9 @@ export function localNote(
           tone: 'warn',
           title,
           detail: held ?? fetchReason(local.failure, repository, login),
-          retryAt: local.retryAt,
+          retryAt: held === undefined ? local.retryAt : undefined,
           details: local.details,
-          actions: [tryNow],
+          actions: held === undefined ? [tryNow] : [],
         },
       };
     }

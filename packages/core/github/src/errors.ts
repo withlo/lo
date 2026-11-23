@@ -441,7 +441,7 @@ export function statusLine(status: number): string {
  * epoch) when GitHub said; an account signed out, or whose sign-in can't be read; something that
  * doesn't exist or can't be seen, by `login`, or with none signed in (`private`) or none of the
  * accounts able to (`signedIn`); an organization that requires single sign-on or hasn't approved
- * Lo; or something else, which has no words of its own.
+ * Lo; a certificate that couldn't be verified; or something else, which has no words of its own.
  */
 export type GithubCause =
   | { readonly kind: 'offline' }
@@ -455,6 +455,7 @@ export type GithubCause =
   | { readonly kind: 'private'; readonly signedIn: boolean }
   | { readonly kind: 'sso'; readonly org: string }
   | { readonly kind: 'unapproved'; readonly org: string }
+  | { readonly kind: 'certificate' }
   | { readonly kind: 'unknown' };
 
 /** What a cause can say besides the error: the repository's `owner`, and the account that asked. */
@@ -485,7 +486,10 @@ export function causeOf(error: unknown, context: CauseContext = {}): GithubCause
           return { kind: 'proxy', why: 'refused' };
         case 'lost':
           return { kind: 'timeout' };
+        // With no proxy to blame, a connection refused for good is TLS: a certificate that
+        // couldn't be verified.
         case 'refused':
+          return { kind: 'certificate' };
         case 'unknown':
           return { kind: 'unknown' };
         default:
@@ -516,12 +520,13 @@ export function causeOf(error: unknown, context: CauseContext = {}): GithubCause
       const org = detail.org ?? owner;
       return org === undefined ? { kind: 'unknown' } : { kind: 'unapproved', org };
     }
+    // GitHub answered, but with an error, or with what Lo couldn't read or fit together.
     case 'api':
     case 'graphql':
-      return { kind: 'github' };
     case 'inconsistent':
-    case 'refusedUrl':
     case 'decode':
+      return { kind: 'github' };
+    case 'refusedUrl':
       return { kind: 'unknown' };
     default:
       // GitHub may fail in a way Lo doesn't know yet: its words say it, behind Details.

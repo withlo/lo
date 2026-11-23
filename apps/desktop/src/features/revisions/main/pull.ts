@@ -1156,12 +1156,14 @@ export class RevisionsTab {
     else if (error instanceof GitError && error.detail.kind === 'unavailable') {
       why = { kind: 'gone', head: null };
     }
-    const said = describe(error);
     // Lo's own account of why goes to the log; what Git or the system said, behind Details.
+    const said = error instanceof GitError ? error.said() : saidBy(error);
     const details = error instanceof Uncompared ? undefined : detailsOf(said);
     this.#problem = { kind: 'compare', from: chosen.from, to: chosen.to, why, details };
     const from = chosen.from === null ? 'the base' : this.#label(chosen.from);
-    this.#options.log(`Lo couldn’t compare ${from} with ${this.#label(chosen.to)}: ${said}.`);
+    this.#options.log(
+      `Lo couldn’t compare ${from} with ${this.#label(chosen.to)}: ${describe(error)}.`,
+    );
     if (same(this.#chosen, chosen)) this.#chosen = undefined;
     const hadReady = this.#ready !== undefined;
     this.#ready = undefined;

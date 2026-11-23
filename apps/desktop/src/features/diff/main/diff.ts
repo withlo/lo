@@ -476,11 +476,11 @@ export class DiffTab {
         // The older side as compared: its head, or its changes replayed onto the newer base.
         const compared = await comparing.compared();
         if ('refused' in compared) {
-          return { kind: 'refused', why: 'the revisions compared are too large to read' };
+          return { kind: 'refused', why: 'compared' };
         }
         rev = compared.old;
       } else if (local?.kind !== 'ready' || local.mergeBase === null) {
-        return { kind: 'refused', why: 'the pull request has no history in common with its base' };
+        return { kind: 'refused', why: 'unrelated' };
       } else {
         rev = parseOid(local.mergeBase);
       }
@@ -503,7 +503,7 @@ export class DiffTab {
       throw new IpcError('invalid', `There’s no file at that path in ${where}.`);
     }
     if (found.mode === 'submodule') {
-      return { kind: 'refused', why: 'it’s a submodule: another repository’s commit' };
+      return { kind: 'refused', why: 'submodule' };
     }
     let { size } = found;
     if (size === undefined && !repo.offline) {
