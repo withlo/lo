@@ -11,7 +11,7 @@
 // never says it couldn't trust what it then trusts. Nothing here calls Electron, so it runs under
 // unit tests.
 
-import type { PullRequestRepositories } from '@lo/github';
+import { saidBy, type PullRequestRepositories } from '@lo/github';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { Unwritten } from '../../settings/service.ts';
@@ -147,30 +147,20 @@ export function subjectOf(
   const { base, head, isCrossRepository } = repositories;
   for (const named of [base, head]) {
     if (named && !repoName.safeParse(named.name).success) {
-      throw new IpcError(
-        'refused',
-        "GitHub named a repository of this PR in a way Lo doesn't expect, so Lo didn't ask about it.",
-      );
+      // What GitHub named it, behind Details.
+      throw new IpcError('unexpectedName', named.name.slice(0, 200));
     }
   }
   if (!sameName(base.name, request.repo)) {
-    throw new IpcError(
-      'changed',
-      `GitHub calls this repository ${base.name} now, so Lo didn't ask about ${request.repo}. Reopen its tab to trust it.`,
-    );
+    // The name GitHub has for it now, which the window says.
+    throw new IpcError('renamed', base.name);
   }
   if (request.pull === null) return { kind: 'repo', repo: base.name, id: base.id };
   if (!isCrossRepository) {
-    throw new IpcError(
-      'refused',
-      `This PR's branch is in ${base.name} itself, so Lo trusts it with the repo. Trust the repo instead.`,
-    );
+    throw new IpcError('notFork', '');
   }
   if (!head) {
-    throw new IpcError(
-      'refused',
-      "GitHub no longer has the fork this PR comes from, so Lo can't tell whose code it is.",
-    );
+    throw new IpcError('forkGone', '');
   }
   return {
     kind: 'pull',
@@ -184,18 +174,13 @@ export function subjectOf(
 
 /**
  * Why the entry wasn't written, for the window, which says it where the reader asked: what the
- * settings file holds, which editing it fixes (`settingsFile`), then what to do, or anything else
- * (`unsaved`), each in a sentence or two. `pull` is whether the reader asked to trust a pull request.
+ * settings file holds, which editing it fixes (`settingsFile`), or anything else (`unsaved`), with
+ * what was wrong behind Details.
  */
-export function unsaved(error: unknown, pull: boolean): IpcError {
-  if (error instanceof Unwritten && error.inFile) {
-    return new IpcError(
-      'settingsFile',
-      `${error.why} Fix that, then trust the ${pull ? 'PR' : 'repo'} again.`,
-    );
-  }
+export function unsaved(error: unknown): IpcError {
+  if (error instanceof Unwritten && error.inFile) return new IpcError('settingsFile', error.why);
   if (error instanceof Unwritten) return new IpcError('unsaved', error.why);
-  return new IpcError('unsaved', "Lo couldn't write the settings file.");
+  return new IpcError('unsaved', error instanceof Error ? error.message : '');
 }
 
 /** The ask under way: what it's about, in which window, how far it has got, and what ends it. */
@@ -239,10 +224,8 @@ export class TrustAsker<W extends AskWindow = AskWindow> {
       }
       if (current.step === 'asking' && current.window) this.#options.focus?.(current.window);
       const { repo, pull } = current.request;
-      throw new IpcError(
-        'asking',
-        `Lo is already asking whether to trust ${pull === null ? repo : `${repo}#${pull}`}. Answer that first, then try again.`,
-      );
+      // What it's asking about, which the window names.
+      throw new IpcError('asking', pull === null ? repo : `${repo}#${pull}`);
     }
     const asked: Current<W> = { request, window, gone: new AbortController() };
     this.#current = asked;
@@ -290,7 +273,7 @@ export class TrustAsker<W extends AskWindow = AskWindow> {
       try {
         await options.write(entryFor(subject, options.now?.() ?? new Date()));
       } catch (error) {
-        throw unsaved(error, request.pull !== null);
+        throw unsaved(error);
       }
       return 'trusted';
     } finally {
@@ -315,12 +298,10 @@ export class TrustAsker<W extends AskWindow = AskWindow> {
         });
         this.#options.read(view, reading.signal).then(resolve, reject);
       });
-    } catch {
+    } catch (error) {
       if (gone.aborted) return undefined;
-      throw new IpcError(
-        'unread',
-        "Lo couldn't read from GitHub which repo this is, so it didn't ask. Try again.",
-      );
+      // What GitHub or the system said, behind Details.
+      throw new IpcError('unread', saidBy(error));
     } finally {
       clearTimeout(timer);
       gone.removeEventListener('abort', giveUp);

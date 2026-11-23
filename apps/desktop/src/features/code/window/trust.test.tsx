@@ -227,15 +227,16 @@ describe('asking to trust', () => {
     const page = draw(<TrustBanner tab={tabOf('t5')} />);
     act(() => bridge.push('code.status', statusOf('t5')));
     const why =
-      "The settings file isn't valid JSON (Expected ',' or '}' after property value in JSON at position 20). Fix that, then trust the repo again.";
+      "The settings file isn't valid JSON (Expected ',' or '}' after property value in JSON at position 20).";
     answerTrust = () => {
       throw new IpcError('settingsFile', why);
     };
     act(() => button(page, 'Trust repo…')?.click());
     await until(() => page.textContent.includes('Couldn’t trust rozed-dev/e2e'));
     // In its own body, as an alert, with the button back.
+    // The reason in the window's words; what the file holds is the settings' own to say.
     expect(page.querySelector('[role="alert"] p')?.textContent).toBe(
-      `Couldn’t trust rozed-dev/e2e ${why}`,
+      'Couldn’t trust rozed-dev/e2e settings.json has an error.',
     );
     expect([...page.querySelectorAll('button')].map(said)).toEqual([
       'Open settings.json',
@@ -253,7 +254,7 @@ describe('asking to trust', () => {
     };
     act(() => button(page, 'Trust repo…')?.click());
     expect(page.textContent).toContain('Language servers are off for rozed-dev/e2e');
-    await until(() => page.textContent.includes('(ENOSPC)'));
+    await until(() => page.textContent.includes('couldn’t be saved'));
     expect(button(page, 'Open settings.json')).toBeUndefined();
 
     // Asked again, and trusted.
@@ -304,7 +305,7 @@ describe('asking to trust', () => {
       throw new IpcError('unsaved', "Lo couldn't write the settings file (ENOSPC).");
     };
     act(() => button(page, 'Trust repo…')?.click());
-    await until(() => page.textContent.includes('(ENOSPC)'));
+    await until(() => page.textContent.includes('couldn’t be saved'));
     act(() =>
       bridge.push('settings.state', {
         file: '~/.config/lo/settings.json',
@@ -312,17 +313,16 @@ describe('asking to trust', () => {
         problems: [],
       }),
     );
-    expect(page.textContent).toContain('(ENOSPC)');
+    expect(page.textContent).toContain('couldn’t be saved');
     answerTrust = () => 'cancelled';
   });
 
   it('says so when main is asking about another repo, and asks it again once pressed again', async () => {
     const page = draw(<TrustBanner tab={tabOf('t8')} />);
     act(() => bridge.push('code.status', statusOf('t8')));
-    const elsewhere =
-      'Lo is already asking whether to trust rozed-dev/other. Answer that first, then try again.';
+    const elsewhere = 'Answer the question about rozed-dev/other first.';
     answerTrust = () => {
-      throw new IpcError('asking', elsewhere);
+      throw new IpcError('asking', 'rozed-dev/other');
     };
     act(() => button(page, 'Trust repo…')?.click());
     await until(() => page.textContent.includes(elsewhere));
