@@ -215,6 +215,115 @@ test('a wrong date fails the test', async () => {
   );
 });
 
+const RESOURCE = 'https://api.github.com/repos/o/r/pulls/1';
+const FIRST = 'Fri, 06 Nov 2026 08:15:07 GMT';
+const LATER = 'Sat, 07 Nov 2026 01:04:21 GMT';
+
+/** A state of the resource: its response, with validators, headers a `304` leaves out, and a body. */
+const state = (etag: string, modified: string, body: string): Interaction['response'] => ({
+  status: 200,
+  headers: {
+    'content-type': 'application/json',
+    etag,
+    'last-modified': modified,
+    link: '<https://api.github.com/repos/o/r/pulls?page=2>; rel="next"',
+    location: 'https://api.github.com/elsewhere',
+    'x-github-api-version-selected': '2022-11-28',
+    'x-ratelimit-remaining': '4990',
+    'x-served-by': 'a server',
+  },
+  body_text: body,
+});
+
+/**
+ * A resource's recording: read, asked again with the first state's validator and told it hasn't
+ * changed, then asked again the same way and told it has, with new validators. Asked with a time
+ * (`poll`), with an ETag, or never.
+ */
+function changed(poll: 'time' | 'etag' | 'never'): Replay {
+  const request: Interaction['request'] = { method: 'GET', url: RESOURCE };
+  const asked: Interaction['request'] =
+    poll === 'time'
+      ? { ...request, if_modified_since: FIRST }
+      : poll === 'etag'
+        ? { ...request, if_none_match: '"a"' }
+        : request;
+  return new Replay('t', [
+    { request, response: state('"a"', FIRST, 'first') },
+    { request: asked, response: { status: 304, headers: { etag: '"a"' } } },
+    { request: asked, response: state('"b"', LATER, 'later') },
+  ]);
+}
+
+test('a poll the recording ended before gets a 304 for the state it left, by its time', async () => {
+  const fetch = replayFetch(changed('time'));
+  expect(await get(fetch, RESOURCE)).toEqual([200, 'first', '"a"']);
+  expect((await get(fetch, RESOURCE, { 'If-Modified-Since': FIRST }))[0]).toBe(304);
+  expect(await get(fetch, RESOURCE, { 'If-Modified-Since': FIRST })).toEqual([200, 'later', '"b"']);
+  // Never sent while recording: a poll after the answer that gave the new time.
+  for (let poll = 0; poll < 2; poll++) {
+    const response = await fetch(RESOURCE, { headers: { 'If-Modified-Since': LATER } });
+    expect(response.status).toBe(304);
+    expect(await response.text()).toBe('');
+  }
+});
+
+test('a poll the recording ended before gets a 304 for the state it left, by its etag', async () => {
+  const fetch = replayFetch(changed('etag'));
+  // Weak or strong, and among others.
+  for (const sent of ['"b"', 'W/"b"', '"a", W/"b"']) {
+    expect((await get(fetch, RESOURCE, { 'If-None-Match': sent }))[0]).toBe(304);
+  }
+});
+
+test('that 304 has the headers of one from GitHub', async () => {
+  const response = await replayFetch(changed('time'))(RESOURCE, {
+    headers: { 'If-Modified-Since': LATER },
+  });
+  expect(Object.fromEntries(response.headers)).toEqual({
+    etag: '"b"',
+    'last-modified': LATER,
+    'x-github-api-version-selected': '2022-11-28',
+    'x-ratelimit-remaining': '4990',
+  });
+});
+
+const sends = (replay: Replay, headers: Record<string, string>) =>
+  replay.respond(new Request(RESOURCE, { headers }));
+
+test('a poll the recording never sent that way still fails the test', async () => {
+  // An ETag where it only polled by time, a time where it only polled by ETag, and any poll of a
+  // resource it only read.
+  await expect(sends(changed('time'), { 'If-None-Match': '"b"' })).rejects.toThrow(
+    'has no response for',
+  );
+  await expect(sends(changed('etag'), { 'If-Modified-Since': LATER })).rejects.toThrow(
+    'has no response for',
+  );
+  await expect(sends(changed('never'), { 'If-None-Match': '"b"' })).rejects.toThrow(
+    'has no response for',
+  );
+  await expect(sends(changed('never'), { 'If-Modified-Since': LATER })).rejects.toThrow(
+    'has no response for',
+  );
+  await expect(sends(changed('etag'), { 'If-None-Match': '*' })).rejects.toThrow(
+    'has no response for',
+  );
+});
+
+test('a validator of any other state still fails the test', async () => {
+  // The first state's, as the recording never sent it, a made-up one, and an old time.
+  await expect(sends(changed('etag'), { 'If-None-Match': 'W/"a"' })).rejects.toThrow(
+    'has no response for',
+  );
+  await expect(sends(changed('etag'), { 'If-None-Match': '"c"' })).rejects.toThrow(
+    'has no response for',
+  );
+  await expect(
+    sends(changed('time'), { 'If-Modified-Since': 'Thu, 05 Nov 2026 00:00:00 GMT' }),
+  ).rejects.toThrow('has no response for');
+});
+
 test('a changed query asks for a new recording', async () => {
   const recorded = interaction('POST', 'https://api.github.com/graphql', 200, '{}');
   recorded.request.operation = 'A';

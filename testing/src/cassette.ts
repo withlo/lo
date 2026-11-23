@@ -195,18 +195,29 @@ export function requestKey(
 
 /** The key of a recorded request. */
 export function recordedKey(request: RecordedRequest): string {
+  return withConditions(
+    recordedResource(request),
+    request.if_none_match,
+    request.if_modified_since,
+  );
+}
+
+/**
+ * The key of what a recorded request asks for, without the conditions it sent: the same as a
+ * request's key with none ({@link requestKey}), so all the answers recorded for a resource share it.
+ */
+export function recordedResource(request: RecordedRequest): string {
   const normalized = normalizeUrl(new URL(request.url));
-  let key: string;
   if (request.operation !== undefined) {
-    key = graphqlKey(request.method, normalized, request.operation, request.variables ?? null);
-  } else if (request.body !== undefined) {
-    key = `${request.method} ${normalized} body=${sha256(request.body)}`;
-  } else if (request.body_sha256 !== undefined) {
-    key = `${request.method} ${normalized} body=${request.body_sha256}`;
-  } else {
-    key = `${request.method} ${normalized}`;
+    return graphqlKey(request.method, normalized, request.operation, request.variables ?? null);
   }
-  return withConditions(key, request.if_none_match, request.if_modified_since);
+  if (request.body !== undefined) {
+    return `${request.method} ${normalized} body=${sha256(request.body)}`;
+  }
+  if (request.body_sha256 !== undefined) {
+    return `${request.method} ${normalized} body=${request.body_sha256}`;
+  }
+  return `${request.method} ${normalized}`;
 }
 
 function withConditions(
