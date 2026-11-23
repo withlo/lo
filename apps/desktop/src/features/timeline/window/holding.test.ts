@@ -146,8 +146,8 @@ describe('holding', () => {
 
   test('what came shows at a key Lo takes, such as `j`, and at a sequence’s once it ends, as `dd`’s', () => {
     const declarations = defineCommands('timeline', {
-      down: { label: 'Next event in the timeline', group: 'Move', keys: ['j'] },
-      remove: { label: 'Delete your comment…', group: 'Act', keys: ['d d'] },
+      down: { label: 'Next event in the timeline', group: 'Go', keys: ['j'] },
+      remove: { label: 'Delete your comment…', group: 'Review', keys: ['d d'] },
     });
     const ran: string[] = [];
     const commands = handlers(declarations, {

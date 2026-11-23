@@ -40,7 +40,7 @@
   --spacing-list-repo-w: var(--lo-list-repo-w);
   --spacing-list-who-w: var(--lo-list-who-w);
   --spacing-list-when-w: var(--lo-list-when-w);
-  --spacing-keyhelp-w: var(--lo-keyhelp-w);
+  --spacing-keyhelp-nav-w: var(--lo-keyhelp-nav-w);
   --spacing-settings-nav-w: var(--lo-settings-nav-w);
   --spacing-settings-w: var(--lo-settings-w);
   --spacing-dialog-w: var(--lo-dialog-w);

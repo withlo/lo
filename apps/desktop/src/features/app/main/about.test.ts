@@ -10,8 +10,8 @@ import {
   buildOf,
   COPYRIGHT,
   FREE_SOFTWARE,
-  howToRead,
-  notice,
+  HOW_TO_READ,
+  NOTICE,
   shortHash,
 } from './about.ts';
 
@@ -48,14 +48,14 @@ describe('aboutOptions', () => {
       applicationVersion: '0.1.0',
       version: '0123456',
       copyright: COPYRIGHT,
-      credits: notice('darwin', 'Lo'),
+      credits: NOTICE,
     });
     expect(
       aboutOptions({ ...about, platform: 'darwin', name: 'Lo Dev', build: 'from source' }),
     ).toMatchObject({
       applicationName: 'Lo Dev',
       version: 'from source',
-      credits: expect.stringContaining('in the Lo Dev menu'),
+      credits: NOTICE,
     });
   });
 
@@ -64,7 +64,7 @@ describe('aboutOptions', () => {
       applicationName: 'Lo',
       applicationVersion: '0.1.0',
       copyright: COPYRIGHT,
-      credits: notice('darwin', 'Lo'),
+      credits: NOTICE,
     });
   });
 
@@ -74,14 +74,14 @@ describe('aboutOptions', () => {
     ).toEqual({
       applicationName: 'Lo',
       applicationVersion: '0.1.0 (0123456)',
-      copyright: `${COPYRIGHT}\n${notice('linux', 'Lo')}`,
+      copyright: `${COPYRIGHT}\n${NOTICE}`,
       website: 'https://github.com/withlo/lo',
       iconPath: '/opt/Lo/resources/icon.png',
     });
     expect(aboutOptions({ ...about, platform: 'linux', build: undefined })).toEqual({
       applicationName: 'Lo',
       applicationVersion: '0.1.0',
-      copyright: `${COPYRIGHT}\n${notice('linux', 'Lo')}`,
+      copyright: `${COPYRIGHT}\n${NOTICE}`,
       website: 'https://github.com/withlo/lo',
     });
   });
@@ -112,27 +112,15 @@ describe("Lo's license", () => {
     });
 
     it('does not use "we" or an exclamation, as the interface does not', () => {
-      expect(notice('darwin', 'Lo')).not.toMatch(/\bwe\b|!/i);
-      expect(notice('linux', 'Lo')).not.toMatch(/\bwe\b|!/i);
+      expect(NOTICE).not.toMatch(/\bwe\b|!/i);
     });
 
-    it("says how to read the license by the command's own label, in the menu it is in on macOS", () => {
+    it("says how to read the license by the command's own label, in the right-click menu on both systems", () => {
       const licenses = find('app.licenses');
-      expect(licenses?.bar?.menu).toBe('App');
-      expect(howToRead('darwin', 'Lo')).toBe(
-        `To read the license, choose ${licenses?.label} in the Lo menu.`,
-      );
-      // The app menu is named for the app, as the system names it.
-      expect(howToRead('darwin', 'Lo Dev')).toContain('in the Lo Dev menu');
-    });
-
-    it("says how to read the license by the command's own label, in the right-click menu on Linux, which has no menu bar", () => {
-      const licenses = find('app.licenses');
-      // The right-click menu of the window itself: on no target in particular.
+      // The right-click menu of the window itself: on no target in particular, on either system.
       expect(licenses?.menu).toMatchObject({ on: 'none' });
-      expect(howToRead('linux', 'Lo')).toBe(
-        `To read the license, right-click and choose ${licenses?.label}.`,
-      );
+      expect(licenses?.when).toBeUndefined();
+      expect(HOW_TO_READ).toBe(`To read the license, right-click and choose ${licenses?.label}.`);
     });
 
     it('is in the panel whole on each system, once the copyright is', () => {
@@ -144,7 +132,7 @@ describe("Lo's license", () => {
         icon: undefined,
       });
       expect(mac.copyright).toBe(COPYRIGHT);
-      expect(mac.credits).toBe(`${FREE_SOFTWARE} ${howToRead('darwin', 'Lo')}`);
+      expect(mac.credits).toBe(`${FREE_SOFTWARE} ${HOW_TO_READ}`);
       const linux = aboutOptions({
         platform: 'linux',
         name: 'Lo',
@@ -152,7 +140,7 @@ describe("Lo's license", () => {
         build: undefined,
         icon: undefined,
       });
-      expect(linux.copyright).toBe(`${COPYRIGHT}\n${FREE_SOFTWARE} ${howToRead('linux', 'Lo')}`);
+      expect(linux.copyright).toBe(`${COPYRIGHT}\n${FREE_SOFTWARE} ${HOW_TO_READ}`);
     });
   });
 

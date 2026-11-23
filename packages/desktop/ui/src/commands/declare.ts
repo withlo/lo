@@ -4,7 +4,7 @@
 //
 //   export default defineCommands('diff', {
 //     markViewed: {
-//       label: 'Mark viewed', group: 'Act', keys: ['e'], targets: ['line', 'file'],
+//       label: 'Mark viewed', group: 'Review', keys: ['e'], targets: ['line', 'file'],
 //       when: { scope: ['diff', 'tree'], mode: 'normal' }, menu: { on: 'file', order: 20 },
 //     },
 //   });
@@ -15,36 +15,43 @@ import { parseKeys, type System } from './notation.ts';
 import type { Mode } from './scopes.ts';
 import type { NoTarget, Target, TargetKind, TargetOf } from './targets.ts';
 
-/** The key table's groups, in its order, which key help follows. */
-export const groups = [
-  'Move',
-  'Jump',
-  'Act',
-  'Threads',
-  'Code',
-  'Copy and open',
-  'Review',
-  'Find',
-  'View',
-  'Files',
-  'Overview',
-  'Panels',
-  'Diff view',
-  'Comment box',
-  'Merge queue',
-  'Revision picker',
-  'Palettes',
-  'Tabs and window',
-] as const;
+/**
+ * The groups every command is in, in their order: one list for the command palette's headings,
+ * keyboard shortcuts' headings and the separators of a right-click menu.
+ *
+ * - `Go`: moving through the pull request, by history, change, file, thread, layer, line, match and
+ *   row, and moving focus between its parts.
+ * - `Review`: what a review ends in or records.
+ * - `Comments`: comments, threads, drafts and the comment box.
+ * - `Code`: what a line of code offers: definitions, references, the whole file, copying, and the
+ *   language servers behind them.
+ * - `View`: what shows and how: views, panels, the diff's layout, what's collapsed, which revisions
+ *   and layers, zoom.
+ * - `Merge`: the merge panel and the merge queue.
+ * - `Tabs`: opening pull requests, and the tab itself.
+ * - `App`: Settings, keyboard shortcuts, accounts, updates and what Lo installs.
+ *
+ * A list that belongs to one tool sits with the tool: the merge panel's rows are in `Merge`, not in
+ * `Go`. "Open on GitHub" sits with what it opens.
+ */
+export const groups = ['Go', 'Review', 'Comments', 'Code', 'View', 'Merge', 'Tabs', 'App'] as const;
 
 export type Group = (typeof groups)[number];
 
 /**
- * The macOS app menu's menus a command can sit in. `App` is the menu named after Lo, and `Update`
- * is a submenu of it, for the commands of one thing that are too many to list there. `Help` is the
- * last menu, for what explains Lo.
+ * Where a command is in the app menu: the menu and the section of it, by the names the app's list
+ * of menus gives them (`apps/desktop/src/platform/menu.ts`), and its place in the section.
  */
-export type BarMenu = 'App' | 'Update' | 'File' | 'View' | 'Go' | 'Review' | 'Window' | 'Help';
+export interface BarPlace {
+  readonly menu: string;
+  readonly section: string;
+  readonly order: number;
+  /**
+   * The command whose place it takes while it can run, and which it leaves to it otherwise: "Restart
+   * to update" in place of "Check for updates" once an update is ready.
+   */
+  readonly instead?: string;
+}
 
 /** A default key sequence in Lo's notation, for both systems or for one. */
 export type KeySpec = string | { readonly keys: string; readonly on: System };
@@ -87,7 +94,13 @@ export function menuPlaces(command: Pick<Declaration, 'menu'>): readonly MenuPla
 }
 
 export interface Declaration {
+  /** What it does, in a few words: "Mark viewed". `lo` between backticks is set as code. */
   readonly label: string;
+  /**
+   * One line under the label in the command palette and keyboard shortcuts, in the reader's words,
+   * for the few commands whose label can't say all they do: "Closes what’s open in the view first."
+   */
+  readonly description?: string;
   readonly group: Group;
   /** Its default keys. The keymap file adds and removes keys over these. */
   readonly keys: readonly KeySpec[];
@@ -133,8 +146,14 @@ export interface Declaration {
    * changes between neighbours, so commands of one group sit together.
    */
   readonly menu?: MenuPlace | readonly MenuPlace[];
-  /** It's in this menu of the macOS app menu. */
-  readonly bar?: { readonly menu: BarMenu; readonly order: number };
+  /** It's in the app menu, there: on macOS the menu bar, on Linux the menu at the strip's end. */
+  readonly bar?: BarPlace;
+  /**
+   * It's a `switch`, a setting of Lo's or a panel that stays as it's set, checked while on, or one
+   * option of a `choice`, checked while it's the one chosen. Its handler says which with `checked`,
+   * and the app menu draws the check.
+   */
+  readonly toggle?: 'switch' | 'choice';
   /**
    * The control that runs it, drawn where its target is, in a few words: "the viewed ball in a
    * file's header". Every action has a key and a visible control, so every command names how the
@@ -181,6 +200,11 @@ export interface Handler<T extends Target = Target> {
    * target stands: "Unresolve thread" on a resolved thread. Nothing, or without this, its label.
    */
   labelled?(target: T): string | undefined;
+  /**
+   * Whether it's checked on `target` now, for a command declared as a `toggle`: the switch is on,
+   * or the option is the one chosen. Every toggle has it, and nothing else does.
+   */
+  checked?(target: T): boolean;
 }
 
 /** The target a command's handler gets, from the kinds it declares. */
@@ -258,6 +282,7 @@ export function defineCommands<const D extends Record<string, Declaration>>(
           'targets',
           'menu',
           'bar',
+          'toggle',
           'count',
           'jump',
           'repeat',

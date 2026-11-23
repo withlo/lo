@@ -17,7 +17,7 @@ import { setCodeElsewhere } from '../../diff/window/shared.ts';
 import { contract as revisionsContract } from '../../revisions/contract.ts';
 import { settingRow } from '../../settings/window/shared.ts';
 import { viewIds } from '../../tab/contract.ts';
-import { activeTab, middle, status } from '../../tab/window/shared.ts';
+import { activeTab, middle, showingMiddle, status } from '../../tab/window/shared.ts';
 import { setup } from '../../welcome/window/shared.ts';
 import keys from '../keys.ts';
 import { open as openOn } from '../settings.ts';
@@ -201,6 +201,7 @@ function lookAgain(state: ReturnType<typeof stateNow>): boolean {
 
 export default {
   commands: handlers(keys, {
+    show: showingMiddle(OVERVIEW_VIEW),
     nextBlock: moving(1),
     previousBlock: moving(-1),
     nextLink: linking(1),

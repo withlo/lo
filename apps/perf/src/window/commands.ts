@@ -15,7 +15,7 @@ import {
 export const diffKeys = defineCommands('diff', {
   nextChange: {
     label: 'Next change',
-    group: 'Jump',
+    group: 'Go',
     keys: ['] c'],
     targets: ['line'],
     vim: 'motion',
@@ -23,7 +23,7 @@ export const diffKeys = defineCommands('diff', {
   },
   previousChange: {
     label: 'Previous change',
-    group: 'Jump',
+    group: 'Go',
     keys: ['[ c'],
     targets: ['line'],
     vim: 'motion',
@@ -31,7 +31,7 @@ export const diffKeys = defineCommands('diff', {
   },
   nextFile: {
     label: 'Next file',
-    group: 'Jump',
+    group: 'Go',
     keys: ['] f'],
     targets: ['line'],
     vim: 'motion',
@@ -39,7 +39,7 @@ export const diffKeys = defineCommands('diff', {
   },
   previousFile: {
     label: 'Previous file',
-    group: 'Jump',
+    group: 'Go',
     keys: ['[ f'],
     targets: ['line'],
     vim: 'motion',
@@ -47,7 +47,7 @@ export const diffKeys = defineCommands('diff', {
   },
   nextThread: {
     label: 'Next thread',
-    group: 'Jump',
+    group: 'Go',
     keys: ['] t'],
     targets: ['line'],
     vim: 'motion',
@@ -55,7 +55,7 @@ export const diffKeys = defineCommands('diff', {
   },
   previousThread: {
     label: 'Previous thread',
-    group: 'Jump',
+    group: 'Go',
     keys: ['[ t'],
     targets: ['line'],
     vim: 'motion',
@@ -63,13 +63,13 @@ export const diffKeys = defineCommands('diff', {
   },
   otherSide: {
     label: 'The other side',
-    group: 'Diff view',
+    group: 'View',
     keys: ['tab'],
     when: { scope: 'diff', mode: 'normal' },
   },
   openRun: {
     label: 'Open unchanged lines',
-    group: 'Diff view',
+    group: 'View',
     keys: ['z o'],
     targets: ['line'],
     overVim: true,
@@ -77,7 +77,7 @@ export const diffKeys = defineCommands('diff', {
   },
   closeRun: {
     label: 'Close unchanged lines',
-    group: 'Diff view',
+    group: 'View',
     keys: ['z c'],
     targets: ['line'],
     overVim: true,
@@ -85,7 +85,7 @@ export const diffKeys = defineCommands('diff', {
   },
   openFile: {
     label: 'Open every unchanged line in the file',
-    group: 'Diff view',
+    group: 'View',
     keys: ['z R'],
     targets: ['line', 'header'],
     overVim: true,
@@ -93,7 +93,7 @@ export const diffKeys = defineCommands('diff', {
   },
   toggleFile: {
     label: 'Load, close or open the file',
-    group: 'Diff view',
+    group: 'View',
     keys: ['z a'],
     targets: ['line', 'header'],
     overVim: true,
@@ -101,14 +101,14 @@ export const diffKeys = defineCommands('diff', {
   },
   inline: {
     label: 'Inline or side by side',
-    group: 'Diff view',
+    group: 'View',
     keys: ['g i'],
     overVim: true,
     when: { scope: 'diff', mode: 'normal' },
   },
   comment: {
     label: 'Comment',
-    group: 'Threads',
+    group: 'Comments',
     keys: ['c'],
     targets: ['line'],
     overVim: true,
@@ -116,7 +116,7 @@ export const diffKeys = defineCommands('diff', {
   },
   copyLink: {
     label: "Copy the line's link",
-    group: 'Copy and open',
+    group: 'Tabs',
     keys: ['y l'],
     targets: ['line'],
     when: { scope: 'diff', mode: 'normal' },

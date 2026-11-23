@@ -53,7 +53,7 @@ running code, which language servers need.
 The app is open source under GPL-3.0. The overview skill and the artifact format are MIT, so teams
 can copy them into their repos and other tools can read artifacts. Lo shows its license where
 GPL-3.0 asks an interface to: the system's About panel names its copyright, says it has no warranty
-and may be redistributed under the license, and says where the source is. "Show licenses" opens
+and may be redistributed under the license, and says where the source is. "Open licenses" opens
 `licenses.txt`, which holds Lo's own license and the license of every package and file Lo bundles,
 and says where Electron's and Chromium's are, installed beside it. The build fails on a bundled
 package with no license, or one GPL-3.0 can't carry.

@@ -10,7 +10,7 @@ export default defineCommands('accounts', {
   copyCode: {
     label: 'Copy sign-in code',
     control: 'Copy beside the code, in Sign in with GitHub',
-    group: 'Copy and open',
+    group: 'App',
     keys: ['y y'],
     when: { scope: 'dialog' },
   },
@@ -18,9 +18,8 @@ export default defineCommands('accounts', {
   addAccount: {
     label: 'Sign in with GitHub…',
     control: 'Sign in with GitHub… on the GitHub row of Settings › Accounts',
-    group: 'Tabs and window',
+    group: 'App',
     keys: [],
-    bar: { menu: 'App', order: 30 },
   },
   /**
    * Opens the dialog for signing out: it asks which account when Lo has several, and what signing
@@ -29,8 +28,7 @@ export default defineCommands('accounts', {
   signOut: {
     label: 'Sign out…',
     control: "Sign out… on each account's row of Settings › Accounts",
-    group: 'Tabs and window',
+    group: 'App',
     keys: [],
-    bar: { menu: 'App', order: 40 },
   },
 });

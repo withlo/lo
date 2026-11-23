@@ -27,7 +27,7 @@ export default defineCommands(
     /** Opens the merge panel under the header's merge status, at the reasons it can't merge. */
     panel: {
       label: 'Merge panel',
-      group: 'Review',
+      group: 'Merge',
       keys: ['m'],
       targets: ['row', 'none'],
       overVim: true,
@@ -36,7 +36,7 @@ export default defineCommands(
     },
     down: {
       label: 'Next reason',
-      group: 'Review',
+      group: 'Merge',
       keys: ['j', 'down'],
       when: panel,
       repeat: true,
@@ -44,7 +44,7 @@ export default defineCommands(
     },
     up: {
       label: 'Previous reason',
-      group: 'Review',
+      group: 'Merge',
       keys: ['k', 'up'],
       when: panel,
       repeat: true,
@@ -56,7 +56,7 @@ export default defineCommands(
      */
     open: {
       label: 'Open in browser',
-      group: 'Review',
+      group: 'Merge',
       keys: ['o'],
       targets: ['row', 'none'],
       when: panel,
@@ -64,14 +64,14 @@ export default defineCommands(
     },
     nextMethod: {
       label: 'Next merge method',
-      group: 'Review',
+      group: 'Merge',
       keys: ['tab'],
       when: panel,
       control: "the merge panel's Method choice",
     },
     previousMethod: {
       label: 'Previous merge method',
-      group: 'Review',
+      group: 'Merge',
       keys: ['shift+tab'],
       when: panel,
       control: "the merge panel's Method choice",
@@ -79,7 +79,7 @@ export default defineCommands(
     /** Goes to the squash commit's title, to change what GitHub would write. */
     edit: {
       label: 'Edit commit message',
-      group: 'Review',
+      group: 'Merge',
       keys: ['e'],
       when: panel,
       control: "the merge panel's Commit title field",
@@ -87,7 +87,7 @@ export default defineCommands(
     /** Closes the panel and goes to the next unresolved thread in the diff. */
     nextThread: {
       label: 'Next unresolved thread',
-      group: 'Review',
+      group: 'Merge',
       keys: ['] t'],
       when: panel,
       control: "Next thread on the merge panel's unresolved threads reason",
@@ -99,10 +99,10 @@ export default defineCommands(
      */
     merge: {
       label: 'Merge…',
-      group: 'Review',
+      group: 'Merge',
       keys: ['enter'],
       when: panel,
-      bar: { menu: 'Review', order: 15 },
+      bar: { menu: 'Review', section: 'merge', order: 10 },
       control: "the merge panel's main button",
     },
     /**
@@ -111,7 +111,7 @@ export default defineCommands(
      */
     autoMerge: {
       label: 'Turn on auto-merge…',
-      group: 'Review',
+      group: 'Merge',
       keys: ['a'],
       when: panel,
       control: "the merge panel's auto-merge button",
@@ -122,7 +122,7 @@ export default defineCommands(
      */
     override: {
       label: 'Bypass rules and merge…',
-      group: 'Review',
+      group: 'Merge',
       keys: ['alt+enter'],
       when: panel,
       control: 'Bypass rules and merge… in the merge panel',
@@ -133,7 +133,7 @@ export default defineCommands(
      */
     askAgain: {
       label: 'Check merge again',
-      group: 'Review',
+      group: 'Merge',
       keys: [],
       targets: ['row', 'none'],
       when: { except: ['menu', 'dialog', 'palette', 'box'] },
@@ -146,16 +146,17 @@ export default defineCommands(
      */
     ship: {
       label: 'Approve and ship…',
+      description: 'Approves, then merges, adds to the merge queue or turns on auto-merge.',
       group: 'Review',
       keys: ['cmd+shift+enter'],
       targets: ['row', 'none'],
       when: { except: ['box', 'dialog', 'palette', 'menu'] },
       menu: { on: 'row', order: 5 },
-      bar: { menu: 'Review', order: 16 },
+      bar: { menu: 'Review', section: 'merge', order: 20 },
     },
     close: {
       label: 'Close merge panel',
-      group: 'Review',
+      group: 'Merge',
       keys: ['esc'],
       when: panel,
       control: "the merge panel's ×",
@@ -163,7 +164,7 @@ export default defineCommands(
     /** Leaves the commit's fields for the panel, keeping what was typed. */
     leaveCommit: {
       label: 'Go to merge panel',
-      group: 'Review',
+      group: 'Merge',
       keys: ['esc'],
       when: { scope: 'commit' },
     },

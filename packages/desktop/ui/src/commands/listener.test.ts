@@ -229,7 +229,7 @@ describe('the listener', () => {
 
   test('leaves the keys that edit text to an editable field, and runs them where none is', () => {
     const erase = defineCommands('erase', {
-      line: { label: 'Erase the line', group: 'Find', keys: ['cmd+backspace'] },
+      line: { label: 'Erase the line', group: 'Go', keys: ['cmd+backspace'] },
     });
     stop();
     registry = new Registry({ system: 'mac', commands: testCommands(ran, [erase]) });

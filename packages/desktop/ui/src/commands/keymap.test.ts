@@ -45,7 +45,7 @@ describe('the keymap file', () => {
   test('numbers lines through any line ending and a byte order mark', () => {
     const keymap = read('﻿bind x diff.markViewed\r\n\r\nbind y oops\rbind z diff.markViewed');
     expect(keymap.lines.map((line) => line.line)).toEqual([1, 4]);
-    expect(keymap.errors).toEqual([{ line: 3, message: "There's no command called oops." }]);
+    expect(keymap.errors).toEqual([{ line: 3, message: 'No command `oops`' }]);
   });
 
   test('reports each line it can’t read with its number, and keeps the rest', () => {
@@ -69,22 +69,22 @@ describe('the keymap file', () => {
       ].join('\n'),
     );
     expect(keymap.errors).toEqual([
-      { line: 2, message: 'A line starts with bind, unbind, vim or #, not map.' },
-      { line: 3, message: 'bind takes keys, then a command: bind x diff.markViewed.' },
-      { line: 4, message: "There's no command called diff.unknown." },
-      { line: 5, message: '"cmdd" in "cmdd+x" isn\'t a modifier: use cmd, ctrl, alt or shift.' },
-      { line: 6, message: '"cmd+" has no key after its last "+".' },
-      { line: 7, message: '"shift+shift+x" holds shift twice.' },
+      { line: 2, message: 'Lines start with `bind`, `unbind`, `vim` or `#`' },
+      { line: 3, message: '`bind` needs keys, then a command: `bind x diff.markViewed`' },
+      { line: 4, message: 'No command `diff.unknown`' },
+      { line: 5, message: '`cmdd` isn’t a modifier: use `cmd`, `ctrl`, `alt` or `shift`' },
+      { line: 6, message: '`cmd+` has no key after `+`' },
+      { line: 7, message: '`shift+shift+x` has `shift` twice' },
       {
         line: 8,
-        message: '"return" isn\'t a key: write one character, or a name such as enter.',
+        message: '`return` isn’t a key: use one character or a name such as `enter`',
       },
-      { line: 9, message: 'unbind takes keys, and a command if only its keys go: unbind e.' },
-      { line: 10, message: "There's no command called diff.unknown." },
-      { line: 11, message: '"cmd+" has no key after its last "+".' },
-      { line: 12, message: 'vim takes a mode, keys and what they do: vim normal Y y$.' },
-      { line: 13, message: "command isn't a Vim mode here: use normal, visual or insert." },
-      { line: 14, message: 'vim takes a mode, keys and what they do: vim normal Y y$.' },
+      { line: 9, message: '`unbind` needs keys: `unbind e`' },
+      { line: 10, message: 'No command `diff.unknown`' },
+      { line: 11, message: '`cmd+` has no key after `+`' },
+      { line: 12, message: '`vim` needs a mode, keys and what they do: `vim normal Y y$`' },
+      { line: 13, message: '`command` isn’t a mode: use `normal`, `visual` or `insert`' },
+      { line: 14, message: '`vim` needs a mode, keys and what they do: `vim normal Y y$`' },
     ]);
     expect(keymap.lines.map((line) => line.line)).toEqual([1, 15]);
   });
@@ -102,7 +102,7 @@ describe('the keymap file', () => {
         'unbind e',
       ].join('\n'),
     );
-    const message = "This line is over 1,000 characters long, so Lo didn't read it.";
+    const message = 'Over 1,000 characters';
     expect(keymap.errors).toEqual([
       { line: 2, message },
       { line: 4, message },
@@ -124,7 +124,7 @@ describe('the keymap file', () => {
   test('without a list of commands, takes any id written as one', () => {
     expect(parseKeymap('bind x some.command').errors).toEqual([]);
     expect(parseKeymap('bind x notACommand').errors).toEqual([
-      { line: 1, message: "There's no command called notACommand." },
+      { line: 1, message: 'No command `notACommand`' },
     ]);
   });
 
@@ -147,11 +147,11 @@ describe('the keymap file', () => {
     expect(writeStrokes(fine.bindings[0]!.strokes, 'mac')).toBe('y l');
     // A scope's lone `z` against the tree's `z R`.
     expect(apply('bind z tree.closeAll').errors).toEqual([
-      { line: 1, message: 'z would keep z R (tree.openAll) from ever running.' },
+      { line: 1, message: '`z` would block `tree.openAll`' },
     ]);
     // Bindings for ⌘ are written back as cmd.
     expect(apply('bind cmd+shift+p x keys.help').errors).toEqual([
-      { line: 1, message: 'cmd+shift+p x would never run: cmd+shift+p (keys.palette) runs first.' },
+      { line: 1, message: '`cmd+shift+p x` is blocked by `keys.palette`' },
     ]);
   });
 });

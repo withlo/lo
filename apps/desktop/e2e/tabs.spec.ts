@@ -452,7 +452,7 @@ test('⌃o and ⌃i walk the history of the tab on screen, and each tab keeps it
   ).toBe(0);
 });
 
-test('macOS’s File, View and Window menus list closing a tab, the panels and stepping through tabs', async ({
+test('macOS’s File, View and Window menus list the pull request’s page and link, closing a tab, the panels, checked when shown, and stepping through tabs', async ({
   app,
   page,
 }) => {
@@ -467,15 +467,20 @@ test('macOS’s File, View and Window menus list closing a tab, the panels and s
             const id: unknown = Reflect.get(item, 'id');
             return typeof id === 'string' && id.startsWith('tab.');
           })
-          .map((item) => `${menu.label}: ${item.label} ${item.accelerator ?? ''}`),
+          .map((item) => {
+            const check = item.type === 'checkbox' ? (item.checked ? ' (on)' : ' (off)') : '';
+            return `${menu.label}: ${item.label}${check} ${item.accelerator ?? ''}`;
+          }),
       ),
     );
   await expect
     .poll(items)
     .toEqual([
+      'File: Open on GitHub ',
+      'File: Copy link ',
       'File: Close tab Command+W',
-      'View: Left panel Command+\\',
-      'View: Threads panel Command+Shift+\\',
+      'View: Left panel (off) Command+\\',
+      'View: Threads panel (off) Command+Shift+\\',
       'Window: Next tab Command+Shift+]',
       'Window: Previous tab Command+Shift+[',
     ]);

@@ -1,18 +1,19 @@
 import { handlers, type History, type NoTarget, type TabTarget } from '@lo/ui/commands';
 import { createElement } from 'react';
 
+import { announce, fail } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
 import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { contract as app } from '../../app/contract.ts';
-import { viewIds, type Choice, type Tab } from '../contract.ts';
+import { layerOf, viewIds, type Choice, type Tab } from '../contract.ts';
 import keys from '../keys.ts';
 import { follow } from './follow.ts';
 import { main } from './main.ts';
 import { moreStore, setMoreOpen } from './more.ts';
 import { inStrip, movable, stepTab } from './order.ts';
-import { middleIds, panels, stepAmong, toggleRight, viewCounts } from './panels.ts';
+import { middleIds, panels, rightPanel, stepAmong, toggleRight, viewCounts } from './panels.ts';
 import { PullRequestTab } from './PullRequestTab.tsx';
 import { activeTab, kinds } from './shared.ts';
 import { pullsStore, showFiles, showLocal, showPull, showTabs, tabsStore } from './store.ts';
@@ -78,6 +79,42 @@ function catchUp(): void {
   }
 }
 
+/** The link to the pull request on screen, in a stack's tab the layer it shows, or `''` with none. */
+function linkOnScreen(): string {
+  const tab = pullOnScreen();
+  if (typeof tab === 'string') return '';
+  return `https://github.com/${tab.owner}/${tab.repo}/pull/${layerOf(tab)}`;
+}
+
+/** Why there's no pull request on screen to link to, or `true` when there is. */
+function linkable(): true | string {
+  const tab = pullOnScreen();
+  return typeof tab === 'string' ? tab : true;
+}
+
+/** Copies the link to the pull request on screen, and says so, or what failed. */
+async function copyLink(): Promise<void> {
+  const text = linkOnScreen();
+  if (text === '') return;
+  try {
+    await main().copy({ text });
+  } catch (error) {
+    console.error('Couldn’t copy the link:', error);
+    fail(
+      'Couldn’t copy the link',
+      error instanceof Error && error.message !== '' ? error.message : undefined,
+    );
+    return;
+  }
+  announce('Copied link');
+}
+
+/** Whether the pull request on screen has a left panel to show, and shows it. */
+function leftShown(): boolean {
+  const tab = pullOnScreen();
+  return typeof tab !== 'string' && viewCounts.left > 0 && panels.get(tab.id).leftOpen;
+}
+
 /** Why `target`, a tab or the one on screen, can't be closed, or `true` when it can. */
 function closable(target: TabTarget | NoTarget): true | string {
   const { tabs, active } = tabsStore.getState();
@@ -134,6 +171,7 @@ export default {
         if (typeof tab === 'string') return tab;
         return viewCounts.left > 0 || 'No left panel yet';
       },
+      checked: leftShown,
     },
     rightPanel: {
       run: toggleRight,
@@ -142,9 +180,22 @@ export default {
         if (typeof tab === 'string') return tab;
         return viewCounts.right > 0 || 'No threads panel yet';
       },
+      checked: () =>
+        typeof pullOnScreen() !== 'string' && viewCounts.right > 0 && rightPanel.getState().open,
     },
     nextView: { run: () => stepMiddle(1), enabled: middleSteps },
     previousView: { run: () => stepMiddle(-1), enabled: middleSteps },
+    openOnGithub: {
+      run: () => {
+        const url = linkOnScreen();
+        if (url === '') return;
+        main()
+          .openExternal({ url })
+          .catch((error: unknown) => console.error("Lo couldn't open the pull request:", error));
+      },
+      enabled: linkable,
+    },
+    copyLink: { run: copyLink, enabled: linkable },
     // Main closes the tab on screen as it has it, so two quick presses close two tabs.
     close: {
       run: (target) => main().close(target.kind === 'tab' ? { id: target.tab } : {}),

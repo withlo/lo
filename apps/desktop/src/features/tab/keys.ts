@@ -10,7 +10,7 @@ const outside: When = { except: ['dialog', 'palette'] };
 /** The command that shows the tab at `position` in the strip, by `⌘` and its number. */
 const place = (position: number) => ({
   label: `Tab ${position}`,
-  group: 'Tabs and window' as const,
+  group: 'Tabs' as const,
   keys: [`cmd+${position}`],
   when: outside,
   control: 'the tab in the strip',
@@ -28,7 +28,7 @@ export default defineCommands('tab', {
   /** `⌘9` is the last tab however many are open, as in browsers, so the end is always a key away. */
   showLast: {
     label: 'Last tab',
-    group: 'Tabs and window',
+    group: 'Tabs',
     keys: ['cmd+9'],
     when: outside,
     control: 'the last tab in the strip, or in its "N more" menu',
@@ -40,19 +40,19 @@ export default defineCommands('tab', {
    */
   next: {
     label: 'Next tab',
-    group: 'Tabs and window',
+    group: 'Tabs',
     keys: ['cmd+shift+]', 'ctrl+tab'],
     when: outside,
     repeat: true,
-    bar: { menu: 'Window', order: 10 },
+    bar: { menu: 'Window', section: 'tabs', order: 10 },
   },
   previous: {
     label: 'Previous tab',
-    group: 'Tabs and window',
+    group: 'Tabs',
     keys: ['cmd+shift+[', 'ctrl+shift+tab'],
     when: outside,
     repeat: true,
-    bar: { menu: 'Window', order: 20 },
+    bar: { menu: 'Window', section: 'tabs', order: 20 },
   },
   /**
    * The tab on screen, or the one right-clicked, one place along the strip, but not past its ends
@@ -61,7 +61,7 @@ export default defineCommands('tab', {
    */
   moveLeft: {
     label: 'Move tab left',
-    group: 'Tabs and window',
+    group: 'Tabs',
     keys: ['ctrl+shift+pageup'],
     targets: ['tab', 'none'],
     when: outside,
@@ -70,7 +70,7 @@ export default defineCommands('tab', {
   },
   moveRight: {
     label: 'Move tab right',
-    group: 'Tabs and window',
+    group: 'Tabs',
     keys: ['ctrl+shift+pagedown'],
     targets: ['tab', 'none'],
     when: outside,
@@ -83,7 +83,7 @@ export default defineCommands('tab', {
    */
   more: {
     label: 'More tabs',
-    group: 'Tabs and window',
+    group: 'Tabs',
     keys: ['cmd+shift+a'],
     when: { except: ['dialog', 'palette', 'box'] },
     control: '"N more" at the end of the strip',
@@ -91,10 +91,11 @@ export default defineCommands('tab', {
   /** Opens and closes a pull request's left panel: its stack and files. */
   leftPanel: {
     label: 'Left panel',
-    group: 'Panels',
+    group: 'View',
     keys: ['cmd+\\'],
     when: outside,
-    bar: { menu: 'View', order: 10 },
+    bar: { menu: 'View', section: 'panels', order: 10 },
+    toggle: 'switch',
   },
   /**
    * Opens and closes the right panel, the threads, in every pull request's tab: opened, it takes
@@ -102,10 +103,11 @@ export default defineCommands('tab', {
    */
   rightPanel: {
     label: 'Threads panel',
-    group: 'Panels',
+    group: 'View',
     keys: ['cmd+shift+\\'],
     when: outside,
-    bar: { menu: 'View', order: 20 },
+    bar: { menu: 'View', section: 'panels', order: 20 },
+    toggle: 'switch',
   },
   /**
    * The next of a pull request's middle views the header's switch lists: overview, diff, timeline,
@@ -128,17 +130,34 @@ export default defineCommands('tab', {
     control: "Overview, Diff and Timeline in the pull request's header",
   },
   /**
+   * Opens the pull request on screen on GitHub, in the browser: its page, from anywhere in its tab,
+   * as the File menu has it.
+   */
+  openOnGithub: {
+    label: 'Open on GitHub',
+    group: 'Tabs',
+    keys: [],
+    bar: { menu: 'File', section: 'pull', order: 10 },
+  },
+  /** Copies the link to the pull request on screen, from anywhere in its tab. */
+  copyLink: {
+    label: 'Copy link',
+    group: 'Tabs',
+    keys: [],
+    bar: { menu: 'File', section: 'pull', order: 20 },
+  },
+  /**
    * The tab on screen, or the one right-clicked. On Linux it's Ctrl+W, over Vim's window keys,
    * which code views don't use; in a comment box in insert mode Ctrl+W deletes a word instead.
    */
   close: {
     label: 'Close tab',
-    group: 'Tabs and window',
+    group: 'Tabs',
     keys: ['cmd+w'],
     targets: ['tab', 'none'],
     overVim: true,
     when: outside,
-    bar: { menu: 'File', order: 10 },
+    bar: { menu: 'File', section: 'tab', order: 10 },
     menu: { on: 'tab', order: 10 },
   },
 });

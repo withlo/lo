@@ -1,24 +1,151 @@
-// The app menu. Electron's default one goes: it reloads the page on ⌘R and closes the window on ⌘W
-// behind Lo's back. macOS gets a menu of the system's roles and Lo's commands; Linux gets none,
-// since Lo draws its own window.
+// The app menu: one tree of eight menus on both systems. Electron's default one goes: it reloads the
+// page on ⌘R and closes the window on ⌘W behind Lo's back. macOS shows the tree as the menu bar,
+// with the system's roles where its menus have them; Lo's window on Linux is frameless, with no
+// menu bar, so there the same tree is the menu that opens from the end of the tab strip.
 //
 // On macOS a chord reaches the page first, and the menu only when the page let it pass, which Lo's
 // registry does where its key doesn't apply. So a menu item a key triggered runs nothing: the key
 // already ran its command or was meant to do nothing there, and a command runs once either way.
-// Only clicks run Lo's commands.
+// Only clicks run Lo's commands. A menu that pops up registers no keys, so on Linux none can.
 
 import type { MenuItemConstructorOptions } from 'electron';
 
 import type { BarItem, BarKey } from '../features/keys/contract.ts';
 
-/** The app menu on `platform`: macOS's, or none on Linux. */
-export function appMenu(
-  platform: NodeJS.Platform,
-  items: readonly BarItem[],
-  options: MenuOptions,
-): MenuItemConstructorOptions[] | null {
-  return platform === 'darwin' ? macMenu(items, options) : null;
+/** The systems the app menu is drawn on. */
+type System = 'mac' | 'linux';
+
+/** The system's own items, by role, with the label each has in Lo's words where it differs. */
+interface Roles {
+  readonly roles: readonly MenuItemConstructorOptions[];
+  /** Only on this system: the other has no such role, or a command of Lo's in its place. */
+  readonly on?: System;
+  /** Only in a build that offers the developer tools. */
+  readonly dev?: true;
 }
+
+/** A section Lo's commands join by name: a command's `bar` names its menu and this. */
+interface Section {
+  readonly section: string;
+}
+
+/** A menu of the app menu: its name, which commands join it by, and its parts, in order. */
+interface BarMenu {
+  readonly menu: string;
+  /** Its role, for a menu macOS fills or searches: Window and Help. */
+  readonly role?: 'windowMenu' | 'help';
+  /** Its parts, separated. */
+  readonly parts: readonly (Roles | Section)[];
+}
+
+/**
+ * The app menu's menus, in order, and the parts of each, which separators part: the system's own
+ * items, by role, and the sections Lo's commands join by name. Lo's menu is shown as the app's name;
+ * every other menu as its name. A command names the menu and section it's in, and its order there,
+ * in its `bar`, and a test fails on one that names a menu or section this doesn't have.
+ *
+ * The menu bar holds actions on the window and the pull request. Preferences and one-time set-up
+ * are in Settings.
+ */
+export const barMenus: readonly BarMenu[] = [
+  {
+    menu: 'Lo',
+    parts: [
+      { roles: [{ role: 'about' }], on: 'mac' },
+      // Check for updates, and Settings.
+      { section: 'app' },
+      { roles: [{ role: 'services' }], on: 'mac' },
+      {
+        roles: [
+          { role: 'hide' },
+          { role: 'hideOthers', label: 'Hide others' },
+          { role: 'unhide', label: 'Show all' },
+        ],
+        on: 'mac',
+      },
+      { roles: [{ role: 'quit' }], on: 'mac' },
+    ],
+  },
+  {
+    menu: 'File',
+    // Opening a pull request; its page and link; closing its tab; and Quit, on Linux.
+    parts: [{ section: 'open' }, { section: 'pull' }, { section: 'tab' }, { section: 'quit' }],
+  },
+  {
+    menu: 'Edit',
+    parts: [
+      { roles: [{ role: 'undo' }, { role: 'redo' }] },
+      {
+        roles: [
+          { role: 'cut' },
+          { role: 'copy' },
+          { role: 'paste' },
+          { role: 'selectAll', label: 'Select all' },
+        ],
+      },
+      { section: 'find' },
+    ],
+  },
+  {
+    menu: 'View',
+    // Overview, Diff and Timeline; the panels; the diff's layout and what it shows; the command
+    // palette; zoom; and full screen, which is a command of Lo's on Linux.
+    parts: [
+      { section: 'views' },
+      { section: 'panels' },
+      { section: 'diff' },
+      { section: 'palette' },
+      { section: 'zoom' },
+      { roles: [{ role: 'toggleDevTools', label: 'Developer tools' }], dev: true },
+      { roles: [{ role: 'togglefullscreen', label: 'Full screen' }], on: 'mac' },
+      { section: 'screen' },
+    ],
+  },
+  {
+    menu: 'Go',
+    // Back and Forward; the next and previous change, file and thread; and Go to file.
+    parts: [{ section: 'history' }, { section: 'steps' }, { section: 'find' }],
+  },
+  {
+    menu: 'Review',
+    // Submitting the review; and merging.
+    parts: [{ section: 'review' }, { section: 'merge' }],
+  },
+  {
+    menu: 'Window',
+    role: 'windowMenu',
+    parts: [
+      { roles: [{ role: 'minimize' }, { role: 'zoom' }], on: 'mac' },
+      { roles: [{ role: 'minimize' }], on: 'linux' },
+      { section: 'tabs' },
+      { roles: [{ role: 'front', label: 'Bring all to front' }], on: 'mac' },
+    ],
+  },
+  {
+    menu: 'Help',
+    role: 'help',
+    // The welcome, keyboard shortcuts and the docs; what's new and reporting an issue; and About,
+    // on Linux.
+    parts: [{ section: 'help' }, { section: 'news' }, { section: 'about' }],
+  },
+];
+
+/** Each menu by name, with the names of the sections commands join, for the check of them. */
+export function barNames(): { menu: string; sections: string[] }[] {
+  return barMenus.map(({ menu, parts }) => ({
+    menu,
+    sections: parts.flatMap((part) => ('section' in part ? [part.section] : [])),
+  }));
+}
+
+/**
+ * What a system's app menu calls a command where that differs from its label: macOS's Settings in
+ * the app's own menu has the system's `…`.
+ */
+const systemLabels: Readonly<Record<System, Readonly<Record<string, string>>>> = {
+  mac: { 'settings.open': 'Settings…' },
+  linux: {},
+};
 
 export interface MenuOptions {
   /** The app's name, for its own menu. */
@@ -29,86 +156,84 @@ export interface MenuOptions {
   readonly run: (id: string) => void;
 }
 
-const separator: MenuItemConstructorOptions = { type: 'separator' };
-
-/** A menu with its items, or none when it has none. */
-function menu(label: string, submenu: MenuItemConstructorOptions[]): MenuItemConstructorOptions[] {
-  return submenu.length > 0 ? [{ label, submenu }] : [];
-}
-
-/** A submenu of the menu it's in, or none when it has no items. It's greyed when none can run. */
-function nested(label: string, items: MenuItemConstructorOptions[]): MenuItemConstructorOptions[] {
-  return items.length > 0
-    ? [{ label, enabled: items.some((item) => item.enabled !== false), submenu: items }]
-    : [];
-}
-
-/** The groups, separated, leaving out the empty ones. */
-function grouped(...groups: MenuItemConstructorOptions[][]): MenuItemConstructorOptions[] {
-  return groups
-    .filter((group) => group.length > 0)
-    .flatMap((group, index) => (index === 0 ? group : [separator, ...group]));
-}
-
-/**
- * The macOS app menu: the app's menu, File, Edit, View, Go, Review, Window and Help, with Lo's
- * commands in the menus they declare, in their order: `App` is the app's own, and `Update` a
- * submenu of it, after the others. Help is there while a command is in it, and has the system's
- * search. Nothing reloads the page or closes the window by key, and the developer tools appear only
- * when `devTools` says.
- */
-export function macMenu(
+/** The app menu on `platform`, from the commands the window lists. */
+export function appMenu(
+  platform: NodeJS.Platform,
   items: readonly BarItem[],
   options: MenuOptions,
 ): MenuItemConstructorOptions[] {
-  const lo = (name: BarItem['menu']) =>
-    items
-      .filter((item) => item.menu === name)
-      .toSorted((a, b) => a.order - b.order)
-      .map((item) => loItem(item, options.run));
-  const help = lo('Help');
-  return [
-    {
-      label: options.name,
-      submenu: grouped(
-        [{ role: 'about' }],
-        [...lo('App'), ...nested('Update', lo('Update'))],
-        [{ role: 'services' }],
-        [{ role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }],
-        [{ role: 'quit' }],
-      ),
-    },
-    ...menu('File', lo('File')),
-    {
-      label: 'Edit',
-      submenu: grouped(
-        [{ role: 'undo' }, { role: 'redo' }],
-        [{ role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }],
-      ),
-    },
-    ...menu(
-      'View',
-      grouped(lo('View'), options.devTools ? [{ role: 'toggleDevTools' }] : [], [
-        { role: 'togglefullscreen' },
-      ]),
-    ),
-    ...menu('Go', lo('Go')),
-    ...menu('Review', lo('Review')),
-    {
-      label: 'Window',
-      role: 'windowMenu',
-      submenu: grouped([{ role: 'minimize' }, { role: 'zoom' }], lo('Window'), [{ role: 'front' }]),
-    },
-    ...(help.length > 0 ? [{ label: 'Help', role: 'help' as const, submenu: help }] : []),
-  ];
+  return menuTree(platform === 'darwin' ? 'mac' : 'linux', items, options);
 }
 
-function loItem(item: BarItem, run: (id: string) => void): MenuItemConstructorOptions {
+const separator: MenuItemConstructorOptions = { type: 'separator' };
+
+/** The parts, separated, leaving out the empty ones. */
+function separated(parts: readonly MenuItemConstructorOptions[][]): MenuItemConstructorOptions[] {
+  return parts
+    .filter((part) => part.length > 0)
+    .flatMap((part, index) => (index === 0 ? part : [separator, ...part]));
+}
+
+/**
+ * One section's commands, in their order. One that takes another's place while it can run
+ * (`instead`) does, and isn't there otherwise.
+ */
+function inSection(items: readonly BarItem[], menu: string, section: string): BarItem[] {
+  const here = items.filter((item) => item.menu === menu && item.section === section);
+  const taken = new Set(
+    here.flatMap((item) => (item.instead !== undefined && item.enabled ? [item.instead] : [])),
+  );
+  return here
+    .filter((item) => !taken.has(item.id) && (item.instead === undefined || item.enabled))
+    .toSorted((a, b) => a.order - b.order);
+}
+
+/**
+ * The app menu on `system`: the eight menus, each with those of its parts that have anything in
+ * them. On Linux, Lo's menu has no roles of the system's, and the commands Linux has for quitting,
+ * About and full screen are in File, Help and View instead. A menu with nothing in it isn't there.
+ */
+export function menuTree(
+  system: System,
+  items: readonly BarItem[],
+  options: MenuOptions,
+): MenuItemConstructorOptions[] {
+  return barMenus.flatMap(({ menu, role, parts }): MenuItemConstructorOptions[] => {
+    const submenu = separated(
+      parts.map((part) => {
+        if ('section' in part) {
+          return inSection(items, menu, part.section).map((item) =>
+            loItem(item, system, options.run),
+          );
+        }
+        if (part.on !== undefined && part.on !== system) return [];
+        if (part.dev && !options.devTools) return [];
+        return [...part.roles];
+      }),
+    );
+    if (submenu.length === 0) return [];
+    const label = menu === 'Lo' ? options.name : menu;
+    // Only macOS fills or searches a menu by its role.
+    return [{ label, ...(system === 'mac' && role ? { role } : {}), submenu }];
+  });
+}
+
+/** A command's item: its label, key and state, and a check where it's a switch or a choice. */
+function loItem(
+  item: BarItem,
+  system: System,
+  run: (id: string) => void,
+): MenuItemConstructorOptions {
   const accelerator = item.key && acceleratorOf(item.key);
+  const toggle: MenuItemConstructorOptions =
+    item.toggle === undefined
+      ? {}
+      : { type: item.toggle === 'choice' ? 'radio' : 'checkbox', checked: item.checked === true };
   return {
     id: item.id,
-    label: item.label,
+    label: systemLabels[system][item.id] ?? item.label,
     enabled: item.enabled,
+    ...toggle,
     ...(accelerator ? { accelerator } : {}),
     click(_menuItem, _window, event) {
       if (!event.triggeredByAccelerator) run(item.id);

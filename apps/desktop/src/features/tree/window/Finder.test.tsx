@@ -182,7 +182,7 @@ describe('opening the finder', () => {
     await open();
     const foot = [...document.querySelectorAll('kbd')].map((key) => key.parentElement?.textContent);
     expect(foot).toEqual(
-      expect.arrayContaining(['⏎Show in the diff', '⌘⏎Whole file', 'TabChanged only']),
+      expect.arrayContaining(['Show in the diff⏎', 'Whole file⌘⏎', 'Changed onlyTab']),
     );
     expect(document.querySelector('input[aria-label="Go to a file"]')).not.toBeNull();
   });
@@ -324,7 +324,7 @@ describe('Tab', () => {
     expect(document.body.textContent).toContain('3 of 3 changed files');
     expect(document.body.textContent).toContain('Changed only');
     const foot = [...document.querySelectorAll('kbd')].map((key) => key.parentElement?.textContent);
-    expect(foot).toContain('TabAll files');
+    expect(foot).toContain('All filesTab');
     act(() => {
       registry().run('tree.findChanged', NO_TARGET);
     });

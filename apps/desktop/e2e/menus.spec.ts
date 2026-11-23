@@ -32,7 +32,7 @@ function nativeMenus(app: ElectronApplication): Promise<string[]> {
   });
 }
 
-test('a right-click lists Back and Forward with their keys in this system’s form, and on Linux About Lo, and Show licenses, which have none, and a screen reader hears an item’s name and key, not its key caps', async ({
+test('a right-click lists Back and Forward with their keys in this system’s form, and on Linux About Lo, and Open licenses, which have none, and a screen reader hears an item’s name and key, not its key caps', async ({
   page,
 }) => {
   const middle = middleOf(page);
@@ -43,13 +43,13 @@ test('a right-click lists Back and Forward with their keys in this system’s fo
   await expect(items).toHaveText([
     new RegExp(`^Back${mac ? '⌃o' : 'Ctrl\\+O'}$`),
     new RegExp(`^Forward${mac ? '⌃i' : 'Ctrl\\+I'}$`),
-    // Linux has no app menu to open About from, so its menu lists it, with no key.
+    // macOS's About is the system's, in the app menu; Linux's is Lo's, listed here too, with no key.
     ...(mac ? [] : [/^About Lo$/]),
     // Both systems list how to read Lo's license, which the About panel says to look for here.
-    /^Show licenses$/,
+    /^Open licenses$/,
   ]);
-  // Back and Forward are in the key table's Code group, so no separator sits between them. About
-  // Lo and Show licenses, in another, sit after one.
+  // Back and Forward are in the Go group, so no separator sits between them. About Lo and Open
+  // licenses, in App, sit after one.
   await expect(menu.getByRole('separator')).toHaveCount(1);
   // The menu is a scope of its own, which is how j and k move in it.
   await expect(menu).toHaveAttribute('data-lo-scope', 'menu');
@@ -105,7 +105,7 @@ test('Esc closes the menu and gives focus back to where it was; and j and k move
     // ⏎ on one that can run runs it, through the same handler as its key, and the menu closes.
     await page.keyboard.press('j');
     if (!mac) await page.keyboard.press('j');
-    await expect(highlighted(page)).toContainText('Show licenses');
+    await expect(highlighted(page)).toContainText('Open licenses');
     await page.keyboard.press('Enter');
     await expect(menu).toBeHidden();
     await expect.poll(opened).toEqual([realpathSync(join(appFolder, 'dist', 'licenses.txt'))]);
@@ -174,8 +174,8 @@ test('a right-click in a code view’s text gets Lo’s menu, and one in a comme
     await middleOf(page).focus();
     await page.keyboard.press('?');
     const search = page
-      .getByRole('dialog', { name: 'Every key' })
-      .getByRole('searchbox', { name: 'Find a key or an action' });
+      .getByRole('dialog', { name: 'Keyboard shortcuts' })
+      .getByRole('searchbox', { name: 'Search keys and commands' });
     await expect(search).toBeFocused();
     await search.click({ button: 'right' });
     await expect.poll(() => nativeMenus(app)).toEqual(['cut,copy,paste,separator,selectall']);

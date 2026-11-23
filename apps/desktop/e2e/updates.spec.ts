@@ -235,97 +235,52 @@ test('offers a newer Lo in a toast that floats and waits and never takes focus; 
 });
 
 /**
- * The enabled items of the menu named after Lo, by label, with those of its submenus: `top` names
- * the items of the menu itself, and the rest are `[label, enabled]` wherever they are.
+ * The items of the app menu's menu `name` by label, each with whether it's enabled. `Lo` is the
+ * first, the menu named after the app.
  */
-const menuOfLo = (app: ElectronApplication) =>
-  app.evaluate(({ Menu }) => {
-    const labels: Record<string, boolean> = {};
-    const walk = (items: Electron.MenuItem[]): void => {
-      for (const item of items) {
-        if (item.label !== '') labels[item.label] = item.enabled;
-        if (item.submenu) walk(item.submenu.items);
-      }
-    };
-    const top = Menu.getApplicationMenu()?.items[0]?.submenu?.items ?? [];
-    walk(top);
-    return { top: top.map((item) => item.label).filter(Boolean), labels };
-  });
-
-const enabled = async (app: ElectronApplication) => (await menuOfLo(app)).labels;
+const menuItems = (app: ElectronApplication, name: string) =>
+  app.evaluate(({ Menu }, label) => {
+    const menus = Menu.getApplicationMenu()?.items ?? [];
+    const menu = label === 'Lo' ? menus[0] : menus.find((item) => item.label === label);
+    return Object.fromEntries(
+      (menu?.submenu?.items ?? [])
+        .filter((item) => item.label !== '')
+        .map((item) => [item.label, item.enabled]),
+    );
+  }, name);
 
 test.describe('the app menu', () => {
-  test.skip(!mac, 'Linux has no app menu.');
+  test.skip(!mac, 'The test reads the menu bar, which is macOS’s.');
 
-  test('greys the update commands that don’t apply, and follows where updates stand', async ({
+  test('holds Check for updates, and What’s new in Help, and leaves the rest to the update’s toast', async ({
     app,
     page,
     feed,
   }) => {
-    // Before anything is on offer: only a check applies, and Lo can't tell if it must move.
     await expect
-      .poll(async () => (await enabled(app))['Check for updates'], { timeout: 20_000 })
+      .poll(async () => (await menuItems(app, 'Lo'))['Check for updates'], { timeout: 20_000 })
       .toBe(true);
-    const idle = await enabled(app);
-    // Of the update commands the menu lists three, and the others are in its Update submenu.
-    const { top } = await menuOfLo(app);
-    expect(top).toEqual(
-      expect.arrayContaining(['Check for updates', 'Update Lo', 'Restart to update']),
-    );
-    expect(top).toContain('Update');
-    for (const label of [
-      'Move Lo to Applications',
-      'Hide update',
-      'What’s new',
-      'Download update',
-      'Copy Homebrew command',
-      'Go to update',
-    ]) {
-      expect(top, label).not.toContain(label);
-    }
+    const lo = Object.keys(await menuItems(app, 'Lo'));
     for (const label of [
       'Update Lo',
       'Restart to update',
-      // A source build can't be moved, which Lo can tell with nothing on offer.
+      'Update',
       'Move Lo to Applications',
       'Hide update',
       'Download update',
       'Copy Homebrew command',
       'Go to update',
     ]) {
-      expect(idle[label], label).toBe(false);
+      expect(lo, label).not.toContain(label);
     }
     // What's new applies with nothing on offer too: it opens Lo's releases.
-    expect(idle['What’s new']).toBe(true);
-    expect(idle.Update).toBe(true);
+    expect((await menuItems(app, 'Help'))['What’s new']).toBe(true);
 
-    // A source build offers the release's page: Download update applies, and Update Lo and Restart
-    // don't.
+    // An offer a source build can only download leaves the menu as it was: Restart to update takes
+    // Check for updates' place only once an update is ready.
     await expect(said(page, 'Lo 0.9.0 is available')).toBeVisible({ timeout: 20_000 });
-    await expect.poll(async () => (await enabled(app))['Download update']).toBe(true);
-    const offered = await enabled(app);
-    expect(offered).toMatchObject({
-      'Check for updates': true,
-      'Update Lo': false,
-      'Restart to update': false,
-      'Move Lo to Applications': false,
-      Update: true,
-      'Hide update': true,
-      'What’s new': true,
-      'Copy Homebrew command': false,
-      'Go to update': true,
-    });
-
-    // Hide takes the offer back, and the items go grey again.
-    // A press in the moment after a toast comes is ignored, so it's pressed until it takes.
-    const toast = said(page, 'Lo 0.9.0 is available');
-    await expect(async () => {
-      await toast.getByRole('button', { name: 'Hide' }).click();
-      await expect(toast).toHaveCount(0, { timeout: 1_000 });
-    }).toPass();
-    await expect.poll(async () => (await enabled(app))['Hide update']).toBe(false);
-    expect((await enabled(app))['Download update']).toBe(false);
-    expect((await enabled(app))['What’s new']).toBe(true);
+    expect(await menuItems(app, 'Lo')).toMatchObject({ 'Check for updates': true });
+    expect(Object.keys(await menuItems(app, 'Lo'))).not.toContain('Restart to update');
     void feed;
   });
 });

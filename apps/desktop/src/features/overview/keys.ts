@@ -12,17 +12,29 @@ const overview: When = { scope: 'overview' };
 export default defineCommands(
   'overview',
   {
+    /**
+     * Shows the overview in the middle of the pull request's tab on screen: one of the three views
+     * the header's switch lists, so the app menu has it beside the other two, checked while it shows.
+     */
+    show: {
+      label: 'Overview',
+      control: "Overview in the pull request's header",
+      group: 'View',
+      keys: [],
+      bar: { menu: 'View', section: 'views', order: 10 },
+      toggle: 'choice',
+    },
     /** The next block that holds something to act on: code, a figure, a link to code or a term. */
     nextBlock: {
       label: 'Next block',
-      group: 'Overview',
+      group: 'Go',
       keys: ['] b'],
       when: overview,
       control: 'Next block under the outline, and over an overview beside its code',
     },
     previousBlock: {
       label: 'Previous block',
-      group: 'Overview',
+      group: 'Go',
       keys: ['[ b'],
       when: overview,
       control: 'Previous block under the outline',
@@ -34,7 +46,8 @@ export default defineCommands(
      */
     follow: {
       label: 'Go to code',
-      group: 'Overview',
+      description: 'On a link, follows it. On a fold, opens it.',
+      group: 'Go',
       keys: ['enter'],
       targets: ['block', 'none'],
       when: overview,
@@ -44,7 +57,7 @@ export default defineCommands(
     /** Splits the middle: the overview, and the block's file in the diff beside it, inline. */
     beside: {
       label: 'Code beside',
-      group: 'Overview',
+      group: 'View',
       keys: ['o'],
       targets: ['block', 'none'],
       when: overview,
@@ -57,7 +70,7 @@ export default defineCommands(
      */
     closeBeside: {
       label: 'Close code beside',
-      group: 'Overview',
+      group: 'View',
       keys: ['esc'],
       when: overview,
       control: 'Close code beside, over the code beside',
@@ -69,14 +82,16 @@ export default defineCommands(
      */
     nextLink: {
       label: 'Next link',
-      group: 'Overview',
+      description: 'Stops at parts and sections too.',
+      group: 'Go',
       keys: ['tab'],
       when: overview,
       control: "Next link on a focused block's chip, and a click on the link itself",
     },
     previousLink: {
       label: 'Previous link',
-      group: 'Overview',
+      description: 'Stops at parts and sections too.',
+      group: 'Go',
       keys: ['shift+tab'],
       when: overview,
       control: 'a click on the link itself',
@@ -84,7 +99,7 @@ export default defineCommands(
     /** A walkthrough's next step, or the next of a set of tabs. */
     nextStep: {
       label: 'Next step',
-      group: 'Overview',
+      group: 'Go',
       keys: ['right'],
       targets: ['block', 'none'],
       when: overview,
@@ -92,7 +107,7 @@ export default defineCommands(
     },
     previousStep: {
       label: 'Previous step',
-      group: 'Overview',
+      group: 'Go',
       keys: ['left'],
       targets: ['block', 'none'],
       when: overview,
@@ -100,7 +115,7 @@ export default defineCommands(
     },
     scrollDown: {
       label: 'Scroll down',
-      group: 'Move',
+      group: 'Go',
       keys: ['j', 'down'],
       repeat: true,
       when: overview,
@@ -108,7 +123,7 @@ export default defineCommands(
     },
     scrollUp: {
       label: 'Scroll up',
-      group: 'Move',
+      group: 'Go',
       keys: ['k', 'up'],
       repeat: true,
       when: overview,
@@ -116,21 +131,21 @@ export default defineCommands(
     },
     top: {
       label: 'Go to top',
-      group: 'Move',
+      group: 'Go',
       keys: ['g g', 'home'],
       when: overview,
       control: "the overview's scroll bar",
     },
     bottom: {
       label: 'Go to bottom',
-      group: 'Move',
+      group: 'Go',
       keys: ['G', 'end'],
       when: overview,
       control: "the overview's scroll bar",
     },
     pageDown: {
       label: 'Page down',
-      group: 'Move',
+      group: 'Go',
       keys: ['pagedown'],
       repeat: true,
       when: overview,
@@ -138,7 +153,7 @@ export default defineCommands(
     },
     pageUp: {
       label: 'Page up',
-      group: 'Move',
+      group: 'Go',
       keys: ['pageup'],
       repeat: true,
       when: overview,
@@ -147,7 +162,7 @@ export default defineCommands(
     /** Puts the latest overview, pushed while this one was read, on screen. */
     loadNewer: {
       label: 'Show latest overview',
-      group: 'Overview',
+      group: 'View',
       keys: [],
       targets: ['block', 'none'],
       menu: { on: 'block', order: 40 },
@@ -155,7 +170,7 @@ export default defineCommands(
     /** Reads the overview's ref again now: after a read that failed, or one made only once. */
     retry: {
       label: 'Try again',
-      group: 'Overview',
+      group: 'View',
       keys: [],
       targets: ['block', 'none'],
       menu: { on: 'block', order: 50 },
@@ -167,7 +182,7 @@ export default defineCommands(
      */
     copyPrompt: {
       label: 'Copy prompt',
-      group: 'Overview',
+      group: 'View',
       keys: ['y a'],
       overVim: true,
       when: { except: ['menu', 'dialog', 'palette', 'box'], mode: 'normal' },
@@ -181,18 +196,17 @@ export default defineCommands(
     installSkill: {
       label: 'Install overview skill',
       control: 'Install on the Overview skill row of Settings',
-      group: 'Tabs and window',
+      group: 'App',
       keys: [],
-      bar: { menu: 'App', order: 20 },
     },
     /**
      * Copies the command that installs the overview skill from a terminal, which Settings shows in
      * its Command line section, by the version of the checker Lo's own skill runs.
      */
     copyInstallCommand: {
-      label: 'Copy the overview skill’s install command',
+      label: 'Copy install command',
       control: 'Copy on the On another computer row of Settings',
-      group: 'Copy and open',
+      group: 'App',
       keys: ['y c'],
       when: { scope: 'settings' },
     },

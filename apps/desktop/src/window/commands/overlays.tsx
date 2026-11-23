@@ -1,20 +1,26 @@
-// Key help (`?`) and the command palette (`⌘⇧P`): which of them is open, and the window's copy of
-// each, read live from the registry.
+// Keyboard shortcuts (`?`) and the command palette (`⌘⇧P`): which of them is open, and the
+// window's copy of each, read live from the registry.
 
 import {
+  areaOfCommand,
   filterPalette,
   findScope,
-  helpGroups,
+  helpAll,
+  helpAreas,
+  helpHere,
   keyLabels,
   paletteItems,
   parseKeys,
   systemStrokes,
   NO_TARGET,
+  type Command,
+  type HelpOptions,
   type PaletteMatch,
   type Target,
 } from '@lo/ui/commands';
-import { Key, KeyHelp, keyAria, Palette, PaletteHint, type PaletteGroup } from '@lo/ui';
-import { useState, useSyncExternalStore } from 'react';
+import { onVim, plainKeys, vimOn } from '@lo/ui/code';
+import { HERE, Key, KeyHelp, keyAria, Palette, PaletteHint, type PaletteGroup } from '@lo/ui';
+import { Fragment, useState, useSyncExternalStore } from 'react';
 
 import { focusedTarget } from './bar.ts';
 import { keymapProblem, keymapState, subscribeKeymap } from './keymap.ts';
@@ -22,7 +28,13 @@ import { registry, useKeys } from './registry.ts';
 
 /** What's open over the window. */
 export type Overlay =
-  | { readonly kind: 'help'; readonly show?: string | undefined }
+  | {
+      readonly kind: 'help';
+      readonly show?: string | undefined;
+      /** The scope and target that had focus as it opened, whose keys its "Here" lists. */
+      readonly scope: string;
+      readonly target: Target;
+    }
   | {
       readonly kind: 'palette';
       /** The scope and target that had focus before it opened, which its commands run on. */
@@ -36,7 +48,7 @@ export type Overlay =
 let current: Overlay;
 /** What to do once the overlay that's closing has given focus back. */
 let afterClose: (() => void) | undefined;
-/** The palette's highlighted command, which `⌥⏎` shows in key help. */
+/** The palette's highlighted command, which `⌥⏎` shows in keyboard shortcuts. */
 let highlighted: string | undefined;
 const listeners = new Set<() => void>();
 
@@ -57,9 +69,14 @@ export function overlay(): Overlay {
   return current;
 }
 
-/** Opens key help, showing the command `show` if given. */
+/** Opens keyboard shortcuts, for what has focus now, showing the command `show` if given. */
 export function openHelp(show?: string): void {
-  set({ kind: 'help', show });
+  set({
+    kind: 'help',
+    show,
+    scope: findScope(document.activeElement).name,
+    target: focusedTarget(),
+  });
 }
 
 /** Opens the command palette, for what has focus now. */
@@ -80,7 +97,7 @@ export function closeOverlay(then?: () => void): void {
   set(undefined);
 }
 
-/** `?` again closes key help. */
+/** `?` again closes keyboard shortcuts. */
 export function toggleHelp(): void {
   if (current?.kind === 'help') closeOverlay();
   else if (current === undefined) openHelp();
@@ -95,14 +112,14 @@ export function togglePalette(): void {
 }
 
 /**
- * Shows the palette's highlighted command in key help, as `⌥⏎` asks. With none highlighted, the
- * palette says why instead. Returns `true`, or why it didn't.
+ * Shows the palette's highlighted command in keyboard shortcuts, as `⌥⏎` asks. With none
+ * highlighted, the palette says why instead. Returns `true`, or why it didn't.
  */
 export function showHighlighted(): true | string {
-  if (current?.kind !== 'palette') return 'No action is highlighted.';
+  if (current?.kind !== 'palette') return 'No command highlighted';
   const id = highlighted;
   if (id === undefined) {
-    const why = "No action matches, so there's no key to show.";
+    const why = 'No commands match';
     set({ ...current, notice: why });
     return why;
   }
@@ -129,12 +146,39 @@ function keyOf(id: string): string[] | undefined {
   return first && keyLabels(first, registry().system);
 }
 
-/** Key help and the command palette, over the window. */
+/** Lo's own keys in a code view while Vim keys are off: the rest of Vim's own are Vim's alone. */
+const plain = new Set<string>(Object.values(plainKeys));
+
+/** Whether `command` is one of Vim's own keys that only Vim has, such as `v`. */
+function vimOnly(command: Command): boolean {
+  if (command.vim !== 'own') return false;
+  return !command.keys.every((spec) => plain.has(typeof spec === 'string' ? spec : spec.keys));
+}
+
+/** Keyboard shortcuts' lists, for what had focus as it opened. */
+function helpOf(open: Extract<Overlay, { kind: 'help' }> | undefined, vim: boolean) {
+  const options: HelpOptions = { vim, vimOnly, all: true };
+  const here = open ? helpHere(registry(), open.scope, open.target, options) : [];
+  const show = open?.show;
+  // A command shown is shown in "Here" if it's there, or else in the first area it works in.
+  const shownHere = here.some(({ rows }) => rows.some((row) => row.ids.includes(show ?? '')));
+  return {
+    here,
+    areas: open ? helpAreas(registry(), options) : [],
+    all: open ? helpAll(registry(), options) : [],
+    show,
+    showIn: show === undefined || shownHere ? HERE : areaOfCommand(registry(), show),
+  };
+}
+
+/** Keyboard shortcuts and the command palette, over the window. */
 export function Overlays() {
   const open = useSyncExternalStore(subscribe, overlay);
   const keymap = useSyncExternalStore(subscribeKeymap, keymapState);
+  const vim = useSyncExternalStore(onVim, vimOn);
   useKeys();
   const container = document.getElementById('root');
+  const help = helpOf(open?.kind === 'help' ? open : undefined, vim);
   return (
     <>
       <KeyHelp
@@ -142,7 +186,9 @@ export function Overlays() {
         onOpenChange={(next) => {
           if (!next) closeOverlay();
         }}
-        groups={helpGroups(registry())}
+        here={help.here}
+        areas={help.areas}
+        all={help.all}
         errors={registry().keymapErrors()}
         // Without a button for the file, what's wrong with it, or why Lo won't open it.
         problem={keymapProblem()}
@@ -154,7 +200,9 @@ export function Overlays() {
               }
             : undefined
         }
-        show={open?.kind === 'help' ? open.show : undefined}
+        show={help.show}
+        showIn={help.showIn}
+        closeKeys={labels('esc')}
         container={container}
         onClosed={closed}
       />
@@ -163,25 +211,45 @@ export function Overlays() {
   );
 }
 
-/** A label with the letters the query matched marked. */
+/**
+ * A label as it reads, what's between backticks set as code, with the letters the query matched
+ * marked: `marks` index the label without its backticks.
+ */
 function Marked({ text, marks }: { text: string; marks: readonly number[] }) {
   const marked = new Set(marks);
-  const runs: { text: string; marked: boolean }[] = [];
-  for (let index = 0; index < text.length; index++) {
-    const letter = text.slice(index, index + 1);
+  const runs: { text: string; code: boolean; marked: boolean }[] = [];
+  let code = false;
+  let at = 0;
+  for (const letter of text) {
+    if (letter === '`') {
+      code = !code;
+      continue;
+    }
+    const mark = marked.has(at);
+    at += letter.length;
     const last = runs.at(-1);
-    if (last && last.marked === marked.has(index)) last.text += letter;
-    else runs.push({ text: letter, marked: marked.has(index) });
+    if (last && last.code === code && last.marked === mark) last.text += letter;
+    else runs.push({ text: letter, code, marked: mark });
   }
-  return runs.map((run, index) =>
-    run.marked ? (
-      <mark key={index} className="bg-transparent font-semibold text-fg-accent">
-        {run.text}
-      </mark>
+  return runs.map((run, index) => {
+    const letters = run.marked ? (
+      <mark className="bg-transparent font-semibold text-fg-accent">{run.text}</mark>
     ) : (
       run.text
-    ),
-  );
+    );
+    return run.code ? (
+      <span key={index} className="code-small">
+        {letters}
+      </span>
+    ) : (
+      <Fragment key={index}>{letters}</Fragment>
+    );
+  });
+}
+
+/** A count of commands: "1 command", "80 commands". */
+function commands(count: number): string {
+  return `${count.toLocaleString('en')} ${count === 1 ? 'command' : 'commands'}`;
 }
 
 function CommandPalette({
@@ -196,7 +264,7 @@ function CommandPalette({
   const matches = filterPalette(items, query);
   const typed = query.trim() !== '';
   const showKey = keyOf('keys.showKey');
-  // Grouped as key help is while nothing's typed; the best match first once something is.
+  // Grouped as keyboard shortcuts is while nothing's typed; the best match first once something is.
   const groups: PaletteGroup<PaletteMatch>[] = typed
     ? matches.length > 0
       ? [{ items: matches }]
@@ -217,8 +285,7 @@ function CommandPalette({
         closed();
       }}
       label="Command palette"
-      placeholder="Type an action"
-      keys={keyOf('keys.palette')}
+      placeholder="Search commands"
       query={query}
       onQueryChange={(next) => {
         setQuery(next);
@@ -238,8 +305,13 @@ function CommandPalette({
       }}
       renderItem={({ item, marks }) => (
         <>
-          <span className="whitespace-nowrap">
-            <Marked text={item.label} marks={marks} />
+          <span className="flex min-w-0 flex-col">
+            <span className="whitespace-nowrap">
+              <Marked text={item.label} marks={marks} />
+            </span>
+            {item.description !== undefined && (
+              <span className="truncate text-fg-muted text-small">{item.description}</span>
+            )}
           </span>
           {typed && <span className="min-w-0 truncate text-fg-muted text-small">{item.group}</span>}
           <span className="ms-auto flex flex-none items-center gap-8">
@@ -247,18 +319,24 @@ function CommandPalette({
           </span>
         </>
       )}
-      empty={`No action matches "${query}".`}
+      empty={`No commands match “${query}”`}
       foot={
         <>
           <span className="lo-num">
-            {typed ? `${matches.length} of ${items.length} actions` : `${items.length} actions`}
+            {typed
+              ? `${matches.length.toLocaleString('en')} of ${commands(items.length)}`
+              : commands(items.length)}
           </span>
           <span role="status" className="text-fg">
             {open?.notice}
           </span>
           <span className="flex-1" />
           <PaletteHint keys={labels('enter')}>Run</PaletteHint>
-          {showKey && <PaletteHint keys={showKey}>Show its key</PaletteHint>}
+          {showKey && (
+            <PaletteHint keys={showKey} onClick={() => registry().run('keys.showKey', NO_TARGET)}>
+              Show key
+            </PaletteHint>
+          )}
           <PaletteHint keys={labels('esc')}>Close</PaletteHint>
         </>
       }

@@ -16,42 +16,40 @@ export default defineCommands(
     check: {
       label: 'Check for updates',
       control: 'Check now on the Lo row of Settings › About',
-      group: 'Tabs and window',
+      group: 'App',
       keys: [],
-      bar: { menu: 'App', order: 1 },
+      bar: { menu: 'Lo', section: 'app', order: 10 },
     },
     /** Downloads the newer Lo on offer, to install as Lo quits. */
     install: {
       label: 'Update Lo',
       control: "Update on the update's toast, and in Settings › About",
-      group: 'Tabs and window',
+      group: 'App',
       keys: [],
-      bar: { menu: 'App', order: 2 },
     },
     /** Quits, installs the downloaded update and starts Lo again. */
     restart: {
       label: 'Restart to update',
       control: "Restart to update on the update's toast, and in Settings › About",
-      group: 'Tabs and window',
+      group: 'App',
       keys: [],
-      bar: { menu: 'App', order: 3 },
+      bar: { menu: 'Lo', section: 'app', order: 10, instead: 'updates.check' },
     },
     /** Moves Lo to Applications, where it can update itself, and starts it again from there. */
     move: {
       label: 'Move Lo to Applications',
       control: "Move Lo to Applications on the update's toast, and in Settings › About",
-      group: 'Tabs and window',
+      group: 'App',
       keys: [],
       when: { system: 'mac' },
-      bar: { menu: 'Update', order: 1 },
     },
     /** Hides the update on offer until Lo starts again: it comes back after a restart. */
     later: {
       label: 'Hide update',
+      description: 'It comes back after a restart.',
       control: "Hide on the update's toast",
-      group: 'Tabs and window',
+      group: 'App',
       keys: [],
-      bar: { menu: 'Update', order: 2 },
     },
     /**
      * Opens the page of the update on offer, where its notes are; with none on offer, the list of
@@ -60,25 +58,24 @@ export default defineCommands(
     whatsNew: {
       label: 'What’s new',
       control: "What’s new on the update's toast, and in Settings › About",
-      group: 'Tabs and window',
+      group: 'App',
       keys: [],
-      bar: { menu: 'Update', order: 3 },
+      bar: { menu: 'Help', section: 'news', order: 10 },
     },
     /** Opens the page of the release on offer, to download it from, where Lo can't install it. */
     download: {
       label: 'Download update',
+      description: 'Opens the update’s page in the browser.',
       control: "Download update on the update's toast, and in Settings › About",
-      group: 'Tabs and window',
+      group: 'App',
       keys: [],
-      bar: { menu: 'Update', order: 4 },
     },
     /** Copies the command that updates Lo through Homebrew. */
     copy: {
       label: 'Copy Homebrew command',
       control: "Copy on the update's toast, and in Settings › About",
-      group: 'Tabs and window',
+      group: 'App',
       keys: [],
-      bar: { menu: 'Update', order: 5 },
     },
     /**
      * Puts focus on the toast that offers the update, whose buttons `Tab` then moves between, and
@@ -86,9 +83,9 @@ export default defineCommands(
      */
     focus: {
       label: 'Go to update',
-      group: 'Tabs and window',
+      control: "The update's toast, whose buttons a click reaches",
+      group: 'App',
       keys: [],
-      bar: { menu: 'Update', order: 6 },
     },
   },
   { scopes: ['toasts'] },

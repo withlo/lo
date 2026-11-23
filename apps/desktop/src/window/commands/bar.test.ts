@@ -16,16 +16,16 @@ import { systemOf } from './registry.ts';
 const declarations = defineCommands('view', {
   inline: {
     label: 'Inline or side by side',
-    group: 'Diff view',
+    group: 'View',
     keys: ['g i'],
-    bar: { menu: 'View', order: 10 },
+    bar: { menu: 'View', section: 'diff', order: 10 },
   },
   threads: {
     label: 'Threads panel',
-    group: 'Panels',
+    group: 'View',
     keys: ['cmd+shift+\\'],
     targets: ['file'],
-    bar: { menu: 'View', order: 20 },
+    bar: { menu: 'View', section: 'diff', order: 20 },
   },
   hidden: { label: 'Not in a menu', group: 'View', keys: ['cmd+k'] },
 });
@@ -50,6 +50,7 @@ describe('the app menu’s items', () => {
         id: 'view.inline',
         label: 'Inline or side by side',
         menu: 'View',
+        section: 'diff',
         order: 10,
         enabled: true,
       },
@@ -57,6 +58,7 @@ describe('the app menu’s items', () => {
         id: 'view.threads',
         label: 'Threads panel',
         menu: 'View',
+        section: 'diff',
         order: 20,
         key: { key: '\\', meta: true, ctrl: false, alt: false, shift: true },
         enabled: true,
@@ -74,9 +76,9 @@ describe('the app menu’s items', () => {
       defineCommands('open', {
         installCommand: {
           label: 'Install `lo` command',
-          group: 'Tabs and window',
+          group: 'Tabs',
           keys: [],
-          bar: { menu: 'App', order: 10 },
+          bar: { menu: 'App', section: 'app', order: 10 },
         },
       }),
       { installCommand: { run() {} } },
@@ -102,6 +104,58 @@ describe('the app menu’s items', () => {
       alt: true,
       shift: false,
     });
+  });
+});
+
+describe('a switch or a choice in the app menu', () => {
+  const layout = { value: 'split' };
+  const toggles = defineCommands('diff', {
+    split: {
+      label: 'Side by side',
+      group: 'View',
+      keys: ['g s'],
+      toggle: 'choice',
+      bar: { menu: 'View', section: 'diff', order: 10 },
+    },
+    inline: {
+      label: 'Inline',
+      group: 'View',
+      keys: ['g i'],
+      toggle: 'choice',
+      bar: { menu: 'View', section: 'diff', order: 20 },
+    },
+    quit: {
+      label: 'Quit',
+      group: 'App',
+      keys: ['ctrl+q'],
+      when: { system: 'linux' },
+      bar: { menu: 'File', section: 'quit', order: 10 },
+    },
+  });
+  const ran: string[] = [];
+  const registry = new Registry({
+    system: 'mac',
+    commands: handlers(toggles, {
+      split: { run: () => void ran.push('split'), checked: () => layout.value === 'split' },
+      inline: { run: () => void ran.push('inline'), checked: () => layout.value === 'inline' },
+      quit: { run() {} },
+    }),
+  });
+
+  it('says whether it’s checked, and leaves out a command for the other system', () => {
+    expect(
+      barItems(registry, { kind: 'none' }).map(({ id, toggle, checked }) => [id, toggle, checked]),
+    ).toEqual([
+      ['diff.split', 'choice', true],
+      ['diff.inline', 'choice', false],
+    ]);
+  });
+
+  it('does nothing when the choice clicked is already chosen', () => {
+    expect(runFromBar(registry, 'diff.split', { kind: 'none' })).toBe(true);
+    expect(ran).toEqual([]);
+    expect(runFromBar(registry, 'diff.inline', { kind: 'none' })).toBe(true);
+    expect(ran).toEqual(['inline']);
   });
 });
 

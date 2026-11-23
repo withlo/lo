@@ -5,7 +5,7 @@ import { macChrome, macPaint } from './mac.ts';
 
 export type { Strip };
 export { editMenu } from './edit.ts';
-export { acceleratorOf, appMenu, macMenu, type MenuOptions } from './menu.ts';
+export { acceleratorOf, appMenu, barNames, menuTree, type MenuOptions } from './menu.ts';
 
 /** The window's title bar and controls on this system. Lo draws its own tab strip on both. */
 export function windowChrome(

@@ -4,7 +4,7 @@
 
 import { join } from 'node:path';
 
-import { app, Menu } from 'electron';
+import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron';
 
 import { launch, query } from '../../../main/editor.ts';
 import { configFolder, devTools, keymapEditor } from '../../../main/environment.ts';
@@ -33,16 +33,36 @@ function keymapPath(): string {
 
 let keymap: KeymapWatch | undefined;
 
-/** Puts the app menu in place of whatever was there, Electron's default included. */
+/** The app menu as the window last listed its commands. */
+let tree: MenuItemConstructorOptions[] = [];
+
+/**
+ * Makes the app menu from the commands the window lists. On macOS it's the menu bar, in place of
+ * whatever was there, Electron's default included. Lo's window on Linux has no menu bar, so there
+ * the menu is kept for the window to open from its tab strip, and Electron's goes with nothing in
+ * its place: a menu set there would take keys the page didn't, though it never shows.
+ */
 function setMenu(items: readonly BarItem[], run: (id: string) => void): void {
-  const template = appMenu(process.platform, items, { name: app.name, devTools: tools, run });
-  Menu.setApplicationMenu(template ? Menu.buildFromTemplate(template) : null);
+  tree = appMenu(process.platform, items, { name: app.name, devTools: tools, run });
+  const mac = process.platform === 'darwin';
+  Menu.setApplicationMenu(mac ? Menu.buildFromTemplate(tree) : null);
 }
 
 export default defineFeature(contract, {
   handlers: {
     menu({ items }, { publish }) {
       setMenu(items, (id) => publish('run', { id }));
+    },
+    popup({ x, y }, _context, { windowId }) {
+      const window = windowId === undefined ? undefined : BrowserWindow.fromId(windowId);
+      if (!window || tree.length === 0) return;
+      // The window says where in CSS pixels; the menu goes by the window's own, at its zoom.
+      const zoom = window.webContents.getZoomFactor();
+      Menu.buildFromTemplate(tree).popup({
+        window,
+        x: Math.round(x * zoom),
+        y: Math.round(y * zoom),
+      });
     },
     async readKeymap() {
       if (!keymap) throw new IpcError('unavailable', "Lo isn't watching the keymap file.");

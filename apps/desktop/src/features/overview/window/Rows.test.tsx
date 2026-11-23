@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // The overview skill's rows in a window of their own, with main answered by a stand-in bridge: the
-// step on the welcome screen, the rows in Settings › Integrations, and the command in the app menu.
+// step on the welcome screen, the rows in Settings › Integrations, and the command in the palette.
 // What main installs, and in which folders, is tested beside it, in a temporary home.
 
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -489,12 +489,13 @@ describe('Settings’ row', () => {
   });
 });
 
-describe('the command in the app menu', () => {
-  it('has no key, and installs as the buttons do', async () => {
+describe('the command in the palette', () => {
+  it('has no key, its control is Settings’ row, and installs as the buttons do', async () => {
     const asked = main(state(), [{ kind: 'installed', agent: 'claude' }]);
     const command = feature.commands?.find((each) => each.id === 'overview.installSkill');
     expect(command?.keys).toEqual([]);
-    expect(command?.bar).toEqual({ menu: 'App', order: 20 });
+    expect(command?.bar).toBeUndefined();
+    expect(command?.control).toContain('Settings');
     await act(async () => {
       await command?.handler?.run({ kind: 'none' });
     });

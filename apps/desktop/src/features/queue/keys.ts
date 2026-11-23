@@ -22,7 +22,7 @@ export default defineCommands(
     show: {
       label: 'Merge queue',
       control: "See the queue in a queued pull request's merge panel",
-      group: 'Review',
+      group: 'Merge',
       keys: ['g q'],
       overVim: true,
       when: { except: ['menu', 'dialog', 'palette', 'box'], mode: 'normal' },
@@ -30,7 +30,7 @@ export default defineCommands(
     down: {
       label: 'Next pull request',
       control: "Next in the merge queue's status bar",
-      group: 'Merge queue',
+      group: 'Merge',
       keys: ['j', 'down'],
       when: queue,
       repeat: true,
@@ -38,7 +38,7 @@ export default defineCommands(
     up: {
       label: 'Previous pull request',
       control: "Previous in the merge queue's status bar",
-      group: 'Merge queue',
+      group: 'Merge',
       keys: ['k', 'up'],
       when: queue,
       repeat: true,
@@ -50,7 +50,7 @@ export default defineCommands(
     open: {
       label: 'Open pull request',
       control: 'a double click on a row of the merge queue, and Open in its status bar',
-      group: 'Merge queue',
+      group: 'Merge',
       keys: ['enter'],
       targets: ['row'],
       when: queue,
@@ -60,7 +60,7 @@ export default defineCommands(
     remove: {
       label: 'Remove from merge queue…',
       control: 'Remove… on a row of the merge queue',
-      group: 'Merge queue',
+      group: 'Merge',
       keys: ['x'],
       targets: ['row'],
       when: queue,
@@ -74,7 +74,7 @@ export default defineCommands(
     jump: {
       label: 'Move to front…',
       control: 'Move to front… on a row of the merge queue',
-      group: 'Merge queue',
+      group: 'Merge',
       keys: ['J'],
       targets: ['row'],
       when: queue,
@@ -88,7 +88,7 @@ export default defineCommands(
     autoMerge: {
       label: 'Turn off auto-merge',
       control: 'Turn off auto-merge on a row waiting to join the merge queue',
-      group: 'Merge queue',
+      group: 'Merge',
       keys: ['a'],
       targets: ['row'],
       when: queue,
@@ -98,21 +98,21 @@ export default defineCommands(
     nextBranch: {
       label: 'Next branch',
       control: "the branch switch in the merge queue's header",
-      group: 'Merge queue',
+      group: 'Merge',
       keys: ['tab'],
       when: queue,
     },
     previousBranch: {
       label: 'Previous branch',
       control: "the branch switch in the merge queue's header",
-      group: 'Merge queue',
+      group: 'Merge',
       keys: ['shift+tab'],
       when: queue,
     },
     /** The pull request on GitHub, or the queue itself while the keyboard is on none. */
     openOnGithub: {
       label: 'Open on GitHub',
-      group: 'Copy and open',
+      group: 'Merge',
       keys: ['g x'],
       targets: ['row', 'none'],
       when: queue,

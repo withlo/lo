@@ -2,21 +2,6 @@ import { z } from 'zod';
 
 import { defineContract, reply } from '../../ipc/contract.ts';
 
-/**
- * The macOS app menu's menus a command can sit in, as commands declare them in `bar`. `App` is the
- * menu named after Lo, and `Update` is a submenu of it.
- */
-export const barMenus = [
-  'App',
-  'Update',
-  'File',
-  'View',
-  'Go',
-  'Review',
-  'Window',
-  'Help',
-] as const;
-
 /** A keystroke a menu item shows, with the modifier keys by their DOM names. */
 export const barKey = z.strictObject({
   key: z.string().min(1).max(16),
@@ -29,17 +14,29 @@ export const barKey = z.strictObject({
 /** A command's id, `<feature>.<name>`, as `isCommandId` reads one. */
 export const commandId = z.string().regex(/^[a-z][a-zA-Z0-9]*\.[a-z][a-zA-Z0-9]*$/);
 
-/** One of Lo's commands in the app menu, as the window describes it. */
+/** A name of the app menu's, for a menu or a section of one: `View`, `panels`. */
+const barName = z.string().regex(/^[A-Za-z]{1,20}$/);
+
+/**
+ * One of Lo's commands in the app menu, as the window describes it: where it is, by the names the
+ * app menu's list gives its menus and their sections, which main draws only if it has.
+ */
 export const barItem = z.strictObject({
   /** The command's id, which a click sends back. */
   id: commandId,
   label: z.string().min(1).max(100),
-  menu: z.enum(barMenus),
+  menu: barName,
+  section: barName,
   order: z.number().finite(),
+  /** The command whose place it takes while it can run. */
+  instead: commandId.optional(),
   /** The command's key, when it's a single chord a menu can show. */
   key: barKey.optional(),
   /** Whether it can run on what has focus now. */
   enabled: z.boolean(),
+  /** A switch, checked while on, or one option of a choice, checked while chosen. */
+  toggle: z.enum(['switch', 'choice']).optional(),
+  checked: z.boolean().optional(),
 });
 
 export type BarKey = z.output<typeof barKey>;
@@ -86,6 +83,17 @@ export const contract = defineContract('keys', {
   requests: {
     /** Lo's commands in the app menu, each time their labels, keys or states change. */
     menu: { input: z.strictObject({ items: z.array(barItem).max(1000) }), reply: reply<void>() },
+    /**
+     * Opens the app menu as a menu at a point of the window that asks, in CSS pixels from its top
+     * left: on Linux, whose frameless window has no menu bar, from the end of the tab strip.
+     */
+    popup: {
+      input: z.strictObject({
+        x: z.number().finite().nonnegative().max(100_000),
+        y: z.number().finite().nonnegative().max(100_000),
+      }),
+      reply: reply<void>(),
+    },
     /** The keymap file as it is now. The `keymap` topic then keeps the window up to date. */
     readKeymap: { input: z.undefined(), reply: reply<KeymapFile>() },
     /**

@@ -251,7 +251,7 @@ describe('Appearance', () => {
       [
         ...handlers(
           defineCommands('settings', {
-            layout: { label: 'Inline or side by side', group: 'Diff view', keys: ['g i'] },
+            layout: { label: 'Inline or side by side', group: 'View', keys: ['g i'] },
           }),
           { layout: { run: () => undefined } },
         ),
@@ -516,6 +516,7 @@ describe('Keys', () => {
         palette: { run: () => undefined },
         showKey: { run: () => undefined },
         menu: { run: () => undefined },
+        appMenu: { run: () => undefined },
         escape: { run: () => undefined },
         back: { run: () => undefined },
         forward: { run: () => undefined },

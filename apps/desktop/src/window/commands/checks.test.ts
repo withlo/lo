@@ -1,4 +1,5 @@
 import {
+  checkBar,
   checkClashes,
   checkEditingKeys,
   checkHandlers,
@@ -6,12 +7,14 @@ import {
   checkKeys,
   checkMenus,
   checkRoutes,
+  checkToggles,
   checkVim,
   defineCommands,
   type Declarations,
 } from '@lo/ui/commands';
 import { describe, expect, it } from 'vitest';
 
+import { barNames } from '../../platform/menu.ts';
 import { featureCommands } from '../features.ts';
 import { checkDeclarations } from './declarations.ts';
 import { FIELDLESS, LEFT_TO_FIELDS } from './fieldless.ts';
@@ -55,8 +58,16 @@ describe("every feature's commands", () => {
 
   it('wait for a control no more than before: the list only shrinks', () => {
     // Lowered as commands come off the list, so that none can join it.
-    expect(WITHOUT_ROUTE.length).toBeLessThanOrEqual(25);
+    expect(WITHOUT_ROUTE.length).toBeLessThanOrEqual(21);
     expect(new Set(WITHOUT_ROUTE).size).toBe(WITHOUT_ROUTE.length);
+  });
+
+  it('join only the app menu’s menus and sections, by their names', () => {
+    expect(checkBar(features, barNames())).toEqual([]);
+  });
+
+  it('say when they’re checked, each switch and choice, and nothing else does', () => {
+    expect(checkToggles(features, given)).toEqual([]);
   });
 
   it('claim no key or start of a sequence twice, in any scope, mode or system', () => {

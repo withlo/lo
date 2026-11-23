@@ -1,41 +1,53 @@
 import { describe, expect, it } from 'vitest';
 
-import { commandsOf, defineCommands, handlers } from './declare.ts';
-import { filterHelp, filterPalette, helpGroups, paletteItems, whereText } from './help.ts';
+import { defineCommands, handlers, type Command } from './declare.ts';
+import {
+  areaOfCommand,
+  filterHelp,
+  filterPalette,
+  helpAll,
+  helpAreas,
+  helpHere,
+  paletteItems,
+  plainLabel,
+  type HelpGroup,
+  type HelpOptions,
+} from './help.ts';
 import { Registry } from './registry.ts';
-import { NO_TARGET } from './targets.ts';
+import { NO_TARGET, type Target } from './targets.ts';
 
 const run = { run() {} };
 
 const declared = defineCommands(
   'diff',
   {
-    down: { label: 'Line down', group: 'Move', keys: ['j'], vim: 'own' },
+    down: { label: 'Line down', group: 'Go', keys: ['j'], vim: 'own' },
     markViewed: {
       label: 'Mark viewed',
-      group: 'Act',
+      group: 'Review',
       keys: ['e'],
       targets: ['file'],
       overVim: true,
       when: { scope: ['diff', 'tree'], mode: 'normal' },
     },
-    nextFile: { label: 'Next file', group: 'Jump', keys: ['] f'] },
-    palette: { label: 'Command palette', group: 'Find', keys: ['cmd+shift+p'] },
-    open: { label: 'Open a PR', group: 'Find', keys: ['cmd+l', { keys: 'cmd+o', on: 'mac' }] },
+    nextFile: { label: 'Next file', group: 'Go', keys: ['] f'] },
+    palette: { label: 'Command palette', group: 'Go', keys: ['cmd+shift+p'] },
+    open: { label: 'Open a PR', group: 'Go', keys: ['cmd+l', { keys: 'cmd+o', on: 'mac' }] },
     quit: {
       label: 'Quit Lo',
-      group: 'Tabs and window',
+      group: 'Tabs',
       keys: ['cmd+q'],
       when: { system: 'linux' },
     },
     escape: {
       label: 'Back to the middle view',
-      group: 'Tabs and window',
+      group: 'Tabs',
       keys: ['esc'],
       when: { except: ['menu', 'box'] },
     },
     merge: {
       label: 'Merge',
+      description: 'Merges the whole pull request.',
       group: 'Review',
       keys: ['m'],
     },
@@ -66,30 +78,44 @@ function registry(
   });
 }
 
-/** The keys key help shows for `id`, on `system`. */
+const vim = { vim: true };
+
+/** The row keyboard shortcuts lists for `id` with `options`. */
+const rowOf = (options: HelpOptions, id: string) =>
+  helpAll(registry(), options)
+    .flatMap((group) => group.rows)
+    .find((each) => each.id === id);
+
+/** Whether `command` is one only Vim has: here, `diff.down`. */
+const vimOnly = (command: Command) => command.id === 'diff.down';
+
+/** The ids of what "Here" lists in `scope`, on `target`, with the commands `disabled` disabled. */
+const hereOf = (scope: string, disabled: readonly string[] = [], target: Target = NO_TARGET) =>
+  helpHere(registry('mac', disabled), scope, target, vim).flatMap((group) =>
+    group.rows.map((row) => row.id),
+  );
+
+/** The keys keyboard shortcuts shows for `id`, on `system`. */
 function keysOf(system: 'mac' | 'linux', id: string) {
-  return helpGroups(registry(system))
+  return helpAll(registry(system), vim)
     .flatMap((group) => group.rows)
     .find((row) => row.id === id)?.keys;
 }
 
-describe('key help', () => {
-  it('lists the key table’s groups in order, with each command on this system', () => {
-    const groups = helpGroups(registry());
-    expect(groups.map((group) => group.group)).toEqual([
-      'Move',
-      'Jump',
-      'Act',
-      'Review',
-      'Find',
-      'Tabs and window',
+/** The ids of the rows in `groups`, in order. */
+const idsOf = (groups: readonly HelpGroup[]) =>
+  groups.flatMap((group) => group.rows.map((row) => row.id));
+
+describe('keyboard shortcuts', () => {
+  it('lists the groups in their fixed order, with each command on this system', () => {
+    const groups = helpAll(registry(), vim);
+    expect(groups.map((group) => group.group)).toEqual(['Go', 'Review', 'Tabs']);
+    expect(groups.find((group) => group.group === 'Tabs')?.rows.map((row) => row.id)).toEqual([
+      'diff.escape',
     ]);
     expect(
-      groups.find((group) => group.group === 'Tabs and window')?.rows.map((row) => row.id),
-    ).toEqual(['diff.escape']);
-    expect(
-      helpGroups(registry('linux'))
-        .find((group) => group.group === 'Tabs and window')
+      helpAll(registry('linux'), vim)
+        .find((group) => group.group === 'Tabs')
         ?.rows.map((row) => row.id),
     ).toEqual(['diff.quit', 'diff.escape']);
   });
@@ -102,10 +128,10 @@ describe('key help', () => {
     expect(keysOf('mac', 'diff.nextFile')).toEqual([[']', 'f']]);
   });
 
-  it('follows the keymap file live', () => {
+  it('follows the keymap file live, and leaves out a command with no key unless asked', () => {
     const live = registry();
-    const nextFile = () =>
-      helpGroups(live)
+    const nextFile = (all?: boolean) =>
+      helpAll(live, { vim: true, all })
         .flatMap((group) => group.rows)
         .find((row) => row.id === 'diff.nextFile')?.keys;
     live.setKeymap('bind g n diff.nextFile');
@@ -115,39 +141,81 @@ describe('key help', () => {
     ]);
     live.setKeymap('bind g n diff.nextFile\nunbind ] f');
     expect(nextFile()).toEqual([['g', 'n']]);
-    live.setKeymap('');
-    expect(nextFile()).toEqual([[']', 'f']]);
+    live.setKeymap('unbind ] f');
+    expect(nextFile()).toBeUndefined();
+    expect(nextFile(true)).toEqual([]);
   });
 
-  it('marks Vim’s own keys and those that replace Vim’s, and says where each applies', () => {
-    const rows = helpGroups(registry()).flatMap((group) => group.rows);
-    const row = (id: string) => rows.find((each) => each.id === id);
-    expect(row('diff.down')).toMatchObject({ vim: true, overVim: false, where: undefined });
-    expect(row('diff.markViewed')).toMatchObject({
-      vim: false,
-      overVim: true,
-      where: "In the diff and tree, in Vim's normal mode",
+  it('tags Vim’s own keys and those that replace Vim’s only with Vim keys on', () => {
+    expect(rowOf(vim, 'diff.down')).toMatchObject({ vim: true, overVim: false });
+    expect(rowOf(vim, 'diff.markViewed')).toMatchObject({ vim: false, overVim: true });
+    expect(rowOf({ vim: false }, 'diff.down')).toMatchObject({ vim: false, overVim: false });
+    expect(rowOf({ vim: false }, 'diff.markViewed')).toMatchObject({ vim: false, overVim: false });
+    // A key only Vim has is gone with Vim keys off.
+    expect(rowOf({ vim: false, vimOnly }, 'diff.down')).toBeUndefined();
+    expect(rowOf({ vim: true, vimOnly }, 'diff.down')).toBeDefined();
+  });
+
+  it('opens on the keys that work where focus is and can run on its target', () => {
+    // Vim's own keys are listed wherever they apply: nothing checks them against a target.
+    expect(hereOf('window')).toEqual([
+      'diff.down',
+      'diff.nextFile',
+      'diff.palette',
+      'diff.open',
+      'diff.merge',
+      'diff.escape',
+    ]);
+    expect(hereOf('window', ['merge'])).not.toContain('diff.merge');
+    expect(hereOf('box')).not.toContain('diff.escape');
+    expect(hereOf('diff', [], { kind: 'file', file: 'a.ts' })).toContain('diff.markViewed');
+  });
+
+  it('gives each area a tab of the keys that work there, in the areas’ order', () => {
+    const areas = helpAreas(registry(), vim);
+    expect(areas.map(({ scope, name }) => [scope, name])).toEqual([
+      ['window', 'Anywhere'],
+      ['diff', 'Diff'],
+      ['tree', 'Files'],
+    ]);
+    expect(idsOf(areas.find((area) => area.scope === 'tree')?.groups ?? [])).toEqual([
+      'diff.markViewed',
+    ]);
+    expect(areaOfCommand(registry(), 'diff.markViewed')).toBe('diff');
+    expect(areaOfCommand(registry(), 'diff.open')).toBe('window');
+  });
+
+  it('makes one row of the commands in a group with one label, with all their keys', () => {
+    const twins = new Registry({
+      system: 'mac',
+      commands: handlers(
+        defineCommands('diff', {
+          next: { label: 'Next', group: 'Go', keys: ['n'], when: { scope: 'diff' } },
+          nextRow: { label: 'Next', group: 'Go', keys: ['j', 'n'], when: { scope: 'tree' } },
+        }),
+        { next: run, nextRow: run },
+      ),
     });
-    expect(row('diff.escape')?.where).toBe('Not in menus or comment boxes');
-    const [both] = commandsOf(
-      defineCommands('diff', {
-        x: { label: 'X', group: 'Act', keys: ['x'], when: { scope: 'window', except: ['box'] } },
-      }),
-    );
-    expect(whereText(both!)).toBe('In the window, not in comment boxes');
+    const [merged] = helpAll(twins, vim).flatMap((group) => group.rows);
+    expect(merged).toMatchObject({ id: 'diff.next', ids: ['diff.next', 'diff.nextRow'] });
+    expect(merged?.keys).toEqual([['n'], ['j']]);
   });
 
-  it('narrows to the actions, groups, ids or keys typed', () => {
-    const groups = helpGroups(registry());
-    const ids = (query: string) =>
-      filterHelp(groups, query).flatMap((group) => group.rows.map((row) => row.id));
+  it('narrows to the commands, descriptions, groups, ids or keys typed', () => {
+    const groups = helpAll(registry(), vim);
+    const ids = (query: string) => idsOf(filterHelp(groups, query));
     expect(ids('')).toHaveLength(7);
     expect(ids('mark')).toEqual(['diff.markViewed']);
-    expect(ids('find')).toEqual(['diff.palette', 'diff.open']);
+    expect(ids('tabs')).toEqual(['diff.escape']);
     expect(ids('⌘o')).toEqual(['diff.open']);
     expect(ids('] f')).toEqual(['diff.nextFile']);
     expect(ids('next file')).toEqual(['diff.nextFile']);
+    expect(ids('whole pull request')).toEqual(['diff.merge']);
     expect(ids('nothing like it')).toEqual([]);
+  });
+
+  it('reads a label without its backticks', () => {
+    expect(plainLabel('Install `lo` command')).toBe('Install lo command');
   });
 });
 
@@ -161,12 +229,12 @@ describe('the palette', () => {
   it('lists every command that applies where focus was and can run on its target', () => {
     const ids = (scope: string, disabled: readonly string[] = []) =>
       paletteItems(registry('mac', disabled), scope, NO_TARGET).map((item) => item.id);
-    // Not Vim's own, not one that needs a file, and in the key table's order.
+    // Not Vim's own, not one that needs a file, and in the groups' order.
     expect(ids('window')).toEqual([
       'diff.nextFile',
-      'diff.merge',
       'diff.palette',
       'diff.open',
+      'diff.merge',
       'diff.escape',
     ]);
     expect(ids('box')).not.toContain('diff.escape');
@@ -184,7 +252,7 @@ describe('the palette', () => {
     expect(items.find((item) => item.id === 'diff.palette')).toEqual({
       id: 'diff.palette',
       label: 'Command palette',
-      group: 'Find',
+      group: 'Go',
       keys: ['Ctrl+Shift+P'],
       shortcut: 'Control+Shift+P',
     });
@@ -237,8 +305,25 @@ describe('the palette', () => {
     // A run of letters beats the same letters spread out.
     expect(found('back')).toEqual([['Back to the middle view', '0,1,2,3']]);
     expect(found('nf')).toEqual([['Next file', '0,5']]);
-    // The group or the id, when the label has none of it.
+    // The description, group or id, when the label has none of it.
     expect(found('review')).toEqual([['Merge', '']]);
+    expect(found('whole')).toEqual([['Merge', '']]);
     expect(found('zzz')).toEqual([]);
+  });
+
+  it('matches and marks a label as it reads, without its backticks, and leaves out its own', () => {
+    const own = new Registry({
+      system: 'mac',
+      commands: handlers(
+        defineCommands('keys', {
+          install: { label: 'Install `lo` command', group: 'App', keys: ['i'] },
+          palette: { label: 'Command palette', group: 'App', keys: ['cmd+shift+p'] },
+        }),
+        { install: run, palette: run },
+      ),
+    });
+    const items = paletteItems(own, 'window', NO_TARGET);
+    expect(items.map((item) => item.id)).toEqual(['keys.install']);
+    expect(filterPalette(items, 'lo c')[0]?.marks).toEqual([8, 9, 11]);
   });
 });

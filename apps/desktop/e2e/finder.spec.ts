@@ -181,7 +181,7 @@ test('⏎ reveals a changed file in the tree, and the diff shows it', async ({ p
   await expect(diffHeader(page, 'src/text/wrap.ts')).toBeInViewport();
 });
 
-test('closing a palette or key help gives focus back to where it was, in a pull request’s tab', async ({
+test('closing a palette or keyboard shortcuts gives focus back to where it was, in a pull request’s tab', async ({
   page,
 }) => {
   await shown(page);
@@ -189,7 +189,7 @@ test('closing a palette or key help gives focus back to where it was, in a pull 
     [`${held}+Shift+p`, 'Command palette'],
     [`${held}+l`, 'Open pull request'],
     [`${held}+p`, 'Go to a file'],
-    ['?', 'Every key'],
+    ['?', 'Keyboard shortcuts'],
   ] as const;
   // The middle of the window takes focus without being tabbable, and holds the tree, which is.
   for (const [where, origin] of [

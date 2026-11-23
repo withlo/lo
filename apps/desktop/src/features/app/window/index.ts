@@ -5,6 +5,7 @@ import { notify } from '../../../window/commands/notices.tsx';
 import { NO_TEXT_APP, TEXT_APP_QUERY, UNSUPPORTED } from '../../../window/explain.ts';
 import type { WindowFeature } from '../../../window/features.ts';
 import { client, type Client } from '../../../window/ipc.ts';
+import { contract as tabs } from '../../tab/contract.ts';
 import { contract, type Theme } from '../contract.ts';
 import keys from '../keys.ts';
 import { offerCodeViews } from './codeviews.ts';
@@ -49,6 +50,19 @@ async function showLicenses(): Promise<void> {
   }
 }
 
+/** Lo's documentation: its README, on GitHub. */
+export const DOCS = 'https://github.com/withlo/lo#readme';
+
+/** A new issue on Lo's repository, on GitHub. */
+export const REPORT = 'https://github.com/withlo/lo/issues/new';
+
+/** Opens a page of Lo's on GitHub in the browser. */
+function openPage(url: string): void {
+  client(tabs)
+    .openExternal({ url })
+    .catch((error: unknown) => console.error("Lo couldn't open its page on GitHub:", error));
+}
+
 export default {
   commands: handlers(keys, {
     about: { run: () => main().about() },
@@ -58,6 +72,8 @@ export default {
     zoomOut: { run: () => main().zoom({ step: 'out' }) },
     actualSize: { run: () => main().zoom({ step: 'reset' }) },
     fullScreen: { run: () => main().fullScreen() },
+    docs: { run: () => openPage(DOCS) },
+    report: { run: () => openPage(REPORT) },
   }),
   views: Rows,
   start() {

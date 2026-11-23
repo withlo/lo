@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import {
+  checkBar,
   checkClashes,
   checkEditingKeys,
   checkHandlers,
@@ -8,6 +9,7 @@ import {
   checkKeys,
   checkMenus,
   checkRoutes,
+  checkToggles,
   checkVim,
   vimMeetings,
 } from './checks.ts';
@@ -28,26 +30,26 @@ const passing = [
     {
       markViewed: {
         label: 'Mark viewed',
-        group: 'Act',
+        group: 'Review',
         keys: ['e'],
         overVim: true,
         when: { scope: ['diff', 'tree'], mode: 'normal' },
         menu: { on: 'file', order: 20 },
       },
-      nextFile: { label: 'Next file', group: 'Jump', keys: ['] f'], vim: 'motion' },
-      down: { label: 'Line down', group: 'Move', keys: ['j'], vim: 'own' },
+      nextFile: { label: 'Next file', group: 'Go', keys: ['] f'], vim: 'motion' },
+      down: { label: 'Line down', group: 'Go', keys: ['j'], vim: 'own' },
       submit: { label: 'Submit review', group: 'Review', keys: ['cmd+enter'] },
       add: {
         label: 'Add to review',
-        group: 'Comment box',
+        group: 'Comments',
         keys: ['cmd+enter'],
         when: { scope: 'box' },
       },
       open: {
         label: 'Open a PR',
-        group: 'Find',
+        group: 'Go',
         keys: ['cmd+l', { keys: 'cmd+o', on: 'mac' }],
-        bar: { menu: 'File', order: 10 },
+        bar: { menu: 'File', section: 'file', order: 10 },
       },
     },
     'diff',
@@ -56,7 +58,7 @@ const passing = [
     {
       order: {
         label: 'Tree or review order',
-        group: 'Files',
+        group: 'Go',
         keys: ['t'],
         when: { scope: 'tree' },
       },
@@ -79,14 +81,18 @@ describe('the checks', () => {
 
 describe('ids', () => {
   test('are each feature’s and command’s own', () => {
-    const one = feature({ a: { label: 'A', group: 'Act', keys: ['x'] } });
+    const one = feature({ a: { label: 'A', group: 'Review', keys: ['x'] } });
     expect(checkIds([one, one])).toEqual([
       'Two features are called diff.',
       'Two commands are called diff.a.',
     ]);
     expect(
       checkIds([
-        { feature: 'my-diff', commands: { a: { label: 'A', group: 'Act', keys: [] } }, scopes: [] },
+        {
+          feature: 'my-diff',
+          commands: { a: { label: 'A', group: 'Review', keys: [] } },
+          scopes: [],
+        },
       ]),
     ).toEqual([
       `"my-diff" isn't a feature's name, such as diff.`,
@@ -97,10 +103,12 @@ describe('ids', () => {
   test('name only scopes the engine, a code view or one feature declares', () => {
     expect(
       checkIds([
-        feature({ a: { label: 'A', group: 'Act', keys: ['x'], when: { scope: ['tre', 'diff'] } } }),
+        feature({
+          a: { label: 'A', group: 'Review', keys: ['x'], when: { scope: ['tre', 'diff'] } },
+        }),
         feature({}, 'tree', ['tree', 'box', 'Bad']),
         feature(
-          { b: { label: 'B', group: 'Act', keys: ['y'], when: { except: ['tree'] } } },
+          { b: { label: 'B', group: 'Review', keys: ['y'], when: { except: ['tree'] } } },
           'files',
           ['tree'],
         ),
@@ -116,9 +124,9 @@ describe('ids', () => {
 
 describe('handlers', () => {
   const declared = feature({
-    reply: { label: 'Reply', group: 'Threads', keys: ['r'] },
-    resolve: { label: 'Resolve', group: 'Threads', keys: ['x'] },
-    down: { label: 'Line down', group: 'Move', keys: ['j'], vim: 'own' },
+    reply: { label: 'Reply', group: 'Comments', keys: ['r'] },
+    resolve: { label: 'Resolve', group: 'Comments', keys: ['x'] },
+    down: { label: 'Line down', group: 'Go', keys: ['j'], vim: 'own' },
   });
   const run = { run() {} };
 
@@ -143,11 +151,11 @@ describe('handlers', () => {
   });
 
   test('fail a handler without a declaration in keys.ts, or for another declaration', () => {
-    const elsewhere = feature({ reply: { label: 'Reply', group: 'Threads', keys: ['R'] } });
+    const elsewhere = feature({ reply: { label: 'Reply', group: 'Comments', keys: ['R'] } });
     const given = [
       ...handlers(declared, { reply: run, resolve: run }).filter((each) => each.name !== 'reply'),
       ...handlers(elsewhere, { reply: run }),
-      ...handlers(feature({ undo: { label: 'Undo', group: 'Act', keys: ['u'] } }, 'edit'), {
+      ...handlers(feature({ undo: { label: 'Undo', group: 'Review', keys: ['u'] } }, 'edit'), {
         undo: run,
       }),
     ];
@@ -174,17 +182,17 @@ describe('keys', () => {
     expect(
       checkKeys([
         feature({
-          none: { label: 'None', group: 'Act', keys: [] },
-          macOnly: { label: 'Mac', group: 'Act', keys: [{ keys: 'cmd+o', on: 'mac' }] },
+          none: { label: 'None', group: 'Review', keys: [] },
+          macOnly: { label: 'Mac', group: 'Review', keys: [{ keys: 'cmd+o', on: 'mac' }] },
           linux: {
             label: 'Linux',
-            group: 'Act',
+            group: 'Review',
             keys: [{ keys: 'cmd+o', on: 'mac' }],
             when: { system: 'linux' },
           },
           mac: {
             label: 'Mac',
-            group: 'Act',
+            group: 'Review',
             keys: [{ keys: 'cmd+o', on: 'mac' }],
             when: { system: 'mac' },
           },
@@ -198,13 +206,19 @@ describe('keys', () => {
     ]);
   });
 
-  test('pass a command declared with no key that a menu reaches, and no other', () => {
+  test('pass a command declared with no key that a menu or a control reaches, and no other', () => {
     expect(
       checkKeys([
         feature({
-          install: { label: 'Install', group: 'Act', keys: [], bar: { menu: 'App', order: 1 } },
-          viewed: { label: 'Viewed', group: 'Act', keys: [], menu: { on: 'file', order: 1 } },
-          hidden: { label: 'Hidden', group: 'Act', keys: [] },
+          install: {
+            label: 'Install',
+            group: 'Review',
+            keys: [],
+            bar: { menu: 'App', section: 'app', order: 1 },
+          },
+          undo: { label: 'Undo', group: 'Review', keys: [], control: 'Undo on its toast' },
+          viewed: { label: 'Viewed', group: 'Review', keys: [], menu: { on: 'file', order: 1 } },
+          hidden: { label: 'Hidden', group: 'Review', keys: [] },
         }),
       ]),
     ).toEqual(['diff.hidden has no key on macOS.', 'diff.hidden has no key on Linux.']);
@@ -216,27 +230,27 @@ describe('text-editing keys', () => {
     {
       clear: {
         label: 'Clear filter',
-        group: 'Find',
+        group: 'Go',
         keys: ['cmd+backspace'],
         when: { scope: 'list' },
       },
       top: {
         label: 'Top',
-        group: 'Move',
+        group: 'Go',
         keys: ['home', 'g g'],
         when: { scope: ['list', 'tree'] },
       },
-      everywhere: { label: 'Everywhere', group: 'Find', keys: ['cmd+a'] },
+      everywhere: { label: 'Everywhere', group: 'Go', keys: ['cmd+a'] },
       unscoped: {
         label: 'Not the field',
-        group: 'Find',
+        group: 'Go',
         keys: ['alt+left'],
         when: { except: ['list'] },
       },
-      form: { label: 'Form', group: 'Find', keys: ['cmd+z'], when: { scope: ['list', 'form'] } },
+      form: { label: 'Form', group: 'Go', keys: ['cmd+z'], when: { scope: ['list', 'form'] } },
       linux: {
         label: 'Back a word',
-        group: 'Move',
+        group: 'Go',
         keys: [
           { keys: 'ctrl+left', on: 'linux' },
           { keys: 'cmd+[', on: 'mac' },
@@ -245,13 +259,13 @@ describe('text-editing keys', () => {
       },
       erase: {
         label: 'Erase',
-        group: 'Find',
+        group: 'Go',
         keys: ['cmd+backspace'],
         when: { scope: 'form' },
         editsField: true,
       },
-      plain: { label: 'Plain', group: 'Find', keys: ['x', 'cmd+enter'], when: { scope: 'form' } },
-      down: { label: 'Line down', group: 'Move', keys: ['cmd+down'], vim: 'own' },
+      plain: { label: 'Plain', group: 'Go', keys: ['x', 'cmd+enter'], when: { scope: 'form' } },
+      down: { label: 'Line down', group: 'Go', keys: ['cmd+down'], vim: 'own' },
     },
     'lists',
     ['list', 'form', 'tree'],
@@ -268,7 +282,7 @@ describe('text-editing keys', () => {
 
   test('fail editsField on a command none of whose keys edits text', () => {
     const odd = feature(
-      { erase: { label: 'Erase', group: 'Find', keys: ['x'], editsField: true } },
+      { erase: { label: 'Erase', group: 'Go', keys: ['x'], editsField: true } },
       'odd',
     );
     expect(checkEditingKeys([odd], [])).toEqual([
@@ -288,10 +302,15 @@ describe('text-editing keys', () => {
 
 describe('routes', () => {
   const some = defineCommands('some', {
-    key: { label: 'Only a key', group: 'Act', keys: ['a'] },
-    button: { label: 'A button', group: 'Act', keys: ['b'], control: 'a button in the header' },
-    menu: { label: 'A menu row', group: 'Act', keys: ['m'], bar: { menu: 'View', order: 1 } },
-    down: { label: 'Line down', group: 'Move', keys: ['j'], vim: 'own' },
+    key: { label: 'Only a key', group: 'Review', keys: ['a'] },
+    button: { label: 'A button', group: 'Review', keys: ['b'], control: 'a button in the header' },
+    menu: {
+      label: 'A menu row',
+      group: 'Review',
+      keys: ['m'],
+      bar: { menu: 'View', section: 'view', order: 1 },
+    },
+    down: { label: 'Line down', group: 'Go', keys: ['j'], vim: 'own' },
   });
 
   test('fail a command only its key runs, and pass one with a control or a menu', () => {
@@ -314,26 +333,31 @@ describe('menu items', () => {
     expect(
       checkMenus([
         feature({
-          viewed: { label: 'Viewed', group: 'Act', keys: [], menu: { on: 'file', order: 1 } },
+          viewed: { label: 'Viewed', group: 'Review', keys: [], menu: { on: 'file', order: 1 } },
           copy: {
             label: 'Copy',
-            group: 'Copy and open',
+            group: 'Tabs',
             keys: [{ keys: 'y y', on: 'linux' }],
             menu: { on: 'line', order: 1 },
           },
-          merge: { label: 'Merge', group: 'Review', keys: [], bar: { menu: 'Review', order: 1 } },
+          merge: {
+            label: 'Merge',
+            group: 'Review',
+            keys: [],
+            bar: { menu: 'Review', section: 'review', order: 1 },
+          },
           linux: {
             label: 'Linux',
             group: 'Review',
             keys: [],
             when: { system: 'linux' },
-            bar: { menu: 'Review', order: 2 },
+            bar: { menu: 'Review', section: 'review', order: 2 },
           },
           ship: {
             label: 'Ship',
             group: 'Review',
             keys: [{ keys: 'g s', on: 'linux' }],
-            bar: { menu: 'Review', order: 3 },
+            bar: { menu: 'Review', section: 'review', order: 3 },
           },
         }),
       ]),
@@ -349,19 +373,19 @@ describe('menu items', () => {
         // A line gives its file and its thread, and a command for nothing in particular takes any.
         file: {
           label: 'File',
-          group: 'Act',
+          group: 'Review',
           keys: ['e'],
           targets: ['file'],
           menu: { on: 'line', order: 1 },
         },
         thread: {
           label: 'Thread',
-          group: 'Threads',
+          group: 'Comments',
           keys: ['r'],
           targets: ['thread', 'layer'],
           menu: { on: 'line', order: 2 },
         },
-        window: { label: 'Window', group: 'Find', keys: ['?'], menu: { on: 'block', order: 3 } },
+        window: { label: 'Window', group: 'Go', keys: ['?'], menu: { on: 'block', order: 3 } },
         layer: {
           label: 'Layer',
           group: 'Review',
@@ -371,7 +395,7 @@ describe('menu items', () => {
         },
         line: {
           label: 'Line',
-          group: 'Act',
+          group: 'Review',
           keys: ['c'],
           targets: ['line', 'thread'],
           menu: { on: 'file', order: 5 },
@@ -391,10 +415,10 @@ describe('clashes', () => {
       checkClashes([
         feature(
           {
-            resolve: { label: 'Resolve', group: 'Threads', keys: ['x'], when: { scope: 'tree' } },
+            resolve: { label: 'Resolve', group: 'Comments', keys: ['x'], when: { scope: 'tree' } },
             remove: {
               label: 'Remove',
-              group: 'Merge queue',
+              group: 'Merge',
               keys: ['x'],
               when: { scope: ['tree', 'menu'] },
             },
@@ -411,10 +435,10 @@ describe('clashes', () => {
       checkClashes([
         feature(
           {
-            file: { label: 'Collapse file', group: 'Act', keys: ['x'], when: { scope: 'tree' } },
+            file: { label: 'Collapse file', group: 'Review', keys: ['x'], when: { scope: 'tree' } },
             thread: {
               label: 'Collapse thread',
-              group: 'Threads',
+              group: 'Comments',
               keys: ['x'],
               targets: ['thread'],
               when: { scope: 'tree', on: 'thread' },
@@ -432,7 +456,7 @@ describe('clashes', () => {
       checkClashes([
         feature(
           {
-            go: { label: 'Go', group: 'Act', keys: ['g'], when: { scope: 'tree' } },
+            go: { label: 'Go', group: 'Review', keys: ['g'], when: { scope: 'tree' } },
             stack: { label: 'Stack', group: 'Review', keys: ['g S'], when: { scope: 'tree' } },
           },
           'diff',
@@ -447,7 +471,7 @@ describe('clashes', () => {
       checkClashes([
         feature(
           {
-            go: { label: 'Go', group: 'Act', keys: ['g'], when: { scope: 'tree' } },
+            go: { label: 'Go', group: 'Review', keys: ['g'], when: { scope: 'tree' } },
             stack: { label: 'Stack', group: 'Review', keys: ['g S'] },
           },
           'diff',
@@ -462,7 +486,7 @@ describe('clashes', () => {
       checkClashes([
         feature({
           submit: { label: 'Submit', group: 'Review', keys: ['cmd+enter'] },
-          add: { label: 'Add', group: 'Comment box', keys: ['cmd+enter'], when: { scope: 'box' } },
+          add: { label: 'Add', group: 'Comments', keys: ['cmd+enter'], when: { scope: 'box' } },
         }),
       ]),
     ).toEqual([]);
@@ -473,27 +497,27 @@ describe('clashes', () => {
       checkClashes([
         feature({
           // Only on Linux is cmd+p Ctrl+P.
-          files: { label: 'Files', group: 'Find', keys: ['cmd+p'] },
+          files: { label: 'Files', group: 'Go', keys: ['cmd+p'] },
           up: {
             label: 'Up',
-            group: 'Act',
+            group: 'Review',
             keys: ['ctrl+p'],
             when: { scope: 'diff', mode: 'visual' },
           },
           // Different modes never meet.
-          a: { label: 'A', group: 'Act', keys: ['q'], when: { scope: 'diff', mode: 'normal' } },
-          b: { label: 'B', group: 'Act', keys: ['q'], when: { scope: 'diff', mode: 'visual' } },
+          a: { label: 'A', group: 'Review', keys: ['q'], when: { scope: 'diff', mode: 'normal' } },
+          b: { label: 'B', group: 'Review', keys: ['q'], when: { scope: 'diff', mode: 'visual' } },
           // Different systems never meet.
-          c: { label: 'C', group: 'Act', keys: ['cmd+k'], when: { system: 'mac' } },
-          d: { label: 'D', group: 'Act', keys: ['cmd+k'], when: { system: 'linux' } },
+          c: { label: 'C', group: 'Review', keys: ['cmd+k'], when: { system: 'mac' } },
+          d: { label: 'D', group: 'Review', keys: ['cmd+k'], when: { system: 'linux' } },
         }),
       ]),
     ).toEqual([]);
     expect(
       checkClashes([
         feature({
-          files: { label: 'Files', group: 'Find', keys: ['cmd+p'] },
-          up: { label: 'Up', group: 'Act', keys: ['ctrl+p'] },
+          files: { label: 'Files', group: 'Go', keys: ['cmd+p'] },
+          up: { label: 'Up', group: 'Review', keys: ['ctrl+p'] },
         }),
       ]),
     ).toEqual([
@@ -507,8 +531,8 @@ describe('clashes', () => {
     expect(
       checkClashes([
         feature({
-          nextFile: { label: 'Next file', group: 'Jump', keys: ['] f'], vim: 'motion' },
-          follow: { label: 'Follow', group: 'Act', keys: [']'], when: { scope: 'diff' } },
+          nextFile: { label: 'Next file', group: 'Go', keys: ['] f'], vim: 'motion' },
+          follow: { label: 'Follow', group: 'Review', keys: [']'], when: { scope: 'diff' } },
         }),
       ]),
     ).toEqual([
@@ -524,12 +548,12 @@ describe('clashes the engine’s rules hide', () => {
         feature({
           nextFile: {
             label: 'Next file',
-            group: 'Jump',
+            group: 'Go',
             keys: ['] f'],
             vim: 'motion',
             when: { scope: 'diff' },
           },
-          follow: { label: 'Follow', group: 'Act', keys: ['] f'] },
+          follow: { label: 'Follow', group: 'Review', keys: ['] f'] },
         }),
       ]),
     ).toEqual([
@@ -539,8 +563,8 @@ describe('clashes the engine’s rules hide', () => {
     expect(
       checkClashes([
         feature({
-          nextFile: { label: 'Next file', group: 'Jump', keys: ['] f'], when: { scope: 'diff' } },
-          follow: { label: 'Follow', group: 'Act', keys: ['] f'] },
+          nextFile: { label: 'Next file', group: 'Go', keys: ['] f'], when: { scope: 'diff' } },
+          follow: { label: 'Follow', group: 'Review', keys: ['] f'] },
         }),
       ]),
     ).toEqual([]);
@@ -550,9 +574,9 @@ describe('clashes the engine’s rules hide', () => {
     expect(
       checkClashes([
         feature({
-          jump: { label: 'Jump', group: 'Act', keys: ['j'], when: { scope: 'menu' } },
-          kill: { label: 'Kill', group: 'Act', keys: ['k x'], when: { scope: 'menu' } },
-          next: { label: 'Next', group: 'Act', keys: ['n'], when: { scope: 'menu' } },
+          jump: { label: 'Jump', group: 'Review', keys: ['j'], when: { scope: 'menu' } },
+          kill: { label: 'Kill', group: 'Review', keys: ['k x'], when: { scope: 'menu' } },
+          next: { label: 'Next', group: 'Review', keys: ['n'], when: { scope: 'menu' } },
         }),
       ]),
     ).toEqual([
@@ -569,7 +593,7 @@ describe('Vim’s keys', () => {
         feature({
           markViewed: {
             label: 'Mark viewed',
-            group: 'Act',
+            group: 'Review',
             keys: ['e'],
             when: { scope: 'diff', mode: 'normal' },
           },
@@ -583,10 +607,10 @@ describe('Vim’s keys', () => {
   test('fail a key that starts one of Vim’s, or starts with one Vim reads another key after', () => {
     const problems = checkVim([
       feature({
-        go: { label: 'Go', group: 'Act', keys: ['g'], when: { scope: 'peek', mode: 'normal' } },
+        go: { label: 'Go', group: 'Review', keys: ['g'], when: { scope: 'peek', mode: 'normal' } },
         link: {
           label: 'Copy a link',
-          group: 'Copy and open',
+          group: 'Tabs',
           keys: ['y l'],
           when: { scope: 'peek', mode: 'normal' },
         },
@@ -607,17 +631,17 @@ describe('Vim’s keys', () => {
           {
             next: {
               label: 'Next block',
-              group: 'Overview',
+              group: 'View',
               keys: ['] b'],
               when: { scope: 'diff' },
             },
             add: {
               label: 'Add',
-              group: 'Comment box',
+              group: 'Comments',
               keys: ['cmd+enter'],
               when: { scope: 'box' },
             },
-            order: { label: 'Order', group: 'Files', keys: ['t'], when: { scope: 'tree' } },
+            order: { label: 'Order', group: 'Go', keys: ['t'], when: { scope: 'tree' } },
           },
           'diff',
           ['tree'],
@@ -628,7 +652,7 @@ describe('Vim’s keys', () => {
 
   test('read cmd as Ctrl on Linux, where it can meet Vim’s Ctrl keys', () => {
     expect(
-      checkVim([feature({ files: { label: 'Files', group: 'Find', keys: ['cmd+p'] } })]),
+      checkVim([feature({ files: { label: 'Files', group: 'Go', keys: ['cmd+p'] } })]),
     ).toEqual([
       "`ctrl+p` (diff.files) meets Vim's `ctrl+p` without overVim, in diff (normal), diff (visual), file (normal), file (visual), peek (normal), peek (visual), box (normal) and box (visual), on Linux.",
     ]);
@@ -637,14 +661,14 @@ describe('Vim’s keys', () => {
   test('fail overVim on a command whose keys meet none of Vim’s', () => {
     expect(
       checkVim([
-        feature({ next: { label: 'Next block', group: 'Overview', keys: ['] b'], overVim: true } }),
+        feature({ next: { label: 'Next block', group: 'View', keys: ['] b'], overVim: true } }),
       ]),
     ).toEqual(["diff.next says overVim, but none of its keys meets one of Vim's."]);
   });
 
   test('fail a key declared as Vim’s own that isn’t', () => {
     expect(
-      checkVim([feature({ down: { label: 'Down', group: 'Move', keys: ['] b'], vim: 'own' } })]),
+      checkVim([feature({ down: { label: 'Down', group: 'Go', keys: ['] b'], vim: 'own' } })]),
     ).toEqual(["diff.down is declared as Vim's own, but `] b` isn't one of Vim's keys."]);
   });
 
@@ -681,9 +705,74 @@ describe('Vim’s keys', () => {
 
   test('are all keys Lo’s notation can read', () => {
     for (const keys of Object.values(vimDefaults)) {
-      expect(() =>
-        feature({ all: { label: 'All', group: 'Move', keys, vim: 'own' } }),
-      ).not.toThrow();
+      expect(() => feature({ all: { label: 'All', group: 'Go', keys, vim: 'own' } })).not.toThrow();
     }
+  });
+});
+
+describe('the app menu', () => {
+  const menus = [
+    { menu: 'File', sections: ['open'] },
+    { menu: 'View', sections: ['diff'] },
+  ];
+  const run = { run() {} };
+
+  test('fail a command that names a menu or a section the app menu doesn’t have', () => {
+    expect(
+      checkBar(
+        [
+          feature({
+            open: {
+              label: 'Open',
+              group: 'Go',
+              keys: ['o'],
+              bar: { menu: 'File', section: 'open', order: 1 },
+            },
+            nowhere: {
+              label: 'Nowhere',
+              group: 'Go',
+              keys: ['n'],
+              bar: { menu: 'Lo', section: 'app', order: 1 },
+            },
+            stray: {
+              label: 'Stray',
+              group: 'Go',
+              keys: ['s'],
+              bar: { menu: 'File', section: 'quit', order: 1 },
+            },
+            instead: {
+              label: 'Instead',
+              group: 'Go',
+              keys: ['i'],
+              bar: { menu: 'File', section: 'open', order: 2, instead: 'diff.gone' },
+            },
+          }),
+        ],
+        menus,
+      ),
+    ).toEqual([
+      "diff.nowhere is in the app menu's Lo menu, which it doesn't have.",
+      "diff.stray is in the File menu's quit section, which it doesn't have.",
+      "diff.instead takes the place of diff.gone in the app menu, which isn't in it.",
+    ]);
+  });
+
+  test('fail a switch or a choice that doesn’t say when it’s checked, and a check on anything else', () => {
+    const toggles = feature({
+      wrap: { label: 'Wrap', group: 'View', keys: ['w'], toggle: 'switch' },
+      inline: { label: 'Inline', group: 'View', keys: ['i'], toggle: 'choice' },
+      split: { label: 'Split', group: 'View', keys: ['s'], toggle: 'choice' },
+      plain: { label: 'Plain', group: 'View', keys: ['p'] },
+    });
+    const given = handlers(toggles, {
+      wrap: { run() {}, checked: () => true },
+      inline: run,
+      split: { run() {}, checked: () => false },
+      plain: { run() {}, checked: () => false },
+    });
+    expect(checkToggles([toggles], given)).toEqual([
+      "diff.inline is a choice, but its handler doesn't say when it's checked.",
+      "diff.plain says when it's checked, but isn't declared a switch or a choice.",
+    ]);
   });
 });

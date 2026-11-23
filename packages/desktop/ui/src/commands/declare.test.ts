@@ -6,14 +6,14 @@ import type { FileTarget, LineTarget, NoTarget, ThreadTarget } from './targets.t
 const keys = defineCommands('diff', {
   markViewed: {
     label: 'Mark viewed',
-    group: 'Act',
+    group: 'Review',
     keys: ['e'],
     targets: ['line', 'file'],
     when: { scope: ['diff', 'tree'], mode: 'normal' },
   },
-  reply: { label: 'Reply', group: 'Threads', keys: ['r'], targets: ['thread'] },
-  help: { label: 'Every key', group: 'Tabs and window', keys: ['?'] },
-  down: { label: 'Line down', group: 'Move', keys: ['j'], vim: 'own' },
+  reply: { label: 'Reply', group: 'Comments', keys: ['r'], targets: ['thread'] },
+  help: { label: 'Every key', group: 'Tabs', keys: ['?'] },
+  down: { label: 'Line down', group: 'Go', keys: ['j'], vim: 'own' },
 });
 
 describe('declarations', () => {
@@ -32,16 +32,16 @@ describe('declarations', () => {
 
   test('fail as they load on a key Lo can’t read, or a name that isn’t one', () => {
     expect(() =>
-      defineCommands('diff', { bad: { label: 'Bad', group: 'Act', keys: ['cmd+'] } }),
-    ).toThrow('Keys "cmd+": "cmd+" has no key after its last "+".');
+      defineCommands('diff', { bad: { label: 'Bad', group: 'Review', keys: ['cmd+'] } }),
+    ).toThrow('Keys "cmd+": `cmd+` has no key after `+`');
     expect(() =>
       defineCommands('diff', {
-        bad: { label: 'Bad', group: 'Act', keys: [{ keys: 'hyper+x', on: 'mac' }] },
+        bad: { label: 'Bad', group: 'Review', keys: [{ keys: 'hyper+x', on: 'mac' }] },
       }),
-    ).toThrow("isn't a modifier");
+    ).toThrow('isn’t a modifier');
     expect(() => defineCommands('my-feature', {})).toThrow('"my-feature" isn\'t a feature name');
     expect(() =>
-      defineCommands('diff', { 'mark-viewed': { label: 'x', group: 'Act', keys: [] } }),
+      defineCommands('diff', { 'mark-viewed': { label: 'x', group: 'Review', keys: [] } }),
     ).toThrow('"diff.mark-viewed" isn\'t a command id.');
   });
 

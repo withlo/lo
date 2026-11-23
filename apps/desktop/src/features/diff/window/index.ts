@@ -12,9 +12,9 @@ import { announce, fail } from '../../../window/commands/notices.tsx';
 import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
 import { defineView } from '../../../window/slots.tsx';
-import { changeSetting, settingRow } from '../../settings/window/shared.ts';
+import { changeSetting, settingNow, settingRow } from '../../settings/window/shared.ts';
 import { contract as tabContract, viewIds } from '../../tab/contract.ts';
-import { activeTab, middle, status, type PullTab } from '../../tab/window/shared.ts';
+import { activeTab, middle, showingMiddle, status, type PullTab } from '../../tab/window/shared.ts';
 import type { TreePath } from '../../tree/contract.ts';
 import type { FileVersions } from '../contract.ts';
 import keys from '../keys.ts';
@@ -257,6 +257,7 @@ const copyCode = inCode<LineTarget>(
 
 export default {
   commands: handlers(keys, {
+    show: showingMiddle(DIFF_VIEW),
     nextChange: { run: withDiff(({ view }) => view.jump('change', 1)), enabled: drawnNow },
     previousChange: { run: withDiff(({ view }) => view.jump('change', -1)), enabled: drawnNow },
     nextFile: { run: withDiff(({ view }) => view.jump('file', 1)), enabled: drawnNow },
@@ -280,18 +281,24 @@ export default {
       },
     },
     otherSide: { run: withDiff(({ view }) => view.otherSide()), enabled: drawnNow },
-    sideBySide: { run: withDiff((drawn) => setLayout(drawn, 'split')), enabled: layoutNow },
+    sideBySide: {
+      run: withDiff((drawn) => setLayout(drawn, 'split')),
+      enabled: layoutNow,
+      checked: () => settingNow(layout) === 'split',
+    },
     inline: {
       run: withDiff((drawn) =>
         setLayout(drawn, drawn.view.probe.layout === 'split' ? 'inline' : 'split'),
       ),
       enabled: layoutNow,
+      checked: () => settingNow(layout) === 'inline',
     },
     whitespace: {
       run: withDiff(async ({ loader }) => {
         await changeSetting(whitespace, loader.whitespaceShown() ? 'hide' : 'show');
       }),
       enabled: drawnNow,
+      checked: () => settingNow(whitespace) === 'hide',
     },
     openRun: { run: withDiff(fold('open')), enabled: drawnNow },
     closeRun: { run: withDiff(fold('close')), enabled: drawnNow },

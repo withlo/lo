@@ -58,24 +58,42 @@ function type(field: HTMLInputElement, text: string): void {
   });
 }
 
-/** What key help's alerts say. */
+/** What keyboard shortcuts' alerts say. */
 function alerts(): (string | null)[] {
   return [...document.querySelectorAll('[role="alert"]')].map((each) => each.textContent);
 }
 
-/** The keys key help shows for Back. */
+/** The keys keyboard shortcuts shows for Back, in its tab for anywhere in the window. */
 function backKeys(): (string | null)[] {
+  const anywhere = [...document.querySelectorAll<HTMLElement>('[role="tab"]')].find(
+    (each) => each.textContent === 'Anywhere',
+  );
+  act(() => anywhere?.click());
   return [...document.querySelectorAll('[data-command="keys.back"] kbd')].map(
     (kbd) => kbd.textContent,
   );
 }
 
-describe('key help', () => {
+describe('keyboard shortcuts', () => {
+  it('opens on the keys that work in what has focus, with a tab for each area', () => {
+    act(() => toggleHelp());
+    const tabs = [...document.querySelectorAll('[role="tab"]')];
+    expect(tabs[0]?.textContent).toBe('Here');
+    expect(tabs[0]?.getAttribute('aria-selected')).toBe('true');
+    expect(tabs.map((tab) => tab.textContent)).toContain('Anywhere');
+    const here = [...document.querySelectorAll('[data-command]')].map((row) =>
+      row.getAttribute('data-command'),
+    );
+    expect(here).toContain('keys.help');
+    // Back has nowhere to go, so its key does nothing here.
+    expect(here).not.toContain('keys.back');
+  });
+
   it('opens and closes with ?', async () => {
     act(() => toggleHelp());
-    expect(dialog('Every key')).toBeDefined();
+    expect(dialog('Keyboard shortcuts')).toBeDefined();
     act(() => toggleHelp());
-    await vi.waitFor(() => expect(dialog('Every key')).toBeUndefined());
+    await vi.waitFor(() => expect(dialog('Keyboard shortcuts')).toBeUndefined());
     expect(overlay()).toBeUndefined();
   });
 
@@ -90,11 +108,11 @@ describe('key help', () => {
       registry().setKeymap('nonsense');
     });
     expect(backKeys()).toEqual(['⌃o']);
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain('Line 1:');
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain('Line 1 ·');
   });
 });
 
-describe('key help and the keymap file', () => {
+describe('keyboard shortcuts and the keymap file', () => {
   it('shows what is wrong with the file, and its lines that can’t be used, as they change', () => {
     act(() => toggleHelp());
     expect(alerts()).toEqual([]);
@@ -113,7 +131,7 @@ describe('key help and the keymap file', () => {
       applyKeymapFile({ text: 'bind x nope.nothing\n# fine\nbnid y keys.back', canOpen: true }),
     );
     expect(alerts()).toEqual([
-      "The keymap file has 2 lines Lo can't use:Line 1: There's no command called nope.nothing.Line 3: A line starts with bind, unbind, vim or #, not bnid.",
+      'Can’t use 2 lines of the keymap file Line 1 · No command nope.nothingLine 3 · Lines start with bind, unbind, vim or #',
     ]);
     act(() => applyKeymapFile({ text: 'bind ctrl+b keys.back', canOpen: true }));
     expect(alerts()).toEqual([]);
@@ -125,22 +143,20 @@ describe('key help and the keymap file', () => {
     Reflect.set(window, 'lo', { invoke, subscribe: () => () => undefined });
     act(() => toggleHelp());
     const button = [...document.querySelectorAll('button')].find(
-      (each) => each.textContent === 'Open the keymap file',
+      (each) => each.textContent === 'Open keymap file',
     );
     act(() => button?.click());
     await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith('keys.openKeymap', undefined));
-    // Key help stays up, so the file's errors are there when Lo is back.
-    expect(dialog('Every key')).toBeDefined();
+    // Keyboard shortcuts stays up, so the file's errors are there when Lo is back.
+    expect(dialog('Keyboard shortcuts')).toBeDefined();
   });
 });
 
-/** Key help's button for the keymap file, if it has one. */
+/** Keyboard shortcuts' button for the keymap file, if it has one. */
 const button = () =>
-  [...document.querySelectorAll('button')].find(
-    (each) => each.textContent === 'Open the keymap file',
-  );
+  [...document.querySelectorAll('button')].find((each) => each.textContent === 'Open keymap file');
 
-describe('key help’s button for the keymap file', () => {
+describe('keyboard shortcuts’ button for the keymap file', () => {
   it('is there when Lo will open the file, and gone when it won’t', () => {
     act(() => applyKeymapFile({ text: '', canOpen: true }));
     act(() => toggleHelp());
@@ -180,16 +196,17 @@ describe('the palette', () => {
     const palette = dialog('Command palette');
     expect(palette?.getAttribute('data-lo-scope')).toBe('palette');
     const input = palette?.querySelector('input');
-    type(input!, 'every key');
-    expect(palette?.querySelector('[role="option"]')?.textContent).toContain('Every key');
+    expect(input?.getAttribute('placeholder')).toBe('Search commands');
+    type(input!, 'keyboard');
+    expect(palette?.querySelector('[role="option"]')?.textContent).toContain('Keyboard shortcuts');
     act(() => {
       input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     });
-    await vi.waitFor(() => expect(dialog('Every key')).toBeDefined());
+    await vi.waitFor(() => expect(dialog('Keyboard shortcuts')).toBeDefined());
     expect(dialog('Command palette')).toBeUndefined();
   });
 
-  it('says why ⌥⏎ did nothing when no action matches, until what’s typed changes', () => {
+  it('says why ⌥⏎ did nothing when no command matches, until what’s typed changes', () => {
     act(() => openPalette());
     const palette = dialog('Command palette');
     const input = palette?.querySelector('input');
@@ -199,22 +216,37 @@ describe('the palette', () => {
     act(() => {
       shown = showHighlighted();
     });
-    expect(shown).toBe("No action matches, so there's no key to show.");
+    expect(shown).toBe('No commands match');
     // The palette stays open and says it, in a live region.
     expect(dialog('Command palette')).toBeDefined();
     const said = () =>
       [...(palette?.querySelectorAll('[role="status"]') ?? [])].map((each) => each.textContent);
-    expect(said()).toContain("No action matches, so there's no key to show.");
-    type(input!, 'forward');
-    expect(said()).not.toContain("No action matches, so there's no key to show.");
+    expect(said()).toContain('No commands match');
+    expect(palette?.textContent).toContain('No commands match “zzzz”');
+    type(input!, 'keyboard');
+    expect(said()).not.toContain('No commands match');
   });
 
-  it('shows the highlighted command in key help on ⌥⏎', async () => {
-    expect(showHighlighted()).toBe('No action is highlighted.');
+  it('shows the highlighted command in keyboard shortcuts from Show key in its foot', async () => {
+    act(() => openPalette());
+    const palette = dialog('Command palette');
+    type(palette!.querySelector('input')!, 'go to view');
+    const show = [...(palette?.querySelectorAll('button') ?? [])].find(
+      (each) => each.textContent === 'Show key⌥⏎',
+    );
+    act(() => show?.click());
+    await vi.waitFor(() =>
+      expect(document.querySelector('[aria-current="true"]')?.getAttribute('data-command')).toBe(
+        'keys.escape',
+      ),
+    );
+  });
+
+  it('shows the highlighted command in keyboard shortcuts on ⌥⏎', async () => {
+    expect(showHighlighted()).toBe('No command highlighted');
     act(() => openPalette());
     const input = dialog('Command palette')?.querySelector('input');
-    // Back and Forward, with nowhere to go, aren't offered.
-    type(input!, 'middle view');
+    type(input!, 'go to view');
     let shown: true | string = '';
     act(() => {
       shown = showHighlighted();

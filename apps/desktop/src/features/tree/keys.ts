@@ -18,9 +18,10 @@ export default defineCommands(
      * up in a code view, which `k` and `↑` do as well.
      */
     find: {
-      label: 'Go to a file',
-      group: 'Find',
+      label: 'Go to file…',
+      group: 'Go',
       keys: ['cmd+p'],
+      bar: { menu: 'Go', section: 'find', order: 10 },
       overVim: true,
       when: { except: ['dialog', 'palette'] },
     },
@@ -29,8 +30,8 @@ export default defineCommands(
      * moves nothing, so the finder has it for its own.
      */
     findChanged: {
-      label: 'Changed files only in the file finder',
-      group: 'Palettes',
+      label: 'Changed files only',
+      group: 'Go',
       keys: ['tab'],
       when: { scope: 'palette' },
     },
@@ -39,8 +40,8 @@ export default defineCommands(
      * file in the diff instead.
      */
     findWhole: {
-      label: 'Whole file from the file finder',
-      group: 'Palettes',
+      label: 'Open whole file',
+      group: 'Go',
       keys: ['cmd+enter'],
       when: { scope: 'palette' },
     },
@@ -50,9 +51,9 @@ export default defineCommands(
      * nothing further up.
      */
     focus: {
-      label: 'Go to the file tree',
+      label: 'Go to files',
       control: 'a click in the files tree',
-      group: 'Files',
+      group: 'Go',
       keys: ['-'],
       overVim: true,
       when: { except: ['menu', 'dialog', 'palette', 'box', 'tree', 'stack'], mode: 'normal' },
@@ -64,11 +65,10 @@ export default defineCommands(
     asTree: {
       label: 'Tree',
       control: 'Tree in the Files toolbar',
-      group: 'Files',
+      group: 'View',
       // `t` is the switch's, which comes back to the tree.
       keys: [],
       when: tree,
-      bar: { menu: 'View', order: 22 },
     },
     /**
      * A switch, as the setting: lists only the changed files, in review order, or the tree again,
@@ -77,81 +77,80 @@ export default defineCommands(
     reviewOrder: {
       label: 'Review order',
       control: 'Review order in the Files toolbar',
-      group: 'Files',
+      group: 'View',
       keys: ['t'],
       when: tree,
-      bar: { menu: 'View', order: 24 },
     },
     /** Shows only the changed files, still as a tree, or every file again. */
     changedOnly: {
       label: 'Changed files only',
       control: 'Changed files only in the Files toolbar',
-      group: 'Files',
+      group: 'View',
       keys: ['f'],
       when: tree,
     },
     down: {
-      label: 'Next row of the tree',
-      group: 'Files',
+      label: 'Next row',
+      group: 'Go',
       keys: ['j', 'down'],
       when: tree,
       repeat: true,
       count: 'rows',
     },
     up: {
-      label: 'Previous row of the tree',
-      group: 'Files',
+      label: 'Previous row',
+      group: 'Go',
       keys: ['k', 'up'],
       when: tree,
       repeat: true,
       count: 'rows',
     },
-    top: { label: 'First row of the tree', group: 'Files', keys: ['g g', 'home'], when: tree },
-    bottom: { label: 'Last row of the tree', group: 'Files', keys: ['G', 'end'], when: tree },
+    top: { label: 'Go to top', group: 'Go', keys: ['g g', 'home'], when: tree },
+    bottom: { label: 'Go to bottom', group: 'Go', keys: ['G', 'end'], when: tree },
     /** A page of rows on, as many as the tree shows. */
     pageDown: {
-      label: 'Page down the tree',
-      group: 'Files',
+      label: 'Page down',
+      group: 'Go',
       keys: ['pagedown'],
       when: tree,
       repeat: true,
     },
     pageUp: {
-      label: 'Page up the tree',
-      group: 'Files',
+      label: 'Page up',
+      group: 'Go',
       keys: ['pageup'],
       when: tree,
       repeat: true,
     },
     /** Opens a folder, or on an open one goes to what's in it. */
     open: {
-      label: 'Open the folder',
+      label: 'Expand folder',
       control: "a closed folder's row in the files tree",
-      group: 'Files',
+      group: 'View',
       keys: ['l', 'right'],
       when: tree,
       repeat: true,
     },
     /** Closes a folder, or goes to the folder a row is in. */
     close: {
-      label: 'Close the folder',
+      label: 'Collapse folder',
       control: "an open folder's row in the files tree",
-      group: 'Files',
+      group: 'View',
       keys: ['h', 'left'],
       when: tree,
       repeat: true,
     },
-    openAll: { label: 'Open every folder', group: 'Files', keys: ['z R'], when: tree },
-    closeAll: { label: 'Close every folder', group: 'Files', keys: ['z M'], when: tree },
+    openAll: { label: 'Expand all folders', group: 'View', keys: ['z R'], when: tree },
+    closeAll: { label: 'Collapse all folders', group: 'View', keys: ['z M'], when: tree },
     /**
      * Shows the file: a changed one at the top of the diff. On a folder, opens or closes it, as a
      * click does. Not a jump of its own: showing a file records one, as a click does, and a folder
      * moves nothing.
      */
     show: {
-      label: 'Show the file',
+      label: 'Show file',
       control: "a file's row in the files tree",
-      group: 'Files',
+      group: 'Go',
       keys: ['enter'],
       targets: ['file', 'none'],
       when: tree,
@@ -163,7 +162,7 @@ export default defineCommands(
      */
     markViewed: {
       label: 'Mark viewed',
-      group: 'Act',
+      group: 'Review',
       keys: ['e'],
       targets: ['file'],
       when: tree,
@@ -172,8 +171,8 @@ export default defineCommands(
     },
     /** Opens the file whole and read-only, changed or not. */
     wholeFile: {
-      label: 'Whole file',
-      group: 'Copy and open',
+      label: 'Open whole file',
+      group: 'Code',
       keys: ['g f'],
       targets: ['file'],
       jump: true,
@@ -182,7 +181,7 @@ export default defineCommands(
     },
     copyPath: {
       label: 'Copy path',
-      group: 'Copy and open',
+      group: 'Code',
       keys: ['y p'],
       targets: ['file'],
       when: tree,
@@ -191,7 +190,7 @@ export default defineCommands(
     /** The file in the pull request's changes on GitHub, or for an unchanged file, at the head. */
     openOnGithub: {
       label: 'Open on GitHub',
-      group: 'Copy and open',
+      group: 'Code',
       keys: ['g x'],
       targets: ['file'],
       when: tree,

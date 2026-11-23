@@ -21,9 +21,9 @@ let applies = false;
 const declarations = defineCommands('stand', {
   restart: {
     label: 'Restart to update',
-    group: 'Tabs and window',
+    group: 'Tabs',
     keys: [],
-    bar: { menu: 'App', order: 3 },
+    bar: { menu: 'App', section: 'app', order: 3 },
   },
 });
 

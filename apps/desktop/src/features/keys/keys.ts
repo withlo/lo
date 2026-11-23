@@ -6,22 +6,24 @@ import { defineCommands } from '@lo/ui/commands';
 export default defineCommands('keys', {
   /** Every key. `?` is Vim's backward search in code views; Lo searches with `/` alone. */
   help: {
-    label: 'Every key',
+    label: 'Keyboard shortcuts',
     control: 'Show on the Keyboard shortcuts row of Settings',
-    group: 'Tabs and window',
+    group: 'App',
     keys: ['?'],
+    bar: { menu: 'Help', section: 'help', order: 20 },
     overVim: true,
   },
   palette: {
     label: 'Command palette',
-    group: 'Find',
+    group: 'View',
     keys: ['cmd+shift+p'],
-    bar: { menu: 'View', order: 90 },
+    bar: { menu: 'View', section: 'palette', order: 10 },
   },
-  /** In the palette, shows the highlighted action in key help. */
+  /** In the palette, shows the highlighted command in keyboard shortcuts. */
   showKey: {
-    label: "Show an action's key",
-    group: 'Palettes',
+    label: 'Show key',
+    control: "Show key in the command palette's foot",
+    group: 'App',
     keys: ['alt+enter'],
     when: { scope: 'palette' },
   },
@@ -31,11 +33,22 @@ export default defineCommands('keys', {
    * their own.
    */
   menu: {
-    label: 'Show the right-click menu',
+    label: 'Show right-click menu',
     control: 'A right-click on what has focus',
-    group: 'Tabs and window',
+    group: 'App',
     keys: ['menu', 'shift+f10'],
     when: { except: ['menu', 'dialog', 'palette'] },
+  },
+  /**
+   * The app menu, as a menu at the end of the tab strip: Linux's window has no menu bar to hold it.
+   * `F10` opens a window's menu on Linux's desktops.
+   */
+  appMenu: {
+    label: 'Show menu',
+    control: 'The menu button at the end of the tab strip',
+    group: 'App',
+    keys: ['f10'],
+    when: { system: 'linux', except: ['menu', 'dialog', 'palette'] },
   },
   /**
    * Back to the middle view, from anywhere but the widgets that close on `Esc` themselves (menus,
@@ -43,29 +56,30 @@ export default defineCommands('keys', {
    * middle view, it first closes what that has open, such as a note in the diff.
    */
   escape: {
-    label: 'Back to the middle view',
+    label: 'Go to view',
+    description: 'Closes what’s open in the view first.',
     control: 'A click in the middle view',
-    group: 'Tabs and window',
+    group: 'Go',
     keys: ['esc'],
     when: { except: ['menu', 'dialog', 'palette', 'box'], mode: 'normal' },
   },
   /** Back through the tab's history. In a comment box, `⌃o` is Vim's, on the box's own list. */
   back: {
     label: 'Back',
-    group: 'Code',
+    group: 'Go',
     keys: ['ctrl+o'],
     overVim: true,
     when: { except: ['box'] },
-    bar: { menu: 'Go', order: 10 },
+    bar: { menu: 'Go', section: 'history', order: 10 },
     menu: { on: 'none', order: 10 },
   },
   forward: {
     label: 'Forward',
-    group: 'Code',
+    group: 'Go',
     keys: ['ctrl+i'],
     overVim: true,
     when: { except: ['box'] },
-    bar: { menu: 'Go', order: 20 },
+    bar: { menu: 'Go', section: 'history', order: 20 },
     menu: { on: 'none', order: 20 },
   },
   /**
@@ -73,9 +87,9 @@ export default defineCommands('keys', {
    * `g` goes to the widget or to Vim: in menus, dialogs, the palette and comment boxes.
    */
   openKeymap: {
-    label: 'Open the keymap file',
+    label: 'Open keymap file',
     control: "Open keymap file at the foot of Settings' list",
-    group: 'Tabs and window',
+    group: 'App',
     keys: ['g ,'],
     when: { except: ['menu', 'dialog', 'palette', 'box'], mode: 'normal' },
   },

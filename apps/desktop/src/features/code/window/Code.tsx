@@ -305,7 +305,6 @@ function OutlinePalette() {
     ) : (
       'No symbols in this file'
     ));
-  const go = keysOf('code.outline');
   return (
     <Palette<OutlineRow>
       open={state.open}
@@ -315,7 +314,6 @@ function OutlinePalette() {
       onClosed={outlineClosed}
       label="Outline"
       placeholder="Filter by name"
-      keys={go}
       icon={OUTLINE_ICON}
       query={state.query}
       onQueryChange={typeOutline}

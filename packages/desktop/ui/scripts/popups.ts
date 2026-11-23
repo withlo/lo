@@ -37,7 +37,7 @@ export const SHARED: readonly string[] = [
  * Files that drew a popup of their own before the shared pieces could hold it. Each moves to a
  * shared piece and comes off this list; nothing is added to it.
  */
-export const NOT_YET: readonly string[] = ['KeyHelp.tsx', 'MergePanel.tsx', 'overview/Term.tsx'];
+export const NOT_YET: readonly string[] = ['MergePanel.tsx', 'overview/Term.tsx'];
 
 export interface PopupFinding {
   file: string;

@@ -11,9 +11,9 @@ export default defineCommands(
     show: {
       label: 'Welcome to Lo',
       control: 'Show on the Welcome to Lo row of Settings › About',
-      group: 'Tabs and window',
+      group: 'App',
       keys: [],
-      bar: { menu: 'Help', order: 10 },
+      bar: { menu: 'Help', section: 'help', order: 10 },
     },
     /**
      * The step's main button: "Continue", "Done" on the last step, and signing in on the first
@@ -23,7 +23,7 @@ export default defineCommands(
     continue: {
       label: 'Continue',
       control: "The main button in the welcome's foot",
-      group: 'Act',
+      group: 'App',
       keys: ['enter'],
       when: { scope: 'welcome' },
     },

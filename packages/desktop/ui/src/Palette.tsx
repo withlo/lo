@@ -19,8 +19,6 @@ export interface PaletteProps<T> {
   /** What the palette is, for screen readers: "Command palette". */
   label: string;
   placeholder: string;
-  /** The palette's own key, shown at the end of its input. */
-  keys?: readonly string[] | undefined;
   query: string;
   onQueryChange: (query: string) => void;
   /** The items that match the query, in the order to show them. */
@@ -77,7 +75,7 @@ export function Palette<T>(props: PaletteProps<T>) {
   const { container, onClosed } = props;
   // What it shows stays as it was while it leaves.
   const held = useHeld(open, props);
-  const { label, placeholder, keys, query, groups, renderItem, empty, mono, icon, mode } = held;
+  const { label, placeholder, query, groups, renderItem, empty, mono, icon, mode } = held;
   const { message, foot } = held;
   const input = useRef<HTMLInputElement>(null);
   const popup = useRef<HTMLDivElement | null>(null);
@@ -148,7 +146,6 @@ export function Palette<T>(props: PaletteProps<T>) {
                     {mode}
                   </span>
                 )}
-                {keys && <Key keys={keys} quiet />}
               </div>
               {message !== undefined && (
                 <div className="flex gap-12 px-16 py-12 text-ui">{message}</div>
@@ -200,12 +197,36 @@ export function Palette<T>(props: PaletteProps<T>) {
   );
 }
 
-/** A hint in a palette's foot: a key and what it does. */
-export function PaletteHint({ keys, children }: { keys: readonly string[]; children: ReactNode }) {
+/**
+ * A hint in a palette's foot: what a key does, then the key. With `onClick`, it's the key's control
+ * too, a button a click runs, which leaves focus in the palette's input.
+ */
+export function PaletteHint({
+  keys,
+  children,
+  onClick,
+}: {
+  keys: readonly string[];
+  children: ReactNode;
+  onClick?: (() => void) | undefined;
+}) {
+  if (onClick === undefined) {
+    return (
+      <span className="inline-flex items-center gap-6 whitespace-nowrap">
+        {children}
+        <Key keys={keys} quiet />
+      </span>
+    );
+  }
   return (
-    <span className="inline-flex items-center gap-6 whitespace-nowrap">
-      <Key keys={keys} quiet />
+    <button
+      type="button"
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={onClick}
+      className="inline-flex items-center gap-6 rounded-sm whitespace-nowrap text-fg-muted hover:text-fg focus-visible:shadow-ring"
+    >
       {children}
-    </span>
+      <Key keys={keys} quiet decorative />
+    </button>
   );
 }

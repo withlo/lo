@@ -207,6 +207,24 @@ export class Registry {
     }
   }
 
+  /**
+   * Whether `id`, a toggle, is checked on `target` now, as its handler's `checked` says: `undefined`
+   * for a command that isn't a toggle, or a target it can't take.
+   */
+  checked(id: string, target: Target): boolean | undefined {
+    const command = this.byId.get(id);
+    const handler = command?.handler;
+    if (!command?.toggle || !handler?.checked) return undefined;
+    const fitted = fit(command.targets ?? ['none'], target);
+    if (!fitted) return undefined;
+    try {
+      return handler.checked(fitted);
+    } catch (error) {
+      this.onError(error, command);
+      return undefined;
+    }
+  }
+
   /** What the palette says after `id`'s label on `target` now, as its handler's `detail` says. */
   detail(id: string, target: Target): string | undefined {
     const command = this.byId.get(id);

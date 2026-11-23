@@ -369,7 +369,7 @@ function counting() {
     defineCommands('rows', {
       down: {
         label: 'Next row',
-        group: 'Files',
+        group: 'Go',
         keys: ['j'],
         count: 'rows',
         when: { scope: 'tree' },
@@ -487,8 +487,8 @@ describe('the keymap file', () => {
     const { registry, ran, press } = setup({ system: 'linux' });
     const errors = registry.setKeymap('bind cmd+k keys.palette\nbind x diff.nope\nunbind\n');
     expect(errors).toEqual([
-      { line: 2, message: "There's no command called diff.nope." },
-      { line: 3, message: 'unbind takes keys, and a command if only its keys go: unbind e.' },
+      { line: 2, message: 'No command `diff.nope`' },
+      { line: 3, message: '`unbind` needs keys: `unbind e`' },
     ]);
     expect(registry.keymapErrors()).toBe(errors);
     press(['ctrl+k'], scope('window'));
@@ -526,11 +526,11 @@ describe('the keymap file', () => {
       ].join('\n'),
     );
     expect(errors).toEqual([
-      { line: 1, message: "vim.down is one of Vim's own keys: change Vim's keys with a vim line." },
-      { line: 2, message: 'e already runs diff.markViewed.' },
-      { line: 3, message: 'y would keep y y (diff.copyLine) from ever running.' },
-      { line: 4, message: 'g i x would never run: g i (diff.inline) runs first.' },
-      { line: 6, message: 'q already runs diff.comment.' },
+      { line: 1, message: '`vim.down` is a Vim key: use a `vim` line' },
+      { line: 2, message: '`e` already runs `diff.markViewed`' },
+      { line: 3, message: '`y` would block `diff.copyLine`' },
+      { line: 4, message: '`g i x` is blocked by `diff.inline`' },
+      { line: 6, message: '`q` already runs `diff.comment`' },
     ]);
     // Once `y y` and `y l` are gone, `y` is free.
     press(['q', 'y'], scope('diff', new FakeView()));
