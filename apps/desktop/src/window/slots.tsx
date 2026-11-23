@@ -5,6 +5,7 @@
 // its own error boundary, however its owner renders it: one that fails shows a short note in its
 // place, and the rest of the window goes on.
 
+import { Button } from '@lo/ui';
 import { Component, createContext, createElement, use, useMemo, type ReactNode } from 'react';
 
 import { channelName } from '../ipc/contract.ts';
@@ -148,7 +149,10 @@ export function ViewPart({ id, children }: { id: string; children: ReactNode }) 
   return <Contained id={id}>{children}</Contained>;
 }
 
-/** One view, which shows a note in its place, and logs why, when it throws. */
+/**
+ * One view, which shows a note in its place, and logs why, when it throws. "Try again" draws it
+ * again.
+ */
 class Contained extends Component<{ id: string; children: ReactNode }, { failed: boolean }> {
   override state = { failed: false };
 
@@ -165,11 +169,14 @@ class Contained extends Component<{ id: string; children: ReactNode }, { failed:
     if (!this.state.failed) return this.props.children;
     return (
       <p
-        className="px-8 py-4 text-fg-muted text-ui"
+        className="flex items-center gap-8 px-8 py-4 text-fg-muted text-ui"
         role="alert"
         data-lo-failed-view={this.props.id}
       >
-        Lo couldn't show this part of the window. Restart Lo to try again.
+        Can’t show this view
+        <Button size="sm" onClick={() => this.setState({ failed: false })}>
+          Try again
+        </Button>
       </p>
     );
   }
