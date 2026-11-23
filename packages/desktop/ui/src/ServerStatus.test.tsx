@@ -8,6 +8,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { buildCss, declarations } from '../scripts/stylesheet.ts';
 import { missingRules } from '../test/classes.ts';
 import { cleanUp, click, focus, press, render, rerender } from '../test/dom.ts';
+import { CopyRoute } from './CopyButton.tsx';
 import { ServerStatus, type ServerState, type ServerTrust } from './ServerStatus.tsx';
 
 beforeAll(() => {
@@ -228,6 +229,8 @@ describe('ServerStatus', () => {
     expect(open.textContent).not.toContain('tsserver 5.6.3');
     const buttons = [...open.querySelectorAll('button')];
     expect(buttons.map(says)).toEqual(['Restart', 'Details', 'Show log']);
+    // In one row: what helps first, then Details, then the log.
+    expect(new Set(buttons.map((button) => button.parentElement)).size).toBe(1);
     // Restart is the one thing to do; it has focus as the details open.
     expect(document.activeElement).toBe(buttons[0]);
     click(buttons[1]!);
@@ -300,13 +303,17 @@ describe('ServerStatus', () => {
     expect(document.activeElement).toBe(item(host));
   });
 
-  it('says what a missing toolchain needs, and copies the command that installs it', async () => {
+  it('says what a missing toolchain needs, and gives the command that installs it to copy', async () => {
+    const copy = vi.fn<(text: string) => Promise<void>>(() => Promise.resolve());
     const host = render(
-      <ServerStatus
-        name="Go"
-        state={{ kind: 'missing', needs: 'Go 1.24 or newer', install: 'brew install go' }}
-        onRestart={() => undefined}
-      />,
+      <CopyRoute copy={copy}>
+        <ServerStatus
+          name="Go"
+          state={{ kind: 'missing', needs: 'Go 1.24 or newer', install: 'brew install go' }}
+          onRestart={() => undefined}
+          onShowLog={() => undefined}
+        />
+      </CopyRoute>,
     );
     click(item(host));
     await settle();
@@ -316,11 +323,16 @@ describe('ServerStatus', () => {
       'Can’t run Go',
       'It needs Go 1.24 or newer.',
     ]);
+    // The command in its own well, with Copy; then one row, with nothing to start again until
+    // it's installed.
+    expect(open.querySelector('pre')?.textContent).toBe('brew install go');
     const buttons = [...open.querySelectorAll('button')];
-    // The command is behind Details, and the Problem's one button copies it; Restart follows.
-    expect(buttons.map(says)).toEqual(['Copy command', 'Details', 'Restart']);
-    click(buttons[1]!);
-    expect(open.textContent).toContain('brew install go');
+    expect(buttons.map(says)).toEqual(['Copy', 'Show log']);
+    await act(async () => {
+      buttons[0]!.click();
+      await Promise.resolve();
+    });
+    expect(copy).toHaveBeenCalledWith('brew install go');
   });
 
   it('says why one waits for room, and offers to start it next unless it is next already', async () => {

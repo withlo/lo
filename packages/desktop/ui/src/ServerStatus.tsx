@@ -5,7 +5,6 @@ import { Button } from './Button.tsx';
 import { formatBytes } from './bytes.ts';
 import { besideIn, handOffFocus } from './focus.ts';
 import { showFormat } from './controls.ts';
-import { CopyFaces, CopyStatus, useCopy, useCopySaid } from './CopyButton.tsx';
 import { Popover } from './Popover.tsx';
 import { Problem, type ProblemAction } from './Problem.tsx';
 import { ShownText } from './ShownText.tsx';
@@ -283,7 +282,7 @@ function restartLabel(state: ServerState): string {
 interface CantRun {
   readonly reason?: string | undefined;
   readonly details?: string | undefined;
-  /** The command that installs what it needs, which the Problem's button copies. */
+  /** The command that installs what it needs, in a well of its own with Copy. */
   readonly install?: string | undefined;
 }
 
@@ -315,7 +314,6 @@ function cantRun(state: ServerState): CantRun | undefined {
     case 'missing':
       return {
         reason: `${state.plural === true ? 'They need' : 'It needs'} ${state.needs}.`,
-        details: state.install,
         install: state.install,
       };
     case 'downloading':
@@ -389,8 +387,6 @@ export function ServerStatus({
   const trigger = useRef<HTMLButtonElement>(null);
   const beside = useRef<HTMLButtonElement>(null);
   const details = useRef<HTMLDivElement | null>(null);
-  const copy = useCopy();
-  const [copied, sayCopied] = useCopySaid();
   // Whatever takes the item away while it has focus, such as a caller that draws another item for
   // the new state, would drop focus on the page: it goes to the bar's next item, else its previous
   // one, else the bar.
@@ -414,27 +410,39 @@ export function ServerStatus({
     again?.();
   };
   const install = stopped?.install;
-  // The one thing to do about a server that can't run is its Problem's button: copy what installs
-  // what it needs, or start it again.
+  const showLog = onShowLog && {
+    label: 'Show log',
+    onClick: () => {
+      change(false);
+      onShowLog();
+    },
+  };
+  // A server that can't run says so in its Problem, with one row of buttons: what helps first,
+  // starting it again, then Details, then Show log and the trust button. A missing one has nothing
+  // to start again until what it needs is there: the command that installs it is to copy.
   const fix: ProblemAction | undefined =
-    install !== undefined
-      ? {
-          label: <CopyFaces said={copied}>Copy command</CopyFaces>,
-          ref: first,
-          onClick: () => {
-            Promise.resolve()
-              .then(() => copy(install))
-              .then(
-                () => sayCopied('copied'),
-                () => sayCopied('failed'),
-              );
+    stopped !== undefined && install === undefined && again
+      ? { label: restartLabel(state), onClick: restart, ref: first }
+      : undefined;
+  const others: ProblemAction[] = [
+    ...(showLog ? [{ ...showLog, ref: fix ? undefined : first }] : []),
+    ...(trust
+      ? [
+          {
+            label: trustLabel(trust.action),
+            ref: fix || showLog ? undefined : first,
+            busy: trust.busy !== undefined,
+            working: trust.busy,
+            onClick: () => {
+              if (trust.action === 'stop') change(false);
+              trust.onChoose();
+            },
           },
-        }
-      : stopped !== undefined && again
-        ? { label: restartLabel(state), onClick: restart, ref: first }
-        : undefined;
-  // Restart goes in the row under the line, unless the Problem holds it.
-  const restartInRow = again !== undefined && (stopped === undefined || install !== undefined);
+        ]
+      : []),
+  ];
+  // Otherwise Restart, Show log and the trust button go in a row under the line.
+  const restartInRow = again !== undefined && stopped === undefined;
   return (
     <>
       <Popover
@@ -469,11 +477,12 @@ export function ServerStatus({
               </>
             }
             reason={stopped.reason === undefined ? undefined : <ShownText text={stopped.reason} />}
+            commands={install === undefined ? undefined : [install]}
             action={fix}
+            others={others}
             details={stopped.details}
           />
         )}
-        {install !== undefined && <CopyStatus said={copied} />}
         {trust?.failure && (
           <Problem
             layout="details"
@@ -492,29 +501,26 @@ export function ServerStatus({
             details={trust.failure.details}
           />
         )}
-        {(restartInRow || onShowLog || trust) && (
-          <StatusActions flush={!restartInRow && (onShowLog !== undefined || state.kind !== 'off')}>
+        {stopped === undefined && (restartInRow || showLog || trust) && (
+          <StatusActions flush={!restartInRow && (showLog !== undefined || state.kind !== 'off')}>
             {restartInRow && (
-              <Button ref={fix ? undefined : first} variant="secondary" size="sm" onClick={restart}>
+              <Button ref={first} variant="secondary" size="sm" onClick={restart}>
                 {restartLabel(state)}
               </Button>
             )}
-            {onShowLog && (
+            {showLog && (
               <Button
-                ref={restartInRow || fix ? undefined : first}
+                ref={restartInRow ? undefined : first}
                 variant="ghost"
                 size="sm"
-                onClick={() => {
-                  change(false);
-                  onShowLog();
-                }}
+                onClick={showLog.onClick}
               >
                 Show log
               </Button>
             )}
             {trust && (
               <Button
-                ref={restartInRow || fix || onShowLog ? undefined : first}
+                ref={restartInRow || showLog ? undefined : first}
                 variant={state.kind === 'off' ? 'secondary' : 'ghost'}
                 size="sm"
                 busy={trust.busy !== undefined}

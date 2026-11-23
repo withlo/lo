@@ -37,7 +37,8 @@ export interface ProblemProps {
   action?: ProblemAction | undefined;
   /**
    * Other ways on, beside the one thing to do, for a failed view that can also be left: "Open on
-   * GitHub", "Close tab". Drawn quieter than `action`, after it.
+   * GitHub", "Close tab". Drawn quieter than `action`, after it; in a status item's details, after
+   * Details too, as "Show log" is.
    */
   others?: readonly ProblemAction[] | undefined;
   /**
@@ -160,12 +161,13 @@ export function Problem({
               <CopyButton size="sm" onCopy={() => copy(command)} />
             </div>
           ))}
-          {/* The one thing to do first, then the others, then Details; a ghost button first sits on
-            the line's edge, as the text above it does. */}
+          {/* One row: the one thing to do first, then Details, then the other ways on; a ghost
+            button first sits on the line's edge, as the text above it does. */}
           {(act || more) && (
             <div className={`flex flex-wrap items-center gap-6 ${action ? '' : '-ms-8'}`}>
-              {act}
+              {action && button(action, true)}
               {more}
+              {others.map((each, index) => button(each, false, index))}
             </div>
           )}
         </div>

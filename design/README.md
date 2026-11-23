@@ -451,13 +451,15 @@ that floats.
   view's place; `layout="inline"` sits by the control whose action failed; `layout="details"` goes
   in a status item's details, which are its box, so it has no border or ground: the title on its row
   after the triangle, the reason the details' width, each command whole in its own well with Copy at
-  its end (`commands`), then the action and Details after it. Its `tone` is the item's ball's:
-  `warn` while it waits, as to try again, `danger` only once it failed. A failed view that can also
-  be left offers its other ways on as `others`, drawn quieter after the action: "Open on GitHub",
-  "Close tab". It's said once: no toast repeats it. A screen reader hears what failed and why as an
-  alert, and not the buttons. Anything else that says what failed, such as a comment box's note,
-  puts the raw text behind the same Details and Copy with `useDetails(details)`, which gives the
-  button and the text it opens to draw where they go.
+  its end (`commands`), then one row of buttons: what helps first, then Details, then `others`, such
+  as a language server's "Show log". A missing toolchain's install command is in its well, with no
+  Restart until it's installed. Its `tone` is the item's ball's: `warn` while it waits, as to try
+  again, `danger` only once it failed. A failed view that can also be left offers its other ways on
+  as `others`, drawn quieter after the action: "Open on GitHub", "Close tab". It's said once: no
+  toast repeats it. A screen reader hears what failed and why as an alert, and not the buttons.
+  Anything else that says what failed, such as a comment box's note, puts the raw text behind the
+  same Details and Copy with `useDetails(details)`, which gives the button and the text it opens to
+  draw where they go.
 - **Nothing in a `Problem` changes on a timer except through `Countdown`.** A retry's wait is
   `Retrying <Countdown at={retryAt} />.`: it counts "in 8 s" down for the eye, and a screen reader
   hears the wait as it stood when first drawn, spelled out ("in 8 seconds"), and nothing after, so
