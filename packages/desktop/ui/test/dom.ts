@@ -3,6 +3,9 @@
 
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { vi } from 'vitest';
+
+import { TOOLTIP_DELAY } from '../src/Tooltip.tsx';
 
 let mounted: { root: Root; host: HTMLElement }[] = [];
 
@@ -47,6 +50,45 @@ export function click(target: Element): void {
   act(() => {
     target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
   });
+}
+
+/**
+ * What `target`'s tooltip says once the pointer has rested on it, its key caps' text last, or
+ * nothing where it shows none. The pointer then leaves, and the tooltip with it. jsdom lays nothing
+ * out, so text is never cut short there: with `cut`, `target` is measured as narrower than its
+ * text. It waits on fake timers, and puts back the real ones if it set them.
+ */
+export function tipOf(
+  target: Element,
+  { cut = false }: { cut?: boolean } = {},
+): string | undefined {
+  const faked = vi.isFakeTimers();
+  if (!faked) vi.useFakeTimers();
+  if (cut) {
+    Object.defineProperty(target, 'clientWidth', { configurable: true, value: 40 });
+    Object.defineProperty(target, 'scrollWidth', { configurable: true, value: 80 });
+  }
+  try {
+    act(() => {
+      target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      target.dispatchEvent(new MouseEvent('mouseenter'));
+      target.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+      vi.advanceTimersByTime(TOOLTIP_DELAY);
+    });
+    const said = document.querySelector('.tooltip')?.textContent ?? undefined;
+    act(() => {
+      target.dispatchEvent(new MouseEvent('mouseleave'));
+      target.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+      vi.advanceTimersByTime(TOOLTIP_DELAY);
+    });
+    return said;
+  } finally {
+    if (cut) {
+      Reflect.deleteProperty(target, 'clientWidth');
+      Reflect.deleteProperty(target, 'scrollWidth');
+    }
+    if (!faked) vi.useRealTimers();
+  }
 }
 
 /** Gives `target` focus. */

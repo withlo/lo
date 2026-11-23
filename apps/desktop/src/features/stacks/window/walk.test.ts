@@ -80,7 +80,6 @@ const STACK: StackView = {
   kind: 'stack',
   root: 'stack/root',
   githubStack: false,
-  found: ['baseBranch', 'sharedCommits'],
   rows: [row(82, []), row(83, [82]), row(84, [82, 83]), row(85, [82])],
   notes: [],
   callout: null,

@@ -1,10 +1,10 @@
 // The stack a pull request's tab shows: the open pull requests that sit on each other with it, found
 // in main among its repository's open pull requests by base branch, by shared commits, or as a
-// GitHub stack, with each layer's state, how the stack was found, and what Lo couldn't read. Main
-// works the stack out again as the repository's pull requests change, and sends it on `stack`, with
-// where the layer's diff starts when that came after its diff was drawn, which a banner offers. A
-// run of layers, each sitting on the one before, shows as one diff in a view of its own, which main
-// makes once the window has chosen it.
+// GitHub stack, with each layer's state and what Lo couldn't read. Main works the stack out again as
+// the repository's pull requests change, and sends it on `stack`, with where the layer's diff starts
+// when that came after its diff was drawn, which a banner offers. A run of layers, each sitting on
+// the one before, shows as one diff in a view of its own, which main makes once the window has
+// chosen it.
 //
 // And converting a chain to a GitHub stack: main plans it and keeps the plan under a key, the window
 // shows it and confirms the key, and main sends the changes, saying how they go on `conversion`.
@@ -117,21 +117,6 @@ export const note = z.strictObject({ kind: noteKind, text: z.string() });
 export type Note = z.output<typeof note>;
 
 /**
- * How a layer was found to sit on the one below, in the order the design lists them: as the next
- * layer up in a GitHub stack, by base branch, or by shared commits.
- */
-export const link = z.enum(['github', 'baseBranch', 'sharedCommits']);
-export type Link = z.output<typeof link>;
-
-/**
- * How a stack's layers were found to sit on each other: each kind of link between them, once, in
- * the order `link` lists them. A GitHub stack can't branch, so a stack that branches can hold one
- * along a path, with other links off it.
- */
-export const found = z.array(link).min(1);
-export type Found = z.output<typeof found>;
-
-/**
  * The stack a pull request's tab shows:
  *
  * - `unknown` until its repository's open pull requests and rulesets have been read, and for a
@@ -139,9 +124,9 @@ export type Found = z.output<typeof found>;
  * - `none` when its pull request isn't in a stack: a stack shows when it has two layers or more,
  *   when the pull request is in a GitHub stack, or when it needs a rebase;
  * - `stack`: the root branch its bottom layer sits on; whether every layer is in one GitHub stack
- *   (`githubStack`), which its head then says in place of how its layers were found (`found`,
- *   `null` for a layer alone); its rows and its notes; and `callout`, the line the offer to convert
- *   it to a GitHub stack says, while Lo could convert the chain through the layer on screen.
+ *   (`githubStack`), which its head then says; its rows and its notes; and `callout`, the line the
+ *   offer to convert it to a GitHub stack says, while Lo could convert the chain through the layer
+ *   on screen.
  */
 export const stackView = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('unknown') }),
@@ -150,7 +135,6 @@ export const stackView = z.discriminatedUnion('kind', [
     kind: z.literal('stack'),
     root: z.string(),
     githubStack: z.boolean(),
-    found: found.nullable(),
     rows: z.array(row).min(1),
     notes: z.array(note),
     callout: z.string().nullable(),

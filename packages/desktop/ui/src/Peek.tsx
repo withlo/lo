@@ -58,7 +58,7 @@ export interface PeekKeys {
 
 export interface PeekProps extends Omit<
   HTMLAttributes<HTMLDivElement>,
-  'children' | 'role' | 'aria-label' | 'tabIndex'
+  'children' | 'role' | 'aria-label' | 'tabIndex' | 'title'
 > {
   /** The word the peek answers for. */
   name: string;
@@ -185,7 +185,7 @@ export function PeekHead({
           size="sm"
           icon
           aria-label="Close"
-          hint="Close"
+          hint="Close definitions"
           hintKeys={keys?.close}
           onClick={() => onClose?.()}
         >

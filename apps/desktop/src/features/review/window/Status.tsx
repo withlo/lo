@@ -3,7 +3,7 @@
 // pending review, "3 pending comments", while it holds comments, whose tooltip names the command and
 // its key. Each runs `review.submit`, as its key does.
 
-import { Button, Key, keyAria, StatusItem, Tooltip } from '@lo/ui';
+import { Button, Key, keyAria, StatusItem } from '@lo/ui';
 import { controlOf, heldRegistry, runControl } from '@lo/ui/commands';
 import { useEffect, useId, useSyncExternalStore } from 'react';
 
@@ -80,13 +80,13 @@ export function PendingItem({ tab }: { tab: PullTab }) {
   if (count === 0) return null;
   const control = controlOf(SUBMIT);
   return (
-    // The item takes no tooltip of its own: this one names its command and key.
-    <Tooltip label={control?.label ?? null} keys={control?.keys} side="top">
-      <span className="inline-flex min-w-0">
-        <StatusItem onClick={() => runControl(SUBMIT)}>
-          {counted(count, 'pending comment')}
-        </StatusItem>
-      </span>
-    </Tooltip>
+    <StatusItem
+      onClick={() => runControl(SUBMIT)}
+      hint={control?.label}
+      hintKeys={control?.keys}
+      hintShortcut={control?.shortcut}
+    >
+      {counted(count, 'pending comment')}
+    </StatusItem>
   );
 }

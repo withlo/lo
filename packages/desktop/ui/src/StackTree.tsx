@@ -35,12 +35,6 @@ export type StackOverview = 'current' | 'stale' | 'error' | 'none';
  */
 export type StackRun = 'start' | 'middle' | 'end' | 'only';
 
-/**
- * How Lo found a layer to sit on the one below, which the head says: as the next layer up in a
- * GitHub stack, by base branch, or by shared commits.
- */
-export type StackTreeLink = 'github' | 'base' | 'commits';
-
 /** One layer of the stack: a pull request, as its row shows it. */
 export interface StackTreeLayer {
   /** What identifies the row, such as the layer's view. */
@@ -93,26 +87,18 @@ export interface StackTreeNote {
   bare?: boolean | undefined;
 }
 
-export interface StackTreeProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
+export interface StackTreeProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children' | 'title'> {
   /** The layers in the order `]s` walks them: the bottom first, each branch finished in turn. */
   layers: readonly StackTreeLayer[];
   /** The branch the bottom layer sits on. */
   root: string;
-  /**
-   * Every layer is in one GitHub stack, which the head says in place of how Lo found them to sit on
-   * each other.
-   */
+  /** Every layer is in one GitHub stack, which the head says. */
   githubStack?: boolean | undefined;
   /**
    * Some of the layers, not all, are a GitHub stack, as the notes under the rows say: the head
    * says "Stack", neither a GitHub stack nor a branch stack.
    */
   githubPartly?: boolean | undefined;
-  /**
-   * How Lo found the layers to sit on each other, each kind of link once, which the head's tooltip
-   * says. Nothing for a layer alone, which none sits on.
-   */
-  found?: readonly StackTreeLink[] | undefined;
   /** Controls at the end of the head, such as the arrows that step through the layers. */
   actions?: ReactNode;
   /** The layer the keyboard is on, by key. */
@@ -168,16 +154,6 @@ function ordinal(position: number): string {
   return `${position}${SUFFIXES[ORDINALS.select(position)]}`;
 }
 
-/** Each kind of link, as the head names it. */
-const LINK_WORDS: Readonly<Record<StackTreeLink, string>> = {
-  github: 'GitHub stack',
-  base: 'base branch',
-  commits: 'shared commits',
-};
-
-/** The kinds of link, in the order the head names them. */
-const LINK_ORDER: readonly StackTreeLink[] = ['github', 'base', 'commits'];
-
 /**
  * "GitHub stack · 4 layers" when every layer is in one GitHub stack, "Stack · 4 layers" when only
  * some are, and "Branch stack · 4 layers" when none is.
@@ -186,21 +162,6 @@ function headText(count: number, githubStack: boolean, partly: boolean): string 
   const layers = `${count} ${count === 1 ? 'layer' : 'layers'}`;
   const kind = githubStack ? 'GitHub stack' : partly ? 'Stack' : 'Branch stack';
   return `${kind} · ${layers}`;
-}
-
-/**
- * How the layers were found to sit on each other, for the head's tooltip, each kind of link in
- * order: "By GitHub stack and base branch". Nothing for one GitHub stack, which the head says.
- */
-function foundText(
-  githubStack: boolean,
-  found: readonly StackTreeLink[] | undefined,
-): string | undefined {
-  if (githubStack) return undefined;
-  const words = LINK_ORDER.filter((link) => found?.includes(link)).map((link) => LINK_WORDS[link]);
-  const last = words.pop();
-  if (last === undefined) return undefined;
-  return `By ${words.length === 0 ? last : `${words.join(', ')} and ${last}`}`;
 }
 
 /** Whether a layer is on a branch's own rail: one that starts a branch, or sits above one. */
@@ -519,8 +480,8 @@ function useKeptInView(
 }
 
 /**
- * The stack, top of the left panel: a head that says what kind of stack and how many layers, with
- * how Lo found them in its tooltip, any offer under it, then a tree with the base branch as its
+ * The stack, top of the left panel: a head that says what kind of stack and how many layers, any
+ * offer under it, then a tree with the base branch as its
  * root and a rail with a ball for each layer. The head is one line, and never wraps. The tree is
  * one focusable element with `role="tree"`: the layer the keyboard is on is its active descendant,
  * and the layer on screen is marked `aria-current` and a Powder ball, which is not the same thing. A run of layers chosen to view as one diff, or on screen as one, shares a band, and
@@ -534,7 +495,6 @@ export function StackTree({
   root,
   githubStack = false,
   githubPartly = false,
-  found,
   actions,
   focused,
   current,
@@ -574,10 +534,7 @@ export function StackTree({
       </span>
       <div className="flex flex-none items-center gap-6 ps-16 pe-8 pt-12 pb-8 whitespace-nowrap">
         <h2 className="flex-none label-caps text-fg-muted text-label">Stack</h2>
-        <span
-          className="ms-auto min-w-0 truncate text-end text-fg-muted text-small"
-          title={choosing ? undefined : foundText(githubStack, found)}
-        >
+        <span className="ms-auto min-w-0 truncate text-end text-fg-muted text-small">
           {choosing ? (
             <span className="mode-chip">V-LINE</span>
           ) : (
@@ -613,13 +570,11 @@ export function StackTree({
               <path d="M4.5 5.25v5.5M11.5 6.5c0 2.75-4 2.5-6.6 4.4" />
             </svg>
           </span>
-          <span
-            aria-hidden="true"
-            className="min-w-0 truncate text-fg-muted code-small"
-            title={root}
-          >
-            {middleOut(root, BRANCH_SHOWN)}
-          </span>
+          <Tooltip label={root} cut={middleOut(root, BRANCH_SHOWN) === root}>
+            <span aria-hidden="true" className="min-w-0 truncate text-fg-muted code-small">
+              {middleOut(root, BRANCH_SHOWN)}
+            </span>
+          </Tooltip>
         </div>
         {layers.map((layer, index) => {
           const sprouts = layer.sitsOn !== undefined;
@@ -672,15 +627,16 @@ export function StackTree({
                 })}
               />
               <div className="min-w-0">
-                <div
-                  className={title({
-                    weight: onScreen ? 'strong' : outside ? 'regular' : 'medium',
-                    tone: outside || finished ? 'muted' : 'normal',
-                  })}
-                  title={layer.title}
-                >
-                  {layer.title}
-                </div>
+                <Tooltip label={layer.title} cut>
+                  <div
+                    className={title({
+                      weight: onScreen ? 'strong' : outside ? 'regular' : 'medium',
+                      tone: outside || finished ? 'muted' : 'normal',
+                    })}
+                  >
+                    {layer.title}
+                  </div>
+                </Tooltip>
                 <Meta layer={layer} />
               </div>
             </div>

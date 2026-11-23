@@ -7,7 +7,7 @@ import type { MouseEvent } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { buildCss, hasRule } from '../scripts/stylesheet.ts';
-import { cleanUp, click, render, rerender } from '../test/dom.ts';
+import { cleanUp, click, render, rerender, tipOf } from '../test/dom.ts';
 import { StackTree, type StackTreeLayer, type StackTreeProps } from './StackTree.tsx';
 
 beforeAll(() => {
@@ -80,7 +80,7 @@ const LAYERS: StackTreeLayer[] = [
 ];
 
 function props(over: Partial<StackTreeProps> = {}): StackTreeProps {
-  return { layers: LAYERS, root: 'main', found: ['base'], ...over };
+  return { layers: LAYERS, root: 'main', ...over };
 }
 
 /** The tree's rows, in order, by key. */
@@ -97,6 +97,16 @@ function row(host: HTMLElement, key: string): HTMLElement {
   const found = rows(host).get(key);
   if (!found) throw new Error(`No row for ${key}.`);
   return found;
+}
+
+/** A layer's title, in its row. */
+function titleIn(element: Element): HTMLElement | null {
+  return element.querySelector<HTMLElement>(':scope > .min-w-0 > :first-child');
+}
+
+/** The base branch's name, on the tree's first row. */
+function rootIn(host: HTMLElement): HTMLElement | null {
+  return host.querySelector<HTMLElement>('[role="presentation"] .code-small');
 }
 
 function tree(host: HTMLElement): HTMLElement {
@@ -222,46 +232,22 @@ describe('StackTree', () => {
     click(row(alone, 'a'));
   });
 
-  it('says what kind of stack and how many layers, with how Lo found them in its tooltip', () => {
-    const heads = (
-      found: StackTreeProps['found'],
-      layers: StackTreeLayer[] = LAYERS,
-      githubStack = false,
-    ) => {
-      const head = render(<StackTree {...props({ found, layers, githubStack })} />).querySelector(
-        'section > div',
-      );
-      return [
-        head?.textContent?.replace('Stack', ''),
-        head?.querySelector('[title]')?.getAttribute('title') ?? null,
-      ];
-    };
-    expect(heads(['base'])).toEqual(['Branch stack · 5 layers', 'By base branch']);
-    expect(heads(['commits'])).toEqual(['Branch stack · 5 layers', 'By shared commits']);
-    expect(heads(['commits', 'base'])).toEqual([
-      'Branch stack · 5 layers',
-      'By base branch and shared commits',
-    ]);
-    expect(heads(['github'], LAYERS.slice(0, 4), true)).toEqual(['GitHub stack · 4 layers', null]);
-    expect(heads(undefined, LAYERS.slice(0, 1), true)).toEqual(['GitHub stack · 1 layer', null]);
-    // Linked by GitHub stack alone, through a merged layer, but not every layer is in it.
-    expect(heads(['github'], LAYERS.slice(0, 2))).toEqual([
-      'Branch stack · 2 layers',
-      'By GitHub stack',
-    ]);
-    // A GitHub stack along one path of a stack that branches, and other layers off it.
-    expect(heads(['base', 'github'])[1]).toBe('By GitHub stack and base branch');
-    expect(heads(['github', 'commits'])[1]).toBe('By GitHub stack and shared commits');
-    expect(heads(['commits', 'base', 'github'])[1]).toBe(
-      'By GitHub stack, base branch and shared commits',
-    );
-    // A layer alone, such as one that needs a rebase, was found by nothing.
-    expect(heads(undefined, LAYERS.slice(0, 1))).toEqual(['Branch stack · 1 layer', null]);
+  it('says what kind of stack and how many layers', () => {
+    const heads = (layers: StackTreeLayer[] = LAYERS, githubStack = false) =>
+      render(<StackTree {...props({ layers, githubStack })} />)
+        .querySelector('section > div')
+        ?.textContent?.replace('Stack', '');
+    expect(heads()).toBe('Branch stack · 5 layers');
+    expect(heads(LAYERS.slice(0, 4), true)).toBe('GitHub stack · 4 layers');
+    expect(heads(LAYERS.slice(0, 1), true)).toBe('GitHub stack · 1 layer');
+    expect(heads(LAYERS.slice(0, 1))).toBe('Branch stack · 1 layer');
     // Some layers are a GitHub stack, as the notes under the rows say: it's a stack, of neither kind.
-    const partly = render(
-      <StackTree {...props({ found: ['github', 'base'], githubPartly: true })} />,
-    ).querySelector('section > div');
+    const partly = render(<StackTree {...props({ githubPartly: true })} />).querySelector(
+      'section > div',
+    );
     expect(partly?.textContent?.replace('Stack', '')).toBe('Stack · 5 layers');
+    // How the layers were found to sit on each other isn't said, on hover or anywhere.
+    expect(partly?.querySelector('[title]')).toBeNull();
   });
 
   it('keeps its head to one line, cutting its words before its controls', () => {
@@ -270,7 +256,7 @@ describe('StackTree', () => {
     );
     const head = host.querySelector('section > div');
     expect(head?.className).toContain('whitespace-nowrap');
-    expect(head?.querySelector('[title]')?.className).toContain('truncate');
+    expect(head?.querySelector('.truncate')).not.toBeNull();
     expect(head?.lastElementChild?.textContent).toBe('Next layer');
     expect(head?.lastElementChild?.className).toContain('flex-none');
   });
@@ -286,9 +272,12 @@ describe('StackTree', () => {
     it('shows the title and number, then who opened it with their initials', () => {
       const host = render(<StackTree {...props()} />);
       const first = row(host, 'a');
-      expect(
-        first.querySelector('[title="Move the token bucket into packages/ratelimit"]'),
-      ).toBeTruthy();
+      expect(titleIn(first)?.textContent).toBe('Move the token bucket into packages/ratelimit');
+      // Cut short in a narrow panel, the title shows whole as its tooltip.
+      expect(tipOf(titleIn(first)!)).toBeUndefined();
+      expect(tipOf(titleIn(first)!, { cut: true })).toBe(
+        'Move the token bucket into packages/ratelimit',
+      );
       expect(said(first)).toContain('#4818');
       expect(said(first)).toContain('ravi-k');
       // The picture is only initials, which the login beside it explains.
@@ -617,7 +606,7 @@ describe('StackTree', () => {
         true,
       ]);
       // The titles outside lose their weight and color; those inside keep theirs.
-      const titleOf = (key: string) => row(host, key).querySelector('[title]');
+      const titleOf = (key: string) => titleIn(row(host, key));
       expect(titleOf('a')?.className).toContain('text-fg-muted');
       expect(titleOf('e')?.className).toContain('text-fg-muted');
       expect(titleOf('b')?.className).not.toContain('text-fg-muted');
@@ -776,9 +765,8 @@ describe('StackTree', () => {
       expect(done.getAttribute('data-state')).toBe('merged');
       expect(done.querySelector('.stack-ball-merged')).toBeTruthy();
       expect(said(done)).toContain('Merged 40 min ago');
-      expect(done.querySelector('[title="Split settings routes by section"]')?.className).toContain(
-        'text-fg-muted',
-      );
+      expect(titleIn(done)?.textContent).toBe('Split settings routes by section');
+      expect(titleIn(done)?.className).toContain('text-fg-muted');
       // An open layer beside it has the plain ball.
       expect(row(host, 'n').querySelector('[class*="stack-ball-"]')).toBeNull();
     });
@@ -913,28 +901,27 @@ describe('StackTree', () => {
       expect(host.innerHTML).toContain('&lt;img');
     });
 
-    it('cuts a long branch name in the middle, keeping its whole name for the hover and for a screen reader', () => {
+    it('cuts a long branch name in the middle, keeping its whole name for its tooltip and for a screen reader', () => {
       const name = `ravi/${'a'.repeat(60)}/rate-limit-headers-v2`;
       const host = render(<StackTree {...props({ root: name })} />);
-      const shown = host.querySelector<HTMLElement>('[role="presentation"] [title]');
-      expect(shown?.getAttribute('title')).toBe(name);
+      const shown = rootIn(host);
+      expect(tipOf(shown!)).toBe(name);
       const text = shown?.textContent ?? '';
       expect(text).toContain('…');
       expect(text.length).toBeLessThan(name.length);
       expect(text.startsWith('ravi/')).toBe(true);
       expect(text.endsWith('headers-v2')).toBe(true);
       expect(host.querySelector('.sr-only')?.textContent).toBe(`Base branch ${name}`);
-      // A name that fits is left whole.
+      // A name that fits is left whole, with no tooltip to say it again.
       const short = render(<StackTree {...props({ root: 'release/2026.11' })} />);
-      expect(short.querySelector('[role="presentation"] [title]')?.textContent).toBe(
-        'release/2026.11',
-      );
+      expect(rootIn(short)?.textContent).toBe('release/2026.11');
+      expect(tipOf(rootIn(short)!)).toBeUndefined();
     });
 
     it('never cuts a character in two', () => {
       const name = '😀'.repeat(50);
       const host = render(<StackTree {...props({ root: name })} />);
-      const text = host.querySelector('[role="presentation"] [title]')?.textContent ?? '';
+      const text = rootIn(host)?.textContent ?? '';
       expect(text).toContain('…');
       expect(text.isWellFormed()).toBe(true);
       expect(text.replace('…', '').replaceAll('😀', '')).toBe('');

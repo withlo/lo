@@ -60,7 +60,10 @@ export interface FileTreeFile {
   threads?: { total: number; unresolved: number } | undefined;
   /** In review order, the folder it's in, after its name. */
   folder?: string | undefined;
-  /** The whole path, as the name's tooltip, when the name shows only part of it. */
+  /**
+   * The whole path, as the name's tooltip, when the name shows only part of it. Without it, a name
+   * cut short in a narrow tree shows whole as its tooltip.
+   */
   title?: string | undefined;
   /** While two revisions are compared, whether it changed between them. */
   hit?: boolean | undefined;
@@ -83,10 +86,10 @@ const LETTERS: Record<FileTreeChange, { letter: string; tone: string; word: stri
   typeChanged: { letter: 'T', tone: 'text-change-modified', word: 'Changed type' },
 };
 
-const BALLS: Record<FileTreeViewed, { className: string; title: string }> = {
-  viewed: { className: 'ball ball-viewed', title: 'Viewed' },
-  unviewed: { className: 'ball', title: 'Not viewed' },
-  dismissed: { className: 'ball ball-stale', title: 'Changed since viewed' },
+const BALLS: Record<FileTreeViewed, { className: string; word: string }> = {
+  viewed: { className: 'ball ball-viewed', word: 'Viewed' },
+  unviewed: { className: 'ball', word: 'Not viewed' },
+  dismissed: { className: 'ball ball-stale', word: 'Changed since viewed' },
 };
 
 const row = cva(
@@ -162,7 +165,8 @@ export function FileIcon({
 
 /**
  * A changed file's marks: that it's generated, how the pull request changes it and whether it's
- * viewed, as the tree and the file finder show them.
+ * viewed, as the tree and the file finder show them. Each is named as a mark is, in its tooltip and
+ * to a screen reader: "Added", "Viewed".
  */
 export function FileMarks({
   change,
@@ -178,11 +182,29 @@ export function FileMarks({
   return (
     <>
       {generated && <Tag>gen</Tag>}
-      <span className={`change-letter ${letter.tone}`} title={letter.word}>
-        {letter.letter}
-      </span>
-      {ball && <span className={ball.className} title={ball.title} />}
+      <Tooltip label={letter.word}>
+        <span className={`change-letter ${letter.tone}`} role="img" aria-label={letter.word}>
+          {letter.letter}
+        </span>
+      </Tooltip>
+      {ball && (
+        <Tooltip label={ball.word}>
+          <span className={ball.className} role="img" aria-label={ball.word} />
+        </Tooltip>
+      )}
     </>
+  );
+}
+
+/** How many changed files a closed folder holds, named for what the number counts. */
+function ChangedCount({ count }: { count: number }) {
+  const said = `${count} changed ${count === 1 ? 'file' : 'files'}`;
+  return (
+    <Tooltip label={said}>
+      <span className="tree-badge" role="img" aria-label={said}>
+        {count}
+      </span>
+    </Tooltip>
   );
 }
 
@@ -192,7 +214,7 @@ export const ROW_HEIGHT = 24;
 /** Rows drawn beyond each end of what's in view, so scrolling never shows a gap. */
 const OVERSCAN = 12;
 
-export interface FileTreeProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
+export interface FileTreeProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children' | 'title'> {
   rows: readonly FileTreeRow[];
   /** The row the keyboard is on, by key. */
   focused?: string | undefined;
@@ -370,14 +392,7 @@ function Row({
         </span>
         <span className="ms-auto flex flex-none items-center gap-6 ps-6">
           {each.loading && <Spinner size="xs" />}
-          {!each.open && each.changes > 0 && (
-            <span
-              className="tree-badge"
-              title={`${each.changes} changed ${each.changes === 1 ? 'file' : 'files'}`}
-            >
-              {each.changes}
-            </span>
-          )}
+          {!each.open && each.changes > 0 && <ChangedCount count={each.changes} />}
         </span>
       </div>
     );
@@ -408,24 +423,30 @@ function Row({
     >
       <span className="lo-i lo-i--xs" aria-hidden="true" />
       <FileIcon entry={each.entry} dim={dim} />
-      <span
-        className={`min-w-0 overflow-hidden text-ellipsis ${each.change === 'deleted' ? 'text-fg-muted line-through decoration-fg-subtle' : ''}`}
-        title={each.title}
-      >
-        {each.name}
-      </span>
+      <Tooltip label={each.title ?? each.name} cut={each.title === undefined}>
+        <span
+          className={`min-w-0 overflow-hidden text-ellipsis ${each.change === 'deleted' ? 'text-fg-muted line-through decoration-fg-subtle' : ''}`}
+        >
+          {each.name}
+        </span>
+      </Tooltip>
       {each.folder !== undefined && each.folder !== '' && (
         <span className="min-w-0 shrink-first overflow-hidden text-ellipsis text-fg-muted text-micro">
           {each.folder}
         </span>
       )}
       {each.previous !== undefined && (
-        <span
-          className="min-w-0 shrink-first overflow-hidden text-ellipsis text-fg-muted text-micro"
-          title={`Renamed from ${each.previous}`}
+        <Tooltip
+          label={
+            <>
+              Renamed from <code className="code-small">{each.previous}</code>
+            </>
+          }
         >
-          ← {each.previous}
-        </span>
+          <span className="min-w-0 shrink-first overflow-hidden text-ellipsis text-fg-muted text-micro">
+            ← {each.previous}
+          </span>
+        </Tooltip>
       )}
       <span
         className={`ms-auto flex flex-none items-center gap-6 ps-6 ${aside ? 'opacity-45' : ''}`}

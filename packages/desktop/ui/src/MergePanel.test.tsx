@@ -6,7 +6,7 @@ import { act, createRef, useState, type ReactNode, type RefObject } from 'react'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { missingRules } from '../test/classes.ts';
-import { cleanUp, click, focus, press, render, rerender } from '../test/dom.ts';
+import { cleanUp, click, focus, press, render, rerender, tipOf } from '../test/dom.ts';
 import { Branch } from './Branch.tsx';
 import { Button } from './Button.tsx';
 import { Callout } from './Callout.tsx';
@@ -500,6 +500,8 @@ describe('MergePanel', () => {
       const [dimmed] = parts().foot.querySelectorAll('button');
       expect(dimmed?.getAttribute('aria-disabled')).toBe('true');
       expect(dimmed?.getAttribute('aria-description')).toBe('Offline');
+      // Dimmed, its tooltip is why, with no key.
+      expect(tipOf(dimmed!)).toBe('Offline');
       click(dimmed!);
       expect(onClick).not.toHaveBeenCalled();
     });

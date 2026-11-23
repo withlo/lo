@@ -3,7 +3,6 @@ import { Fragment, useId, useMemo, type HTMLAttributes, type MouseEvent } from '
 import type { Code, Details, Plain, Tree } from '@lo/markdown';
 
 import { showDocs } from './hoverDocs.ts';
-import { Key } from './Key.tsx';
 import {
   Anchors,
   drawBlocks,
@@ -19,13 +18,6 @@ import {
 import { ShownText } from './ShownText.tsx';
 import { PathName, SourceMark, type AnswerSource } from './Source.tsx';
 import { Spinner } from './Spinner.tsx';
-
-/** The keys a type hover's foot points to, as this system shows each. A missing one shows none. */
-export interface TypeHoverKeys {
-  /** Go to the word's definition. */
-  definition?: readonly string[] | undefined;
-  close?: readonly string[] | undefined;
-}
 
 /** A stretch of a signature, and what it is when the language says: "keyword", "type". */
 export interface SignatureRun {
@@ -45,7 +37,10 @@ export type HighlightCode = (code: {
   language: string | undefined;
 }) => readonly SignatureRun[] | undefined;
 
-export interface TypeHoverProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children' | 'role'> {
+export interface TypeHoverProps extends Omit<
+  HTMLAttributes<HTMLDivElement>,
+  'children' | 'role' | 'title'
+> {
   /**
    * The word's declaration, drawn as code: a string, or its stretches, to highlight it. It sets its
    * own line breaks, and a word too long for the card breaks to fit it. A hover with none, as a
@@ -69,7 +64,6 @@ export interface TypeHoverProps extends Omit<HTMLAttributes<HTMLDivElement>, 'ch
   fallback?: string | undefined;
   /** Where the word is declared. */
   location?: { path: string; line: number } | undefined;
-  keys?: TypeHoverKeys | undefined;
 }
 
 /**
@@ -85,7 +79,6 @@ export function TypeHover({
   source,
   fallback,
   location,
-  keys,
   className = '',
   onMouseDown,
   ...rest
@@ -124,16 +117,6 @@ export function TypeHover({
           <span className="flex max-w-full min-w-0 items-baseline code-small">
             <PathName path={location.path} />
             <span className="flex-none">:{location.line}</span>
-          </span>
-        )}
-        {keys?.definition && (
-          <span className="inline-flex flex-none items-center gap-6 whitespace-nowrap">
-            <Key keys={keys.definition} quiet /> Definition
-          </span>
-        )}
-        {keys?.close && (
-          <span className="inline-flex flex-none items-center gap-6 whitespace-nowrap">
-            <Key keys={keys.close} quiet /> Close
           </span>
         )}
       </div>
@@ -273,7 +256,7 @@ function Docs({ tree, highlight }: { tree: Tree; highlight: HighlightCode | unde
 
 export interface TypeHoverWaitingProps extends Omit<
   HTMLAttributes<HTMLDivElement>,
-  'children' | 'role'
+  'children' | 'role' | 'title'
 > {
   /** The language server that hasn't answered yet: "TypeScript". */
   server: string;

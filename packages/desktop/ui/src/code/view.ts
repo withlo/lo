@@ -44,8 +44,9 @@ import {
   setScopeSource,
   type Target,
 } from '../commands/index.ts';
+import { cutShort } from '../cut.ts';
 import { EDIT_SLOT_EVENT } from '../edits.ts';
-import { cutShort, type Tip, TIPPED, tips } from './tip.ts';
+import { type Tip, TIPPED, tips } from './tip.ts';
 import type {
   Anchor,
   BoxFrame,

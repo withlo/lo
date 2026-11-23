@@ -10,6 +10,7 @@ import plugin, {
   SCROLL_MESSAGE,
   SUBJECT_MESSAGE,
   subjectEntry,
+  TITLE_MESSAGE,
 } from './plugin.ts';
 import { LO_SUBJECTS } from './subjects.ts';
 
@@ -314,6 +315,76 @@ test('a version, another subject, a log’s message and a listed string are let 
   expect(subjects(source, path, known)).toEqual([]);
   // Listed for another file, it's refused here.
   expect(subjects(source, join(ROOT, 'apps/desktop/src/other.tsx'), known)).toHaveLength(2);
+});
+
+/** The source of each native `title` `lo/no-native-title` reports in `source`, a file at `path`. */
+function titles(source: string, path = join(ROOT, 'packages/desktop/ui/src/file.tsx')): string[] {
+  const found: string[] = [];
+  const rule = plugin.rules['no-native-title'].create({
+    report: ({ node, message }) => {
+      expect(message).toBe(TITLE_MESSAGE);
+      const start: unknown = Reflect.get(node, 'start');
+      const end: unknown = Reflect.get(node, 'end');
+      found.push(
+        typeof start === 'number' && typeof end === 'number' ? source.slice(start, end) : '',
+      );
+    },
+    filename: path,
+  });
+  const { program } = parseSync(path, source);
+  new Visitor({
+    JSXOpeningElement: (node) => rule.JSXOpeningElement(node),
+    AssignmentExpression: (node) => rule.AssignmentExpression(node),
+    Property: (node) => rule.Property(node),
+    CallExpression: (node) => rule.CallExpression(node),
+  }).visit(program);
+  return found;
+}
+
+test('a native title is refused, on an element, as a property or as an attribute', () => {
+  const source = `
+    const path = <span className="lo-path" title={path}>{path}</span>;
+    const named = <svg role="img" aria-label="Added" title="Added" />;
+    ball.title = 'Viewed';
+    row.dataset.tip = 'Viewed';
+    ball.setAttribute('title', 'Viewed');
+    ball.setAttributeNS(null, 'title', 'Viewed');
+    ball.setAttribute('aria-label', 'title');
+  `;
+  expect(titles(source)).toEqual([
+    'title={path}',
+    'title="Added"',
+    "ball.title = 'Viewed'",
+    "ball.setAttribute('title', 'Viewed')",
+    "ball.setAttributeNS(null, 'title', 'Viewed')",
+  ]);
+});
+
+test('a native title is refused spread on an element, or among a decoration’s attributes', () => {
+  const source = `
+    const spread = <span {...{ title }} />;
+    const named = <span {...{ 'title': path, id }} />;
+    const rest = <span {...rest} />;
+    const component = <Dialog {...{ title }} />;
+    const mark = Decoration.mark({ class: 'lo-hit', attributes: { title: why } });
+    const line = Decoration.line({ attributes: { 'aria-label': why } });
+    const data = { attributes: [], title: 'Kept' };
+  `;
+  expect(titles(source)).toEqual(['title', "'title': path", 'title: why']);
+});
+
+test('a component’s own title, the window’s and one outside the desktop app are let through', () => {
+  const source = `
+    const dialog = <Dialog title="Delete comment?" />;
+    const problem = <Problem layout="inline" title="Couldn’t send the comment" />;
+    const row = <ui.Row title="One" />;
+    document.title = 'Lo';
+  `;
+  expect(titles(source)).toEqual([]);
+  expect(titles('const a = <span title="x" />;', join(ROOT, 'apps/site/src/file.tsx'))).toEqual([]);
+  expect(titles('const a = <span title="x" />;', join(ROOT, 'apps/desktop/src/file.tsx'))).toEqual([
+    'title="x"',
+  ]);
 });
 
 /** Where the desktop app's strings are: its source, and its packages'. */

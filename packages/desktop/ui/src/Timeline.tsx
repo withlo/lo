@@ -17,6 +17,7 @@ import { LinkButton } from './LinkButton.tsx';
 import { StateIcon } from './StatePill.tsx';
 import { Tag } from './Tag.tsx';
 import { CommentIcon } from './ThreadCount.tsx';
+import { Tooltip } from './Tooltip.tsx';
 
 /** What a one-line event or a row's marker draws, on the 16 grid. */
 export type TimelineGlyph =
@@ -164,7 +165,10 @@ function rowId(prefix: string, item: string): string {
  * What every row takes beside its own: what identifies it in its timeline, a `data-` attribute to
  * find it by, a right-click.
  */
-export type TimelineRowAttributes = Omit<HTMLAttributes<HTMLLIElement>, 'children' | 'hidden'> & {
+export type TimelineRowAttributes = Omit<
+  HTMLAttributes<HTMLLIElement>,
+  'children' | 'hidden' | 'title'
+> & {
   /**
    * What identifies the row in its timeline, which the timeline's `focused` names: the row gets an
    * id from it, which the timeline names as its active descendant while the keyboard is on it.
@@ -213,7 +217,10 @@ export function TimelineRow({
   );
 }
 
-export interface TimelineProps extends Omit<HTMLAttributes<HTMLOListElement>, 'children'> {
+export interface TimelineProps extends Omit<
+  HTMLAttributes<HTMLOListElement>,
+  'children' | 'title'
+> {
   /** The rows, each a {@link TimelineRow} or one of the kinds below. */
   children: ReactNode;
   /**
@@ -259,7 +266,7 @@ export function Timeline({
   );
 }
 
-export interface TimelineEndProps extends HTMLAttributes<HTMLDivElement> {
+export interface TimelineEndProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title'> {
   marker: TimelineMarker;
   children: ReactNode;
 }
@@ -685,12 +692,14 @@ const REVIEWER_STATES: Readonly<
 function Reviewer({ reviewer }: { reviewer: TimelineReviewer }) {
   const { words, tone, shapes } = REVIEWER_STATES[reviewer.state];
   return (
-    <li className="inline-flex items-center gap-4" title={`${reviewer.login}: ${words}`}>
+    <li className="inline-flex items-center gap-4">
       <Avatar login={reviewer.login} image={reviewer.image} size="sm" />
       <span className="text-fg">{reviewer.login}</span>
-      <svg className={`lo-i lo-i--xs ${tone}`} viewBox="0 0 16 16" role="img" aria-label={words}>
-        {shapes}
-      </svg>
+      <Tooltip label={words}>
+        <svg className={`lo-i lo-i--xs ${tone}`} viewBox="0 0 16 16" role="img" aria-label={words}>
+          {shapes}
+        </svg>
+      </Tooltip>
     </li>
   );
 }

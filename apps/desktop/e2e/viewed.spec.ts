@@ -289,9 +289,7 @@ async function cursorTo(page: Page, path: string): Promise<void> {
 const tree = (page: Page) => page.locator('[role="tree"][data-lo-scope="tree"]');
 /** A changed file's viewed ball in the tree. */
 const ball = (page: Page, path: string) =>
-  tree(page)
-    .locator(`[data-key="${path}"]`)
-    .locator('[title="Viewed"], [title="Not viewed"], [title="Changed since viewed"]');
+  tree(page).locator(`[data-key="${path}"]`).locator('.ball[role="img"]');
 /**
  * Whether `path`'s file shows closed, its lines in one block: in the new side's editor, its header
  * is followed by a note that says so.
@@ -377,7 +375,7 @@ test('`e` marks the file viewed and closes it, and the next file’s header stay
 
     await page.keyboard.press('e');
     // The mark shows at once, in the tree and the header, and GitHub gets it.
-    await expect(ball(page, 'src/text/wrap.ts')).toHaveAttribute('title', 'Viewed');
+    await expect(ball(page, 'src/text/wrap.ts')).toHaveAttribute('aria-label', 'Viewed');
     await expect(headerBall(page, 'src/text/wrap.ts')).toHaveClass(/is-viewed/);
     await expect.poll(() => closed(page, 'src/text/wrap.ts')).toBe(true);
     await expect.poll(() => fake.writes).toEqual(['MarkFileAsViewed src/text/wrap.ts']);
@@ -391,7 +389,7 @@ test('`e` marks the file viewed and closes it, and the next file’s header stay
 
     // GitHub's details, read again after the write, say so too: the mark stays.
     await page.waitForTimeout(1500);
-    await expect(ball(page, 'src/text/wrap.ts')).toHaveAttribute('title', 'Viewed');
+    await expect(ball(page, 'src/text/wrap.ts')).toHaveAttribute('aria-label', 'Viewed');
   });
 
   await test.step('a write GitHub refuses takes back the mark alone, not the closing, the cursor or the scroll', async () => {
@@ -405,7 +403,7 @@ test('`e` marks the file viewed and closes it, and the next file’s header stay
     await expect
       .poll(() => fake.writes)
       .toEqual(['MarkFileAsViewed src/text/wrap.ts', 'MarkFileAsViewed src/format.ts']);
-    await expect(ball(page, 'src/format.ts')).toHaveAttribute('title', 'Not viewed');
+    await expect(ball(page, 'src/format.ts')).toHaveAttribute('aria-label', 'Not viewed');
     await expect(headerBall(page, 'src/format.ts')).not.toHaveClass(/is-viewed/);
     // Why shows under the file's header, with a way to try again, and no toast says it.
     const problem = refusal(page, 'format.ts');
@@ -435,14 +433,14 @@ test('`e` marks the file viewed and closes it, and the next file’s header stay
     await page.keyboard.press('e');
     await expect.poll(() => fake.writes).toEqual(WRITES);
     // GitHub turned it away: the mark goes back, and the file's header says why.
-    await expect(ball(page, 'src/format.ts')).toHaveAttribute('title', 'Not viewed');
+    await expect(ball(page, 'src/format.ts')).toHaveAttribute('aria-label', 'Not viewed');
     await expect(refusal(page, 'format.ts')).toContainText('GitHub’s rate limit was reached.');
 
     // Now nothing is sent until the pause ends, marking or clearing: `e` says why it can't.
     await cursorTo(page, 'src/format.ts');
     await page.keyboard.press('e');
     await expect(page.getByText(/GitHub’s rate limit resets at/).first()).toBeVisible();
-    await expect(ball(page, 'src/format.ts')).toHaveAttribute('title', 'Not viewed');
+    await expect(ball(page, 'src/format.ts')).toHaveAttribute('aria-label', 'Not viewed');
     await page.waitForTimeout(1000);
     expect(fake.writes).toEqual(WRITES);
   });
@@ -538,7 +536,7 @@ async function viewAndWatch(
   const goal = !drawn ? top : whole ? before : foot - (bottom - before);
   const watched = await watchHeader(page, following.id);
   await page.keyboard.press('e');
-  await expect(ball(page, path)).toHaveAttribute('title', 'Viewed');
+  await expect(ball(page, path)).toHaveAttribute('aria-label', 'Viewed');
   await expect.poll(() => cursorPath(page)).toBe(following.path);
   await page.waitForTimeout(1000);
   const frames = await watched();
@@ -610,7 +608,7 @@ test('`e` in the tree marks the file viewed and goes on to the next changed file
   await expect.poll(() => treeFocus(page)).toBe('src/text/wrap.ts');
 
   await page.keyboard.press('e');
-  await expect(ball(page, 'src/text/wrap.ts')).toHaveAttribute('title', 'Viewed');
+  await expect(ball(page, 'src/text/wrap.ts')).toHaveAttribute('aria-label', 'Viewed');
   await expect.poll(() => treeFocus(page)).toBe('src/format.ts');
   await expect.poll(() => fake.writes).toEqual(['MarkFileAsViewed src/text/wrap.ts']);
   // The diff's header shows it too.
@@ -620,7 +618,7 @@ test('`e` in the tree marks the file viewed and goes on to the next changed file
   await page.keyboard.press('k');
   await expect.poll(() => treeFocus(page)).toBe('src/text/wrap.ts');
   await page.keyboard.press('e');
-  await expect(ball(page, 'src/text/wrap.ts')).toHaveAttribute('title', 'Not viewed');
+  await expect(ball(page, 'src/text/wrap.ts')).toHaveAttribute('aria-label', 'Not viewed');
   expect(await treeFocus(page)).toBe('src/text/wrap.ts');
   await expect
     .poll(() => fake.writes)
@@ -634,7 +632,7 @@ test('clearing a viewed file’s mark opens it again, and the cursor stays', asy
   test.setTimeout(60_000);
   fake.marks.set('src/format.ts', 'VIEWED');
   await shown(page);
-  await expect(ball(page, 'src/format.ts')).toHaveAttribute('title', 'Viewed');
+  await expect(ball(page, 'src/format.ts')).toHaveAttribute('aria-label', 'Viewed');
   await expect(headerBall(page, 'src/format.ts')).toHaveClass(/is-viewed/);
   await cursorTo(page, 'src/format.ts');
   // A viewed file starts closed, unless GitHub said so once it was on screen: then the reader
@@ -646,7 +644,7 @@ test('clearing a viewed file’s mark opens it again, and the cursor stays', asy
   await expect.poll(() => closed(page, 'src/format.ts')).toBe(true);
 
   await page.keyboard.press('e');
-  await expect(ball(page, 'src/format.ts')).toHaveAttribute('title', 'Not viewed');
+  await expect(ball(page, 'src/format.ts')).toHaveAttribute('aria-label', 'Not viewed');
   await expect.poll(() => fake.writes).toEqual(['UnmarkFileAsViewed src/format.ts']);
   await expect.poll(() => closed(page, 'src/format.ts')).toBe(false);
   expect(await cursorPath(page)).toBe('src/format.ts');
@@ -656,7 +654,7 @@ test('clearing a viewed file’s mark opens it again, and the cursor stays', asy
  * Waits until the ball in the header of `path`'s file has stayed where it is, and the diff hasn't
  * scrolled, for `frames` frames in a row. What arrives after the diff is drawn, as a banner does,
  * pushes it down, and the view scrolls to put back what's on screen: a ball that moves from under
- * the pointer, or a scroll, takes a tooltip away before it shows, and it isn't brought back.
+ * the pointer leaves it resting on something else.
  */
 async function atRest(page: Page, path: string, frames = 30): Promise<void> {
   await page.evaluate(
@@ -706,14 +704,11 @@ test('a click on a file’s viewed ball unmarks it, and another marks it', async
   await expect(mark).toHaveAccessibleName('Viewed');
   await expect(mark).toHaveAttribute('aria-checked', 'true');
   // Its tooltip is what a click does. It comes once the pointer has rested on the ball for half a
-  // second, so the diff must be at rest first; and if something still moved it, the pointer leaves
-  // and arrives again.
+  // second, so the diff must be at rest first. A scroll or a moving row that takes it away while
+  // the pointer stays, it comes back once the pointer rests again.
   await atRest(page, 'src/format.ts');
-  await expect(async () => {
-    await page.mouse.move(0, 0);
-    await mark.hover();
-    await expect(page.getByRole('tooltip')).toContainText('Unmark viewed', { timeout: 2_000 });
-  }).toPass({ timeout: 20_000 });
+  await mark.hover();
+  await expect(page.getByRole('tooltip')).toContainText('Unmark viewed');
   await mark.click();
   await expect(mark).toHaveAttribute('aria-checked', 'false');
   await expect.poll(() => fake.writes).toEqual(['UnmarkFileAsViewed src/format.ts']);

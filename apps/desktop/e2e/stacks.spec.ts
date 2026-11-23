@@ -40,7 +40,7 @@ async function open(page: Page, number: number): Promise<string> {
   return reply.value;
 }
 
-/** The stack tab `id` shows, as main has it, briefly: how it was found, and each row's marks. */
+/** The stack tab `id` shows, as main has it, briefly: its root, and each row's marks. */
 async function stackOf(page: Page, id: string): Promise<unknown> {
   const reply = await page.evaluate((tab) => window.lo.invoke('stacks.state', { id: tab }), id);
   if (!reply.ok) return reply;
@@ -48,7 +48,6 @@ async function stackOf(page: Page, id: string): Promise<unknown> {
   const stack = (reply.value as StackState | undefined)?.stack;
   if (stack?.kind !== 'stack') return stack;
   return {
-    found: stack.found,
     root: stack.root,
     rows: stack.rows.map((row) => [
       row.number,
@@ -144,7 +143,6 @@ test('draws the stack above the files, with each layer’s marks, the offer and 
   await open(page, STACK.c);
   const stack = page.getByRole('region', { name: 'Stack' });
   await expect(stack).toContainText('Branch stack · 4 layers', { timeout: 20_000 });
-  await expect(stack.getByTitle('By base branch and shared commits')).toHaveCount(1);
   await expect(treeOf(page).getByRole('treeitem')).toHaveText([
     /^Stack A: load per-plan limits/,
     /^Stack B: rate limit GraphQL queries by cost/,
@@ -347,7 +345,7 @@ test.describe('a run of layers', () => {
       await settled(page);
       await expect(header(page, 'src/cost.ts')).toBeVisible({ timeout: 20_000 });
       await expect(page.locator('.lo-diffview .lo-diffhead__ball')).toHaveCount(0);
-      await expect(page.locator('button[title="Compare revisions"]')).toHaveCount(0);
+      await expect(page.locator('button[data-lo-revisions]')).toHaveCount(0);
       await inDiff(page);
       await type(page, 'e');
       await expect(said(page, 'Show a single layer first')).toHaveCount(1);
