@@ -2,6 +2,7 @@ import { handlers } from '@lo/ui/commands';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { notify } from '../../../window/commands/notices.tsx';
+import { NO_TEXT_APP, TEXT_APP_QUERY, UNSUPPORTED } from '../../../window/explain.ts';
 import type { WindowFeature } from '../../../window/features.ts';
 import { client, type Client } from '../../../window/ipc.ts';
 import { contract, type Theme } from '../contract.ts';
@@ -22,18 +23,29 @@ function main(): Client<typeof contract> {
   return connected;
 }
 
+/** Why the licenses didn't open, as a reason and what the system said, behind Details. */
+export function unopened(error: unknown): { reason: string; details: string | undefined } {
+  if (!(error instanceof IpcError)) return { reason: '', details: String(error) };
+  switch (error.code) {
+    case 'missing':
+      return { reason: 'The file is missing from this copy of Lo.', details: undefined };
+    case 'noApp':
+      return { reason: NO_TEXT_APP, details: TEXT_APP_QUERY };
+    case 'unsupported':
+      return { reason: UNSUPPORTED, details: undefined };
+    default:
+      return { reason: '', details: error.message === '' ? undefined : error.message };
+  }
+}
+
 /** Opens the licenses file, and says why in a toast if it can't be. */
 async function showLicenses(): Promise<void> {
   try {
     await main().licenses();
   } catch (error) {
     console.error("Lo couldn't open the licenses file:", error);
-    notify(
-      'Show licenses',
-      error instanceof IpcError && error.code === 'unopened'
-        ? error.message
-        : "Lo couldn't open its licenses file.",
-    );
+    const { reason, details } = unopened(error);
+    notify('Couldn’t open the licenses', reason, { details, tone: 'danger' });
   }
 }
 

@@ -54,13 +54,23 @@ export type Metadata =
   /** Lo doesn't read this kind's metadata, so it sends the file as it is. */
   | { kind: 'asIs' };
 
-/** Why Lo can't read through a file's metadata, so can't say what it would send. */
+/**
+ * Why Lo can't read through a file's metadata, so can't say what it would send: its metadata
+ * can't be read (`metadata`), or where it was filmed can't be taken out (`location`). Its message
+ * names the part, such as "JPEG segment", for Details.
+ */
 export class UnreadableMetadata extends Error {
   override name = 'UnreadableMetadata';
+  readonly what: 'metadata' | 'location';
+
+  constructor(what: 'metadata' | 'location', part: string) {
+    super(part);
+    this.what = what;
+  }
 }
 
-function unreadable(why: string): never {
-  throw new UnreadableMetadata(why);
+function unreadable(part: string, what: 'metadata' | 'location' = 'metadata'): never {
+  throw new UnreadableMetadata(what, part);
 }
 
 /** What a video keeps, as the comment box says it. */
@@ -323,7 +333,7 @@ interface Stripped {
 }
 
 function jpeg(bytes: Uint8Array): Stripped {
-  const MALFORMED = 'its JPEG structure is broken';
+  const MALFORMED = 'JPEG structure';
   if (bytes[0] !== 0xff || bytes[1] !== 0xd8) unreadable(MALFORMED);
   const removed = nothingRemoved();
   let orientation: number | undefined;
@@ -403,7 +413,7 @@ function jpeg(bytes: Uint8Array): Stripped {
       keep = true;
     } else {
       // Anything else isn't image data Lo knows to keep, nor metadata it knows to drop.
-      unreadable("it holds a JPEG segment Lo doesn't know");
+      unreadable('JPEG segment');
     }
     if (keep) kept.push(segment);
     else removed.other = true;
@@ -474,7 +484,7 @@ const PNG_KEPT = new Set([
 ]);
 
 function png(bytes: Uint8Array): Stripped {
-  const MALFORMED = 'its PNG structure is broken';
+  const MALFORMED = 'PNG structure';
   if (!startsWith(bytes, PNG_SIGNATURE)) unreadable(MALFORMED);
   const removed = nothingRemoved();
   let orientation: number | undefined;
@@ -489,7 +499,7 @@ function png(bytes: Uint8Array): Stripped {
     const first = bytes[at + 4] ?? 0;
     const critical = first >= 0x41 && first <= 0x5a;
     if (critical && !PNG_CRITICAL.has(type)) {
-      unreadable("it holds a critical PNG chunk Lo doesn't know");
+      unreadable('PNG chunk');
     }
     if (critical || PNG_KEPT.has(type)) {
       chunks.push(bytes.subarray(at, end));
@@ -543,13 +553,13 @@ const WEBP_EXIF = 0x08;
 const WEBP_XMP = 0x04;
 
 function webp(bytes: Uint8Array): Stripped {
-  const MALFORMED = 'its WebP structure is broken';
+  const MALFORMED = 'WebP structure';
   if (bytes.length < 12 || fourcc(bytes, 0) !== 'RIFF' || fourcc(bytes, 8) !== 'WEBP') {
     unreadable(MALFORMED);
   }
   const riffEnd = 8 + (u32le(bytes, 4) ?? 0);
   // Chunks past a RIFF size shorter than the file would go unread.
-  if (riffEnd !== bytes.length) unreadable("its RIFF size isn't the file's");
+  if (riffEnd !== bytes.length) unreadable('RIFF size');
   const removed = nothingRemoved();
   let orientation: number | undefined;
   const chunks: Uint8Array[] = [];
@@ -601,14 +611,14 @@ function webp(bytes: Uint8Array): Stripped {
  * image data, which keeps no metadata.
  */
 function animationFrame(data: Uint8Array): void {
-  const MALFORMED = 'its WebP structure is broken';
+  const MALFORMED = 'WebP structure';
   let at = 16;
   if (data.length < at) unreadable(MALFORMED);
   while (at < data.length) {
     if (!fits(data, at, 8)) unreadable(MALFORMED);
     const type = fourcc(data, at);
     if (type !== 'ALPH' && type !== 'VP8 ' && type !== 'VP8L') {
-      unreadable('an animation frame holds more than image data');
+      unreadable('animation frame');
     }
     const length = u32le(data, at + 4) ?? 0;
     at += 8 + length + (length % 2);
@@ -632,7 +642,7 @@ const XMP_UUID = new Uint8Array([
 /** How deep boxes are read: the location is a few levels down. A file nesting deeper isn't sent. */
 export const MAX_BOX_DEPTH = 8;
 
-const TOO_DEEP = 'its boxes nest deeper than Lo reads';
+const TOO_DEEP = 'nested boxes';
 
 /** The tracks a video keeps: pictures, sound, text and timecodes, which hold no location. */
 const PLAIN_TRACKS = new Set([
@@ -648,7 +658,7 @@ const PLAIN_TRACKS = new Set([
 ]);
 
 /** Why a video whose boxes don't fit together isn't sent. */
-const MALFORMED_MP4 = 'its MP4 structure is broken';
+const MALFORMED_MP4 = 'MP4 structure';
 
 /**
  * Takes where an MP4 or MOV was filmed out of `bytes`, in place: the boxes that hold it become
@@ -748,7 +758,8 @@ const GPS_ENTRIES = new Set(['gpmd', 'camm', 'rtmd', 'djmd', 'dbgi']);
  */
 const PLACE_WORDS = ['location', 'iso6709', 'gps', 'coordinate', 'latitude'];
 
-const GPS_TRACK = "it has a track of timed metadata, such as a GoPro's or a drone's GPS";
+/** A track of timed metadata, such as a GoPro's or a drone's GPS. */
+const GPS_TRACK = 'timed metadata track';
 
 /** Every child of `type` among the boxes from `start` to `end`. */
 function children(bytes: Uint8Array, start: number, end: number, type: string): Box[] {
@@ -780,7 +791,8 @@ function track(bytes: Uint8Array, content: number, end: number): void {
       const handler = fourcc(bytes, hdlr.content + 8);
       if (handler === 'meta') timed = true;
       else if (!PLAIN_TRACKS.has(handler)) {
-        unreadable("it has a track Lo doesn't know, which may hold where it was filmed");
+        // One Lo doesn't know may hold where it was filmed.
+        unreadable('unknown track', 'location');
       }
     }
     // Every sample description, and every entry in each.
@@ -802,13 +814,13 @@ function track(bytes: Uint8Array, content: number, end: number): void {
 
 /** Checks one sample entry, of `format`, holding `entry`, in a track of timed metadata when `timed`. */
 function sampleEntry(format: string, entry: Uint8Array, timed: boolean): void {
-  if (GPS_ENTRIES.has(format)) unreadable(GPS_TRACK);
+  if (GPS_ENTRIES.has(format)) unreadable(GPS_TRACK, 'location');
   if (format === 'mebx') {
     if (PLACE_WORDS.some((word) => containsIgnoringCase(entry, word))) {
-      unreadable('it has a track of timed metadata naming where it was filmed');
+      unreadable(GPS_TRACK, 'location');
     }
   } else if (timed) {
-    unreadable(GPS_TRACK);
+    unreadable(GPS_TRACK, 'location');
   }
 }
 
@@ -831,7 +843,7 @@ function meta(
     const box = readBox(bytes, at, end);
     if (box.type === 'keys') {
       // Version and flags, a count, then each key's size, namespace and name.
-      const BROKEN = 'its metadata keys are broken';
+      const BROKEN = 'metadata keys';
       let keyAt = box.content + 8;
       let index = 1;
       while (keyAt < box.end) {

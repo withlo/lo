@@ -373,10 +373,10 @@ test.describe('with a git too old', () => {
   });
 
   test('says what Lo needs, and "Check again" finds git without restarting', async ({ page }) => {
-    const notice = welcome(page)
-      .getByText(/Lo needs git 2\.41\.0 or newer/)
-      .first();
+    // The version it found as the title, and the one it needs as the reason.
+    const notice = welcome(page).getByText('Version 2.41.0 or newer is required.').first();
     await expect(notice).toBeVisible({ timeout: 15_000 });
+    await expect(welcome(page).getByText('Can’t use Git 2.30.0').first()).toBeVisible();
     const again = welcome(page).getByRole('button', { name: 'Check again' });
 
     // Nothing has changed: the notice stays.

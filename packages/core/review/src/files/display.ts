@@ -128,17 +128,23 @@ export const MAX_SHOWN_BYTES = 50 * 1024 * 1024;
 export const MAX_LINE_BYTES = 1024 * 1024;
 
 /**
+ * Why a file is too large to show: it's over {@link MAX_SHOWN_BYTES} (`size`, its size in bytes,
+ * or `null` when only that it's over is known), or it has a line over {@link MAX_LINE_BYTES}
+ * (`longLine`).
+ */
+export type TooLarge =
+  { readonly kind: 'size'; readonly size: number | null } | { readonly kind: 'longLine' };
+
+/**
  * Why a file is too large to show at all, from its larger side's size and its two sides' bytes
  * when they've been read; nothing when it can show.
  */
 export function tooLargeToShow(
   size: number | undefined,
   sides: readonly Uint8Array[],
-): string | undefined {
-  if (size !== undefined && size > MAX_SHOWN_BYTES) {
-    return `${sizeText(size)}, more than the 50 MiB Lo shows`;
-  }
-  return sides.some(hasLongLine) ? 'it has a line over 1 MiB long' : undefined;
+): TooLarge | undefined {
+  if (size !== undefined && size > MAX_SHOWN_BYTES) return { kind: 'size', size };
+  return sides.some(hasLongLine) ? { kind: 'longLine' } : undefined;
 }
 
 /** Whether a line of `bytes` is longer than {@link MAX_LINE_BYTES}. */

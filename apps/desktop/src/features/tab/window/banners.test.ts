@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
+import type { Cause } from '../../../ipc/cause.ts';
+import { timeOfDay } from '../../../window/explain.ts';
 import type { LocalState, PullView } from '../contract.ts';
 import { ago, bannersFor, inWords, span, type Clock } from './banners.ts';
 
 const HEAD = '5530830f535b2947f1b50a184dc58a9c7b2845ad';
 const FIRST = '45e4f22d09ea29631f43d3f8c1e05b7fb4001099';
+
+/** The pull request the tab shows. */
+const E2E = { owner: 'rozed-dev', repo: 'e2e', number: 9 };
+
+/** What GitHub has no such pull request, or hides from rozed-bot, comes to. */
+const MISSING = { kind: 'hidden', login: 'rozed-bot' } as const;
 
 const clock: Clock = {
   now: 1_000_000,
@@ -33,7 +41,7 @@ const ready: LocalState = {
 
 /** Each banner's id, most urgent first. */
 const ids = (pull: PullView, local: LocalState = ready) =>
-  bannersFor(pull, local, 'rozed-dev/e2e', clock).map((banner) => banner.id);
+  bannersFor(pull, local, E2E, clock).map((banner) => banner.id);
 
 describe('a pull request’s banners', () => {
   it('say nothing while all is well', () => {
@@ -41,39 +49,102 @@ describe('a pull request’s banners', () => {
     expect(ids(view(), { kind: 'waiting' })).toEqual([]);
   });
 
-  it("say a pull request can't be opened, with a way to try again", () => {
+  it("say a pull request can't be opened, with GitHub's page and a way to close the tab", () => {
     const [banner] = bannersFor(
-      view({
-        problem: { kind: 'notFound', message: 'GitHub has no pull request rozed-dev/e2e#9.' },
-      }),
+      view({ problem: { kind: 'notFound', cause: MISSING, details: 'Not Found' } }),
       { kind: 'waiting' },
-      'rozed-dev/e2e',
+      E2E,
       clock,
     );
     expect(banner).toEqual({
       id: 'notFound',
       tone: 'danger',
-      title: "Lo can't open this pull request.",
-      detail: 'GitHub has no pull request rozed-dev/e2e#9.',
-      actions: [{ label: 'Try again', do: { kind: 'retry' } }],
+      title: 'Can’t open #9',
+      detail: 'It doesn’t exist, or rozed-bot can’t see it.',
+      details: 'Not Found',
+      // Another account may see it: signing in with one works out the tab's account again.
+      actions: [
+        { label: 'Sign in with GitHub…', do: { kind: 'signIn' } },
+        {
+          label: 'Open on GitHub',
+          do: { kind: 'link', url: 'https://github.com/rozed-dev/e2e/pull/9' },
+        },
+        { label: 'Close tab', do: { kind: 'close' } },
+      ],
+    });
+    // With nobody signed in, signing in may show it.
+    const [signedOut] = bannersFor(
+      view({
+        acting: { kind: 'anonymous' },
+        problem: { kind: 'notFound', cause: { kind: 'private', signedIn: false } },
+      }),
+      { kind: 'waiting' },
+      E2E,
+      clock,
+    );
+    expect(signedOut).toMatchObject({
+      detail: 'It doesn’t exist, or it’s private.',
+      actions: [{ label: 'Sign in with GitHub…', do: { kind: 'signIn' } }, {}, {}],
+    });
+  });
+
+  it('say why reading it failed, and when it tries again, with GitHub’s words behind Details', () => {
+    const [failed] = bannersFor(
+      view({
+        problem: {
+          kind: 'failed',
+          cause: { kind: 'github' },
+          details: '500 Internal Server Error',
+          retryAt: clock.now + 20_000,
+        },
+      }),
+      { kind: 'waiting' },
+      E2E,
+      clock,
+    );
+    expect(failed).toEqual({
+      id: 'failed',
+      tone: 'danger',
+      title: 'Can’t open #9',
+      detail: 'GitHub returned an error. Retrying in 20 s.',
+      details: '500 Internal Server Error',
+      actions: [{ label: 'Try now', do: { kind: 'retry' } }],
+    });
+  });
+
+  it('offer what the cause calls for: a sign-in, or nothing while the rate limit holds', () => {
+    const failed = (cause: Cause) =>
+      bannersFor(
+        view({ problem: { kind: 'failed', cause, retryAt: clock.now + 5_000 } }),
+        { kind: 'waiting' },
+        E2E,
+        clock,
+      )[0];
+    // The reset time is the reason: no countdown to the next try, and nothing to press.
+    expect(failed({ kind: 'rateLimit', resets: clock.now + 25 * 60_000 })).toMatchObject({
+      detail: `GitHub’s rate limit resets at ${timeOfDay(clock.now + 25 * 60_000)}.`,
+      actions: [],
+    });
+    expect(failed({ kind: 'signedOut', login: 'rozed-bot' })).toMatchObject({
+      detail: 'rozed-bot is signed out.',
+      actions: [{ label: 'Sign in again', do: { kind: 'signIn' } }],
+    });
+    expect(failed({ kind: 'hidden', login: 'rozed-bot' })).toMatchObject({
+      detail: 'It doesn’t exist, or rozed-bot can’t see it.',
+      actions: [{ label: 'Sign in with GitHub…', do: { kind: 'signIn' } }],
     });
   });
 
   it("offer a layer that can't be opened a way back to the pull request its tab opened on", () => {
     // As for a tab that comes back at a layer whose pull request was deleted since.
     const [banner] = bannersFor(
-      view({
-        problem: { kind: 'notFound', message: 'GitHub has no pull request rozed-dev/e2e#9.' },
-      }),
+      view({ problem: { kind: 'notFound', cause: MISSING } }),
       { kind: 'waiting' },
-      'rozed-dev/e2e',
+      E2E,
       clock,
       84,
     );
-    expect(banner?.actions).toEqual([
-      { label: 'Show #84', do: { kind: 'layer', number: 84 } },
-      { label: 'Try again', do: { kind: 'retry' } },
-    ]);
+    expect(banner?.actions).toEqual([{ label: 'Show #84', do: { kind: 'layer', number: 84 } }]);
   });
 
   it("offer GitHub's link to fix single sign-on, and each account that can see it", () => {
@@ -81,14 +152,18 @@ describe('a pull request’s banners', () => {
       view({
         problem: {
           kind: 'blocked',
-          message: 'The rozed-dev organization needs single sign-on.',
+          cause: { kind: 'sso', org: 'rozed-dev' },
           links: [{ label: 'Authorize on GitHub', url: 'https://github.com/orgs/rozed-dev/sso' }],
         },
       }),
       ready,
-      'rozed-dev/e2e',
+      E2E,
       clock,
     );
+    expect(blocked[0]).toMatchObject({
+      title: 'Can’t open #9',
+      detail: 'rozed-dev requires single sign-on.',
+    });
     expect(blocked[0]?.actions).toEqual([
       {
         label: 'Authorize on GitHub',
@@ -99,7 +174,7 @@ describe('a pull request’s banners', () => {
     const ask = bannersFor(
       view({ acting: null, problem: { kind: 'ask', logins: ['rozed-bot', 'other-bot'] } }),
       { kind: 'waiting' },
-      'rozed-dev/e2e',
+      E2E,
       clock,
     );
     expect(ask[0]).toMatchObject({
@@ -122,7 +197,7 @@ describe('a pull request’s banners', () => {
         },
       }),
       ready,
-      'rozed-dev/e2e',
+      E2E,
       clock,
     );
     expect(offline).toMatchObject({
@@ -140,7 +215,7 @@ describe('a pull request’s banners', () => {
         },
       }),
       ready,
-      'rozed-dev/e2e',
+      E2E,
       clock,
     );
     expect(limited).toMatchObject({
@@ -159,7 +234,7 @@ describe('a pull request’s banners', () => {
       bannersFor(
         view(),
         { kind: 'fetching', progress: 'receiving objects, 44% of 1234', attempt: 1 },
-        'rozed-dev/e2e',
+        E2E,
         clock,
       )[0],
     ).toMatchObject({
@@ -170,58 +245,87 @@ describe('a pull request’s banners', () => {
     const retrying: LocalState = {
       kind: 'retrying',
       failure: 'network',
-      message: "can't fetch pull request #78: the network failed",
+      details: 'fatal: unable to access',
       attempt: 2,
       retryAt: clock.now + 12_000,
     };
-    expect(bannersFor(view(), retrying, 'rozed-dev/e2e', clock)[0]).toMatchObject({
+    expect(bannersFor(view(), retrying, E2E, clock)[0]).toMatchObject({
       tone: 'warn',
-      detail:
-        "Can't fetch pull request #78: the network failed. Lo tries again in 12 s, attempt 3.",
-      actions: [{ label: 'Retry now', do: { kind: 'retry' } }],
+      title: 'Can’t fetch the local copy',
+      detail: 'Offline. Retrying in 12 s.',
+      details: 'fatal: unable to access',
+      actions: [{ label: 'Try now', do: { kind: 'retry' } }],
     });
     const offline = view({
       connection: { kind: 'offline', savedAt: null, retryAt: null, error: 'x' },
     });
     expect(ids(offline, retrying)).toEqual(['offline']);
+    expect(ids(view(), { kind: 'failed', failure: 'diskFull' })).toEqual(['local']);
     expect(
-      ids(view(), { kind: 'failed', failure: 'diskFull', message: 'the disk is full' }),
-    ).toEqual(['local']);
-    expect(
-      bannersFor(
-        view(),
-        { kind: 'failed', failure: 'diskFull', message: 'x' },
-        'rozed-dev/e2e',
-        clock,
-      )[0]?.title,
-    ).toBe("The disk is full, so Lo can't save the local copy.");
-    expect(
-      bannersFor(
-        view(),
-        { kind: 'failed', failure: 'diskFull', message: 'x' },
-        'rozed-dev/e2e',
-        clock,
-      )[0]?.actions,
-    ).toEqual([
-      { label: 'Clear the cache', do: { kind: 'clearCache' } },
-      { label: 'Try again', do: { kind: 'retry' } },
-    ]);
+      bannersFor(view(), { kind: 'failed', failure: 'diskFull' }, E2E, clock)[0],
+    ).toMatchObject({
+      title: 'Can’t fetch the local copy',
+      detail: 'The disk is full.',
+      actions: [{ label: 'Clear cache', do: { kind: 'clearCache' } }],
+    });
+    // A copy held open says what it waits for, with nothing to press and no time, even while
+    // main looks again by itself.
     expect(
       bannersFor(
         view(),
-        { kind: 'noGit', message: "Lo can't find git.", install: 'Get it.' },
-        'rozed-dev/e2e',
+        { kind: 'retrying', failure: 'heldByServers', attempt: 1, retryAt: clock.now + 20_000 },
+        E2E,
         clock,
-      )[0]?.actions,
-    ).toEqual([{ label: 'Check again', do: { kind: 'retry' } }]);
+      )[0],
+    ).toMatchObject({
+      title: 'Can’t use the local copy',
+      detail: 'It’s made again once its language servers stop.',
+      actions: [],
+    });
     expect(
-      ids(view(), { kind: 'noGit', message: "Lo can't find git.", install: 'Get it.' }),
-    ).toEqual(['noGit']);
+      bannersFor(view(), { kind: 'failed', failure: 'heldByTabs' }, E2E, clock)[0],
+    ).toMatchObject({
+      title: 'Can’t use the local copy',
+      detail: 'It’s made again once every tab of rozed-dev/e2e closes.',
+      actions: [],
+    });
+    const noGit: LocalState = {
+      kind: 'noGit',
+      git: { status: 'missing', install: { commands: ['xcode-select --install'], page: null } },
+    };
+    // How to install Git is in the banner, to copy, never only behind Details.
+    expect(bannersFor(view(), noGit, E2E, clock)[0]).toMatchObject({
+      title: 'Can’t find Git',
+      commands: ['xcode-select --install'],
+      details: undefined,
+      actions: [{ label: 'Check again', do: { kind: 'retry' } }],
+    });
+    const old: LocalState = {
+      kind: 'noGit',
+      git: {
+        status: 'tooOld',
+        program: '/usr/bin/git',
+        version: '2.30.0',
+        minimum: '2.41.0',
+        check: 'version',
+        install: {
+          commands: ['sudo apt install git'],
+          page: 'https://git-scm.com/downloads/linux',
+        },
+      },
+    };
+    expect(bannersFor(view(), old, E2E, clock)[0]).toMatchObject({
+      title: 'Can’t use Git 2.30.0',
+      detail: 'Version 2.41.0 or newer is required.',
+      commands: ['sudo apt install git', 'https://git-scm.com/downloads/linux'],
+      details: '/usr/bin/git',
+    });
+    expect(ids(view(), noGit)).toEqual(['noGit']);
   });
 
   it('offer the newer push, and keep the most urgent first', () => {
     const newer = view({ shown: FIRST, newer: HEAD });
-    expect(bannersFor(newer, ready, 'rozed-dev/e2e', clock)).toEqual([
+    expect(bannersFor(newer, ready, E2E, clock)).toEqual([
       {
         id: 'newer',
         tone: 'info',
@@ -236,9 +340,9 @@ describe('a pull request’s banners', () => {
           shown: FIRST,
           newer: HEAD,
           connection: { kind: 'offline', savedAt: null, retryAt: null, error: 'x' },
-          problem: { kind: 'failed', message: 'x', retryAt: null },
+          problem: { kind: 'failed', cause: { kind: 'unknown' }, retryAt: null },
         }),
-        { kind: 'failed', failure: 'other', message: 'x' },
+        { kind: 'failed', failure: 'other' },
       ),
     ).toEqual(['failed', 'offline', 'local', 'newer']);
   });
@@ -263,7 +367,7 @@ describe('poll state', () => {
   const NOW = 1_000_000_000;
   const at = (seconds: number) => NOW + seconds * 1000;
   const clockAt: Clock = { now: NOW, time: (time) => `at ${time}` };
-  const noteFor = (pull: PullView) => bannersFor(pull, ready, 'rozed-dev/e2e', clockAt);
+  const noteFor = (pull: PullView) => bannersFor(pull, ready, E2E, clockAt);
 
   it('ages read in words', () => {
     const before = (seconds: number) => ago(at(-seconds), NOW);
@@ -341,7 +445,8 @@ describe('poll state', () => {
       view({
         problem: {
           kind: 'blocked',
-          message: 'Resource protected by organization SAML enforcement.',
+          cause: { kind: 'sso', org: 'acme' },
+          details: 'Resource protected by organization SAML enforcement.',
           links: [
             {
               label: 'Authorize on GitHub',
@@ -351,7 +456,8 @@ describe('poll state', () => {
         },
       }),
     );
-    expect(failed?.title).toBe('Resource protected by organization SAML enforcement.');
+    expect(failed?.title).toBe('Can’t open #9');
+    expect(failed?.details).toBe('Resource protected by organization SAML enforcement.');
     expect(failed?.actions[0]).toEqual({
       label: 'Authorize on GitHub',
       do: { kind: 'link', url: 'https://github.com/orgs/acme/sso?authorization_request=A1' },

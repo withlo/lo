@@ -55,21 +55,18 @@ afterEach(() => {
 const open = (platform: NodeJS.Platform = 'darwin') =>
   openKeymapFile(path, { platform, launch: started, linux });
 
-/** Why opening the keymap file was refused on each system: a reason, or none if it opened. */
+/** Why opening the keymap file was refused on each system: why, or nothing if it opened. */
 async function refusals(): Promise<(string | undefined)[]> {
   const reasons: (string | undefined)[] = [];
   for (const platform of ['darwin', 'linux'] as const) {
     const result = await open(platform);
-    reasons.push(result.ok ? undefined : result.reason);
+    reasons.push(result.ok ? undefined : result.why);
   }
   return reasons;
 }
 
-/** What `refusals` gives when both systems refuse for a reason that matches `reason`. */
-const bothRefuse = (reason: RegExp) => [
-  expect.stringMatching(reason),
-  expect.stringMatching(reason),
-];
+/** What `refusals` gives when both systems refuse a file Lo won't open. */
+const BOTH_REFUSE = ['refused', 'refused'];
 
 describe('opening the keymap file', () => {
   it('opens a plain file as text: open -t on a Mac, the app for text on Linux, with the path as an argument', async () => {
@@ -116,11 +113,7 @@ describe('opening the keymap file', () => {
     ];
     for (const answer of answers) {
       asked.mockImplementationOnce(answer);
-      expect(await open('linux')).toEqual({
-        ok: false,
-        reason:
-          "Lo couldn't find the app for text files (`xdg-mime query default text/plain`), so it didn't open the keymap file.",
-      });
+      expect(await open('linux')).toEqual({ ok: false, why: 'noApp' });
     }
     expect(started).not.toHaveBeenCalled();
   });
@@ -161,7 +154,7 @@ describe('opening the keymap file', () => {
     for (const mode of [0o755, 0o744, 0o700, 0o710, 0o701, 0o777]) {
       writeFileSync(path, '#!/bin/sh\necho hi\n');
       chmodSync(path, mode);
-      expect(await refusals()).toEqual(bothRefuse(/executable, so Lo won't open it/));
+      expect(await refusals()).toEqual(BOTH_REFUSE);
       expect(started).not.toHaveBeenCalled();
     }
     // It is left as it was.
@@ -174,7 +167,7 @@ describe('opening the keymap file', () => {
     writeFileSync(target, '# synced from another machine\n');
     chmodSync(target, 0o755);
     symlinkSync(target, path);
-    expect(await refusals()).toEqual(bothRefuse(/executable/));
+    expect(await refusals()).toEqual(BOTH_REFUSE);
     expect(started).not.toHaveBeenCalled();
   });
 
@@ -184,7 +177,7 @@ describe('opening the keymap file', () => {
     writeFileSync(join(app, 'Contents', 'MacOS', 'Calculator'), '#!/bin/sh\n');
     chmodSync(join(app, 'Contents', 'MacOS', 'Calculator'), 0o755);
     symlinkSync(app, path);
-    expect(await refusals()).toEqual(bothRefuse(/isn't a plain file/));
+    expect(await refusals()).toEqual(BOTH_REFUSE);
     expect(started).not.toHaveBeenCalled();
   });
 
@@ -195,69 +188,63 @@ describe('opening the keymap file', () => {
     writeFileSync(script, '#!/bin/sh\n');
     chmodSync(script, 0o755);
     symlinkSync(script, path);
-    expect(await refusals()).toEqual(bothRefuse(/executable/));
+    expect(await refusals()).toEqual(BOTH_REFUSE);
     expect(started).not.toHaveBeenCalled();
     rmSync(path);
     symlinkSync(app, join(folder, 'first'));
     symlinkSync(join(folder, 'first'), path);
-    expect(await refusals()).toEqual(bothRefuse(/isn't a plain file/));
+    expect(await refusals()).toEqual(BOTH_REFUSE);
     expect(started).not.toHaveBeenCalled();
   });
 
   it('refuses a folder', async () => {
     mkdirSync(path);
-    expect(await refusals()).toEqual(bothRefuse(/isn't a plain file/));
+    expect(await refusals()).toEqual(BOTH_REFUSE);
     expect(started).not.toHaveBeenCalled();
   });
 
   it('refuses a named pipe, without waiting for anyone to write to it', async () => {
     execFileSync('mkfifo', [path]);
-    expect(await refusals()).toEqual(bothRefuse(/isn't a plain file/));
+    expect(await refusals()).toEqual(BOTH_REFUSE);
     expect(started).not.toHaveBeenCalled();
   });
 
   it('refuses a huge file', async () => {
     writeFileSync(path, '');
     truncateSync(path, 64 * 1024 * 1024);
-    expect(await refusals()).toEqual(bothRefuse(/over 1 MiB/));
+    expect(await refusals()).toEqual(BOTH_REFUSE);
     expect(started).not.toHaveBeenCalled();
   });
 
   it('refuses a binary file', async () => {
     writeFileSync(path, Uint8Array.from([0x7f, 0x45, 0x4c, 0x46, 0x00, 0x01, 0x02]));
-    expect(await refusals()).toEqual(bothRefuse(/isn't text/));
+    expect(await refusals()).toEqual(BOTH_REFUSE);
     expect(started).not.toHaveBeenCalled();
   });
 
   it('refuses a link to nothing, and writes nothing through it', async () => {
     symlinkSync(join(folder, 'missing'), path);
-    expect(await refusals()).toEqual(bothRefuse(/link to a file that isn't there/));
+    expect(await refusals()).toEqual(BOTH_REFUSE);
     expect(started).not.toHaveBeenCalled();
     expect(existsSync(join(folder, 'missing'))).toBe(false);
   });
 
   it('refuses a link that leads in a circle', async () => {
     symlinkSync(path, path);
-    expect(await refusals()).toEqual(bothRefuse(/ELOOP/));
+    expect(await refusals()).toEqual(BOTH_REFUSE);
     expect(started).not.toHaveBeenCalled();
   });
 
   it('refuses where Lo has no way to open a file as text', async () => {
     writeFileSync(path, '');
-    expect(await open('win32')).toEqual({
-      ok: false,
-      reason: "Lo can't open the keymap file on this system.",
-    });
+    expect(await open('win32')).toEqual({ ok: false, why: 'unsupported' });
     expect(started).not.toHaveBeenCalled();
   });
 
-  it('says so when the system’s opener fails, without its own words', async () => {
+  it('says so when the system’s opener fails, with what the system said', async () => {
     writeFileSync(path, '');
-    started.mockRejectedValueOnce(new Error('spawn /usr/bin/open ENOENT at /Users/me'));
-    expect(await open()).toEqual({
-      ok: false,
-      reason: "Lo couldn't open the keymap file in a text editor.",
-    });
+    started.mockRejectedValueOnce(new Error('spawn /usr/bin/open ENOENT'));
+    expect(await open()).toEqual({ ok: false, why: 'launch', said: 'spawn /usr/bin/open ENOENT' });
   });
 
   it('says so when the file or its folder can’t be made', async () => {
@@ -268,7 +255,7 @@ describe('opening the keymap file', () => {
         launch: started,
         linux,
       }),
-    ).toEqual({ ok: false, reason: "Lo couldn't create the keymap file." });
+    ).toMatchObject({ ok: false, why: 'create' });
     expect(started).not.toHaveBeenCalled();
   });
 });

@@ -1,7 +1,7 @@
 // What reading an overview ran into, as the tab says it, and when to try again: sorted as a pull
 // request's tab sorts what reading it ran into. Nothing here calls Electron or keeps state.
 
-import { GithubError } from '@lo/github';
+import { githubErrorIn, saidBy } from '@lo/github';
 
 import type { Acting } from '../../tab/contract.ts';
 import type { Problem } from '../contract.ts';
@@ -16,25 +16,13 @@ export function retryWait(failures: number): number {
   return Math.min(FIRST_RETRY * 2 ** Math.max(0, failures - 1), LAST_RETRY);
 }
 
-/** The GitHub error `error` is, or was caused by. */
-function githubError(error: unknown): GithubError | undefined {
-  for (let at = error, depth = 0; at !== undefined && depth < 5; depth++) {
-    if (at instanceof GithubError) return at;
-    at = at instanceof Error ? at.cause : undefined;
-  }
-  return undefined;
-}
-
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 /**
  * What `error` was, for a tab acting as `acting`, at `now`, after `failures` failures in a row,
  * counting it, reading the overview of a pull request in `owner`'s repository: the problem to say,
  * and how long to wait before reading again. A refusal for the rate limit waits as long as GitHub
  * asked, and anything else {@link retryWait}. An organization that blocks the read is the one
- * GitHub names, else `owner`.
+ * GitHub names, else `owner`. Each problem's `message` is what GitHub or the system said, for
+ * Details.
  */
 export function problemOf(
   error: unknown,
@@ -43,7 +31,7 @@ export function problemOf(
   now: number,
   owner: string,
 ): { problem: Problem; wait: number } {
-  const github = githubError(error);
+  const github = githubErrorIn(error);
   const wait = retryWait(failures);
   const retryAt = Math.round(now + wait);
   if (github) {
@@ -76,7 +64,7 @@ export function problemOf(
           kind: 'blocked',
           why: approval ? 'approval' : 'sso',
           org: (approval ? detail.org : undefined) ?? owner,
-          message: github.message,
+          message: github.said(),
           links: [link],
           retryAt,
         },
@@ -84,8 +72,8 @@ export function problemOf(
       };
     }
     if (detail.kind === 'network' || detail.kind === 'tokenUnavailable') {
-      return { problem: { kind: 'offline', message: github.message, retryAt }, wait };
+      return { problem: { kind: 'offline', message: github.said(), retryAt }, wait };
     }
   }
-  return { problem: { kind: 'failed', message: describe(error), retryAt }, wait };
+  return { problem: { kind: 'failed', message: saidBy(error), retryAt }, wait };
 }

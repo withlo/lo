@@ -186,6 +186,7 @@ export class Github implements GithubAccess {
    */
   async add(user: AuthenticatedUser, grant: Grant, source: AccountSource): Promise<void> {
     await (await this.#loaded).add(user, grant, source);
+    this.#emit({ kind: 'added', login: user.user.login });
   }
 
   /**

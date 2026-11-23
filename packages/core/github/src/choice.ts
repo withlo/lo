@@ -3,7 +3,7 @@
  * repository, else the one remembered for it, else ask.
  */
 
-import type { GithubError, HelpLink } from './errors.ts';
+import { causeOf, type GithubCause, type GithubError, type HelpLink } from './errors.ts';
 import type { RepoRef } from './refs.ts';
 
 /**
@@ -103,7 +103,8 @@ export type AccountDecision =
  * single sign-on.
  */
 export interface AccountRefusal {
-  message: string;
+  /** Each account that couldn't check the repository, with GitHub's error: none when GitHub didn't say. */
+  problems: readonly { login: string; error: GithubError }[];
   links: HelpLink[];
   /** Whether waiting may fix every problem behind it, such as a server error or a rate limit, so Lo tries again by itself. */
   waitable: boolean;
@@ -112,12 +113,11 @@ export interface AccountRefusal {
 /**
  * Decides from what checking the accounts found, or from nothing when Lo keeps no accounts. A pull
  * request opens with the account that can see its repository, and without signing in when none
- * can and none ran into anything else, which works for public repositories. Messages name the
- * repository as GitHub does now.
+ * can and none ran into anything else, which works for public repositories.
  */
 export function decideAccount(found: RepoAccount | undefined): AccountDecision {
   if (found === undefined) return { kind: 'open', acting: { kind: 'anonymous' } };
-  const { repo, choice } = found;
+  const { choice } = found;
   switch (choice.kind) {
     case 'account':
       return { kind: 'open', acting: { kind: 'account', login: choice.login } };
@@ -128,11 +128,10 @@ export function decideAccount(found: RepoAccount | undefined): AccountDecision {
       // would had it been signed out before the check.
       const problems = found.problems.filter(({ error }) => !error.isUnauthorized());
       if (problems.length === 0) return { kind: 'open', acting: { kind: 'anonymous' } };
-      const said = problems.map(({ login, error }) => `${login}: ${describe(error)}`);
       return {
         kind: 'refuse',
         refusal: {
-          message: `No account Lo is signed in to could check ${repo.toString()}, so it didn't open without signing in. ${said.join('; ')}`,
+          problems,
           links: problems.flatMap(({ error }) => error.helpLink() ?? []),
           waitable: problems.every(({ error }) => error.isWaitable()),
         },
@@ -140,18 +139,14 @@ export function decideAccount(found: RepoAccount | undefined): AccountDecision {
     }
     case 'unavailable': {
       const { login } = choice;
-      const problem = found.problems.find((each) => sameLogin(each.login, login))?.error;
-      const why = problem === undefined ? "GitHub didn't say why" : describe(problem);
-      const forRepo =
-        found.remembered.repo !== undefined && sameLogin(found.remembered.repo, login);
-      const usesFor = forRepo ? repo.toString() : repo.owner;
-      const link = problem?.helpLink();
+      const problems = found.problems.filter((each) => sameLogin(each.login, login)).slice(0, 1);
+      const link = problems[0]?.error.helpLink();
       return {
         kind: 'refuse',
         refusal: {
-          message: `${login}, the account Lo uses for ${usesFor}, couldn't check ${repo.toString()}: ${why}`,
+          problems,
           links: link === undefined ? [] : [link],
-          waitable: problem?.isWaitable() ?? false,
+          waitable: problems[0]?.error.isWaitable() ?? false,
         },
       };
     }
@@ -167,8 +162,23 @@ export function sameLogin(a: string, b: string): boolean {
   return a.toLowerCase() === b.toLowerCase();
 }
 
-/** GitHub's message, and its link to fix it, where there's one. */
-function describe(error: GithubError): string {
-  const link = error.helpLink();
-  return link === undefined ? error.message : `${error.message} (${link.url})`;
+/**
+ * Why a refusal stopped a pull request of `owner`'s opening, as one cause: the account an
+ * organization stops, where one does, since its link fixes it, else one GitHub didn't sign out,
+ * else the first. `details` is what GitHub said to each, a line an account, as `rozed-bot: 500
+ * Internal Server Error`.
+ */
+export function refusalCause(
+  refusal: AccountRefusal,
+  owner: string,
+): { cause: GithubCause; details: string | undefined } {
+  const { problems } = refusal;
+  const first =
+    problems.find(({ error }) => error.helpLink() !== undefined) ??
+    problems.find(({ error }) => !error.isUnauthorized()) ??
+    problems[0];
+  const cause: GithubCause =
+    first === undefined ? { kind: 'unknown' } : causeOf(first.error, { owner, login: first.login });
+  const details = problems.map(({ login, error }) => `${login}: ${error.said()}`).join('\n');
+  return { cause, details: details === '' ? undefined : details };
 }

@@ -141,6 +141,7 @@ export default defineFeature(contract, {
               );
             }
             return;
+          case 'added':
           case 'signedOut':
           case 'cantSave':
           case 'cantSaveOver':

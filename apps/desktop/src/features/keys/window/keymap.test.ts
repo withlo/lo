@@ -7,7 +7,7 @@ import type { Result } from '../../../ipc/contract.ts';
 import { keymapState } from '../../../window/commands/keymap.ts';
 import { notice } from '../../../window/commands/notices.tsx';
 import { createRegistry, registry } from '../../../window/commands/registry.ts';
-import type { KeymapFile } from '../contract.ts';
+import type { KeymapFile, KeymapProblem } from '../contract.ts';
 import keys from './index.ts';
 
 type Listener = (value: unknown) => void;
@@ -39,8 +39,11 @@ function fakeBridge(answers: Record<string, () => Promise<Result<unknown>>>) {
 }
 
 const ok = (value: unknown): Result<unknown> => ({ ok: true, value });
-const file = (text: string, problem?: string, canOpen = problem === undefined): KeymapFile =>
-  problem === undefined ? { text, canOpen } : { text, problem, canOpen };
+const file = (
+  text: string,
+  problem?: KeymapProblem,
+  canOpen = problem === undefined,
+): KeymapFile => (problem === undefined ? { text, canOpen } : { text, problem, canOpen });
 
 /** The keys `id` has now, as the registry writes them. */
 function keysOf(id: string): string[] {
@@ -72,7 +75,7 @@ describe('the keymap file in the window', () => {
       keys: 'Y',
       to: 'y$',
     });
-    expect(keymapState()).toEqual({ problem: undefined, canOpen: true });
+    expect(keymapState()).toEqual({ problem: undefined, canOpen: true, refusal: undefined });
   });
 
   it('applies each change main pushes, over the last file, and reports its bad lines', async () => {
@@ -110,14 +113,15 @@ describe('the keymap file in the window', () => {
   it('shows what is wrong with the file as a whole until a file that is fine', () => {
     const { bridge, push } = fakeBridge({});
     start(bridge);
-    push('keys.keymap', file('', "The keymap file is over 1 MiB, so Lo didn't read it."));
+    push('keys.keymap', file('', { kind: 'tooLarge', size: 1024 ** 2 + 1 }));
     expect(keymapState()).toEqual({
-      problem: "The keymap file is over 1 MiB, so Lo didn't read it.",
+      problem: { title: 'Can’t read the keymap file', reason: 'It’s 1.1 MB, over the 1 MB limit.' },
       canOpen: false,
+      refusal: 'The keymap file can’t be opened',
     });
     expect(keysOf('keys.back')).toEqual(['ctrl+o']);
     push('keys.keymap', file('bind ctrl+b keys.back'));
-    expect(keymapState()).toEqual({ problem: undefined, canOpen: true });
+    expect(keymapState()).toEqual({ problem: undefined, canOpen: true, refusal: undefined });
   });
 
   it('opens the file through main, and says why in a toast when main can’t', async () => {
@@ -128,33 +132,45 @@ describe('the keymap file in the window', () => {
     await vi.waitFor(() => expect(invoked('keys.openKeymap')).toBe(1));
     expect(notice()).toBeUndefined();
 
-    result = {
-      ok: false,
-      error: { code: 'unopened', message: "Lo couldn't open the keymap file in a text editor." },
-    };
+    result = { ok: false, error: { code: 'noApp', message: '' } };
     registry().run('keys.openKeymap', NO_TARGET);
     await vi.waitFor(() =>
-      expect(notice()).toEqual({
-        title: 'Open the keymap file',
-        body: "Lo couldn't open the keymap file in a text editor.",
+      expect(notice()).toMatchObject({
+        title: 'Couldn’t open the keymap file',
+        body: 'No app is set for text files.',
+        details: 'xdg-mime query default text/plain',
       }),
     );
 
-    // A failure main didn't mean to show is told in Lo's words, not main's.
-    result = { ok: false, error: { code: 'internal', message: 'keys.openKeymap failed.' } };
+    // What the system said goes behind Details, under the same title.
+    result = { ok: false, error: { code: 'launch', message: 'spawn /usr/bin/open ENOENT' } };
     registry().run('keys.openKeymap', NO_TARGET);
-    await vi.waitFor(() => expect(notice()?.body).toBe("Lo couldn't open the keymap file."));
+    await vi.waitFor(() =>
+      expect(notice()).toMatchObject({
+        title: 'Couldn’t open the keymap file',
+        body: '',
+        details: 'spawn /usr/bin/open ENOENT',
+      }),
+    );
   });
 
   it('refuses to ask main to open a file main has said it won’t, and says why', () => {
     const { bridge, push, invoked } = fakeBridge({});
     start(bridge);
-    const why =
-      "The keymap file is executable, so Lo won't open it, which could run it. Clear its execute permission to open it from here.";
-    // An executable file's keys still apply, with the reason beside them.
-    push('keys.keymap', { text: 'bind ctrl+b keys.back', problem: why, canOpen: false });
+    const why = 'The keymap file is executable';
+    // An executable file's keys still apply, with the reason on the command that would open it.
+    push('keys.keymap', {
+      text: 'bind ctrl+b keys.back',
+      problem: { kind: 'executable' },
+      canOpen: false,
+    });
     expect(keysOf('keys.back')).toEqual(['ctrl+b', 'ctrl+o']);
-    expect(keymapState()).toEqual({ problem: why, canOpen: false });
+    expect(keymapState()).toEqual({
+      problem: undefined,
+      canOpen: false,
+      refusal: why,
+      remedy: 'Clear its execute permission to open it from here.',
+    });
     expect(registry().enabled('keys.openKeymap', NO_TARGET)).toBe(why);
     expect(registry().run('keys.openKeymap', NO_TARGET)).toBe(why);
     // The reason alone, not under the command's name.

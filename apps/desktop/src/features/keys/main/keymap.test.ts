@@ -19,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { KEYMAP_SIZE_LIMIT, type KeymapFile } from '../contract.ts';
 import { ensureKeymap, keymapHeader, readKeymap, watchKeymap } from './keymap.ts';
 
-const NOT_PLAIN = "The keymap file isn't a plain file, so Lo doesn't read or open it.";
+const NOT_PLAIN = { kind: 'notFile' } as const;
 
 let folder: string;
 let path: string;
@@ -73,7 +73,7 @@ describe('readKeymap', () => {
     write('#'.repeat(KEYMAP_SIZE_LIMIT + 1));
     expect(await readKeymap(path)).toEqual({
       text: '',
-      problem: "The keymap file is over 1 MiB, so Lo didn't read it.",
+      problem: { kind: 'tooLarge', size: KEYMAP_SIZE_LIMIT + 1 },
       canOpen: false,
     });
   });
@@ -84,7 +84,7 @@ describe('readKeymap', () => {
     const before = process.memoryUsage().arrayBuffers;
     const file = await readKeymap(path);
     expect(file.text).toBe('');
-    expect(file.problem).toContain('over 1 MiB');
+    expect(file.problem).toEqual({ kind: 'tooLarge', size: 64 * 1024 * 1024 });
     // Nothing near the file's size was taken for it.
     expect(process.memoryUsage().arrayBuffers - before).toBeLessThan(16 * 1024 * 1024);
   });
@@ -100,7 +100,7 @@ describe('readKeymap', () => {
     write(Uint8Array.from([0x62, 0x69, 0x6e, 0x64, 0x00, 0xff, 0x0a]));
     expect(await readKeymap(path)).toEqual({
       text: '',
-      problem: "The keymap file isn't text.",
+      problem: { kind: 'notText' },
       canOpen: false,
     });
   });
@@ -116,7 +116,7 @@ describe('readKeymap', () => {
     execFileSync('chmod', ['000', path]);
     expect(await readKeymap(path)).toEqual({
       text: '',
-      problem: "Lo isn't allowed to read the keymap file.",
+      problem: { kind: 'denied' },
       canOpen: false,
     });
   });
@@ -126,8 +126,7 @@ describe('readKeymap', () => {
     chmodSync(path, 0o755);
     expect(await readKeymap(path)).toEqual({
       text: 'bind x diff.markViewed\n',
-      problem:
-        "The keymap file is executable, so Lo won't open it, which could run it. Clear its execute permission to open it from here.",
+      problem: { kind: 'executable' },
       canOpen: false,
     });
     chmodSync(path, 0o644);
@@ -139,7 +138,7 @@ describe('readKeymap', () => {
     symlinkSync(join(folder, 'elsewhere'), path);
     expect(await readKeymap(path)).toEqual({
       text: '',
-      problem: "The keymap file is a link to a file that isn't there.",
+      problem: { kind: 'brokenLink' },
       canOpen: false,
     });
   });
@@ -149,7 +148,7 @@ describe('readKeymap', () => {
     symlinkSync(path, path);
     expect(await readKeymap(path)).toEqual({
       text: '',
-      problem: "Lo couldn't read the keymap file (ELOOP).",
+      problem: { kind: 'unreadable', code: 'ELOOP' },
       canOpen: false,
     });
   });
@@ -301,7 +300,11 @@ describe('watchKeymap', () => {
     write('bind y diff.markViewed');
     await settle(watcher);
     expect(changes).toEqual([
-      { text: '', problem: "The keymap file is over 1 MiB, so Lo didn't read it.", canOpen: false },
+      {
+        text: '',
+        problem: { kind: 'tooLarge', size: KEYMAP_SIZE_LIMIT + 1 },
+        canOpen: false,
+      },
       { text: 'bind y diff.markViewed', canOpen: true },
     ]);
   });

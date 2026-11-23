@@ -4,7 +4,8 @@
 
 import type { RevisionPickerRow, RevisionShortcut, RevisionTag } from '@lo/ui';
 
-import type { Compared, ComparisonView, RevisionRow } from '../contract.ts';
+import { explain } from '../../../window/explain.ts';
+import type { Compared, ComparisonView, RevisionRow, RevisionsProblem } from '../contract.ts';
 
 /** The base's row in the picker, last. */
 export const BASE = 'base';
@@ -30,6 +31,54 @@ export function labelOf(view: ComparisonView, head: string): string {
 export function comparisonLabel(view: ComparisonView, compared: Compared): string {
   const from = compared.from === null ? 'base' : labelOf(view, compared.from);
   return `${from} → ${labelOf(view, compared.to)}`;
+}
+
+/** What went wrong reading or comparing the revisions, as a title and one reason. */
+export function problemWords(
+  view: ComparisonView,
+  problem: RevisionsProblem,
+): { title: string; reason: string | undefined } {
+  if (problem.kind === 'read') {
+    return { title: 'Can’t read the revisions', reason: explain(problem.cause) };
+  }
+  const title = `Couldn’t compare ${comparisonLabel(view, problem)}`;
+  const { why } = problem;
+  switch (why.kind) {
+    case 'gone':
+      return {
+        title,
+        reason:
+          why.head === null
+            ? 'A revision’s commit is no longer on GitHub.'
+            : `${labelOf(view, why.head)}’s commit is no longer on GitHub.`,
+      };
+    case 'notFetched':
+      return { title, reason: 'The local copy doesn’t have it.' };
+    case 'noBase':
+      return { title, reason: `${labelOf(view, why.head)}’s base isn’t known.` };
+    case 'unrelated':
+      return {
+        title,
+        reason: `${labelOf(view, why.head)} shares no history with its base branch.`,
+      };
+    case 'tooLarge':
+      return {
+        title,
+        reason: `The changes are over the ${Math.round(why.limit / 2 ** 20)} MB limit.`,
+      };
+    case 'local':
+      return { title, reason: 'The local copy can’t be used.' };
+    case 'unknown':
+      return { title, reason: undefined };
+    default:
+      throw new Error(`A reason Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
+  }
+}
+
+/** {@link problemWords} on one line, the reason after the title. */
+export function problemLine(view: ComparisonView, problem: RevisionsProblem): string {
+  const { title, reason } = problemWords(view, problem);
+  return reason === undefined ? title : `${title} · ${reason}`;
 }
 
 /**
@@ -290,7 +339,7 @@ export function noteOf(view: ComparisonView | undefined, pickerKey = 'gv'): Note
   ];
   let tone: Note['tone'] = 'plain';
   if (view.problem !== null) {
-    parts.push(view.problem);
+    parts.push(problemLine(view, view.problem));
     tone = 'warn';
   } else if (view.replay === 'conflicted') {
     const from = comparison.from === null ? 'the base' : labelOf(view, comparison.from);

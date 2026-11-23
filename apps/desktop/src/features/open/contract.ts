@@ -5,6 +5,7 @@
 
 import { z } from 'zod';
 
+import { cause } from '../../ipc/cause.ts';
 import { defineContract, reply } from '../../ipc/contract.ts';
 import { login } from '../accounts/contract.ts';
 import { helpLink, pullState } from '../tab/contract.ts';
@@ -60,25 +61,8 @@ export const refusal = z.enum([
 ]);
 export type Refusal = z.output<typeof refusal>;
 
-/**
- * Why GitHub didn't say whether an account can see a pull request: no connection, GitHub's own
- * error, no answer in time, its rate limit (resetting at `resets`, in milliseconds since the Unix
- * epoch, when it said), an account signed out or whose sign-in can't be read, an organization that
- * requires single sign-on or hasn't approved Lo, or something else. The window words it with the
- * guide's causes (`window/explain.ts`).
- */
-export const cause = z.discriminatedUnion('kind', [
-  z.strictObject({ kind: z.literal('offline') }),
-  z.strictObject({ kind: z.literal('github') }),
-  z.strictObject({ kind: z.literal('timeout') }),
-  z.strictObject({ kind: z.literal('rateLimit'), resets: z.number().nullable() }),
-  z.strictObject({ kind: z.literal('signedOut'), login }),
-  z.strictObject({ kind: z.literal('unreadable'), login }),
-  z.strictObject({ kind: z.literal('sso'), org: z.string() }),
-  z.strictObject({ kind: z.literal('unapproved'), org: z.string() }),
-  z.strictObject({ kind: z.literal('unknown') }),
-]);
-export type Cause = z.output<typeof cause>;
+/** Why GitHub didn't say whether an account can see a pull request, as every error says it. */
+export { cause, type Cause } from '../../ipc/cause.ts';
 
 /**
  * Why the open box can't open a pull request:

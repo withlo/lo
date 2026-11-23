@@ -1,11 +1,14 @@
 import { expect, test } from 'vitest';
 
 import {
+  causeOf,
   classifyNetworkError,
+  classifyProxy,
   GithubError,
   helpLink,
   MAX_RETRY_AFTER,
   parseSsoHeader,
+  saidBy,
   type GithubErrorDetail,
   type NetworkFailure,
 } from './errors.ts';
@@ -403,4 +406,100 @@ test('an error Lo can’t put in words keeps its detail and cause, with a plain 
     expect(error.detail).toBe(given);
     expect(error.cause).toBe(cause);
   }
+});
+
+test('said is what github said, as it came', () => {
+  expect(
+    new GithubError({ kind: 'api', status: 502, message: 'Bad gateway', errors: [] }).said(),
+  ).toBe('502 Bad Gateway\nBad gateway');
+  expect(
+    new GithubError({ kind: 'api', status: 500, message: 'HTTP 500', errors: [] }).said(),
+  ).toBe('500 Internal Server Error');
+  expect(new GithubError({ kind: 'unauthorized', message: 'Bad credentials' }).said()).toBe(
+    'Bad credentials',
+  );
+  const graphql = new GithubError({
+    kind: 'graphql',
+    errors: [
+      { message: 'One', path: [] },
+      { message: 'Two', path: [] },
+    ],
+  });
+  expect(graphql.said()).toBe('One\nTwo');
+  // What GitHub didn't say keeps the words that say what happened.
+  expect(new GithubError({ kind: 'refusedUrl', host: 'example.com' }).said()).toContain(
+    'example.com',
+  );
+});
+
+/** A used-up rate limit, resetting at `reset` or after `retryAfter` seconds, or with neither. */
+function rateLimit(reset?: number, retryAfter?: number): GithubError {
+  return new GithubError({
+    kind: 'rateLimited',
+    message: 'x',
+    secondary: false,
+    reset,
+    retryAfter,
+  });
+}
+
+test('a cause is the guides, with what words it', () => {
+  const now = 1_700_000_000_000;
+  expect(causeOf(network('offline'))).toEqual({ kind: 'offline' });
+  expect(causeOf(network('lost'))).toEqual({ kind: 'timeout' });
+  expect(causeOf(network('tunnel'))).toEqual({ kind: 'proxy', why: 'refused' });
+  // Refused with no proxy to blame: TLS, so a certificate.
+  expect(causeOf(network('refused'))).toEqual({ kind: 'certificate' });
+  const signIn = new GithubError({
+    kind: 'network',
+    failure: 'refused',
+    message: 'x',
+    proxy: 'signIn',
+  });
+  expect(causeOf(signIn)).toEqual({ kind: 'proxy', why: 'signIn' });
+  expect(causeOf(api(500))).toEqual({ kind: 'github' });
+  // An answer Lo couldn't read, or whose pages don't fit together, is GitHub's error too.
+  expect(causeOf(new GithubError({ kind: 'decode', message: 'no data' }))).toEqual({
+    kind: 'github',
+  });
+  expect(
+    causeOf(new GithubError({ kind: 'inconsistent', message: 'a cursor that stays' })),
+  ).toEqual({ kind: 'github' });
+  expect(causeOf(rateLimit(1_700_000_100))).toEqual({
+    kind: 'rateLimit',
+    resets: 1_700_000_100_000,
+  });
+  expect(causeOf(rateLimit(undefined, 30), { now })).toEqual({
+    kind: 'rateLimit',
+    resets: now + 30_000,
+  });
+  expect(causeOf(rateLimit())).toEqual({ kind: 'rateLimit', resets: null });
+  const refused = new GithubError({ kind: 'unauthorized', message: 'Bad credentials' });
+  expect(causeOf(refused, { login: 'rozed-bot' })).toEqual({
+    kind: 'signedOut',
+    login: 'rozed-bot',
+  });
+  expect(causeOf(refused)).toEqual({ kind: 'unknown' });
+  const missing = new GithubError({ kind: 'notFound', message: 'Not Found' });
+  expect(causeOf(missing, { login: 'rozed-bot' })).toEqual({ kind: 'hidden', login: 'rozed-bot' });
+  expect(causeOf(missing)).toEqual({ kind: 'private', signedIn: false });
+  const sso = new GithubError({ kind: 'ssoRequired', message: 'x' });
+  expect(causeOf(sso, { owner: 'rozed-dev' })).toEqual({ kind: 'sso', org: 'rozed-dev' });
+  // A GitHub error that caused another is found under it; anything else has no cause.
+  expect(causeOf(new Error('reading', { cause: api(502) }))).toEqual({ kind: 'github' });
+  expect(causeOf(new Error('nothing of GitHub'))).toEqual({ kind: 'unknown' });
+  expect(saidBy(new Error('reading', { cause: api(502) }))).toBe('502 Bad Gateway\nx');
+});
+
+/** A write a proxy stopped, as Lo's own writes throw it, with its code. */
+function stopped(code: string): Error {
+  return Object.assign(new Error('the proxy'), { name: 'ProxyStopped', code });
+}
+
+test('a proxy is why when it stopped the request', () => {
+  expect(classifyProxy(stopped('ERR_PROXY_AUTH_REQUESTED'))).toBe('signIn');
+  expect(classifyProxy(stopped('ERR_NO_SUPPORTED_PROXIES'))).toBe('unsupported');
+  expect(classifyProxy(stopped('ECONNREFUSED'))).toBe('refused');
+  expect(classifyProxy(chromiumFailure('ERR_TUNNEL_CONNECTION_FAILED'))).toBe('refused');
+  expect(classifyProxy(nodeFailure('ECONNREFUSED'))).toBeUndefined();
 });

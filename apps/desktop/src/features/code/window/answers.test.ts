@@ -21,6 +21,7 @@ import {
   noDefinition,
   noHints,
   noneFound,
+  NOT_YET,
   notYet,
   outlineRows,
   peekOf,
@@ -62,16 +63,16 @@ describe('what the status bar says', () => {
   });
 
   it('says why code features can’t answer before the local copy, or without git', () => {
-    expect(notYet(undefined)).toBe('The syntax index waits for the local copy.');
-    expect(notYet({ kind: 'fetching', progress: null, attempt: 1 })).toBe(
-      'The syntax index waits for the local copy.',
+    expect(notYet(undefined)).toBe('waiting');
+    expect(notYet({ kind: 'fetching', progress: null, attempt: 1 })).toBe('waiting');
+    expect(
+      notYet({ kind: 'noGit', git: { status: 'missing', install: { commands: [], page: null } } }),
+    ).toBe('noGit');
+    // What Git said is the local copy's own Details, never in the line.
+    expect(notYet({ kind: 'failed', failure: 'diskFull', details: 'the disk is full' })).toBe(
+      'notFetched',
     );
-    expect(notYet({ kind: 'noGit', message: 'No git.', install: '' })).toBe(
-      'Code features need git.',
-    );
-    expect(notYet({ kind: 'failed', failure: 'diskFull', message: 'the disk is full' })).toBe(
-      'Code features need the local copy, which Lo couldn’t fetch: the disk is full.',
-    );
+    expect(NOT_YET.notFetched).toBe('The local copy couldn’t be fetched');
     expect(
       notYet({ kind: 'ready', head: HEAD, base: HEAD, mergeBase: HEAD, offline: false }),
     ).toBeUndefined();

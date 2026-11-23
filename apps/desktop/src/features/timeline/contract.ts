@@ -5,6 +5,7 @@
 
 import { z } from 'zod';
 
+import { cause, details } from '../../ipc/cause.ts';
 import { defineContract, reply } from '../../ipc/contract.ts';
 import { tabId } from '../tab/contract.ts';
 
@@ -196,25 +197,18 @@ export const timeline = z.strictObject({
 export type Timeline = z.output<typeof timeline>;
 
 /**
- * Why a timeline couldn't be read: GitHub can't be reached now, as the account's poller says
- * (`offline`), or it answered with an error (`failed`), as anything else is.
- */
-export const timelineCause = z.enum(['offline', 'failed']);
-export type TimelineCause = z.output<typeof timelineCause>;
-
-/**
  * A view's timeline, as main has it: `loading` until it's read; `signIn` for a tab that acts as
  * nobody, which reads no timeline; `run` for a run of a stack's layers, which has none of its own;
  * `ready`; or `failed`, when it couldn't be read and nothing was read before, with why in `cause`,
- * the error's words in `problem`, and when it's read again by itself in `retryAt`, as `Date.now()`
- * counts, where that's known and the poller isn't `stalled`.
+ * what GitHub or the system said in `details`, and when it's read again by itself in `retryAt`, as
+ * `Date.now()` counts, where that's known and the poller isn't `stalled`.
  */
 export const timelineView = z.strictObject({
   id: tabId,
   status: z.enum(['loading', 'signIn', 'run', 'ready', 'failed']),
   timeline: timeline.nullable(),
-  cause: timelineCause.nullable(),
-  problem: z.string().nullable(),
+  cause: cause.nullable(),
+  details: details.nullable(),
   retryAt: z.number().int().nonnegative().nullable(),
   /**
    * Whether the account's poller reads nothing now: GitHub can't be reached, the rate limit holds

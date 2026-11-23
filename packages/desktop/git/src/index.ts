@@ -32,12 +32,17 @@ export * from './errors.ts';
 export { serverGitEnvironment } from './environment.ts';
 export {
   defaultPlaces,
+  describeDistrust,
+  type Distrust,
+  distrustOf,
   findGit,
   type FindOptions,
   gitAt,
   type GitStatus,
+  type Install,
   installAdvice,
   isExecutableFile,
+  LAZY_FETCH_VERSION,
   type Places,
   whyDistrusted,
 } from './find.ts';

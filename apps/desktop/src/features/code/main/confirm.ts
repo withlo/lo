@@ -11,8 +11,9 @@
 // never says it couldn't trust what it then trusts. Nothing here calls Electron, so it runs under
 // unit tests.
 
-import type { PullRequestRepositories } from '@lo/github';
+import { causeOf, saidBy, type PullRequestRepositories } from '@lo/github';
 
+import { detailsOf, githubCause } from '../../../ipc/cause.ts';
 import { IpcError } from '../../../ipc/contract.ts';
 import { Unwritten } from '../../settings/service.ts';
 import type { Asked, Trusting } from '../contract.ts';
@@ -147,30 +148,20 @@ export function subjectOf(
   const { base, head, isCrossRepository } = repositories;
   for (const named of [base, head]) {
     if (named && !repoName.safeParse(named.name).success) {
-      throw new IpcError(
-        'refused',
-        "GitHub named a repository of this PR in a way Lo doesn't expect, so Lo didn't ask about it.",
-      );
+      // What GitHub named it, behind Details.
+      throw new IpcError('unexpectedName', named.name.slice(0, 200));
     }
   }
   if (!sameName(base.name, request.repo)) {
-    throw new IpcError(
-      'changed',
-      `GitHub calls this repository ${base.name} now, so Lo didn't ask about ${request.repo}. Reopen its tab to trust it.`,
-    );
+    // The name GitHub has for it now, which the window says.
+    throw new IpcError('renamed', base.name);
   }
   if (request.pull === null) return { kind: 'repo', repo: base.name, id: base.id };
   if (!isCrossRepository) {
-    throw new IpcError(
-      'refused',
-      `This PR's branch is in ${base.name} itself, so Lo trusts it with the repo. Trust the repo instead.`,
-    );
+    throw new IpcError('notFork', '');
   }
   if (!head) {
-    throw new IpcError(
-      'refused',
-      "GitHub no longer has the fork this PR comes from, so Lo can't tell whose code it is.",
-    );
+    throw new IpcError('forkGone', '');
   }
   return {
     kind: 'pull',
@@ -184,18 +175,13 @@ export function subjectOf(
 
 /**
  * Why the entry wasn't written, for the window, which says it where the reader asked: what the
- * settings file holds, which editing it fixes (`settingsFile`), then what to do, or anything else
- * (`unsaved`), each in a sentence or two. `pull` is whether the reader asked to trust a pull request.
+ * settings file holds, which editing it fixes (`settingsFile`), or anything else (`unsaved`), with
+ * what was wrong behind Details.
  */
-export function unsaved(error: unknown, pull: boolean): IpcError {
-  if (error instanceof Unwritten && error.inFile) {
-    return new IpcError(
-      'settingsFile',
-      `${error.why} Fix that, then trust the ${pull ? 'PR' : 'repo'} again.`,
-    );
-  }
+export function unsaved(error: unknown): IpcError {
+  if (error instanceof Unwritten && error.inFile) return new IpcError('settingsFile', error.why);
   if (error instanceof Unwritten) return new IpcError('unsaved', error.why);
-  return new IpcError('unsaved', "Lo couldn't write the settings file.");
+  return new IpcError('unsaved', error instanceof Error ? error.message : '');
 }
 
 /** The ask under way: what it's about, in which window, how far it has got, and what ends it. */
@@ -227,8 +213,8 @@ export class TrustAsker<W extends AskWindow = AskWindow> {
    * window, or the view, closed meanwhile. Throws an `IpcError` for a request it won't ask, with no
    * window to ask in, and while it's asking already, so two requests never share a dialog: `busy`
    * for the same view, which asks already, and `asking` for another, saying which, once its dialog
-   * is brought forward; for GitHub's read failing or taking too long (`unread`); and, once the
-   * reader said "Trust", for an entry it couldn't write ({@link unsaved}). Meanwhile `progress`
+   * is brought forward; and, once the reader said "Trust", for an entry it couldn't write
+   * ({@link unsaved}). GitHub's read failing or taking too long answers `unread`, by its cause. Meanwhile `progress`
    * hears each step, and that it's over.
    */
   async ask(request: TrustRequest, window: W | undefined): Promise<Asked> {
@@ -239,10 +225,8 @@ export class TrustAsker<W extends AskWindow = AskWindow> {
       }
       if (current.step === 'asking' && current.window) this.#options.focus?.(current.window);
       const { repo, pull } = current.request;
-      throw new IpcError(
-        'asking',
-        `Lo is already asking whether to trust ${pull === null ? repo : `${repo}#${pull}`}. Answer that first, then try again.`,
-      );
+      // What it's asking about, which the window names.
+      throw new IpcError('asking', pull === null ? repo : `${repo}#${pull}`);
     }
     const asked: Current<W> = { request, window, gone: new AbortController() };
     this.#current = asked;
@@ -280,6 +264,7 @@ export class TrustAsker<W extends AskWindow = AskWindow> {
       step('reading');
       const repositories = await this.#read(view, gone.signal);
       if (!repositories || gone.signal.aborted) return 'cancelled';
+      if ('kind' in repositories) return repositories;
       const subject = subjectOf(request, view, repositories);
       step('asking');
       const answer = await options.confirm(window, questionFor(subject), gone.signal);
@@ -290,7 +275,7 @@ export class TrustAsker<W extends AskWindow = AskWindow> {
       try {
         await options.write(entryFor(subject, options.now?.() ?? new Date()));
       } catch (error) {
-        throw unsaved(error, request.pull !== null);
+        throw unsaved(error);
       }
       return 'trusted';
     } finally {
@@ -301,9 +286,13 @@ export class TrustAsker<W extends AskWindow = AskWindow> {
 
   /**
    * Reads `view`'s repositories from GitHub, or nothing once `gone` aborts first. The read is given
-   * up on then, or once the limit passes, which fails as `unread`.
+   * up on then, or once the limit passes, which is `unread` as GitHub not answering in time; any
+   * other failure is `unread` by GitHub's cause.
    */
-  async #read(view: AskedView, gone: AbortSignal): Promise<PullRequestRepositories | undefined> {
+  async #read(
+    view: AskedView,
+    gone: AbortSignal,
+  ): Promise<PullRequestRepositories | Extract<Asked, { kind: 'unread' }> | undefined> {
     const reading = new AbortController();
     const giveUp = () => reading.abort(new Error('Nobody waits on it.'));
     const timer = setTimeout(giveUp, this.#options.readLimit ?? READ_LIMIT);
@@ -315,12 +304,16 @@ export class TrustAsker<W extends AskWindow = AskWindow> {
         });
         this.#options.read(view, reading.signal).then(resolve, reject);
       });
-    } catch {
+    } catch (error) {
       if (gone.aborted) return undefined;
-      throw new IpcError(
-        'unread',
-        "Lo couldn't read from GitHub which repo this is, so it didn't ask. Try again.",
-      );
+      // Why, by its cause, with what GitHub or the system said behind Details.
+      if (reading.signal.aborted) return { kind: 'unread', cause: { kind: 'timeout' } };
+      const [owner] = view.repo.split('/');
+      return {
+        kind: 'unread',
+        cause: githubCause(causeOf(error, { owner })),
+        details: detailsOf(saidBy(error)),
+      };
     } finally {
       clearTimeout(timer);
       gone.removeEventListener('abort', giveUp);

@@ -179,6 +179,22 @@ interface Check {
 }
 
 /**
+ * An account was removed, but its token couldn't be deleted from where Lo keeps tokens, as the
+ * system said (`said`): it's still there, and nothing deletes it later.
+ */
+export class TokenLeftover extends Error {
+  override name = 'TokenLeftover';
+  readonly login: string;
+  readonly said: string;
+
+  constructor(login: string, said: string, cause: unknown) {
+    super(`removed ${login}, but couldn't delete its token: ${said}`, { cause });
+    this.login = login;
+    this.said = said;
+  }
+}
+
+/**
  * Every account Lo is signed in to. Listeners hear of what happens to them
  * ({@link Accounts.onEvent}) and of any change to the list ({@link Accounts.onChange}).
  *
@@ -360,10 +376,7 @@ export class Accounts {
     this.#clients.delete(lower);
     this.#cancelRenewal(lower);
     this.#changed();
-    if (left !== undefined) {
-      const message = `removed ${login}, but couldn't delete its token: ${describeError(left.error)}`;
-      throw new Error(message, { cause: left.error });
-    }
+    if (left !== undefined) throw new TokenLeftover(login, describeError(left.error), left.error);
   }
 
   /**

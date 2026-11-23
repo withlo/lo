@@ -202,9 +202,7 @@ test('opens lo:// links and a second launch’s links as a typed link, and says 
       );
     });
     await expect(page.getByRole('tablist', { name: 'Tabs' }).getByRole('tab')).toHaveCount(2);
-    await expect(
-      page.getByRole('alert').filter({ hasText: "Lo can't open this pull request." }),
-    ).toBeVisible();
+    await expect(page.getByRole('alert').filter({ hasText: 'Can’t open #9999' })).toBeVisible();
   });
 
   await test.step('installs the lo command, which hands a link to the Lo running', async () => {

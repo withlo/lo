@@ -21,6 +21,13 @@ import { folder, published, replayGithub, testGit, TOKEN } from './test/support.
 const E2E = { owner: 'rozed-dev', repo: 'e2e', number: APP_PULL.number };
 const TITLE = "App: the pull request Lo's end-to-end tests open";
 
+/** GitHub's own addresses, which the cassettes were recorded from. */
+const GITHUB: GitHubUrls = {
+  api: 'https://api.github.com',
+  web: 'https://github.com',
+  uploads: 'https://uploads.github.com',
+};
+
 /** A tab for `link`, as the watcher makes one, with what it keeps and sends collected. */
 function tabFor(options: {
   link?: { owner: string; repo: string; number: number };
@@ -132,6 +139,31 @@ function gated(cassette: string) {
   };
 }
 
+/** GitHub's answer to nobody's read of a private repository's: it has no such pull request. */
+function hidden(): Promise<Response> {
+  return Promise.resolve(Response.json({ message: 'Not Found' }, { status: 404 }));
+}
+
+/**
+ * The tab's GitHub, with no account until `add`, and a GitHub that answers nobody's reads as
+ * a private repository's: it has no such pull request.
+ */
+function unseen() {
+  const replay = replayGithub('app_e2e');
+  let added = false;
+  const github: TabGithub = {
+    ...replay.github,
+    anonymous: new GithubClient({ fetch: hidden, urls: GITHUB }),
+    accounts: () => (added ? replay.github.accounts() : Promise.resolve([])),
+  };
+  return {
+    github,
+    add: () => {
+      added = true;
+    },
+  };
+}
+
 describe('a pull request’s tab', { timeout: 60_000 }, () => {
   it('opens as the account that can see it, with its header, files and local copy at the head it opened at', async () => {
     const { github } = replayGithub('app_e2e');
@@ -205,10 +237,7 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
     tab.show();
     await expect
       .poll(() => sent.pull?.problem)
-      .toEqual({
-        kind: 'notFound',
-        message: "GitHub has no pull request rozed-dev/e2e#9999, or rozed-bot can't see it.",
-      });
+      .toMatchObject({ kind: 'notFound', cause: { kind: 'hidden', login: 'rozed-bot' } });
     expect(sent.pull?.loading).toBe(false);
     expect(sent.pull?.header).toBe(null);
     expect(sent.local).toEqual({ kind: 'waiting' });
@@ -226,9 +255,8 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
     tab.show();
     await expect.poll(() => sent.pull?.problem?.kind).toBe('notFound');
     expect(sent.pull?.acting).toEqual({ kind: 'anonymous' });
-    expect(sent.pull?.problem).toMatchObject({
-      message: expect.stringContaining('GitHub has no public pull request rozed-dev/gone#1'),
-    });
+    // The account can't see it either, which the reason says.
+    expect(sent.pull?.problem).toMatchObject({ cause: { kind: 'private', signedIn: true } });
     // Nobody is remembered for it.
     expect(kept.filter((change) => change.login !== undefined)).toEqual([]);
     tab.close();
@@ -577,6 +605,45 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
     tab.close();
   });
 
+  describe('opened as nobody, of a pull request nobody can see without signing in', () => {
+    it('opens again as the account added, which may see it', async () => {
+      const { github, add } = unseen();
+      const git = await testGit();
+      const { tab, sent } = tabFor({ github, git });
+      tab.show();
+      await expect
+        .poll(() => sent.pull?.problem)
+        .toMatchObject({ kind: 'notFound', cause: { kind: 'private', signedIn: false } });
+      expect(sent.pull?.acting).toEqual({ kind: 'anonymous' });
+
+      // Signed in: the tab works out its account again, and the account sees it.
+      add();
+      tab.accountAdded();
+      await expect.poll(() => sent.pull?.acting).toEqual({ kind: 'account', login: 'rozed-bot' });
+      await expect.poll(() => sent.pull?.header?.title).toBe(TITLE);
+      expect(sent.pull?.problem).toBe(null);
+      tab.close();
+    });
+
+    it('works out its account again on Try again, and opens nothing else again on a sign-in', async () => {
+      const { github, add } = unseen();
+      const git = await testGit();
+      const { tab, sent } = tabFor({ github, git });
+      tab.show();
+      await expect.poll(() => sent.pull?.problem?.kind).toBe('notFound');
+      add();
+      tab.retry();
+      await expect.poll(() => sent.pull?.acting).toEqual({ kind: 'account', login: 'rozed-bot' });
+      await expect.poll(() => sent.pull?.header?.title).toBe(TITLE);
+      // Open as the account, a tab has nothing to look for again: another sign-in leaves it be.
+      const before = sent.pulls.length;
+      tab.accountAdded();
+      expect(sent.pulls.length).toBe(before);
+      expect(sent.pull?.acting).toEqual({ kind: 'account', login: 'rozed-bot' });
+      tab.close();
+    });
+  });
+
   it('says what reading it ran into, and an organization’s link to fix it', async () => {
     const replay = replayGithub('app_e2e');
     const git = await testGit();
@@ -598,7 +665,8 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
       .poll(() => sent.pull?.problem)
       .toEqual({
         kind: 'blocked',
-        message: expect.stringContaining('SAML'),
+        cause: { kind: 'sso', org: 'rozed-dev' },
+        details: expect.stringContaining('SAML'),
         links: [
           {
             label: 'Authorize on GitHub',
@@ -630,7 +698,7 @@ describe('working out the account while GitHub doesn’t answer', () => {
     web: 'https://github.com',
     uploads: 'https://uploads.github.com',
   };
-  const status = { status: 'missing', message: "Lo can't find git.", install: 'Get it.' } as const;
+  const status = { status: 'missing', install: { commands: ['xcode-select --install'] } } as const;
   const noGit: LocalGit = {
     status,
     cache: undefined,

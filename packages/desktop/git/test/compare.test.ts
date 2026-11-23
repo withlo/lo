@@ -1121,7 +1121,7 @@ test('an aborted comparison stops its replay', async () => {
     before: `case " $* " in *" merge-tree "*) touch '${started}'; sleep 60;; esac`,
   });
   const found = await gitAt(program, { env: process.env, platform: process.platform });
-  if (found.status !== 'found') throw new Error(found.message);
+  if (found.status !== 'found') throw new Error(`found ${found.status}`);
   const { f, old, now } = await contentMerges(found.git);
   const controller = new AbortController();
   const reason = new Error('the comparison was closed');

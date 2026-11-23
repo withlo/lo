@@ -4,11 +4,20 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { filterHelp, type HelpGroup, type KeymapError } from './commands/index.ts';
 import { useTakeFocus } from './focus.ts';
 import { Key } from './Key.tsx';
+import { Problem } from './Problem.tsx';
 import { useReturnFocus } from './returnFocus.ts';
 import { reveal } from './reveal.ts';
 
 /** How many of the keymap file's errors key help lists. A file can have thousands of lines. */
 export const ERRORS_SHOWN = 20;
+
+/** What went wrong with the keymap file as a whole, as an error says it. */
+export interface KeyHelpProblem {
+  readonly title: string;
+  readonly reason?: string | undefined;
+  /** What the system said, as it came. */
+  readonly details?: string | undefined;
+}
 
 export interface KeyHelpProps {
   open: boolean;
@@ -17,8 +26,11 @@ export interface KeyHelpProps {
   groups: readonly HelpGroup[];
   /** The keymap file's lines Lo couldn't use. Only the first few are listed. */
   errors?: readonly KeymapError[] | undefined;
-  /** What went wrong with the keymap file as a whole, such as being too big to read. */
-  problem?: string | undefined;
+  /**
+   * What went wrong with the keymap file as a whole, as an error says it: its title, why, and what
+   * the system said, behind Details.
+   */
+  problem?: KeyHelpProblem | undefined;
   /** A command to show: its row is marked and scrolled to. */
   show?: string | undefined;
   /** Opens the keymap file. Without it, key help offers no button for it. */
@@ -118,12 +130,7 @@ export function KeyHelp({
             </div>
             <div className="flex min-h-0 flex-col gap-12 overflow-auto ps-20 pe-20 pt-8 pb-16">
               {problem !== undefined && (
-                <div
-                  role="alert"
-                  className="rounded-md border border-danger-border bg-danger-bg px-12 py-8"
-                >
-                  {problem}
-                </div>
+                <Problem title={problem.title} reason={problem.reason} details={problem.details} />
               )}
               {errors.length > 0 && (
                 <div

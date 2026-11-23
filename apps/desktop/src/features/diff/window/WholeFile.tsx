@@ -17,12 +17,13 @@ import {
   MiddlePlaceholder,
   tabState,
   useLocalCopy,
+  usePull,
   useTabState,
   type PullTab,
 } from '../../tab/window/shared.ts';
 import type { TreePath } from '../../tree/contract.ts';
 import { followFile } from '../../tree/window/shared.ts';
-import type { FileVersions, Version } from '../contract.ts';
+import type { FileVersions, Version, WholeRefusal } from '../contract.ts';
 import { hintsShown, restedIn } from './code.ts';
 import { shownPath } from './files.ts';
 import { usePage } from './page.ts';
@@ -38,6 +39,7 @@ import {
   reads,
   readWhole,
   setWholeDrawn,
+  tooLargeReason,
   wholeWork,
 } from './whole.ts';
 
@@ -477,10 +479,16 @@ function Note({
           It’s {sizeText(content.size)} of binary data, which Lo doesn’t show.
         </Said>
       );
+    case 'tooLarge':
+      return (
+        <Said title="Lo doesn’t show this file" actions={github}>
+          {tooLargeReason(content.why)}
+        </Said>
+      );
     case 'refused':
       return (
         <Said title="Lo doesn’t show this file" actions={github}>
-          {sentence(content.why)}
+          <Refused why={content.why} tab={tab} />
         </Said>
       );
     case 'failed':
@@ -495,10 +503,25 @@ function Note({
   }
 }
 
-/** `text` as a sentence: its first letter capital, and a full stop at its end. */
-function sentence(text: string): string {
-  const capital = text.charAt(0).toUpperCase() + text.slice(1);
-  return /[.!?]$/.test(capital) ? capital : `${capital}.`;
+/** Why Lo won't show a file whole, besides its size: the base branch by name, as code. */
+function Refused({ why, tab }: { why: WholeRefusal; tab: PullTab }) {
+  const base = usePull(tab.id)?.header?.base.branch;
+  switch (why) {
+    case 'compared':
+      return 'The changes are over the size limit.';
+    case 'unrelated':
+      return base === undefined ? (
+        'This pull request shares no history with its base branch.'
+      ) : (
+        <>
+          This pull request shares no history with <code>{base}</code>.
+        </>
+      );
+    case 'submodule':
+      return 'It’s a submodule.';
+    default:
+      throw new Error(`A refusal Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
+  }
 }
 
 /** A note in the middle of the view, with what can be done about it. */

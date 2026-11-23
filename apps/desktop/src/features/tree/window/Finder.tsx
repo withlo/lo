@@ -31,6 +31,7 @@ import {
   type FinderState,
 } from './finding.ts';
 import { states } from './store.ts';
+import { oneLine, problemWords, unlistedWords } from './words.ts';
 
 const FILE_ICON = (
   <svg className="lo-i text-fg-muted" viewBox="0 0 16 16" aria-hidden="true">
@@ -127,14 +128,13 @@ function emptyOf(state: FinderState, tree: TreeState | undefined): ReactNode {
 function noteOf(tree: TreeState | undefined): string | undefined {
   if (!tree) return undefined;
   const notes: string[] = [];
-  if (tree.listing.kind === 'changed')
-    notes.push(`Only changed files can be found. ${tree.listing.why}`);
+  if (tree.listing.kind === 'changed') notes.push(oneLine(unlistedWords(tree.listing.why)));
   if (tree.omitted > 0) {
     notes.push(
       `${tree.omitted.toLocaleString('en')} unchanged ${tree.omitted === 1 ? 'file has a path' : 'files have paths'} longer than ${PATH_LIMIT.toLocaleString('en')} bytes, which the finder leaves out.`,
     );
   }
-  if (tree.problem !== null) notes.push(tree.problem);
+  if (tree.problem !== null) notes.push(oneLine(problemWords(tree.problem)));
   return notes.length === 0 ? undefined : notes.join(' ');
 }
 

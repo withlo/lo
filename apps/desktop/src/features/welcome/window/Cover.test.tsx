@@ -184,9 +184,7 @@ const ghAccount = (login: string): GhAccount => ({
 
 const missing: GitInfo = {
   status: 'missing',
-  message: "Lo can't find git.",
-  install:
-    'Install or update the Xcode Command Line Tools: run `xcode-select --install` in Terminal.',
+  install: { commands: ['xcode-select --install'], page: null },
 };
 
 /** Main as the welcome finds it: not finished, no gh, git found, nothing installed. */
@@ -197,11 +195,7 @@ function main(given: Readonly<Record<string, (input: unknown) => unknown>> = {})
     {
       'welcome.state': () => ({ finished: false }),
       'welcome.finish': () => undefined,
-      'accounts.ghAccounts': () => ({
-        kind: 'missing',
-        message: 'Lo found no gh.',
-        passedOver: false,
-      }),
+      'accounts.ghAccounts': () => ({ kind: 'missing' }),
       'open.command': () => ({ installed: [] }),
       'app.info': () => ({ git: { status: 'found', version: '2.54.0' }, nonce: '' }),
     },
@@ -575,14 +569,17 @@ describe('the first step', () => {
         looked = true;
       },
     });
-    expect(onScreen().textContent).toContain("Lo can't find git.");
+    expect(onScreen().textContent).toContain('Can’t find Git');
     const code = [...onScreen().querySelectorAll('.code-small')].map((each) => each.textContent);
     expect(code).toContain('xcode-select --install');
     click(button('Check again'));
     await settle();
     expect(looked).toBe(true);
     // Nothing new: a screen reader hears the notice again.
-    expect(onScreen().querySelector('[role="status"]')?.textContent).toBe("Lo can't find git.");
+    const said = [...onScreen().querySelectorAll('[role="status"]')].map(
+      (each) => each.textContent,
+    );
+    expect(said).toContain('Can’t find Git');
     // What Lo finds reaches the window on `app.git`, and the notice goes.
     act(() => bridge.push('app.git', { status: 'found', version: '2.54.0' }));
     expect(onScreen().textContent).not.toContain('Check again');
@@ -601,7 +598,7 @@ describe('the first step', () => {
     const alert = onScreen().querySelector('[role="alert"]');
     expect(alert?.textContent).toBe('Couldn’t check for Git');
     // How to get Git stays, and so does the button that looks again.
-    expect(onScreen().textContent).toContain("Lo can't find git.");
+    expect(onScreen().textContent).toContain('Can’t find Git');
     const code = [...onScreen().querySelectorAll('.code-small')].map((each) => each.textContent);
     expect(code).toContain('xcode-select --install');
     const buttons = [...onScreen().querySelectorAll('button')].map((each) => each.textContent);
@@ -610,7 +607,7 @@ describe('the first step', () => {
     click(button('Check again'));
     await settle();
     expect(onScreen().querySelector('[role="alert"]')).toBeNull();
-    expect(onScreen().textContent).toContain("Lo can't find git.");
+    expect(onScreen().textContent).toContain('Can’t find Git');
   });
 
   it('unmelds the mark as it opens, and draws it at rest when the reader comes back', async () => {

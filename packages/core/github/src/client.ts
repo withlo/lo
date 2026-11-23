@@ -3,6 +3,7 @@
 import type { TypedDocumentString } from './generated/graphql.ts';
 import {
   classifyNetworkError,
+  classifyProxy,
   GithubError,
   parseSsoHeader,
   type GithubErrorDetail,
@@ -587,7 +588,12 @@ export class GithubClient {
         );
       }
       throw new GithubError(
-        { kind: 'network', failure: this.#classify(error), message: describeThrown(error) },
+        {
+          kind: 'network',
+          failure: this.#classify(error),
+          message: describeThrown(error),
+          proxy: classifyProxy(error),
+        },
         { cause: error },
       );
     } finally {

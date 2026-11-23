@@ -3,7 +3,8 @@
 // what went wrong. Nothing here calls Electron or keeps state.
 
 import {
-  GithubError,
+  causeOf,
+  githubErrorIn,
   pullMerged,
   readPullSummary,
   readPullToOpen,
@@ -13,8 +14,10 @@ import {
   type PullRequest,
   type PullSummary,
   type PullToOpen,
-  type RepoAccount,
+  saidBy,
 } from '@lo/github';
+
+import { detailsOf, githubCause } from '../../../ipc/cause.ts';
 
 import type { Connection, Files, Header, Problem, PullState } from '../contract.ts';
 
@@ -162,13 +165,12 @@ export function connectionOf(
 
 /** Whether `error` says GitHub couldn't be reached, as opposed to an answer. */
 export function isUnreached(error: unknown): boolean {
-  const github = githubError(error);
-  return github?.detail.kind === 'network';
+  return githubErrorIn(error)?.detail.kind === 'network';
 }
 
 /** When a refusal for the rate limit says to try again, in milliseconds, if it's one. */
 export function rateLimitedUntil(error: unknown, now: number): number | undefined {
-  const github = githubError(error);
+  const github = githubErrorIn(error);
   if (github?.detail.kind !== 'rateLimited') return undefined;
   const { reset, retryAfter } = github.detail;
   if (retryAfter !== undefined) return now + retryAfter * 1000;
@@ -177,80 +179,41 @@ export function rateLimitedUntil(error: unknown, now: number): number | undefine
 }
 
 /**
- * What reading the pull request to open it ran into, as a problem the tab shows: not there, or
- * the account can't see it; blocked until the account's authorized, with GitHub's link; or
- * anything else, which Lo tries again at `retryAt`. Nothing for an error the poller's status says
- * already: GitHub out of reach, the rate limit or a refused token.
+ * What reading the pull request to open it ran into, as a problem the tab shows, with its cause
+ * and what GitHub said: not there, or the account can't see it (or, read without one, with
+ * `signedIn` saying whether any account is); blocked until the account's authorized, with
+ * GitHub's link; or anything else, which Lo tries again at `retryAt`. Nothing for an error the
+ * poller's status says already: GitHub out of reach, the rate limit or a refused token.
  */
 export function problemOf(
   error: unknown,
   pull: PullRef,
-  acting: { kind: 'account'; login: string } | { kind: 'anonymous'; canSignIn: boolean },
+  acting: { kind: 'account'; login: string } | { kind: 'anonymous'; signedIn: boolean },
   retryAt: number | undefined,
 ): Problem {
-  const github = githubError(error);
-  const name = pull.toString();
+  const github = githubErrorIn(error);
+  const login = acting.kind === 'account' ? acting.login : undefined;
+  const cause = githubCause(causeOf(error, { owner: pull.repo.owner, login }));
+  const details = detailsOf(saidBy(error));
   if (github) {
     const { detail } = github;
     const link = github.helpLink();
-    if (link) {
-      const message =
-        detail.kind === 'oauthAppRestricted'
-          ? restrictedMessage(detail.org ?? pull.repo.owner)
-          : github.message;
-      return { kind: 'blocked', message, links: [link] };
-    }
+    if (link) return { kind: 'blocked', cause, links: [link], details };
     if (detail.kind === 'notFound' || (detail.kind === 'api' && detail.status === 410)) {
       return {
         kind: 'notFound',
-        message:
+        cause:
           acting.kind === 'account'
-            ? `GitHub has no pull request ${name}, or ${acting.login} can't see it.`
-            : acting.canSignIn
-              ? `GitHub has no public pull request ${name}. If it's private, sign in with an account that can see it.`
-              : `GitHub has no public pull request ${name}.`,
+            ? { kind: 'hidden', login: acting.login }
+            : { kind: 'private', signedIn: acting.signedIn },
+        details,
       };
     }
   }
   return {
     kind: 'failed',
-    message: `Lo couldn't read ${name}: ${describe(error)}`,
+    cause,
+    details,
     retryAt: retryAt === undefined ? null : Math.round(retryAt),
   };
-}
-
-/**
- * What a tab says when an organization restricts third-party apps and hasn't approved Lo: GitHub
- * hides the organization's private repositories from Lo until an owner approves it, which the
- * person asks for on GitHub.
- */
-export function restrictedMessage(org: string): string {
-  return `${org} hasn't approved Lo, so GitHub hides its repositories from Lo. Ask for approval on GitHub, and GitHub emails ${org}'s owners.`;
-}
-
-/**
- * The organization that restricts Lo, when that's why no account Lo would use could check a
- * repository: among every account's problems, or the chosen account's alone.
- */
-export function restrictingOrg(found: RepoAccount): string | undefined {
-  const chosen = found.choice.kind === 'unavailable' ? found.choice.login : undefined;
-  for (const { login, error } of found.problems) {
-    if (chosen !== undefined && login.toLowerCase() !== chosen.toLowerCase()) continue;
-    const { detail } = error;
-    if (detail.kind === 'oauthAppRestricted') return detail.org ?? found.repo.owner;
-  }
-  return undefined;
-}
-
-/** The GitHub error `error` is, or was caused by. */
-function githubError(error: unknown): GithubError | undefined {
-  for (let at = error, depth = 0; at !== undefined && depth < 5; depth++) {
-    if (at instanceof GithubError) return at;
-    at = at instanceof Error ? at.cause : undefined;
-  }
-  return undefined;
-}
-
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

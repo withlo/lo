@@ -125,19 +125,20 @@ test("says why a pull request GitHub doesn't have, or one no account can see, ca
   page,
 }) => {
   await open(page, { ...E2E, number: 9999 });
-  const banner = page.getByRole('alert').filter({ hasText: "Lo can't open this pull request." });
-  await expect(banner).toContainText(
-    "GitHub has no pull request rozed-dev/e2e#9999, or rozed-bot can't see it.",
-  );
-  await expect(banner.getByRole('button', { name: 'Try again' })).toBeVisible();
+  const banner = page.getByRole('alert').filter({ hasText: 'Can’t open #9999' });
+  await expect(banner).toContainText('It doesn’t exist, or rozed-bot can’t see it.');
+  // Nothing to try again: it can be looked for on GitHub, or closed.
+  await expect(banner.getByRole('button', { name: 'Open on GitHub' })).toBeVisible();
+  await expect(banner.getByRole('button', { name: 'Close tab' })).toBeVisible();
   // The tab isn't busy: it's opened all it can.
   await expect(strip(page).getByRole('tab', { selected: true })).toHaveText('e2e #9999');
   await expect(strip(page).getByRole('tab', { selected: true })).not.toHaveAttribute('aria-busy');
 
   await open(page, { owner: 'rozed-dev', repo: 'gone', number: 1 });
-  await expect(
-    page.getByRole('alert').filter({ hasText: "Lo can't open this pull request." }),
-  ).toContainText('GitHub has no public pull request rozed-dev/gone#1.');
+  const gone = page.getByRole('alert').filter({ hasText: 'Can’t open #1' });
+  // Signed in, but no account can see it: nothing to sign in with.
+  await expect(gone).toContainText('It doesn’t exist, or none of your accounts can see it.');
+  await expect(gone.getByRole('button', { name: 'Close tab' })).toBeVisible();
   await expect(page.locator('header').first()).toContainText('Not signed in');
 });
 

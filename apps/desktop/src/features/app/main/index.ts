@@ -4,6 +4,7 @@ import { formatVersion, type GitStatus } from '@lo/git';
 import { app, BrowserWindow, nativeTheme, type WebContents } from 'electron';
 
 import { launch, query } from '../../../main/editor.ts';
+import { troubleOf } from '../../../main/git.ts';
 import { holdLimit, keymapEditor } from '../../../main/environment.ts';
 import { defineFeature } from '../../../main/features.ts';
 import { pageNonce } from '../../../main/security.ts';
@@ -52,11 +53,7 @@ function gitInfo(status: GitStatus | undefined): GitInfo {
   if (status.status === 'found') {
     return { status: 'found', version: formatVersion(status.git.version) };
   }
-  if (status.status === 'missing') {
-    return { status: 'missing', message: status.message, install: status.install };
-  }
-  const { version, check, message, install } = status;
-  return { status: 'tooOld', version: formatVersion(version), check, message, install };
+  return troubleOf(status);
 }
 
 export default defineFeature(contract, {
@@ -115,7 +112,8 @@ export default defineFeature(contract, {
           editor: keymapEditor({ packaged: app.isPackaged, env: process.env }),
         },
       );
-      if (!result.ok) throw new IpcError('unopened', result.reason);
+      // Why, as the code; what the system said, if anything, behind Details.
+      if (!result.ok) throw new IpcError(result.why, result.said ?? '');
     },
   },
   start({ publish, git, use }) {
