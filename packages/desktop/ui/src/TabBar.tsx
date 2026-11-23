@@ -137,16 +137,28 @@ const tab = cva(
   },
 );
 
+/** What a tab says, in one row. */
+const LABEL = 'flex min-w-0 flex-1 items-center gap-6';
+
 /**
- * What a tab says, in one row. While its close button shows, on the tab on screen or one under the
- * pointer, the row's end fades under the button, which takes no room from it: a tab reads the same
- * whether it's on screen or not.
+ * The end of what a tab says: its title, or the skeleton that stands for it. A tab that closes
+ * keeps room at its end for its close button, so nothing before the title, its number above all,
+ * ever sits under it. While the button shows, on the tab on screen or one under the pointer, the
+ * title fades out under it, which takes no more room from it: a tab reads the same whether it's on
+ * screen or not, and nothing moves as the pointer comes.
  */
-const label = cva('flex min-w-0 flex-1 items-center gap-6', {
+const tail = cva('flex-1', {
   variants: {
-    fade: { always: 'tab-fade', hover: 'group-hover:tab-fade', never: '' },
+    fade: {
+      always: 'min-w-control-h-sm tab-fade',
+      hover: 'min-w-control-h-sm group-hover:tab-fade',
+      never: 'min-w-0',
+    },
   },
 });
+
+/** Whether, and when, a tab's title fades under its close button. */
+type Fade = 'always' | 'hover' | 'never';
 
 /** A pull request's state, as its ball is named: as its pill in the header says it. */
 const STATE_NAMES = { open: 'Open', draft: 'Draft', merged: 'Merged', closed: 'Closed' } as const;
@@ -198,6 +210,8 @@ export function TabBar({
   const [landed, setLanded] = useState<Landed | undefined>(undefined);
   const measured = useRoom(list, plus, more, tabs.length);
   const room = measured?.fits;
+  // Read once for every tab: what the close buttons say doesn't depend on the tab.
+  const closeWords = wordsOf(useControl(commands?.close ?? ''), 'Close tab');
   const { tabs: ordered, moved } = bringIn(inOrder(tabs, landed), selected, room);
   const { shown, folded } = foldTabs(ordered, room);
   // The tab on screen, brought into the strip, moves there in the order, once each time, as it's
@@ -244,7 +258,7 @@ export function TabBar({
             count={ordered.length}
             onSelect={onSelect}
             onClose={onClose}
-            close={commands?.close}
+            words={closeWords}
             drag={drag(item, index)}
           />
         ))}
@@ -841,7 +855,7 @@ function TabItem({
   count,
   onSelect,
   onClose,
-  close,
+  words,
   drag,
 }: {
   tab: Tab;
@@ -850,13 +864,13 @@ function TabItem({
   count: number;
   onSelect: TabBarProps['onSelect'];
   onClose: TabBarProps['onClose'];
-  close: string | undefined;
+  /** What the close buttons say, the same on every tab. */
+  words: ReturnType<typeof wordsOf>;
   drag: TabDrag;
 }) {
   const { id } = item;
   const loading = item.kind === 'pull' && isLoading(item);
   const closable = item.kind !== 'recent';
-  const words = wordsOf(useControl(close ?? '', { kind: 'tab', tab: id }), 'Close tab');
   return (
     <div
       role="tab"
@@ -875,11 +889,12 @@ function TabItem({
         .filter(Boolean)
         .join(' ')}
     >
-      <span
-        className={label({ fade: !closable ? 'never' : selected ? 'always' : 'hover' })}
-        data-tab-label
-      >
-        <TabLabel tab={item} selected={selected} />
+      <span className={LABEL} data-tab-label>
+        <TabLabel
+          tab={item}
+          selected={selected}
+          fade={!closable ? 'never' : selected ? 'always' : 'hover'}
+        />
       </span>
       {closable && (
         // Over the end of the tab, taking no room: the one on screen always shows it, another only
@@ -923,8 +938,8 @@ function isLoading(item: PullTab): boolean {
  * number stays whole. The marks, the state's ball and the stack's count, are named in a tooltip
  * and to a screen reader.
  */
-function TabLabel({ tab: item, selected }: { tab: Tab; selected: boolean }) {
-  const title = `min-w-0 flex-1 truncate ${selected ? 'font-medium' : ''}`;
+function TabLabel({ tab: item, selected, fade }: { tab: Tab; selected: boolean; fade: Fade }) {
+  const title = `${tail({ fade })} truncate ${selected ? 'font-medium' : ''}`;
   switch (item.kind) {
     case 'pull':
       return (
@@ -946,7 +961,9 @@ function TabLabel({ tab: item, selected }: { tab: Tab; selected: boolean }) {
           <span className="lo-num flex-none text-fg-muted">#{item.number}</span>
           {item.stack !== undefined && <StackCount layers={item.stack} />}
           {isLoading(item) ? (
-            <Skeleton className="w-48 min-w-0 shrink" />
+            <span className={`${tail({ fade })} flex items-center`}>
+              <Skeleton className="w-48 min-w-0 shrink" />
+            </span>
           ) : (
             <span className={title}>{item.title}</span>
           )}

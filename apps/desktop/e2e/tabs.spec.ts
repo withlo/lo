@@ -610,6 +610,13 @@ test('⌘⇧A opens the tabs that don’t fit, to choose one by key', async ({ a
   await expect(shown(page)).toHaveText(last ?? '');
 });
 
+/** Checks that tab `tab`'s number ends before its close button starts. */
+async function clear(tab: Locator): Promise<void> {
+  const number = await tab.locator('span', { hasText: /^#\d+$/ }).boundingBox();
+  const close = await tab.getByRole('button', { name: 'Close tab' }).boundingBox();
+  expect((number?.x ?? Infinity) + (number?.width ?? 0)).toBeLessThanOrEqual(close?.x ?? 0);
+}
+
 /** How wide an element is, and whether its text is cut short. */
 function fits(locator: Locator) {
   return locator.evaluate((element) => ({
@@ -637,6 +644,11 @@ test('the narrowest tabs keep their repository, cut short, and their number whol
     expect((await fits(repository)).width).toBeGreaterThanOrEqual(12);
     expect(await fits(number)).toMatchObject({ cut: false });
   }
+  // The number ends before the close button starts, on the tab on screen and one under the pointer.
+  await clear(shown(page));
+  const other = strip(page).getByRole('tab', { selected: false }).first();
+  await other.hover();
+  await clear(other);
   await expectFits(page);
 });
 

@@ -4,13 +4,15 @@
 // in it from the start, and kept until the reader orders the files another way: what the files
 // say of themselves changing doesn't reorder them under the reader. A new order, or other files,
 // is a new view, which puts the cursor's line back where it was on the page, or else what was at
-// the top of the screen. What's drawn stays while the next view's files load, marked as at work in
-// the diff bar, and the next takes its place in one Swap. A view is drawn before the frame it's
-// first seen in, so a tab coming back on screen shows its code at once.
+// the top of the screen. What's drawn stays while the next view's files load, or while main waits
+// for what they need, marked as at work in the diff bar, and the next takes its place in one Swap;
+// a tab that comes back on screen meanwhile draws it again, from what the loader kept of it. A view
+// is drawn before the frame it's first seen in, so a tab coming back on screen shows its code at
+// once.
 // What arrives after it's drawn goes into the view in place (`drawing.ts`). The tree follows the
 // file on screen, and asks the diff to show the files it picks.
 
-import { HintButton, Spinner } from '@lo/ui';
+import { HintButton, Spinner, Swap } from '@lo/ui';
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 
 import { Slot } from '../../../window/slots.tsx';
@@ -25,7 +27,7 @@ import { MiddlePlaceholder, tabState, usePull, type PullTab } from '../../tab/wi
 import { orderIn, useOrderMode } from '../../tree/window/shared.ts';
 import { layout as layoutSetting, whitespace as whitespaceSetting } from '../settings.ts';
 import { draw, type Drawing, type Place } from './drawing.ts';
-import { inOrder, keptOrder, type KeptOrder, viewKey } from './files.ts';
+import { inOrder, keepsBox, keptOrder, type KeptOrder, viewKey } from './files.ts';
 import type { Snapshot } from './loader.ts';
 import { usePage } from './page.ts';
 import { placesFor } from './places.ts';
@@ -106,10 +108,18 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
       ready && order ? inOrder(ready.entries, order, (key) => loader.ids.find(key)) : undefined,
     [ready, order, loader],
   );
-  const key =
-    ready && entries
-      ? viewKey(`${ready.at}|${ready.comparison ?? ''}|${ready.compareFrom ?? ''}`, entries)
-      : undefined;
+  const key = ready && entries ? keyOf(ready, entries) : undefined;
+  // What was drawn before the loader started on what's next, in the order it was drawn in, while
+  // that's on its way: a tab that comes back on screen meanwhile draws it again, held.
+  const { held } = snapshot;
+  const again = useMemo(() => {
+    if (!held) return undefined;
+    const kept = keptOrder(orders.get(tab.id), comparisonOf(held), held.entries, mode, (changes) =>
+      orderIn(changes, mode),
+    );
+    const listed = inOrder(held.entries, kept.order, (found) => loader.ids.find(found));
+    return { ready: held, entries: listed, key: keyOf(held, listed) };
+  }, [held, mode, tab.id, loader]);
   // What a new view is drawn with, read as it's drawn: a change of layout alone needs no new view.
   const comparison = ready && comparisonOf(ready);
   const compareFrom = ready?.compareFrom ?? null;
@@ -123,6 +133,7 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
     comparison,
     revisions,
     compareFrom,
+    held: again,
   });
   latest.current = {
     entries,
@@ -133,6 +144,7 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
     comparison,
     revisions,
     compareFrom,
+    held: again,
   };
 
   // Where the view is as it goes, read while it's still on the page, before it's taken down: as
@@ -146,20 +158,51 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
   );
 
   // Drawn before the frame it's first seen in. Until there's a view to draw, the one drawn stays,
-  // stale: it hears nothing more of the loader, which has started on the next, and takes no input.
-  // The next is drawn in the frame the last is taken down in, and fades in over it.
+  // held: it hears nothing more of the loader, which has started on the next, and takes no input.
+  // A tab that comes back on screen meanwhile draws the one it had again, held, from what the
+  // loader kept of it. The next is drawn in the frame the last is taken down in, and fades in over
+  // it, in one Swap.
   const drawable = key !== undefined && nonceValue !== undefined && settled;
-  const [drawn, setDrawn] = useState(false);
-  const stale = drawn && !drawable;
+  /** What the view drawn shows, held or not, by its key: what the Swap names. */
+  const [drawnKey, setDrawnKey] = useState<string>();
+  const restorable =
+    !drawable && drawnKey === undefined && again !== undefined && nonceValue !== undefined;
+  const stale = (drawnKey !== undefined || restorable) && !drawable;
   useLayoutEffect(() => {
     const parent = box.current;
     const drawing = latest.current;
     if (!parent || nonceValue === undefined || !drawing.entries || key === undefined || !settled) {
       const last = view.current;
-      if (last && !last.stopped) {
-        last.stop();
+      if (last) {
+        if (!last.stopped) last.stop();
         last.stopped = true;
+        return;
       }
+      // Nothing drawn, as the tab comes back on screen before what's next is ready: the view it
+      // had, again, held.
+      const copy = loader.heldCopy();
+      const kept = drawing.held;
+      if (!parent || !copy || !kept || nonceValue === undefined) return;
+      const made: Kept = draw({
+        parent,
+        tab,
+        loader: copy,
+        entries: kept.entries,
+        at: kept.ready.at,
+        comparison: kept.ready.comparison,
+        compareFrom: kept.ready.compareFrom,
+        layout: drawing.layout,
+        nonce: nonceValue,
+        packaged: drawing.packaged,
+        shown: drawing.shown,
+        before: places.get(tab.id),
+        marks: drawing.marks,
+        held: true,
+      });
+      made.stop();
+      made.stopped = true;
+      view.current = made;
+      setDrawnKey(kept.key);
       return;
     }
     const at = key.slice(0, key.indexOf('|'));
@@ -187,22 +230,22 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
       marks: drawing.marks,
     });
     view.current = made;
-    setDrawn(true);
-    if (replaced) swapIn(parent);
-    // A new view only for new files, or a new order of them.
-  }, [key, nonceValue, settled]);
+    setDrawnKey(key);
+    // A new view only for new files, or a new order of them; one held, as the tab comes back.
+  }, [key, nonceValue, settled, restorable]);
 
-  // The box stays while a view is drawn in it, stale or not, until there's nothing to draw but why.
+  // The box stays while a view is drawn in it, held or not, until there's nothing to draw and the
+  // loader has said why: a wait for what's next, such as the local copy, leaves the view held.
   const pull = usePull(tab.id);
   const revisionsOf = useRevisions(tab.id);
   const said = waitingSays(snapshot, pull, revisionsOf);
-  const showsBox = drawable || (stale && said === undefined);
+  const showsBox = keepsBox({ drawable, held: stale, said, waiting: snapshot.state?.waiting });
   useLayoutEffect(() => {
     if (showsBox) return;
     const last = view.current;
     view.current = undefined;
     if (last) takeDown(last);
-    setDrawn(false);
+    setDrawnKey(undefined);
   }, [showsBox]);
   // Taken down with the tab.
   useLayoutEffect(
@@ -247,21 +290,23 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
           tab,
           end: (
             <>
-              {stale && <Spinner size="xs" />}
+              {stale && showsBox && <Spinner size="xs" />}
               <ChangeJumps tab={tab.id} />
             </>
           ),
         }}
       />
       {showsBox ? (
-        <div
-          ref={box}
-          className="min-h-0 flex-1"
-          data-lo-diff={tab.id}
-          data-lo-held={stale || undefined}
-          aria-busy={stale || undefined}
-          inert={stale}
-        />
+        <Swap id={drawnKey} keep className="flex min-h-0 flex-1 flex-col">
+          <div
+            ref={box}
+            className="min-h-0 flex-1"
+            data-lo-diff={tab.id}
+            data-lo-held={stale || undefined}
+            aria-busy={stale || undefined}
+            inert={stale}
+          />
+        </Swap>
       ) : (
         <Waiting tab={tab} said={said} threads={saysWaiting} />
       )}
@@ -284,12 +329,12 @@ function takeDown(made: Kept): void {
   made.view.destroy();
 }
 
-/** Fades what's in `box` in, a Swap, as a view takes another's place in it. */
-function swapIn(box: HTMLElement): void {
-  box.classList.remove('move-swap');
-  // Read once, so the move starts again rather than going on from where the last one was.
-  void box.offsetWidth;
-  box.classList.add('move-swap');
+/** What makes a view of `ready`'s files, in the order of `entries`, a new one. */
+function keyOf(
+  ready: { at: string; comparison: string | null; compareFrom: string | null },
+  entries: Parameters<typeof viewKey>[1],
+): string {
+  return viewKey(`${ready.at}|${ready.comparison ?? ''}|${ready.compareFrom ?? ''}`, entries);
 }
 
 /**

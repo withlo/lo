@@ -138,15 +138,20 @@ describe('TabBar', () => {
     expect(markup).toMatch(/<span class="[^"]*flex-none[^"]*">#123456<\/span>/);
   });
 
-  it("lays its close button over the tab's end, fading the words under it, and shows another tab's only under the pointer", () => {
+  it("lays its close button over the tab's end, fading the title under it, and shows another tab's only under the pointer", () => {
     const [selected, other] = tabsIn(renderToStaticMarkup(<TabBar tabs={tabs} selected="a" />));
-    // The button takes no room from the words, so a tab reads the same on screen or not.
+    // The button takes no room from the title, so a tab reads the same on screen or not.
     expect(selected).toMatch(/class="absolute [^"]* flex"><button[^>]*aria-label="Close tab"/);
-    expect(selected).toMatch(/class="[^"]* tab-fade" data-tab-label/);
     expect(other).toMatch(
       /class="absolute [^"]* hidden group-hover:flex"><button[^>]*aria-label="Close tab"/,
     );
-    expect(other).toMatch(/class="[^"]* group-hover:tab-fade" data-tab-label/);
+    // Only the title fades, and it keeps the button's room at the tab's end, so the number never
+    // sits under the button.
+    expect(selected).not.toMatch(/tab-fade[^"]*" data-tab-label/);
+    expect(selected).toMatch(
+      /class="flex-1 min-w-control-h-sm tab-fade truncate font-medium">Rate limit GraphQL/,
+    );
+    expect(other).toMatch(/class="flex-1 min-w-control-h-sm group-hover:tab-fade truncate ">/);
   });
 
   it('gives its stack count up before its number as it narrows, and joins the page only on screen', () => {
