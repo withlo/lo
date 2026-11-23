@@ -597,7 +597,7 @@ describe('signing out', () => {
     let refuse = true;
     const bridge = installBridge({
       'accounts.remove': () => {
-        if (refuse) throw new IpcError('failed', "Lo couldn't sign out of rozed-bot completely.");
+        if (refuse) throw new IpcError('failed', 'database is locked');
         return undefined;
       },
     });
@@ -638,7 +638,7 @@ describe('signing out', () => {
       'accounts.remove': () => {
         if (gone) throw new IpcError('missing', 'Lo isn’t signed in to rozed-bot.');
         gone = true;
-        throw new IpcError('failed', "Lo couldn't sign out of rozed-bot completely.");
+        throw new IpcError('failed', 'database is locked');
       },
     });
     showAccounts([account('rozed-bot')]);
@@ -655,6 +655,25 @@ describe('signing out', () => {
     await settle();
     expect(bridge.calls.filter(([channel]) => channel === 'accounts.remove')).toHaveLength(2);
     expect(dialog('sign-out')).toBeNull();
+  });
+
+  it('says a sign-in it couldn’t delete is still kept, with nothing to try again', async () => {
+    installBridge({
+      'accounts.remove': () => {
+        throw new IpcError('leftover', 'The keychain is locked.');
+      },
+    });
+    showAccounts([account('rozed-bot')]);
+    render();
+    act(() => openSignOut(['rozed-bot']));
+    await settle();
+    click(button(dialog('sign-out'), 'Sign out'));
+    await settle();
+    const alert = dialog('sign-out')?.querySelector('[role="alert"]')?.textContent;
+    expect(alert).toContain('Couldn’t delete rozed-bot’s sign-in');
+    expect(alert).toMatch(/It’s still in the (Keychain|keyring)\./);
+    expect(() => button(dialog('sign-out'), 'Try again')).toThrow();
+    expect(button(dialog('sign-out'), 'Close')).toBeDefined();
   });
 
   it('asks which account when there are several, and picks none for the person', async () => {

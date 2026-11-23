@@ -1,7 +1,13 @@
 import { MemoryAccountRows, MemorySecrets } from '@lo/testing';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
-import { Accounts, type Account, type AccountSource, type AccountsEvent } from './accounts.ts';
+import {
+  Accounts,
+  TokenLeftover,
+  type Account,
+  type AccountSource,
+  type AccountsEvent,
+} from './accounts.ts';
 import type { RepoAccount } from './choice.ts';
 import type { RequestGate } from './client.ts';
 import { GithubError } from './errors.ts';
@@ -407,7 +413,7 @@ test('removing forgets the account even when its token cant be deleted', async (
   await add(accounts, 'a', 'gho_FAKE');
   store.failingWrites = true;
   // The account is gone, and the error says the token wasn't.
-  await expect(accounts.remove('a')).rejects.toThrow("couldn't delete its token");
+  await expect(accounts.remove('a')).rejects.toBeInstanceOf(TokenLeftover);
   expect(accounts.accounts).toEqual([]);
   expect(await rows.accounts()).toEqual([]);
 });
