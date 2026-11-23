@@ -6,11 +6,13 @@
 // in a line.
 //
 // A note is one line: the result, or the reason. `refuse` and `announce` with nothing after the
-// line are the two to use. A title with a body under it is the older shape, still drawn for the
-// callers that have it, and the shape of the one failure a note may hold: one with nothing in view
-// to hold it, which keeps main's words behind Details. Its icon says which a note is: a tick for
-// what's done, a failure's for what failed, a warning's for what can't be done here at all, and an
-// info icon for the rest.
+// line are the two to use. A failure is said where it happened, in a `Problem` or on the control
+// that was pressed. Only one with nothing in view to host it is a note, at danger tone, with what
+// main said behind Details where it said something: `fail` for one line, as for a key pressed with
+// no control for it on screen, or the older shape, a title with a body under it, which `notify`
+// still draws for the callers that have it, as for a command run from the menu. Its icon says which
+// a note is: a tick for what's done, a failure's for what failed, a warning's for what can't be
+// done here at all, and an info icon for the rest.
 
 import {
   Ticks,
@@ -167,12 +169,12 @@ export interface NoteMore {
 
 /**
  * Says that something asked for went wrong, in a line at danger tone, where nothing in view can
- * host it: "Couldn’t copy the prompt" for `ya` pressed with no Copy prompt button on screen. A
- * control that's in view says it itself, and a failure that has a view says it there, as a
- * `Problem`.
+ * host it: "Couldn’t copy the prompt" for `ya` pressed with no Copy prompt button on screen, with
+ * `details`, what main or the system said, behind Details. A control that's in view says it
+ * itself, and a failure that has a view says it there, as a `Problem`.
  */
-export function fail(line: string): void {
-  show({ title: line, body: '', tone: 'danger' });
+export function fail(line: string, details?: string): void {
+  show({ title: line, body: '', tone: 'danger', details });
 }
 
 /**

@@ -273,6 +273,13 @@ describe('notices', () => {
     act(() => fail('Couldn’t copy the prompt'));
     expect(toast()).toEqual({ title: 'Couldn’t copy the prompt', body: null, icon: true });
     expect(status()?.querySelector('.toast .text-danger')).not.toBeNull();
+    // What main said goes behind Details.
+    act(() => fail('Couldn’t copy the prompt', 'The clipboard is busy.'));
+    expect(notice()).toMatchObject({ tone: 'danger', details: 'The clipboard is busy.' });
+    const more = [...(status()?.querySelectorAll('button') ?? [])].find(
+      (button) => button.textContent === 'Details',
+    );
+    expect(more).toBeDefined();
   });
 
   it('go after their time with no window drawing them', () => {

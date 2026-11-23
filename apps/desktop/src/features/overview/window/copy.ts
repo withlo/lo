@@ -6,7 +6,7 @@ import type { CopySaid } from '@lo/ui';
 import { announce, fail } from '../../../window/commands/notices.tsx';
 import { client } from '../../../window/ipc.ts';
 import { contract as tabContract } from '../../tab/contract.ts';
-import { pullOf, type PullTab } from '../../tab/window/shared.ts';
+import { pullOf, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
 import { promptKindOf, revisionAt, standingOf, type Standing } from './facts.ts';
 import { promptOf } from './prompts.ts';
 import { checked, revisions, states } from './store.ts';
@@ -56,19 +56,21 @@ export function answerCopies(id: string, say: (said: CopySaid) => void): () => v
  * pressed where no button copies it.
  */
 export async function copyPrompt(id: string, prompt: string): Promise<void> {
-  let said: CopySaid = 'copied';
+  // What main said of a copy that failed, behind a toast's Details.
+  let failed: string | undefined;
   try {
     await client(tabContract).copy({ text: prompt });
   } catch (error) {
     console.error("Lo couldn't copy the prompt:", error);
-    said = 'failed';
+    failed = withoutBidi(error instanceof Error ? error.message : String(error));
   }
+  const said: CopySaid = failed === undefined ? 'copied' : 'failed';
   const buttons = answering.get(id);
   if (buttons) {
     for (const say of buttons) say(said);
-  } else if (said === 'copied') {
+  } else if (failed === undefined) {
     announce('Copied prompt');
   } else {
-    fail('Couldn’t copy the prompt');
+    fail('Couldn’t copy the prompt', failed);
   }
 }

@@ -526,7 +526,7 @@ describe('with no overview', () => {
     view.shown(false);
     await act(() => copyPromptOf(tab.id, 'The prompt'));
     expect(toasts().at(-1)).toBe('Couldn’t copy the prompt');
-    expect(notice()?.tone).toBe('danger');
+    expect(notice()).toMatchObject({ tone: 'danger', details: 'The clipboard is busy.' });
     answers.copyFails = false;
     await act(() => copyPromptOf(tab.id, 'The prompt'));
     expect(toasts().at(-1)).toBe('Copied prompt');
