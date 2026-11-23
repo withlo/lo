@@ -1,8 +1,9 @@
 // Moving Lo to Applications, asking first when a Lo is there already. Electron's move takes its
 // answer to a Lo in the way at once, from inside the move, while Lo's own dialog answers later; so
 // Lo first moves replacing nothing, which stops at a Lo in the way, asks the reader only then, and
-// moves again once the reader says "Replace Lo". Nothing here calls Electron, so it runs under unit
-// tests.
+// moves again once the reader says "Replace Lo". Where Lo can't write Applications, Electron asks
+// macOS for an administrator's password and replaces a Lo there without asking Lo first, so Lo asks
+// nothing then, as before. Nothing here calls Electron, so it runs under unit tests.
 
 import type { Asked } from '../../ask/service.ts';
 

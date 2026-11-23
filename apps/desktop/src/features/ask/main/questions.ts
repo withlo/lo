@@ -47,6 +47,13 @@ export class Questions implements Asking {
       return Promise.resolve(false);
     }
     const question: Question = { ...asked, id: this.#options.newId?.() ?? crypto.randomUUID() };
+    // Told first: a question the window can't be told, as one its schema refuses, is never up, so
+    // it holds up no question after it.
+    try {
+      this.#options.publish(question);
+    } catch (error) {
+      return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+    }
     return new Promise((resolve) => {
       const cancel = () => end(false);
       const stop = shown.onClosed(cancel);
@@ -60,7 +67,6 @@ export class Questions implements Asking {
         resolve(act);
       };
       this.#up = { question, window, end };
-      this.#options.publish(question);
     });
   }
 

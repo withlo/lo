@@ -68,6 +68,7 @@ export function Asked(): ReactNode {
         if (!next) answer(false);
       }}
       title={question?.title}
+      description={question === null || question.detail === '' ? undefined : question.detail}
       size="sm"
       foot={
         <>
@@ -85,10 +86,6 @@ export function Asked(): ReactNode {
       onKeyDown={cancelOnEnter}
       container={document.getElementById('root')}
       testId="asked"
-    >
-      {question !== null && question.detail !== '' && (
-        <p className="m-0 text-fg-muted">{question.detail}</p>
-      )}
-    </Dialog>
+    />
   );
 }

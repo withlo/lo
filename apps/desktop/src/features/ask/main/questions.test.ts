@@ -114,6 +114,25 @@ describe('Questions', () => {
     ]);
   });
 
+  it('fails a question the window can’t be told, which holds up no question after it', async () => {
+    const window = new TestWindow();
+    let refuse = true;
+    const questions = new Questions({
+      window: () => window,
+      publish: (question) => {
+        if (refuse && question !== null) throw new Error('A question the schema refuses.');
+      },
+      newId: () => 'q1',
+    });
+    await expect(questions.ask(1, REPLACE)).rejects.toThrow('A question the schema refuses.');
+    expect(questions.current).toBeNull();
+    expect(window.listeners.size).toBe(0);
+    refuse = false;
+    const asked = questions.ask(1, REPLACE);
+    questions.answer(1, 'q1', true);
+    await expect(asked).resolves.toBe(true);
+  });
+
   it('asks one question at a time: one asked meanwhile is Cancel, and the first stays up', async () => {
     const { questions } = start();
     const first = questions.ask(1, REPLACE);

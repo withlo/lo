@@ -1160,10 +1160,11 @@ its own app, installs it when the reader says so.
   translocated download, where "Move Lo to Applications" asks before it replaces a Lo already there,
   in Lo's own dialog (see "Questions main asks"): Electron's move takes its answer at once, from
   inside the move, so Lo first moves replacing nothing, asks only once that stops at a Lo in the
-  way, and moves again once the reader says "Replace Lo" (`main/move.ts`); `page` on Linux, from
-  source, or where Lo can't write its own folder, where "Download update" opens the release's page.
-  Only `install` builds electron-updater's Mac updater: the rest get one that can check and has no
-  way to download.
+  way, and moves again once the reader says "Replace Lo" (`main/move.ts`), unless Lo can't write
+  Applications, where macOS asks for an administrator's password and Electron replaces a Lo there
+  without asking Lo first, as it always has; `page` on Linux, from source, or where Lo can't write
+  its own folder, where "Download update" opens the release's page. Only `install` builds
+  electron-updater's Mac updater: the rest get one that can check and has no way to download.
 - **When.** 30 s after the window is up, then every 6 hours, and on `updates.check`, the command,
   the overview's "Get a newer Lo" and Settings' "Check now". The `updates.check` setting (on) turns
   off only the timed checks. A timed check that fails is logged and tried at the next, and one the
@@ -1563,11 +1564,13 @@ the `updates` feature asks "Replace Lo in Applications?".
   up, which stays up alone.
 - Main gives each question an id and pushes it on `question`, and a window loaded meanwhile reads it
   with `read`. Only `answer` with that id, from the window it was asked in, ends it; any other
-  answer is ignored.
+  answer is ignored. A question the window can't be told is never up: the ask fails, and the next
+  one is asked as usual.
 - The window draws it as a small `Dialog` in the `tab.dialogs` slot, over any other. Cancel has
   focus as it opens, so `⏎` presses it, and a held key's repeats do nothing.
-- What the window must not decide by itself isn't asked here, since whatever runs in the window
-  could answer: trust is asked in main's native dialog.
+- A question here guards against a slip, not against the page: whatever runs in the window can read
+  its id and answer it. What the window must not decide by itself isn't asked here, so trust is
+  asked in main's native dialog.
 
 ### Trust
 
