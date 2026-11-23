@@ -432,6 +432,17 @@ test('said is what github said, as it came', () => {
   );
 });
 
+/** A used-up rate limit, resetting at `reset` or after `retryAfter` seconds, or with neither. */
+function rateLimit(reset?: number, retryAfter?: number): GithubError {
+  return new GithubError({
+    kind: 'rateLimited',
+    message: 'x',
+    secondary: false,
+    reset,
+    retryAfter,
+  });
+}
+
 test('a cause is the guides, with what words it', () => {
   const now = 1_700_000_000_000;
   expect(causeOf(network('offline'))).toEqual({ kind: 'offline' });
@@ -446,14 +457,15 @@ test('a cause is the guides, with what words it', () => {
   });
   expect(causeOf(signIn)).toEqual({ kind: 'proxy', why: 'signIn' });
   expect(causeOf(api(500))).toEqual({ kind: 'github' });
-  const limited = (reset?: number, retryAfter?: number) =>
-    new GithubError({ kind: 'rateLimited', message: 'x', secondary: false, reset, retryAfter });
-  expect(causeOf(limited(1_700_000_100))).toEqual({ kind: 'rateLimit', resets: 1_700_000_100_000 });
-  expect(causeOf(limited(undefined, 30), { now })).toEqual({
+  expect(causeOf(rateLimit(1_700_000_100))).toEqual({
+    kind: 'rateLimit',
+    resets: 1_700_000_100_000,
+  });
+  expect(causeOf(rateLimit(undefined, 30), { now })).toEqual({
     kind: 'rateLimit',
     resets: now + 30_000,
   });
-  expect(causeOf(limited())).toEqual({ kind: 'rateLimit', resets: null });
+  expect(causeOf(rateLimit())).toEqual({ kind: 'rateLimit', resets: null });
   const refused = new GithubError({ kind: 'unauthorized', message: 'Bad credentials' });
   expect(causeOf(refused, { login: 'rozed-bot' })).toEqual({
     kind: 'signedOut',
@@ -471,9 +483,12 @@ test('a cause is the guides, with what words it', () => {
   expect(saidBy(new Error('reading', { cause: api(502) }))).toBe('502 Bad Gateway\nx');
 });
 
+/** A write a proxy stopped, as Lo's own writes throw it, with its code. */
+function stopped(code: string): Error {
+  return Object.assign(new Error('the proxy'), { name: 'ProxyStopped', code });
+}
+
 test('a proxy is why when it stopped the request', () => {
-  const stopped = (code: string) =>
-    Object.assign(new Error('the proxy'), { name: 'ProxyStopped', code });
   expect(classifyProxy(stopped('ERR_PROXY_AUTH_REQUESTED'))).toBe('signIn');
   expect(classifyProxy(stopped('ERR_NO_SUPPORTED_PROXIES'))).toBe('unsupported');
   expect(classifyProxy(stopped('ECONNREFUSED'))).toBe('refused');

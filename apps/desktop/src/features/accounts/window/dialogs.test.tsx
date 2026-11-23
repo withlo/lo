@@ -691,7 +691,7 @@ describe('signing out', () => {
     const alert = dialog('sign-out')?.querySelector('[role="alert"]')?.textContent;
     expect(alert).toContain('Couldn’t delete rozed-bot’s sign-in');
     expect(alert).toMatch(/It’s still in the (Keychain|keyring)\./);
-    expect(() => button(dialog('sign-out'), 'Try again')).toThrow();
+    expect(() => button(dialog('sign-out'), 'Try again')).toThrow('No button "Try again".');
     expect(button(dialog('sign-out'), 'Close')).toBeDefined();
   });
 

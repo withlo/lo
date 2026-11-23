@@ -75,6 +75,13 @@ async function failure(promise: Promise<unknown>): Promise<Error> {
   throw new Error(`expected an error, got ${String(thrown)}`);
 }
 
+/** The GitHub error `promise` fails with. */
+async function githubFailure(promise: Promise<unknown>): Promise<GithubError> {
+  const error = await failure(promise);
+  if (error instanceof GithubError) return error;
+  throw new Error(`expected GitHub's error, got ${String(error)}`);
+}
+
 function read(body: string): PullToOpen {
   return readPullToOpen(JSON.parse(body));
 }
@@ -164,9 +171,8 @@ test('refuses a repository name that isnt owner slash name', () => {
 });
 
 test('a missing or private pull request is githubs not found', async () => {
-  const error = await failure(fetchAnonymously(canned(404, '{"message":"Not Found"}')));
-  expect(error).toBeInstanceOf(GithubError);
-  expect((error as GithubError).detail).toMatchObject({ kind: 'notFound', message: 'Not Found' });
+  const error = await githubFailure(fetchAnonymously(canned(404, '{"message":"Not Found"}')));
+  expect(error.detail).toMatchObject({ kind: 'notFound', message: 'Not Found' });
 });
 
 test('a used up rate limit is githubs, with when it resets', async () => {
@@ -174,18 +180,18 @@ test('a used up rate limit is githubs, with when it resets', async () => {
     'x-ratelimit-remaining': '0',
     'x-ratelimit-reset': '1700000000',
   });
-  const error = await failure(fetchAnonymously(fetch));
-  expect((error as GithubError).detail).toMatchObject({
+  const error = await githubFailure(fetchAnonymously(fetch));
+  expect(error.detail).toMatchObject({
     kind: 'rateLimited',
     secondary: false,
     reset: 1700000000,
   });
-  expect((error as GithubError).said()).toBe('API rate limit exceeded');
+  expect(error.said()).toBe('API rate limit exceeded');
 });
 
 test('other errors carry githubs status and message', async () => {
-  const error = await failure(fetchAnonymously(canned(500, '{"message":"Server Error"}')));
-  expect((error as GithubError).said()).toBe('500 Internal Server Error\nServer Error');
+  const error = await githubFailure(fetchAnonymously(canned(500, '{"message":"Server Error"}')));
+  expect(error.said()).toBe('500 Internal Server Error\nServer Error');
 });
 
 test('refuses a clone url off github', () => {
