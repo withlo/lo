@@ -101,11 +101,14 @@ describe('key help and the keymap file', () => {
     act(() =>
       applyKeymapFile({
         text: '',
-        problem: "The keymap file is over 1 MiB, so Lo didn't read it.",
+        problem: {
+          title: 'Can’t read the keymap file',
+          reason: 'It’s 1.1 MB, over the 1 MB limit.',
+        },
         canOpen: false,
       }),
     );
-    expect(alerts()).toEqual(["The keymap file is over 1 MiB, so Lo didn't read it."]);
+    expect(alerts()).toEqual(['Can’t read the keymap file It’s 1.1 MB, over the 1 MB limit.']);
     act(() =>
       applyKeymapFile({ text: 'bind x nope.nothing\n# fine\nbnid y keys.back', canOpen: true }),
     );
@@ -142,14 +145,29 @@ describe('key help’s button for the keymap file', () => {
     act(() => applyKeymapFile({ text: '', canOpen: true }));
     act(() => toggleHelp());
     expect(button()).toBeDefined();
-    for (const problem of [
-      "The keymap file isn't a plain file, so Lo doesn't read or open it.",
-      "The keymap file is executable, so Lo won't open it, which could run it.",
-    ]) {
-      act(() => applyKeymapFile({ text: '', problem, canOpen: false }));
-      expect(button()).toBeUndefined();
-      expect(alerts()).toEqual([problem]);
-    }
+    act(() =>
+      applyKeymapFile({
+        text: '',
+        problem: { title: 'Can’t read the keymap file', reason: 'It isn’t a file.' },
+        canOpen: false,
+      }),
+    );
+    expect(button()).toBeUndefined();
+    expect(alerts()).toEqual(['Can’t read the keymap file It isn’t a file.']);
+    // An executable file's keys apply: only opening it is refused, and that's why there's no
+    // button, with what to do about it.
+    act(() =>
+      applyKeymapFile({
+        text: '',
+        canOpen: false,
+        refusal: 'The keymap file is executable',
+        remedy: 'Clear its execute permission to open it from here.',
+      }),
+    );
+    expect(button()).toBeUndefined();
+    expect(alerts()).toEqual([
+      'The keymap file is executable Clear its execute permission to open it from here.',
+    ]);
     act(() => applyKeymapFile({ text: '', canOpen: true }));
     expect(button()).toBeDefined();
     expect(alerts()).toEqual([]);

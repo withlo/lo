@@ -1,7 +1,7 @@
 import { parseSync, Visitor } from 'oxc-parser';
 import { expect, test } from 'vitest';
 
-import plugin, { MESSAGE } from './plugin.ts';
+import plugin, { MESSAGE, SCROLL_MESSAGE } from './plugin.ts';
 
 /** The source of each node `lo/no-returned-never` reports in `source`, a TypeScript file. */
 function reported(source: string): string[] {
@@ -179,4 +179,40 @@ test('checking a value as never then throwing or falling back is allowed', () =>
     const kept = { checked: checked satisfies 'a', all: [checked satisfies string] };
   `;
   expect(reported(source)).toEqual([]);
+});
+
+/** The source of each call `lo/no-scroll-into-view` reports in `source`, a TypeScript file. */
+function scrolls(source: string): string[] {
+  const found: string[] = [];
+  const rule = plugin.rules['no-scroll-into-view'].create({
+    report: ({ node, message }) => {
+      expect(message).toBe(SCROLL_MESSAGE);
+      const start: unknown = Reflect.get(node, 'start');
+      const end: unknown = Reflect.get(node, 'end');
+      found.push(
+        typeof start === 'number' && typeof end === 'number' ? source.slice(start, end) : '',
+      );
+    },
+  });
+  const { program } = parseSync('file.ts', source);
+  new Visitor({ CallExpression: (node) => rule.CallExpression(node) }).visit(program);
+  return found;
+}
+
+test("an element's scrollIntoView is refused, however it's called, and CodeMirror's effect isn't", () => {
+  const source = `
+    row.scrollIntoView({ block: 'nearest' });
+    shown.current?.scrollIntoView?.({ block: 'nearest' });
+    element['scrollIntoView']();
+    element.scrollIntoViewIfNeeded();
+    view.dispatch({ effects: EditorView.scrollIntoView(line.from, { y: 'start' }) });
+    view.dispatch({ selection, scrollIntoView: true });
+    if (typeof row?.scrollIntoView === 'function') reveal(row);
+  `;
+  expect(scrolls(source)).toEqual([
+    "row.scrollIntoView({ block: 'nearest' })",
+    "shown.current?.scrollIntoView?.({ block: 'nearest' })",
+    "element['scrollIntoView']()",
+    'element.scrollIntoViewIfNeeded()',
+  ]);
 });

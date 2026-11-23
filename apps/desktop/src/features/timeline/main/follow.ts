@@ -4,9 +4,11 @@
 // reads neither. Nothing here calls Electron.
 
 import {
+  causeOf,
   GithubError,
   PULL_REQUEST_SIDEBAR,
   PullRef,
+  saidBy,
   TIMELINE,
   type Cached,
   type Poller,
@@ -16,8 +18,9 @@ import {
   type PullRequestTimeline,
 } from '@lo/github';
 
+import { detailsOf, githubCause, type Cause } from '../../../ipc/cause.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
-import type { SidebarView, TimelineCause, TimelineView } from '../contract.ts';
+import type { SidebarView, TimelineView } from '../contract.ts';
 
 /**
  * What the timeline uses of an account's poller: its two reads, its events, reading again and when,
@@ -57,12 +60,21 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** Why reading the timeline failed, and what GitHub or the system said, for Details. */
+interface Problem {
+  readonly cause: Cause;
+  readonly details: string | undefined;
+}
+
 /**
- * Why reading the timeline failed, in the causes every error is worded by: GitHub couldn't be
- * reached, or answered with an error, as anything else is.
+ * Why reading `pull`'s timeline as `login` failed: GitHub's cause, which the window words, and what
+ * GitHub or the system said.
  */
-function causeOf(error: unknown): TimelineCause {
-  return error instanceof GithubError && error.isUnreachable() ? 'offline' : 'failed';
+function problemOf(error: unknown, pull: PullRef, login: string | undefined): Problem {
+  return {
+    cause: githubCause(causeOf(error, { login, owner: pull.repo.owner })),
+    details: detailsOf(saidBy(error)),
+  };
 }
 
 /**
@@ -74,9 +86,7 @@ function stalled(status: PollStatus): boolean {
 }
 
 /** Why a timeline that was never read can't be, and when the poller tries again, if it says. */
-interface Failure {
-  readonly cause: TimelineCause;
-  readonly words: string;
+interface Failure extends Problem {
   readonly retryAt: number | undefined;
   /** Whether the poller reads nothing now, so nothing here can try again. */
   readonly stalled: boolean;
@@ -94,7 +104,7 @@ export class TimelineTab {
   #unsubscribe: (() => void) | undefined;
   #timeline: PullRequestTimeline | undefined;
   #sidebar: PullRequestSidebar | undefined;
-  #problem: { readonly cause: TimelineCause; readonly words: string } | undefined;
+  #problem: Problem | undefined;
   /** What waits for the timeline's next read to answer, as Try again does. */
   #waiting: (() => void)[] = [];
   /** What the window was last told of a failure, so a change in polling says only what's new. */
@@ -116,7 +126,7 @@ export class TimelineTab {
       status: this.#status(failure),
       timeline: this.#timeline ?? null,
       cause: failure?.cause ?? null,
-      problem: failure?.words ?? null,
+      details: failure?.details ?? null,
       retryAt: failure?.retryAt ?? null,
       stalled: failure?.stalled ?? false,
     };
@@ -139,8 +149,8 @@ export class TimelineTab {
     // A tab that opens offline shows what it saved, once it's read that: nothing fails before.
     if (status?.offline && this.#landed) {
       return {
-        cause: 'offline',
-        words: `Lo couldn’t read the timeline: ${status.offline.error}`,
+        cause: { kind: 'offline' },
+        details: detailsOf(status.offline.error),
         retryAt: undefined,
         stalled: true,
       };
@@ -246,7 +256,7 @@ export class TimelineTab {
     const told = JSON.stringify([
       view.status,
       view.cause,
-      view.problem,
+      view.details,
       view.retryAt,
       view.stalled,
     ]);
@@ -279,7 +289,8 @@ export class TimelineTab {
       poller = await this.#options.github.poller(login);
     } catch (error) {
       if (!this.#current(pull, login)) return;
-      this.#fail(causeOf(error), `Lo can’t read the timeline as ${login}: ${describe(error)}`);
+      this.#options.log(`reading the timeline as ${login}: ${describe(error)}`);
+      this.#fail(problemOf(error, pull, login));
       return;
     }
     if (!this.#current(pull, login) || this.#poller) return;
@@ -299,12 +310,8 @@ export class TimelineTab {
     this.#landed = true;
     const [timeline, sidebar] = reads;
     if (timeline.status === 'rejected') {
-      if (!this.#timeline) {
-        this.#fail(
-          causeOf(timeline.reason),
-          `Lo couldn’t read the timeline: ${describe(timeline.reason)}`,
-        );
-      }
+      this.#options.log(`reading the timeline: ${describe(timeline.reason)}`);
+      if (!this.#timeline) this.#fail(problemOf(timeline.reason, pull, login));
     } else if (timeline.value && !this.#timeline) {
       this.#timeline = timeline.value.value;
       this.#publishTimeline();
@@ -350,9 +357,8 @@ export class TimelineTab {
         if (!event.pull.equals(pull)) return;
         if (event.name === TIMELINE.name) {
           const error = new GithubError(event.error);
-          const message = `Lo couldn’t read the timeline: ${error.message}`;
-          this.#options.log(message);
-          if (!this.#timeline) this.#fail(causeOf(error), message);
+          this.#options.log(`reading the timeline: ${error.message}`);
+          if (!this.#timeline) this.#fail(problemOf(error, pull, this.#login));
           this.#answered();
         } else if (event.name === PULL_REQUEST_SIDEBAR.name) {
           this.#options.log(
@@ -372,9 +378,9 @@ export class TimelineTab {
     }
   }
 
-  /** Reading the timeline failed, with nothing read before, for `cause`, as `words` say. */
-  #fail(cause: TimelineCause, words: string): void {
-    this.#problem = { cause, words };
+  /** Reading the timeline failed, with nothing read before, as `problem` says. */
+  #fail(problem: Problem): void {
+    this.#problem = problem;
     this.#publishTimeline();
   }
 
@@ -388,7 +394,7 @@ export class TimelineTab {
     this.#told = JSON.stringify([
       view.status,
       view.cause,
-      view.problem,
+      view.details,
       view.retryAt,
       view.stalled,
     ]);

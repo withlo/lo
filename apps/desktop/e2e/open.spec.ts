@@ -124,9 +124,7 @@ test('says what a link it doesn’t open is, and sends a web link to the browser
     await input(page).fill(E2E);
     await expect(box(page).getByRole('option')).toContainText('rozed-bot');
     await page.keyboard.press('Enter');
-    await expect(page.getByRole('tablist', { name: 'Pull requests' }).getByRole('tab')).toHaveCount(
-      1,
-    );
+    await expect(page.getByRole('tablist', { name: 'Tabs' }).getByRole('tab')).toHaveCount(1);
   });
 });
 
@@ -203,12 +201,8 @@ test('opens lo:// links and a second launch’s links as a typed link, and says 
         '/',
       );
     });
-    await expect(page.getByRole('tablist', { name: 'Pull requests' }).getByRole('tab')).toHaveCount(
-      2,
-    );
-    await expect(
-      page.getByRole('alert').filter({ hasText: "Lo can't open this pull request." }),
-    ).toBeVisible();
+    await expect(page.getByRole('tablist', { name: 'Tabs' }).getByRole('tab')).toHaveCount(2);
+    await expect(page.getByRole('alert').filter({ hasText: 'Can’t open #9999' })).toBeVisible();
   });
 
   await test.step('installs the lo command, which hands a link to the Lo running', async () => {
@@ -236,9 +230,7 @@ test.describe('started with a link', () => {
 
   test('opens the pull request it was started with', async ({ page }) => {
     await expect(heading(page)).toHaveText(TITLE);
-    await expect(page.getByRole('tablist', { name: 'Pull requests' }).getByRole('tab')).toHaveCount(
-      1,
-    );
+    await expect(page.getByRole('tablist', { name: 'Tabs' }).getByRole('tab')).toHaveCount(1);
   });
 });
 

@@ -12,7 +12,7 @@ import type { Changed, TreeState } from '../contract.ts';
 import { closeRow, markViewed, move, openRow, setAll, show, showable } from './actions.ts';
 import { Files } from './Files.tsx';
 import feature from './index.ts';
-import { fileOrder, followFile, onShowFile } from './shared.ts';
+import { fileOrder, followFile, holdTree, onShowFile } from './shared.ts';
 import { choices, focus, onScreen, showState, shown, states } from './store.ts';
 
 // The tab on screen, for the keys that act on it; the tab feature isn't loaded.
@@ -160,14 +160,32 @@ describe('the files panel', () => {
     expect(row('src')?.textContent).toContain('4');
   });
 
+  it('holds the rows it drew, taking no input, while the diff holds its view, and changes with it', () => {
+    const { container, row } = render();
+    const tree = () => container.querySelector('[role="tree"]');
+    act(() => holdTree(TAB.id, true));
+    onTestFinished(() => holdTree(TAB.id, false));
+    // The next comparison is still being worked out: main lists no changes yet.
+    act(() => showState({ ...LOCAL, changes: null, compared: null }));
+    expect(tree()?.hasAttribute('inert')).toBe(true);
+    expect(tree()?.getAttribute('aria-busy')).toBe('true');
+    expect(row('src/parser.ts')?.textContent).toContain('R');
+    expect(row('src')?.getAttribute('aria-expanded')).toBe('true');
+    act(() => showState({ ...LOCAL, compared: [change('src/parser.ts', 'modified')] }));
+    act(() => holdTree(TAB.id, false));
+    expect(tree()?.hasAttribute('inert')).toBe(false);
+    expect(tree()?.hasAttribute('aria-busy')).toBe(false);
+    expect(row('src/parser.ts')?.getAttribute('data-hit')).not.toBeNull();
+  });
+
   it('says why only the changed files show', () => {
     const { container } = render({
       ...LOCAL,
-      listing: { kind: 'changed', why: 'GitHub lists only part of this repository’s files.' },
+      listing: { kind: 'changed', why: { kind: 'truncated' } },
       partial: true,
     });
     expect(container.querySelector('[role="note"]')?.textContent).toBe(
-      'GitHub lists only part of this repository’s files.GitHub lists only some of the changed files, so the rest show once the local copy is ready.',
+      'Unchanged files aren’t listedGitHub lists only part of this repo.GitHub lists only some of the changed files, so the rest show once the local copy is ready.',
     );
     expect(container.querySelector('[data-key="README.md"]')).toBeNull();
   });
@@ -317,7 +335,7 @@ describe('the tree’s keys', () => {
     // GitHub's list, before .gitattributes marked a.pb.go generated.
     const github: TreeState = {
       ...LOCAL,
-      listing: { kind: 'changed', why: 'Only the changed files.' },
+      listing: { kind: 'changed', why: { kind: 'tooManyBytes' } },
       from: 'github',
       changes: [change('a.pb.go', 'modified'), change('b.rs', 'modified')],
       changesFrom: 'github',

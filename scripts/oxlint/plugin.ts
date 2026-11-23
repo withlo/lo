@@ -11,6 +11,8 @@
  * never;`, then throw an error naming it, or, for a value that can come from outside Lo, such as
  * GitHub's answer or what Lo saved, give a safe answer. A call's argument isn't refused, since
  * naming the value in an error (`JSON.stringify(value satisfies never)`) is the intended form.
+ *
+ * `lo/no-scroll-into-view` refuses an element's `scrollIntoView`: see {@link noScrollIntoView}.
  */
 
 /** A syntax tree node, as oxlint hands one to a rule. */
@@ -111,7 +113,52 @@ export const noReturnedNever = {
   },
 };
 
+export const SCROLL_MESSAGE =
+  'This scrolls every box around the element, the window among them, and the window never scrolls. Use `reveal(element, { block })` from `@lo/ui`, which scrolls the pane the element is in and nothing else.';
+
+/** The name of what `node`, a member expression, reads, when it's a plain name or a string. */
+function memberName(node: unknown): string | undefined {
+  if (!isNode(node) || node.type !== 'MemberExpression') return undefined;
+  const property: unknown = Reflect.get(node, 'property');
+  if (!isNode(property)) return undefined;
+  if (!Reflect.get(node, 'computed') && property.type === 'Identifier') {
+    const name: unknown = Reflect.get(property, 'name');
+    return typeof name === 'string' ? name : undefined;
+  }
+  const value: unknown = Reflect.get(property, 'value');
+  return property.type === 'Literal' && typeof value === 'string' ? value : undefined;
+}
+
+/**
+ * `lo/no-scroll-into-view` refuses calling an element's `scrollIntoView` or
+ * `scrollIntoViewIfNeeded`, which scroll every box around the element, the window's shell among
+ * them. `reveal()` scrolls the element's own pane. CodeMirror's `EditorView.scrollIntoView`, an
+ * effect that scrolls the editor alone, is left alone.
+ */
+export const noScrollIntoView = {
+  meta: {
+    type: 'problem',
+    docs: {
+      description: "Disallow an element's scrollIntoView, which scrolls the window; use reveal().",
+    },
+  },
+  create(context: Context) {
+    return {
+      CallExpression(node: AstNode): void {
+        const callee: unknown = Reflect.get(node, 'callee');
+        const name = memberName(callee);
+        if (name !== 'scrollIntoView' && name !== 'scrollIntoViewIfNeeded') return;
+        const object: unknown = isNode(callee) ? Reflect.get(callee, 'object') : undefined;
+        if (isNode(object) && object.type === 'Identifier') {
+          if (Reflect.get(object, 'name') === 'EditorView') return;
+        }
+        context.report({ node, message: SCROLL_MESSAGE });
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: 'lo' },
-  rules: { 'no-returned-never': noReturnedNever },
+  rules: { 'no-returned-never': noReturnedNever, 'no-scroll-into-view': noScrollIntoView },
 };

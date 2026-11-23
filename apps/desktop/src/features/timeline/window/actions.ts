@@ -2,6 +2,7 @@
 // links and buttons of the row the keyboard is on, and what a row's buttons do, which its menu and
 // the palette offer too, for the row right-clicked or the one the keyboard is on.
 
+import { reveal } from '@lo/ui';
 import type { RowTarget, Target } from '@lo/ui/commands';
 
 import { notify } from '../../../window/commands/notices.tsx';
@@ -122,7 +123,8 @@ export function onRow(
 export function focusRow(timeline: DrawnTimeline, key: string): void {
   focusedRows.set(timeline.tab.id, key);
   requestAnimationFrame(() => {
-    rowElement(timeline.list(), key)?.scrollIntoView({ block: 'nearest' });
+    const row = rowElement(timeline.list(), key);
+    if (row) reveal(row);
   });
 }
 
@@ -182,7 +184,7 @@ export function nextLink(by: 1 | -1): void {
   const at = order.findIndex((each) => each === document.activeElement);
   const next = order[(Math.max(0, at) + by + order.length) % order.length] ?? list;
   next.focus({ preventScroll: true });
-  (next === list ? element : next).scrollIntoView({ block: 'nearest' });
+  reveal(next === list ? element : next);
 }
 
 /** The pull request's page on GitHub, and the path under it. */

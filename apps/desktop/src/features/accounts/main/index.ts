@@ -5,7 +5,7 @@
 
 import { fileURLToPath } from 'node:url';
 
-import { RepoRef, sameLogin } from '@lo/github';
+import { RepoRef, sameLogin, TokenLeftover } from '@lo/github';
 import { app, clipboard, net, safeStorage, session } from 'electron';
 
 import { IpcError } from '../../../ipc/contract.ts';
@@ -174,7 +174,9 @@ export default defineFeature(contract, {
         await feature().github.remove(login);
       } catch (error) {
         log(`removing ${login}: ${String(error)}`);
-        throw new IpcError('failed', `Lo couldn't sign out of ${login} completely.`);
+        // Gone from the list, with its sign-in left where the system keeps it: the system's words.
+        if (error instanceof TokenLeftover) throw new IpcError('leftover', error.said);
+        throw new IpcError('failed', error instanceof Error ? error.message : String(error));
       }
     },
     async keyring() {
@@ -241,8 +243,9 @@ export default defineFeature(contract, {
         (error: unknown) => log(`listing the accounts: ${String(error)}`),
       );
     });
+    // What the window words: an account added is in the accounts it's sent anyway.
     accounts.onEvent((event) => {
-      if (event.kind !== 'seen') publish('event', event);
+      if (event.kind !== 'seen' && event.kind !== 'added') publish('event', event);
     });
     // Each poller polls faster while Lo's window is in front.
     accounts.setForeground(false);

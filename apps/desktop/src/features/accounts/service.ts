@@ -38,6 +38,8 @@ export type GithubEvent =
   | { kind: 'signedOut'; login: string; why: SignedOut }
   /** The account was removed. Each feature forgets what it kept for it. */
   | { kind: 'removed'; login: string }
+  /** The account was added, or signed in again: what no account could see may be seen now. */
+  | { kind: 'added'; login: string }
   /** The keychain keeps refusing the account's renewed token (see {@link AccountState.cantSave}). */
   | { kind: 'cantSave'; login: string }
   /** What `cantSave` warned of is over. */

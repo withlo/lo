@@ -86,8 +86,8 @@ export function showGit(git: GitInfo): void {
 /** Whether Git is a problem to tell the reader of: Lo looked, and found none it can use. */
 export function gitProblem(
   git: GitInfo | undefined,
-): git is Extract<GitInfo, { status: 'missing' | 'tooOld' }> {
-  return git?.status === 'missing' || git?.status === 'tooOld';
+): git is Extract<GitInfo, { status: 'missing' | 'distrusted' | 'tooOld' }> {
+  return git?.status === 'missing' || git?.status === 'distrusted' || git?.status === 'tooOld';
 }
 
 /** The step after `step`, or before it: nothing past either end. */

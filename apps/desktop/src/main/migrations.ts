@@ -72,12 +72,14 @@ export function migrate(database: Database, files: Readonly<Record<string, strin
     const migration = known.get(key({ feature, number }));
     if (!migration) {
       throw new StartupError(
+        { kind: 'newerDatabase', feature, number },
         `Lo's database was last opened by a newer version of Lo: it holds ${feature}'s migration ` +
           `${String(number).padStart(3, '0')}, which this version doesn't have. Update Lo to open it.`,
       );
     }
     if (migration.sha256 !== row.sha256) {
       throw new StartupError(
+        { kind: 'migrationChanged', feature, file: migration.file },
         `${feature}'s migration ${migration.file} has changed since it ran on this database. ` +
           'Add a new migration rather than editing one that has run.',
       );

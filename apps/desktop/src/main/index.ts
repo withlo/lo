@@ -34,7 +34,7 @@ import { migrate } from './migrations.ts';
 import { windowPartition, windowUrl } from './policy.ts';
 import { registerScheme, secureContents, secureSession } from './security.ts';
 import { findServices } from './services.ts';
-import { StartupError } from './startup.ts';
+import { StartupError, startupWords } from './startup.ts';
 import { openWindow } from './window.ts';
 
 /** The window's build output, next to this file's. */
@@ -128,7 +128,11 @@ if (!refusing) {
 function couldNotStart(error: unknown): void {
   if (error instanceof StartupError) {
     console.error(`Lo couldn't start. ${error.message}`);
-    if (app.isPackaged) dialog.showErrorBox("Lo couldn't start", error.message);
+    // The box is the system's: the fact and what to do, then the detail as its last paragraph.
+    const { body, detail } = startupWords(error.failure);
+    if (app.isPackaged) {
+      dialog.showErrorBox('Couldn’t start Lo', detail === '' ? body : `${body}\n\n${detail}`);
+    }
   } else {
     console.error("Lo couldn't start:", error);
   }

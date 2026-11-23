@@ -831,7 +831,8 @@ describe('failing', () => {
         () => Response.json({ message: 'Server Error' }, { status: 502 }),
         {
           kind: 'failed',
-          message: 'GitHub answered 502: Server Error',
+          // What GitHub said, for Details.
+          message: '502 Bad Gateway\nServer Error',
           retryAt: Date.now() + 5_000,
         },
       ],
@@ -1129,7 +1130,9 @@ describe('the code', () => {
     tab.update(info({ local: { ...ready, kind: 'ready', offline: false } }), false, true);
     expect(sent.at(-1)?.code).toBe('ready');
     tab.update(
-      info({ local: { kind: 'noGit', message: 'No git.', install: 'Install git.' } }),
+      info({
+        local: { kind: 'noGit', git: { status: 'missing', install: { commands: [], page: null } } },
+      }),
       false,
       true,
     );

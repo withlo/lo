@@ -699,7 +699,7 @@ test('what git leaves running as it exits is stopped', async () => {
     env: { PATH: '/usr/bin:/bin' },
     platform: process.platform,
   });
-  if (status.status !== 'found') throw new Error(status.message);
+  if (status.status !== 'found') throw new Error(`found ${status.status}`);
   const repo = await (
     await cacheFor('https://127.0.0.1:1', { git: status.git })
   ).open('owner', 'repo');

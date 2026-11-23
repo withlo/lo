@@ -12,7 +12,13 @@
  */
 
 import { GITHUB_URLS, USER_AGENT, type FetchInit, type GitHubUrls } from './client.ts';
-import { CLIENT_ID, classifyNetworkError, GithubError, summarizeBody } from './errors.ts';
+import {
+  CLIENT_ID,
+  classifyNetworkError,
+  classifyProxy,
+  GithubError,
+  summarizeBody,
+} from './errors.ts';
 import { RenewalError, type Grant, type Refresh } from './grant.ts';
 import { isRecord } from './graphql.ts';
 import { Token } from './token.ts';
@@ -95,7 +101,12 @@ export async function postForm(
   } catch (error) {
     if (signal?.aborted) throw abortReason(signal);
     throw new GithubError(
-      { kind: 'network', failure: classifyNetworkError(error), message: describeThrown(error) },
+      {
+        kind: 'network',
+        failure: classifyNetworkError(error),
+        message: describeThrown(error),
+        proxy: classifyProxy(error),
+      },
       { cause: error },
     );
   }

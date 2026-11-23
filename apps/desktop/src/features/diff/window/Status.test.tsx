@@ -62,6 +62,7 @@ function snapshotOf(
           uncompared: from === 'github',
         }
       : undefined,
+    held: undefined,
     progress: { done: 0, of: 0 },
     whitespace: true,
   };

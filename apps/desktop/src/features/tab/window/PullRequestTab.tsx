@@ -5,15 +5,19 @@
 
 import {
   Banner,
+  CopyButton,
   PRHeader,
   Spinner,
   StatusBar,
   StatusItem,
   StatusKeys,
   StatusMode,
+  Swap,
+  useCopy,
   type HeaderConnection,
 } from '@lo/ui';
 import { focusedMode, onFocusedMode } from '@lo/ui/code';
+import { NO_TARGET } from '@lo/ui/commands';
 import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
 
 import { registry } from '../../../window/commands/registry.ts';
@@ -116,6 +120,11 @@ function run(id: string, action: BannerDo): void {
         return main().reload({ id });
       case 'choose':
         return main().choose({ id, login: action.login });
+      case 'signIn':
+        registry().run('accounts.addAccount', NO_TARGET);
+        return Promise.resolve();
+      case 'close':
+        return main().close({ id });
       case 'link':
         return main().openExternal({ url: action.url });
       case 'clearCache':
@@ -151,7 +160,7 @@ function useBanners(
   const now = useNow(counting);
   const held = useTabs().tabs.find((each) => viewIds([each]).includes(tab.id));
   const own = held?.kind === 'pull' && held.number !== tab.number ? held.number : undefined;
-  return bannersFor(view, local, `${tab.owner}/${tab.repo}`, systemClock(now), own);
+  return bannersFor(view, local, tab, systemClock(now), own);
 }
 
 /** The banners: Lo's own, then other features', two at most, the most urgent first. */
@@ -184,7 +193,13 @@ function Banners({ tab, own: all }: { tab: PullTab; own: readonly BannerSpec[] }
           key={banner.id}
           tone={banner.tone}
           title={banner.title}
-          detail={banner.detail}
+          detail={
+            banner.commands === undefined ? (
+              banner.detail
+            ) : (
+              <Commands detail={banner.detail} commands={banner.commands} />
+            )
+          }
           actions={banner.actions.map((action) => ({
             label: action.label,
             onClick: () => run(tab.id, action.do),
@@ -195,6 +210,28 @@ function Banners({ tab, own: all }: { tab: PullTab; own: readonly BannerSpec[] }
         <other.render key={other.id} tab={tab} />
       ))}
     </div>
+  );
+}
+
+/** A banner's line, then what it says to run, each as code with Copy. */
+function Commands({
+  detail,
+  commands,
+}: {
+  detail: string | undefined;
+  commands: readonly string[];
+}) {
+  const copy = useCopy();
+  return (
+    <>
+      {detail}
+      {commands.map((command) => (
+        <span key={command} className="ms-8 inline-flex items-center gap-4 align-middle">
+          <code className="break-all text-fg code-small select-text">{command}</code>
+          <CopyButton size="sm" variant="ghost" onCopy={() => copy(command)} />
+        </span>
+      ))}
+    </>
   );
 }
 
@@ -337,7 +374,9 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
           aria-label="Pull request"
         >
           <Slot slot={over} props={{ tab }} />
-          <div className="relative min-h-0 flex-1">
+          {/* One shown in another's place fades in over it, a Swap that keeps them all drawn; the
+          first the tab shows is just there. */}
+          <Swap id={shownMiddle?.id} keep className="relative min-h-0 flex-1">
             {shownMiddle ? (
               middles
                 .filter((each) => each === shownMiddle || kept.includes(each.id))
@@ -357,7 +396,7 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
             ) : (
               <Placeholder tab={tab.id} />
             )}
-          </div>
+          </Swap>
         </section>
         {showRight && shownRight && (
           <aside

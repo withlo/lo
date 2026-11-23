@@ -5,7 +5,9 @@
 import { parsePullLink } from '@lo/review';
 import { z } from 'zod';
 
+import { cause, details } from '../../ipc/cause.ts';
 import { defineContract, reply } from '../../ipc/contract.ts';
+import { gitTrouble } from '../../ipc/git.ts';
 import { login } from '../accounts/contract.ts';
 
 /** A pull request's state, as its tab shows it. */
@@ -285,11 +287,16 @@ export const choice = z.union([
 export type Choice = z.output<typeof choice>;
 
 /**
- * Where to move a tab: to a place in the strip, from 0, counted without it; or one place along the
- * tabs the strip shows, but not past their ends. Without an id, a step moves the tab on screen.
+ * Where to move a tab: to a place in the strip, from 0, counted without it, `brought` when it's
+ * the tab on screen, brought into the strip's last place from past it; or one place along the tabs
+ * the strip shows, but not past their ends. Without an id, a step moves the tab on screen.
  */
 export const move = z.union([
-  z.strictObject({ id: tabId, to: z.number().int().min(0).max(1_000_000) }),
+  z.strictObject({
+    id: tabId,
+    to: z.number().int().min(0).max(1_000_000),
+    brought: z.literal(true).optional(),
+  }),
   z.strictObject({ id: tabId.optional(), step: z.union([z.literal(1), z.literal(-1)]), within }),
 ]);
 export type Move = z.output<typeof move>;
@@ -317,8 +324,11 @@ export type Acting = z.output<typeof acting>;
 export const header = z.strictObject({
   title: z.string(),
   state: pullState,
-  /** The author's login, or null for an account GitHub deleted. */
-  author: z.string().nullable(),
+  /**
+   * The author's login, or null for an account GitHub deleted. Nothing while it isn't known: a
+   * poll's summary, which can come before GitHub's details, doesn't name the author.
+   */
+  author: z.string().nullable().optional(),
   head: z.strictObject({ branch: z.string(), fork: z.string().nullable() }),
   base: z.strictObject({ branch: z.string() }),
 });
@@ -353,16 +363,27 @@ export type Connection = z.output<typeof connection>;
 export const helpLink = z.strictObject({ label: z.string(), url: z.string() });
 
 /**
- * Why a tab can't show its pull request: GitHub has no such pull request, or the account can't
- * see it; an organization blocks the account until it's authorized, with GitHub's links to fix
- * that; several accounts can see it, and none was chosen for it; or reading it failed, and Lo
- * tries again at `retryAt`, if it will.
+ * Why a tab can't show its pull request, each with its `cause` (`ipc/cause.ts`) and what GitHub
+ * said, for Details: GitHub has no such pull request, or the account can't see it (`hidden`, or
+ * `private` with nobody signed in or no account that can); an organization blocks the account
+ * until it's authorized, with GitHub's links to fix that; several accounts can see it, and none
+ * was chosen for it; or reading it failed, and Lo tries again at `retryAt`, if it will.
  */
 export const problem = z.discriminatedUnion('kind', [
-  z.strictObject({ kind: z.literal('notFound'), message: z.string() }),
-  z.strictObject({ kind: z.literal('blocked'), message: z.string(), links: z.array(helpLink) }),
+  z.strictObject({ kind: z.literal('notFound'), cause, details: details.optional() }),
+  z.strictObject({
+    kind: z.literal('blocked'),
+    cause,
+    links: z.array(helpLink),
+    details: details.optional(),
+  }),
   z.strictObject({ kind: z.literal('ask'), logins: z.array(login) }),
-  z.strictObject({ kind: z.literal('failed'), message: z.string(), retryAt: time.nullable() }),
+  z.strictObject({
+    kind: z.literal('failed'),
+    cause,
+    details: details.optional(),
+    retryAt: time.nullable(),
+  }),
 ]);
 export type Problem = z.output<typeof problem>;
 
@@ -399,7 +420,11 @@ export const files = z.strictObject({
 });
 export type Files = z.output<typeof files>;
 
-/** Why fetching the local copy failed, in `@lo/git`'s words, or that the disk is full. */
+/**
+ * Why fetching the local copy failed, in `@lo/git`'s words, or that the disk is full, or that a
+ * copy that can't be trusted is held open, by the repository's tabs or its language servers, so
+ * it can't be made again yet.
+ */
 export const fetchFailure = z.enum([
   'network',
   'auth',
@@ -412,6 +437,8 @@ export const fetchFailure = z.enum([
   'tooLarge',
   'unavailable',
   'diskFull',
+  'heldByTabs',
+  'heldByServers',
   'other',
 ]);
 export type FetchFailure = z.output<typeof fetchFailure>;
@@ -428,7 +455,7 @@ export type Compared = z.output<typeof compared>;
  * A tab's local copy of its pull request, sent each time it changes:
  *
  * - `waiting` until Lo knows what to fetch and has git;
- * - `noGit` when Lo has no git new enough, with what it found and how to install one;
+ * - `noGit` when Lo has no git it can run, with why, and how to get one;
  * - `fetching`, with what git is doing, on the `attempt`th try;
  * - `ready`, with the head on screen, the base branch's tip it was fetched with, and where the
  *   pull request's changes start: where the two branched, or, for a stack's layer the stacks
@@ -436,10 +463,12 @@ export type Compared = z.output<typeof compared>;
  *   `offline` when GitHub couldn't be reached, so it's what was fetched before;
  * - `retrying` after a failure Lo tries again after by itself, at `retryAt`;
  * - `failed` after one it doesn't, until asked to try again.
+ *
+ * A failure carries what Git said, as it came, for Details.
  */
 export const localState = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('waiting') }),
-  z.strictObject({ kind: z.literal('noGit'), message: z.string(), install: z.string() }),
+  z.strictObject({ kind: z.literal('noGit'), git: gitTrouble }),
   z.strictObject({
     kind: z.literal('fetching'),
     progress: z.string().nullable(),
@@ -456,11 +485,15 @@ export const localState = z.discriminatedUnion('kind', [
   z.strictObject({
     kind: z.literal('retrying'),
     failure: fetchFailure,
-    message: z.string(),
+    details: details.optional(),
     attempt: z.number().int().positive(),
     retryAt: time,
   }),
-  z.strictObject({ kind: z.literal('failed'), failure: fetchFailure, message: z.string() }),
+  z.strictObject({
+    kind: z.literal('failed'),
+    failure: fetchFailure,
+    details: details.optional(),
+  }),
 ]);
 export type LocalState = z.output<typeof localState>;
 

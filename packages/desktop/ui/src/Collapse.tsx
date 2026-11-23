@@ -71,9 +71,21 @@ export function Collapse({ open, appear = false, children, onGone, className }: 
   );
 }
 
+/** The class that runs the Swap move. */
+const SWAP_CLASS = 'move-swap';
+
 export interface SwapProps {
-  /** Names what's shown: `loading`, `diff`. What's shown fades in when it changes. */
-  id: string;
+  /**
+   * Names what's shown: `loading`, `diff`. What's shown fades in when it changes. With `keep`,
+   * nothing named yet is `undefined`, and what it first names doesn't move either.
+   */
+  id: string | undefined;
+  /**
+   * Keeps what it holds, rather than drawing it anew, as `id` changes: for content that holds its
+   * own state, or that's drawn outside React, such as a code view, or middle views kept drawn while
+   * hidden. The box fades in as it is, once its content has changed.
+   */
+  keep?: boolean | undefined;
   children?: ReactNode;
   /** Classes for the box, which is the same box whatever it shows. */
   className?: string | undefined;
@@ -83,14 +95,61 @@ export interface SwapProps {
  * The Swap move: what replaces something in the same box fades in over it, and nothing slides. A
  * skeleton gives way to its content, and Overview to Diff, in one. What's there when it first draws
  * doesn't move.
+ *
+ * It draws what it holds anew for each `id`, so the move starts with it. With `keep`, it keeps what
+ * it holds, and starts the move on the box itself in the frame `id` changes: the caller changes the
+ * content in that frame too.
  */
-export function Swap({ id, children, className }: SwapProps) {
+export function Swap({ id, keep = false, children, className }: SwapProps) {
   const first = useRef<string | undefined>(id);
   if (first.current !== id) first.current = undefined;
-  const move = first.current === undefined ? 'move-swap' : '';
+  const box = useRef<HTMLDivElement>(null);
+  const named = useRef(id);
+  useLayoutEffect(() => {
+    const before = named.current;
+    named.current = id;
+    const element = box.current;
+    if (!keep || !element || before === undefined || id === undefined || before === id) {
+      return undefined;
+    }
+    return swapIn(element);
+  }, [keep, id]);
+  if (keep) {
+    return (
+      <div ref={box} className={className}>
+        {children}
+      </div>
+    );
+  }
+  const move = first.current === undefined ? SWAP_CLASS : '';
   return (
     <div key={id} className={className === undefined ? move : `${move} ${className}`}>
       {children}
     </div>
   );
+}
+
+/**
+ * Starts the Swap move on `element` afresh, and takes it off once it has run, so the box's own
+ * classes stay as React drew them: for an element drawn outside React, such as a code view, laid
+ * over what it replaces, which goes once the move has run. Returns a function that stops
+ * listening for its end.
+ */
+export function swapIn(element: HTMLElement): () => void {
+  element.classList.remove(SWAP_CLASS);
+  // Read once, so the move starts again rather than going on from where the last one was.
+  void element.getBoundingClientRect();
+  element.classList.add(SWAP_CLASS);
+  const ended = (event: Event) => {
+    if (event.target !== element) return;
+    element.classList.remove(SWAP_CLASS);
+    stop();
+  };
+  const stop = () => {
+    element.removeEventListener('animationend', ended);
+    element.removeEventListener('animationcancel', ended);
+  };
+  element.addEventListener('animationend', ended);
+  element.addEventListener('animationcancel', ended);
+  return stop;
 }

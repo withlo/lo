@@ -119,6 +119,11 @@ export interface Ready {
 export interface Snapshot {
   readonly state: DiffState | undefined;
   readonly ready: Ready | undefined;
+  /**
+   * What was ready before the loader started on what's next, until that's ready: the view drawn of
+   * it stays, held, meanwhile. {@link Loader.heldCopy} draws it again.
+   */
+  readonly held: Ready | undefined;
   /** How many of the files that show their lines have them, of how many. */
   readonly progress: { readonly done: number; readonly of: number };
   /** Whether changes to whitespace alone show. */
@@ -218,12 +223,20 @@ function runOf(
   };
 }
 
+/** What was ready before the loader started on what's next, and what it had worked out of it. */
+interface Before {
+  readonly ready: Ready;
+  readonly shown: ReadonlyMap<string, Shown>;
+  readonly moves: readonly Moved[];
+}
+
 export class Loader {
   readonly #work: LoaderWork;
-  readonly ids = new FileIds();
+  readonly ids: FileIds;
   #state: DiffState | undefined;
   #run: Run | undefined;
   #ready: Ready | undefined;
+  #before: Before | undefined;
   /** What's been worked out of each file at the head on screen, by id. */
   readonly #shown = new Map<string, Shown>();
   /** Files whose lines couldn't be read, and why. */
@@ -239,12 +252,30 @@ export class Loader {
   #snapshot: Snapshot = {
     state: undefined,
     ready: undefined,
+    held: undefined,
     progress: { done: 0, of: 0 },
     whitespace: true,
   };
 
-  constructor(work: LoaderWork) {
+  constructor(work: LoaderWork, ids = new FileIds()) {
     this.#work = work;
+    this.ids = ids;
+  }
+
+  /**
+   * What was ready before the loader started on what's next, as a loader of its own that loads
+   * nothing and has it all worked out already: for its view, drawn again and held while the next
+   * loads, as when its tab comes back on screen meanwhile. Nothing once the next is ready.
+   */
+  heldCopy(): Loader | undefined {
+    const before = this.#before;
+    if (!before) return undefined;
+    const copy = new Loader(this.#work, this.ids);
+    copy.#ready = before.ready;
+    for (const [id, shown] of before.shown) copy.#shown.set(id, shown);
+    copy.#moves = before.moves;
+    copy.#changed();
+    return copy;
   }
 
   /** What there is to draw now. The same object until something changes. */
@@ -429,6 +460,11 @@ export class Loader {
   #reset(): void {
     this.#run?.controller.abort();
     this.#run = undefined;
+    // What was ready is kept until what's next is, for its view to stay; what was kept of an
+    // earlier one that never gave way stays.
+    if (this.#ready) {
+      this.#before = { ready: this.#ready, shown: new Map(this.#shown), moves: this.#moves };
+    }
     this.#ready = undefined;
     const gone = new Set([...this.#shown.keys(), ...this.#failed.keys()]);
     this.#shown.clear();
@@ -478,7 +514,10 @@ export class Loader {
     const run = runOf(at, comparison, compareFrom, since, from, entries, listing, shown, only);
     this.#run = run;
     this.#failed.clear();
-    if (inPlace) this.#ready = { at, comparison, compareFrom, from, entries, ...listing };
+    if (inPlace) {
+      this.#ready = { at, comparison, compareFrom, from, entries, ...listing };
+      this.#before = undefined;
+    }
     void this.#load(run).catch((error: unknown) => {
       if (!run.stopped) this.#work.log('Lo couldn’t load the diff:', error);
     });
@@ -692,6 +731,7 @@ export class Loader {
         partial: run.partial,
         uncompared: run.uncompared,
       };
+      this.#before = undefined;
     }
   }
 
@@ -839,6 +879,7 @@ export class Loader {
     const snapshot: Snapshot = {
       state: this.#state,
       ready: this.#ready,
+      held: this.#before?.ready,
       progress: { done, of: counted.length },
       whitespace: this.#whitespace,
     };
@@ -846,6 +887,7 @@ export class Loader {
     if (
       before.state === snapshot.state &&
       before.ready === snapshot.ready &&
+      before.held === snapshot.held &&
       before.progress.done === done &&
       before.progress.of === counted.length &&
       before.whitespace === snapshot.whitespace

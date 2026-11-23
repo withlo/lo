@@ -62,6 +62,11 @@ export interface ContextMenuProps {
   onClosed?: ((chosen: string | undefined) => void) | undefined;
   /** Where the menu is put in the page: an element inside `.lo-app`. */
   container?: HTMLElement | null | undefined;
+  /**
+   * A menu that can list more than the window holds, such as the tabs that don't fit: it grows to
+   * a palette's list at most, and scrolls.
+   */
+  long?: boolean | undefined;
 }
 
 /**
@@ -88,6 +93,7 @@ export function ContextMenu({
   highlightFirst = false,
   onClosed,
   container,
+  long = false,
 }: ContextMenuProps) {
   const chosen = useRef<string | undefined>(undefined);
   const popup = useRef<HTMLDivElement | null>(null);
@@ -146,7 +152,7 @@ export function ContextMenu({
             inert={!shown}
             aria-label={held.label}
             data-lo-scope="menu"
-            className="move-pop min-w-menu-w rounded-md bg-bg-overlay p-4 text-fg shadow-pop outline-none text-ui"
+            className={`move-pop min-w-menu-w rounded-md bg-bg-overlay p-4 text-fg shadow-pop outline-none text-ui ${long ? 'max-h-palette-list-h overflow-y-auto' : ''}`}
           >
             {held.sections.map((section, index) => (
               <Fragment key={section.map((item) => item.id).join(' ')}>

@@ -337,5 +337,10 @@ test('a first read the poller can’t answer now fails with why, and the threads
     again.reading.follow('t1');
     await settled();
     expect(again.threads.at(-1)?.status).toBe('failed');
+    // The time of day the limit resets, never a timestamp; the account by its login.
+    expect(again.threads.at(-1)?.problem).toMatch(
+      /^GitHub’s rate limit resets at .+\.$|^\S+ is signed out\.$/,
+    );
+    expect(again.threads.at(-1)?.problem).not.toContain('1970');
   }
 });

@@ -145,6 +145,15 @@ describe('Collapse', () => {
   });
 });
 
+/** A box that keeps what it holds, naming it `id`. */
+function keeping(id: string | undefined) {
+  return (
+    <Swap id={id} keep className="box">
+      <p>{id ?? 'nothing yet'}</p>
+    </Swap>
+  );
+}
+
 describe('Swap', () => {
   it('fades in what replaces what it showed, in the same box, and not what it first shows', () => {
     const host = render(<Swap id="loading">Loading</Swap>);
@@ -152,6 +161,23 @@ describe('Swap', () => {
     rerender(host, <Swap id="diff">The diff</Swap>);
     expect(host.firstElementChild?.classList.contains('move-swap')).toBe(true);
     expect(host.textContent).toBe('The diff');
+  });
+
+  it('with keep, fades the same box in as what it names changes, drawing nothing anew', () => {
+    const host = render(keeping(undefined));
+    const box = host.firstElementChild!;
+    const kept = box.firstElementChild;
+    // What it first names, after naming nothing, is just there.
+    rerender(host, keeping('overview'));
+    expect(box.classList.contains('move-swap')).toBe(false);
+    rerender(host, keeping('diff'));
+    expect(host.firstElementChild).toBe(box);
+    expect(box.firstElementChild).toBe(kept);
+    expect(box.textContent).toBe('diff');
+    expect(box.classList.contains('move-swap')).toBe(true);
+    // Once it has run, the box's classes are React's again.
+    box.dispatchEvent(new Event('animationend'));
+    expect(box.className).toBe('box');
   });
 });
 

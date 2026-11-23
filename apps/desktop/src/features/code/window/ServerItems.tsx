@@ -38,7 +38,8 @@ export function ServerItems({ tab }: { tab: PullTab }) {
             failure: failure
               ? {
                   title: failureTitle(status, failure),
-                  message: failure.message,
+                  // As an error's body line, a refusal's reason ends as a sentence does.
+                  message: failure.refusal === true ? `${failure.message}.` : failure.message,
                   fix: failure.file
                     ? { label: 'Open settings.json', onChoose: () => void openSettingsFile() }
                     : undefined,

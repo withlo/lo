@@ -272,10 +272,10 @@ for (const [when, slow, clones] of [
 test('with no git, the window opens and says so, and Lo keeps no cache', async () => {
   const { app, page } = await launch({ LO_GIT: 'none' });
   try {
+    // What's missing as a kind, with the commands that install one.
     expect(await gitFound(page)).toEqual({
       status: 'missing',
-      message: "Lo can't find git.",
-      install: expect.stringContaining('git'),
+      install: { commands: expect.arrayContaining([expect.any(String)]), page: null },
     });
     expect(existsSync(cachePath(dataFolder()))).toBe(false);
   } finally {
@@ -287,12 +287,13 @@ test('with a git too old, the window opens and says why, and Lo keeps no cache',
   const old = script(test.info().outputPath('git', 'git'), ["echo 'git version 2.30.0'"]);
   const { app, page } = await launch({ LO_GIT: old });
   try {
-    expect(await gitFound(page)).toEqual({
+    expect(await gitFound(page)).toMatchObject({
       status: 'tooOld',
+      program: old,
       version: '2.30.0',
+      minimum: '2.41.0',
       check: 'version',
-      message: `Lo needs git 2.41.0 or newer, and ${old} is git 2.30.0.`,
-      install: expect.stringContaining('git'),
+      install: { commands: expect.arrayContaining([expect.stringContaining('git')]) },
     });
     expect(existsSync(cachePath(dataFolder()))).toBe(false);
   } finally {

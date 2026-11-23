@@ -245,15 +245,16 @@ describe('a write', () => {
 
     expect(await fail(`PROXY 127.0.0.1:${asking.port}`)).toEqual([
       'refused',
-      `The proxy 127.0.0.1:${asking.port} asks Lo to sign in, which Lo can't do, so nothing was sent to GitHub.`,
+      // Only where the proxy is, and what it answered, for Details.
+      `127.0.0.1:${asking.port}\n407`,
     ]);
     expect(await fail(`PROXY 127.0.0.1:${refusing.port}`)).toEqual([
       'tunnel',
-      `The proxy 127.0.0.1:${refusing.port} didn't connect Lo to GitHub (it answered 502), so nothing was sent.`,
+      `127.0.0.1:${refusing.port}\n502`,
     ]);
     expect(await fail(`PROXY 127.0.0.1:${down}`)).toEqual([
       'offline',
-      `Lo couldn't reach the proxy 127.0.0.1:${down} (ECONNREFUSED), so nothing was sent to GitHub.`,
+      `127.0.0.1:${down}\nECONNREFUSED`,
     ]);
     expect(arrivals).toEqual([]);
     expect([asking.asked, refusing.asked]).toEqual([
@@ -278,13 +279,13 @@ describe('a write', () => {
 
     expect(await fail(`PROXY 127.0.0.1:${tunnel.port}; DIRECT`)).toEqual([
       'offline',
-      `Lo reached the proxy 127.0.0.1:${tunnel.port}, but the connection through it to GitHub timed out, so nothing was sent.`,
+      `127.0.0.1:${tunnel.port}\nUND_ERR_CONNECT_TIMEOUT`,
     ]);
     expect(tunnel.asked).toEqual([`localhost:${github}`]);
     // An HTTPS proxy whose own handshake stalls is the proxy's.
     expect(await fail(`HTTPS localhost:${stalled}`)).toEqual([
       'offline',
-      `Lo couldn't reach the proxy localhost:${stalled} (UND_ERR_CONNECT_TIMEOUT), so nothing was sent to GitHub.`,
+      `localhost:${stalled}\nUND_ERR_CONNECT_TIMEOUT`,
     ]);
   });
 

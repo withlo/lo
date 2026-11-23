@@ -7,6 +7,7 @@
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { notify } from '../../../window/commands/notices.tsx';
+import { explain } from '../../../window/explain.ts';
 import type { SettingsState } from '../../settings/contract.ts';
 import { activeTab, tabState, type BannerSwitch } from '../../tab/window/shared.ts';
 import type { Status } from '../contract.ts';
@@ -20,8 +21,17 @@ export const statuses = tabState<Status | null>(() => null);
 export interface TrustFailure {
   /** Whether it was its pull request alone that was asked about. */
   readonly pull: boolean;
-  /** Why, in a sentence or two. */
+  /** Why, in a sentence, or nothing when the cause isn't known. */
   readonly message: string;
+  /** A name in `message` that's code, such as `settings.json`, which shows as code where it can. */
+  readonly code?: string | undefined;
+  /**
+   * Whether it's a refusal of main's own, whose reason has no full stop where it's said as one, in
+   * the banner or a note; an error's body line adds it.
+   */
+  readonly refusal?: boolean | undefined;
+  /** What GitHub, the settings file or the system said, as it came, for Details. */
+  readonly details?: string | undefined;
   /** Whether what the settings file holds kept Lo from saving it, which editing the file fixes. */
   readonly file: boolean;
 }
@@ -112,6 +122,44 @@ export function busyLabel(status: Status): string | undefined {
   }
 }
 
+/**
+ * Why trusting failed, as main sent it: a kind, as the error's code, with what GitHub, the
+ * settings file or the system said as its message. The reason is a sentence of the window's, or
+ * nothing for a cause it doesn't know; what was said goes behind Details.
+ */
+export function trustFailureWords(error: unknown): {
+  message: string;
+  code?: string;
+  refusal?: boolean;
+  details?: string;
+} {
+  if (!(error instanceof IpcError)) return { message: '' };
+  const said = error.message === '' ? undefined : error.message;
+  switch (error.code) {
+    case 'renamed':
+      return { message: `It’s now named ${error.message}.` };
+    case 'notFork':
+      return { message: 'This pull request isn’t from a fork.' };
+    case 'forkGone':
+      return { message: 'The fork no longer exists.' };
+    case 'settingsFile':
+      return { message: `${SETTINGS_FILE} has an error.`, code: SETTINGS_FILE, details: said };
+    case 'unsaved':
+      return { message: `${SETTINGS_FILE} couldn’t be saved.`, code: SETTINGS_FILE, details: said };
+    case 'internal':
+      return { message: '' };
+    default:
+      // A refusal of main's own, such as the question already asked about another view, says
+      // itself; the rest, whose cause isn't known, have their text behind Details.
+      return error.code === 'asking'
+        ? { message: `Answer the question about ${error.message} first`, refusal: true }
+        : { message: '', details: said };
+  }
+}
+
+/** The settings file, by its name, which shows as code. */
+const SETTINGS_FILE = 'settings.json';
+
 /** What a failure to trust `status`'s view says first: what didn't happen, as a title. */
 export function failureTitle(status: Status, failure: TrustFailure): string {
   return failure.pull ? 'Couldn’t trust the pull request' : `Couldn’t trust ${status.repo}`;
@@ -141,6 +189,8 @@ export interface TrustBannerText {
   readonly tone: 'warn' | 'danger';
   readonly title: string;
   readonly detail?: string | undefined;
+  /** A name in `detail` that's code, such as `settings.json`, shown as code. */
+  readonly code?: string | undefined;
   /**
    * The button that asks main to ask the reader, if trusting can help, with what Lo is doing
    * while it does.
@@ -173,6 +223,7 @@ export function bannerOf(
     tone: 'danger',
     title: failureTitle(status, failure),
     detail: failure.message,
+    code: failure.code,
     action,
     openFile: failure.file,
   };
@@ -240,8 +291,17 @@ export async function askToTrust(
   const { view } = status;
   if (statuses.get(view)?.trusting !== undefined) return;
   setFailure(view, null);
+  const failed = (failure: TrustFailure) => {
+    setFailure(view, failure);
+    const now = statuses.get(view) ?? status;
+    if (elsewhere && !bannerOf(now)) notify(failureTitle(now, failure), failure.message);
+  };
   try {
-    await main().trust({ view, repo: status.repo, pull: pull ? status.pull : null });
+    const answer = await main().trust({ view, repo: status.repo, pull: pull ? status.pull : null });
+    // What the pull request joins couldn't be read from GitHub: why, by its cause.
+    if (typeof answer === 'object') {
+      failed({ pull, message: explain(answer.cause) ?? '', details: answer.details, file: false });
+    }
   } catch (error) {
     // Asked again while main asks, as by a key held down on the banner: main asks already.
     if (error instanceof IpcError && error.code === 'busy') return;
@@ -249,17 +309,11 @@ export async function askToTrust(
     if (!(error instanceof IpcError && error.code === 'asking')) {
       console.error("Lo couldn't trust a repo:", error);
     }
-    const failure: TrustFailure = {
+    failed({
       pull,
-      message:
-        error instanceof IpcError && error.code !== 'internal' ? error.message : 'Try again.',
+      ...trustFailureWords(error),
       file: error instanceof IpcError && error.code === 'settingsFile',
-    };
-    setFailure(view, failure);
-    const now = statuses.get(view) ?? status;
-    if (elsewhere && !bannerOf(now)) {
-      notify(failureTitle(now, failure), failure.message);
-    }
+    });
   }
 }
 

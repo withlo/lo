@@ -4,7 +4,7 @@
 
 import { FileTree, FileTreePanel, Skeleton, type FileTreeRow } from '@lo/ui';
 import { keyLabels, setScopeSource, type Target } from '@lo/ui/commands';
-import { useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react';
 
 import { currentMenu, openMenu } from '../../../window/commands/menus.tsx';
 import { registry, useKeys } from '../../../window/commands/registry.ts';
@@ -16,10 +16,13 @@ import { mode as modeSetting } from '../settings.ts';
 import { type FileThreads, useCounts } from './counts.ts';
 import { model as modelOf, type Row } from './model.ts';
 import { useViewedCount } from './shared.ts';
+import { problemWords, unlistedWords, type TreeWords } from './words.ts';
 import {
   askFolders,
   catchUp,
   choices,
+  diffHeld,
+  drawnRows,
   focus,
   folders,
   onScreen,
@@ -81,22 +84,29 @@ function drawn(
 /** What the panel says over the files, when only some of them can show. */
 function noteOf(state: TreeState | undefined, omitted: number): ReactNode {
   if (!state) return undefined;
-  const notes: string[] = [];
+  const notes: TreeWords[] = [];
   const long = state.omitted + omitted;
   if (long > 0) {
-    notes.push(
-      `${long.toLocaleString('en')} unchanged ${long === 1 ? 'file has a path' : 'files have paths'} longer than ${PATH_LIMIT.toLocaleString('en')} bytes, which the tree leaves out.`,
-    );
+    notes.push({
+      title: `${long.toLocaleString('en')} unchanged ${long === 1 ? 'file has a path' : 'files have paths'} longer than ${PATH_LIMIT.toLocaleString('en')} bytes, which the tree leaves out.`,
+    });
   }
-  if (state.listing.kind === 'changed') notes.push(state.listing.why);
+  if (state.listing.kind === 'changed') notes.push(unlistedWords(state.listing.why));
   if (state.partial) {
-    notes.push(
-      'GitHub lists only some of the changed files, so the rest show once the local copy is ready.',
-    );
+    notes.push({
+      title:
+        'GitHub lists only some of the changed files, so the rest show once the local copy is ready.',
+    });
   }
-  if (state.problem !== null) notes.push(state.problem);
+  if (state.problem !== null) notes.push(problemWords(state.problem));
   if (notes.length === 0) return undefined;
-  return notes.map((note) => <p key={note}>{note}</p>);
+  // A title, then its reason under it.
+  return notes.map((note) => (
+    <p key={note.title}>
+      {note.title}
+      {note.reason !== undefined && <span className="block">{note.reason}</span>}
+    </p>
+  ));
 }
 
 /** The target a key in the tree acts on: the file the keyboard is on, or nothing on a folder. */
@@ -185,6 +195,13 @@ export function Files({
   );
   const viewedCount = useViewedCount(tab.id);
   const loading = !state || (state.listing.kind === 'loading' && state.changes === null);
+  // While the diff holds the view it drew, the tree holds the rows it drew with it, taking no
+  // input, so neither drops to what the next is still working out: the next come in together.
+  const diffHolds = useTabState(diffHeld, tab.id);
+  useLayoutEffect(() => {
+    if (!diffHolds && !loading) drawnRows.set(tab.id, { rows, comparing: hits !== undefined });
+  });
+  const holding = diffHolds ? drawnRows.get(tab.id) : undefined;
 
   return (
     <FileTreePanel
@@ -196,18 +213,21 @@ export function Files({
       changedOnly={chosen.changedOnly}
       onChangedOnly={(changedOnly) => choices.update(tab.id, (now) => ({ ...now, changedOnly }))}
       changedOnlyKeys={keyOf('tree.changedOnly')}
-      waiting={loading}
+      waiting={loading && !holding}
       note={noteOf(state, model?.omitted ?? 0)}
     >
-      {loading ? (
+      {loading && !holding ? (
         <Loading />
       ) : (
         <FileTree
           treeRef={treeRef}
           data-lo-scope="tree"
+          data-lo-held={holding ? true : undefined}
+          aria-busy={holding ? true : undefined}
+          inert={holding !== undefined}
           aria-label={mode === 'review' ? 'Changed files in review order' : 'Files'}
-          rows={rows}
-          comparing={hits !== undefined}
+          rows={holding?.rows ?? rows}
+          comparing={holding?.comparing ?? hits !== undefined}
           focused={focused}
           current={current}
           reveal={revealed}

@@ -13,6 +13,7 @@
 import { GitError, type Oid, parseOid, type Repo } from '@lo/git';
 import {
   activityEntries,
+  causeOf,
   type Cached,
   GithubError,
   lastReview,
@@ -23,6 +24,7 @@ import {
   type PollEvent,
   type PullRequest,
   type PushHistory,
+  saidBy,
   unavailableHeads,
   unmarkFileAsViewed,
 } from '@lo/github';
@@ -40,22 +42,33 @@ import {
   writeFailed,
 } from '@lo/review';
 
+import { detailsOf, githubCause } from '../../../ipc/cause.ts';
 import { IpcError } from '../../../ipc/contract.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
 import { PATH_LIMIT, pathBytes } from '../../tree/contract.ts';
 import {
   HOLD_LIMIT,
   type Compared,
+  type CompareWhy,
   type ComparisonView,
   type Marked,
   type Replay,
   type RevisionRow,
+  type RevisionsProblem,
 } from '../contract.ts';
 import type { Comparing, OnScreen, Side, Since, SinceGroup } from '../service.ts';
 import type { Marks, ViewedRecord } from './marks.ts';
 
-/** What the note over the diff says while the revisions can't be read. */
-const READ_FAILED = 'Can’t read the revisions';
+/** Why two revisions can't be compared, with what Git or the system said, if anything. */
+class Uncompared extends Error {
+  readonly why: CompareWhy;
+
+  constructor(why: CompareWhy, message: string) {
+    super(message);
+    this.name = 'Uncompared';
+    this.why = why;
+  }
+}
 
 /**
  * What the revisions use of an account's poller: the push history it keeps, and its events; the
@@ -162,7 +175,7 @@ export class RevisionsTab {
   #replay: Replay | undefined;
   #conflicted = 0;
   #uncertain = false;
-  #problem: string | undefined;
+  #problem: RevisionsProblem | undefined;
   #closed = false;
   #said: string | undefined;
   /** The local copy's clone, once a fetch of the revisions has opened it. */
@@ -390,7 +403,7 @@ export class RevisionsTab {
     } catch (error) {
       // Why, in the words the window shows under its title for the failure, with what GitHub or
       // the system said behind Details.
-      const said = error instanceof GithubError ? error.message : describe(error);
+      const said = saidBy(error);
       const who = {
         login,
         owner: pull.repo.owner,
@@ -530,7 +543,7 @@ export class RevisionsTab {
       poller = await this.#options.github.poller(login);
     } catch (error) {
       if (this.#login !== login || this.#closed) return;
-      this.#fail(`as ${login}: ${describe(error)}`);
+      this.#fail(error);
       return;
     }
     if (this.#login !== login || this.#pull?.key !== pull.key || this.#closed) return;
@@ -543,7 +556,7 @@ export class RevisionsTab {
       if (cached) this.#takeHistory(cached.value);
     } catch (error) {
       if (this.#poller !== poller || this.#closed) return;
-      this.#fail(describe(error));
+      this.#fail(error);
     }
   }
 
@@ -559,7 +572,7 @@ export class RevisionsTab {
       }
       case 'readFailed':
         if (event.name !== PUSH_HISTORY.name || !event.pull.equals(pull)) return;
-        if (!this.#history) this.#fail(new GithubError(event.error).message);
+        if (!this.#history) this.#fail(new GithubError(event.error));
         return;
       case 'details':
         if (!event.pull.equals(pull)) return;
@@ -578,11 +591,14 @@ export class RevisionsTab {
   }
 
   /** Reading the revisions failed, with nothing read before: the whole pull request shows. */
-  #fail(details: string): void {
+  #fail(error: unknown): void {
     this.#status = 'failed';
-    // What the note over the diff says; what GitHub or the system said goes to the log alone.
-    this.#problem = READ_FAILED;
-    this.#options.log(`${READ_FAILED}: ${details}`);
+    // Why, by GitHub's cause, with what GitHub or the system said behind Details.
+    const cause = githubCause(
+      causeOf(error, { login: this.#login, owner: this.#pull?.repo.owner }),
+    );
+    this.#problem = { kind: 'read', cause, details: detailsOf(saidBy(error)) };
+    this.#options.log(`Can’t read the revisions as ${this.#login ?? 'nobody'}: ${describe(error)}`);
     this.#release();
     this.#publish();
   }
@@ -822,7 +838,7 @@ export class RevisionsTab {
     this.#revisions = revisions;
     this.#withCommits = withCommits;
     this.#status = 'ready';
-    if (this.#problem === READ_FAILED) this.#problem = undefined;
+    if (this.#problem?.kind === 'read') this.#problem = undefined;
     // What was fetched was for other revisions.
     if (this.#fetched !== this.#headsKey(revisions)) this.#fetched = undefined;
     if (!this.#defaulted) this.#decideDefault(revisions, history);
@@ -1031,17 +1047,30 @@ export class RevisionsTab {
     const oid = parseOid(head);
     const tip = this.#tips.get(head);
     if (!(await repo.hasCommit(oid))) {
-      throw new Error(`the local copy doesn’t have ${label}`);
+      throw new Uncompared({ kind: 'notFetched' }, `the local copy doesn’t have ${label}`);
     }
-    if (!tip) throw new Error(`Lo doesn’t know where ${label}’s base branch was`);
+    if (!tip) {
+      throw new Uncompared(
+        { kind: 'noBase', head },
+        `Lo doesn’t know where ${label}’s base branch was`,
+      );
+    }
     const tipOid = parseOid(tip.commit);
     if (!(await repo.hasCommit(tipOid))) {
-      throw new Error(`the local copy doesn’t have the base ${label} was pushed on`);
+      throw new Uncompared(
+        { kind: 'notFetched' },
+        `the local copy doesn’t have the base ${label} was pushed on`,
+      );
     }
     // A tip that holds the revision is no base for it.
     const holds = await repo.isAncestor(oid, tipOid);
     const base = await repo.mergeBase(oid, tipOid);
-    if (base === undefined) throw new Error(`${label} shares no history with its base branch`);
+    if (base === undefined) {
+      throw new Uncompared(
+        { kind: 'unrelated', head },
+        `${label} shares no history with its base branch`,
+      );
+    }
     const found = { base, uncertain: holds || tip.source === 'uncertain' };
     this.#bases.set(head, found);
     return found;
@@ -1052,14 +1081,19 @@ export class RevisionsTab {
     const current = () => !this.#closed && same(this.#preparing, chosen);
     try {
       const opening = this.#options.clone();
-      if (!opening) throw new Error('the local copy isn’t open');
+      if (!opening) throw new Uncompared({ kind: 'local' }, 'the local copy isn’t open');
       const repo = await opening;
       await this.#fetchRevisions();
       if (!current()) return;
       const unavailable = [chosen.from, chosen.to].find(
         (head) => head !== null && !this.#revisions?.get(head)?.available,
       );
-      if (unavailable) throw new Error(`${this.#label(unavailable)} is no longer available`);
+      if (unavailable) {
+        throw new Uncompared(
+          { kind: 'gone', head: unavailable },
+          `${this.#label(unavailable)} is no longer available`,
+        );
+      }
       const newer = await this.#baseOf(repo, chosen.to);
       const older: BaseOf | undefined =
         chosen.from === null ? undefined : await this.#baseOf(repo, chosen.from);
@@ -1099,7 +1133,10 @@ export class RevisionsTab {
       if ('refused' in compared) {
         this.#couldnt(
           chosen,
-          new Error(`it would read more than ${Math.round(compared.limit / 2 ** 20)} MB of files`),
+          new Uncompared(
+            { kind: 'tooLarge', limit: compared.limit },
+            `it would read more than ${compared.limit} bytes of files`,
+          ),
         );
         return;
       }
@@ -1114,13 +1151,19 @@ export class RevisionsTab {
 
   /** `chosen` can't be compared: it says why, and the whole pull request shows. */
   #couldnt(chosen: Compared, error: unknown): void {
-    const why =
-      error instanceof GitError && error.detail.kind === 'unavailable'
-        ? 'GitHub no longer has one of them'
-        : describe(error);
+    let why: CompareWhy = { kind: 'unknown' };
+    if (error instanceof Uncompared) why = error.why;
+    else if (error instanceof GitError && error.detail.kind === 'unavailable') {
+      why = { kind: 'gone', head: null };
+    }
+    // Lo's own account of why goes to the log; what Git or the system said, behind Details.
+    const said = error instanceof GitError ? error.said() : saidBy(error);
+    const details = error instanceof Uncompared ? undefined : detailsOf(said);
+    this.#problem = { kind: 'compare', from: chosen.from, to: chosen.to, why, details };
     const from = chosen.from === null ? 'the base' : this.#label(chosen.from);
-    this.#problem = `Lo couldn’t compare ${from} with ${this.#label(chosen.to)}: ${why}.`;
-    this.#options.log(this.#problem);
+    this.#options.log(
+      `Lo couldn’t compare ${from} with ${this.#label(chosen.to)}: ${describe(error)}.`,
+    );
     if (same(this.#chosen, chosen)) this.#chosen = undefined;
     const hadReady = this.#ready !== undefined;
     this.#ready = undefined;

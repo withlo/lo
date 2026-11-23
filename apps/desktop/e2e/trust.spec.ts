@@ -229,8 +229,8 @@ test('says in the banner why it couldn’t trust the repo, offers the settings f
     .locator('[data-lo-banners]')
     .getByRole('alert')
     .filter({ hasText: 'Couldn’t trust rozed-dev/e2e' });
-  await expect(failed).toContainText("The settings file isn't valid JSON");
-  await expect(failed).toContainText('Fix that, then trust the repo again.');
+  // Why in the window's words; the settings file's own error is behind Details.
+  await expect(failed).toContainText('settings.json has an error.');
   expect(await dialogsAsked(app)).toHaveLength(1);
   // Said there, and not again in a note in the corner.
   await expect(page.getByText("Lo didn't change code.trusted")).toHaveCount(0);

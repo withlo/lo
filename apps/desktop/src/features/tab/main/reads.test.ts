@@ -5,7 +5,6 @@ import {
   PullRef,
   type PollStatus,
   type PullSummary,
-  type RepoAccount,
 } from '@lo/github';
 import { replayFetch } from '@lo/testing';
 import { describe, expect, it } from 'vitest';
@@ -18,8 +17,6 @@ import {
   problemOf,
   rateLimitedUntil,
   readPull,
-  restrictedMessage,
-  restrictingOrg,
   summaryState,
   withSummary,
 } from './reads.ts';
@@ -82,7 +79,8 @@ describe('reading a pull request to open it', () => {
     expect(error).toBeInstanceOf(GithubError);
     expect(problemOf(error, E2E, { kind: 'account', login: 'rozed-bot' }, undefined)).toEqual({
       kind: 'notFound',
-      message: "GitHub has no pull request rozed-dev/e2e#80, or rozed-bot can't see it.",
+      cause: { kind: 'hidden', login: 'rozed-bot' },
+      details: 'Not Found',
     });
   });
 });
@@ -116,7 +114,9 @@ describe('a pull request’s state', () => {
       head: { branch: 'app/feature', fork: 'someone/e2e' },
       base: { branch: 'app/base' },
     });
-    expect(withSummary(undefined, summary()).author).toBe(null);
+    // With no header before it, the author isn't known yet, which isn't a deleted account.
+    expect(withSummary(undefined, summary()).author).toBeUndefined();
+    expect(withSummary({ ...before, author: null }, summary()).author).toBe(null);
   });
 });
 
@@ -178,10 +178,13 @@ describe('what reading it ran into', () => {
 
   it("says GitHub has no such pull request, or can't show it without signing in", () => {
     const missing = new GithubError({ kind: 'notFound', message: 'Not Found' });
-    expect(problemOf(missing, E2E, { kind: 'anonymous', canSignIn: true }, 5)).toEqual({
+    expect(problemOf(missing, E2E, { kind: 'anonymous', signedIn: false }, 5)).toEqual({
       kind: 'notFound',
-      message:
-        "GitHub has no public pull request rozed-dev/e2e#80. If it's private, sign in with an account that can see it.",
+      cause: { kind: 'private', signedIn: false },
+      details: 'Not Found',
+    });
+    expect(problemOf(missing, E2E, { kind: 'anonymous', signedIn: true }, 5)).toMatchObject({
+      cause: { kind: 'private', signedIn: true },
     });
     const gone = new GithubError({ kind: 'api', status: 410, message: 'Gone', errors: [] });
     expect(problemOf(gone, E2E, account, undefined).kind).toBe('notFound');
@@ -219,31 +222,21 @@ describe('what reading it ran into', () => {
     });
     expect(problemOf(restricted, E2E, account, undefined)).toEqual({
       kind: 'blocked',
-      message:
-        "rozed-dev hasn't approved Lo, so GitHub hides its repositories from Lo. Ask for approval on GitHub, and GitHub emails rozed-dev's owners.",
+      cause: { kind: 'unapproved', org: 'rozed-dev' },
+      details: restricted.detail.kind === 'oauthAppRestricted' ? restricted.detail.message : '',
       links: [{ label: 'Request approval on GitHub', url: approvalUrl() }],
     });
-    const found = (choice: RepoAccount['choice'], login = 'rozed-bot'): RepoAccount => ({
-      repo: E2E.repo,
-      choice,
-      visible: [],
-      remembered: {},
-      problems: [{ login, error: restricted }],
-    });
-    expect(restrictingOrg(found({ kind: 'none' }))).toBe('rozed-dev');
-    expect(restrictingOrg(found({ kind: 'unavailable', login: 'rozed-bot' }))).toBe('rozed-dev');
-    // The chosen account's own problem is what counts.
-    expect(restrictingOrg(found({ kind: 'unavailable', login: 'work-bot' }))).toBeUndefined();
-    expect(restrictedMessage('acme')).toContain("acme hasn't approved Lo");
   });
 
   it('says anything else failed, and when Lo tries again', () => {
     const error = new Error('the answer made no sense', {
       cause: new GithubError({ kind: 'decode', message: 'pull.title is missing' }),
     });
+    // An answer Lo couldn't read is GitHub's error, with what was wrong with it behind Details.
     expect(problemOf(error, E2E, account, 1234.6)).toEqual({
       kind: 'failed',
-      message: "Lo couldn't read rozed-dev/e2e#80: the answer made no sense",
+      cause: { kind: 'github' },
+      details: "couldn't read GitHub's answer: pull.title is missing",
       retryAt: 1235,
     });
   });

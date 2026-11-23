@@ -6,7 +6,7 @@ import { forPullRequest, inStack, windowTitle, withoutBidi } from './title.ts';
 describe("the window's title", () => {
   it('a pull request is named by its repository number and title', () => {
     expect(forPullRequest('sharkdp/fd', 2212, 'Honor explicit use-jemalloc requests')).toBe(
-      'sharkdp/fd#2212 — Honor explicit use-jemalloc requests',
+      'sharkdp/fd#2212 · Honor explicit use-jemalloc requests',
     );
     expect(forPullRequest('rozed-dev/playground', 2)).toBe('rozed-dev/playground#2');
   });
@@ -14,11 +14,11 @@ describe("the window's title", () => {
   it('a stacks layer says where it is and what the stack sits on', () => {
     const title = forPullRequest('rozed-dev/e2e', 3, 'feat: b');
     expect(inStack(title, { root: 'main', layer: 2, layers: 5 })).toBe(
-      'rozed-dev/e2e#3 — feat: b · layer 2 of 5, stack on main',
+      'rozed-dev/e2e#3 · feat: b · layer 2 of 5 · stack on main',
     );
     // Once it merged, it's no layer of the stack.
     expect(inStack(title, { root: 'main', layers: 4 })).toBe(
-      'rozed-dev/e2e#3 — feat: b · 4 layers, stack on main',
+      'rozed-dev/e2e#3 · feat: b · 4 layers · stack on main',
     );
   });
 
@@ -33,13 +33,13 @@ describe("the window's title", () => {
       layer: 3,
       layers: [2, 3],
     };
-    expect(windowTitle(stack)).toBe('rozed-dev/e2e#3 — feat: b');
+    expect(windowTitle(stack)).toBe('rozed-dev/e2e#3 · feat: b');
     expect(windowTitle({ ...stack, stack: { layers: [2, 3, 4, 6, 5], root: 'main' } })).toBe(
-      'rozed-dev/e2e#3 — feat: b · layer 2 of 5, stack on main',
+      'rozed-dev/e2e#3 · feat: b · layer 2 of 5 · stack on main',
     );
     // A layer that left the stack, as one that merged does.
     expect(windowTitle({ ...stack, stack: { layers: [2, 4], root: 'main\u202E' } })).toBe(
-      'rozed-dev/e2e#3 — feat: b · 2 layers, stack on main',
+      'rozed-dev/e2e#3 · feat: b · 2 layers · stack on main',
     );
   });
 
@@ -55,16 +55,16 @@ describe("the window's title", () => {
       layers: [82, 84],
       run: { layers: [82, 83, 84], start: 'a'.repeat(40), from: 84 },
     };
-    expect(windowTitle(tab)).toBe('rozed-dev/e2e#82 to #84 — 3 layers as one diff');
+    expect(windowTitle(tab)).toBe('rozed-dev/e2e#82 to #84 · 3 layers');
     expect(
       windowTitle({ ...tab, stack: { layers: [82, 83, 84, 85], root: 'stack/root\u202E' } }),
-    ).toBe('rozed-dev/e2e#82 to #84 — 3 layers as one diff, stack on stack/root');
+    ).toBe('rozed-dev/e2e#82 to #84 · 3 layers · stack on stack/root');
   });
 
   it('titles lose the characters that turn text around', () => {
     // U+202E turns what follows right to left, so "Fix gpj.exe" would read "Fix exe.jpg".
     expect(forPullRequest('a/b', 1, 'Fix \u202Egpj.exe\u202C \u2067x\u2069')).toBe(
-      'a/b#1 — Fix gpj.exe x',
+      'a/b#1 · Fix gpj.exe x',
     );
     // The marks that place numbers in right-to-left text stay.
     expect(withoutBidi('שלום \u200F1\u061C')).toBe('שלום \u200F1\u061C');
@@ -84,7 +84,7 @@ describe("the window's title", () => {
         title: 'Honor explicit use-jemalloc requests',
         state: 'open',
       }),
-    ).toBe('sharkdp/fd#2212 — Honor explicit use-jemalloc requests');
+    ).toBe('sharkdp/fd#2212 · Honor explicit use-jemalloc requests');
     expect(
       windowTitle({
         id: 'q',
@@ -94,7 +94,7 @@ describe("the window's title", () => {
         branch: 'e4/queued\u202E',
         login: 'rozed-bot',
       }),
-    ).toBe('rozed-dev/e2e — Merge queue · e4/queued');
+    ).toBe('rozed-dev/e2e · Merge queue for e4/queued');
     expect(windowTitle({ id: 'recent', kind: 'recent' })).toBe('Lo');
     expect(windowTitle({ id: 's', kind: 'settings' })).toBe('Lo');
     expect(windowTitle(undefined)).toBe('Lo');

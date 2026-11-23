@@ -19,7 +19,16 @@ function KeymapFile({ label, description }: { label: string; description: string
     <Setting
       label={label}
       description={description}
-      note={keymap.problem}
+      note={
+        keymap.problem && (
+          <>
+            {keymap.problem.title}
+            {keymap.problem.reason !== undefined && (
+              <span className="block">{keymap.problem.reason}</span>
+            )}
+          </>
+        )
+      }
       below={
         path === undefined ? undefined : (
           // It wraps after a slash, and mid-name only where a name is longer than the line.

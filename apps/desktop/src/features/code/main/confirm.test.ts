@@ -1,7 +1,7 @@
 // Asking the reader to trust: nothing but "Trust" in main's own dialog, pressed while the window
 // is there, writes an entry, and only the entry that dialog named.
 
-import type { PullRequestRepositories } from '@lo/github';
+import { GithubError, type PullRequestRepositories } from '@lo/github';
 import { describe, expect, it, vi } from 'vitest';
 
 import { IpcError } from '../../../ipc/contract.ts';
@@ -209,7 +209,7 @@ describe('asking to trust', () => {
       ]) {
         const { trust, dialogs, write } = asker(views, () => Promise.resolve(repositories));
         const refused = await refusal(trust.ask({ view: 't2', repo: 'rozed-dev/e2e', pull: 97 }));
-        expect(refused?.code).toBe('refused');
+        expect(refused?.code).toBe('unexpectedName');
         expect(dialogs).toEqual([]);
         expect(write).not.toHaveBeenCalled();
       }
@@ -287,8 +287,7 @@ describe('asking to trust', () => {
     const second = await refusal(trust.ask({ view: 't2', repo: 'rozed-dev/e2e', pull: 97 }));
     expect({ code: second?.code, message: second?.message }).toEqual({
       code: 'asking',
-      message:
-        'Lo is already asking whether to trust rozed-dev/e2e. Answer that first, then try again.',
+      message: 'rozed-dev/e2e',
     });
     expect(focused).toEqual([]);
     await until(() => dialogs.length === 1);
@@ -337,7 +336,11 @@ describe('asking to trust', () => {
     // The tab says rozed-dev/other, and GitHub says its pull request is in rozed-dev/e2e.
     const { trust, dialogs, write } = asker(views, () => Promise.resolve(OWN));
     const refused = await refusal(trust.ask({ view: 't3', repo: 'rozed-dev/other', pull: null }));
-    expect(refused?.code).toBe('changed');
+    // The name GitHub has for it, which the window says.
+    expect({ code: refused?.code, message: refused?.message }).toEqual({
+      code: 'renamed',
+      message: 'rozed-dev/e2e',
+    });
     expect(dialogs).toEqual([]);
     expect(write).not.toHaveBeenCalled();
   });
@@ -374,20 +377,30 @@ describe('asking to trust', () => {
   });
 
   it('refuses to trust as a pull request one from the repository’s own branch, or a gone fork', async () => {
-    for (const repositories of [OWN, GONE]) {
+    for (const [repositories, code] of [
+      [OWN, 'notFork'],
+      [GONE, 'forkGone'],
+    ] as const) {
       const { trust, dialogs, write } = asker(views, () => Promise.resolve(repositories));
       const refused = await refusal(trust.ask({ view: 't2', repo: 'rozed-dev/e2e', pull: 97 }));
-      expect(refused?.code).toBe('refused');
+      expect(refused?.code).toBe(code);
       expect(dialogs).toEqual([]);
       expect(write).not.toHaveBeenCalled();
     }
   });
 
   it('asks nothing when GitHub can’t be read, or there’s no window to ask in', async () => {
-    const failing = asker(views, () => Promise.reject(new Error('offline')));
-    expect(
-      (await refusal(failing.trust.ask({ view: 't1', repo: 'rozed-dev/e2e', pull: null })))?.code,
-    ).toBe('unread');
+    const failing = asker(views, () =>
+      Promise.reject(
+        new GithubError({ kind: 'api', status: 502, message: 'Server Error', errors: [] }),
+      ),
+    );
+    // Not asked: why, by GitHub's cause, with what GitHub said for Details.
+    expect(await failing.trust.ask({ view: 't1', repo: 'rozed-dev/e2e', pull: null })).toEqual({
+      kind: 'unread',
+      cause: { kind: 'github' },
+      details: '502 Bad Gateway\nServer Error',
+    });
     expect(failing.dialogs).toEqual([]);
     const windowless = asker(views);
     expect(
@@ -438,8 +451,8 @@ describe('saying how it goes', () => {
           true,
         ),
         'settingsFile',
-        // What's wrong, then what to do here: saving the file trusts nothing.
-        "The settings file isn't valid JSON (x). Fix that, then trust the repo again.",
+        // What's wrong in the file, behind Details.
+        "The settings file isn't valid JSON (x).",
       ],
       [
         new Unwritten(
@@ -450,7 +463,7 @@ describe('saying how it goes', () => {
         'unsaved',
         "Lo couldn't write the settings file (ENOSPC).",
       ],
-      [new Error('anything else'), 'unsaved', "Lo couldn't write the settings file."],
+      [new Error('anything else'), 'unsaved', 'anything else'],
     ] as const) {
       const { trust, dialogs, steps } = asker(views, undefined, {
         write: () => Promise.reject(thrown),
@@ -477,9 +490,10 @@ describe('saying how it goes', () => {
         },
         { readLimit: 1000 },
       );
-      const unread = refusal(reading.trust.ask({ view: 't1', repo: 'rozed-dev/e2e', pull: null }));
+      const unread = reading.trust.ask({ view: 't1', repo: 'rozed-dev/e2e', pull: null });
       await vi.advanceTimersByTimeAsync(1000);
-      expect((await unread)?.code).toBe('unread');
+      // GitHub didn't answer in time.
+      expect(await unread).toEqual({ kind: 'unread', cause: { kind: 'timeout' } });
       expect(given?.aborted).toBe(true);
       expect(reading.dialogs).toEqual([]);
       expect(reading.steps).toEqual(['t1 reading', 't1 over']);

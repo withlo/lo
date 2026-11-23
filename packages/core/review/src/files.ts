@@ -16,6 +16,7 @@ export {
   sizeText,
   tooLargeToShow,
   type Collapsed,
+  type TooLarge,
 } from './files/display.ts';
 export { isLockfile, whyGenerated, type Generated } from './files/generated.ts';
 export {

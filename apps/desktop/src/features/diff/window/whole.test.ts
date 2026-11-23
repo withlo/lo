@@ -11,6 +11,7 @@ import {
   readOf,
   reads,
   readWhole,
+  tooLargeReason,
   versionOf,
   type WholeWork,
 } from './whole.ts';
@@ -192,5 +193,15 @@ describe('a file’s page on GitHub', () => {
     expect(fileLink(pull, HEAD, { text: 'caf�', hex: '636166e9' })).toBe(
       `https://github.com/rozed-dev/e2e/blob/${HEAD}/caf%E9`,
     );
+  });
+});
+
+describe('a file too large to show', () => {
+  it('says which limit it is over, in MB', () => {
+    expect(tooLargeReason({ kind: 'size', size: 60 * 1024 ** 2 })).toBe(
+      'It’s 60 MB, over the 50 MB limit.',
+    );
+    expect(tooLargeReason({ kind: 'size', size: null })).toBe('It’s over the 50 MB limit.');
+    expect(tooLargeReason({ kind: 'longLine' })).toBe('It has a line over 1 MB long.');
   });
 });

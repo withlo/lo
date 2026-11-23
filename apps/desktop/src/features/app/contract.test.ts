@@ -16,13 +16,21 @@ describe('appInfo', () => {
     expect(appInfo.parse(info)).toEqual(info);
     for (const git of [
       { status: 'checking' },
-      { status: 'missing', message: "Lo can't find git.", install: 'Install git.' },
+      { status: 'missing', install: { commands: ['xcode-select --install'], page: null } },
+      {
+        status: 'distrusted',
+        program: '/opt/bin/git',
+        why: 'folderWritable',
+        details: '/opt/bin/git\nother users can change /opt/bin',
+        install: { commands: ['xcode-select --install'], page: null },
+      },
       {
         status: 'tooOld',
+        program: '/usr/bin/git',
         version: '2.30.0',
+        minimum: '2.41.0',
         check: 'version',
-        message: 'Lo needs git 2.41.0 or newer.',
-        install: 'Install git.',
+        install: { commands: ['brew install git'], page: null },
       },
     ]) {
       expect(appInfo.parse({ ...info, git })).toEqual({ ...info, git });

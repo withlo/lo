@@ -22,6 +22,7 @@ import { ARTIFACT, namedFigures } from '@lo/artifact';
 import {
   overviewRef,
   RepoRef,
+  saidBy,
   watchOverviewRef,
   type GithubClient,
   type OverviewRef,
@@ -312,14 +313,15 @@ export class OverviewTab {
     id: string,
     size: number | null,
   ): Promise<OverviewFile> {
-    if (size === null) return { kind: 'unread', why: "GitHub didn't say how large it is." };
+    // GitHub's listing gave no size, and said nothing of why.
+    if (size === null) return { kind: 'unread', why: '' };
     if (sizeOnly(size)) return { kind: 'file', size, bytes: null };
     try {
       const bytes = await fetchBlob(github, acting, this.#options.reads.blobs, repository, id);
       return { kind: 'file', size: bytes.length, bytes };
     } catch (error) {
       this.#options.log(`reading file ${id} of the overview: ${describe(error)}`);
-      return { kind: 'unread', why: describe(error) };
+      return { kind: 'unread', why: saidBy(error) };
     }
   }
 

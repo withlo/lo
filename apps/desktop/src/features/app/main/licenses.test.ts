@@ -75,7 +75,7 @@ describe('opening the licenses file', () => {
   });
 
   it('opens nothing when the file is not there, or is not a file', async () => {
-    const reason = { ok: false, reason: "Lo couldn't find its licenses file." };
+    const reason = { ok: false, why: 'missing' };
     expect(
       await openLicenses(join(folder, 'missing.txt'), {
         platform: 'darwin',
@@ -92,22 +92,22 @@ describe('opening the licenses file', () => {
   it('opens nothing where Lo has no way to open a file as text, and says so', async () => {
     expect(await openLicenses(path, { platform: 'win32', launch: started, linux })).toEqual({
       ok: false,
-      reason: "Lo can't open the licenses file on this system.",
+      why: 'unsupported',
     });
     asked.mockRejectedValueOnce(new Error('spawn xdg-mime ENOENT'));
     expect(await openLicenses(path, { platform: 'linux', launch: started, linux })).toEqual({
       ok: false,
-      reason:
-        "Lo couldn't find the app for text files (`xdg-mime query default text/plain`), so it didn't open the licenses file.",
+      why: 'noApp',
     });
     expect(started).not.toHaveBeenCalled();
   });
 
-  it("says so when the system's opener fails, without its own words", async () => {
-    started.mockRejectedValueOnce(new Error('spawn /usr/bin/open ENOENT at /Users/me'));
+  it("says so when the system's opener fails, with what the system said", async () => {
+    started.mockRejectedValueOnce(new Error('spawn /usr/bin/open ENOENT'));
     expect(await openLicenses(path, { platform: 'darwin', launch: started, linux })).toEqual({
       ok: false,
-      reason: "Lo couldn't open the licenses file in a text editor.",
+      why: 'launch',
+      said: 'spawn /usr/bin/open ENOENT',
     });
   });
 });

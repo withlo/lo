@@ -49,14 +49,30 @@ export type BarItem = z.output<typeof barItem>;
 export const KEYMAP_SIZE_LIMIT = 1024 * 1024;
 
 /**
+ * What is wrong with the keymap file as a whole: it isn't a file (a folder, a pipe), it's over the
+ * limit at `size` bytes, it isn't text, it links to nothing, its permissions don't let Lo read it,
+ * reading it failed with the system's `code`, or it's executable, so Lo won't open it.
+ */
+export const keymapProblem = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('notFile') }),
+  z.strictObject({ kind: z.literal('tooLarge'), size: z.number().int().nonnegative() }),
+  z.strictObject({ kind: z.literal('notText') }),
+  z.strictObject({ kind: z.literal('brokenLink') }),
+  z.strictObject({ kind: z.literal('denied') }),
+  z.strictObject({ kind: z.literal('unreadable'), code: z.string().max(40).optional() }),
+  z.strictObject({ kind: z.literal('executable') }),
+]);
+export type KeymapProblem = z.output<typeof keymapProblem>;
+
+/**
  * The keymap file as main read it. The window parses `text` and applies it; a file that is missing
  * is no text and no problem, and one Lo can't read is no text and a `problem` to show. An
  * executable file's text is applied, with a `problem` that says why Lo won't open it.
  */
 export const keymapFile = z.strictObject({
   text: z.string().max(KEYMAP_SIZE_LIMIT),
-  /** What is wrong with the file, in words for the person who wrote it, if anything is. */
-  problem: z.string().max(300).optional(),
+  /** What is wrong with the file, if anything is. */
+  problem: keymapProblem.optional(),
   /**
    * Whether Lo will open the file in an editor: a plain, non-executable text file within the limit,
    * or none yet, which opening makes.

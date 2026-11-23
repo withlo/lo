@@ -7,8 +7,11 @@
 
 import { type PullRequestRefs, parseOid, type Repo } from '@lo/git';
 import {
+  causeOf,
   decideAccount,
   GithubError,
+  refusalCause,
+  saidBy,
   sameLogin,
   PullRef,
   RepoRef,
@@ -18,8 +21,9 @@ import {
   type PullSummary,
 } from '@lo/github';
 
+import { detailsOf, githubCause } from '../../../ipc/cause.ts';
 import { IpcError } from '../../../ipc/contract.ts';
-import type { LocalGit } from '../../../main/git.ts';
+import { troubleOf, type LocalGit } from '../../../main/git.ts';
 import type { GithubAccess } from '../../accounts/service.ts';
 import type { PullTabInfo } from '../service.ts';
 import type {
@@ -43,8 +47,6 @@ import {
   problemOf,
   rateLimitedUntil,
   readPull,
-  restrictedMessage,
-  restrictingOrg,
   withSummary,
   type Opened,
 } from './reads.ts';
@@ -134,6 +136,8 @@ export class PullTab {
   /** When GitHub last confirmed what the header shows, for "saved" while offline. */
   #savedAt: number | undefined;
   #problem: Problem | undefined;
+  /** Whether any account is signed in, as the last choice of account found. */
+  #signedIn = false;
   /** How the tab stands with GitHub while it acts as nobody, which no poller says. */
   #anonymousConnection: Connection = { kind: 'live' };
   /** Since when reading as nobody has found GitHub out of reach. */
@@ -239,6 +243,8 @@ export class PullTab {
     this.#readTimer = undefined;
     this.#waitingForSignIn = undefined;
     this.#started = true;
+    // What its account couldn't see, another may: the account is worked out again.
+    if (this.#unseen()) this.#forgetAccount();
     void this.#open();
     this.#local?.retry();
     // Without git, trying again is looking for it again, as "Check again" does.
@@ -319,13 +325,42 @@ export class PullTab {
   accountGone(login: string): void {
     const acting = this.#acting;
     if (acting?.kind !== 'account' || acting.login.toLowerCase() !== login.toLowerCase()) return;
+    this.#forgetAccount();
+    if (this.#started) void this.#open();
+    this.#publish();
+  }
+
+  /**
+   * An account was added, or signed in again: a tab whose pull request its account, or nobody,
+   * couldn't see works out its account again, which may be the new one.
+   */
+  accountAdded(): void {
+    if (this.#closed || !this.#unseen()) return;
+    this.#forgetAccount();
+    this.#started = true;
+    void this.#open();
+    this.#publish();
+  }
+
+  /**
+   * Whether the tab can't show its pull request because the account it acts as, or nobody, can't
+   * see it: GitHub says it doesn't exist, or that it's private.
+   */
+  #unseen(): boolean {
+    const problem = this.#problem;
+    if (this.#acting === undefined || problem === undefined) return false;
+    return (
+      problem.kind === 'notFound' || (problem.kind === 'failed' && problem.cause.kind === 'private')
+    );
+  }
+
+  /** The tab acts as no one it chose: what it watched with the account, and its local copy, go. */
+  #forgetAccount(): void {
     this.#detach();
     this.#acting = undefined;
     this.#options.keep({ login: null });
     this.#local?.close();
     this.#local = undefined;
-    if (this.#started) void this.#open();
-    this.#publish();
   }
 
   /** Git changed: Lo found it, or opened its cache. */
@@ -438,6 +473,7 @@ export class PullTab {
     const { github } = this.#options;
     try {
       const accounts = await github.accounts();
+      this.#signedIn = accounts.length > 0;
       const found = accounts.length === 0 ? undefined : await github.accountForRepo(this.pull.repo);
       if (this.#closed) return false;
       const decision = decideAccount(found);
@@ -457,12 +493,13 @@ export class PullTab {
           const { refusal } = decision;
           if (refusal.waitable) this.#readFailures += 1;
           const retryAt = refusal.waitable ? this.#scheduleRead() : undefined;
-          const org = found === undefined ? undefined : restrictingOrg(found);
-          const message = org === undefined ? refusal.message : restrictedMessage(org);
+          const refused = refusalCause(refusal, this.pull.repo.owner);
+          const cause = githubCause(refused.cause);
+          const details = detailsOf(refused.details);
           this.#problem =
             refusal.links.length > 0
-              ? { kind: 'blocked', message, links: refusal.links }
-              : { kind: 'failed', message, retryAt: retryAt ?? null };
+              ? { kind: 'blocked', cause, links: refusal.links, details }
+              : { kind: 'failed', cause, details, retryAt: retryAt ?? null };
           return false;
         }
         default:
@@ -474,9 +511,11 @@ export class PullTab {
       // GitHub didn't answer, so which account can see the repository isn't known yet.
       this.#readFailures += 1;
       const retryAt = this.#scheduleRead();
+      this.#options.log(`choosing the account for ${this.pull.toString()}: ${describe(error)}`);
       this.#problem = {
         kind: 'failed',
-        message: `Lo couldn't ask GitHub which account can open ${this.pull.toString()}: ${describe(error)}`,
+        cause: githubCause(causeOf(error, { owner: this.pull.repo.owner })),
+        details: detailsOf(saidBy(error)),
         retryAt,
       };
       return false;
@@ -582,7 +621,7 @@ export class PullTab {
           kind: 'offline',
           savedAt: null,
           retryAt,
-          error: describe(error),
+          error: saidBy(error),
         };
         this.#useSaved();
         this.#startLocal();
@@ -650,8 +689,8 @@ export class PullTab {
 
   #actingFor(
     acting: Acting,
-  ): { kind: 'account'; login: string } | { kind: 'anonymous'; canSignIn: boolean } {
-    return acting.kind === 'account' ? acting : { kind: 'anonymous', canSignIn: true };
+  ): { kind: 'account'; login: string } | { kind: 'anonymous'; signedIn: boolean } {
+    return acting.kind === 'account' ? acting : { kind: 'anonymous', signedIn: this.#signedIn };
   }
 
   /** Reads the pull request again after a wait, 5 s doubling to 5 minutes. Returns when. */
@@ -703,7 +742,7 @@ export class PullTab {
         // Anything else the poller tries again at its next interval, and what's shown stays, since
         // no event says when a poll that changed nothing went well.
         if (problem.kind === 'failed') {
-          this.#options.log(`polling ${this.pull.toString()}: ${problem.message}`);
+          this.#options.log(`polling ${this.pull.toString()}: ${problem.details ?? ''}`);
           return;
         }
         this.#problem = problem;
@@ -857,7 +896,7 @@ export class PullTab {
     if (this.#local) return this.#local.state;
     const { status } = this.#options.git;
     if (status !== undefined && status.status !== 'found') {
-      return { kind: 'noGit', message: status.message, install: status.install };
+      return { kind: 'noGit', git: troubleOf(status) };
     }
     return { kind: 'waiting' };
   }

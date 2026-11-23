@@ -1,8 +1,7 @@
 import { handlers } from '@lo/ui/commands';
 
-import { IpcError } from '../../../ipc/contract.ts';
 import { barItems, focusedTarget, onMenuStale, runFromBar } from '../../../window/commands/bar.ts';
-import { applyKeymapFile, keymapOpenable } from '../../../window/commands/keymap.ts';
+import { applyKeymapFile, keymapOpenable, keymapState } from '../../../window/commands/keymap.ts';
 import { currentMenu, openMenuAtFocus } from '../../../window/commands/menus.tsx';
 import { notify, refuse } from '../../../window/commands/notices.tsx';
 import { showHighlighted, toggleHelp, togglePalette } from '../../../window/commands/overlays.tsx';
@@ -11,6 +10,7 @@ import type { WindowFeature } from '../../../window/features.ts';
 import { client, type Client } from '../../../window/ipc.ts';
 import { contract } from '../contract.ts';
 import keys from '../keys.ts';
+import { keymapWords, unopenedWords } from './words.ts';
 
 /**
  * Keeps main's app menu in step with the registry: its commands' labels, keys and whether they
@@ -59,12 +59,12 @@ function syncKeymap(file: Client<typeof contract>): void {
   // its answer, which it gave from the file as it was when it was asked.
   file.subscribe('keymap', (keymap) => {
     pushed = true;
-    applyKeymapFile(keymap);
+    applyKeymapFile(keymapWords(keymap));
   });
   file
     .readKeymap()
     .then((keymap) => {
-      if (!pushed) applyKeymapFile(keymap);
+      if (!pushed) applyKeymapFile(keymapWords(keymap));
     })
     .catch((error: unknown) => console.error("Lo couldn't read the keymap file:", error));
 }
@@ -75,12 +75,8 @@ async function openKeymap(): Promise<void> {
     await main().openKeymap();
   } catch (error) {
     console.error("Lo couldn't open the keymap file:", error);
-    notify(
-      'Open the keymap file',
-      error instanceof IpcError && error.code === 'unopened'
-        ? error.message
-        : "Lo couldn't open the keymap file.",
-    );
+    const { title, reason, details } = unopenedWords(error, keymapState().refusal);
+    notify(title, reason, { details, tone: 'danger' });
   }
 }
 

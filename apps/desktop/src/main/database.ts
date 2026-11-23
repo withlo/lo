@@ -61,6 +61,7 @@ export function openDatabase(path: string): Database {
   const sqlite: typeof NodeSqlite | undefined = process.getBuiltinModule('node:sqlite');
   if (!sqlite) {
     throw new StartupError(
+      { kind: 'noSqlite' },
       "This build of Lo has no SQLite (Node's node:sqlite module), which it keeps its data in.",
     );
   }

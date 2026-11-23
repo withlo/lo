@@ -76,8 +76,12 @@ export type GitErrorDetail =
     }
   /** A git command took longer than `limit` milliseconds, so Lo stopped it. */
   | { kind: 'tooSlow'; command: string; limit: number }
-  /** The cache is open in another process, or already in this one. */
-  | { kind: 'busy'; message: string }
+  /**
+   * The cache is open in another process, or already in this one; or a clone that can't be
+   * trusted can't be made again while it's `held` open by a repository (`tabs`) or by a language
+   * server running on it (`servers`), with why it can't be trusted.
+   */
+  | { kind: 'busy'; message: string; held?: 'tabs' | 'servers' | undefined }
   /** Writing to a clone opened to read offline, which never writes. */
   | { kind: 'readOnly'; name: string; what: string }
   /** A git command failed for a reason none of the others covers. */
@@ -93,6 +97,39 @@ export class GitError extends Error {
   constructor(detail: GitErrorDetail, options?: ErrorOptions) {
     super(describeOr(detail), options);
     this.detail = detail;
+  }
+
+  /**
+   * What git or the system said, as it came, for Details: git's own words for a fetch or a command
+   * that failed, a commit by its ID, and otherwise the words that say what happened. Never what
+   * the app should say about it.
+   */
+  said(): string {
+    const { detail } = this;
+    switch (detail.kind) {
+      case 'fetch':
+        return detail.message.trim() === '' ? this.message : detail.message.trim();
+      case 'git':
+        return `${detail.command}\n${detail.message.trim()}`;
+      case 'unavailable':
+        return detail.oid;
+      case 'busy':
+      case 'io':
+        return detail.message;
+      case 'notFetched':
+      case 'notDownloaded':
+      case 'tooManyAttributeFiles':
+      case 'baseNotAncestor':
+      case 'diskFull':
+      case 'invalid':
+      case 'tooLarge':
+      case 'tooSlow':
+      case 'readOnly':
+        return this.message;
+      default:
+        detail satisfies never;
+        return this.message;
+    }
   }
 
   /**

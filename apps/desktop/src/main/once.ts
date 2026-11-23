@@ -71,7 +71,11 @@ export interface OnceOptions {
   readonly timeout?: number;
 }
 
-/** A write a proxy stopped before it went to GitHub, with a code GitHub's client classifies. */
+/**
+ * A write a proxy stopped before it went to GitHub, with a code GitHub's client classifies into why
+ * (`classifyProxy` in `@lo/github`). Its message is only what Details shows: the proxy's address,
+ * and the status it answered or the system's code.
+ */
 export class ProxyStopped extends Error {
   override name = 'ProxyStopped';
   readonly code: string;
@@ -113,10 +117,7 @@ export function onceFetch(options: OnceOptions): typeof globalThis.fetch {
     const route = routeOf(await options.proxy(asked.url));
     signal.throwIfAborted();
     if (route.kind === 'unsupported') {
-      throw new ProxyStopped(
-        `Your proxy settings name ${route.shown} for GitHub. Lo sends a change to GitHub only directly or through an HTTP, HTTPS or SOCKS5 proxy, so nothing was sent.`,
-        'ERR_NO_SUPPORTED_PROXIES',
-      );
+      throw new ProxyStopped(route.shown, 'ERR_NO_SUPPORTED_PROXIES');
     }
     const headers: Record<string, string> = {};
     asked.headers.forEach((value, name) => {
@@ -227,7 +228,8 @@ function opening(options: object, opened: () => void): Pool.Options {
  * What `error`, from a write through the proxy `shown`, says when the proxy stopped the write
  * before it went: the proxy asked Lo to sign in, wouldn't connect to GitHub, or couldn't be
  * reached. Once Lo had `reached` an HTTP or HTTPS proxy, a connection that took too long to open
- * was GitHub's, through the proxy's tunnel. Anything else is as undici said.
+ * was GitHub's, through the proxy's tunnel. Anything else is as undici said. Each says only where
+ * the proxy is, and what it answered or the system's code, a line each.
  */
 function stopped(error: unknown, shown: string, reached: boolean): unknown {
   const said = typeof error === 'object' && error !== null ? Reflect.get(error, 'code') : undefined;
@@ -239,32 +241,23 @@ function stopped(error: unknown, shown: string, reached: boolean): unknown {
   const status = answered?.[1];
   if (status === '407' || code.startsWith('UND_ERR_SOCKS5_AUTH')) {
     return new ProxyStopped(
-      `The proxy ${shown} asks Lo to sign in, which Lo can't do, so nothing was sent to GitHub.`,
+      status === undefined ? `${shown}\n${code}` : `${shown}\n${status}`,
       'ERR_PROXY_AUTH_REQUESTED',
     );
   }
   if (status !== undefined || code === 'UND_ERR_PRX_CONN' || code.startsWith('UND_ERR_SOCKS5_')) {
-    const why = status === undefined ? '' : ` (it answered ${status})`;
-    return new ProxyStopped(
-      `The proxy ${shown} didn't connect Lo to GitHub${why}, so nothing was sent.`,
-      'ERR_TUNNEL_CONNECTION_FAILED',
-    );
+    return new ProxyStopped(`${shown}\n${status ?? code}`, 'ERR_TUNNEL_CONNECTION_FAILED');
   }
   // The handshake with GitHub, through the tunnel, timed out: the proxy did its part.
   if (reached && code === 'UND_ERR_CONNECT_TIMEOUT') {
-    return new GithubTimedOut(
-      `Lo reached the proxy ${shown}, but the connection through it to GitHub timed out, so nothing was sent.`,
-    );
+    return new GithubTimedOut(`${shown}\n${code}`);
   }
   // A connection that never opened, through a proxy, is the proxy's. Lo doesn't see a SOCKS5
   // proxy's connection open, so one through it that took too long is the proxy's too.
   if (
     /^(ECONNREFUSED|ENOTFOUND|EAI_AGAIN|E\w+UNREACH|ENETDOWN|UND_ERR_CONNECT_TIMEOUT)$/.test(code)
   ) {
-    return new ProxyStopped(
-      `Lo couldn't reach the proxy ${shown} (${code}), so nothing was sent to GitHub.`,
-      code,
-    );
+    return new ProxyStopped(`${shown}\n${code}`, code);
   }
   return error;
 }

@@ -108,9 +108,11 @@ export interface TabList {
   setLayers(id: string, stack: Stack | undefined): void;
   /**
    * Moves a tab to place `to`, from 0, counted without it, or to the end when `to` is past it, and
-   * says where it is now. Nothing for a tab that isn't open.
+   * says where it is now. Nothing for a tab that isn't open. `brought`, it's a tab from further
+   * along brought into the strip's last place, and the tab that was there folds back among those
+   * past it, before the first that opened after it, so they stay in the order they opened.
    */
-  move(id: string, to: number): Moved | undefined;
+  move(id: string, to: number, brought?: boolean): Moved | undefined;
   /**
    * Moves `id`, or the tab on screen, one place along the strip, but not past its ends, nor past
    * the first `within` tabs, those the strip shows, and says where it is now. Nothing while only
@@ -149,6 +151,8 @@ export function createTabs(options: TabListOptions): TabList {
   const { database, changed, newId = randomUUID } = options;
   const log = options.log ?? ((message: string) => console.error(message));
   let state = load(database, log);
+  /** When each tab opened, in turn: those read back in their order, then each as it opens. */
+  const opened = new Map(state.kept.map((tab, index) => [tab.id, index]));
   /** What GitHub said of each view's pull request, by the view's id, while its tab is open. */
   const described = new Map<string, Described>();
   for (const tab of state.kept) {
@@ -188,6 +192,7 @@ export function createTabs(options: TabListOptions): TabList {
 
   /** Adds `tab` at the end of the strip and shows it. */
   const add = (tab: Kept): string => {
+    opened.set(tab.id, Math.max(-1, ...opened.values()) + 1);
     commit({ kept: [...state.kept, tab], active: tab.id });
     return tab.id;
   };
@@ -238,13 +243,19 @@ export function createTabs(options: TabListOptions): TabList {
     return id;
   };
 
-  const moveTo = (id: string, to: number): Moved | undefined => {
+  const moveTo = (id: string, to: number, brought = false): Moved | undefined => {
     const from = state.kept.findIndex((tab) => tab.id === id);
     const moved = state.kept[from];
     if (!moved) return undefined;
     const place = Math.min(to, state.kept.length - 1);
     if (place !== from) {
-      commit({ ...state, kept: state.kept.toSpliced(from, 1).toSpliced(place, 0, moved) });
+      const kept = state.kept.toSpliced(from, 1).toSpliced(place, 0, moved);
+      // Placed here, by main's order now, so a tab brought in by an order the window had before
+      // others opened still folds the tab that was there.
+      commit({
+        ...state,
+        kept: brought && from > place ? foldBack(kept, place + 1, opened) : kept,
+      });
     }
     return { id, place };
   };
@@ -355,7 +366,7 @@ export function createTabs(options: TabListOptions): TabList {
       tell({ ...state, kept: state.kept.with(found.index, next) });
     },
 
-    move: (id, to) => moveTo(tabOf(id), to),
+    move: (id, to, brought) => moveTo(tabOf(id), to, brought),
 
     step(id, by, within = state.kept.length) {
       const moving = id === undefined ? list().active : tabOf(id);
@@ -431,6 +442,23 @@ function sameStack(a: Stack | undefined, b: Stack | undefined): boolean {
     a.layers.length === b.layers.length &&
     a.layers.every((layer, at) => layer === b.layers[at])
   );
+}
+
+/**
+ * `kept` with the tab at `from` moved on among those after it, before the first that opened after
+ * it, by `opened`, or last.
+ */
+function foldBack(
+  kept: readonly Kept[],
+  from: number,
+  opened: ReadonlyMap<string, number>,
+): readonly Kept[] {
+  const folding = kept[from];
+  if (!folding) return kept;
+  const when = (tab: Kept) => opened.get(tab.id) ?? Infinity;
+  const rest = kept.toSpliced(from, 1);
+  const later = rest.findIndex((tab, index) => index >= from && when(tab) > when(folding));
+  return rest.toSpliced(later === -1 ? rest.length : later, 0, folding);
 }
 
 /** A kept tab as the strip shows it: without what main keeps for itself. */

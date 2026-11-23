@@ -30,7 +30,7 @@ export {
   type ToastStackProps,
   type ToastTone,
 } from './Toast.tsx';
-export { KeyHelp, type KeyHelpProps } from './KeyHelp.tsx';
+export { KeyHelp, type KeyHelpProblem, type KeyHelpProps } from './KeyHelp.tsx';
 export { MORE_ACTIONS, MoreButton, openMenuUnder, type MoreButtonProps } from './MoreButton.tsx';
 export { Palette, PaletteHint, type PaletteGroup, type PaletteProps } from './Palette.tsx';
 export { Banner, type BannerAction, type BannerProps } from './Banner.tsx';
@@ -117,8 +117,8 @@ export {
   type TooltipGroupProps,
   type TooltipProps,
 } from './Tooltip.tsx';
-export { Collapse, Swap, type CollapseProps, type SwapProps } from './Collapse.tsx';
-export { Problem, type ProblemAction, type ProblemProps } from './Problem.tsx';
+export { Collapse, Swap, swapIn, type CollapseProps, type SwapProps } from './Collapse.tsx';
+export { Problem, type ProblemAction, type ProblemProps, useDetails } from './Problem.tsx';
 export { Countdown, countdownSaid, countdownWords, type CountdownProps } from './Countdown.tsx';
 export { EmptyState, type EmptyAction, type EmptyStateProps } from './EmptyState.tsx';
 export {

@@ -5,6 +5,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   statSync,
   symlinkSync,
 } from 'node:fs';
@@ -24,7 +25,7 @@ const { groups } = defaultPlaces(platform);
 
 test('finds a git new enough', async () => {
   const status = await findGit({ env, platform });
-  if (status.status !== 'found') throw new Error(status.message);
+  if (status.status !== 'found') throw new Error(`found ${status.status}`);
   expect(compareVersions(status.git.version, MINIMUM_VERSION)).toBeGreaterThanOrEqual(0);
   expect(isAbsolute(status.git.program)).toBe(true);
 });
@@ -38,9 +39,9 @@ test('refuses a git older than 2 41', async () => {
   if (old.status !== 'tooOld') throw new Error(`found ${old.status}`);
   expect(old.version).toEqual({ major: 2, minor: 39, patch: 5 });
   expect(old.check).toBe('version');
-  expect(old.message).toContain('git 2.41.0 or newer');
-  expect(old.message).toContain('is git 2.39.5');
-  expect(old.install).toContain('xcode-select --install');
+  expect(old.minimum).toEqual({ major: 2, minor: 41, patch: 0 });
+  // The Command Line Tools can carry an old git, so a newer one comes from Homebrew.
+  expect(old.install).toEqual({ commands: ['brew install git'] });
   // 2.40 has no `--attr-source`, which keeps a repository's attributes out of what Lo reads.
   const older = await gitAt(fakeGit(join(dir, 'git-2.40'), '2.40.1'), { env, platform });
   expect(older.status).toBe('tooOld');
@@ -58,7 +59,7 @@ test('missing git says how to install it', async () => {
   const missing = await gitAt(join(dir, 'no-git-here'), { env, platform: 'darwin' });
   expect(missing.status).toBe('missing');
   if (missing.status === 'found') return;
-  expect(missing.install).toContain('xcode-select --install');
+  expect(missing.install).toEqual({ commands: ['xcode-select --install'] });
 
   // Something that runs but isn't git counts as missing too.
   const notGit = script(join(dir, 'git'), 'echo hello');
@@ -174,7 +175,10 @@ test('looks on PATH, then in the system’s folders, and takes the first git new
   });
   expect(tooOld).toMatchObject({ status: 'tooOld', program: join(first, 'git') });
   if (tooOld.status !== 'tooOld') return;
-  expect(tooOld.install).toContain('package manager');
+  expect(tooOld.install).toEqual({
+    commands: ['sudo apt install git', 'sudo dnf install git'],
+    page: 'https://git-scm.com/downloads/linux',
+  });
 });
 
 test('finds a git installed since it last looked', async () => {
@@ -200,8 +204,8 @@ test('refuses a git that would download what a clone lacks without being asked',
 
   expect(status).toMatchObject({ status: 'tooOld', check: 'lazyFetch' });
   if (status.status !== 'tooOld') return;
-  expect(status.message).toContain('GIT_NO_LAZY_FETCH');
-  expect(status.message).toContain(eager);
+  expect(status.minimum).toEqual({ major: 2, minor: 45, patch: 0 });
+  expect(status.program).toBe(eager);
 });
 
 /** What a git may say when `GIT_NO_LAZY_FETCH` keeps it from downloading a missing object. */
@@ -260,17 +264,12 @@ test('takes a git that says lazy fetching is off', async () => {
 
 describe('passes over a git someone else could change, and says so', () => {
   test.each([
-    ['a git others may write to', 0o700, 0o777, 'other users can change it'],
-    ['a git its group may write to', 0o700, 0o775, 'other users can change it'],
-    ['a git in a folder its group may write to', 0o775, 0o755, 'other users can change {bin}'],
-    ['a git in a folder anyone may write to', 0o777, 0o755, 'other users can change {bin}'],
-    [
-      'a git in a folder anyone may write to, sticky as /tmp is',
-      0o1777,
-      0o755,
-      'other users can change {bin}',
-    ],
-  ])('%s', async (_, folderMode, fileMode, reason) => {
+    ['a git others may write to', 0o700, 0o777, 'writable'],
+    ['a git its group may write to', 0o700, 0o775, 'writable'],
+    ['a git in a folder its group may write to', 0o775, 0o755, 'folderWritable'],
+    ['a git in a folder anyone may write to', 0o777, 0o755, 'folderWritable'],
+    ['a git in a folder anyone may write to, sticky as /tmp is', 0o1777, 0o755, 'folderWritable'],
+  ])('%s', async (_, folderMode, fileMode, why) => {
     const dir = tempFolder();
     const bin = join(dir, 'bin');
     mkdirSync(bin);
@@ -280,8 +279,9 @@ describe('passes over a git someone else could change, and says so', () => {
     const options = { env: { PATH: bin }, platform, places: { folders: [], groups } };
 
     expect(await findGit(options)).toMatchObject({
-      status: 'missing',
-      message: `Lo found git at ${git}, but ${reason.replace('{bin}', bin)}, so Lo won't run it.`,
+      status: 'distrusted',
+      program: git,
+      distrust: { why, path: why === 'writable' ? realpathSync(git) : realpathSync(bin) },
     });
 
     chmodSync(git, 0o755);
@@ -300,8 +300,8 @@ describe('passes over a git someone else could change, and says so', () => {
     const options = { env: { PATH: bin }, platform, places: { folders: [], groups } };
 
     expect(await findGit(options)).toMatchObject({
-      status: 'missing',
-      message: expect.stringContaining(`other users can change ${open}`),
+      status: 'distrusted',
+      distrust: { why: 'folderWritable', path: realpathSync(open) },
     });
 
     // Sticky, nobody else can move what's this user's in it, as in /tmp.
@@ -320,8 +320,8 @@ describe('passes over a git someone else could change, and says so', () => {
     const options = { env: { PATH: bin }, platform, places: { folders: [], groups } };
 
     expect(await findGit(options)).toMatchObject({
-      status: 'missing',
-      message: expect.stringContaining(`other users can change ${open}`),
+      status: 'distrusted',
+      distrust: { why: 'folderWritable', path: realpathSync(open) },
     });
 
     chmodSync(open, 0o755);
@@ -360,8 +360,8 @@ describe('takes a git whose folders root’s or admin’s group may write to, as
     // The folders' group here is the user's, not root's or admin's, so its members could change git.
     expect(groups).not.toContain(gid);
     expect(await findGit(options(groups))).toMatchObject({
-      status: 'missing',
-      message: expect.stringContaining('other users can change'),
+      status: 'distrusted',
+      distrust: { why: 'folderWritable' },
     });
     expect((await findGit(options([...groups, gid]))).status).toBe('found');
   });

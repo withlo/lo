@@ -328,7 +328,10 @@ the window find them with `import.meta.glob`.
   feature's context: `publish`, `database`, `git` and `use`. A handler also gets who asked, as its
   third argument: `{ windowId }`, the window whose page sent the request, for what it shows there,
   as a dialog. A handler throws an `IpcError` for a failure the window should see; any other error
-  is logged and reaches the window only as `internal`.
+  is logged and reaches the window only as `internal`. A failure crosses as a kind and its data,
+  never a sentence: the error's code, or a reply's or topic's value, says what went wrong, and its
+  message holds only what the source said (GitHub's, Git's, the system's), for Details. The window
+  writes the words, with the Causes in `ipc/cause.ts` and `window/explain.ts`.
 - `service.ts` names what the feature's main side offers other features, each with
   `defineService<T>('<feature>.<name>')`: the GitHub clients, say. Its `provide` pairs each with its
   value (`provides(service, value)`). Every feature's `provide` runs before any feature's `start`,
@@ -381,8 +384,8 @@ the window find them with `import.meta.glob`.
   slot's views in order, and `useViews(slot)` lists them for an owner that lays them out itself. A
   slot is named for the feature whose `window/shared.ts` exports it, and views go only in exported
   slots. Every view runs inside its own error boundary, from `<Slot>` or `useViews` alike: one that
-  throws shows a short note in its place, and its error is logged. In a build run from source, it
-  then stops the window too, so tests can't miss it.
+  throws shows a short note in its place, with "Try again", which draws it again, and its error is
+  logged. In a build run from source, it then stops the window too, so tests can't miss it.
 
 Features share only through `contract.ts`, `keys.ts`, `service.ts` and `window/shared.ts`.
 `pnpm check:boundaries` reads every file in a feature's folder that Vite could bundle, in any

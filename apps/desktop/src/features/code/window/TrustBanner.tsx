@@ -25,6 +25,19 @@ import {
   TRUSTING,
 } from './status.ts';
 
+/** `text` with the name `code` in it shown as code: "`settings.json` has an error." */
+function Coded({ text, code }: { text: string; code: string }) {
+  const at = text.indexOf(code);
+  if (at === -1) return text;
+  return (
+    <>
+      {text.slice(0, at)}
+      <code>{code}</code>
+      {text.slice(at + code.length)}
+    </>
+  );
+}
+
 /** Says view `view`'s banner is on screen, or that the one that was has gone, if that's news. */
 function mark(view: string, how: 'on' | 'off'): void {
   const was = drawn.get(view);
@@ -66,7 +79,13 @@ export function TrustBanner({ tab }: { tab: PullTab }) {
         <Banner
           tone={banner.tone}
           title={banner.title}
-          detail={banner.detail}
+          detail={
+            banner.code === undefined || banner.detail === undefined ? (
+              banner.detail
+            ) : (
+              <Coded text={banner.detail} code={banner.code} />
+            )
+          }
           actions={actions}
           onDismiss={() => void dismissBanner(status)}
         />

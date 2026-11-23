@@ -201,7 +201,7 @@ describe('excerptOf', () => {
   });
 
   it('shows plain lines for a file it didn’t change, or that Lo couldn’t diff', () => {
-    for (const base of [{ kind: 'same' }, { kind: 'unknown', why: 'No.' }, null] as const) {
+    for (const base of [{ kind: 'same' }, { kind: 'unknown', why: 'unrelated' }, null] as const) {
       const read = { kind: 'text', text: 'b\n', base } as const;
       expect(textsOf('y', read).old).toBe(null);
       expect(excerptOf(read, diffed)).toEqual({

@@ -60,9 +60,9 @@ describe('check-popups', () => {
   });
 
   it('fails once a file excused for now has moved to a shared piece', () => {
-    write({ 'TabBar.tsx': "import { ContextMenu } from './ContextMenu.tsx';\n" });
+    write({ 'KeyHelp.tsx': "import { Dialog } from './Dialog.tsx';\n" });
     const { status, stderr } = check();
     expect(status).toBe(1);
-    expect(stderr).toContain('TabBar.tsx no longer draws a popup of its own.');
+    expect(stderr).toContain('KeyHelp.tsx no longer draws a popup of its own.');
   });
 });

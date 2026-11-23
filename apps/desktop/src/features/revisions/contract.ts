@@ -7,6 +7,7 @@
 
 import { z } from 'zod';
 
+import { cause, details } from '../../ipc/cause.ts';
 import { defineContract, reply } from '../../ipc/contract.ts';
 import { oid, tabId } from '../tab/contract.ts';
 import { PATH_LIMIT, pathBytes } from '../tree/contract.ts';
@@ -67,6 +68,40 @@ export const replay = z.enum(['sameBase', 'clean', 'retargeted', 'conflicted']);
 export type Replay = z.output<typeof replay>;
 
 /**
+ * Why two revisions couldn't be compared: a revision's commit is no longer on GitHub (`gone`, with
+ * which, when it's known), the local copy doesn't have what it needs (`notFetched`), a revision's
+ * base isn't known (`noBase`) or shares no history with it (`unrelated`), the changes are over
+ * `limit` bytes (`tooLarge`), the local copy can't be used (`local`), or something else.
+ */
+export const compareWhy = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('gone'), head: oid.nullable() }),
+  z.strictObject({ kind: z.literal('notFetched') }),
+  z.strictObject({ kind: z.literal('noBase'), head: oid }),
+  z.strictObject({ kind: z.literal('unrelated'), head: oid }),
+  z.strictObject({ kind: z.literal('tooLarge'), limit: z.number().int().positive() }),
+  z.strictObject({ kind: z.literal('local') }),
+  z.strictObject({ kind: z.literal('unknown') }),
+]);
+export type CompareWhy = z.output<typeof compareWhy>;
+
+/**
+ * What went wrong: the revisions couldn't be read (`read`), by GitHub's cause, or revision `from`,
+ * or the base for `null`, couldn't be compared with `to` (`compare`). What GitHub, Git or the
+ * system said is behind Details.
+ */
+export const revisionsProblem = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('read'), cause, details: details.optional() }),
+  z.strictObject({
+    kind: z.literal('compare'),
+    from: oid.nullable(),
+    to: oid,
+    why: compareWhy,
+    details: details.optional(),
+  }),
+]);
+export type RevisionsProblem = z.output<typeof revisionsProblem>;
+
+/**
  * A pull request's tab's revisions and what it compares, sent each time they change:
  *
  * - `status`: `signIn` for a tab that acts as nobody, which can't read revisions; `loading` until
@@ -102,7 +137,7 @@ export const comparisonView = z.strictObject({
   replay: replay.nullable(),
   conflicted: z.number().int().nonnegative(),
   uncertain: z.boolean(),
-  problem: z.string().nullable(),
+  problem: revisionsProblem.nullable(),
 });
 export type ComparisonView = z.output<typeof comparisonView>;
 
