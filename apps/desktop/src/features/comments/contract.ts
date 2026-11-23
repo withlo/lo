@@ -339,6 +339,7 @@ export type Commentable =
  * - `pendingUnknown`: Lo couldn't tell whether you have a pending review;
  * - `unconfirmed`: it was sent before, GitHub's answer was lost, and Lo couldn't tell whether it
  *   posted: sending it again could post it twice, so only `check` goes on from there;
+ * - `busy`: it's being sent already, or Lo is still looking whether it posted;
  * - `signIn`: the view acts as nobody; `run`: it shows a run of a stack's layers;
  * - `github`: anything else GitHub refused, or that went wrong, in a sentence.
  */
@@ -349,6 +350,7 @@ export type SendRefusal =
   | { kind: 'paused'; until: number }
   | { kind: 'pendingUnknown' }
   | { kind: 'unconfirmed' }
+  | { kind: 'busy' }
   | { kind: 'signIn' }
   | { kind: 'run' }
   | { kind: 'github'; message: string };
@@ -446,6 +448,7 @@ export type UploadProgressRow = z.output<typeof uploadProgress>;
  *   asked;
  * - `gone`: the thread or the comment is gone from GitHub;
  * - `busy`: it's being sent, or Lo is still looking whether it went;
+ * - `noBase`: the edit's draft lost the text it started from, so it can only be discarded;
  * - `paused`, `signIn`, `run` and `github`, as for a comment.
  */
 export type ActRefusal =
@@ -455,6 +458,7 @@ export type ActRefusal =
   | { kind: 'changed' }
   | { kind: 'gone' }
   | { kind: 'busy' }
+  | { kind: 'noBase' }
   | { kind: 'paused'; until: number }
   | { kind: 'signIn' }
   | { kind: 'run' }

@@ -129,9 +129,12 @@ export type Version = z.output<typeof version>;
 /**
  * Why Lo won't show a file whole, besides its size: the revisions compared are too large to replay
  * the older side's changes onto (`compared`), the pull request shares no history with its base, so
- * there's no older side (`unrelated`), or it's a submodule, another repository's commit.
+ * there's no older side (`unrelated`), it's a submodule, another repository's commit, the pull
+ * request changes no file that was at that path (`unchanged`), or there's no file at that path in
+ * the head on screen (`missing`) or in the base (`notInBase`).
  */
-export type WholeRefusal = 'compared' | 'unrelated' | 'submodule';
+export type WholeRefusal =
+  'compared' | 'unrelated' | 'submodule' | 'unchanged' | 'missing' | 'notInBase';
 
 /**
  * A whole file, as `diff.whole` replies: its text; or what its whole-file view says in place of
@@ -175,9 +178,10 @@ export const contract = defineContract('diff', {
      * A whole file from the local copy, for its whole-file view: the head's version of the file at
      * `path` in the head on screen, `at`, or, for `old`, the base's version of a file the
      * comparison changes, by its path in the base. Main reads only those: a path the head's tree
-     * doesn't hold, or that no changed file had in the base, fails as `invalid`, and a head other
-     * than the one on screen as `moved`. A file larger than Lo loads at once comes only when
-     * `large` asks for it anyway.
+     * doesn't hold is refused as `missing`, one the base doesn't as `notInBase`, and one no changed
+     * file had in the base as `unchanged`; a head other than the one on screen fails as `moved`,
+     * and a local copy that couldn't be read as `unavailable`. A file larger than Lo loads at once
+     * comes only when `large` asks for it anyway.
      */
     whole: {
       input: z.strictObject({ id: tabId, at: oid, version, path: treePath, large: z.boolean() }),

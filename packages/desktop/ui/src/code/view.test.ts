@@ -2195,13 +2195,13 @@ describe('headers and notes', () => {
     expect(header.classList.contains('is-viewed')).toBe(true);
     expect(header.textContent).toContain('new3');
     const count = header.querySelector('.lo-count');
-    expect(count?.getAttribute('title')).toBe('2 unresolved of 3');
+    expect(count?.getAttribute('title')).toBe('2 / 3 threads unresolved');
     expect(count?.classList.contains('is-open')).toBe(true);
     shown.setHeader('b', { additions: 10, deletions: 0, threads: { total: 1, unresolved: 0 } });
     const resolved = parent!.querySelector(
       '.cm-content[aria-label="After"] [data-row="h:1"] .lo-count',
     );
-    expect(resolved?.getAttribute('aria-label')).toBe('1 thread, resolved');
+    expect(resolved?.getAttribute('aria-label')).toBe('1 resolved thread');
     expect(resolved?.classList.contains('is-open')).toBe(false);
   });
 

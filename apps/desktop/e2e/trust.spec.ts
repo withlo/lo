@@ -1,11 +1,11 @@
 // Trust in the app, on rozed-dev/e2e#80, which nothing trusts: its status bar says language servers
-// are off, with no banner, and the item's details offer to trust it by themselves once, at the first
-// `g d`, leaving focus where it was, and not again after Lo starts again; "Trust repo…" trusts it
-// only once main's own dialog, answered here as the reader would, says "Trust", and Settings lists
-// it until it's removed there; taken out of the file by hand, its checkouts go too. With a settings
-// file Lo can't read, the details say why Lo couldn't trust it, offer to open the file, and once the
-// file's fixed, offer to trust it again, and do. GitHub answers from `app_e2e`, and the
-// repository's IDs, which Lo reads only once the reader asks to trust it, from
+// are off, with no banner, and the item's details offer to trust it by themselves once, at the
+// first `g d`, leaving focus where it was, and not again after Lo starts again; "Trust repo…"
+// trusts it only once main's own dialog, answered here as the reader would, says "Trust repo", and
+// Settings lists it until it's removed there; taken out of the file by hand, its checkouts go too.
+// With a settings file Lo can't read, the details say why Lo couldn't trust it, offer to open the
+// file, and once the file's fixed, offer to trust it again, and do. GitHub answers from `app_e2e`,
+// and the repository's IDs, which Lo reads only once the reader asks to trust it, from
 // `pull_request_repositories_e2e`.
 
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
@@ -199,7 +199,7 @@ test.describe('with Vim keys', () => {
   });
 });
 
-test('trusts the repo only once main’s own dialog says Trust, and Settings lists it until it’s removed', async ({
+test('trusts the repo only once main’s own dialog says Trust repo, and Settings lists it until it’s removed', async ({
   app,
   page,
 }) => {
@@ -214,8 +214,8 @@ test('trusts the repo only once main’s own dialog says Trust, and Settings lis
     {
       message: 'Trust rozed-dev/e2e?',
       detail:
-        'Lo will check out its pull requests and run language servers on them. The servers read its code and settings. Lo limits what they run, but they aren’t sandboxed. The repo’s settings can still steer them. A file that exploits a bug in one could run code as you.',
-      buttons: ['Trust', 'Cancel'],
+        'Language servers read this repo’s code and settings. They aren’t sandboxed. Trust only repos whose code you’d run.',
+      buttons: ['Trust repo', 'Cancel'],
       defaultId: 1,
       cancelId: 1,
       // The window that asked.
@@ -233,7 +233,7 @@ test('trusts the repo only once main’s own dialog says Trust, and Settings lis
   ).toMatchObject({ ok: false, error: { code: 'unwritable' } });
 
   // Trusted: the entry, by the repository's ID, and the item gives way to the servers.
-  await answerDialogs(app, 'Trust');
+  await answerDialogs(app, 'Trust repo');
   await (await offer(page)).getByRole('button', { name: 'Trust repo…' }).click();
   await expect
     .poll(() => status(page, id), { timeout: 20_000 })
@@ -257,7 +257,7 @@ test('trusts the repo only once main’s own dialog says Trust, and Settings lis
 
   // Trusted again, then taken out of the file by hand: Lo lets go of the repo's checkouts, here
   // one made as Lo's cache makes them.
-  await answerDialogs(app, 'Trust');
+  await answerDialogs(app, 'Trust repo');
   expect(
     await page.evaluate(
       (view) => window.lo.invoke('code.trust', { view, repo: 'rozed-dev/e2e', pull: null }),
@@ -284,7 +284,7 @@ test('says in the item’s details why it couldn’t trust the repo, offers the 
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, '{ "code.trusted": [\n');
 
-  await answerDialogs(app, 'Trust');
+  await answerDialogs(app, 'Trust repo');
   const shown = await offer(page);
   await shown.getByRole('button', { name: 'Trust repo…' }).click();
   const failed = shown.getByRole('alert').filter({ hasText: 'Couldn’t trust rozed-dev/e2e' });

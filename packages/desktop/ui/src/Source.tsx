@@ -7,14 +7,14 @@ import { ShownText } from './ShownText.tsx';
  */
 export type AnswerSource = { kind: 'server'; name: string } | { kind: 'syntax' };
 
-/** The words that say a source: a server's name, or "Syntax index". */
+/** The words that say a source: a server's name, or "Code index". */
 export function sourceName(source: AnswerSource): string {
-  return source.kind === 'server' ? source.name : 'Syntax index';
+  return source.kind === 'server' ? source.name : 'Code index';
 }
 
 /**
  * A source as a dot and its name, with what sets this answer apart after it: "TypeScript",
- * "TypeScript · overload", "Syntax index · same name". A server's dot is green, since it answered;
+ * "TypeScript · overload", "Code index · same name". A server's dot is green, since it answered;
  * the syntax index's is dim, as it's the fallback. The name always comes with the dot.
  */
 export function SourceMark({

@@ -141,11 +141,11 @@ async function blob(repo: CodeRepo, commit: Oid, path: Buffer, oid: Oid): Promis
     if (downloaded) return downloaded;
   } catch (error) {
     if (error instanceof GitError && error.detail.kind === 'tooLarge') {
-      throw new IpcError('unavailable', 'The file is too large for Lo to read about.');
+      throw new IpcError('unavailable', 'This file is too large');
     }
     throw error;
   }
-  throw new IpcError('unavailable', "The local copy doesn't have that file, and can't get it now.");
+  throw new IpcError('unavailable', 'The local copy doesn’t have it');
 }
 
 /**

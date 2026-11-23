@@ -88,7 +88,7 @@ describe('the Recent list', () => {
 
   it('follows the accounts in its header', () => {
     expect(acrossAccounts([])).toBe('Not signed in');
-    expect(acrossAccounts(['rozed-bot'])).toBe('Signed in as rozed-bot');
-    expect(acrossAccounts(['rozed-bot', 'work-bot'])).toBe('Across 2 accounts');
+    expect(acrossAccounts(['rozed-bot'])).toBe('rozed-bot');
+    expect(acrossAccounts(['rozed-bot', 'work-bot'])).toBe('2 accounts');
   });
 });

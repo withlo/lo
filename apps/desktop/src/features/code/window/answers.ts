@@ -28,36 +28,31 @@ export function isOutside(answer: Definition): answer is OutsideAnswer {
   return 'outside' in answer;
 }
 
-/** "No definition of `parse` found". */
+/** "No definition of `parse`". */
 export function noDefinition(name: string): string {
-  return `No definition of \`${name}\` found`;
+  return `No definition of \`${name}\``;
 }
 
-/** "No references of `parse` found". */
+/** "No references to `parse`". */
 export function noReferences(name: string): string {
-  return `No references of \`${name}\` found`;
+  return `No references to \`${name}\``;
 }
 
-/** What the status bar says of nothing found, with why a language server didn't answer, if it didn't. */
-export function noneFound(said: string, fallback: string | undefined): string {
-  return fallback === undefined ? said : `${said}. ${fallback}`;
-}
+/**
+ * What `K` says of a name nothing's known of. Like the rest, it's the fact alone: why a language
+ * server didn't answer is on its own item in the status bar.
+ */
+export const NO_TYPE = 'No type for this name';
 
-/** What `K` says of a name nothing's known of, with why a server didn't answer, if one could. */
-export function noHover(fallback: string | undefined): string {
-  const said = 'No definition found at the cursor.';
-  return fallback === undefined ? said : `${said} ${fallback}`;
-}
-
-/** "`parse` has 3 references, all outside this repository.": what a server found, none listed. */
-export function allOutside(name: string, count: number): string {
+/** "3 references, all outside this repo": what a server found, none listed. */
+export function allOutside(count: number): string {
   return count === 1
-    ? `\`${name}\` has 1 reference, outside this repository.`
-    : `\`${name}\` has ${count} references, all outside this repository.`;
+    ? '1 reference, outside this repo'
+    : `${count.toLocaleString('en-US')} references, all outside this repo`;
 }
 
 /** What the status bar says when there's no name at the place asked about. */
-export const NO_NAME = 'There’s no name at the cursor.';
+export const NO_NAME = 'No name at the cursor';
 
 /**
  * Why no type hint came for the code on screen, from what each file's question found, the view's
@@ -78,35 +73,35 @@ export function noHints(
   const trust = status?.trust;
   switch (trust?.kind) {
     case 'trusted':
-      return 'No language server reads the code on screen.';
+      return 'No language server for this file';
     case 'untrusted': {
       if (trust.why === 'unread') break;
       const head = status?.head;
       switch (head?.kind) {
         case 'fork':
-          return 'Type hints need a language server, which Lo runs only on PRs you trust.';
+          return 'Trust the pull request to see type hints';
         case 'gone':
-          return 'Type hints need a language server. GitHub no longer has this PR’s fork, so Lo can’t tell whose code it is.';
+          return 'The fork no longer exists';
         case 'base':
         case undefined:
-          return 'Type hints need a language server, which Lo runs only on repos you trust.';
+          return 'Trust the repo to see type hints';
         default:
           head satisfies never;
-          return 'Type hints need a language server.';
+          return 'Type hints need a language server';
       }
     }
     case 'checking':
     case 'waiting':
       break;
     case 'noGit':
-      return 'Code features need git.';
+      return 'Git wasn’t found';
     case undefined:
-      return 'Type hints need a language server.';
+      return 'Type hints need a language server';
     default:
       trust satisfies never;
-      return 'Type hints need a language server.';
+      return 'Type hints need a language server';
   }
-  return 'Type hints wait for Lo to work out whether this repo is trusted.';
+  return 'Checking whether this repo is trusted';
 }
 
 /** Why server `name` gave no type hints for a file: what it said, or where it is. */
@@ -119,9 +114,9 @@ function serverHints(
   const state = servers?.servers.find((server) => server.name === name)?.state;
   switch (state?.kind) {
     case 'failed':
-      return `${name} failed. Restart it from the status bar.`;
+      return `${name} isn’t running`;
     case 'missing':
-      return `${name} needs ${state.needs}.`;
+      return `${name} needs ${state.needs}`;
     case 'refused':
       return state.why;
     case 'downloading':
@@ -133,10 +128,10 @@ function serverHints(
     case 'ready':
     case 'notAnswering':
     case undefined:
-      return found.fallback ?? `${name} gives no type hints for the code on screen.`;
+      return found.fallback ?? `${name} has no type hints for this file`;
     default:
       state satisfies never;
-      return found.fallback ?? `${name} gives no type hints for the code on screen.`;
+      return found.fallback ?? `${name} has no type hints for this file`;
   }
 }
 
@@ -159,14 +154,14 @@ export function notYet(local: LocalState | undefined): NotYet | undefined {
 
 /** Why code features can't answer yet, as the status bar says it. */
 export const NOT_YET = {
-  noGit: 'Code features need git.',
+  noGit: 'Git wasn’t found',
   notFetched: 'Can’t fetch the local copy',
-  waiting: 'The syntax index waits for the local copy.',
+  waiting: 'Fetching local copy…',
 } as const satisfies Record<NotYet, string>;
 
 /**
  * What the status bar says of a question that failed, in main's own words where it gave them, as
- * it does for "The syntax index waits for the local copy." Nothing for one that was cancelled,
+ * it does for "Fetching local copy…". Nothing for one that was cancelled,
  * since a newer one took its place.
  */
 export function failureOf(error: unknown): string | undefined {
@@ -174,12 +169,12 @@ export function failureOf(error: unknown): string | undefined {
     if (error.code === 'cancelled') return undefined;
     return error.message;
   }
-  return 'Lo couldn’t ask the syntax index.';
+  return 'Couldn’t search the code index';
 }
 
 /**
- * Where an answer came from, from its label: "TypeScript" or "Syntax index", with what sets it
- * apart after a `·`, as "Syntax index · same name" does.
+ * Where an answer came from, from its label: "TypeScript" or "Code index", with what sets it
+ * apart after a `·`, as "Code index · same name" does.
  */
 export function sourceOf(answer: Pick<CodeAnswer, 'source' | 'label'>): {
   source: AnswerSource;
@@ -242,8 +237,8 @@ export function peekOf(found: Definitions, shown: number, code: PeekCode | undef
 
 /** What a peek's foot says of its answer shown: its path, its revision, and whether the PR changes it. */
 export function metaOf(answer: Definition, revision: string | undefined): string {
-  if (isOutside(answer)) return 'Outside this repository';
-  return [answer.path, revision, answer.changed ? 'changed in this PR' : 'unchanged in this PR']
+  if (isOutside(answer)) return 'Outside this repo';
+  return [answer.path, revision, answer.changed ? 'changed' : 'unchanged']
     .filter((part) => part !== undefined)
     .join(' · ');
 }
@@ -261,7 +256,7 @@ export function peekSource(
   if (!only || rest.length > 0) return undefined;
   const { source, note } = sourceOf(only);
   if (!isOutside(only) && only.from !== undefined) {
-    return { source, note: `From ${only.from}, which Lo doesn't install` };
+    return { source, note: `From ${only.from} · not installed` };
   }
   return { source, note };
 }

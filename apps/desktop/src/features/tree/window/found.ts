@@ -196,7 +196,7 @@ export function groupsOf(items: readonly Item[], repo: string): Group[] {
 /** What `⏎` does on `item`, for the finder's foot. */
 export function enterAction(item: Item | undefined): string | undefined {
   if (item === undefined) return undefined;
-  return item.changed ? 'Show in the diff' : 'Show the whole file';
+  return item.changed ? 'Show in diff' : 'Open whole file';
 }
 
 /** `count` as a person reads it. */
@@ -217,12 +217,12 @@ export function countText(
   if (changedOnly) {
     return changed === undefined
       ? `${n(shown)} changed`
-      : `${n(shown)} of ${n(changed)} changed files`;
+      : `${n(shown)} / ${n(changed)} changed files`;
   }
   if (answer.total > answer.found.length) {
     const what = answer.query.trim() === '' ? 'files' : 'matches';
-    return `${n(answer.found.length)} of ${n(answer.total)} ${what}`;
+    return `First ${n(answer.found.length)} of ${n(answer.total)} ${what} shown`;
   }
   if (files === undefined) return `${n(shown)} ${shown === 1 ? 'file' : 'files'}`;
-  return `${n(shown)} of ${n(files)} files`;
+  return `${n(shown)} / ${n(files)} files`;
 }

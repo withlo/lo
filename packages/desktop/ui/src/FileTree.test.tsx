@@ -116,9 +116,9 @@ describe('FileTree', () => {
       />,
     );
     const [a, b, c] = html.split('role="treeitem"').slice(1);
-    expect(a).toContain('aria-label="2 unresolved of 3"');
+    expect(a).toContain('aria-label="2 / 3 threads unresolved"');
     expect(a).toContain('data-open=""');
-    expect(b).toContain('aria-label="1 thread, resolved"');
+    expect(b).toContain('aria-label="1 resolved thread"');
     expect(b).not.toContain('data-open');
     expect(c).not.toContain('role="img"');
   });

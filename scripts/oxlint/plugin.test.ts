@@ -1,7 +1,20 @@
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { parseSync, Visitor } from 'oxc-parser';
 import { expect, test } from 'vitest';
 
-import plugin, { MESSAGE, SCROLL_MESSAGE } from './plugin.ts';
+import plugin, {
+  loSubject,
+  MESSAGE,
+  SCROLL_MESSAGE,
+  SUBJECT_MESSAGE,
+  subjectEntry,
+} from './plugin.ts';
+import { LO_SUBJECTS } from './subjects.ts';
+
+/** The repository's root. */
+const ROOT = join(import.meta.dirname, '..', '..');
 
 /** The source of each node `lo/no-returned-never` reports in `source`, a TypeScript file. */
 function reported(source: string): string[] {
@@ -215,4 +228,125 @@ test("an element's scrollIntoView is refused, however it's called, and CodeMirro
     "element['scrollIntoView']()",
     'element.scrollIntoViewIfNeeded()',
   ]);
+});
+
+/**
+ * The source of each string `lo/no-lo-subject` reports in `source`, a file at `path`, letting
+ * through those `known` lists.
+ */
+function subjects(
+  source: string,
+  path = join(ROOT, 'apps/desktop/src/file.tsx'),
+  known: ReadonlySet<string> = new Set(),
+): string[] {
+  const found: string[] = [];
+  const text = (node: unknown): string => {
+    const start: unknown = Reflect.get(Object(node), 'start');
+    const end: unknown = Reflect.get(Object(node), 'end');
+    return typeof start === 'number' && typeof end === 'number' ? source.slice(start, end) : '';
+  };
+  const rule = loSubject(known).create({
+    report: ({ node, message }) => {
+      expect(message).toBe(SUBJECT_MESSAGE);
+      found.push(text(node));
+    },
+    filename: path,
+    sourceCode: { getText: text },
+  });
+  const { program } = parseSync(path, source);
+  new Visitor({
+    CallExpression: (node) => rule.CallExpression(node),
+    Literal: (node) => rule.Literal(node),
+    TemplateLiteral: (node) => rule.TemplateLiteral(node),
+    JSXText: (node) => rule.JSXText(node),
+  }).visit(program);
+  return found;
+}
+
+test('a string the reader may see that makes Lo its subject is refused, in any form', () => {
+  const source = `
+    const said = 'Lo couldn’t send the comment.';
+    const why = \`Lo can’t open \${path}\`;
+    const label = <span title="Lo is reading the file">
+      Lo is checking
+    </span>;
+    throw new IpcError('failed', "Lo couldn't read the comments.");
+    throw new Error(\`Lo doesn't know why: \${String(why)}\`);
+    giveUp.abort(new DOMException('Lo is quitting', 'AbortError'));
+  `;
+  expect(subjects(source)).toEqual([
+    "'Lo couldn’t send the comment.'",
+    '`Lo can’t open ${path}`',
+    '"Lo is reading the file"',
+    `
+      Lo is checking
+    `,
+    '"Lo couldn\'t read the comments."',
+    "`Lo doesn't know why: ${String(why)}`",
+    "'Lo is quitting'",
+  ]);
+});
+
+test('a version, another subject, a log’s message and a listed string are let through', () => {
+  const path = join(ROOT, 'apps/desktop/src/file.tsx');
+  const source = `
+    const offer = \`Lo \${version} is available\`;
+    const version = 'Lo 0.9.0';
+    const named = 'Lo Dev';
+    const own = 'Lo’s own dialog';
+    const title = 'Couldn’t send the comment';
+    console.error("Lo couldn't copy the path:", error);
+    log(\`Lo couldn't check the setting \${key}:\`, error);
+    this.#log('Lo is quitting');
+    work.log('Lo couldn’t highlight a file:', error);
+    const kept = 'Lo still says this';
+    const label = <span>
+      Lo still says this too
+    </span>;
+  `;
+  const known = new Set([
+    "apps/desktop/src/file.tsx: 'Lo still says this'",
+    'apps/desktop/src/file.tsx: Lo still says this too',
+  ]);
+  expect(subjectEntry(path, "'Lo still says this'")).toBe(
+    "apps/desktop/src/file.tsx: 'Lo still says this'",
+  );
+  expect(subjects(source, path, known)).toEqual([]);
+  // Listed for another file, it's refused here.
+  expect(subjects(source, join(ROOT, 'apps/desktop/src/other.tsx'), known)).toHaveLength(2);
+});
+
+/** Where the desktop app's strings are: its source, and its packages'. */
+const SOURCES = [
+  'apps/desktop/src',
+  ...readdirSync(join(ROOT, 'packages/desktop'))
+    .map((name) => `packages/desktop/${name}/src`)
+    .filter((folder) => existsSync(join(ROOT, folder))),
+];
+
+/** Every source file under `folder` that `lo/no-lo-subject` checks: not a test's, nor built. */
+function sourceFiles(folder: string): string[] {
+  return readdirSync(folder, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(folder, entry.name);
+    if (entry.isDirectory()) {
+      const skipped = ['node_modules', 'dist', 'test', 'e2e', '.tsbuild'];
+      return skipped.includes(entry.name) ? [] : sourceFiles(path);
+    }
+    return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : [];
+  });
+}
+
+test('the strings that still make Lo their subject are listed, and only they', () => {
+  const found = new Set(
+    SOURCES.flatMap((folder) => sourceFiles(join(ROOT, folder))).flatMap((path) =>
+      subjects(readFileSync(path, 'utf8'), path).map((text) => subjectEntry(path, text)),
+    ),
+  );
+  // A listed string no longer found was rewritten: take it off the list. One found but not listed
+  // is new: `lo/no-lo-subject` refuses it, so rewrite it.
+  expect({
+    gone: LO_SUBJECTS.filter((each) => !found.has(each)),
+    unlisted: [...found].filter((each) => !LO_SUBJECTS.includes(each)),
+    repeated: LO_SUBJECTS.filter((each, index) => LO_SUBJECTS.indexOf(each) !== index),
+  }).toEqual({ gone: [], unlisted: [], repeated: [] });
 });

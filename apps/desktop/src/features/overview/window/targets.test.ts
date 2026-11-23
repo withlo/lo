@@ -143,7 +143,7 @@ describe('showsOf', () => {
     expect(title({ kind: 'failed', why: 'notFetched' })).toEqual([
       'code',
       'Can’t show this code',
-      'The local copy couldn’t be fetched.',
+      'Can’t fetch the local copy.',
     ]);
     // Main says the cause, and Lo words it: nothing where main doesn't know it.
     expect(title(READ, { ...unread, answer: { kind: 'unread', why: 'binary' } })).toEqual([

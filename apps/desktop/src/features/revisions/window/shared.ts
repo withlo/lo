@@ -286,6 +286,6 @@ export function compareAgain(
 ): 'now' | 'coming' | { readonly why: string } {
   const view = views.get(tab);
   const compared = view && comparisonNamed(view, name);
-  if (!compared) return { why: 'Lo can’t tell what that place compared.' };
+  if (!compared) return { why: 'That comparison can’t be shown again' };
   return compareTo(tab, compared);
 }

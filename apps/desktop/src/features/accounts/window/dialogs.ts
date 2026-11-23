@@ -118,7 +118,7 @@ function said(error: unknown): string {
  */
 export async function copyCode(): Promise<void> {
   const waiting = waitingSignIn();
-  if (waiting === undefined) throw new Error('No sign-in is waiting for its code.');
+  if (waiting === undefined) throw new Error('No sign-in code to copy');
   await main().copyCode({ id: waiting.id });
 }
 

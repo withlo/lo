@@ -145,7 +145,12 @@ test("says why a pull request GitHub doesn't have, or one no account can see, ca
   await expect(header.getByRole('heading', { level: 1 })).toHaveText('rozed-dev/e2e');
   await expect(header).toContainText('#9999');
   await expect(header.locator('.skeleton')).toHaveCount(0);
-  for (const gone of [/^Checking/, /^Submit review/, /^Revisions/, /^Sign in to see revisions/]) {
+  for (const gone of [
+    /^Checking/,
+    /^Submit review/,
+    /^Reading revisions/,
+    /^Sign in to compare revisions/,
+  ]) {
     await expect(header.getByRole('button', { name: gone })).toHaveCount(0);
   }
   await expect(header.locator('[inert]')).toHaveCount(1);

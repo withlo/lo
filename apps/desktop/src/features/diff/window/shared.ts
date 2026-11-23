@@ -19,7 +19,6 @@ import type {
 import { createElement, type ReactNode } from 'react';
 
 import { defineSlot, Slot } from '../../../window/slots.tsx';
-import type { LocalState } from '../../tab/contract.ts';
 import { showMiddle, type PullTab } from '../../tab/window/shared.ts';
 import type { DiffState } from '../contract.ts';
 import { FILES_PER_JOB, type FileResult } from '../jobs.ts';
@@ -91,14 +90,6 @@ export function diffStateOf(tab: string): DiffState | undefined {
 /** Calls `listener` each time main says pull request's tab `tab`'s diff anew. Returns a function that stops it. */
 export function onDiffState(tab: string, listener: () => void): () => void {
   return loaderOf(tab).subscribe(listener);
-}
-
-/**
- * What replaces a diff that's GitHub's until the local copy is ready, as a clause for a sentence:
- * ` until the local copy is ready`, or nothing where it never will be, as without git.
- */
-export function untilLocalCopy(local: LocalState | undefined): string {
-  return local?.kind === 'noGit' ? '' : ' until the local copy is ready';
 }
 
 /**

@@ -38,10 +38,9 @@ import {
   failureOf,
   isOutside,
   NO_NAME,
+  NO_TYPE,
   noDefinition,
   noHints,
-  noHover,
-  noneFound,
   noReferences,
   NOT_YET,
   notYet,
@@ -82,9 +81,9 @@ function placeOf(target: LineTarget | HeaderTarget): Place {
 /** The pull request's tab on screen and its code view the keys act on, or why there's none. */
 export function onCode(): { tab: string; view: CodeViewKind } | string {
   const tab = activeTab();
-  if (tab?.kind !== 'pull') return 'There’s no pull request on screen.';
+  if (tab?.kind !== 'pull') return 'Open a pull request first';
   const view = codeViews(tab.id).onScreen();
-  return view ? { tab: tab.id, view } : 'There’s no code on screen.';
+  return view ? { tab: tab.id, view } : 'No code in this view';
 }
 
 /** Whether code features can run on what's on screen, or why not. */
@@ -106,12 +105,12 @@ function ask(target: LineTarget | HeaderTarget): Asked | undefined {
   }
   const file = codeViews(tab).fileAt(at);
   if (!file) {
-    say(tab, 'Lo can’t name this file to the syntax index: its path isn’t UTF-8.');
+    say(tab, 'This file’s path isn’t UTF-8');
     return undefined;
   }
   const { commit } = file;
   if (commit === undefined) {
-    say(tab, 'The syntax index waits for the local copy.');
+    say(tab, 'Fetching local copy…');
     return undefined;
   }
   return {
@@ -181,7 +180,7 @@ export function peekIn(tab: string): OpenPeek | undefined {
 function peekOnScreen(): OpenPeek | string {
   const tab = activeTab();
   const open = tab ? peekIn(tab.id) : undefined;
-  return open ?? 'There’s no peek open.';
+  return open ?? 'Definitions aren’t open';
 }
 
 export function peekNow(): true | string {
@@ -280,7 +279,7 @@ async function define(target: LineTarget): Promise<void> {
     return;
   }
   if (found.answers.length === 0) {
-    say(tab, noneFound(noDefinition(name), found.fallback));
+    say(tab, noDefinition(name));
     return;
   }
   const views = codeViews(tab);
@@ -308,7 +307,7 @@ async function define(target: LineTarget): Promise<void> {
   setPeek(tab, open);
   if (!draw(open)) {
     setPeek(tab, undefined);
-    say(tab, 'There’s no line drawn there to show a peek under.');
+    say(tab, 'That line isn’t in view');
     return;
   }
   readCode(open, 0, signal).catch((error: unknown) => failed(tab, error));
@@ -441,10 +440,7 @@ export async function references(target: LineTarget): Promise<void> {
   }
   if (found.answers.length === 0) {
     const outside = found.outside ?? 0;
-    say(
-      tab,
-      outside > 0 ? allOutside(name, outside) : noneFound(noReferences(name), found.fallback),
-    );
+    say(tab, outside > 0 ? allOutside(outside) : noReferences(name));
     return;
   }
   const open = peekIn(tab);
@@ -471,7 +467,7 @@ export async function references(target: LineTarget): Promise<void> {
 function listedOnScreen(): { tab: string; list: ListedReferences } | string {
   const tab = activeTab();
   const list = tab ? listed.get(tab.id) : undefined;
-  return tab && list ? { tab: tab.id, list } : 'There are no references listed.';
+  return tab && list ? { tab: tab.id, list } : 'No references listed';
 }
 
 export function listedNow(): true | string {
@@ -583,7 +579,7 @@ async function showHover(asked: Asked, byKey: boolean): Promise<void> {
   if (signal.aborted) return;
   // A hover with nothing the card can draw is none, saying why a server didn't answer.
   if ('none' in hover || !cardOf(hover)) {
-    if (byKey) say(tab, noHover(hover.fallback));
+    if (byKey) say(tab, NO_TYPE);
     return;
   }
   const anchor = codeViews(tab).anchor(view, at);

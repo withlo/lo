@@ -417,6 +417,7 @@ it('turns auto-merge off from its button, busy until main answers, and says in t
       autoMerge: { method: 'SQUASH', by: 'rozed-bot' },
       action: { kind: 'notPossible', reason: 'blocked' },
       auto: { kind: 'off' },
+      picked: 'MERGE',
     }),
   });
   onScreen(tabOf('t9'));
@@ -427,6 +428,8 @@ it('turns auto-merge off from its button, busy until main answers, and says in t
   act(() => page.querySelector('button')?.click());
   await until(() => panel() !== null);
   expect(panel()?.textContent).toContain('Squash · turned on by rozed-bot');
+  // The foot names no other method than the one auto-merge merges with.
+  expect(panel()?.textContent).not.toContain('Merge commit');
   const off = () => buttonSaying('Turn off auto-merge', panel() ?? undefined);
   expect(off()?.getAttribute('aria-disabled')).toBeNull();
   const answer = Promise.withResolvers<void>();

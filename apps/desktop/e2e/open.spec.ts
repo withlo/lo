@@ -141,7 +141,7 @@ test.describe('without an account', () => {
     await expect(header(page)).toContainText('Not signed in');
     await expect(header(page)).toContainText('Read only');
     await expect(
-      header(page).getByRole('button', { name: 'Sign in to see revisions' }),
+      header(page).getByRole('button', { name: 'Sign in to compare revisions' }),
     ).toBeVisible();
 
     // Closed, it isn't among the pull requests opened lately.

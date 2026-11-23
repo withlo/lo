@@ -35,6 +35,7 @@ import {
   opened,
   type Opened,
   pathIn,
+  readAgain,
   readOf,
   reads,
   readWhole,
@@ -350,8 +351,8 @@ function short(commit: string): string {
 
 /** What the bar says the file is to the pull request. */
 function tagOf(change: FileVersions | undefined, version: Version): string {
-  if (change === undefined) return 'Unchanged in this pull request';
-  return version === 'old' ? 'Before this pull request' : 'Changed in this pull request';
+  if (change === undefined) return 'Unchanged';
+  return version === 'old' ? 'Before changes' : 'Changed';
 }
 
 /**
@@ -427,10 +428,15 @@ function Note({
 }) {
   if (!open || !path) {
     return (
-      <Said title="No file is open whole">
-        <KeyFor id="diff.wholeFile" /> on a line of the diff opens its file here, at that line. So
-        does a file the pull request leaves alone, chosen in the tree or the file finder.
-      </Said>
+      <Said
+        title="No whole file open"
+        actions={
+          <Button onClick={() => registry().run('tree.find', NO_TARGET)}>
+            Go to file…
+            <KeyFor id="tree.find" />
+          </Button>
+        }
+      />
     );
   }
   const header = headerOf(open);
@@ -455,52 +461,67 @@ function Note({
         <Said>
           <span className="inline-flex items-center gap-8">
             <Spinner size="xs" />
-            Reading the file…
+            Reading file…
           </span>
         </Said>
       );
     case 'waiting':
-      return <Said>The whole file opens once the local copy is ready.</Said>;
+      return (
+        <Said>
+          <span className="inline-flex items-center gap-8">
+            <Spinner size="xs" />
+            Fetching local copy…
+          </span>
+        </Said>
+      );
     case 'text':
       return null;
     case 'large':
       return (
         <Said
-          title={`This file is ${sizeText(content.size)}`}
+          title={`${sizeText(content.size)} file`}
           actions={
             <>
               <Button variant="primary" onClick={() => registry().run('diff.loadWhole', header)}>
-                Load it anyway
+                Show large file
                 <KeyFor id="diff.loadWhole" className="text-on-accent" />
               </Button>
               {github}
             </>
           }
-        >
-          Lo loads files up to 1 MiB at once. This one may take a while to load and to scroll.
-        </Said>
+        />
       );
     case 'binary':
       return (
-        <Said title="This file isn’t text" actions={github}>
-          It’s {sizeText(content.size)} of binary data, which Lo doesn’t show.
+        <Said title="Can’t show this file" actions={github}>
+          It’s a binary file, {sizeText(content.size)}.
         </Said>
       );
     case 'tooLarge':
       return (
-        <Said title="Lo doesn’t show this file" actions={github}>
+        <Said title="Can’t show this file" actions={github}>
           {tooLargeReason(content.why)}
         </Said>
       );
     case 'refused':
       return (
-        <Said title="Lo doesn’t show this file" actions={github}>
+        <Said title="Can’t show this file" actions={github}>
           <Refused why={content.why} tab={tab} />
         </Said>
       );
     case 'failed':
       return (
-        <Said title="Lo couldn’t read this file" actions={github}>
+        <Said
+          title="Can’t show this file"
+          actions={
+            <>
+              <Button variant="primary" onClick={() => readAgain(tab.id, path, wholeWork(tab.id))}>
+                Try again
+              </Button>
+              {github}
+            </>
+          }
+        >
           {content.why}
         </Said>
       );
@@ -526,6 +547,18 @@ function Refused({ why, tab }: { why: WholeRefusal; tab: PullTab }) {
       );
     case 'submodule':
       return 'It’s a submodule.';
+    case 'unchanged':
+      return 'This pull request doesn’t change it.';
+    case 'missing':
+      return 'It isn’t in this revision.';
+    case 'notInBase':
+      return base === undefined ? (
+        'It isn’t in the base branch.'
+      ) : (
+        <>
+          It isn’t in <code>{base}</code>.
+        </>
+      );
     default:
       throw new Error(`A refusal Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
   }
@@ -539,13 +572,15 @@ function Said({
 }: {
   title?: string | undefined;
   actions?: ReactNode;
-  children: ReactNode;
+  children?: ReactNode;
 }) {
   return (
     <div className="grid min-h-0 flex-1 place-items-center overflow-auto p-32 text-center">
       <div className="flex max-w-read-measure flex-col items-center gap-12">
         {title && <h2 className="m-0 text-fg text-title">{title}</h2>}
-        <p className="m-0 text-fg-muted text-ui">{children}</p>
+        {children !== undefined && children !== '' && (
+          <p className="m-0 text-fg-muted text-ui">{children}</p>
+        )}
         {actions && <div className="flex flex-wrap justify-center gap-8">{actions}</div>}
       </div>
     </div>

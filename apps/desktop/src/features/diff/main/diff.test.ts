@@ -448,10 +448,12 @@ function sized(repo: Repo, size: number, contents: Buffer): Repo {
   return new Proxy(repo, {
     get(target, property) {
       if (property === 'readBlob') return () => Promise.resolve(contents);
-      if (property === 'fileVersion') {
-        return async (rev: Parameters<Repo['fileVersion']>[0], path: Uint8Array) => {
-          const found = await target.fileVersion(rev, path);
-          return found && { ...found, size };
+      if (property === 'fileVersions') {
+        return async (rev: Parameters<Repo['fileVersions']>[0], paths: readonly Uint8Array[]) => {
+          const found = await target.fileVersions(rev, paths);
+          return found.map((each) =>
+            each === undefined || each === 'folder' ? each : { ...each, size },
+          );
         };
       }
       const value: unknown = Reflect.get(target, property, target);
@@ -496,18 +498,39 @@ describe('a whole file', { timeout: 60_000 }, () => {
     await expect(
       diff.whole(APP_PULL.firstHead, 'new', at('README.md'), false),
     ).rejects.toMatchObject({ code: 'moved' });
-    // The base's README.md is no file the comparison changes, nor is the renamed file's new path.
+    // The base's README.md is no file the comparison changes, nor is the renamed file's new path:
+    // a refusal the window words.
     for (const path of ['README.md', 'src/parser.ts']) {
-      await expect(diff.whole(APP_PULL.head, 'old', at(path), false)).rejects.toMatchObject({
-        code: 'invalid',
+      await expect(diff.whole(APP_PULL.head, 'old', at(path), false)).resolves.toEqual({
+        kind: 'refused',
+        why: 'unchanged',
       });
     }
     // Nothing at a path, or a folder there.
     for (const path of ['src/nothing.ts', 'src', '../README.md']) {
-      await expect(diff.whole(APP_PULL.head, 'new', at(path), false)).rejects.toMatchObject({
-        code: 'invalid',
+      await expect(diff.whole(APP_PULL.head, 'new', at(path), false)).resolves.toEqual({
+        kind: 'refused',
+        why: 'missing',
       });
     }
+  });
+
+  it('fails, for the window to try again, when the local copy can’t say what’s at a path', async () => {
+    const repo = await e2eClone();
+    const broken = new Proxy(repo, {
+      get(target, property) {
+        if (property === 'fileVersions') return () => Promise.reject(new Error('bad pack'));
+        const value: unknown = Reflect.get(target, property, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    const { diff, settled } = diffTab({ clone: () => Promise.resolve(broken) });
+    diff.update(e2eInfo(READY));
+    await settled((each) => each.from === 'local');
+    await expect(diff.whole(APP_PULL.head, 'new', at('README.md'), false)).rejects.toMatchObject({
+      code: 'unavailable',
+      message: '',
+    });
   });
 
   it('waits for the local copy to have the head on screen', async () => {

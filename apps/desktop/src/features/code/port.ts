@@ -66,7 +66,7 @@ export interface CodeAnswer {
   /** What's defined there, for a definition. */
   kind?: DefinitionKind;
   source: 'server' | 'syntax';
-  /** What says where it came from: "TypeScript", "Syntax index · same name". */
+  /** What says where it came from: "TypeScript", "Code index · same name". */
   label: string;
   /** Whether the pull request changes its file. */
   changed: boolean;

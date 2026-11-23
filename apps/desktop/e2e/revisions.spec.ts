@@ -91,9 +91,9 @@ async function diffFiles(page: Page): Promise<string[]> {
 }
 
 const button = (page: Page) => page.locator('header').getByRole('button', { name: /→/ });
-const picker = (page: Page) => page.getByRole('listbox', { name: 'Revisions' });
+const picker = (page: Page) => page.getByRole('listbox', { name: 'Compare revisions' });
 const option = (page: Page, head: string) => picker(page).locator(`[data-key="${head}"]`);
-const note = (page: Page) => page.getByRole('note', { name: 'What the diff compares' });
+const note = (page: Page) => page.getByRole('note', { name: 'Comparison' });
 const row = (page: Page, key: string) =>
   page.locator('[role="tree"][data-lo-scope="tree"]').locator(`[data-key="${key}"]`);
 
@@ -113,7 +113,7 @@ async function shown(page: Page): Promise<string> {
 test('the picker lists the revisions and compares two, across the rebase', async ({ page }) => {
   const id = await shown(page);
   await expect(button(page)).toContainText('base → r2');
-  await expect(note(page)).toContainText('Every change, base → r2');
+  await expect(note(page)).toContainText('base → r2 · whole pull request');
   await expect.poll(() => diffFiles(page)).toHaveLength(7);
 
   // `gv` from the diff opens the picker at the comparison on screen.
@@ -123,7 +123,7 @@ test('the picker lists the revisions and compares two, across the rebase', async
   await expect(picker(page)).toBeFocused();
   await expect(option(page, APP_PULL.head)).toContainText('r2');
   await expect(option(page, APP_PULL.head)).toContainText('Force-pushed · rebased onto app/base');
-  await expect(option(page, APP_PULL.head)).toContainText('Newest');
+  await expect(option(page, APP_PULL.head)).toContainText('Latest');
   await expect(option(page, APP_PULL.firstHead)).toContainText('r1');
   await expect(option(page, 'base')).toContainText('app/base');
   await expect(option(page, APP_PULL.head)).toHaveAttribute('aria-selected', 'true');
@@ -141,7 +141,7 @@ test('the picker lists the revisions and compares two, across the rebase', async
   // Only what the author changed since r1 shows: the base's README and everything r1 had stay out.
   await expect(button(page)).toContainText('r1 → r2');
   await expect.poll(() => diffFiles(page), { timeout: 20_000 }).toEqual(['src/parser.ts']);
-  await expect(note(page)).toContainText('r1 → r2 · across a rebase: only what the author changed');
+  await expect(note(page)).toContainText('r1 → r2 · across a rebase · the author’s changes only');
   await expect
     .poll(() => revisions(page, id))
     .toMatchObject({
@@ -508,10 +508,10 @@ test('opens on what changed since the reader last looked, across the rebase, and
     // It opens on r1 → r2, and draws nothing of the whole pull request first.
     await expect(page.locator('.lo-diffview')).toBeVisible({ timeout: 30_000 });
     await expect(button(page)).toContainText('r1 → r2');
-    await expect(button(page)).toContainText('since you last looked');
+    await expect(button(page)).toContainText('since last opened');
     expect(await diffFiles(page)).toEqual(['src/parser.ts']);
     expect(await page.evaluate(() => window.loDiff?.draws)).toBe(1);
-    await expect(note(page)).toContainText('r1 → r2, since you last looked');
+    await expect(note(page)).toContainText('r1 → r2 · since last opened');
     await expect
       .poll(() => revisions(page, id))
       .toMatchObject({ markers: { lastSeen: APP_PULL.firstHead } });
@@ -520,13 +520,13 @@ test('opens on what changed since the reader last looked, across the rebase, and
     await page.locator('.lo-diffview').click();
     await page.keyboard.press('g');
     await page.keyboard.press('v');
-    await expect(option(page, APP_PULL.firstHead)).toContainText('Last seen here');
+    await expect(option(page, APP_PULL.firstHead)).toContainText('Last opened');
     await page.keyboard.press('w');
     await expect.poll(() => diffFiles(page), { timeout: 20_000 }).toHaveLength(7);
     await page.locator('.lo-diffview').click();
     await page.keyboard.press('g');
     await page.keyboard.press('v');
-    await expect(page.getByRole('button', { name: /Since last seen · r1 → r2/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Since last opened · r1 → r2/ })).toBeVisible();
     await page.keyboard.press('s');
     await expect(button(page)).toContainText('r1 → r2');
     await expect.poll(() => diffFiles(page), { timeout: 20_000 }).toEqual(['src/parser.ts']);
@@ -588,7 +588,7 @@ test('draws the whole pull request when the local copy comes late, and only offe
         { timeout: 30_000 },
       )
       .toMatchObject({ from: 'local', comparison: null });
-    await expect(note(page)).toContainText('r1 → r2, since you last looked: gv');
+    await expect(note(page)).toContainText('r1 → r2 since last opened');
     await page.waitForTimeout(1500);
     // Nothing changed by itself: the same view, its files, and the reader's place in it.
     expect(await page.evaluate(() => window.loDiff?.draws)).toBe(1);
@@ -627,7 +627,7 @@ test.describe('without the first push', () => {
       });
     await button(page).click();
     await expect(picker(page)).toBeFocused();
-    await expect(option(page, APP_PULL.firstHead)).toContainText('No longer available');
+    await expect(option(page, APP_PULL.firstHead)).toContainText('No longer on GitHub');
     await expect(option(page, APP_PULL.firstHead)).toHaveAttribute('aria-disabled', 'true');
     // It can't be an end.
     await page.keyboard.press('j');

@@ -13,16 +13,25 @@
  * naming the value in an error (`JSON.stringify(value satisfies never)`) is the intended form.
  *
  * `lo/no-scroll-into-view` refuses an element's `scrollIntoView`: see {@link noScrollIntoView}.
+ *
+ * `lo/no-lo-subject` refuses a string the reader may see that starts with "Lo ": see
+ * {@link noLoSubject}.
  */
+
+import { join, relative } from 'node:path';
+
+import { LO_SUBJECTS } from './subjects.ts';
 
 /** A syntax tree node, as oxlint hands one to a rule. */
 interface AstNode {
   readonly type: string;
 }
 
-/** What a rule reports through. */
+/** What a rule reports through, and the file it's checking, where it needs them. */
 interface Context {
   report(diagnostic: { node: AstNode; message: string }): void;
+  readonly filename?: string;
+  readonly sourceCode?: { getText(node: AstNode): string };
 }
 
 export const MESSAGE =
@@ -158,7 +167,128 @@ export const noScrollIntoView = {
   },
 };
 
+export const SUBJECT_MESSAGE =
+  'This string makes Lo its subject. Name the reader’s thing instead: “Couldn’t send the comment”, not “Lo couldn’t send your comment”. Lo is the subject only to tell it apart from GitHub or another app, and “Lo 0.9.0” names a version.';
+
+/**
+ * "Lo " and a word in lower case at the start of a string, as a sentence starts: not a version,
+ * "Lo 0.9.0 is available", nor a name, "Lo Dev".
+ */
+const LO_SUBJECT = /^Lo [a-z]/;
+
+/** What logs a message, which no one reads but a developer, by name. */
+const UNREAD_CALLS = new Set(['log', 'warn', 'debug', 'trace', 'info']);
+
+/** The repository's root, which {@link LO_SUBJECTS}' paths are relative to. */
+const ROOT = join(import.meta.dirname, '..', '..');
+
+/** Where the desktop app's strings are, relative to {@link ROOT}: its source, and its packages'. */
+const DESKTOP = /^(apps\/desktop\/src|packages\/desktop\/[^/]+\/src)\//;
+
+/** A string `lo/no-lo-subject` finds, as {@link LO_SUBJECTS} lists it: its file, then its first line. */
+export function subjectEntry(filename: string, source: string): string {
+  return `${relative(ROOT, filename)}: ${source.trim().split('\n')[0] ?? ''}`;
+}
+
+/** The name `node` calls: a plain name, or the last part of a member or private name. */
+function calleeName(node: unknown): string | undefined {
+  if (!isNode(node)) return undefined;
+  if (node.type === 'Identifier') {
+    const name: unknown = Reflect.get(node, 'name');
+    return typeof name === 'string' ? name : undefined;
+  }
+  if (node.type !== 'MemberExpression') return undefined;
+  const property: unknown = Reflect.get(node, 'property');
+  if (isNode(property) && property.type === 'PrivateIdentifier') {
+    const name: unknown = Reflect.get(property, 'name');
+    return typeof name === 'string' ? name : undefined;
+  }
+  return memberName(node);
+}
+
+/** Whether `node`, a member expression, reads from `console`. */
+function onConsole(node: unknown): boolean {
+  if (!isNode(node) || node.type !== 'MemberExpression') return false;
+  const object: unknown = Reflect.get(node, 'object');
+  return (
+    isNode(object) && object.type === 'Identifier' && Reflect.get(object, 'name') === 'console'
+  );
+}
+
+/** Where `node` starts and ends in its file. */
+function spanOf(node: AstNode): [number, number] {
+  const start: unknown = Reflect.get(node, 'start');
+  const end: unknown = Reflect.get(node, 'end');
+  return [typeof start === 'number' ? start : 0, typeof end === 'number' ? end : 0];
+}
+
+/**
+ * `lo/no-lo-subject` refuses a string the reader may see that starts with "Lo " and a word in lower
+ * case: a string or template literal, or JSX text. Lo isn't the subject of what it says
+ * (`design/writing.md`). A version, "Lo 0.9.0", and a name, "Lo Dev", are left alone, and so is a
+ * log call's message (`console.*`, and anything called `log`, `warn`, `debug`, `trace` or `info`),
+ * which only a developer reads. An error's message isn't left alone: `describe` puts one on screen.
+ * It checks the desktop app's strings, its source's and its packages', and lets through those
+ * `known` lists, by {@link subjectEntry}.
+ */
+export function loSubject(known: ReadonlySet<string>) {
+  return {
+    meta: {
+      type: 'suggestion',
+      docs: { description: 'Refuse a string the reader may see that makes Lo its subject.' },
+    },
+    create(context: Context) {
+      /** The spans of log calls' arguments, which only a developer reads. */
+      const unread: [number, number][] = [];
+      const { filename, sourceCode } = context;
+      const desktop = filename === undefined || DESKTOP.test(relative(ROOT, filename));
+      const check = (node: AstNode, text: unknown): void => {
+        if (!desktop || typeof text !== 'string' || !LO_SUBJECT.test(text)) return;
+        const [start, end] = spanOf(node);
+        if (unread.some(([from, to]) => start >= from && end <= to)) return;
+        if (filename !== undefined && sourceCode !== undefined) {
+          if (known.has(subjectEntry(filename, sourceCode.getText(node)))) return;
+        }
+        context.report({ node, message: SUBJECT_MESSAGE });
+      };
+      return {
+        CallExpression(node: AstNode): void {
+          const callee: unknown = Reflect.get(node, 'callee');
+          const name = calleeName(callee);
+          if (!onConsole(callee) && (name === undefined || !UNREAD_CALLS.has(name))) return;
+          const args: unknown = Reflect.get(node, 'arguments');
+          if (!Array.isArray(args)) return;
+          for (const arg of args) if (isNode(arg)) unread.push(spanOf(arg));
+        },
+        Literal(node: AstNode): void {
+          check(node, Reflect.get(node, 'value'));
+        },
+        TemplateLiteral(node: AstNode): void {
+          const quasis: unknown = Reflect.get(node, 'quasis');
+          const first: unknown = Array.isArray(quasis) ? quasis[0] : undefined;
+          const value: unknown = isNode(first) ? Reflect.get(first, 'value') : undefined;
+          check(
+            node,
+            typeof value === 'object' && value !== null ? Reflect.get(value, 'cooked') : undefined,
+          );
+        },
+        JSXText(node: AstNode): void {
+          const value: unknown = Reflect.get(node, 'value');
+          check(node, typeof value === 'string' ? value.trimStart() : undefined);
+        },
+      };
+    },
+  };
+}
+
+/** `lo/no-lo-subject`, letting through the strings that remain, which {@link LO_SUBJECTS} lists. */
+export const noLoSubject = loSubject(new Set(LO_SUBJECTS));
+
 export default {
   meta: { name: 'lo' },
-  rules: { 'no-returned-never': noReturnedNever, 'no-scroll-into-view': noScrollIntoView },
+  rules: {
+    'no-returned-never': noReturnedNever,
+    'no-scroll-into-view': noScrollIntoView,
+    'no-lo-subject': noLoSubject,
+  },
 };

@@ -8,6 +8,7 @@ import {
   changeAt,
   changedIn,
   pathIn,
+  readAgain,
   readOf,
   reads,
   readWhole,
@@ -106,7 +107,8 @@ describe('a file read whole', () => {
         new IpcError('invalid', 'There’s no file at that path in the head on screen.'),
         { kind: 'failed', why: 'There’s no file at that path in the head on screen.' },
       ],
-      [new Error('the bridge fell over'), { kind: 'failed', why: 'Lo couldn’t read it.' }],
+      // Anything else has no reason Lo knows: the title says it alone.
+      [new Error('the bridge fell over'), { kind: 'failed', why: '' }],
     ] as const) {
       readWhole('t2', file, HEAD, null, true, made);
       answers.at(-1)?.(answer);
@@ -114,6 +116,27 @@ describe('a file read whole', () => {
       expect(reads.get('t2')).toMatchObject({ large: true, content });
     }
     expect(logged).toEqual([new Error('the bridge fell over')]);
+  });
+
+  it('reads a file again as it was read once that read failed, and only then', async () => {
+    const { made, asked, answers } = work();
+    const file = { key: 'a.ts', version: 'old' as const, path: { text: 'a.ts' } };
+    readWhole('t3', file, HEAD, 'c'.repeat(40), true, made);
+    answers.at(-1)?.(new IpcError('unavailable', ''));
+    await settle();
+    expect(reads.get('t3')?.content).toEqual({ kind: 'failed', why: '' });
+    readAgain('t3', file.path, made);
+    expect(reads.get('t3')).toMatchObject({
+      key: 'a.ts',
+      version: 'old',
+      at: HEAD,
+      from: 'c'.repeat(40),
+      large: true,
+      content: { kind: 'reading' },
+    });
+    expect(asked).toHaveLength(2);
+    readAgain('t3', file.path, made);
+    expect(asked).toHaveLength(2);
   });
 
   it('is of one file, version, head and start', () => {

@@ -149,7 +149,7 @@ test('gd, K, gr, gO and gh answer from the syntax index of a PR nothing trusts',
     await press(page, '0', 'f', 'Shift+L', 'Shift+K');
     const card = page.locator('[data-lo-hover]');
     await expect(card).toContainText('export interface Line {');
-    await expect(card).toContainText('Syntax index');
+    await expect(card).toContainText('Code index');
     // It takes no focus.
     await expect(
       page.locator('.lo-diffview .cm-editor').nth(1).locator('.cm-content'),
@@ -198,11 +198,7 @@ test('gd, K, gr, gO and gh answer from the syntax index of a PR nothing trusts',
 
   await test.step('gh says type hints need a language server, which Lo runs on trusted repos', async () => {
     await press(page, 'g', 'h');
-    await expect(
-      status(page).getByText(
-        'Type hints need a language server, which Lo runs only on repos you trust.',
-      ),
-    ).toBeVisible();
+    await expect(status(page).getByText('Trust the repo to see type hints')).toBeVisible();
   });
 });
 
@@ -266,7 +262,7 @@ trusting(
   async ({ app, page }) => {
     test.setTimeout(120_000);
     const id = await opened(page);
-    await answerDialogs(app, 'Trust');
+    await answerDialogs(app, 'Trust repo');
     expect(
       await page.evaluate(
         (view) => window.lo.invoke('code.trust', { view, repo: 'rozed-dev/e2e', pull: null }),
@@ -288,7 +284,7 @@ trusting(
       const head = peek(page).locator('.lo-diffpeek__head');
       await expect(head).toContainText('Line · 1 definition');
       await expect(head).toContainText('TypeScript');
-      await expect(head).not.toContainText('Syntax index');
+      await expect(head).not.toContainText('Code index');
       await expect(peek(page).locator('.lo-diffpeek__code')).toContainText(
         'export interface Line {',
       );

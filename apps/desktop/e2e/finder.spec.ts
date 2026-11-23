@@ -65,8 +65,8 @@ async function openE2e(page: Page): Promise<string> {
 
 const tree = (page: Page) => page.locator('[role="tree"][data-lo-scope="tree"]');
 const row = (page: Page, key: string) => tree(page).locator(`[data-key="${key}"]`);
-const finder = (page: Page) => page.getByRole('dialog', { name: 'Go to a file' });
-const field = (page: Page) => finder(page).getByRole('combobox', { name: 'Go to a file' });
+const finder = (page: Page) => page.getByRole('dialog', { name: 'Go to file' });
+const field = (page: Page) => finder(page).getByRole('combobox', { name: 'Go to file' });
 const options = (page: Page) => finder(page).getByRole('option');
 const middle = (page: Page) => page.locator('main[data-lo-middle]');
 /** A file's header in the diff's new side. */
@@ -130,8 +130,8 @@ test('⌘P lists the files by name, the changed ones first and marked, and Esc g
     'pnpm-lock.yamlM',
     'wrap.tssrc/textA',
   ]);
-  expect(all.slice(7).every((each) => each?.endsWith('whole file'))).toBe(true);
-  await expect(options(page).filter({ hasText: 'README.md' })).toContainText('whole file');
+  expect(all.slice(7).every((each) => each?.endsWith('unchanged'))).toBe(true);
+  await expect(options(page).filter({ hasText: 'README.md' })).toContainText('unchanged');
 
   // The foot says what the keys do; the field shows none.
   const foot = finder(page).locator('kbd');
@@ -186,7 +186,7 @@ test('closing a palette or keyboard shortcuts gives focus back to where it was, 
   const overlays = [
     [`${held}+Shift+p`, 'Command palette'],
     [`${held}+l`, 'Open pull request'],
-    [`${held}+p`, 'Go to a file'],
+    [`${held}+p`, 'Go to file'],
     ['?', 'Keyboard shortcuts'],
   ] as const;
   // The middle of the window takes focus without being tabbable, and holds the tree, which is.

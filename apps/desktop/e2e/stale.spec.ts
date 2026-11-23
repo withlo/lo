@@ -517,7 +517,7 @@ test('marks the lines it explains in the diff at r2, opens what it says of them,
     await page.locator('.lo-diffview').click();
     await page.keyboard.press('g');
     await page.keyboard.press('v');
-    const picker = page.getByRole('listbox', { name: 'Revisions' });
+    const picker = page.getByRole('listbox', { name: 'Compare revisions' });
     await expect(picker).toBeFocused();
     await expect(picker.locator(`[data-key="${APP_PULL.firstHead}"]`)).toContainText('Overview');
     await expect(picker.locator(`[data-key="${APP_PULL.firstHead}"] .lo-ovmark`)).toHaveCount(1);

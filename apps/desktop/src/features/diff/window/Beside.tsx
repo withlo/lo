@@ -12,7 +12,14 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 
 import { openMenu } from '../../../window/commands/menus.tsx';
 import { registry } from '../../../window/commands/registry.ts';
-import { useViewedMarks, viewedMarkOf, type Mark } from '../../revisions/window/shared.ts';
+import {
+  comparedIn,
+  revisionLabel,
+  useRevisions,
+  useViewedMarks,
+  viewedMarkOf,
+  type Mark,
+} from '../../revisions/window/shared.ts';
 import { useSetting } from '../../settings/window/shared.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
 import { whitespace as whitespaceSetting } from '../settings.ts';
@@ -47,6 +54,7 @@ export function Beside({ tab, path, line, end, note }: BesideProps) {
   useEffect(() => loader.setWhitespace(whitespace === 'show'), [loader, whitespace]);
   const files = state?.files;
   const change = changeAt(files, path);
+  const revisions = useRevisions(tab.id);
   const slash = path.lastIndexOf('/');
   const shown = shownPath(path);
   return (
@@ -82,9 +90,7 @@ export function Beside({ tab, path, line, end, note }: BesideProps) {
         />
       ) : files ? (
         <Said>
-          {state?.comparison === null
-            ? `This pull request doesn’t change ${shownPath(path)}.`
-            : `${shownPath(path)} didn’t change between these revisions.`}
+          {unchangedSays(shownPath(path), state?.comparison === null ? undefined : revisions)}
         </Said>
       ) : (
         <div className="min-h-0 flex-1 bg-bg">
@@ -93,6 +99,21 @@ export function Beside({ tab, path, line, end, note }: BesideProps) {
       )}
     </div>
   );
+}
+
+/**
+ * What the code beside says when the pull request, or the revisions compared, named from
+ * `revisions` where they're known, leave the file at `path` as it was.
+ */
+function unchangedSays(
+  path: string,
+  revisions: ReturnType<typeof useRevisions> | undefined,
+): string {
+  const name = path.slice(path.lastIndexOf('/') + 1);
+  const ends = revisions && comparedIn(revisions);
+  const from = ends && (ends.from === null ? 'base' : revisionLabel(revisions, ends.from));
+  const to = ends && revisions && revisionLabel(revisions, ends.to);
+  return from && to ? `No changes to ${name} in ${from} → ${to}` : `No changes to ${name}`;
 }
 
 /** What shows in the code's place. */
@@ -267,7 +288,7 @@ function Code({
   }, [marks, id, versions]);
 
   if (!page || !ready) {
-    return <Said>Diffing the file…</Said>;
+    return <Said>Diffing file…</Said>;
   }
   return <div ref={box} className="min-h-0 flex-1" data-lo-beside-code={id} />;
 }

@@ -8,7 +8,9 @@ import type { FigureState, ImageType } from '@lo/artifact';
 import type { SvgElement } from '@lo/markdown';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
+import { useDetails } from '../Problem.tsx';
 import { Spinner } from '../Spinner.tsx';
+import { Ticks } from '../Ticks.tsx';
 import { imageSize, scroller, showImage, widest, type DrawFailure } from './image.ts';
 import { drawSvg, linkParts, sizeHits, type PartLink } from './svg.ts';
 
@@ -227,8 +229,7 @@ function ImageFigure({
     });
   }, [type, bytes, laid, failure]);
 
-  if (failure)
-    return <Broken path={path} number={number} caption={caption} why={failure} type={type} />;
+  if (failure) return <Broken path={path} number={number} caption={caption} why={failure} />;
   return (
     <figure className="lo-figure">
       <div ref={frame} className="lo-figure__frame">
@@ -253,45 +254,41 @@ type Why =
   | Extract<FigureState, { state: 'unread' }>['why']
   | DrawFailure;
 
-/** Each type's name, as a sentence gives it. */
-const NAMES: Readonly<Record<ImageType, string>> = {
-  png: 'a PNG',
-  jpeg: 'a JPEG',
-  gif: 'a GIF',
-  webp: 'a WebP',
-};
-
-/** Why, in a sentence that follows the figure's path. */
-function reason(why: Why, path: string, type: ImageType | undefined): string {
+/** Why, as a sentence about the figure's file, `name`. */
+function reason(why: Why, name: string): ReactNode {
   switch (why) {
     case 'missing':
-      return "isn't in the overview's commit.";
+      return `${name} isn’t in the overview’s commit.`;
     case 'notFile':
-      return "isn't a file.";
+      return `${name} isn’t a file.`;
     case 'type':
-      return "isn't the type its name says.";
+      return `${name} isn’t the type its name says.`;
     case 'header':
-      // An SVG's size is its viewBox; an image's is in its header.
-      return path.endsWith('.svg')
-        ? "has no viewBox, so Lo can't tell its size."
-        : "has a damaged header, so Lo can't tell its size.";
+      // An SVG's size is its viewBox; an image's is in its header, and one that can't be read is
+      // damaged.
+      return name.endsWith('.svg') ? (
+        <>
+          {name} has no <Ticks text="`viewBox`" />.
+        </>
+      ) : (
+        `${name} is damaged.`
+      );
     case 'encoding':
-      return "isn't UTF-8, which an SVG figure must be.";
+      return `${name} isn’t UTF-8.`;
     case 'content':
-      return "holds what a figure can't, such as a script, a style or an outside image.";
+      return `${name} holds what a figure can’t, such as a script or an outside image.`;
     case 'tooLarge':
-      return 'is larger than a figure may be.';
+      return `${name} is too large for a figure.`;
     case 'failed':
-      return "couldn't be read.";
+      return `${name} couldn’t be read.`;
     case 'stopped':
-      return 'took too long to read.';
+      return `${name} took too long to read.`;
     case 'decode':
-      return type ? `didn't decode as ${NAMES[type]}.` : "didn't decode.";
     case 'size':
-      return 'decoded at another size than its header gives.';
+      return `${name} is damaged.`;
     default:
       why satisfies never;
-      return "couldn't be shown.";
+      return '';
   }
 }
 
@@ -313,14 +310,15 @@ function Broken({
   number,
   caption,
   why,
-  type,
 }: {
   path: string;
   number: number;
   caption?: ReactNode;
   why: Why;
-  type?: ImageType | undefined;
 }) {
+  // The path is behind Details; the reason names the file.
+  const { more, shown } = useDetails(path, 'pt-8');
+  const name = path.slice(path.lastIndexOf('/') + 1);
   return (
     <figure className="lo-figure lo-figure--broken">
       <div className="lo-figure__frame">
@@ -328,9 +326,13 @@ function Broken({
           <path d="M7.13 2.5a1 1 0 0 1 1.74 0l5.2 9.5a1 1 0 0 1-.87 1.5H2.8a1 1 0 0 1-.87-1.5Z" />
           <path d="M8 6.25v3M8 11.25v.01" />
         </svg>
-        <p className="min-w-0 wrap-anywhere">
-          <strong>Figure {number} can't be shown.</strong> {path} {reason(why, path, type)}
-        </p>
+        <div className="min-w-0 flex-1">
+          <p className="wrap-anywhere">
+            <strong>Can’t show figure {number}</strong> {reason(why, name)}
+          </p>
+          {more}
+          {shown}
+        </div>
       </div>
       <Caption number={number} caption={caption} />
     </figure>

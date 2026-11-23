@@ -75,8 +75,7 @@ describe('standing', () => {
 
 describe('standing, with what stops an install', () => {
   const link: SkillRefusal = { kind: 'link', path: '~/.claude/skills/lo-overview' };
-  const LINK =
-    "`~/.claude/skills/lo-overview` is a link, and Lo doesn't install the skill through links. Remove it, then install again.";
+  const LINK = '`~/.claude/skills/lo-overview` is a link, not a folder.';
 
   it('says a skill reached through a link is installed, and that Lo can’t update it', () => {
     expect(standing(state({ installed: true, blocked: link }))[0]).toEqual({
@@ -92,7 +91,7 @@ describe('standing, with what stops an install', () => {
       { line: 'Claude Code · not installed', why: LINK },
       {
         line: 'Codex · not installed',
-        why: '`~/.agents` is a file, not a folder. Remove it, then install again.',
+        why: '`~/.agents` is a file, not a folder.',
       },
     ]);
   });
@@ -127,12 +126,13 @@ describe('agentsToInstall', () => {
 });
 
 describe('the button', () => {
-  it('says Install until it is installed for any, then names the rest, then Install again', () => {
+  it('says Install until it is installed for every agent set up, then Install again', () => {
     expect(installLabel(undefined)).toBe('Install');
     expect(installLabel(state())).toBe('Install');
     expect(installLabel(nothing)).toBe('Install');
-    expect(installLabel(state({ installed: true }))).toBe('Install for Codex');
-    expect(installLabel(state({}, { installed: true }))).toBe('Install for Claude Code');
+    // The rows under it name the rest.
+    expect(installLabel(state({ installed: true }))).toBe('Install');
+    expect(installLabel(state({}, { installed: true }))).toBe('Install');
     expect(installLabel(state({ installed: true }, { installed: true }))).toBe('Install again');
     expect(installLabel(state({ installed: true }, { setUp: false }))).toBe('Install again');
   });
@@ -149,58 +149,41 @@ describe('the button', () => {
 describe('refusalWords', () => {
   const claude = state();
   const refusals: [SkillRefusal, string][] = [
-    [
-      { kind: 'nothingSetUp' },
-      'Lo found neither Claude Code nor Codex set up on this computer. Set one up, then install the skill.',
-    ],
+    [{ kind: 'nothingSetUp' }, 'Set up Claude Code or Codex first'],
     [
       { kind: 'link', path: '/h/.claude/skills/lo-overview' },
-      "`/h/.claude/skills/lo-overview` is a link, and Lo doesn't install the skill through links. Remove it, then install again.",
+      '`/h/.claude/skills/lo-overview` is a link, not a folder.',
     ],
     [
       { kind: 'notFolder', path: '/h/.claude/skills/lo-overview' },
-      '`/h/.claude/skills/lo-overview` is a file, not a folder. Remove it, then install again.',
+      '`/h/.claude/skills/lo-overview` is a file, not a folder.',
     ],
     [
       { kind: 'notFile', path: '/h/.claude/skills/lo-overview/SKILL.md' },
-      "`/h/.claude/skills/lo-overview/SKILL.md` isn't a file, so the skill can't go there. Remove it, then install again.",
+      '`/h/.claude/skills/lo-overview/SKILL.md` is a folder, not a file.',
     ],
     [
       { kind: 'otherSkill', path: '/h/skills/lo-overview', name: 'review' },
-      '`/h/skills/lo-overview` holds another skill, "review". Move it, then install again.',
+      '`/h/skills/lo-overview` holds another skill, “review”.',
     ],
     [
       { kind: 'otherSkill', path: '/h/skills/lo-overview', name: null },
-      '`/h/skills/lo-overview` holds another skill. Move it, then install again.',
+      '`/h/skills/lo-overview` holds another skill.',
     ],
     [
       { kind: 'otherFiles', path: '/h/skills/lo-overview' },
-      "`/h/skills/lo-overview` holds files that aren't the skill's. Move them, then install again.",
+      '`/h/skills/lo-overview` holds other files.',
     ],
-    [
-      failed({ code: 'EACCES', path: '~/.claude/skills' }),
-      "Lo doesn't have permission to use `~/.claude/skills`. Change its permissions, then install again.",
-    ],
-    [
-      failed({ code: 'EPERM', path: null }),
-      "Lo doesn't have permission to use `~/.claude/skills`. Change its permissions, then install again.",
-    ],
-    [
-      failed({ code: 'EROFS', path: '~/.claude' }),
-      "`~/.claude` is read-only, so the skill can't go there. Make it writable, then install again.",
-    ],
-    [
-      failed({ code: 'ENOSPC', path: null }),
-      "The disk is full, so Lo couldn't write in `~/.claude/skills`. Free some space, then install again.",
-    ],
+    [failed({ code: 'EACCES', path: '~/.claude/skills' }), '`~/.claude/skills` isn’t writable.'],
+    [failed({ code: 'EPERM', path: null }), '`~/.claude/skills` isn’t writable.'],
+    [failed({ code: 'EROFS', path: '~/.claude' }), '`~/.claude` is read-only.'],
+    [failed({ code: 'ENOSPC', path: null }), 'The disk is full.'],
     [
       failed({ code: 'EIO', path: null, detail: 'EIO: i/o error, mkdir.' }),
-      "Lo couldn't write in `~/.claude/skills`: EIO: i/o error, mkdir. Fix that, then install again.",
+      // A cause Lo can't name: no reason line, and the system's words behind Details.
+      '',
     ],
-    [
-      failed({ code: null, path: null, detail: 'Something odd' }),
-      "Lo couldn't write in `~/.claude/skills`: Something odd. Fix that, then install again.",
-    ],
+    [failed({ code: null, path: null, detail: 'Something odd' }), ''],
   ];
 
   it.each(refusals)('words %j', (why, words) => {
@@ -249,6 +232,18 @@ describe('installWords', () => {
       {
         title: 'Couldn’t install Codex’s overview skill',
         body: refusalWords(link, state()),
+        details: undefined,
+      },
+    ]);
+  });
+
+  it('puts what the system said of a failure behind Details, with no reason where Lo can’t name it', () => {
+    const odd = failed({ code: 'EIO', detail: 'EIO: i/o error, mkdir' });
+    expect(installWords([{ kind: 'refused', agent: 'codex', why: odd }], state()).failed).toEqual([
+      {
+        title: 'Couldn’t install Codex’s overview skill',
+        body: '',
+        details: 'EIO: i/o error, mkdir',
       },
     ]);
   });

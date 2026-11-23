@@ -14,10 +14,10 @@ export const nearness = ['file', 'folder', 'import', 'name'] as const;
 export type Nearness = (typeof nearness)[number];
 
 /** The label of a syntax answer that something besides its name links to the asking file. */
-export const syntaxLabel = 'Syntax index';
+export const syntaxLabel = 'Code index';
 
 /** The label of a syntax answer that only its name links to the asking file. */
-export const sameNameLabel = 'Syntax index · same name';
+export const sameNameLabel = 'Code index · same name';
 
 /** The file asking for a name's definitions: its path, and what its symbols say it imports. */
 export interface Asking {

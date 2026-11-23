@@ -412,8 +412,7 @@ export class DiffTab {
       (sum, { file }) => sum + (file.old?.size ?? 0) + (file.new?.size ?? 0),
       0,
     );
-    if (bytes > TEXTS_BYTES)
-      throw new IpcError('tooLarge', 'That’s more text than Lo reads at once.');
+    if (bytes > TEXTS_BYTES) throw new IpcError('tooLarge', 'It’s too large to read at once.');
     const opening = this.#options.reads.clone();
     if (!opening) throw new IpcError('unavailable', 'The local copy isn’t open.');
     const repo = await opening;
@@ -449,7 +448,7 @@ export class DiffTab {
    */
   async whole(head: string, version: Version, path: TreePath, large: boolean): Promise<WholeText> {
     const at = this.#at;
-    if (!at || at.head !== head) throw new IpcError('moved', 'The head on screen is another now.');
+    if (!at || at.head !== head) throw new IpcError('moved', 'This revision is out of date.');
     const local = this.#info?.local;
     const { comparing } = at;
     // Two revisions compared are in the local copy already; the whole pull request waits for it,
@@ -469,9 +468,7 @@ export class DiffTab {
         const was = basePath(file);
         return was !== undefined && samePath(was, path);
       });
-      if (!known) {
-        throw new IpcError('invalid', 'The pull request changes no file that was at that path.');
-      }
+      if (!known) return { kind: 'refused', why: 'unchanged' };
       if (comparing) {
         // The older side as compared: its head, or its changes replayed onto the newer base.
         const compared = await comparing.compared();
@@ -489,19 +486,23 @@ export class DiffTab {
     if (!opening) return { kind: 'waiting' };
     const repo = await opening;
     const bytes = pathBytesOf(path);
-    const where = version === 'new' ? 'the head on screen' : 'the base';
+    const missing: WholeText = {
+      kind: 'refused',
+      why: version === 'new' ? 'missing' : 'notInBase',
+    };
+    // Nothing at the path, or a folder, is `missing`; the local copy failing to say is a failure,
+    // which the view can try again, with no reason, as its cause isn't known.
     const find = async () => {
       try {
-        return await repo.fileVersion(rev, bytes);
+        const [found] = await repo.fileVersions(rev, [bytes]);
+        return found === 'folder' ? undefined : found;
       } catch (error) {
         this.#options.log(`finding a file to show whole: ${describe(error)}`);
-        throw new IpcError('invalid', `There’s no file at that path in ${where}.`);
+        throw new IpcError('unavailable', '');
       }
     };
     const found = await find();
-    if (found === undefined) {
-      throw new IpcError('invalid', `There’s no file at that path in ${where}.`);
-    }
+    if (found === undefined) return missing;
     if (found.mode === 'submodule') {
       return { kind: 'refused', why: 'submodule' };
     }
@@ -514,19 +515,19 @@ export class DiffTab {
           return { kind: 'tooLarge', why: { kind: 'size', size: null } };
         }
         this.#options.log(`downloading a file to show whole: ${describe(error)}`);
-        throw new IpcError('unavailable', `Lo couldn’t download the file: ${describe(error)}`);
+        throw new IpcError('unavailable', 'It couldn’t be downloaded.');
       }
       size = (await find())?.size;
     }
     if (size === undefined) {
-      throw new IpcError('unavailable', 'The local copy doesn’t have this file’s contents.');
+      throw new IpcError('unavailable', 'The local copy doesn’t have it.');
     }
     const tooLarge = tooLargeToShow(size, []);
     if (tooLarge !== undefined) return { kind: 'tooLarge', why: tooLarge };
     if (size > LARGE_FILE_BYTES && !large) return { kind: 'large', size };
     const contents = await repo.readBlob(found.oid, { maxBytes: MAX_SHOWN_BYTES });
     if (contents === undefined) {
-      throw new IpcError('unavailable', 'The local copy doesn’t have this file’s contents.');
+      throw new IpcError('unavailable', 'The local copy doesn’t have it.');
     }
     if (looksBinary(contents)) return { kind: 'binary', size: contents.length };
     // A minified bundle on one line is as slow to lay out as it is large.
@@ -543,13 +544,15 @@ export class DiffTab {
   async #read(repo: Repo, blob: string | undefined): Promise<string | null> {
     if (blob === undefined) return null;
     const bytes = await repo.readBlob(parseOid(blob), { maxBytes: MAX_SHOWN_BYTES });
-    if (bytes === undefined) throw new Error('The local copy doesn’t have this file’s contents.');
+    if (bytes === undefined) throw new Error('The local copy doesn’t have it.');
     // A minified bundle on one line is as slow to lay out as it is large.
     const tooLarge = tooLargeToShow(bytes.length, [bytes]);
     if (tooLarge !== undefined) {
-      const why =
-        tooLarge.kind === 'size' ? 'it’s over the 50 MB limit' : 'it has a line over 1 MB long';
-      throw new Error(`Lo doesn’t show this file: ${why}.`);
+      throw new Error(
+        tooLarge.kind === 'size'
+          ? `It’s ${Math.round(bytes.length / 1024 ** 2)} MB, over the 50 MB limit.`
+          : 'It has a line over 1 MB long.',
+      );
     }
     return decoder.decode(bytes);
   }
@@ -575,7 +578,7 @@ export class DiffTab {
       );
       if (!this.#current(at)) return;
       if ('refused' in compared) {
-        at.problem = `The changed files are larger than ${Math.round(compared.limit / 2 ** 20)} MB, so the diff is GitHub’s.`;
+        at.problem = `Changes over ${Math.round(compared.limit / 2 ** 20)} MB · showing GitHub’s diff`;
         this.#publish();
         this.#fallBackToGithub(at);
         return;
@@ -598,7 +601,7 @@ export class DiffTab {
     } catch (error) {
       if (!this.#current(at)) return;
       this.#options.log(`finding what changed at ${at.head}: ${describe(error)}`);
-      at.problem = `Lo couldn’t read what changed from the local copy: ${describe(error)}`;
+      at.problem = 'Couldn’t read the changes from the local copy';
       this.#fallBackToGithub(at);
     }
     this.#publish();
@@ -625,7 +628,7 @@ export class DiffTab {
       const compared = await comparing.compared();
       if (!this.#current(at)) return;
       if ('refused' in compared) {
-        at.problem = `The files changed between these revisions are larger than ${Math.round(compared.limit / 2 ** 20)} MB, so Lo doesn’t compare them.`;
+        at.problem = `The changes are over the ${Math.round(compared.limit / 2 ** 20)} MB limit.`;
         this.#publish();
         return;
       }
@@ -651,7 +654,7 @@ export class DiffTab {
     } catch (error) {
       if (!this.#current(at)) return;
       this.#options.log(`comparing the revisions: ${describe(error)}`);
-      at.problem = `Lo couldn’t compare the revisions: ${describe(error)}`;
+      at.problem = 'Couldn’t compare the revisions';
     }
     this.#publish();
     this.#caughtUp(at);
@@ -716,7 +719,7 @@ export class DiffTab {
     } catch (error) {
       if (!this.#current(at)) return;
       this.#options.log(`reading the changed files from GitHub: ${describe(error)}`);
-      at.problem ??= `Lo couldn’t read the changed files from GitHub: ${describe(error)}`;
+      at.problem ??= 'Couldn’t read the changed files';
     }
     this.#publish();
   }

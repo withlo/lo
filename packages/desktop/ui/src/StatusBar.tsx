@@ -250,7 +250,7 @@ export function StatusActions({ children, flush }: { children: ReactNode; flush?
  */
 export function StatusKeys({ keys }: { keys: string }) {
   return (
-    <span className="flex-none text-fg code-key" title="Keys typed so far">
+    <span className="flex-none text-fg code-key" title="Keys typed">
       {keys}
     </span>
   );
@@ -269,9 +269,5 @@ const MODES = {
  */
 export function StatusMode({ name }: { name: string }) {
   const kind = name === 'NORMAL' ? 'normal' : name === 'INSERT' ? 'insert' : 'visual';
-  return (
-    <span className={`flex-none ${MODES[kind]}`} title="Vim’s mode in the code that has focus">
-      {name}
-    </span>
-  );
+  return <span className={`flex-none ${MODES[kind]}`}>{name}</span>;
 }

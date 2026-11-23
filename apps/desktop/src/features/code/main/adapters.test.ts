@@ -303,11 +303,11 @@ describe('Lo’s adapters', () => {
   it('say which servers give no inline type hints, as Pyright and terraform-ls give none', () => {
     expect(ADAPTERS.map((adapter) => [adapter.id, adapter.noHints])).toEqual([
       ['typescript', undefined],
-      ['python', 'Pyright has no type hints.'],
+      ['python', 'Pyright has no type hints'],
       ['rust', undefined],
       ['php', undefined],
       ['go', undefined],
-      ['terraform', 'terraform-ls has no type hints.'],
+      ['terraform', 'terraform-ls has no type hints'],
       ['java', undefined],
       ['csharp', undefined],
       ['swift', undefined],
@@ -324,7 +324,7 @@ describe('Lo’s adapters', () => {
       ['terraform', undefined],
       ['java', undefined],
       ['csharp', undefined],
-      ['swift', 'SourceKit-LSP finds references only from a build, which Lo never runs.'],
+      ['swift', 'SourceKit-LSP needs a build to find references'],
     ]);
   });
 
@@ -391,9 +391,7 @@ describe('Lo’s adapters', () => {
     expect(adapter.downloads).toEqual({ servers: [], toolchains: ['swift-fedora41'] });
     expect(adapter.checkout).toBe(sourceKitCheckoutProblem);
     expect(adapter.system).toBeUndefined();
-    expect(adapter.noReferences).toBe(
-      'SourceKit-LSP finds references only from a build, which Lo never runs.',
-    );
+    expect(adapter.noReferences).toBe('SourceKit-LSP needs a build to find references');
 
     const files = '/lo/cache/toolchains/swift-fedora41/6.4.2/files';
     const installed: Installed = {

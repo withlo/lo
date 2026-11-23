@@ -8,8 +8,9 @@ export const COMMENT_PATH =
 
 /** What a count of `total` threads, `unresolved` of them unresolved, says in words. */
 export function threadWords(total: number, unresolved: number): string {
-  if (unresolved === 0)
-    return total === 1 ? '1 thread, resolved' : `${total} threads, all resolved`;
-  if (unresolved === total) return `${unresolved} unresolved`;
-  return `${unresolved} unresolved of ${total}`;
+  if (unresolved === 0) return total === 1 ? '1 resolved thread' : `${total} resolved threads`;
+  if (unresolved === total) {
+    return unresolved === 1 ? '1 unresolved thread' : `${unresolved} unresolved threads`;
+  }
+  return `${unresolved} / ${total} threads unresolved`;
 }

@@ -122,6 +122,6 @@ export function whenOpened(time: number, now: number, locale?: string): string {
 /** Who the list's pull requests are across, for its header. */
 export function acrossAccounts(logins: readonly string[]): string {
   if (logins.length === 0) return 'Not signed in';
-  if (logins.length === 1) return `Signed in as ${logins[0] ?? ''}`;
-  return `Across ${logins.length} accounts`;
+  if (logins.length === 1) return logins[0] ?? '';
+  return `${logins.length} accounts`;
 }

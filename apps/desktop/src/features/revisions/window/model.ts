@@ -83,12 +83,12 @@ export function problemLine(view: ComparisonView, problem: RevisionsProblem): st
 
 /**
  * Why a comparison starts where it does, when a marker or the whole pull request says: "since your
- * review", "since you last looked", "every change".
+ * review", "since last opened", "whole pull request".
  */
 export function reasonOf(view: ComparisonView, compared: Compared): string | undefined {
-  if (compared.from === null) return 'every change';
+  if (compared.from === null) return 'whole pull request';
   if (compared.from === view.markers.review) return 'since your review';
-  if (compared.from === view.markers.lastSeen) return 'since you last looked';
+  if (compared.from === view.markers.lastSeen) return 'since last opened';
   return undefined;
 }
 
@@ -106,7 +106,7 @@ export function ago(at: number, now: number): string {
 
 /** What a revision's push did, as its row says it. */
 function lineOf(view: ComparisonView, revision: RevisionRow, index: number): string {
-  if (!revision.available) return 'No longer available';
+  if (!revision.available) return 'No longer on GitHub';
   if (revision.number === null) return 'Reviewed, never pushed';
   if (revision.forced) {
     return revision.rebased && view.base
@@ -114,7 +114,7 @@ function lineOf(view: ComparisonView, revision: RevisionRow, index: number): str
       : 'Force-pushed';
   }
   if (index === 0) return 'Opened';
-  return revision.rebased && view.base ? `Pushed onto a newer ${view.base.branch}` : 'Pushed';
+  return revision.rebased && view.base ? `Pushed · onto a later ${view.base.branch}` : 'Pushed';
 }
 
 /** Who pushed a revision, when, and its head. */
@@ -123,7 +123,7 @@ function metaOf(revision: RevisionRow, now: number): string {
     revision.pushedAt.kind === 'exact'
       ? ago(revision.pushedAt.at, now)
       : revision.pushedAt.kind === 'by'
-        ? `seen ${ago(revision.pushedAt.at, now)}`
+        ? `${ago(revision.pushedAt.at, now)} or earlier`
         : undefined;
   return [revision.pusher, when, short(revision.head)]
     .filter((part) => part !== undefined && part !== null)
@@ -147,10 +147,10 @@ export function rowsOf(
   const newest = view.revisions.at(-1)?.head;
   const rows = view.revisions.map((revision, index): RevisionPickerRow => {
     const tags: RevisionTag[] = [];
-    if (revision.head === newest) tags.push({ label: 'Newest', kind: 'newest' });
+    if (revision.head === newest) tags.push({ label: 'Latest', kind: 'newest' });
     if (revision.head === view.markers.review) tags.push({ label: 'Your review', kind: 'review' });
     if (revision.head === view.markers.lastSeen) {
-      tags.push({ label: 'Last seen here', kind: 'seen' });
+      tags.push({ label: 'Last opened', kind: 'seen' });
     }
     if (revision.head === marked.overview) tags.push({ label: 'Overview', kind: 'overview' });
     return {
@@ -166,7 +166,7 @@ export function rowsOf(
   const base: RevisionPickerRow = {
     key: BASE,
     label: 'base',
-    line: view.base?.branch ?? 'The base branch',
+    line: view.base?.branch ?? 'Base branch',
     meta:
       view.base?.tip === null || view.base === null
         ? 'Where each revision branched off'
@@ -178,13 +178,14 @@ export function rowsOf(
 
 /**
  * What the picker says of the commit the overview describes when it's no revision's head, as when
- * it was written for a commit inside a push: its short id. None while the revisions are read.
+ * it was written for a commit inside a push: its short id, as code. None while the revisions are
+ * read.
  */
 export function overviewNote(view: ComparisonView, marked: Marked): string | undefined {
   const { overview } = marked;
   if (overview === undefined || view.status !== 'ready') return undefined;
   if (view.revisions.some((revision) => revision.head === overview)) return undefined;
-  return `The overview describes ${short(overview)}, which isn’t one of these revisions.`;
+  return `The overview was written for \`${short(overview)}\`, a commit inside a revision.`;
 }
 
 /** The ends of `compared`, as rows' keys. */
@@ -278,7 +279,7 @@ export function shortcutRows(
   if (shortcuts.seen) {
     rows.push({
       id: 'seen',
-      label: `Since last seen · ${comparisonLabel(view, shortcuts.seen)}`,
+      label: `Since last opened · ${comparisonLabel(view, shortcuts.seen)}`,
       keys: keys.seen,
       pressed: pressed(shortcuts.seen),
     });
@@ -286,7 +287,7 @@ export function shortcutRows(
   if (shortcuts.whole) {
     rows.push({
       id: 'whole',
-      label: `Whole PR · ${comparisonLabel(view, shortcuts.whole)}`,
+      label: `Whole pull request · ${comparisonLabel(view, shortcuts.whole)}`,
       keys: keys.whole,
       pressed: pressed(shortcuts.whole),
     });
@@ -302,7 +303,7 @@ export interface Note {
 
 /**
  * The note over the diff of a run of a stack's layers, bottom first: its ends, as the note names
- * what a diff compares ("Every change, base → r5", "Every change, #83 → #84"). A run that GitHub
+ * what a diff compares ("base → r5 · whole pull request", "#83 → #84 · every change"). A run that GitHub
  * couldn't compare (`uncompared`) shows the top layer's pull request, which is what the note says
  * then.
  */
@@ -310,60 +311,57 @@ export function runNoteOf(layers: readonly number[], uncompared: boolean): Note 
   const [bottom] = layers;
   const top = layers.at(-1);
   if (uncompared || bottom === undefined || top === undefined) {
-    return { tone: 'plain', text: 'Every change in the pull request' };
+    return { tone: 'plain', text: 'Whole pull request' };
   }
-  return { tone: 'plain', text: `Every change, #${bottom} → #${top}` };
+  return { tone: 'plain', text: `#${bottom} → #${top} · every change` };
 }
 
 /**
  * The note over the diff: what it compares, and anything to know about how. A comparison offered,
- * which came too late to be drawn first, is named with the key that opens the picker at it,
- * `pickerKey`.
+ * which came too late to be drawn first, is named; the key that opens the picker at it is the
+ * chip beside the note.
  */
-export function noteOf(view: ComparisonView | undefined, pickerKey = 'gv'): Note {
+export function noteOf(view: ComparisonView | undefined): Note {
   if (!view || view.comparison === null) {
     const pending = view?.pending;
     if (view && pending) {
       return {
         tone: 'plain',
-        text: `Comparing ${comparisonLabel(view, pending)} once the local copy has both…`,
+        text: `Comparing ${comparisonLabel(view, pending)}…`,
       };
     }
-    return { tone: 'plain', text: 'Every change in the pull request' };
+    return { tone: 'plain', text: 'Whole pull request' };
   }
   const { comparison } = view;
   const label = comparisonLabel(view, comparison);
   const reason = reasonOf(view, comparison);
-  const parts: string[] = [
-    comparison.from === null ? `Every change, ${label}` : reason ? `${label}, ${reason}` : label,
-  ];
+  const parts: string[] = [reason ? `${label} · ${reason}` : label];
   let tone: Note['tone'] = 'plain';
   if (view.problem !== null) {
     parts.push(problemLine(view, view.problem));
     tone = 'warn';
   } else if (view.replay === 'conflicted') {
-    const from = comparison.from === null ? 'the base' : labelOf(view, comparison.from);
     const files = view.conflicted === 1 ? '1 file' : `${view.conflicted} files`;
     parts.push(
-      `Lo couldn’t replay ${from} across the rebase, so this compares the heads, and shows what came with the base too${view.conflicted > 0 ? `: ${files} had conflicts` : ''}`,
+      view.conflicted > 0
+        ? `${files} conflicted in the rebase · includes the base branch’s changes`
+        : 'includes the base branch’s changes',
     );
     tone = 'warn';
   } else if (view.replay === 'retargeted') {
-    parts.push(
-      'The base changed in a way a rebase doesn’t explain, so some of this may have come with it',
-    );
+    parts.push('may include the base branch’s changes');
     tone = 'warn';
   } else if (view.uncertain) {
-    parts.push('Lo isn’t sure where a revision branched off, so some of this may be the base’s');
+    parts.push('may include the base branch’s changes');
     tone = 'warn';
   } else if (view.replay === 'clean') {
-    parts.push('across a rebase: only what the author changed');
+    parts.push('across a rebase · the author’s changes only');
   }
   if (tone === 'plain' && view.pending) {
-    parts.push(`comparing ${comparisonLabel(view, view.pending)} once the local copy has both…`);
+    parts.push(`comparing ${comparisonLabel(view, view.pending)}…`);
   } else if (tone === 'plain' && view.offered) {
     const why = reasonOf(view, view.offered);
-    parts.push(`${comparisonLabel(view, view.offered)}${why ? `, ${why}` : ''}: ${pickerKey}`);
+    parts.push(`${comparisonLabel(view, view.offered)}${why ? ` ${why}` : ''}`);
     return { tone: 'info', text: parts.join(' · ') };
   }
   if (tone === 'plain' && view.nothingNewSince !== null && comparison.from === null) {

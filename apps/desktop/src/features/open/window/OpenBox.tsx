@@ -215,7 +215,7 @@ export function OpenBox() {
       }}
       onClosed={boxClosed}
       label="Open pull request"
-      placeholder="Paste a pull request link"
+      placeholder="Paste pull request link"
       mono
       icon={LINK_ICON}
       mode={state.fromClipboard ? 'From clipboard' : undefined}

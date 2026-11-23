@@ -299,7 +299,7 @@ export class RevisionsTab {
     }
     if (!revisions) throw new IpcError('unavailable', 'Lo hasn’t read the revisions yet.');
     if (this.#info?.local.kind === 'noGit') {
-      throw new IpcError('unavailable', 'Comparing revisions needs git, which Lo can’t find.');
+      throw new IpcError('unavailable', 'Git wasn’t found');
     }
     const end = revisions.position(to);
     if (end === undefined) throw new IpcError('invalid', `${to} isn’t one of the revisions.`);
@@ -1178,7 +1178,7 @@ export class RevisionsTab {
   /** What the diff says while it waits for the comparison the markers ask for. */
   #waitingWhy(): string {
     const chosen = this.#chosen;
-    if (!chosen || !this.#revisions) return 'Reading the revisions…';
+    if (!chosen || !this.#revisions) return 'Reading revisions…';
     const from = chosen.from === null ? 'the base' : this.#label(chosen.from);
     return `Comparing ${from} with ${this.#label(chosen.to)} once the local copy has both…`;
   }

@@ -456,10 +456,10 @@ describe('TypeHover', () => {
       <TypeHover
         signature="export interface Line {"
         source={{ kind: 'syntax' }}
-        fallback="TypeScript is starting."
+        fallback="TypeScript is starting"
       />,
     );
-    expect(foot(host)).toBe('Syntax index · TypeScript is starting.');
+    expect(foot(host)).toBe('Code index · TypeScript is starting');
   });
 
   it('empty docs say no doc comment too, and leave the card as short', () => {
@@ -479,7 +479,7 @@ describe('TypeHover', () => {
         keys={{ definition: ['g', 'd'] }}
       />,
     );
-    expect(foot(host)).toBe('Syntax indexsrc/graphql/cost/estimate.ts:18gd Definition');
+    expect(foot(host)).toBe('Code indexsrc/graphql/cost/estimate.ts:18gd Definition');
     expect(host.textContent).not.toContain('No doc comment');
   });
 

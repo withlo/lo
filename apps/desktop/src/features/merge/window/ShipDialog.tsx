@@ -42,7 +42,7 @@ import {
   type StepWords,
 } from './shipWords.ts';
 import { merging, shipping, statuses, type ShipDialog as Dialogue } from './store.ts';
-import { detailsOf, refusalText } from './words.ts';
+import { confirmLabel, detailsOf, refusalText } from './words.ts';
 
 /** A key written in Lo's notation, such as `enter`, as this system shows it. */
 function labels(keys: string): string[] {
@@ -171,6 +171,7 @@ function endShown(
   end: End,
   id: string,
   number: number,
+  label: string,
   merged = false,
   looking = false,
 ): Pick<Shown, 'primary' | 'state' | 'problem' | 'done'> {
@@ -178,7 +179,7 @@ function endShown(
     case 'running':
       return {
         state: 'working',
-        primary: { label: shipLabel(), run: () => undefined, busy: true, working: end.working },
+        primary: { label, run: () => undefined, busy: true, working: end.working },
       };
     case 'done':
       return {
@@ -214,7 +215,12 @@ function shownOf(dialog: Dialogue): Shown {
         step: `confirm ${plan.key}`,
         // Pressed, main checks it again before anything is sent, and runs it: nothing leaves it.
         state: dialog.sending ? 'working' : 'ask',
-        primary: { label: shipLabel(), run: confirmShip, busy: dialog.sending, working: CHECKING },
+        primary: {
+          label: shipLabel(plan),
+          run: confirmShip,
+          busy: dialog.sending,
+          working: CHECKING,
+        },
         body: <StepList steps={plannedSteps(plan)} plan={plan} />,
         line: noteLine(dialog.note),
       };
@@ -242,7 +248,12 @@ function shownOf(dialog: Dialogue): Shown {
         return {
           step,
           body,
-          ...endShown(end.kind === 'failed' ? { ...end, details } : end, dialog.id, dialog.number),
+          ...endShown(
+            end.kind === 'failed' ? { ...end, details } : end,
+            dialog.id,
+            dialog.number,
+            shipLabel(plan),
+          ),
         };
       }
       return {
@@ -271,6 +282,7 @@ function shownOf(dialog: Dialogue): Shown {
           shown.end,
           plan.id,
           plan.number,
+          shipLabel(plan),
           job?.state.kind === 'merged',
           dialog.looking === true,
         ),
@@ -293,6 +305,9 @@ function widestOf(words: readonly (string | undefined)[]): string {
 /** What the main button may say, so it keeps one width from checking to done. */
 const WORDS = [
   shipLabel(),
+  // On your own pull request, what follows the approval it skips.
+  confirmLabel({ kind: 'enqueue', number: 0 }),
+  confirmLabel({ kind: 'autoMerge', number: 0 }),
   CHECKING,
   'Approving…',
   'Merging…',
@@ -357,6 +372,7 @@ export function ShipDialog() {
   const step = shown?.step;
   const open = dialog !== undefined;
   const head = headOf(dialog, id);
+  const plan = dialog && dialog.kind !== 'planning' ? dialog.plan : undefined;
   // "Add a CLI flag · r3", the same in every state.
   const description = [pull?.header?.title ?? '', head ? revision(labelsOf(id), head) : '']
     .filter((part) => part !== '')
@@ -401,12 +417,12 @@ export function ShipDialog() {
       onOpenChange={(next) => {
         if (!next) leaveShip();
       }}
-      title={open ? shipTitle(number) : shipLabel()}
+      title={open ? shipTitle(number, plan) : shipLabel()}
       description={description === '' ? undefined : withoutBidi(description)}
       size="md"
       state={shown?.state}
       action={{
-        label: failed ? shipLabel() : (primary?.label ?? shipLabel()),
+        label: failed ? shipLabel(plan) : (primary?.label ?? shipLabel(plan)),
         again: failed ? (primary?.label ?? null) : undefined,
         onRun: () => primary?.run(),
         busy: primary?.busy === true,

@@ -98,9 +98,7 @@ test.describe('on the welcome screen', () => {
     await welcome(page)
       .getByRole('button', { name: /^Continue/ })
       .click();
-    await expect(step(page)).toContainText(
-      'Teaches Claude Code and Codex to write overviews that Lo shows.',
-    );
+    await expect(step(page)).toContainText('Teaches Claude Code and Codex to write overviews.');
     await step(page).getByRole('button', { name: 'Install', exact: true }).click();
     // The step says so, and nothing else says it again.
     await expect(step(page)).toContainText('Installed');
@@ -128,7 +126,7 @@ test.describe('in Settings', () => {
       'Claude Code · installed in ~/.claude/skills',
       'Codex · not installed',
     ]);
-    await row(page).getByRole('button', { name: 'Install for Codex' }).click();
+    await row(page).getByRole('button', { name: 'Install' }).click();
     await expect(lines(page)).toHaveText([
       'Claude Code · installed in ~/.claude/skills',
       'Codex · installed in ~/.agents/skills',
@@ -154,8 +152,7 @@ test.describe('in Settings', () => {
     const skills = join(home, '.agents', 'skills');
     mkdirSync(skills, { recursive: true });
     symlinkSync(outside, join(skills, 'lo-overview'));
-    const link =
-      "~/.agents/skills/lo-overview is a link, and Lo doesn't install the skill through links. Remove it, then install again.";
+    const link = '~/.agents/skills/lo-overview is a link, not a folder.';
 
     await openSettings(page);
     // What would stop the install is said before it's tried.

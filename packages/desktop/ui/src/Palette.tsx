@@ -31,6 +31,11 @@ export interface PaletteProps<T> {
    * `decorative`: `keyAria` makes it.
    */
   itemKeys?: ((item: T) => KeyAria) | undefined;
+  /**
+   * Whether an item is checked, for a switch or a choice's option: `renderItem` draws the check,
+   * and the row says it to a screen reader. `undefined` for an item that's neither.
+   */
+  itemChecked?: ((item: T) => boolean | undefined) | undefined;
   /** `⏎` on the highlighted item, or a click on one. */
   onRun: (item: T) => void;
   /** The highlighted item changed, as the arrows, the pointer or typing moved it. */
@@ -72,7 +77,7 @@ export interface PaletteProps<T> {
 export function Palette<T>(props: PaletteProps<T>) {
   const { open, onOpenChange, onQueryChange, itemId, itemKeys, onRun, onHighlight, onSubmit } =
     props;
-  const { container, onClosed } = props;
+  const { itemChecked, container, onClosed } = props;
   // What it shows stays as it was while it leaves.
   const held = useHeld(open, props);
   const { label, placeholder, query, groups, renderItem, empty, mono, icon, mode } = held;
@@ -171,6 +176,7 @@ export function Palette<T>(props: PaletteProps<T>) {
                           key={itemId(item)}
                           value={item}
                           {...itemKeys?.(item)}
+                          aria-checked={itemChecked?.(item)}
                           onClick={() => onRun(item)}
                           className="flex min-h-palette-item-h cursor-default items-center gap-12 rounded-sm px-12 py-6 text-fg text-ui data-highlighted:bg-current-strong"
                         >

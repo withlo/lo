@@ -19,13 +19,12 @@ import { pickers, views } from './store.ts';
 /** The pull request's tab on screen, and its revisions, or why there are none to pick from. */
 function onScreen() {
   const tab = activeTab();
-  if (tab?.kind !== 'pull') return 'There’s no pull request on screen.';
-  if (tab.run)
-    return 'A run of layers is one diff of its layers, so it has no revisions to compare.';
+  if (tab?.kind !== 'pull') return 'Open a pull request first';
+  if (tab.run) return 'Show a single layer first';
   const view = views.get(tab.id);
-  if (!view) return 'Lo hasn’t read the revisions yet.';
-  if (view.status === 'signIn') return 'Sign in to see revisions.';
-  if (view.status === 'loading') return 'Lo is still reading the revisions.';
+  if (!view) return 'Reading revisions…';
+  if (view.status === 'signIn') return 'Sign in to compare revisions';
+  if (view.status === 'loading') return 'Reading revisions…';
   if (view.revisions.length === 0) return 'Can’t read the revisions';
   return { id: tab.id, view };
 }
@@ -64,7 +63,7 @@ function picking() {
 
 /** Whether a picker is open, or why its keys can't run. */
 export function isPicking(): true | string {
-  return picking() ? true : 'The revision picker isn’t open.';
+  return picking() ? true : 'Revisions aren’t open';
 }
 
 export function closePicker(): void {
@@ -121,9 +120,7 @@ export async function compareShortcut(which: keyof Shortcuts): Promise<void> {
 /** Whether a shortcut can compare, or why not. */
 export function canShortcut(which: keyof Shortcuts): true | string {
   const open = picking();
-  if (!open) return 'The revision picker isn’t open.';
+  if (!open) return 'Revisions aren’t open';
   if (shortcutsOf(open.view)[which]) return true;
-  return which === 'review'
-    ? 'You haven’t reviewed an earlier revision.'
-    : 'You haven’t looked at an earlier revision here.';
+  return which === 'review' ? 'No earlier review of yours' : 'No earlier revision opened';
 }

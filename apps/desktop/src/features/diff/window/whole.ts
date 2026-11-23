@@ -222,11 +222,22 @@ export function readWhole(
         if (reads.get(tab) !== read) return;
         // Main's own words for what it refused; anything else is logged, and said plainly.
         if (!(error instanceof IpcError)) work.log('Lo couldn’t read a file whole:', error);
-        const why = error instanceof IpcError ? error.message : 'Lo couldn’t read it.';
+        const why = error instanceof IpcError ? error.message : '';
         reads.set(tab, { ...read, content: { kind: 'failed', why } });
       },
     )
     .catch((error: unknown) => work.log('Lo couldn’t highlight a file:', error));
+}
+
+/**
+ * Reads tab `tab`'s whole file again, at `path`, as it last read it, once that read failed: what
+ * "Try again" does.
+ */
+export function readAgain(tab: string, path: TreePath, work: WholeWork): void {
+  const read = reads.get(tab);
+  if (read?.content.kind !== 'failed') return;
+  const { key, version, at, from, large } = read;
+  readWhole(tab, { key, version, path }, at, from, large, work);
 }
 
 /** What reading tab `tab`'s whole files asks of main and the background process. */

@@ -36,8 +36,8 @@ function searchPanel(view: EditorView): Panel {
   field.className = 'lo-codesearch__field';
   field.type = 'text';
   field.name = 'search';
-  field.placeholder = 'Search';
-  field.setAttribute('aria-label', 'Search');
+  field.placeholder = 'Find';
+  field.setAttribute('aria-label', 'Find');
   field.setAttribute('main-field', 'true');
   field.autocomplete = 'off';
   field.spellcheck = false;

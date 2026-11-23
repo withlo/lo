@@ -12,7 +12,7 @@ export interface Going extends Pick<Drawn, 'enter'> {
 }
 
 /** What `gm` says on a line that isn't moved code. */
-export const NOT_MOVED = 'There’s no moved code on this line.';
+export const NOT_MOVED = 'No moved code on this line';
 
 /** Whether line `at` is in moved code, so `gm` can go from it, or why not. */
 export function movedNow(view: Pick<DiffView, 'otherEnd'>, at: Place): true | string {

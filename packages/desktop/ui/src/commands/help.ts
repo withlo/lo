@@ -259,6 +259,11 @@ export interface PaletteItem {
   readonly keys: readonly string[] | undefined;
   /** That key as `aria-keyshortcuts` says it, if it's one key or a chord. */
   readonly shortcut: string | undefined;
+  /**
+   * For a toggle, whether it's checked now: a switch that's on, or the option of a choice that's
+   * chosen. The row draws a check, as the app menu does.
+   */
+  readonly checked: boolean | undefined;
 }
 
 /** The palette's own command, which it doesn't list. */
@@ -293,6 +298,7 @@ export function paletteItems(registry: Registry, scope: string, target: Target):
         group,
         keys: liveKeys(registry, command)[0],
         shortcut: liveShortcut(registry, command),
+        checked: registry.checked(command.id, target),
       })),
   );
 }
