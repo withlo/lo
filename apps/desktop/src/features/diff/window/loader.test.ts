@@ -548,6 +548,36 @@ describe('a tab’s diff in the window', () => {
     expect(loader.shown('d0')).toBe(undefined);
   });
 
+  it('keeps what was ready at the last head until the next is, for its view to stay', async () => {
+    const files = [versions('a.ts')];
+    const { done, list } = work();
+    list(files);
+    const loader = new Loader(done);
+    loader.setWhitespace(true);
+    loader.take(state(files));
+    await settle(loader);
+    const drawn = loader.snapshot().ready;
+    const lines = loader.shown('d0');
+    expect(lines).toBeDefined();
+
+    // A newer push: nothing's ready yet, and what was stays, for the view drawn of it.
+    list([...files, versions('b.ts')]);
+    loader.take(state(null, null, NEXT));
+    expect(loader.snapshot()).toMatchObject({ ready: undefined, held: drawn });
+    // A copy of it to draw again, which has its lines worked out and loads nothing.
+    const copy = loader.heldCopy();
+    expect(copy?.snapshot().ready).toBe(drawn);
+    expect(copy?.shown('d0')).toBe(lines);
+    expect(copy?.ids).toBe(loader.ids);
+
+    // Once the next is ready, it goes.
+    loader.take(state([...files, versions('b.ts')], 'local', NEXT));
+    await settle(loader);
+    expect(loader.snapshot().ready?.at).toBe(NEXT);
+    expect(loader.snapshot().held).toBeUndefined();
+    expect(loader.heldCopy()).toBeUndefined();
+  });
+
   it('starts again, never in place, when a stack’s layer is compared with another commit', async () => {
     const files = [versions('a.ts')];
     const { done, list, asked } = work();

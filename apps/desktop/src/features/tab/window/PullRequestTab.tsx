@@ -4,7 +4,7 @@
 // has focus. Until the diff and the threads arrive, the middle says what's coming, and a pull
 // request the tab can't show says why there.
 
-import { PRHeader, StatusBar, StatusKeys, StatusMode } from '@lo/ui';
+import { PRHeader, StatusBar, StatusKeys, StatusMode, Swap } from '@lo/ui';
 import { focusedMode, onFocusedMode } from '@lo/ui/code';
 import { useState, useSyncExternalStore } from 'react';
 
@@ -143,26 +143,31 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
         >
           <Slot slot={over} props={{ tab }} />
           <div className="relative min-h-0 flex-1">
-            {shownMiddle ? (
-              middles
-                .filter((each) => each === shownMiddle || kept.includes(each.id))
-                .map((each) => {
-                  const shown = each === shownMiddle;
-                  const seen = shown && !failed;
-                  return (
-                    <div
-                      key={each.id}
-                      className={seen ? 'absolute inset-0' : 'invisible absolute inset-0'}
-                      inert={!seen}
-                      data-lo-middle-view={each.id}
-                    >
-                      <each.render tab={tab} shown={shown} />
-                    </div>
-                  );
-                })
-            ) : (
-              <Placeholder tab={tab.id} />
-            )}
+            {/* One shown in another's place fades in over it, a Swap that keeps them all drawn; the
+            first the tab shows is just there. A pull request the tab can't show says why over
+            them, and stays still as they change under it. */}
+            <Swap id={shownMiddle?.id} keep className="absolute inset-0">
+              {shownMiddle ? (
+                middles
+                  .filter((each) => each === shownMiddle || kept.includes(each.id))
+                  .map((each) => {
+                    const shown = each === shownMiddle;
+                    const seen = shown && !failed;
+                    return (
+                      <div
+                        key={each.id}
+                        className={seen ? 'absolute inset-0' : 'invisible absolute inset-0'}
+                        inert={!seen}
+                        data-lo-middle-view={each.id}
+                      >
+                        <each.render tab={tab} shown={shown} />
+                      </div>
+                    );
+                  })
+              ) : (
+                <Placeholder tab={tab.id} />
+              )}
+            </Swap>
             <TabFailed tab={tab} view={view} />
           </div>
         </section>

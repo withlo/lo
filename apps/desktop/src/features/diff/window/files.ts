@@ -1,5 +1,6 @@
 // The files as the diff view is given them: in the left panel's order, each starting out as main
-// said, closed when it's viewed, with its viewed mark and what's been worked out of it so far.
+// said, closed when it's viewed, with its viewed mark and what's been worked out of it so far; and
+// whether the middle shows the view drawn of them, or what it says in its place.
 
 import { sizeText } from '@lo/review';
 import type { DiffFile, FileHeader } from '@lo/ui/code';
@@ -211,4 +212,20 @@ export function diffFileOf(entry: Entry, shown: Shown | undefined, mark?: Mark):
   if (shown.gaps.length > 0) file.gaps = shown.gaps;
   if (startWith(versions, mark) === 'collapsed') file.collapsed = true;
   return file;
+}
+
+/**
+ * Whether the middle shows the box a view is drawn in, rather than what it says in its place: while
+ * there's a view to draw, and while one drawn is held, until there's nothing to draw and the loader
+ * has said why. A wait for what's next, `waiting`, such as for the local copy, leaves the view held.
+ */
+export function keepsBox(middle: {
+  drawable: boolean;
+  held: boolean;
+  said: string | undefined;
+  waiting: string | null | undefined;
+}): boolean {
+  const { drawable, held, said, waiting } = middle;
+  if (drawable) return true;
+  return held && (said === undefined || said === waiting);
 }

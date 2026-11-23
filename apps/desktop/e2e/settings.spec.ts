@@ -28,7 +28,7 @@ const mac = process.platform === 'darwin';
 /** ⌘ on macOS, Ctrl on Linux. */
 const cmd = mac ? 'Meta' : 'Control';
 
-const strip = (page: Page) => page.getByRole('tablist', { name: 'Pull requests' });
+const strip = (page: Page) => page.getByRole('tablist', { name: 'Tabs' });
 const tabs = (page: Page) => strip(page).getByRole('tab');
 const shown = (page: Page) => strip(page).getByRole('tab', { selected: true });
 

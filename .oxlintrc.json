@@ -32,6 +32,7 @@
     ],
     "default-case": "error",
     "lo/no-returned-never": "error",
+    "lo/no-scroll-into-view": "error",
     "typescript/consistent-type-imports": "error",
     "typescript/no-explicit-any": "error",
     "import/no-cycle": "error"
@@ -66,6 +67,12 @@
       "files": ["packages/core/**/*.test.*", "packages/core/*/test/**"],
       "rules": {
         "no-restricted-globals": "off"
+      }
+    },
+    {
+      "files": ["**/e2e/**", "**/*.test.*"],
+      "rules": {
+        "lo/no-scroll-into-view": "off"
       }
     }
   ]

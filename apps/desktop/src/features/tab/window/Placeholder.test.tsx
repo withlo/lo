@@ -56,6 +56,9 @@ function wait(ms: number): void {
   });
 }
 const cancel = (box: HTMLElement) => box.querySelector('button');
+/** How far the mark in `box` is moved from its box's middle, to hold its place. */
+const held = (box: HTMLElement) =>
+  box.querySelector<HTMLElement>('[data-lo-placeholder] > [role="status"]')?.style.translate;
 
 describe('a tab’s placeholder', () => {
   it('shows nothing at first, then the mark over what it waits for', () => {
@@ -120,6 +123,37 @@ describe('a tab’s placeholder', () => {
     wait(LOADING_SLOW_MS - 500);
     expect(cancel(second.box)?.parentElement?.className).not.toContain('invisible');
     expect(line()?.textContent).toBe('Reading changed files…');
+  });
+
+  it('swaps the next view’s own line in over the last one’s, as a line does in one view', () => {
+    const first = draw('fd', 'Fetching overview…');
+    wait(500);
+    first.gone();
+    const second = draw('fd', 'Reading changed files…');
+    const line = second.box.querySelector('[role="status"] p');
+    expect(line?.textContent).toBe('Reading changed files…');
+    expect(line?.className).toContain('move-swap');
+    // The mark carries on, with nothing coming in again.
+    expect(second.box.querySelector('svg')?.getAttribute('class')).not.toContain('move-swap');
+  });
+
+  it('holds the mark where it came on screen as the next view draws the wait lower', () => {
+    const boxes = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect');
+    const at = (top: number, height: number) =>
+      boxes.mockImplementation(() => DOMRect.fromRect({ x: 0, y: top, width: 800, height }));
+    try {
+      // The tab's middle, as it opens: the mark comes in its middle, at 400.
+      at(100, 600);
+      const first = draw('fd');
+      wait(500);
+      expect(held(first.box)).toBe('');
+      first.gone();
+      // The diff's box, under its bar, 40 px lower: the mark stays at 400.
+      at(140, 560);
+      expect(held(draw('fd').box)).toBe('0 -20px');
+    } finally {
+      boxes.mockRestore();
+    }
   });
 
   it('keeps each tab’s wait to itself', () => {

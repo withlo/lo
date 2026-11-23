@@ -12,6 +12,7 @@ import {
   PeekList,
   ReferencesHead,
   ReferencesList,
+  reveal,
   SourceMark,
   Spinner,
   StatusItem,
@@ -162,7 +163,7 @@ export function ReferencesPanel({ tab }: { tab: PullTab }): ReactNode {
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const row = box.current?.querySelector<HTMLElement>('[role="option"][aria-selected="true"]');
-    if (typeof row?.scrollIntoView === 'function') row.scrollIntoView({ block: 'nearest' });
+    if (row) reveal(row);
   }, [focusedKey]);
   const first = answers[0];
   return (

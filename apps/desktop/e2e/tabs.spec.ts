@@ -42,7 +42,7 @@ const mac = process.platform === 'darwin';
 /** ⌘ on macOS, Ctrl on Linux. */
 const cmd = mac ? 'Meta' : 'Control';
 
-const strip = (page: Page) => page.getByRole('tablist', { name: 'Pull requests' });
+const strip = (page: Page) => page.getByRole('tablist', { name: 'Tabs' });
 const tabs = (page: Page) => strip(page).getByRole('tab');
 /** The tab on screen. */
 const shown = (page: Page) => strip(page).getByRole('tab', { selected: true });
@@ -74,7 +74,7 @@ async function expectFits(page: Page): Promise<void> {
     true,
   );
   await expectInside(page, shown(page));
-  await expectInside(page, strip(page).getByRole('button', { name: 'Review a pull request' }));
+  await expectInside(page, strip(page).getByRole('button', { name: 'Open pull request…' }));
   if ((await more(page).count()) > 0) await expectInside(page, more(page));
 }
 
@@ -88,6 +88,15 @@ async function resize(app: ElectronApplication, page: Page, width: number | 'scr
   await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(wanted);
   return wanted;
 }
+
+/** The pull request numbers `items` name, in order. */
+async function numbersIn(items: Locator): Promise<number[]> {
+  return (await items.allTextContents()).map((text) => Number(/#(\d+)/.exec(text)?.[1]));
+}
+
+/** `count` numbers up from `first`. */
+const upFrom = (first: number, count: number) =>
+  Array.from({ length: count }, (_, index) => first + index);
 
 /** `count` pull requests, `r1 #1` to `rN #N`. */
 const many = (count: number) =>
@@ -166,13 +175,10 @@ test('with nothing open, Recent pull requests is the only tab, and it can’t be
 
   await page.keyboard.press(`${cmd}+KeyW`);
   await expect(said(page, 'Recent pull requests can’t be closed')).toBeVisible();
-  // Its right-click menu says so too.
+  // Nothing on a tab's menu could run on it, so a right-click on it opens the window's menu.
   await shown(page).click({ button: 'right' });
-  const close = page
-    .getByRole('menu', { name: 'Tab actions' })
-    .getByRole('menuitem', { name: 'Close tab' });
-  await expect(close).toHaveAttribute('aria-disabled', 'true');
-  await expect(close).toContainText('Recent pull requests can’t be closed');
+  await expect(page.getByRole('menu', { name: 'Actions' })).toBeVisible();
+  await expect(page.getByRole('menu', { name: 'Tab actions' })).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(tabs(page)).toHaveText(['Recent pull requests']);
 });
@@ -336,7 +342,7 @@ test('a tab dragged along the strip lands where it’s let go, the others slidin
   await page.mouse.up();
   await expect(tabs(page)).toHaveText(['b #2', 'c #3', 'a #1']);
   await expect(shown(page)).toHaveText('c #3');
-  await expect(said(page, 'a #1 is now tab 3 of 3.')).toBeAttached();
+  await expect(said(page, 'Moved a #1 to tab 3 of 3')).toBeAttached();
 
   // A click still shows a tab, and its button still closes it.
   await tabs(page).nth(2).click();
@@ -352,13 +358,13 @@ test('⌃⇧PageUp and ⌃⇧PageDown move the tab on screen a place, keeping it
   await expect(shown(page)).toHaveText('c #3');
   await page.keyboard.press('Control+Shift+PageUp');
   await expect(tabs(page)).toHaveText(['a #1', 'c #3', 'b #2']);
-  await expect(said(page, 'c #3 is now tab 2 of 3.')).toBeAttached();
+  await expect(said(page, 'Moved c #3 to tab 2 of 3')).toBeAttached();
 
   // From the tab itself, focus stays on it as it moves.
   await shown(page).focus();
   await page.keyboard.press('Control+Shift+PageDown');
   await expect(tabs(page)).toHaveText(['a #1', 'b #2', 'c #3']);
-  await expect(said(page, 'c #3 is now tab 3 of 3.')).toBeAttached();
+  await expect(said(page, 'Moved c #3 to tab 3 of 3')).toBeAttached();
   await expect(shown(page)).toBeFocused();
   // Not round the end.
   await page.keyboard.press('Control+Shift+PageDown');
@@ -527,9 +533,10 @@ test('the tabs that don’t fit are in the "N more" menu, and choosing one shows
   await more(page).click();
   const menu = page.getByRole('menu', { name: 'More tabs' });
   const items = menu.getByRole('menuitem');
-  // In the order, after the last tab the strip shows.
+  // In the order, after the last tab the strip shows, which is the order they opened in.
   const order = await inOrder(page);
   await expect(items).toHaveText(order.slice(16 - folded));
+  await expect.poll(() => numbersIn(items)).toEqual(upFrom(16 - folded, folded));
   const chosen = order.at(-1) ?? '';
   const replaced = order[15 - folded] ?? '';
   await items.last().click();
@@ -540,7 +547,9 @@ test('the tabs that don’t fit are in the "N more" menu, and choosing one shows
   await expect(tabs(page).last()).toHaveText(chosen);
   await expect.poll(async () => (await inOrder(page))[15 - folded]).toBe(chosen);
   await more(page).click();
-  await expect(items.first()).toHaveText(replaced);
+  // It opened last, so it folds last.
+  await expect(items.last()).toHaveText(replaced);
+  await expect.poll(() => numbersIn(items)).toEqual([...upFrom(16 - folded, folded - 1), 16]);
   await page.keyboard.press('Escape');
 });
 
@@ -578,7 +587,7 @@ test('with a tab brought in from "N more", a drag and the keys move exactly what
   await page.keyboard.press('Control+Shift+PageDown');
   const last = dropped.toSpliced(count - 2, 1).toSpliced(count - 1, 0, chosen);
   await expect(tabs(page)).toHaveText(last);
-  await expect(said(page, `${chosen} is now tab ${count} of 16.`)).toBeAttached();
+  await expect(said(page, `Moved ${chosen} to tab ${count} of 16`)).toBeAttached();
   await page.keyboard.press('Control+Shift+PageDown');
   await expect(said(page, 'Already last')).toBeVisible();
   await expect(tabs(page)).toHaveText(last);
@@ -597,19 +606,28 @@ test('⌘⇧A opens the tabs that don’t fit, to choose one by key', async ({ a
   await expect(shown(page)).toHaveText('a #1');
   const menu = page.getByRole('menu', { name: 'More tabs' });
   await page.keyboard.press(`${cmd}+Shift+KeyA`);
-  // Focus goes into the menu, which Esc closes.
-  await expect(menu).toBeFocused();
+  // Focus goes into the menu, on its first tab, as a menu a key opens has it; Esc closes it.
+  await expect(menu.getByRole('menuitem').first()).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(menu).toBeHidden();
 
   await page.keyboard.press(`${cmd}+Shift+KeyA`);
-  await expect(menu).toBeFocused();
+  await expect(menu.getByRole('menuitem').first()).toBeFocused();
   const last = await menu.getByRole('menuitem').last().textContent();
+  // `↑` from the first goes round to the last.
   await page.keyboard.press('ArrowUp');
+  await expect(menu.getByRole('menuitem').last()).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(menu).toBeHidden();
   await expect(shown(page)).toHaveText(last ?? '');
 });
+
+/** Checks that tab `tab`'s number ends before its close button starts. */
+async function clear(tab: Locator): Promise<void> {
+  const number = await tab.locator('span', { hasText: /^#\d+$/ }).boundingBox();
+  const close = await tab.getByRole('button', { name: 'Close tab' }).boundingBox();
+  expect((number?.x ?? Infinity) + (number?.width ?? 0)).toBeLessThanOrEqual(close?.x ?? 0);
+}
 
 /** How wide an element is, and whether its text is cut short. */
 function fits(locator: Locator) {
@@ -631,13 +649,18 @@ test('the narrowest tabs keep their repository, cut short, and their number whol
   );
   await expect.poll(() => openCount(page)).toBe(40);
   for (const tab of await tabs(page).all()) {
-    const repository = tab.locator('span', { hasText: long });
+    const repository = tab.getByText(long, { exact: true });
     const number = tab.locator('span', { hasText: /^#\d+$/ });
     // Its first letter and an ellipsis, at least.
     expect(await fits(repository)).toEqual({ width: expect.any(Number), cut: true });
     expect((await fits(repository)).width).toBeGreaterThanOrEqual(12);
     expect(await fits(number)).toMatchObject({ cut: false });
   }
+  // The number ends before the close button starts, on the tab on screen and one under the pointer.
+  await clear(shown(page));
+  const other = strip(page).getByRole('tab', { selected: false }).first();
+  await other.hover();
+  await clear(other);
   await expectFits(page);
 });
 
@@ -646,7 +669,7 @@ test('a repository with a long name takes half its tab at most, leaving room for
 }) => {
   const long = 'r'.repeat(100);
   await open(page, pull('withlo', long, 1));
-  const repository = shown(page).locator('span', { hasText: long });
+  const repository = shown(page).getByText(long, { exact: true });
   const box = await repository.boundingBox();
   const tab = await shown(page).boundingBox();
   expect((box?.width ?? Infinity) * 2).toBeLessThanOrEqual((tab?.width ?? 0) + 1);

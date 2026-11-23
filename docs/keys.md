@@ -162,16 +162,16 @@ Each command's id is what [the keymap file](#the-keymap-file) binds keys to.
 
 ## View
 
-| Action               | Keys                                           | Where                                                                                               | Command               |
-| -------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------- |
-| Show latest          | None: in its menu and the palette              | In `box`                                                                                            | `comments.showLatest` |
-| Vim keys             | None: in the app menu on macOS and the palette | Anywhere                                                                                            | `comments.vim`        |
-| Show kept drafts     | None: in the app menu on macOS and the palette | Anywhere                                                                                            | `comments.keptDrafts` |
-| Compare revisions    | `g v`                                          | Anywhere but `menu`, `dialog`, `palette`, `box` and `revisions`; in code views, only in normal mode | `revisions.picker`    |
-| Next middle view     | `` ` ``                                        | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.nextView`        |
-| Previous middle view | `~`                                            | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.previousView`    |
-| Show in diff         | None: in its menu and the palette              | In `timeline`                                                                                       | `timeline.showInDiff` |
-| Compare              | None: in its menu and the palette              | In `timeline`                                                                                       | `timeline.compare`    |
+| Action            | Keys                                           | Where                                                                                               | Command               |
+| ----------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------- | --------------------- |
+| Show latest       | None: in its menu and the palette              | In `box`                                                                                            | `comments.showLatest` |
+| Vim keys          | None: in the app menu on macOS and the palette | Anywhere                                                                                            | `comments.vim`        |
+| Show kept drafts  | None: in the app menu on macOS and the palette | Anywhere                                                                                            | `comments.keptDrafts` |
+| Compare revisions | `g v`                                          | Anywhere but `menu`, `dialog`, `palette`, `box` and `revisions`; in code views, only in normal mode | `revisions.picker`    |
+| Next view         | `` ` ``                                        | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.nextView`        |
+| Previous view     | `~`                                            | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.previousView`    |
+| Show in diff      | None: in its menu and the palette              | In `timeline`                                                                                       | `timeline.showInDiff` |
+| Compare           | None: in its menu and the palette              | In `timeline`                                                                                       | `timeline.compare`    |
 
 ## Files
 
@@ -339,7 +339,7 @@ mode. In the box's preview, or on its frame, `Esc` closes it at once, from any m
 | Previous tab              | `⌘⇧[`, `⌃⇧⇥`                                             | Anywhere but `dialog` and `palette`                                                    | `tab.previous`          |
 | Move tab left             | `⌃⇧PgUp`                                                 | Anywhere but `dialog` and `palette`                                                    | `tab.moveLeft`          |
 | Move tab right            | `⌃⇧PgDn`                                                 | Anywhere but `dialog` and `palette`                                                    | `tab.moveRight`         |
-| Tabs that don’t fit       | `⌘⇧A`                                                    | Anywhere but `dialog`, `palette` and `box`                                             | `tab.more`              |
+| More tabs                 | `⌘⇧A`                                                    | Anywhere but `dialog`, `palette` and `box`                                             | `tab.more`              |
 | Choose account…           | None: in the app menu on macOS and the palette           | Anywhere but `dialog` and `palette`                                                    | `tab.chooseAccount`     |
 | Close tab                 | `⌘W`                                                     | Anywhere but `dialog` and `palette`                                                    | `tab.close`             |
 | Check for updates         | None: in the app menu on macOS and the palette           | Anywhere                                                                               | `updates.check`         |
@@ -491,8 +491,8 @@ how Lo starts, they run Lo's command too:
 | `y a`            | Copy prompt                     | `y`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `overview.copyPrompt`     |
 | `g q`            | Merge queue                     | `g q`     | `diff` (normal), `file` (normal) and `peek` (normal)                 | `queue.show`              |
 | `g v`            | Compare revisions               | `g v`     | `diff` (normal), `file` (normal) and `peek` (normal)                 | `revisions.picker`        |
-| `` ` ``          | Next middle view                | `` ` ``   | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.nextView`            |
-| `~`              | Previous middle view            | `~`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.previousView`        |
+| `` ` ``          | Next view                       | `` ` ``   | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.nextView`            |
+| `~`              | Previous view                   | `~`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.previousView`        |
 | `-`              | Go to the file tree             | `-`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tree.focus`              |
 | `c`              | Comment on lines                | `c`       | `file`                                                               | `comments.commentOnBlock` |
 | `j`              | Next answer in the peek         | `j`       | `peek` (normal)                                                      | `code.nextAnswer`         |

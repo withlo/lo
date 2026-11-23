@@ -33,7 +33,7 @@ function select(choice: Choice): Promise<void> {
 /** The pull request's tab on screen, or why a key for one can't run. */
 function pullOnScreen(): Extract<Tab, { kind: 'pull' }> | string {
   const tab = activeTab();
-  return tab?.kind === 'pull' ? tab : 'There’s no pull request on screen.';
+  return tab?.kind === 'pull' ? tab : 'Open a pull request first';
 }
 
 /**
@@ -55,7 +55,7 @@ function middleSteps(): true | string {
   const tab = pullOnScreen();
   if (typeof tab === 'string') return tab;
   const listed = middleIds.labeled.filter(Boolean).length;
-  return listed > 1 ? true : 'This pull request has one view so far.';
+  return listed > 1 ? true : 'Only one view so far';
 }
 
 /** Asks main what it has for every view of a pull request's tab the window has heard nothing of. */
@@ -88,6 +88,15 @@ function closable(target: TabTarget | NoTarget): true | string {
     : true;
 }
 
+/**
+ * Whether a tab's right-click menu lists moving and closing it: not on Recent pull requests, which
+ * never moves or closes, so its tab opens no menu with nothing to run.
+ */
+function notRecent(target: TabTarget | NoTarget): boolean {
+  if (target.kind !== 'tab') return true;
+  return tabsStore.getState().tabs.find((tab) => tab.id === target.tab)?.kind !== 'recent';
+}
+
 export default {
   commands: handlers(keys, {
     show1: { run: () => select({ position: 1 }) },
@@ -104,10 +113,12 @@ export default {
     moveLeft: {
       run: (target) => stepTab(target, -1),
       enabled: (target) => movable(tabsStore.getState(), target, -1, inStrip()),
+      listed: notRecent,
     },
     moveRight: {
       run: (target) => stepTab(target, 1),
       enabled: (target) => movable(tabsStore.getState(), target, 1, inStrip()),
+      listed: notRecent,
     },
     more: {
       run: () => setMoreOpen(true),
@@ -122,7 +133,7 @@ export default {
       enabled: () => {
         const tab = pullOnScreen();
         if (typeof tab === 'string') return tab;
-        return viewCounts.left > 0 || 'This pull request has no left panel yet.';
+        return viewCounts.left > 0 || 'No left panel yet';
       },
     },
     rightPanel: {
@@ -130,7 +141,7 @@ export default {
       enabled: () => {
         const tab = pullOnScreen();
         if (typeof tab === 'string') return tab;
-        return viewCounts.right > 0 || 'This pull request has no threads panel yet.';
+        return viewCounts.right > 0 || 'No threads panel yet';
       },
     },
     nextView: { run: () => stepMiddle(1), enabled: middleSteps },
@@ -149,6 +160,7 @@ export default {
     close: {
       run: (target) => main().close(target.kind === 'tab' ? { id: target.tab } : {}),
       enabled: closable,
+      listed: notRecent,
     },
   }),
   views: [

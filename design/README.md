@@ -240,6 +240,11 @@ time.
   after its move, unlike a popup's `onClosed`, which fires as the popup starts to leave.
 - **`Swap`** (`id`, `className`) is one box whose content fades in when `id` changes:
   `<Swap id={loaded ? 'diff' : 'loading'}>…</Swap>`. What's there when it first draws doesn't move.
+  It draws its content anew for each `id`. Content that must not be drawn anew, such as a code view
+  or middle views kept drawn while hidden, takes `keep`: the box and what's in it stay, and the box
+  fades in as it is in the frame `id` changes, so change the content in that frame too. With `keep`,
+  an `id` of `undefined` names nothing yet, and what it names first doesn't move. Never put
+  `move-swap` on an element yourself.
 - **`reveal(element, { block })`** brings an element into view by scrolling its own pane and nothing
   else. Use it in place of `scrollIntoView`, which scrolls the window's shell too. A jump (`start`,
   `center`, `end`) lands; keeping a cursor in view (`nearest`, the default) doesn't. An element
@@ -282,7 +287,9 @@ its last, as the step appears. Where one would play again on a step the reader c
 
 ## Waiting
 
-Lo waits in three ways. Use the first that fits, and never two for one wait.
+Lo waits in three ways. Use the first that fits, and never two for one wait. Never replace drawn
+content with a wait: what's drawn stays until what replaces it is ready, marked as at work where it
+says so (a `Spinner` in its bar), and then the new content takes its place in one Swap.
 
 | When                                 | What shows                                                                                                                                        | Component                        |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
@@ -291,7 +298,12 @@ Lo waits in three ways. Use the first that fits, and never two for one wait.
 | A control is doing its work          | The control keeps its width, its fill and focus, and reads its verb beside a turning ring: "Merging…".                                            | `busy` and `working` on `Button` |
 
 - `Loading` takes `status` ("Fetching diff…"), and optionally `slow`, `onCancel` and `cancelKeys`.
-  It fills the view it's in.
+  It fills the view it's in. A wait that several views draw in turn, as a tab's opening is, looks
+  like one `Loading`: each takes the wait's `since`, so the mark goes on turning, and the line it
+  showed last (`before`), which its own line swaps in over. `onLine` says each line as it shows, for
+  the next view's `before`. `Loading` centers its mark in its box; where the box moves under the
+  wait, as a view's bar or a banner comes above it, the caller holds the mark where it came on
+  screen (a tab's placeholder does).
 - `Skeleton` is the `skeleton` utility on a block. Give each the size of what it stands for.
 - A view that shows `Loading` or skeletons sets `aria-busy` on its own box until its content is in,
   so a screen reader waits for the content rather than reading the wait.
@@ -409,7 +421,9 @@ that floats.
   its key. A command that does one of two things is named by which it would do there, from its
   handler's `named`: "Unresolve" on a resolved thread, "Expand" on one drawn collapsed (a
   `ThreadTarget`'s `collapsed`). A focused overview block's chip names its buttons the same way:
-  "Open link" for `⏎` on prose that links to a page, "Next tab" for `→` on tabs.
+  "Open link" for `⏎` on prose that links to a page, "Next tab" for `→` on tabs. A menu that can
+  list more than the window holds, such as the tabs that don't fit, takes `long`: it grows to a
+  palette's list at most, and scrolls.
 - **`Palette`** is the box that finds things by typing, from the top of the window. A command that
   does one of two things is named there by which it would do, from its handler's `labelled`:
   "Unresolve thread" on a resolved thread.
@@ -510,8 +524,9 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
   opens and closes with a key.
 - The window never scrolls. Panes do. The shell hides what overflows it and puts itself back if a
   script scrolls it, and anything brought into view goes through `reveal()`, which scrolls the pane
-  it's in. The shell hides with `overflow: hidden`, never `clip`: an image loads as it comes near
-  the screen, and a clipped box cuts "near" off at its edge.
+  it's in. Lint refuses an element's `scrollIntoView` outside tests (`lo/no-scroll-into-view`). The
+  shell hides with `overflow: hidden`, never `clip`: an image loads as it comes near the screen, and
+  a clipped box cuts "near" off at its edge.
 - A toolbar or foot never wraps or clips. Narrow, it drops chips, then hints, then labels.
 - Lo draws its own tab strip on both systems and nothing else. On macOS the strip starts after the
   traffic lights (`--lo-window-inset-start`); on Linux set `data-lo-platform="linux"` on `<html>`.

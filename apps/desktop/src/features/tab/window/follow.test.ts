@@ -103,8 +103,8 @@ describe("the window's title", () => {
     expect(titles).toEqual([
       'Lo',
       'sharkdp/fd#2212',
-      'sharkdp/bat#7 — Page with less',
-      'sharkdp/bat#7 — Page with less, always',
+      'sharkdp/bat#7 · Page with less',
+      'sharkdp/bat#7 · Page with less, always',
     ]);
   });
 
@@ -114,8 +114,8 @@ describe("the window's title", () => {
     show([stack], 'bat');
     show([{ ...stack, stack: { layers: [5, 7, 9], root: 'master' } }], 'bat');
     expect(titles).toEqual([
-      'sharkdp/bat#7 — Page with less',
-      'sharkdp/bat#7 — Page with less · layer 2 of 3, stack on master',
+      'sharkdp/bat#7 · Page with less',
+      'sharkdp/bat#7 · Page with less · layer 2 of 3 · stack on master',
     ]);
   });
 });

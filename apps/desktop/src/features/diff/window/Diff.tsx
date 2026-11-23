@@ -4,12 +4,16 @@
 // in it from the start, and kept until the reader orders the files another way: what the files
 // say of themselves changing doesn't reorder them under the reader. A new order, or other files,
 // is a new view, which puts the cursor's line back where it was on the page, or else what was at
-// the top of the screen.
+// the top of the screen. What's drawn stays while the next view's files load, or while main waits
+// for what they need, marked as at work in the diff bar, and the next takes its place in one Swap;
+// a tab that comes back on screen meanwhile draws it again, from what the loader kept of it. A view
+// is drawn before the frame it's first seen in, so a tab coming back on screen shows its code at
+// once.
 // What arrives after it's drawn goes into the view in place (`drawing.ts`). The tree follows the
 // file on screen, and asks the diff to show the files it picks.
 
-import { HintButton } from '@lo/ui';
-import { useEffect, useLayoutEffect, useMemo, useReducer, useRef } from 'react';
+import { HintButton, Spinner, Swap } from '@lo/ui';
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 
 import { Slot } from '../../../window/slots.tsx';
 import {
@@ -23,7 +27,7 @@ import { MiddlePlaceholder, tabState, usePull, type PullTab } from '../../tab/wi
 import { orderIn, useOrderMode } from '../../tree/window/shared.ts';
 import { layout as layoutSetting, whitespace as whitespaceSetting } from '../settings.ts';
 import { draw, type Drawing, type Place } from './drawing.ts';
-import { inOrder, keptOrder, type KeptOrder, viewKey } from './files.ts';
+import { inOrder, keepsBox, keptOrder, type KeptOrder, viewKey } from './files.ts';
 import type { Snapshot } from './loader.ts';
 import { usePage } from './page.ts';
 import { placesFor } from './places.ts';
@@ -94,7 +98,7 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
   const nonceValue = page?.nonce;
   const packaged = page?.packaged ?? true;
   const box = useRef<HTMLDivElement>(null);
-  const view = useRef<Drawing>(undefined);
+  const view = useRef<Kept>(undefined);
   useEffect(() => loader.setWhitespace(whitespace === 'show'), [loader, whitespace]);
   // The tab's places in the diff and the whole-file view, for `⌃o` and `⌃i`.
   useEffect(() => placesFor(tab.id), [tab.id]);
@@ -104,10 +108,18 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
       ready && order ? inOrder(ready.entries, order, (key) => loader.ids.find(key)) : undefined,
     [ready, order, loader],
   );
-  const key =
-    ready && entries
-      ? viewKey(`${ready.at}|${ready.comparison ?? ''}|${ready.compareFrom ?? ''}`, entries)
-      : undefined;
+  const key = ready && entries ? keyOf(ready, entries) : undefined;
+  // What was drawn before the loader started on what's next, in the order it was drawn in, while
+  // that's on its way: a tab that comes back on screen meanwhile draws it again, held.
+  const { held } = snapshot;
+  const again = useMemo(() => {
+    if (!held) return undefined;
+    const kept = keptOrder(orders.get(tab.id), comparisonOf(held), held.entries, mode, (changes) =>
+      orderIn(changes, mode),
+    );
+    const listed = inOrder(held.entries, kept.order, (found) => loader.ids.find(found));
+    return { ready: held, entries: listed, key: keyOf(held, listed) };
+  }, [held, mode, tab.id, loader]);
   // What a new view is drawn with, read as it's drawn: a change of layout alone needs no new view.
   const comparison = ready && comparisonOf(ready);
   const compareFrom = ready?.compareFrom ?? null;
@@ -121,6 +133,7 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
     comparison,
     revisions,
     compareFrom,
+    held: again,
   });
   latest.current = {
     entries,
@@ -131,47 +144,11 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
     comparison,
     revisions,
     compareFrom,
+    held: again,
   };
 
-  useEffect(() => {
-    const parent = box.current;
-    const drawn = latest.current;
-    if (!parent || nonceValue === undefined || !drawn.entries || key === undefined || !settled) {
-      return undefined;
-    }
-    const at = key.slice(0, key.indexOf('|'));
-    // Another comparison than the last view's: the cursor's file at the top, if this one has it.
-    const before = places.get(tab.id);
-    const last = compared.get(tab.id);
-    const another = last !== undefined && last !== drawn.comparison;
-    compared.set(tab.id, drawn.comparison);
-    const made = draw({
-      parent,
-      tab,
-      loader,
-      entries: drawn.entries,
-      at,
-      comparison: drawn.revisions,
-      compareFrom: drawn.compareFrom,
-      layout: drawn.layout,
-      nonce: nonceValue,
-      packaged: drawn.packaged,
-      shown: drawn.shown,
-      before: another ? undefined : before,
-      onTop: another ? cursorFile(before) : undefined,
-      marks: drawn.marks,
-    });
-    view.current = made;
-    return () => {
-      view.current = undefined;
-      made.stop();
-      made.view.destroy();
-    };
-    // A new view only for new files, or a new order of them.
-  }, [key, nonceValue, settled]);
-
-  // Where the view is as it goes, read while it's still on the page: as the tab goes off screen,
-  // its view is taken off the page before the effects above are undone.
+  // Where the view is as it goes, read while it's still on the page, before it's taken down: as
+  // the tab goes off screen, and as another view takes its place.
   useLayoutEffect(
     () => () => {
       const made = view.current;
@@ -180,12 +157,112 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
     [key, nonceValue, tab.id],
   );
 
+  // Drawn before the frame it's first seen in. Until there's a view to draw, the one drawn stays,
+  // held: it hears nothing more of the loader, which has started on the next, and takes no input.
+  // A tab that comes back on screen meanwhile draws the one it had again, held, from what the
+  // loader kept of it. The next is drawn in the frame the last is taken down in, and fades in over
+  // it, in one Swap.
+  const drawable = key !== undefined && nonceValue !== undefined && settled;
+  /** What the view drawn shows, held or not, by its key: what the Swap names. */
+  const [drawnKey, setDrawnKey] = useState<string>();
+  const restorable =
+    !drawable && drawnKey === undefined && again !== undefined && nonceValue !== undefined;
+  const stale = (drawnKey !== undefined || restorable) && !drawable;
+  useLayoutEffect(() => {
+    const parent = box.current;
+    const drawing = latest.current;
+    if (!parent || nonceValue === undefined || !drawing.entries || key === undefined || !settled) {
+      const last = view.current;
+      if (last) {
+        if (!last.stopped) last.stop();
+        last.stopped = true;
+        return;
+      }
+      // Nothing drawn, as the tab comes back on screen before what's next is ready: the view it
+      // had, again, held.
+      const copy = loader.heldCopy();
+      const kept = drawing.held;
+      if (!parent || !copy || !kept || nonceValue === undefined) return;
+      const made: Kept = draw({
+        parent,
+        tab,
+        loader: copy,
+        entries: kept.entries,
+        at: kept.ready.at,
+        comparison: kept.ready.comparison,
+        compareFrom: kept.ready.compareFrom,
+        layout: drawing.layout,
+        nonce: nonceValue,
+        packaged: drawing.packaged,
+        shown: drawing.shown,
+        before: places.get(tab.id),
+        marks: drawing.marks,
+        held: true,
+      });
+      made.stop();
+      made.stopped = true;
+      view.current = made;
+      setDrawnKey(kept.key);
+      return;
+    }
+    const at = key.slice(0, key.indexOf('|'));
+    // Another comparison than the last view's: the cursor's file at the top, if this one has it.
+    const before = places.get(tab.id);
+    const last = compared.get(tab.id);
+    const another = last !== undefined && last !== drawing.comparison;
+    compared.set(tab.id, drawing.comparison);
+    const replaced = view.current;
+    if (replaced) takeDown(replaced);
+    const made: Kept = draw({
+      parent,
+      tab,
+      loader,
+      entries: drawing.entries,
+      at,
+      comparison: drawing.revisions,
+      compareFrom: drawing.compareFrom,
+      layout: drawing.layout,
+      nonce: nonceValue,
+      packaged: drawing.packaged,
+      shown: drawing.shown,
+      before: another ? undefined : before,
+      onTop: another ? cursorFile(before) : undefined,
+      marks: drawing.marks,
+    });
+    view.current = made;
+    setDrawnKey(key);
+    // A new view only for new files, or a new order of them; one held, as the tab comes back.
+  }, [key, nonceValue, settled, restorable]);
+
+  // The box stays while a view is drawn in it, held or not, until there's nothing to draw and the
+  // loader has said why: a wait for what's next, such as the local copy, leaves the view held.
+  const pull = usePull(tab.id);
+  const revisionsOf = useRevisions(tab.id);
+  const said = waitingSays(snapshot, pull, revisionsOf);
+  const showsBox = keepsBox({ drawable, held: stale, said, waiting: snapshot.state?.waiting });
+  useLayoutEffect(() => {
+    if (showsBox) return;
+    const last = view.current;
+    view.current = undefined;
+    if (last) takeDown(last);
+    setDrawnKey(undefined);
+  }, [showsBox]);
+  // Taken down with the tab.
+  useLayoutEffect(
+    () => () => {
+      const last = view.current;
+      view.current = undefined;
+      if (last) takeDown(last);
+    },
+    [],
+  );
+
   useEffect(() => {
     view.current?.view.setLayout(layout);
   }, [layout]);
 
   useEffect(() => {
-    view.current?.setShown(shown);
+    live(view.current)?.setShown(shown);
   }, [shown]);
 
   // Its place on the page is held from the first frame it's seen in, as it's shown.
@@ -196,25 +273,68 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
   // Viewed marks change the headers' balls, and close the files marked viewed elsewhere, or that
   // GitHub said were viewed after the view was drawn, where the reader isn't looking.
   useEffect(() => {
-    view.current?.setMarks(marks);
+    live(view.current)?.setMarks(marks);
   }, [marks]);
 
   // The local copy's files, taken in place of GitHub's, say more of each, and may start out
   // otherwise.
   useEffect(() => {
-    if (ready) view.current?.update(ready.entries);
+    if (ready) live(view.current)?.update(ready.entries);
   }, [ready]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <Slot slot={notes} props={{ tab, end: <ChangeJumps tab={tab.id} /> }} />
-      {!ready || nonceValue === undefined || !settled ? (
-        <Waiting tab={tab} snapshot={snapshot} threads={saysWaiting} />
+      <Slot
+        slot={notes}
+        props={{
+          tab,
+          end: (
+            <>
+              {stale && showsBox && <Spinner size="xs" />}
+              <ChangeJumps tab={tab.id} />
+            </>
+          ),
+        }}
+      />
+      {showsBox ? (
+        <Swap id={drawnKey} keep className="flex min-h-0 flex-1 flex-col">
+          <div
+            ref={box}
+            className="min-h-0 flex-1"
+            data-lo-diff={tab.id}
+            data-lo-held={stale || undefined}
+            aria-busy={stale || undefined}
+            inert={stale}
+          />
+        </Swap>
       ) : (
-        <div ref={box} className="min-h-0 flex-1" data-lo-diff={tab.id} />
+        <Waiting tab={tab} said={said} threads={saysWaiting} />
       )}
     </div>
   );
+}
+
+/** A view drawn, and whether it has stopped hearing the loader while it stays, stale. */
+type Kept = Drawing & { stopped?: boolean };
+
+/** The view drawn, unless it's stale: what comes now is the next one's, and isn't for it. */
+function live(made: Kept | undefined): Kept | undefined {
+  return made?.stopped ? undefined : made;
+}
+
+/** Takes a view off the page, stopping it first unless it has stopped already. */
+function takeDown(made: Kept): void {
+  if (!made.stopped) made.stop();
+  made.stopped = true;
+  made.view.destroy();
+}
+
+/** What makes a view of `ready`'s files, in the order of `entries`, a new one. */
+function keyOf(
+  ready: { at: string; comparison: string | null; compareFrom: string | null },
+  entries: Parameters<typeof viewKey>[1],
+): string {
+  return viewKey(`${ready.at}|${ready.comparison ?? ''}|${ready.compareFrom ?? ''}`, entries);
 }
 
 /**
@@ -239,33 +359,44 @@ function ChangeJumps({ tab }: { tab: string }) {
 }
 
 /**
- * What the middle shows until the diff is drawn. While the tab opens and its files are read, it's
- * the tab's own wait, which this view carries on from whichever drew it before: one mark from the
- * tab opening until the diff is there, over what's read now. A diff with nothing to draw says why.
- * `threads` says the view has waited a while for its threads.
+ * What the middle says in place of the diff, when there's something to say: why there's nothing to
+ * draw. Nothing while the diff is on its way, or while the tab hasn't opened, since the tab says
+ * why it can't in place of its view.
  */
-function Waiting({
-  tab,
-  snapshot,
-  threads,
-}: {
-  tab: PullTab;
-  snapshot: Snapshot;
-  threads: boolean;
-}) {
-  const pull = usePull(tab.id);
-  const revisions = useRevisions(tab.id);
+function waitingSays(
+  snapshot: Snapshot,
+  pull: ReturnType<typeof usePull>,
+  revisions: ReturnType<typeof useRevisions>,
+): string | undefined {
   const { state } = snapshot;
-  let said: string | undefined;
-  // Until it opens, the wait goes on; one that can't open, the tab's banner says why.
-  if (!pull?.shown) said = undefined;
-  else if (state?.waiting) said = state.waiting;
-  else if (state?.files?.length === 0) {
+  if (!pull?.shown) return undefined;
+  if (state?.waiting) return state.waiting;
+  if (state?.files?.length === 0) {
     const ends = state.comparison === null ? undefined : comparedIn(revisions);
     const from = ends && (ends.from === null ? 'base' : revisionLabel(revisions, ends.from));
     const to = ends && revisionLabel(revisions, ends.to);
-    said = from && to ? `No files changed in ${from} → ${to}` : 'No files changed';
-  } else if (state?.problem && state.files === null) said = state.problem;
+    return from && to ? `No files changed in ${from} → ${to}` : 'No files changed';
+  }
+  if (state?.problem && state.files === null) return state.problem;
+  return undefined;
+}
+
+/**
+ * What the middle shows until the diff is drawn. While the tab opens and its files are read, it's
+ * the tab's own wait, which this view carries on from whichever drew it before: one mark from the
+ * tab opening until the diff is there, over what's read now. A diff with nothing to draw says why,
+ * `said`. `threads` says the view has waited a while for its threads.
+ */
+function Waiting({
+  tab,
+  said,
+  threads,
+}: {
+  tab: PullTab;
+  said: string | undefined;
+  threads: boolean;
+}) {
+  const pull = usePull(tab.id);
   if (said !== undefined) {
     return (
       <div className="grid min-h-0 flex-1 place-items-center p-32 text-center text-fg-muted text-ui">

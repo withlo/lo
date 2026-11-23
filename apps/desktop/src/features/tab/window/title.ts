@@ -19,17 +19,17 @@ export interface StackPosition {
   readonly layers: number;
 }
 
-/** `owner/repo#n — title`, or `owner/repo#n` until its title is known. */
+/** `owner/repo#n · title`, or `owner/repo#n` until its title is known. */
 export function forPullRequest(repository: string, number: number, title?: string): string {
   return title === undefined
     ? `${repository}#${number}`
-    : `${repository}#${number} — ${withoutBidi(title)}`;
+    : `${repository}#${number} · ${withoutBidi(title)}`;
 }
 
 /** `title`, a pull request's, for a layer of a stack: where it is, and what the stack sits on. */
 export function inStack(title: string, { root, layer, layers }: StackPosition): string {
   const where = layer === undefined ? layerCount(layers) : `layer ${layer} of ${layers}`;
-  return `${title} · ${where}, stack on ${withoutBidi(root)}`;
+  return `${title} · ${where} · stack on ${withoutBidi(root)}`;
 }
 
 /** "1 layer", "5 layers". */
@@ -37,14 +37,14 @@ function layerCount(count: number): string {
   return count === 1 ? '1 layer' : `${count} layers`;
 }
 
-/** `owner/repo#83 to #84 — 2 layers as one diff`, for a run of a stack's layers, bottom first. */
+/** `owner/repo#83 to #84 · 2 layers`, for a run of a stack's layers shown as one diff, bottom first. */
 export function forRun(repository: string, layers: readonly number[]): string {
-  return `${repository}#${layers[0] ?? ''} to #${layers.at(-1) ?? ''} — ${layerCount(layers.length)} as one diff`;
+  return `${repository}#${layers[0] ?? ''} to #${layers.at(-1) ?? ''} · ${layerCount(layers.length)}`;
 }
 
-/** `owner/repo — Merge queue · main`, for a repository's merge queue for a branch. */
+/** `owner/repo · Merge queue for main`, for a repository's merge queue for a branch. */
 export function forQueue(repository: string, branch: string): string {
-  return `${repository} — Merge queue · ${withoutBidi(branch)}`;
+  return `${repository} · Merge queue for ${withoutBidi(branch)}`;
 }
 
 /**
@@ -57,7 +57,7 @@ export function windowTitle(tab: Tab | undefined): string {
   if (tab?.kind !== 'pull') return NO_PULL_REQUEST;
   if (tab.run) {
     const run = forRun(`${tab.owner}/${tab.repo}`, tab.run.layers);
-    return tab.stack ? `${run}, stack on ${withoutBidi(tab.stack.root)}` : run;
+    return tab.stack ? `${run} · stack on ${withoutBidi(tab.stack.root)}` : run;
   }
   const layer = layerOf(tab);
   const title = forPullRequest(`${tab.owner}/${tab.repo}`, layer, tab.title);
