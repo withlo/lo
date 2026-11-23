@@ -6,15 +6,17 @@
 
 import { accessSync, constants, existsSync } from 'node:fs';
 
-import { app, autoUpdater, BrowserWindow, dialog, type MessageBoxSyncOptions } from 'electron';
+import { app, autoUpdater } from 'electron';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { defineFeature } from '../../../main/features.ts';
+import { asking } from '../../ask/service.ts';
 import { settings } from '../../settings/service.ts';
 import { checkAnswer, contract, how as howSchema, updateState } from '../contract.ts';
 import { check as checkSetting } from '../settings.ts';
 import { feedFor } from './feed.ts';
 import { howItUpdates, howItUpdatesNow, type Place } from './how.ts';
+import { moveAsking, REPLACE } from './move.ts';
 import { FIRST_CHECK, FIRST_LOCAL_CHECK, Schedule } from './schedule.ts';
 import { adapt, CheckingUpdater, configure, InstallingUpdater, type Squirrel } from './updater.ts';
 import { Updates, type UpdatesOptions } from './updates.ts';
@@ -53,37 +55,8 @@ const squirrel: Squirrel = {
   },
 };
 
-/** The question Lo asks before it replaces a Lo already in Applications. "Cancel" is the default. */
-const REPLACE: MessageBoxSyncOptions = {
-  type: 'question',
-  message: 'Replace Lo in Applications?',
-  detail: 'The copy in Applications moves to the Trash. This one takes its place and restarts.',
-  buttons: ['Replace Lo', 'Cancel'],
-  defaultId: 1,
-  cancelId: 1,
-  noLink: true,
-};
-
-/**
- * Moves Lo to Applications, asking first when a Lo is there already, and, once it's moved, starts
- * it from there and quits this one: `false` when told not to. When the Lo there is running, it
- * comes forward and this one quits, as Electron does by default.
- */
-function moveToApplications(): boolean {
-  return app.moveToApplicationsFolder({
-    conflictHandler(conflict) {
-      if (conflict === 'existsAndRunning') return true;
-      const window = BrowserWindow.getFocusedWindow();
-      const answer = window
-        ? dialog.showMessageBoxSync(window, REPLACE)
-        : dialog.showMessageBoxSync(REPLACE);
-      return answer === 0;
-    },
-  });
-}
-
 export default defineFeature(contract, {
-  uses: [settings],
+  uses: [settings, asking],
   handlers: {
     // Checked as a push is, so the window gets nothing but what the contract says.
     read: () => updateState.parse(running().state),
@@ -95,7 +68,7 @@ export default defineFeature(contract, {
     install: () => running().install(),
     restart: () => running().restart(),
     later: () => running().later(),
-    move: () => running().move(),
+    move: (_input, _context, { windowId }) => running().move(windowId),
   },
   start(context) {
     const packaged = app.isPackaged;
@@ -131,7 +104,12 @@ export default defineFeature(contract, {
       publish: (state) => context.publish('state', state),
       log,
       quit: () => app.quit(),
-      move: moveToApplications,
+      // Asking in Lo's own dialog, in the window that asked, before it replaces a Lo there.
+      move: (window) =>
+        moveAsking(
+          (conflict) => app.moveToApplicationsFolder({ conflictHandler: conflict }),
+          () => context.use(asking).ask(window, REPLACE),
+        ),
     });
     updates = started;
     // Never taken off: the last `will-quit`, after the feature has stopped, is the one a restart

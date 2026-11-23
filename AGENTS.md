@@ -1156,10 +1156,14 @@ its own app, installs it when the reader says so.
   (`/opt/homebrew/Caskroom/lo` or `/usr/local/Caskroom/lo`), where Lo never replaces itself, since
   Homebrew's record of the version would go stale, and the toast gives `BREW_UPGRADE`,
   `brew upgrade --cask withlo/tap/lo`; `move` on a Mac anywhere else, such as the disk image or a
-  translocated download, where "Move Lo to Applications" asks before it replaces a Lo already there;
-  `page` on Linux, from source, or where Lo can't write its own folder, where "Download update"
-  opens the release's page. Only `install` builds electron-updater's Mac updater: the rest get one
-  that can check and has no way to download.
+  translocated download, where "Move Lo to Applications" asks before it replaces a Lo already there,
+  in Lo's own dialog (see "Questions main asks"): Electron's move takes its answer at once, from
+  inside the move, so Lo first moves replacing nothing, asks only once that stops at a Lo in the
+  way, and moves again once the reader says "Replace Lo" (`main/move.ts`), unless Lo can't write
+  Applications, where macOS asks for an administrator's password and Electron replaces a Lo there
+  without asking Lo first, as it always has; `page` on Linux, from source, or where Lo can't write
+  its own folder, where "Download update" opens the release's page. Only `install` builds
+  electron-updater's Mac updater: the rest get one that can check and has no way to download.
 - **When.** 30 s after the window is up, then every 6 hours, and on `updates.check`, the command,
   the overview's "Get a newer Lo" and Settings' "Check now". The `updates.check` setting (on) turns
   off only the timed checks. A timed check that fails is logged and tried at the next, and one the
@@ -1547,6 +1551,26 @@ The window shows an image from outside Lo only as `<img src="lo-image://…">`, 
 - A test run fetches the image hosts from the test's GitHub too, each under `/images/<host>/`,
   through `githubSettings`, so a packaged build never does.
 
+### Questions main asks
+
+The `ask` feature lets main ask the reader something in Lo's own dialog, and wait for the answer, as
+the `updates` feature asks "Replace Lo in Applications?".
+
+- A feature asks through `ask.asking`, `ask(window, question, signal)`, in the window whose request
+  it's answering: a title, what happens that the title doesn't say, and the action's label. It
+  answers whether the reader pressed the action. Anything else is Cancel: `⏎` and `Esc`, no such
+  window, the window closing, `signal` aborting, Lo quitting, and a question asked while another is
+  up, which stays up alone.
+- Main gives each question an id and pushes it on `question`, and a window loaded meanwhile reads it
+  with `read`. Only `answer` with that id, from the window it was asked in, ends it; any other
+  answer is ignored. A question the window can't be told is never up: the ask fails, and the next
+  one is asked as usual.
+- The window draws it as a small `Dialog` in the `tab.dialogs` slot, over any other. Cancel has
+  focus as it opens, so `⏎` presses it, and a held key's repeats do nothing.
+- A question here guards against a slip, not against the page: whatever runs in the window can read
+  its id and answer it. What the window must not decide by itself isn't asked here, so trust is
+  asked in main's native dialog.
+
 ### Trust
 
 The `code` feature decides which pull requests language servers may run on. Nothing else changes
@@ -1567,9 +1591,11 @@ with trust: highlighting, the diff, comments and the syntax index work the same 
   untrusted, and is tried again after 5 s, doubling to 5 minutes. A renamed repository, or fork, is
   asked about again.
 - Only main writes trust, once its own native dialog, attached to the window that asked, says
-  "Trust" (`main/confirm.ts`); `code.trust` only asks main to ask. "Cancel" is the dialog's default
-  and its `Esc`, one dialog asks at a time, and closing the window meanwhile trusts nothing. A test
-  answers it with `answerDialogs` in `e2e/app.ts`.
+  "Trust" (`main/confirm.ts`); `code.trust` only asks main to ask. It stays native, not one of the
+  questions Lo draws itself: the window shows what GitHub and the repo hold, and whatever runs in it
+  could answer a question the window draws, as it can't answer main's own dialog. "Cancel" is the
+  dialog's default and its `Esc`, one dialog asks at a time, and closing the window meanwhile trusts
+  nothing. A test answers it with `answerDialogs` in `e2e/app.ts`.
 - While main trusts a view, the view's status says how far it has got (`trusting`: reading the
   repository's IDs, asking, saving), and the banner's and the status item's buttons show it
   ("Checking with GitHub", "Waiting for your answer", then "Trusting" once the reader said "Trust"),
