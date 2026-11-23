@@ -33,8 +33,8 @@ describe('moving a tab a place', () => {
   });
 
   it('says where the tab is now, by the name the strip shows', () => {
-    expect(saidOf(fd, 1, 3)).toBe('fd #2212 is now tab 2 of 3.');
-    expect(saidOf(settings, 0, 3)).toBe('Settings is now tab 1 of 3.');
+    expect(saidOf(fd, 1, 3)).toBe('Moved fd #2212 to tab 2 of 3');
+    expect(saidOf(settings, 0, 3)).toBe('Moved Settings to tab 1 of 3');
     // A branch's name can't turn the words after it around.
     const queue = {
       id: 'q',
@@ -44,6 +44,6 @@ describe('moving a tab a place', () => {
       branch: 'e4/\u202Equeued',
       login: 'rozed-bot',
     } as const;
-    expect(saidOf(queue, 2, 3)).toBe('e2e merge queue for e4/queued is now tab 3 of 3.');
+    expect(saidOf(queue, 2, 3)).toBe('Moved e2e merge queue for e4/queued to tab 3 of 3');
   });
 });

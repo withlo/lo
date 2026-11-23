@@ -5,6 +5,7 @@ import { filterHelp, type HelpGroup, type KeymapError } from './commands/index.t
 import { useTakeFocus } from './focus.ts';
 import { Key } from './Key.tsx';
 import { useReturnFocus } from './returnFocus.ts';
+import { reveal } from './reveal.ts';
 
 /** How many of the keymap file's errors key help lists. A file can have thousands of lines. */
 export const ERRORS_SHOWN = 20;
@@ -66,7 +67,7 @@ export function KeyHelp({
     if (open) setQuery('');
   }, [open, show]);
   useEffect(() => {
-    if (open && show !== undefined) shown.current?.scrollIntoView?.({ block: 'nearest' });
+    if (open && show !== undefined && shown.current) reveal(shown.current);
   }, [open, show]);
 
   return (

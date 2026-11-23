@@ -16,6 +16,9 @@ import { cover, kinds, stripEnd, useActiveTab, useTabs } from './shared.ts';
 import { pullsStore } from './store.ts';
 import { stripTab } from './strip.ts';
 
+/** The commands the strip's buttons stand for: `+`, a tab's `×` and "N more". */
+const STRIP_COMMANDS = { open: 'open.box', close: 'tab.close', more: 'tab.more' } as const;
+
 /** The tab a right-click landed on, by the id the strip gives each. */
 function tabAt(target: EventTarget): string | undefined {
   if (!(target instanceof Element)) return undefined;
@@ -59,6 +62,7 @@ export function TabStrip() {
         }
         menuContainer={document.getElementById('root')}
         end={<Slot slot={stripEnd} props={{}} />}
+        commands={STRIP_COMMANDS}
       />
       <div role="status" className="sr-only">
         {said}

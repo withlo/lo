@@ -298,6 +298,8 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
   // The middle views shown since the tab was drawn stay drawn, hidden while another is on screen.
   const [kept, setKept] = useState<readonly string[]>([]);
   if (shownMiddle && !kept.includes(shownMiddle.id)) setKept([...kept, shownMiddle.id]);
+  // One shown in another's place fades in over it, a Swap; the first the tab shows is just there.
+  const swapped = kept.some((id) => id !== shownMiddle?.id);
   return (
     <div className="flex h-full min-h-0 flex-col" data-lo-pull={tab.id}>
       <PRHeader
@@ -346,7 +348,11 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
                   return (
                     <div
                       key={each.id}
-                      className={shown ? 'absolute inset-0' : 'invisible absolute inset-0'}
+                      className={
+                        shown
+                          ? `absolute inset-0 ${swapped ? 'move-swap' : ''}`
+                          : 'invisible absolute inset-0'
+                      }
                       inert={!shown}
                       data-lo-middle-view={each.id}
                     >

@@ -29,13 +29,13 @@ async function mark(page: Page): Promise<() => Promise<boolean>> {
 }
 
 /** The tab strip, which holds the button that reviews a pull request, not the ones in Recent. */
-const strip = (page: Page) => page.getByRole('tablist', { name: 'Pull requests' });
+const strip = (page: Page) => page.getByRole('tablist', { name: 'Tabs' });
 
 test('Electron’s menu is gone: Linux has none, and macOS’s reloads nothing; and reload and developer-tools keys do nothing in the built app', async ({
   app,
   page,
 }) => {
-  await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
+  await expect(page.getByRole('tablist', { name: 'Tabs' })).toBeVisible();
 
   await test.step('Electron’s menu is gone: Linux has none, and macOS’s reloads nothing', async () => {
     const contents = await menuContents(app);
@@ -87,7 +87,7 @@ test('Electron’s menu is gone: Linux has none, and macOS’s reloads nothing; 
 signedIn(
   'the window runs only the app menu’s own commands that main sends back',
   async ({ app, page }) => {
-    const open = strip(page).getByRole('button', { name: 'Review a pull request' });
+    const open = strip(page).getByRole('button', { name: 'Open pull request…' });
     await open.focus();
     // Esc's command isn't in the app menu, so a click can't have sent it.
     await app.evaluate(({ BrowserWindow }) => {
@@ -178,7 +178,7 @@ test('Tab moves focus only through commands, and forms that ask keep the browser
   await expect(page.locator('#second')).toBeFocused();
 
   // Nor out of the window's own scope: the tab strip's button keeps focus.
-  const open = strip(page).getByRole('button', { name: 'Review a pull request' });
+  const open = strip(page).getByRole('button', { name: 'Open pull request…' });
   await open.focus();
   await page.keyboard.press('Tab');
   await expect(open).toBeFocused();
@@ -196,7 +196,7 @@ test('⌘ or Ctrl with =, - and 0 zooms the window, and macOS’s View menu list
   app,
   page,
 }) => {
-  await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
+  await expect(page.getByRole('tablist', { name: 'Tabs' })).toBeVisible();
 
   await test.step('⌘ or Ctrl with =, - and 0 zooms the window', async () => {
     const held = mac ? 'Meta' : 'Control';
@@ -234,7 +234,7 @@ test.describe('on Linux, with no app menu', () => {
   test.skip(mac, 'macOS’s app menu quits and goes full screen.');
 
   test('F11 asks for full screen', async ({ app, page }) => {
-    await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
+    await expect(page.getByRole('tablist', { name: 'Tabs' })).toBeVisible();
     // Counted where main asks, since a display without a window manager may not go full screen.
     await app.evaluate(({ BrowserWindow }) => {
       const window = BrowserWindow.getAllWindows()[0];
@@ -254,7 +254,7 @@ test.describe('on Linux, with no app menu', () => {
   });
 
   test('Ctrl+Q quits', async ({ app, page }) => {
-    await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
+    await expect(page.getByRole('tablist', { name: 'Tabs' })).toBeVisible();
     const closed = app.waitForEvent('close');
     // Lo may be gone before the key comes back up.
     await page.keyboard.press('Control+Q').catch(() => undefined);

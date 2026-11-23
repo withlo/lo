@@ -291,7 +291,9 @@ Lo waits in three ways. Use the first that fits, and never two for one wait.
 | A control is doing its work          | The control keeps its width, its fill and focus, and reads its verb beside a turning ring: "Merging…".                                            | `busy` and `working` on `Button` |
 
 - `Loading` takes `status` ("Fetching diff…"), and optionally `slow`, `onCancel` and `cancelKeys`.
-  It fills the view it's in.
+  It fills the view it's in. A wait that several views draw in turn, as a tab's opening is, looks
+  like one `Loading`: each takes the wait's `since` and the line it showed last (`before`), so the
+  mark keeps its place on screen and only the line swaps.
 - `Skeleton` is the `skeleton` utility on a block. Give each the size of what it stands for.
 - A view that shows `Loading` or skeletons sets `aria-busy` on its own box until its content is in,
   so a screen reader waits for the content rather than reading the wait.
@@ -491,8 +493,9 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
   opens and closes with a key.
 - The window never scrolls. Panes do. The shell hides what overflows it and puts itself back if a
   script scrolls it, and anything brought into view goes through `reveal()`, which scrolls the pane
-  it's in. The shell hides with `overflow: hidden`, never `clip`: an image loads as it comes near
-  the screen, and a clipped box cuts "near" off at its edge.
+  it's in. Lint refuses an element's `scrollIntoView` anywhere (`lo/no-scroll-into-view`). The shell
+  hides with `overflow: hidden`, never `clip`: an image loads as it comes near the screen, and a
+  clipped box cuts "near" off at its edge.
 - A toolbar or foot never wraps or clips. Narrow, it drops chips, then hints, then labels.
 - Lo draws its own tab strip on both systems and nothing else. On macOS the strip starts after the
   traffic lights (`--lo-window-inset-start`); on Linux set `data-lo-platform="linux"` on `<html>`.

@@ -85,13 +85,15 @@ export function headerFromDetails(details: PullRequest): Header {
 
 /**
  * The header with what a poll's REST summary changed: its title, state and branches. The summary
- * doesn't name the author or a fork, so those stay as they were.
+ * doesn't name the author or a fork, so those stay as they were, and an author not yet known stays
+ * unknown, not deleted.
  */
 export function withSummary(header: Header | undefined, summary: PullSummary): Header {
+  const author = header?.author;
   return {
     title: summary.title,
     state: summaryState(summary),
-    author: header?.author ?? null,
+    ...(author === undefined ? {} : { author }),
     head: { branch: summary.head.ref, fork: header?.head.fork ?? null },
     base: { branch: summary.base.ref },
   };

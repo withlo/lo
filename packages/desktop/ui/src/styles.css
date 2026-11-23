@@ -809,6 +809,40 @@
   }
 }
 
+/* A tab that isn't on screen, under the pointer: the hover tint, held clear of the strip's foot, so
+   only the tab on screen joins the page. The tab isolates its layers (`isolate`), and the tint sits
+   under its words. It comes and goes in a Tint, `before:move-tint` on the tab. */
+@utility tab-hover {
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0 0 var(--lo-sp-4);
+    z-index: -1;
+    border-radius: var(--lo-r-sm);
+  }
+  &:hover::before {
+    background-color: var(--lo-hover);
+  }
+}
+
+/* The end of a tab's words, fading out under its close button while the button shows, so the
+   button takes no room from them. */
+@utility tab-fade {
+  mask-image: linear-gradient(
+    to right,
+    var(--lo-bg) calc(100% - var(--lo-sp-32) - var(--lo-sp-8)),
+    transparent calc(100% - var(--lo-sp-24))
+  );
+}
+
+/* A tab's stack count, which a narrow tab gives up after its title, so its number stays whole. The
+   tab is the container (`@container`). */
+@utility tab-stack {
+  @container (width < 152px) {
+    display: none;
+  }
+}
+
 /* A tab dragged along the strip, over the tabs it passes. */
 @utility tab-dragged {
   z-index: 1;

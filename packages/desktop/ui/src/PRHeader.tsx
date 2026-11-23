@@ -20,7 +20,7 @@ export interface PRHeaderProps {
   /** Its title and state, once known. Until then the header holds their places. */
   title?: string | undefined;
   state?: PullRequestState | undefined;
-  /** The author's login: null for an account GitHub deleted. */
+  /** The author's login: null for an account GitHub deleted, and nothing while it isn't known. */
   author?: string | null | undefined;
   /** The branch it merges from, with the fork it's in, if it's in one. */
   head?: { branch: string; fork?: string | null | undefined } | undefined;
@@ -109,12 +109,13 @@ export function PRHeader({
             <Skeleton className="w-tab-w" />
           ) : (
             <>
-              {author !== undefined && (
-                <>
-                  <strong className="font-semibold text-fg">{author ?? 'A deleted account'}</strong>{' '}
-                  wants to merge
-                </>
-              )}
+              {author === undefined ? (
+                // Its room, held until GitHub names the author, who is never assumed deleted.
+                <Skeleton className="w-48 flex-none" />
+              ) : (
+                <strong className="font-semibold text-fg">{author ?? 'A deleted account'}</strong>
+              )}{' '}
+              wants to merge
               <Branch name={head.fork ? `${head.fork}:${head.branch}` : head.branch} />
               <span className="flex-none text-fg-subtle" aria-label="into">
                 →

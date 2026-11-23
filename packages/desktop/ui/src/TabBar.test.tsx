@@ -60,9 +60,9 @@ describe('TabBar', () => {
   it('draws an empty strip with only the button that opens a pull request', () => {
     const markup = renderToStaticMarkup(<TabBar tabs={[]} />);
     expect(markup).toContain('role="tablist"');
-    expect(markup).toContain('aria-label="Pull requests"');
+    expect(markup).toContain('aria-label="Tabs"');
     expect(markup).not.toContain('role="tab"');
-    expect(markup).toContain('aria-label="Review a pull request"');
+    expect(markup).toContain('aria-label="Open pull request…"');
     // Inert until there's a way to open one.
     expect(markup).toContain('aria-disabled="true"');
   });
@@ -72,8 +72,10 @@ describe('TabBar', () => {
     expect(markup.match(/role="tab"/g)).toHaveLength(5);
     expect(markup.match(/aria-selected="true"/g)).toHaveLength(1);
     expect(markup).toContain('#4821');
-    expect(markup).toContain('title="Stack of 4"');
-    expect(markup).not.toContain('aria-disabled');
+    // Its marks are named, to a screen reader as in their tooltips.
+    expect(markup).toContain('role="img" aria-label="Stack · 4 layers"');
+    expect(markup).toContain('role="img" aria-label="Open"');
+    expect(markup).not.toContain('aria-disabled="');
     // Each carries its id, for a right-click on it.
     expect(tabsIn(markup).map((each) => /data-tab="([^"]*)"/.exec(each)?.[1])).toEqual([
       'a',
@@ -98,10 +100,10 @@ describe('TabBar', () => {
       <TabBar tabs={[{ kind: 'pull', id: 'a', repo: 'fd', number: 2212 }]} selected="a" />,
     );
     expect(markup).toMatch(/>fd <\/span><span[^>]*>#2212<\/span>/);
-    expect(markup).not.toContain('title="open"');
+    expect(markup).not.toContain('role="img"');
     expect(markup).toContain('aria-label="Close tab"');
     // Not opening: nothing says it's busy.
-    expect(markup).not.toContain('aria-busy');
+    expect(markup).not.toContain('aria-busy="');
     expect(markup).not.toContain('spinner');
   });
 
@@ -118,7 +120,7 @@ describe('TabBar', () => {
         tabs={[{ kind: 'pull', id: 'a', repo: 'fd', number: 2212, loading: true, title: 'Done' }]}
       />,
     );
-    expect(arrived).not.toContain('aria-busy');
+    expect(arrived).not.toContain('aria-busy="');
     expect(arrived).not.toContain('skeleton');
     expect(arrived).toContain('Done</span>');
   });
@@ -136,10 +138,28 @@ describe('TabBar', () => {
     expect(markup).toMatch(/<span class="[^"]*flex-none[^"]*">#123456<\/span>/);
   });
 
-  it("takes no room for another tab's close button until it's hovered", () => {
+  it("lays its close button over the tab's end, fading the words under it, and shows another tab's only under the pointer", () => {
     const [selected, other] = tabsIn(renderToStaticMarkup(<TabBar tabs={tabs} selected="a" />));
-    expect(selected).toMatch(/aria-label="Close tab"[^>]*class="[^"]* grid"/);
-    expect(other).toMatch(/aria-label="Close tab"[^>]*class="[^"]* hidden group-hover:grid"/);
+    // The button takes no room from the words, so a tab reads the same on screen or not.
+    expect(selected).toMatch(/class="absolute [^"]* flex"><button[^>]*aria-label="Close tab"/);
+    expect(selected).toMatch(/class="[^"]* tab-fade" data-tab-label/);
+    expect(other).toMatch(
+      /class="absolute [^"]* hidden group-hover:flex"><button[^>]*aria-label="Close tab"/,
+    );
+    expect(other).toMatch(/class="[^"]* group-hover:tab-fade" data-tab-label/);
+  });
+
+  it('gives its stack count up before its number as it narrows, and joins the page only on screen', () => {
+    const [selected, other] = tabsIn(renderToStaticMarkup(<TabBar tabs={tabs} selected="a" />));
+    // The count comes before the title, so the title is what goes first, and the tab is the
+    // container its count goes at.
+    expect(selected).toMatch(/aria-label="Stack · 4 layers" class="[^"]*\btab-stack\b/);
+    expect(selected).toMatch(/#4821<\/span><span role="img" aria-label="Stack · 4 layers"/);
+    expect(selected).toMatch(/class="group @container /);
+    // Hovered, a tab not on screen takes the hover tint, not the current tab's ground.
+    expect(selected).toContain('tab-flares bg-bg-chrome');
+    expect(other).toContain('tab-hover');
+    expect(other).not.toContain('bg-bg-chrome');
   });
 
   it('names Recent pull requests and Settings, and gives Recent no close button', () => {

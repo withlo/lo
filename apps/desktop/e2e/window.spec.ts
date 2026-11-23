@@ -13,7 +13,7 @@ test('the window opens on a fresh data folder, on Recent pull requests alone, in
     expect(page.url()).toBe('lo-app://app/index.html');
     expect(await page.title()).toBe('Lo');
     expect(app.windows()).toHaveLength(1);
-    await expect(page.getByRole('tablist', { name: 'Pull requests' })).toBeVisible();
+    await expect(page.getByRole('tablist', { name: 'Tabs' })).toBeVisible();
     // Tests start Lo with every move off.
     await expect(page.locator('html')).toHaveAttribute('data-lo-motion', 'reduce');
 
@@ -65,7 +65,7 @@ test('the window opens on a fresh data folder, on Recent pull requests alone, in
 
   await test.step("the tab strip's row clears the window's controls", async () => {
     // The strip's row, which holds the tab list between the window's insets.
-    const strip = page.getByRole('tablist', { name: 'Pull requests' }).locator('..');
+    const strip = page.getByRole('tablist', { name: 'Tabs' }).locator('..');
     const layout = await strip.evaluate((element) => {
       const style = getComputedStyle(element);
       const overlay = (
@@ -109,19 +109,22 @@ test('the window opens on a fresh data folder, on Recent pull requests alone, in
         .poll(() => page.evaluate(() => document.documentElement.dataset.theme))
         .toBe('dark');
       await page.evaluate(() => document.fonts.ready);
-      const strip = page.getByRole('tablist', { name: 'Pull requests' });
+      const strip = page.getByRole('tablist', { name: 'Tabs' });
       await expect(strip.getByRole('tab', { name: 'Recent pull requests' })).toBeVisible();
       await expect(strip.locator('..')).toHaveScreenshot('empty-strip.png');
     });
   }
 
   await test.step('the window opens on Recent pull requests alone, in both of its fonts', async () => {
-    const strip = page.getByRole('tablist', { name: 'Pull requests' });
+    const strip = page.getByRole('tablist', { name: 'Tabs' });
     await expect(strip.getByRole('tab')).toHaveText(['Recent pull requests']);
-    const open = strip.getByRole('button', { name: 'Review a pull request' });
+    const open = strip.getByRole('button', { name: 'Open pull request…' });
     await expect(open).toBeVisible();
+    // Its place on the strip is no part of the window's drag region.
     expect(
-      await open.evaluate((button) => getComputedStyle(button).getPropertyValue('app-region')),
+      await open.evaluate((button) =>
+        getComputedStyle(button.parentElement ?? button).getPropertyValue('app-region'),
+      ),
     ).toBe('no-drag');
 
     const fonts = await page.evaluate(async () => {

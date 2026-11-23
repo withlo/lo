@@ -12,6 +12,7 @@ import {
   type MarkdownExtension,
   type Rendering,
 } from './render.tsx';
+import { reveal as bringIntoView } from '../reveal.ts';
 import { Anchors, generationOf, scopePrefix } from './scope.ts';
 
 export interface MarkdownProps<X extends Extension = Plain> {
@@ -99,8 +100,7 @@ export function reveal(within: Element | null, id: string | undefined): HTMLElem
       for (const hider of hidden) show(hider);
     });
   }
-  // jsdom has no scrolling.
-  if (typeof element.scrollIntoView === 'function') element.scrollIntoView({ block: 'start' });
+  bringIntoView(element, { block: 'start' });
   element.focus({ preventScroll: true });
   return element;
 }

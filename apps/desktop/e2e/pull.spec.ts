@@ -81,7 +81,7 @@ async function state(page: Page, id: string): Promise<unknown> {
   return reply.ok ? reply.value : reply;
 }
 
-const strip = (page: Page) => page.getByRole('tablist', { name: 'Pull requests' });
+const strip = (page: Page) => page.getByRole('tablist', { name: 'Tabs' });
 const status = (page: Page) => page.locator('footer[aria-label="Status"]');
 
 test('opens a pull request with its header, and fetches its local copy at the head it opened at', async ({
@@ -100,7 +100,7 @@ test('opens a pull request with its header, and fetches its local copy at the he
   // The strip and the window take its title, once it's arrived.
   await expect(strip(page).getByRole('tab', { selected: true })).toContainText(TITLE);
   await expect(strip(page).getByRole('tab', { selected: true })).not.toHaveAttribute('aria-busy');
-  await expect(page).toHaveTitle(`rozed-dev/e2e#80 — ${TITLE}`);
+  await expect(page).toHaveTitle(`rozed-dev/e2e#80 · ${TITLE}`);
 
   await expect(status(page)).toContainText('Local copy', { timeout: 20_000 });
   await expect

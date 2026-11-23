@@ -4,39 +4,54 @@
 //
 // A tab that's opening is one wait, whichever view draws it: the tab before it has a view, the
 // overview while it chooses what to open on, the diff until its files are drawn. Each draws this,
-// and each takes the wait up where the last left it: the mark keeps going round, and only its line
-// changes, to what the view reads.
+// and each takes the wait up where the last left it: the mark keeps going round where it was on
+// screen, and only its line changes, swapping in what the view reads.
 
 import { Loading, LOADING_DELAY_MS } from '@lo/ui';
 import { keyLabels } from '@lo/ui/commands';
-import { useEffect, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { useStore } from 'zustand';
 
 import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { main } from './main.ts';
 import { pullsStore } from './store.ts';
 
-/** A tab's wait: when it began, and how many placeholders draw it now. */
+/**
+ * A tab's wait: when it began, how many placeholders draw it now, the line it showed last, and
+ * where on screen its mark came, to stay.
+ */
 interface Wait {
   readonly since: number;
   drawn: number;
   /** Ends it, once nothing has drawn it for a moment. */
   over?: ReturnType<typeof setTimeout> | undefined;
+  /** The line it showed last, for the next view to swap its own in over. */
+  line?: string | undefined;
+  /** The middle of the box it was drawn in as its mark came, in window pixels from the top. */
+  at?: number | undefined;
 }
 
 const waits = new Map<string, Wait>();
 
+/** The room a held mark keeps from its box's edges: enough for it, its line and Cancel. */
+const HELD_MARGIN = 72;
+
 /**
- * When tab `tab`'s wait began: as its first placeholder was drawn. A placeholder drawn while
- * another draws the wait, or within the moment a quick load shows nothing for after the last one
- * went, as one view gives way to the next, carries on the same wait. One drawn later, as when the
- * tab is read again, begins a new one.
+ * Tab `tab`'s wait: when it began, as its first placeholder was drawn, and the line it showed
+ * before this placeholder was drawn. A placeholder drawn while another draws the wait, or within
+ * the moment a quick load shows nothing for after the last one went, as one view gives way to the
+ * next, carries on the same wait. One drawn later, as when the tab is read again, begins a new one.
  */
-function useWaitSince(tab: string): number {
-  const [held, setHeld] = useState(() => ({ tab, since: waits.get(tab)?.since ?? Date.now() }));
-  if (held.tab !== tab) setHeld({ tab, since: waits.get(tab)?.since ?? Date.now() });
+function useWait(tab: string): { since: number; before: string | undefined } {
+  const start = () => {
+    const wait = waits.get(tab);
+    return { tab, since: wait?.since ?? Date.now(), before: wait?.line };
+  };
+  const [held, setHeld] = useState(start);
+  if (held.tab !== tab) setHeld(start());
   const { since } = held;
-  useEffect(() => {
+  // Before the layout of the box is read, so the wait is there to hold the mark's place in.
+  useLayoutEffect(() => {
     const wait = waits.get(tab) ?? { since, drawn: 0 };
     clearTimeout(wait.over);
     wait.over = undefined;
@@ -50,7 +65,46 @@ function useWaitSince(tab: string): number {
       }, LOADING_DELAY_MS);
     };
   }, [tab, since]);
-  return since;
+  return { since, before: held.before };
+}
+
+/**
+ * Holds the mark of tab `tab`'s wait where it was on screen as it came, whatever the box it's
+ * drawn in does: a view's bar over the next view's box, or a banner coming above the tab's body,
+ * moves the box, and the mark stays, as near its place as the box has room for. Until the mark
+ * shows, it's in the middle of the box it's in, and that's where it comes. The window resized, it
+ * comes back to the middle. Returns the ref for the box.
+ */
+function useHeldPlace(tab: string): RefObject<HTMLDivElement | null> {
+  const box = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const element = box.current;
+    if (!element) return undefined;
+    const place = () => {
+      const wait = waits.get(tab);
+      const loading = element.firstElementChild;
+      if (!wait || !(loading instanceof HTMLElement)) return;
+      const { top, height } = element.getBoundingClientRect();
+      const middle = top + height / 2;
+      if (wait.at === undefined || Date.now() - wait.since < LOADING_DELAY_MS) wait.at = middle;
+      const room = Math.max(0, height / 2 - HELD_MARGIN);
+      const by = Math.min(room, Math.max(-room, wait.at - middle));
+      loading.style.translate = by === 0 ? '' : `0 ${by}px`;
+    };
+    place();
+    const recenter = () => {
+      const wait = waits.get(tab);
+      if (wait) wait.at = undefined;
+    };
+    window.addEventListener('resize', recenter);
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(place);
+    observer?.observe(element);
+    return () => {
+      window.removeEventListener('resize', recenter);
+      observer?.disconnect();
+    };
+  }, [tab]);
+  return box;
 }
 
 /** The key that closes a tab now, as this system shows it, if it has one. */
@@ -69,14 +123,24 @@ function closeKeys(): string[] | undefined {
  */
 export function Placeholder({ tab, status }: { tab: string; status?: string | undefined }) {
   const view = useStore(pullsStore, (state) => state.views.get(tab));
-  const since = useWaitSince(tab);
+  const { since, before } = useWait(tab);
+  const box = useHeldPlace(tab);
+  const shown = useCallback(
+    (line: string) => {
+      const wait = waits.get(tab);
+      if (wait) wait.line = line;
+    },
+    [tab],
+  );
   useKeys();
   const waiting = !view?.problem;
   return (
-    <div className="h-full" data-lo-placeholder aria-busy={waiting || undefined}>
+    <div ref={box} className="h-full" data-lo-placeholder aria-busy={waiting || undefined}>
       {waiting && (
         <Loading
           since={since}
+          before={before}
+          onLine={shown}
           status={status ?? 'Opening pull request…'}
           // With its header there, or a view reading what came with it, GitHub has answered, and
           // what's left is Lo's own work.

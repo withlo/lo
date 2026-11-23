@@ -31,6 +31,14 @@ export interface LoadingProps {
    * what the wait already showed is there at once. Without it the wait begins as this is drawn.
    */
   since?: number | undefined;
+  /**
+   * The line the wait showed last, in the view that drew it before this one, as a tab's opening
+   * hands its wait from view to view. A line of its own swaps in over it, as a new line does within
+   * one view; the same line is there at once. Without it, what shows at first is this one's own.
+   */
+  before?: string | undefined;
+  /** Hears each line it shows, as it shows it, for the next view of the same wait to carry on. */
+  onLine?: ((line: string) => void) | undefined;
 }
 
 type Stage = 'early' | 'waiting' | 'slow';
@@ -54,7 +62,15 @@ function stageAfter(waited: number): Stage {
  * It's the first of the three ways Lo waits. A view whose shape is known waits as a `Skeleton` laid
  * out as its content will be, and a control at work is `busy`.
  */
-export function Loading({ status, slow, onCancel, cancelKeys, since }: LoadingProps) {
+export function Loading({
+  status,
+  slow,
+  onCancel,
+  cancelKeys,
+  since,
+  before,
+  onLine,
+}: LoadingProps) {
   const [drawn] = useState(Date.now);
   const began = since ?? drawn;
   const [wait, setWait] = useState(() => ({ began, waited: Date.now() - began }));
@@ -78,8 +94,12 @@ export function Loading({ status, slow, onCancel, cancelKeys, since }: LoadingPr
   const late = stage === 'slow';
   const line = late && slow !== undefined ? slow : status;
   // What was already showing as this was drawn, in a wait another view drew before: it's there at
-  // once, with nothing coming in again.
-  const [found] = useState(() => ({ stage: stageAfter(Date.now() - began), line }));
+  // once, with nothing coming in again, and a line of this view's own swaps in over the last.
+  const [found] = useState(() => ({ stage: stageAfter(Date.now() - began), line: before ?? line }));
+  const shows = stage === 'early' ? undefined : line;
+  useEffect(() => {
+    if (shows !== undefined) onLine?.(shows);
+  }, [shows, onLine]);
   return (
     <div
       role="status"

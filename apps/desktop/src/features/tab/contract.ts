@@ -317,8 +317,11 @@ export type Acting = z.output<typeof acting>;
 export const header = z.strictObject({
   title: z.string(),
   state: pullState,
-  /** The author's login, or null for an account GitHub deleted. */
-  author: z.string().nullable(),
+  /**
+   * The author's login, or null for an account GitHub deleted. Nothing while it isn't known: a
+   * poll's summary, which can come before GitHub's details, doesn't name the author.
+   */
+  author: z.string().nullable().optional(),
   head: z.strictObject({ branch: z.string(), fork: z.string().nullable() }),
   base: z.strictObject({ branch: z.string() }),
 });

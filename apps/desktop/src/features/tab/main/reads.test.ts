@@ -116,7 +116,9 @@ describe('a pull request’s state', () => {
       head: { branch: 'app/feature', fork: 'someone/e2e' },
       base: { branch: 'app/base' },
     });
-    expect(withSummary(undefined, summary()).author).toBe(null);
+    // With no header before it, the author isn't known yet, which isn't a deleted account.
+    expect(withSummary(undefined, summary()).author).toBeUndefined();
+    expect(withSummary({ ...before, author: null }, summary()).author).toBe(null);
   });
 });
 
