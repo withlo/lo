@@ -133,11 +133,9 @@ test('⌘P lists the files by name, the changed ones first and marked, and Esc g
   expect(all.slice(7).every((each) => each?.endsWith('whole file'))).toBe(true);
   await expect(options(page).filter({ hasText: 'README.md' })).toContainText('whole file');
 
-  // The foot says what the keys do.
+  // The foot says what the keys do; the field shows none.
   const foot = finder(page).locator('kbd');
-  await expect(foot).toContainText(
-    mac ? ['⌘P', '⏎', '⌘⏎', 'Tab'] : ['Ctrl+P', 'Enter', 'Ctrl+Enter', 'Tab'],
-  );
+  await expect(foot).toContainText(mac ? ['⏎', '⌘⏎', 'Tab'] : ['Enter', 'Ctrl+Enter', 'Tab']);
 
   // Typing narrows the list, with the letters that matched marked.
   await page.keyboard.type('parser');
