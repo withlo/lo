@@ -112,6 +112,19 @@ test('a tooltip names a control under the pointer, with its key', async () => {
   await expect(tooltip).toHaveCount(0);
 });
 
+test('a name cut short shows whole as its tooltip, and one drawn whole shows none', async () => {
+  const page = await open();
+  const tooltip = page.locator('.tooltip');
+  await page.locator('#cut').hover();
+  await expect(tooltip).toHaveText('src/graphql/cost/estimate.ts');
+  await expect(tooltip.locator('kbd')).toHaveCount(0);
+  // Its neighbour's would come at once, with one just shown: drawn whole, it has none.
+  await page.locator('#whole').hover();
+  await expect(tooltip).toHaveCount(0);
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(done)));
+  await expect(tooltip).toHaveCount(0);
+});
+
 test('a tooltip for a control in a dialog shows over the dialog and its scrim', async () => {
   const page = await open();
   await page.locator('#open-dialog').click();

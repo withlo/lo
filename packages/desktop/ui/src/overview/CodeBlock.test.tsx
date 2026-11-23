@@ -10,7 +10,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 
 import { parseArtifact, type CodeRange } from '@lo/artifact';
 
-import { cleanUp, click, render, rerender } from '../../test/dom.ts';
+import { cleanUp, click, render, rerender, tipOf } from '../../test/dom.ts';
 import { commandsOf, defineCommands, holdRegistry, Registry } from '../commands/index.ts';
 import { TOOLTIP_DELAY, TooltipGroup } from '../Tooltip.tsx';
 import { FakeResizeObserver, resize } from '../../test/figures.ts';
@@ -352,7 +352,8 @@ describe('the banner over an overview written for an older push', () => {
     );
     expect(page.querySelector('.lo-ov-stale__sub')).toBe(sub);
     expect(sub.textContent).toBe('2 pushes since, touching 5 files.');
-    expect(sub.getAttribute('title')).toBe('2 pushes since, touching 5 files.');
+    // Cut short, it shows whole as its tooltip.
+    expect(tipOf(sub, { cut: true })).toBe('2 pushes since, touching 5 files.');
     expect(banner.querySelector('.lo-ov-stale__actions button')?.textContent).toBe(
       'Compare r3 → r5',
     );

@@ -16,7 +16,7 @@ import { reveal } from '../../src/reveal.ts';
 import { SegmentedControl } from '../../src/SegmentedControl.tsx';
 import { Switch } from '../../src/Switch.tsx';
 import { ToastStack, type StackedToast } from '../../src/Toast.tsx';
-import { TooltipGroup } from '../../src/Tooltip.tsx';
+import { Tooltip, TooltipGroup } from '../../src/Tooltip.tsx';
 
 export type Theme = 'dark' | 'light';
 
@@ -99,6 +99,20 @@ function Scene() {
           </Button>
           <Switch checked={on} onCheckedChange={setOn} aria-label="Merge when ready" />
           <Switch checked={false} onCheckedChange={() => {}} disabled aria-label="Start at login" />
+        </div>
+
+        {/* A path drawn whole, and over it one cut short in a narrow row, whose tooltip shows under it. */}
+        <div className="flex flex-col gap-4 text-small">
+          <Tooltip label="src/a.ts" cut>
+            <span id="whole" className="self-start truncate">
+              src/a.ts
+            </span>
+          </Tooltip>
+          <Tooltip label="src/graphql/cost/estimate.ts" cut>
+            <span id="cut" className="block max-w-tab-w-min min-w-0 truncate">
+              src/graphql/cost/estimate.ts
+            </span>
+          </Tooltip>
         </div>
 
         <SegmentedControl

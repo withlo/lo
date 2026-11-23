@@ -320,14 +320,15 @@ it('says it can’t check merge status once a read failed, and its panel says wh
   expect(problem?.textContent).toContain('GitHub didn’t answer.');
 });
 
-it('says in its line what a read may be missing, and on hover only that it opens the panel', async () => {
+it('says in its line what a read may be missing, and nothing of it on hover', async () => {
   views.set('t13', { kind: 'known', state: state({ partial: true }) });
   const page = draw(<MergeHeader tab={tabOf('t13')} />);
   await until(() => page.querySelector('button') !== null);
   const status = page.querySelector('button');
   expect(status?.textContent).toContain('Ready to merge');
   expect(status?.textContent).toContain('Some rules aren’t shown');
-  expect(status?.getAttribute('title')).toBe('Merge panel (m)');
+  // Its tooltip is Lo's, and names only the panel it opens: what's missing is on the line.
+  expect(status?.hasAttribute('title')).toBe(false);
 });
 
 it('says it merged as soon as the merge Lo sent merged, before its status is read again', async () => {
@@ -547,7 +548,6 @@ function chainOf(layers: readonly number[]): StackView {
     kind: 'stack',
     root: 'main',
     githubStack: false,
-    found: ['baseBranch'],
     rows: layers.map((number, index) => ({
       number,
       title: `Layer ${number}`,

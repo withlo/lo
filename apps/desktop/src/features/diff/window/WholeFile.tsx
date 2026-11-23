@@ -5,7 +5,7 @@
 // tree and the file finder, and `⌃o` goes back through the tab's history to where it was opened
 // from. Keys in it act on the cursor's line, or on the file while it shows a note.
 
-import { Button, bytes, Key, Spinner, Tag, useControl } from '@lo/ui';
+import { Button, bytes, Key, Spinner, Tag, Tooltip, useControl } from '@lo/ui';
 import { keyLabels, NO_TARGET, setScopeSource, type Target } from '@lo/ui/commands';
 import { createFileView, type FileView, type Mark } from '@lo/ui/code';
 import { useEffect, useRef, type ReactNode } from 'react';
@@ -388,10 +388,12 @@ function Bar({
         Back
         <KeyFor id="keys.back" />
       </Button>
-      <span className="lo-path lo-selectable" title={text}>
-        {text.slice(0, slash + 1)}
-        <b>{text.slice(slash + 1)}</b>
-      </span>
+      <Tooltip label={text} cut>
+        <span className="lo-path lo-selectable">
+          {text.slice(0, slash + 1)}
+          <b>{text.slice(slash + 1)}</b>
+        </span>
+      </Tooltip>
       {commit && (
         <span className="lo-num flex-none">
           at <span className="text-fg code-small">{short(commit)}</span>

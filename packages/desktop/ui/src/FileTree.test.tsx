@@ -69,10 +69,13 @@ describe('FileTree', () => {
     // A chain on one row, its names split by slashes.
     expect(html).toMatch(/src<\/span><span><span class="[^"]*">\/<\/span>api/);
     // A closed folder's count; an open one has none.
-    expect(html).toContain('title="2 changed files"');
-    expect(html).not.toContain('title="3 changed files"');
+    expect(html).toContain('aria-label="2 changed files"');
+    expect(html).not.toContain('aria-label="3 changed files"');
     expect(html).toContain('← b.ts');
-    expect(html).toContain('title="Changed since viewed"');
+    // Each mark is named, in its tooltip and to a screen reader, and none by a native title.
+    expect(html).toContain('aria-label="Changed since viewed"');
+    expect(html).toContain('aria-label="Modified"');
+    expect(html).not.toContain('title=');
     expect(html).toContain('>gen<');
     expect(html).toContain('aria-current="true"');
     expect(html).toContain('1 / 3');
@@ -120,7 +123,7 @@ describe('FileTree', () => {
     expect(a).toContain('data-open=""');
     expect(b).toContain('aria-label="1 resolved thread"');
     expect(b).not.toContain('data-open');
-    expect(c).not.toContain('role="img"');
+    expect(c).not.toContain('thread');
   });
 
   it('dims the toolbar while the files are read, saying why, and keeps it reachable', () => {

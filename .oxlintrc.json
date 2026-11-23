@@ -34,6 +34,7 @@
     "lo/no-returned-never": "error",
     "lo/no-scroll-into-view": "error",
     "lo/no-lo-subject": "error",
+    "lo/no-native-title": "error",
     "lo/no-straight-apostrophe": "error",
     "typescript/consistent-type-imports": "error",
     "typescript/no-explicit-any": "error",
@@ -81,6 +82,7 @@
       "files": ["**/e2e/**", "**/test/**", "**/*.test.*"],
       "rules": {
         "lo/no-lo-subject": "off",
+        "lo/no-native-title": "off",
         "lo/no-straight-apostrophe": "off"
       }
     }

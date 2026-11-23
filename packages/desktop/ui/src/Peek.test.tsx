@@ -287,8 +287,8 @@ describe('Peek', () => {
     expect(text).toContain('src/evilU+202Egnp.ts1');
     expect(text).toContain('TypeU+200BScript · oU+2066verload');
     expect(text).toContain('· rU+202E5');
-    const titles = [...host.querySelectorAll('[title^="U+"]')].map((mark) =>
-      mark.getAttribute('title'),
+    const titles = [...host.querySelectorAll('[role="img"][aria-label^="U+"]')].map((mark) =>
+      mark.getAttribute('aria-label'),
     );
     expect(titles).toContain('U+202E right-to-left override');
     expect(titles).toContain('U+200B zero width space');

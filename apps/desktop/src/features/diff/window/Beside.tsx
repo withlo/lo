@@ -6,7 +6,7 @@
 // so nothing on screen moves without the reader, and otherwise wait until it's drawn again. While it
 // has focus, the diff's keys act on it.
 
-import { Loading } from '@lo/ui';
+import { Loading, Tooltip } from '@lo/ui';
 import { createDiffView, type DiffFile, type DiffView, type Place } from '@lo/ui/code';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
@@ -60,16 +60,18 @@ export function Beside({ tab, path, line, end, note }: BesideProps) {
   return (
     <div className="flex h-full min-h-0 flex-col" data-lo-beside={tab.id}>
       <div className="lo-split__bar">
-        <span className="lo-path" title={path}>
-          {slash < 0 || shown !== path ? (
-            shown
-          ) : (
-            <>
-              {path.slice(0, slash + 1)}
-              <b>{path.slice(slash + 1)}</b>
-            </>
-          )}
-        </span>
+        <Tooltip label={path} cut={shown === path}>
+          <span className="lo-path">
+            {slash < 0 || shown !== path ? (
+              shown
+            ) : (
+              <>
+                {path.slice(0, slash + 1)}
+                <b>{path.slice(slash + 1)}</b>
+              </>
+            )}
+          </span>
+        </Tooltip>
         <span className="flex-none">Inline</span>
         <span className="min-w-8 flex-1" />
         {end}

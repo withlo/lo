@@ -1,7 +1,7 @@
 // The stack a pull request's tab shows, worked out from its repository's stacks, the open pull
 // request list they were found in, the state of the layers and the repository's overviews, as read
-// for the tab on screen: each row, how the layers were found, the notes, and the offer to make the
-// chain a GitHub stack. Nothing here calls Electron or GitHub.
+// for the tab on screen: each row, the notes, and the offer to make the chain a GitHub stack.
+// Nothing here calls Electron or GitHub.
 
 import {
   layerThreads,
@@ -21,22 +21,12 @@ import {
   stackOf,
   type Cycle,
   type Layer,
-  type Rule,
   type Stack,
   type Stacks,
 } from '@lo/stacks';
 
 import type { PullState } from '../../tab/contract.ts';
-import {
-  link,
-  type Checks,
-  type Found,
-  type Link,
-  type Note,
-  type Review,
-  type Row,
-  type StackView,
-} from '../contract.ts';
+import { type Checks, type Note, type Review, type Row, type StackView } from '../contract.ts';
 import { calloutText, CHECKING_MERGED, numbers } from './words.ts';
 
 /** What a tab's stack is worked out from. */
@@ -71,8 +61,6 @@ export interface ShownRow {
   readonly id: string;
   /** The layer it sat on, if it sat on one. */
   readonly parent: number | undefined;
-  /** How it was linked to the layer it sat on, if it sat on one. */
-  readonly rule: Rule | undefined;
 }
 
 /** A tab's stack, what to keep of it, and the layers to read the state of. */
@@ -146,12 +134,9 @@ function drawn(
     const layer = layerOf(forest, number);
     const pr = openPullRequest(list, number);
     const parent = layer?.parent.kind === 'pr' ? layer.parent.number : undefined;
-    // A layer that sat on the one that left sits elsewhere now: it was linked as it was shown.
-    const linked = parent === undefined && left ? shownRule(input.shown, number) : undefined;
     return {
       id: pr?.id ?? '',
       parent,
-      rule: parent === undefined ? linked : layer?.rule,
       row: {
         number,
         title: pr?.title ?? '',
@@ -218,7 +203,6 @@ function drawn(
       kind: 'stack',
       root: stack.root,
       githubStack: oneGithubStack(layers),
-      found: foundOf(placed),
       rows: placed.map(({ row }) => row),
       notes: [...githubNotes(layers), ...notesOf(input, forest, list, stack)],
       callout: left ? null : calloutOf(input, forest),
@@ -226,12 +210,6 @@ function drawn(
     shown: { rows: placed },
     ids: placed.map(({ id }) => id).filter((id) => id !== ''),
   };
-}
-
-/** How `number` was linked to the layer it sat on when the tab showed it. */
-function shownRule(shown: Shown | undefined, number: number): Rule | undefined {
-  const kept = shown?.rows.find(({ row }) => row.number === number);
-  return kept?.parent === undefined ? undefined : kept.rule;
 }
 
 /** A layer's review, checks and place in the merge queue, from its state as read. */
@@ -295,28 +273,10 @@ function threadsOf(layer: StackLayer | undefined): Row['threads'] {
   return layer ? layerThreads(layer) : null;
 }
 
-/** Whether every one of `layers` is in one GitHub stack, as the head says in place of the links. */
+/** Whether every one of `layers` is in one GitHub stack, as the head then says. */
 export function oneGithubStack(layers: readonly Pick<Layer, 'nativeStack'>[]): boolean {
   const github = new Set(layers.map((layer) => layer.nativeStack?.stack));
   return layers.length > 0 && github.size === 1 && !github.has(undefined);
-}
-
-/** The kind of link each rule makes, as the head names it. */
-const LINKS: Readonly<Record<Rule, Link>> = {
-  nativeStack: 'github',
-  baseBranch: 'baseBranch',
-  sharedCommits: 'sharedCommits',
-};
-
-/**
- * How the stack's layers were found: each kind of link that placed its rows, or nothing for a layer
- * no rule linked. A GitHub stack can't branch, so a stack that does may hold one along a path, with
- * layers off it linked by base branch or shared commits.
- */
-export function foundOf(rows: readonly Pick<ShownRow, 'rule'>[]): Found | null {
-  const used = new Set(rows.flatMap(({ rule }) => (rule === undefined ? [] : [LINKS[rule]])));
-  const found = link.options.filter((each) => used.has(each));
-  return found.length > 0 ? found : null;
 }
 
 /**

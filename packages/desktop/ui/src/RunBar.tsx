@@ -1,5 +1,6 @@
 import { Button } from './Button.tsx';
 import { Key } from './Key.tsx';
+import { Tooltip } from './Tooltip.tsx';
 
 /** A layer shown, as the bar names it. */
 export interface RunBarLayer {
@@ -87,10 +88,12 @@ export function RunBar({
         <path d="M8 2.25 13.75 5 8 7.75 2.25 5Z" />
         <path d="M2.25 8 8 10.75 13.75 8M2.25 11 8 13.75 13.75 11" />
       </svg>
-      <p className="min-w-0 truncate" role={problem ? 'alert' : undefined} title={said}>
-        <strong className="font-semibold">{problem?.title ?? name}</strong>{' '}
-        {problem ? problem.reason : `· ${which}`}
-      </p>
+      <Tooltip label={said} cut>
+        <p className="min-w-0 truncate" role={problem ? 'alert' : undefined}>
+          <strong className="font-semibold">{problem?.title ?? name}</strong>{' '}
+          {problem ? problem.reason : `· ${which}`}
+        </p>
+      </Tooltip>
       {(between !== undefined || count !== undefined) && (
         <span className="flex items-center gap-6 text-fg-muted code-small">
           {between !== undefined && (

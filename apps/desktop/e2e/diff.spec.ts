@@ -327,7 +327,7 @@ test('answers its keys: files, changes, sides, layout, whitespace and folds, Esc
   await test.step('a key held shows in the status bar, and no mode does, with Vim keys off', async () => {
     const status = page.locator('footer[aria-label="Status bar"]');
     await expect(status.locator('.mode-chip')).toHaveCount(0);
-    const held = status.locator('[title="Keys typed"]');
+    const held = status.locator('[data-lo-keys-typed]');
     await press(page, 'g');
     await expect(held).toHaveText('g');
     await press(page, 'Escape');

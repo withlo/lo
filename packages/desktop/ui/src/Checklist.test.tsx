@@ -6,7 +6,7 @@ import { createRef } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { missingRules } from '../test/classes.ts';
-import { cleanUp, click, focus, press, render, rerender } from '../test/dom.ts';
+import { cleanUp, click, focus, press, render, rerender, tipOf } from '../test/dom.ts';
 import { Avatar } from './Avatar.tsx';
 import { Button } from './Button.tsx';
 import { Checklist, checkRowId, type CheckItem, type CheckKind } from './Checklist.tsx';
@@ -180,10 +180,11 @@ describe('Checklist', () => {
     ]);
     click(links[1]!);
     expect(open).toHaveBeenCalledWith('e2e (chromium)');
-    // A sub-row's name is in code type and cut short with its whole name on hover.
+    // A sub-row's name is in code type, and cut short with its whole name as its tooltip.
     const name = failed?.querySelector('.code-small');
-    expect(name?.getAttribute('title')).toBe('test (node 20)');
     expect(name?.className).toContain('truncate');
+    expect(tipOf(name!)).toBeUndefined();
+    expect(tipOf(name!, { cut: true })).toBe('test (node 20)');
   });
 
   it('puts what is at a row’s end, such as people or a button, in a column of its own', () => {

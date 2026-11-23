@@ -88,8 +88,6 @@ function picker(
       onShortcut={onShortcut}
       compare={{ label: 'Compare r3 → r5', keys: ['⏎'] }}
       onCompare={onCompare}
-      moveKeys={['j']}
-      endKeys={['␣']}
       note="Revisions are compared once the local copy is ready."
     />,
   );
@@ -142,6 +140,10 @@ describe('RevisionPicker', () => {
     ).toBe('true');
     act(() => buttons.find((button) => button.textContent?.startsWith('Compare r3'))?.click());
     expect(onCompare).toHaveBeenCalled();
+    // The foot is the button alone: the list's own keys are in Keyboard shortcuts, not a row of
+    // hints that does nothing when clicked.
+    const foot = buttons.at(-1)?.parentElement;
+    expect(foot?.textContent).toBe('Compare r3 → r5⏎');
   });
 
   it("only uses utilities that Lo's stylesheet has", async () => {

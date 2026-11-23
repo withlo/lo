@@ -33,7 +33,6 @@ const STACK: StackView = {
   kind: 'stack',
   root: 'stack/root',
   githubStack: false,
-  found: ['baseBranch', 'sharedCommits'],
   rows: [
     row(82, []),
     row(83, [82]),

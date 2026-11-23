@@ -75,7 +75,10 @@ export interface ThreadListGroup {
   rows: readonly ThreadListRow[];
 }
 
-export interface ThreadListProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
+export interface ThreadListProps extends Omit<
+  HTMLAttributes<HTMLDivElement>,
+  'children' | 'title'
+> {
   groups: readonly ThreadListGroup[];
   /** The thread on screen, by key. */
   current?: string | undefined;

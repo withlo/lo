@@ -222,7 +222,6 @@ const EDGE = 16;
 
 /** The card over a word, under it, or over it where the window's foot leaves no room. */
 function HoverCard() {
-  useKeys();
   const shown = useStore(hovers);
   const drawn = useMemo(() => (shown ? cardOf(shown.hover) : undefined), [shown]);
   const card = useRef<HTMLDivElement>(null);
@@ -256,7 +255,6 @@ function HoverCard() {
         source={source}
         fallback={hover.fallback}
         location={hover.at && { path: hover.at.path, line: hover.at.line }}
-        keys={{ definition: keysOf('code.definition'), close: keysOf('keys.escape') }}
       />
     </div>
   );

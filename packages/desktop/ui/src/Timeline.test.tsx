@@ -7,7 +7,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { buildCss } from '../scripts/stylesheet.ts';
 import { missingRules } from '../test/classes.ts';
-import { cleanUp, click, render } from '../test/dom.ts';
+import { cleanUp, click, render, tipOf } from '../test/dom.ts';
 import { Label, labelColor } from './Label.tsx';
 import {
   Timeline,
@@ -147,13 +147,19 @@ describe('Timeline', () => {
       (each) => each.style.backgroundColor,
     );
     expect(dots).toEqual(['rgb(74, 143, 220)', 'rgb(217, 160, 63)']);
-    // Each reviewer's login and where they stand, in words as well as a mark.
-    const reviewers = [...card.querySelectorAll('ul li')].map((each) => each.getAttribute('title'));
-    expect(reviewers).toEqual([
-      'tess-okafor: Requested changes',
-      'jun-park: Review requested',
-      'mira-chen: Approved',
+    // Each reviewer's login, then where they stand as a mark, named in its tooltip.
+    const reviewers = [...card.querySelectorAll('ul li')];
+    expect(reviewers.map((each) => each.textContent)).toEqual([
+      'TOtess-okafor',
+      'JPjun-park',
+      'MCmira-chen',
     ]);
+    expect(reviewers.map((each) => tipOf(each.querySelector('svg[role="img"]')!))).toEqual([
+      'Requested changes',
+      'Review requested',
+      'Approved',
+    ]);
+    expect(card.querySelector('[title]')).toBeNull();
   });
 
   it('says a pull request with no description has none, and no Draft tag unless it is one', () => {

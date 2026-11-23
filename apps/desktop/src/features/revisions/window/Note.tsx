@@ -3,7 +3,7 @@
 // from the first frame, so the diff below never moves. It ends with what the diff puts there. While
 // the diff holds the view it drew, the note says what that view compares, and changes with it.
 
-import { Key } from '@lo/ui';
+import { Key, Tooltip } from '@lo/ui';
 import { keyLabels } from '@lo/ui/commands';
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 
@@ -58,9 +58,9 @@ export function Note({
         data-lo-diffnote={note.tone}
         className="flex min-w-0 flex-1 items-center gap-8"
       >
-        <span className="min-w-0 flex-1 truncate" title={note.text}>
-          {note.text}
-        </span>
+        <Tooltip label={note.text} cut>
+          <span className="min-w-0 flex-1 truncate">{note.text}</span>
+        </Tooltip>
         {keys && !tab.run && pull?.acting?.kind !== 'anonymous' && (
           <span className="flex flex-none items-center gap-6 text-fg-muted">
             <Key keys={keys} quiet decorative /> Compare revisions

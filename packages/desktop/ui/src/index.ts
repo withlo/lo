@@ -212,7 +212,6 @@ export {
   type StackReview,
   type StackRun,
   type StackTreeLayer,
-  type StackTreeLink,
   type StackTreeNote,
   type StackTreeProps,
 } from './StackTree.tsx';
@@ -321,7 +320,6 @@ export {
   TypeHoverWaiting,
   type HighlightCode,
   type SignatureRun,
-  type TypeHoverKeys,
   type TypeHoverProps,
   type TypeHoverWaitingProps,
 } from './TypeHover.tsx';

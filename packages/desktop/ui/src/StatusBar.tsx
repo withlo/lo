@@ -11,8 +11,10 @@ import {
 } from 'react';
 
 import { besideIn, handOffFocus } from './focus.ts';
+import { keyAria } from './Key.tsx';
 import { Popover, PopoverDescription } from './Popover.tsx';
 import { Spinner } from './Spinner.tsx';
+import { Tooltip } from './Tooltip.tsx';
 
 /**
  * The strip at the bottom of a pull request's tab: background work on the left, each item a ball
@@ -86,8 +88,15 @@ export interface StatusItemProps extends Omit<
   initialFocus?: RefObject<HTMLElement | null> | undefined;
   /** Where its details are put in the page: an element inside `.lo-app`. */
   container?: HTMLElement | null | undefined;
-  /** Its tooltip, for an item that's a command's button, as a `Popover`'s trigger may be. */
-  title?: string | undefined;
+  /**
+   * Its tooltip, for an item that's a command's button, as a `Popover`'s trigger may be: the
+   * command's label. Without one, an item whose label is cut short shows it whole as its tooltip.
+   */
+  hint?: string | undefined;
+  /** The command's key, shown in the tooltip, as the system shows each key of it. */
+  hintKeys?: readonly string[] | undefined;
+  /** That key as `aria-keyshortcuts` says it, which a screen reader hears in place of the caps. */
+  hintShortcut?: string | undefined;
   /** It's a button, for something it does, without details of its own. */
   onClick?: ButtonHTMLAttributes<HTMLButtonElement>['onClick'] | undefined;
   ref?: Ref<HTMLButtonElement> | undefined;
@@ -98,7 +107,8 @@ export interface StatusItemProps extends Omit<
  * its place in the bar from one state to the next. With `details`, a click or `⏎` opens them over
  * it: one line of state and what to do about it. With `onClick` alone it's a button, as it is as a
  * `Popover`'s `trigger`, which gives it its click, its ref and the rest of a button's props.
- * Otherwise it's text, with no tooltip: what it says is all there is.
+ * Otherwise it's text, with no tooltip: what it says is all there is. A label cut short, in a
+ * narrow window, shows whole as its tooltip.
  */
 export function StatusItem({
   ball,
@@ -109,7 +119,9 @@ export function StatusItem({
   onOpenChange,
   initialFocus,
   container,
-  title,
+  hint,
+  hintKeys,
+  hintShortcut,
   onClick,
   ref,
   ...props
@@ -145,9 +157,9 @@ export function StatusItem({
         onOpenChange={change}
         item={self}
         trigger={
-          <button type="button" {...props} ref={mine} className={STATUS_BUTTON}>
+          <ItemButton {...props} ref={mine} tip={children}>
             {content}
-          </button>
+          </ItemButton>
         }
         label={label}
         initialFocus={initialFocus}
@@ -159,22 +171,60 @@ export function StatusItem({
   }
   if (onClick === undefined) {
     return (
-      <span ref={mine} className={STATUS_ITEM}>
-        {content}
-      </span>
+      <Tooltip label={children} side="top" cut>
+        <span ref={mine} className={STATUS_ITEM}>
+          {content}
+        </span>
+      </Tooltip>
     );
   }
   return (
-    <button
-      type="button"
+    <ItemButton
       {...props}
       ref={mine}
-      className={STATUS_BUTTON}
-      title={title}
+      tip={children}
+      hint={hint}
+      hintKeys={hintKeys}
+      hintShortcut={hintShortcut}
       onClick={onClick}
     >
       {content}
-    </button>
+    </ItemButton>
+  );
+}
+
+/**
+ * An item that's a button, with its tooltip: its command's label and key where it has a `hint`,
+ * else its label whole, `tip`, while it's cut short. It takes the rest of a button's props, as from
+ * a `Popover` it's the trigger of.
+ */
+function ItemButton({
+  tip,
+  hint,
+  hintKeys,
+  hintShortcut,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  tip: ReactNode;
+  hint?: string | undefined;
+  hintKeys?: readonly string[] | undefined;
+  hintShortcut?: string | undefined;
+  ref?: Ref<HTMLButtonElement> | undefined;
+}) {
+  return (
+    <Tooltip
+      label={hint ?? tip}
+      keys={hint === undefined ? undefined : hintKeys}
+      side="top"
+      cut={hint === undefined}
+    >
+      <button
+        type="button"
+        {...(hint === undefined ? {} : keyAria(hintKeys, hintShortcut))}
+        {...props}
+        className={STATUS_BUTTON}
+      />
+    </Tooltip>
   );
 }
 
@@ -250,9 +300,16 @@ export function StatusActions({ children, flush }: { children: ReactNode; flush?
  */
 export function StatusKeys({ keys }: { keys: string }) {
   return (
-    <span className="flex-none text-fg code-key" title="Keys typed">
-      {keys}
-    </span>
+    <Tooltip label="Keys typed" side="top">
+      <span
+        className="flex-none text-fg code-key"
+        role="img"
+        aria-label={`Keys typed: ${keys}`}
+        data-lo-keys-typed=""
+      >
+        {keys}
+      </span>
+    </Tooltip>
   );
 }
 

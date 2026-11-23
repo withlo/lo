@@ -29,8 +29,8 @@ export interface MarkedSpan {
   readonly last: number;
 }
 
-/** What a ball says, on hover and to a screen reader. */
-export const BALL_TITLE = 'Explained in the overview';
+/** What a ball says, as its tooltip and to a screen reader: what a click on it does. */
+export const BALL_TIP = 'Show overview note';
 
 /**
  * The gutter beside a line, or a collapsed block: the rail, its ends where no range goes on past
@@ -65,8 +65,8 @@ export class OverviewMarker extends GutterMarker {
     if (!this.ball) return document.createTextNode('');
     const ball = document.createElement('span');
     ball.className = `lo-ov-marker${this.open ? ' is-open' : ''}`;
-    ball.title = BALL_TITLE;
-    ball.setAttribute('aria-label', BALL_TITLE);
+    ball.dataset.tip = BALL_TIP;
+    ball.setAttribute('aria-label', BALL_TIP);
     return ball;
   }
 }

@@ -4,7 +4,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { buildCss, hasRule } from '../scripts/stylesheet.ts';
-import { cleanUp, click, render } from '../test/dom.ts';
+import { cleanUp, click, render, tipOf } from '../test/dom.ts';
 import { RunBar, type RunBarProps } from './RunBar.tsx';
 
 beforeAll(() => {
@@ -55,8 +55,8 @@ describe('RunBar', () => {
     expect(host.querySelector('[role="alert"]')?.textContent).toBe(
       'Can’t show layers 3–4 as one diff Showing #4821 alone.',
     );
-    // The line may be cut, so its title says all of it.
-    expect(host.querySelector('p')?.getAttribute('title')).toBe(
+    // The line may be cut, and its tooltip then says all of it.
+    expect(tipOf(host.querySelector('p')!, { cut: true })).toBe(
       'Can’t show layers 3–4 as one diff · Showing #4821 alone.',
     );
     // Neither where its diff goes between, nor how many files.

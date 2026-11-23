@@ -57,7 +57,9 @@ const face = cva('col-start-1 row-start-1 inline-flex items-center', {
 });
 
 export interface ButtonProps
-  extends Omit<ComponentProps<'button'>, 'className'>, Omit<VariantProps<typeof button>, 'icon'> {
+  extends
+    Omit<ComponentProps<'button'>, 'className' | 'title'>,
+    Omit<VariantProps<typeof button>, 'icon'> {
   /** A square button holding an icon alone. Give it an `aria-label`. */
   icon?: boolean | undefined;
   /**

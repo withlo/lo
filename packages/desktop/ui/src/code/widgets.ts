@@ -963,7 +963,8 @@ export class ArrivedWidget extends WidgetType {
 function threadCount(total: number, unresolved: number): HTMLElement {
   const said = threadWords(total, unresolved);
   const count = element('span', `lo-count lo-num${unresolved > 0 ? ' is-open' : ''}`);
-  count.title = said;
+  // A mark, not a control: its name is its tooltip and what a screen reader reads.
+  count.dataset.tip = said;
   count.setAttribute('role', 'img');
   count.setAttribute('aria-label', said);
   const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
