@@ -91,6 +91,8 @@ in Settings.
   `toggle` says when it's checked, and a test fails on one that doesn't. The window sends the menu
   again after every command that runs and every click in the page, and a click on a check or radio
   item in the menu has main draw it again from what the window last sent, so the mark never drifts.
+- **Full screen on macOS is the system's own item,** which says "Enter Full Screen" or "Exit Full
+  Screen" for what a click does, so it shows no check. Linux's Full screen is Lo's, and checked.
 - **Linux gets the same tree,** from the menu button at the end of the tab strip, or `F10`. It acts
   on what has focus, as a menu bar does: opened from the strip by the keyboard, it acts on what had
   focus before the strip, which gets focus back.

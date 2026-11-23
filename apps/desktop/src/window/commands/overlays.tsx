@@ -307,14 +307,19 @@ function CommandPalette({
       renderItem={({ item, marks }) => (
         <>
           <span className="flex min-w-0 flex-col">
-            <span className="whitespace-nowrap">
-              <Marked text={item.label} marks={marks} />
+            {/* A search's group goes on the label's line, so it never reads as the description's. */}
+            <span className="flex min-w-0 items-baseline gap-8">
+              <span className="whitespace-nowrap">
+                <Marked text={item.label} marks={marks} />
+              </span>
+              {typed && (
+                <span className="min-w-0 truncate text-fg-muted text-small">{item.group}</span>
+              )}
             </span>
             {item.description !== undefined && (
               <span className="truncate text-fg-muted text-small">{item.description}</span>
             )}
           </span>
-          {typed && <span className="min-w-0 truncate text-fg-muted text-small">{item.group}</span>}
           <span className="ms-auto flex flex-none items-center gap-8">
             {item.keys && <Key keys={item.keys} decorative />}
           </span>

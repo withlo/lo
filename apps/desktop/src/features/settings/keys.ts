@@ -54,7 +54,7 @@ export default defineCommands(
     },
     /** Opens the settings file in the system's text editor, so the person can fix it. */
     openFile: {
-      label: 'Open settings.json',
+      label: 'Open `settings.json`',
       control: "Open settings.json at the foot of Settings' list",
       group: 'App',
       keys: ['g .'],
