@@ -1,7 +1,7 @@
 // What the window says of the overview skill: where it stands for each agent, what the button does,
 // and how an install went. Plain functions of what main reported, so each wording is tested alone.
 
-import type { Agent, SkillAgent, SkillRefusal, SkillState } from '../contract.ts';
+import type { Agent, SkillAgent, SkillRefusal, SkillResult, SkillState } from '../contract.ts';
 
 /** `names` as a list in a sentence: "A", "A and B", "A, B and C". */
 function list(names: readonly string[]): string {
@@ -111,4 +111,40 @@ export function refusalWords(why: SkillRefusal, state: SkillState): string {
 export function notSetUp(state: SkillState | undefined): string | undefined {
   if (state === undefined || state.agents.some((each) => each.setUp)) return undefined;
   return `Set up ${state.agents.map((each) => each.name).join(' or ')} first`;
+}
+
+/** What an install a command asked for says, in notes: what's done, and each agent's failure. */
+export interface InstallSaid {
+  /** "Installed overview skill", or with some failed, the agents it's installed for. */
+  readonly done: string | undefined;
+  /** For each agent it couldn't be installed for, what failed, and why. */
+  readonly failed: readonly { readonly title: string; readonly body: string }[];
+}
+
+/**
+ * How an install for agents went, from main's `results`: done, naming the agents it's for when it
+ * failed for others ("Installed overview skill for Claude Code"), and a failure for each of those,
+ * named, with why ("Couldn’t install the overview skill for Codex").
+ */
+export function installWords(results: readonly SkillResult[], state: SkillState): InstallSaid {
+  const name = (agent: Agent) => state.agents.find((each) => each.agent === agent)?.name ?? agent;
+  const installed = results.flatMap((each) =>
+    each.kind === 'installed' ? [name(each.agent)] : [],
+  );
+  const failed = results.flatMap((each) =>
+    each.kind === 'refused' && each.agent !== null
+      ? [
+          {
+            title: `Couldn’t install the overview skill for ${name(each.agent)}`,
+            body: refusalWords(each.why, state),
+          },
+        ]
+      : [],
+  );
+  if (installed.length === 0) return { done: undefined, failed };
+  const done =
+    failed.length === 0
+      ? 'Installed overview skill'
+      : `Installed overview skill for ${list(installed)}`;
+  return { done, failed };
 }

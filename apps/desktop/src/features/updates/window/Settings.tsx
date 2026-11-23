@@ -30,17 +30,37 @@ function useNow(): number {
   return now;
 }
 
-/** Whether some of `element` is inside the window, as it's drawn now. */
-function onScreen(element: HTMLElement): boolean {
+/** The nearest box around `element` that scrolls, which shows only what's inside it: Settings' page. */
+function scrollerOf(element: HTMLElement): HTMLElement | null {
+  for (let at = element.parentElement; at; at = at.parentElement) {
+    const { overflowY } = getComputedStyle(at);
+    if (overflowY === 'auto' || overflowY === 'scroll') return at;
+  }
+  return null;
+}
+
+/** Whether `element` is under a cover, as the welcome over a tab makes what it covers inert. */
+const covered = (element: HTMLElement) => element.closest('[inert]') !== null;
+
+/**
+ * Whether some of `element` shows now: inside `scroller`'s box, so not under the tab strip or the
+ * status bar, and the window's, and not under a cover.
+ */
+function inView(element: HTMLElement, scroller: HTMLElement | null): boolean {
+  if (covered(element)) return false;
   const { top, bottom } = element.getBoundingClientRect();
-  return top < window.innerHeight && bottom > 0;
+  const box = scroller?.getBoundingClientRect();
+  const from = Math.max(0, box?.top ?? 0);
+  const to = Math.min(window.innerHeight, box?.bottom ?? window.innerHeight);
+  return top < to && bottom > from;
 }
 
 /**
  * Says while `box`, the offer under the Lo row, is in view, so the toast that says the same steps
  * aside meanwhile. `drawn` is whether there's an offer to draw: one that comes while the row shows
  * is watched from then. It's said before the frame is drawn, so the toast doesn't come for a frame
- * and go. Where the window can't tell, as in a test without layout, it's in view.
+ * and go, and as the page scrolls, or a cover comes over it or goes. Where the window can't tell,
+ * as in a test without layout, it's in view.
  */
 function useSaysOffer(box: { readonly current: HTMLElement | null }, drawn: boolean): void {
   useLayoutEffect(() => {
@@ -54,14 +74,21 @@ function useSaysOffer(box: { readonly current: HTMLElement | null }, drawn: bool
       say(true);
       return () => say(false);
     }
-    say(onScreen(element));
-    const observer = new IntersectionObserver((entries) => {
-      const last = entries.at(-1);
-      if (last) say(last.isIntersecting);
-    });
-    observer.observe(element);
+    const scroller = scrollerOf(element);
+    say(inView(element, scroller));
+    const scrolled = new IntersectionObserver(
+      (entries) => {
+        const last = entries.at(-1);
+        if (last) say(last.isIntersecting && !covered(element));
+      },
+      { root: scroller },
+    );
+    scrolled.observe(element);
+    const covers = new MutationObserver(() => say(inView(element, scroller)));
+    covers.observe(document.body, { attributes: true, attributeFilter: ['inert'], subtree: true });
     return () => {
-      observer.disconnect();
+      scrolled.disconnect();
+      covers.disconnect();
       say(false);
     };
   }, [box, drawn]);

@@ -258,9 +258,11 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
     if (own && !placed && focusIsFree(own)) take();
     return setMiddle({
       focus: take,
+      // The block the reader is at, or with none, the overview itself: a file opened from here
+      // still has a way back.
       here: () => {
         const now = drawnIn(tab.id);
-        return now && hereIn(now);
+        return (now && hereIn(now)) ?? { view: 'overview', at: NO_TARGET };
       },
       escape: () => {
         if (closeCards()) return true;

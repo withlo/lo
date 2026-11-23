@@ -6,7 +6,7 @@
 
 import { KEY_EVENT, type Side, type Target } from '@lo/ui/commands';
 
-import { fail, refuse, withdraw } from '../../../window/commands/notices.tsx';
+import { refuse, withdraw } from '../../../window/commands/notices.tsx';
 import { here, registry } from '../../../window/commands/registry.ts';
 import {
   compareAgain,
@@ -103,11 +103,11 @@ export function showThread(tab: string, thread: string, when: ShowWhen): boolean
 const waiting = new Map<string, () => void>();
 
 /**
- * What the notes say while a place waits for the diff's files, and when the reader moves on before
- * they're read. One dropped as it waited too long says nothing more: the first note said why.
+ * What the note says while a place waits for the diff's files. The reader moving on before they're
+ * read isn't a failure: the note goes, and nothing more is said. One dropped as it waited too long
+ * says nothing more either: the note said why.
  */
 const WAITING = 'Reading changed files…';
-const STOPPED = 'Couldn’t read the changed files';
 
 /**
  * What the reader does that drops a place waiting for the diff's files, as they've moved on: a key,
@@ -124,8 +124,8 @@ const INPUT = [KEY_EVENT, 'pointerdown', 'wheel'] as const;
  * head, so it opens at the head. Without a line, the file's top. Where the tab was is recorded in
  * its history first, as a jump's place, and focus goes to the code. Until the diff's files are
  * known, which has the file isn't: a note says it waits for them, for up to `holdLimit()`. Past
- * that, or once the reader does anything else, it's dropped, and a note says so; a later place
- * asked for in the tab takes its place.
+ * that it's dropped; once the reader does anything else, it's dropped and the note goes with it. A
+ * later place asked for in the tab takes its place.
  */
 export function showPlace(
   tab: string,
@@ -148,12 +148,11 @@ export function showPlace(
     for (const type of INPUT) window.removeEventListener(type, moved, true);
     if (waiting.get(tab) === stop) waiting.delete(tab);
   };
-  const drop = (why?: string) => {
+  const moved = () => {
     stop();
-    if (why !== undefined) fail(why);
+    withdraw(WAITING, '');
   };
-  const moved = () => drop(STOPPED);
-  const bound = setTimeout(() => drop(), holdLimit());
+  const bound = setTimeout(stop, holdLimit());
   const listening = loader.subscribe(() => {
     if (!loader.snapshot().state?.files) return;
     stop();

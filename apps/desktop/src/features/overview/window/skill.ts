@@ -9,7 +9,7 @@ import { menuStale } from '../../../window/commands/bar.ts';
 import { announce, fail, notify, refuse } from '../../../window/commands/notices.tsx';
 import type { Agent, SkillResult, SkillState } from '../contract.ts';
 import { main, tabs } from './main.ts';
-import { agentsToInstall, notSetUp, refusalWords } from './words.ts';
+import { agentsToInstall, installWords, notSetUp, refusalWords } from './words.ts';
 
 /** The checker Lo builds in, `@withlo/overview@<version>`, as electron.vite.config.ts reads it. */
 declare const LO_OVERVIEW_CHECKER: string;
@@ -117,15 +117,16 @@ export async function installSkill(
     const done = await main().installSkill({ agents: [...(only ?? agentsToInstall(before))] });
     results = done;
     const none = done.find((each) => each.kind === 'refused' && each.agent === null);
-    const refused = done.find((each) => each.kind === 'refused');
     if (none?.kind === 'refused') {
       const why = notSetUp(before) ?? refusalWords(none.why, before);
       tell = () => refuse(why);
     } else if (from === 'command') {
-      tell =
-        refused?.kind === 'refused'
-          ? () => notify(FAILED, refusalWords(refused.why, before))
-          : () => announce('Installed overview skill');
+      // Each agent named where it went one way for some and the other for the rest.
+      const said = installWords(done, before);
+      tell = () => {
+        if (said.done !== undefined) announce(said.done);
+        for (const each of said.failed) notify(each.title, each.body);
+      };
     }
   } catch (error) {
     console.error("Lo couldn't install the overview skill:", error);

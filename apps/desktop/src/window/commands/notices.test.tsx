@@ -16,7 +16,7 @@ import {
   refuse,
   withdraw,
 } from './notices.tsx';
-import { createRegistry, registry } from './registry.ts';
+import { createRegistry, registry, setMiddle } from './registry.ts';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -364,5 +364,42 @@ describe('a command that did nothing', () => {
     expect(shown).toEqual([{ kind: 'file', file: 'a.ts' }]);
     expect(registry().enabled('keys.back', NO_TARGET)).toBe('');
     expect(notices()).toEqual([]);
+  });
+
+  it('says why when Back or Forward finds what it would show gone', () => {
+    const { history } = registry();
+    let there = false;
+    history.register('', 'diff', () => there);
+    history.record({ view: 'diff', at: { kind: 'file', file: 'a.ts' } });
+    history.record({ view: 'diff', at: { kind: 'file', file: 'b.ts' } });
+    // Their files gone, as a push removes them: Back is ready, and finds nowhere to go.
+    expect(registry().enabled('keys.back', NO_TARGET)).toBe(true);
+    act(() => {
+      registry().run('keys.back', NO_TARGET);
+    });
+    expect(notices().map((note) => note.title)).toEqual(['What you saw before this is gone']);
+    there = true;
+    act(() => {
+      registry().run('keys.back', NO_TARGET);
+      registry().run('keys.back', NO_TARGET);
+    });
+    there = false;
+    act(() => {
+      registry().run('keys.forward', NO_TARGET);
+    });
+    expect(notices().at(-1)?.title).toBe('What you went back from is gone');
+  });
+
+  it('says why when Back would go only where the cursor is now', () => {
+    const { history } = registry();
+    const at = { view: 'diff', at: { kind: 'file', file: 'a.ts' } } as const;
+    history.register('', 'diff', () => true);
+    history.record(at);
+    const stop = setMiddle({ focus: () => undefined, here: () => at });
+    act(() => {
+      registry().run('keys.back', NO_TARGET);
+    });
+    stop();
+    expect(notices().map((note) => note.title)).toEqual(['You’re already where Back goes']);
   });
 });

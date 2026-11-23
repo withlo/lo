@@ -12,7 +12,7 @@ import { keyLabels, runControl, type Target } from '@lo/ui/commands';
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 
-import { refuse } from '../../../window/commands/notices.tsx';
+import { refuse, withdraw } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
 import { diffStateOf, showThread as showInDiff, type ShowWhen } from '../../diff/window/shared.ts';
 import {
@@ -277,14 +277,19 @@ export function showThread(tab: PullTab, id: string): void {
     case 'compare': {
       // The place it leaves goes in the history first, with what's compared now.
       show(tab.id, row, 'drawn');
-      // Said as it's asked for, with the way back, and taken back if a later move calls it off.
+      // Said as it's asked for, with the way back, and taken back if a later move calls it off,
+      // or once its way back is taken, so its Back never stands for a step further back.
+      const title = `Showing ${plan.label} for this thread`;
       const asked = compareTo(tab.id, plan.compared, {
-        title: `Showing ${plan.label} for this thread`,
+        title,
         body: '',
         action: {
           label: 'Back',
           keys: keysOf('keys.back'),
-          onClick: () => runControl('keys.back'),
+          onClick: () => {
+            withdraw(title, '');
+            runControl('keys.back');
+          },
         },
       });
       if (typeof asked !== 'string') refuse(asked.why);

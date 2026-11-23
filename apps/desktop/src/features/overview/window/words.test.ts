@@ -5,6 +5,7 @@ import {
   agentsToInstall,
   installedEverywhere,
   installLabel,
+  installWords,
   notSetUp,
   refusalWords,
   standing,
@@ -217,5 +218,46 @@ describe('notSetUp', () => {
     expect(notSetUp(state())).toBeUndefined();
     expect(notSetUp(state({ setUp: false }))).toBeUndefined();
     expect(notSetUp(undefined)).toBeUndefined();
+  });
+});
+
+describe('installWords', () => {
+  const link = { kind: 'link', path: '~/.agents/skills/lo-overview' } as const;
+
+  it('says it’s done, with no agent named, where it went for each', () => {
+    expect(
+      installWords(
+        [
+          { kind: 'installed', agent: 'claude' },
+          { kind: 'installed', agent: 'codex' },
+        ],
+        state(),
+      ),
+    ).toEqual({ done: 'Installed overview skill', failed: [] });
+  });
+
+  it('names each agent where it went for some and failed for the rest, with why', () => {
+    const said = installWords(
+      [
+        { kind: 'installed', agent: 'claude' },
+        { kind: 'refused', agent: 'codex', why: link },
+      ],
+      state(),
+    );
+    expect(said.done).toBe('Installed overview skill for Claude Code');
+    expect(said.failed).toEqual([
+      {
+        title: 'Couldn’t install the overview skill for Codex',
+        body: refusalWords(link, state()),
+      },
+    ]);
+  });
+
+  it('says nothing done where it failed for each', () => {
+    const said = installWords([{ kind: 'refused', agent: 'codex', why: link }], state());
+    expect(said.done).toBeUndefined();
+    expect(said.failed.map((each) => each.title)).toEqual([
+      'Couldn’t install the overview skill for Codex',
+    ]);
   });
 });

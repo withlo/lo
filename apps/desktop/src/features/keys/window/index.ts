@@ -81,6 +81,13 @@ async function openKeymap(): Promise<void> {
   }
 }
 
+/** Why Back stays: the one place before is where the cursor is now. */
+const BACK_HERE = 'You’re already where Back goes';
+/** Why Back stays: each file or block it would show again is gone, as a push removes a file. */
+const BACK_GONE = 'What you saw before this is gone';
+/** Why Forward stays, the same way. */
+const FORWARD_GONE = 'What you went back from is gone';
+
 export default {
   commands: handlers(keys, {
     help: { run: toggleHelp },
@@ -96,17 +103,21 @@ export default {
       },
     },
     escape: { run: escapeToMiddle },
-    // With nowhere to go, Back and Forward are dimmed, which says it all: their keys do nothing,
-    // and say nothing.
+    // With no history, Back and Forward are dimmed, which says it all: their keys do nothing, and
+    // say nothing. Whether they can run follows the history alone, which the app menu hears, not
+    // where the cursor is. Run, and finding nowhere to go after all, they say why.
     back: {
       run() {
-        registry().history.back(here());
+        const { history } = registry();
+        const at = here();
+        if (!history.canBack(at)) refuse(BACK_HERE);
+        else if (!history.back(at)) refuse(BACK_GONE);
       },
-      enabled: () => registry().history.canBack(here()) || '',
+      enabled: () => registry().history.canBack() || '',
     },
     forward: {
       run() {
-        registry().history.forward();
+        if (!registry().history.forward()) refuse(FORWARD_GONE);
       },
       enabled: () => registry().history.canForward() || '',
     },

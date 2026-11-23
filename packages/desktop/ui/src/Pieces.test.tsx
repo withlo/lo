@@ -300,6 +300,31 @@ describe('a button that can’t be pressed now', () => {
     expect(host.querySelector('.tooltip')?.textContent).toContain('Merge panel');
   });
 
+  it('is dimmed with no tooltip where its reason is empty, as its dimmed label says it all', () => {
+    const run = vi.fn<() => void>();
+    const host = render(
+      <div className="lo-app">
+        <TooltipGroup>
+          <Button disabled hint="" onClick={run}>
+            Back
+          </Button>
+        </TooltipGroup>
+      </div>,
+    );
+    const button = host.querySelector('button')!;
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.hasAttribute('aria-description')).toBe(false);
+    click(button);
+    expect(run).not.toHaveBeenCalled();
+    act(() => {
+      button.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: host }));
+      button.dispatchEvent(new MouseEvent('mouseenter', { relatedTarget: host }));
+      button.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+      vi.advanceTimersByTime(TOOLTIP_DELAY);
+    });
+    expect(host.querySelector('.tooltip')).toBeNull();
+  });
+
   it('is plainly disabled with no reason to give', () => {
     const host = render(<Button disabled>Open</Button>);
     const button = host.querySelector('button')!;

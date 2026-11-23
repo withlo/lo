@@ -6,7 +6,7 @@
 // from. Keys in it act on the cursor's line, or on the file while it shows a note.
 
 import { sizeText } from '@lo/review';
-import { Button, Key, Spinner, Tag } from '@lo/ui';
+import { Button, Key, Spinner, Tag, useControl } from '@lo/ui';
 import { keyLabels, NO_TARGET, setScopeSource, type Target } from '@lo/ui/commands';
 import { createFileView, type FileView, type Mark } from '@lo/ui/code';
 import { useEffect, useRef, type ReactNode } from 'react';
@@ -370,9 +370,16 @@ function Bar({
   const header = headerOf(open);
   const text = shownPath(path.text);
   const slash = text.lastIndexOf('/');
+  // Back's control: dimmed while there's nowhere to go.
+  const back = useControl('keys.back');
   return (
     <div className="flex h-file-header-h flex-none items-center gap-8 border-b border-border-subtle bg-diff-file-header-bg px-8 whitespace-nowrap text-fg-muted text-small">
-      <Button size="sm" onClick={() => registry().run('keys.back', NO_TARGET)}>
+      <Button
+        size="sm"
+        disabled={back?.off !== undefined}
+        hint={back?.off ?? null}
+        onClick={() => registry().run('keys.back', NO_TARGET)}
+      >
         <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
           <path d="M9.5 4 5.5 8l4 4" />
         </svg>
