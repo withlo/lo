@@ -226,6 +226,8 @@ export class OverviewTab {
   async retry(): Promise<void> {
     if (this.#closed) return;
     this.#failures = 0;
+    // Asked to, a pull request read once without an account is read again.
+    this.#readOnce = false;
     this.#awaited = true;
     this.#read();
     // A read already under way reads again once it's done: settled once neither is left.

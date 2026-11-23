@@ -62,11 +62,12 @@ function skillMissing(state: SkillState | undefined): boolean {
 
 /**
  * What tab `id`'s Copy prompt button says of the last copy of its prompt, by the button or by `ya`,
- * while it's `drawn`: a copy made with none drawn says so in a toast.
+ * while it's `seen`: drawn, in the view on screen. A copy made while none is seen, as from another
+ * view, which keeps this one drawn but hidden, says so in a toast.
  */
-function usePromptCopied(id: string, drawn: boolean): CopySaid | undefined {
+function usePromptCopied(id: string, seen: boolean): CopySaid | undefined {
   const [said, say] = useCopySaid();
-  useEffect(() => (drawn ? answerCopies(id, say) : undefined), [drawn, id, say]);
+  useEffect(() => (seen ? answerCopies(id, say) : undefined), [seen, id, say]);
   return said;
 }
 
@@ -84,12 +85,21 @@ function PromptText({ prompt }: { prompt: string }) {
  * watching for one to arrive offers to look again; else, while no agent has the skill, to install
  * it.
  */
-export function NoOverview({ tab, standing }: { tab: PullTab; standing: Standing }) {
+export function NoOverview({
+  tab,
+  standing,
+  onScreen,
+}: {
+  tab: PullTab;
+  standing: Standing;
+  /** Whether the view is on screen, so its Copy prompt answers a copy. */
+  onScreen: boolean;
+}) {
   useKeys();
   const state = useTabState(states, tab.id);
   const looking = useTabState(rereading, tab.id);
   const skill = useStore(skillStore, (store) => store.state);
-  const copied = usePromptCopied(tab.id, true);
+  const copied = usePromptCopied(tab.id, onScreen);
   useEffect(() => {
     void checkSkill();
   }, []);
@@ -227,9 +237,12 @@ function latestAction(tab: PullTab): ProblemAction {
 export function CantShow({
   tab,
   standing,
+  onScreen,
 }: {
   tab: PullTab;
   standing: Extract<Standing, { kind: 'unchecked' | 'invalid' | 'tooLarge' | 'newer' }>;
+  /** Whether the view is on screen, so its Copy prompt answers a copy. */
+  onScreen: boolean;
 }) {
   useKeys();
   const now = useNow(true, 60_000);
@@ -244,7 +257,7 @@ export function CantShow({
     latest === undefined &&
     prompt !== undefined &&
     (standing.kind === 'invalid' || standing.kind === 'tooLarge');
-  const copied = usePromptCopied(tab.id, copies);
+  const copied = usePromptCopied(tab.id, copies && onScreen);
   switch (standing.kind) {
     case 'invalid':
       return (

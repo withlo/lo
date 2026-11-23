@@ -655,6 +655,26 @@ describe('watching', () => {
     expect(github.asked.length).toBe(asked);
     tab.close();
   });
+
+  it('reads a public pull request again without an account when asked, once each time', async () => {
+    const github = new FakeGithub();
+    const { tab, last } = tabWith(github.client);
+    tab.update(info({ acting: { kind: 'anonymous' } }), true, true);
+    await settle();
+    expect(last()).toMatchObject({ watching: false, found: 'none' });
+    const asked = github.asked.length;
+    github.push('rozed-dev/e2e', 5, overview('public', { 'artifact.md': artifactText(5) }));
+    const retried = tab.retry();
+    await settle();
+    await retried;
+    expect(github.asked.length).toBeGreaterThan(asked);
+    expect(last()).toMatchObject({ watching: false, found: 'commit' });
+    // Read once more, it's still not watched.
+    const again = github.asked.length;
+    await vi.advanceTimersByTimeAsync(10 * BACKGROUND_EVERY);
+    expect(github.asked.length).toBe(again);
+    tab.close();
+  });
 });
 
 describe('failing', () => {

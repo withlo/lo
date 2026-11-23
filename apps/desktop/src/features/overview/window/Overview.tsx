@@ -121,14 +121,14 @@ function Body({
     case 'checking':
       return <MiddlePlaceholder tab={tab} status="Checking overview…" />;
     case 'none':
-      return <NoOverview tab={tab} standing={standing} />;
+      return <NoOverview tab={tab} standing={standing} onScreen={onScreen} />;
     case 'failed':
       return <ReadFailed tab={tab} problem={standing.problem} />;
     case 'unchecked':
     case 'invalid':
     case 'tooLarge':
     case 'newer':
-      return <CantShow tab={tab} standing={standing} />;
+      return <CantShow tab={tab} standing={standing} onScreen={onScreen} />;
     case 'shown':
       return (
         <Shown

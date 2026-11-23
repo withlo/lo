@@ -522,12 +522,18 @@ describe('with no overview', () => {
     await act(() => copyPromptOf(tab.id, 'The prompt'));
     expect(faceOf(copy())).toBe('Couldn’t copy');
     expect(toasts().length).toBe(before);
-    // With no Copy prompt button drawn, as from another state, a toast says it.
-    view.unmount();
+    // With the view drawn but hidden, as `ya` pressed from the diff finds it, a toast says it.
+    view.shown(false);
     await act(() => copyPromptOf(tab.id, 'The prompt'));
     expect(toasts().at(-1)).toBe('Couldn’t copy the prompt');
     expect(notice()?.failed).toBe(true);
     answers.copyFails = false;
+    await act(() => copyPromptOf(tab.id, 'The prompt'));
+    expect(toasts().at(-1)).toBe('Copied prompt');
+    expect(faceOf(copy())).not.toBe('Copied');
+    // And with none drawn at all, as from another state.
+    withdraw('Copied prompt', '');
+    view.unmount();
     await act(() => copyPromptOf(tab.id, 'The prompt'));
     expect(toasts().at(-1)).toBe('Copied prompt');
   });
