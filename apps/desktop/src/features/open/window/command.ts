@@ -3,7 +3,7 @@
 
 import { createStore } from 'zustand/vanilla';
 
-import { notify } from '../../../window/commands/notices.tsx';
+import { announce, notify } from '../../../window/commands/notices.tsx';
 import type { CommandState, Installed } from '../contract.ts';
 import { main } from './main.ts';
 
@@ -12,8 +12,6 @@ export interface CommandStore {
   readonly state: CommandState | undefined;
   /** Whether it's being installed. */
   readonly installing: boolean;
-  /** What the last install said. */
-  readonly said: string | undefined;
   /**
    * What the last install a row asked for did, which the row shows; `undefined` when main couldn't
    * be asked, and `null` for nothing to show.
@@ -24,7 +22,6 @@ export interface CommandStore {
 export const commandStore = createStore<CommandStore>()(() => ({
   state: undefined,
   installing: false,
-  said: undefined,
   done: null,
 }));
 
@@ -37,20 +34,39 @@ export async function checkCommand(): Promise<void> {
   }
 }
 
-/** What an install did, in words for the person. */
-export function installedWords(done: Installed): string {
-  switch (done.kind) {
-    case 'installed':
-      return done.onPath
-        ? `Installed ${done.path}. Review a pull request from a terminal with lo <link>.`
-        : `Installed ${done.path}. Add ${done.path.slice(0, done.path.lastIndexOf('/'))} to your PATH if your shell doesn't find lo.`;
-    case 'taken':
-      return `There's already a ${done.path} that Lo didn't write, so Lo left it as it is.`;
-    case 'failed':
-      return done.message;
-    default:
-      done satisfies never;
-      return "Lo couldn't install the lo command.";
+/** What stopped an install, the title it fails under says. */
+export const NOT_INSTALLED = 'Couldn’t install the `lo` command';
+
+/** Why an install failed, with code between backticks, for one that main said didn't. */
+export function notInstalledReason(done: Exclude<Installed, { kind: 'installed' }>): string {
+  if (done.kind === 'taken') return 'Another `lo` file is already there.';
+  return done.why === 'unreadable'
+    ? 'The existing `lo` file can’t be read.'
+    : 'The `lo` file can’t be written.';
+}
+
+/** The folder of `path`, which the shell must search to find `lo` there. */
+export function folderOf(path: string): string {
+  return path.slice(0, path.lastIndexOf('/'));
+}
+
+/**
+ * Says how an install a command asked for went, in a note: there's no row in view to say it. A
+ * failure keeps what main or the system said behind Details: the path, and why it failed.
+ */
+function tell(done: Installed | undefined, details?: string): void {
+  if (done === undefined) {
+    notify(NOT_INSTALLED, '', { details, tone: 'danger' });
+  } else if (done.kind === 'installed') {
+    announce(
+      'Installed `lo` command',
+      done.onPath ? '' : `Add \`${folderOf(done.path)}\` to \`PATH\`.`,
+    );
+  } else {
+    notify(NOT_INSTALLED, notInstalledReason(done), {
+      details: done.kind === 'taken' ? done.path : done.details,
+      tone: 'danger',
+    });
   }
 }
 
@@ -63,18 +79,16 @@ export async function installCommand(
   from: 'command' | 'row' = 'command',
 ): Promise<Installed | undefined> {
   if (commandStore.getState().installing) return undefined;
-  commandStore.setState({ installing: true, said: undefined, done: null });
+  commandStore.setState({ installing: true, done: null });
   try {
     const done = await main().installCommand();
-    const said = installedWords(done);
-    commandStore.setState({ said, done: from === 'row' ? done : null });
-    if (from === 'command') notify('Install command-line tool', said);
+    commandStore.setState({ done: from === 'row' ? done : null });
+    if (from === 'command') tell(done);
     return done;
   } catch (error) {
     console.error("Lo couldn't install the lo command:", error);
-    const said = "Lo couldn't install the lo command.";
-    commandStore.setState({ said, done: from === 'row' ? undefined : null });
-    if (from === 'command') notify('Install command-line tool', said);
+    commandStore.setState({ done: from === 'row' ? undefined : null });
+    if (from === 'command') tell(undefined, error instanceof Error ? error.message : undefined);
     return undefined;
   } finally {
     commandStore.setState({ installing: false });

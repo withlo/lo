@@ -197,7 +197,11 @@ function main(given: Readonly<Record<string, (input: unknown) => unknown>> = {})
     {
       'welcome.state': () => ({ finished: false }),
       'welcome.finish': () => undefined,
-      'accounts.ghAccounts': () => ({ kind: 'missing', message: 'Lo found no gh.' }),
+      'accounts.ghAccounts': () => ({
+        kind: 'missing',
+        message: 'Lo found no gh.',
+        passedOver: false,
+      }),
       'open.command': () => ({ installed: [] }),
       'app.info': () => ({ git: { status: 'found', version: '2.54.0' }, nonce: '' }),
     },
@@ -424,7 +428,10 @@ describe('walking it', () => {
     expect(button('Back').disabled).toBe(true);
     click(button('Continue'));
     expect(stepOnScreen()).toBe('keys');
-    expect(screen()?.querySelector('[role="status"].sr-only')?.textContent).toBe('Step 2 of 4');
+    // The dots' own region, beside them.
+    expect(screen()?.querySelector('[role="img"] + [role="status"].sr-only')?.textContent).toBe(
+      'Step 2 of 4',
+    );
     click(button('Back'));
     expect(stepOnScreen()).toBe('account');
   });
@@ -759,17 +766,17 @@ describe('the set-up step', () => {
     const row = () => onScreen().querySelector('ul > li');
     click(button('Install', onScreen()));
     await settle();
-    expect(row()?.textContent).toContain('Add /opt/lo/bin to your PATH.');
+    expect(row()?.textContent).toContain('Add /opt/lo/bin to PATH.');
     const code = [...(row()?.querySelectorAll('.code-small') ?? [])].map(
       (each) => each.textContent,
     );
     expect(code).toContain('/opt/lo/bin');
-    answer = { kind: 'failed', message: 'EACCES: permission denied' };
+    answer = { kind: 'failed', why: 'unwritable', details: '/opt/lo/bin/lo\nEACCES' };
     click(button('Install', row() ?? document));
     await settle();
-    expect(row()?.querySelector('[role="alert"]')?.textContent).toBe(
-      'Couldn’t install the lo command',
-    );
+    const alert = row()?.querySelector('[role="alert"]');
+    expect(alert?.querySelector('p')?.textContent).toBe('Couldn’t install the lo command');
+    expect(alert?.textContent).toContain('The lo file can’t be written.');
     expect(button('Try again', row() ?? document)).toBeDefined();
     expect(notices()).toEqual([]);
   });
@@ -821,23 +828,51 @@ describe('opening a pull request', () => {
     expect(welcomeStore.getState().open).toBe(false);
   });
 
-  it('says why a link didn’t open, keeps it, and stays', async () => {
+  it('says text isn’t a pull request link as the open box does, keeps it, and stays', async () => {
     await first({
-      'open.open': () => ({ kind: 'refused', message: 'That isn’t a link Lo opens.' }),
+      'open.open': () => ({ kind: 'refused', why: 'link' }),
     });
     await goTo('open');
     const field = type('owner/repo#1');
+    const region = () => field.form?.querySelector(':scope > [role="status"]');
+    expect(region()?.textContent).toBe('');
+    click(button('Open', onScreen()));
+    await settle();
+    // A warning, not a failure: the box's note, with what a link looks like.
+    expect(onScreen().querySelector('[role="alert"]')).toBeNull();
+    const note = document.getElementById(field.getAttribute('aria-describedby') ?? '');
+    expect(note?.querySelector('svg.text-warning')).not.toBeNull();
+    expect(note?.textContent).toBe(
+      'Not a pull request linkA pull request link looks like https://github.com/owner/repo/pull/123.',
+    );
+    // Said by a region that was there before it, so a screen reader reads it as it comes.
+    expect(region()?.textContent).toBe(
+      'Not a pull request link. A pull request link looks like https://github.com/owner/repo/pull/123.',
+    );
+    expect(note?.querySelector('.code-small')?.textContent).toBe(
+      'https://github.com/owner/repo/pull/123',
+    );
+    expect(field.getAttribute('aria-invalid')).not.toBe('true');
+    expect(field.value).toBe('owner/repo#1');
+    expect(stepOnScreen()).toBe('open');
+    // Changing the text takes the note away.
+    type('owner/repo#12');
+    expect(onScreen().textContent).not.toContain('Not a pull request link');
+  });
+
+  it('says why a link that is one didn’t open, and stays', async () => {
+    await first({
+      'open.open': () => ({ kind: 'refused', why: 'cameBack' }),
+    });
+    await goTo('open');
+    const field = type('https://github.com/rozed-dev/e2e/issues/1');
     click(button('Open', onScreen()));
     await settle();
     const alert = onScreen().querySelector('[role="alert"]');
     expect(alert?.querySelector('p')?.textContent).toBe('Couldn’t open the link');
-    expect(alert?.textContent).toContain('That isn’t a link Lo opens.');
+    expect(alert?.textContent).toContain('The browser sent it straight back.');
     expect(field.getAttribute('aria-invalid')).toBe('true');
-    expect(field.value).toBe('owner/repo#1');
     expect(stepOnScreen()).toBe('open');
-    // Changing the text takes the reason away.
-    type('owner/repo#12');
-    expect(onScreen().querySelector('[role="alert"]')).toBeNull();
   });
 
   it('makes Open the main button, with ⏎, once the field holds a link', async () => {

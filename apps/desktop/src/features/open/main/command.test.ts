@@ -133,7 +133,7 @@ describe('the lo command on macOS', () => {
     );
     const { code, stderr } = await run(path, [argument], at);
     expect(code).toBe(2);
-    expect(stderr).toContain('give it a link to a pull request');
+    expect(stderr).toContain('lo: not a pull request link.');
     expect(existsSync(join(at, 'pwned'))).toBe(false);
     expect(open.got()).toBeUndefined();
   });
@@ -148,7 +148,7 @@ describe('the lo command on macOS', () => {
     for (const args of [[], ['https://github.com/a/b/pull/1', 'https://github.com/a/b/pull/2']]) {
       const { code, stderr } = await run(path, args, at);
       expect(code).toBe(2);
-      expect(stderr).toContain('usage: lo <link to a pull request>');
+      expect(stderr).toContain('usage: lo <pull request link>');
     }
     expect(open.got()).toBeUndefined();
   });
@@ -300,10 +300,8 @@ describe('installing the lo command', () => {
       return Promise.resolve({ kind: 'done' });
     };
     const done = await installCommand({ folders, script, elevate });
-    expect(done).toMatchObject({ kind: 'failed' });
-    expect(done.kind === 'failed' ? done.message : '').toContain(
-      `Lo couldn't read ${unreadable} to see whether it wrote it, so it left it as it is`,
-    );
+    expect(done).toMatchObject({ kind: 'failed', why: 'unreadable' });
+    expect(done.kind === 'failed' ? done.details : '').toMatch(new RegExp(`^${unreadable}\n`));
     expect(asked).toBe(false);
     chmodSync(unreadable, 0o644);
     expect(readFileSync(unreadable, 'utf8')).toContain('another lo');

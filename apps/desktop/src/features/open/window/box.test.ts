@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { installBridge } from '../../../window/test/bridge.ts';
-import type { Preview } from '../contract.ts';
+import type { Blocked, Preview } from '../contract.ts';
 import {
   boxClosed,
   boxStore,
@@ -10,6 +10,7 @@ import {
   currentPreview,
   enterAction,
   LOOK_AFTER,
+  type BoxState,
   openBox,
   submit,
   typeText,
@@ -27,22 +28,47 @@ const pull: Preview = {
   state: 'open',
 };
 
-const restricted: Preview = {
+const restricted: Extract<Preview, { kind: 'blocked' }> = {
   kind: 'blocked',
   owner: 'rozed-dev',
   repo: 'restricted',
   number: 3,
-  title: 'rozed-dev hasn’t approved Lo',
-  message: '…',
-  links: [
-    {
-      label: 'Request approval on GitHub',
-      url: 'https://github.com/settings/connections/applications/x',
-    },
-  ],
-  signIn: true,
-  openAnyway: false,
+  why: {
+    kind: 'refused',
+    cause: { kind: 'unapproved', org: 'rozed-dev' },
+    links: [
+      {
+        label: 'Request approval on GitHub',
+        url: 'https://github.com/settings/connections/applications/x',
+      },
+    ],
+    openAnyway: false,
+  },
 };
+
+/** The restricted pull request, blocked for `why`. */
+function refused(why: Blocked): Preview {
+  return { ...restricted, kind: 'blocked', why };
+}
+
+/** What the box holds once main has said `preview` of `text`. */
+function holding(text: string, preview: Preview | undefined, highlighted?: string): BoxState {
+  return {
+    ...boxStore.getState(),
+    text,
+    preview,
+    lookedAt: preview === undefined ? undefined : text,
+    highlighted,
+  };
+}
+
+const web = (secure: boolean): Preview => ({
+  kind: 'web',
+  url: E2E,
+  github: true,
+  page: 'issue',
+  secure,
+});
 
 /** What the window's bridge answers, which each test sets: the feature's client keeps one bridge. */
 const answers: Record<string, (input: unknown) => unknown> = {};
@@ -124,22 +150,68 @@ describe('the open box', () => {
   });
 
   it('says what ⏎ does for what’s in it', () => {
-    expect(enterAction(undefined, '')).toBeUndefined();
-    expect(enterAction(undefined, E2E)).toBe('Open');
-    expect(enterAction(pull, E2E)).toBe('Open');
+    const ask: Preview = { ...pull, as: { kind: 'ask', logins: ['a', 'b'], remember: 'owner' } };
+    expect(enterAction(holding('', undefined))).toBeUndefined();
+    expect(enterAction(holding(E2E, undefined))).toBe('Open');
+    expect(enterAction(holding(E2E, pull))).toBe('Open');
+    expect(enterAction(holding(E2E, ask))).toBe('Open as a');
+    expect(enterAction(holding(E2E, ask, 'b'))).toBe('Open as b');
+    // A login highlighted for an earlier link that this one doesn't offer isn't who it opens as.
+    expect(enterAction(holding(E2E, ask, 'c'))).toBe('Open as a');
+    expect(enterAction(holding(E2E, web(true)))).toBe('Open on GitHub');
     expect(
-      enterAction({ ...pull, as: { kind: 'ask', logins: ['a', 'b'], remember: 'owner' } }, E2E),
-    ).toBe('Open as the account chosen');
-    expect(enterAction({ kind: 'web', url: E2E, title: '', message: '', browse: true }, E2E)).toBe(
-      'Open in the browser',
+      enterAction(holding(E2E, { kind: 'web', url: E2E, github: false, page: null, secure: true })),
+    ).toBe('Open in browser');
+    expect(enterAction(holding(E2E, web(false)))).toBe('Copy link');
+    expect(enterAction(holding('x', { kind: 'invalid', why: 'link' }))).toBeUndefined();
+    expect(enterAction(holding(E2E, restricted))).toBe('Request approval on GitHub');
+    const unapproved = { kind: 'unapproved', org: 'rozed-dev' } as const;
+    expect(
+      enterAction(
+        holding(E2E, refused({ kind: 'refused', cause: unapproved, links: [], openAnyway: true })),
+      ),
+    ).toBe('Open anyway');
+    expect(
+      enterAction(
+        holding(
+          E2E,
+          refused({
+            kind: 'refused',
+            cause: { kind: 'signedOut', login: 'rozed-bot' },
+            links: [],
+            openAnyway: false,
+          }),
+        ),
+      ),
+    ).toBe('Sign in again');
+    expect(
+      enterAction(
+        holding(
+          E2E,
+          refused({
+            kind: 'refused',
+            cause: { kind: 'unreadable', login: 'rozed-bot' },
+            links: [],
+            openAnyway: false,
+          }),
+        ),
+      ),
+    ).toBe('Try again');
+    expect(enterAction(holding(E2E, refused({ kind: 'hidden', signedIn: false })))).toBe(
+      'Sign in with GitHub…',
     );
-    expect(enterAction({ kind: 'web', url: E2E, title: '', message: '', browse: false }, E2E)).toBe(
-      'Copy the link',
+    expect(enterAction(holding(E2E, refused({ kind: 'missing' })))).toBeUndefined();
+    // GitHub's rate limit holds opening anyway too: nothing to press.
+    const limit = { kind: 'rateLimit', resets: null } as const;
+    expect(
+      enterAction(
+        holding(E2E, refused({ kind: 'refused', cause: limit, links: [], openAnyway: true })),
+      ),
+    ).toBeUndefined();
+    expect(enterAction(holding(E2E, refused({ kind: 'unchecked', cause: limit })))).toBeUndefined();
+    expect(enterAction({ ...holding(E2E, pull), error: { title: 'x', retry: true } })).toBe(
+      'Try again',
     );
-    expect(enterAction({ kind: 'invalid', message: '' }, 'x')).toBeUndefined();
-    expect(enterAction(restricted, E2E)).toBe('Request approval on GitHub');
-    expect(enterAction({ ...restricted, links: [], openAnyway: true }, E2E)).toBe('Open anyway');
-    expect(enterAction({ ...restricted, links: [] }, E2E)).toBe('Add an account');
   });
 
   it('opens GitHub’s page for asking an organization to approve Lo on ⏎, and nothing else', async () => {
@@ -158,10 +230,32 @@ describe('the open box', () => {
     expect(bridge.calls.some(([channel]) => channel === 'open.open')).toBe(false);
   });
 
+  it('looks a link up again on ⏎ when its account’s sign-in couldn’t be read', async () => {
+    const unreadable = refused({
+      kind: 'refused',
+      cause: { kind: 'unreadable', login: 'rozed-bot' },
+      links: [],
+      openAnyway: false,
+    });
+    const looks: Preview[] = [unreadable, pull];
+    answering({ 'open.look': () => looks.shift() });
+    openBox(E2E);
+    await settle();
+    expect(currentPreview()).toEqual(unreadable);
+    submit();
+    await settle();
+    expect(bridge.calls).toEqual([
+      ['open.look', { text: E2E }],
+      ['open.look', { text: E2E }],
+    ]);
+    expect(currentPreview()).toEqual(pull);
+    expect(boxStore.getState().open).toBe(true);
+  });
+
   it('copies a plain http link on ⏎, and hands it to nothing', async () => {
     const insecure = 'http://example.com/x';
     answering({
-      'open.look': () => ({ kind: 'web', url: insecure, title: '', message: '', browse: false }),
+      'open.look': () => ({ kind: 'web', url: insecure, github: false, page: null, secure: false }),
       'tab.copy': () => undefined,
     });
     openBox(insecure);
@@ -189,13 +283,16 @@ describe('the open box', () => {
     expect(boxStore.getState().open).toBe(false);
 
     answering({
-      'open.look': () => ({ kind: 'web', url: E2E, title: '', message: '', browse: true }),
-      'open.open': () => ({ kind: 'refused', message: 'It came straight back.' }),
+      'open.look': () => web(true),
+      'open.open': () => ({ kind: 'refused', why: 'cameBack' }),
     });
     openBox('https://github.com/rozed-dev/e2e/issues/1');
     await settle();
     submit();
     await settle();
-    expect(boxStore.getState()).toMatchObject({ open: true, error: 'It came straight back.' });
+    expect(boxStore.getState()).toMatchObject({
+      open: true,
+      error: { title: 'Couldn’t open the link', reason: 'The browser sent it straight back.' },
+    });
   });
 });

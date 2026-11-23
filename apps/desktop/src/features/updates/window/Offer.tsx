@@ -8,28 +8,21 @@
 // for what was there before, and so is a key press in the moment after focus comes into the toast,
 // since the key that took it there may still be down: a key held down repeats, and a repeat never
 // presses a button. When a toast goes while one of its buttons has focus, as it does on pressing
-// Install or Later, focus goes back to the middle of the window, rather than to nowhere.
+// Update or Hide, focus goes back to the middle of the window, rather than to nowhere.
 
-import { Button, Meter, Spinner, Toast } from '@lo/ui';
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type KeyboardEvent as KeyEvent,
-  type ReactNode,
-} from 'react';
+import { Button, CopyButton, Meter, Problem, Spinner, Toast, useCopy } from '@lo/ui';
+import { useLayoutEffect, useRef, type KeyboardEvent as KeyEvent, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
 import { focusMiddle } from '../../../window/commands/registry.ts';
 import { BREW_UPGRADE, type UpdateState } from '../contract.ts';
-import { copyBrewCommand, install, later, move, openPage, restart } from './actions.ts';
+import { install, later, move, openPage, restart } from './actions.ts';
 import { updatesStore } from './store.ts';
-import { progressText } from './words.ts';
+import { downloadingText, failureReason, failureWay } from './words.ts';
 
 type Offered = Extract<UpdateState, { status: 'available' }>;
 
-/** "Lo 0.2.0 is out": an arrow up in a ring, as the design draws a release arriving. */
+/** "Lo 0.2.0 is available": an arrow up in a ring, as the design draws an update arriving. */
 const OUT = (
   <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
     <circle cx="8" cy="8" r="6.25" />
@@ -131,36 +124,41 @@ function wrap(event: KeyEvent, box: HTMLElement | null): void {
   (event.shiftKey ? last : first).focus();
 }
 
-/** How long "Copied" stays on the button, in ms. */
-export const COPIED_TIME = 2000;
-
-/** The command that updates Lo through Homebrew, with the button that copies it. */
+/**
+ * The command that updates Lo through Homebrew, with the button that copies it, which answers on
+ * itself: "Copied", or "Couldn’t copy".
+ */
 function BrewCommand() {
-  const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    if (!copied) return undefined;
-    const timer = setTimeout(() => setCopied(false), COPIED_TIME);
-    return () => clearTimeout(timer);
-  }, [copied]);
+  const copy = useCopy();
   return (
     <div className="mt-8 flex items-center gap-8 rounded-sm bg-bg-well py-6 ps-8 pe-6 text-fg inset-ring inset-ring-border">
       <code className="min-w-0 flex-1 break-all code-small select-text">{BREW_UPGRADE}</code>
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => {
-          void copyBrewCommand().then(setCopied);
-        }}
-      >
-        {copied ? 'Copied' : 'Copy'}
-      </Button>
+      <CopyButton size="sm" onCopy={() => copy(BREW_UPGRADE)} />
+    </div>
+  );
+}
+
+/**
+ * Why the last download of the update on offer failed, said on the offer, whose button then tries
+ * again where that can help.
+ */
+function DownloadFailed({ offer }: { offer: Offered }) {
+  if (offer.failed === undefined) return null;
+  return (
+    <div className="mt-8">
+      <Problem
+        title={`Couldn’t download Lo ${offer.version}`}
+        reason={failureReason(offer.failed.why)}
+        details={offer.failed.details}
+      />
     </div>
   );
 }
 
 /** A newer Lo, on offer, as this copy takes it: the buttons are what it can do about it. */
 function Available({ offer }: { offer: Offered }) {
-  const title = `Lo ${offer.version} is out`;
+  const title = `Lo ${offer.version} is available`;
+  const line = offer.line === '' ? undefined : offer.line;
   const whatsNew = (
     <Button size="sm" onClick={() => void openPage(offer.page)}>
       What’s new
@@ -168,28 +166,33 @@ function Available({ offer }: { offer: Offered }) {
   );
   const hide = (
     <Button variant="ghost" size="sm" onClick={() => void later()}>
-      Later
+      Hide
     </Button>
   );
   switch (offer.how) {
-    case 'install':
+    case 'install': {
+      const failed = offer.failed;
+      const again = failed !== undefined && failureWay(failed.why) === 'again';
       return (
         <Toast
           tone="info"
           icon={OUT}
           title={title}
-          body={offer.line === '' ? undefined : offer.line}
+          body={failed === undefined ? line : <DownloadFailed offer={offer} />}
           actions={
             <>
-              <Button variant="primary" size="sm" onClick={() => void install()}>
-                Install
-              </Button>
+              {(failed === undefined || again) && (
+                <Button variant="primary" size="sm" onClick={() => void install()}>
+                  {again ? 'Try again' : 'Update'}
+                </Button>
+              )}
               {whatsNew}
               {hide}
             </>
           }
         />
       );
+    }
     case 'brew':
       return (
         <Toast
@@ -198,7 +201,7 @@ function Available({ offer }: { offer: Offered }) {
           title={title}
           body={
             <>
-              You installed Lo with Homebrew, so update it there:
+              This copy of Lo updates with Homebrew.
               <BrewCommand />
             </>
           }
@@ -216,11 +219,11 @@ function Available({ offer }: { offer: Offered }) {
           tone="info"
           icon={OUT}
           title={title}
-          body="Lo can’t update itself from where it is. Move it to Applications, and it updates from there."
+          body="Updates need Lo in Applications."
           actions={
             <>
               <Button variant="primary" size="sm" onClick={() => void move()}>
-                Move to Applications
+                Move Lo to Applications
               </Button>
               {hide}
             </>
@@ -233,11 +236,11 @@ function Available({ offer }: { offer: Offered }) {
           tone="info"
           icon={OUT}
           title={title}
-          body={offer.line === '' ? undefined : offer.line}
+          body={line}
           actions={
             <>
               <Button variant="primary" size="sm" onClick={() => void openPage(offer.page)}>
-                Download
+                Download update
               </Button>
               {hide}
             </>
@@ -272,21 +275,20 @@ export function UpdateToast({ state }: { state: UpdateState }) {
           <Toast
             tone="info"
             icon={WAITING}
-            title={`Downloading Lo ${state.version}`}
-            body={
+            title={
               // How far it has come changes as bytes do, and isn't said again each time.
-              <div className="flex items-center gap-8" aria-live="off">
-                <span className="tabular-nums">{progressText(state.received, state.total)}</span>
-                {known && (
-                  <div className="min-w-0 flex-1">
-                    <Meter
-                      value={state.received}
-                      max={state.total}
-                      label={`Download of Lo ${state.version}`}
-                    />
-                  </div>
-                )}
-              </div>
+              <span className="tabular-nums" aria-live="off">
+                {downloadingText(state.version, state.received, state.total)}
+              </span>
+            }
+            body={
+              known ? (
+                <Meter
+                  value={state.received}
+                  max={state.total}
+                  label={`Downloading Lo ${state.version}`}
+                />
+              ) : undefined
             }
           />
         </Held>
@@ -299,10 +301,9 @@ export function UpdateToast({ state }: { state: UpdateState }) {
             tone="success"
             icon={TICK}
             title={`Lo ${state.version} is ready`}
-            body="It installs when you quit, or now."
             actions={
               <Button variant="primary" size="sm" onClick={() => void restart()}>
-                Restart now
+                Restart to update
               </Button>
             }
           />

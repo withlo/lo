@@ -79,9 +79,9 @@ drafts a release, and a maintainer reads the draft and publishes it. "Releasing"
 - **Updates** come from GitHub's release hosts alone. On a Mac, Lo checks the zip it downloads
   against the SHA-512 in the release's `latest-mac.yml`, and Squirrel.Mac, which Electron's updater
   uses there, installs it only if the same team signed it as signed the running Lo. Nothing
-  downloads until you press "Install", Lo restarts only when you press "Restart now", and it never
-  installs an older version. Where Lo can't install, as on Linux, it says a newer version is out and
-  links the release's page.
+  downloads until you press "Update", Lo restarts only when you press "Restart to update", and it
+  never installs an older version. Where Lo can't install, as on Linux, it says a newer version is
+  out and links the release's page.
 
 ## Known limits
 

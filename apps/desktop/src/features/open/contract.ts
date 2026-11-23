@@ -40,16 +40,96 @@ export const opener = z.discriminatedUnion('kind', [
 export type Opener = z.output<typeof opener>;
 
 /**
+ * Why text isn't a pull request link Lo opens: it isn't a link to one, it's a `lo://` link to
+ * something else, or it's too long to be one.
+ */
+export const notPull = z.enum(['link', 'loLink', 'long']);
+export type NotPull = z.output<typeof notPull>;
+
+/**
+ * Why a link opened nothing: there was none; it isn't a pull request link Lo opens; it's a web link
+ * over plain `http`, which the window's links never hand to the browser; or the browser would send
+ * it straight back, since Lo is the default browser (`defaultBrowser`) or it just did (`cameBack`).
+ */
+export const refusal = z.enum([
+  ...notPull.options,
+  'empty',
+  'insecure',
+  'defaultBrowser',
+  'cameBack',
+]);
+export type Refusal = z.output<typeof refusal>;
+
+/**
+ * Why GitHub didn't say whether an account can see a pull request: no connection, GitHub's own
+ * error, no answer in time, its rate limit (resetting at `resets`, in milliseconds since the Unix
+ * epoch, when it said), an account signed out or whose sign-in can't be read, an organization that
+ * requires single sign-on or hasn't approved Lo, or something else. The window words it with the
+ * guide's causes (`window/explain.ts`).
+ */
+export const cause = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('offline') }),
+  z.strictObject({ kind: z.literal('github') }),
+  z.strictObject({ kind: z.literal('timeout') }),
+  z.strictObject({ kind: z.literal('rateLimit'), resets: z.number().nullable() }),
+  z.strictObject({ kind: z.literal('signedOut'), login }),
+  z.strictObject({ kind: z.literal('unreadable'), login }),
+  z.strictObject({ kind: z.literal('sso'), org: z.string() }),
+  z.strictObject({ kind: z.literal('unapproved'), org: z.string() }),
+  z.strictObject({ kind: z.literal('unknown') }),
+]);
+export type Cause = z.output<typeof cause>;
+
+/**
+ * Why the open box can't open a pull request:
+ *
+ * - `unchecked`, GitHub couldn't be asked which account can see it, for a `cause`; opening it
+ *   anyway asks again from its tab;
+ * - `missing`, the account that can see its repository finds no such pull request;
+ * - `hidden`, no account can see it, as when it doesn't exist or it's private, with whether any
+ *   account is `signedIn`;
+ * - `refused`, the accounts that might see it couldn't check it, for a `cause`, with GitHub's
+ *   `links` to fix that, and whether opening it anyway may work once GitHub answers;
+ * - `unknown`, none of these.
+ */
+export const blocked = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('unchecked'), cause }),
+  z.strictObject({ kind: z.literal('missing') }),
+  z.strictObject({ kind: z.literal('hidden'), signedIn: z.boolean() }),
+  z.strictObject({
+    kind: z.literal('refused'),
+    cause,
+    links: z.array(helpLink),
+    openAnyway: z.boolean(),
+  }),
+  z.strictObject({ kind: z.literal('unknown') }),
+]);
+export type Blocked = z.output<typeof blocked>;
+
+/** What a page of GitHub's that isn't a pull request is, where its link says. */
+export const githubPage = z.enum([
+  'issue',
+  'commit',
+  'pulls',
+  'folder',
+  'file',
+  'discussion',
+  'workflow',
+]);
+export type GithubPage = z.output<typeof githubPage>;
+
+/**
  * What the open box shows for what's in it:
  *
  * - `empty`, nothing yet;
  * - `pull`, a pull request it opens, as whom, with its title and state once GitHub has said;
- * - `blocked`, a pull request none of the accounts can open, with why: GitHub's links to fix it,
- *   whether signing in with an account might, and whether opening it anyway may work once GitHub
- *   answers, as when it couldn't be reached;
- * - `web`, a link Lo doesn't show, which goes to the browser when it's `https`, and is only copied
+ * - `blocked`, a pull request it can't open, with why, and what GitHub said, as it came;
+ * - `web`, a link Lo doesn't show: one of GitHub's pages, named where its link says what it is, or
+ *   a page elsewhere. It goes to the browser when it's `secure`, over `https`, and is only copied
  *   when it isn't;
- * - `invalid`, text that isn't a link Lo can do anything with.
+ * - `invalid`, text that isn't a pull request link Lo opens.
+ *
+ * Main says what each is, never in words: the window writes them.
  */
 export const preview = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('empty') }),
@@ -63,21 +143,17 @@ export const preview = z.discriminatedUnion('kind', [
   z.strictObject({
     kind: z.literal('blocked'),
     ...pullRequest,
-    title: z.string(),
-    message: z.string(),
-    links: z.array(helpLink),
-    signIn: z.boolean(),
-    openAnyway: z.boolean(),
+    why: blocked,
+    details: z.string().optional(),
   }),
   z.strictObject({
     kind: z.literal('web'),
     url: z.string(),
-    title: z.string(),
-    message: z.string(),
-    /** Whether `⏎` hands it to the browser, as it does an `https` link; else it copies it. */
-    browse: z.boolean(),
+    github: z.boolean(),
+    page: githubPage.nullable(),
+    secure: z.boolean(),
   }),
-  z.strictObject({ kind: z.literal('invalid'), message: z.string() }),
+  z.strictObject({ kind: z.literal('invalid'), why: notPull }),
 ]);
 export type Preview = z.output<typeof preview>;
 
@@ -97,7 +173,7 @@ export const opened = z.discriminatedUnion('kind', [
     choice: z.enum(['account', 'ask', 'unavailable', 'none']),
   }),
   z.strictObject({ kind: z.literal('browser') }),
-  z.strictObject({ kind: z.literal('refused'), message: z.string() }),
+  z.strictObject({ kind: z.literal('refused'), why: refusal }),
 ]);
 export type Opened = z.output<typeof opened>;
 
@@ -125,12 +201,18 @@ export type CommandState = z.output<typeof commandState>;
 
 /**
  * How installing the `lo` command went: installed at `path`, which the shell may not search
- * (`onPath`); not, because a `lo` Lo didn't write is there; or not, and why.
+ * (`onPath`); not, because a `lo` Lo didn't write is there; or not, because the `lo` there can't be
+ * read to tell whose it is (`unreadable`) or the new one can't be written (`unwritable`), with the
+ * path and the system's words for Details.
  */
 export const installed = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('installed'), path: z.string(), onPath: z.boolean() }),
   z.strictObject({ kind: z.literal('taken'), path: z.string() }),
-  z.strictObject({ kind: z.literal('failed'), message: z.string() }),
+  z.strictObject({
+    kind: z.literal('failed'),
+    why: z.enum(['unreadable', 'unwritable']),
+    details: z.string().optional(),
+  }),
 ]);
 export type Installed = z.output<typeof installed>;
 
@@ -164,6 +246,6 @@ export const contract = defineContract('open', {
   },
   topics: {
     /** A link from another app that Lo couldn't open, and why, for a notice. */
-    refused: z.strictObject({ message: z.string() }),
+    refused: z.strictObject({ why: refusal }),
   },
 });

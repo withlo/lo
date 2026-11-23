@@ -18,7 +18,8 @@ import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'reac
 
 import { refuse } from '../../../window/commands/notices.tsx';
 import { client } from '../../../window/ipc.ts';
-import { contract as open } from '../../open/contract.ts';
+import { contract as open, type NotPull } from '../../open/contract.ts';
+import { isNotPull, NotPullNote, notPullWords } from '../../open/window/shared.ts';
 import { openPublic } from './actions.ts';
 import { StepHeading } from './Heading.tsx';
 import { keyOf } from './labels.ts';
@@ -45,14 +46,20 @@ function PullIcon() {
 
 type Busy = 'field' | 'paste' | 'sample' | undefined;
 
-/** What went wrong opening a link, said under the field. */
-interface Failure {
-  readonly title: string;
-  /** Main's reason, where it gave one: a sentence, with code between backticks. */
-  readonly reason?: string | undefined;
-  /** What came back, as it came. */
-  readonly details?: string | undefined;
-}
+/**
+ * What went wrong opening a link, said under the field: text that isn't a pull request link, as
+ * the open box says it, or a link that didn't open.
+ */
+type Failure =
+  | { readonly kind: 'notPull'; readonly why: NotPull }
+  | {
+      readonly kind: 'failed';
+      readonly title: string;
+      /** Main's reason, where it gave one: a sentence, with code between backticks. */
+      readonly reason?: string | undefined;
+      /** What came back, as it came. */
+      readonly details?: string | undefined;
+    };
 
 const NOT_OPENED = 'Couldn’t open the link';
 
@@ -85,12 +92,17 @@ export function OpenStep({ shown }: { shown: boolean }): ReactNode {
       (refused) => {
         setBusy(undefined);
         if (refused === undefined) setText('');
-        else setFailure({ title: NOT_OPENED, reason: refused === '' ? undefined : refused });
+        else if (refused.why !== undefined && isNotPull(refused.why)) {
+          setFailure({ kind: 'notPull', why: refused.why });
+        } else {
+          const reason = refused.message === '' ? undefined : refused.message;
+          setFailure({ kind: 'failed', title: NOT_OPENED, reason });
+        }
       },
       (error: unknown) => {
         console.error("Lo couldn't open the link:", error);
         setBusy(undefined);
-        setFailure({ title: NOT_OPENED, details: wordsOf(error) });
+        setFailure({ kind: 'failed', title: NOT_OPENED, details: wordsOf(error) });
       },
     );
   };
@@ -121,7 +133,11 @@ export function OpenStep({ shown }: { shown: boolean }): ReactNode {
         (error: unknown) => {
           console.error("Lo couldn't read the clipboard:", error);
           setBusy(undefined);
-          setFailure({ title: 'Couldn’t read the clipboard', details: wordsOf(error) });
+          setFailure({
+            kind: 'failed',
+            title: 'Couldn’t read the clipboard',
+            details: wordsOf(error),
+          });
         },
       );
   };
@@ -151,7 +167,7 @@ export function OpenStep({ shown }: { shown: boolean }): ReactNode {
             aria-describedby={failure === undefined ? undefined : why}
             placeholder="https://github.com/owner/repo/pull/123"
             value={text}
-            invalid={failure !== undefined}
+            invalid={failure?.kind === 'failed'}
             onChange={(event) => {
               setText(event.target.value);
               setFailure(undefined);
@@ -173,7 +189,8 @@ export function OpenStep({ shown }: { shown: boolean }): ReactNode {
           </Button>
         </div>
         <Collapse open={failure !== undefined}>
-          {failure !== undefined && (
+          {failure?.kind === 'notPull' && <NotPullNote id={why} why={failure.why} />}
+          {failure?.kind === 'failed' && (
             <div id={why}>
               <Problem
                 title={failure.title}
@@ -183,6 +200,10 @@ export function OpenStep({ shown }: { shown: boolean }): ReactNode {
             </div>
           )}
         </Collapse>
+        {/* There all along, so the note is read as it comes; the Problem is an alert of its own. */}
+        <span role="status" className="sr-only">
+          {failure?.kind === 'notPull' ? notPullWords(failure.why) : ''}
+        </span>
       </form>
       <SetupList label="Sample pull request">
         <SetupItem icon={<PullIcon />} title={SAMPLE.title} description={SAMPLE.where}>

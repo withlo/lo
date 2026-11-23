@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { feedFor, GITHUB_FEED, UNCHECKED } from './feed.ts';
+import { feedFor, GITHUB_FEED } from './feed.ts';
 
 const local = { LO_UPDATES_FEED: 'http://127.0.0.1:4100/' };
 
@@ -30,14 +30,14 @@ describe('a packaged Lo', () => {
   });
 
   it('checks nothing without it among its resources, as a zip made from a branch', () => {
-    expect(feedFor(lo(true, false))).toEqual({ unchecked: UNCHECKED.unreleased });
+    expect(feedFor(lo(true, false))).toEqual({ unchecked: 'unreleased' });
     for (const elsewhere of [
       `${RESOURCES}/app/app-update.yml`,
       '/Applications/Lo.app/Contents/app-update.yml',
       `${RESOURCES}/dev-app-update.yml`,
     ]) {
       const place = { ...lo(true, false), exists: disk(elsewhere) };
-      expect(feedFor(place)).toEqual({ unchecked: UNCHECKED.unreleased });
+      expect(feedFor(place)).toEqual({ unchecked: 'unreleased' });
     }
   });
 
@@ -45,7 +45,7 @@ describe('a packaged Lo', () => {
     for (const LO_UPDATES_FEED of [local.LO_UPDATES_FEED, 'https://example.com/', 'nonsense']) {
       const env = { LO_UPDATES_FEED };
       expect(feedFor(lo(true, true, env))).toEqual({ feed: GITHUB_FEED });
-      expect(feedFor(lo(true, false, env))).toEqual({ unchecked: UNCHECKED.unreleased });
+      expect(feedFor(lo(true, false, env))).toEqual({ unchecked: 'unreleased' });
     }
   });
 });
@@ -53,7 +53,7 @@ describe('a packaged Lo', () => {
 describe('a build run from source', () => {
   it('checks nothing without LO_UPDATES_FEED, whatever its resources hold', () => {
     for (const env of [{}, { LO_UPDATES_FEED: '' }]) {
-      expect(feedFor(lo(false, true, env))).toEqual({ unchecked: UNCHECKED.source });
+      expect(feedFor(lo(false, true, env))).toEqual({ unchecked: 'source' });
     }
   });
 

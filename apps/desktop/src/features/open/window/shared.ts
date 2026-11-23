@@ -5,13 +5,16 @@
 import { createElement, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
-import type { CommandState, Installed, Opened } from '../contract.ts';
+import type { CommandState, Installed, NotPull, Refusal } from '../contract.ts';
 import { followLink as follow } from './actions.ts';
-import { openBox as openTheBox, openText } from './box.ts';
+import { openBox as openTheBox, openText, type OpenedHere } from './box.ts';
 import { checkCommand, commandStore, installCommand as install } from './command.ts';
 import { InstallResult as Result } from './InstallResult.tsx';
+import { NotPullNote as Note, notPullWords as wordsOf } from './Note.tsx';
+import { isNotPull as notPull } from './words.ts';
 
-export type { CommandState, Installed, Opened } from '../contract.ts';
+export type { CommandState, Installed } from '../contract.ts';
+export type { OpenedHere as Opened } from './box.ts';
 
 /** Opens the open box, with `text` in it, or else the pull request link on the clipboard, if any. */
 export function openBox(text?: string): void {
@@ -21,10 +24,34 @@ export function openBox(text?: string): void {
 /**
  * Opens `text` as the box does: a pull request in its tab, read only without signing in when it's
  * public and no account can see it; any other web link in the browser. Resolves with what it did,
- * or nothing when main couldn't be asked.
+ * a refusal with its reason in words, or nothing when main couldn't be asked.
  */
-export function openLink(text: string): Promise<Opened | undefined> {
+export function openLink(text: string): Promise<OpenedHere | undefined> {
   return openText(text);
+}
+
+/**
+ * Whether a refusal is that the text isn't a pull request link, which a field says as the open box
+ * does, with {@link NotPullNote}.
+ */
+export function isNotPull(why: Refusal): why is NotPull {
+  return notPull(why);
+}
+
+/**
+ * The open box's note for text that isn't a pull request link: a warning, with what one looks
+ * like. `id` is for the field it describes.
+ */
+export function NotPullNote(props: { why: NotPull; id?: string | undefined }): ReactNode {
+  return createElement(Note, props);
+}
+
+/**
+ * What {@link NotPullNote} says, for the live region its host keeps there all along, so a screen
+ * reader hears it as it comes.
+ */
+export function notPullWords(why: NotPull): string {
+  return wordsOf(why);
 }
 
 /**

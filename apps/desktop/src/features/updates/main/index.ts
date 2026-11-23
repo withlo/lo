@@ -56,10 +56,9 @@ const squirrel: Squirrel = {
 /** The question Lo asks before it replaces a Lo already in Applications. "Cancel" is the default. */
 const REPLACE: MessageBoxSyncOptions = {
   type: 'question',
-  message: 'Replace the Lo in Applications?',
-  detail:
-    'Applications has a Lo already. Lo moves that one to the Trash, puts this one in its place, and starts it from there.',
-  buttons: ['Replace', 'Cancel'],
+  message: 'Replace Lo in Applications?',
+  detail: 'The copy in Applications moves to the Trash. This one takes its place and restarts.',
+  buttons: ['Replace Lo', 'Cancel'],
   defaultId: 1,
   cancelId: 1,
   noLink: true,

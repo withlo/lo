@@ -4,7 +4,6 @@
 import { useStore } from 'zustand';
 
 import { ImportView } from './Import.tsx';
-import { PickerView } from './Picker.tsx';
 import { SignInView } from './SignIn.tsx';
 import { SignOutView } from './SignOut.tsx';
 import { accountsStore } from './store.ts';
@@ -16,7 +15,6 @@ export function AccountDialogs() {
     <>
       <SignInView dialog={dialog?.kind === 'signIn' ? dialog : undefined} container={container} />
       <ImportView open={dialog?.kind === 'import'} container={container} />
-      <PickerView dialog={dialog?.kind === 'pick' ? dialog : undefined} container={container} />
       <SignOutView dialog={dialog?.kind === 'signOut' ? dialog : undefined} container={container} />
     </>
   );

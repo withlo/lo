@@ -1,80 +1,178 @@
-// The dialog for importing accounts from `gh`: what gh is signed in to, which of them to import,
-// what each one's token can't do, and how the import went. Lo copies the tokens; gh keeps its own.
+// The dialog for importing accounts from GitHub CLI: which accounts it's signed in to, which of them
+// to import, what each one's sign-in can't do, and how the import went. Lo copies the sign-ins; gh
+// keeps its own.
+//
+// Its title is the command's from start to end, and its body stays put: the list, once GitHub CLI
+// has said what it's signed in to, with what's being read or what went wrong in its place before.
+// The main button is dimmed until an account is chosen, busy while they're imported, and the foot
+// reads "Done" once they are. What stopped it shows above the foot, with GitHub CLI's own words
+// behind Details.
 
-import { Avatar, Button, Callout, Dialog, DialogSpacer, Key, Spinner, Switch } from '@lo/ui';
 import {
-  useEffect,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type ReactNode,
-  type RefObject,
-} from 'react';
+  Avatar,
+  Button,
+  Callout,
+  CopyButton,
+  Dialog,
+  Problem,
+  SetupDone,
+  Spinner,
+  Switch,
+  useCopy,
+  type DialogAction,
+  type DialogProps,
+  type DialogState,
+} from '@lo/ui';
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
 import { IpcError } from '../../../ipc/contract.ts';
+import { registry } from '../../../window/commands/registry.ts';
 import { client } from '../../../window/ipc.ts';
 import { contract as app } from '../../app/contract.ts';
-import type { GhAccount, GhListing, Imported } from '../contract.ts';
-import { closeDialog } from './dialogs.ts';
-import { useFocusOnStep } from './focus.ts';
+import type { GhAccount, GhListing, ImportFailure, Imported } from '../contract.ts';
+import { closeDialog, openSignIn } from './dialogs.ts';
 import { labels } from './labels.ts';
 import { main } from './main.ts';
 
 type Found = Extract<GhListing, { kind: 'found' }>;
+type Unlisted = Exclude<GhListing, Found>;
 
 /** Where the import is. */
 type Step =
   | { readonly kind: 'loading' }
-  /** Lo can't keep a token, so it imports nothing. */
+  /** Lo can't keep a sign-in, so it imports nothing: main's words, for Details. */
   | { readonly kind: 'noKeyring'; readonly message: string }
-  /** gh can't be found or run, or main couldn't be asked. */
-  | { readonly kind: 'unavailable'; readonly message: string }
+  /** gh can't be found or run, or main couldn't be asked: what main said, if it did. */
+  | { readonly kind: 'unlisted'; readonly listing: Unlisted | undefined }
   | { readonly kind: 'choosing'; readonly found: Found }
-  | { readonly kind: 'importing'; readonly found: Found }
-  | { readonly kind: 'done'; readonly results: readonly Imported[] };
+  | { readonly kind: 'importing'; readonly found: Found; readonly logins: readonly string[] }
+  /** Main couldn't be asked to import `logins`, for `details`. */
+  | {
+      readonly kind: 'failed';
+      readonly found: Found;
+      readonly logins: readonly string[];
+      readonly details: string;
+    }
+  | { readonly kind: 'done'; readonly found: Found; readonly results: readonly Imported[] };
 
-/** What went wrong asking main, in words to show. */
-function whyNot(error: unknown, otherwise: string): string {
-  return error instanceof IpcError ? error.message : otherwise;
-}
+/** The command that signs GitHub CLI in, to type in a terminal. */
+const GH_LOGIN = 'gh auth login';
 
 /** `n` of `what`, as a person writes it: "1 account", "2 accounts". */
 function count(n: number, what: string): string {
   return `${n} ${what}${n === 1 ? '' : 's'}`;
 }
 
-/** What gh's account can't do for want of a scope, if anything. */
-function lacking(account: GhAccount): string | undefined {
+/** What gh's account can't do for want of a scope, and whether signing in with GitHub would. */
+function lacking(account: GhAccount): { line: ReactNode; signIn: boolean } | undefined {
   if (!account.usable || account.missing.length === 0) return undefined;
   if (account.scopes.length === 0) {
-    return `${account.login}'s token has no OAuth scopes, so what Lo can do with it depends on its permissions.`;
+    return { line: `${account.login}’s sign-in doesn’t say what it can do.`, signIn: false };
   }
   if (account.missing.length === 1 && account.missing[0] === 'workflow') {
-    return `${account.login}'s token can't merge PRs that change workflows. Sign in with GitHub instead for a token that can.`;
+    return {
+      line: `${account.login}’s sign-in can’t merge pull requests that change workflows.`,
+      signIn: true,
+    };
   }
-  return `${account.login}'s token lacks ${account.missing.join(', ')}, so Lo can't do everything with it. Sign in with GitHub instead for a token that can.`;
+  return {
+    line: (
+      <>
+        {account.login}’s sign-in lacks{' '}
+        {account.missing.map((scope, index) => (
+          <span key={scope}>
+            {index > 0 && ', '}
+            <code className="code-small">{scope}</code>
+          </span>
+        ))}
+        .
+      </>
+    ),
+    signIn: true,
+  };
 }
 
 /** What to say about gh's account beside its login. */
-function notes(account: GhAccount): string {
-  const said = [account.scopes.length > 0 ? account.scopes.join(', ') : 'no scopes'];
-  if (account.active) said.push('active in gh');
-  if (!account.usable) said.push(`gh says ${account.state}`);
-  if (account.shortLived) said.push('a short-lived token gh renews');
-  if (account.inLo) said.push('in Lo already; importing replaces its token');
-  return said.join(' · ');
+function notes(account: GhAccount): ReactNode {
+  const said: ReactNode[] = [account.scopes.length > 0 ? account.scopes.join(', ') : 'no scopes'];
+  if (account.active) said.push('active in GitHub CLI');
+  if (!account.usable) {
+    said.push(
+      <>
+        status <code className="code-small">{account.state}</code>
+      </>,
+    );
+  }
+  if (account.shortLived) said.push('short-lived sign-in');
+  if (account.inLo) said.push('already signed in · importing replaces its sign-in');
+  return said.map((each, index) => (
+    <span key={index}>
+      {index > 0 && ' · '}
+      {each}
+    </span>
+  ));
+}
+
+/** Why one account wasn't imported, as an error's reason and details. */
+function failureWords(
+  login: string,
+  why: ImportFailure,
+): { reason: string | undefined; details: string | undefined } {
+  switch (why.kind) {
+    case 'notSignedIn':
+      return { reason: `GitHub CLI isn’t signed in to ${login}.`, details: undefined };
+    case 'unusable':
+      return { reason: `GitHub CLI can’t use ${login}’s sign-in.`, details: why.state };
+    case 'otherAccount':
+      return {
+        reason: `GitHub CLI’s sign-in for ${login} belongs to ${why.other}.`,
+        details: undefined,
+      };
+    case 'unknown':
+      return { reason: undefined, details: why.details };
+    default:
+      throw new Error(`An import failure Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
+  }
+}
+
+/**
+ * Whether importing the account again could go another way: it failed for want of an answer, or
+ * GitHub's error, not for what GitHub CLI holds.
+ */
+function canRetry(why: ImportFailure): boolean {
+  return why.kind === 'unknown';
+}
+
+/** Sign-ins are kept in the system's keychain, which isn't there, as this system says it. */
+function keyringReason(): string {
+  return registry().system === 'mac'
+    ? 'Sign-ins are kept in the Keychain, and it isn’t available.'
+    : 'Sign-ins are kept in the keyring, and none is running.';
+}
+
+function quit(): void {
+  client(app)
+    .quit()
+    .catch((error: unknown) => console.error("Lo couldn't quit:", error));
+}
+
+function loginOf(account: GhAccount): string {
+  return account.login;
 }
 
 /** The dialog for importing accounts from gh, open while `open` is. */
 export function ImportView({ open, container }: { open: boolean; container: HTMLElement | null }) {
   const [step, setStep] = useState<Step>({ kind: 'loading' });
   const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
-  const primary = useRef<HTMLButtonElement>(null);
+  // The accounts an import refused for a reason a second try can't change, and why: they can't be
+  // chosen again until GitHub CLI has been read again.
+  const [refused, setRefused] = useState<ReadonlyMap<string, ImportFailure>>(new Map());
   const opened = useRef(0);
 
   const load = () => {
     const turn = ++opened.current;
     setStep({ kind: 'loading' });
+    setRefused(new Map());
     const api = main();
     Promise.all([api.keyring(), api.ghAccounts()]).then(
       ([problem, listing]) => {
@@ -87,12 +185,13 @@ export function ImportView({ open, container }: { open: boolean; container: HTML
           );
           setStep({ kind: 'choosing', found: listing });
         } else {
-          setStep({ kind: 'unavailable', message: listing.message });
+          setStep({ kind: 'unlisted', listing });
         }
       },
       (error: unknown) => {
         if (turn !== opened.current) return;
-        setStep({ kind: 'unavailable', message: whyNot(error, "Lo couldn't ask gh.") });
+        console.error("Lo couldn't ask gh for its accounts:", error);
+        setStep({ kind: 'unlisted', listing: undefined });
       },
     );
   };
@@ -102,28 +201,54 @@ export function ImportView({ open, container }: { open: boolean; container: HTML
     else opened.current += 1;
   }, [open]);
 
-  useFocusOnStep(primary, step.kind);
-
-  const importChosen = () => {
-    if (step.kind !== 'choosing' || chosen.size === 0) return;
+  /** Imports `logins` of what gh `found`: importing them again only replaces their sign-ins. */
+  const importAll = (found: Found, logins: readonly string[]) => {
+    if (logins.length === 0) return;
     const turn = opened.current;
-    const logins = step.found.accounts.map(loginOf).filter((login) => chosen.has(login));
-    setStep({ kind: 'importing', found: step.found });
+    setStep({ kind: 'importing', found, logins });
     main()
-      .importGh({ logins })
+      .importGh({ logins: [...logins] })
       .then(
         (results) => {
-          if (turn === opened.current) setStep({ kind: 'done', results });
+          if (turn !== opened.current) return;
+          const failures = results.flatMap((result) => (result.ok ? [] : [result]));
+          // Those refused for good stay refused, with why, through every try after: none of them
+          // can be chosen again until GitHub CLI is read again.
+          const forGood = failures.filter(({ why }) => !canRetry(why));
+          if (forGood.length > 0) {
+            setRefused(
+              (was) => new Map([...was, ...forGood.map(({ login, why }) => [login, why] as const)]),
+            );
+            setChosen(
+              (was) => new Set([...was].filter((login) => !forGood.some((f) => f.login === login))),
+            );
+          }
+          // Nothing imported, and trying again would only hear the same: back to choosing, with
+          // those accounts out of it and why in their place.
+          if (failures.length === results.length && forGood.length === failures.length) {
+            setStep({ kind: 'choosing', found });
+            return;
+          }
+          setStep({ kind: 'done', found, results });
         },
         (error: unknown) => {
           if (turn !== opened.current) return;
           if (error instanceof IpcError && error.code === 'noKeyring') {
             setStep({ kind: 'noKeyring', message: error.message });
           } else {
-            setStep({ kind: 'unavailable', message: whyNot(error, "Lo couldn't import from gh.") });
+            const details = error instanceof IpcError ? error.message : String(error);
+            setStep({ kind: 'failed', found, logins, details });
           }
         },
       );
+  };
+
+  const importChosen = () => {
+    if (step.kind !== 'choosing') return;
+    importAll(
+      step.found,
+      step.found.accounts.map(loginOf).filter((login) => chosen.has(login)),
+    );
   };
 
   // `⏎` on a switch imports, as the main button would; a switch turns with `Space`.
@@ -136,17 +261,20 @@ export function ImportView({ open, container }: { open: boolean; container: HTML
     }
   };
 
-  const shown = view(step, chosen, setChosen, importChosen, load, primary);
+  const shown = view(step, { chosen, refused, choose: setChosen, importChosen, importAll, load });
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
         if (!next) closeDialog();
       }}
-      title={shown.title}
+      title="Import from GitHub CLI"
       description={shown.description}
-      foot={shown.foot}
-      initialFocus={primary}
+      state={shown.state}
+      action={shown.action}
+      problem={shown.problem}
+      leaveKeys={labels('esc')}
+      stays="The import can’t be stopped"
       onKeyDown={onKeyDown}
       container={container}
       testId="import-gh"
@@ -156,232 +284,246 @@ export function ImportView({ open, container }: { open: boolean; container: HTML
   );
 }
 
-function loginOf(account: GhAccount): string {
-  return account.login;
-}
-
 interface Shown {
-  title: string;
   description?: ReactNode;
   body: ReactNode;
-  foot: ReactNode;
+  state: DialogState;
+  action: DialogAction;
+  problem?: DialogProps['problem'];
 }
 
-/** A button that closes the dialog, labelled `label`, with `Esc`. */
-function cancel(label: string) {
-  return (
-    <Button onClick={closeDialog}>
-      {label}
-      <Key keys={labels('esc')} decorative />
-    </Button>
-  );
+interface Doing {
+  chosen: ReadonlySet<string>;
+  /** Accounts an import refused for good, and why. */
+  refused: ReadonlyMap<string, ImportFailure>;
+  choose: (chosen: ReadonlySet<string>) => void;
+  importChosen: () => void;
+  importAll: (found: Found, logins: readonly string[]) => void;
+  load: () => void;
 }
 
-function view(
-  step: Step,
-  chosen: ReadonlySet<string>,
-  choose: (chosen: ReadonlySet<string>) => void,
-  importChosen: () => void,
-  load: () => void,
-  primary: RefObject<HTMLButtonElement | null>,
-): Shown {
-  const title = 'Import accounts from gh';
+/** What stopped the listing, as an error: GitHub CLI isn't there to run, or it failed. */
+function unlisted(listing: Unlisted | undefined): {
+  problem: NonNullable<DialogProps['problem']>;
+  again: string;
+} {
+  if (listing?.kind === 'missing') {
+    return {
+      problem: {
+        title: listing.passedOver ? 'Can’t use GitHub CLI' : 'Can’t find GitHub CLI',
+        details: listing.message,
+      },
+      again: 'Check again',
+    };
+  }
+  return {
+    problem: { title: 'Can’t read GitHub CLI’s accounts', details: listing?.message },
+    again: 'Try again',
+  };
+}
+
+function view(step: Step, doing: Doing): Shown {
+  const { chosen, refused, choose, importChosen, importAll, load } = doing;
+  const importing: DialogAction = {
+    label: 'Import',
+    working: 'Importing…',
+    keys: labels('enter'),
+    onRun: importChosen,
+  };
   switch (step.kind) {
     case 'loading':
       return {
-        title,
         body: (
           <div role="status" className="flex items-center gap-8 text-fg-muted text-small">
             <Spinner />
-            Asking gh for its accounts…
+            Reading accounts…
           </div>
         ),
-        foot: (
-          <>
-            <DialogSpacer />
-            {cancel('Cancel')}
-          </>
-        ),
+        state: 'ask',
+        action: { ...importing, disabled: 'Reading accounts' },
       };
     case 'noKeyring':
       return {
-        title: "Lo can't keep your tokens safely",
-        body: (
-          <>
-            <Callout tone="danger" role="alert">
-              {step.message}
-            </Callout>
-            <p className="m-0 text-fg-muted text-small">
-              Without a keyring, the tokens would be kept where any program could read them, so Lo
-              imports nothing.
-            </p>
-          </>
-        ),
-        foot: (
-          <>
-            <DialogSpacer />
-            {cancel('Close')}
-            <Button
-              ref={primary}
-              variant="primary"
-              onClick={() => {
-                client(app)
-                  .quit()
-                  .catch((error: unknown) => console.error("Lo couldn't quit:", error));
-              }}
-            >
-              Quit Lo
-              <Key keys={labels('enter')} decorative className="text-on-accent" />
-            </Button>
-          </>
-        ),
+        body: null,
+        state: 'failed',
+        action: { ...importing, again: 'Quit Lo', onRun: quit },
+        problem: { title: 'Can’t import accounts', reason: keyringReason(), details: step.message },
       };
-    case 'unavailable':
-      return {
-        title,
-        body: (
-          <Callout tone="warning" role="alert">
-            {step.message}
-          </Callout>
-        ),
-        foot: (
-          <>
-            <DialogSpacer />
-            {cancel('Close')}
-            <Button ref={primary} variant="primary" onClick={load}>
-              Try again
-              <Key keys={labels('enter')} decorative className="text-on-accent" />
-            </Button>
-          </>
-        ),
-      };
+    case 'unlisted': {
+      const { problem, again } = unlisted(step.listing);
+      return { body: null, state: 'failed', action: { ...importing, again, onRun: load }, problem };
+    }
     case 'choosing':
-    case 'importing': {
-      const { found } = step;
-      const busy = step.kind === 'importing';
-      const { accounts } = found;
-      const where = `gh${found.version === null ? '' : ` ${found.version}`} at ${found.program}`;
-      if (accounts.length === 0) {
-        return {
-          title,
-          description: `${where} isn't signed in to any github.com account.`,
-          body: (
-            <p className="m-0 text-fg-muted">
-              Sign in with <span className="code-small">gh auth login</span>, then try again.
-            </p>
-          ),
-          foot: (
-            <>
-              <DialogSpacer />
-              {cancel('Close')}
-              <Button ref={primary} variant="primary" onClick={load}>
-                Try again
-                <Key keys={labels('enter')} decorative className="text-on-accent" />
-              </Button>
-            </>
-          ),
-        };
-      }
-      const warnings = accounts
-        .filter((account) => chosen.has(account.login))
-        .flatMap((account) => lacking(account) ?? []);
-      return {
-        title,
-        description: `${where} is signed in to ${count(accounts.length, 'account')}`,
-        body: (
-          <>
-            <ul className="m-0 flex list-none flex-col p-0" aria-label="gh's accounts">
-              {accounts.map((account, index) => (
-                <li
-                  key={account.login}
-                  className={
-                    index === 0
-                      ? 'flex items-center gap-12 py-8'
-                      : 'flex items-center gap-12 border-t border-border-subtle py-8'
-                  }
-                >
-                  <Avatar login={account.login} />
-                  <div className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-ui-strong">{account.login}</span>
-                    <span className="text-fg-muted text-small">github.com · {notes(account)}</span>
-                  </div>
-                  <Switch
-                    aria-label={`Import ${account.login}`}
-                    checked={chosen.has(account.login)}
-                    disabled={!account.usable || busy}
-                    onCheckedChange={(on) => {
-                      const next = new Set(chosen);
-                      if (on) next.add(account.login);
-                      else next.delete(account.login);
-                      choose(next);
-                    }}
-                  />
-                </li>
-              ))}
-            </ul>
-            {warnings.map((warning) => (
-              <Callout key={warning} tone="warning">
-                {warning}
-              </Callout>
-            ))}
-            <p className="m-0 text-fg-muted text-small">
-              Lo copies the tokens. gh stays signed in, and signing out of one doesn't sign out the
-              other.
-            </p>
-          </>
-        ),
-        foot: (
-          <>
-            {busy && (
-              <span role="status" className="flex items-center gap-8">
-                <Spinner />
-                Importing…
-              </span>
-            )}
-            <DialogSpacer />
-            {cancel('Cancel')}
-            <Button
-              ref={primary}
-              variant="primary"
-              disabled={busy || chosen.size === 0}
-              onClick={importChosen}
-            >
-              {chosen.size === 0 ? 'Import' : `Import ${count(chosen.size, 'account')}`}
-              <Key keys={labels('enter')} decorative className="text-on-accent" />
-            </Button>
-          </>
-        ),
-      };
-    }
-    case 'done': {
-      const imported = step.results.filter((result) => result.ok).map(({ login }) => login);
-      const failed = step.results.flatMap((result) => (result.ok ? [] : [result]));
-      return {
-        title: imported.length > 0 ? `Imported ${count(imported.length, 'account')}` : title,
-        body: (
-          <>
-            {imported.length > 0 && (
-              <p className="m-0">Lo is signed in to GitHub as {imported.join(', ')}.</p>
-            )}
-            {failed.map((result) => (
-              <Callout key={result.login} tone="danger" role="alert">
-                <span className="font-semibold">{result.login}</span>: {result.message}
-              </Callout>
-            ))}
-          </>
-        ),
-        foot: (
-          <>
-            <DialogSpacer />
-            <Button ref={primary} variant="primary" onClick={closeDialog}>
-              Done
-              <Key keys={labels('enter')} decorative className="text-on-accent" />
-            </Button>
-          </>
-        ),
-      };
-    }
+    case 'importing':
+    case 'failed':
+    case 'done':
+      break;
     default:
       throw new Error(`An import step Lo doesn't know: ${JSON.stringify(step satisfies never)}`);
   }
+
+  const { found } = step;
+  const { accounts } = found;
+  const version = found.version === null ? '' : ` ${found.version}`;
+  const description = `GitHub CLI${version} · ${count(accounts.length, 'account')}`;
+  if (accounts.length === 0) {
+    // What's wrong, then the command that fixes it, under its reason.
+    return {
+      description,
+      body: (
+        <>
+          <Problem title="Can’t import accounts" reason="GitHub CLI isn’t signed in." />
+          <SignInFirst />
+        </>
+      ),
+      state: 'failed',
+      action: { ...importing, again: 'Check again', onRun: load },
+    };
+  }
+
+  const settled = step.kind === 'done' || step.kind === 'failed';
+  const results = step.kind === 'done' ? step.results : [];
+  const imported = results.filter((result) => result.ok).map(({ login }) => login);
+  const failed = results.flatMap((result) => (result.ok ? [] : [result]));
+  // Why an import refused an account for good, in its place from then on, except where this
+  // import's own failure says it.
+  const refusals = accounts.flatMap((account) => {
+    const why = refused.get(account.login);
+    if (why === undefined || failed.some(({ login }) => login === account.login)) return [];
+    const { reason } = failureWords(account.login, why);
+    return reason === undefined ? [] : [{ login: account.login, line: reason }];
+  });
+  // What the accounts chosen can't do stays while they're imported, so the body holds still.
+  const warnings =
+    step.kind === 'choosing' || step.kind === 'importing'
+      ? accounts.flatMap((account) => {
+          if (!chosen.has(account.login) || refused.has(account.login)) return [];
+          const lack = lacking(account);
+          return lack === undefined ? [] : [{ login: account.login, ...lack }];
+        })
+      : [];
+  const body = (
+    <>
+      <div className="flex flex-col">
+        <ul className="m-0 flex list-none flex-col p-0" aria-label="GitHub CLI’s accounts">
+          {accounts.map((account, index) => (
+            <li
+              key={account.login}
+              className={
+                index === 0
+                  ? 'flex items-center gap-12 py-8'
+                  : 'flex items-center gap-12 border-t border-border-subtle py-8'
+              }
+            >
+              <Avatar login={account.login} />
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-ui-strong">{account.login}</span>
+                <span className="text-fg-muted text-small">github.com · {notes(account)}</span>
+              </div>
+              <Switch
+                aria-label={`Import ${account.login}`}
+                checked={chosen.has(account.login)}
+                disabled={!account.usable || refused.has(account.login) || step.kind !== 'choosing'}
+                onCheckedChange={(on) => {
+                  const next = new Set(chosen);
+                  if (on) next.add(account.login);
+                  else next.delete(account.login);
+                  choose(next);
+                }}
+              />
+            </li>
+          ))}
+        </ul>
+        {/* There through every step, so what an import refused is said as it comes, after
+          "Importing…": a region drawn with its words already in it is read by nobody. */}
+        <div role="status" className="flex flex-col gap-12 not-empty:mt-12">
+          {refusals.map((refusal) => (
+            <Callout key={refusal.login} tone="warning">
+              {refusal.line}
+            </Callout>
+          ))}
+        </div>
+      </div>
+      {warnings.map((warning) => (
+        <Callout key={warning.login} tone="warning">
+          <div className="flex items-center gap-8">
+            <span className="min-w-0 flex-1">{warning.line}</span>
+            {warning.signIn && (
+              <Button size="sm" disabled={step.kind !== 'choosing'} onClick={openSignIn}>
+                Sign in with GitHub…
+              </Button>
+            )}
+          </div>
+        </Callout>
+      ))}
+      {imported.length > 0 && <ImportedNote logins={imported} />}
+      {(imported.length > 0 || failed.length > 1) &&
+        failed.map((result) => (
+          <Problem
+            key={result.login}
+            title={`Couldn’t import ${result.login}`}
+            {...failureWords(result.login, result.why)}
+          />
+        ))}
+    </>
+  );
+
+  if (step.kind === 'failed') {
+    return {
+      description,
+      body,
+      state: 'failed',
+      action: { ...importing, onRun: () => importAll(found, step.logins) },
+      problem: { title: 'Couldn’t import the accounts', details: step.details },
+    };
+  }
+  // None imported: what failed is the problem above the foot, each account's in the body when
+  // there are several, and the main button tries them again, which only replaces a sign-in that
+  // did come through.
+  if (step.kind === 'done' && imported.length === 0) {
+    const [first] = failed;
+    // Only those a second try could change are tried again.
+    const logins = failed.filter(({ why }) => canRetry(why)).map(({ login }) => login);
+    return {
+      description,
+      body,
+      state: 'failed',
+      action: { ...importing, onRun: () => importAll(found, logins) },
+      problem:
+        failed.length === 1 && first !== undefined
+          ? { title: `Couldn’t import ${first.login}`, ...failureWords(first.login, first.why) }
+          : { title: 'Couldn’t import the accounts' },
+    };
+  }
+  return {
+    description,
+    body,
+    state: step.kind === 'importing' ? 'working' : settled ? 'done' : 'ask',
+    action: {
+      ...importing,
+      label: chosen.size === 0 ? 'Import' : `Import ${count(chosen.size, 'account')}`,
+      disabled: chosen.size === 0 ? 'Choose an account' : undefined,
+    },
+  };
+}
+
+/** Which accounts were imported, as a done fact. */
+function ImportedNote({ logins }: { logins: readonly string[] }) {
+  return (
+    <div role="status" className="flex flex-col">
+      <SetupDone>Imported {count(logins.length, 'account')}</SetupDone>
+      <span className="text-fg-muted text-small">Signed in as {logins.join(', ')}</span>
+    </div>
+  );
+}
+
+/** The command that signs GitHub CLI in, with Copy. */
+function SignInFirst() {
+  const copy = useCopy();
+  return (
+    <div className="flex items-center gap-8 rounded-md border border-border bg-bg-well py-6 ps-12 pe-6">
+      <code className="min-w-0 flex-1 code-small select-text">{GH_LOGIN}</code>
+      <CopyButton variant="ghost" size="sm" onCopy={() => copy(GH_LOGIN)} />
+    </div>
+  );
 }

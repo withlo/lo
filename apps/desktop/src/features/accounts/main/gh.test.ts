@@ -68,6 +68,7 @@ describe('finding gh', () => {
     expect(await gh.find()).toEqual({
       kind: 'missing',
       message: `Lo found gh at ${join(shared, 'gh')}, but other users can change ${shared}, so Lo won't run it.`,
+      passedOver: true,
     });
     // A gh the person named is held to the same rule.
     const named = new Gh({
