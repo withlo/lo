@@ -57,16 +57,17 @@ export function Revisions({ tab }: { tab: PullTab }) {
   const rows = picker.open ? rowsOf(view, Date.now(), marks) : [];
   const ends = picker.open ? picker.ends : undefined;
   const asked = ends && comparedOf(ends);
+  const command = control?.label ?? 'Compare revisions…';
   return (
     <>
-      {/* Its face says what's compared, so its tooltip names it, with its key. */}
-      <Tooltip label={control?.label ?? 'Compare revisions…'} keys={control?.keys}>
+      {/* Its face says what's compared; its tooltip and description name its command. */}
+      <Tooltip label={command} keys={control?.keys}>
         <button
           ref={setButton}
           type="button"
           aria-haspopup="listbox"
           aria-expanded={picker.open}
-          {...keyAria(control?.keys, control?.shortcut)}
+          {...keyAria(control?.keys, control?.shortcut, command)}
           data-lo-revisions=""
           className="inline-flex h-row-h flex-none items-center gap-6 rounded-sm border border-border ps-8 pe-6 whitespace-nowrap text-fg code-small hover:bg-hover"
           onClick={() => {

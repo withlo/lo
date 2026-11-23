@@ -74,7 +74,7 @@ export interface CheckItem {
 
 export interface ChecklistProps extends Omit<
   HTMLAttributes<HTMLUListElement>,
-  'children' | 'role' | 'aria-label' | 'aria-activedescendant'
+  'children' | 'role' | 'aria-label' | 'aria-activedescendant' | 'title'
 > {
   /** What the list is, for screen readers: "Why it can't merge". */
   label: string;

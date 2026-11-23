@@ -66,6 +66,14 @@ describe('MergeStatus', () => {
     // Its tooltip names it, with its key: Lo's, not the system's.
     expect(button?.hasAttribute('title')).toBe(false);
     expect(tipOf(button!)).toBe('Merge panelm');
+    // A screen reader hears what it opens as its description, after the verdict that names it.
+    expect(button?.getAttribute('aria-description')).toBe('Merge panel');
+    const sequence = render(
+      <MergeStatus kind="ready" verdict="Ready to merge" keys={['g', 'm']} onClick={onClick} />,
+    );
+    expect(sequence.querySelector('button')?.getAttribute('aria-description')).toBe(
+      'Merge panel, Keys g then m',
+    );
     expect(button?.querySelector('kbd')?.getAttribute('aria-hidden')).toBe('true');
     click(button!);
     expect(onClick).toHaveBeenCalledOnce();

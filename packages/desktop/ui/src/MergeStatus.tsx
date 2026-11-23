@@ -116,7 +116,7 @@ export function MergeStatus({
         type="button"
         aria-haspopup="dialog"
         aria-expanded={expanded}
-        {...keyAria(keys, undefined)}
+        {...keyAria(keys, undefined, 'Merge panel')}
         className={`${line} hover:bg-hover hover:text-fg focus-visible:shadow-ring`}
         onClick={onClick}
       >

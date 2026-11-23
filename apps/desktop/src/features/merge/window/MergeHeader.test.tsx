@@ -548,7 +548,6 @@ function chainOf(layers: readonly number[]): StackView {
     kind: 'stack',
     root: 'main',
     githubStack: false,
-    found: ['baseBranch'],
     rows: layers.map((number, index) => ({
       number,
       title: `Layer ${number}`,

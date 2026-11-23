@@ -107,7 +107,7 @@ export interface LeftEntry {
 
 export interface QueueTableProps extends Omit<
   HTMLAttributes<HTMLDivElement>,
-  'children' | 'role' | 'aria-label' | 'aria-activedescendant'
+  'children' | 'role' | 'aria-label' | 'aria-activedescendant' | 'title'
 > {
   /** What the table is, for screen readers: "Merge queue for main". */
   label: string;

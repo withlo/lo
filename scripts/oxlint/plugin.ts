@@ -302,11 +302,40 @@ function titleLiteral(node: unknown): boolean {
 }
 
 /**
+ * The name of a key in an object literal: `title` in `{ title }`, `{ title: path }` or
+ * `{ 'title': path }`.
+ */
+function keyName(node: AstNode): string | undefined {
+  if (node.type !== 'Property') return undefined;
+  const key: unknown = Reflect.get(node, 'key');
+  if (!isNode(key)) return undefined;
+  const name: unknown =
+    key.type === 'Identifier' && !Reflect.get(node, 'computed')
+      ? Reflect.get(key, 'name')
+      : key.type === 'Literal'
+        ? Reflect.get(key, 'value')
+        : undefined;
+  return typeof name === 'string' ? name : undefined;
+}
+
+/** The `title` key of `node`, when it's an object literal that has one. */
+function titleIn(node: unknown): AstNode | undefined {
+  const at = unwrapped(node);
+  if (!isNode(at) || at.type !== 'ObjectExpression') return undefined;
+  const properties: unknown = Reflect.get(at, 'properties');
+  if (!Array.isArray(properties)) return undefined;
+  return properties.find((each): each is AstNode => isNode(each) && keyName(each) === 'title');
+}
+
+/**
  * `lo/no-native-title` refuses a native tooltip: `title` on a DOM element in JSX
- * (`<span title={path}>`), set as a property (`ball.title = …`) or as an attribute
- * (`setAttribute('title', …)`), in the desktop app's source and its packages'. A component's own
- * `title`, a dialog's, a `Problem`'s or a toast's, is its text, and is left alone, and so is the
- * window's, `document.title`. A tooltip is Lo's own (`design/README.md`), and none is let through.
+ * (`<span title={path}>`, or spread on it, `<span {...{ title }}>`), set as a property
+ * (`ball.title = …`) or as an attribute (`setAttribute('title', …)`, or among the `attributes` of a
+ * CodeMirror decoration), in the desktop app's source and its packages'. A component's own `title`,
+ * a dialog's, a `Problem`'s or a toast's, is its text, and is left alone, and so is the window's,
+ * `document.title`. A shared component that hands its props on to a DOM element leaves `title` out
+ * of them, so none comes through one. A tooltip is Lo's own (`design/README.md`), and none is let
+ * through.
  */
 export const noNativeTitle = {
   meta: {
@@ -325,7 +354,13 @@ export const noNativeTitle = {
         const attributes: unknown = Reflect.get(node, 'attributes');
         if (!Array.isArray(attributes)) return;
         for (const attribute of attributes) {
-          if (!isNode(attribute) || attribute.type !== 'JSXAttribute') continue;
+          if (!isNode(attribute)) continue;
+          if (attribute.type === 'JSXSpreadAttribute') {
+            const title = titleIn(Reflect.get(attribute, 'argument'));
+            if (title) report(title);
+            continue;
+          }
+          if (attribute.type !== 'JSXAttribute') continue;
           const name: unknown = Reflect.get(attribute, 'name');
           if (
             isNode(name) &&
@@ -344,6 +379,12 @@ export const noNativeTitle = {
           if (Reflect.get(object, 'name') === 'document') return;
         }
         report(node);
+      },
+      // A CodeMirror decoration puts its `attributes` on the DOM element it draws.
+      Property(node: AstNode): void {
+        if (keyName(node) !== 'attributes') return;
+        const title = titleIn(Reflect.get(node, 'value'));
+        if (title) report(title);
       },
       CallExpression(node: AstNode): void {
         const name = memberName(Reflect.get(node, 'callee'));

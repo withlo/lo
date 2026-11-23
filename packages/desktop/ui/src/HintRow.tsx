@@ -10,7 +10,7 @@ export function useHintsSqueezed(): boolean {
   return useContext(Squeezed);
 }
 
-export interface HintRowProps extends HTMLAttributes<HTMLDivElement> {
+export interface HintRowProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title'> {
   /**
    * What it gives up after its hints' key chips, where it still doesn't fit, a step at a time, as
    * `useGiveUp` names them: the same steps from draw to draw.

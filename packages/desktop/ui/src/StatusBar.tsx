@@ -301,7 +301,12 @@ export function StatusActions({ children, flush }: { children: ReactNode; flush?
 export function StatusKeys({ keys }: { keys: string }) {
   return (
     <Tooltip label="Keys typed" side="top">
-      <span className="flex-none text-fg code-key" data-lo-keys-typed="">
+      <span
+        className="flex-none text-fg code-key"
+        role="img"
+        aria-label={`Keys typed: ${keys}`}
+        data-lo-keys-typed=""
+      >
         {keys}
       </span>
     </Tooltip>

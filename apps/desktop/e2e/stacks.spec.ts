@@ -40,7 +40,7 @@ async function open(page: Page, number: number): Promise<string> {
   return reply.value;
 }
 
-/** The stack tab `id` shows, as main has it, briefly: how it was found, and each row's marks. */
+/** The stack tab `id` shows, as main has it, briefly: its root, and each row's marks. */
 async function stackOf(page: Page, id: string): Promise<unknown> {
   const reply = await page.evaluate((tab) => window.lo.invoke('stacks.state', { id: tab }), id);
   if (!reply.ok) return reply;
@@ -48,7 +48,6 @@ async function stackOf(page: Page, id: string): Promise<unknown> {
   const stack = (reply.value as StackState | undefined)?.stack;
   if (stack?.kind !== 'stack') return stack;
   return {
-    found: stack.found,
     root: stack.root,
     rows: stack.rows.map((row) => [
       row.number,

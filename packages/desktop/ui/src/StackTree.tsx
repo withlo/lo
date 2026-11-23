@@ -87,7 +87,7 @@ export interface StackTreeNote {
   bare?: boolean | undefined;
 }
 
-export interface StackTreeProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
+export interface StackTreeProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children' | 'title'> {
   /** The layers in the order `]s` walks them: the bottom first, each branch finished in turn. */
   layers: readonly StackTreeLayer[];
   /** The branch the bottom layer sits on. */

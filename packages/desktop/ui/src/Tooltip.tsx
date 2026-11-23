@@ -1,5 +1,12 @@
 import { Tooltip as Base } from '@base-ui/react/tooltip';
-import { createContext, useContext, useRef, type ReactElement, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useRef,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 
 import { cutShort } from './cut.ts';
 import { Key } from './Key.tsx';
@@ -71,6 +78,10 @@ export interface TooltipProps {
 export function Tooltip({ label, keys, side = 'bottom', on, cut, children }: TooltipProps) {
   const container = useContext(Container);
   const trigger = useRef<HTMLElement | null>(null);
+  // One function throughout, so the ref Base UI merges it into, and the control's own, stay put.
+  const setTrigger = useCallback((element: HTMLElement | null) => {
+    trigger.current = element;
+  }, []);
   return (
     <Base.Root
       disabled={label === null}
@@ -83,13 +94,7 @@ export function Tooltip({ label, keys, side = 'bottom', on, cut, children }: Too
         }
       }}
     >
-      <Base.Trigger
-        ref={(element: HTMLElement | null) => {
-          trigger.current = element;
-        }}
-        render={children}
-        delay={TOOLTIP_DELAY}
-      />
+      <Base.Trigger ref={setTrigger} render={children} delay={TOOLTIP_DELAY} />
       <Base.Portal container={container ?? globalThis.document?.querySelector('.lo-app')}>
         <Base.Positioner side={side} sideOffset={6} collisionPadding={8} className="z-tooltip">
           <Base.Popup className="tooltip move-pop flex items-center gap-8 rounded-sm bg-bg-overlay px-8 py-4 text-fg shadow-pop text-small">

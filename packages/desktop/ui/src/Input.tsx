@@ -14,7 +14,7 @@ const input = cva(
   },
 );
 
-export interface InputProps extends Omit<ComponentProps<'input'>, 'className'> {
+export interface InputProps extends Omit<ComponentProps<'input'>, 'className' | 'title'> {
   /** For links, paths and numbers. */
   mono?: boolean | undefined;
   /** What it holds can't be used. Say why under the field, and tie that to it with `aria-describedby`. */

@@ -22,10 +22,11 @@ export const TIPPED = '[data-command], [data-tip]';
 
 /**
  * Shows a tip under each control in `root` the pointer rests on, as `tipOf` says it, and takes it
- * away as the pointer leaves, a button goes down, a key is pressed or anything scrolls. A tip taken
- * away while the pointer stays comes back once it rests again: a move over the control arms it, and
- * so does the end of a scroll, for the control then under the pointer. A control a button went down
- * on stays quiet until the pointer leaves it. Returns a function that stops.
+ * away as the pointer leaves, a button goes down, a key is pressed or anything scrolls. A tip a
+ * scroll took away comes back once the pointer rests again: a move over the control arms it, and so
+ * does the end of the scroll, for the control then under the pointer. A control a button went down
+ * on, or the pointer was on as a key was pressed, stays quiet until the pointer leaves it. Returns a
+ * function that stops.
  */
 export function tips(
   root: HTMLElement,
@@ -89,7 +90,8 @@ export function tips(
   const onMove = (event: MouseEvent): void => {
     pointer = { x: event.clientX, y: event.clientY };
     const control = controlAt(event.target);
-    if (control === over) return;
+    if (control !== undefined && control === over) return;
+    // Off a control, this also stops the wait a scroll started: the pointer is no longer at rest.
     hide();
     if (control) arm(control);
   };
@@ -106,14 +108,22 @@ export function tips(
       (event.target instanceof Element ? event.target.closest<HTMLElement>(TIPPED) : null) ??
       undefined;
   };
+  // A key quiets the control the pointer is on, as a press does: a twitch of the pointer, or the
+  // scroll a key such as `j` makes, doesn't bring its tip back.
+  const onKey = (): void => {
+    pressed = over ?? pressed;
+    hide();
+  };
   // A scroll moves what's under the pointer without a move of the pointer's own to arm a tip: the
   // control under it once the scroll is over shows its tip, as if the pointer had come to rest there.
+  // Where the pointer is is asked then, so a pointer that has left the view shows none.
   const onScroll = (): void => {
     hide();
-    const at = pointer;
-    if (!at) return;
+    if (!pointer) return;
     timer = setTimeout(() => {
       timer = undefined;
+      const at = pointer;
+      if (!at) return;
       const control = controlAt(document.elementFromPoint?.(at.x, at.y));
       if (!control) return;
       over = control;
@@ -125,7 +135,7 @@ export function tips(
   root.addEventListener('mousemove', onMove);
   root.addEventListener('mouseout', onOut);
   root.addEventListener('mousedown', onPress, true);
-  root.addEventListener('keydown', hide, true);
+  root.addEventListener('keydown', onKey, true);
   root.addEventListener('wheel', onScroll, { capture: true, passive: true });
   root.addEventListener('scroll', onScroll, { capture: true, passive: true });
   return () => {
@@ -134,7 +144,7 @@ export function tips(
     root.removeEventListener('mousemove', onMove);
     root.removeEventListener('mouseout', onOut);
     root.removeEventListener('mousedown', onPress, true);
-    root.removeEventListener('keydown', hide, true);
+    root.removeEventListener('keydown', onKey, true);
     root.removeEventListener('wheel', onScroll, true);
     root.removeEventListener('scroll', onScroll, true);
   };

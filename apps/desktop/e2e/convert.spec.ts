@@ -17,7 +17,7 @@ import {
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { Page } from '@playwright/test';
 
-import type { Found, StackState } from '../src/features/stacks/contract.ts';
+import type { NoteKind, StackState } from '../src/features/stacks/contract.ts';
 import { expect, onStacks, STACK } from './app.ts';
 
 /** How GitHub answers, from `app_stack_convert`. */
@@ -129,18 +129,22 @@ async function open(page: Page, number: number): Promise<string> {
   );
   if (!reply.ok || typeof reply.value !== 'string') throw new Error(JSON.stringify(reply));
   const id = reply.value;
-  await expect.poll(() => foundOf(page, id), { timeout: 30_000 }).not.toBe('unread');
+  await expect.poll(() => stackOf(page, id), { timeout: 30_000 }).not.toBe('unread');
   return id;
 }
 
-/** How the stack tab `id` shows was found, once main has read the state of its layers. */
-async function foundOf(page: Page, id: string): Promise<Found | null | 'unread'> {
+/** Whether the stack tab `id` shows is one GitHub stack, and its notes, once its layers are read. */
+async function stackOf(
+  page: Page,
+  id: string,
+): Promise<{ githubStack: boolean; notes: NoteKind[] } | 'unread'> {
   const reply = await page.evaluate((tab) => window.lo.invoke('stacks.state', { id: tab }), id);
   if (!reply.ok) return 'unread';
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- what the contract says.
   const stack = (reply.value as StackState | undefined)?.stack;
   if (stack?.kind !== 'stack') return 'unread';
-  return stack.rows.every((row) => row.viewed) ? stack.found : 'unread';
+  if (!stack.rows.every((row) => row.viewed)) return 'unread';
+  return { githubStack: stack.githubStack, notes: stack.notes.map((note) => note.kind) };
 }
 
 /** Presses `g S`, "Convert to GitHub stack…", in the diff on screen, once it shows. */
@@ -182,7 +186,7 @@ test('converts a chain to a GitHub stack once the reader confirms it, and only t
   });
 
   const c = await open(page, STACK.c);
-  expect(await foundOf(page, c)).toEqual(['baseBranch', 'sharedCommits']);
+  expect(await stackOf(page, c)).toEqual({ githubStack: false, notes: [] });
   await makeStack(page);
   const dialog = page.getByTestId('make-stack');
   const steps = dialog.getByRole('list', { name: 'Steps' });
@@ -215,7 +219,9 @@ test('converts a chain to a GitHub stack once the reader confirms it, and only t
   await expect(dialog).toBeHidden();
   // #A, #B and #C are a GitHub stack now. One can't branch, so #D still sits on #A by its base
   // branch, and the tree says which layers are the GitHub stack.
-  await expect.poll(() => foundOf(page, c), { timeout: 30_000 }).toEqual(['github', 'baseBranch']);
+  await expect
+    .poll(() => stackOf(page, c), { timeout: 30_000 })
+    .toEqual({ githubStack: false, notes: ['github'] });
   const stack = page.getByRole('region', { name: 'Stack' });
   // Only some layers are the GitHub stack: the head says it's a stack, of neither kind.
   await expect(stack).toContainText('Stack · 4 layers');

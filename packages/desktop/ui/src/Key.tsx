@@ -45,16 +45,24 @@ export interface KeyAria {
 /**
  * The attributes that say a control's key to a screen reader in place of its key caps: its
  * `aria-keyshortcuts` for one key or a chord, and for a sequence, whose spaces `aria-keyshortcuts`
- * can't write, a description.
+ * can't write, a description. With `command`, for a control whose words say something other than
+ * the command it runs, as the merge status's verdict does, the description names the command first,
+ * as its tooltip does.
  */
 export function keyAria(
   keys: readonly string[] | undefined,
   shortcut: string | undefined,
+  command?: string,
 ): KeyAria {
-  if (shortcut !== undefined) return { 'aria-keyshortcuts': shortcut };
-  if (keys !== undefined && keys.length > 1)
-    return { 'aria-description': `Keys ${keys.join(' then ')}` };
-  return {};
+  const sequence =
+    shortcut === undefined && keys !== undefined && keys.length > 1
+      ? `Keys ${keys.join(' then ')}`
+      : undefined;
+  const description = [command, sequence].filter((part) => part !== undefined).join(', ');
+  return {
+    ...(shortcut === undefined ? {} : { 'aria-keyshortcuts': shortcut }),
+    ...(description === '' ? {} : { 'aria-description': description }),
+  };
 }
 
 /**

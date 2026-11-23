@@ -165,7 +165,10 @@ function rowId(prefix: string, item: string): string {
  * What every row takes beside its own: what identifies it in its timeline, a `data-` attribute to
  * find it by, a right-click.
  */
-export type TimelineRowAttributes = Omit<HTMLAttributes<HTMLLIElement>, 'children' | 'hidden'> & {
+export type TimelineRowAttributes = Omit<
+  HTMLAttributes<HTMLLIElement>,
+  'children' | 'hidden' | 'title'
+> & {
   /**
    * What identifies the row in its timeline, which the timeline's `focused` names: the row gets an
    * id from it, which the timeline names as its active descendant while the keyboard is on it.
@@ -214,7 +217,10 @@ export function TimelineRow({
   );
 }
 
-export interface TimelineProps extends Omit<HTMLAttributes<HTMLOListElement>, 'children'> {
+export interface TimelineProps extends Omit<
+  HTMLAttributes<HTMLOListElement>,
+  'children' | 'title'
+> {
   /** The rows, each a {@link TimelineRow} or one of the kinds below. */
   children: ReactNode;
   /**
@@ -260,7 +266,7 @@ export function Timeline({
   );
 }
 
-export interface TimelineEndProps extends HTMLAttributes<HTMLDivElement> {
+export interface TimelineEndProps extends Omit<HTMLAttributes<HTMLDivElement>, 'title'> {
   marker: TimelineMarker;
   children: ReactNode;
 }

@@ -37,7 +37,10 @@ export type HighlightCode = (code: {
   language: string | undefined;
 }) => readonly SignatureRun[] | undefined;
 
-export interface TypeHoverProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children' | 'role'> {
+export interface TypeHoverProps extends Omit<
+  HTMLAttributes<HTMLDivElement>,
+  'children' | 'role' | 'title'
+> {
   /**
    * The word's declaration, drawn as code: a string, or its stretches, to highlight it. It sets its
    * own line breaks, and a word too long for the card breaks to fit it. A hover with none, as a
@@ -253,7 +256,7 @@ function Docs({ tree, highlight }: { tree: Tree; highlight: HighlightCode | unde
 
 export interface TypeHoverWaitingProps extends Omit<
   HTMLAttributes<HTMLDivElement>,
-  'children' | 'role'
+  'children' | 'role' | 'title'
 > {
   /** The language server that hasn't answered yet: "TypeScript". */
   server: string;

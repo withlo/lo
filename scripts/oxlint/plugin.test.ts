@@ -335,6 +335,7 @@ function titles(source: string, path = join(ROOT, 'packages/desktop/ui/src/file.
   new Visitor({
     JSXOpeningElement: (node) => rule.JSXOpeningElement(node),
     AssignmentExpression: (node) => rule.AssignmentExpression(node),
+    Property: (node) => rule.Property(node),
     CallExpression: (node) => rule.CallExpression(node),
   }).visit(program);
   return found;
@@ -357,6 +358,19 @@ test('a native title is refused, on an element, as a property or as an attribute
     "ball.setAttribute('title', 'Viewed')",
     "ball.setAttributeNS(null, 'title', 'Viewed')",
   ]);
+});
+
+test('a native title is refused spread on an element, or among a decoration’s attributes', () => {
+  const source = `
+    const spread = <span {...{ title }} />;
+    const named = <span {...{ 'title': path, id }} />;
+    const rest = <span {...rest} />;
+    const component = <Dialog {...{ title }} />;
+    const mark = Decoration.mark({ class: 'lo-hit', attributes: { title: why } });
+    const line = Decoration.line({ attributes: { 'aria-label': why } });
+    const data = { attributes: [], title: 'Kept' };
+  `;
+  expect(titles(source)).toEqual(['title', "'title': path", 'title: why']);
 });
 
 test('a component’s own title, the window’s and one outside the desktop app are let through', () => {

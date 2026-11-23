@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // The tips of the controls a code view draws: they come once the pointer rests on one, and come back
-// once it rests again after a scroll, a key or a move of the rows took them away.
+// once it rests again after a scroll or a move of the rows took them away.
 
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
@@ -73,21 +73,48 @@ test('the control under the pointer once a scroll ends shows its tip, with no mo
   }
 });
 
-test('a key takes a tip away, and a move brings it back; a press keeps it away until the pointer leaves', () => {
-  move(ball, 'mouseover');
-  vi.advanceTimersByTime(TIP_DELAY);
-  root.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true }));
-  expect(shown()).toBeUndefined();
-  move(ball);
-  vi.advanceTimersByTime(TIP_DELAY);
-  expect(shown()).toBe('Mark viewede');
-  ball.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-  expect(shown()).toBeUndefined();
-  move(ball);
-  vi.advanceTimersByTime(TIP_DELAY);
-  expect(shown()).toBeUndefined();
-  ball.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: root }));
-  move(ball, 'mouseover');
-  vi.advanceTimersByTime(TIP_DELAY);
-  expect(shown()).toBe('Mark viewede');
+test('a pointer that moves off the controls or leaves the view once a scroll starts shows no tip', () => {
+  document.elementFromPoint = () => ball;
+  try {
+    const empty = root.querySelector('p')!;
+    move(empty, 'mouseover');
+    root.dispatchEvent(new Event('scroll'));
+    move(empty, 'mousemove', { clientX: 30, clientY: 40 });
+    vi.advanceTimersByTime(TIP_DELAY);
+    expect(shown()).toBeUndefined();
+    root.dispatchEvent(new Event('scroll'));
+    empty.dispatchEvent(
+      new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }),
+    );
+    vi.advanceTimersByTime(TIP_DELAY);
+    expect(shown()).toBeUndefined();
+  } finally {
+    Reflect.deleteProperty(document, 'elementFromPoint');
+  }
 });
+
+for (const [what, quiet] of [
+  ['a key', () => root.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true }))],
+  ['a press', () => ball.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))],
+] as const) {
+  test(`${what} takes a tip away, and it stays away until the pointer leaves`, () => {
+    document.elementFromPoint = () => ball;
+    try {
+      move(ball, 'mouseover');
+      vi.advanceTimersByTime(TIP_DELAY);
+      quiet();
+      expect(shown()).toBeUndefined();
+      // Neither a twitch of the pointer nor a scroll brings it back.
+      move(ball);
+      root.dispatchEvent(new Event('scroll'));
+      vi.advanceTimersByTime(TIP_DELAY);
+      expect(shown()).toBeUndefined();
+      ball.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: root }));
+      move(ball, 'mouseover');
+      vi.advanceTimersByTime(TIP_DELAY);
+      expect(shown()).toBe('Mark viewede');
+    } finally {
+      Reflect.deleteProperty(document, 'elementFromPoint');
+    }
+  });
+}

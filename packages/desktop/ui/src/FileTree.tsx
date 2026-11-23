@@ -214,7 +214,7 @@ export const ROW_HEIGHT = 24;
 /** Rows drawn beyond each end of what's in view, so scrolling never shows a gap. */
 const OVERSCAN = 12;
 
-export interface FileTreeProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
+export interface FileTreeProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children' | 'title'> {
   rows: readonly FileTreeRow[];
   /** The row the keyboard is on, by key. */
   focused?: string | undefined;

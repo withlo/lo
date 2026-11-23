@@ -133,7 +133,10 @@ export function around(row: Pick<ReferenceRow, 'text' | 'match'>): {
   };
 }
 
-export interface ReferencesListProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
+export interface ReferencesListProps extends Omit<
+  HTMLAttributes<HTMLDivElement>,
+  'children' | 'title'
+> {
   groups: readonly ReferencesGroup[];
   /** The reference on screen, by key: the one at the cursor, if it is one. */
   current?: string | undefined;
