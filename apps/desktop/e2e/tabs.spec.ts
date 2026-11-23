@@ -441,7 +441,7 @@ test('⌃o and ⌃i walk the history of the tab on screen, and each tab keeps it
   ).toBe(0);
 });
 
-test('macOS’s File, View and Window menus list closing a tab, the panels and stepping through tabs', async ({
+test('macOS’s File, View and Window menus list choosing an account, closing a tab, the panels and stepping through tabs', async ({
   app,
   page,
 }) => {
@@ -462,6 +462,7 @@ test('macOS’s File, View and Window menus list closing a tab, the panels and s
   await expect
     .poll(items)
     .toEqual([
+      'File: Choose account… ',
       'File: Close tab Command+W',
       'View: Left panel Command+\\',
       'View: Threads panel Command+Shift+\\',
