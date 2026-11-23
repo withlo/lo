@@ -1,7 +1,7 @@
 // The file finder over the window (`⌘P`): any file in the repository, found by name, the changed
 // ones first and marked, on the same palette the command palette and the open box use.
 
-import { FileIcon, FileMarks, Palette, PaletteHint, Spinner } from '@lo/ui';
+import { FileIcon, FileMarks, Palette, PaletteHint, Spinner, Tooltip } from '@lo/ui';
 import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
 import { useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
 import { useStore } from 'zustand';
@@ -80,12 +80,14 @@ function Row({ item }: { item: Item }) {
   return (
     <>
       <FileIcon dim={dim} />
-      <span
-        className={`whitespace-nowrap ${dim ? 'text-fg-dim' : ''} ${item.change === 'deleted' ? 'text-fg-muted line-through decoration-fg-subtle' : ''}`}
-        title={place.title}
-      >
-        <Marked {...place.name} />
-      </span>
+      {/* Shortened in the middle, a path shows whole as its tooltip. */}
+      <Tooltip label={place.title ?? null}>
+        <span
+          className={`whitespace-nowrap ${dim ? 'text-fg-dim' : ''} ${item.change === 'deleted' ? 'text-fg-muted line-through decoration-fg-subtle' : ''}`}
+        >
+          <Marked {...place.name} />
+        </span>
+      </Tooltip>
       {place.folder.text !== '' && (
         <span className="min-w-0 truncate text-fg-muted text-small">
           <Marked {...place.folder} />

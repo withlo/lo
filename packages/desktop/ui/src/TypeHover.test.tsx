@@ -88,15 +88,13 @@ function release(): void {
 
 describe('TypeHover', () => {
   it('shows the signature as code, and the docs under it, with where they came from', () => {
-    const host = render(
-      <TypeHover signature={SIGNATURE} docs={DOCS} source={TYPESCRIPT} keys={{ close: ['Esc'] }} />,
-    );
+    const host = render(<TypeHover signature={SIGNATURE} docs={DOCS} source={TYPESCRIPT} />);
     const card = host.querySelector('[role="tooltip"]')!;
     expect(card.firstElementChild?.textContent).toBe(SIGNATURE);
     expect(card.firstElementChild?.className).toContain('code-small');
     expect(card.textContent).toContain("What estimateCost found: the query's total cost");
     expect(card.querySelector('code')?.textContent).toBe('estimateCost');
-    expect(foot(host)).toBe('TypeScriptEsc Close');
+    expect(foot(host)).toBe('TypeScript');
   });
 
   it('colours a signature’s stretches by their tokens', () => {
@@ -411,7 +409,7 @@ describe('TypeHover', () => {
     expect(host.querySelector('[role="tooltip"]')?.firstElementChild?.textContent).toBe(
       'const evilU+202Elive: string = 1',
     );
-    expect(host.querySelector('[title="U+202E right-to-left override"]')).not.toBeNull();
+    expect(host.querySelector('[aria-label="U+202E right-to-left override"]')).not.toBeNull();
     // Code has no room for a badge, so its mark is spelled out; prose between draws one as code.
     expect(text).toContain(
       'Open evil\u2039U+202E\u203Alive or evilU+2066live (https://example.com/x)',
@@ -428,27 +426,21 @@ describe('TypeHover', () => {
         signature="(method) TokenBucket.take(points: number): boolean"
         source={TYPESCRIPT}
         location={{ path: 'packages/ratelimit/src/bucket.ts', line: 52 }}
-        keys={{ definition: ['g', 'd'], close: ['Esc'] }}
       />,
     );
-    expect(foot(host)).toBe(
-      'TypeScript · No doc comment' +
-        'packages/ratelimit/src/bucket.ts:52' +
-        'gd Definition' +
-        'Esc Close',
-    );
+    expect(foot(host)).toBe('TypeScript · No doc commentpackages/ratelimit/src/bucket.ts:52');
     // With nothing under the signature, the foot has its own hairline.
     const card = host.querySelector('[role="tooltip"]')!;
     expect(card.children).toHaveLength(2);
   });
 
   it('shows docs alone when there’s no signature, as a hover that’s only prose', () => {
-    const host = render(<TypeHover docs={DOCS} source={TYPESCRIPT} keys={{ close: ['Esc'] }} />);
+    const host = render(<TypeHover docs={DOCS} source={TYPESCRIPT} />);
     const card = host.querySelector('[role="tooltip"]')!;
     expect(card.children).toHaveLength(2);
     expect(card.firstElementChild?.className).not.toContain('code-small');
     expect(card.firstElementChild?.textContent).toContain('What estimateCost found');
-    expect(foot(host)).toBe('TypeScriptEsc Close');
+    expect(foot(host)).toBe('TypeScript');
   });
 
   it('says why a language server didn’t answer beside the syntax index that did', () => {
@@ -476,29 +468,23 @@ describe('TypeHover', () => {
         signature="export function estimateCost("
         source={{ kind: 'syntax' }}
         location={{ path: 'src/graphql/cost/estimate.ts', line: 18 }}
-        keys={{ definition: ['g', 'd'] }}
       />,
     );
-    expect(foot(host)).toBe('Code indexsrc/graphql/cost/estimate.ts:18gd Definition');
+    expect(foot(host)).toBe('Code indexsrc/graphql/cost/estimate.ts:18');
     expect(host.textContent).not.toContain('No doc comment');
   });
 
-  it('shows the keys it was given, and none it wasn’t', () => {
-    const bare = render(<TypeHover signature={SIGNATURE} docs={DOCS} source={TYPESCRIPT} />);
-    expect(bare.querySelector('[role="tooltip"] > :last-child kbd')).toBeNull();
-    const keyed = render(
+  it('shows no keys: they’re in Keyboard shortcuts, and the card has no buttons to put them on', () => {
+    const host = render(
       <TypeHover
         signature={SIGNATURE}
         docs={DOCS}
         source={TYPESCRIPT}
-        keys={{ definition: ['g', 'd'], close: ['Esc'] }}
+        location={{ path: 'a.ts', line: 1 }}
       />,
     );
-    expect([...keyed.querySelectorAll('kbd')].map((key) => key.textContent)).toEqual([
-      'g',
-      'd',
-      'Esc',
-    ]);
+    expect(host.querySelector('kbd')).toBeNull();
+    expect(foot(host)).not.toMatch(/Definition|Close/);
   });
 
   it('is not a stop for focus, and says so to a screen reader as a tooltip', () => {
@@ -527,7 +513,6 @@ describe('TypeHover', () => {
           docs={DOCS}
           source={TYPESCRIPT}
           location={{ path: 'a.ts', line: 1 }}
-          keys={{ definition: ['g', 'd'], close: ['Esc'] }}
         />
         <TypeHover signature={SIGNATURE} source={{ kind: 'syntax' }} />
         <TypeHoverWaiting server="TypeScript" known={{ name: 'take', kind: 'method' }} />

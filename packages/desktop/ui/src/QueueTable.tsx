@@ -14,6 +14,7 @@ import { LinkButton } from './LinkButton.tsx';
 import { Spinner } from './Spinner.tsx';
 import { StateIcon } from './StatePill.tsx';
 import { Tag } from './Tag.tsx';
+import { Tooltip } from './Tooltip.tsx';
 
 /** How an entry stands in the queue: its checks run, it waits its turn, or it's leaving. */
 export type QueueState = 'running' | 'waiting' | 'removal';
@@ -305,9 +306,9 @@ function Byline({
 function Title({ text }: { text: string }) {
   const shown = withoutBidi(text);
   return (
-    <span className="min-w-0 truncate" title={shown}>
-      {shown}
-    </span>
+    <Tooltip label={shown} cut>
+      <span className="min-w-0 truncate">{shown}</span>
+    </Tooltip>
   );
 }
 

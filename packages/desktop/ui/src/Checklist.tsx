@@ -5,6 +5,7 @@ import { withoutBidi, withoutBidiNode } from './controls.ts';
 import { LinkButton } from './LinkButton.tsx';
 import { Spinner } from './Spinner.tsx';
 import { StateIcon } from './StatePill.tsx';
+import { Tooltip } from './Tooltip.tsx';
 
 /**
  * How a row stands, which tints its icon: `fail` is in the way and waiting won't fix it, `wait`
@@ -191,9 +192,9 @@ function Sub({ sub }: { sub: CheckSub }) {
   const name = withoutBidi(sub.name);
   return (
     <li className="flex items-center gap-8 text-fg text-small">
-      <span className="min-w-0 flex-1 truncate code-small" title={name}>
-        {name}
-      </span>
+      <Tooltip label={name} cut>
+        <span className="min-w-0 flex-1 truncate code-small">{name}</span>
+      </Tooltip>
       {sub.note !== undefined && (
         <span
           className={`lo-num flex-none ${sub.tone === 'fail' ? 'text-danger' : 'text-fg-muted'}`}

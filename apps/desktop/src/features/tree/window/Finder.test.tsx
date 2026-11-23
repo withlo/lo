@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { TOOLTIP_DELAY } from '@lo/ui';
 import { NO_TARGET } from '@lo/ui/commands';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -208,8 +209,21 @@ describe('opening the finder', () => {
     const row = options()[0];
     expect(row?.textContent?.length).toBeLessThan(150);
     expect(row?.textContent).toContain('…');
-    // The whole path is a tooltip away.
-    expect(row?.querySelector('[title]')?.getAttribute('title')).toBe(long);
+    // The whole path is a tooltip away: Lo's, once the pointer rests on the name.
+    expect(row?.querySelector('[title]')).toBeNull();
+    const name = row?.querySelector('.whitespace-nowrap');
+    vi.useFakeTimers();
+    try {
+      act(() => {
+        name?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+        name?.dispatchEvent(new MouseEvent('mouseenter'));
+        name?.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
+        vi.advanceTimersByTime(TOOLTIP_DELAY);
+      });
+      expect(document.querySelector('.tooltip')?.textContent).toBe(long);
+    } finally {
+      vi.useRealTimers();
+    }
     expect(row?.querySelectorAll('mark')).toHaveLength(2);
   });
 });

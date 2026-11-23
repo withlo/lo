@@ -143,6 +143,15 @@ Dark (Lo Glow Dark) is the default. Every color comes from `tokens.json` through
   something. A button that takes focus by itself, as a dialog's main button does when the dialog
   opens, shows its hint under the pointer only (`hintOn="hover"`, or `on="hover"` on `Tooltip`), so
   nothing opens with a tooltip already over it.
+- A mark with no words, such as a file's change letter or a thread count, names itself in a
+  `Tooltip` with no key: "Added", "2 unresolved threads". A screen reader hears the same words, as
+  the mark's `aria-label` with `role="img"`, since a tooltip is never read. A name cut short with an
+  ellipsis, a path, a branch or a title, shows whole in a `Tooltip` with `cut`, which stays shut
+  while the name fits. A code view's own DOM takes `data-tip` for either, and `data-tip-cut` for a
+  name.
+- Never the system's tooltip: no `title` on an element, which shows late, unstyled and whatever it
+  holds. `lo/no-native-title` refuses one in the app and in `ui`. A component's `title`, a
+  `Dialog`'s or a `Problem`'s, is its heading, not a tooltip.
 - A dimmed control says why in its tooltip, in a few words with no full stop: "Offline", "Write a
   comment first". Give `Button` the reason as its `hint` while it's off, and name the reason for a
   screen reader with `aria-describedby`, since a tooltip is never read. A reason with something to
@@ -787,6 +796,7 @@ push is a revision, written r3) and the shape of each kind of message. Nothing h
 - Hide focus, or show hover styles that the keyboard can't reach.
 - Make anything wait for an animation, or scroll the window.
 - Import a popup from Base UI in a feature.
+- Give an element a `title`: the tooltip is Lo's `Tooltip`.
 - Copy macOS-only window chrome, or assume `⌘` exists on Linux.
 
 ## Where things are

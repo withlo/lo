@@ -17,7 +17,6 @@ import {
   type StackReview,
   type StackRun,
   type StackTreeLayer,
-  type StackTreeLink,
   type StackTreeNote,
 } from '@lo/ui';
 import { controlOf, runControl, setScopeSource, type Target } from '@lo/ui/commands';
@@ -28,7 +27,7 @@ import { useKeys } from '../../../window/commands/registry.ts';
 import { useOverviewMark, type OverviewMark } from '../../overview/window/shared.ts';
 import { useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
 import { useViewedCount } from '../../tree/window/shared.ts';
-import type { Checks, Link, Note, Review, Row } from '../contract.ts';
+import type { Checks, Note, Review, Row } from '../contract.ts';
 import { makeStack } from './actions.ts';
 import { useLayerCount } from './counts.ts';
 import { catchUp, choosing, focused, keyboardLayer, runTrouble, stacks } from './layers.ts';
@@ -45,12 +44,6 @@ const CHECKS: Readonly<Record<Checks, StackChecks>> = {
   passing: 'passing',
   running: 'running',
   failing: 'failing',
-};
-
-const LINKS: Readonly<Record<Link, StackTreeLink>> = {
-  github: 'github',
-  baseBranch: 'base',
-  sharedCommits: 'commits',
 };
 
 /** Where each layer of `band`, bottom first, sits in it, for its row: its ends, or between. */
@@ -325,7 +318,6 @@ export function Stack({ tab }: { tab: PullTab }) {
         githubStack={view.githubStack}
         // The notes say which layers are a GitHub stack where only some are: the head agrees.
         githubPartly={view.notes.some((note) => note.kind === 'github')}
-        found={view.found?.map((link) => LINKS[link])}
         actions={
           <>
             <StepButton id="stacks.previousLayer" down={false} />

@@ -67,9 +67,6 @@ export interface RevisionPickerProps {
   /** The button that compares the ends: its label, its key, and why it can't, if it can't. */
   compare: { label: string; keys?: readonly string[] | undefined; disabled?: boolean | undefined };
   onCompare?: (() => void) | undefined;
-  /** The keys the foot hints at: moving, and setting an end. */
-  moveKeys?: readonly string[] | undefined;
-  endKeys?: readonly string[] | undefined;
   /** A line under the rows, such as what a comparison waits for. */
   note?: ReactNode;
   /** The list, which has focus while the picker is open. */
@@ -154,8 +151,6 @@ export function RevisionPicker({
   onShortcut,
   compare,
   onCompare,
-  moveKeys,
-  endKeys,
   note,
   listRef,
 }: RevisionPickerProps) {
@@ -270,16 +265,6 @@ export function RevisionPicker({
         </p>
       )}
       <div className="flex items-center gap-12 border-t border-border-subtle bg-bg-chrome px-12 py-8 text-fg-muted text-small">
-        {moveKeys && (
-          <span className="inline-flex items-center gap-4">
-            <Key keys={moveKeys} quiet decorative /> Move
-          </span>
-        )}
-        {endKeys && (
-          <span className="inline-flex items-center gap-4">
-            <Key keys={endKeys} quiet decorative /> Set an end
-          </span>
-        )}
         <span className="flex-1" />
         <Button
           variant="primary"

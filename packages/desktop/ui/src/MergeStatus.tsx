@@ -3,6 +3,7 @@ import type { Ref } from 'react';
 
 import { withoutBidi } from './controls.ts';
 import { Key, keyAria } from './Key.tsx';
+import { Tooltip } from './Tooltip.tsx';
 
 /**
  * How a pull request stands on merging, which colors the dot and picks the words beside it:
@@ -57,9 +58,7 @@ export interface MergeStatusProps {
   verdict: string;
   /** The reasons or the method after it, on the same line: "Review required · 2 checks running". */
   detail?: string | undefined;
-  /** What it says on hover. When Lo may not see every rule, it says so here. */
-  title?: string | undefined;
-  /** The key that opens the merge panel, shown at its end. */
+  /** The key that opens the merge panel, shown at its end, and in its tooltip, "Merge panel". */
   keys?: readonly string[] | undefined;
   /**
    * Opens the merge panel. Without it the status is only a line, as it is once a pull request has
@@ -89,7 +88,6 @@ export function MergeStatus({
   kind,
   verdict,
   detail,
-  title,
   keys,
   onClick,
   expanded,
@@ -109,25 +107,21 @@ export function MergeStatus({
       {keys !== undefined && onClick !== undefined && <Key keys={keys} decorative />}
     </>
   );
-  if (onClick === undefined) {
-    return (
-      <span className={line} title={title}>
-        {content}
-      </span>
-    );
-  }
+  // Not a control, with nothing to name: what it says is all there is.
+  if (onClick === undefined) return <span className={line}>{content}</span>;
   return (
-    <button
-      ref={ref}
-      type="button"
-      title={title ?? (keys === undefined ? undefined : `Merge panel (${keys.join(' ')})`)}
-      aria-haspopup="dialog"
-      aria-expanded={expanded}
-      {...keyAria(keys, undefined)}
-      className={`${line} hover:bg-hover hover:text-fg focus-visible:shadow-ring`}
-      onClick={onClick}
-    >
-      {content}
-    </button>
+    <Tooltip label="Merge panel" keys={keys}>
+      <button
+        ref={ref}
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={expanded}
+        {...keyAria(keys, undefined)}
+        className={`${line} hover:bg-hover hover:text-fg focus-visible:shadow-ring`}
+        onClick={onClick}
+      >
+        {content}
+      </button>
+    </Tooltip>
   );
 }

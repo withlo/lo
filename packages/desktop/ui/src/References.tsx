@@ -4,6 +4,7 @@ import { showFormat } from './controls.ts';
 import { FileIcon } from './FileTree.tsx';
 import { ShownText } from './ShownText.tsx';
 import { PathName, SourceMark, type AnswerSource } from './Source.tsx';
+import { Tooltip } from './Tooltip.tsx';
 
 /** The word's references in one file: the rows the list shows under the file's name. */
 export interface ReferencesGroup {
@@ -69,9 +70,11 @@ export function ReferencesHead({
 }: ReferencesHeadProps) {
   return (
     <div className="flex flex-none flex-col gap-4 px-16 pb-8">
-      <span className="min-w-0 truncate text-fg code-text" title={showFormat(name)}>
-        <ShownText text={name} />
-      </span>
+      <Tooltip label={showFormat(name)} cut>
+        <span className="min-w-0 truncate text-fg code-text">
+          <ShownText text={name} />
+        </span>
+      </Tooltip>
       <span className="min-w-0 text-fg-muted text-small">
         <span className="lo-num">
           {count} in {filesIn(files)}

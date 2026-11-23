@@ -3,7 +3,7 @@
 // each draft is: "retry.ts · line 41 · r2". "Show kept drafts" opens the same list from the
 // palette and the app menu.
 
-import { Popover, StatusItem } from '@lo/ui';
+import { Popover, StatusItem, useControl } from '@lo/ui';
 
 import { useTabState, type PullTab } from '../../tab/window/shared.ts';
 import { keptAway, keptCount, keptOpen } from './boxes.ts';
@@ -11,6 +11,7 @@ import { keptAway, keptCount, keptOpen } from './boxes.ts';
 export function KeptStatus({ tab }: { tab: PullTab }) {
   const kept = useTabState(keptAway, tab.id);
   const open = useTabState(keptOpen, tab.id);
+  const control = useControl('comments.keptDrafts');
   const count = keptCount(kept);
   if (count === undefined) return null;
   // The item is the list's trigger, which opens and closes it, and the list opens over it.
@@ -18,7 +19,15 @@ export function KeptStatus({ tab }: { tab: PullTab }) {
     <Popover
       open={open}
       onOpenChange={(next) => keptOpen.set(tab.id, next)}
-      trigger={<StatusItem title="Show kept drafts">{count}</StatusItem>}
+      trigger={
+        <StatusItem
+          hint={control?.label ?? 'Show kept drafts'}
+          hintKeys={control?.keys}
+          hintShortcut={control?.shortcut}
+        >
+          {count}
+        </StatusItem>
+      }
       side="top"
       align="start"
       label="Kept drafts"

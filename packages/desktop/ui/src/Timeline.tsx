@@ -17,6 +17,7 @@ import { LinkButton } from './LinkButton.tsx';
 import { StateIcon } from './StatePill.tsx';
 import { Tag } from './Tag.tsx';
 import { CommentIcon } from './ThreadCount.tsx';
+import { Tooltip } from './Tooltip.tsx';
 
 /** What a one-line event or a row's marker draws, on the 16 grid. */
 export type TimelineGlyph =
@@ -685,12 +686,14 @@ const REVIEWER_STATES: Readonly<
 function Reviewer({ reviewer }: { reviewer: TimelineReviewer }) {
   const { words, tone, shapes } = REVIEWER_STATES[reviewer.state];
   return (
-    <li className="inline-flex items-center gap-4" title={`${reviewer.login}: ${words}`}>
+    <li className="inline-flex items-center gap-4">
       <Avatar login={reviewer.login} image={reviewer.image} size="sm" />
       <span className="text-fg">{reviewer.login}</span>
-      <svg className={`lo-i lo-i--xs ${tone}`} viewBox="0 0 16 16" role="img" aria-label={words}>
-        {shapes}
-      </svg>
+      <Tooltip label={words}>
+        <svg className={`lo-i lo-i--xs ${tone}`} viewBox="0 0 16 16" role="img" aria-label={words}>
+          {shapes}
+        </svg>
+      </Tooltip>
     </li>
   );
 }

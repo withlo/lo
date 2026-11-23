@@ -5,7 +5,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { missingRules } from '../test/classes.ts';
-import { cleanUp, click, render } from '../test/dom.ts';
+import { cleanUp, click, render, tipOf } from '../test/dom.ts';
 import { MergeStatus, type MergeKind } from './MergeStatus.tsx';
 import { PRHeader } from './PRHeader.tsx';
 
@@ -63,7 +63,9 @@ describe('MergeStatus', () => {
     const button = host.querySelector('button');
     expect(button?.getAttribute('aria-haspopup')).toBe('dialog');
     expect(button?.getAttribute('aria-expanded')).toBe('true');
-    expect(button?.getAttribute('title')).toBe('Merge panel (m)');
+    // Its tooltip names it, with its key: Lo's, not the system's.
+    expect(button?.hasAttribute('title')).toBe(false);
+    expect(tipOf(button!)).toBe('Merge panelm');
     expect(button?.querySelector('kbd')?.getAttribute('aria-hidden')).toBe('true');
     click(button!);
     expect(onClick).toHaveBeenCalledOnce();
@@ -81,20 +83,6 @@ describe('MergeStatus', () => {
     expect(host.querySelector('button')).toBeNull();
     expect(host.querySelector('kbd')).toBeNull();
     expect(host.textContent).toBe('Merged');
-  });
-
-  it('says on hover when Lo may not see every rule', () => {
-    const host = render(
-      <MergeStatus
-        kind="waiting"
-        verdict="Can't merge yet"
-        detail="Review required"
-        title="Lo may not see every rule"
-        keys={['m']}
-        onClick={vi.fn<() => void>()}
-      />,
-    );
-    expect(host.querySelector('button')?.getAttribute('title')).toBe('Lo may not see every rule');
   });
 
   it('cuts its reasons short, never its verdict', () => {

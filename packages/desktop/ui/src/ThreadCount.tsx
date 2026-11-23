@@ -1,4 +1,5 @@
 import { COMMENT_PATH, threadWords } from './counts.ts';
+import { Tooltip } from './Tooltip.tsx';
 
 /** A speech bubble on the 16 grid, the mark of a comment. */
 export function CommentIcon() {
@@ -25,15 +26,16 @@ export function ThreadCount({ total, unresolved }: ThreadCountProps) {
   const open = unresolved > 0;
   const said = threadWords(total, unresolved);
   return (
-    <span
-      role="img"
-      aria-label={said}
-      title={said}
-      data-open={open ? '' : undefined}
-      className={`lo-num inline-flex flex-none items-center gap-2 text-micro ${open ? 'text-fg' : 'text-fg-muted'}`}
-    >
-      <CommentIcon />
-      {total}
-    </span>
+    <Tooltip label={said}>
+      <span
+        role="img"
+        aria-label={said}
+        data-open={open ? '' : undefined}
+        className={`lo-num inline-flex flex-none items-center gap-2 text-micro ${open ? 'text-fg' : 'text-fg-muted'}`}
+      >
+        <CommentIcon />
+        {total}
+      </span>
+    </Tooltip>
   );
 }

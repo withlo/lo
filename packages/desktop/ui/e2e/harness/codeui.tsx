@@ -210,7 +210,6 @@ function LongHover() {
         signature={LONG_SIGNATURE}
         docs={LONG_DOCS}
         source={{ kind: 'server', name: 'TypeScript' }}
-        keys={{ definition: ['g', 'd'], close: ['Esc'] }}
       />
       <button type="button" id="after" className="self-start">
         After
@@ -285,7 +284,6 @@ function sceneNode(scene: Scene, container: HTMLElement): ReactNode {
           signature={SIGNATURE}
           docs={DOCS}
           source={{ kind: 'server', name: 'TypeScript' }}
-          keys={{ definition: ['g', 'd'], close: ['Esc'] }}
           className="m-12"
         />
       );
@@ -295,7 +293,6 @@ function sceneNode(scene: Scene, container: HTMLElement): ReactNode {
           signature="(method) TokenBucket.take(points: number): boolean"
           source={{ kind: 'server', name: 'TypeScript' }}
           location={{ path: 'packages/ratelimit/src/bucket.ts', line: 52 }}
-          keys={{ definition: ['g', 'd'], close: ['Esc'] }}
           className="m-12"
         />
       );

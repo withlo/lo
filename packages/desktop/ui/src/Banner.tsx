@@ -198,6 +198,7 @@ export function Banner(props: BannerProps) {
               variant="ghost"
               icon
               aria-label="Dismiss"
+              hint="Dismiss"
               onClick={() => {
                 onDismiss();
                 handOff('dismiss');

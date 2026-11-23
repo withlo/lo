@@ -1,4 +1,5 @@
 import { withoutBidi } from './controls.ts';
+import { Tooltip } from './Tooltip.tsx';
 
 export interface BranchProps {
   /** The branch's name, as GitHub has it. */
@@ -8,17 +9,19 @@ export interface BranchProps {
 }
 
 /**
- * A branch's name, in code type, cut short with its whole name on hover. A name is the pull
- * request author's text, so it's drawn without the characters that turn text around.
+ * A branch's name, in code type, cut short with its whole name as its tooltip while it's cut. A
+ * name is the pull request author's text, so it's drawn without the characters that turn text
+ * around.
  */
 export function Branch({ name, base = false }: BranchProps) {
   const shown = withoutBidi(name);
   return (
-    <span
-      className={`lo-selectable inline-block h-20 max-w-tab-w min-w-0 truncate rounded-xs bg-hover px-6 code-small ${base ? 'text-fg-muted' : 'text-fg'}`}
-      title={shown}
-    >
-      {shown}
-    </span>
+    <Tooltip label={shown} cut>
+      <span
+        className={`lo-selectable inline-block h-20 max-w-tab-w min-w-0 truncate rounded-xs bg-hover px-6 code-small ${base ? 'text-fg-muted' : 'text-fg'}`}
+      >
+        {shown}
+      </span>
+    </Tooltip>
   );
 }

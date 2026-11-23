@@ -219,7 +219,6 @@ test('converts a chain to a GitHub stack once the reader confirms it, and only t
   const stack = page.getByRole('region', { name: 'Stack' });
   // Only some layers are the GitHub stack: the head says it's a stack, of neither kind.
   await expect(stack).toContainText('Stack · 4 layers');
-  await expect(stack.getByTitle('By GitHub stack and base branch')).toHaveCount(1);
   await expect(stack.getByRole('note')).toContainText([
     `#${STACK.a}, #${STACK.b} and #${STACK.c} are a GitHub stack.`,
   ]);

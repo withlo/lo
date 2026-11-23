@@ -8,7 +8,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished,
 
 import { buildCss, declarations, hasRule } from '../scripts/stylesheet.ts';
 import { missingRules } from '../test/classes.ts';
-import { cleanUp, click, render, rerender } from '../test/dom.ts';
+import { cleanUp, click, render, rerender, tipOf } from '../test/dom.ts';
 import { Button } from './Button.tsx';
 import { COPIED_MS, CopyButton, CopyRoute } from './CopyButton.tsx';
 import { Dialog, type DialogState } from './Dialog.tsx';
@@ -93,7 +93,11 @@ function Kept() {
       open={open}
       onOpenChange={setOpen}
       label="Kept drafts"
-      trigger={<StatusItem title="Show kept drafts">2 kept drafts</StatusItem>}
+      trigger={
+        <StatusItem hint="Show kept drafts" hintKeys={['g', 'K']}>
+          2 kept drafts
+        </StatusItem>
+      }
     >
       <p>retry.ts · line 41 · r2</p>
     </Popover>
@@ -747,10 +751,13 @@ describe('Popover', () => {
     expect(await missingRules(document.body)).toEqual([]);
   });
 
-  it('opens from a status bar item as its trigger', async () => {
+  it('opens from a status bar item as its trigger, which names its command in its tooltip', async () => {
     const host = render(<Kept />);
     const item = host.querySelector('button')!;
     expect(item.textContent).toBe('2 kept drafts');
+    expect(item.hasAttribute('title')).toBe(false);
+    expect(tipOf(item)).toBe('Show kept draftsgK');
+    expect(item.getAttribute('aria-description')).toBe('Keys g then K');
     click(item);
     await settle();
     expect(item.getAttribute('aria-expanded')).toBe('true');

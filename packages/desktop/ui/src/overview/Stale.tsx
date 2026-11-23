@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
 
+import { Tooltip } from '../Tooltip.tsx';
+
 /**
  * Over an overview written for an older push than the pull request is at: what it was written
  * for and where the pull request is, in `title`; how much changed since, in `detail`, as it comes;
@@ -22,12 +24,12 @@ export function OutOfDate({
           <path d="M7.13 2.5a1 1 0 0 1 1.74 0l5.2 9.5a1 1 0 0 1-.87 1.5H2.8a1 1 0 0 1-.87-1.5Z" />
           <path d="M8 6.25v3M8 11.25v.01" />
         </svg>
-        <div className="lo-ov-stale__title" title={title}>
-          {title}
-        </div>
-        <div className="lo-ov-stale__sub" title={detail === '' ? undefined : detail}>
-          {detail}
-        </div>
+        <Tooltip label={title} cut>
+          <div className="lo-ov-stale__title">{title}</div>
+        </Tooltip>
+        <Tooltip label={detail === '' ? null : detail} cut>
+          <div className="lo-ov-stale__sub">{detail}</div>
+        </Tooltip>
         <div className="lo-ov-stale__actions">{actions}</div>
       </div>
     </div>

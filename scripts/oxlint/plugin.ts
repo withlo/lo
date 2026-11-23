@@ -16,6 +16,8 @@
  *
  * `lo/no-lo-subject` refuses a string the reader may see that starts with "Lo ": see
  * {@link noLoSubject}.
+ *
+ * `lo/no-native-title` refuses a native tooltip, a DOM element's `title`: see {@link noNativeTitle}.
  */
 
 import { join, relative } from 'node:path';
@@ -284,11 +286,82 @@ export function loSubject(known: ReadonlySet<string>) {
 /** `lo/no-lo-subject`, letting through the strings that remain, which {@link LO_SUBJECTS} lists. */
 export const noLoSubject = loSubject(new Set(LO_SUBJECTS));
 
+export const TITLE_MESSAGE =
+  'A native `title` is the system’s tooltip: slow, unstyled and not Lo’s. Name a control with `hint` on `Button`, or `Tooltip` around anything else (`cut` for a name cut short); a code view’s control takes `data-tip`. Words found nowhere else go on screen, not in a tooltip.';
+
+/** Whether `node`, a JSX element's name, names a DOM element: `span`, not `Dialog` or `ui.Row`. */
+function domElement(node: unknown): boolean {
+  if (!isNode(node) || node.type !== 'JSXIdentifier') return false;
+  const name: unknown = Reflect.get(node, 'name');
+  return typeof name === 'string' && /^[a-z]/.test(name);
+}
+
+/** Whether `node` is the string `title`, as a literal. */
+function titleLiteral(node: unknown): boolean {
+  return isNode(node) && node.type === 'Literal' && Reflect.get(node, 'value') === 'title';
+}
+
+/**
+ * `lo/no-native-title` refuses a native tooltip: `title` on a DOM element in JSX
+ * (`<span title={path}>`), set as a property (`ball.title = …`) or as an attribute
+ * (`setAttribute('title', …)`), in the desktop app's source and its packages'. A component's own
+ * `title`, a dialog's, a `Problem`'s or a toast's, is its text, and is left alone, and so is the
+ * window's, `document.title`. A tooltip is Lo's own (`design/README.md`), and none is let through.
+ */
+export const noNativeTitle = {
+  meta: {
+    type: 'problem',
+    docs: { description: 'Refuse a DOM element’s native `title`, the system’s tooltip.' },
+  },
+  create(context: Context) {
+    const { filename } = context;
+    const desktop = filename === undefined || DESKTOP.test(relative(ROOT, filename));
+    const report = (node: AstNode): void => {
+      if (desktop) context.report({ node, message: TITLE_MESSAGE });
+    };
+    return {
+      JSXOpeningElement(node: AstNode): void {
+        if (!domElement(Reflect.get(node, 'name'))) return;
+        const attributes: unknown = Reflect.get(node, 'attributes');
+        if (!Array.isArray(attributes)) return;
+        for (const attribute of attributes) {
+          if (!isNode(attribute) || attribute.type !== 'JSXAttribute') continue;
+          const name: unknown = Reflect.get(attribute, 'name');
+          if (
+            isNode(name) &&
+            name.type === 'JSXIdentifier' &&
+            Reflect.get(name, 'name') === 'title'
+          ) {
+            report(attribute);
+          }
+        }
+      },
+      AssignmentExpression(node: AstNode): void {
+        const left: unknown = Reflect.get(node, 'left');
+        if (memberName(left) !== 'title') return;
+        const object: unknown = isNode(left) ? Reflect.get(left, 'object') : undefined;
+        if (isNode(object) && object.type === 'Identifier') {
+          if (Reflect.get(object, 'name') === 'document') return;
+        }
+        report(node);
+      },
+      CallExpression(node: AstNode): void {
+        const name = memberName(Reflect.get(node, 'callee'));
+        // The attribute's name: first, or after its namespace.
+        const at = name === 'setAttribute' ? 0 : name === 'setAttributeNS' ? 1 : undefined;
+        const args: unknown = Reflect.get(node, 'arguments');
+        if (at !== undefined && Array.isArray(args) && titleLiteral(args[at])) report(node);
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: 'lo' },
   rules: {
     'no-returned-never': noReturnedNever,
     'no-scroll-into-view': noScrollIntoView,
     'no-lo-subject': noLoSubject,
+    'no-native-title': noNativeTitle,
   },
 };

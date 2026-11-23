@@ -77,7 +77,7 @@ describe('Facts', () => {
     expect(values[0]?.textContent).toBe('TOtess-okafor');
     expect(values[0]?.querySelector('[aria-hidden="true"]')?.textContent).toBe('TO');
     expect(values[1]?.textContent).toBe('Squash, one commit per layer');
-    expect(values[2]?.querySelector('[title="main"]')?.textContent).toBe('main');
+    expect(values[2]?.querySelector('.code-small')?.textContent).toBe('main');
     expect(values[3]?.textContent).toBe('r5 of #4821, the one you reviewed');
   });
 

@@ -185,7 +185,7 @@ export function PeekHead({
           size="sm"
           icon
           aria-label="Close"
-          hint="Close"
+          hint="Close definitions"
           hintKeys={keys?.close}
           onClick={() => onClose?.()}
         >

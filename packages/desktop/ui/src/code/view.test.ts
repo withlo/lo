@@ -2195,7 +2195,10 @@ describe('headers and notes', () => {
     expect(header.classList.contains('is-viewed')).toBe(true);
     expect(header.textContent).toContain('new3');
     const count = header.querySelector('.lo-count');
-    expect(count?.getAttribute('title')).toBe('2 / 3 threads unresolved');
+    // A mark: its name is its tooltip, Lo's, and what a screen reader reads.
+    expect(count?.getAttribute('data-tip')).toBe('2 / 3 threads unresolved');
+    expect(count?.getAttribute('aria-label')).toBe('2 / 3 threads unresolved');
+    expect(count?.hasAttribute('title')).toBe(false);
     expect(count?.classList.contains('is-open')).toBe(true);
     shown.setHeader('b', { additions: 10, deletions: 0, threads: { total: 1, unresolved: 0 } });
     const resolved = parent!.querySelector(

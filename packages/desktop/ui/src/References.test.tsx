@@ -5,7 +5,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { missingRules } from '../test/classes.ts';
-import { cleanUp, click, focus, render, rerender } from '../test/dom.ts';
+import { cleanUp, click, focus, render, rerender, tipOf } from '../test/dom.ts';
 import {
   around,
   ReferencesHead,
@@ -127,7 +127,7 @@ describe('format characters', () => {
     const text = host.textContent ?? '';
     expect(text).not.toMatch(/\p{Cf}/u);
     expect(text).toBe('evilU+202Elive2 in 1 file · TypeU+200BScript, at rU+202E5');
-    expect(host.firstElementChild?.firstElementChild?.getAttribute('title')).toBe(
+    expect(tipOf(host.firstElementChild!.firstElementChild!, { cut: true })).toBe(
       'evil\u2039U+202E\u203Alive',
     );
   });

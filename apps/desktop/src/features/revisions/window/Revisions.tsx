@@ -1,7 +1,7 @@
 // The header's revision button, showing what's compared ("r3 → r5"), and the revision picker it
 // opens, as `gv` does.
 
-import { RevisionPicker, Ticks } from '@lo/ui';
+import { keyAria, RevisionPicker, Ticks, Tooltip, useControl } from '@lo/ui';
 import { keyLabels } from '@lo/ui/commands';
 import { useEffect, useState } from 'react';
 
@@ -42,6 +42,7 @@ export function Revisions({ tab }: { tab: PullTab }) {
   const marks = useTabState(marked, tab.id);
   const pull = usePull(tab.id);
   const [button, setButton] = useState<HTMLButtonElement | null>(null);
+  const control = useControl('revisions.picker');
   useEffect(() => {
     if (tab.run === undefined && views.get(tab.id) === undefined) catchUp(tab.id);
     // The picker closes as its tab leaves the screen.
@@ -58,23 +59,27 @@ export function Revisions({ tab }: { tab: PullTab }) {
   const asked = ends && comparedOf(ends);
   return (
     <>
-      <button
-        ref={setButton}
-        type="button"
-        aria-haspopup="listbox"
-        aria-expanded={picker.open}
-        title="Compare revisions"
-        className="inline-flex h-row-h flex-none items-center gap-6 rounded-sm border border-border ps-8 pe-6 whitespace-nowrap text-fg code-small hover:bg-hover"
-        onClick={() => {
-          if (picker.open) closePicker();
-          else openPicker();
-        }}
-      >
-        {view.status === 'loading' || !compared
-          ? 'Reading revisions…'
-          : comparisonLabel(view, compared)}
-        {reason && <span className="text-fg-muted text-small">{reason}</span>}
-      </button>
+      {/* Its face says what's compared, so its tooltip names it, with its key. */}
+      <Tooltip label={control?.label ?? 'Compare revisions…'} keys={control?.keys}>
+        <button
+          ref={setButton}
+          type="button"
+          aria-haspopup="listbox"
+          aria-expanded={picker.open}
+          {...keyAria(control?.keys, control?.shortcut)}
+          data-lo-revisions=""
+          className="inline-flex h-row-h flex-none items-center gap-6 rounded-sm border border-border ps-8 pe-6 whitespace-nowrap text-fg code-small hover:bg-hover"
+          onClick={() => {
+            if (picker.open) closePicker();
+            else openPicker();
+          }}
+        >
+          {view.status === 'loading' || !compared
+            ? 'Reading revisions…'
+            : comparisonLabel(view, compared)}
+          {reason && <span className="text-fg-muted text-small">{reason}</span>}
+        </button>
+      </Tooltip>
       <RevisionPicker
         open={picker.open}
         onOpenChange={(open) => {
@@ -104,8 +109,6 @@ export function Revisions({ tab }: { tab: PullTab }) {
         onCompare={() => {
           void compareEnds();
         }}
-        moveKeys={keyOf('revisions.down')}
-        endKeys={keyOf('revisions.end')}
         note={notesOf([
           view.waitingFor === 'local'
             ? 'Fetching local copy…'

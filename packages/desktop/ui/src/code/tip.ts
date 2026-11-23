@@ -21,19 +21,11 @@ const EDGE = 8;
 export const TIPPED = '[data-command], [data-tip]';
 
 /**
- * Whether `element`'s text is cut short where it's drawn, in it or in a part of it, as a path
- * whose folder ellipsizes: a name drawn whole needs no tip to say it again.
- */
-export function cutShort(element: HTMLElement): boolean {
-  return [element, ...element.querySelectorAll<HTMLElement>('*')].some(
-    (each) => each.clientWidth > 0 && each.scrollWidth > each.clientWidth,
-  );
-}
-
-/**
  * Shows a tip under each control in `root` the pointer rests on, as `tipOf` says it, and takes it
- * away as the pointer leaves, a button goes down, a key is pressed or anything scrolls. Returns a
- * function that stops.
+ * away as the pointer leaves, a button goes down, a key is pressed or anything scrolls. A tip taken
+ * away while the pointer stays comes back once it rests again: a move over the control arms it, and
+ * so does the end of a scroll, for the control then under the pointer. A control a button went down
+ * on stays quiet until the pointer leaves it. Returns a function that stops.
  */
 export function tips(
   root: HTMLElement,
@@ -42,6 +34,9 @@ export function tips(
   let over: HTMLElement | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let shown: HTMLElement | undefined;
+  let pressed: HTMLElement | undefined;
+  /** Where the pointer is, while it's over `root`. */
+  let pointer: { readonly x: number; readonly y: number } | undefined;
 
   const hide = (): void => {
     clearTimeout(timer);
@@ -79,33 +74,68 @@ export function tips(
     shown = popup;
   };
 
-  const onOver = (event: Event): void => {
-    const control =
-      event.target instanceof Element ? event.target.closest<HTMLElement>(TIPPED) : null;
-    if (control === (over ?? null)) return;
-    hide();
-    if (!control || !root.contains(control)) return;
+  /** The control in `root` that `target` is in, when it may show its tip now. */
+  const controlAt = (target: unknown): HTMLElement | undefined => {
+    const control = target instanceof Element ? target.closest<HTMLElement>(TIPPED) : null;
+    return control && control !== pressed && root.contains(control) ? control : undefined;
+  };
+
+  /** Shows `control`'s tip once the pointer has rested on it. */
+  const arm = (control: HTMLElement): void => {
     over = control;
     timer = setTimeout(() => show(control), TIP_DELAY);
   };
+
+  const onMove = (event: MouseEvent): void => {
+    pointer = { x: event.clientX, y: event.clientY };
+    const control = controlAt(event.target);
+    if (control === over) return;
+    hide();
+    if (control) arm(control);
+  };
   const onOut = (event: MouseEvent): void => {
     const to = event.relatedTarget;
-    if (over && !(to instanceof Node && over.contains(to))) hide();
+    const into = (element: Node): boolean => to instanceof Node && element.contains(to);
+    if (!into(root)) pointer = undefined;
+    if (pressed && !into(pressed)) pressed = undefined;
+    if (over && !into(over)) hide();
+  };
+  const onPress = (event: MouseEvent): void => {
+    hide();
+    pressed =
+      (event.target instanceof Element ? event.target.closest<HTMLElement>(TIPPED) : null) ??
+      undefined;
+  };
+  // A scroll moves what's under the pointer without a move of the pointer's own to arm a tip: the
+  // control under it once the scroll is over shows its tip, as if the pointer had come to rest there.
+  const onScroll = (): void => {
+    hide();
+    const at = pointer;
+    if (!at) return;
+    timer = setTimeout(() => {
+      timer = undefined;
+      const control = controlAt(document.elementFromPoint?.(at.x, at.y));
+      if (!control) return;
+      over = control;
+      show(control);
+    }, TIP_DELAY);
   };
 
-  root.addEventListener('mouseover', onOver);
+  root.addEventListener('mouseover', onMove);
+  root.addEventListener('mousemove', onMove);
   root.addEventListener('mouseout', onOut);
-  root.addEventListener('mousedown', hide, true);
+  root.addEventListener('mousedown', onPress, true);
   root.addEventListener('keydown', hide, true);
-  root.addEventListener('wheel', hide, { capture: true, passive: true });
-  root.addEventListener('scroll', hide, { capture: true, passive: true });
+  root.addEventListener('wheel', onScroll, { capture: true, passive: true });
+  root.addEventListener('scroll', onScroll, { capture: true, passive: true });
   return () => {
     hide();
-    root.removeEventListener('mouseover', onOver);
+    root.removeEventListener('mouseover', onMove);
+    root.removeEventListener('mousemove', onMove);
     root.removeEventListener('mouseout', onOut);
-    root.removeEventListener('mousedown', hide, true);
+    root.removeEventListener('mousedown', onPress, true);
     root.removeEventListener('keydown', hide, true);
-    root.removeEventListener('wheel', hide, true);
-    root.removeEventListener('scroll', hide, true);
+    root.removeEventListener('wheel', onScroll, true);
+    root.removeEventListener('scroll', onScroll, true);
   };
 }

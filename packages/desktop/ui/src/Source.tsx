@@ -1,5 +1,6 @@
 import { showFormat } from './controls.ts';
 import { ShownText } from './ShownText.tsx';
+import { Tooltip } from './Tooltip.tsx';
 
 /**
  * Where an answer about code came from: a language server, by its name, or Lo's own reading of the
@@ -57,18 +58,21 @@ export function SourceMark({
 
 /**
  * A path with its file's name standing out from the folders before it. When the row is too narrow,
- * the folders give way first, so the name is always there to read.
+ * the folders give way first, so the name is always there to read, and the path whole is its
+ * tooltip.
  */
 export function PathName({ path, strong = false }: { path: string; strong?: boolean }) {
   const at = path.lastIndexOf('/');
   return (
-    <span className="flex min-w-0 items-baseline" title={showFormat(path)}>
-      <span className="min-w-0 truncate">
-        <ShownText text={path.slice(0, at + 1)} />
+    <Tooltip label={showFormat(path)} cut>
+      <span className="flex min-w-0 items-baseline">
+        <span className="min-w-0 truncate">
+          <ShownText text={path.slice(0, at + 1)} />
+        </span>
+        <span className={`flex-none ${strong ? 'font-semibold' : 'text-fg'}`}>
+          <ShownText text={path.slice(at + 1)} />
+        </span>
       </span>
-      <span className={`flex-none ${strong ? 'font-semibold' : 'text-fg'}`}>
-        <ShownText text={path.slice(at + 1)} />
-      </span>
-    </span>
+    </Tooltip>
   );
 }
