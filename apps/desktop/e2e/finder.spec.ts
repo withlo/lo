@@ -133,11 +133,9 @@ test('⌘P lists the files by name, the changed ones first and marked, and Esc g
   expect(all.slice(7).every((each) => each?.endsWith('whole file'))).toBe(true);
   await expect(options(page).filter({ hasText: 'README.md' })).toContainText('whole file');
 
-  // The foot says what the keys do.
+  // The foot says what the keys do; the field shows none.
   const foot = finder(page).locator('kbd');
-  await expect(foot).toContainText(
-    mac ? ['⌘P', '⏎', '⌘⏎', 'Tab'] : ['Ctrl+P', 'Enter', 'Ctrl+Enter', 'Tab'],
-  );
+  await expect(foot).toContainText(mac ? ['⏎', '⌘⏎', 'Tab'] : ['Enter', 'Ctrl+Enter', 'Tab']);
 
   // Typing narrows the list, with the letters that matched marked.
   await page.keyboard.type('parser');
@@ -181,7 +179,7 @@ test('⏎ reveals a changed file in the tree, and the diff shows it', async ({ p
   await expect(diffHeader(page, 'src/text/wrap.ts')).toBeInViewport();
 });
 
-test('closing a palette or key help gives focus back to where it was, in a pull request’s tab', async ({
+test('closing a palette or keyboard shortcuts gives focus back to where it was, in a pull request’s tab', async ({
   page,
 }) => {
   await shown(page);
@@ -189,7 +187,7 @@ test('closing a palette or key help gives focus back to where it was, in a pull 
     [`${held}+Shift+p`, 'Command palette'],
     [`${held}+l`, 'Open pull request'],
     [`${held}+p`, 'Go to a file'],
-    ['?', 'Every key'],
+    ['?', 'Keyboard shortcuts'],
   ] as const;
   // The middle of the window takes focus without being tabbable, and holds the tree, which is.
   for (const [where, origin] of [

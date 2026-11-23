@@ -5,6 +5,8 @@ import {
   KEY_EVENT,
   parseKeys,
   Registry,
+  SCOPE_ATTRIBUTE,
+  setScopeSource,
   systemStrokes,
   type Target,
 } from '@lo/ui/commands';
@@ -16,16 +18,16 @@ import { systemOf } from './registry.ts';
 const declarations = defineCommands('view', {
   inline: {
     label: 'Inline or side by side',
-    group: 'Diff view',
+    group: 'View',
     keys: ['g i'],
-    bar: { menu: 'View', order: 10 },
+    bar: { menu: 'View', section: 'diff', order: 10 },
   },
   threads: {
     label: 'Threads panel',
-    group: 'Panels',
+    group: 'View',
     keys: ['cmd+shift+\\'],
     targets: ['file'],
-    bar: { menu: 'View', order: 20 },
+    bar: { menu: 'View', section: 'diff', order: 20 },
   },
   hidden: { label: 'Not in a menu', group: 'View', keys: ['cmd+k'] },
 });
@@ -50,6 +52,7 @@ describe('the app menu’s items', () => {
         id: 'view.inline',
         label: 'Inline or side by side',
         menu: 'View',
+        section: 'diff',
         order: 10,
         enabled: true,
       },
@@ -57,6 +60,7 @@ describe('the app menu’s items', () => {
         id: 'view.threads',
         label: 'Threads panel',
         menu: 'View',
+        section: 'diff',
         order: 20,
         key: { key: '\\', meta: true, ctrl: false, alt: false, shift: true },
         enabled: true,
@@ -74,9 +78,9 @@ describe('the app menu’s items', () => {
       defineCommands('open', {
         installCommand: {
           label: 'Install `lo` command',
-          group: 'Tabs and window',
+          group: 'Tabs',
           keys: [],
-          bar: { menu: 'App', order: 10 },
+          bar: { menu: 'App', section: 'app', order: 10 },
         },
       }),
       { installCommand: { run() {} } },
@@ -102,6 +106,58 @@ describe('the app menu’s items', () => {
       alt: true,
       shift: false,
     });
+  });
+});
+
+describe('a switch or a choice in the app menu', () => {
+  const layout = { value: 'split' };
+  const toggles = defineCommands('diff', {
+    split: {
+      label: 'Side by side',
+      group: 'View',
+      keys: ['g s'],
+      toggle: 'choice',
+      bar: { menu: 'View', section: 'diff', order: 10 },
+    },
+    inline: {
+      label: 'Inline',
+      group: 'View',
+      keys: ['g i'],
+      toggle: 'choice',
+      bar: { menu: 'View', section: 'diff', order: 20 },
+    },
+    quit: {
+      label: 'Quit',
+      group: 'App',
+      keys: ['ctrl+q'],
+      when: { system: 'linux' },
+      bar: { menu: 'File', section: 'quit', order: 10 },
+    },
+  });
+  const ran: string[] = [];
+  const registry = new Registry({
+    system: 'mac',
+    commands: handlers(toggles, {
+      split: { run: () => void ran.push('split'), checked: () => layout.value === 'split' },
+      inline: { run: () => void ran.push('inline'), checked: () => layout.value === 'inline' },
+      quit: { run() {} },
+    }),
+  });
+
+  it('says whether it’s checked, and leaves out a command for the other system', () => {
+    expect(
+      barItems(registry, { kind: 'none' }).map(({ id, toggle, checked }) => [id, toggle, checked]),
+    ).toEqual([
+      ['diff.split', 'choice', true],
+      ['diff.inline', 'choice', false],
+    ]);
+  });
+
+  it('does nothing when the choice clicked is already chosen', () => {
+    expect(runFromBar(registry, 'diff.split', { kind: 'none' })).toBe(true);
+    expect(ran).toEqual([]);
+    expect(runFromBar(registry, 'diff.inline', { kind: 'none' })).toBe(true);
+    expect(ran).toEqual(['inline']);
   });
 });
 
@@ -175,6 +231,75 @@ describe('a click in the app menu', () => {
     expect(registry.isPending()).toBe(false);
     expect(registry.handle(key('i'), place).kind).toBe('pass');
     expect(ran).toEqual(['threads']);
+  });
+});
+
+/** A diff on the page, whose cursor is at `target`, until the function it gives is called. */
+function diffAt(target: Target, inert = false): () => void {
+  const holder = document.createElement('div');
+  if (inert) holder.setAttribute('inert', '');
+  const diff = document.createElement('div');
+  diff.setAttribute(SCOPE_ATTRIBUTE, 'diff');
+  holder.append(diff);
+  document.body.append(holder);
+  const stop = setScopeSource(diff, { target: () => target });
+  return () => {
+    stop();
+    holder.remove();
+  };
+}
+
+describe('a step the app menu shares with a key in the diff', () => {
+  const steps = defineCommands('diff', {
+    nextFile: {
+      label: 'Next file',
+      group: 'Go',
+      keys: ['] f'],
+      targets: ['line'],
+      vim: 'motion',
+      when: { scope: 'diff' },
+      bar: { menu: 'Go', section: 'steps', order: 30 },
+    },
+  });
+  const ran: Target[] = [];
+  const registry = new Registry({
+    system: 'mac',
+    commands: handlers(steps, { nextFile: { run: (target) => void ran.push(target) } }),
+  });
+  const none: Target = { kind: 'none' };
+  const header: Target = { kind: 'header', file: 'b.ts', side: 'new' };
+  const line: Target = { kind: 'line', at: { file: 'a.ts', side: 'new', line: 4 } };
+
+  const enabled = (focused: Target) => barItems(registry, focused)[0]?.enabled;
+
+  it('can run from a file’s header, as its key goes from one as from a line', () => {
+    ran.length = 0;
+    expect(enabled(header)).toBe(true);
+    expect(runFromBar(registry, 'diff.nextFile', header)).toBe(true);
+    expect(ran).toEqual([header]);
+  });
+
+  it('goes from the diff’s cursor with focus outside it, as its key would there', () => {
+    ran.length = 0;
+    const gone = diffAt(line);
+    expect(enabled(none)).toBe(true);
+    expect(runFromBar(registry, 'diff.nextFile', none)).toBe(true);
+    expect(ran).toEqual([line]);
+    gone();
+    // With the cursor on a header, too.
+    const onHeader = diffAt(header);
+    expect(enabled(none)).toBe(true);
+    onHeader();
+  });
+
+  it('can’t run with no diff on screen: none, or one kept hidden under another view', () => {
+    ran.length = 0;
+    expect(enabled(none)).toBe(false);
+    const hidden = diffAt(line, true);
+    expect(enabled(none)).toBe(false);
+    expect(runFromBar(registry, 'diff.nextFile', none)).toBe("Next file doesn't apply here.");
+    hidden();
+    expect(ran).toEqual([]);
   });
 });
 

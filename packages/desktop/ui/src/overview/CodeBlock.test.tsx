@@ -229,8 +229,8 @@ describe('a walkthrough', () => {
   it('gives the keys that step it as the keymap has them, in its buttons’ tooltips', () => {
     vi.useFakeTimers();
     const steps = defineCommands('overview', {
-      previousStep: { label: 'Previous step', group: 'Overview', keys: ['left'] },
-      nextStep: { label: 'Next step', group: 'Overview', keys: ['right'] },
+      previousStep: { label: 'Previous step', group: 'View', keys: ['left'] },
+      nextStep: { label: 'Next step', group: 'View', keys: ['right'] },
     });
     const registry = new Registry({
       system: 'mac',

@@ -124,8 +124,8 @@ describe('the dialogs take focus as they open, without waiting for a frame', () 
     await vi.waitFor(() => expect(document.activeElement).toBe(page.querySelector('input')));
   });
 
-  it('key help, in its search', async () => {
-    const page = render(<KeyHelp open onOpenChange={() => {}} groups={[]} />);
+  it('keyboard shortcuts, in its search', async () => {
+    const page = render(<KeyHelp open onOpenChange={() => {}} here={[]} areas={[]} all={[]} />);
     await vi.waitFor(() =>
       expect(document.activeElement).toBe(page.querySelector('input[type="search"]')),
     );

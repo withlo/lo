@@ -14,7 +14,7 @@ import {
   type Declaration,
   type Declarations,
 } from './declare.ts';
-import { helpGroups, paletteItems, whereText } from './help.ts';
+import { areaOfCommand, helpAll, helpHere, paletteItems } from './help.ts';
 import { applyKeymap, parseKeymap } from './keymap.ts';
 import { declaredBindings } from './match.ts';
 import { menuSections } from './menu.ts';
@@ -28,28 +28,28 @@ const inBox = { scope: 'box' } as const;
 const box = defineCommands('comments', {
   add: {
     label: 'Add to review',
-    group: 'Comment box',
+    group: 'Comments',
     keys: ['cmd+enter'],
     editor: true,
     when: inBox,
   },
   attach: {
     label: 'Attach files',
-    group: 'Comment box',
+    group: 'Comments',
     keys: ['cmd+shift+a'],
     editor: true,
     when: inBox,
   },
   leave: {
     label: 'Leave insert mode',
-    group: 'Comment box',
+    group: 'Comments',
     keys: ['esc'],
     vim: 'own',
     when: { scope: 'box', mode: 'insert' },
   },
   close: {
     label: 'Close the box and keep the draft',
-    group: 'Comment box',
+    group: 'Comments',
     keys: ['esc'],
     editor: true,
     when: { scope: 'box', mode: 'normal' },
@@ -66,7 +66,7 @@ const elsewhere = defineCommands('review', {
   },
   more: {
     label: 'Tabs that don’t fit',
-    group: 'Tabs and window',
+    group: 'Tabs',
     keys: ['cmd+shift+a'],
     when: { except: ['box'] },
   },
@@ -81,7 +81,7 @@ const declare = (declaration: Declaration) => () => feature({ add: declaration }
 
 describe('a key the editor handles itself', () => {
   test('is declared with the scope of its editor, and nothing that would run it', () => {
-    const base = { label: 'Add', group: 'Comment box', keys: ['cmd+enter'], editor: true } as const;
+    const base = { label: 'Add', group: 'Comments', keys: ['cmd+enter'], editor: true } as const;
     expect(declare({ ...base, when: inBox })).not.toThrow();
     expect(declare(base)).toThrow('names no scope for the editor');
     expect(declare({ ...base, when: { except: ['box'] } })).toThrow('names no scope');
@@ -113,7 +113,7 @@ describe('a key the editor handles itself', () => {
   test('has its default keys checked like any other’s', () => {
     expect(checkKeys([box])).toEqual([]);
     const none = feature({
-      none: { label: 'None', group: 'Act', keys: [], editor: true, when: inBox },
+      none: { label: 'None', group: 'Review', keys: [], editor: true, when: inBox },
     });
     expect(checkKeys([none])).toEqual([
       'diff.none has no key on macOS.',
@@ -137,15 +137,15 @@ describe('the clash check', () => {
   test('passes a command for anywhere that leaves the box out, and one for other scopes', () => {
     expect(checkClashes([box, elsewhere])).toEqual([]);
     const diff = feature({
-      more: { label: 'More', group: 'Act', keys: ['cmd+shift+a'], when: { scope: 'diff' } },
+      more: { label: 'More', group: 'Review', keys: ['cmd+shift+a'], when: { scope: 'diff' } },
     });
     expect(checkClashes([box, diff])).toEqual([]);
   });
 
   test('covers a command of the box’s own scope on the same keys, and one starting with them', () => {
     const same = feature({
-      more: { label: 'More', group: 'Act', keys: ['cmd+shift+a'], when: inBox },
-      go: { label: 'Go', group: 'Act', keys: ['cmd+enter x'], when: inBox },
+      more: { label: 'More', group: 'Review', keys: ['cmd+shift+a'], when: inBox },
+      go: { label: 'Go', group: 'Review', keys: ['cmd+enter x'], when: inBox },
     });
     expect(checkClashes([box, same]).filter((line) => line.includes('on macOS'))).toEqual([
       '`cmd+enter` (comments.add) starts `cmd+enter x` (diff.go), in box (normal), box (visual) and box (insert), on macOS.',
@@ -158,7 +158,7 @@ describe('the Vim check', () => {
   test('covers it, as declared: its keys take none of Vim’s, and can’t say they do', () => {
     expect(checkVim([box])).toEqual([]);
     const takes = feature({
-      move: { label: 'Move', group: 'Comment box', keys: ['x'], editor: true, when: inBox },
+      move: { label: 'Move', group: 'Comments', keys: ['x'], editor: true, when: inBox },
     });
     expect(checkVim([takes])).toEqual([
       "`x` (diff.move) meets Vim's `x` without overVim, in box (normal) and box (visual), on macOS and Linux.",
@@ -200,12 +200,10 @@ const keysOf = (text: string) =>
   );
 
 /** What the keymap file says of a line that names one of the editor's commands. */
-const message = (id: string) =>
-  `${id} is handled by the editor in \`box\`, so the keymap file can't change its keys.`;
+const message = (id: string) => `\`${id}\`’s keys are fixed`;
 
 /** What it says of a command that would take `keys`, which start with one of the editor's keys. */
-const taking = (keys: string) =>
-  `${keys} would take ${keys.split(' ')[0]} (comments.add) from the editor that handles it itself.`;
+const taking = (keys: string) => `\`${keys}\` is fixed to \`comments.add\``;
 
 describe('the registry', () => {
   const given = handlers(box, {});
@@ -228,14 +226,17 @@ describe('the registry', () => {
     expect(registry.isPending()).toBe(false);
   });
 
-  test('still has its keys, for key help, marked as fixed', () => {
+  test('still has its keys, for keyboard shortcuts, marked as fixed', () => {
     const [add] = registry.keysOf('comments.add');
     expect(keyLabels(add!, 'mac')).toEqual(['⌘⏎']);
-    const row = helpGroups(registry)
+    const row = helpAll(registry, { vim: true })
       .flatMap((group) => group.rows)
       .find((each) => each.id === 'comments.close');
     expect(row).toMatchObject({ editor: true, vim: false, keys: [['Esc']] });
-    expect(row?.where).toBe("In comment boxes, in Vim's normal mode");
+    // Under the comment box's tab, and in "Here" in a box, though it can't run there.
+    expect(areaOfCommand(registry, 'comments.close')).toBe('box');
+    const here = helpHere(registry, 'box', NO_TARGET, { vim: true }).flatMap((group) => group.rows);
+    expect(here.map((each) => each.id)).toContain('comments.close');
   });
 
   test('refuses to run one, saying whose it is', () => {
@@ -246,7 +247,6 @@ describe('the registry', () => {
   test('doesn’t offer it in the palette or a menu', () => {
     expect(paletteItems(registry, 'box', NO_TARGET)).toEqual([]);
     expect(menuSections(registry, { kind: 'box', box: 'b' })).toEqual([]);
-    expect(whereText(given[0]!)).toBe('In comment boxes');
   });
 });
 
@@ -260,7 +260,7 @@ describe('the keymap file', () => {
   });
 
   test('can’t bind a command that would take its keys where the box is', () => {
-    const anywhere = feature({ every: { label: 'Every', group: 'Act', keys: ['y'] } }, 'view');
+    const anywhere = feature({ every: { label: 'Every', group: 'Review', keys: ['y'] } }, 'view');
     expect(apply('bind cmd+enter view.every', [box, anywhere]).errors).toEqual([
       { line: 1, message: taking('cmd+enter') },
     ]);
@@ -270,7 +270,7 @@ describe('the keymap file', () => {
     ]);
     // A command for another scope may have them there.
     const diff = feature({
-      go: { label: 'Go', group: 'Act', keys: ['y'], when: { scope: 'diff' } },
+      go: { label: 'Go', group: 'Review', keys: ['y'], when: { scope: 'diff' } },
     });
     expect(apply('bind cmd+enter diff.go', [box, diff]).errors).toEqual([]);
   });

@@ -339,7 +339,7 @@ export function readKeys(text: string): { keys: Sequence } | { error: string } {
     .trim()
     .split(/\s+/)
     .filter((word) => word !== '');
-  if (words.length === 0) return { error: 'No keys.' };
+  if (words.length === 0) return { error: 'No keys' };
   const keys: Chord[] = [];
   for (const word of words) {
     const chord = readChord(word);
@@ -368,24 +368,24 @@ function readChord(word: string): Chord | { error: string } {
   } else {
     parts = word.split('+');
     key = parts.pop() ?? '';
-    if (key === '') return { error: `"${word}" has no key after its last "+".` };
+    if (key === '') return { error: `\`${word}\` has no key after \`+\`` };
   }
   const held = new Set<Modifier>();
   for (const part of parts) {
     const modifier = modifiers.find((name) => name === part.toLowerCase());
     if (modifier === undefined) {
       return part === ''
-        ? { error: `"${word}" has a "+" with nothing before it.` }
-        : { error: `"${part}" in "${word}" isn't a modifier: use cmd, ctrl, alt or shift.` };
+        ? { error: `\`${word}\` has nothing before \`+\`` }
+        : { error: `\`${part}\` isn’t a modifier: use \`cmd\`, \`ctrl\`, \`alt\` or \`shift\`` };
     }
-    if (held.has(modifier)) return { error: `"${word}" holds ${modifier} twice.` };
+    if (held.has(modifier)) return { error: `\`${word}\` has \`${modifier}\` twice` };
     held.add(modifier);
   }
   if (!isCharacter(key)) {
     const name = key.toLowerCase();
     if (name === 'plus') key = '+';
     else if (names.has(name)) key = name;
-    else return { error: `"${key}" isn't a key: write one character, or a name such as enter.` };
+    else return { error: `\`${key}\` isn’t a key: use one character or a name such as \`enter\`` };
   }
   return normalizeChord({
     key,

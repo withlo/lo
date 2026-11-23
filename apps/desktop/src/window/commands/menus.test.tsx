@@ -34,36 +34,36 @@ const declared = defineCommands(
   {
     show: {
       label: 'Show in the diff',
-      group: 'Files',
+      group: 'Go',
       keys: ['enter'],
       targets: ['file'],
       menu: { on: 'file', order: 10 },
     },
     markViewed: {
       label: 'Mark viewed',
-      group: 'Files',
+      group: 'Go',
       keys: ['e'],
       targets: ['file'],
       menu: { on: 'file', order: 20 },
     },
     copyPath: {
       label: 'Copy the path',
-      group: 'Copy and open',
+      group: 'Tabs',
       keys: ['y p'],
       targets: ['file'],
       menu: { on: 'file', order: 30 },
     },
     comment: {
       label: 'Comment',
-      group: 'Act',
+      group: 'Review',
       keys: ['c'],
       targets: ['line'],
       menu: { on: 'line', order: 10 },
     },
-    open: { label: 'Open a PR', group: 'Find', keys: ['cmd+l'] },
+    open: { label: 'Open a PR', group: 'Go', keys: ['cmd+l'] },
     quit: {
       label: 'Quit Lo',
-      group: 'Tabs and window',
+      group: 'Tabs',
       keys: ['cmd+q'],
       when: { system: 'linux' },
       menu: { on: 'file', order: 40 },
@@ -489,7 +489,7 @@ describe('from the keyboard', () => {
     setScopeSource(tree, { target: () => file });
     tree.focus();
     const command = registry().command('keys.menu');
-    expect(command?.label).toBe('Show the right-click menu');
+    expect(command?.label).toBe('Show right-click menu');
     expect(
       registry()
         .keysOf('keys.menu')

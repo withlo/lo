@@ -124,6 +124,11 @@ export default defineFeature(contract, {
     // page the window loads is drawn at the setting's again.
     app.on('browser-window-created', (_event, window) => {
       window.webContents.on('did-navigate', () => applyZoom(window.webContents));
+      // The app menu checks Full screen while it's on, on Linux, however the window got there.
+      const say = () => publish('screen', { full: window.isFullScreen() });
+      window.on('enter-full-screen', say);
+      window.on('leave-full-screen', say);
+      window.webContents.on('did-finish-load', say);
     });
     use(settings).watch(zoom, (percent) => {
       if (zoomWrites === 0) drawAt(percent);

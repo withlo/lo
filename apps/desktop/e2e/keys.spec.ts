@@ -31,16 +31,18 @@ async function mark(page: Page): Promise<() => Promise<boolean>> {
 /** The tab strip, which holds the button that reviews a pull request, not the ones in Recent. */
 const strip = (page: Page) => page.getByRole('tablist', { name: 'Tabs' });
 
-test('Electron’s menu is gone: Linux has none, and macOS’s reloads nothing; and reload and developer-tools keys do nothing in the built app', async ({
+test('Electron’s menu is gone: Linux’s opens from a button, and macOS’s reloads nothing; and reload and developer-tools keys do nothing in the built app', async ({
   app,
   page,
 }) => {
   await expect(page.getByRole('tablist', { name: 'Tabs' })).toBeVisible();
 
-  await test.step('Electron’s menu is gone: Linux has none, and macOS’s reloads nothing', async () => {
+  await test.step('Electron’s menu is gone: Linux’s opens from a button, and macOS’s reloads nothing', async () => {
     const contents = await menuContents(app);
     if (!mac) {
+      // The same tree opens from the menu button at the end of the tab strip instead.
       expect(contents).toBeNull();
+      await expect(page.getByRole('button', { name: 'Show menu' })).toBeVisible();
       return;
     }
     for (const missing of [

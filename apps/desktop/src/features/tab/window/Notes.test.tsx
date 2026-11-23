@@ -4,7 +4,7 @@
 // the view was drawn, which leaves the view and says why in the header's chip.
 
 import { Banner, PRHeader } from '@lo/ui';
-import { holdRegistry } from '@lo/ui/commands';
+import { heldRegistry, holdRegistry, NO_TARGET } from '@lo/ui/commands';
 import { act, createElement, useSyncExternalStore, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
@@ -64,9 +64,10 @@ function store(said: BannerSaid | undefined) {
 
 /**
  * A feature's banner view, `order` in the slot, drawing what `kept` says while it says it, with a
- * button, "Show r5", that takes the banner away, as its feature's own does.
+ * button, "Show r5", that takes the banner away, as its feature's own does, and with `dismiss`, a
+ * Dismiss that does too.
  */
-function bannerView(id: string, order: number, kept: ReturnType<typeof store>) {
+function bannerView(id: string, order: number, kept: ReturnType<typeof store>, dismiss = false) {
   function Drawn() {
     const said = useSyncExternalStore(kept.subscribe, kept.get);
     return said
@@ -74,6 +75,7 @@ function bannerView(id: string, order: number, kept: ReturnType<typeof store>) {
           tone: said.tone,
           title: said.title,
           action: { label: 'Show r5', onClick: () => kept.set(undefined) },
+          ...(dismiss ? { onDismiss: () => kept.set(undefined) } : {}),
         })
       : null;
   }
@@ -101,6 +103,12 @@ function click(target: Element | null): void {
     target?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
   });
 }
+
+/** Runs command `id` through the window's registry, as the palette would. */
+const run = (id: string) => heldRegistry()?.run(id, NO_TARGET);
+
+/** Whether command `id` can run now, or why not. */
+const can = (id: string) => heldRegistry()?.enabled(id, NO_TARGET);
 
 /** Lets focus that's handed on, a microtask on, land. */
 async function settle(): Promise<void> {
@@ -157,6 +165,42 @@ describe('the tab’s banners', () => {
     act(() => start.set(undefined));
     expect(heard(host)).toBe('');
     expect(alerted(host)).toBe('');
+  });
+
+  it('go to the next, and are dismissed, by commands that press "+1" and Dismiss', () => {
+    const watched = store(undefined);
+    const start = store(undefined);
+    const host = draw(
+      <Slots
+        views={[
+          bannerView('merge.watched', 7, watched, true),
+          bannerView('stacks.start', 10, start),
+        ]}
+      >
+        <Banners tab={TAB} view={undefined} />
+      </Slots>,
+    );
+    expect(can('tab.nextBanner')).toBe('No messages');
+    expect(can('tab.dismissBanner')).toBe('No messages');
+    act(() => start.set({ tone: 'info', title: 'This diff includes #83’s changes' }));
+    expect(can('tab.nextBanner')).toBe('No other messages');
+    expect(can('tab.dismissBanner')).toBe('This message can’t be dismissed');
+    act(() => watched.set({ tone: 'info', title: 'ravi-k pushed r5 after your approval' }));
+    expect(titleOf(host)).toBe('ravi-k pushed r5 after your approval');
+    act(() => {
+      run('tab.nextBanner');
+    });
+    expect(titleOf(host)).toBe('This diff includes #83’s changes');
+    act(() => {
+      run('tab.nextBanner');
+    });
+    expect(titleOf(host)).toBe('ravi-k pushed r5 after your approval');
+    expect(can('tab.dismissBanner')).toBe(true);
+    act(() => {
+      run('tab.dismissBanner');
+    });
+    expect(watched.get()).toBeUndefined();
+    expect(titleOf(host)).toBe('This diff includes #83’s changes');
   });
 
   it('hand focus to the view as the last one goes with it, as its own action takes it away', () => {

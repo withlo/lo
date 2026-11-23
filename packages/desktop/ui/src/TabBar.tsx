@@ -149,6 +149,9 @@ const LABEL = 'give-up flex min-w-0 flex-1 items-center gap-6';
  */
 const LABEL_STEPS = ['mark'] as const;
 
+/** The attribute the strip's row has, its tabs and what's at its end, for finding focus in it. */
+export const STRIP_ATTRIBUTE = 'data-lo-strip';
+
 /**
  * The end of what a tab says: its title, or the skeleton that stands for it. A tab that closes
  * keeps room at its end for its close button, so nothing before the title, its number above all,
@@ -258,7 +261,10 @@ export function TabBar({
     onFold?.(foldedIds === '' ? [] : foldedIds.split('\n'));
   }, [foldedIds, onFold]);
   return (
-    <div className="flex h-tabbar-h shrink-0 bg-bg ps-window-inset-start pe-window-inset-end drag">
+    <div
+      className="flex h-tabbar-h shrink-0 bg-bg ps-window-inset-start pe-window-inset-end drag"
+      {...{ [STRIP_ATTRIBUTE]: '' }}
+    >
       <div
         ref={list}
         role="tablist"

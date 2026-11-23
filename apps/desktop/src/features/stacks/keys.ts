@@ -32,7 +32,7 @@ export default defineCommands(
      */
     nextLayer: {
       label: 'Next layer',
-      group: 'Jump',
+      group: 'Go',
       keys: ['] s'],
       when: anywhere,
       count: 'layers',
@@ -40,7 +40,7 @@ export default defineCommands(
     },
     previousLayer: {
       label: 'Previous layer',
-      group: 'Jump',
+      group: 'Go',
       keys: ['[ s'],
       when: anywhere,
       count: 'layers',
@@ -52,7 +52,7 @@ export default defineCommands(
      */
     focus: {
       label: 'Go to stack',
-      group: 'Files',
+      group: 'Go',
       keys: ['-'],
       when: { scope: 'tree' },
       control: 'the stack panel, which a click gives the keys',
@@ -63,7 +63,7 @@ export default defineCommands(
      */
     files: {
       label: 'Go to files',
-      group: 'Files',
+      group: 'Go',
       keys: ['+'],
       when: tree,
       control: 'the files, which a click gives the keys',
@@ -71,7 +71,7 @@ export default defineCommands(
     /** Moves the keyboard to the next layer in the tree, or, while layers are selected, grows them. */
     down: {
       label: 'Next layer',
-      group: 'Panels',
+      group: 'Go',
       keys: ['j', 'down'],
       when: tree,
       repeat: true,
@@ -79,7 +79,7 @@ export default defineCommands(
     },
     up: {
       label: 'Previous layer',
-      group: 'Panels',
+      group: 'Go',
       keys: ['k', 'up'],
       when: tree,
       repeat: true,
@@ -91,7 +91,7 @@ export default defineCommands(
      */
     show: {
       label: 'Show layer',
-      group: 'Panels',
+      group: 'Go',
       keys: ['enter'],
       targets: ['layer'],
       when: tree,
@@ -105,7 +105,8 @@ export default defineCommands(
      */
     choose: {
       label: 'Select layers',
-      group: 'Panels',
+      description: 'Shows several layers as one diff.',
+      group: 'View',
       keys: ['v'],
       targets: ['layer'],
       when: tree,
@@ -117,7 +118,8 @@ export default defineCommands(
      */
     upTo: {
       label: 'Show layers to here',
-      group: 'Panels',
+      description: 'From the bottom of the stack to this layer, as one diff.',
+      group: 'View',
       keys: [],
       targets: ['layer'],
       menu: { on: 'layer', order: 20 },
@@ -128,7 +130,7 @@ export default defineCommands(
      */
     cancel: {
       label: 'Stop selecting layers',
-      group: 'Panels',
+      group: 'View',
       keys: ['esc'],
       when: tree,
       control: 'Stop in the hint row while layers are selected',
@@ -139,14 +141,15 @@ export default defineCommands(
      */
     back: {
       label: 'Show single layer',
-      group: 'Jump',
+      group: 'View',
       keys: ['esc'],
       when: { scope: 'diff', mode: 'normal' },
       control: 'Show single layer on the bar over layers shown as one diff',
     },
     openOnGithub: {
       label: 'Open on GitHub',
-      group: 'Copy and open',
+      description: 'The layer’s pull request.',
+      group: 'Tabs',
       keys: ['g x'],
       targets: ['layer'],
       when: tree,

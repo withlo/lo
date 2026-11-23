@@ -76,6 +76,8 @@ export const contract = defineContract('app', {
   topics: {
     /** The system's appearance, each time it changes. */
     theme,
+    /** Whether the window is in full screen, each time that changes and each time its page loads. */
+    screen: z.strictObject({ full: z.boolean() }),
     /** What Lo finds each time it looks for git. */
     git: gitInfo,
   },

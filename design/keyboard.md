@@ -7,8 +7,8 @@ Every key can be remapped in `~/.config/lo/keymap`.
 
 ## Vim keys
 
-"Vim keys" in the command palette and the View menu switches the `editor.vim` setting, and every
-code view and comment box follows at once.
+"Vim keys" in the command palette and Settings › Keyboard switches the `editor.vim` setting, and
+every code view and comment box follows at once.
 
 - **Off, as Lo starts,** code has a caret, as text anywhere does: click to place it, arrows to move
   it, Shift with either to select, `⌘C` to copy, and `/` or `⌘F` to search. A comment box is typed
@@ -25,8 +25,8 @@ code view and comment box follows at once.
 
 ## Rules
 
-- **Every action gets a key before it ships,** and appears in the command palette (`⌘⇧P`), the key
-  help (`?`) and the right-click menu where one makes sense.
+- **Every action gets a key before it ships,** and appears in the command palette (`⌘⇧P`), Keyboard
+  shortcuts (`?`) and the right-click menu where one makes sense.
 - **Every action gets a control too,** drawn where its target is, which runs the command as its key
   does. Its command says where in `keys.ts` (`control`, `menu` or `bar`), and a check fails on one
   that doesn't. "Every action has a control" in [`README.md`](README.md#every-action-has-a-control)
@@ -65,6 +65,37 @@ code view and comment box follows at once.
   back everywhere but in a field on macOS, which opens a line with it. The app lists both in
   `window/commands/fieldless.ts`, and the window logs an error when a field has focus in a scope
   listed as holding none, as the check is wrong then.
+
+## Groups, the palette and Keyboard shortcuts
+
+- **Every command is in one of eight groups,** in this order, the same in the command palette,
+  Keyboard shortcuts and the menu bar: Go, Review, Comments, Code, View, Merge, Tabs and App.
+  `groups` in the command engine is the list, and a command's `group` can only be one of them.
+- **Keyboard shortcuts opens on "Here":** the keys that work in what has focus, now. Every other
+  area of the window is a tab, one focus scope each. A command with no key shows only with "Show all
+  commands" on, and Vim's tags only with Vim keys on.
+- **A command's description is one line in the reader's words,** for what its label can't say. The
+  palette and Keyboard shortcuts show it under the label. Code in a label or a description is in
+  backticks, and both draw it as code.
+
+## The menu bar
+
+The menu bar holds actions on the window and the pull request. Preferences and one-time set-up live
+in Settings.
+
+- **The menus are a fixed list,** in this order: Lo, File, Edit, View, Go, Review, Window and Help.
+  `barMenus` in `apps/desktop/src/platform/menu.ts` gives each its sections, and a command joins one
+  by name in its `bar`: the menu, the section and its order there. A test fails on a command that
+  names a menu or a section the list doesn't have.
+- **A switch shows a check, and a choice a radio mark,** for what's on now. A command declared a
+  `toggle` says when it's checked, and a test fails on one that doesn't. The window sends the menu
+  again after every command that runs and every click in the page, and a click on a check or radio
+  item in the menu has main draw it again from what the window last sent, so the mark never drifts.
+- **Full screen on macOS is the system's own item,** which says "Enter Full Screen" or "Exit Full
+  Screen" for what a click does, so it shows no check. Linux's Full screen is Lo's, and checked.
+- **Linux gets the same tree,** from the menu button at the end of the tab strip, or `F10`. It acts
+  on what has focus, as a menu bar does: opened from the strip by the keyboard, it acts on what had
+  focus before the strip, which gets focus back.
 
 ## Focus
 
@@ -111,11 +142,13 @@ code view and comment box follows at once.
 ## Linux
 
 Ctrl takes the place of `⌘` in every key. Vim's `⌃` keys keep their meanings, so two keys differ
-from what that rule would give, on both systems:
+from what that rule would give, on both systems, and one on Linux alone:
 
 - **`⌘L` opens a PR,** the browser's "type an address" key. `⌘O` would become Ctrl+O, which is `⌃o`
   (back), so it stays a macOS alias only.
-- **`⌥⏎` shows an action's key in the palettes.** `⌃⏎` would be the same as `⌘⏎`, the other way.
+- **`⌥⏎` shows a command's key in the palettes.** `⌃⏎` would be the same as `⌘⏎`, the other way.
+- **Find… is Ctrl+Shift+F,** as in a terminal, whose program keeps Ctrl+F. Ctrl+F is Vim's `⌃f`, a
+  page down. With Vim keys off, a code view's own Ctrl+F opens its search, as `/` does.
 
 `⌃⇥` and `⌃⇧⇥` also move to the next and previous tab, on both systems, beside `⌘⇧]` and `⌘⇧[`.
 

@@ -40,7 +40,7 @@ const anywhere: Focus = { scope: 'window', text: false };
 const box: Focus = { scope: 'box', text: false, view: { mode: 'insert', pending: false } };
 const diff: Focus = { scope: 'diff', text: false, view: { mode: 'normal', pending: false } };
 
-describe('on Linux, which has no app menu', () => {
+describe('on Linux', () => {
   it('Ctrl+Q quits, anywhere', () => {
     for (const focus of [anywhere, box, diff]) {
       expect(runs({ key: 'q', code: 'KeyQ', ctrlKey: true }, focus)).toBe('app.quit');
@@ -77,7 +77,7 @@ describe('on macOS', () => {
     expect(runs({ key: '-', code: 'Minus', metaKey: true }, diff, 'mac')).toBe('app.zoomOut');
     expect(runs({ key: '0', code: 'Digit0', metaKey: true }, box, 'mac')).toBe('app.actualSize');
     expect(
-      commands.filter((command) => command.bar?.menu === 'View').map((command) => command.id),
+      commands.filter((command) => command.bar?.section === 'zoom').map((command) => command.id),
     ).toEqual(['app.zoomIn', 'app.zoomOut', 'app.actualSize']);
   });
 });
@@ -93,18 +93,19 @@ describe('About and the licenses', () => {
     expect([about && keyless(about), licenses && keyless(licenses)]).toEqual([true, true]);
   });
 
-  it('About Lo is Linux’s, in the right-click menu of the window, where macOS’s app menu has About', () => {
+  it('About Lo is Linux’s, in Help and the right-click menu of the window, where macOS has its own', () => {
     expect(find('app.about')?.when).toEqual({ system: 'linux' });
     expect(find('app.about')?.menu).toMatchObject({ on: 'none' });
-    expect(find('app.about')?.bar).toBeUndefined();
+    expect(find('app.about')?.bar).toMatchObject({ menu: 'Help', section: 'about' });
   });
 
-  it('Show licenses is in the app menu on macOS, ahead of the other commands that sit under About', () => {
-    expect(find('app.licenses')?.bar).toEqual({ menu: 'App', order: 5 });
+  it('Open licenses is in Settings, not the app menu, on both systems', () => {
+    expect(find('app.licenses')?.bar).toBeUndefined();
+    expect(find('app.licenses')?.control).toContain('Settings › About');
     expect(find('app.licenses')?.when).toBeUndefined();
   });
 
-  it('Show licenses is in the right-click menu of the window, after About Lo, which Linux has there', () => {
+  it('Open licenses is in the right-click menu of the window, after About Lo, which Linux has there', () => {
     const about = find('app.about')?.menu;
     const licenses = find('app.licenses')?.menu;
     expect(licenses).toMatchObject({ on: 'none' });

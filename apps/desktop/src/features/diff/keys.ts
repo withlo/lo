@@ -13,11 +13,23 @@ const code: When = { scope: ['diff', 'file'] };
 const codeNormal: When = { scope: ['diff', 'file'], mode: 'normal' };
 
 export default defineCommands('diff', {
+  /**
+   * Shows the diff in the middle of the pull request's tab on screen: one of the three views
+   * the header's switch lists, so the app menu has it beside the other two, checked while it shows.
+   */
+  show: {
+    label: 'Diff',
+    control: "Diff in the pull request's header",
+    group: 'View',
+    keys: [],
+    bar: { menu: 'View', section: 'views', order: 20 },
+    toggle: 'choice',
+  },
   nextChange: {
     label: 'Next change',
-    group: 'Jump',
+    group: 'Go',
     control: 'Previous change and Next change in the diff bar',
-    bar: { menu: 'Go', order: 30 },
+    bar: { menu: 'Go', section: 'steps', order: 10 },
     keys: ['] c'],
     // From the line, as a key; from anywhere, as its button.
     targets: ['line', 'none'],
@@ -26,9 +38,9 @@ export default defineCommands('diff', {
   },
   previousChange: {
     label: 'Previous change',
-    group: 'Jump',
+    group: 'Go',
     control: 'Previous change and Next change in the diff bar',
-    bar: { menu: 'Go', order: 40 },
+    bar: { menu: 'Go', section: 'steps', order: 20 },
     keys: ['[ c'],
     // From the line, as a key; from anywhere, as its button.
     targets: ['line', 'none'],
@@ -37,8 +49,8 @@ export default defineCommands('diff', {
   },
   nextFile: {
     label: 'Next file',
-    group: 'Jump',
-    bar: { menu: 'Go', order: 50 },
+    group: 'Go',
+    bar: { menu: 'Go', section: 'steps', order: 30 },
     keys: ['] f'],
     targets: ['line'],
     vim: 'motion',
@@ -46,8 +58,8 @@ export default defineCommands('diff', {
   },
   previousFile: {
     label: 'Previous file',
-    group: 'Jump',
-    bar: { menu: 'Go', order: 60 },
+    group: 'Go',
+    bar: { menu: 'Go', section: 'steps', order: 40 },
     keys: ['[ f'],
     targets: ['line'],
     vim: 'motion',
@@ -56,8 +68,8 @@ export default defineCommands('diff', {
   /** The next review thread under a line, in the files' order. */
   nextThread: {
     label: 'Next thread',
-    group: 'Jump',
-    bar: { menu: 'Go', order: 70 },
+    group: 'Go',
+    bar: { menu: 'Go', section: 'steps', order: 50 },
     keys: ['] t'],
     targets: ['line'],
     vim: 'motion',
@@ -65,8 +77,8 @@ export default defineCommands('diff', {
   },
   previousThread: {
     label: 'Previous thread',
-    group: 'Jump',
-    bar: { menu: 'Go', order: 80 },
+    group: 'Go',
+    bar: { menu: 'Go', section: 'steps', order: 60 },
     keys: ['[ t'],
     targets: ['line'],
     vim: 'motion',
@@ -79,8 +91,9 @@ export default defineCommands('diff', {
    * to be over.
    */
   otherEnd: {
-    label: 'The other end of moved code',
-    group: 'Jump',
+    label: 'Go to moved code',
+    description: 'From moved code, goes to where it went or came from.',
+    group: 'Go',
     control: 'the place on a moved-code label',
     keys: ['g m'],
     targets: ['line'],
@@ -94,7 +107,8 @@ export default defineCommands('diff', {
    */
   markViewed: {
     label: 'Mark viewed',
-    group: 'Act',
+    description: 'Collapses the file and goes to the next one not viewed.',
+    group: 'Review',
     control: "the viewed ball in a file's header",
     keys: ['e'],
     targets: ['line', 'header'],
@@ -105,56 +119,59 @@ export default defineCommands('diff', {
   },
   /** The cursor's row on the other side. */
   otherSide: {
-    label: 'The other side',
+    label: 'Go to other side',
     control: 'a line on the other side',
-    group: 'Diff view',
+    group: 'Go',
     keys: ['tab'],
     when: normal,
   },
   /** Sets the diff side by side, as the setting: with `diff.inline`, a choice of two. */
   sideBySide: {
     label: 'Side by side',
-    group: 'Diff view',
+    group: 'View',
     // `g i` is the switch's, which comes back side by side.
     keys: [],
     when: diff,
-    bar: { menu: 'View', order: 30 },
+    bar: { menu: 'View', section: 'diff', order: 10 },
+    toggle: 'choice',
   },
   /** A switch, as the setting: draws the diff in one column, or side by side again. */
   inline: {
     label: 'Inline',
-    group: 'Diff view',
+    group: 'View',
     keys: ['g i'],
     overVim: true,
     when: normal,
-    bar: { menu: 'View', order: 35 },
+    bar: { menu: 'View', section: 'diff', order: 20 },
+    toggle: 'choice',
   },
   whitespace: {
-    label: 'Hide or show whitespace changes',
-    group: 'Diff view',
+    label: 'Hide whitespace changes',
+    group: 'View',
     keys: ['g w'],
     overVim: true,
     when: normal,
-    bar: { menu: 'View', order: 40 },
+    bar: { menu: 'View', section: 'diff', order: 30 },
+    toggle: 'switch',
   },
   openRun: {
-    label: 'Open unchanged lines',
-    group: 'Diff view',
+    label: 'Show unchanged lines',
+    group: 'View',
     control: 'a fold of unchanged lines',
     keys: ['z o'],
     targets: ['line'],
     when: normal,
   },
   closeRun: {
-    label: 'Close unchanged lines',
-    group: 'Diff view',
+    label: 'Hide unchanged lines',
+    group: 'View',
     keys: ['z c'],
     targets: ['line'],
     when: normal,
   },
   openFile: {
     label: 'Show all unchanged lines',
-    group: 'Diff view',
+    group: 'View',
     keys: ['z R'],
     targets: ['line', 'header'],
     when: normal,
@@ -167,7 +184,7 @@ export default defineCommands('diff', {
    */
   toggleFile: {
     label: 'Collapse file',
-    group: 'Diff view',
+    group: 'View',
     control: "the row under a file's header",
     keys: ['z a'],
     targets: ['line', 'header'],
@@ -181,7 +198,7 @@ export default defineCommands('diff', {
    */
   toggleThread: {
     label: 'Collapse thread',
-    group: 'Threads',
+    group: 'Comments',
     keys: ['z a'],
     targets: ['thread'],
     when: { scope: 'diff', mode: 'normal', on: 'thread' },
@@ -193,8 +210,8 @@ export default defineCommands('diff', {
    * cursor's side. `⌃o` comes back.
    */
   wholeFile: {
-    label: 'Whole file at the cursor',
-    group: 'Copy and open',
+    label: 'Open whole file',
+    group: 'Code',
     keys: ['g f'],
     targets: ['line', 'header'],
     jump: true,
@@ -203,8 +220,8 @@ export default defineCommands('diff', {
   },
   /** In the whole-file view, a file larger than Lo loads at once, loaded anyway. */
   loadWhole: {
-    label: 'Load a large file anyway',
-    group: 'Diff view',
+    label: 'Show large file',
+    group: 'Code',
     control: "the button in the whole file's note on a large file",
     keys: ['z a'],
     targets: ['header', 'line'],
@@ -215,8 +232,8 @@ export default defineCommands('diff', {
    * A count copies that many from the cursor's, as Vim's `2yy` yanks two.
    */
   copyLines: {
-    label: 'Copy the lines',
-    group: 'Copy and open',
+    label: 'Copy lines',
+    group: 'Code',
     keys: ['y y'],
     targets: ['line'],
     overVim: true,
@@ -229,8 +246,8 @@ export default defineCommands('diff', {
    * alone, in the file at the head.
    */
   copyLink: {
-    label: "Copy the line's link",
-    group: 'Copy and open',
+    label: 'Copy link to line',
+    group: 'Code',
     keys: ['y l'],
     targets: ['line'],
     overVim: true,
@@ -239,7 +256,7 @@ export default defineCommands('diff', {
   },
   copyPath: {
     label: 'Copy path',
-    group: 'Copy and open',
+    group: 'Code',
     keys: ['y p'],
     targets: ['line', 'header'],
     overVim: true,
@@ -252,7 +269,8 @@ export default defineCommands('diff', {
    */
   openOnGithub: {
     label: 'Open on GitHub',
-    group: 'Copy and open',
+    description: 'The line or file, in the pull request’s changes.',
+    group: 'Code',
     keys: ['g x'],
     targets: ['line', 'header'],
     when: codeNormal,
@@ -264,17 +282,32 @@ export default defineCommands('diff', {
    * only; a click on the marker's ball opens it too.
    */
   overviewNote: {
-    label: 'Overview note',
-    group: 'Copy and open',
+    label: 'Show overview note',
+    group: 'Code',
     keys: [],
     targets: ['line'],
     when: normal,
     menu: { on: 'line', order: 40 },
   },
-  down: { label: 'Line down', group: 'Move', keys: ['j'], vim: 'own', when: code },
-  up: { label: 'Line up', group: 'Move', keys: ['k'], vim: 'own', when: code },
-  select: { label: 'Select lines', group: 'Move', keys: ['v'], vim: 'own', when: code },
-  search: { label: 'Search', group: 'Find', keys: ['/'], vim: 'own', when: code },
-  nextMatch: { label: 'Next match', group: 'Find', keys: ['n'], vim: 'own', when: code },
-  previousMatch: { label: 'Previous match', group: 'Find', keys: ['N'], vim: 'own', when: code },
+  down: { label: 'Next line', group: 'Go', keys: ['j'], vim: 'own', when: code },
+  up: { label: 'Previous line', group: 'Go', keys: ['k'], vim: 'own', when: code },
+  select: { label: 'Select lines', group: 'Go', keys: ['v'], vim: 'own', when: code },
+  search: { label: 'Find…', group: 'Go', keys: ['/'], vim: 'own', when: code },
+  /**
+   * Opens the search in the code on screen, a file whole's or the diff's, as `/` does there, with
+   * focus in it: the app menu's Find…, which works wherever focus is. On Linux, Ctrl+F is Vim's
+   * page down, so it's Ctrl+Shift+F there, as in a terminal, whose program keeps Ctrl+F.
+   */
+  find: {
+    label: 'Find…',
+    group: 'Go',
+    keys: [
+      { keys: 'cmd+f', on: 'mac' },
+      { keys: 'cmd+shift+f', on: 'linux' },
+    ],
+    when: code,
+    bar: { menu: 'Edit', section: 'find', order: 10 },
+  },
+  nextMatch: { label: 'Next match', group: 'Go', keys: ['n'], vim: 'own', when: code },
+  previousMatch: { label: 'Previous match', group: 'Go', keys: ['N'], vim: 'own', when: code },
 });

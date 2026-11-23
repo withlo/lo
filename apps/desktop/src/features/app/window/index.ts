@@ -1,10 +1,12 @@
 import { handlers } from '@lo/ui/commands';
 
 import { IpcError } from '../../../ipc/contract.ts';
-import { notify } from '../../../window/commands/notices.tsx';
+import { menuStale } from '../../../window/commands/bar.ts';
+import { fail, notify, saidBy } from '../../../window/commands/notices.tsx';
 import { NO_TEXT_APP, TEXT_APP_QUERY, UNSUPPORTED } from '../../../window/explain.ts';
 import type { WindowFeature } from '../../../window/features.ts';
 import { client, type Client } from '../../../window/ipc.ts';
+import { contract as tabs } from '../../tab/contract.ts';
 import { contract, type Theme } from '../contract.ts';
 import keys from '../keys.ts';
 import { offerCodeViews } from './codeviews.ts';
@@ -49,6 +51,25 @@ async function showLicenses(): Promise<void> {
   }
 }
 
+/** Lo's documentation: its README, on GitHub. */
+export const DOCS = 'https://github.com/withlo/lo#readme';
+
+/** A new issue on Lo's repository, on GitHub. */
+export const REPORT = 'https://github.com/withlo/lo/issues/new';
+
+/** Opens a page of Lo's on GitHub in the browser, and says `failed` if that failed. */
+async function openPage(url: string, failed: string): Promise<void> {
+  try {
+    await client(tabs).openExternal({ url });
+  } catch (error) {
+    console.error("Lo couldn't open its page on GitHub:", error);
+    fail(failed, saidBy(error));
+  }
+}
+
+/** Whether the window is in full screen, as main last said. */
+let fullScreen = false;
+
 export default {
   commands: handlers(keys, {
     about: { run: () => main().about() },
@@ -57,13 +78,19 @@ export default {
     zoomIn: { run: () => main().zoom({ step: 'in' }) },
     zoomOut: { run: () => main().zoom({ step: 'out' }) },
     actualSize: { run: () => main().zoom({ step: 'reset' }) },
-    fullScreen: { run: () => main().fullScreen() },
+    fullScreen: { run: () => main().fullScreen(), checked: () => fullScreen },
+    docs: { run: () => openPage(DOCS, 'Couldn’t open the documentation') },
+    report: { run: () => openPage(REPORT, 'Couldn’t open GitHub’s page') },
   }),
   views: Rows,
   start() {
     const app = main();
     // Subscribed first, so no change between the two is missed.
     app.subscribe('theme', showTheme);
+    app.subscribe('screen', ({ full }) => {
+      fullScreen = full;
+      menuStale();
+    });
     app
       .info()
       .then(({ theme, packaged, nonce }) => {

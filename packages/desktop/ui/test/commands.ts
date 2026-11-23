@@ -14,7 +14,7 @@ import {
 export const diff = defineCommands('diff', {
   markViewed: {
     label: 'Mark viewed',
-    group: 'Act',
+    group: 'Review',
     keys: ['e'],
     targets: ['line', 'file'],
     overVim: true,
@@ -23,49 +23,49 @@ export const diff = defineCommands('diff', {
   },
   comment: {
     label: 'Comment',
-    group: 'Act',
+    group: 'Review',
     keys: ['c'],
     targets: ['line'],
     when: { scope: 'diff' },
   },
   otherSide: {
     label: 'Other side',
-    group: 'Act',
+    group: 'Review',
     keys: ['tab'],
     targets: ['line'],
     jump: true,
     when: { scope: 'diff' },
   },
-  nextFile: { label: 'Next file', group: 'Jump', keys: ['] f'], targets: ['line'], vim: 'motion' },
+  nextFile: { label: 'Next file', group: 'Go', keys: ['] f'], targets: ['line'], vim: 'motion' },
   copyLine: {
     label: 'Copy the line',
-    group: 'Copy and open',
+    group: 'Tabs',
     keys: ['y y'],
     targets: ['line'],
     when: { scope: ['diff', 'file'] },
   },
   copyLink: {
     label: 'Copy a link to it',
-    group: 'Copy and open',
+    group: 'Tabs',
     keys: ['y l'],
     targets: ['line'],
     when: { scope: ['diff', 'file'] },
   },
   inline: {
     label: 'Inline or side by side',
-    group: 'Diff view',
+    group: 'View',
     keys: ['g i'],
     when: { scope: 'diff' },
   },
   expand: {
     label: 'Expand unchanged code',
-    group: 'Diff view',
+    group: 'View',
     keys: ['z o'],
     when: { scope: 'diff' },
   },
   reply: {
     label: 'Reply',
-    group: 'Threads',
+    group: 'Comments',
     keys: ['r'],
     targets: ['thread'],
     when: { scope: 'diff' },
@@ -73,37 +73,37 @@ export const diff = defineCommands('diff', {
 });
 
 export const vim = defineCommands('vim', {
-  down: { label: 'Line down', group: 'Move', keys: ['j'], vim: 'own' },
-  up: { label: 'Line up', group: 'Move', keys: ['k'], vim: 'own' },
-  top: { label: 'Top', group: 'Move', keys: ['g g'], vim: 'own' },
+  down: { label: 'Line down', group: 'Go', keys: ['j'], vim: 'own' },
+  up: { label: 'Line up', group: 'Go', keys: ['k'], vim: 'own' },
+  top: { label: 'Top', group: 'Go', keys: ['g g'], vim: 'own' },
 });
 
 export const review = defineCommands('review', {
   submit: { label: 'Submit review', group: 'Review', keys: ['cmd+enter'] },
   add: {
     label: 'Add to review',
-    group: 'Comment box',
+    group: 'Comments',
     keys: ['cmd+enter'],
     when: { scope: 'box' },
   },
-  now: { label: 'Comment now', group: 'Comment box', keys: ['alt+enter'], when: { scope: 'box' } },
+  now: { label: 'Comment now', group: 'Comments', keys: ['alt+enter'], when: { scope: 'box' } },
   preview: {
     label: 'Write or preview',
-    group: 'Comment box',
+    group: 'Comments',
     keys: ['cmd+shift+v'],
     when: { scope: 'box' },
   },
   close: {
     label: 'Close and keep the draft',
-    group: 'Comment box',
+    group: 'Comments',
     keys: ['esc esc'],
     when: { scope: 'box', mode: 'normal' },
   },
 });
 
 export const keys = defineCommands('keys', {
-  help: { label: 'Every key', group: 'Tabs and window', keys: ['?'] },
-  palette: { label: 'Every action', group: 'Find', keys: ['cmd+shift+p'] },
+  help: { label: 'Every key', group: 'Tabs', keys: ['?'] },
+  palette: { label: 'Every action', group: 'Go', keys: ['cmd+shift+p'] },
   back: {
     label: 'Back',
     group: 'Code',
@@ -118,26 +118,26 @@ export const keys = defineCommands('keys', {
     overVim: true,
     when: { except: ['box'] },
   },
-  tree: { label: 'Tree at this file', group: 'Files', keys: ['-'] },
-  erase: { label: 'Never on its own', group: 'Find', keys: ['backspace'] },
+  tree: { label: 'Tree at this file', group: 'Go', keys: ['-'] },
+  erase: { label: 'Never on its own', group: 'Go', keys: ['backspace'] },
   nextView: { label: 'Next view', group: 'View', keys: ['`'] },
 });
 
 export const tab = defineCommands('tab', {
   close: {
     label: 'Close the tab',
-    group: 'Tabs and window',
+    group: 'Tabs',
     keys: ['cmd+w'],
     targets: ['tab', 'none'],
   },
   open: {
     label: 'Open a PR',
-    group: 'Find',
+    group: 'Go',
     keys: ['cmd+l', { keys: 'cmd+o', on: 'mac' }],
   },
   install: {
     label: 'Install the command-line tool',
-    group: 'Tabs and window',
+    group: 'Tabs',
     keys: ['cmd+shift+i'],
     when: { system: 'mac' },
   },
@@ -146,17 +146,17 @@ export const tab = defineCommands('tab', {
 export const tree = defineCommands(
   'tree',
   {
-    openAll: { label: 'Open all', group: 'Files', keys: ['z R'], when: { scope: 'tree' } },
-    closeAll: { label: 'Close all', group: 'Files', keys: ['z M'], when: { scope: 'tree' } },
+    openAll: { label: 'Open all', group: 'Go', keys: ['z R'], when: { scope: 'tree' } },
+    closeAll: { label: 'Close all', group: 'Go', keys: ['z M'], when: { scope: 'tree' } },
   },
   { scopes: ['tree'] },
 );
 
 export const palette = defineCommands('palette', {
-  run: { label: 'Run', group: 'Palettes', keys: ['enter'], when: { scope: 'palette' } },
+  run: { label: 'Run', group: 'App', keys: ['enter'], when: { scope: 'palette' } },
   next: {
     label: 'Next',
-    group: 'Palettes',
+    group: 'App',
     keys: ['down'],
     repeat: true,
     when: { scope: 'palette' },
@@ -168,7 +168,7 @@ export const overview = defineCommands(
   {
     nextBlock: {
       label: 'Next block',
-      group: 'Overview',
+      group: 'View',
       keys: ['] b'],
       targets: ['block', 'none'],
       repeat: true,
@@ -176,7 +176,7 @@ export const overview = defineCommands(
     },
     previousBlock: {
       label: 'Previous block',
-      group: 'Overview',
+      group: 'View',
       keys: ['[ b'],
       targets: ['block', 'none'],
       when: { scope: 'overview' },

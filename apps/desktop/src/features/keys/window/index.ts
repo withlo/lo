@@ -1,4 +1,5 @@
 import { handlers } from '@lo/ui/commands';
+import { createElement } from 'react';
 
 import { barItems, focusedTarget, onMenuStale, runFromBar } from '../../../window/commands/bar.ts';
 import { applyKeymapFile, keymapOpenable, keymapState } from '../../../window/commands/keymap.ts';
@@ -8,16 +9,23 @@ import { showHighlighted, toggleHelp, togglePalette } from '../../../window/comm
 import { escapeToMiddle, here, registry } from '../../../window/commands/registry.ts';
 import type { WindowFeature } from '../../../window/features.ts';
 import { client, type Client } from '../../../window/ipc.ts';
+import { defineView } from '../../../window/slots.tsx';
+import { onSettingsChange } from '../../settings/window/shared.ts';
+import { stripEnd } from '../../tab/window/shared.ts';
 import { contract } from '../contract.ts';
 import keys from '../keys.ts';
+import { MenuButton, openAppMenu, watchStripFocus } from './MenuButton.tsx';
 import { keymapWords, unopenedWords } from './words.ts';
 
 /**
- * Keeps main's app menu in step with the registry: its commands' labels, keys and whether they
- * can run where focus is, and when a feature says that has changed. Sends only when something
- * changed.
+ * Keeps main's app menu in step with the registry: its commands' labels, keys, whether they can
+ * run where focus is and whether they're checked. It looks again after every command that runs,
+ * however it was asked to, and after every click in the page, once the page has handled it, as
+ * well as when a feature says something changed, or a setting a switch follows. Sends only when
+ * something changed: main draws the menu again from what was sent last when a click flips a check.
+ * Returns a function that sends at once, if anything changed.
  */
-function syncMenu(menu: Client<typeof contract>): void {
+function syncMenu(menu: Client<typeof contract>): () => void {
   let sent = '';
   let queued = false;
   const send = () => {
@@ -36,16 +44,24 @@ function syncMenu(menu: Client<typeof contract>): void {
     queueMicrotask(send);
   };
   registry().subscribe(soon);
+  registry().onRun(soon);
   onMenuStale(soon);
   // Back and Forward dim where the tab's history has nowhere to go, and where the cursor is counts:
   // it moves with a key or a click, so the menu looks again after each.
   registry().history.subscribe(soon);
+  onSettingsChange(soon);
   window.addEventListener('focusin', soon);
   window.addEventListener('focusout', soon);
   window.addEventListener('keyup', soon, true);
   window.addEventListener('pointerup', soon, true);
+  // A click's handlers run after `pointerup`: as it bubbles out of the page, they have.
+  window.addEventListener('click', soon);
   send();
+  return send;
 }
+
+/** Sends the app menu to main now, if it changed: before main opens it, say. */
+let sendMenu: () => void = () => undefined;
 
 /** The feature's client, made when it's needed, once the window's bridge is there. */
 function main(): Client<typeof contract> {
@@ -111,7 +127,17 @@ export default {
     },
     // A file Lo won't open says why when asked, as any command that can't run does.
     openKeymap: { run: openKeymap, enabled: keymapOpenable },
+    appMenu: { run: () => openAppMenu(main(), sendMenu) },
   }),
+  views: [
+    // Linux's window has no menu bar: the app menu opens from the end of the tab strip, after the
+    // gear.
+    defineView(stripEnd, {
+      id: 'keys.menu',
+      order: 20,
+      render: () => (registry().system === 'linux' ? createElement(MenuButton) : null),
+    }),
+  ],
   start() {
     const menu = main();
     syncKeymap(menu);
@@ -125,7 +151,7 @@ export default {
       }
       runFromBar(registry(), id, focusedTarget());
     });
-    // Linux has no app menu.
-    if (registry().system === 'mac') syncMenu(menu);
+    sendMenu = syncMenu(menu);
+    watchStripFocus();
   },
 } satisfies WindowFeature;

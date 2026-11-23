@@ -250,11 +250,14 @@ function sameDeclaration(command: Command, declaration: Command): boolean {
 
 /**
  * Whether `command` has no key on purpose: it's declared with `keys: []`, for something done once
- * in a while, and a menu reaches it, the app menu (`bar`) or a right-click menu, besides the
- * palette, which lists every command.
+ * in a while, and something drawn reaches it, besides the palette, which lists every command: its
+ * control, a right-click menu or the app menu.
  */
 export function keyless(command: Command): boolean {
-  return command.keys.length === 0 && (command.bar !== undefined || command.menu !== undefined);
+  return (
+    command.keys.length === 0 &&
+    (command.control !== undefined || command.bar !== undefined || command.menu !== undefined)
+  );
 }
 
 /**
@@ -269,6 +272,66 @@ export function routed(command: Command): boolean {
     command.menu !== undefined ||
     command.bar !== undefined
   );
+}
+
+/** A menu of the app menu, by its name, and the names of its sections that commands join. */
+export interface BarMenuNames {
+  readonly menu: string;
+  readonly sections: readonly string[];
+}
+
+/**
+ * The app menu: every command in it names a menu and a section of it that `menus`, the app's list,
+ * has, and one command a place takes the place of (`instead`) is in the app menu too.
+ */
+export function checkBar(
+  features: readonly Declarations[],
+  menus: readonly BarMenuNames[],
+): string[] {
+  const commands = features.flatMap(commandsOf);
+  const inBar = new Set(commands.filter((command) => command.bar).map((command) => command.id));
+  return commands.flatMap((command) => {
+    const { bar } = command;
+    if (!bar) return [];
+    const menu = menus.find((each) => each.menu === bar.menu);
+    if (!menu)
+      return [`${command.id} is in the app menu's ${bar.menu} menu, which it doesn't have.`];
+    const problems = menu.sections.includes(bar.section)
+      ? []
+      : [
+          `${command.id} is in the ${bar.menu} menu's ${bar.section} section, which it doesn't have.`,
+        ];
+    if (bar.instead !== undefined && !inBar.has(bar.instead)) {
+      problems.push(
+        `${command.id} takes the place of ${bar.instead} in the app menu, which isn't in it.`,
+      );
+    }
+    return problems;
+  });
+}
+
+/**
+ * Toggles: every command declared a `toggle` has a handler that says whether it's checked, and
+ * only toggles have one, so the app menu never draws a switch with no check, nor a check on an
+ * action.
+ */
+export function checkToggles(
+  features: readonly Declarations[],
+  given: readonly Command[],
+): string[] {
+  const handled = new Map(given.map((command) => [command.id, command.handler]));
+  return features.flatMap(commandsOf).flatMap((command) => {
+    const checked = handled.get(command.id)?.checked !== undefined;
+    if (command.toggle !== undefined && !checked) {
+      return [
+        `${command.id} is a ${command.toggle}, but its handler doesn't say when it's checked.`,
+      ];
+    }
+    if (command.toggle === undefined && checked) {
+      return [`${command.id} says when it's checked, but isn't declared a switch or a choice.`];
+    }
+    return [];
+  });
 }
 
 /**

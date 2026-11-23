@@ -169,13 +169,14 @@ Never “mergeable”, “pending”, “dequeued” or “clean”.
 
 ### The window
 
-| Write | For                                                                                                           | Never                             |
-| ----- | ------------------------------------------------------------------------------------------------------------- | --------------------------------- |
-| tab   | One pull request or stack, the Recent tab, a merge queue. In keyboard shortcuts, a tab holds one area’s keys. | page, window                      |
-| view  | What fills the middle of a tab: Overview, Diff or Timeline.                                                   | middle view, mode, pane, screen   |
-| panel | The left panel, the threads panel, the merge panel.                                                           | sidebar, pane, drawer             |
-| files | The list of files in the left panel, as a tree or in review order.                                            | “the tree”, explorer, file finder |
-| area  | Where a key works: Diff, Files, Comment box. Keyboard shortcuts has a tab for each.                           | scope, context, mode              |
+| Write   | For                                                                                                           | Never                             |
+| ------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| tab     | One pull request or stack, the Recent tab, a merge queue. In keyboard shortcuts, a tab holds one area’s keys. | page, window                      |
+| view    | What fills the middle of a tab: Overview, Diff or Timeline.                                                   | middle view, mode, pane, screen   |
+| panel   | The left panel, the threads panel, the merge panel.                                                           | sidebar, pane, drawer             |
+| files   | The list of files in the left panel, as a tree or in review order.                                            | “the tree”, explorer, file finder |
+| area    | Where a key works: Diff, Files, Comment box. Keyboard shortcuts has a tab for each.                           | scope, context, mode              |
+| message | A line under a pull request’s header that reports a change to it: “Next message”, “Dismiss message”.          | banner, notice, alert             |
 
 What a list holds has one noun, and stepping uses it: a block in the overview, a step in a
 walkthrough, an event on the timeline, a row in the files, a symbol in the outline, a group in

@@ -1,19 +1,21 @@
 import { handlers, type History, type NoTarget, type TabTarget } from '@lo/ui/commands';
 import { createElement } from 'react';
 
+import { menuStale } from '../../../window/commands/bar.ts';
+import { announce, fail, saidBy } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
 import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { contract as app } from '../../app/contract.ts';
-import { viewIds, type Choice, type Tab } from '../contract.ts';
+import { layerOf, viewIds, type Choice, type Tab } from '../contract.ts';
 import keys from '../keys.ts';
 import { follow } from './follow.ts';
 import { main } from './main.ts';
 import { moreStore, setMoreOpen } from './more.ts';
 import { choosable, chooseAccount } from './Notes.tsx';
 import { inStrip, movable, stepTab } from './order.ts';
-import { middleIds, panels, stepAmong, toggleRight, viewCounts } from './panels.ts';
+import { middleIds, panels, rightPanel, stepAmong, toggleRight, viewCounts } from './panels.ts';
 import { PullRequestTab } from './PullRequestTab.tsx';
 import { activeTab, kinds } from './shared.ts';
 import { pullsStore, showFiles, showLocal, showPull, showTabs, tabsStore } from './store.ts';
@@ -79,6 +81,67 @@ function catchUp(): void {
   }
 }
 
+/** The link to the pull request on screen, in a stack's tab the layer it shows, or `''` with none. */
+function linkOnScreen(): string {
+  const tab = pullOnScreen();
+  if (typeof tab === 'string') return '';
+  return `https://github.com/${tab.owner}/${tab.repo}/pull/${layerOf(tab)}`;
+}
+
+/** Why there's no pull request on screen to link to, or `true` when there is. */
+function linkable(): true | string {
+  const tab = pullOnScreen();
+  return typeof tab === 'string' ? tab : true;
+}
+
+/** Copies the link to the pull request on screen, and says so, or what failed. */
+async function copyLink(): Promise<void> {
+  const text = linkOnScreen();
+  if (text === '') return;
+  try {
+    await main().copy({ text });
+  } catch (error) {
+    console.error("Lo couldn't copy the link:", error);
+    fail('Couldn’t copy the link', saidBy(error));
+    return;
+  }
+  announce('Copied link');
+}
+
+/** Opens the pull request on screen on GitHub, and says so if that failed. */
+async function openOnGithub(): Promise<void> {
+  const url = linkOnScreen();
+  if (url === '') return;
+  try {
+    await main().openExternal({ url });
+  } catch (error) {
+    console.error("Lo couldn't open the pull request on GitHub:", error);
+    fail('Couldn’t open GitHub’s page', saidBy(error));
+  }
+}
+
+/** The banner row's button `kind`, "+1" or Dismiss, on the banner the tab on screen shows. */
+function bannerButton(kind: 'more' | 'dismiss'): HTMLElement | undefined {
+  const found = document.querySelectorAll<HTMLElement>(
+    `[data-lo-banners] [data-lo-banner="${kind}"]`,
+  );
+  return [...found].find((button) => button.closest('[inert]') === null);
+}
+
+/** Whether the banner on screen has the button `kind`, or why not. */
+function pressable(kind: 'more' | 'dismiss'): true | string {
+  if (bannerButton(kind)) return true;
+  const shown = document.querySelector('[data-lo-banners] :is([role="status"], [role="alert"])');
+  if (!shown) return 'No messages';
+  return kind === 'more' ? 'No other messages' : 'This message can’t be dismissed';
+}
+
+/** Whether the pull request on screen has a left panel to show, and shows it. */
+function leftShown(): boolean {
+  const tab = pullOnScreen();
+  return typeof tab !== 'string' && viewCounts.left > 0 && panels.get(tab.id).leftOpen;
+}
+
 /** Why `target`, a tab or the one on screen, can't be closed, or `true` when it can. */
 function closable(target: TabTarget | NoTarget): true | string {
   const { tabs, active } = tabsStore.getState();
@@ -135,6 +198,7 @@ export default {
         if (typeof tab === 'string') return tab;
         return viewCounts.left > 0 || 'No left panel yet';
       },
+      checked: leftShown,
     },
     rightPanel: {
       run: toggleRight,
@@ -143,9 +207,19 @@ export default {
         if (typeof tab === 'string') return tab;
         return viewCounts.right > 0 || 'No threads panel yet';
       },
+      checked: () =>
+        typeof pullOnScreen() !== 'string' && viewCounts.right > 0 && rightPanel.getState().open,
     },
     nextView: { run: () => stepMiddle(1), enabled: middleSteps },
     previousView: { run: () => stepMiddle(-1), enabled: middleSteps },
+    openOnGithub: { run: openOnGithub, enabled: linkable },
+    copyLink: { run: copyLink, enabled: linkable },
+    // As a click on the banner's own button, which hands focus on as it does.
+    nextBanner: { run: () => bannerButton('more')?.click(), enabled: () => pressable('more') },
+    dismissBanner: {
+      run: () => bannerButton('dismiss')?.click(),
+      enabled: () => pressable('dismiss'),
+    },
     chooseAccount: {
       run: (target) => {
         const tab = pullOnScreen();
@@ -182,6 +256,8 @@ export default {
     tabs.subscribe('files', showFiles);
     tabs.subscribe('local', showLocal);
     tabsStore.subscribe(catchUp);
+    // The app menu's checks, and what it dims, follow the tabs and their panels however they move.
+    for (const store of [tabsStore, panels, rightPanel]) store.subscribe(() => menuStale());
     tabs
       .list()
       .then(showTabs)

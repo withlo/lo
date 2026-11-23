@@ -221,14 +221,14 @@ describe('precedence', () => {
     const own = defineCommands('diff', {
       toggleFile: {
         label: 'Collapse file',
-        group: 'Diff view',
+        group: 'View',
         keys: ['z a'],
         targets: ['line', 'header'],
         when: { scope: 'diff', mode: 'normal' },
       },
       toggleThread: {
         label: 'Collapse thread',
-        group: 'Threads',
+        group: 'Comments',
         keys: ['z a'],
         targets: ['thread'],
         when: { scope: 'diff', mode: 'normal', on: 'thread' },
@@ -355,15 +355,15 @@ describe('text', () => {
   describe('the keys that edit text', () => {
     // Commands on them: for anywhere, for scopes, after another key, and one that edits its field.
     const editing = defineCommands('editing', {
-      clear: { label: 'Clear', group: 'Find', keys: ['cmd+backspace'] },
-      word: { label: 'Word', group: 'Find', keys: ['alt+backspace'], when: { scope: 'tree' } },
-      all: { label: 'All', group: 'Find', keys: ['cmd+a'], when: { scope: 'palette' } },
-      top: { label: 'Top', group: 'Move', keys: ['shift+home', 'cmd+up'] },
-      end: { label: 'End', group: 'Move', keys: ['ctrl+e', 'alt+shift+up'] },
-      later: { label: 'Later', group: 'Move', keys: ['g cmd+z'], when: { scope: 'box' } },
+      clear: { label: 'Clear', group: 'Go', keys: ['cmd+backspace'] },
+      word: { label: 'Word', group: 'Go', keys: ['alt+backspace'], when: { scope: 'tree' } },
+      all: { label: 'All', group: 'Go', keys: ['cmd+a'], when: { scope: 'palette' } },
+      top: { label: 'Top', group: 'Go', keys: ['shift+home', 'cmd+up'] },
+      end: { label: 'End', group: 'Go', keys: ['ctrl+e', 'alt+shift+up'] },
+      later: { label: 'Later', group: 'Go', keys: ['g cmd+z'], when: { scope: 'box' } },
       erase: {
         label: 'Erase the query',
-        group: 'Palettes',
+        group: 'App',
         keys: ['alt+delete', { keys: 'ctrl+delete', on: 'linux' }],
         when: { scope: 'palette' },
         editsField: true,
@@ -456,8 +456,8 @@ describe('text', () => {
     expect(type(['cmd+shift+p'], anywhere).said).toEqual(['run keys.palette']);
     // A command that names the menu runs there.
     const own = defineCommands('menu', {
-      pick: { label: 'Pick', group: 'Act', keys: ['p'], when: { scope: 'menu' } },
-      both: { label: 'Both', group: 'Act', keys: ['b'], when: { scope: ['menu', 'tree'] } },
+      pick: { label: 'Pick', group: 'Review', keys: ['p'], when: { scope: 'menu' } },
+      both: { label: 'Both', group: 'Review', keys: ['b'], when: { scope: ['menu', 'tree'] } },
     });
     const bindings = new Bindings('mac', declaredBindings(commandsOf(own), 'mac'));
     const press = (key: string, focus: Focus) => {
@@ -518,7 +518,7 @@ describe('counts', () => {
     {
       markViewed: {
         label: 'Mark viewed',
-        group: 'Act',
+        group: 'Review',
         keys: ['e'],
         overVim: true,
         count: 'files',
@@ -526,7 +526,7 @@ describe('counts', () => {
       },
       copyLines: {
         label: 'Copy the lines',
-        group: 'Copy and open',
+        group: 'Tabs',
         keys: ['y y'],
         overVim: true,
         count: 'lines',
@@ -534,37 +534,37 @@ describe('counts', () => {
       },
       copyLink: {
         label: 'Copy the line’s link',
-        group: 'Copy and open',
+        group: 'Tabs',
         keys: ['y l'],
         overVim: true,
         when: { scope: ['diff', 'file'], mode: 'normal' },
       },
       inline: {
         label: 'Inline or side by side',
-        group: 'Diff view',
+        group: 'View',
         keys: ['g i'],
         overVim: true,
         when: { scope: 'diff', mode: 'normal' },
       },
       nextLayer: {
         label: 'Next layer',
-        group: 'Jump',
+        group: 'Go',
         keys: ['] s'],
         count: 'layers',
         when: { except: ['box'], mode: 'normal' },
       },
       down: {
         label: 'Next row of the tree',
-        group: 'Files',
+        group: 'Go',
         keys: ['j'],
         repeat: true,
         count: 'rows',
         when: { scope: 'tree' },
       },
-      mode: { label: 'Tree or review order', group: 'Files', keys: ['t'], when: { scope: 'tree' } },
-      openAll: { label: 'Open all', group: 'Files', keys: ['z R'], when: { scope: 'tree' } },
-      middle: { label: 'Back to the middle view', group: 'Panels', keys: ['esc'] },
-      palette: { label: 'Every action', group: 'Find', keys: ['cmd+shift+p'] },
+      mode: { label: 'Tree or review order', group: 'Go', keys: ['t'], when: { scope: 'tree' } },
+      openAll: { label: 'Open all', group: 'Go', keys: ['z R'], when: { scope: 'tree' } },
+      middle: { label: 'Back to the middle view', group: 'View', keys: ['esc'] },
+      palette: { label: 'Every action', group: 'Go', keys: ['cmd+shift+p'] },
     },
     { scopes: ['tree'] },
   );

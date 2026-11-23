@@ -110,18 +110,18 @@ function commandsIn(features: readonly Declarations[]): Command[] {
 }
 
 /**
- * What a command with no key says in place of one: where it's found instead. Only macOS has an app
- * menu, so a command in one says so, and a command in a right-click menu is in `its menu`, which
- * both systems have.
+ * What a command with no key says in place of one: where it's found instead. Its control, the app
+ * menu and its right-click menu are on both systems, and so is the command palette.
  */
 function noKey(command: Command): string {
   if (!keyless(command)) return 'None';
   const places = [
-    ...(command.bar ? ['the app menu on macOS'] : []),
-    ...(command.menu ? ['its menu'] : []),
-    'the palette',
+    ...(command.control !== undefined ? ['its control'] : []),
+    ...(command.bar ? ['the app menu'] : []),
+    ...(command.menu ? ['its right-click menu'] : []),
+    'the command palette',
   ];
-  return `None: in ${listed(places)}`;
+  return `None: ${listed(places, 'or')}`;
 }
 
 /**
@@ -138,7 +138,10 @@ function editorNote(rows: readonly Command[]): string[] {
   ];
 }
 
-/** Key help's groups as macOS shows them: each command on macOS, with its keys there. */
+/**
+ * The groups, as keyboard shortcuts, the command palette and the menu bar share them, in macOS's
+ * form: each command on macOS, with its keys there.
+ */
 function groupSections(commands: readonly Command[]): string[] {
   return groups.flatMap((group) => {
     const here = commands.filter(
@@ -155,7 +158,7 @@ function groupSections(commands: readonly Command[]): string[] {
     return [
       `## ${group}`,
       '',
-      ...table(['Action', 'Keys', 'Where', 'Command'], rows),
+      ...table(['Command', 'Keys', 'Where', 'ID'], rows),
       '',
       ...editorNote(here),
     ];
@@ -220,7 +223,7 @@ function countSection(commands: readonly Command[]): string[] {
     '',
     'Digits typed just before a key are a count, as in Vim, for the commands that take one: `3 e` marks three files viewed, and `1 e` one, where `e` alone clears a mark. Before any other key a count is dropped, and the key runs once; in a code view with Vim keys on it goes on to Vim with the key, so `3 j` still moves three lines. `Esc` drops a count and does nothing else.',
     '',
-    ...table(['Action', 'Keys', 'Counts', 'Where', 'Command'], rows),
+    ...table(['Command', 'Keys', 'Counts', 'Where', 'ID'], rows),
     '',
     `In a code view with Vim keys on, the count is Vim's until one of these keys takes it, in normal mode only; with them off, a code view counts as any other scope does.${scopes.length > 0 ? ` Elsewhere digits are a count only in ${listed(scopes.map(code))}, where a command of the scope's own takes one, and a count waits for its key as a sequence's first key does.` : ''}`,
     '',
@@ -264,7 +267,7 @@ function systemSection(commands: readonly Command[]): string[] {
       ? [
           'These keys are on one system only:',
           '',
-          ...table(['Action', 'Keys', 'On', 'Where', 'Command'], rows),
+          ...table(['Command', 'Keys', 'On', 'Where', 'ID'], rows),
           '',
         ]
       : []),
@@ -326,7 +329,7 @@ function vimSection(commands: readonly Command[], vim: VimKeys): string[] {
     `With Vim keys on, code views (${listed(codeScopes.map(code))}) run Vim, and Lo leaves Vim's keys to it there, except these, which run Lo's command in place of Vim's key. With Vim keys off, which is how Lo starts, they run Lo's command too:`,
     '',
     ...(cells.length > 0
-      ? table(['Keys', 'Action', "Vim's key", 'Where', 'Command'], cells)
+      ? table(['Keys', 'Command', "Vim's key", 'Where', 'ID'], cells)
       : ['None.']),
     '',
     ...(motions.length > 0
@@ -380,7 +383,7 @@ function keymapSection(commands: readonly Command[]): string[] {
     '',
     "A line that can't be read or applied is reported with its number, and the others still apply. A `bind` doesn't apply when it names one of Vim's own keys or one of the comment box's (see Comment box), repeats a key the command already has, or would keep another command's key from running: one of the two being the start of the other where both apply. A `bind` that would take the comment box's keys there is refused too, and an `unbind` with no command leaves them as they are. A `vim` line can't take them either: the box's editor runs its own keys before Vim's.",
     '',
-    `Lo watches the file, so a saved change applies within a second, with no restart, and key help (\`?\`) shows the new keys and the lines Lo can't use. To open the file, use the button in key help, the command palette or ${code(form(openKeymapKeys(commands), 'mac'))}: Lo opens it as text in your system's text editor, writing it first, with a header of comments, if there isn't one. Opening never runs anything, so Lo doesn't open a file that is executable, isn't a plain file (a folder, or an app a link leads to) or is over the limit below: key help says why, and has no button. The editor is the app for text whatever the file's name or contents, even through a link to a file named like a launcher or a web page: on Linux, the app \`xdg-mime query default text/plain\` names, started with \`gio launch\`. Without one of those, Lo says so and opens nothing. A link to a file in a dotfiles folder is followed. Lo reads a file of up to ${KEYMAP_SIZE_LIMIT / 1024 ** 2} MB and lines of up to ${KEYMAP_LINE_LIMIT.toLocaleString('en')} characters; a longer line is reported and skipped, and a longer file isn't read. Nothing in the file is ever run.`,
+    `Lo watches the file, so a saved change applies within a second, with no restart, and Keyboard shortcuts (\`?\`) shows the new keys and the lines Lo can't use. To open the file, use the button in Keyboard shortcuts, the command palette or ${code(form(openKeymapKeys(commands), 'mac'))}: Lo opens it as text in your system's text editor, writing it first, with a header of comments, if there isn't one. Opening never runs anything, so Lo doesn't open a file that is executable, isn't a plain file (a folder, or an app a link leads to) or is over the limit below: Keyboard shortcuts says why, and has no button. The editor is the app for text whatever the file's name or contents, even through a link to a file named like a launcher or a web page: on Linux, the app \`xdg-mime query default text/plain\` names, started with \`gio launch\`. Without one of those, Lo says so and opens nothing. A link to a file in a dotfiles folder is followed. Lo reads a file of up to ${KEYMAP_SIZE_LIMIT / 1024 ** 2} MB and lines of up to ${KEYMAP_LINE_LIMIT.toLocaleString('en')} characters; a longer line is reported and skipped, and a longer file isn't read. Nothing in the file is ever run.`,
     '',
     '### Writing keys',
     '',
@@ -402,9 +405,9 @@ export function keysDoc(features: readonly Declarations[], vim: VimKeys = vimDef
     '',
     '# Keys',
     '',
-    "Lo is keyboard first: every action has a key, but for a few done once in a while, which a menu and the command palette reach. These are its keys as it ships, from the commands each of its features declares. Keys are written as macOS shows them; on Linux, Ctrl takes the place of `⌘` (see [Keys for one system](#keys-for-one-system)). A sequence's keys are pressed one after another: `] f` is `]`, then `f`.",
+    "Lo is keyboard first: every command has a key, but for a few done once in a while, which a control, the app menu and the command palette reach. These are its keys as it ships, from the commands each of its features declares. Keys are written as macOS shows them; on Linux, Ctrl takes the place of `⌘` (see [Keys for one system](#keys-for-one-system)). A sequence's keys are pressed one after another: `] f` is `]`, then `f`.",
     '',
-    "Each command's id is what [the keymap file](#the-keymap-file) binds keys to.",
+    `The commands are in ${groups.length} groups, the same in Keyboard shortcuts (\`?\`), the command palette and the app menu: ${listed([...groups])}. Each command's ID is what [the keymap file](#the-keymap-file) binds keys to.`,
     '',
     ...groupSections(commands),
     ...scopeSection(features),

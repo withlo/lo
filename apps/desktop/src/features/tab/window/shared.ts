@@ -4,6 +4,7 @@
 // shown; what's shared names it by its view on screen, so what follows the tab on screen follows
 // the layer on screen.
 
+import type { Handler, NoTarget } from '@lo/ui/commands';
 import { createElement, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
@@ -165,6 +166,40 @@ export function showMiddle(tab: string, id: string): boolean {
   if (at < 0) return false;
   if (panels.get(tab).middle !== at) panels.update(tab, (current) => ({ ...current, middle: at }));
   return true;
+}
+
+/** The id of the middle view on screen in pull request's tab `tab`. */
+export function middleShown(tab: string): string | undefined {
+  const { ids } = middleIds;
+  return ids[panels.get(tab).middle % Math.max(1, ids.length)];
+}
+
+/** The pull request's tab on screen, or why there's none. */
+function pullOnScreen(): PullTab | string {
+  const tab = activeTab();
+  return tab?.kind === 'pull' ? tab : 'Open a pull request first';
+}
+
+/**
+ * The handler of a command that shows the middle view `id` in the pull request's tab on screen, as
+ * its segment of the header's switch does: an option of a choice, checked while it's on screen.
+ */
+export function showingMiddle(id: string): Handler<NoTarget> {
+  return {
+    run() {
+      const tab = pullOnScreen();
+      if (typeof tab !== 'string') showMiddle(tab.id, id);
+    },
+    enabled() {
+      const tab = pullOnScreen();
+      if (typeof tab === 'string') return tab;
+      return middleIds.ids.includes(id) || '';
+    },
+    checked() {
+      const tab = pullOnScreen();
+      return typeof tab !== 'string' && middleShown(tab.id) === id;
+    },
+  };
 }
 
 /**

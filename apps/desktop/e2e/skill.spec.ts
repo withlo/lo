@@ -1,5 +1,5 @@
 // The overview skill's rows in the app: the step on the welcome screen, the rows in Settings' Command
-// line, and the command in the app menu and the palette. Each test starts Lo with a home folder of
+// line, and the command in the palette. Each test starts Lo with a home folder of
 // its own, so the skill goes into folders the test made and never into the real ~/.claude or
 // ~/.agents, and with the variables that move an agent's folder cleared.
 
@@ -215,30 +215,6 @@ test.describe('as a command', () => {
     await expect(option.locator('kbd')).toHaveCount(0);
     await page.keyboard.press('Enter');
     await expect(palette).toBeHidden();
-    await expect(toast(page, 'Installed overview skill')).toBeVisible();
-    expect(isSkill(claudeSkill(home))).toBe(true);
-    expect(existsSync(join(home, '.agents'))).toBe(false);
-  });
-
-  test('is in the app menu beside the command-line tool, and a click runs it', async ({
-    app,
-    page,
-    home,
-  }) => {
-    test.skip(!mac, 'The app menu is the Mac’s.');
-    mkdirSync(join(home, '.claude'));
-    const labels = await app.evaluate(({ Menu }) =>
-      (Menu.getApplicationMenu()?.items[0]?.submenu?.items ?? []).map((item) => item.label),
-    );
-    const at = labels.indexOf('Install lo command');
-    expect(at).toBeGreaterThan(-1);
-    expect(labels[at + 1]).toBe('Install overview skill');
-    await app.evaluate(({ Menu }) => {
-      const item = Menu.getApplicationMenu()?.items[0]?.submenu?.items.find(
-        ({ label }) => label === 'Install overview skill',
-      );
-      item?.click({ triggeredByAccelerator: false });
-    });
     await expect(toast(page, 'Installed overview skill')).toBeVisible();
     expect(isSkill(claudeSkill(home))).toBe(true);
     expect(existsSync(join(home, '.agents'))).toBe(false);

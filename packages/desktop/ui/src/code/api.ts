@@ -724,6 +724,11 @@ export interface DiffView extends KeySource {
    */
   seen(): void;
   focus(): void;
+  /**
+   * Focuses the code where `focus` puts it and opens its search there, as `/` does: Vim's prompt
+   * with Vim keys on, the search field at the foot of the code with them off.
+   */
+  find(): void;
   destroy(): void;
   readonly probe: Probe;
 }
@@ -965,6 +970,8 @@ export interface FileView extends KeySource {
   /** Where the word at `at` is drawn, as the diff view finds it (`DiffView.anchor`). */
   anchor(at: Place): Anchor | undefined;
   focus(): void;
+  /** Focuses the code and opens its search, as the diff view does (`DiffView.find`). */
+  find(): void;
   destroy(): void;
 }
 

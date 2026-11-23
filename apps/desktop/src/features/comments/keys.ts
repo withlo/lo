@@ -20,12 +20,11 @@
 // registry, nor changed by the keymap file. What the buttons in a box's notes do is also on its
 // frame's right-click menu, and in the palette while focus is in the box, each only where the box
 // offers it, without a key of its own. Where the drafts are that the diff, drawn again, had nowhere
-// to open, the palette and the app menu's Review menu say, as a click on the status bar's note for
-// them does.
+// to open, the palette says, as a click on the status bar's note for them does.
 //
 // Vim keys are a setting, `editor.vim`, off as Lo starts: "Vim keys" switches it, from the palette
-// or the app menu's View menu. Off, code and boxes have a plain caret, a box takes typing as soon
-// as it has focus, and every key here works as it does with them on, but Vim's own.
+// or Settings › Keyboard. Off, code and boxes have a plain caret, a box takes typing as soon as it
+// has focus, and every key here works as it does with them on, but Vim's own.
 //
 // In the threads panel, the `threads` scope: `j` and `k` move between its threads, `⏎` shows the
 // one the keyboard is on in the diff, and `f` steps through what it lists: the unresolved threads,
@@ -54,7 +53,7 @@ export default defineCommands(
     comment: {
       label: 'Comment',
       control: 'the + beside a line, in the gutter',
-      group: 'Act',
+      group: 'Comments',
       keys: ['c'],
       targets: ['line', 'header'],
       overVim: true,
@@ -64,7 +63,8 @@ export default defineCommands(
     /** The same box, whose main button posts the comment right away, outside your pending review. */
     commentNow: {
       label: 'Comment now',
-      group: 'Act',
+      description: 'Sends at once, outside your pending review.',
+      group: 'Comments',
       keys: ['C'],
       targets: ['line', 'header'],
       overVim: true,
@@ -77,7 +77,7 @@ export default defineCommands(
      */
     suggest: {
       label: 'Suggest change',
-      group: 'Act',
+      group: 'Comments',
       keys: ['s'],
       targets: ['line'],
       overVim: true,
@@ -90,7 +90,7 @@ export default defineCommands(
      */
     commentOnFile: {
       label: 'Comment on file',
-      group: 'Act',
+      group: 'Comments',
       keys: ['c'],
       targets: ['header', 'file'],
       when: { scope: 'tree' },
@@ -104,7 +104,7 @@ export default defineCommands(
      */
     commentOnBlock: {
       label: 'Comment on lines',
-      group: 'Act',
+      group: 'Comments',
       keys: ['c'],
       targets: ['block', 'line'],
       overVim: true,
@@ -118,7 +118,7 @@ export default defineCommands(
     onFileInstead: {
       label: 'Comment on file',
       control: 'Comment on file on the toast after a line takes no comment',
-      group: 'Act',
+      group: 'Comments',
       keys: ['enter'],
       targets: ['line'],
       overVim: true,
@@ -128,7 +128,7 @@ export default defineCommands(
     reply: {
       label: 'Reply',
       control: "Reply on a thread's card",
-      group: 'Act',
+      group: 'Comments',
       keys: ['r'],
       targets: ['line', 'header', 'thread'],
       overVim: true,
@@ -139,7 +139,7 @@ export default defineCommands(
     resolve: {
       label: 'Resolve thread',
       control: "Resolve on a thread's card",
-      group: 'Act',
+      group: 'Comments',
       keys: ['x'],
       targets: ['line', 'header', 'thread'],
       overVim: true,
@@ -152,7 +152,7 @@ export default defineCommands(
     edit: {
       label: 'Edit comment',
       control: 'Edit on your comment',
-      group: 'Act',
+      group: 'Comments',
       keys: ['i'],
       targets: ['line', 'header', 'thread'],
       overVim: true,
@@ -163,7 +163,7 @@ export default defineCommands(
     remove: {
       label: 'Delete comment…',
       control: 'Delete on your comment',
-      group: 'Act',
+      group: 'Comments',
       keys: ['d d'],
       targets: ['line', 'header', 'thread'],
       overVim: true,
@@ -174,7 +174,7 @@ export default defineCommands(
     discard: {
       label: 'Discard draft',
       control: "Discard draft in a comment box's foot",
-      group: 'Act',
+      group: 'Comments',
       keys: [],
       targets: ['box'],
       when: box,
@@ -183,9 +183,9 @@ export default defineCommands(
     /** Brings back the draft "Discard draft" last took, as the "Undo" on its toast does. */
     undiscard: {
       label: 'Undo discard',
-      group: 'Act',
+      control: 'Undo on the toast that says a draft was discarded',
+      group: 'Comments',
       keys: [],
-      bar: { menu: 'Review', order: 30 },
     },
     /**
      * After a comment was sent and didn't post: sends it again, as the box's "Try again" does. Never
@@ -194,7 +194,7 @@ export default defineCommands(
     sendAnyway: {
       label: 'Send again',
       control: "Try again in a comment box's note",
-      group: 'Act',
+      group: 'Comments',
       keys: [],
       targets: ['box'],
       when: box,
@@ -207,7 +207,7 @@ export default defineCommands(
     checkAgain: {
       label: 'Check again',
       control: "Check again in a comment box's note",
-      group: 'Act',
+      group: 'Comments',
       keys: [],
       targets: ['box'],
       when: box,
@@ -220,7 +220,7 @@ export default defineCommands(
     moveToFile: {
       label: 'Move comment to file',
       control: "Move comment to file in a comment box's note",
-      group: 'Act',
+      group: 'Comments',
       keys: [],
       targets: ['box'],
       when: box,
@@ -247,7 +247,7 @@ export default defineCommands(
     addToReview: {
       label: 'Add to review',
       control: "Add to review in a comment box's foot",
-      group: 'Comment box',
+      group: 'Comments',
       keys: ['cmd+enter'],
       editor: true,
       when: box,
@@ -258,8 +258,9 @@ export default defineCommands(
      */
     postNow: {
       label: 'Send now',
+      description: 'Sends at once, outside your pending review.',
       control: "Send now in a comment box's foot",
-      group: 'Comment box',
+      group: 'Comments',
       keys: ['alt+enter'],
       editor: true,
       when: box,
@@ -268,7 +269,7 @@ export default defineCommands(
     preview: {
       label: 'Preview',
       control: "Write and Preview in a comment box's head",
-      group: 'Comment box',
+      group: 'Comments',
       keys: ['cmd+shift+v'],
       editor: true,
       when: box,
@@ -277,7 +278,7 @@ export default defineCommands(
     attach: {
       label: 'Attach files…',
       control: "Attach files… in a comment box's foot",
-      group: 'Comment box',
+      group: 'Comments',
       keys: ['cmd+shift+a'],
       editor: true,
       when: box,
@@ -285,7 +286,7 @@ export default defineCommands(
     /** With Vim keys on, in insert mode: Vim's `Esc`, which leaves it. */
     leaveInsert: {
       label: 'Leave INSERT mode',
-      group: 'Comment box',
+      group: 'Comments',
       keys: ['esc'],
       vim: 'own',
       when: { scope: 'box', mode: 'insert' },
@@ -298,7 +299,7 @@ export default defineCommands(
     close: {
       label: 'Close comment box',
       control: "Close comment box in a comment box's head",
-      group: 'Comment box',
+      group: 'Comments',
       keys: ['esc'],
       editor: true,
       when: { scope: 'box', mode: 'normal' },
@@ -309,9 +310,9 @@ export default defineCommands(
      */
     vim: {
       label: 'Vim keys',
-      group: 'View',
+      control: 'The Vim keys switch in Settings › Keyboard',
+      group: 'App',
       keys: [],
-      bar: { menu: 'View', order: 60 },
     },
     /**
      * Says where each draft is that the diff, drawn again, had nowhere to open, and when it opens,
@@ -320,16 +321,16 @@ export default defineCommands(
      */
     keptDrafts: {
       label: 'Show kept drafts',
+      description: 'Drafts whose lines aren’t in this diff.',
       control: 'Show on a pull request in Settings › Storage › Kept drafts',
-      group: 'View',
+      group: 'Comments',
       keys: [],
       targets: ['none', 'tab'],
-      bar: { menu: 'Review', order: 20 },
     },
     nextThread: {
       label: 'Next thread',
       control: "Next in the threads panel's foot",
-      group: 'Panels',
+      group: 'Comments',
       keys: ['j', 'down'],
       when: panel,
       repeat: true,
@@ -337,7 +338,7 @@ export default defineCommands(
     previousThread: {
       label: 'Previous thread',
       control: "Previous in the threads panel's foot",
-      group: 'Panels',
+      group: 'Comments',
       keys: ['k', 'up'],
       when: panel,
       repeat: true,
@@ -350,7 +351,7 @@ export default defineCommands(
     showThread: {
       label: 'Show in diff',
       control: 'a row of the threads panel',
-      group: 'Panels',
+      group: 'Comments',
       keys: ['enter'],
       targets: ['thread'],
       when: panel,
@@ -359,7 +360,7 @@ export default defineCommands(
     resolveInPanel: {
       label: 'Resolve thread',
       control: "Resolve in the threads panel's foot",
-      group: 'Panels',
+      group: 'Comments',
       keys: ['x'],
       targets: ['thread'],
       when: panel,
@@ -368,7 +369,7 @@ export default defineCommands(
     filterThreads: {
       label: 'Next thread filter',
       control: "the filter over the threads panel's list",
-      group: 'Panels',
+      group: 'Comments',
       keys: ['f'],
       when: panel,
     },
@@ -379,7 +380,7 @@ export default defineCommands(
     clearFilter: {
       label: 'Clear filter',
       control: 'Clear filter in the threads panel, where its filter lists none of the threads',
-      group: 'Panels',
+      group: 'Comments',
       keys: ['cmd+backspace'],
       when: panel,
     },

@@ -425,7 +425,7 @@ describe('a check Lo gives up on', () => {
         publish: () => {},
         log: () => {},
         quit: () => {},
-        move: () => false,
+        move: () => Promise.resolve(false),
       });
       const feedHeld = hold(FEED);
       const checking = updates.check(true);

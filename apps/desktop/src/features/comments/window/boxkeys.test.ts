@@ -6,7 +6,7 @@
 
 import { createComposer, setVim, type ComposerEvents } from '@lo/ui/code';
 import {
-  helpGroups,
+  helpAll,
   listen,
   parseKeys,
   systemStrokes,
@@ -199,10 +199,10 @@ describe('the keys in the box’s foot', () => {
     ['preview', '⌘⇧V'],
     ['attach', '⌘⇧A'],
     ['close', 'Esc'],
-  ] as const)('%s is shown as %s, as the keys of the docs and key help show it', (name, label) => {
+  ] as const)('%s is shown as %s, as the docs and keyboard shortcuts show it', (name, label) => {
     const mac = createRegistry(featureCommands(), 'mac');
     expect(boxKeys(name)).toEqual([label]);
-    const row = helpGroups(mac)
+    const row = helpAll(mac, { vim: true })
       .flatMap((group) => group.rows)
       .find((each) => each.id === `comments.${name}`);
     expect(row?.keys).toEqual([[label]]);

@@ -22,14 +22,7 @@
 
 import { isCommandId, listOf, type Command, type When } from './declare.ts';
 import type { Binding } from './match.ts';
-import {
-  readKeys,
-  systemStrokes,
-  writeKeys,
-  writeStrokes,
-  type Sequence,
-  type System,
-} from './notation.ts';
+import { readKeys, systemStrokes, writeKeys, type Sequence, type System } from './notation.ts';
 import type { Mode } from './scopes.ts';
 
 export type KeymapLine =
@@ -86,7 +79,7 @@ export function parseKeymap(text: string, isCommand?: (id: string) => boolean): 
       if (source.length > KEYMAP_LINE_LIMIT) {
         errors.push({
           line,
-          message: `This line is over ${KEYMAP_LINE_LIMIT.toLocaleString('en')} characters long, so Lo didn't read it.`,
+          message: `Over ${KEYMAP_LINE_LIMIT.toLocaleString('en')} characters`,
         });
         return;
       }
@@ -112,19 +105,18 @@ function readLine(
     case 'bind': {
       const command = rest.at(-1);
       if (rest.length < 2 || command === undefined) {
-        return error('bind takes keys, then a command: bind x diff.markViewed.');
+        return error('`bind` needs keys, then a command: `bind x diff.markViewed`');
       }
-      if (!known(command)) return error(`There's no command called ${command}.`);
+      if (!known(command)) return error(`No command \`${command}\``);
       const keys = readKeys(rest.slice(0, -1).join(' '));
       if ('error' in keys) return error(keys.error);
       return { line, kind: 'bind', keys: keys.keys, command };
     }
     case 'unbind': {
-      if (rest.length === 0)
-        return error('unbind takes keys, and a command if only its keys go: unbind e.');
+      if (rest.length === 0) return error('`unbind` needs keys: `unbind e`');
       const last = rest.at(-1) ?? '';
       const named = rest.length >= 2 && isCommandId(last);
-      if (named && !known(last)) return error(`There's no command called ${last}.`);
+      if (named && !known(last)) return error(`No command \`${last}\``);
       const keys = readKeys((named ? rest.slice(0, -1) : rest).join(' '));
       if ('error' in keys) return error(keys.error);
       return { line, kind: 'unbind', keys: keys.keys, command: named ? last : undefined };
@@ -132,18 +124,18 @@ function readLine(
     case 'vim': {
       const [mode, keys] = rest;
       if (mode === undefined || keys === undefined || rest.length < 3) {
-        return error('vim takes a mode, keys and what they do: vim normal Y y$.');
+        return error('`vim` needs a mode, keys and what they do: `vim normal Y y$`');
       }
       const vimMode = modes.find((each) => each === mode);
       if (vimMode === undefined) {
-        return error(`${mode} isn't a Vim mode here: use normal, visual or insert.`);
+        return error(`\`${mode}\` isn’t a mode: use \`normal\`, \`visual\` or \`insert\``);
       }
       // What the keys do is the rest of the line as written, spaces and all.
       const to = trimmed.replace(/^vim\s+\S+\s+\S+\s+/, '');
       return { line, kind: 'vim', mode: vimMode, keys, to };
     }
     default:
-      return error(`A line starts with bind, unbind, vim or #, not ${word}.`);
+      return error('Lines start with `bind`, `unbind`, `vim` or `#`');
   }
 }
 
@@ -220,7 +212,7 @@ export function applyKeymap(
     const command = commands.get(line.command);
     if (!command) continue;
     if (command.vim === 'own') {
-      fail(`${command.id} is one of Vim's own keys: change Vim's keys with a vim line.`);
+      fail(`\`${command.id}\` is a Vim key: use a \`vim\` line`);
       continue;
     }
     if (command.editor) {
@@ -229,7 +221,7 @@ export function applyKeymap(
     }
     const same = alive(byKeys, keys);
     if (same.some((entry) => entry.binding.command === command)) {
-      fail(`${written} already runs ${command.id}.`);
+      fail(`\`${written}\` already runs \`${command.id}\``);
       continue;
     }
     // Another command on the same keys takes them in its scope, but not from an editor's own.
@@ -237,19 +229,18 @@ export function applyKeymap(
       (entry) => entry.binding.command.editor && overlap(command, entry.binding.command),
     );
     if (taken) {
-      const other = `${writeStrokes(taken.binding.strokes, system)} (${taken.binding.command.id})`;
-      fail(`${written} would take ${other} from the editor that handles it itself.`);
+      fail(`\`${written}\` is fixed to \`${taken.binding.command.id}\``);
       continue;
     }
     const conflict = shadowed(command, strokes.length, keys, byKeys, byStart);
     if (conflict) {
-      const other = `${writeStrokes(conflict.binding.strokes, system)} (${conflict.binding.command.id})`;
+      const other = conflict.binding.command.id;
       fail(
         conflict.binding.command.editor
-          ? `${written} would take ${other} from the editor that handles it itself.`
+          ? `\`${written}\` is fixed to \`${other}\``
           : conflict.binding.strokes.length > strokes.length
-            ? `${written} would keep ${other} from ever running.`
-            : `${written} would never run: ${other} runs first.`,
+            ? `\`${written}\` would block \`${other}\``
+            : `\`${written}\` is blocked by \`${other}\``,
       );
       continue;
     }
@@ -283,8 +274,7 @@ function shadowed(
 
 /** Why the keymap file can't change `command`, whose keys its scope's editor handles itself. */
 function editorMessage(command: Command): string {
-  const scopes = listOf(command.when?.scope).map((scope) => `\`${scope}\``);
-  return `${command.id} is handled by the editor in ${scopes.join(' and ')}, so the keymap file can't change its keys.`;
+  return `\`${command.id}\`’s keys are fixed`;
 }
 
 /** Whether `command` takes keys in the scope an editor's `owner` is in, in a mode they share. */

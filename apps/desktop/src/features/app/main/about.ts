@@ -1,9 +1,9 @@
 // The system's About panel: Lo's name, version, build, copyright and license. Section 0 of GPL-3.0
 // asks a program with an interface to show its appropriate legal notices: its copyright, that it
 // has no warranty, that you may redistribute it under the license, and how to view the license.
-// This panel is where Lo does, and its "Show licenses" command is how you view it, from the app
-// menu on macOS and the right-click menu on Linux. Nothing here calls Electron, so it runs under
-// unit tests.
+// This panel is where Lo does, and its "Open licenses" command is how you view it, from the
+// right-click menu of the window on both systems, and Settings › About. Nothing here calls
+// Electron, so it runs under unit tests.
 
 import type { AboutPanelOptionsOptions } from 'electron';
 
@@ -19,19 +19,13 @@ export const FREE_SOFTWARE =
   'Lo is free software. You can redistribute it and modify it under the terms of the GNU General Public License, version 3. Lo comes with no warranty. Its source is at github.com/withlo/lo.';
 
 /**
- * How to read the license, as the command that opens it is found on `platform`: `name`'s menu in
- * the menu bar on macOS, the right-click menu on Linux, which has no menu bar.
+ * How to read the license, by the command that opens it, as it's found on both systems: in the
+ * right-click menu of the window.
  */
-export function howToRead(platform: NodeJS.Platform, name: string): string {
-  return platform === 'darwin'
-    ? `To read the license, choose Show licenses in the ${name} menu.`
-    : 'To read the license, right-click and choose Show licenses.';
-}
+export const HOW_TO_READ = 'To read the license, right-click and choose Open licenses.';
 
 /** What the panel says of Lo's license: {@link FREE_SOFTWARE}, then how to read the license. */
-export function notice(platform: NodeJS.Platform, name: string): string {
-  return `${FREE_SOFTWARE} ${howToRead(platform, name)}`;
-}
+export const NOTICE = `${FREE_SOFTWARE} ${HOW_TO_READ}`;
 
 /** Where Lo's source is, for the panel's link on Linux. */
 const WEBSITE = 'https://github.com/withlo/lo';
@@ -76,14 +70,14 @@ export function aboutOptions(about: About): AboutPanelOptionsOptions {
       applicationVersion: about.version,
       ...(about.build === undefined ? {} : { version: about.build }),
       copyright: COPYRIGHT,
-      credits: notice(about.platform, about.name),
+      credits: NOTICE,
     };
   }
   return {
     applicationName: about.name,
     applicationVersion:
       about.build === undefined ? about.version : `${about.version} (${about.build})`,
-    copyright: `${COPYRIGHT}\n${notice(about.platform, about.name)}`,
+    copyright: `${COPYRIGHT}\n${NOTICE}`,
     website: WEBSITE,
     ...(about.icon === undefined ? {} : { iconPath: about.icon }),
   };

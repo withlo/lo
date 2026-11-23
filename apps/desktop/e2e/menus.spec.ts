@@ -32,7 +32,34 @@ function nativeMenus(app: ElectronApplication): Promise<string[]> {
   });
 }
 
-test('a right-click lists Back and Forward with their keys in this system’s form, and on Linux About Lo, and Show licenses, which have none, and a screen reader hears an item’s name and key, not its key caps', async ({
+/**
+ * Records the app menu main pops up on Linux, rather than showing it: its menus' names, then where
+ * it opened, `@ x,y`.
+ */
+async function recordAppMenus(app: ElectronApplication): Promise<void> {
+  await app.evaluate(({ Menu }) => {
+    const shown: string[] = [];
+    Reflect.set(globalThis, 'appMenus', shown);
+    Reflect.set(
+      Menu.prototype,
+      'popup',
+      function popup(this: Electron.Menu, options?: Electron.PopupOptions) {
+        const names = this.items.map((item) => item.label).join(' ');
+        shown.push(`${names} @ ${options?.x ?? '?'},${options?.y ?? '?'}`);
+      },
+    );
+  });
+}
+
+/** The app menus main has popped up since `recordAppMenus`. */
+function appMenus(app: ElectronApplication): Promise<string[]> {
+  return app.evaluate(() => {
+    const shown: unknown = Reflect.get(globalThis, 'appMenus');
+    return Array.isArray(shown) ? shown.map((menu) => String(menu)) : [];
+  });
+}
+
+test('a right-click lists Back and Forward with their keys in this system’s form, and on Linux About Lo, and Open licenses, which have none, and a screen reader hears an item’s name and key, not its key caps', async ({
   page,
 }) => {
   const middle = middleOf(page);
@@ -43,13 +70,13 @@ test('a right-click lists Back and Forward with their keys in this system’s fo
   await expect(items).toHaveText([
     new RegExp(`^Back${mac ? '⌃o' : 'Ctrl\\+O'}$`),
     new RegExp(`^Forward${mac ? '⌃i' : 'Ctrl\\+I'}$`),
-    // Linux has no app menu to open About from, so its menu lists it, with no key.
+    // macOS's About is the system's, in the app menu; Linux's is Lo's, listed here too, with no key.
     ...(mac ? [] : [/^About Lo$/]),
     // Both systems list how to read Lo's license, which the About panel says to look for here.
-    /^Show licenses$/,
+    /^Open licenses$/,
   ]);
-  // Back and Forward are in the key table's Code group, so no separator sits between them. About
-  // Lo and Show licenses, in another, sit after one.
+  // Back and Forward are in the Go group, so no separator sits between them. About Lo and Open
+  // licenses, in App, sit after one.
   await expect(menu.getByRole('separator')).toHaveCount(1);
   // The menu is a scope of its own, which is how j and k move in it.
   await expect(menu).toHaveAttribute('data-lo-scope', 'menu');
@@ -105,7 +132,7 @@ test('Esc closes the menu and gives focus back to where it was; and j and k move
     // ⏎ on one that can run runs it, through the same handler as its key, and the menu closes.
     await page.keyboard.press('j');
     if (!mac) await page.keyboard.press('j');
-    await expect(highlighted(page)).toContainText('Show licenses');
+    await expect(highlighted(page)).toContainText('Open licenses');
     await page.keyboard.press('Enter');
     await expect(menu).toBeHidden();
     await expect.poll(opened).toEqual([realpathSync(join(appFolder, 'dist', 'licenses.txt'))]);
@@ -134,6 +161,43 @@ for (const key of ['Shift+F10', 'ContextMenu']) {
     await expect(middle).toBeFocused();
   });
 }
+
+test('on Linux, the app menu opens under the menu button by a click and by F10, with the menus macOS’s menu bar has, keeping focus where it was; opened from the strip by the keyboard, it gives focus back to what had it', async ({
+  app,
+  page,
+}) => {
+  test.skip(mac, 'macOS’s app menu is its menu bar.');
+  await recordAppMenus(app);
+  const button = page.getByRole('button', { name: 'Show menu' });
+  await expect(button).toHaveAttribute('aria-haspopup', 'menu');
+  const box = await button.boundingBox();
+  const under = `@ ${Math.round(box?.x ?? 0)},${Math.round((box?.y ?? 0) + (box?.height ?? 0))}`;
+  const middle = middleOf(page);
+  await middle.focus();
+
+  await test.step('a click opens it under the button, and focus stays where it was', async () => {
+    await button.click();
+    await expect.poll(() => appMenus(app)).toHaveLength(1);
+    const [shown] = await appMenus(app);
+    expect(shown).toMatch(/(^| )File Edit View Go Review Window Help @ /);
+    expect(shown?.endsWith(under)).toBe(true);
+    await expect(middle).toBeFocused();
+  });
+
+  await test.step('F10 opens it too, and focus stays where it was', async () => {
+    await page.keyboard.press('F10');
+    await expect.poll(() => appMenus(app)).toHaveLength(2);
+    await expect(middle).toBeFocused();
+  });
+
+  await test.step('from the strip by the keyboard, it acts on what had focus before, which gets it back', async () => {
+    await button.focus();
+    await expect(button).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect.poll(() => appMenus(app)).toHaveLength(3);
+    await expect(middle).toBeFocused();
+  });
+});
 
 test('a right-click in a code view’s text gets Lo’s menu, and one in a comment box the Edit menu; and one in a text field gets the system’s Edit menu, not Lo’s', async ({
   app,
@@ -174,8 +238,8 @@ test('a right-click in a code view’s text gets Lo’s menu, and one in a comme
     await middleOf(page).focus();
     await page.keyboard.press('?');
     const search = page
-      .getByRole('dialog', { name: 'Every key' })
-      .getByRole('searchbox', { name: 'Find a key or an action' });
+      .getByRole('dialog', { name: 'Keyboard shortcuts' })
+      .getByRole('searchbox', { name: 'Search keys and commands' });
     await expect(search).toBeFocused();
     await search.click({ button: 'right' });
     await expect.poll(() => nativeMenus(app)).toEqual(['cut,copy,paste,separator,selectall']);

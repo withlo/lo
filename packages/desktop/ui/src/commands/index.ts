@@ -3,6 +3,7 @@
 // features' declarations.
 
 export {
+  checkBar,
   checkClashes,
   checkEditingKeys,
   checkHandlers,
@@ -10,6 +11,7 @@ export {
   checkKeys,
   checkMenus,
   checkRoutes,
+  checkToggles,
   checkVim,
   codeModes,
   keyless,
@@ -21,6 +23,7 @@ export {
   systems,
   systemsOf,
   vimMeetings,
+  type BarMenuNames,
   type Site,
   type VimKeys,
   type VimMeeting,
@@ -41,7 +44,7 @@ export {
   isOwned,
   listOf,
   menuPlaces,
-  type BarMenu,
+  type BarPlace,
   type Command,
   type Declaration,
   type Declarations,
@@ -54,12 +57,17 @@ export {
   type When,
 } from './declare.ts';
 export {
+  areaOfCommand,
   filterHelp,
   filterPalette,
-  helpGroups,
+  helpAll,
+  helpAreas,
+  helpHere,
   paletteItems,
-  whereText,
+  plainLabel,
+  type HelpArea,
   type HelpGroup,
+  type HelpOptions,
   type HelpRow,
   type PaletteItem,
   type PaletteMatch,

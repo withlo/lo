@@ -432,7 +432,9 @@ that floats.
   palette's list at most, and scrolls.
 - **`Palette`** is the box that finds things by typing, from the top of the window. A command that
   does one of two things is named there by which it would do, from its handler's `labelled`:
-  "Unresolve thread" on a resolved thread.
+  "Unresolve thread" on a resolved thread. Its foot's `PaletteHint`s say what a key does, then the
+  key, and one given `onClick` is that key's control too. Its field shows no key: the key that
+  opened it is in the menu bar and Keyboard shortcuts.
 - **`Tooltip`** names a control and its key: see [Controls](#controls).
 - **`ToastStack`** shows results at the bottom right, above the status bar: three at most, four
   seconds each, paused under the pointer or focus. One with an action or Details stays eight

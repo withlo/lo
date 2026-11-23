@@ -14,7 +14,7 @@ export default defineCommands(
      * selection again", which a diff has little use for.
      */
     picker: {
-      label: 'Compare revisions',
+      label: 'Compare revisions…',
       group: 'View',
       keys: ['g v'],
       overVim: true,
@@ -22,43 +22,43 @@ export default defineCommands(
     },
     down: {
       label: 'Next revision',
-      group: 'Revision picker',
+      group: 'View',
       keys: ['j', 'down'],
       when: picker,
       repeat: true,
     },
     up: {
       label: 'Previous revision',
-      group: 'Revision picker',
+      group: 'View',
       keys: ['k', 'up'],
       when: picker,
       repeat: true,
     },
     /** Makes the revision the keyboard is on an end of the comparison, in place of the nearer one. */
-    end: { label: 'Set an end', group: 'Revision picker', keys: ['space'], when: picker },
+    end: { label: 'Set comparison end', group: 'View', keys: ['space'], when: picker },
     /** Compares the two ends, and closes the picker. */
-    compare: { label: 'Compare', group: 'Revision picker', keys: ['enter'], when: picker },
+    compare: { label: 'Compare', group: 'View', keys: ['enter'], when: picker },
     sinceReview: {
       label: 'Compare since your review',
-      group: 'Revision picker',
+      group: 'View',
       keys: ['r'],
       when: picker,
     },
     sinceSeen: {
-      label: 'Compare since you last looked',
-      group: 'Revision picker',
+      label: 'Compare since last opened',
+      group: 'View',
       keys: ['s'],
       when: picker,
     },
     whole: {
-      label: 'Compare the whole pull request',
-      group: 'Revision picker',
+      label: 'Compare whole pull request',
+      group: 'View',
       keys: ['w'],
       when: picker,
     },
     close: {
-      label: 'Close the revision picker',
-      group: 'Revision picker',
+      label: 'Close revisions',
+      group: 'View',
       keys: ['esc'],
       when: picker,
     },

@@ -5,6 +5,7 @@ import { Button, type ButtonProps } from './Button.tsx';
 import { Collapse } from './Collapse.tsx';
 import { runControl } from './commands/control.ts';
 import { NO_TARGET, type Target } from './commands/targets.ts';
+import { Ticks } from './Ticks.tsx';
 import { useControl } from './useControl.ts';
 
 /** One of Settings' groups, as the list beside it names it. */
@@ -362,12 +363,12 @@ export function SettingsCommand({
         {...button}
         disabled={off !== undefined}
         aria-describedby={off ? why : undefined}
-        hint={off ?? control.label}
+        hint={<Ticks text={off ?? control.label} />}
         hintKeys={off === undefined ? control.keys : undefined}
         hintShortcut={off === undefined ? control.shortcut : undefined}
         onClick={() => runControl(command, target)}
       >
-        {children ?? control.label}
+        {children ?? <Ticks text={control.label} />}
       </Button>
       {off && (
         <span id={why} className="sr-only">
