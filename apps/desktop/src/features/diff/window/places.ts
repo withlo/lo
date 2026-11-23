@@ -278,18 +278,19 @@ function revealWhole(tab: string, target: Target): boolean {
 
 /**
  * Whether tab `tab`'s diff could still show `target`, in `within`, asked without showing it: a
- * file the comparison on screen has. A place in another comparison is compared again first, and
- * what can't be told, as while the files load, GitHub listed only some, or one file is drawn beside
- * the overview, counts as there.
+ * file the comparison on screen has, drawn or read. A place in another comparison is compared
+ * again first, and what can't be told counts as there: while another comparison is coming or the
+ * files load, as a diff held while the next one loads, where GitHub listed only some, or with one
+ * file drawn beside the overview.
  */
 function inDiff(tab: string, target: Target, within: string | undefined): boolean {
   if (within !== undefined && within !== comparisonHere(tab)) return true;
   const file = placeOf(target)?.file;
   const drawn = drawnFor(tab);
-  if (file === undefined || !drawn || drawn.beside || loaderOf(tab).snapshot().ready?.partial) {
-    return true;
-  }
-  return drawn.order.includes(file);
+  const { ready } = loaderOf(tab).snapshot();
+  if (file === undefined || !drawn || drawn.beside || !ready || ready.partial) return true;
+  if (comparisonComing(tab) !== undefined) return true;
+  return drawn.order.includes(file) || ready.entries.some((entry) => entry.id === file);
 }
 
 /** The tabs whose history can reveal places in the diff and the whole-file view. */

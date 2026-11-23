@@ -13,6 +13,7 @@ import { HintButton } from './HintButton.tsx';
 import { HintRow } from './HintRow.tsx';
 import { MoreButton } from './MoreButton.tsx';
 import { TOOLTIP_DELAY, TooltipGroup } from './Tooltip.tsx';
+import { useControl } from './useControl.ts';
 
 const LINE: LineTarget = { kind: 'line', at: { file: 'a.ts', side: 'new', line: 3 } };
 
@@ -102,6 +103,24 @@ test('a hint whose command has nothing to say is dimmed with no tooltip, and fol
     registry.history.record({ view: 'diff', at: { kind: 'none' } });
   });
   expect(button.hasAttribute('aria-disabled')).toBe(false);
+});
+
+test('a control is drawn again only when what it shows changes, not at each step of the history', () => {
+  const { registry } = held();
+  let draws = 0;
+  function Counted() {
+    draws += 1;
+    return <span>{useControl('diff.comment', LINE)?.label}</span>;
+  }
+  draw(<Counted />);
+  const before = draws;
+  act(() => {
+    registry.history.register('', 'diff', () => true);
+    registry.history.record({ view: 'diff', at: { kind: 'none' } });
+  });
+  expect(draws).toBe(before);
+  act(() => void registry.setKeymap('bind C diff.comment'));
+  expect(draws).toBe(before + 1);
 });
 
 /** The row the HintRow test measures. */
