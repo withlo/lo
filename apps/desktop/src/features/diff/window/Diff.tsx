@@ -312,7 +312,7 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
           held: holding,
           end: (
             <>
-              {holding && <Spinner size="xs" />}
+              {holding && <Spinner />}
               <ChangeJumps tab={tab.id} />
             </>
           ),

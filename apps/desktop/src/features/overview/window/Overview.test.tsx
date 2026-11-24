@@ -666,12 +666,12 @@ describe('an overview that can’t be shown', () => {
     );
     const view = render(tab);
     expect(view.querySelector('[role="alert"] > p:first-child')?.textContent).toBe(
-      'Can’t fetch the overview',
+      'Can’t show the overview',
     );
     // The count is for the eye: a screen reader hears the wait as first drawn, spelled out, so the
     // alert isn't read each second.
     expect(view.querySelector('[role="alert"]')?.textContent).toMatch(
-      /^Can’t fetch the overviewOffline\. Retrying in ([78]) sin \1 seconds\.$/,
+      /^Can’t show the overviewOffline\. Retrying in ([78]) sin \1 seconds\.$/,
     );
     const retry = buttonOf(view, 'Try now');
     expect(retry?.getAttribute('aria-busy')).toBeNull();

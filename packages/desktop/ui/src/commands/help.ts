@@ -18,6 +18,11 @@ export interface HelpRow {
   readonly description: string | undefined;
   /** Its keys now, the keymap file's first: one list of key labels per sequence (`⌘⇧P`, `] f`). */
   readonly keys: readonly (readonly string[])[];
+  /**
+   * A series' row, each of its commands with one key: its keys read as a range, the first's to the
+   * last's (`⌘1` – `⌘8`).
+   */
+  readonly range: boolean;
   /** One of Vim's own keys, which keyboard shortcuts lists and Lo never takes. */
   readonly vim: boolean;
   /** One of an editor's own keys, such as the comment box's: listed, never run, and fixed. */
@@ -121,15 +126,17 @@ function listedCommands(registry: Registry, options: HelpOptions): Command[] {
 
 /**
  * `commands` as rows in the groups' order, those of one group with one label and description as one
- * row: commands named alike that do different things say what each does apart.
+ * row: commands named alike that do different things say what each does apart. A series is one row,
+ * by its name.
  */
 function grouped(registry: Registry, commands: readonly Command[], vim: boolean): HelpGroup[] {
   return groups.flatMap((group): HelpGroup[] => {
     const rows: HelpRow[] = [];
     for (const command of commands.filter((each) => each.group === group)) {
       const keys = liveKeys(registry, command);
+      const label = command.series ?? command.label;
       const at = rows.findIndex(
-        (row) => row.label === command.label && row.description === command.description,
+        (row) => row.label === label && row.description === command.description,
       );
       const same = rows[at];
       if (same) {
@@ -138,15 +145,17 @@ function grouped(registry: Registry, commands: readonly Command[], vim: boolean)
           ...same,
           ids: [...same.ids, command.id],
           keys: [...same.keys, ...keys.filter((each) => !known.has(each.join(' ')))],
+          range: same.range && keys.length === 1,
         };
         continue;
       }
       rows.push({
         id: command.id,
         ids: [command.id],
-        label: command.label,
+        label,
         description: command.description,
         keys,
+        range: command.series !== undefined && keys.length === 1,
         vim: vim && command.vim === 'own',
         editor: command.editor === true,
         overVim: vim && command.overVim === true,
@@ -188,7 +197,8 @@ function appliesIn(command: Command, scope: string): boolean {
 /**
  * The keys that work in what had focus, keyboard shortcuts' first tab, "Here": every command whose
  * keys apply in `scope` and can run on `target` now, as its key would, by group. One that the
- * registry never runs, one of Vim's or an editor's own, is there wherever it applies.
+ * registry never runs, one of Vim's or an editor's own, is there wherever it applies. A series is
+ * there whole while any of it can run, as one row stands for it all.
  */
 export function helpHere(
   registry: Registry,
@@ -196,10 +206,12 @@ export function helpHere(
   target: Target,
   options: HelpOptions,
 ): HelpGroup[] {
-  const commands = listedCommands(registry, options).filter(
-    (command) =>
-      appliesIn(command, scope) &&
-      (isOwned(command) || registry.enabled(command.id, target, true) === true),
+  const applying = listedCommands(registry, options).filter((command) => appliesIn(command, scope));
+  const runs = (command: Command) =>
+    isOwned(command) || registry.enabled(command.id, target, true) === true;
+  const series = new Set(applying.filter(runs).map((command) => command.series));
+  const commands = applying.filter((command) =>
+    command.series === undefined ? runs(command) : series.has(command.series),
   );
   return grouped(registry, commands, options.vim);
 }

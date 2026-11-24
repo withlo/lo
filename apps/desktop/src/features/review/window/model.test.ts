@@ -86,10 +86,12 @@ test('every verdict is offered, and on your own pull request Approve and Request
   expect(verdictsOf(mine, label).map(({ event, off }) => [event, off])).toEqual([
     ['COMMENT', undefined],
     ['APPROVE', own],
-    ['REQUEST_CHANGES', 'Its author can’t request changes'],
+    ['REQUEST_CHANGES', 'Authors can’t request changes on their own pull request'],
   ]);
   expect(verdictsOf(mine, label)[1]?.description).toBe(own);
-  expect(verdictsOf(mine, label)[2]?.description).toBe('Its author can’t request changes');
+  expect(verdictsOf(mine, label)[2]?.description).toBe(
+    'Authors can’t request changes on their own pull request',
+  );
 });
 
 test('a pending review on another revision dims Approve and Request changes, with "Show r2" while GitHub has it', () => {

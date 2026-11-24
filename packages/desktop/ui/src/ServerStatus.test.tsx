@@ -474,6 +474,15 @@ describe('ServerStatus', () => {
     expect(details()?.textContent).toBe('');
   });
 
+  it('says a ready server with no version is running', async () => {
+    const host = render(
+      <ServerStatus name="TypeScript" state={{ kind: 'ready' }} onShowLog={() => undefined} />,
+    );
+    click(item(host));
+    await settle();
+    expect(details()?.textContent).toBe('TypeScript is runningShow log');
+  });
+
   it('says nothing more of a ready server than its version', async () => {
     const host = render(
       <ServerStatus

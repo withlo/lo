@@ -438,6 +438,6 @@ describe('a walkthrough', () => {
     const next = [...page.querySelectorAll('button')].find((each) => each.textContent === 'Next');
     act(() => next?.click());
     await until(() => marked()[0] === 'bee');
-    expect(page.querySelector('.lo-walk__codehead')?.textContent).toBe('src/b.tsL1');
+    expect(page.querySelector('.lo-walk__codehead')?.textContent).toBe('src/b.ts:1');
   });
 });

@@ -63,6 +63,15 @@ describe('PRHeader', () => {
     expect(markup).toContain('Comparing');
   });
 
+  it('says the author merged the branches once it has merged, and wanted to once it closed', () => {
+    expect(headerOf('merged')).toContain('> merged</span>');
+    expect(headerOf('merged')).not.toContain('wants to merge');
+    expect(headerOf('closed')).toContain('> wanted to merge</span>');
+    expect(headerOf('draft')).toContain('> wants to merge</span>');
+    // A branch is given up whole where it can't show a few letters, never cut to one.
+    expect(headerOf('draft')).toMatch(/data-gives="branches" class="flex min-w-48 shrink"/);
+  });
+
   it('holds the places of what hasn’t arrived, and shows no chip while all is well', () => {
     const markup = renderToStaticMarkup(<PRHeader number={78} />);
     expect(markup).not.toContain('<h1');
@@ -239,7 +248,7 @@ describe('the parts’ styles', () => {
         <StatePill state="draft" />
         <StatePill state="merged" />
         <StatePill state="closed" />
-        <Spinner size="xs" />
+        <Spinner />
         <Spinner />
         <Skeleton className="w-48" />
       </>,
@@ -250,3 +259,16 @@ describe('the parts’ styles', () => {
     expect(classes.filter((name) => !hasRule(css, name))).toEqual([]);
   });
 });
+
+/** The header of a pull request in `state`, as markup. */
+function headerOf(state: 'merged' | 'closed' | 'draft'): string {
+  return renderToStaticMarkup(
+    <PRHeader
+      number={78}
+      state={state}
+      author="rozed-bot"
+      head={{ branch: 'app/head' }}
+      base={{ branch: 'app/base' }}
+    />,
+  );
+}

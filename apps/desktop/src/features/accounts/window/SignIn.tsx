@@ -226,42 +226,46 @@ function Body({ dialog }: { dialog: SignInDialog }) {
   const shown = code?.userCode;
   return (
     <>
+      {/* The line under the code goes with it: one that ended before a code came says why in its
+          problem, and leaves no empty rows. */}
       <Collapse open={shown !== undefined || !ended}>
-        <div
-          className="flex items-center gap-8 rounded-md border border-border bg-bg-well py-12 ps-16 pe-12"
-          // The line under it says the code is coming, and this is how the box is heard meanwhile.
-          aria-busy={shown === undefined && !ended ? true : undefined}
-        >
-          <Swap id={shown === undefined ? 'none' : 'code'} className="grid min-w-0 flex-1">
-            {/* The room a code takes, before there's one. */}
-            <span aria-hidden="true" className="invisible col-start-1 row-start-1 device-code">
-              XXXX-XXXX
-            </span>
-            {shown !== undefined && (
-              <span
-                role="img"
-                aria-label={`Code ${shown.split('').join(' ')}`}
-                // To be typed while the sign-in waits for it, and dimmed once it's of no more use.
-                className={
-                  waiting
-                    ? 'col-start-1 row-start-1 device-code text-fg select-all'
-                    : 'col-start-1 row-start-1 device-code text-fg-disabled select-all'
-                }
-              >
-                {shown}
+        <div className="flex flex-col gap-12">
+          <div
+            className="flex items-center gap-8 rounded-md border border-border bg-bg-well py-12 ps-16 pe-12"
+            // The line under it says the code is coming, and this is how the box is heard meanwhile.
+            aria-busy={shown === undefined && !ended ? true : undefined}
+          >
+            <Swap id={shown === undefined ? 'none' : 'code'} className="grid min-w-0 flex-1">
+              {/* The room a code takes, before there's one. */}
+              <span aria-hidden="true" className="invisible col-start-1 row-start-1 device-code">
+                XXXX-XXXX
               </span>
-            )}
-          </Swap>
-          {/* Its room is kept while there's nothing to copy. */}
-          <span className={waiting ? 'flex-none' : 'invisible flex-none'} {...{ [COPY]: '' }}>
-            <CopyButton variant="secondary" onCopy={copyCode}>
-              Copy
-              {copy !== undefined && <Key keys={copy} decorative />}
-            </CopyButton>
-          </span>
+              {shown !== undefined && (
+                <span
+                  role="img"
+                  aria-label={`Code ${shown.split('').join(' ')}`}
+                  // To be typed while the sign-in waits for it, and dimmed once it's of no more use.
+                  className={
+                    waiting
+                      ? 'col-start-1 row-start-1 device-code text-fg select-all'
+                      : 'col-start-1 row-start-1 device-code text-fg-disabled select-all'
+                  }
+                >
+                  {shown}
+                </span>
+              )}
+            </Swap>
+            {/* Its room is kept while there's nothing to copy. */}
+            <span className={waiting ? 'flex-none' : 'invisible flex-none'} {...{ [COPY]: '' }}>
+              <CopyButton variant="secondary" onCopy={copyCode}>
+                Copy
+                {copy !== undefined && <Key keys={copy} decorative />}
+              </CopyButton>
+            </span>
+          </div>
+          <Status dialog={dialog} />
         </div>
       </Collapse>
-      <Status dialog={dialog} />
       {waiting && unopened !== undefined && (
         <Problem title="Couldn’t open GitHub" details={unopened} />
       )}

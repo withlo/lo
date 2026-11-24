@@ -162,7 +162,9 @@
 }
 .lo-codeblock__path { font: 400 12px/1 var(--lo-font-mono); font-variant-ligatures: none; color: var(--lo-fg-muted); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .lo-codeblock__path b { color: var(--lo-fg); font-weight: 400; }
-.lo-codeblock__lines { font: 400 11.5px/1 var(--lo-font-mono); font-variant-ligatures: none; color: var(--lo-fg-muted); flex: none; }
+/* Its path and lines read as one, `src/cache.ts:12–44`: the path is cut short, never the lines. */
+.lo-codeblock__where { display: flex; align-items: center; min-width: 0; }
+.lo-codeblock__lines { font: 400 12px/1 var(--lo-font-mono); font-variant-ligatures: none; color: var(--lo-fg-muted); flex: none; }
 .lo-codeblock__actions { margin-left: auto; display: flex; align-items: center; gap: 2px; flex: none; }
 .lo-codeblock__flag {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;

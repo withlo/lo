@@ -295,7 +295,7 @@ function OutlinePalette() {
     state.problem ??
     (found === undefined ? (
       <span className="inline-flex items-center gap-8">
-        <Spinner size="xs" />
+        <Spinner />
         Reading symbols…
       </span>
     ) : typed ? (

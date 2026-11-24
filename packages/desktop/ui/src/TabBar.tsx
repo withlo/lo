@@ -139,15 +139,16 @@ const tab = cva(
   },
 );
 
-/** What a tab says, in one row, which gives up its mark where its number wouldn't fit beside it. */
+/** What a tab says, in one row, which gives up its title's words where its number wouldn't fit. */
 const LABEL = 'give-up flex min-w-0 flex-1 items-center gap-6';
 
 /**
  * What a tab gives up, measured, once its title, stack count and repository have gone as far as they
- * go: its mark, the state's ball or the spinner in its place, so its number stays whole and clear of
- * its close button on every system.
+ * go: its title's words, whose room at its end, kept for its close button, its mark then takes, the
+ * state's ball or the spinner in its place. So its number stays whole and clear of its close button
+ * on every system, and the mark stays.
  */
-const LABEL_STEPS = ['mark'] as const;
+const LABEL_STEPS = ['title'] as const;
 
 /** The attribute the strip's row has, its tabs and what's at its end, for finding focus in it. */
 export const STRIP_ATTRIBUTE = 'data-lo-strip';
@@ -982,11 +983,12 @@ function isLoading(item: PullTab): boolean {
 
 /**
  * What a tab says: a pull request's state, place, stack and title, or the name of one of Lo's own.
- * As the tab narrows, its title goes first, then its stack's count, then its repository's name
- * shortens, but never past its first letter and an ellipsis, and never past half the tab, then its
- * state's ball, or the spinner in its place, goes where its number wouldn't fit beside it; its
- * number stays whole. The marks, the state's ball and the stack's count, are named in a tooltip
- * and to a screen reader.
+ * As the tab narrows, its title is cut short first, then its stack's count goes, then its
+ * repository's name shortens, but never past its first letter and an ellipsis, and never past half
+ * the tab. Where its number then wouldn't fit beside its mark, the state's ball or the spinner in
+ * its place, the title's words go, and the mark takes their room at its end, which its close button
+ * covers as it covered them; its number stays whole. The marks, the state's ball and the stack's
+ * count, are named in a tooltip and to a screen reader.
  */
 function TabLabel({ tab: item, selected, fade }: { tab: Tab; selected: boolean; fade: Fade }) {
   const title = `${tail({ fade })} truncate ${selected ? 'font-medium' : ''}`;
@@ -995,30 +997,34 @@ function TabLabel({ tab: item, selected, fade }: { tab: Tab; selected: boolean; 
       return (
         <>
           {isLoading(item) ? (
-            <span data-gives="mark" className="flex flex-none">
-              <Spinner size="xs" />
+            <span className="tab-mark flex flex-none">
+              <Spinner />
             </span>
           ) : (
             item.state && (
-              <Tooltip label={STATE_NAMES[item.state]}>
-                <span
-                  role="img"
-                  aria-label={STATE_NAMES[item.state]}
-                  data-gives="mark"
-                  className={state({ state: item.state })}
-                />
-              </Tooltip>
+              // The spinner's room, so the tab's words stay put as it finishes opening.
+              <span className="tab-mark flex size-12 flex-none items-center justify-center">
+                <Tooltip label={STATE_NAMES[item.state]}>
+                  <span
+                    role="img"
+                    aria-label={STATE_NAMES[item.state]}
+                    className={state({ state: item.state })}
+                  />
+                </Tooltip>
+              </span>
             )
           )}
           <span className="max-w-1/2 min-w-16 shrink truncate text-fg-muted">{item.repo} </span>
           <span className="lo-num flex-none text-fg-muted">#{item.number}</span>
           {item.stack !== undefined && <StackCount layers={item.stack} />}
           {isLoading(item) ? (
-            <span className={`${tail({ fade })} flex items-center`}>
+            <span data-gives="title" className={`${tail({ fade })} flex items-center`}>
               <Skeleton className="w-48 min-w-0 shrink" />
             </span>
           ) : (
-            <span className={title}>{item.title}</span>
+            <span data-gives="title" className={title}>
+              {item.title}
+            </span>
           )}
         </>
       );

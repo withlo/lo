@@ -495,7 +495,7 @@ export class DiffTab {
         // The older side as compared: its head, or its changes replayed onto the newer base.
         const compared = await comparing.compared();
         if ('refused' in compared) {
-          return { kind: 'refused', why: 'compared' };
+          return { kind: 'refused', why: 'compared', limit: compared.limit };
         }
         rev = compared.old;
       } else if (local?.kind !== 'ready' || local.mergeBase === null) {

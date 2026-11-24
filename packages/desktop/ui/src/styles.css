@@ -533,6 +533,9 @@
   &[data-gave-up~='hint'] [data-gives='hint'],
   &[data-gave-up~='labels'] [data-gives='labels'],
   &[data-gave-up~='mark'] [data-gives='mark'],
+  &[data-gave-up~='title'] [data-gives='title'],
+  &[data-gave-up~='branches'] [data-gives='branches'],
+  &[data-gave-up~='detail'] [data-gives='detail'],
   &[data-gave-up~='actions'] [data-gives='actions'],
   &[data-gave-up~='fill'] [data-gives='fill'],
   &:not([data-gave-up~='labels']) [data-takes='labels'],
@@ -847,6 +850,22 @@
     var(--lo-bg) calc(100% - var(--lo-sp-32) - var(--lo-sp-8)),
     transparent calc(100% - var(--lo-sp-24))
   );
+}
+
+/* A pull request's tab's mark, the state's ball or the spinner in its place. Once the tab has given
+   up its title's words (`title`), the mark takes their room at the tab's end, kept for its close
+   button, and goes under the button wherever it shows, as the title did: on the tab on screen, and
+   on another under the pointer. */
+@utility tab-mark {
+  [data-gave-up~='title'] > & {
+    order: 1;
+    justify-content: center;
+    min-width: var(--lo-control-h-sm);
+    margin-inline-start: auto;
+  }
+  :is([role='tab'][aria-selected='true'], [role='tab']:hover) [data-gave-up~='title'] > & {
+    visibility: hidden;
+  }
 }
 
 /* A tab's stack count, which a narrow tab gives up after its title, so its number stays whole. The

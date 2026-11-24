@@ -1,23 +1,18 @@
 import { cva } from 'class-variance-authority';
 
-const spinner = cva('inline-block spinner', {
+// One size wherever it turns: a busy button's ring's, beside text of the interface's size.
+const spinner = cva('inline-block size-12 spinner', {
   variants: {
-    size: {
-      // In a tab, beside its number.
-      xs: 'size-8',
-      sm: 'size-12',
-    },
     tone: {
       accent: '',
       // On a fill of its own, such as a button at work: the color of the words beside it.
       current: 'spinner-current',
     },
   },
-  defaultVariants: { size: 'sm', tone: 'accent' },
+  defaultVariants: { tone: 'accent' },
 });
 
 export interface SpinnerProps {
-  size?: 'xs' | 'sm' | undefined;
   /** `current` takes the color of the text beside it, for a control with a fill of its own. */
   tone?: 'accent' | 'current' | undefined;
 }
@@ -27,8 +22,8 @@ export interface SpinnerProps {
  * shows one through `busy` on `Button`, and a whole view waits with `Loading` instead. Screen
  * readers hear what's waiting from its place.
  */
-export function Spinner({ size, tone }: SpinnerProps) {
-  return <span className={spinner({ size, tone })} aria-hidden="true" />;
+export function Spinner({ tone }: SpinnerProps) {
+  return <span className={spinner({ tone })} aria-hidden="true" />;
 }
 
 /**

@@ -19,6 +19,7 @@ export default defineCommands(
       keys: ['g v'],
       overVim: true,
       when: { except: ['menu', 'dialog', 'palette', 'box', 'revisions'], mode: 'normal' },
+      control: 'Compare revisions in the diff’s bar, and the revisions button in the header',
     },
     down: {
       label: 'Next revision',

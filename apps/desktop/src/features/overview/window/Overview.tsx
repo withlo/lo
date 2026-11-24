@@ -250,10 +250,11 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
   }, [tab.id, shown, known]);
 
   // While it's on screen, the middle view, which `Esc` gives focus back to, after closing a term's
-  // card or the code beside; and where the tab is in it, for history.
+  // card or the code beside; and where the tab is in it, for history. While the tab still chooses
+  // what to open on, it's the overview's place too, so a file opened from the tree has a way back.
   const waiting = opening === 'waiting';
   useEffect(() => {
-    if (!shown || waiting) return undefined;
+    if (!shown) return undefined;
     const take = () => (article.current ?? root.current)?.focus({ preventScroll: true });
     // A block history brought back has focus already.
     const own = root.current;
@@ -362,7 +363,13 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
     return block && targetOf(drawn, block);
   });
 
-  if (waiting) return <MiddlePlaceholder tab={tab} />;
+  if (waiting) {
+    return (
+      <div ref={root} className="h-full outline-none" tabIndex={-1}>
+        <MiddlePlaceholder tab={tab} />
+      </div>
+    );
+  }
   const ring = focused ?? (split ? besideAt : undefined);
   return (
     <div

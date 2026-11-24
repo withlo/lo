@@ -590,7 +590,7 @@ export function QueueTable({
                 aria-colspan={6}
                 className="flex items-center gap-6 px-12 pb-4 text-small-medium text-queue"
               >
-                <Spinner size="xs" />
+                <Spinner />
                 Testing together · {pullRequests(item.group.entries.length)}
               </div>
             </div>

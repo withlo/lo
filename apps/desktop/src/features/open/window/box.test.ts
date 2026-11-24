@@ -153,7 +153,7 @@ describe('the open box', () => {
     const ask: Preview = { ...pull, as: { kind: 'ask', logins: ['a', 'b'], remember: 'owner' } };
     expect(enterAction(holding('', undefined))).toBeUndefined();
     expect(enterAction(holding(E2E, undefined))).toBe('Open');
-    expect(enterAction(holding(E2E, pull))).toBe('Open');
+    expect(enterAction(holding(E2E, pull))).toBe('Open #78');
     expect(enterAction(holding(E2E, ask))).toBe('Open as a');
     expect(enterAction(holding(E2E, ask, 'b'))).toBe('Open as b');
     // A login highlighted for an earlier link that this one doesn't offer isn't who it opens as.

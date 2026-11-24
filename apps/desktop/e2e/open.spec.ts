@@ -113,7 +113,8 @@ test('says what a link it doesn’t open is, and sends a web link to the browser
     await expect(row).toContainText('e2e #80');
     await expect(row).toContainText(TITLE);
     await expect(row).toContainText('rozed-bot');
-    await expect(box(page)).toContainText('Open');
+    // `⏎` names the pull request it opens, beside the state's pill.
+    await expect(box(page)).toContainText('Open #80');
     await page.keyboard.press('Enter');
 
     await expect(box(page)).toBeHidden();

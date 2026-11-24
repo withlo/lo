@@ -10,6 +10,7 @@ import {
 
 import { Branch } from './Branch.tsx';
 import { besideIn, handOffFocus } from './focus.ts';
+import { useGiveUp } from './giveUp.ts';
 import { Popover } from './Popover.tsx';
 import { Skeleton } from './Spinner.tsx';
 import { StatePill, type PullRequestState } from './StatePill.tsx';
@@ -79,7 +80,7 @@ const chip = cva(
 /**
  * The two rows above a pull request: its state, title and number, how the connection stands when
  * it isn't as usual, whether it can merge, and who Lo acts as; then who wants to merge which branch
- * into which, and what other features put after them.
+ * into which, or merged it, or wanted to once it's closed, and what other features put after them.
  */
 export function PRHeader({
   number,
@@ -94,6 +95,8 @@ export function PRHeader({
   status,
   children,
 }: PRHeaderProps) {
+  const merges = useRef<HTMLSpanElement>(null);
+  useGiveUp(merges, BRANCH_STEPS);
   return (
     <header className="pr-header h-header-h min-w-0 flex-none bg-bg-chrome ps-16 pe-12 pb-6">
       <div className="flex min-w-0 items-center gap-12">
@@ -126,7 +129,10 @@ export function PRHeader({
         )}
       </div>
       <div className="flex min-w-0 items-center gap-12">
-        <span className="flex min-w-0 items-center gap-6 whitespace-nowrap text-fg-muted text-small">
+        <span
+          ref={merges}
+          className="give-up flex min-w-0 items-center gap-6 whitespace-nowrap text-fg-muted text-small"
+        >
           {head === undefined || base === undefined ? (
             missing === undefined && <Skeleton className="w-tab-w" />
           ) : (
@@ -136,19 +142,41 @@ export function PRHeader({
                 <Skeleton className="w-48 flex-none" />
               ) : (
                 <strong className="font-semibold text-fg">{author ?? 'Deleted account'}</strong>
-              )}{' '}
-              wants to merge
-              <Branch name={head.fork ? `${head.fork}:${head.branch}` : head.branch} />
-              <span className="flex-none text-fg-subtle" aria-label="into">
+              )}
+              <span data-gives="branches"> {mergeWords(state)}</span>
+              <BranchAtLeast name={head.fork ? `${head.fork}:${head.branch}` : head.branch} />
+              <span data-gives="branches" className="flex-none text-fg-subtle" aria-label="into">
                 →
               </span>
-              <Branch name={base.branch} base />
+              <BranchAtLeast name={base.branch} base />
             </>
           )}
         </span>
         {children}
       </div>
     </header>
+  );
+}
+
+/** What the author did with the branches, as the pull request stands: "wants to merge". */
+function mergeWords(state: PullRequestState | undefined): string {
+  if (state === 'merged') return 'merged';
+  if (state === 'closed') return 'wanted to merge';
+  return 'wants to merge';
+}
+
+/**
+ * What the header's second row gives up where its branches can't show a few letters each: "wants
+ * to merge" and both branches, whole, so a branch is never cut to a letter. Its author stays.
+ */
+const BRANCH_STEPS = ['branches'] as const;
+
+/** A branch in the header: cut short no further than a few letters, and given up whole after. */
+function BranchAtLeast({ name, base = false }: { name: string; base?: boolean }) {
+  return (
+    <span data-gives="branches" className="flex min-w-48 shrink">
+      <Branch name={name} base={base} />
+    </span>
   );
 }
 

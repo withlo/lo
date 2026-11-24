@@ -93,7 +93,7 @@ describe('MergeStatus', () => {
     expect(host.textContent).toBe('Merged');
   });
 
-  it('cuts its reasons short, never its verdict', () => {
+  it('cuts its reasons short, never its verdict, and to a few letters at most before it gives them up', () => {
     const host = render(
       <MergeStatus
         kind="waiting"
@@ -103,7 +103,11 @@ describe('MergeStatus', () => {
       />,
     );
     expect(host.querySelector('strong')?.className).toContain('flex-none');
-    expect(host.querySelector('button > span:not([aria-hidden])')?.className).toContain('truncate');
+    const reasons = host.querySelector('[data-gives="detail"]');
+    expect(reasons?.textContent).toBe('Review required · 2 checks running');
+    expect(reasons?.className).toContain('truncate');
+    expect(reasons?.className).toContain('min-w-48');
+    expect(reasons?.parentElement?.className).toContain('give-up');
   });
 
   it('draws what a branch’s name says without the characters that turn text around', () => {

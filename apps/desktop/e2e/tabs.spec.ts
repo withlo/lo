@@ -739,7 +739,7 @@ async function clearHovered(page: Page, tab: Locator): Promise<void> {
   await clear(tab);
 }
 
-test('the narrowest tabs keep their repository, cut short, and their number whole, opening or showing their state', async () => {
+test('the narrowest tabs keep their repository, cut short, their number whole, and their spinner or state', async () => {
   const long = 'a-repository-with-a-long-name';
   const openings = Array.from({ length: 40 }, (_, index) => pull('withlo', long, 123_456 + index));
   // Each still opening, with a spinner in its state's place, as GitHub stays out of reach for less
@@ -757,6 +757,9 @@ test('the narrowest tabs keep their repository, cut short, and their number whol
       '[role="tab"][aria-selected="false"][aria-busy="true"]',
     );
     await expect(opening.first()).toBeVisible();
+    // Its title gives way first: the spinner stays, and the skeleton for the title goes.
+    await expect(opening.first().locator('.spinner')).toBeVisible();
+    await expect(opening.first().locator('.skeleton')).toBeHidden();
     await clearHovered(first.page, opening.first());
     await expectFits(first.page);
   } finally {
@@ -782,6 +785,7 @@ test('the narrowest tabs keep their repository, cut short, and their number whol
       .filter({ hasText: /Make the tab strip narrower$/ })
       .first();
     await expect(stated.locator('[aria-label="Open"]')).toHaveCount(1);
+    await expect(stated.locator('[aria-label="Open"]')).toBeVisible();
     await clearHovered(second.page, stated);
     await expectFits(second.page);
   } finally {

@@ -58,6 +58,7 @@ const row = (
   label,
   description: undefined,
   keys,
+  range: false,
   vim: false,
   editor: false,
   overVim: false,
@@ -139,6 +140,23 @@ describe('KeyHelp', () => {
     expect(
       [...(line('keys.palette')?.querySelectorAll('kbd') ?? [])].map((kbd) => kbd.textContent),
     ).toEqual(['⌘⇧P', ']', 'p']);
+  });
+
+  it('draws a series’ keys as one range, the first’s to the last’s', () => {
+    const tabs = row('tab.show1', 'Tab 1–8', [['⌘1'], ['⌘2'], ['⌘8']], {
+      ids: ['tab.show1', 'tab.show2', 'tab.show8'],
+      range: true,
+    });
+    const groups: HelpGroup[] = [{ group: 'Tabs', rows: [tabs] }];
+    const page = render(
+      <KeyHelp open onOpenChange={() => {}} here={groups} areas={[]} all={groups} />,
+    );
+    const line = page.querySelector('[data-command="tab.show1"]');
+    expect([...(line?.querySelectorAll('kbd') ?? [])].map((kbd) => kbd.textContent)).toEqual([
+      '⌘1',
+      '⌘8',
+    ]);
+    expect(line?.textContent).toBe('Tab 1–8⌘1–⌘8');
   });
 
   it('shows the commands with no key too, with “Show all commands” on, code as code', () => {

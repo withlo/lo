@@ -168,7 +168,7 @@ describe('TabBar', () => {
     expect(other).not.toContain('bg-bg-chrome');
   });
 
-  it('gives its mark up, the ball or the spinner in its place, where its number wouldn’t fit beside it', () => {
+  it('gives its title’s words up where its number wouldn’t fit beside its mark, which takes their room', () => {
     const [stated] = tabsIn(renderToStaticMarkup(<TabBar tabs={tabs} selected="a" />));
     const [opening] = tabsIn(
       renderToStaticMarkup(
@@ -177,10 +177,10 @@ describe('TabBar', () => {
     );
     // The row measures what fits and names what it gave up, which its stylesheet hides.
     expect(stated).toMatch(/class="give-up [^"]*" data-tab-label/);
-    expect(stated).toMatch(/role="img" aria-label="Open" data-gives="mark"/);
-    expect(opening).toMatch(
-      /<span data-gives="mark" class="flex flex-none"><span class="[^"]*spinner/,
-    );
+    expect(stated).toMatch(/<span class="[^"]*\btab-mark\b[^"]*"><span [^>]*aria-label="Open"/);
+    expect(stated).toMatch(/<span data-gives="title" class="[^"]*\btruncate\b/);
+    expect(opening).toMatch(/<span class="[^"]*\btab-mark\b[^"]*"><span class="[^"]*spinner/);
+    expect(opening).toMatch(/<span data-gives="title" class="[^"]*"><span class="[^"]*skeleton/);
   });
 
   it('names Recent pull requests and Settings, and gives Recent no close button', () => {

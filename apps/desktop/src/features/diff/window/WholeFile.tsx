@@ -465,7 +465,7 @@ function Note({
       return (
         <Said>
           <span className="inline-flex items-center gap-8">
-            <Spinner size="xs" />
+            <Spinner />
             Reading file…
           </span>
         </Said>
@@ -474,7 +474,7 @@ function Note({
       return (
         <Said>
           <span className="inline-flex items-center gap-8">
-            <Spinner size="xs" />
+            <Spinner />
             Fetching local copy…
           </span>
         </Said>
@@ -511,7 +511,7 @@ function Note({
     case 'refused':
       return (
         <Said title="Can’t show this file" actions={github}>
-          <Refused why={content.why} tab={tab} />
+          <Refused refusal={content} tab={tab} />
         </Said>
       );
     case 'failed':
@@ -537,11 +537,11 @@ function Note({
 }
 
 /** Why Lo won't show a file whole, besides its size: the base branch by name, as code. */
-function Refused({ why, tab }: { why: WholeRefusal; tab: PullTab }) {
+function Refused({ refusal, tab }: { refusal: WholeRefusal; tab: PullTab }) {
   const base = usePull(tab.id)?.header?.base.branch;
-  switch (why) {
+  switch (refusal.why) {
     case 'compared':
-      return 'The changes are over the size limit.';
+      return `The changes are over the ${bytes(refusal.limit)} limit.`;
     case 'unrelated':
       return base === undefined ? (
         'This pull request shares no history with its base branch.'
@@ -565,7 +565,7 @@ function Refused({ why, tab }: { why: WholeRefusal; tab: PullTab }) {
         </>
       );
     default:
-      throw new Error(`A refusal Lo doesn’t know: ${JSON.stringify(why satisfies never)}`);
+      throw new Error(`A refusal Lo doesn’t know: ${JSON.stringify(refusal satisfies never)}`);
   }
 }
 

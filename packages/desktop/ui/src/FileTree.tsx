@@ -391,7 +391,7 @@ function Row({
           ))}
         </span>
         <span className="ms-auto flex flex-none items-center gap-6 ps-6">
-          {each.loading && <Spinner size="xs" />}
+          {each.loading && <Spinner />}
           {!each.open && each.changes > 0 && <ChangedCount count={each.changes} />}
         </span>
       </div>

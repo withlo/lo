@@ -10,6 +10,8 @@ const outside: When = { except: ['dialog', 'palette'] };
 /** The command that shows the tab at `position` in the strip, by `⌘` and its number. */
 const place = (position: number) => ({
   label: `Tab ${position}`,
+  // Keyboard shortcuts lists the eight as one row.
+  series: 'Tab 1–8',
   group: 'Tabs' as const,
   keys: [`cmd+${position}`],
   when: outside,

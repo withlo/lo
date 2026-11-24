@@ -11,7 +11,7 @@ import { missingRules } from '../test/classes.ts';
 import { cleanUp, click, render, rerender, tipOf } from '../test/dom.ts';
 import { Button } from './Button.tsx';
 import { COPIED_MS, CopyButton, CopyRoute } from './CopyButton.tsx';
-import { Dialog, type DialogState } from './Dialog.tsx';
+import { CHECK_AGAIN, Dialog, type DialogState } from './Dialog.tsx';
 import { Loading, LOADING_DELAY_MS, LOADING_SLOW_MS } from './Loading.tsx';
 import { LogoMotion } from './LogoMotion.tsx';
 import { setMotion } from './motion.ts';
@@ -162,7 +162,7 @@ describe('a button at work', () => {
       expect(held().className).toContain('invisible');
       expect(held().getAttribute('aria-hidden')).toBe('true');
       // Beside the ring's room, as the words are while the ring turns.
-      expect(held().firstElementChild?.className).toContain('size-8');
+      expect(held().firstElementChild?.className).toContain('size-12');
     }
   });
 
@@ -706,6 +706,17 @@ describe('a dialog that does something', () => {
     rerender(host, ending('failed'));
     expect(named('Check again')).toBeUndefined();
     expect(document.activeElement).toBe(named('Close'));
+  });
+
+  it('says what went wrong in amber while it can only check again, and in red once it failed', async () => {
+    const triangle = () => document.querySelector('[role="dialog"] svg')?.getAttribute('class');
+    render(ending('failed', CHECK_AGAIN));
+    await settle();
+    expect(triangle()).toContain('text-warning');
+    cleanUp();
+    render(ending('failed', 'Try again'));
+    await settle();
+    expect(triangle()).toContain('text-danger');
   });
 
   it('says it has closed the moment it’s asked to, and keeps its words while it leaves', () => {

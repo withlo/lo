@@ -53,7 +53,7 @@ describe('a code block', () => {
     expect(page.querySelector('.lo-codeblock')?.className).toBe('lo-codeblock');
     expect(page.querySelector('.lo-codeblock__path')?.textContent).toBe('src/cache/lru.ts');
     expect(page.querySelector('.lo-codeblock__path b')?.textContent).toBe('lru.ts');
-    expect(page.querySelector('.lo-codeblock__lines')?.textContent).toBe('L12–44');
+    expect(page.querySelector('.lo-codeblock__lines')?.textContent).toBe(':12–44');
     // Its room is an excerpt's frame of as many empty lines, drawn by the code views' own rules.
     const space = page.querySelector('.lo-codeblock__body > .lo-codeblock__space')!;
     expect(
@@ -198,7 +198,7 @@ describe('a walkthrough', () => {
     const { page } = drawn(1);
     expect(page.querySelector('.lo-walk__title')?.textContent).toBe('Through it');
     expect(page.querySelector('.lo-walk__head')?.textContent).toContain('Step 2 of 3');
-    expect(page.querySelector('.lo-walk__codehead')?.textContent).toBe('src/b.tsL3');
+    expect(page.querySelector('.lo-walk__codehead')?.textContent).toBe('src/b.ts:3');
     const steps = [...page.querySelectorAll('.lo-walk__step')];
     expect(steps.map((each) => each.className)).toEqual([
       'lo-walk__step is-done',

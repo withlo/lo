@@ -101,6 +101,12 @@ export interface Declaration {
    * for the few commands whose label can't say all they do: "Closes what’s open in the view first."
    */
   readonly description?: string;
+  /**
+   * The one row keyboard shortcuts lists it in with the rest of its series, named so: "Tab 1–8",
+   * its keys a range from the first's to the last's (`⌘1` – `⌘8`). The palette lists each command by
+   * its own label.
+   */
+  readonly series?: string;
   readonly group: Group;
   /** Its default keys. The keymap file adds and removes keys over these. */
   readonly keys: readonly KeySpec[];

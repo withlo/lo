@@ -1,5 +1,5 @@
 import { cva } from 'class-variance-authority';
-import { useId, useState, type ReactNode, type Ref } from 'react';
+import { createContext, useContext, useId, useState, type ReactNode, type Ref } from 'react';
 
 import { Button } from './Button.tsx';
 import { Collapse } from './Collapse.tsx';
@@ -61,11 +61,18 @@ export interface ProblemProps {
   layout?: 'view' | 'inline' | 'details' | undefined;
   /**
    * `warn` while it's a wait, not a failure: Lo tries again by itself, or it waits for something
-   * else to let go. As the status item's amber ball, its triangle and ground are amber. `danger`,
-   * the default, once it failed.
+   * else to let go, or to know whether what was sent went. As the status item's amber ball, its
+   * triangle and ground are amber. `danger` once it failed. Without one, it's the tone of where it
+   * is ({@link ProblemTone}), else `danger`.
    */
   tone?: 'danger' | 'warn' | undefined;
 }
+
+/**
+ * The tone a `Problem` takes inside it that names none of its own: a dialog's, `warn`, while
+ * whether what it sent went isn't known and "Check again" looks.
+ */
+export const ProblemTone = createContext<'danger' | 'warn'>('danger');
 
 const problem = cva('min-w-0 text-ui', {
   variants: {
@@ -100,8 +107,10 @@ export function Problem({
   details,
   commands = [],
   layout = 'inline',
-  tone = 'danger',
+  tone: given,
 }: ProblemProps) {
+  const around = useContext(ProblemTone);
+  const tone = given ?? around;
   const view = layout === 'view';
   const copy = useCopy();
   // In a view, the text sits 12 px under the buttons, in a roomier well with a hairline, since

@@ -1,7 +1,8 @@
 import { cva } from 'class-variance-authority';
-import type { Ref } from 'react';
+import { useRef, type Ref } from 'react';
 
 import { withoutBidi } from './controls.ts';
+import { useGiveUp } from './giveUp.ts';
 import { Key, keyAria } from './Key.tsx';
 import { Tooltip } from './Tooltip.tsx';
 
@@ -77,7 +78,10 @@ export interface MergeStatusProps {
 }
 
 const line =
-  'inline-flex h-control-h min-w-0 items-center gap-8 rounded-sm border border-border px-8 whitespace-nowrap text-fg-muted text-small';
+  'inline-flex h-control-h min-w-0 items-center rounded-sm border border-border px-8 whitespace-nowrap text-fg-muted text-small';
+
+/** What the status gives up where its detail can't show a few letters: the detail, whole. */
+const DETAIL_STEPS = ['detail'] as const;
 
 /**
  * Whether a pull request can merge, as a dot and one line in the header: a strong verdict, then the
@@ -96,16 +100,21 @@ export function MergeStatus({
 }: MergeStatusProps) {
   const said = withoutBidi(verdict);
   const reasons = detail === undefined ? undefined : withoutBidi(detail);
+  const row = useRef<HTMLSpanElement>(null);
+  useGiveUp(row, DETAIL_STEPS);
   const content = (
-    <>
+    <span ref={row} className="give-up flex min-w-0 items-center gap-8">
       {/* A new dot as it lands, so its fill plays then and only then. */}
       <MergeDot key={landed ? 'landed' : 'still'} kind={kind} fills={landed} />
       <strong className="flex-none font-semibold text-fg">{said}</strong>
       {reasons !== undefined && reasons !== '' && (
-        <span className="min-w-0 truncate">{reasons}</span>
+        // Cut short no further than a few letters, then given up whole.
+        <span data-gives="detail" className="min-w-48 truncate">
+          {reasons}
+        </span>
       )}
       {keys !== undefined && onClick !== undefined && <Key keys={keys} decorative />}
-    </>
+    </span>
   );
   // Not a control, with nothing to name: what it says is all there is.
   if (onClick === undefined) return <span className={line}>{content}</span>;
