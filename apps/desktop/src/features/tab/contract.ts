@@ -286,6 +286,27 @@ export const choice = z.union([
 ]);
 export type Choice = z.output<typeof choice>;
 
+/** A choice of tab by where it is, not by its id. */
+export type PlaceChoice = Exclude<Choice, { readonly id: unknown }>;
+
+/**
+ * The tab `chosen` names among `tabs`, with `active` on screen: by its place in the strip, the
+ * last, or the one after or before `active`, round the ends of the tabs the strip shows. Main shows
+ * it, and the window asks whether there's one to show.
+ */
+export function chosenTab(
+  { tabs: listed, active }: { readonly tabs: readonly Tab[]; readonly active: string | undefined },
+  chosen: PlaceChoice,
+): Tab | undefined {
+  if ('position' in chosen) return listed[chosen.position - 1];
+  if ('last' in chosen) return listed.at(-1);
+  const strip = listed.slice(0, chosen.within ?? listed.length);
+  const at = strip.findIndex((each) => each.id === active);
+  return at < 0
+    ? strip.at(chosen.step > 0 ? 0 : -1)
+    : strip[(at + chosen.step + strip.length) % strip.length];
+}
+
 /**
  * Where to move a tab: to a place in the strip, from 0, counted without it, `brought` when it's
  * the tab on screen, brought into the strip's last place from past it; or one place along the tabs

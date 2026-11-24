@@ -203,8 +203,11 @@ where the action's target is.
   and Forward do with nowhere to go: their menu rows dim with no reason under them. And so does Go
   to view with focus already where the middle view puts it and nothing there to close: each middle
   view says where its focus goes (`holds`) and what `Esc` closes there (`escape`), without closing
-  it. The palette and keyboard shortcuts' "Here" leave out a command that refuses, so neither lists
-  what can't act where it's asked.
+  it. The palette and keyboard shortcuts' "Here" leave out a command that refuses, so a command that
+  can't act where it's asked refuses from `enabled`, not only in `run`, and neither lists it: a tab
+  by its place with no tab there, or with that tab on screen; `j` in Recent with no rows; Open pull
+  request with none highlighted. Only what Lo can't know until the command runs, as whether the
+  clipboard holds a link, is left to `run` to say.
 - **Anything with a right-click menu has a `⋯` button.** `MoreButton` goes inside the element whose
   right-click opens the menu, at the end of its row (before a chevron that opens or closes the row,
   as on a thread's card), and opens that same menu under itself (`openMenuUnder`), so the two can

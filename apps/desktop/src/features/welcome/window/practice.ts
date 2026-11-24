@@ -17,10 +17,3 @@ export function setPracticeEscape(given: Practice | undefined): void {
 export function practiceEscape(): (() => void) | undefined {
   return practice?.open() === true ? practice.close : undefined;
 }
-
-/** `Esc` in the welcome: closes the practice box if it's open, and says whether it did. */
-export function escapePractice(): boolean {
-  const close = practiceEscape();
-  close?.();
-  return close !== undefined;
-}

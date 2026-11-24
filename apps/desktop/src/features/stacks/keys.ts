@@ -137,7 +137,8 @@ export default defineCommands(
     },
     /**
      * With layers shown as one diff, once the diff has nothing of its own open that `Esc` closes,
-     * goes back to the layer they were selected from. Elsewhere it's `Esc` as anywhere.
+     * goes back to the layer they were selected from. Elsewhere it's `Esc` as anywhere, with nothing
+     * to say where that does nothing.
      */
     back: {
       label: 'Show single layer',

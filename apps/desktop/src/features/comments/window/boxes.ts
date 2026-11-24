@@ -60,7 +60,7 @@ import {
   type WritingBlock,
 } from '../../overview/window/shared.ts';
 import { contract as revisionsContract } from '../../revisions/contract.ts';
-import { pullOf, runOf, tabState, type PullTab } from '../../tab/window/shared.ts';
+import { activeTab, pullOf, runOf, tabState, type PullTab } from '../../tab/window/shared.ts';
 import type {
   ActOutcome,
   Commentable,
@@ -810,17 +810,19 @@ function showKept(
   }
 }
 
-/** A draft the diff had nowhere to open, as the kept drafts' list names it: "retry.ts · line 41 · r2". */
+/** A kept draft, as the kept drafts' list names it: "retry.ts · line 41 · r2". */
 export interface KeptAway {
   readonly box: string;
   readonly where: string;
 }
 
 /**
- * Each view's drafts the diff took down open, as it was drawn again, that no box has taken since:
- * from the moment it took them down, whether or not the diff drawn anew is there yet, and on while
- * it has nowhere to open them, neither their lines, nor their file's header, nor their code block.
- * The status bar counts them, until each opens again or goes, and its item opens their list.
+ * Each view's kept drafts: those the diff took down open, as it was drawn again, that no box has
+ * taken since. One taken down while its tab is on screen counts from that moment, whether or not
+ * the diff drawn anew is there yet; one taken down with its tab, as another tab is shown, once the
+ * diff drawn as its tab is shown again has nowhere to open it. Each counts on while there's nowhere
+ * to open it, neither its lines, nor its file's header, nor its code block. The status bar counts
+ * them, until each opens again or goes, and its item opens their list.
  */
 export const keptAway = tabState<readonly KeptAway[]>(() => []);
 
@@ -846,10 +848,9 @@ function unsay(box: Box): void {
 }
 
 /**
- * Where a draft the diff had nowhere to open is, as the list of kept drafts names it: its file and
- * lines at its revision, "retry.ts · line 41 · r2"; for a reply or an edit, what it is first, and
- * where its thread is, "Reply · retry.ts · line 41"; and "Comment · pull request" for the pull
- * request's own.
+ * Where a kept draft is, as the list of kept drafts names it: its file and lines at its revision,
+ * "retry.ts · line 41 · r2"; for a reply or an edit, what it is first, and where its thread is,
+ * "Reply · retry.ts · line 41"; and "Comment · pull request" for the pull request's own.
  */
 function keptWhere(box: Box): string {
   const { place } = box.state;
@@ -904,7 +905,7 @@ const retrying = new Map<string, ReturnType<typeof setTimeout>>();
  * Opens view `view`'s boxes that should show in its diff, as it's drawn now: drafts restored as Lo
  * started, boxes the diff took down as it was drawn again ({@link placeKept}), and those whose
  * block the overview no longer has. One whose line isn't drawn yet tries again in a moment, a few
- * times. The status bar goes on counting the boxes the diff took down that it had nowhere to open.
+ * times. The status bar counts the boxes the diff took down that it has nowhere to open.
  */
 export function restore(view: string): void {
   const diff = writingDiff(view);
@@ -1067,7 +1068,7 @@ export function takeDrafts(given: DraftsView): void {
       if (first) box.set({ restored: row.savedAt });
       own.set(key, box);
       // Kept as the one it moved from was, in no box until one takes it.
-      if (box.kept && box.open) say(view, [box]);
+      if (box.kept && box.open && keptOnScreen(box)) say(view, [box]);
     } else if (row.home && box.home.kind !== 'block' && !box.saving && box.state.text === '') {
       // Drawn before main said anything, as the timeline's box is, with nothing typed: it takes its
       // draft's home, and opens there, never drawn where it was with the draft's text.
@@ -2183,11 +2184,35 @@ export function takenDown(box: Box, composer: Composer): void {
   else if (box.drawnIn === 'diff' && box.open) {
     box.retries = 0;
     box.kept = { box: composer.keep(), focused: box.state.focused, inputs: inputsSoFar() };
-    // Not for a view that's gone, as its tab closes.
-    if (views.get(box.view)?.get(box.key) !== box) return;
+    if (!keptOnScreen(box)) return;
     say(box.view, [box]);
-    queueMicrotask(() => restore(box.view));
+    restoreSoon(box.view);
   }
+}
+
+/**
+ * Whether box `box`, kept as the diff took it down, is kept on screen: its view is the one on
+ * screen, and its tab is still open. A tab left, or closed, takes its diff down with it: its boxes
+ * aren't counted then, and the diff drawn as the tab is shown again places them.
+ */
+function keptOnScreen(box: Box): boolean {
+  return activeTab()?.id === box.view && views.get(box.view)?.get(box.key) === box;
+}
+
+/** The views whose diff places the boxes it took down once the diff's drawing is done. */
+const restoring = new Set<string>();
+
+/**
+ * Has view `view`'s diff place the boxes it took down once its drawing is done: once for them all,
+ * so each try spends one of a waiting box's tries, however many boxes it took down.
+ */
+function restoreSoon(view: string): void {
+  if (restoring.has(view)) return;
+  restoring.add(view);
+  queueMicrotask(() => {
+    restoring.delete(view);
+    restore(view);
+  });
 }
 
 /**

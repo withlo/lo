@@ -146,7 +146,8 @@ export function RecentTab() {
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') {
                     event.preventDefault();
-                    void openRow();
+                    // As `⏎` in the list: it says so with no row highlighted.
+                    registry().run('open.openRecent', NO_TARGET);
                   } else if (event.key === 'ArrowDown') {
                     event.preventDefault();
                     list.current?.focus();

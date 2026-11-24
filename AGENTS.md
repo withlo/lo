@@ -1338,12 +1338,14 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
   overview did meanwhile, on its line; else under its file's header in that diff, as for a file
   closed as viewed, still on the line; else under its block if the overview has it; else nowhere
   (`placeKept`). A diff drawn over the last one is drawn before the last goes, so a box is placed as
-  it's taken down too, not only as a diff is drawn. From the moment the diff takes it down until a
-  box takes it, whether the diff drawn anew is there yet or not, the status bar counts it as kept
-  (`keptAway`), in one note for all such drafts, whose click, and "Show where kept drafts are", say
-  where each is. `kept` lasts until that diff has placed it or couldn't. Focus comes back only to a
-  box that had it, with no key, click, wheel or app menu command since, no key held for the rest of
-  a sequence, and focus where the redraw left it.
+  it's taken down too, not only as a diff is drawn, once for all the boxes it took down. While its
+  tab is on screen, from the moment the diff takes it down until a box takes it, whether the diff
+  drawn anew is there yet or not, the status bar counts it as kept (`keptAway`), in one note for all
+  such drafts, whose click, and "Show where kept drafts are", say where each is. A tab left, or
+  closed, takes its diff down uncounted, and the diff drawn as it's shown again places its boxes.
+  `kept` lasts until that diff has placed it or couldn't. Focus comes back only to a box that had
+  it, with no key, click, wheel or app menu command since, no key held for the rest of a sequence,
+  and focus where the redraw left it.
 - `comments.send` plans each write with `@lo/review`'s `YourReview` and sends it with the poller's
   `sendReview`, one write to a pull request at a time, each planned from your pending review as read
   after the last one's answer. The box's text is held, read-only, while it's sent. A refusal keeps
