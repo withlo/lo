@@ -33,7 +33,7 @@ Before your first pull request merges, you agree to Lo's contributor license agr
 the Foundation's place. The `license/cla` check comments on the pull request with a link to sign it
 with your GitHub account, and you sign only once. You keep the copyright in what you contribute, and
 you give Lo's maintainer a license to it that lets Lo change its license later, such as to a more
-permissive one, and be used in commercial products and services, such as a hosted version of Lo.
+permissive one, and be used in commercial products and services.
 
 ### Work you didn't write
 
