@@ -37,7 +37,7 @@ jobs:
 
       - name: Decide whether the check job runs
         id: filter
-        run: echo check=false >> "$GITHUB_OUTPUT"
+        run: sh scripts/changes.sh "$BASE_SHA" "$HEAD_SHA" >> "$GITHUB_OUTPUT"
 
   commitlint:
     name: commitlint
