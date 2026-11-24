@@ -23,6 +23,7 @@ import { Stack } from './Stack.tsx';
 import { StartBanner } from './StartBanner.tsx';
 import {
   back,
+  backable,
   cancel,
   choosable,
   choose,
@@ -59,7 +60,7 @@ export default {
     choose: { run: choose, enabled: choosable },
     upTo: { run: upTo, enabled: upToReady, named: upToNamed },
     cancel: { run: cancel },
-    back: { run: back },
+    back: { run: back, enabled: backable },
     openOnGithub: { run: openOnGithub, enabled: onLayer },
     convert: { run: convertTarget, enabled: convertible },
   }),

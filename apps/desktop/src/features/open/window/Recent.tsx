@@ -108,7 +108,11 @@ export function RecentTab() {
     if (!focused || focused === document.body || focused.hasAttribute('data-lo-middle')) {
       list.current?.focus();
     }
-    return setMiddle({ focus: () => list.current?.focus(), here: () => undefined });
+    return setMiddle({
+      focus: () => list.current?.focus(),
+      holds: (element) => element === list.current,
+      here: () => undefined,
+    });
   }, []);
 
   const any = rows !== undefined && rows.length > 0;
@@ -142,7 +146,8 @@ export function RecentTab() {
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') {
                     event.preventDefault();
-                    void openRow();
+                    // As `⏎` in the list: it says so with no row highlighted.
+                    registry().run('open.openRecent', NO_TARGET);
                   } else if (event.key === 'ArrowDown') {
                     event.preventDefault();
                     list.current?.focus();

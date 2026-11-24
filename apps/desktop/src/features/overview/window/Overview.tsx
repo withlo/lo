@@ -9,7 +9,7 @@
 import { HintButton } from '@lo/ui';
 import { NO_TARGET, setScopeSource } from '@lo/ui/commands';
 import { generationOf } from '@lo/ui/markdown';
-import { blockNumber, blockOf as blockAround, closeCards } from '@lo/ui/overview';
+import { blockNumber, blockOf as blockAround, cardsOpen, closeCards } from '@lo/ui/overview';
 import {
   useCallback,
   useEffect,
@@ -177,7 +177,11 @@ function InRun({ tab, shown }: { tab: PullTab; shown: boolean }) {
     if (!shown) return undefined;
     const take = () => root.current?.focus({ preventScroll: true });
     take();
-    return setMiddle({ focus: take, here: () => undefined });
+    return setMiddle({
+      focus: take,
+      holds: (element) => element === root.current,
+      here: () => undefined,
+    });
   }, [shown]);
   return (
     <div ref={root} className="h-full outline-none" tabIndex={-1} data-lo-overview="run">
@@ -246,10 +250,11 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
   }, [tab.id, shown, known]);
 
   // While it's on screen, the middle view, which `Esc` gives focus back to, after closing a term's
-  // card or the code beside; and where the tab is in it, for history.
+  // card or the code beside; and where the tab is in it, for history. While the tab still chooses
+  // what to open on, it's the overview's place too, so a file opened from the tree has a way back.
   const waiting = opening === 'waiting';
   useEffect(() => {
-    if (!shown || waiting) return undefined;
+    if (!shown) return undefined;
     const take = () => (article.current ?? root.current)?.focus({ preventScroll: true });
     // A block history brought back has focus already.
     const own = root.current;
@@ -258,17 +263,20 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
     if (own && !placed && focusIsFree(own)) take();
     return setMiddle({
       focus: take,
+      holds: (element) => element === (article.current ?? root.current),
       // The block the reader is at, or with none, the overview itself: a file opened from here
       // still has a way back.
       here: () => {
         const now = drawnIn(tab.id);
         return (now && hereIn(now)) ?? { view: 'overview', at: NO_TARGET };
       },
-      escape: () => {
-        if (closeCards()) return true;
+      escape: (from) => {
+        if (cardsOpen()) return closeCards;
         const now = drawnIn(tab.id);
-        if (!now || !root.current?.contains(document.activeElement)) return false;
-        return closeBesideAt(now);
+        if (!now || besides.get(tab.id) === undefined || !root.current?.contains(from)) {
+          return undefined;
+        }
+        return () => closeBesideAt(now);
       },
     });
   }, [tab.id, shown, waiting]);
@@ -355,7 +363,13 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
     return block && targetOf(drawn, block);
   });
 
-  if (waiting) return <MiddlePlaceholder tab={tab} />;
+  if (waiting) {
+    return (
+      <div ref={root} className="h-full outline-none" tabIndex={-1}>
+        <MiddlePlaceholder tab={tab} />
+      </div>
+    );
+  }
   const ring = focused ?? (split ? besideAt : undefined);
   return (
     <div

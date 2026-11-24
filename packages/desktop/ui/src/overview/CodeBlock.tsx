@@ -52,10 +52,12 @@ export function CodeBlock({
   return (
     <div className={className}>
       <div className="lo-codeblock__head">
-        <span className="lo-codeblock__path">
-          <PathName path={target.path} />
+        <span className="lo-codeblock__where">
+          <span className="lo-codeblock__path">
+            <PathName path={target.path} />
+          </span>
+          <span className="lo-codeblock__lines">{lineRange(target.lines)}</span>
         </span>
-        <span className="lo-codeblock__lines">{lineRange(target.lines)}</span>
         {actions !== undefined && <span className="lo-codeblock__actions">{actions}</span>}
       </div>
       {flag}

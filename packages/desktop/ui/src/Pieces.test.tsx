@@ -162,7 +162,7 @@ describe('a button at work', () => {
       expect(held().className).toContain('invisible');
       expect(held().getAttribute('aria-hidden')).toBe('true');
       // Beside the ring's room, as the words are while the ring turns.
-      expect(held().firstElementChild?.className).toContain('size-8');
+      expect(held().firstElementChild?.className).toContain('size-12');
     }
   });
 
@@ -485,6 +485,11 @@ describe('Problem in a status item’s details', () => {
   });
 });
 
+/** The classes of the triangle of the problem in the dialog on screen. */
+function triangle(): string | null | undefined {
+  return document.querySelector('[role="dialog"] svg')?.getAttribute('class');
+}
+
 describe('CopyButton', () => {
   it('reads Copied for two seconds, and not at all when nothing was copied', async () => {
     vi.useFakeTimers();
@@ -675,13 +680,13 @@ describe('a dialog that does something', () => {
     expect(document.activeElement).toBe(named('Waiting'));
   });
 
-  const ending = (state: DialogState, again: string | null = null) => (
+  const ending = (state: DialogState, again: string | null = null, unconfirmed = false) => (
     <Dialog
       open
       onOpenChange={() => {}}
       title="Merge #264"
       state={state}
-      action={{ label: 'Merge #264', onRun: run, again, shortcut: 'Meta+Enter' }}
+      action={{ label: 'Merge #264', onRun: run, again, unconfirmed, shortcut: 'Meta+Enter' }}
       problem={{ title: 'Can’t merge #264' }}
     />
   );
@@ -706,6 +711,21 @@ describe('a dialog that does something', () => {
     rerender(host, ending('failed'));
     expect(named('Check again')).toBeUndefined();
     expect(document.activeElement).toBe(named('Close'));
+  });
+
+  it('says what went wrong in amber while it can’t tell whether what it sent went, and in red once it failed', async () => {
+    render(ending('failed', 'Check again', true));
+    await settle();
+    expect(triangle()).toContain('text-warning');
+    cleanUp();
+    // "Check again" for something missing: it failed.
+    render(ending('failed', 'Check again'));
+    await settle();
+    expect(triangle()).toContain('text-danger');
+    cleanUp();
+    render(ending('failed', 'Try again'));
+    await settle();
+    expect(triangle()).toContain('text-danger');
   });
 
   it('says it has closed the moment it’s asked to, and keeps its words while it leaves', () => {

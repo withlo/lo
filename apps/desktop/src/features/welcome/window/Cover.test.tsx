@@ -19,7 +19,7 @@ import { cover, dialogs, type Tab } from '../../tab/window/shared.ts';
 import { enter, setScreen, show } from './actions.ts';
 import feature from './index.ts';
 import { SAMPLE } from './Open.tsx';
-import { escapePractice } from './practice.ts';
+import { practiceEscape } from './practice.ts';
 import { routers } from './routers.ts';
 import { welcomeStore, type Step } from './store.ts';
 
@@ -708,16 +708,16 @@ describe('the keys step', () => {
     // ⏎ in it is the box's own, not Continue.
     act(() => enter());
     expect(stepOnScreen()).toBe('keys');
-    let closed = false;
+    const close = practiceEscape();
+    expect(close).toBeDefined();
     act(() => {
-      closed = escapePractice();
+      close?.();
     });
-    expect(closed).toBe(true);
     expect(box?.closest('[inert]')).not.toBeNull();
     expect(document.activeElement?.getAttribute('role')).toBe('listbox');
     expect(bridge.calls).toHaveLength(before);
     // With no box open, Esc is the window's again.
-    expect(escapePractice()).toBe(false);
+    expect(practiceEscape()).toBeUndefined();
   });
 });
 

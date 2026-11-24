@@ -219,7 +219,8 @@ export function enterAction(state: BoxState = boxStore.getState()): string | und
     case 'invalid':
       return undefined;
     case 'pull': {
-      if (preview.as.kind !== 'ask') return 'Open';
+      // Its number, not a second "Open" beside the state's pill.
+      if (preview.as.kind !== 'ask') return `Open #${preview.number}`;
       // Only a row of this preview's: one the keys were on before belonged to another.
       const { logins } = preview.as;
       const on = state.highlighted;

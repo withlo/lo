@@ -303,7 +303,7 @@ test.describe('a run of layers', () => {
       await expect.poll(() => scopeOf(page)).toBe('stack');
       await type(page, 'k', 'v');
       const stack = page.getByRole('region', { name: 'Stack' });
-      await expect(stack).toContainText('V-LINE');
+      await expect(stack).toContainText('1 selected');
       // #D sits on #A, on another branch: `j` from #B goes to #C, and no further.
       await type(page, 'j', 'j');
       const selecting = stack.getByRole('note').first();

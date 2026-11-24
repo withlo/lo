@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { HOLD_LIMIT } from '../../revisions/contract.ts';
-import { offered, openingOf, type Opened } from './opening.ts';
+import { offered, openingOf, overviewPlace, type Opened } from './opening.ts';
 
 describe('what a tab opens on', () => {
   it('waits while nothing is known, up to the bound', () => {
@@ -64,5 +64,20 @@ describe('a late overview', () => {
   it('isn’t offered while Settings is unknown, or says the diff, as for a tab that opened first', () => {
     expect(offered(opened(), 'shown', undefined)).toBe(false);
     expect(offered(opened(), 'shown', 'diff')).toBe(false);
+  });
+});
+
+describe('history’s place at the overview itself', () => {
+  const choosing: Opened = { since: 0, on: undefined, late: false, seen: false, chose: true };
+
+  it('is the overview while the tab chooses, and once it opened on the overview', () => {
+    expect(overviewPlace(choosing)).toBe('overview');
+    expect(overviewPlace({ ...choosing, on: 'overview', seen: true })).toBe('overview');
+  });
+
+  it('is the diff where the tab opened on it, until its overview is seen', () => {
+    expect(overviewPlace({ ...choosing, on: 'diff' })).toBe('diff');
+    expect(overviewPlace({ ...choosing, on: 'diff', late: true })).toBe('diff');
+    expect(overviewPlace({ ...choosing, on: 'diff', seen: true })).toBe('overview');
   });
 });

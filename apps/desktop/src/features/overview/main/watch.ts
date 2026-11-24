@@ -131,6 +131,8 @@ export class OverviewTab {
   #awaited = false;
   /** What waits for the tab to know where its head is, which tells the fork to look in. */
   #headWaiters: (() => void)[] = [];
+  /** What waits for the tab to know who it acts as, to read a file it didn't keep. */
+  #actingWaiters: (() => void)[] = [];
   /** When the ref was last read through, in milliseconds since the Unix epoch. */
   #readAt: number | undefined;
   /**
@@ -181,6 +183,7 @@ export class OverviewTab {
       moved = pull !== undefined;
     }
     this.#acting = info.acting;
+    if (info.acting) for (const resolve of this.#actingWaiters.splice(0)) resolve();
     const code = codeAccess(info.local);
     const access = code !== this.#code;
     this.#code = code;
@@ -263,20 +266,16 @@ export class OverviewTab {
 
   /**
    * Files of overview commit `commit`, the one on screen or the newer one, by their paths, in the
-   * order asked: kept ones at once, the rest raw from GitHub, each once it hashes to its ID. Only
-   * `artifact.md` and figures are ever read, only of a commit whose text was read, and a file too
-   * large for any reader to want its bytes comes with its size alone. A file asked for twice is read
-   * once, and both answers are the same.
+   * order asked: kept ones at once, the rest raw from GitHub, each once it hashes to its ID, as the
+   * tab acts once it knows who that is. Only `artifact.md` and figures are ever read, only of a
+   * commit whose text was read, and a file too large for any reader to want its bytes comes with its
+   * size alone. A file asked for twice is read once, and both answers are the same.
    */
   async files(commit: string, paths: readonly string[]): Promise<OverviewFile[]> {
     const overview = [this.#shown, this.#newer].find((each) => each?.id === commit);
-    const acting = this.#acting;
-    if (!overview || !acting) {
+    if (!overview) {
       throw new IpcError('moved', 'That isn’t the overview on screen, or the newer one.');
     }
-    // What the window draws on screen, as the overview's figures fill in, while it's on screen.
-    const priority = (): ReadPriority => (this.#onScreen ? 'foreground' : 'background');
-    const github: Github = (request) => this.#options.reads.github(acting, request, priority);
     const repository = new RepoRef(overview.repository.owner, overview.repository.name);
     const answers: OverviewFile[] = [];
     // Each file's answer, by its ID, never by its path, which may be long.
@@ -297,7 +296,7 @@ export class OverviewTab {
       }
       let answer = read.get(entry.id);
       if (!answer) {
-        answer = await this.#file(github, acting, repository, entry.id, entry.size);
+        answer = await this.#file(repository, entry.id, entry.size);
         read.set(entry.id, answer);
       }
       answers.push(answer);
@@ -305,19 +304,25 @@ export class OverviewTab {
     return answers;
   }
 
-  /** The file `id` names, of `size` bytes, in `repository`, read as `acting`, as `files` answers. */
-  async #file(
-    github: Github,
-    acting: Acting,
-    repository: RepoRef,
-    id: string,
-    size: number | null,
-  ): Promise<OverviewFile> {
+  /**
+   * The file `id` names, of `size` bytes, in `repository`, as `files` answers: as it was kept, or
+   * read as the tab acts, once it knows who that is.
+   */
+  async #file(repository: RepoRef, id: string, size: number | null): Promise<OverviewFile> {
     // GitHub's listing gave no size, and said nothing of why.
     if (size === null) return { kind: 'unread', why: '' };
     if (sizeOnly(size)) return { kind: 'file', size, bytes: null };
+    const { blobs } = this.#options.reads;
+    // What was kept needs no account: a tab opened again shows the overview it kept at once,
+    // before it has worked out who it acts as.
+    const kept = blobs.get(id);
+    if (kept) return { kind: 'file', size: kept.length, bytes: kept };
+    const acting = await this.#actingKnown();
+    // What the window draws on screen, as the overview's figures fill in, while it's on screen.
+    const priority = (): ReadPriority => (this.#onScreen ? 'foreground' : 'background');
+    const github: Github = (request) => this.#options.reads.github(acting, request, priority);
     try {
-      const bytes = await fetchBlob(github, acting, this.#options.reads.blobs, repository, id);
+      const bytes = await fetchBlob(github, acting, blobs, repository, id);
       return { kind: 'file', size: bytes.length, bytes };
     } catch (error) {
       this.#options.log(`reading file ${id} of the overview: ${describe(error)}`);
@@ -325,10 +330,21 @@ export class OverviewTab {
     }
   }
 
+  /** Who the tab acts as, once it knows: refused if the tab closes first. */
+  async #actingKnown(): Promise<Acting> {
+    while (!this.#closed) {
+      const acting = this.#acting;
+      if (acting) return acting;
+      await new Promise<void>((resolve) => this.#actingWaiters.push(resolve));
+    }
+    throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
+  }
+
   /** Stops everything, as the tab closes or Lo quits. */
   close(): void {
     this.#closed = true;
     this.#headKnown();
+    for (const resolve of this.#actingWaiters.splice(0)) resolve();
     this.#stopTimer();
     clearTimeout(this.#bylineTimer);
     this.#codeRead.stop();

@@ -85,7 +85,7 @@ describe('OverviewDocument', () => {
     ).toEqual([]);
     expect(page.querySelector('.lo-codeblock__path')?.textContent).toBe('src/limiter.ts');
     expect(page.querySelector('.lo-codeblock__path b')?.textContent).toBe('limiter.ts');
-    expect(page.querySelector('.lo-codeblock__lines')?.textContent).toBe('L46–61');
+    expect(page.querySelector('.lo-codeblock__lines')?.textContent).toBe(':46–61');
     expect(page.querySelector('.lo-walk__title')?.textContent).toBe('One request, start to finish');
     expect(page.querySelectorAll('.lo-walk__step')).toHaveLength(3);
     expect(page.querySelector('.lo-fold__kind')?.textContent).toBe('More detail');

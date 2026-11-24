@@ -59,7 +59,7 @@ function retrying(at: number) {
   return (
     <Problem
       layout="view"
-      title="Can’t fetch the overview"
+      title="Can’t show the overview"
       reason={
         <>
           Offline. Retrying <Countdown at={at} />.
@@ -76,8 +76,8 @@ test('counts down for the eye, while a problem’s alert reads as it was first d
   });
   const host = draw(retrying(1_000_000 + 8_000));
   const alert = host.querySelector('[role="alert"]')!;
-  expect(seen(alert)).toBe('Can’t fetch the overviewOffline. Retrying in 8 s.');
-  expect(heard(alert)).toBe('Can’t fetch the overviewOffline. Retrying in 8 seconds.');
+  expect(seen(alert)).toBe('Can’t show the overviewOffline. Retrying in 8 s.');
+  expect(heard(alert)).toBe('Can’t show the overviewOffline. Retrying in 8 seconds.');
   // Each second the count goes down, and nothing a screen reader hears changes.
   const said = heard(alert);
   const watching = new MutationObserver(() => {});
@@ -92,7 +92,7 @@ test('counts down for the eye, while a problem’s alert reads as it was first d
     return node?.closest('[aria-hidden="true"]') === null;
   });
   watching.disconnect();
-  expect(seen(alert)).toBe('Can’t fetch the overviewOffline. Retrying in 5 s.');
+  expect(seen(alert)).toBe('Can’t show the overviewOffline. Retrying in 5 s.');
   expect(heard(alert)).toBe(said);
   // What changed is only what a screen reader doesn't hear.
   expect(changed).toEqual([]);
@@ -102,7 +102,7 @@ test('counts down for the eye, while a problem’s alert reads as it was first d
       vi.advanceTimersByTime(1_000);
     });
   }
-  expect(seen(alert)).toBe('Can’t fetch the overviewOffline. Retrying in 1 s.');
+  expect(seen(alert)).toBe('Can’t show the overviewOffline. Retrying in 1 s.');
   expect(vi.getTimerCount()).toBe(0);
 });
 
@@ -124,13 +124,13 @@ test('reads anew for a new time to count to, once', () => {
     vi.advanceTimersByTime(3_000);
   });
   act(() => root.render(<TooltipGroup>{retrying(Date.now() + 180_000)}</TooltipGroup>));
-  expect(seen(alert)).toBe('Can’t fetch the overviewOffline. Retrying in 3 min.');
-  expect(heard(alert)).toBe('Can’t fetch the overviewOffline. Retrying in 3 minutes.');
+  expect(seen(alert)).toBe('Can’t show the overviewOffline. Retrying in 3 min.');
+  expect(heard(alert)).toBe('Can’t show the overviewOffline. Retrying in 3 minutes.');
   for (let second = 0; second < 65; second++) {
     act(() => {
       vi.advanceTimersByTime(1_000);
     });
   }
-  expect(seen(alert)).toBe('Can’t fetch the overviewOffline. Retrying in 2 min.');
-  expect(heard(alert)).toBe('Can’t fetch the overviewOffline. Retrying in 3 minutes.');
+  expect(seen(alert)).toBe('Can’t show the overviewOffline. Retrying in 2 min.');
+  expect(heard(alert)).toBe('Can’t show the overviewOffline. Retrying in 3 minutes.');
 });

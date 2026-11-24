@@ -55,6 +55,16 @@ export const openings = tabState<Opened>(() => ({
 }));
 
 /**
+ * Where history's place at the overview itself, at no block, goes in a tab that opened as `opened`:
+ * the overview; or the diff, where the tab opened on it and has never shown its overview, as when
+ * the place was left while the tab still chose. It goes to the view the tab opened on, not to one it
+ * never did.
+ */
+export function overviewPlace(opened: Opened): 'overview' | 'diff' {
+  return opened.on === 'diff' && !opened.seen ? 'diff' : 'overview';
+}
+
+/**
  * Whether a tab that opened as `opened` offers its overview, now known as `known`, with Settings
  * saying `setting`: only while Settings is known to say the overview, which a tab that opened
  * before main said may not.

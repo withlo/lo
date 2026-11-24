@@ -1,7 +1,7 @@
-// What the comments say in a pull request's tab's status bar: how many drafts the diff, drawn
-// again, had nowhere to open, "2 kept drafts". A click opens their list over it, a row each, where
-// each draft is: "retry.ts · line 41 · r2". "Show kept drafts" opens the same list from the
-// palette and the app menu.
+// What the comments say in a pull request's tab's status bar: how many kept drafts it has, those
+// the diff took down open that no box has taken since, "2 kept drafts". A click opens their list
+// over it, a row each, where each draft is: "retry.ts · line 41 · r2". "Show kept drafts" opens the
+// same list from the palette and the app menu.
 
 import { Popover, StatusItem, useControl } from '@lo/ui';
 

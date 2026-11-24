@@ -332,15 +332,18 @@ function cantRun(state: ServerState): CantRun | undefined {
   }
 }
 
-/** The details' one line for a server that can run: what it waits for, why it's held, its version. */
-function lineOf(state: ServerState, version: string | undefined): ReactNode {
+/**
+ * The details' one line for a server that can run: what it waits for, why it's held, and once it's
+ * ready, its version, or that `name` is running.
+ */
+function lineOf(name: string, state: ServerState, version: string | undefined): ReactNode {
   switch (state.kind) {
     case 'waiting':
       return `At most ${state.count} language servers run at once.`;
     case 'refused':
       return <ShownText text={state.why} />;
     case 'ready':
-      return version === undefined ? undefined : <ShownText text={version} />;
+      return version === undefined ? `${name} is running` : <ShownText text={version} />;
     case 'downloading':
     case 'unpacking':
     case 'building':
@@ -400,7 +403,7 @@ export function ServerStatus({
   );
   const ball = serverBall(state);
   const stopped = cantRun(state);
-  const says = line ?? lineOf(state, version);
+  const says = line ?? lineOf(name, state, version);
   const change = (next: boolean) => {
     setKept(next);
     onOpenChange?.(next);

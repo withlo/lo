@@ -646,8 +646,16 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
 
   it('says why in place of its view when nobody can read it for the rate limit, and reads again at its reset', async () => {
     const git = await testGit();
-    // A reset a second or two from the tab's first read, past which GitHub answers again.
-    const reset = Math.floor(Date.now() / 1000) + 2;
+    // The clock held on a whole second, with the reset a second on, past which GitHub answers
+    // again: the tab's first read is refused however long it takes to come, and only the clock
+    // moved on to the reset lets the read due then through.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const start = Math.ceil(Date.now() / 1000) * 1000;
+    vi.setSystemTime(start);
+    const reset = start / 1000 + 1;
     const answer = replayFetch('app_e2e');
     const github: TabGithub = {
       ...replayGithub('app_e2e').github,
@@ -674,6 +682,7 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
       connection: { kind: 'rateLimited', login: null, until: reset * 1000 },
     });
     // The read due at the reset opens it.
+    vi.setSystemTime(reset * 1000);
     await expect.poll(() => sent.pull?.header?.title, { timeout: 10_000 }).toBe(TITLE);
     expect(sent.pull).toMatchObject({ problem: null, connection: { kind: 'live' } });
     tab.close();

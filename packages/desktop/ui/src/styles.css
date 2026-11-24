@@ -533,12 +533,28 @@
   &[data-gave-up~='hint'] [data-gives='hint'],
   &[data-gave-up~='labels'] [data-gives='labels'],
   &[data-gave-up~='mark'] [data-gives='mark'],
+  &[data-gave-up~='branches'] [data-gives='branches'],
+  &[data-gave-up~='detail'] [data-gives='detail'],
   &[data-gave-up~='actions'] [data-gives='actions'],
   &[data-gave-up~='fill'] [data-gives='fill'],
   &:not([data-gave-up~='labels']) [data-takes='labels'],
   &:not([data-gave-up~='actions']) [data-takes='actions'],
   &:not([data-gave-up~='fill']) [data-takes='fill'] {
     display: none !important;
+  }
+  /* A title given up leaves the row, not its name: out of sight and out of the way, still heard. */
+  &[data-gave-up~='title'] [data-gives='title'] {
+    position: absolute;
+    width: 1px;
+    min-width: 0;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  /* What holds a title's place until it comes names nothing: it goes. */
+  &[data-gave-up~='title'] [data-gives='title']:has(.skeleton) {
+    display: none;
   }
   &[data-gave-up~='labels'] [data-squares='labels'],
   &[data-gave-up~='actions'] [data-squares='actions'],
@@ -847,6 +863,29 @@
     var(--lo-bg) calc(100% - var(--lo-sp-32) - var(--lo-sp-8)),
     transparent calc(100% - var(--lo-sp-24))
   );
+}
+
+/* The least that words cut short keep before they're given up whole: a few letters, 48 px, or all
+   of them where they're shorter, as a branch named `main` is, so a short name is never padded. */
+@utility min-w-cut {
+  min-width: calc-size(max-content, min(size, var(--lo-sp-48)));
+}
+
+/* A pull request's tab's mark, the state's ball or the spinner in its place. Once the tab has given
+   up its title's words (`title`), the mark takes their room at the tab's end, kept for its close
+   button, and goes under the button wherever it shows, as the title did: on the tab on screen, and
+   on another under the pointer. */
+@utility tab-mark {
+  [data-gave-up~='title'] > & {
+    order: 1;
+    justify-content: center;
+    min-width: var(--lo-control-h-sm);
+    margin-inline-start: auto;
+  }
+  /* Unseen, not gone: the tab is still named by its state. */
+  :is([role='tab'][aria-selected='true'], [role='tab']:hover) [data-gave-up~='title'] > & {
+    opacity: 0;
+  }
 }
 
 /* A tab's stack count, which a narrow tab gives up after its title, so its number stays whole. The

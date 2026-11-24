@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import type { Database, Row } from '../../../main/database.ts';
 import { login as accountLogin } from '../../accounts/contract.ts';
 import {
+  chosenTab,
   layerOf,
   layersOf,
   opening as openingSchema,
@@ -314,22 +315,12 @@ export function createTabs(options: TabListOptions): TabList {
     },
 
     select(choice) {
-      const { tabs, active } = list();
+      const listed = list();
       let chosen: Tab | undefined;
       if ('id' in choice) {
         const id = tabOf(choice.id);
-        chosen = tabs.find((tab) => tab.id === id);
-      } else if ('position' in choice) chosen = tabs[choice.position - 1];
-      else if ('last' in choice) chosen = tabs.at(-1);
-      else {
-        // Round the ends of the tabs the strip shows.
-        const strip = tabs.slice(0, choice.within ?? tabs.length);
-        const at = strip.findIndex((tab) => tab.id === active);
-        chosen =
-          at < 0
-            ? strip.at(choice.step > 0 ? 0 : -1)
-            : strip[(at + choice.step + strip.length) % strip.length];
-      }
+        chosen = listed.tabs.find((tab) => tab.id === id);
+      } else chosen = chosenTab(listed, choice);
       // Recent is on screen only while it's the only tab.
       if (chosen && chosen.kind !== 'recent') show(chosen.id);
     },

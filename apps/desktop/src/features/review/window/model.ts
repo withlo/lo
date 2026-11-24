@@ -104,7 +104,7 @@ export function verdictRefusal(
 }
 
 /** Why Request changes is dimmed on your own pull request. */
-const OWN_CHANGES = 'Its author can’t request changes';
+const OWN_CHANGES = 'Authors can’t request changes on their own pull request';
 
 /**
  * The verdicts the dialog offers, in `@lo/review`'s order, each dimmed with why where it can't be

@@ -261,9 +261,14 @@ describe('StackTree', () => {
     expect(head?.lastElementChild?.className).toContain('flex-none');
   });
 
-  it('says V-LINE in its head, in place of how many layers, while a run is chosen', () => {
-    const host = render(<StackTree {...props({ choosing: true })} />);
-    expect(host.querySelector('section > div')?.textContent).toBe('StackV-LINE');
+  it('says how many layers are selected in its head, in place of how many there are, while a run is chosen', () => {
+    const chosen = LAYERS.map((layer, index) =>
+      index < 2 ? { ...layer, run: index === 0 ? ('start' as const) : ('end' as const) } : layer,
+    );
+    const host = render(<StackTree {...props({ layers: chosen, choosing: true })} />);
+    expect(host.querySelector('section > div')?.textContent).toBe('Stack2 selected');
+    // In the head's quiet small text: Vim's mode is the status bar's alone.
+    expect(host.querySelector('.mode-chip')).toBeNull();
     rerender(host, <StackTree {...props({ choosing: false })} />);
     expect(host.querySelector('section > div')?.textContent).toContain('Branch stack · 5 layers');
   });

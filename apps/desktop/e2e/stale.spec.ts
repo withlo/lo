@@ -240,7 +240,7 @@ test('says it was written for r1 from its first frame, and flags the block on li
     );
 
     // The block on lines r2 changed is flagged, its code still r1's, its changed line marked.
-    const parser = codeBlock(page, 'src/parser.ts', 'L7–10');
+    const parser = codeBlock(page, 'src/parser.ts', ':7–10');
     await expect(parser.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 20_000 });
     const flag = parser.locator('.lo-codeblock__flag');
     await expect(flag).toContainText(
@@ -255,9 +255,9 @@ test('says it was written for r1 from its first frame, and flags the block on li
 
     // Blocks on lines r2 left alone, and on a file only the base changed, aren't.
     for (const [path, lines] of [
-      ['src/format.ts', 'L1–3'],
-      ['src/format.ts', 'L5–8'],
-      ['README.md', 'L1–4'],
+      ['src/format.ts', ':1–3'],
+      ['src/format.ts', ':5–8'],
+      ['README.md', ':1–4'],
     ] as const) {
       const block = codeBlock(page, path, lines);
       await block.scrollIntoViewIfNeeded();
@@ -269,7 +269,7 @@ test('says it was written for r1 from its first frame, and flags the block on li
   await test.step('a comment on a block whose lines r2 changed goes on the file, and on a file the pull request leaves alone, on the pull request', async () => {
     const boxes = shown(page).locator('.lo-codeblock .lo-diffcomposer');
     // The block's menu, on the parser's lines r2 changed: on the file, under the block's last line.
-    const parser = codeBlock(page, 'src/parser.ts', 'L7–10');
+    const parser = codeBlock(page, 'src/parser.ts', ':7–10');
     await parser.scrollIntoViewIfNeeded();
     // At its corner, its own: a right-click on its code is the line's.
     await parser.click({ button: 'right', position: { x: 4, y: 4 } });
@@ -286,7 +286,7 @@ test('says it was written for r1 from its first frame, and flags the block on li
     await expect(boxes).toHaveCount(0);
 
     // `c` on a line of the README's block, which the pull request doesn't touch.
-    const readme = codeBlock(page, 'README.md', 'L1–4');
+    const readme = codeBlock(page, 'README.md', ':1–4');
     await readme.scrollIntoViewIfNeeded();
     await readme.locator('.cm-line:visible').first().click();
     await page.keyboard.press('c');
@@ -371,7 +371,7 @@ test.describe('while the local copy comes late', () => {
         timeout: 20_000,
       });
       await expect(
-        codeBlock(page, 'src/parser.ts', 'L7–10').locator('.lo-codeblock__flag'),
+        codeBlock(page, 'src/parser.ts', ':7–10').locator('.lo-codeblock__flag'),
       ).toBeVisible({ timeout: 20_000 });
       await page.waitForTimeout(1500);
       expect(await stillMoved(page)).toEqual([]);

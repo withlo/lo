@@ -6,7 +6,6 @@
 export const WITHOUT_ROUTE: readonly string[] = [
   'diff.closeRun',
   'merge.leaveCommit',
-  'revisions.picker',
   'revisions.down',
   'revisions.up',
   'revisions.end',

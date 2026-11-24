@@ -7,9 +7,12 @@ import type { Excerpt, Figure, Lines, Overview, Walkthrough } from '@lo/artifact
 
 import { MarkdownBlocks } from '../markdown/index.ts';
 
-/** A range of lines as the code block's head writes it: `L12`, or `L12–44`. */
+/**
+ * A range of lines as the code block's head writes it, after its path, as code: `:12`, or `:12–44`,
+ * so the head reads `src/cache.ts:12–44`.
+ */
 export function lineRange({ start, end }: Lines): string {
-  return start === end ? `L${start}` : `L${start}–${end}`;
+  return start === end ? `:${start}` : `:${start}–${end}`;
 }
 
 /** A code block's head: the file, its name set apart, and the lines. */
@@ -19,11 +22,13 @@ export function ExcerptHead({ node }: { node: Excerpt }) {
   return (
     <div className="lo-codeblock">
       <div className="lo-codeblock__head">
-        <span className="lo-codeblock__path">
-          {path.slice(0, slash + 1)}
-          <b>{path.slice(slash + 1)}</b>
+        <span className="lo-codeblock__where">
+          <span className="lo-codeblock__path">
+            {path.slice(0, slash + 1)}
+            <b>{path.slice(slash + 1)}</b>
+          </span>
+          <span className="lo-codeblock__lines">{lineRange(lines)}</span>
         </span>
-        <span className="lo-codeblock__lines">{lineRange(lines)}</span>
       </div>
     </div>
   );

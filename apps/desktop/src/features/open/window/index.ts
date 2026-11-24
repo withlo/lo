@@ -8,10 +8,13 @@ import keys from '../keys.ts';
 import {
   canClearFilter,
   clearFilter,
+  filterable,
   focusFilter,
+  openable,
   openRow,
   pasteLink,
   said,
+  steppable,
   stepChosen,
 } from './actions.ts';
 import { openBox } from './box.ts';
@@ -26,11 +29,11 @@ export default {
   commands: handlers(keys, {
     box: { run: () => openBox() },
     paste: { run: pasteLink },
-    filter: { run: focusFilter },
+    filter: { run: focusFilter, enabled: filterable },
     clearFilter: { run: clearFilter, enabled: canClearFilter },
-    openRecent: { run: () => openRow() },
-    nextRecent: { run: () => stepChosen(1) },
-    previousRecent: { run: () => stepChosen(-1) },
+    openRecent: { run: () => openRow(), enabled: openable },
+    nextRecent: { run: () => stepChosen(1), enabled: steppable },
+    previousRecent: { run: () => stepChosen(-1), enabled: steppable },
     installCommand: {
       run: async () => {
         await installCommand();

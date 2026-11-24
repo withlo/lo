@@ -180,7 +180,7 @@ export function ReadFailed({ tab, problem }: { tab: PullTab; problem: ReadProble
   return (
     <Problem
       layout="view"
-      title="Can’t fetch the overview"
+      title="Can’t show the overview"
       reason={
         <>
           {cause}

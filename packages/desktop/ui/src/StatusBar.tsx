@@ -48,15 +48,16 @@ const BALLS = {
   failed: 'bg-danger',
 } as const;
 
-/** A status item's ball: what it says of the item, the item's label says in words. */
+/**
+ * A status item's ball: what it says of the item, the item's label says in words. It holds the
+ * spinner's room, so the label stays put as the item's work starts and ends.
+ */
 export function StatusBall({ state }: { state: StatusBallState }) {
-  if (state === 'working') return <Spinner size="xs" />;
+  if (state === 'working') return <Spinner />;
   return (
-    <span
-      className={`size-8 flex-none rounded-full ${BALLS[state]}`}
-      data-ball={state}
-      aria-hidden="true"
-    />
+    <span className="flex size-12 flex-none items-center justify-center" aria-hidden="true">
+      <span className={`size-8 rounded-full ${BALLS[state]}`} data-ball={state} />
+    </span>
   );
 }
 

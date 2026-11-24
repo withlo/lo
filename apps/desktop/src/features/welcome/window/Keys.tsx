@@ -266,11 +266,12 @@ function Practice() {
   };
 
   useEffect(() => {
-    setPracticeEscape(() => {
-      if (!writes.current) return false;
-      setWriting(false);
-      lines.current?.focus();
-      return true;
+    setPracticeEscape({
+      open: () => writes.current,
+      close: () => {
+        setWriting(false);
+        lines.current?.focus();
+      },
     });
     return () => setPracticeEscape(undefined);
   }, []);

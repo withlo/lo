@@ -114,7 +114,7 @@ test('on your own pull request, Approve and Request changes are dimmed with why'
   expect(verdicts()).toEqual(['Comment', 'Approve', 'Request changes']);
   expect(dimmed()).toEqual([
     'ApproveAuthors can’t approve their own pull request',
-    'Request changesIts author can’t request changes',
+    'Request changesAuthors can’t request changes on their own pull request',
   ]);
 });
 

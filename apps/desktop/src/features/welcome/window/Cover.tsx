@@ -15,7 +15,7 @@ import { back, leave, loadGh, next, openFirst, setScreen, touch } from './action
 import { KeysStep } from './Keys.tsx';
 import { keyOf } from './labels.ts';
 import { OpenStep } from './Open.tsx';
-import { escapePractice } from './practice.ts';
+import { practiceEscape } from './practice.ts';
 import { SetupStep } from './Setup.tsx';
 import { STEPS, welcomeStore, type Step } from './store.ts';
 
@@ -137,21 +137,24 @@ function Welcome(): ReactNode {
     };
   }, []);
 
-  /** Puts focus where the step starts: on what it marks, or else on the foot's main button. */
-  const focusStep = () => {
+  /** Where the step starts: what it marks, or else the foot's main button. */
+  const stepStart = () => {
     const screen = root.current;
     const now = welcomeStore.getState().step;
-    const first =
+    return (
       screen?.querySelector<HTMLElement>(`[data-welcome-step="${now}"] [data-welcome-focus]`) ??
-      screen?.querySelector<HTMLElement>('[data-welcome-default]');
-    first?.focus();
+      screen?.querySelector<HTMLElement>('[data-welcome-default]')
+    );
   };
+  /** Puts focus where the step starts. */
+  const focusStep = () => stepStart()?.focus();
 
   useEffect(() => {
     const takeBack = setMiddle({
       focus: focusStep,
+      holds: (element) => element === stepStart(),
       here: () => undefined,
-      escape: escapePractice,
+      escape: practiceEscape,
     });
     void loadGh();
     return () => {

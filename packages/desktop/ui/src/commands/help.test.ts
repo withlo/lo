@@ -201,6 +201,24 @@ describe('keyboard shortcuts', () => {
     expect(merged?.keys).toEqual([['n'], ['j']]);
   });
 
+  it('makes one row of a series, its keys a range, there whole in "Here" while any of it runs', () => {
+    const shown = new Set(['tab.show2']);
+    const [all] = helpAll(tabs(shown), vim).flatMap((group) => group.rows);
+    expect(all).toMatchObject({
+      label: 'Tab 1–3',
+      ids: ['tab.show1', 'tab.show2', 'tab.show3'],
+      keys: [['⌘1'], ['⌘2'], ['⌘3']],
+      range: true,
+    });
+    const here = helpHere(tabs(shown), 'window', NO_TARGET, vim).flatMap((group) => group.rows);
+    expect(here.map((row) => row.ids)).toEqual([['tab.show1', 'tab.show2', 'tab.show3']]);
+    expect(helpHere(tabs(new Set()), 'window', NO_TARGET, vim)).toEqual([]);
+    // The palette lists each by its own label.
+    expect(paletteItems(tabs(shown), 'window', NO_TARGET).map((item) => item.label)).toEqual([
+      'Tab 2',
+    ]);
+  });
+
   it('keeps commands with one label apart where their descriptions say they do different things', () => {
     const apart = new Registry({
       system: 'mac',
@@ -411,3 +429,33 @@ describe('the palette', () => {
     expect(filterPalette(items, 'lo c')[0]?.marks).toEqual([8, 9, 11]);
   });
 });
+
+/** Tabs 1 to 3 by their places, a series, each running only while `on` holds it. */
+function tabs(on: ReadonlySet<string>): Registry {
+  return new Registry({
+    system: 'mac',
+    commands: handlers(
+      defineCommands('tab', { show1: place(1), show2: place(2), show3: place(3) }),
+      {
+        show1: runsWhile(on, 'tab.show1'),
+        show2: runsWhile(on, 'tab.show2'),
+        show3: runsWhile(on, 'tab.show3'),
+      },
+    ),
+  });
+}
+
+/** Tab `position`, by its place, one of a series. */
+function place(position: number) {
+  return {
+    label: `Tab ${position}`,
+    series: 'Tab 1–3',
+    group: 'Tabs' as const,
+    keys: [`cmd+${position}`],
+  };
+}
+
+/** A handler that runs only while `on` holds its command, `id`, and refuses silently otherwise. */
+function runsWhile(on: ReadonlySet<string>, id: string) {
+  return { run() {}, enabled: () => on.has(id) || '' };
+}

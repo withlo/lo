@@ -47,13 +47,25 @@ function details(error: unknown): string | undefined {
   return error instanceof Error ? error.message : undefined;
 }
 
-/** Opens `row`, or the one chosen: with its account while it can see the repository. */
+/** Whether the list has rows for `j` and `k` to move through, with nothing to say without. */
+export function steppable(): true | '' {
+  return shownRows().length > 0 || '';
+}
+
+/** Whether a row is chosen for `⏎` to open, or why not. */
+export function openable(): true | string {
+  return chosenRow(shownRows(), recentStore.getState().chosen)
+    ? true
+    : 'No pull request highlighted';
+}
+
+/**
+ * Opens `row`, or the one chosen, which `openable` says there is: with its account while it can see
+ * the repository.
+ */
 export async function openRow(row?: RecentPull): Promise<void> {
   const opening = row ?? chosenRow(shownRows(), recentStore.getState().chosen);
-  if (!opening) {
-    refuse('No pull request highlighted');
-    return;
-  }
+  if (!opening) return;
   recentStore.setState({ chosen: rowKey(opening) });
   const title = `Couldn’t open #${opening.number}`;
   try {
@@ -110,12 +122,13 @@ export function canClearFilter(): true | string {
   return recentStore.getState().query === '' ? 'The filter is empty' : true;
 }
 
-/** Goes to the filter, with what it holds selected; or says there's nothing to filter yet. */
+/** Whether the list shows a filter to go to, or why not: there's nothing to filter yet. */
+export function filterable(): true | string {
+  return filterField ? true : 'No pull requests to filter';
+}
+
+/** Goes to the filter, with what it holds selected. */
 export function focusFilter(): void {
-  if (!filterField) {
-    refuse('No pull requests to filter');
-    return;
-  }
-  filterField.focus();
-  filterField.select();
+  filterField?.focus();
+  filterField?.select();
 }

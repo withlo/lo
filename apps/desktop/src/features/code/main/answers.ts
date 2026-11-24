@@ -145,7 +145,7 @@ async function blob(repo: CodeRepo, commit: Oid, path: Buffer, oid: Oid): Promis
     }
     throw error;
   }
-  throw new IpcError('unavailable', 'The local copy doesn’t have it');
+  throw new IpcError('unavailable', 'The local copy doesn’t have it.');
 }
 
 /**

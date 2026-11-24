@@ -106,8 +106,8 @@ export interface StackTreeProps extends Omit<HTMLAttributes<HTMLDivElement>, 'ch
   /** The layer on screen, by key. */
   current?: string | undefined;
   /**
-   * A run is being chosen: the head says so, as Vim names its line-wise selection, in place of how
-   * many layers there are.
+   * A run is being chosen: the head says how many layers it holds, "2 selected", in place of how many
+   * the stack has.
    */
   choosing?: boolean | undefined;
   /** A layer was clicked, by key. */
@@ -485,7 +485,7 @@ function useKeptInView(
  * root and a rail with a ball for each layer. The head is one line, and never wraps. The tree is
  * one focusable element with `role="tree"`: the layer the keyboard is on is its active descendant,
  * and the layer on screen is marked `aria-current` and a Powder ball, which is not the same thing. A run of layers chosen to view as one diff, or on screen as one, shares a band, and
- * the rest step back; while it's being chosen, the head says `V-LINE`.
+ * the rest step back; while it's being chosen, the head says how many it holds: "2 selected".
  *
  * It draws what it's given, as text, and asks for nothing: a click shows a layer, and a right-click
  * asks for its menu. The keys, and what a pull request's text is cleaned of, belong to the caller.
@@ -510,6 +510,8 @@ export function StackTree({
   const prefix = useId();
   const scroller = useRef<HTMLDivElement | null>(null);
   const banded = layers.some((each) => each.run !== undefined);
+  /** How many layers the run being chosen holds so far. */
+  const chosen = layers.filter((each) => each.run !== undefined).length;
   const focusedIndex =
     focused === undefined ? -1 : layers.findIndex((each) => each.key === focused);
   // Whether a later layer starts a branch, for each layer: the trunk runs on down to its elbow.
@@ -536,7 +538,7 @@ export function StackTree({
         <h2 className="flex-none label-caps text-fg-muted text-label">Stack</h2>
         <span className="ms-auto min-w-0 truncate text-end text-fg-muted text-small">
           {choosing ? (
-            <span className="mode-chip">V-LINE</span>
+            <span className="lo-num">{`${chosen.toLocaleString('en')} selected`}</span>
           ) : (
             <span className="lo-num">{headText(layers.length, githubStack, githubPartly)}</span>
           )}

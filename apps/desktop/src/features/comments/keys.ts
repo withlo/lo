@@ -19,8 +19,8 @@
 // declared as its own (`editor`): listed, checked for clashes, and never run or offered by the
 // registry, nor changed by the keymap file. What the buttons in a box's notes do is also on its
 // frame's right-click menu, and in the palette while focus is in the box, each only where the box
-// offers it, without a key of its own. Where the drafts are that the diff, drawn again, had nowhere
-// to open, the palette says, as a click on the status bar's note for them does.
+// offers it, without a key of its own. Where the kept drafts are, those the diff took down open
+// that no box has taken since, the palette says, as a click on the status bar's note for them does.
 //
 // Vim keys are a setting, `editor.vim`, off as Lo starts: "Vim keys" switches it, from the palette
 // or Settings › Keyboard. Off, code and boxes have a plain caret, a box takes typing as soon as it
@@ -316,9 +316,9 @@ export default defineCommands(
       toggle: 'switch',
     },
     /**
-     * Says where each draft is that the diff, drawn again, had nowhere to open, and when it opens,
-     * as a click on the status bar's note for them does: the pull request on screen's, or the tab's
-     * that Settings' list of kept drafts names.
+     * Says where each kept draft is, one the diff took down open that no box has taken since, and
+     * when it opens, as a click on the status bar's note for them does: the pull request on
+     * screen's, or the tab's that Settings' list of kept drafts names.
      */
     keptDrafts: {
       label: 'Show kept drafts',

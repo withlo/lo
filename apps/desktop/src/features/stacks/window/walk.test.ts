@@ -3,7 +3,7 @@
 // when the view on screen has one; choosing a run of layers and showing it as one diff; and leaving
 // a run on screen for the layer it was chosen from, which `]s` and `[s` go on from.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { installBridge } from '../../../window/test/bridge.ts';
 import type * as TabShared from '../../tab/window/shared.ts';
@@ -12,6 +12,7 @@ import type { Row, StackView } from '../contract.ts';
 import { choosing, focused, runTrouble, stacks } from './layers.ts';
 import {
   back,
+  backable,
   cancel,
   choose,
   goDown,
@@ -41,6 +42,7 @@ const middle = vi.hoisted(() => {
   const run = vi.fn<(id: string, target: unknown) => void>();
   return {
     escapeInMiddle: vi.fn<() => boolean>(() => false),
+    canEscape: vi.fn<(focused: Element | null) => boolean>(() => true),
     focusMiddle: vi.fn<() => void>(),
     escapeToMiddle: vi.fn<() => void>(),
     run,
@@ -48,6 +50,7 @@ const middle = vi.hoisted(() => {
   };
 });
 vi.mock('../../../window/commands/registry.ts', () => middle);
+vi.mock('../../../window/commands/overlays.tsx', () => ({ askedFrom: () => document.body }));
 
 const bridge = installBridge({
   'stacks.run': () => 'run',
@@ -276,5 +279,21 @@ describe('a run of layers on screen', () => {
     showing(84, STACK);
     back();
     expect(middle.focusMiddle).toHaveBeenCalledOnce();
+  });
+
+  it('is there to go back with, and elsewhere only where Esc would do anything', () => {
+    // Focus where the diff puts it, and nothing open.
+    middle.canEscape.mockReturnValue(false);
+    onTestFinished(() => {
+      middle.canEscape.mockReturnValue(true);
+    });
+    showing(84, STACK, run);
+    expect(backable()).toBe(true);
+    // A layer's own view: nothing to say.
+    showing(84, STACK);
+    expect(backable()).toBe('');
+    expect(middle.canEscape).toHaveBeenLastCalledWith(document.body);
+    middle.canEscape.mockReturnValue(true);
+    expect(backable()).toBe(true);
   });
 });
