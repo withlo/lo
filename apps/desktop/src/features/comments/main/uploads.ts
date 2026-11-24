@@ -11,11 +11,11 @@
 // it, and kept once GitHub has answered. Nothing here calls Electron.
 
 import {
+  type AttachmentRefusal,
   type AttachmentTarget,
   attachmentKind,
   attachmentMarkdown,
   bytesAgree,
-  describeRefusal,
   explainUploadError,
   GithubError,
   type Poller,
@@ -73,8 +73,8 @@ export function checkedFile(
 }
 
 /** A file refused for `refusal`, as the box says it. */
-function refused(refusal: Parameters<typeof describeRefusal>[0]): { refusal: UploadRefusal } {
-  return { refusal: { kind: 'file', why: describeRefusal(refusal) } };
+function refused(refusal: AttachmentRefusal): { refusal: UploadRefusal } {
+  return { refusal: { kind: 'file', refusal } };
 }
 
 /** Whether GitHub answered Not Found, as it does an upload it won't take from a token. */
@@ -116,7 +116,7 @@ export class Uploads {
     bytes: Uint8Array,
   ): Promise<UploadOutcome> {
     const info = this.#options.view(id);
-    if (!info) throw new IpcError('missing', "There's no pull request's tab with that id.");
+    if (!info) throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
     if (this.#stopped) throw new IpcError('refused', 'Lo is quitting.');
     if (info.run) return { kind: 'refused', refusal: { kind: 'run' } };
     const acting = info.acting;
@@ -140,7 +140,7 @@ export class Uploads {
    */
   async check(id: string): Promise<AttachCheck> {
     const info = this.#options.view(id);
-    if (!info) throw new IpcError('missing', "There's no pull request's tab with that id.");
+    if (!info) throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
     const { acting } = info;
     if (this.#stopped || info.run || acting?.kind !== 'account') return { kind: 'unknown' };
     const { login } = acting;

@@ -16,7 +16,7 @@ import type {
   Overview,
   Walkthrough as WalkthroughNode,
 } from '@lo/artifact';
-import { Button, HintButton } from '@lo/ui';
+import { ago, Button, HintButton } from '@lo/ui';
 import { Figure, type PartLink } from '@lo/ui/figures';
 import { generationOf, MarkdownBlocks, secureLink, useRendering } from '@lo/ui/markdown';
 import {
@@ -52,7 +52,7 @@ import { useNow } from './hooks.ts';
 import { openings } from './opening.ts';
 import { OutOfDateBanner } from './OutOfDate.tsx';
 import { AuthorPicture, WhoWrote } from './Author.tsx';
-import { ago, authorOf, linesOf, shortId } from './says.ts';
+import { authorOf, linesOf, shortId } from './says.ts';
 import { labelOf, staleAgainst } from './stale.ts';
 import { revisions, states } from './store.ts';
 

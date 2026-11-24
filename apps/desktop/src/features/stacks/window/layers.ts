@@ -94,6 +94,6 @@ export function stepFrom(
     }
     default:
       view satisfies never;
-      throw new Error(`A stack of a kind Lo doesn't know: ${JSON.stringify(view)}.`);
+      throw new Error(`A stack of a kind Lo doesn’t know: ${JSON.stringify(view)}.`);
   }
 }

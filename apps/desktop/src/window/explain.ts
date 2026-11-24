@@ -2,6 +2,7 @@
 // title, and why Lo has no git it can run. Main says a cause as a kind (`ipc/cause.ts`, `ipc/git.ts`),
 // and every feature words it here.
 
+import { clock } from '@lo/ui';
 import type { System } from '@lo/ui/commands';
 
 import type { Cause } from '../ipc/cause.ts';
@@ -18,11 +19,6 @@ export const TEXT_APP_QUERY = 'xdg-mime query default text/plain';
 
 /** Why a text file didn't open on a computer Lo has no way to open one on. */
 export const UNSUPPORTED = 'Opening text files isn’t supported on this computer.';
-
-/** A time of day, in the system's own format: `14:05`. */
-export function timeOfDay(time: number): string {
-  return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(time);
-}
 
 /** Where sign-ins are kept: the Keychain on macOS, the keyring on Linux. */
 export function keptIn(system: System = currentSystem()): string {
@@ -51,7 +47,7 @@ export function explain(cause: Cause, system: System = currentSystem()): string 
         case 'unsupported':
           return 'The proxy isn’t HTTP, HTTPS or SOCKS5.';
         default:
-          throw new Error(`A proxy Lo doesn't know: ${JSON.stringify(cause.why satisfies never)}`);
+          throw new Error(`A proxy Lo doesn’t know: ${JSON.stringify(cause.why satisfies never)}`);
       }
     case 'github':
       return 'GitHub returned an error.';
@@ -60,7 +56,7 @@ export function explain(cause: Cause, system: System = currentSystem()): string 
     case 'rateLimit':
       return cause.resets === null
         ? 'GitHub’s rate limit was reached.'
-        : `GitHub’s rate limit resets at ${timeOfDay(cause.resets)}.`;
+        : `GitHub’s rate limit resets at ${clock(cause.resets)}.`;
     case 'signedOut':
       return `${cause.login} is signed out.`;
     case 'unreadable':
@@ -86,7 +82,7 @@ export function explain(cause: Cause, system: System = currentSystem()): string 
     case 'unknown':
       return undefined;
     default:
-      throw new Error(`A cause Lo doesn't know: ${JSON.stringify(cause satisfies never)}`);
+      throw new Error(`A cause Lo doesn’t know: ${JSON.stringify(cause satisfies never)}`);
   }
 }
 
@@ -119,7 +115,7 @@ export function chipLabel(cause: Cause, otherwise: string): string {
     case 'memory':
       return otherwise;
     default:
-      throw new Error(`A cause Lo doesn't know: ${JSON.stringify(cause satisfies never)}`);
+      throw new Error(`A cause Lo doesn’t know: ${JSON.stringify(cause satisfies never)}`);
   }
 }
 
@@ -160,7 +156,7 @@ export function waitsOut(cause: Cause): boolean {
     case 'unknown':
       return false;
     default:
-      throw new Error(`A cause Lo doesn't know: ${JSON.stringify(cause satisfies never)}`);
+      throw new Error(`A cause Lo doesn’t know: ${JSON.stringify(cause satisfies never)}`);
   }
 }
 
@@ -222,7 +218,7 @@ export function gitWords(trouble: GitTrouble): GitWords {
         details: trouble.program,
       };
     default:
-      throw new Error(`A Git Lo doesn't know: ${JSON.stringify(trouble satisfies never)}`);
+      throw new Error(`A Git Lo doesn’t know: ${JSON.stringify(trouble satisfies never)}`);
   }
 }
 

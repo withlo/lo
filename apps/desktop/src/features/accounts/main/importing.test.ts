@@ -190,7 +190,7 @@ describe('reading a token from gh again', () => {
     const again = rereadFromGh({ gh, fetch: replayFetch('user'), urls: GITHUB_URLS, log });
     expect(await again('someone-else')).toBeUndefined();
     expect(logged).toEqual([
-      "reading someone-else's token from gh again: gh's token for someone-else is rozed-bot's.",
+      "reading someone-else's token from gh again: gh’s token for someone-else is rozed-bot’s.",
     ]);
   });
 
@@ -207,7 +207,7 @@ describe('reading a token from gh again', () => {
     });
     expect(await refused('rozed-bot')).toBeUndefined();
     expect(logged[0]).toBe(
-      "reading nobody's token from gh again: gh isn't signed in to nobody any more.",
+      "reading nobody's token from gh again: gh isn’t signed in to nobody any more.",
     );
     expect(logged.join('\n')).not.toContain(GH_TOKEN_FOR_BOT);
   });
@@ -229,10 +229,10 @@ describe('reading a token from gh again', () => {
       log: (message) => logged.push(message),
     });
     await expect(reread('rozed-bot')).rejects.toThrow(
-      "gh didn't list its accounts within 0.2 s, so Lo stopped it.",
+      'gh didn’t list its accounts within 0.2 s, so Lo stopped it.',
     );
     expect(logged).toEqual([
-      "reading rozed-bot's token from gh again: gh didn't list its accounts within 0.2 s, so Lo stopped it.",
+      "reading rozed-bot's token from gh again: gh didn’t list its accounts within 0.2 s, so Lo stopped it.",
     ]);
   });
 
@@ -281,7 +281,7 @@ describe('reading a token from gh again', () => {
     });
     expect(await reread('rozed-bot')).toBeUndefined();
     expect(logged).toEqual([
-      "reading rozed-bot's token from gh again: Lo can't find gh, GitHub's command-line tool.",
+      "reading rozed-bot's token from gh again: Lo can’t find gh, GitHub’s command-line tool.",
     ]);
   });
 });
@@ -299,7 +299,7 @@ describe("reading gh's token for an upload", () => {
     ]);
     expect(await token('nobody')).toBeUndefined();
     expect(logged).toEqual([
-      "reading nobody's token from gh for an upload: gh isn't signed in to nobody.",
+      "reading nobody's token from gh for an upload: gh isn’t signed in to nobody.",
     ]);
     expect(logged.join('\n')).not.toContain(GH_TOKEN_FOR_BOT);
   });

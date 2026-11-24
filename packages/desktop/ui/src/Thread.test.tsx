@@ -19,13 +19,13 @@ afterEach(() => {
 const MIRA: ThreadComment = {
   id: 'c1',
   author: 'mira-chen',
-  when: '2 days ago',
+  when: '2 d ago',
   body: <p>Import order: the linter wants type imports last.</p>,
 };
 const RAVI: ThreadComment = {
   id: 'c2',
   author: 'ravi-k',
-  when: '1 day ago',
+  when: '1 d ago',
   byAuthor: true,
   body: <p>Fixed in the next push.</p>,
 };
@@ -206,7 +206,7 @@ describe('Thread', () => {
   });
 
   it('offers Edit and Delete on your own comments only, with their keys on your newest', () => {
-    const older: ThreadComment = { ...MINE, id: 'm1', when: '3 days ago' };
+    const older: ThreadComment = { ...MINE, id: 'm1', when: '3 d ago' };
     const newest: ThreadComment = { ...MINE, id: 'm2' };
     const onEdit = vi.fn<(id: string) => void>();
     const onDelete = vi.fn<(id: string) => void>();

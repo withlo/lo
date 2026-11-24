@@ -136,10 +136,10 @@ export function defineSetting<T>(
     throw new Error(`A setting is named in words joined by dots, as diff.layout is, not "${key}".`);
   }
   if (!schema.safeParse(fallback).success) {
-    throw new Error(`The default of the setting ${key} isn't a value its schema accepts.`);
+    throw new Error(`The default of the setting ${key} isn’t a value its schema accepts.`);
   }
   if (!settingValue.safeParse(fallback).success) {
-    throw new Error(`The default of the setting ${key} isn't JSON, which the settings file holds.`);
+    throw new Error(`The default of the setting ${key} isn’t JSON, which the settings file holds.`);
   }
   const { group, label, named, description, options, window = 'write', problems } = about;
   checkRowWords(`The setting ${key}`, label, description);

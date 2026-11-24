@@ -226,7 +226,11 @@ describe('a pull request’s diff', { timeout: 60_000 }, () => {
     const [text] = await diff.texts(APP_PULL.head, null, null, null, 'local', [
       find(state, 'src/parser.ts').place,
     ]);
-    expect(text).toEqual({ kind: 'missing', why: expect.stringContaining('a line over 1 MB') });
+    expect(text).toEqual({
+      kind: 'missing',
+      why: 'It’s too large to show.',
+      tooLarge: { kind: 'longLine' },
+    });
   });
 
   it('reads GitHub’s files and patches until the local copy is ready, which then replaces them', async () => {

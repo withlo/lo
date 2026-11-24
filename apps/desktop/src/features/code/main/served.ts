@@ -160,7 +160,7 @@ function waitingFor(serving: NotServing): string {
       return `${name} isn’t running`;
     default:
       serving satisfies never;
-      throw new Error(`a server's state Lo doesn't know: ${JSON.stringify(serving)}`);
+      throw new Error(`a server’s state Lo doesn’t know: ${JSON.stringify(serving)}`);
   }
 }
 
@@ -186,7 +186,7 @@ function fallbackOf(name: string, why: NoAnswer): string {
     case 'replaced':
       throw new IpcError('cancelled', 'The question was cancelled.');
     default:
-      throw new Error(`a request's end Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
+      throw new Error(`a request’s end Lo doesn’t know: ${JSON.stringify(why satisfies never)}`);
   }
 }
 
@@ -410,7 +410,7 @@ export async function servedDefinitions(
   );
   if (!answer.ok) return syntax(answer.fallback);
   const places = locationsOf(answer.value, MAX_DEFINITIONS + 1);
-  if (places === undefined) return syntax(`${serving.name} didn't answer.`);
+  if (places === undefined) return syntax(`${serving.name} didn’t answer.`);
   if (places.length === 0) {
     // It found nothing in the repository: the asking file's import of the name, then the index's.
     const [found, imported] = await Promise.all([
@@ -466,7 +466,7 @@ export async function servedReferences(
   let answer = await referencesAt(here);
   if (!answer.ok) return syntax(answer.fallback);
   let places = locationsOf(answer.value, MAX_REFERENCES + 1);
-  if (places === undefined) return syntax(`${serving.name} didn't answer.`);
+  if (places === undefined) return syntax(`${serving.name} didn’t answer.`);
   if (places.length === 0 && serving.referencesFromDefinition === true) {
     // It finds references only from a declaration, and this may be a use: ask at its definition.
     if (left() < 1) return late();
@@ -480,7 +480,7 @@ export async function servedReferences(
       answer = await referencesAt(found);
       if (!answer.ok) return syntax(answer.fallback);
       places = locationsOf(answer.value, MAX_REFERENCES + 1);
-      if (places === undefined) return syntax(`${serving.name} didn't answer.`);
+      if (places === undefined) return syntax(`${serving.name} didn’t answer.`);
     }
   }
   const { inside, outside } = await place(
@@ -616,7 +616,7 @@ export async function servedHover(
   );
   if (!answer.ok) return syntax(answer.fallback);
   const text = hoverText(answer.value);
-  if (text === undefined) return syntax(`${serving.name} didn't answer.`);
+  if (text === undefined) return syntax(`${serving.name} didn’t answer.`);
   // No hover from the server: the index may know the name.
   if (text.text.trim() === '') return syntax();
   const found: Hover = { name, kind: undefined, ...text, source: 'server', label: serving.name };
@@ -838,6 +838,6 @@ export async function servedOutline(
   );
   if (!answer.ok) return syntax(answer.fallback);
   const found = outlineOf(answer.value);
-  if (!found) return syntax(`${serving.name} didn't answer.`);
+  if (!found) return syntax(`${serving.name} didn’t answer.`);
   return { ...found, source: 'server', label: serving.name };
 }

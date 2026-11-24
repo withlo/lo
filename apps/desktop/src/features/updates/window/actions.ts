@@ -84,7 +84,7 @@ function tell(answer: CheckAnswer): void {
       return;
     default:
       throw new Error(
-        `A check's answer Lo doesn't know: ${JSON.stringify(answer satisfies never)}`,
+        `A check’s answer Lo doesn’t know: ${JSON.stringify(answer satisfies never)}`,
       );
   }
 }
@@ -205,7 +205,7 @@ export function pageOfUpdate(state: UpdateState): string | undefined {
     case 'ready':
       return releasePage(state.version);
     default:
-      throw new Error(`An update state Lo doesn't know: ${JSON.stringify(state satisfies never)}`);
+      throw new Error(`An update state Lo doesn’t know: ${JSON.stringify(state satisfies never)}`);
   }
 }
 

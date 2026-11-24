@@ -193,27 +193,3 @@ export function useProblems(): readonly Problem[] {
 export function useSettingsFile(): string | undefined {
   return useStore(settingsStore, (state) => state.settings?.file);
 }
-
-const MINUTE = 60 * 1000;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
-
-/**
- * How long before `now` the time `at` was, both in milliseconds, as a row of Settings says it:
- * "just now", "5 min ago", "2 h ago", "12 d ago", and past 30 days the date, "Nov 12", with its
- * year when that isn't this one. A time that isn't one is "just now".
- */
-export function ago(at: number, now: number): string {
-  const gone = Number.isFinite(at) ? Math.max(0, now - at) : 0;
-  if (gone < MINUTE) return 'just now';
-  if (gone < HOUR) return `${Math.floor(gone / MINUTE)} min ago`;
-  if (gone < DAY) return `${Math.floor(gone / HOUR)} h ago`;
-  if (gone <= 30 * DAY) return `${Math.floor(gone / DAY)} d ago`;
-  const date = new Date(at);
-  const sameYear = date.getFullYear() === new Date(now).getFullYear();
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    ...(sameYear ? {} : { year: 'numeric' }),
-  });
-}

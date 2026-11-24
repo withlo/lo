@@ -40,7 +40,7 @@ function kindOfMode(mode: FileMode): Listed['kind'] {
       return 'submodule';
     default:
       mode satisfies never;
-      throw new Error(`A file mode Lo doesn't know: ${String(mode)}.`);
+      throw new Error(`A file mode Lo doesn’t know: ${String(mode)}.`);
   }
 }
 

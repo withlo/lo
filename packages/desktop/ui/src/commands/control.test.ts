@@ -47,9 +47,9 @@ test('it runs its command on its target, as the key does, and says why where it 
   expect(runControl('diff.comment', LINE)).toBe(true);
   expect(ran).toEqual([['diff.comment', LINE]]);
   // On nothing, a command that needs a line says so, and the registry reports it as a key's.
-  expect(controlOf('diff.comment')?.off).toBe('Comment doesn’t apply here.'.replace('’', "'"));
-  expect(runControl('diff.comment')).toBe("Comment doesn't apply here.");
-  expect(refused).toEqual(["Comment doesn't apply here."]);
+  expect(controlOf('diff.comment')?.off).toBe('Comment doesn’t apply here.');
+  expect(runControl('diff.comment')).toBe('Comment doesn’t apply here.');
+  expect(refused).toEqual(['Comment doesn’t apply here.']);
 });
 
 test('the registry the window’s keys go through is the one its controls run through', () => {

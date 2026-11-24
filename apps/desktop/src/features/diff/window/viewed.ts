@@ -93,7 +93,7 @@ export function markViewed(drawn: Drawn, target: LineTarget | HeaderTarget, coun
     }
     default:
       toggled satisfies never;
-      throw new Error(`A toggle Lo doesn't know: ${JSON.stringify(toggled)}.`);
+      throw new Error(`A toggle Lo doesn’t know: ${JSON.stringify(toggled)}.`);
   }
 }
 

@@ -198,7 +198,7 @@ describe('the lo command that runs Lo’s program', () => {
     expect(existsSync(join(at, 'pwned'))).toBe(false);
     expect(() =>
       commandScript({ kind: 'program', program, args: [], env: { 'A=B; touch x #': 'y' } }),
-    ).toThrow("Not a variable's name");
+    ).toThrow('Not a variable’s name');
   });
 
   it('refuses an argument that isn’t a link', async () => {

@@ -1,15 +1,6 @@
 import { useEffect, useState } from 'react';
 
-/** How long until `at`, from `now`, in the largest whole unit, rounded up as a countdown counts. */
-function left(at: number, now: number): { count: number; unit: 's' | 'min' | 'h' | 'd' } {
-  const seconds = Math.max(1, Math.ceil((at - now) / 1000));
-  if (seconds < 60) return { count: seconds, unit: 's' };
-  const minutes = Math.ceil(seconds / 60);
-  if (minutes < 60) return { count: minutes, unit: 'min' };
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return { count: hours, unit: 'h' };
-  return { count: Math.floor(hours / 24), unit: 'd' };
-}
+import { duration, spanOf } from './formats.ts';
 
 /** Each unit's word, as a screen reader hears it. */
 const SPELLED = { s: 'second', min: 'minute', h: 'hour', d: 'day' } as const;
@@ -19,13 +10,12 @@ const SPELLED = { s: 'second', min: 'minute', h: 'hour', d: 'day' } as const;
  * largest whole unit, rounded up, and never under a second.
  */
 export function countdownWords(at: number, now: number): string {
-  const { count, unit } = left(at, now);
-  return `in ${count} ${unit}`;
+  return `in ${duration(at - now, 'up')}`;
 }
 
 /** The same, spelled out, as a screen reader hears it: "in 8 seconds", "in 1 minute". */
 export function countdownSaid(at: number, now: number): string {
-  const { count, unit } = left(at, now);
+  const { count, unit } = spanOf(at - now, 'up');
   return `in ${count} ${SPELLED[unit]}${count === 1 ? '' : 's'}`;
 }
 

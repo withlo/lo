@@ -2,11 +2,11 @@
 // it last checked and why a check failed; the update on offer, downloading or ready, with what
 // this copy can do about it; and whether Lo checks by itself, which is the `updates.check` setting.
 
-import { Button, Problem, Setting, SettingsCommand } from '@lo/ui';
+import { ago, Button, Problem, Setting, SettingsCommand } from '@lo/ui';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
-import { ago, defineRow, settingRow } from '../../settings/window/shared.ts';
+import { defineRow, settingRow } from '../../settings/window/shared.ts';
 import type { UpdateState } from '../contract.ts';
 import { check as checkSetting } from '../settings.ts';
 import { check, checkWay } from './actions.ts';
@@ -156,7 +156,7 @@ function OnOffer({ state }: { state: UpdateState }) {
       );
       break;
     default:
-      throw new Error(`An update state Lo doesn't know: ${JSON.stringify(state satisfies never)}`);
+      throw new Error(`An update state Lo doesn’t know: ${JSON.stringify(state satisfies never)}`);
   }
   return (
     <div

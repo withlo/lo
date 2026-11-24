@@ -109,7 +109,7 @@ test.describe('with no keymap file', () => {
     // Lo makes the file as it opens it, so there is nothing to resolve until it has.
     await expect.poll(() => existsSync(path)).toBe(true);
     await expect.poll(opened).toEqual([realpathSync(path)]);
-    expect(readFileSync(path, 'utf8')).toMatch(/^# Lo's keymap\./);
+    expect(readFileSync(path, 'utf8')).toMatch(/^# Lo’s keymap\./);
     // Keyboard shortcuts stays, so what's wrong with the file is there when its editor is closed.
     await expect(help).toBeVisible();
     await expect(help.getByRole('alert')).toHaveCount(0);

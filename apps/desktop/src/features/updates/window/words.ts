@@ -1,7 +1,7 @@
 // What the updates feature says that depends on numbers or on main's kinds: how far a download has
 // come, what names a build, and why a check or a download failed, as an error's parts.
 
-import { formatBytes } from '@lo/ui';
+import { bytes } from '@lo/ui';
 
 import { explain } from '../../../window/explain.ts';
 import type { Failure } from '../contract.ts';
@@ -35,9 +35,9 @@ export function buildText(build: Build): string {
  */
 export function progressText(received: number, total: number): string | undefined {
   if (received <= 0) return undefined;
-  const done = formatBytes(received);
+  const done = bytes(received);
   if (total <= 0) return done;
-  const whole = formatBytes(total);
+  const whole = bytes(total);
   const [number, unit] = done.split(' ');
   return unit === whole.split(' ')[1] ? `${number} / ${whole}` : `${done} / ${whole}`;
 }
@@ -74,7 +74,7 @@ export function failureReason(why: Failure): string | undefined {
     case 'unknown':
       return undefined;
     default:
-      throw new Error(`A failure Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
+      throw new Error(`A failure Lo doesn’t know: ${JSON.stringify(why satisfies never)}`);
   }
 }
 
@@ -99,7 +99,7 @@ export function failureWay(why: Failure): 'again' | 'github' | undefined {
     case 'unknown':
       return 'again';
     default:
-      throw new Error(`A failure Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
+      throw new Error(`A failure Lo doesn’t know: ${JSON.stringify(why satisfies never)}`);
   }
 }
 

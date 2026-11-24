@@ -99,7 +99,7 @@ describe('Grants', () => {
     await kept.write('bot', expiring);
     storage.refusing = true;
     const read = kept.read('bot');
-    await expect(read).rejects.toThrow("the keychain couldn't decrypt the token");
+    await expect(read).rejects.toThrow('the keychain couldn’t decrypt the token');
     await expect(read).rejects.not.toBeInstanceOf(GithubError);
     storage.refusing = false;
     expect(exposed(await kept.read('bot'))).toEqual(exposed(expiring));
@@ -264,7 +264,7 @@ describe("Linux's built-in key, and other stand-in keychains", () => {
     const storage = new FakeStorage();
     storage.available = false;
     expect(await keychainProblem(storage, { ...mac, testRun: true })).toContain(
-      "can't reach the system's keychain",
+      'can’t reach the system’s keychain',
     );
   });
 
@@ -288,7 +288,7 @@ describe("Linux's built-in key, and other stand-in keychains", () => {
     const { grants: kept, storage } = grants({ keychain: { ...mac, mockKeychain: true } });
     expect(await kept.problem()).toContain('stand-in keychain');
     storage.available = false;
-    expect(await kept.problem()).toContain("can't reach the system's keychain");
+    expect(await kept.problem()).toContain('can’t reach the system’s keychain');
   });
 
   it("takes a keyring's grant that no longer decrypts, once only the built-in key answers, for want of a keyring", async () => {
@@ -305,7 +305,7 @@ describe("Linux's built-in key, and other stand-in keychains", () => {
     storage.mark = 'v12';
     const refused = kept.read('bot');
     await expect(refused).rejects.not.toBeInstanceOf(NoKeychain);
-    await expect(refused).rejects.toThrow("the keychain couldn't decrypt the token");
+    await expect(refused).rejects.toThrow('the keychain couldn’t decrypt the token');
     // On a Mac, a refusal is never taken for no keychain.
     const onMac = grants({ keychain: mac });
     await onMac.grants.write('bot', expiring);

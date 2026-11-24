@@ -48,7 +48,7 @@ export function workers(entry: URL, startLimit = START_LIMIT): Execute {
       signal?.addEventListener('abort', cancelled, { once: true });
       // The load's limit, until the job starts; then the job's deadline.
       let limit = setTimeout(
-        () => fail('busy', `${job} couldn't start within ${startLimit} ms; try again later.`),
+        () => fail('busy', `${job} couldn’t start within ${startLimit} ms; try again later.`),
         startLimit,
       );
       if (signal?.aborted) cancelled();
@@ -61,7 +61,7 @@ export function workers(entry: URL, startLimit = START_LIMIT): Execute {
             limits.deadline,
           );
         } else if (started && isResult(message)) settle(message);
-        else fail('failed', `${job} answered with something that isn't a result.`);
+        else fail('failed', `${job} answered with something that isn’t a result.`);
       });
       worker.once('error', (error: unknown) => {
         const outOfMemory =
@@ -82,7 +82,7 @@ export async function work(runners: readonly Runner[]): Promise<void> {
   parentPort?.postMessage(STARTED);
   let result: Result<unknown>;
   try {
-    if (!found) throw new IpcError('unavailable', `There's no job named ${job}.`);
+    if (!found) throw new IpcError('unavailable', `There’s no job named ${job}.`);
     result = { ok: true, value: await found.run(input) };
   } catch (error) {
     // A job's own IpcError says what went wrong; anything else stays here.

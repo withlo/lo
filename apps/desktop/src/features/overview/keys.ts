@@ -18,7 +18,7 @@ export default defineCommands(
      */
     show: {
       label: 'Overview',
-      control: "Overview in the pull request's header",
+      control: 'Overview in the pull request’s header',
       group: 'View',
       keys: [],
       bar: { menu: 'View', section: 'views', order: 10 },
@@ -52,7 +52,7 @@ export default defineCommands(
       targets: ['block', 'none'],
       when: overview,
       menu: { on: 'block', order: 10 },
-      control: "Go to code on a focused block's chip",
+      control: 'Go to code on a focused block’s chip',
     },
     /** Splits the middle: the overview, and the block's file in the diff beside it, inline. */
     beside: {
@@ -86,7 +86,7 @@ export default defineCommands(
       group: 'Go',
       keys: ['tab'],
       when: overview,
-      control: "Next link on a focused block's chip, and a click on the link itself",
+      control: 'Next link on a focused block’s chip, and a click on the link itself',
     },
     previousLink: {
       label: 'Previous link',
@@ -103,7 +103,7 @@ export default defineCommands(
       keys: ['right'],
       targets: ['block', 'none'],
       when: overview,
-      control: "Next on a walkthrough, a set's tabs, and Next step on a focused block's chip",
+      control: 'Next on a walkthrough, a set’s tabs, and Next step on a focused block’s chip',
     },
     previousStep: {
       label: 'Previous step',
@@ -111,7 +111,7 @@ export default defineCommands(
       keys: ['left'],
       targets: ['block', 'none'],
       when: overview,
-      control: "Previous on a walkthrough, and a set's tabs",
+      control: 'Previous on a walkthrough, and a set’s tabs',
     },
     scrollDown: {
       label: 'Scroll down',
@@ -119,7 +119,7 @@ export default defineCommands(
       keys: ['j', 'down'],
       repeat: true,
       when: overview,
-      control: "the overview's scroll bar",
+      control: 'the overview’s scroll bar',
     },
     scrollUp: {
       label: 'Scroll up',
@@ -127,21 +127,21 @@ export default defineCommands(
       keys: ['k', 'up'],
       repeat: true,
       when: overview,
-      control: "the overview's scroll bar",
+      control: 'the overview’s scroll bar',
     },
     top: {
       label: 'Go to top',
       group: 'Go',
       keys: ['g g', 'home'],
       when: overview,
-      control: "the overview's scroll bar",
+      control: 'the overview’s scroll bar',
     },
     bottom: {
       label: 'Go to bottom',
       group: 'Go',
       keys: ['G', 'end'],
       when: overview,
-      control: "the overview's scroll bar",
+      control: 'the overview’s scroll bar',
     },
     pageDown: {
       label: 'Page down',
@@ -149,7 +149,7 @@ export default defineCommands(
       keys: ['pagedown'],
       repeat: true,
       when: overview,
-      control: "the overview's scroll bar",
+      control: 'the overview’s scroll bar',
     },
     pageUp: {
       label: 'Page up',
@@ -157,7 +157,7 @@ export default defineCommands(
       keys: ['pageup'],
       repeat: true,
       when: overview,
-      control: "the overview's scroll bar",
+      control: 'the overview’s scroll bar',
     },
     /** Puts the latest overview, pushed while this one was read, on screen. */
     loadNewer: {

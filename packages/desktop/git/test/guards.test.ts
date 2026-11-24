@@ -229,8 +229,8 @@ test('the token never reaches a proxy, even one that asks for a password', async
     failures.push(await failureOf(listing));
   }
   expect(failures).toEqual([
-    expect.stringContaining("can't fetch owner/repo"),
-    expect.stringContaining("can't fetch owner/repo"),
+    expect.stringContaining('can’t fetch owner/repo'),
+    expect.stringContaining('can’t fetch owner/repo'),
   ]);
 
   // git went through the proxy, which refused it, and never gave it the token.
@@ -251,7 +251,7 @@ test('a redirect is never followed, and the host it names never gets the token',
       .command('none', { fetching: { token } })
       .arg('ls-remote', `${redirector.url}/owner/repo.git`)
       .run(undefined, { what: 'owner/repo' });
-    await expect(listing).rejects.toThrow("can't fetch owner/repo");
+    await expect(listing).rejects.toThrow('can’t fetch owner/repo');
   };
 
   await list([]);

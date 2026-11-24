@@ -7,11 +7,12 @@
 // here touches the DOM: the view hears through a sink.
 
 import { splitLines, type FileDiff, type MovedBlock } from '@lo/diff';
+import { bytes } from '@lo/ui';
 import type { ReadFailure } from '@lo/ui/code';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { type Changed, fileKey } from '../../tree/contract.ts';
-import type { DiffState, FileText, FileVersions, Source } from '../contract.ts';
+import type { DiffProblem, DiffState, FileText, FileVersions, Source } from '../contract.ts';
 import {
   HIGHLIGHTS_PER_JOB,
   JOB_LINES,
@@ -24,6 +25,7 @@ import {
 } from '../jobs.ts';
 import { changeOf, inOrder } from './files.ts';
 import { FileIds } from './ids.ts';
+import { tooLargeReason } from './whole.ts';
 
 /** What the loader asks main and the background process for. */
 export interface LoaderWork {
@@ -645,7 +647,11 @@ export class Loader {
         this.#fail(
           run,
           entry,
-          text ? { reason: text.reason, details: text.why } : { details: NO_ANSWER },
+          text === undefined
+            ? { details: NO_ANSWER }
+            : text.tooLarge === undefined
+              ? { reason: text.reason, details: text.why }
+              : { reason: tooLargeReason(text.tooLarge) },
         );
       }
     });
@@ -933,20 +939,17 @@ function highlightBatches(
 ): Entry[][] {
   const batches: Entry[][] = [];
   let batch: Entry[] = [];
-  let bytes = 0;
+  let held = 0;
   for (const entry of entries) {
     const lines = shown(entry)?.lines;
     const size = lines ? sizeOf(lines.old) + sizeOf(lines.new) : 0;
-    if (
-      batch.length > 0 &&
-      (batch.length >= HIGHLIGHTS_PER_JOB || bytes + size > HIGHLIGHT_BYTES)
-    ) {
+    if (batch.length > 0 && (batch.length >= HIGHLIGHTS_PER_JOB || held + size > HIGHLIGHT_BYTES)) {
       batches.push(batch);
       batch = [];
-      bytes = 0;
+      held = 0;
     }
     batch.push(entry);
-    bytes += size;
+    held += size;
   }
   if (batch.length > 0) batches.push(batch);
   return batches;
@@ -993,17 +996,35 @@ function byReach(jobs: readonly Job[]): Job[][] {
 function batchesOf(entries: readonly Entry[]): Entry[][] {
   const batches: Entry[][] = [];
   let batch: Entry[] = [];
-  let bytes = 0;
+  let held = 0;
   for (const entry of entries) {
     const size = (entry.versions.old?.size ?? 0) + (entry.versions.new?.size ?? 0);
-    if (batch.length > 0 && (batch.length >= BATCH_FILES || bytes + size > BATCH_BYTES)) {
+    if (batch.length > 0 && (batch.length >= BATCH_FILES || held + size > BATCH_BYTES)) {
       batches.push(batch);
       batch = [];
-      bytes = 0;
+      held = 0;
     }
     batch.push(entry);
-    bytes += size;
+    held += size;
   }
   if (batch.length > 0) batches.push(batch);
   return batches;
+}
+
+/** What couldn't be read, in words. */
+export function problemSays(problem: DiffProblem): string {
+  switch (problem.kind) {
+    case 'local':
+      return 'Couldn’t read the changes from the local copy';
+    case 'compare':
+      return 'Couldn’t compare the revisions';
+    case 'github':
+      return 'Couldn’t read the changed files';
+    case 'tooLarge':
+      return problem.fellBack
+        ? `Changes over ${bytes(problem.limit)} · showing GitHub’s diff`
+        : `The changes are over the ${bytes(problem.limit)} limit.`;
+    default:
+      throw new Error(`A problem Lo doesn’t know: ${JSON.stringify(problem satisfies never)}`);
+  }
 }

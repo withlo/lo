@@ -297,7 +297,7 @@ export class CodeIndex {
     const { signal } = build.controller;
     try {
       const repo = await view.clone();
-      if (!repo) throw new Error("The pull request's local copy isn't open.");
+      if (!repo) throw new Error('The pull request’s local copy isn’t open.');
       const tree = await repo.treeId(build.commit);
       build.tree = tree;
       const entries = await listed(repo, build.commit);

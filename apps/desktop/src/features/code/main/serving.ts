@@ -109,7 +109,7 @@ interface Checkout {
  * What the status bar says, after "Lo couldn't check out this PR's head:", of a checkout made again
  * that a server finds unusable too.
  */
-const STILL_UNUSABLE = "the checkout Lo made again isn't usable either";
+const STILL_UNUSABLE = 'the checkout Lo made again isn’t usable either';
 
 /** The lowercase key servers of `repo` are kept by. */
 export function repoKey(repo: string): string {
@@ -287,12 +287,12 @@ export class ServingViews {
     const followed = this.#views.get(id);
     const input = followed?.input;
     if (!followed || !input)
-      throw new IpcError('missing', "There's no pull request's tab with that id.");
+      throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
     if (input.trust !== 'trusted' || input.head === undefined) {
-      throw new IpcError('refused', "Language servers don't run on this PR.");
+      throw new IpcError('refused', 'Language servers don’t run on this PR.');
     }
     const adapter = this.#options.adapters().find((each) => each.id === server);
-    if (!adapter) throw new IpcError('missing', "There's no language server by that name.");
+    if (!adapter) throw new IpcError('missing', 'There’s no language server by that name.');
     followed.asked.add(adapter.id);
     const head = input.head;
     const key = checkoutKey(input, head);
@@ -416,7 +416,7 @@ export class ServingViews {
     const key = checkoutKey(input, head);
     try {
       const repo = await input.clone();
-      if (!repo) throw new Error("The pull request's local copy isn't open.");
+      if (!repo) throw new Error('The pull request’s local copy isn’t open.');
       checkout.folder = await repo.checkout(input.number, head);
     } catch (error) {
       checkout.failed = describe(error);
@@ -622,7 +622,7 @@ export class ServingViews {
           kind: 'failed',
           why: {
             kind: 'error',
-            message: clip(`Lo couldn't check out this PR's head: ${checkout.failed}`),
+            message: clip(`Lo couldn’t check out this PR’s head: ${checkout.failed}`),
           },
         };
       } else if (state === undefined && onScreen && input.trust === 'trusted') {

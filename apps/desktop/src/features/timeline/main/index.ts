@@ -31,7 +31,7 @@ export default defineFeature(contract, {
   handlers: {
     show({ id }, context) {
       const info = context.use(tabs).pull(id);
-      if (!info) throw new IpcError('missing', "There's no pull request's tab with that id.");
+      if (!info) throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
       let tab = followed.get(id);
       if (!tab) {
         tab = new TimelineTab({

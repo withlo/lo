@@ -19,6 +19,7 @@ import {
   Collapse,
   CopyButton,
   Dialog,
+  duration,
   Key,
   Problem,
   Spinner,
@@ -84,7 +85,7 @@ function reasonOf(why: SignInFailure | 'cancelled'): string | undefined {
     case 'failed':
       return undefined;
     default:
-      throw new Error(`A sign-in failure Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
+      throw new Error(`A sign-in failure Lo doesn’t know: ${JSON.stringify(why satisfies never)}`);
   }
 }
 
@@ -98,12 +99,6 @@ function useNow(on: boolean): number {
     return () => clearInterval(timer);
   }, [on]);
   return now;
-}
-
-/** How far ahead `ms` is, in its largest whole unit: `14 min`, `40 s`. */
-function ahead(ms: number): string {
-  const seconds = Math.max(1, Math.ceil(ms / 1000));
-  return seconds < 60 ? `${seconds} s` : `${Math.floor(seconds / 60)} min`;
 }
 
 function quit(): void {
@@ -163,7 +158,7 @@ function stepOf(dialog: SignInDialog): Step {
     case 'cancelled':
       return failed('cancelled', undefined);
     default:
-      throw new Error(`A sign-in state Lo doesn't know: ${JSON.stringify(state satisfies never)}`);
+      throw new Error(`A sign-in state Lo doesn’t know: ${JSON.stringify(state satisfies never)}`);
   }
 }
 
@@ -298,7 +293,7 @@ function Status({ dialog }: { dialog: SignInDialog }) {
         {statusOf(dialog, left !== undefined && left <= 0)}
       </div>
       {left !== undefined && left > 0 && (
-        <span className="lo-num flex-none">Code expires in {ahead(left)}</span>
+        <span className="lo-num flex-none">Code expires in {duration(left, 'down')}</span>
       )}
     </div>
   );
@@ -334,7 +329,7 @@ function statusOf({ state, error }: SignInDialog, expired: boolean): ReactNode {
     case 'cancelled':
       return null;
     default:
-      throw new Error(`A sign-in state Lo doesn't know: ${JSON.stringify(state satisfies never)}`);
+      throw new Error(`A sign-in state Lo doesn’t know: ${JSON.stringify(state satisfies never)}`);
   }
 }
 

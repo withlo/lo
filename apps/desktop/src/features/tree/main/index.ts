@@ -22,7 +22,7 @@ const log = (line: string) => console.error(`tree: ${line}`);
 
 function treeOf(id: string): TreeTab {
   const tree = trees.get(id);
-  if (!tree) throw new IpcError('missing', "There's no pull request's tab with that id.");
+  if (!tree) throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
   return tree;
 }
 

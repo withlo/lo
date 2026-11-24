@@ -108,7 +108,7 @@ function planAgain(tab: string, number: number, shown: boolean): void {
             });
             return;
           default:
-            throw new Error(`a plan Lo doesn't know: ${JSON.stringify(planned satisfies never)}`);
+            throw new Error(`a plan Lo doesn’t know: ${JSON.stringify(planned satisfies never)}`);
         }
       },
       (error: unknown) => {
@@ -188,7 +188,7 @@ export function dismiss(): void {
       return;
     }
     default:
-      throw new Error(`a dialog Lo doesn't know: ${JSON.stringify(now satisfies never)}`);
+      throw new Error(`a dialog Lo doesn’t know: ${JSON.stringify(now satisfies never)}`);
   }
 }
 
@@ -230,7 +230,7 @@ export function tryAgain(): void {
       forget(now.key);
       break;
     default:
-      throw new Error(`a dialog Lo doesn't know: ${JSON.stringify(now satisfies never)}`);
+      throw new Error(`a dialog Lo doesn’t know: ${JSON.stringify(now satisfies never)}`);
   }
   planAgain(now.tab, now.number, true);
 }

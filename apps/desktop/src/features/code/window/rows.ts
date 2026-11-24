@@ -1,6 +1,6 @@
 // What Settings' Toolchains row shows of what main lists, and why one wasn't deleted.
 
-import { formatBytes, type ToolchainEntry } from '@lo/ui';
+import { bytes, type ToolchainEntry } from '@lo/ui';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import type { Toolchain } from '../contract.ts';
@@ -27,8 +27,8 @@ export function rowsOf(
           id: toolchain.id,
           name: toolchain.name,
           version: toolchain.version,
-          installed: toolchain.installed === null ? undefined : formatBytes(toolchain.installed),
-          download: formatBytes(toolchain.download),
+          installed: toolchain.installed === null ? undefined : bytes(toolchain.installed),
+          download: bytes(toolchain.download),
           uses: toolchain.uses,
           removing: removing.has(toolchain.id),
         },

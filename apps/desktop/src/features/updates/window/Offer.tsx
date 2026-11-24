@@ -251,7 +251,7 @@ function Available({ offer }: { offer: Offered }) {
       );
     default:
       throw new Error(
-        `A way to update Lo doesn't know: ${JSON.stringify(offer.how satisfies never)}`,
+        `A way to update Lo doesn’t know: ${JSON.stringify(offer.how satisfies never)}`,
       );
   }
 }
@@ -312,7 +312,7 @@ export function UpdateToast({ state }: { state: UpdateState }) {
         </Held>
       );
     default:
-      throw new Error(`An update state Lo doesn't know: ${JSON.stringify(state satisfies never)}`);
+      throw new Error(`An update state Lo doesn’t know: ${JSON.stringify(state satisfies never)}`);
   }
 }
 

@@ -167,7 +167,7 @@ describe('opening a merge queue', () => {
       'Lo is still working out which account this tab uses.',
     );
     expect(() => queues.show('closed', 'main')).toThrow(
-      "There's no pull request's tab with that id.",
+      'There’s no pull request’s tab with that id.',
     );
     expect(opened).toEqual([]);
   });
@@ -188,7 +188,7 @@ describe('opening a merge queue', () => {
     expect(opened).toEqual([
       [{ kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: 150 }, { login: 'rozed-bot' }],
     ]);
-    expect(() => queues.open('recent', 150)).toThrow("There's no merge queue's tab with that id.");
+    expect(() => queues.open('recent', 150)).toThrow('There’s no merge queue’s tab with that id.');
   });
 });
 

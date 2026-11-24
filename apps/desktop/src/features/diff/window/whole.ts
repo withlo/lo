@@ -6,6 +6,7 @@
 
 import { MAX_LINE_BYTES, MAX_SHOWN_BYTES, type TooLarge } from '@lo/review';
 import { splitLines } from '@lo/diff';
+import { bytes } from '@lo/ui';
 import type { Target } from '@lo/ui/commands';
 import type { FileView } from '@lo/ui/code';
 
@@ -252,22 +253,17 @@ export function wholeWork(tab: string): WholeWork {
   };
 }
 
-/** Megabytes, whole: sizes are never said in MiB. */
-function megabytes(bytes: number): string {
-  return `${Math.round(bytes / 1024 ** 2)} MB`;
-}
-
 /** Why a file is too large to show, as a sentence: which limit it's over. */
 export function tooLargeReason(why: TooLarge): string {
-  const limit = megabytes(MAX_SHOWN_BYTES);
+  const limit = bytes(MAX_SHOWN_BYTES);
   switch (why.kind) {
     case 'size':
       return why.size === null
         ? `It’s over the ${limit} limit.`
-        : `It’s ${megabytes(why.size)}, over the ${limit} limit.`;
+        : `It’s ${bytes(why.size, 'up')}, over the ${limit} limit.`;
     case 'longLine':
-      return `It has a line over ${megabytes(MAX_LINE_BYTES)} long.`;
+      return `It has a line over ${bytes(MAX_LINE_BYTES)} long.`;
     default:
-      throw new Error(`A limit Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
+      throw new Error(`A limit Lo doesn’t know: ${JSON.stringify(why satisfies never)}`);
   }
 }

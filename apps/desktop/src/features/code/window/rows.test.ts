@@ -16,7 +16,7 @@ const GO = {
   uses: ['Go'],
 };
 
-it('writes sizes as formatBytes does, and has the one being removed wait', () => {
+it('writes sizes as bytes does, and has the one being removed wait', () => {
   const rows = rowsOf([GO, { ...GO, id: 'rust', name: 'Rust', installed: null }], new Set(['go']));
   expect(rows).toEqual([
     { ...GO, installed: '229.1 MB', download: '65.1 MB', removing: true },

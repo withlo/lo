@@ -183,7 +183,7 @@ export class Highlighter {
         } catch (error) {
           // A fault as the grammar loads breaks the memory, as one as it parses does.
           if (isFault(error)) throw error;
-          throw new NotLoaded(`${name} didn't load.`, { cause: error });
+          throw new NotLoaded(`${name} didn’t load.`, { cause: error });
         } finally {
           const elapsed = performance.now() - started;
           deadline += elapsed;

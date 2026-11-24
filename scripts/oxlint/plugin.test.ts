@@ -5,6 +5,7 @@ import { parseSync, Visitor } from 'oxc-parser';
 import { expect, test } from 'vitest';
 
 import plugin, {
+  APOSTROPHE_MESSAGE,
   loSubject,
   MESSAGE,
   SCROLL_MESSAGE,
@@ -385,6 +386,89 @@ test('a component’s own title, the window’s and one outside the desktop app 
   expect(titles('const a = <span title="x" />;', join(ROOT, 'apps/desktop/src/file.tsx'))).toEqual([
     'title="x"',
   ]);
+});
+
+/** The source of each string `lo/no-straight-apostrophe` reports in `source`, a file at `path`. */
+function straight(source: string, path = join(ROOT, 'apps/desktop/src/file.tsx')): string[] {
+  const found: string[] = [];
+  const text = (node: unknown): string => {
+    const start: unknown = Reflect.get(Object(node), 'start');
+    const end: unknown = Reflect.get(Object(node), 'end');
+    return typeof start === 'number' && typeof end === 'number' ? source.slice(start, end) : '';
+  };
+  const rule = plugin.rules['no-straight-apostrophe'].create({
+    report: ({ node, message }) => {
+      expect(message).toBe(APOSTROPHE_MESSAGE);
+      found.push(text(node));
+    },
+    filename: path,
+  });
+  const { program } = parseSync(path, source);
+  new Visitor({
+    CallExpression: (node) => rule.CallExpression(node),
+    NewExpression: (node) => rule.NewExpression(node),
+    BinaryExpression: (node) => rule.BinaryExpression(node),
+    SwitchCase: (node) => rule.SwitchCase(node),
+    ImportDeclaration: (node) => rule.ImportDeclaration(node),
+    ImportExpression: (node) => rule.ImportExpression(node),
+    ExportAllDeclaration: (node) => rule.ExportAllDeclaration(node),
+    ExportNamedDeclaration: (node) => rule.ExportNamedDeclaration(node),
+    Property: (node) => rule.Property(node),
+    JSXElement: (node) => rule.JSXElement(node),
+    Literal: (node) => rule.Literal(node),
+    TemplateLiteral: (node) => rule.TemplateLiteral(node),
+    JSXText: (node) => rule.JSXText(node),
+  }).visit(program);
+  return found;
+}
+
+test('a straight apostrophe the reader may see is refused, in any form', () => {
+  const source = `
+    const said = "Couldn't send the comment";
+    const why = \`\${login}'s token isn’t valid\`;
+    const label = <p>It's over the limit</p>;
+    throw new IpcError('missing', "There's no tab with that id.");
+    const plural = "The pull requests' checks";
+    const last = <p>Open Settings' list</p>;
+  `;
+  expect(straight(source)).toEqual([
+    '"Couldn\'t send the comment"',
+    "`${login}'s token isn’t valid`",
+    "It's over the limit",
+    '"There\'s no tab with that id."',
+    '"The pull requests\' checks"',
+    "Open Settings' list",
+  ]);
+});
+
+test('code keeps its straight apostrophes, and so does text from elsewhere', () => {
+  const source = `
+    import { thing } from './it\\'s.ts';
+    const curly = 'Couldn’t send the comment';
+    const quoted = "Run \`git config user.name 'Ravi'\` first";
+    const typed = <p>Run <code>echo 'it's'</code> or <kbd>don't</kbd></p>;
+    const id = 'diff.markViewed';
+    const byName = { "isn't": 'not' };
+    const later = await import('./it\\'s.ts');
+    const marks = /(?<!\\p{L})'/u;
+    if (message.includes("couldn't find remote ref")) refNotFound();
+    if (has('Failed to connect', "Couldn't connect")) offline();
+    if (new RegExp("can't lock ref").test(message)) locked();
+    if (said === "doesn't exist") missing();
+    switch (said) {
+      case "isn't a repo":
+        break;
+    }
+    const plain = line.replace("it's", 'it’s');
+    console.error("Lo couldn't copy the path:", error);
+    const quotes = "Pushes to 'releases' are refused";
+    const project = \`<!-- Lo's project, with nothing else of the checkout's. -->\`;
+  `;
+  expect(straight(source)).toEqual([]);
+  // What a replace puts in its place is its own.
+  expect(straight("const text = line.replace('x', \"it's\");")).toEqual(['"it\'s"']);
+  // Outside the desktop app, nothing is checked.
+  expect(straight('const said = "Couldn\'t send";', join(ROOT, 'scripts/file.ts'))).toEqual([]);
 });
 
 /** Where the desktop app's strings are: its source, and its packages'. */

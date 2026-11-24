@@ -4,9 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  ago,
   authorOf,
-  bytes,
   findingPlace,
   invalidSummary,
   newerDetails,
@@ -17,8 +15,7 @@ import {
   writtenText,
 } from './says.ts';
 
-const MINUTE = 60_000;
-const DAY = 24 * 60 * MINUTE;
+const DAY = 24 * 60 * 60_000;
 
 /** Who wrote it, for a commit GitHub matched to no account that gives `name`. */
 function named(name: string) {
@@ -52,14 +49,7 @@ describe('the byline', () => {
     expect(named('“ · ”')).toEqual({ kind: 'unknown' });
   });
 
-  it('says when, and the commit by its short ID', () => {
-    expect(ago(0, 30_000)).toBe('just now');
-    expect(ago(0, 5 * MINUTE)).toBe('5 min ago');
-    expect(ago(0, 60 * MINUTE)).toBe('1 h ago');
-    expect(ago(0, 2 * DAY + MINUTE)).toBe('2 d ago');
-    const now = Date.parse('2026-11-22T12:00:00Z');
-    expect(ago(Date.parse('2026-10-12T12:00:00Z'), now)).toBe('Oct 12');
-    expect(ago(Date.parse('2025-11-12T12:00:00Z'), now)).toBe('Nov 12, 2025');
+  it('says the commit by its short ID', () => {
     expect(shortId('a91c4e2ffffffffffffffffffffffffffffffff')).toBe('a91c4e2');
   });
 
@@ -137,8 +127,6 @@ describe('an overview too large to show', () => {
       { kind: 'artifact.md', size: '1 file · 20 KB' },
       { kind: 'Other files', size: '1 file · 300 B' },
     ]);
-    expect(bytes(1)).toBe('1 B');
-    expect(bytes(1.5 * 1024 * 1024)).toBe('1.5 MB');
   });
 });
 

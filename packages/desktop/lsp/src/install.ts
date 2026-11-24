@@ -184,7 +184,7 @@ export class Installer {
   readonly #removing = new Map<string, Removal[]>();
 
   constructor(options: InstallerOptions) {
-    if (!isAbsolute(options.folder)) throw new Error(`${options.folder} isn't an absolute path`);
+    if (!isAbsolute(options.folder)) throw new Error(`${options.folder} isn’t an absolute path`);
     this.#folder = options.folder;
     this.#fetch = options.fetch;
     this.#platform = options.platform ?? currentPlatform();
@@ -296,7 +296,7 @@ export class Installer {
     reason: Error = new Error(`${id} was removed`),
     first?: () => Promise<void>,
   ): Promise<void> {
-    if (!NAME.test(id)) throw new Error(`${id} isn't an ID`);
+    if (!NAME.test(id)) throw new Error(`${id} isn’t an ID`);
     const removals = this.#removing.get(id) ?? [];
     this.#removing.set(id, removals);
     const before = removals.at(-1)?.done;
@@ -507,7 +507,7 @@ export class Installer {
     // So the install outlasts a power loss, rather than being fetched again.
     await syncPath(dirname(target));
     const placed = await this.#whole(target, print, download);
-    if (placed === undefined) throw new Error(`the install at ${target} isn't whole`);
+    if (placed === undefined) throw new Error(`the install at ${target} isn’t whole`);
     return placed;
   }
 
@@ -638,14 +638,14 @@ async function matches(folder: string, unpacked: Unpacked): Promise<boolean> {
   try {
     if (!(await lstat(folder)).isDirectory()) return false;
     await atOnce(unpacked.folders, CHECKS, async (path) => {
-      if (!(await lstat(at(path))).isDirectory()) throw new Error(`${path} isn't as unpacked`);
+      if (!(await lstat(at(path))).isDirectory()) throw new Error(`${path} isn’t as unpacked`);
     });
     await atOnce(unpacked.files, CHECKS, async ([path, size]) => {
       const info = await lstat(at(path));
-      if (!info.isFile() || info.size !== size) throw new Error(`${path} isn't as unpacked`);
+      if (!info.isFile() || info.size !== size) throw new Error(`${path} isn’t as unpacked`);
     });
     await atOnce(unpacked.links, CHECKS, async ([path, target]) => {
-      if ((await readlink(at(path))) !== target) throw new Error(`${path} isn't as unpacked`);
+      if ((await readlink(at(path))) !== target) throw new Error(`${path} isn’t as unpacked`);
     });
     return true;
   } catch {
@@ -742,7 +742,7 @@ async function unpackAll(
       if (build === undefined) throw new Error('a Go program is built, not unpacked');
       return unpacker.program(await build(download), download.entry);
     default:
-      throw new Error(`a download Lo doesn't know: ${JSON.stringify(download satisfies never)}`);
+      throw new Error(`a download Lo doesn’t know: ${JSON.stringify(download satisfies never)}`);
   }
 }
 

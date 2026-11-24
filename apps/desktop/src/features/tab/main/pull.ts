@@ -327,7 +327,7 @@ export class PullTab {
     const problem = this.#problem;
     const asked = problem?.kind === 'ask' && problem.logins.some((each) => sameLogin(each, login));
     if (!asked) {
-      throw new IpcError('refused', `This tab isn't asking which account to open it with.`);
+      throw new IpcError('refused', `This tab isn’t asking which account to open it with.`);
     }
     await this.#options.github.rememberAccountForOwner(this.pull.repo.owner, login);
     this.#acting = { kind: 'account', login };
@@ -548,7 +548,7 @@ export class PullTab {
         }
         default:
           decision satisfies never;
-          throw new Error(`A decision Lo doesn't know: ${JSON.stringify(decision)}.`);
+          throw new Error(`A decision Lo doesn’t know: ${JSON.stringify(decision)}.`);
       }
     } catch (error) {
       if (this.#closed) return false;

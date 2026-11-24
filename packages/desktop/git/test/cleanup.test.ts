@@ -1577,7 +1577,7 @@ test('reading offline stops cleanup collecting replays, and waits for it', async
   expect(Date.now() - began).toBeLessThan(GRACE + STOP_GRACE + 1000);
   await cleaning;
   expect(logged).toContain(
-    "stopped removing owner/old's replayed trees for reading its local copy, to do again later",
+    'stopped removing owner/old’s replayed trees for reading its local copy, to do again later',
   );
   expect(hasObject(folder, loose)).toBe(true);
   // While it's open, cleanup leaves the clone alone.
@@ -1664,7 +1664,7 @@ test('a clone is looked at again once its lock is idle, a few times each launch 
     log: (line) => logged.push(line),
     maintenance: { idleFor: 100, attempts: 2 },
   });
-  const tried = () => logged.filter((line) => line.startsWith("can't repack owner/repo")).length;
+  const tried = () => logged.filter((line) => line.startsWith('can’t repack owner/repo')).length;
 
   for (let open = 0; open < 4; open++) {
     (await cache.open('owner', 'repo')).close();
@@ -1743,6 +1743,6 @@ test('closing the cache waits for a prune it stopped, so no git outlives the cac
   expect(existsSync(join(cache.root, 'lo-cache.lock'))).toBe(false);
   await cleaning;
   expect(logged).toContain(
-    "stopped removing owner/old's replayed trees for closing the cache, to do again later",
+    'stopped removing owner/old’s replayed trees for closing the cache, to do again later',
   );
 });

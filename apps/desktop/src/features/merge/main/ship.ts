@@ -326,7 +326,7 @@ function stepOf(ship: Ship, snapshot: MergeSnapshot, facts: MergeFacts, pull: Pu
       return { kind: 'stop', stop: stopOf(ship.stop, snapshot, facts, pull) };
     default:
       ship satisfies never;
-      throw new Error(`a step Lo doesn't know: ${JSON.stringify(ship)}`);
+      throw new Error(`a step Lo doesn’t know: ${JSON.stringify(ship)}`);
   }
 }
 
@@ -356,7 +356,7 @@ function stopOf(stop: Stop, snapshot: MergeSnapshot, facts: MergeFacts, pull: Pu
       return { kind: 'incomplete', incomplete: stop.incomplete };
     default:
       stop satisfies never;
-      throw new Error(`a stop Lo doesn't know: ${JSON.stringify(stop)}`);
+      throw new Error(`a stop Lo doesn’t know: ${JSON.stringify(stop)}`);
   }
 }
 

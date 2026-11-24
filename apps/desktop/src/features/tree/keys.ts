@@ -125,7 +125,7 @@ export default defineCommands(
     /** Opens a folder, or on an open one goes to what's in it. */
     open: {
       label: 'Expand folder',
-      control: "a closed folder's row in the files tree",
+      control: 'a closed folder’s row in the files tree',
       group: 'View',
       keys: ['l', 'right'],
       when: tree,
@@ -134,7 +134,7 @@ export default defineCommands(
     /** Closes a folder, or goes to the folder a row is in. */
     close: {
       label: 'Collapse folder',
-      control: "an open folder's row in the files tree",
+      control: 'an open folder’s row in the files tree',
       group: 'View',
       keys: ['h', 'left'],
       when: tree,
@@ -149,7 +149,7 @@ export default defineCommands(
      */
     show: {
       label: 'Show file',
-      control: "a file's row in the files tree",
+      control: 'a file’s row in the files tree',
       group: 'Go',
       keys: ['enter'],
       targets: ['file', 'none'],

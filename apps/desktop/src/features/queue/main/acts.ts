@@ -639,7 +639,7 @@ export class QueueActs {
       }
       default:
         answer satisfies never;
-        throw new Error(`an answer Lo doesn't know: ${JSON.stringify(answer)}`);
+        throw new Error(`an answer Lo doesn’t know: ${JSON.stringify(answer)}`);
     }
   }
 

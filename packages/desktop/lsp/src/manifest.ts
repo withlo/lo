@@ -191,7 +191,7 @@ const pinned = z
     }
     for (const part of downloads.flatMap(partsOf)) {
       if (!entry.hosts.includes(new URL(part.url).hostname)) {
-        context.addIssue({ code: 'custom', message: `${part.url} isn't on one of its hosts` });
+        context.addIssue({ code: 'custom', message: `${part.url} isn’t on one of its hosts` });
       }
     }
   });
@@ -224,7 +224,7 @@ export function partsOf(download: Download): readonly Part[] {
     case 'file':
       return [download];
     default:
-      throw new Error(`a download Lo doesn't know: ${JSON.stringify(download satisfies never)}`);
+      throw new Error(`a download Lo doesn’t know: ${JSON.stringify(download satisfies never)}`);
   }
 }
 
@@ -266,7 +266,7 @@ export function parseToolchains(json: unknown): Manifest {
     for (const [platform, download] of Object.entries(entry.platforms)) {
       if (download.unpacked === undefined) {
         throw new Error(
-          `the manifest is invalid: ${id} doesn't say what it unpacks to on ${platform}`,
+          `the manifest is invalid: ${id} doesn’t say what it unpacks to on ${platform}`,
         );
       }
     }

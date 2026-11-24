@@ -265,9 +265,9 @@ export function defineCommands<const D extends Record<string, Declaration>>(
   commands: D,
   options: { readonly scopes?: readonly string[] } = {},
 ): Declarations<D> {
-  if (!NAME.test(feature)) throw new Error(`"${feature}" isn't a feature name, such as diff.`);
+  if (!NAME.test(feature)) throw new Error(`"${feature}" isn’t a feature name, such as diff.`);
   for (const [name, declaration] of Object.entries(commands)) {
-    if (!NAME.test(name)) throw new Error(`"${feature}.${name}" isn't a command id.`);
+    if (!NAME.test(name)) throw new Error(`"${feature}.${name}" isn’t a command id.`);
     for (const spec of declaration.keys) parseKeys(typeof spec === 'string' ? spec : spec.keys);
     if (declaration.editor === true) {
       const id = `${feature}.${name}`;
@@ -325,17 +325,17 @@ export function handlers<const D extends Record<string, Declaration>>(
     const declaration = Object.hasOwn(commands, name) ? commands[name] : undefined;
     if (declaration === undefined) {
       throw new Error(
-        `${feature}.${name} has a handler, but ${feature}'s keys.ts doesn't declare it.`,
+        `${feature}.${name} has a handler, but ${feature}’s keys.ts doesn’t declare it.`,
       );
     }
     if (declaration.vim === 'own') {
       throw new Error(
-        `${feature}.${name} is one of Vim's own keys, which nothing runs, so it has no handler.`,
+        `${feature}.${name} is one of Vim’s own keys, which nothing runs, so it has no handler.`,
       );
     }
     if (declaration.editor === true) {
       throw new Error(
-        `${feature}.${name} is handled by its scope's editor, which nothing here runs, so it has no handler.`,
+        `${feature}.${name} is handled by its scope’s editor, which nothing here runs, so it has no handler.`,
       );
     }
   }

@@ -9,7 +9,6 @@ import { IpcError } from '../../../ipc/contract.ts';
 import { defineSetting, type SettingsState } from '../contract.ts';
 import { z } from 'zod';
 import {
-  ago,
   changeSetting,
   defineRow,
   rows,
@@ -238,19 +237,5 @@ describe('watchSetting', () => {
     stop();
     act(() => showSettings(state({})));
     expect(heard).toEqual(['split', 'inline']);
-  });
-});
-
-describe('ago', () => {
-  const now = Date.parse('2026-11-15T12:00:00.000Z');
-
-  it('says a time as how long ago it was, then as its date', () => {
-    expect(ago(now - 30 * 1000, now)).toBe('just now');
-    expect(ago(now - 5 * 60 * 1000, now)).toBe('5 min ago');
-    expect(ago(now - 2 * 60 * 60 * 1000, now)).toBe('2 h ago');
-    expect(ago(Date.parse('2026-11-03T12:00:00.000Z'), now)).toBe('12 d ago');
-    expect(ago(Date.parse('2026-09-12T12:00:00.000Z'), now)).toBe('Sep 12');
-    expect(ago(Date.parse('2025-11-12T12:00:00.000Z'), now)).toBe('Nov 12, 2025');
-    expect(ago(Number.NaN, now)).toBe('just now');
   });
 });

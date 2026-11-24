@@ -159,10 +159,10 @@ export async function readAsked(sides: ViewSides, asked: Asked): Promise<AskedFi
       : sides.old !== undefined && asked.key === sides.old.commit
         ? 'old'
         : undefined;
-  if (side === undefined) throw new IpcError('refused', "That isn't a tree this view shows.");
+  if (side === undefined) throw new IpcError('refused', 'That isn’t a tree this view shows.');
   const { commit, tree } = side === 'new' ? sides.new : (sides.old ?? sides.new);
   const repo = await sides.clone();
-  if (!repo) throw new IpcError('unavailable', "The pull request's local copy isn't open.");
+  if (!repo) throw new IpcError('unavailable', 'The pull request’s local copy isn’t open.');
   const path = Buffer.from(asked.path, 'utf8');
   let version;
   try {
@@ -172,7 +172,7 @@ export async function readAsked(sides: ViewSides, asked: Asked): Promise<AskedFi
     version = undefined;
   }
   if (!version || (version.mode !== 'regular' && version.mode !== 'executable')) {
-    throw new IpcError('missing', `There's no file at ${asked.path} in that tree.`);
+    throw new IpcError('missing', `There’s no file at ${asked.path} in that tree.`);
   }
   const bytes = await blob(repo, commit, path, version.oid);
   return {

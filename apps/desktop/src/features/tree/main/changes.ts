@@ -21,7 +21,7 @@ function changeOf(file: ChangedFile): Change {
       return change.kind;
     default:
       change satisfies never;
-      throw new Error(`A change Lo doesn't know: ${JSON.stringify(change)}.`);
+      throw new Error(`A change Lo doesn’t know: ${JSON.stringify(change)}.`);
   }
 }
 

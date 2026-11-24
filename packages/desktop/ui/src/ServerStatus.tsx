@@ -2,7 +2,7 @@ import { cva } from 'class-variance-authority';
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
 import { Button } from './Button.tsx';
-import { formatBytes } from './bytes.ts';
+import { bytes } from './formats.ts';
 import { besideIn, handOffFocus } from './focus.ts';
 import { showFormat } from './controls.ts';
 import { Popover } from './Popover.tsx';
@@ -142,8 +142,8 @@ function percentOf(percent: number): number {
 
 /** "38 / 112 MB": how much of a download has come, in the whole's unit where they share one. */
 function measure(done: number, total: number): string {
-  const part = formatBytes(done);
-  const whole = formatBytes(total);
+  const part = bytes(done);
+  const whole = bytes(total);
   const unit = part.slice(part.lastIndexOf(' '));
   return whole.endsWith(unit) ? `${part.slice(0, -unit.length)} / ${whole}` : `${part} / ${whole}`;
 }
@@ -182,7 +182,7 @@ function words<T>(name: T, state: ServerState): (T | string)[] {
       return ['Language servers off'];
     default:
       state satisfies never;
-      throw new Error(`A language server state Lo doesn't know: ${JSON.stringify(state)}.`);
+      throw new Error(`A language server state Lo doesn’t know: ${JSON.stringify(state)}.`);
   }
 }
 
@@ -230,7 +230,7 @@ export function serverBall(state: ServerState): StatusBallState {
       return 'off';
     default:
       state satisfies never;
-      throw new Error(`A language server state Lo doesn't know: ${JSON.stringify(state)}.`);
+      throw new Error(`A language server state Lo doesn’t know: ${JSON.stringify(state)}.`);
   }
 }
 
@@ -265,7 +265,7 @@ function trustLabel(action: ServerTrust['action']): string {
       return 'Stop trusting';
     default:
       action satisfies never;
-      throw new Error(`A way to change trust Lo doesn't know: ${JSON.stringify(action)}.`);
+      throw new Error(`A way to change trust Lo doesn’t know: ${JSON.stringify(action)}.`);
   }
 }
 
@@ -308,7 +308,7 @@ function cantRun(state: ServerState): CantRun | undefined {
           return { details: why.message };
         default:
           why satisfies never;
-          throw new Error(`A failure Lo doesn't know: ${JSON.stringify(why)}.`);
+          throw new Error(`A failure Lo doesn’t know: ${JSON.stringify(why)}.`);
       }
     }
     case 'missing':
@@ -328,7 +328,7 @@ function cantRun(state: ServerState): CantRun | undefined {
       return undefined;
     default:
       state satisfies never;
-      throw new Error(`A language server state Lo doesn't know: ${JSON.stringify(state)}.`);
+      throw new Error(`A language server state Lo doesn’t know: ${JSON.stringify(state)}.`);
   }
 }
 
@@ -353,7 +353,7 @@ function lineOf(state: ServerState, version: string | undefined): ReactNode {
       return undefined;
     default:
       state satisfies never;
-      throw new Error(`A language server state Lo doesn't know: ${JSON.stringify(state)}.`);
+      throw new Error(`A language server state Lo doesn’t know: ${JSON.stringify(state)}.`);
   }
 }
 

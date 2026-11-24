@@ -16,8 +16,8 @@ describe('defineContract', () => {
 
   it.each([
     ['a feature name that isn', 'Notes', {}, {}, 'lowercase letters and digits'],
-    ['a request name that isn', 'notes', { 'add-note': 0 }, {}, "isn't a request or topic name"],
-    ['a topic name that isn', 'notes', {}, { 'notes.changed': 0 }, "isn't a request or topic name"],
+    ['a request name that isn', 'notes', { 'add-note': 0 }, {}, 'isn’t a request or topic name'],
+    ['a topic name that isn', 'notes', {}, { 'notes.changed': 0 }, 'isn’t a request or topic name'],
     ['a name used twice', 'notes', { changed: 0 }, { changed: 0 }, 'both a request and a topic'],
     ['the client', 'notes', { subscribe: 0 }, {}, '"subscribe" is taken'],
   ])("refuses %s't one", (_case, feature, requests, topics, message) => {

@@ -101,7 +101,7 @@ function blockerOf(found: ReviewBlocker, snapshot: MergeSnapshot, url: string): 
       return { kind: 'unexplained', url: pageOf(found.url) ?? url };
     default:
       found satisfies never;
-      throw new Error(`A blocker Lo doesn't know: ${JSON.stringify(found)}`);
+      throw new Error(`A blocker Lo doesn’t know: ${JSON.stringify(found)}`);
   }
 }
 

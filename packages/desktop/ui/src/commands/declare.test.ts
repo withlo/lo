@@ -39,10 +39,10 @@ describe('declarations', () => {
         bad: { label: 'Bad', group: 'Review', keys: [{ keys: 'hyper+x', on: 'mac' }] },
       }),
     ).toThrow('isn’t a modifier');
-    expect(() => defineCommands('my-feature', {})).toThrow('"my-feature" isn\'t a feature name');
+    expect(() => defineCommands('my-feature', {})).toThrow('"my-feature" isn’t a feature name');
     expect(() =>
       defineCommands('diff', { 'mark-viewed': { label: 'x', group: 'Review', keys: [] } }),
-    ).toThrow('"diff.mark-viewed" isn\'t a command id.');
+    ).toThrow('"diff.mark-viewed" isn’t a command id.');
   });
 
   test('keep the scopes a feature names', () => {
@@ -99,10 +99,10 @@ describe('handlers', () => {
     expect(() =>
       // @ts-expect-error: Vim's own keys have no handler.
       handlers(keys, { ...others, down: { run() {} } }),
-    ).toThrow("diff.down is one of Vim's own keys, which nothing runs, so it has no handler.");
+    ).toThrow('diff.down is one of Vim’s own keys, which nothing runs, so it has no handler.');
     expect(() =>
       // @ts-expect-error: the feature declares no such command.
       handlers(keys, { ...others, unknown: { run() {} } }),
-    ).toThrow("diff.unknown has a handler, but diff's keys.ts doesn't declare it.");
+    ).toThrow('diff.unknown has a handler, but diff’s keys.ts doesn’t declare it.');
   });
 });

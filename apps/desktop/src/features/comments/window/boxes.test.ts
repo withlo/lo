@@ -117,7 +117,6 @@ vi.mock('./main.ts', async (original) => ({
         kind: 'prepared',
         name,
         bytes: new Uint8Array(bytes ?? []),
-        size: '8 bytes',
         metadata: { kind: 'image', removed: { location: false, other: false, embedded: false } },
         paidPlan: false,
       }),

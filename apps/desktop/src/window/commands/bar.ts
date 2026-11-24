@@ -89,7 +89,7 @@ export function onMenuStale(listener: () => void): () => void {
  */
 export function runFromBar(registry: Registry, id: string, focused: Target): true | string {
   const command = registry.command(id);
-  if (!command?.bar) return `${id} isn't in the app menu.`;
+  if (!command?.bar) return `${id} isn’t in the app menu.`;
   const target = keyTarget(command, focused);
   if (command.toggle === 'choice' && registry.checked(id, target) === true) return true;
   registry.drop();

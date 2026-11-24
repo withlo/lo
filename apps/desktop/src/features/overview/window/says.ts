@@ -3,40 +3,10 @@
 // fetched again. Plain functions of what main and the check found, so each wording is tested alone.
 
 import { FORMAT, LIMITS, type Finding, type SizeKind, type Sizes } from '@lo/artifact';
-import { formatBytes } from '@lo/ui';
+import { ago, bytes, clock } from '@lo/ui';
 
 import { explain } from '../../../window/explain.ts';
 import type { Byline, OverviewCommit, Problem } from '../contract.ts';
-
-/** `seconds` in the largest whole unit: "5 min", "2 h", "3 d"; nothing under a minute. */
-function whole(seconds: number): string | undefined {
-  if (seconds < 60) return undefined;
-  if (seconds < 3_600) return `${Math.floor(seconds / 60)} min`;
-  if (seconds < 86_400) return `${Math.floor(seconds / 3_600)} h`;
-  return `${Math.floor(seconds / 86_400)} d`;
-}
-
-/** How many days back a time is still said as how long ago it was, rather than as its date. */
-const AGO_DAYS = 30;
-
-/**
- * How long before `now` `then` was: "just now", "5 min ago", "2 d ago"; past 30 days, its date:
- * "Nov 12", or "Nov 12, 2025" in another year.
- */
-export function ago(then: number, now: number): string {
-  const seconds = Math.floor(Math.max(0, now - then) / 1000);
-  if (seconds > AGO_DAYS * 86_400) {
-    const date = new Date(then);
-    const sameYear = date.getFullYear() === new Date(now).getFullYear();
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      ...(sameYear ? {} : { year: 'numeric' }),
-    });
-  }
-  const said = whole(seconds);
-  return said === undefined ? 'just now' : `${said} ago`;
-}
 
 /**
  * Who wrote an overview: their login, when GitHub matched the commit to an account; else the name
@@ -79,11 +49,6 @@ export function shortId(id: string): string {
 /** `count` and a noun, made plural past one: "1 problem", "2 problems". */
 function counted(count: number, one: string, many = `${one}s`): string {
   return `${count.toLocaleString('en-US')} ${count === 1 ? one : many}`;
-}
-
-/** A size in bytes as people read it: "820 B", "48 KB", "74 MB". */
-export function bytes(size: number): string {
-  return formatBytes(size);
 }
 
 /**
@@ -154,7 +119,7 @@ export function tooLargeWords(what: 'text' | 'entries' | 'bytes', sizes: Sizes):
     case 'entries':
       return `It has more than ${counted(LIMITS.entries, 'file and folder', 'files and folders')}.`;
     case 'bytes':
-      return `It’s ${bytes(sizes.bytes)}, over the ${bytes(LIMITS.commit)} limit.`;
+      return `It’s ${bytes(sizes.bytes, 'up')}, over the ${bytes(LIMITS.commit)} limit.`;
     default:
       what satisfies never;
       return 'It’s over the size limit.';
@@ -182,11 +147,6 @@ export function newerDetails(format: number): string {
   }.`;
 }
 
-/** A time of day, in the system's own format: "14:05". */
-function timeOfDay(at: number): string {
-  return new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-}
-
 /**
  * Why the overview couldn't be fetched, as an error's reason says it: its cause, such as "GitHub
  * didn’t respond.", or nothing where it isn't known, and when it's fetched again, `retryAt`, which
@@ -201,7 +161,7 @@ export function problemReason(problem: Problem): { cause: string; retryAt?: numb
     case 'rateLimited':
       return problem.secondary
         ? { cause: 'GitHub’s rate limit was reached.', retryAt }
-        : { cause: `GitHub’s rate limit resets at ${timeOfDay(retryAt)}.` };
+        : { cause: `GitHub’s rate limit resets at ${clock(retryAt)}.` };
     case 'blocked':
       return {
         cause:

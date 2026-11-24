@@ -34,7 +34,7 @@ startCommands();
 startFeatures();
 
 const root = document.getElementById('root');
-if (!root) throw new Error("Lo's page has no #root element.");
+if (!root) throw new Error('Lo’s page has no #root element.');
 createRoot(root).render(
   <StrictMode>
     <Slots views={featureViews()}>

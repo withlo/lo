@@ -199,8 +199,8 @@ export class Images {
         throw new ImageError(
           'refused',
           from === undefined
-            ? `${address.host} isn't one of GitHub's image hosts`
-            : `${from.host} redirected to ${address.host}, which isn't one of GitHub's image hosts for it`,
+            ? `${address.host} isn’t one of GitHub’s image hosts`
+            : `${from.host} redirected to ${address.host}, which isn’t one of GitHub’s image hosts for it`,
         );
       }
       const response = await this.#request(
@@ -241,7 +241,7 @@ export class Images {
     } catch {
       // What the header said would be in the error, and it may be the token, so the error is left
       // behind.
-      throw new ImageError('failed', `Lo couldn't ask ${address.host} for it`);
+      throw new ImageError('failed', `Lo couldn’t ask ${address.host} for it`);
     }
     try {
       return await this.#fetch(this.#route(address), {
@@ -257,7 +257,7 @@ export class Images {
         'failed',
         isTimeout(error, signal)
           ? `it took longer than ${this.#limits.deadline / 1000} s`
-          : `Lo couldn't reach ${address.host}`,
+          : `Lo couldn’t reach ${address.host}`,
       );
     }
   }
@@ -349,7 +349,7 @@ function firstAddress(asked: ImageAsked): URL {
       return new URL(`https://${AVATAR_HOST}/${asked.login}?s=${asked.size}`);
     default:
       asked satisfies never;
-      throw new Error(`An image Lo doesn't know: ${JSON.stringify(asked)}.`);
+      throw new Error(`An image Lo doesn’t know: ${JSON.stringify(asked)}.`);
   }
 }
 
@@ -412,7 +412,7 @@ export function keyOf(asked: ImageAsked, as?: string): string {
       return `avatar ${asked.login.toLowerCase()} ${asked.size}`;
     default:
       asked satisfies never;
-      throw new Error(`An image Lo doesn't know: ${JSON.stringify(asked)}.`);
+      throw new Error(`An image Lo doesn’t know: ${JSON.stringify(asked)}.`);
   }
 }
 

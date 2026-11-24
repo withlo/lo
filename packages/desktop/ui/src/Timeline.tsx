@@ -316,7 +316,7 @@ function Line({ children, when }: { children: ReactNode; when?: string | undefin
 export interface TimelineEventProps extends TimelineRowAttributes {
   glyph: TimelineGlyph;
   tone?: TimelineTone | undefined;
-  /** How long ago, as the row says it: "3 days ago". */
+  /** How long ago, as the row says it: "3 d ago". */
   when?: string | undefined;
   focused?: boolean | undefined;
   /** The sentence: who did what, with {@link TimelineName} for the names and {@link Label}s. */
@@ -707,7 +707,7 @@ function Reviewer({ reviewer }: { reviewer: TimelineReviewer }) {
 export interface TimelineDescriptionProps extends TimelineRowAttributes {
   author: string;
   image?: string | undefined;
-  /** How long ago it was opened: "3 days ago". */
+  /** How long ago it was opened: "3 d ago". */
   when: string;
   /** The description, already drawn. A pull request with none says so. */
   body?: ReactNode;

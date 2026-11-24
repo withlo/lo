@@ -97,14 +97,14 @@ describe('defineSetting', () => {
     // The type checker would stop this too; the file's values never come through it.
     const schema: z.ZodType<string> = layout;
     expect(() => defineSetting('diff.layout', schema, 'wrapped', 'split or inline', row)).toThrow(
-      "The default of the setting diff.layout isn't a value its schema accepts.",
+      'The default of the setting diff.layout isn’t a value its schema accepts.',
     );
   });
 
   it('refuses a default that is not JSON, which is all the file holds', () => {
     expect(() =>
       defineSetting('when', z.date(), new Date(0), 'a date', { ...row, group: 'file' }),
-    ).toThrow("The default of the setting when isn't JSON");
+    ).toThrow('The default of the setting when isn’t JSON');
   });
 });
 

@@ -269,12 +269,12 @@ test('a workspace outside the server’s home, or one Lo couldn’t make, starts
   for (const [workspace, why] of [
     [
       ({ root }: { root: string }) => Promise.resolve({ folder: root, notifications: [] }),
-      "a server's workspace must be in its home",
+      'a server’s workspace must be in its home',
     ],
     [
       ({ home }: { home: string }) =>
         Promise.resolve({ folder: join(home, '..'), notifications: [] }),
-      "a server's workspace must be in its home",
+      'a server’s workspace must be in its home',
     ],
     [() => Promise.reject(tooMany), 'The checkout has more than 2 C# files.'],
   ] as const) {

@@ -68,5 +68,5 @@ export function runControl(
   target: Target = NO_TARGET,
   registry: Registry | undefined = held,
 ): true | string {
-  return registry?.run(id, target) ?? `There's no command called ${id}.`;
+  return registry?.run(id, target) ?? `There’s no command called ${id}.`;
 }

@@ -174,14 +174,14 @@ describe('a click in the app menu', () => {
     });
     expect(runFromBar(registry, 'view.inline', { kind: 'none' })).toBe(true);
     expect(runFromBar(registry, 'view.hidden', { kind: 'none' })).toBe(
-      "view.hidden isn't in the app menu.",
+      'view.hidden isn’t in the app menu.',
     );
     expect(runFromBar(registry, 'view.missing', { kind: 'none' })).toBe(
-      "view.missing isn't in the app menu.",
+      'view.missing isn’t in the app menu.',
     );
     // Still only where it can run.
     expect(runFromBar(registry, 'view.threads', { kind: 'none' })).toBe(
-      "Threads panel doesn't apply here.",
+      'Threads panel doesn’t apply here.',
     );
     expect(ran).toEqual(['inline']);
   });
@@ -297,7 +297,7 @@ describe('a step the app menu shares with a key in the diff', () => {
     expect(enabled(none)).toBe(false);
     const hidden = diffAt(line, true);
     expect(enabled(none)).toBe(false);
-    expect(runFromBar(registry, 'diff.nextFile', none)).toBe("Next file doesn't apply here.");
+    expect(runFromBar(registry, 'diff.nextFile', none)).toBe('Next file doesn’t apply here.');
     hidden();
     expect(ran).toEqual([]);
   });

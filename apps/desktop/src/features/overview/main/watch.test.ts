@@ -981,7 +981,7 @@ describe('fetching', () => {
       overview: null,
       problem: {
         kind: 'failed',
-        message: "GitHub sent a file of the overview that isn't the one its ID names.",
+        message: 'GitHub sent a file of the overview that isn’t the one its ID names.',
       },
     });
     expect(blobs.has(id ?? '')).toBe(false);
@@ -1161,7 +1161,7 @@ describe('the code', () => {
     await reading;
     expect(stopped).toBe(true);
     expect(() => tab.readCode('a', () => Promise.resolve({ kind: 'waiting' }))).toThrow(
-      "There's no pull request's tab with that id.",
+      'There’s no pull request’s tab with that id.',
     );
   });
 });

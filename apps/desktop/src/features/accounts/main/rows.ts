@@ -124,14 +124,14 @@ function readAccount(row: Row): Account {
 
 function readScopes(json: string): string[] {
   const scopes: unknown = JSON.parse(json);
-  if (!Array.isArray(scopes)) throw new TypeError("scopes isn't a list");
+  if (!Array.isArray(scopes)) throw new TypeError('scopes isn’t a list');
   return scopes.map((scope: unknown) => {
-    if (typeof scope !== 'string') throw new TypeError("scopes isn't a list of strings");
+    if (typeof scope !== 'string') throw new TypeError('scopes isn’t a list of strings');
     return scope;
   });
 }
 
 function readSource(source: string): AccountSource {
   if (source === 'deviceFlow' || source === 'gh') return source;
-  throw new TypeError("source isn't one Lo knows");
+  throw new TypeError('source isn’t one Lo knows');
 }

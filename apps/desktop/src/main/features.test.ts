@@ -147,7 +147,7 @@ describe('createRouter', () => {
     for (const sender of ['https://example.com/', 'about:blank', undefined]) {
       expect(await routes.answer('notes.count', sender, undefined)).toEqual({
         ok: false,
-        error: { code: 'forbidden', message: "notes.count answers only Lo's own page." },
+        error: { code: 'forbidden', message: 'notes.count answers only Lo’s own page.' },
       });
     }
   });
@@ -155,7 +155,7 @@ describe('createRouter', () => {
   it("refuses a request that doesn't exist", async () => {
     expect(await router().ask('notes.nothing')).toEqual({
       ok: false,
-      error: { code: 'unavailable', message: "There's no request named notes.nothing." },
+      error: { code: 'unavailable', message: 'There’s no request named notes.nothing.' },
     });
   });
 
@@ -282,7 +282,7 @@ describe('stopOrder', () => {
   it('refuses features that use each other’s services', () => {
     expect(() =>
       stopOrder([plain('tab', { uses: [tree] }), plain('tree', { uses: [tab] }), plain('a')]),
-    ).toThrow("tab, tree use each other's services, so none of them can stop first.");
+    ).toThrow('tab, tree use each other’s services, so none of them can stop first.');
   });
 });
 
@@ -527,7 +527,7 @@ describe('services', () => {
   it('refuses to start while a service a service.ts defines goes unprovided', () => {
     const silent = defineFeature(notes, { handlers });
     expect(() => start([silent, user], [board])).toThrow(
-      "The notes feature defines notes.board in its service.ts, but doesn't provide it.",
+      'The notes feature defines notes.board in its service.ts, but doesn’t provide it.',
     );
   });
 

@@ -147,7 +147,7 @@ function refuse(refusal: CacheRefusal): StartupError {
   const said = refusal.said === undefined ? '' : `: ${refusal.said}`;
   return new StartupError(
     { kind: 'cacheFolder', ...refusal },
-    `Lo keeps its cache in the folder macOS keeps for this user's caches${where}, but won't use it: ${refusal.why}${said}`,
+    `Lo keeps its cache in the folder macOS keeps for this user’s caches${where}, but won’t use it: ${refusal.why}${said}`,
   );
 }
 
@@ -648,7 +648,7 @@ class GitHost implements MainGit {
 
   async setCap(bytes: number): Promise<void> {
     if (!Number.isSafeInteger(bytes) || bytes <= 0) {
-      throw new RangeError(`The cache's cap is a whole number of bytes over 0, not ${bytes}.`);
+      throw new RangeError(`The cache’s cap is a whole number of bytes over 0, not ${bytes}.`);
     }
     this.#cap = bytes;
     await this.#cache?.setCap(bytes);
@@ -782,7 +782,7 @@ export function troubleOf(status: Exclude<GitStatus, { status: 'found' }>): GitT
       };
     default:
       throw new Error(
-        `What Lo found of git isn't known: ${JSON.stringify(status satisfies never)}`,
+        `What Lo found of git isn’t known: ${JSON.stringify(status satisfies never)}`,
       );
   }
 }

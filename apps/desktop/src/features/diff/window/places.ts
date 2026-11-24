@@ -229,7 +229,7 @@ function placeOf(target: Target): { file: string; side: Side } | undefined {
     case 'none':
       return undefined;
     default:
-      throw new Error(`A target Lo doesn't know: ${JSON.stringify(target satisfies never)}`);
+      throw new Error(`A target Lo doesn’t know: ${JSON.stringify(target satisfies never)}`);
   }
 }
 

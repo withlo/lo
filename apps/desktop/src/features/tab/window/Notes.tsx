@@ -4,6 +4,7 @@
 // copy and its rate limit, as status bar items, with their details. `banners.ts` has the words.
 
 import {
+  ago,
   Banner,
   BannerDrawn,
   BannerPlaceProvider,
@@ -44,7 +45,6 @@ import { contract as settings } from '../../settings/contract.ts';
 import { viewIds, type Connection, type LocalState, type PullView } from '../contract.ts';
 import {
   accountChoice,
-  ago,
   bannersFor,
   blocked,
   connectionNote,

@@ -16,7 +16,7 @@ test('names must be safe as folder names', () => {
   expect(fine.map(said)).toEqual(fine.map(() => 'accepted'));
   const unsafe = ['', '.', '..', 'a/b', '../x', 'a b', 'a\nb', 'ä', 'a'.repeat(101)];
   expect(unsafe.map(said)).toEqual(
-    unsafe.map((name) => `\`${name}\` isn't a valid repository name`),
+    unsafe.map((name) => `\`${name}\` isn’t a valid repository name`),
   );
 });
 

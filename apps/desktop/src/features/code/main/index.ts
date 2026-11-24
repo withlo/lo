@@ -483,7 +483,7 @@ function install(
   const installing = serverInstaller(context);
   if (!installing) throw new Error('Lo has no cache to download language servers into.');
   const pinned = pinnedIn(MANIFEST, id);
-  if (!pinned) throw new Error(`Lo's list of language servers has no ${id}.`);
+  if (!pinned) throw new Error(`Lo’s list of language servers has no ${id}.`);
   return installing.install(id, pinned, {
     signal,
     progress,
@@ -505,7 +505,7 @@ async function installToolchain(
   const installing = toolchainsInstaller(context);
   if (!installing) throw new Error('Lo has no cache to download toolchains into.');
   const pinned = pinnedIn(SYSTEM_TOOLCHAINS, id);
-  if (!pinned) throw new Error(`Lo's list of toolchains has no ${id}.`);
+  if (!pinned) throw new Error(`Lo’s list of toolchains has no ${id}.`);
   let downloaded = false;
   try {
     const installed = await installing.install(id, pinned, {
@@ -714,7 +714,7 @@ export default defineFeature(contract, {
     async untrust(input, context) {
       if ('view' in input) {
         const view = viewInfo(context, input.view);
-        if (!view) throw new IpcError('missing', "There's no pull request's tab with that id.");
+        if (!view) throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
         viewsOf().update(input.view);
         await untrust(context, meant(viewsOf().trustedBy(input.view)));
         return;
@@ -724,7 +724,7 @@ export default defineFeature(contract, {
     dismiss({ view }, context) {
       const info = viewInfo(context, view);
       if (!info || !dismissed) {
-        throw new IpcError('missing', "There's no pull request's tab with that id.");
+        throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
       }
       dismissed.add(info.repo, Date.now());
       viewsOf().updateAll();

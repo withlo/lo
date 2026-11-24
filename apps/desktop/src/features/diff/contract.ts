@@ -80,6 +80,23 @@ export const comparisonKey = z.string().min(1).max(1024);
 export const sinceKey = z.string().min(1).max(1024);
 
 /**
+ * What couldn't be read, for the window to word: the local copy's changes (`local`), the comparison
+ * of two revisions (`compare`), GitHub's changed files (`github`), or changes over the local copy's
+ * `limit` in bytes (`tooLarge`), with GitHub's diff shown in their place when `fellBack`.
+ */
+export const diffProblem = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('local') }),
+  z.strictObject({ kind: z.literal('compare') }),
+  z.strictObject({ kind: z.literal('github') }),
+  z.strictObject({
+    kind: z.literal('tooLarge'),
+    limit: z.number().int().nonnegative(),
+    fellBack: z.boolean(),
+  }),
+]);
+export type DiffProblem = z.output<typeof diffProblem>;
+
+/**
  * A pull request's tab's diff, each time it changes: the head it's of, which is the head on
  * screen, or the newer revision of the two compared, named by `comparison`; for the whole pull
  * request of a stack's layer, the commit it's compared with, `compareFrom`, which another starts
@@ -105,19 +122,20 @@ export const diffState = z.strictObject({
   files: z.array(fileVersions).nullable(),
   partial: z.boolean(),
   uncompared: z.boolean(),
-  problem: z.string().nullable(),
+  problem: diffProblem.nullable(),
 });
 export type DiffState = z.output<typeof diffState>;
 
 /**
  * A file's texts, as `diff.texts` replies: both sides from the local copy, `null` for a side it
  * isn't on; GitHub's patch of it; or why it can't be had: `why` as it was said, and `reason`, the
- * cause in the window's words, where it's known.
+ * cause in the window's words, where it's known, or `tooLarge`, the limit a side is over, which the
+ * window words.
  */
 export type FileText =
   | { kind: 'texts'; old: string | null; new: string | null }
   | { kind: 'patch'; patch: string }
-  | { kind: 'missing'; why: string; reason?: string };
+  | { kind: 'missing'; why: string; reason?: string; tooLarge?: TooLarge };
 
 /** The most files one `diff.texts` asks for. */
 export const TEXTS_LIMIT = 2000;

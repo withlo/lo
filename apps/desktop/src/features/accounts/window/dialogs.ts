@@ -30,7 +30,7 @@ function finish(dialog: OpenDialog): void {
     case 'signOut':
       break;
     default:
-      throw new Error(`A dialog Lo doesn't know: ${JSON.stringify(dialog satisfies never)}`);
+      throw new Error(`A dialog Lo doesn’t know: ${JSON.stringify(dialog satisfies never)}`);
   }
 }
 

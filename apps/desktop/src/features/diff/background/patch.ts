@@ -64,7 +64,7 @@ export function patchShown(text: string, options: { budget?: number } = {}): Pat
     }
     if (change) changes.push(change);
     if (lines.old.length !== hunk.old.end || lines.new.length !== hunk.new.end) {
-      throw new Error("a hunk's lines don't fill the rows its header says");
+      throw new Error('a hunk’s lines don’t fill the rows its header says');
     }
   }
   const diff = diffOfChanges(changes, lines.old, lines.new, {

@@ -427,10 +427,10 @@ export function describeDistrust(distrust: Distrust): string {
     case 'folderWritable':
       return `other users can change ${distrust.path}`;
     case 'unchecked':
-      return `${distrust.path} can't be checked (${distrust.said ?? 'no reason given'})`;
+      return `${distrust.path} can’t be checked (${distrust.said ?? 'no reason given'})`;
     default:
       throw new Error(
-        `A distrust Lo doesn't know: ${JSON.stringify(distrust.why satisfies never)}`,
+        `A distrust Lo doesn’t know: ${JSON.stringify(distrust.why satisfies never)}`,
       );
   }
 }
@@ -467,7 +467,7 @@ export async function whyDistrusted(
   groups: readonly number[],
 ): Promise<string | undefined> {
   const real = await realpath(program).catch(() => undefined);
-  if (real === undefined) return "it can't be found";
+  if (real === undefined) return 'it can’t be found';
   const distrust = await distrustProgram(program, real, groups);
   return distrust === undefined ? undefined : describeDistrust(distrust);
 }

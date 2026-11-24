@@ -15,11 +15,10 @@
 // `https` address pasted or dropped goes in as an image; files dropped before it said go in, and
 // out again before they're sent. Nothing is uploaded again by itself.
 
-import type { Metadata } from '@lo/github';
-import { formatBytes } from '@lo/ui';
+import { ATTACHMENT_KINDS, type AttachmentRefusal, type Metadata } from '@lo/github';
+import { bytes, clock } from '@lo/ui';
 import type { Composer } from '@lo/ui/code';
 
-import { clockOf } from '../../../window/time.ts';
 import { offlineLabel } from '../../../window/explain.ts';
 import { pullOf, runOf } from '../../tab/window/shared.ts';
 import {
@@ -238,8 +237,8 @@ const NAMED = /\[Uploading ((?:\\[^\n]|[^\]\\\n]){1,300})…\]\(lo-upload:([0-9a
 
 /** A new token for an upload's placeholder. */
 function newToken(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(8));
-  return [...bytes].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+  const random = crypto.getRandomValues(new Uint8Array(8));
+  return [...random].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 /**
@@ -390,11 +389,6 @@ export function whyNoAttach(view: string): string | undefined {
   return undefined;
 }
 
-/** `bytes` as people read sizes, as Lo writes them everywhere: "512 B", "38 KB", "6.2 MB". */
-export function sizeText(bytes: number): string {
-  return formatBytes(bytes);
-}
-
 /**
  * Whether a file's name is of a kind GitHub takes, so it gets a placeholder at once. The
  * background process decides, from its bytes as well.
@@ -493,6 +487,26 @@ export function metadataNote(name: string, metadata: Metadata): string | undefin
   }
 }
 
+/** Why Lo won't attach a file, as the box says it: "It’s larger than GitHub’s 10 MB." */
+export function refusalSays(refusal: AttachmentRefusal): string {
+  switch (refusal.reason) {
+    case 'unsupported':
+      return 'GitHub takes PNG, JPEG, GIF, WebP and SVG images and MP4, MOV and WebM videos.';
+    case 'empty':
+      return 'It’s empty.';
+    case 'tooLarge':
+      return `It’s larger than GitHub’s ${bytes(refusal.limit)}.`;
+    case 'mislabelled':
+      return `Its name says ${ATTACHMENT_KINDS[refusal.kind].label}, but it isn’t.`;
+    case 'unreadable':
+      return refusal.what === 'location'
+        ? 'Its location data can’t be removed.'
+        : 'Its metadata can’t be read.';
+    default:
+      throw new Error(`A refusal Lo doesn’t know: ${JSON.stringify(refusal satisfies never)}`);
+  }
+}
+
 /** A reason that came as part of a sentence, as a line of its own: "It’s empty." */
 function asReason(why: string): string {
   const line = why.charAt(0).toUpperCase() + why.slice(1);
@@ -510,14 +524,14 @@ export function refusedNote(
 ): { title?: string; text: string } {
   switch (refusal.kind) {
     case 'file':
-      return { title: couldntAttach(name), text: asReason(refusal.why) };
+      return { title: couldntAttach(name), text: refusalSays(refusal.refusal) };
     case 'cantWrite':
     case 'needsGh':
       return { text: offNote(refusal, login).text };
     case 'paused':
       return {
         title: couldntAttach(name),
-        text: `GitHub’s rate limit resets at ${clockOf(refusal.until)}.`,
+        text: `GitHub’s rate limit resets at ${clock(refusal.until)}.`,
       };
     case 'signIn':
       return { text: 'Sign in to attach files' };
@@ -583,7 +597,7 @@ export function attachFiles(box: Attachable, files: readonly File[]): void {
     const attachment: Attachment = {
       key: uploadKey(),
       name: file.name,
-      size: sizeText(file.size),
+      size: bytes(file.size),
       token,
       placeholder: placeholderFor(file.name, token),
       progress: undefined,
@@ -613,12 +627,12 @@ async function refuseUnread(attaching: Attaching, file: File): Promise<void> {
     const answer = await commentsJobs().prepare({ name: file.name, bytes: null });
     why =
       answer.kind === 'refused'
-        ? answer.why
+        ? refusalSays(answer.refusal)
         : 'GitHub takes PNG, JPEG, GIF, WebP, SVG, MP4, MOV and WebM.';
   } catch (error) {
-    why = describe(error);
+    why = asReason(describe(error));
   }
-  attaching.say(`upload-refused-${uploadKey()}`, asReason(why), 'danger', couldntAttach(file.name));
+  attaching.say(`upload-refused-${uploadKey()}`, why, 'danger', couldntAttach(file.name));
 }
 
 /** Prepares `file` in the background process, then uploads it through main. */
@@ -639,9 +653,9 @@ async function attachOne(attaching: Attaching, file: File, attachment: Attachmen
   };
   let prepared: Prepared;
   try {
-    const bytes = new Uint8Array(await file.arrayBuffer());
+    const read = new Uint8Array(await file.arrayBuffer());
     if (attachment.cancelled) return;
-    prepared = await commentsJobs().prepare({ name, bytes });
+    prepared = await commentsJobs().prepare({ name, bytes: read });
   } catch (error) {
     if (!attachment.cancelled) failed('It can’t be read.', couldntAttach(name), describe(error));
     return;
@@ -653,7 +667,7 @@ async function attachOne(attaching: Attaching, file: File, attachment: Attachmen
     return;
   }
   if (prepared.kind === 'refused') {
-    failed(asReason(prepared.why), couldntAttach(name));
+    failed(refusalSays(prepared.refusal), couldntAttach(name));
     return;
   }
   const said = metadataNote(name, prepared.metadata);

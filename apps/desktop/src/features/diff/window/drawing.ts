@@ -142,7 +142,7 @@ function changeFor(drawn: Drawn, start: Start): Change | undefined {
       return drawn === 'shown' ? 'close' : undefined;
     default:
       start satisfies never;
-      throw new Error(`A start Lo doesn't know: ${JSON.stringify(start)}.`);
+      throw new Error(`A start Lo doesn’t know: ${JSON.stringify(start)}.`);
   }
 }
 
@@ -422,7 +422,7 @@ export function draw(options: DrawOptions): Drawing {
       }
       default:
         change satisfies never;
-        throw new Error(`A change Lo doesn't know: ${JSON.stringify(change)}.`);
+        throw new Error(`A change Lo doesn’t know: ${JSON.stringify(change)}.`);
     }
   };
 

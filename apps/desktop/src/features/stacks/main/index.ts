@@ -75,7 +75,7 @@ function keepLayers(service: TabService, { id, stack }: StackState): void {
       return;
     default:
       stack satisfies never;
-      throw new Error(`A stack of a kind Lo doesn't know: ${JSON.stringify(stack)}.`);
+      throw new Error(`A stack of a kind Lo doesn’t know: ${JSON.stringify(stack)}.`);
   }
 }
 

@@ -109,7 +109,7 @@ export function knownOf(standing: Standing): Known {
       return 'other';
     default:
       standing satisfies never;
-      throw new Error(`An overview's standing Lo doesn't know: ${JSON.stringify(standing)}.`);
+      throw new Error(`An overview’s standing Lo doesn’t know: ${JSON.stringify(standing)}.`);
   }
 }
 
@@ -142,7 +142,7 @@ export function markOf(standing: Standing, newest: string | undefined): MarkKind
       return newest !== undefined && standing.header.commit !== newest ? 'stale' : 'current';
     default:
       standing satisfies never;
-      throw new Error(`An overview's standing Lo doesn't know: ${JSON.stringify(standing)}.`);
+      throw new Error(`An overview’s standing Lo doesn’t know: ${JSON.stringify(standing)}.`);
   }
 }
 
@@ -159,7 +159,7 @@ export function markWords(mark: MarkKind): string {
       return 'Overview · can’t show';
     default:
       mark satisfies never;
-      throw new Error(`A mark Lo doesn't know: ${String(mark)}.`);
+      throw new Error(`A mark Lo doesn’t know: ${String(mark)}.`);
   }
 }
 
@@ -182,7 +182,7 @@ export function promptKindOf(standing: Standing): PromptKind | undefined {
       return undefined;
     default:
       standing satisfies never;
-      throw new Error(`An overview's standing Lo doesn't know: ${JSON.stringify(standing)}.`);
+      throw new Error(`An overview’s standing Lo doesn’t know: ${JSON.stringify(standing)}.`);
   }
 }
 

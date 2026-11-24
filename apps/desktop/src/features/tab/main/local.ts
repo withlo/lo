@@ -145,7 +145,7 @@ export function gitSaid(activity: Activity): string | undefined {
       return progressLine(activity.progress);
     default:
       activity satisfies never;
-      throw new Error(`Lo doesn't know what git is doing: ${JSON.stringify(activity)}.`);
+      throw new Error(`Lo doesn’t know what git is doing: ${JSON.stringify(activity)}.`);
   }
 }
 
@@ -318,7 +318,7 @@ export class LocalCopy<R extends Clone = Repo> {
         };
       default:
         fetching satisfies never;
-        throw new Error(`A local copy in a state Lo doesn't know: ${JSON.stringify(fetching)}.`);
+        throw new Error(`A local copy in a state Lo doesn’t know: ${JSON.stringify(fetching)}.`);
     }
   }
 

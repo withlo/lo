@@ -53,7 +53,7 @@ describe('opening the settings file', () => {
   });
 
   it('refuses, starting nothing, a file that isn’t there, isn’t plain, is too big or can run', async () => {
-    expect(await open()).toEqual({ ok: false, reason: "There's no settings file yet." });
+    expect(await open()).toEqual({ ok: false, reason: 'There’s no settings file yet.' });
     mkdirSync(path);
     expect(await open()).toMatchObject({ ok: false, reason: expect.stringMatching(/plain file/) });
     rmSync(path, { recursive: true });
@@ -70,11 +70,11 @@ describe('opening the settings file', () => {
     started.mockRejectedValueOnce(new Error('open failed'));
     expect(await open()).toEqual({
       ok: false,
-      reason: "Lo couldn't open the settings file in a text editor.",
+      reason: 'Lo couldn’t open the settings file in a text editor.',
     });
     expect(await openSettingsFile(path, { platform: 'win32', launch: started, linux })).toEqual({
       ok: false,
-      reason: "Lo can't open the settings file on this system.",
+      reason: 'Lo can’t open the settings file on this system.',
     });
   });
 });

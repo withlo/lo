@@ -371,7 +371,7 @@ test('a clone whose promisor is a remote of another name is made again', async (
 
   expect(await madeAgain(cache, repo)).toBe(true);
   expect(logged).toEqual([
-    "owner/repo: making its local copy again, since it has settings Lo didn't write " +
+    'owner/repo: making its local copy again, since it has settings Lo didn’t write ' +
       '(remote.Origin.url, remote.Origin.promisor, remote.Origin.partialclonefilter)',
   ]);
 });

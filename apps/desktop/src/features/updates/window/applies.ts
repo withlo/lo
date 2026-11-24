@@ -27,7 +27,7 @@ function without(state: UpdateState): string {
     case 'ready':
       return `Lo ${state.version} is ready`;
     default:
-      throw new Error(`An update state Lo doesn't know: ${JSON.stringify(state satisfies never)}`);
+      throw new Error(`An update state Lo doesn’t know: ${JSON.stringify(state satisfies never)}`);
   }
 }
 
@@ -44,7 +44,7 @@ function otherWay(offer: Offered): string {
       return 'This copy of Lo can’t update itself';
     default:
       throw new Error(
-        `A way to update Lo doesn't know: ${JSON.stringify(offer.how satisfies never)}`,
+        `A way to update Lo doesn’t know: ${JSON.stringify(offer.how satisfies never)}`,
       );
   }
 }
@@ -73,7 +73,7 @@ export function canRestart(state: UpdateState): Applies {
     case 'downloading':
       return `Lo ${state.version} is downloading`;
     default:
-      throw new Error(`An update state Lo doesn't know: ${JSON.stringify(state satisfies never)}`);
+      throw new Error(`An update state Lo doesn’t know: ${JSON.stringify(state satisfies never)}`);
   }
 }
 
@@ -98,7 +98,7 @@ export function canMove(state: UpdateState, how: How | undefined): Applies {
     case 'ready':
       return stays('install');
     default:
-      throw new Error(`An update state Lo doesn't know: ${JSON.stringify(state satisfies never)}`);
+      throw new Error(`An update state Lo doesn’t know: ${JSON.stringify(state satisfies never)}`);
   }
 }
 

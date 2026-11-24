@@ -2,11 +2,11 @@
 // file, which only main writes. "Stop trusting" asks main to stop trusting one; trusting happens on
 // a pull request's tab, through main's own dialog.
 
-import { Problem, TrustList, type TrustEntry as TrustRow } from '@lo/ui';
+import { ago, Problem, TrustList, type TrustEntry as TrustRow } from '@lo/ui';
 import { useState } from 'react';
 
 import { IpcError } from '../../../ipc/contract.ts';
-import { ago, settingRow, type ControlProps } from '../../settings/window/shared.ts';
+import { settingRow, type ControlProps } from '../../settings/window/shared.ts';
 import { readTrusted, trusted, type TrustEntry } from '../settings.ts';
 import { main } from './main.ts';
 

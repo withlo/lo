@@ -100,7 +100,7 @@ describe('parseRemote', () => {
     'https://127.0.0.1:1',
     'file:///tmp/remotes',
   ])('refuses %j without the test-only setting', (base) => {
-    expect(() => parseRemote(base)).toThrow("isn't a valid remote address");
+    expect(() => parseRemote(base)).toThrow('isn’t a valid remote address');
   });
 
   test.each([
@@ -115,12 +115,12 @@ describe('parseRemote', () => {
     'github.com',
     '',
   ])('refuses %j even with it', (base) => {
-    expect(() => parseRemote(base, { test: true })).toThrow("isn't a valid remote address");
+    expect(() => parseRemote(base, { test: true })).toThrow('isn’t a valid remote address');
   });
 
   test('never repeats a password it refuses', () => {
     expect(() => parseRemote('https://x-access-token:gho_secret@github.com')).toThrow(
-      "`https://<redacted>@github.com` isn't a valid remote address",
+      '`https://<redacted>@github.com` isn’t a valid remote address',
     );
   });
 });

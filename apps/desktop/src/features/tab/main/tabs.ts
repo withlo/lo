@@ -298,7 +298,7 @@ export function createTabs(options: TabListOptions): TabList {
         }
         default:
           opening satisfies never;
-          throw new Error(`There's no kind of tab for ${JSON.stringify(opening)}.`);
+          throw new Error(`There’s no kind of tab for ${JSON.stringify(opening)}.`);
       }
     },
 

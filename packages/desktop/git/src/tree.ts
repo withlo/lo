@@ -235,7 +235,7 @@ export class TreeWalk {
         throw new GitError({
           kind: 'git',
           command: 'git cat-file --batch-command',
-          message: `${oid} isn't a tree the clone has`,
+          message: `${oid} isn’t a tree the clone has`,
         });
       }
       tree = parseTree(object.data, oid.length / 2);

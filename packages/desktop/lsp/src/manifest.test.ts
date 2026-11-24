@@ -61,7 +61,7 @@ test('refuses a toolchain that doesn’t say what it unpacks to', () => {
   const go = TOOLCHAINS.go;
   const download = go?.platforms['linux-x64'];
   const changed = { ...go, platforms: { 'linux-x64': { ...download, unpacked: undefined } } };
-  expect(() => parseToolchains({ go: changed })).toThrow(/doesn't say what it unpacks to/);
+  expect(() => parseToolchains({ go: changed })).toThrow(/doesn’t say what it unpacks to/);
   // A server needn't.
   expect(() => parseManifest({ go: changed })).not.toThrow();
 });

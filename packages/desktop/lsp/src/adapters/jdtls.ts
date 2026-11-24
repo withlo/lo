@@ -172,10 +172,10 @@ export function launchJdtls(
   manifest: Manifest = MANIFEST,
 ): Launch {
   const pinned = Object.hasOwn(manifest, JDTLS.id) ? manifest[JDTLS.id] : undefined;
-  if (pinned === undefined) throw new Error(`Lo's list of language servers has no ${JDTLS.id}.`);
+  if (pinned === undefined) throw new Error(`Lo’s list of language servers has no ${JDTLS.id}.`);
   if (platform === undefined) throw new Error('Lo has no Java server for this system.');
   for (const path of [installed.folder, installed.entry, jdk.entry]) {
-    if (!isAbsolute(path)) throw new Error(`${path} isn't an absolute path.`);
+    if (!isAbsolute(path)) throw new Error(`${path} isn’t an absolute path.`);
   }
   const javaHome = use.variables.JAVA_HOME;
   if (javaHome === undefined) throw new Error('The JDK doesn’t say where its home is.');

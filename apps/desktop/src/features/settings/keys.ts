@@ -18,7 +18,7 @@ export default defineCommands(
     /** In Settings, on the list of groups or the rows themselves. */
     nextSection: {
       label: 'Next group',
-      control: "a group in Settings' list",
+      control: 'a group in Settings’ list',
       group: 'App',
       keys: ['j'],
       when: { scope: 'settings' },
@@ -26,7 +26,7 @@ export default defineCommands(
     },
     previousSection: {
       label: 'Previous group',
-      control: "a group in Settings' list",
+      control: 'a group in Settings’ list',
       group: 'App',
       keys: ['k'],
       when: { scope: 'settings' },
@@ -35,7 +35,7 @@ export default defineCommands(
     /** Goes to the search field over Settings' rows, with what it holds selected. */
     search: {
       label: 'Search settings',
-      control: "the search field over Settings' rows",
+      control: 'the search field over Settings’ rows',
       group: 'App',
       keys: ['/', 'cmd+f'],
       when: { scope: ['settings', 'noMatch'] },
@@ -55,7 +55,7 @@ export default defineCommands(
     /** Opens the settings file in the system's text editor, so the person can fix it. */
     openFile: {
       label: 'Open `settings.json`',
-      control: "Open settings.json at the foot of Settings' list",
+      control: 'Open settings.json at the foot of Settings’ list',
       group: 'App',
       keys: ['g .'],
       when: { except: ['menu', 'dialog', 'palette', 'box'], mode: 'normal' },

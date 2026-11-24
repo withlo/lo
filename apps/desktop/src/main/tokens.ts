@@ -25,7 +25,7 @@ export function readTokens(file: TokenFile): Tokens {
 
   const color = (name: string, theme: Theme, seen: readonly string[] = []): string => {
     const value = colors.get(name);
-    if (value === undefined) throw new Error(`There's no color token named ${name}.`);
+    if (value === undefined) throw new Error(`There’s no color token named ${name}.`);
     if (seen.includes(name)) throw new Error(`The color token ${name} refers to itself.`);
     const themed = typeof value === 'string' ? value : value[theme];
     const reference = /^\{(.+)\}$/.exec(themed)?.[1];
@@ -35,7 +35,7 @@ export function readTokens(file: TokenFile): Tokens {
   const size = (name: string): number => {
     const value = sizes.get(name);
     const pixels = value === undefined ? undefined : /^(\d+(?:\.\d+)?)px$/.exec(value)?.[1];
-    if (pixels === undefined) throw new Error(`There's no size token in pixels named ${name}.`);
+    if (pixels === undefined) throw new Error(`There’s no size token in pixels named ${name}.`);
     return Number(pixels);
   };
 

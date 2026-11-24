@@ -19,7 +19,7 @@ export default defineCommands(
      */
     show: {
       label: 'Timeline',
-      control: "Timeline in the pull request's header",
+      control: 'Timeline in the pull request’s header',
       group: 'View',
       keys: [],
       bar: { menu: 'View', section: 'views', order: 30 },
@@ -67,7 +67,7 @@ export default defineCommands(
       group: 'Comments',
       keys: ['c'],
       when: timeline,
-      control: "the comment box at the timeline's end",
+      control: 'the comment box at the timeline’s end',
     },
     /** A box with your comment's text, in its card, to edit it and save it over GitHub's text. */
     editComment: {

@@ -29,14 +29,22 @@ import {
   readPullFiles,
   RepoRef,
 } from '@lo/github';
-import { LARGE_FILE_BYTES, MAX_SHOWN_BYTES, tooLargeToShow } from '@lo/review';
+import { LARGE_FILE_BYTES, MAX_SHOWN_BYTES, tooLargeToShow, type TooLarge } from '@lo/review';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import type { Comparing, OnScreen, Since } from '../../revisions/service.ts';
 import type { Acting } from '../../tab/contract.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
 import type { TreePath } from '../../tree/contract.ts';
-import type { DiffState, FileText, FileVersions, Source, Version, WholeText } from '../contract.ts';
+import type {
+  DiffProblem,
+  DiffState,
+  FileText,
+  FileVersions,
+  Source,
+  Version,
+  WholeText,
+} from '../contract.ts';
 import { listedAt } from './listed.ts';
 import {
   conflictedVersions,
@@ -98,7 +106,7 @@ interface At {
    * request's own.
    */
   uncompared: boolean;
-  problem: string | undefined;
+  problem: DiffProblem | undefined;
   /** What's been started for it, so nothing starts twice. */
   readonly started: Set<Source>;
   /** The local copy's files as the comparison lists them, before any shows from where it left off. */
@@ -112,6 +120,16 @@ interface At {
 }
 
 const decoder = new TextDecoder('utf-8', { ignoreBOM: true });
+
+/** A side of a file too large to show, with the limit it's over, which the window words. */
+class TooLargeSide extends Error {
+  readonly why: TooLarge;
+
+  constructor(why: TooLarge) {
+    super('It’s too large to show.');
+    this.why = why;
+  }
+}
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -434,7 +452,11 @@ export class DiffTab {
           new: await this.#read(repo, file.new?.blob),
         });
       } catch (error) {
-        texts.push({ kind: 'missing', why: describe(error) });
+        texts.push(
+          error instanceof TooLargeSide
+            ? { kind: 'missing', why: error.message, tooLarge: error.why }
+            : { kind: 'missing', why: describe(error) },
+        );
       }
     }
     return texts;
@@ -547,13 +569,7 @@ export class DiffTab {
     if (bytes === undefined) throw new Error('The local copy doesn’t have it.');
     // A minified bundle on one line is as slow to lay out as it is large.
     const tooLarge = tooLargeToShow(bytes.length, [bytes]);
-    if (tooLarge !== undefined) {
-      throw new Error(
-        tooLarge.kind === 'size'
-          ? `It’s ${Math.round(bytes.length / 1024 ** 2)} MB, over the 50 MB limit.`
-          : 'It has a line over 1 MB long.',
-      );
-    }
+    if (tooLarge !== undefined) throw new TooLargeSide(tooLarge);
     return decoder.decode(bytes);
   }
 
@@ -578,7 +594,7 @@ export class DiffTab {
       );
       if (!this.#current(at)) return;
       if ('refused' in compared) {
-        at.problem = `Changes over ${Math.round(compared.limit / 2 ** 20)} MB · showing GitHub’s diff`;
+        at.problem = { kind: 'tooLarge', limit: compared.limit, fellBack: true };
         this.#publish();
         this.#fallBackToGithub(at);
         return;
@@ -601,7 +617,7 @@ export class DiffTab {
     } catch (error) {
       if (!this.#current(at)) return;
       this.#options.log(`finding what changed at ${at.head}: ${describe(error)}`);
-      at.problem = 'Couldn’t read the changes from the local copy';
+      at.problem = { kind: 'local' };
       this.#fallBackToGithub(at);
     }
     this.#publish();
@@ -628,7 +644,7 @@ export class DiffTab {
       const compared = await comparing.compared();
       if (!this.#current(at)) return;
       if ('refused' in compared) {
-        at.problem = `The changes are over the ${Math.round(compared.limit / 2 ** 20)} MB limit.`;
+        at.problem = { kind: 'tooLarge', limit: compared.limit, fellBack: false };
         this.#publish();
         return;
       }
@@ -654,7 +670,7 @@ export class DiffTab {
     } catch (error) {
       if (!this.#current(at)) return;
       this.#options.log(`comparing the revisions: ${describe(error)}`);
-      at.problem = 'Couldn’t compare the revisions';
+      at.problem = { kind: 'compare' };
     }
     this.#publish();
     this.#caughtUp(at);
@@ -719,7 +735,7 @@ export class DiffTab {
     } catch (error) {
       if (!this.#current(at)) return;
       this.#options.log(`reading the changed files from GitHub: ${describe(error)}`);
-      at.problem ??= 'Couldn’t read the changed files';
+      at.problem ??= { kind: 'github' };
     }
     this.#publish();
   }

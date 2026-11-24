@@ -488,7 +488,7 @@ describe('changing a setting', () => {
     const refused = await refusal(settings.set('anything', deep));
     expect(refused?.code).toBe('unwritable');
     expect(refused?.message).toBe(
-      "Lo didn't change anything: the new value, written into the settings file, wouldn't read back as Settings shows it, so Lo left the file as it was.",
+      'Lo didn’t change anything: the new value, written into the settings file, wouldn’t read back as Settings shows it, so Lo left the file as it was.',
     );
     expect(contents()).toBe(text);
     expect(log).not.toHaveBeenCalled();
@@ -542,7 +542,7 @@ describe('changing a setting', () => {
     const refused = await refusal(settings.set('theme', 'system'));
     expect(refused?.code).toBe('unwritable');
     expect(refused?.message).toBe(
-      "Lo didn't change theme, since the settings file has it more than once. Take out all but one, and Lo can change it.",
+      'Lo didn’t change theme, since the settings file has it more than once. Take out all but one, and Lo can change it.',
     );
     // The file is the cause, which editing it fixes.
     expect(refused).toMatchObject({
@@ -593,15 +593,15 @@ describe('changing a setting', () => {
     const refused = await refusal(settings.set('theme', 'dark'));
     expect(refused?.code).toBe('unwritable');
     expect(refused?.message).toContain(
-      "Lo didn't change theme, since the settings file has a problem.",
+      'Lo didn’t change theme, since the settings file has a problem.',
     );
-    expect(refused?.message).toContain("isn't valid JSON");
+    expect(refused?.message).toContain('isn’t valid JSON');
     // What's in the file is the cause, which editing it fixes, and why alone, for a caller to say.
     expect(refused).toBeInstanceOf(Unwritten);
     expect(refused).toMatchObject({ inFile: true });
     // What's wrong alone: saving the file isn't what applies a change Lo couldn't make.
     expect(refused instanceof Unwritten && refused.why).toMatch(
-      /^The settings file isn't valid JSON \(.+\)\.$/,
+      /^The settings file isn’t valid JSON \(.+\)\.$/,
     );
     expect(contents()).toBe('{ "theme": "light", ');
     // Fixed by hand, a change goes through.
@@ -640,7 +640,7 @@ describe('changing a setting', () => {
     const refused = await refusal(settings.set('theme', 'dark'));
     expect(refused?.code).toBe('unwritable');
     expect(refused?.message).toBe(
-      "Lo didn't change theme, since the settings file has a problem. The settings file isn't valid JSON (Lo expected a comma at line 4, column 3).",
+      'Lo didn’t change theme, since the settings file has a problem. The settings file isn’t valid JSON (Lo expected a comma at line 4, column 3).',
     );
     expect(refused instanceof Unwritten && refused.said).toEqual({
       reason: '`settings.json` isn’t valid JSON.',
@@ -694,7 +694,7 @@ describe('changing a setting', () => {
     const refused = await refusal(settings.set('diff.layout', 'inline'));
     expect(refused?.code).toBe('unwritable');
     expect(refused?.message).toBe(
-      "Lo didn't change diff.layout: the settings file kept changing while Lo saved it.",
+      'Lo didn’t change diff.layout: the settings file kept changing while Lo saved it.',
     );
     expect(saves).toBe(3);
     expect(JSON.parse(contents())).toEqual({ theme: 'dark', saves: 'xxx' });
@@ -745,10 +745,10 @@ describe('changing a setting', () => {
       if (process.getuid?.() === 0) return;
       const refused = await refusal(settings.set('theme', 'light'));
       expect(refused?.code).toBe('unwritable');
-      expect(refused?.message).toBe("Lo couldn't save theme to the settings file (EACCES).");
+      expect(refused?.message).toBe('Lo couldn’t save theme to the settings file (EACCES).');
       // The disk is the cause, not what the file holds.
       expect(refused).toMatchObject({
-        why: "Lo couldn't write the settings file (EACCES).",
+        why: 'Lo couldn’t write the settings file (EACCES).',
         inFile: false,
       });
       expect(log).toHaveBeenCalled();
@@ -798,7 +798,7 @@ describe('a setting only main changes', () => {
     expect((await settings.state()).values['code.names']).toEqual(['lo']);
     const refused = await refusal(settings.set('code.names', ['lo', 'more']));
     expect(refused?.code).toBe('unwritable');
-    expect(refused?.message).toBe("Settings can't change code.names: only Lo itself does.");
+    expect(refused?.message).toBe('Settings can’t change code.names: only Lo itself does.');
     expect(contents()).toBe('{ "code.names": ["lo"] }');
   });
 
@@ -834,10 +834,10 @@ describe('a setting only main changes', () => {
       const refused = await refusal(settings.update(names, (now) => [...now, 'sh']));
       expect(refused?.code).toBe('unwritable');
       expect(refused?.message).toBe(
-        "Lo didn't change code.names: the settings file holds one that isn't a list of names, which Lo won't replace. Fix it there, or take it out.",
+        'Lo didn’t change code.names: the settings file holds one that isn’t a list of names, which Lo won’t replace. Fix it there, or take it out.',
       );
       expect(refused).toMatchObject({
-        why: "The settings file's code.names isn't a list of names, and Lo won't replace it.",
+        why: 'The settings file’s code.names isn’t a list of names, and Lo won’t replace it.',
         inFile: true,
       });
       expect(contents()).toBe(text);

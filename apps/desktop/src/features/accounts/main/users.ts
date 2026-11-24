@@ -13,10 +13,10 @@ const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/;
 export function checkedUser(user: AuthenticatedUser): AuthenticatedUser {
   const { login, id, name } = user.user;
   if (typeof login !== 'string' || !LOGIN.test(login)) {
-    throw new GithubError({ kind: 'decode', message: "GitHub's answer named no login Lo can use" });
+    throw new GithubError({ kind: 'decode', message: 'GitHub’s answer named no login Lo can use' });
   }
   if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) {
-    throw new GithubError({ kind: 'decode', message: "GitHub's answer named no account id" });
+    throw new GithubError({ kind: 'decode', message: 'GitHub’s answer named no account id' });
   }
   return {
     user: { ...user.user, name: typeof name === 'string' ? name.slice(0, 255) : null },

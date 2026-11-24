@@ -3,12 +3,15 @@
 // and why, the queue's settings, and how long ago it was read. And the rows the keyboard moves
 // through, in the table's order. Nothing here touches the DOM.
 
-import type {
-  LeftEntry as TableLeft,
-  LeftReason,
-  QueueItem,
-  QueueEntry as TableEntry,
-  WaitingEntry as TableWaiting,
+import {
+  about,
+  ago,
+  duration,
+  type LeftEntry as TableLeft,
+  type LeftReason,
+  type QueueItem,
+  type QueueEntry as TableEntry,
+  type WaitingEntry as TableWaiting,
 } from '@lo/ui';
 
 import type {
@@ -108,34 +111,16 @@ export function tableState(state: EntryState): TableEntry['state'] {
   }
 }
 
-const MINUTE = 60_000;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
-
-/** A length of time in its largest whole unit only: "40 s", "14 min", "2 h", "4 d". */
-export function lengthOf(ms: number): string {
-  const at = Math.max(0, ms);
-  if (at < MINUTE) return `${Math.floor(at / 1000)} s`;
-  if (at < HOUR) return `${Math.floor(at / MINUTE)} min`;
-  if (at < DAY) return `${Math.floor(at / HOUR)} h`;
-  return `${Math.floor(at / DAY)} d`;
-}
-
 /** How long an entry has been in the queue, from when it joined: "14 min", or "—" when unknown. */
 export function inQueue(enqueuedAt: number | null, now: number): string {
   if (enqueuedAt === null) return '—';
-  return lengthOf(now - enqueuedAt);
-}
-
-/** GitHub's estimate, in seconds, as an estimate says it: "about 2 min", a minute at least. */
-function about(seconds: number): string {
-  return `about ${lengthOf(Math.max(1, Math.round(seconds / 60)) * MINUTE)}`;
+  return duration(now - enqueuedAt);
 }
 
 /** When an entry should merge, from GitHub's estimate in seconds: "about 2 min", or "—" without one. */
 export function toMerge(seconds: number | null): string {
   if (seconds === null) return '—';
-  return about(seconds);
+  return about(seconds * 1000);
 }
 
 function tableEntry(entry: Entry, now: number): TableEntry {
@@ -203,19 +188,6 @@ export function waitingOf(waiting: readonly WaitingEntry[]): TableWaiting[] {
     yours: entry.yours,
     until: waitsFor(entry),
   }));
-}
-
-/**
- * How long ago `at` was, from `now`, in its largest whole unit: "just now", "3 min ago", "2 h ago",
- * "3 d ago"; and more than 30 days ago, the date: "Nov 12", with its year in another year.
- */
-export function ago(at: number, now: number): string {
-  const since = Math.max(0, now - at);
-  if (since < MINUTE) return 'just now';
-  if (since <= 30 * DAY) return `${lengthOf(since)} ago`;
-  const date = new Date(at);
-  const year = date.getFullYear() === new Date(now).getFullYear() ? undefined : 'numeric';
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year });
 }
 
 /** Why a pull request left, as the table says it, its failed check's run opening with `open`. */
@@ -297,7 +269,7 @@ export function settingsOf(read: QueueRead | undefined): string | undefined {
     ...(read.groups === null
       ? []
       : [read.groups === 1 ? 'one at a time' : `groups of up to ${read.groups}`]),
-    ...(read.nextMerge === null ? [] : [`next merge in ${about(read.nextMerge)}`]),
+    ...(read.nextMerge === null ? [] : [`next merge in ${about(read.nextMerge * 1000)}`]),
   ];
   return parts.length === 0 ? undefined : parts.join(' · ');
 }
@@ -310,6 +282,5 @@ export function updated(readAt: number, now: number): string {
 /** When the queue is read again after a failure, counting down: "Retrying in 40 s.". */
 export function retryIn(retryAt: number | null, now: number): string | undefined {
   if (retryAt === null) return undefined;
-  const seconds = Math.max(1, Math.ceil((retryAt - now) / 1000));
-  return seconds < 60 ? `Retrying in ${seconds} s.` : `Retrying in ${Math.ceil(seconds / 60)} min.`;
+  return `Retrying in ${duration(retryAt - now, 'up')}.`;
 }

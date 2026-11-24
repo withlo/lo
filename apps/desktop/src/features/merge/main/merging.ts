@@ -389,7 +389,7 @@ export function offRefusal(off: Off, login: string): Refusal {
       return own('signedOut', `${login} is signed out`);
     default:
       off satisfies never;
-      throw new Error(`a reason Lo doesn't know: ${JSON.stringify(off)}`);
+      throw new Error(`a reason Lo doesn’t know: ${JSON.stringify(off)}`);
   }
 }
 
@@ -489,7 +489,7 @@ function unsureOf(outcome: Extract<Outcome, { kind: 'unknown' }>) {
       return { why: unknown.kind, text: unknown.status, askAgain: true };
     default:
       unknown satisfies never;
-      throw new Error(`a reason Lo doesn't know: ${JSON.stringify(unknown)}`);
+      throw new Error(`a reason Lo doesn’t know: ${JSON.stringify(unknown)}`);
   }
 }
 
@@ -518,7 +518,7 @@ function endOf(outcome: Outcome, head: string, asker: Asker): JobState {
       return { kind: 'unknown', ...unsureOf(outcome), shows: null };
     default:
       outcome satisfies never;
-      throw new Error(`an outcome Lo doesn't know: ${JSON.stringify(outcome)}`);
+      throw new Error(`an outcome Lo doesn’t know: ${JSON.stringify(outcome)}`);
   }
 }
 
@@ -537,7 +537,7 @@ function stateOf(job: Job, asker: Asker): JobState {
       return endOf(state.outcome, job.request.sha, asker);
     default:
       state satisfies never;
-      throw new Error(`a job's state Lo doesn't know: ${JSON.stringify(state)}`);
+      throw new Error(`a job’s state Lo doesn’t know: ${JSON.stringify(state)}`);
   }
 }
 
@@ -1060,7 +1060,7 @@ export class Merging {
           return notPossibleText(action.reason.kind, about);
         default:
           action satisfies never;
-          throw new Error(`an action Lo doesn't know: ${JSON.stringify(action)}`);
+          throw new Error(`an action Lo doesn’t know: ${JSON.stringify(action)}`);
       }
     }
     // Only what the reader typed goes, and only for a squash straight in: an empty field leaves
@@ -1180,7 +1180,7 @@ export class Merging {
         return refused(own('changing', `#${plan.number} changed while it was checked.`));
       default:
         weighed satisfies never;
-        throw new Error(`a press Lo doesn't know: ${JSON.stringify(weighed)}`);
+        throw new Error(`a press Lo doesn’t know: ${JSON.stringify(weighed)}`);
     }
     const now = weighed.plan;
     const why = changed(plan, now);
@@ -2209,7 +2209,7 @@ function notPossibleText(
       return `${repo} allows no merge method`;
     default:
       reason satisfies never;
-      throw new Error(`a reason Lo doesn't know: ${String(reason)}`);
+      throw new Error(`a reason Lo doesn’t know: ${String(reason)}`);
   }
 }
 
@@ -2235,7 +2235,7 @@ function takingText(taking: Taking): string | undefined {
       return taking.why;
     default:
       taking satisfies never;
-      throw new Error(`a merge Lo doesn't know: ${JSON.stringify(taking)}`);
+      throw new Error(`a merge Lo doesn’t know: ${JSON.stringify(taking)}`);
   }
 }
 
@@ -2271,7 +2271,7 @@ function autoText(action: Exclude<AutoAction, { kind: 'on' }>, names: Names): st
       return `${login} can’t turn off auto-merge`;
     default:
       action.reason satisfies never;
-      throw new Error(`a reason Lo doesn't know: ${String(action.reason)}`);
+      throw new Error(`a reason Lo doesn’t know: ${String(action.reason)}`);
   }
 }
 
@@ -2299,7 +2299,7 @@ function overrideText(
       return 'Only a GitHub stack’s bottom layer can bypass rules';
     default:
       action.reason satisfies never;
-      throw new Error(`a reason Lo doesn't know: ${String(action.reason)}`);
+      throw new Error(`a reason Lo doesn’t know: ${String(action.reason)}`);
   }
 }
 
@@ -2343,7 +2343,7 @@ function otherWay(
     }
     default:
       asked satisfies never;
-      throw new Error(`a way to merge Lo doesn't know: ${String(asked)}`);
+      throw new Error(`a way to merge Lo doesn’t know: ${String(asked)}`);
   }
 }
 

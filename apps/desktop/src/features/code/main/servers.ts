@@ -338,7 +338,7 @@ export class ServerPool {
         break;
       default:
         entry.phase satisfies never;
-        throw new Error(`a server's phase Lo doesn't know: ${String(entry.phase)}`);
+        throw new Error(`a server’s phase Lo doesn’t know: ${String(entry.phase)}`);
     }
     const { server } = entry;
     if (entry.moving !== undefined || !server) return { kind: 'starting' };
@@ -487,7 +487,7 @@ export class ServerPool {
         entry.used = Date.now();
       } else if (entry.idle === undefined) {
         entry.idle = setTimeout(
-          () => void this.#end(entry, `its pull request wasn't on screen for a while`),
+          () => void this.#end(entry, `its pull request wasn’t on screen for a while`),
           this.#limits.idle,
         );
       }
@@ -866,7 +866,7 @@ export class ServerPool {
         return;
       default:
         look satisfies never;
-        throw new Error(`a look Lo doesn't know: ${JSON.stringify(look)}`);
+        throw new Error(`a look Lo doesn’t know: ${JSON.stringify(look)}`);
     }
   }
 
@@ -1097,9 +1097,10 @@ export class ServerPool {
       if (!victim) return;
       total -= victim.server?.memory ?? 0;
       left = left.filter((entry) => entry !== victim);
+      // For the log, the cap itself: the window words it from the state's `cap`.
       void this.#end(
         victim,
-        `Lo's language servers held more than ${gigabytes(this.#limits.memory)}`,
+        `Lo’s language servers held more than ${this.#limits.memory.toLocaleString('en-US')} bytes`,
       );
     }
   }
@@ -1215,8 +1216,4 @@ function describe(error: unknown): string {
 /** `text`, cut to what the contract carries. */
 function clip(text: string): string {
   return text.length > 400 ? `${text.slice(0, 399)}…` : text;
-}
-
-function gigabytes(bytes: number): string {
-  return `${Math.round(bytes / 1024 ** 3)} GB`;
 }

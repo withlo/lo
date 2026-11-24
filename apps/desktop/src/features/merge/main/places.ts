@@ -123,7 +123,7 @@ export function leftOf(removal: QueueRemoval, login: string): LeftQueue | undefi
       return { at, why: { kind: 'unknown', why: null }, partial: true };
     default:
       found satisfies never;
-      throw new Error(`A reason for leaving the queue Lo doesn't know: ${JSON.stringify(found)}`);
+      throw new Error(`A reason for leaving the queue Lo doesn’t know: ${JSON.stringify(found)}`);
   }
 }
 

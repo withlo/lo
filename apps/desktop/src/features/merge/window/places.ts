@@ -4,17 +4,10 @@
 // logins, is drawn as text without the characters that turn text around, which the components take
 // out. Nothing here draws.
 
+import { about } from '@lo/ui';
+
 import type { Ahead, InQueue, LeftQueue, MergeState } from '../contract.ts';
-import {
-  counted,
-  duration,
-  listed,
-  ordinal,
-  rowsOf,
-  type PanelHead,
-  type Row,
-  type Who,
-} from './words.ts';
+import { counted, listed, ordinal, rowsOf, type PanelHead, type Row, type Who } from './words.ts';
 
 /**
  * What's ahead in the merge queue of the branch a pull request would join, as the merge panel read
@@ -35,7 +28,7 @@ export function aheadWords(ahead: Ahead): string | undefined {
   const { count, atLeast, timeToMerge } = ahead;
   if (atLeast && count === 0) return undefined;
   const how = `${count}${atLeast ? '+' : ''} ahead`;
-  return timeToMerge === null ? how : `${how} · merges in about ${duration(timeToMerge)}`;
+  return timeToMerge === null ? how : `${how} · merges in ${about(timeToMerge * 1000)}`;
 }
 
 /**

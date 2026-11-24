@@ -65,7 +65,7 @@ test('a button whose command can’t run is dimmed, says why, and runs nothing',
   expect(button.textContent).toBe('Commentc');
   expect(button.getAttribute('aria-disabled')).toBe('true');
   expect(document.getElementById(button.getAttribute('aria-describedby')!)?.textContent).toBe(
-    "Comment doesn't apply here.",
+    'Comment doesn’t apply here.',
   );
   act(() => button.click());
   expect(ran).toEqual([]);

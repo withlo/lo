@@ -149,9 +149,9 @@ export function launchRoslyn(
   manifest: Manifest = MANIFEST,
 ): Launch {
   const pinned = Object.hasOwn(manifest, ROSLYN.id) ? manifest[ROSLYN.id] : undefined;
-  if (pinned === undefined) throw new Error(`Lo's list of language servers has no ${ROSLYN.id}.`);
+  if (pinned === undefined) throw new Error(`Lo’s list of language servers has no ${ROSLYN.id}.`);
   for (const path of [dotnet.installed.entry, installed.entry]) {
-    if (!isAbsolute(path)) throw new Error(`${path} isn't an absolute path.`);
+    if (!isAbsolute(path)) throw new Error(`${path} isn’t an absolute path.`);
   }
   return {
     program: dotnet.installed.entry,

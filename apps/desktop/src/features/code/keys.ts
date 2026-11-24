@@ -83,7 +83,7 @@ export default defineCommands(
     nextAnswer: {
       label: 'Next definition',
       group: 'Code',
-      control: "an answer in a peek's list",
+      control: 'an answer in a peek’s list',
       keys: ['j', 'down'],
       overVim: true,
       when: peek,
@@ -92,7 +92,7 @@ export default defineCommands(
     previousAnswer: {
       label: 'Previous definition',
       group: 'Code',
-      control: "an answer in a peek's list",
+      control: 'an answer in a peek’s list',
       keys: ['k', 'up'],
       overVim: true,
       when: peek,
@@ -105,7 +105,7 @@ export default defineCommands(
     goAnswer: {
       label: 'Go to definition',
       group: 'Code',
-      control: "the button in a peek's head that goes to the answer",
+      control: 'the button in a peek’s head that goes to the answer',
       keys: ['enter'],
       overVim: true,
       targets: ['line'],
@@ -115,7 +115,7 @@ export default defineCommands(
     closePeek: {
       label: 'Close definitions',
       group: 'Code',
-      control: "Close in a peek's head",
+      control: 'Close in a peek’s head',
       keys: ['esc'],
       targets: ['line'],
       when: peek,
@@ -123,7 +123,7 @@ export default defineCommands(
     nextReference: {
       label: 'Next reference',
       group: 'Code',
-      control: "Next in the references panel's foot",
+      control: 'Next in the references panel’s foot',
       keys: ['j', 'down'],
       when: panel,
       repeat: true,
@@ -131,7 +131,7 @@ export default defineCommands(
     previousReference: {
       label: 'Previous reference',
       group: 'Code',
-      control: "Previous in the references panel's foot",
+      control: 'Previous in the references panel’s foot',
       keys: ['k', 'up'],
       when: panel,
       repeat: true,
@@ -140,7 +140,7 @@ export default defineCommands(
     goReference: {
       label: 'Go to reference',
       group: 'Code',
-      control: "Go to reference in the references panel's foot, or a reference's row",
+      control: 'Go to reference in the references panel’s foot, or a reference’s row',
       keys: ['enter'],
       when: panel,
     },
@@ -151,7 +151,7 @@ export default defineCommands(
     closeReferences: {
       label: 'Close references',
       group: 'Code',
-      control: "Close in the references panel's foot",
+      control: 'Close in the references panel’s foot',
       keys: ['esc'],
       when: panel,
     },

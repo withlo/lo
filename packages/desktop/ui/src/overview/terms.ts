@@ -76,6 +76,6 @@ export const ReachedContext = createContext<Reached>({ target: undefined, leave:
 
 export function useGlossary(): GlossaryState {
   const state = useContext(GlossaryContext);
-  if (!state) throw new Error("An overview's terms are drawn only inside its document.");
+  if (!state) throw new Error('An overview’s terms are drawn only inside its document.');
   return state;
 }

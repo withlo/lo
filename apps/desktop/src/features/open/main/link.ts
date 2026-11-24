@@ -164,7 +164,7 @@ async function choose(pull: PullRef, github: LinkGithub, wanted?: string): Promi
       return { kind: 'refuse', refusal: decision.refusal, found };
     default:
       decision satisfies never;
-      throw new Error(`A decision Lo doesn't know: ${JSON.stringify(decision)}.`);
+      throw new Error(`A decision Lo doesn’t know: ${JSON.stringify(decision)}.`);
   }
 }
 

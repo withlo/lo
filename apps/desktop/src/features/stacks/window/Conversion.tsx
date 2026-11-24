@@ -6,6 +6,7 @@
 
 import {
   Button,
+  clock,
   Dialog,
   DialogSpacer,
   FactPerson,
@@ -82,14 +83,13 @@ function changeTitle(change: Change): ReactNode {
     case 'unstack':
       return 'Unstack the GitHub stack.';
     default:
-      throw new Error(`a change Lo doesn't know: ${JSON.stringify(change satisfies never)}`);
+      throw new Error(`a change Lo doesn’t know: ${JSON.stringify(change satisfies never)}`);
   }
 }
 
 /** "GitHub’s rate limit resets at 14:05.", while GitHub has asked Lo to hold off. */
 function waiting(until: number): string {
-  const time = new Date(until).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  return `GitHub’s rate limit resets at ${time}.`;
+  return `GitHub’s rate limit resets at ${clock(until)}.`;
 }
 
 /**
@@ -135,7 +135,7 @@ function changeDetail(row: ChangeRow, waitingUntil: number | null): ReactNode {
         </>
       ) : undefined;
     default:
-      throw new Error(`a state Lo doesn't know: ${JSON.stringify(status satisfies never)}`);
+      throw new Error(`a state Lo doesn’t know: ${JSON.stringify(status satisfies never)}`);
   }
 }
 
@@ -327,7 +327,7 @@ function conversionShown(
       };
     }
     default:
-      throw new Error(`a phase Lo doesn't know: ${JSON.stringify(phase satisfies never)}`);
+      throw new Error(`a phase Lo doesn’t know: ${JSON.stringify(phase satisfies never)}`);
   }
 }
 
@@ -340,7 +340,7 @@ function shownOf(open: Open, views: ReadonlyMap<string, ConversionView>): Shown 
     case 'conversion':
       return conversionShown(open, views.get(open.key));
     default:
-      throw new Error(`a dialog Lo doesn't know: ${JSON.stringify(open satisfies never)}`);
+      throw new Error(`a dialog Lo doesn’t know: ${JSON.stringify(open satisfies never)}`);
   }
 }
 

@@ -7,7 +7,6 @@
 
 import {
   attachmentKind,
-  formatSize,
   needsPaidPlan,
   prepareAttachment,
   RefusedAttachment,
@@ -55,12 +54,11 @@ export function prepareFile({ name, bytes }: PrepareInput): Prepared {
       kind: 'prepared',
       name: file.name,
       bytes: own,
-      size: formatSize(file.bytes.length),
       metadata: file.metadata,
       paidPlan: needsPaidPlan(file),
     };
   } catch (error) {
-    if (error instanceof RefusedAttachment) return { kind: 'refused', why: error.message };
+    if (error instanceof RefusedAttachment) return { kind: 'refused', refusal: error.refusal };
     throw error;
   }
 }

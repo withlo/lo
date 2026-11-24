@@ -122,20 +122,16 @@ function setUp(
 
 describe('checking a file again before it goes', () => {
   test.each([
-    [
-      'notes.txt',
-      PNG,
-      'GitHub takes PNG, JPEG, GIF, WebP and SVG images and MP4, MOV and WebM videos',
-    ],
-    ['shot.png', new Uint8Array(), "it's empty"],
-    ['shot.jpg', PNG, "its name says JPEG, but it isn't"],
+    ['notes.txt', PNG, { reason: 'unsupported' }],
+    ['shot.png', new Uint8Array(), { reason: 'empty' }],
+    ['shot.jpg', PNG, { reason: 'mislabelled', kind: 'jpeg' }],
     [
       'shot.png',
       new Uint8Array(10 * 1024 * 1024 + 1).fill(0x89),
-      "it's larger than GitHub's 10 MB",
+      { reason: 'tooLarge', limit: 10 * 1024 * 1024 },
     ],
-  ])('refuses %s as GitHub would', (name, bytes, why) => {
-    expect(checkedFile(name, bytes)).toEqual({ refusal: { kind: 'file', why } });
+  ] as const)('refuses %s as GitHub would', (name, bytes, refusal) => {
+    expect(checkedFile(name, bytes)).toEqual({ refusal: { kind: 'file', refusal } });
   });
 
   test('takes a PNG whose bytes agree', () => {

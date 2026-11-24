@@ -241,7 +241,7 @@ export class GitCommand {
    */
   env(name: string, value: string): this {
     if (!(COMMAND_VARIABLES as readonly string[]).includes(name)) {
-      throw new Error(`${name} isn't a variable a git command may set`);
+      throw new Error(`${name} isn’t a variable a git command may set`);
     }
     this.#env[name] = value;
     return this;

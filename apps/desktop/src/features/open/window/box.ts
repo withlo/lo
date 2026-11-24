@@ -291,7 +291,7 @@ export function takeWay(way: BlockedWay, text: string): void {
       lookUp(text);
       return;
     default:
-      throw new Error(`A way on Lo doesn't know: ${JSON.stringify(way satisfies never)}`);
+      throw new Error(`A way on Lo doesn’t know: ${JSON.stringify(way satisfies never)}`);
   }
 }
 

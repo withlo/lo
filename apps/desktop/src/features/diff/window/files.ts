@@ -2,7 +2,7 @@
 // said, closed when it's viewed, with its viewed mark and what's been worked out of it so far; and
 // whether the middle shows the view drawn of them, or what it says in its place.
 
-import { sizeText } from '@lo/review';
+import { bytes } from '@lo/ui';
 import type { DiffFile, FileHeader } from '@lo/ui/code';
 
 import type { Mark } from '../../revisions/window/shared.ts';
@@ -93,7 +93,7 @@ export function shownPath(path: string): string {
 
 /** A side's size, as a header says it, once it's known. */
 function sizeOf(side: FileVersions['old']): string | undefined {
-  return side?.size === null || side === null ? undefined : sizeText(side.size);
+  return side?.size === null || side === null ? undefined : bytes(side.size);
 }
 
 /** What a header says of where a file shows from, for one a push changed since it was viewed. */
@@ -143,7 +143,7 @@ export function tagsOf(versions: FileVersions): string[] {
       break;
     default:
       versions.start satisfies never;
-      throw new Error(`A start Lo doesn't know: ${JSON.stringify(versions.start)}.`);
+      throw new Error(`A start Lo doesn’t know: ${JSON.stringify(versions.start)}.`);
   }
   return tags;
 }
@@ -200,7 +200,7 @@ export function diffFileOf(entry: Entry, shown: Shown | undefined, mark?: Mark):
       break;
     default:
       versions.start satisfies never;
-      throw new Error(`A start Lo doesn't know: ${JSON.stringify(versions.start)}.`);
+      throw new Error(`A start Lo doesn’t know: ${JSON.stringify(versions.start)}.`);
   }
   if (!shown) {
     file.skip = 'large';

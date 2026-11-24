@@ -20,7 +20,7 @@ export interface ThreadComment {
   author: string;
   /** The address of their picture. */
   image?: string | undefined;
-  /** How long ago, as the card says it: "2 days ago". */
+  /** How long ago, as the card says it: "2 d ago". */
   when: string;
   /** It's yours: it says so, and offers Edit and Delete. No one else's does. */
   mine?: boolean | undefined;

@@ -4,7 +4,7 @@
 // and, under it, how a change asked of it stands while GitHub's answer was lost. A comment's text
 // is drawn as GitHub renders it, through `Post`.
 
-import { Button, Callout, Problem, Thread, type ThreadComment } from '@lo/ui';
+import { ago, Button, Callout, Problem, Thread, type ThreadComment } from '@lo/ui';
 import { keyLabels } from '@lo/ui/commands';
 import { useRef, type MouseEvent, type ReactNode } from 'react';
 
@@ -40,19 +40,6 @@ import { held } from './threads.ts';
 
 /** How tall a comment's avatar is drawn, in pixels: `Avatar`'s small size. */
 const AVATAR = 20;
-
-/** How long ago `at` was, in words, from `now`. */
-export function ago(at: number, now: number): string {
-  if (Number.isNaN(at)) return '';
-  const seconds = Math.max(0, Math.round((now - at) / 1000));
-  if (seconds < 60) return 'just now';
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
-  const days = Math.round(hours / 24);
-  return `${days} ${days === 1 ? 'day' : 'days'} ago`;
-}
 
 /** Whether two logins name one account: GitHub's ignore case. */
 function same(a: string | null | undefined, b: string | null | undefined): boolean {

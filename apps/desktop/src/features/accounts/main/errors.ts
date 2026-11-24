@@ -26,7 +26,7 @@ export function noKeychain(error: unknown): NoKeychain | undefined {
 export function githubMessage(error: unknown): string | undefined {
   if (!(error instanceof GithubError)) return undefined;
   const { kind } = error.detail;
-  if (kind === 'network') return `Lo couldn't reach GitHub: ${error.message}`;
+  if (kind === 'network') return `Lo couldn’t reach GitHub: ${error.message}`;
   if (kind === 'unauthorized') return `GitHub refused the token: ${error.message}`;
   return `GitHub answered with an error: ${error.message}`;
 }

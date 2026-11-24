@@ -18,6 +18,9 @@
  * {@link noLoSubject}.
  *
  * `lo/no-native-title` refuses a native tooltip, a DOM element's `title`: see {@link noNativeTitle}.
+ *
+ * `lo/no-straight-apostrophe` refuses a straight apostrophe the reader may see: see
+ * {@link noStraightApostrophe}.
  */
 
 import { join, relative } from 'node:path';
@@ -224,14 +227,70 @@ function spanOf(node: AstNode): [number, number] {
   return [typeof start === 'number' ? start : 0, typeof end === 'number' ? end : 0];
 }
 
+/** What a string the reader may see says, as a rule over them is handed it. */
+interface Said {
+  /** The node it's in: a string or template literal, or JSX text. */
+  readonly node: AstNode;
+  /** Its text: each part of a template literal, between what's put in it, in order. */
+  readonly parts: readonly string[];
+}
+
+/**
+ * The strings the reader may see in the desktop app, its source's and its packages', handed to
+ * `check` once each: a string or template literal, or JSX text. A log call's message (`console.*`,
+ * and anything called `log`, `warn`, `debug`, `trace` or `info`) is left out, since only a
+ * developer reads it. An error's message isn't: `describe` puts one on screen.
+ */
+function readerStrings(context: Context, check: (said: Said) => void) {
+  /** The spans of log calls' arguments, which only a developer reads. */
+  const unread: [number, number][] = [];
+  const { filename } = context;
+  const desktop = filename === undefined || DESKTOP.test(relative(ROOT, filename));
+  const hand = (node: AstNode, parts: readonly unknown[]): void => {
+    if (!desktop || !parts.every((part) => typeof part === 'string')) return;
+    const [start, end] = spanOf(node);
+    if (unread.some(([from, to]) => start >= from && end <= to)) return;
+    check({ node, parts });
+  };
+  return {
+    CallExpression(node: AstNode): void {
+      const callee: unknown = Reflect.get(node, 'callee');
+      const name = calleeName(callee);
+      if (!onConsole(callee) && (name === undefined || !UNREAD_CALLS.has(name))) return;
+      const args: unknown = Reflect.get(node, 'arguments');
+      if (!Array.isArray(args)) return;
+      for (const arg of args) if (isNode(arg)) unread.push(spanOf(arg));
+    },
+    Literal(node: AstNode): void {
+      const value: unknown = Reflect.get(node, 'value');
+      if (typeof value === 'string') hand(node, [value]);
+    },
+    TemplateLiteral(node: AstNode): void {
+      const quasis: unknown = Reflect.get(node, 'quasis');
+      if (!Array.isArray(quasis)) return;
+      hand(
+        node,
+        quasis.map((quasi: unknown) => {
+          const value: unknown = isNode(quasi) ? Reflect.get(quasi, 'value') : undefined;
+          return typeof value === 'object' && value !== null
+            ? Reflect.get(value, 'cooked')
+            : undefined;
+        }),
+      );
+    },
+    JSXText(node: AstNode): void {
+      const value: unknown = Reflect.get(node, 'value');
+      if (typeof value === 'string') hand(node, [value.trimStart()]);
+    },
+  };
+}
+
 /**
  * `lo/no-lo-subject` refuses a string the reader may see that starts with "Lo " and a word in lower
  * case: a string or template literal, or JSX text. Lo isn't the subject of what it says
  * (`design/writing.md`). A version, "Lo 0.9.0", and a name, "Lo Dev", are left alone, and so is a
- * log call's message (`console.*`, and anything called `log`, `warn`, `debug`, `trace` or `info`),
- * which only a developer reads. An error's message isn't left alone: `describe` puts one on screen.
- * It checks the desktop app's strings, its source's and its packages', and lets through those
- * `known` lists, by {@link subjectEntry}.
+ * log call's message, which only a developer reads. It checks the desktop app's strings, as
+ * {@link readerStrings} finds them, and lets through those `known` lists, by {@link subjectEntry}.
  */
 export function loSubject(known: ReadonlySet<string>) {
   return {
@@ -240,48 +299,159 @@ export function loSubject(known: ReadonlySet<string>) {
       docs: { description: 'Refuse a string the reader may see that makes Lo its subject.' },
     },
     create(context: Context) {
-      /** The spans of log calls' arguments, which only a developer reads. */
-      const unread: [number, number][] = [];
       const { filename, sourceCode } = context;
-      const desktop = filename === undefined || DESKTOP.test(relative(ROOT, filename));
-      const check = (node: AstNode, text: unknown): void => {
-        if (!desktop || typeof text !== 'string' || !LO_SUBJECT.test(text)) return;
-        const [start, end] = spanOf(node);
-        if (unread.some(([from, to]) => start >= from && end <= to)) return;
+      return readerStrings(context, ({ node, parts }) => {
+        if (!LO_SUBJECT.test(parts[0] ?? '')) return;
         if (filename !== undefined && sourceCode !== undefined) {
           if (known.has(subjectEntry(filename, sourceCode.getText(node)))) return;
         }
         context.report({ node, message: SUBJECT_MESSAGE });
-      };
-      return {
-        CallExpression(node: AstNode): void {
-          const callee: unknown = Reflect.get(node, 'callee');
-          const name = calleeName(callee);
-          if (!onConsole(callee) && (name === undefined || !UNREAD_CALLS.has(name))) return;
-          const args: unknown = Reflect.get(node, 'arguments');
-          if (!Array.isArray(args)) return;
-          for (const arg of args) if (isNode(arg)) unread.push(spanOf(arg));
-        },
-        Literal(node: AstNode): void {
-          check(node, Reflect.get(node, 'value'));
-        },
-        TemplateLiteral(node: AstNode): void {
-          const quasis: unknown = Reflect.get(node, 'quasis');
-          const first: unknown = Array.isArray(quasis) ? quasis[0] : undefined;
-          const value: unknown = isNode(first) ? Reflect.get(first, 'value') : undefined;
-          check(
-            node,
-            typeof value === 'object' && value !== null ? Reflect.get(value, 'cooked') : undefined,
-          );
-        },
-        JSXText(node: AstNode): void {
-          const value: unknown = Reflect.get(node, 'value');
-          check(node, typeof value === 'string' ? value.trimStart() : undefined);
-        },
-      };
+      });
     },
   };
 }
+
+export const APOSTROPHE_MESSAGE =
+  'This string has a straight apostrophe the reader may see. Write it curly: “can’t”, “GitHub’s”. Straight ones are only for code.';
+
+/** A straight apostrophe between two letters, as in "can't" or "GitHub's". */
+const STRAIGHT = /\p{L}'\p{L}/u;
+
+/** A plural's straight apostrophe, after an "s" that ends a word, as in "Settings' list". */
+const PLURAL = /\p{L}s'(?=[\s.,;:!?)]|$)/u;
+
+/** A straight quote that opens a quotation, before a letter and after none: "'main'". */
+const OPENS = /(?<![\p{L}\p{N}])'(?=\p{L})/u;
+
+/** Code a string holds between backticks, as in "Run `git config user.name 'Ravi'`". */
+const IN_BACKTICKS = /`[^`]*`/g;
+
+/** A comment in markup, `<!-- … -->`, which is a file's own text, as a project file Lo writes. */
+const IN_MARKUP_COMMENTS = /<!--[\s\S]*?-->/g;
+
+/**
+ * Whether `text` has a straight apostrophe: in a word, or after a plural. A plural's is looked for
+ * only in text that quotes nothing with straight quotes, where its closing quote would look the
+ * same, so "Settings' list" is refused, and "the 'rules' list" isn't.
+ */
+function hasStraight(text: string): boolean {
+  return STRAIGHT.test(text) || (PLURAL.test(text) && !OPENS.test(text));
+}
+
+/** The elements whose text is code: what's typed, or what a program wrote. */
+const CODE_ELEMENTS = new Set(['code', 'kbd', 'pre', 'samp']);
+
+/** The name of the element `node`, a JSX element, opens with, when it's a plain one. */
+function elementName(node: AstNode): string | undefined {
+  const opening: unknown = Reflect.get(node, 'openingElement');
+  const name: unknown = isNode(opening) ? Reflect.get(opening, 'name') : undefined;
+  if (!isNode(name) || name.type !== 'JSXIdentifier') return undefined;
+  const value: unknown = Reflect.get(name, 'name');
+  return typeof value === 'string' ? value : undefined;
+}
+
+/**
+ * What looks for text in other text, or compares with it, by name: a string handed to one is the
+ * other text's, as it's written, as in `message.includes("couldn't find remote ref")`.
+ */
+const LOOKS_FOR = new Set([
+  'endsWith',
+  'has',
+  'includes',
+  'indexOf',
+  'lastIndexOf',
+  'match',
+  'matchAll',
+  'RegExp',
+  'search',
+  'startsWith',
+  'test',
+]);
+
+/** What looks for its first argument only: what it puts in its place is its own. */
+const LOOKS_FOR_FIRST = new Set(['replace', 'replaceAll', 'split']);
+
+/** The arguments of `node`, a call or `new`, that are text it looks for, if it looks for any. */
+function soughtIn(node: AstNode): unknown[] {
+  const name = calleeName(Reflect.get(node, 'callee'));
+  const args: unknown = Reflect.get(node, 'arguments');
+  if (name === undefined || !Array.isArray(args)) return [];
+  if (LOOKS_FOR.has(name)) return args;
+  return LOOKS_FOR_FIRST.has(name) ? args.slice(0, 1) : [];
+}
+
+/** The operators that compare two values. */
+const COMPARES = new Set(['===', '!==', '==', '!=']);
+
+/**
+ * `lo/no-straight-apostrophe` refuses a straight apostrophe between two letters in a string the
+ * reader may see, as {@link readerStrings} finds them, or after a plural: "can't" is written
+ * "can’t", and "Settings' list" "Settings’ list" (`design/writing.md`). A plural's is let through in
+ * text that quotes with straight quotes, where it can't be told from a closing quote. Code keeps its
+ * straight ones, so it leaves alone what's between backticks in a string, the text of a `<code>`,
+ * `<kbd>`, `<pre>` or `<samp>`, a module's name, an object's key, a comment in markup, which is a
+ * file's own text, and text from elsewhere that Lo looks for or compares with, as git or a server
+ * writes it: an argument of `includes`, `has`, `startsWith`, `test` and the like, either side of
+ * `===`, and a `case`. What's put in a template literal counts as a word, so `${name}'s` is refused
+ * too.
+ */
+export const noStraightApostrophe = {
+  meta: {
+    type: 'suggestion',
+    docs: { description: 'Refuse a straight apostrophe in a string the reader may see.' },
+  },
+  create(context: Context) {
+    /** The spans of code: elements whose text is code, and text from elsewhere. */
+    const code: [number, number][] = [];
+    const isCode = (node: unknown): void => {
+      if (isNode(node)) code.push(spanOf(node));
+    };
+    const strings = readerStrings(context, ({ node, parts }) => {
+      const [start, end] = spanOf(node);
+      if (code.some(([from, to]) => start >= from && end <= to)) return;
+      const text = parts.join('x').replaceAll(IN_BACKTICKS, '').replaceAll(IN_MARKUP_COMMENTS, '');
+      if (!hasStraight(text)) return;
+      context.report({ node, message: APOSTROPHE_MESSAGE });
+    });
+    return {
+      ...strings,
+      CallExpression(node: AstNode): void {
+        strings.CallExpression(node);
+        for (const arg of soughtIn(node)) isCode(arg);
+      },
+      NewExpression(node: AstNode): void {
+        for (const arg of soughtIn(node)) isCode(arg);
+      },
+      BinaryExpression(node: AstNode): void {
+        if (!COMPARES.has(String(Reflect.get(node, 'operator')))) return;
+        isCode(Reflect.get(node, 'left'));
+        isCode(Reflect.get(node, 'right'));
+      },
+      SwitchCase(node: AstNode): void {
+        isCode(Reflect.get(node, 'test'));
+      },
+      ImportDeclaration(node: AstNode): void {
+        isCode(Reflect.get(node, 'source'));
+      },
+      ImportExpression(node: AstNode): void {
+        isCode(Reflect.get(node, 'source'));
+      },
+      ExportAllDeclaration(node: AstNode): void {
+        isCode(Reflect.get(node, 'source'));
+      },
+      ExportNamedDeclaration(node: AstNode): void {
+        isCode(Reflect.get(node, 'source'));
+      },
+      Property(node: AstNode): void {
+        isCode(Reflect.get(node, 'key'));
+      },
+      JSXElement(node: AstNode): void {
+        const name = elementName(node);
+        if (name !== undefined && CODE_ELEMENTS.has(name)) code.push(spanOf(node));
+      },
+    };
+  },
+};
 
 /** `lo/no-lo-subject`, letting through the strings that remain, which {@link LO_SUBJECTS} lists. */
 export const noLoSubject = loSubject(new Set(LO_SUBJECTS));
@@ -404,5 +574,6 @@ export default {
     'no-scroll-into-view': noScrollIntoView,
     'no-lo-subject': noLoSubject,
     'no-native-title': noNativeTitle,
+    'no-straight-apostrophe': noStraightApostrophe,
   },
 };

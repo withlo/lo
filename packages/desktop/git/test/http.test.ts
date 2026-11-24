@@ -75,7 +75,7 @@ test('a server that asks for a password gets the token', async () => {
   expect(server.saw(TOKEN)).toBe(true);
   expect(error.detail).toMatchObject({ kind: 'fetch', failure: 'tokenRefused' });
   expect(error.message).not.toContain('sign in');
-  expect(error.message).toContain("GitHub refused the account's token");
+  expect(error.message).toContain('GitHub refused the account’s token');
 });
 
 test('a redirect to another host is never followed', async () => {
@@ -244,7 +244,7 @@ test('a token github refuses isnt a reason to sign in', async () => {
   expect(error.isRetryable()).toBe(true);
   expect(error.message).not.toContain('sign in');
   expect(error.message).toContain(
-    "GitHub refused the account's token, which may have just expired; Lo tries again with its " +
+    'GitHub refused the account’s token, which may have just expired; Lo tries again with its ' +
       'renewed token',
   );
 });

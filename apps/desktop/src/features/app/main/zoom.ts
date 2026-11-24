@@ -15,6 +15,6 @@ export function zoomed(percent: number, step: ZoomStep): number {
     case 'reset':
       return 100;
     default:
-      throw new Error(`a zoom step Lo doesn't know: ${JSON.stringify(step satisfies never)}`);
+      throw new Error(`a zoom step Lo doesn’t know: ${JSON.stringify(step satisfies never)}`);
   }
 }

@@ -41,7 +41,7 @@ test('each starts as its own program, by its absolute path, with nothing from th
     expect(launch.path).toBeUndefined();
   }
   expect(() => launchNative(GOPLS, { folder: 'gopls', entry: 'gopls/gopls' })).toThrow(
-    "gopls/gopls isn't an absolute path",
+    'gopls/gopls isn’t an absolute path',
   );
   expect(() => launchNative({ ...GOPLS, id: 'go-langserver' }, installed(GOPLS))).toThrow(
     'has no go-langserver',

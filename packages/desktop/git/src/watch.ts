@@ -79,7 +79,7 @@ export function stoppedError(stopped: Stopped, what: string): GitError {
   switch (stopped.reason) {
     case 'connect':
       failure = 'network';
-      message = `GitHub didn't answer within ${limit}, so Lo stopped connecting`;
+      message = `GitHub didn’t answer within ${limit}, so Lo stopped connecting`;
       break;
     case 'start':
       failure = 'timedOut';
@@ -91,11 +91,11 @@ export function stoppedError(stopped: Stopped, what: string): GitError {
       break;
     case 'size':
       failure = 'tooLarge';
-      message = `it's more than ${formatMegabytes(stopped.limit)}, so Lo stopped downloading it`;
+      message = `it’s more than ${formatMegabytes(stopped.limit)}, so Lo stopped downloading it`;
       break;
     default:
       throw new Error(
-        `a reason to stop a fetch Lo doesn't know: ${JSON.stringify(stopped.reason satisfies never)}`,
+        `a reason to stop a fetch Lo doesn’t know: ${JSON.stringify(stopped.reason satisfies never)}`,
       );
   }
   return new GitError({ kind: 'fetch', what, failure, message });
@@ -237,7 +237,7 @@ export class FetchState {
         };
       default:
         throw new Error(
-          `a fetch stage Lo doesn't know: ${JSON.stringify(this.stage satisfies never)}`,
+          `a fetch stage Lo doesn’t know: ${JSON.stringify(this.stage satisfies never)}`,
         );
     }
   }
@@ -261,7 +261,7 @@ export class FetchState {
         return progress ?? 'resolving deltas';
       default:
         throw new Error(
-          `a fetch stage Lo doesn't know: ${JSON.stringify(this.stage satisfies never)}`,
+          `a fetch stage Lo doesn’t know: ${JSON.stringify(this.stage satisfies never)}`,
         );
     }
   }

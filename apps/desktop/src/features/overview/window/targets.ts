@@ -5,6 +5,7 @@
 
 import { LIMITS, type CheckedCode, type CodeRange, type CodeState } from '@lo/artifact';
 import { splitLines, type FileDiff } from '@lo/diff';
+import { bytes } from '@lo/ui';
 
 import type { DiffedText } from '../../diff/window/shared.ts';
 import type { BlockText, CodeCause } from '../contract.ts';
@@ -142,7 +143,7 @@ export function showsOf(target: CodeRange, found: Target, read: CodeRead, writte
         case 'binary':
           return cantShow('unresolved', [path, ' isn’t text.']);
         case 'tooLarge':
-          return cantShow('unresolved', [path, ` is over the ${LIMITS.file / 2 ** 20} MB limit.`]);
+          return cantShow('unresolved', [path, ` is over the ${bytes(LIMITS.file)} limit.`]);
         case 'commit':
           return cantShow('missing', [`${written}’s commit is no longer on GitHub.`], {
             kind: 'latest',
@@ -185,7 +186,7 @@ export function causeWords(cause: CodeCause, path: string, written: string): Wor
     case 'binary':
       return [file, ' isn’t text.'];
     case 'tooLarge':
-      return [file, ` is over the ${LIMITS.file / 2 ** 20} MB limit.`];
+      return [file, ` is over the ${bytes(LIMITS.file)} limit.`];
     case 'offline':
       return ['Offline.'];
     case 'spent':

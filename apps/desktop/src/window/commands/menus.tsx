@@ -148,7 +148,7 @@ function nameOf(kind: TargetKind): string {
       return 'Actions';
     default:
       kind satisfies never;
-      throw new Error(`There's no target of kind ${String(kind)}.`);
+      throw new Error(`There’s no target of kind ${String(kind)}.`);
   }
 }
 

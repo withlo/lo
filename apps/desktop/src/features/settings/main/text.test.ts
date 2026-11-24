@@ -119,17 +119,17 @@ describe('parseSettings', () => {
       // The parser's own words.
       details: 'ValueExpected at line 1, column 12',
       // And what's wrong alone, for what says what to do in its own words.
-      cause: "The settings file isn't valid JSON (Lo expected a value at line 1, column 12).",
+      cause: 'The settings file isn’t valid JSON (Lo expected a value at line 1, column 12).',
     });
     // Lines are counted past comments, at the key the comma should come before.
     expect(problemOf(parseSettings(`${COMMENTED.slice(0, -2)}  "x": 1\n}\n`))).toBe(
       'Line 9, column 3 isn’t valid JSON.',
     );
     expect(causeOf('{ "theme": "dark" /* open')).toContain(
-      "a /* comment isn't closed at line 1, column 19",
+      'a /* comment isn’t closed at line 1, column 19',
     );
     expect(causeOf("{ 'theme': 'dark' }")).toContain(
-      "Lo found something JSON doesn't have at line 1, column 3",
+      'Lo found something JSON doesn’t have at line 1, column 3',
     );
     expect(causeOf('{ "theme": "dark" } {}')).toContain(
       'Lo expected nothing more after the object',
@@ -328,7 +328,7 @@ describe('editSettings', () => {
 
   it('reads each change back, and makes none that would read as anything but what was meant', () => {
     const wrong = new SettingsUneditable(
-      "the new value, written into the settings file, wouldn't read back as Settings shows it, so Lo left the file as it was",
+      'the new value, written into the settings file, wouldn’t read back as Settings shows it, so Lo left the file as it was',
     );
     // A value that would take the file past the depth Lo reads.
     expect(() => editSettings(COMMENTED, 'later', nested(SETTINGS_DEPTH_LIMIT))).toThrow(wrong);

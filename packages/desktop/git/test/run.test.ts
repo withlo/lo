@@ -181,7 +181,7 @@ test('a command sets only the variables for git’s trace', async () => {
     'LO_GIT_TOKEN',
     'PATH',
   ]) {
-    expect(() => command.env(name, '1')).toThrow(`${name} isn't a variable a git command may set`);
+    expect(() => command.env(name, '1')).toThrow(`${name} isn’t a variable a git command may set`);
   }
   expect((await command.run()).toString('utf8')).toMatch(/^git version /);
 });

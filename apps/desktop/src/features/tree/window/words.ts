@@ -1,6 +1,8 @@
 // What the tree can't list, in words: main sends why as a kind, with what Git or GitHub said, and
 // the window writes a title and one reason for the line over the files and Go to file.
 
+import { bytes } from '@lo/ui';
+
 import { explain } from '../../../window/explain.ts';
 import type { TreeProblem, Unlisted } from '../contract.ts';
 
@@ -23,7 +25,7 @@ export function unlistedWords(why: Unlisted): TreeWords {
     case 'failed':
       return { title, reason: explain(why.cause) };
     default:
-      throw new Error(`A reason Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
+      throw new Error(`A reason Lo doesn’t know: ${JSON.stringify(why satisfies never)}`);
   }
 }
 
@@ -35,14 +37,11 @@ export function problemWords(problem: TreeProblem): TreeWords {
     case 'local':
       return { title, reason: 'The local copy can’t be used.' };
     case 'tooLarge':
-      return {
-        title,
-        reason: `The changes are over the ${Math.round(why.limit / 2 ** 20)} MB limit.`,
-      };
+      return { title, reason: `The changes are over the ${bytes(why.limit)} limit.` };
     case 'github':
       return { title, reason: explain(why.cause) };
     default:
-      throw new Error(`A problem Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
+      throw new Error(`A problem Lo doesn’t know: ${JSON.stringify(why satisfies never)}`);
   }
 }
 

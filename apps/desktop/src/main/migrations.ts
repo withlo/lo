@@ -35,7 +35,7 @@ export function readMigrations(files: Readonly<Record<string, string>>): Map<str
     const [, feature, file, number] = migrationPath.exec(path) ?? [];
     if (!feature || !file || !number) {
       throw new Error(
-        `${path} isn't named like a migration: features/<feature>/migrations/001-<name>.sql.`,
+        `${path} isn’t named like a migration: features/<feature>/migrations/001-<name>.sql.`,
       );
     }
     const migration = { feature, number: Number(number), file, sql, sha256: sha256(sql) };
@@ -46,7 +46,7 @@ export function readMigrations(files: Readonly<Record<string, string>>): Map<str
     migrations.forEach((migration, index) => {
       if (migration.number !== index + 1) {
         throw new Error(
-          `${feature}'s migrations must be numbered 001 on without gaps or repeats; ${migration.file} is out of place.`,
+          `${feature}’s migrations must be numbered 001 on without gaps or repeats; ${migration.file} is out of place.`,
         );
       }
     });
@@ -73,14 +73,14 @@ export function migrate(database: Database, files: Readonly<Record<string, strin
     if (!migration) {
       throw new StartupError(
         { kind: 'newerDatabase', feature, number },
-        `Lo's database was last opened by a newer version of Lo: it holds ${feature}'s migration ` +
-          `${String(number).padStart(3, '0')}, which this version doesn't have. Update Lo to open it.`,
+        `Lo’s database was last opened by a newer version of Lo: it holds ${feature}’s migration ` +
+          `${String(number).padStart(3, '0')}, which this version doesn’t have. Update Lo to open it.`,
       );
     }
     if (migration.sha256 !== row.sha256) {
       throw new StartupError(
         { kind: 'migrationChanged', feature, file: migration.file },
-        `${feature}'s migration ${migration.file} has changed since it ran on this database. ` +
+        `${feature}’s migration ${migration.file} has changed since it ran on this database. ` +
           'Add a new migration rather than editing one that has run.',
       );
     }
@@ -105,7 +105,7 @@ export function migrate(database: Database, files: Readonly<Record<string, strin
       if (!known.has(key(migration))) continue;
       database.transaction(() => {
         const before = schema(database);
-        const where = `${migration.feature}'s migration ${migration.file}`;
+        const where = `${migration.feature}’s migration ${migration.file}`;
         const allowed = owns(migration.feature);
         let refused: Action | undefined;
         const allow = (action: Action) => {
@@ -327,7 +327,7 @@ function checkOwnership(
   after: Map<string, SchemaObject>,
 ): void {
   const prefix = `${migration.feature}_`;
-  const where = `${migration.feature}'s migration ${migration.file}`;
+  const where = `${migration.feature}’s migration ${migration.file}`;
   for (const name of new Set([...before.keys(), ...after.keys()])) {
     const was = before.get(name);
     const is = after.get(name);
@@ -335,7 +335,7 @@ function checkOwnership(
     const object = is ?? was;
     if (!name.startsWith(prefix) || !object?.table.startsWith(prefix)) {
       throw new Error(
-        `${where} touches ${name}. A feature's tables, indexes, views and triggers are named ${prefix}….`,
+        `${where} touches ${name}. A feature’s tables, indexes, views and triggers are named ${prefix}….`,
       );
     }
   }
@@ -345,7 +345,7 @@ function checkOwnership(
     const content = fts5Content(object.sql);
     if (content && !content.startsWith(prefix)) {
       throw new Error(
-        `${where} makes ${name} read its rows from ${content}, another feature's table.`,
+        `${where} makes ${name} read its rows from ${content}, another feature’s table.`,
       );
     }
     const references = database
@@ -354,7 +354,7 @@ function checkOwnership(
       .map((row) => String(row.table));
     const elsewhere = references.find((table) => !table.startsWith(prefix));
     if (elsewhere) {
-      throw new Error(`${where} makes ${name} refer to ${elsewhere}, another feature's table.`);
+      throw new Error(`${where} makes ${name} refer to ${elsewhere}, another feature’s table.`);
     }
   }
 }

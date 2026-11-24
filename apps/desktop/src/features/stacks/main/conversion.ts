@@ -523,7 +523,7 @@ export class Conversions {
           : change.kind === 'retarget'
             ? await this.#send(run, () => poller.retarget(repo, change, signal))
             : undefined;
-      if (!sent) throw new Error(`putting back can't send a ${change.kind}`);
+      if (!sent) throw new Error(`putting back can’t send a ${change.kind}`);
       if (sent.kind === 'givenUp') {
         this.#mark(rows, index, 'todo', null);
         break;
@@ -737,7 +737,7 @@ function changeOf(step: Step): Change {
     case 'addToStack':
       return { kind: 'add', stack: step.stack, prs: [...step.prs] };
     default:
-      throw new Error(`a step Lo doesn't know: ${JSON.stringify(step satisfies never)}`);
+      throw new Error(`a step Lo doesn’t know: ${JSON.stringify(step satisfies never)}`);
   }
 }
 
@@ -829,7 +829,7 @@ function saidOf(run: Run): {
       };
     }
     default:
-      throw new Error(`a phase Lo doesn't know: ${JSON.stringify(phase satisfies never)}`);
+      throw new Error(`a phase Lo doesn’t know: ${JSON.stringify(phase satisfies never)}`);
   }
 }
 

@@ -48,8 +48,8 @@ export function launchNative(
   manifest: Manifest = MANIFEST,
 ): Launch {
   const pinned = Object.hasOwn(manifest, server.id) ? manifest[server.id] : undefined;
-  if (pinned === undefined) throw new Error(`Lo's list of language servers has no ${server.id}.`);
-  if (!isAbsolute(installed.entry)) throw new Error(`${installed.entry} isn't an absolute path.`);
+  if (pinned === undefined) throw new Error(`Lo’s list of language servers has no ${server.id}.`);
+  if (!isAbsolute(installed.entry)) throw new Error(`${installed.entry} isn’t an absolute path.`);
   const path = toolchains.flatMap((use) => use.path);
   const variables = merged([...toolchains.map((use) => use.variables), server.variables ?? {}]);
   const allowed = toolchains.flatMap((use) => use.allowed);

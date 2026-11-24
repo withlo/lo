@@ -1,6 +1,8 @@
 // How far each view's code index has got, as main last said: kept with the view, and gone when its
 // tab closes. What its status bar item says follows from it, as a plain function tested alone.
 
+import { bytes } from '@lo/ui';
+
 import { tabState } from '../../tab/window/shared.ts';
 import type { IndexState, Indexed, PartialWhy } from '../contract.ts';
 import { TREE_BYTES, TREE_FILES } from '../jobs.ts';
@@ -54,7 +56,7 @@ const count = (value: number) => value.toLocaleString('en-US');
 /** Why an index is partial, a sentence each. */
 const WHY: Readonly<Record<PartialWhy, string>> = {
   files: `The ${count(TREE_FILES)} files nearest the changes are indexed.`,
-  bytes: `The first ${count(TREE_BYTES / 1024 ** 2)} MB of files are indexed.`,
+  bytes: `The first ${bytes(TREE_BYTES)} of files are indexed.`,
   offline: 'Offline.',
   listing: 'The repo has too many files to list.',
 };

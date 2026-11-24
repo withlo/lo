@@ -2,7 +2,7 @@
 // the code when it resolves, a note in its place when it doesn't, saying why and what the reader
 // can do, and, once read, the diff only for a file the pull request changed.
 
-import { LIMITS, type CheckedCode, type CodeRange, type CodeState } from '@lo/artifact';
+import { type CheckedCode, type CodeRange, type CodeState } from '@lo/artifact';
 import { diffText } from '@lo/diff';
 import { describe, expect, it } from 'vitest';
 
@@ -123,9 +123,7 @@ describe('showsOf', () => {
       words({ code: { state: 'broken', why: 'notFile' }, answer: { kind: 'notFile', is: 'link' } }),
     ).toBe('src/cache.ts is a symbolic link in r3.');
     expect(words(broken('binary'))).toBe('src/cache.ts isn’t text.');
-    expect(words(broken('tooLarge'))).toBe(
-      `src/cache.ts is over the ${LIMITS.file / 2 ** 20} MB limit.`,
-    );
+    expect(words(broken('tooLarge'))).toBe('src/cache.ts is over the 10 MB limit.');
     expect(showsOf(range('a.ts', 7), broken('lines'), READ, 'abc1234')).toMatchObject({
       words: [{ code: 'a.ts' }, ' has no line 7 in abc1234.'],
     });

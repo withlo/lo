@@ -199,7 +199,7 @@ test('the account stays across a restart, and removing it removes its token', as
       await shown.evaluate(() => window.lo.invoke('accounts.remove', { login: 'rozed-bot' })),
     ).toEqual({
       ok: false,
-      error: { code: 'missing', message: "Lo isn't signed in to rozed-bot." },
+      error: { code: 'missing', message: 'Lo isn’t signed in to rozed-bot.' },
     });
   } finally {
     await again.close();

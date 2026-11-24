@@ -63,7 +63,7 @@ test('large files start collapsed and say which key loads them', () => {
   expect(heavy).toEqual({
     kind: 'large',
     generated: undefined,
-    why: '2.0 MiB, more than the 1 MiB Lo loads at once',
+    why: '2 MB, more than the 1 MB Lo loads at once',
   });
 });
 
@@ -79,23 +79,18 @@ test('a large binary file that loads nothing isnt collapsed', () => {
   });
 });
 
-test('sizes read in the largest whole unit', () => {
+test('sizes read as the guide writes them: in 1,024s, whole below 1 MB, one decimal from it', () => {
   expect(sizeText(0)).toBe('0 B');
-  expect(sizeText(1023)).toBe('1023 B');
-  expect(sizeText(1024)).toBe('1.0 KiB');
-  expect(sizeText(2150)).toBe('2.1 KiB');
-  expect(sizeText(3 * 1024 * 1024 + 400_000)).toBe('3.4 MiB');
-});
-
-test('a size halfway between two tenths rounds to the even one', () => {
-  expect(sizeText(1280)).toBe('1.2 KiB');
-  expect(sizeText(1792)).toBe('1.8 KiB');
-  expect(sizeText(1382)).toBe('1.3 KiB');
-  expect(sizeText(1.25 * 1024 * 1024)).toBe('1.2 MiB');
+  expect(sizeText(1023)).toBe('1,023 B');
+  expect(sizeText(1024)).toBe('1 KB');
+  expect(sizeText(2150)).toBe('2 KB');
+  expect(sizeText(1024 ** 2 - 1)).toBe('1 MB');
+  expect(sizeText(3 * 1024 * 1024 + 400_000)).toBe('3.4 MB');
+  expect(sizeText(6 * 1024 ** 3)).toBe('6 GB');
 });
 
 test('binary files say they changed and their sizes', () => {
-  expect(binaryText(2150, 4096)).toBe('(binary file changed: 2.1 KiB → 4.0 KiB)');
+  expect(binaryText(2150, 4096)).toBe('(binary file changed: 2 KB → 4 KB)');
   expect(binaryText(undefined, 10)).toBe('(binary file added: 10 B)');
   expect(binaryText(10, undefined)).toBe('(binary file deleted: 10 B)');
 });

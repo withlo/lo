@@ -190,10 +190,10 @@ export function planRefusal(refusal: ReviewRefusal): SendRefusal {
     case 'otherRevision':
     case 'ownPullRequest':
     case 'nothingToSubmit':
-      return { kind: 'github', message: `Lo can't send that: ${refusal.refusal}.` };
+      return { kind: 'github', message: `Lo can’t send that: ${refusal.refusal}.` };
     default:
       refusal satisfies never;
-      return { kind: 'github', message: "Lo can't send that." };
+      return { kind: 'github', message: 'Lo can’t send that.' };
   }
 }
 
@@ -445,7 +445,7 @@ export class Writer {
     how: 'review' | 'now',
   ): Promise<SendOutcome> {
     const info = this.#options.view(id);
-    if (!info) throw new IpcError('missing', "There's no pull request's tab with that id.");
+    if (!info) throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
     if (place.kind === 'edit') throw new IpcError('refused', 'An edit is sent with `edit`.');
     if (info.run) return Promise.resolve({ kind: 'refused', refusal: { kind: 'run' } });
     const target = this.#targetOf(id);
@@ -1042,7 +1042,7 @@ export class Writer {
   /** The account and pull request view `id` changes threads on, or why it can't. */
   #actTarget(id: string): Target | ActOutcome {
     const info = this.#options.view(id);
-    if (!info) throw new IpcError('missing', "There's no pull request's tab with that id.");
+    if (!info) throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
     if (info.run) return { kind: 'refused', refusal: { kind: 'run' } };
     return this.#targetOf(id) ?? { kind: 'refused', refusal: { kind: 'signIn' } };
   }
@@ -1381,7 +1381,7 @@ export class Writer {
   /** {@link Writer.#targetOf}, or the refusal of a view that can't write. */
   #writing(id: string): Target {
     const info = this.#options.view(id);
-    if (!info) throw new IpcError('missing', "There's no pull request's tab with that id.");
+    if (!info) throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
     const target = this.#targetOf(id);
     if (!target) throw new IpcError('refused', 'Sign in to comment.');
     return target;

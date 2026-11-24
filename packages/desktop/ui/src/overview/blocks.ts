@@ -49,7 +49,7 @@ export function isStop(block: OverviewBlock): boolean {
       return false;
     default:
       block satisfies never;
-      throw new Error(`A kind of block Lo doesn't know: ${JSON.stringify(block)}.`);
+      throw new Error(`A kind of block Lo doesn’t know: ${JSON.stringify(block)}.`);
   }
 }
 
@@ -84,7 +84,7 @@ export function blockHints(block: OverviewBlock): readonly BlockHint[] {
       return [];
     default:
       block satisfies never;
-      throw new Error(`A kind of block Lo doesn't know: ${JSON.stringify(block)}.`);
+      throw new Error(`A kind of block Lo doesn’t know: ${JSON.stringify(block)}.`);
   }
 }
 

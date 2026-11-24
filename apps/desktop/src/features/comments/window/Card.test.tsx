@@ -9,7 +9,7 @@ import { beforeAll, expect, onTestFinished, test, vi } from 'vitest';
 import { installBridge } from '../../../window/test/bridge.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
 import type { ThreadCommentRow, ThreadRow, ThreadsView } from '../contract.ts';
-import { ago, Card, ThreadCard } from './Card.tsx';
+import { Card, ThreadCard } from './Card.tsx';
 import { held } from './threads.ts';
 
 vi.mock('../../../window/commands/registry.ts', () => ({
@@ -257,10 +257,7 @@ test('a card drawn as its row goes, and comes back, draws nothing meanwhile', ()
   expect(element.querySelector('[data-comment="C1"]')).not.toBeNull();
 });
 
-test('when a comment was written, in words', () => {
-  expect(ago(NOW - 20_000, NOW)).toBe('just now');
-  expect(ago(NOW - 5 * 60_000, NOW)).toBe('5 min ago');
-  expect(ago(NOW - 60 * 60_000, NOW)).toBe('1 hour ago');
-  expect(ago(NOW - 49 * 60 * 60_000, NOW)).toBe('2 days ago');
-  expect(ago(Number.NaN, NOW)).toBe('');
+test('when a comment was written, in the largest whole unit only', () => {
+  const card = drawn(row({ comments: [comment({ createdAt: '2026-11-04T09:00:00Z' })] }), true);
+  expect(card.textContent).toContain('9 d ago');
 });

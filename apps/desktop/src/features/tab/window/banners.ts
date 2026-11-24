@@ -4,6 +4,8 @@
 // details; and a change to the pull request, a newer push, is its banner. Nothing here draws
 // anything.
 
+import { clock as timeOfDay } from '@lo/ui';
+
 import {
   explain,
   gitWords,
@@ -65,36 +67,7 @@ export interface Clock {
 
 /** A clock in the system's locale. */
 export function systemClock(now: number): Clock {
-  return { now, time: (at) => timeFormat().format(at) };
-}
-
-let format: Intl.DateTimeFormat | undefined;
-
-/** The system's way of writing a time of day, made once: making one takes a while. */
-function timeFormat(): Intl.DateTimeFormat {
-  format ??= new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
-  return format;
-}
-
-/** "12 s", "4 min", "2 h": a wait, for what counts down, rounded up. */
-export function span(milliseconds: number): string {
-  const seconds = Math.max(1, Math.ceil(milliseconds / 1000));
-  if (seconds < 60) return `${seconds} s`;
-  return whole(Math.ceil(seconds / 60) * 60) ?? `${seconds} s`;
-}
-
-/** How long before `now` `then` was: "just now", "5 min ago", "2 h ago". */
-export function ago(then: number, now: number): string {
-  const said = whole(Math.floor(Math.max(0, now - then) / 1000));
-  return said === undefined ? 'just now' : `${said} ago`;
-}
-
-/** `seconds` in the largest whole unit, or nothing under a minute. */
-function whole(seconds: number): string | undefined {
-  if (seconds < 60) return undefined;
-  if (seconds < 3_600) return `${Math.floor(seconds / 60)} min`;
-  if (seconds < 86_400) return `${Math.floor(seconds / 3_600)} h`;
-  return `${Math.floor(seconds / 86_400)} d`;
+  return { now, time: timeOfDay };
 }
 
 /** "abc1234": a commit by the start of its ID. */

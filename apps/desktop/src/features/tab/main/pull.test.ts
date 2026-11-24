@@ -314,7 +314,7 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
     const git = await testGit();
     const { tab, sent, kept } = tabFor({ github, git });
     // Before it asks, nothing is chosen.
-    await expect(tab.choose('rozed-bot')).rejects.toThrow("isn't asking");
+    await expect(tab.choose('rozed-bot')).rejects.toThrow('isn’t asking');
     tab.show();
     await expect
       .poll(() => sent.pull?.problem)
@@ -323,7 +323,7 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
         logins: ['rozed-bot', 'other-bot'],
       });
     // Only an account it asked about.
-    await expect(tab.choose('someone-else')).rejects.toThrow("isn't asking");
+    await expect(tab.choose('someone-else')).rejects.toThrow('isn’t asking');
     expect(remembered.size).toBe(0);
 
     await tab.choose('rozed-bot');

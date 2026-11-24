@@ -5,8 +5,6 @@ import {
   attachmentKind,
   attachmentMarkdown,
   bytesAgree,
-  describeRefusal,
-  formatSize,
   FREE_VIDEO_LIMIT,
   IMAGE_LIMIT,
   isAssetUrl,
@@ -106,9 +104,6 @@ test('images over 10 mib and videos over 100 are refused', () => {
     reason: 'tooLarge',
     limit: VIDEO_LIMIT,
   });
-  expect(describeRefusal({ reason: 'tooLarge', limit: IMAGE_LIMIT })).toBe(
-    "it's larger than GitHub's 10 MB",
-  );
 });
 
 test('a video over 10 mib needs a paid plan', () => {
@@ -213,14 +208,6 @@ test('a heic photo named mp4 isnt a video', () => {
   expect(bytesAgree('mov', heic)).toBe(false);
   const mp4 = concat(new Uint8Array([0, 0, 0, 24]), latin1('ftypisom\0\0\0\0isommp41'));
   expect(bytesAgree('mp4', mp4)).toBe(true);
-});
-
-test('sizes read as people read them', () => {
-  expect(formatSize(512)).toBe('512 bytes');
-  expect(formatSize(250_000)).toBe('244 KB');
-  expect(formatSize(2_200_000)).toBe('2.1 MB');
-  expect(formatSize(IMAGE_LIMIT)).toBe('10 MB');
-  expect(formatSize(VIDEO_LIMIT)).toBe('100 MB');
 });
 
 test('a large upload has longer to finish', () => {

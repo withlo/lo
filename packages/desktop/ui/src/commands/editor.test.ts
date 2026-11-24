@@ -98,7 +98,7 @@ describe('a key the editor handles itself', () => {
     expect(isOwned({})).toBe(false);
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the types refuse it, as they should.
     expect(() => handlers(box, { add: { run() {} } } as never)).toThrow(
-      "is handled by its scope's editor, which nothing here runs, so it has no handler",
+      'is handled by its scope’s editor, which nothing here runs, so it has no handler',
     );
     const given = handlers(box, {});
     expect(checkHandlers([box], given)).toEqual([]);
@@ -106,7 +106,7 @@ describe('a key the editor handles itself', () => {
       command.name === 'add' ? { ...command, handler: { run() {} } } : command,
     );
     expect(checkHandlers([box], withHandler)).toEqual([
-      "comments.add is its scope's editor's own key, which nothing runs, but has a handler.",
+      'comments.add is its scope’s editor’s own key, which nothing runs, but has a handler.',
     ]);
   });
 
@@ -161,7 +161,7 @@ describe('the Vim check', () => {
       move: { label: 'Move', group: 'Comments', keys: ['x'], editor: true, when: inBox },
     });
     expect(checkVim([takes])).toEqual([
-      "`x` (diff.move) meets Vim's `x` without overVim, in box (normal) and box (visual), on macOS and Linux.",
+      '`x` (diff.move) meets Vim’s `x` without overVim, in box (normal) and box (visual), on macOS and Linux.',
     ]);
   });
 });
@@ -240,8 +240,8 @@ describe('the registry', () => {
   });
 
   test('refuses to run one, saying whose it is', () => {
-    expect(registry.run('comments.add', NO_TARGET)).toBe("Add to review is its editor's own key.");
-    expect(registry.run('comments.leave', NO_TARGET)).toBe("Leave insert mode is Vim's.");
+    expect(registry.run('comments.add', NO_TARGET)).toBe('Add to review is its editor’s own key.');
+    expect(registry.run('comments.leave', NO_TARGET)).toBe('Leave insert mode is Vim’s.');
   });
 
   test('doesn’t offer it in the palette or a menu', () => {

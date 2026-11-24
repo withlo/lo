@@ -36,7 +36,7 @@ export default defineCommands(
       keys: ['] s'],
       when: anywhere,
       count: 'layers',
-      control: "the down arrow in the stack panel's head",
+      control: 'the down arrow in the stack panel’s head',
     },
     previousLayer: {
       label: 'Previous layer',
@@ -44,7 +44,7 @@ export default defineCommands(
       keys: ['[ s'],
       when: anywhere,
       count: 'layers',
-      control: "the up arrow in the stack panel's head",
+      control: 'the up arrow in the stack panel’s head',
     },
     /**
      * Goes up from the file tree to the stack's tree, at the layer on screen; for a pull request

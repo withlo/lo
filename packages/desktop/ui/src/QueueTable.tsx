@@ -172,7 +172,7 @@ function leftState(reason: LeftReason): { word: string; tone: string } {
       return { word: 'Left', tone: 'text-fg-muted' };
     default:
       reason satisfies never;
-      throw new Error(`A reason for leaving the queue Lo doesn't know: ${JSON.stringify(reason)}.`);
+      throw new Error(`A reason for leaving the queue Lo doesn’t know: ${JSON.stringify(reason)}.`);
   }
 }
 
@@ -224,7 +224,7 @@ function LeftIcon({ reason }: { reason: LeftReason }) {
       );
     default:
       reason satisfies never;
-      throw new Error(`A reason for leaving the queue Lo doesn't know: ${JSON.stringify(reason)}.`);
+      throw new Error(`A reason for leaving the queue Lo doesn’t know: ${JSON.stringify(reason)}.`);
   }
 }
 
@@ -274,7 +274,7 @@ function Why({ entry }: { entry: LeftEntry }) {
       return <>Left {when}</>;
     default:
       reason satisfies never;
-      throw new Error(`A reason for leaving the queue Lo doesn't know: ${JSON.stringify(reason)}.`);
+      throw new Error(`A reason for leaving the queue Lo doesn’t know: ${JSON.stringify(reason)}.`);
   }
 }
 

@@ -21,7 +21,7 @@ export default defineCommands(
     /** In Recent, opens the pull request link on the clipboard. */
     paste: {
       label: 'Paste link',
-      control: "Paste link in Recent, before any pull request's listed",
+      control: 'Paste link in Recent, before any pull request’s listed',
       group: 'Tabs',
       keys: ['cmd+v'],
       when: { scope: 'recent' },

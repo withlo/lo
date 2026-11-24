@@ -126,7 +126,7 @@ export async function distrust(
     });
   const names = settings.map((setting) => setting.name);
   const others = names.filter((name) => !OWN_SETTINGS.has(name));
-  if (others.length > 0) return `it has settings Lo didn't write (${others.join(', ')})`;
+  if (others.length > 0) return `it has settings Lo didn’t write (${others.join(', ')})`;
   // git reads some settings' first value and others' last, so one that holds two is refused.
   const twice = names.filter((name, index) => names.indexOf(name) !== index);
   if (twice.length > 0) return `it has settings with more than one value (${twice.join(', ')})`;
@@ -192,7 +192,7 @@ async function distrustWorktrees(
     const target = gitdir?.trim();
     const inside =
       checkouts !== undefined && target !== undefined && (await leadsInto(checkouts, target));
-    if (!inside) return `worktrees/${name} names a checkout outside Lo's`;
+    if (!inside) return `worktrees/${name} names a checkout outside Lo’s`;
   }
   return undefined;
 }

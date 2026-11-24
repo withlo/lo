@@ -272,7 +272,7 @@ export class OverviewTab {
     const overview = [this.#shown, this.#newer].find((each) => each?.id === commit);
     const acting = this.#acting;
     if (!overview || !acting) {
-      throw new IpcError('moved', "That isn't the overview on screen, or the newer one.");
+      throw new IpcError('moved', 'That isn’t the overview on screen, or the newer one.');
     }
     // What the window draws on screen, as the overview's figures fill in, while it's on screen.
     const priority = (): ReadPriority => (this.#onScreen ? 'foreground' : 'background');
@@ -341,7 +341,7 @@ export class OverviewTab {
    * {@link CodeReading} runs them, until the tab closes.
    */
   readCode(key: string, read: (signal: AbortSignal) => Promise<CodeReply>): Promise<CodeReply> {
-    if (this.#closed) throw new IpcError('missing', "There's no pull request's tab with that id.");
+    if (this.#closed) throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
     return this.#codeRead.run(key, read);
   }
 

@@ -184,9 +184,9 @@ const LONG_DOCS = markdownTree(
 );
 
 const ENTRIES: TrustEntry[] = [
-  { key: 'api', name: 'fieldwork/atlas-api', kind: 'repo', trusted: '12 days ago' },
-  { key: 'web', name: 'fieldwork/atlas-web', kind: 'repo', trusted: '3 days ago' },
-  { key: 'fork', name: 'sam-whit/atlas-api#4833', kind: 'fork', trusted: 'today' },
+  { key: 'api', name: 'fieldwork/atlas-api', kind: 'repo', trusted: 'trusted 12 d ago' },
+  { key: 'web', name: 'fieldwork/atlas-web', kind: 'repo', trusted: 'trusted 3 d ago' },
+  { key: 'fork', name: 'sam-whit/atlas-api#4833', kind: 'fork', trusted: 'trusted just now' },
 ];
 
 const STATES: { name: string; state: ServerState }[] = [

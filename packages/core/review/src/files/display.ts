@@ -5,7 +5,7 @@
 
 import { changedLines, type ChangedFile } from './changed.ts';
 import type { Generated } from './generated.ts';
-import { initialState, LARGE_FILE_LINES } from './state.ts';
+import { initialState, LARGE_FILE_BYTES, LARGE_FILE_LINES } from './state.ts';
 
 /**
  * Why a file shows collapsed, which its header says.
@@ -168,25 +168,26 @@ function largeWhy(file: ChangedFile): string {
       `${LARGE_FILE_LINES} Lo loads at once`
     );
   }
-  return `${sizeText(file.size ?? 0)}, more than the 1 MiB Lo loads at once`;
+  return `${sizeText(file.size ?? 0)}, more than the ${sizeText(LARGE_FILE_BYTES)} Lo loads at once`;
 }
 
-const KIB = 1024;
-const MIB = 1024 * 1024;
+const SIZE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
 
-/** A size in bytes, as "512 B", "2.1 KiB" or "3.4 MiB". */
+/**
+ * A size in bytes as `design/writing.md` writes one, as the window's `bytes()` in `@lo/ui` does, for
+ * what this package says itself: counted in 1,024s, whole below 1 MB, one decimal from it and never
+ * ".0": "512 B", "38 KB", "3.4 MB", "6 GB".
+ */
 export function sizeText(bytes: number): string {
-  if (bytes < KIB) return `${bytes} B`;
-  if (bytes < MIB) return `${tenths(bytes, KIB)} KiB`;
-  return `${tenths(bytes, MIB)} MiB`;
-}
-
-/** `bytes` in `unit`s, to one decimal place, rounding a half to the even tenth. */
-function tenths(bytes: number, unit: number): string {
-  let whole = Math.floor((bytes * 10) / unit);
-  const rest = bytes * 10 - whole * unit;
-  if (rest * 2 > unit || (rest * 2 === unit && whole % 2 === 1)) whole++;
-  return `${Math.floor(whole / 10)}.${whole % 10}`;
+  let value = Number.isFinite(bytes) ? Math.max(0, bytes) : 0;
+  let unit = 0;
+  /** `value` as it shows in the unit it's in. */
+  const shown = (): number => (unit < 2 ? Math.round(value) : Math.round(value * 10) / 10);
+  while (unit < SIZE_UNITS.length - 1 && shown() >= 1024) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${shown().toLocaleString('en-US')} ${SIZE_UNITS[unit]}`;
 }
 
 /** What a binary file that isn't an image shows: that it changed, and its sizes. */

@@ -362,7 +362,7 @@ function settlesByListing(why: Unsure): boolean {
     case 'cutShort':
       return false;
     default:
-      throw new Error(`a reason Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
+      throw new Error(`a reason Lo doesn’t know: ${JSON.stringify(why satisfies never)}`);
   }
 }
 
@@ -393,7 +393,7 @@ function unsureText(why: Unsure, { number, repo, facts, toLookUp }: WhereView): 
     case 'cutShort':
       return `GitHub lists only some pull requests from ${why.branch}.`;
     default:
-      throw new Error(`a reason Lo doesn't know: ${JSON.stringify(why satisfies never)}`);
+      throw new Error(`a reason Lo doesn’t know: ${JSON.stringify(why satisfies never)}`);
   }
 }
 

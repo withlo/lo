@@ -23,7 +23,7 @@ const log = (line: string) => console.error(`diff: ${line}`);
 
 function diffOf(id: string): DiffTab {
   const diff = diffs.get(id);
-  if (!diff) throw new IpcError('missing', "There's no pull request's tab with that id.");
+  if (!diff) throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
   return diff;
 }
 
