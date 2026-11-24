@@ -6,8 +6,7 @@
 // background or in front by turns, read GitHub on a schedule its cassettes didn't record. On a
 // display of its own, the pointer rests where Xvfb starts it, in the middle, which is in Lo's
 // window, as Lo centers it: the window has focus from when it opens, and it gets focus back when a
-// window it opened itself closes. A window that's never shown, as the ui specs' isn't, draws its
-// frames seconds apart while other windows draw on its display, and on time on one of its own.
+// window it opened itself closes.
 
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';

@@ -1,7 +1,7 @@
 // A spec's page: built from its harness into a folder of its own, and opened in a copy of Electron,
 // one window that's never shown. On Linux each worker opens its pages on an X display of its own
-// (`@lo/testing/display`), so another worker's windows never take its frames, focus or pointer. As
-// a file, the page loads its script as a plain one: Chromium loads no module from a `file:` address.
+// (`@lo/testing/display`), so another worker's windows never take its focus or the pointer. As a
+// file, the page loads its script as a plain one: Chromium loads no module from a `file:` address.
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';

@@ -216,7 +216,7 @@ jobs:
       # e2e depends on build, so this builds each app it tests first. Each Playwright worker of
       # each suite, the smoke test, ui's specs and the performance suite, starts a virtual display
       # of its own (testing/src/display.ts), so the windows two workers open at once never take
-      # focus or frames from each other, and nothing here needs a display of its own. What follows
+      # focus or the pointer from each other, and nothing here needs a display. What follows
       # -- goes to each project's Playwright, and not to the builds. Playwright splits a project's
       # tests by count, in file order, one test at a time, as every suite runs fully parallel. A
       # project with fewer tests than shards leaves some shards with none of them, which passes.
