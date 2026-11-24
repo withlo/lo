@@ -26,6 +26,23 @@ pnpm nx run desktop:e2e    # its smoke test
 A copy run from source keeps its data apart from an installed Lo's. See "The desktop app" in
 [`AGENTS.md`](AGENTS.md#the-desktop-app) for more.
 
+## The contributor agreement
+
+Before your first pull request merges, you agree to Lo's contributor license agreement,
+[`CLA.md`](CLA.md), which is the Apache Software Foundation's individual CLA with Lo's maintainer in
+the Foundation's place. The `license/cla` check comments on the pull request with a link to sign it
+with your GitHub account, and you sign only once. You keep the copyright in what you contribute, and
+you give Lo's maintainer a license to it that lets Lo change its license later, such as to a more
+permissive one, and be used in commercial products and services, such as a hosted version of Lo.
+
+### Work you didn't write
+
+To add work you didn't write, such as code copied from another project, open a pull request for it
+alone, as section 7 of the agreement asks. Its description starts with "Submitted on behalf of a
+third-party:" and the work's author, and says where the work comes from and its license. Keep the
+work's copyright and license notices with it. Lo takes such work only under a license Lo can carry:
+one of those `apps/desktop/scripts/notices/check.ts` lists.
+
 ## Making a change
 
 - Work on a branch and open a pull request against `main`. Pull requests are squash-merged.
