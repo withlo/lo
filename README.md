@@ -243,3 +243,6 @@ The overview skill (`skill/`) and the artifact format with the Markdown parser i
 (`packages/core/artifact` and `packages/core/markdown`) are under the MIT license, so teams can copy
 them into their own repos and other tools can read overviews. Each of those folders carries its own
 `LICENSE`.
+
+Contributions come in under the contributor license agreement in [`CLA.md`](CLA.md), which
+[`CONTRIBUTING.md`](CONTRIBUTING.md#the-contributor-agreement) explains.
