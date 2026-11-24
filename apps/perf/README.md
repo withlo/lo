@@ -113,7 +113,8 @@ then fills it in place as the local copy would (`gaps` and `copyAfterMs` in the 
 and the scroll stay put. The last hands the view an overview's markers part way down
 (`window.perfOverview`), and opens notes from their balls and closes them above the screen, and a
 thread arrives and grows above the screen (`window.perfThread`): nothing on screen moves, side by
-side or inline. CI runs them on Linux.
+side or inline. CI runs them on Linux, where each worker opens the suite on an Xvfb display of its
+own (`@lo/testing/display`), so a run there needs Xvfb, and shows nothing on the screen.
 
 ## The bench
 

@@ -167,10 +167,11 @@ jobs:
   # Builds the desktop app and runs its smoke test: Playwright driving the real app on Linux, with
   # Chromium's sandbox on, under a virtual display. Four jobs run it in parallel, each a shard of
   # every Playwright project's tests, and each builds what it tests. The list of shards must agree
-  # with the 4 in the job's name and in its test step. A shard's failure fails app, and so ci-ok;
-  # the others run on, so one run shows every failing test.
+  # with the 4 in its test step. A shard's failure fails app, and so ci-ok; the others run on, so
+  # one run shows every failing test. It has no name of its own: GitHub names each shard's job
+  # after the job and its shard, app (1) to app (4), and a skipped app, whose shards it never
+  # lists, app, where a name made from the shard would show unfilled.
   app:
-    name: app (${{ matrix.shard }}/4)
     needs: changes
     if: needs.changes.outputs.check == 'true'
     runs-on: ubuntu-latest
@@ -212,18 +213,17 @@ jobs:
       - name: Let Chromium's sandbox run
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
-      # e2e depends on build, so this builds each app it tests first. The desktop smoke test starts
-      # a virtual display for each Playwright worker (apps/desktop/e2e/display.ts), so the copies of
-      # Lo two workers run at once never take focus from each other. The one xvfb-run starts serves
-      # the ui and perf suites: by default Xvfb resets when its last client leaves, and a copy
-      # starting just then finds no display. What follows -- goes to each project's Playwright, and
-      # not to the builds. Playwright splits a project's tests by count, in file order. A project
-      # with fewer tests than shards, such as ui's one spec file, leaves some shards with none of
-      # them, which passes.
+      # e2e depends on build, so this builds each app it tests first. Each Playwright worker of
+      # each suite, the smoke test, ui's specs and the performance suite, starts a virtual display
+      # of its own (testing/src/display.ts), so the windows two workers open at once never take
+      # focus or the pointer from each other, and nothing here needs a display. What follows
+      # -- goes to each project's Playwright, and not to the builds. Playwright splits a project's
+      # tests by count, in file order, one test at a time, as every suite runs fully parallel. A
+      # project with fewer tests than shards leaves some shards with none of them, which passes.
       - name: Build and run a shard of the smoke test
         run: >-
-          xvfb-run -a -s '-screen 0 1920x1080x24 -noreset' pnpm nx affected -t e2e
-          --base="$BASE_SHA" --head=HEAD --output-style=static -- --shard=${{ matrix.shard }}/4
+          pnpm nx affected -t e2e --base="$BASE_SHA" --head=HEAD --output-style=static --
+          --shard=${{ matrix.shard }}/4
 
       # One artifact per shard, and only on failure, so a passing run stores nothing.
       - name: Keep the smoke test's results

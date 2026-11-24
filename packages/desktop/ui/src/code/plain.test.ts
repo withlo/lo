@@ -192,6 +192,22 @@ describe('a code view with Vim keys off', () => {
     expect(jumped).toHaveBeenCalledTimes(2);
   });
 
+  test('marks the cursor line’s number, and its caret doesn’t blink', () => {
+    const { editor, content } = open();
+    content.focus();
+    const { doc } = editor.state;
+    const fifth = Array.from({ length: doc.lines }, (_, at) => doc.line(at + 1)).find(
+      (line) => line.text === 'line 5',
+    )!;
+    editor.dispatch({ selection: { anchor: fifth.from } });
+    const drawn = content.closest('.cm-editor')!;
+    const marked = drawn.querySelectorAll('.cm-lineNumbers .cm-activeLineGutter');
+    expect([...marked].map((number) => number.textContent)).toEqual(['5']);
+    // The caret's layer blinks over a cycle this long: none.
+    const caret = drawn.querySelector<HTMLElement>('.cm-cursorLayer');
+    expect(caret?.style.animationDuration).toBe('0ms');
+  });
+
   test('gets Vim as Vim keys go on, and loses it as they go off', () => {
     const { shown, editor } = open();
     setVim(true);

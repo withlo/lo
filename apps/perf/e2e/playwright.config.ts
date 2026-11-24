@@ -5,7 +5,8 @@ export default defineConfig({
   testDir: '.',
   outputDir: '../test-results',
   fullyParallel: true,
-  // Each test starts its own copy of the suite, so two at a time.
+  // Each test starts its own copy of the suite, so two at a time, each worker on a display of its
+  // own on Linux (suite.ts).
   workers: 2,
   forbidOnly: Boolean(process.env.CI),
   reporter: process.env.CI ? [['list'], ['github']] : 'list',

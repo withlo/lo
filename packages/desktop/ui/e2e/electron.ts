@@ -1,16 +1,36 @@
 // A spec's page: built from its harness into a folder of its own, and opened in a copy of Electron,
-// one window that's never shown. As a file, the page loads its script as a plain one: Chromium
-// loads no module from a `file:` address.
+// one window that's never shown. On Linux each worker opens its pages on an X display of its own
+// (`@lo/testing/display`), so another worker's windows never take its focus or the pointer. As a
+// file, the page loads its script as a plain one: Chromium loads no module from a `file:` address.
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { _electron as electron, test, type ElectronApplication } from '@playwright/test';
+import { onOwnDisplay } from '@lo/testing/display';
+import { Scanner } from '@tailwindcss/oxide';
+import { _electron as electron, test as base, type ElectronApplication } from '@playwright/test';
 // Imported from Node, the electron package is the path to its binary, whatever its types say.
 import electronPackage from 'electron';
 import { build } from 'vite';
 
+import { buildCss } from '../scripts/stylesheet.ts';
+
 const electronBinary: unknown = electronPackage;
+
+/**
+ * The specs' tests, each worker on a display of its own. A spec builds its page as its first test
+ * in a worker opens it (`buildPage`), not in a `beforeAll`: Playwright keeps the tests of a file
+ * with one together, in a group for each shard or worker, where alone each test can go to any.
+ */
+export const test = base.extend<object, { display: string | undefined }>({
+  display: [
+    // oxlint-disable-next-line no-empty-pattern
+    async ({}, use, workerInfo) => onOwnDisplay(workerInfo.parallelIndex, use),
+    { scope: 'worker', auto: true },
+  ],
+});
+
+export { expect } from '@playwright/test';
 
 /** Electron's side: one window, never shown, with the page. */
 const MAIN = `
@@ -28,14 +48,35 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => app.quit());
 `;
 
+/** The folder of each page this worker has built, by its harness. */
+const built = new Map<string, Promise<string>>();
+
 /**
  * Builds the page `harness/<name>.tsx` (or `.ts`) draws into `#root`, titled `title`, with `style`
- * in its head, and says the folder it's in: one for each worker running at once. A worker started
- * again after a failure takes the place of the one before, and its folder, rather than a new one.
+ * in its head, once in each worker, and says the folder it's in: one for each worker running at
+ * once. A worker started again after a failure takes the place of the one before, and its folder,
+ * rather than a new one.
  */
-export async function buildPage(entry: string, title: string, style = ''): Promise<string> {
+export function buildPage(
+  entry: string,
+  title: string,
+  style: string | (() => Promise<string>) = '',
+): Promise<string> {
+  let folder = built.get(entry);
+  if (!folder) {
+    folder = buildOnce(entry, title, style);
+    built.set(entry, folder);
+  }
+  return folder;
+}
+
+async function buildOnce(
+  entry: string,
+  title: string,
+  style: string | (() => Promise<string>),
+): Promise<string> {
   const name = entry.replace(/\.tsx?$/, '');
-  const worker = test.info().parallelIndex;
+  const worker = base.info().parallelIndex;
   const folder = fileURLToPath(new URL(`../test-results/${name}-${worker}/`, import.meta.url));
   mkdirSync(folder, { recursive: true });
   await build({
@@ -50,13 +91,30 @@ export async function buildPage(entry: string, title: string, style = ''): Promi
       lib: { entry, formats: ['iife'], name: 'harness', fileName: () => `${name}.js` },
     },
   });
+  const css = typeof style === 'string' ? style : await style();
   const page =
-    `<!doctype html><meta charset="utf-8"><title>${title}</title><style>${style}</style>` +
+    `<!doctype html><meta charset="utf-8"><title>${title}</title><style>${css}</style>` +
     `<div id="root" class="lo-app"></div><script src="./${name}.js"></script>`;
   writeFileSync(`${folder}index.html`, page);
   writeFileSync(`${folder}main.cjs`, MAIN);
   writeFileSync(`${folder}package.json`, JSON.stringify({ main: 'main.cjs' }));
   return folder;
+}
+
+/**
+ * Lo's stylesheet with the utilities ui's source and the harnesses use, found as Tailwind finds
+ * them in the window, and no margin on the page.
+ */
+export async function utilities(): Promise<string> {
+  const root = fileURLToPath(new URL('..', import.meta.url));
+  const scanner = new Scanner({
+    sources: ['src/**/*', 'e2e/harness/**/*'].map((pattern) => ({
+      base: root,
+      pattern,
+      negated: false,
+    })),
+  });
+  return `${await buildCss(scanner.scan())}\nbody { margin: 0; }`;
 }
 
 /** Opens the page `buildPage` built in `folder`, in a copy of Electron of its own. */

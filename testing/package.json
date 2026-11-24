@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./server": "./src/server.ts",
+    "./display": "./src/display.ts",
     "./git": "./src/git/index.ts",
     "./lsp": "./lsp/index.ts"
   },

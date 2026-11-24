@@ -25,7 +25,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { devNull, homedir } from 'node:os';
+import { availableParallelism, devNull, homedir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -212,7 +212,9 @@ const env = { TREE_SITTER_WASI_SDK_PATH: wasiSdk, TREE_SITTER_BINARYEN_PATH: bin
 
 mkdirSync(output, { recursive: true });
 const failures: string[] = [];
-for (const grammar of list.grammars) {
+
+/** Builds `grammar` from its repo, patched and its lexer split, and checks what it built. */
+async function buildGrammar(grammar: Grammar): Promise<void> {
   const started = performance.now();
   const repo = await checkout(grammar);
   await patch(repo, grammar.patches ?? []);
@@ -230,6 +232,26 @@ for (const grammar of list.grammars) {
   }
   console.log(`${grammar.name}: ${seconds} s`);
 }
+
+// A few grammars build at once, four at most. Grammars from one commit of a repo share its
+// checkout, which each patches and splits in place, so they build one after another.
+const checkouts = [
+  ...Map.groupBy(list.grammars, ({ repo, commit }) => `${repo}@${commit}`).values(),
+];
+const errors: unknown[] = [];
+await Promise.all(
+  Array.from({ length: Math.min(4, availableParallelism()) }, async () => {
+    for (let next = checkouts.shift(); next && errors.length === 0; next = checkouts.shift()) {
+      try {
+        for (const grammar of next) await buildGrammar(grammar);
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+  }),
+);
+if (errors.length > 0) throw errors[0];
+failures.sort();
 if (update) writeFileSync(listFile, `${JSON.stringify(list, null, 2)}\n`);
 if (failures.length > 0) {
   console.error(

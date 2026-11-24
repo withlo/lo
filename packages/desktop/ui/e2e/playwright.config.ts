@@ -4,9 +4,11 @@ import { defineConfig } from '@playwright/test';
 export default defineConfig({
   testDir: '.',
   outputDir: '../test-results',
-  // Each spec builds its page once, before its tests, which start a copy of Electron each.
-  fullyParallel: false,
-  workers: 1,
+  // CI's shards and the workers split the tests one by one, not a file at a time.
+  fullyParallel: true,
+  // Each test starts its own copy of Electron, so two at a time, each worker on a display of its
+  // own on Linux (electron.ts).
+  workers: 2,
   forbidOnly: Boolean(process.env.CI),
   // CI retries a failed test once, and reports one that then passes as flaky.
   retries: process.env.CI ? 1 : 0,
