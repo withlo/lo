@@ -5,14 +5,14 @@
 // was, its folds open and its focus where it was. What Settings says and showing the diff are
 // stood in for, so each test says what Settings holds and sees when the tab hands over to the diff.
 
-import { commandsOf, holdRegistry } from '@lo/ui/commands';
+import { commandsOf, holdRegistry, NO_TARGET } from '@lo/ui/commands';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { notice, notices, withdraw } from '../../../window/commands/notices.tsx';
-import { createRegistry } from '../../../window/commands/registry.ts';
+import { createRegistry, here } from '../../../window/commands/registry.ts';
 import { Slots } from '../../../window/slots.tsx';
 import { installBridge } from '../../../window/test/bridge.ts';
 import { HOLD_LIMIT } from '../../revisions/contract.ts';
@@ -303,6 +303,15 @@ describe('as the tab opens', () => {
     expect(view.querySelector('.lo-ov-byline')?.textContent).toContain('ravi-k · 2 d ago');
     expect(view.querySelector('.lo-ovmark--pending')).toBeNull();
     expect(view.querySelector('.lo-ovmark[role="img"]')).not.toBeNull();
+  });
+
+  it('is a place for history while it waits, so a file opened from the tree has a way back', () => {
+    const view = render(tabOf());
+    expect(waits(view)).toBe(true);
+    expect(here()).toEqual({ view: 'overview', at: NO_TARGET });
+    // Another view shown, it's no longer the middle.
+    view.shown(false);
+    expect(here()).toBeUndefined();
   });
 
   it('opens on the overview from its text alone, its figure and byline filling in after', async () => {
