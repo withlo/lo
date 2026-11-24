@@ -2062,6 +2062,8 @@ pnpm check:symlinks
 - Commit through the git hooks, and update a branch by merging `origin/main` into it, so a pushed
   branch's history is never rewritten.
 - Commits and PRs carry no AI attribution.
+- A PR merges only once everyone who wrote its commits has signed [`CLA.md`](CLA.md), which the
+  `license/cla` check shows.
 - Repository settings, rulesets and branch protection are the maintainers' to change.
 
 ## Secrets
