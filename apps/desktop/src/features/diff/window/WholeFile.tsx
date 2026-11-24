@@ -11,7 +11,7 @@ import { createFileView, type FileView, type Mark } from '@lo/ui/code';
 import { useEffect, useRef, type ReactNode } from 'react';
 
 import { openMenu } from '../../../window/commands/menus.tsx';
-import { registry, setMiddle, useKeys } from '../../../window/commands/registry.ts';
+import { inCodeOf, registry, setMiddle, useKeys } from '../../../window/commands/registry.ts';
 import {
   MiddlePlaceholder,
   tabState,
@@ -188,6 +188,10 @@ export function WholeFile({ tab, shown }: { tab: PullTab; shown: boolean }) {
     const stops = [
       setMiddle({
         focus: () => (view.current ? view.current.focus() : element?.focus()),
+        holds: (focused) =>
+          view.current
+            ? (element?.contains(focused) ?? false) && inCodeOf(focused, 'file')
+            : focused === element,
         here: () => {
           const now = opened.get(tab.id);
           if (!now) return undefined;

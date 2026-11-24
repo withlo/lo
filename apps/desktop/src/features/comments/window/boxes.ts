@@ -817,16 +817,17 @@ export interface KeptAway {
 }
 
 /**
- * Each view's drafts the diff, drawn again, took down open and had nowhere to open: neither their
- * lines, nor their file's header, nor their code block. The status bar counts them, until each opens
- * again or goes, and its item opens their list.
+ * Each view's drafts the diff took down open, as it was drawn again, that no box has taken since:
+ * from the moment it took them down, whether or not the diff drawn anew is there yet, and on while
+ * it has nowhere to open them, neither their lines, nor their file's header, nor their code block.
+ * The status bar counts them, until each opens again or goes, and its item opens their list.
  */
 export const keptAway = tabState<readonly KeptAway[]>(() => []);
 
 /** Whether each view's list of kept drafts is open, over the status bar's item for them. */
 export const keptOpen = tabState<boolean>(() => false);
 
-/** Says in view `view`'s status bar that the diff drawn anew had nowhere to open `boxes`. */
+/** Says in view `view`'s status bar that `boxes` are kept, in no box. */
 function say(view: string, boxes: readonly Box[]): void {
   const ids = new Set(boxes.map((box) => box.id));
   keptAway.update(view, (was) => [
@@ -903,7 +904,7 @@ const retrying = new Map<string, ReturnType<typeof setTimeout>>();
  * Opens view `view`'s boxes that should show in its diff, as it's drawn now: drafts restored as Lo
  * started, boxes the diff took down as it was drawn again ({@link placeKept}), and those whose
  * block the overview no longer has. One whose line isn't drawn yet tries again in a moment, a few
- * times. The status bar says which of the boxes the diff took down it had nowhere to open.
+ * times. The status bar goes on counting the boxes the diff took down that it had nowhere to open.
  */
 export function restore(view: string): void {
   const diff = writingDiff(view);
@@ -1065,6 +1066,8 @@ export function takeDrafts(given: DraftsView): void {
       box.open = row.restored || first || (moved?.open ?? false);
       if (first) box.set({ restored: row.savedAt });
       own.set(key, box);
+      // Kept as the one it moved from was, in no box until one takes it.
+      if (box.kept && box.open) say(view, [box]);
     } else if (row.home && box.home.kind !== 'block' && !box.saving && box.state.text === '') {
       // Drawn before main said anything, as the timeline's box is, with nothing typed: it takes its
       // draft's home, and opens there, never drawn where it was with the draft's text.
@@ -2164,9 +2167,9 @@ export function claimBriefly(diff: WritingDiff, thread: string): void {
 }
 
 /**
- * The box the diff or a block took down as it was drawn again: one the diff took down, open, opens
- * again as it was once the diff is drawn anew ({@link placeKept}); one from a block the overview no
- * longer has, where it opens now.
+ * The box the diff or a block took down as it was drawn again: one the diff took down, open, is
+ * kept, and opens again as it was once the diff is drawn anew ({@link placeKept}); one from a
+ * block the overview no longer has, where it opens now.
  */
 export function takenDown(box: Box, composer: Composer): void {
   if (box.composer !== composer) return;
@@ -2174,10 +2177,16 @@ export function takenDown(box: Box, composer: Composer): void {
   // A block goes as its overview changes: its boxes open where they open now, once it's gone.
   if (box.drawnIn === 'block') queueMicrotask(() => reopen(box.view));
   // The diff is drawn again: a box open there stays in its box, as it was, once the diff drawn
-  // anew places it, whatever the overview did meanwhile.
+  // anew places it, whatever the overview did meanwhile. Until a box takes it, it's in none, and
+  // the status bar counts it. The diff drawn anew may be drawn already, as one drawn over the last
+  // is before the last goes: it places the box now.
   else if (box.drawnIn === 'diff' && box.open) {
     box.retries = 0;
     box.kept = { box: composer.keep(), focused: box.state.focused, inputs: inputsSoFar() };
+    // Not for a view that's gone, as its tab closes.
+    if (views.get(box.view)?.get(box.key) !== box) return;
+    say(box.view, [box]);
+    queueMicrotask(() => restore(box.view));
   }
 }
 

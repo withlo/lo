@@ -23,7 +23,7 @@ import {
 import { plainTarget, type Entry as HistoryEntry } from '@lo/ui/commands';
 
 import { openMenu } from '../../../window/commands/menus.tsx';
-import { registry, setMiddle } from '../../../window/commands/registry.ts';
+import { inCodeOf, registry, setMiddle } from '../../../window/commands/registry.ts';
 import {
   comparisonHere,
   type ShownMarks,
@@ -734,9 +734,11 @@ export function draw(options: DrawOptions): Drawing {
       }),
       setMiddle({
         focus: () => view.focus(),
+        holds: (element) => parent.contains(element) && inCodeOf(element, 'diff'),
         here: () => entryAt(view.keyState().target),
         // An overview's note open in the diff closes on `Esc` in the diff.
-        escape: () => parent.contains(document.activeElement) && view.closeNote(),
+        escape: (focused) =>
+          parent.contains(focused) && view.hasOpenNote() ? () => view.closeNote() : undefined,
       }),
     ];
     // The tree marks the file at the top of the screen again.

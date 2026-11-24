@@ -157,6 +157,7 @@ export function SettingsTab() {
     }
     return setMiddle({
       focus: () => root.current?.focus(),
+      holds: (element) => element === root.current,
       here: () => undefined,
     });
   }, []);

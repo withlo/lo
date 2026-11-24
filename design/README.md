@@ -200,7 +200,11 @@ where the action's target is.
 - **A command with nothing to say refuses with an empty reason.** A command only some controls
   offer, such as one of a box's notes, gives `''` from `enabled` where none offers it: a key bound
   to it then does nothing, and no toast says so. So does one whose dimmed label says it all, as Back
-  and Forward do with nowhere to go: their menu rows dim with no reason under them.
+  and Forward do with nowhere to go: their menu rows dim with no reason under them. And so does Go
+  to view with focus already where the middle view puts it and nothing there to close: each middle
+  view says where its focus goes (`holds`) and what `Esc` closes there (`escape`), without closing
+  it. The palette and keyboard shortcuts' "Here" leave out a command that refuses, so neither lists
+  what can't act where it's asked.
 - **Anything with a right-click menu has a `⋯` button.** `MoreButton` goes inside the element whose
   right-click opens the menu, at the end of its row (before a chevron that opens or closes the row,
   as on a thread's card), and opens that same menu under itself (`openMenuUnder`), so the two can

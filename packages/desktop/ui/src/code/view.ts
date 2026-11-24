@@ -1596,6 +1596,10 @@ class View implements DiffView {
     return true;
   }
 
+  hasOpenNote(): boolean {
+    return this.#notes.some(({ shown }) => this.#drawable(shown));
+  }
+
   /** The marks on `at`'s line whose notes would be drawn, by their keys. */
   #noteKeys(at: Place): string[] {
     const file = this.#index.get(at.file);

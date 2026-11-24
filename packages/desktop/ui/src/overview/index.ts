@@ -16,7 +16,7 @@ export {
   stepIn,
 } from './moving.ts';
 export { alphabetical } from './terms.ts';
-export { closeCards, HOVER_CLOSE_MS, HOVER_OPEN_MS } from './Term.tsx';
+export { cardsOpen, closeCards, HOVER_CLOSE_MS, HOVER_OPEN_MS } from './Term.tsx';
 export { lineRange } from './placeholders.tsx';
 export {
   CodeBlock,

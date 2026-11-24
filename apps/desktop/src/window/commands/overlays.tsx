@@ -43,12 +43,16 @@ export type Overlay =
       /** The scope and target that had focus as it opened, whose keys its "Here" lists. */
       readonly scope: string;
       readonly target: Target;
+      /** What had focus as it opened. */
+      readonly from: Element | null;
     }
   | {
       readonly kind: 'palette';
       /** The scope and target that had focus before it opened, which its commands run on. */
       readonly scope: string;
       readonly target: Target;
+      /** What had focus before it opened, where focus goes back to before a command runs. */
+      readonly from: Element | null;
       /** Why the last `⌥⏎` did nothing, until what's typed changes. */
       readonly notice?: string | undefined;
     }
@@ -78,6 +82,14 @@ export function overlay(): Overlay {
   return current;
 }
 
+/**
+ * What a command is asked from: while keyboard shortcuts or the palette is open, what had focus as
+ * it opened, which the commands it lists act on; otherwise what has focus.
+ */
+export function askedFrom(): Element | null {
+  return current ? current.from : document.activeElement;
+}
+
 /** Opens keyboard shortcuts, for what has focus now, showing the command `show` if given. */
 export function openHelp(show?: string): void {
   set({
@@ -85,6 +97,7 @@ export function openHelp(show?: string): void {
     show,
     scope: findScope(document.activeElement).name,
     target: focusedTarget(),
+    from: document.activeElement,
   });
 }
 
@@ -94,6 +107,7 @@ export function openPalette(): void {
     kind: 'palette',
     scope: findScope(document.activeElement).name,
     target: focusedTarget(),
+    from: document.activeElement,
   });
 }
 

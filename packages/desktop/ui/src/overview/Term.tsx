@@ -24,6 +24,11 @@ export function closeCards(): boolean {
   return closers.length > 0;
 }
 
+/** Whether a term's card is open, which {@link closeCards} would close. */
+export function cardsOpen(): boolean {
+  return openCards.size > 0;
+}
+
 /**
  * A use of a defined term: a dotted underline, and a card with its definition while the pointer
  * rests on it or it has focus. `⏎`, or a click, goes to its entry in the glossary; `Esc` closes the

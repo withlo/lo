@@ -108,7 +108,11 @@ export function RecentTab() {
     if (!focused || focused === document.body || focused.hasAttribute('data-lo-middle')) {
       list.current?.focus();
     }
-    return setMiddle({ focus: () => list.current?.focus(), here: () => undefined });
+    return setMiddle({
+      focus: () => list.current?.focus(),
+      holds: (element) => element === list.current,
+      here: () => undefined,
+    });
   }, []);
 
   const any = rows !== undefined && rows.length > 0;

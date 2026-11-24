@@ -5,8 +5,13 @@ import { barItems, focusedTarget, onMenuStale, runFromBar } from '../../../windo
 import { applyKeymapFile, keymapOpenable, keymapState } from '../../../window/commands/keymap.ts';
 import { currentMenu, openMenuAtFocus } from '../../../window/commands/menus.tsx';
 import { notify, refuse } from '../../../window/commands/notices.tsx';
-import { showHighlighted, toggleHelp, togglePalette } from '../../../window/commands/overlays.tsx';
-import { escapeToMiddle, here, registry } from '../../../window/commands/registry.ts';
+import {
+  askedFrom,
+  showHighlighted,
+  toggleHelp,
+  togglePalette,
+} from '../../../window/commands/overlays.tsx';
+import { canEscape, escapeToMiddle, here, registry } from '../../../window/commands/registry.ts';
 import type { WindowFeature } from '../../../window/features.ts';
 import { client, type Client } from '../../../window/ipc.ts';
 import { defineView } from '../../../window/slots.tsx';
@@ -110,7 +115,9 @@ export default {
         openMenuAtFocus();
       },
     },
-    escape: { run: escapeToMiddle },
+    // With focus already where the middle view puts it, and nothing there to close, `Esc` has
+    // nowhere to go: it does nothing and says nothing, and the palette leaves it out.
+    escape: { run: escapeToMiddle, enabled: () => canEscape(askedFrom()) || '' },
     // With nowhere to go, Back and Forward are dimmed, which says it all: their keys do nothing,
     // and say nothing. A place that's gone, or that's where the cursor is, isn't somewhere to go.
     back: {

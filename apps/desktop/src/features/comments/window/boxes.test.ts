@@ -1168,6 +1168,40 @@ describe('a box on a code block', () => {
     expect(keptAway.get(VIEW)).toEqual([]);
   });
 
+  test('a box the diff takes down is counted as kept at once, and a diff drawn over the last one opens it as the last goes', async () => {
+    const { box, drawn } = await opened();
+    // The diff drawn anew is drawn over the last one, which still holds the box: nothing opens.
+    const again = fakeDiff();
+    restore(VIEW);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(again.drawn).toEqual([]);
+    expect(keptAway.get(VIEW)).toEqual([]);
+    // The last one goes with the box: it's in no box, and the status bar counts it at once.
+    takenDown(box, drawn[0]!.composer);
+    expect(keptAway.get(VIEW).map((kept) => kept.where)).toEqual(['backoff.ts · line 5 · r2']);
+    // The diff drawn anew opens it on its line, as it was, and the status bar says no more.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(again.drawn.map(({ at, composer }) => [at, composer.text])).toEqual([
+      [{ file: 'f0', side: 'new', line: 5 }, 'Ship it?'],
+    ]);
+    expect(keptAway.get(VIEW)).toEqual([]);
+  });
+
+  test('a box taken down by another comparison without its file is counted as kept, with nothing drawn again after', async () => {
+    const { box, drawn } = await opened();
+    // Another comparison, without the box's file, is drawn over the last one before that goes.
+    const other = fakeDiff();
+    other.shown.files = [];
+    restore(VIEW);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(keptAway.get(VIEW)).toEqual([]);
+    takenDown(box, drawn[0]!.composer);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(other.drawn).toEqual([]);
+    expect(keptAway.get(VIEW).map((kept) => kept.where)).toEqual(['backoff.ts · line 5 · r2']);
+    expect(keptCount(keptAway.get(VIEW))).toBe('1 kept draft');
+  });
+
   test('drafts the diff drawn again had nowhere to open have one item in the status bar, whose list says where each is', async () => {
     const onDiff = fakeDiff();
     takeDrafts({
