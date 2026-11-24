@@ -339,6 +339,9 @@ importers:
         specifier: 4.6.7
         version: 4.6.7
     devDependencies:
+      '@lo/testing':
+        specifier: workspace:*
+        version: link:../../testing
       '@playwright/test':
         specifier: 1.65.1
         version: 1.65.1
@@ -567,6 +570,9 @@ importers:
         specifier: 4.3.5
         version: 4.3.5
     devDependencies:
+      '@lo/testing':
+        specifier: workspace:*
+        version: link:../../../testing
       '@playwright/test':
         specifier: 1.65.1
         version: 1.65.1

@@ -7,13 +7,16 @@
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"],
   "references": [
     {
+      "path": "../../core/artifact/tsconfig.lib.json"
+    },
+    {
       "path": "../../core/markdown/tsconfig.lib.json"
     },
     {
       "path": "../../core/diff/tsconfig.lib.json"
     },
     {
-      "path": "../../core/artifact/tsconfig.lib.json"
+      "path": "../../../testing"
     }
   ]
 }

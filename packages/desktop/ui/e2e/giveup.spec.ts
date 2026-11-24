@@ -1,24 +1,11 @@
 // What a row gives up, in Chromium itself, where it's laid out: jsdom lays nothing out.
 
-import { fileURLToPath } from 'node:url';
+import type { ElectronApplication, Page } from '@playwright/test';
 
-import { Scanner } from '@tailwindcss/oxide';
-import { expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import { buildPage, expect, launch, test, utilities } from './electron.ts';
 
-import { buildCss } from '../scripts/stylesheet.ts';
-import { buildPage, launch } from './electron.ts';
-
-/** Where the page is built. */
-let harness = '';
-
-test.beforeAll(async () => {
-  const base = fileURLToPath(new URL('..', import.meta.url));
-  const scanner = new Scanner({
-    sources: ['src/**/*', 'e2e/harness/**/*'].map((pattern) => ({ base, pattern, negated: false })),
-  });
-  const style = `${await buildCss(scanner.scan())}\nbody { margin: 0; }`;
-  harness = await buildPage('giveup.tsx', 'Give up', style);
-});
+/** Where the page is built, once in each worker. */
+const harness = () => buildPage('giveup.tsx', 'Give up', utilities);
 
 let app: ElectronApplication | undefined;
 
@@ -28,7 +15,7 @@ test.afterEach(async () => {
 });
 
 async function open(): Promise<Page> {
-  app = await launch(harness);
+  app = await launch(await harness());
   const page = await app.firstWindow();
   await page.waitForSelector('#frame .give-up');
   return page;

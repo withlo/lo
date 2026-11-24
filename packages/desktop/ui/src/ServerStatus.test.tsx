@@ -229,8 +229,10 @@ describe('ServerStatus', () => {
     expect(open.textContent).not.toContain('tsserver 5.6.3');
     const buttons = [...open.querySelectorAll('button')];
     expect(buttons.map(says)).toEqual(['Restart', 'Details', 'Show log']);
-    // In one row: what helps first, then Details, then the log.
+    // In one row: what helps first, then Details, then the log, the order `Tab` goes in, since each
+    // is in the tab order where it stands.
     expect(new Set(buttons.map((button) => button.parentElement)).size).toBe(1);
+    expect(buttons.map((button) => button.tabIndex)).toEqual([0, 0, 0]);
     // Restart is the one thing to do; it has focus as the details open.
     expect(document.activeElement).toBe(buttons[0]);
     click(buttons[1]!);

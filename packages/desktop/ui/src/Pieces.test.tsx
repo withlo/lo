@@ -14,6 +14,7 @@ import { COPIED_MS, CopyButton, CopyRoute } from './CopyButton.tsx';
 import { Dialog, type DialogState } from './Dialog.tsx';
 import { Loading, LOADING_DELAY_MS, LOADING_SLOW_MS } from './Loading.tsx';
 import { LogoMotion } from './LogoMotion.tsx';
+import { logoSeconds } from './logoFrames.ts';
 import { setMotion } from './motion.ts';
 import { Popover } from './Popover.tsx';
 import { Problem } from './Problem.tsx';
@@ -287,6 +288,15 @@ describe('a button that can’t be pressed now', () => {
       vi.advanceTimersByTime(TOOLTIP_DELAY);
     });
     expect(host.querySelector('.tooltip')?.textContent).toContain('Done');
+    // Under the pointer, it names the control's key too.
+    expect(host.querySelectorAll('.tooltip kbd')).toHaveLength(1);
+    // And it goes when the pointer does.
+    act(() => {
+      button.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: host }));
+      button.dispatchEvent(new MouseEvent('mouseleave', { relatedTarget: host }));
+      vi.advanceTimersByTime(TOOLTIP_DELAY);
+    });
+    expect(host.querySelector('.tooltip')).toBeNull();
   });
 
   it('shows its tooltip for focus too, by default', () => {
@@ -923,6 +933,30 @@ describe('LogoMotion', () => {
     expect(svg.querySelector('g[filter]')?.getAttribute('filter')).toBe(
       `url(#${svg.querySelector('filter')?.id})`,
     );
+  });
+
+  it('plays once and comes to rest, in the mark’s color, and says it’s done once', () => {
+    const frames: FrameRequestCallback[] = [];
+    const request = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((step) => {
+      frames.push(step);
+      return frames.length;
+    });
+    onTestFinished(() => request.mockRestore());
+    const done = vi.fn<() => void>();
+    const host = render(<LogoMotion play="kiss" onDone={done} />);
+    const frame = (at: number) => act(() => frames.shift()?.(at));
+    frame(0);
+    frame(500);
+    expect(host.querySelectorAll('ellipse')).toHaveLength(2);
+    expect(done).not.toHaveBeenCalled();
+    frame(logoSeconds('kiss') * 1000);
+    expect(host.querySelector('ellipse')).toBeNull();
+    expect(host.querySelectorAll('circle')).toHaveLength(1);
+    expect(done).toHaveBeenCalledTimes(1);
+    // It asks for no frame once it rests.
+    expect(frames).toHaveLength(0);
+    // Chalk on dark and ink on light, as the mark's color is in each theme.
+    expect(host.querySelector('svg > g')?.getAttribute('class')).toBe('fill-mark');
   });
 
   it('is the mark at rest with Reduce Motion on, and says it’s done at once, except the loop', () => {

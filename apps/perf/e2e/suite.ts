@@ -4,6 +4,7 @@
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+import { onOwnDisplay } from '@lo/testing/display';
 import type { CursorReading, Mark, Place, Probe, Spot } from '@lo/ui/code';
 import { _electron as electron, test as base, expect, type Page } from '@playwright/test';
 // Imported from Node, the electron package is the path to its binary, whatever its types say.
@@ -105,7 +106,16 @@ declare global {
   }
 }
 
-export const test = base.extend<{ pull: Fixture; page: Page }>({
+export const test = base.extend<{ pull: Fixture; page: Page }, { display: string | undefined }>({
+  /**
+   * On Linux, the worker's own X display, which every copy of the suite it starts runs on, so the
+   * other worker's window never takes focus or the pointer from it (`@lo/testing/display`).
+   */
+  display: [
+    // oxlint-disable-next-line no-empty-pattern
+    async ({}, use, workerInfo) => onOwnDisplay(workerInfo.parallelIndex, use),
+    { scope: 'worker', auto: true },
+  ],
   /** The pull request a test opens. */
   pull: [{ repo: 'withlo/example', number: 1, files, threads }, { option: true }],
   page: async ({ pull }, use) => {

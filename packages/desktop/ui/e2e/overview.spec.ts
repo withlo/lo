@@ -3,16 +3,12 @@
 // closed with `Esc` stays closed when the window loses focus and gets it back, until focus has
 // been somewhere else.
 
-import { expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import type { ElectronApplication, Page } from '@playwright/test';
 
-import { buildPage, launch } from './electron.ts';
+import { buildPage, expect, launch, test } from './electron.ts';
 
-/** Where the page is built. */
-let harness = '';
-
-test.beforeAll(async () => {
-  harness = await buildPage('overview.tsx', 'Overview');
-});
+/** Where the page is built, once in each worker. */
+const harness = () => buildPage('overview.tsx', 'Overview');
 
 let app: ElectronApplication | undefined;
 
@@ -22,7 +18,7 @@ test.afterEach(async () => {
 });
 
 async function open() {
-  app = await launch(harness);
+  app = await launch(await harness());
   const page = await app.firstWindow();
   await page.waitForSelector('.lo-ov');
   return page;
