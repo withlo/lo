@@ -1,10 +1,13 @@
-// On Linux, an X display for each Playwright worker, so the copies of Lo two workers run at once
-// never share one. With no window manager, X gives focus to the window under the pointer, and to a
-// window that asks for it as it opens. On a shared display, a window one worker opened took focus
-// from the other worker's window, and gave it back as it closed: Lo, in the background or in front
-// by turns, read GitHub on a schedule its cassettes didn't record. On a display of its own, the
-// pointer rests where Xvfb starts it, in the middle, which is in Lo's window, as Lo centers it: the
-// window has focus from when it opens, and it gets focus back when a window it opened itself closes.
+// On Linux, an X display for each Playwright worker, so the windows two workers open at once never
+// share one: the desktop app's smoke test, the ui specs and the performance suite each give every
+// worker its own (`onOwnDisplay`). With no window manager, X gives focus to the window under the
+// pointer, and to a window that asks for it as it opens. On a shared display, a window one worker
+// opened took focus from the other worker's window, and gave it back as it closed: Lo, in the
+// background or in front by turns, read GitHub on a schedule its cassettes didn't record. On a
+// display of its own, the pointer rests where Xvfb starts it, in the middle, which is in Lo's
+// window, as Lo centers it: the window has focus from when it opens, and it gets focus back when a
+// window it opened itself closes. A window that's never shown, as the ui specs' isn't, draws its
+// frames seconds apart while other windows draw on its display, and on time on one of its own.
 
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -66,4 +69,31 @@ export async function startDisplay(): Promise<Display> {
       await gone;
     },
   };
+}
+
+/**
+ * Runs `use` with a Playwright worker on a display of its own, for a worker-scoped fixture: on
+ * Linux, a display `startDisplay` starts, as the worker's `DISPLAY`, which every Electron it starts
+ * takes from its environment, with `WAYLAND_DISPLAY` dropped, since Electron takes a Wayland session
+ * over X when there's one: the screen of whoever runs the tests. `use` is given the display's name,
+ * and the display stops once it's done. Elsewhere, where windows are the system's, `use` is given
+ * `undefined`.
+ */
+export async function onOwnDisplay(
+  worker: number,
+  use: (display: string | undefined) => Promise<void>,
+): Promise<void> {
+  if (process.platform !== 'linux') {
+    await use(undefined);
+    return;
+  }
+  const display = await startDisplay();
+  process.env.DISPLAY = display.name;
+  delete process.env.WAYLAND_DISPLAY;
+  console.log(`Worker ${worker} runs on display ${display.name}.`);
+  try {
+    await use(display.name);
+  } finally {
+    await display.stop();
+  }
 }

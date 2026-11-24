@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { buffer } from 'node:stream/consumers';
 import { fileURLToPath } from 'node:url';
 
+import { onOwnDisplay } from '@lo/testing/display';
 import { MERGE_PULLS, STACK_PULLS, writeMergeRemote, writeStackRemote } from '@lo/testing/git';
 import { fakeServer, readReport, type Scenario, type Seen } from '@lo/testing/lsp';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
@@ -19,7 +20,6 @@ import {
   type Page,
 } from '@playwright/test';
 
-import { startDisplay } from './display.ts';
 import { liveArgs, liveDataFolder } from './live.ts';
 
 /**
@@ -277,9 +277,9 @@ interface Fixtures {
 
 interface WorkerFixtures {
   /**
-   * On Linux, the name of the worker's own X display (`./display.ts`), which every copy of Lo it
-   * starts runs on: the worker's `DISPLAY`, which `appEnvironment` passes on. Elsewhere, where
-   * Lo's windows are the system's, `undefined`.
+   * On Linux, the name of the worker's own X display (`@lo/testing/display`), which every copy of
+   * Lo it starts runs on: the worker's `DISPLAY`, which `appEnvironment` passes on. Elsewhere,
+   * where Lo's windows are the system's, `undefined`.
    */
   display: string | undefined;
 }
@@ -287,19 +287,7 @@ interface WorkerFixtures {
 export const test = base.extend<Fixtures, WorkerFixtures>({
   display: [
     // oxlint-disable-next-line no-empty-pattern
-    async ({}, use, workerInfo) => {
-      if (process.platform !== 'linux') {
-        await use(undefined);
-        return;
-      }
-      const display = await startDisplay();
-      process.env.DISPLAY = display.name;
-      // Electron takes a Wayland session over X when there's one: the screen of whoever runs this.
-      delete process.env.WAYLAND_DISPLAY;
-      console.log(`Worker ${workerInfo.parallelIndex} starts Lo on display ${display.name}.`);
-      await use(display.name);
-      await display.stop();
-    },
+    async ({}, use, workerInfo) => onOwnDisplay(workerInfo.parallelIndex, use),
     { scope: 'worker', auto: true },
   ],
   launch: [{}, { option: true }],
@@ -422,9 +410,9 @@ async function loadedAndDrawn(app: ElectronApplication): Promise<Page> {
 
 /**
  * Waits for one of Lo's windows to have focus, as it has on Linux from when it opens, on its
- * worker's display (`./display.ts`), and fails if none does within 5 s. Without focus, Lo is in the
- * background and reads GitHub every few minutes, not every 20 s: a test waiting on a read would
- * time out long after, for a cause it doesn't say.
+ * worker's display (`@lo/testing/display`), and fails if none does within 5 s. Without focus, Lo
+ * is in the background and reads GitHub every few minutes, not every 20 s: a test waiting on a
+ * read would time out long after, for a cause it doesn't say.
  */
 async function focused(app: ElectronApplication): Promise<void> {
   await base.step(
@@ -435,7 +423,7 @@ async function focused(app: ElectronApplication): Promise<void> {
           () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getFocusedWindow() !== null),
           {
             message:
-              "No window of Lo's has focus, so Lo reads GitHub as it does in the background. On Linux, its window should have it on the worker's own display (display.ts).",
+              "No window of Lo's has focus, so Lo reads GitHub as it does in the background. On Linux, its window should have it on the worker's own display (@lo/testing/display).",
             timeout: 5_000,
           },
         )

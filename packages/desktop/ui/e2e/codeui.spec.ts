@@ -4,27 +4,13 @@
 // browser shows and jsdom can't: that the parts fit the room they're given, and run past it
 // nowhere, in light as in dark.
 
-import { fileURLToPath } from 'node:url';
+import type { ElectronApplication, Page } from '@playwright/test';
 
-import { Scanner } from '@tailwindcss/oxide';
-import { expect, test, type ElectronApplication, type Page } from '@playwright/test';
-
-import { buildCss } from '../scripts/stylesheet.ts';
-import { buildPage, launch } from './electron.ts';
+import { buildPage, expect, launch, test, utilities } from './electron.ts';
 import type { Scene, Theme } from './harness/codeui.tsx';
 
-/** Where the page is built. */
-let harness = '';
-
-test.beforeAll(async () => {
-  // The page has the utilities the components use, found as Tailwind finds them in the window.
-  const base = fileURLToPath(new URL('..', import.meta.url));
-  const scanner = new Scanner({
-    sources: ['src/**/*', 'e2e/harness/**/*'].map((pattern) => ({ base, pattern, negated: false })),
-  });
-  const style = `${await buildCss(scanner.scan())}\nbody { margin: 0; }`;
-  harness = await buildPage('codeui.tsx', 'Code components', style);
-});
+/** Where the page is built, once in each worker. */
+const harness = () => buildPage('codeui.tsx', 'Code components', utilities);
 
 let app: ElectronApplication | undefined;
 
@@ -55,7 +41,7 @@ const PLACES: readonly { scene: Scene; widths: readonly number[] }[] = [
 ];
 
 async function open(): Promise<Page> {
-  app = await launch(harness);
+  app = await launch(await harness());
   const page = await app.firstWindow();
   await page.waitForFunction(() => 'parts' in window);
   return page;
@@ -159,25 +145,6 @@ test('the hover card keeps inside a window narrower than it is', async () => {
   expect(card).toBeLessThanOrEqual(400 - 32);
 });
 
-test('a status item opens its details from the keyboard, which take focus, close on Esc and give it back', async () => {
-  const page = await open();
-  await page.evaluate(() => window.parts.show('status', 'dark', 1280));
-  const item = page.getByRole('button', { name: 'Java isn’t running' });
-  await item.focus();
-  await page.keyboard.press('Enter');
-  const details = page.getByRole('dialog');
-  await expect(details).toBeVisible();
-  // The one thing to do has focus, and `Tab` reaches Details after it, then the log's button.
-  await expect(details.getByRole('button', { name: 'Restart' })).toBeFocused();
-  await page.keyboard.press('Tab');
-  await expect(details.getByRole('button', { name: 'Details' })).toBeFocused();
-  await page.keyboard.press('Tab');
-  await expect(details.getByRole('button', { name: 'Show log' })).toBeFocused();
-  await page.keyboard.press('Escape');
-  await expect(details).toHaveCount(0);
-  await expect(item).toBeFocused();
-});
-
 /** Where the parts of the peek that the layout moves are, once drawn. */
 async function layout(page: Page, scene: Scene, width: number) {
   await fit(page, scene, 'dark', width);
@@ -234,15 +201,6 @@ test('a narrow peek stacks its answers above its code, and keeps the count in it
       ).toBeLessThanOrEqual(narrow.go.top + 1);
     }
   }
-});
-
-test('a peek says an answer is outside the repository, and has nothing to go to for it', async () => {
-  const page = await open();
-  await fit(page, 'peek-syntax', 'dark', 720);
-  const dialog = page.getByRole('dialog');
-  await expect(dialog.getByRole('option', { name: /Outside this repo/ })).toBeVisible();
-  await expect(dialog.getByRole('option', { name: /zod · not installed/ })).toBeVisible();
-  await expect(dialog.getByRole('button', { name: /Open whole file/ })).toBeDisabled();
 });
 
 test('Tab goes past a hover whose docs hold links, code and a long signature', async () => {

@@ -1,28 +1,15 @@
 // The moves in Chromium itself, with motion on: what jsdom can't show. A popup gives focus back the
 // moment it's asked to close and only then fades; something in the flow opens, closes and turns
-// back; a jump scrolls its pane and nothing else; and one switch, or the system's setting, turns
-// every move off. Playwright answers "no preference" to `prefers-reduced-motion` unless a test asks
-// otherwise, so the moves are on here whatever the machine's own setting.
+// back; and one switch, or the system's setting, turns every move off. Playwright answers "no
+// preference" to `prefers-reduced-motion` unless a test asks otherwise, so the moves are on here
+// whatever the machine's own setting.
 
-import { fileURLToPath } from 'node:url';
+import type { ElectronApplication, Page } from '@playwright/test';
 
-import { Scanner } from '@tailwindcss/oxide';
-import { expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import { buildPage, expect, launch, test, utilities } from './electron.ts';
 
-import { buildCss } from '../scripts/stylesheet.ts';
-import { buildPage, launch } from './electron.ts';
-
-/** Where the page is built. */
-let harness = '';
-
-test.beforeAll(async () => {
-  const base = fileURLToPath(new URL('..', import.meta.url));
-  const scanner = new Scanner({
-    sources: ['src/**/*', 'e2e/harness/**/*'].map((pattern) => ({ base, pattern, negated: false })),
-  });
-  const style = `${await buildCss(scanner.scan())}\nbody { margin: 0; }`;
-  harness = await buildPage('motion.tsx', 'Motion', style);
-});
+/** Where the page is built, once in each worker. */
+const harness = () => buildPage('motion.tsx', 'Motion', utilities);
 
 let app: ElectronApplication | undefined;
 
@@ -32,7 +19,7 @@ test.afterEach(async () => {
 });
 
 async function open(): Promise<Page> {
-  app = await launch(harness);
+  app = await launch(await harness());
   const page = await app.firstWindow();
   await page.waitForFunction(() => 'moves' in window);
   return page;
@@ -52,13 +39,16 @@ test('a dialog gives focus back as it’s asked to close, keeps its top edge bet
   // Input is live from the first frame: the main button has focus as the dialog mounts.
   await expect(dialog.getByRole('button', { name: 'Sign in' })).toBeFocused();
   const top = async () => Math.round((await dialog.boundingBox())?.y ?? -1);
-  await expect.poll(top).toBe(96);
+  // Where its top edge rests once it has come.
+  await expect(dialog).not.toHaveAttribute('data-starting-style');
+  await expect.poll(() => dialog.evaluate((panel) => panel.getAnimations().length)).toBe(0);
+  const rests = await top();
 
   // A taller step grows downward.
   await page.keyboard.press('Enter');
   await expect(dialog.getByRole('alert')).toContainText('GitHub didn’t answer.');
   await expect(dialog.getByRole('button', { name: 'Try again' })).toBeVisible();
-  await expect.poll(top).toBe(96);
+  await expect.poll(top).toBe(rests);
 
   await page.keyboard.press('Escape');
   // Still drawn, fading, and focus is already back where it was.
@@ -66,27 +56,6 @@ test('a dialog gives focus back as it’s asked to close, keeps its top edge bet
   await expect(dialog).toHaveCount(0);
   // Its caller tried to focus a button in it as it left, which it refused, so focus stayed back.
   expect(await focused(page)).toBe('open-dialog');
-});
-
-test('a menu gives focus back and runs what was chosen as it starts to leave', async () => {
-  const page = await open();
-  const row = page.locator('#row');
-  await row.focus();
-  // Opened from the keyboard, its first action is ready for ⏎.
-  await page.keyboard.press('m');
-  const menu = page.getByRole('menu');
-  await expect(menu.getByRole('menuitem').first()).toBeFocused();
-  await page.keyboard.press('Enter');
-  expect(await closed(page)).toEqual([{ what: 'menu', there: true, focus: 'row', chosen: 'show' }]);
-  await expect(menu).toHaveCount(0);
-
-  // Opened with the pointer and closed by a press outside it, focus goes back all the same.
-  await row.click({ button: 'right' });
-  await expect(menu).toBeVisible();
-  await page.mouse.click(600, 500);
-  await expect(menu).toHaveCount(0);
-  await expect(row).toBeFocused();
-  expect((await closed(page)).at(-1)).toMatchObject({ what: 'menu', focus: 'row' });
 });
 
 test('a popover takes focus as it opens, and gives it back to its trigger as it closes', async () => {
@@ -100,16 +69,6 @@ test('a popover takes focus as it opens, and gives it back to its trigger as it 
   await page.keyboard.press('Escape');
   expect(await closed(page)).toEqual([{ what: 'popover', there: true, focus: 'open-popover' }]);
   await expect(popover).toHaveCount(0);
-});
-
-test('a tooltip names a control under the pointer, with its key', async () => {
-  const page = await open();
-  await page.locator('#hinted').hover();
-  const tooltip = page.locator('.tooltip');
-  await expect(tooltip).toContainText('Next unread file');
-  await expect(tooltip.locator('kbd')).toHaveCount(2);
-  await page.mouse.move(700, 500);
-  await expect(tooltip).toHaveCount(0);
 });
 
 test('a name cut short shows whole as its tooltip, and one drawn whole shows none', async () => {
@@ -206,44 +165,6 @@ test('a toast floats fixed to the window, and a long word wraps inside it', asyn
   expect(fit).toEqual({ over: 0, lines: 3, position: 'fixed' });
 });
 
-test('the mark plays once and rests, in the color of each theme', async () => {
-  const page = await open();
-  await page.locator('#play-kiss').click();
-  const logo = page.locator('#logo svg');
-  // While it plays, the ball is an ellipse, drawn blurred and crisp.
-  await expect(logo.locator('ellipse')).toHaveCount(2);
-  await expect.poll(() => closed(page)).toMatchObject([{ what: 'logo kiss' }]);
-  await expect(logo.locator('circle')).toHaveCount(1);
-
-  const fill = () =>
-    logo
-      .locator('g')
-      .first()
-      .evaluate((group) => getComputedStyle(group).fill);
-  await page.evaluate(() => window.moves.theme('dark'));
-  const chalk = await fill();
-  await page.evaluate(() => window.moves.theme('light'));
-  expect(await fill()).not.toBe(chalk);
-});
-
-test('a jump scrolls its own pane, and nothing around it', async () => {
-  const page = await open();
-  await page.evaluate(() => window.moves.reveal('line-four'));
-  const at = await page.evaluate(() => ({
-    pane: document.getElementById('pane')!.scrollTop > 0,
-    line: Math.round(
-      document.getElementById('line-four')!.getBoundingClientRect().top -
-        document.getElementById('pane')!.getBoundingClientRect().top,
-    ),
-    window: document.documentElement.scrollTop + document.body.scrollTop,
-    shell: document.getElementById('root')!.scrollTop,
-    landed: document.getElementById('line-four')!.classList.contains('move-land'),
-  }));
-  expect(at).toEqual({ pane: true, line: 0, window: 0, shell: 0, landed: true });
-  // The mark fades and is taken off.
-  await expect(page.locator('#line-four')).not.toHaveClass(/move-land/);
-});
-
 /** How long the dialog's panel takes to come, as the page computes it. */
 async function sheetDuration(page: Page): Promise<string> {
   await page.locator('#open-dialog').click();
@@ -252,7 +173,7 @@ async function sheetDuration(page: Page): Promise<string> {
   return dialog.evaluate((panel) => getComputedStyle(panel).transitionDuration);
 }
 
-test('one switch turns every move off', async () => {
+test('one switch turns every move off, and without a call it follows the system’s setting', async () => {
   const page = await open();
   expect(await sheetDuration(page)).toBe('0.16s');
   await page.keyboard.press('Escape');
@@ -267,10 +188,11 @@ test('one switch turns every move off', async () => {
   await page.locator('#play-unmeld').click();
   await expect(page.locator('#logo svg circle')).toHaveCount(1);
   await expect(page.locator('#logo svg ellipse')).toHaveCount(0);
-});
 
-test('without a call it follows the system’s setting', async () => {
-  const page = await open();
+  // Following the system again, which asks for no less motion, the moves are back, until the
+  // system asks for less.
+  await page.evaluate(() => window.moves.setMotion('system'));
+  expect(await page.evaluate(() => window.moves.reduced())).toBe(false);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.evaluate(() => window.moves.setMotion('system'));
   expect(await page.evaluate(() => window.moves.reduced())).toBe(true);

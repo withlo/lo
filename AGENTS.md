@@ -271,11 +271,11 @@ pnpm nx run desktop:release  # build it, then make a release's DMGs and zips (ne
 - Code that doesn't call Electron goes in its own module, with unit tests beside it. The smoke test
   in `e2e/` drives the built app with Playwright, each test on an empty data folder, and covers what
   needs Electron. On Linux each Playwright worker starts its copies of Lo on an Xvfb display of its
-  own (`e2e/display.ts`), so a window one worker opens or closes never takes focus from the other's:
+  own (`@lo/testing/display`), so a window one worker opens or closes never takes the other's focus:
   a run there needs Xvfb, and shows nothing on the screen. With no window manager, X gives focus to
   the window under the pointer, which rests in the middle, in Lo's centered window, so Lo is in
   front, and reads GitHub every 20 s, for the whole test; a test fails at once if no window of Lo's
-  has focus once it has drawn. CI runs it in four shards, one job each (`app (1/4)` to `app (4/4)`),
+  has focus once it has drawn. CI runs it in four shards, one job each (`app (1)` to `app (4)`),
   which split the tests by count with Playwright's `--shard`;
   `pnpm nx run desktop:e2e -- --shard=2/4` runs one. In CI each test records a trace of the window,
   kept in its results when it fails, which CI uploads as `app-test-results-<shard>`; a test that
