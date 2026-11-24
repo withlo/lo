@@ -252,6 +252,18 @@ interface Fixtures {
   /** Extra options for starting Lo, for tests that need it started differently. Its `env` adds to Lo's. */
   launch: LaunchOptions;
   /**
+   * How Lo moves: `reduce`, every move off, as the suite runs unless a run asks otherwise
+   * (`appEnvironment`), or `system`, the moves a reader has by default. A few of the tests that
+   * what's on screen holds still run with them on, so what most readers see is tested too.
+   */
+  motion: 'reduce' | 'system' | undefined;
+  /**
+   * How often, in milliseconds, Lo reads the pull request on screen, the place of one in a merge
+   * queue and the queue's tab (`LO_POLL_MS`), in place of every 20 s, for a test that waits for
+   * GitHub's recorded answers to change; or `undefined` for Lo's own pace.
+   */
+  readEvery: number | undefined;
+  /**
    * How long, in milliseconds, the window holds back what a tab shows first. Long unless a test is
    * about that bound, which it asks for with `HOLD_LIMIT`.
    */
@@ -303,12 +315,18 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
     { scope: 'worker', auto: true },
   ],
   launch: [{}, { option: true }],
+  motion: [undefined, { option: true }],
+  readEvery: [undefined, { option: true }],
   holdLimit: [HELD_LONG, { option: true }],
   traced: [true, { option: true }],
   keymap: [undefined, { option: true }],
   settings: [undefined, { option: true }],
   live: [false, { option: true }],
-  app: async ({ launch, keymap, settings, traced, holdLimit, live }, use, testInfo) => {
+  app: async (
+    { launch, keymap, settings, traced, holdLimit, live, motion, readEvery },
+    use,
+    testInfo,
+  ) => {
     const { env, args = [appFolder], ...options } = launch;
     if (live && testInfo.config.workers > 1) {
       // Each copy would start on the one folder, and Lo quits a second copy started on it.
@@ -332,6 +350,8 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
       env: {
         ...appEnvironment(data),
         LO_HOLD_LIMIT_MS: String(holdLimit),
+        ...(motion === undefined ? {} : { LO_MOTION: motion }),
+        ...(readEvery === undefined ? {} : { LO_POLL_MS: String(readEvery) }),
         ...env,
         // A live run's data stays in its own folder, whatever else it's started with.
         ...(live ? { LO_USER_DATA_DIR: data } : {}),

@@ -295,6 +295,42 @@ export function devicePoll(options: { packaged: boolean; env: Environment }): nu
 }
 
 /**
+ * How often Lo reads what's on screen, in milliseconds, from `LO_POLL_MS` in a build run from
+ * source, in place of 20 s: the pull request on screen, the place in the merge queue of one that's
+ * queued, and the merge queue's own tab, so a test needn't wait 20 s for each read; nothing to keep
+ * Lo's own. A packaged build ignores it.
+ */
+export function pollEvery(options: { packaged: boolean; env: Environment }): number | undefined {
+  const wait = options.env.LO_POLL_MS;
+  if (options.packaged || wait === undefined) return undefined;
+  return milliseconds('LO_POLL_MS', wait);
+}
+
+/**
+ * How often Lo lists each watched repository's open pull requests, and reads the pull requests it
+ * watches off screen, in milliseconds, from `LO_WATCHED_POLL_MS` in a build run from source, in
+ * place of 2 minutes. A list looks up the merged pull requests the last one left out, so a test
+ * needn't wait minutes for those either. Nothing keeps Lo's own. A packaged build ignores it.
+ */
+export function watchedEvery(options: { packaged: boolean; env: Environment }): number | undefined {
+  const wait = options.env.LO_WATCHED_POLL_MS;
+  if (options.packaged || wait === undefined) return undefined;
+  return milliseconds('LO_WATCHED_POLL_MS', wait);
+}
+
+/**
+ * How long a request to GitHub waits for its answer to begin before Lo gives up on it, in
+ * milliseconds, from `LO_ANSWER_START_MS` in a build run from source, in place of 15 s, so a test
+ * of a GitHub that never answers needn't wait that long; nothing to keep Lo's own. A packaged build
+ * ignores it.
+ */
+export function answerStart(options: { packaged: boolean; env: Environment }): number | undefined {
+  const wait = options.env.LO_ANSWER_START_MS;
+  if (options.packaged || wait === undefined) return undefined;
+  return milliseconds('LO_ANSWER_START_MS', wait);
+}
+
+/**
  * The `gh` to run rather than one Lo finds, from `LO_GH`: an absolute path, or `none` for no gh at
  * all. Tests bring a gh of their own this way, so they never run the one on `PATH`, which holds the
  * tokens of whoever runs them. A test run, one talking to a GitHub on this machine, runs no gh

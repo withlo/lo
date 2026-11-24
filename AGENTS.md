@@ -163,6 +163,10 @@ longer `testTimeout` for the whole project (`@lo/git`). The desktop app's tests 
 `apps/desktop/vitest.config.ts` and run as `@lo/desktop:git`, a project of their own with 30 s; the
 rest of the desktop's tests keep the default.
 
+A string is pinned once, in its words module's own test; any other test gets the string from the
+module, or checks the kind of message and one key word. A test that restates a sentence fails each
+time it's reworded, and catches nothing its words module's test doesn't.
+
 What `ui`'s components do that only a real browser shows, such as where `Tab` moves focus, is tested
 by Playwright specs in `packages/desktop/ui/e2e/`. Each builds its own page with Vite and opens it
 in Electron's Chromium (`pnpm nx run ui:e2e`), and CI runs them with the app's smoke test.
@@ -290,10 +294,14 @@ pnpm nx run desktop:release  # build it, then make a release's DMGs and zips (ne
   move off: `appEnvironment` sets `LO_MOTION=reduce`, which a build run from source passes to its
   window's preload, on the window's command line, and the preload sets the motion switch before the
   page's code runs (a packaged build ignores it), so no test waits on a popup fading or meets one
-  still leaving. A run that's there to watch Lo move sets `LO_MOTION=system`. Its specs are
-  `e2e/*.spec.ts`, and a `*.test.ts` beside them is a unit test of what they use. A run on GitHub
-  itself, with the system's keychain, is a `*.live.ts` spec, which only `nx run desktop:live` runs,
-  one at a time, as `testing/README.md` describes.
+  still leaving. A run that's there to watch Lo move sets `LO_MOTION=system`, and so do a few tests
+  that check what's on screen stays put, one each of the diff, the tree and the overview, through
+  the `motion` fixture option, since people see Lo with its moves on. A test of what only macOS has,
+  such as its menu bar, skips on Linux with a reason that starts "Local only", since CI runs on
+  Linux, and runs on a Mac. The smoke test's specs are `e2e/*.spec.ts`, and a `*.test.ts` beside
+  them is a unit test of what they use. A run on GitHub itself, with the system's keychain, is a
+  `*.live.ts` spec, which only `nx run desktop:live` runs, one at a time, as `testing/README.md`
+  describes.
 
 The window shows untrusted content, so it's locked down, and the smoke test shows each guard
 holding:
@@ -835,6 +843,13 @@ repositories, which account opens a repository, and the pull requests opened lat
   whoever runs the tests, never sends one to the test's GitHub. It opens web pages with the program
   `LO_BROWSER` names, rather than the system's browser, so a test opens no browser. A packaged build
   ignores all four.
+- A build run from source takes other waits on GitHub from three more, for its tests, so a test
+  needn't wait out Lo's own; a packaged build ignores them. `LO_POLL_MS` is how often it reads
+  what's on screen, in place of 20 s: the pull request on screen, the merge queue a queued one is
+  in, and a merge queue's tab. `LO_WATCHED_POLL_MS` is how often it lists each watched repository's
+  open pull requests, each list looking up the merged pull requests the last one left out, and reads
+  the pull requests it watches off screen, in place of 2 minutes. `LO_ANSWER_START_MS` is how long a
+  request waits for GitHub's answer to begin before Lo gives up on it, in place of 15 s.
 
 ### A pull request's tab
 

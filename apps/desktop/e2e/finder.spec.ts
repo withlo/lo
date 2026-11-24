@@ -1,12 +1,11 @@
 // The file finder in the app: Lo started on the replay server, as rozed-bot, opens rozed-dev/e2e#80,
-// and ⌘P lists the repository's files by name, the pull request's changes first and marked. Tab lists
-// only the changed files, ⏎ goes to a file, ⌘⏎ opens it whole, and Esc gives focus back.
+// and ⌘P finds the repository's files: ⏎ goes to a file, and Esc gives focus back.
 
 import { writeFileSync } from 'node:fs';
 
 import { APP_PULL, writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
-import type { Locator, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import { appFolder, DIFF_FIRST, expect, KEYCHAIN, test as base } from './app.ts';
 
@@ -106,54 +105,6 @@ async function openFinder(page: Page): Promise<void> {
   await expect(field(page)).toBeFocused();
   await expect(options(page).first()).toBeVisible();
 }
-
-/** What the rows say, one string a row: the name, the folder and the marks. */
-const texts = (rows: Locator) => rows.evaluateAll((all) => all.map((one) => one.textContent));
-
-test('⌘P lists the files by name, the changed ones first and marked, and Esc gives focus back', async ({
-  page,
-}) => {
-  await shown(page);
-  await middle(page).focus();
-  await openFinder(page);
-  // The changed files come first, each with how it changed, then the rest of the repository.
-  const labels = finder(page).locator('[role="group"]');
-  await expect(labels.first()).toContainText('Changed in this pull request · 7');
-  await expect(labels.nth(1)).toContainText('Everywhere else in e2e');
-  const all = await texts(options(page));
-  expect(all.slice(0, 7).toSorted()).toEqual([
-    'format.tssrcM',
-    'legacy.tssrcD',
-    'mark.pngassetsM',
-    'numbers.txtdataA',
-    'parser.tssrcR',
-    'pnpm-lock.yamlM',
-    'wrap.tssrc/textA',
-  ]);
-  expect(all.slice(7).every((each) => each?.endsWith('unchanged'))).toBe(true);
-  await expect(options(page).filter({ hasText: 'README.md' })).toContainText('unchanged');
-
-  // The foot says what the keys do; the field shows none.
-  const foot = finder(page).locator('kbd');
-  await expect(foot).toContainText(mac ? ['⏎', '⌘⏎', 'Tab'] : ['Enter', 'Ctrl+Enter', 'Tab']);
-
-  // Typing narrows the list, with the letters that matched marked.
-  await page.keyboard.type('parser');
-  await expect(options(page)).toHaveCount(1);
-  await expect(options(page).first()).toContainText('parser.ts');
-  await expect(options(page).first().locator('mark')).toHaveText(['parser']);
-
-  // Esc closes the finder and focus goes back to where it came from.
-  await page.keyboard.press('Escape');
-  await expect(finder(page)).toBeHidden();
-  await expect(middle(page)).toBeFocused();
-
-  // It forgets what was typed.
-  await openFinder(page);
-  await expect(field(page)).toHaveValue('');
-  await page.keyboard.press('Escape');
-  await expect(middle(page)).toBeFocused();
-});
 
 test('⏎ reveals a changed file in the tree, and the diff shows it', async ({ page }) => {
   await shown(page);

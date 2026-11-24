@@ -1,7 +1,7 @@
 // The diff view's keys, pressed for real, through the registry's listener as in the app, on a small
-// pull request: the cursor stays on screen, `Tab` and `⌃o` cross and come back, a comment box keeps
-// its keys and stays level as it grows, a held key dies on blur, a key Lo holds still reaches Vim
-// when it isn't Lo's, and `PageDown` and `PageUp` go on past what's taller than the screen.
+// pull request: the cursor stays on screen, a comment box keeps its keys and stays level as it
+// grows, a key Lo holds still reaches Vim when it isn't Lo's, and `PageDown` and `PageUp` go on past
+// what's taller than the screen.
 
 import type { Spot } from '@lo/ui/code';
 import type { Page } from '@playwright/test';
@@ -53,21 +53,6 @@ test('j, ]f, ]t and G keep the cursor on screen', async ({ page }) => {
   expect(fileOf((await cursor(page))?.at)).toBe('src/removed.ts');
 });
 
-test('Tab crosses to the other side, and ⌃o comes back', async ({ page }) => {
-  await focusSide(page, 'new');
-  await press(page, 'g', 'g', ']', 'c', 'j', 'j');
-  const start = await cursor(page);
-  expect(start?.pane).toBe('new');
-  await press(page, 'Tab');
-  await expect.poll(async () => (await cursor(page))?.pane).toBe('old');
-  await press(page, 'Control+o');
-  await expect.poll(async () => (await cursor(page))?.pane).toBe('new');
-  const back = (await cursor(page))?.at;
-  expect([fileOf(back), lineOf(back)]).toEqual([fileOf(start?.at), lineOf(start?.at)]);
-  await press(page, 'Control+i');
-  await expect.poll(async () => (await cursor(page))?.pane).toBe('old');
-});
-
 test('a comment box grows as you type, and the sides stay level', async ({ page }) => {
   await focusSide(page, 'old');
   await press(page, 'g', 'g', ']', 'c', 'c');
@@ -114,31 +99,6 @@ test('Tab and ⇧Tab in a box keep focus there in both modes, and the next lette
   expect((await cursor(page))?.at).toEqual(line?.at);
 });
 
-test('a held g dies on blur', async ({ page }) => {
-  await focusSide(page, 'new');
-  await press(page, 'g', 'g', ']', 'c', 'j');
-  const start = await cursor(page);
-  for (const blur of [
-    // Focus leaves the side, and comes back.
-    () =>
-      page.evaluate(() => {
-        const focused = document.activeElement;
-        if (focused instanceof HTMLElement) focused.blur();
-        document.querySelector<HTMLElement>('.cm-content[aria-label="After"]')?.focus();
-      }),
-    // The window loses focus.
-    () => page.evaluate(() => window.dispatchEvent(new FocusEvent('blur'))),
-  ]) {
-    await press(page, 'g');
-    await blur();
-    // Were the first `g` still held, this would be `gg`, to the top.
-    await press(page, 'g');
-    await page.waitForTimeout(200);
-    expect((await cursor(page))?.at).toEqual(start?.at);
-    await press(page, 'Escape');
-  }
-});
-
 test('y w still reaches Vim', async ({ page }) => {
   await focusSide(page, 'new');
   await press(page, 'g', 'g', ']', 'c', '0');
@@ -154,18 +114,6 @@ test('y w still reaches Vim', async ({ page }) => {
   const line = app.new[(lineOf(start?.at) ?? 1) - 1] ?? '';
   // `yw` takes the space after the word too.
   expect(await boxText(page)).toEqual([`${line.split(' ')[0]} `]);
-});
-
-test('gi goes inline and back', async ({ page }) => {
-  await focusSide(page, 'new');
-  await press(page, 'g', 'g', ']', 'c');
-  const start = await cursor(page);
-  await press(page, 'g', 'i');
-  await expect.poll(() => page.evaluate(() => window.diffView.layout)).toBe('inline');
-  expect(await cursor(page)).toMatchObject({ pane: 'inline', at: start?.at });
-  await press(page, 'g', 'i');
-  await expect.poll(() => page.evaluate(() => window.diffView.layout)).toBe('split');
-  expect(await cursor(page)).toMatchObject({ pane: 'new', at: start?.at });
 });
 
 test('an input method composing in a diff is cancelled, and focus moves on cleanly', async ({

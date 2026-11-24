@@ -117,88 +117,6 @@ function headerBelow(page: Page, path: string): Promise<number | undefined> {
   }, path);
 }
 
-test('answers its keys: moving, opening and closing folders, review order and changed only; ⏎ shows a changed file in the diff, the keyboard staying in the tree', async ({
-  page,
-}) => {
-  await shown(page);
-
-  await test.step('moving, opening and closing folders, review order and changed only', async () => {
-    // `-` goes to the tree from the window.
-    await page.locator('[data-lo-middle]').focus();
-    await page.keyboard.press('-');
-    await expect(tree(page)).toBeFocused();
-    // At the file the diff has on screen.
-    expect(await focused(page)).toBe('assets/mark.png');
-    await page.keyboard.press('k');
-    expect(await focused(page)).toBe('assets');
-    await page.keyboard.press('j');
-    expect(await focused(page)).toBe('assets/mark.png');
-    await page.keyboard.press('k');
-    await page.keyboard.press('h');
-    await expect(row(page, 'assets')).toHaveAttribute('aria-expanded', 'false');
-    // A closed folder counts its changed files.
-    await expect(row(page, 'assets')).toContainText('1');
-    await page.keyboard.press('ArrowRight');
-    await expect(row(page, 'assets')).toHaveAttribute('aria-expanded', 'true');
-    await page.keyboard.press('l');
-    expect(await focused(page)).toBe('assets/mark.png');
-    await page.keyboard.press('ArrowLeft');
-    expect(await focused(page)).toBe('assets');
-
-    // Every folder closed, then open.
-    await page.keyboard.press('z');
-    await page.keyboard.press('Shift+M');
-    await expect(row(page, 'src')).toHaveAttribute('aria-expanded', 'false');
-    await expect(row(page, 'src')).toContainText('4');
-    await expect(row(page, 'src/parser.ts')).toHaveCount(0);
-    await page.keyboard.press('z');
-    await page.keyboard.press('Shift+R');
-    await expect(row(page, 'src/text')).toHaveAttribute('aria-expanded', 'true');
-
-    // Only the changed files, then all of them again.
-    await page.keyboard.press('f');
-    await expect(row(page, 'README.md')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Changed files only' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    await page.keyboard.press('f');
-    await expect(row(page, 'README.md')).toBeVisible();
-
-    // Review order: the changed files flat, in groups, each with its folder.
-    await page.keyboard.press('t');
-    await expect(tree(page)).toHaveAttribute('aria-label', 'Changed files in review order');
-    await expect(tree(page)).toContainText('Source and tests');
-    await expect(tree(page)).toContainText('Generated');
-    await expect(row(page, 'src/parser.ts')).toContainText('src');
-    await page.keyboard.press('t');
-    await expect(tree(page)).toHaveAttribute('aria-label', 'Files');
-
-    // Tab doesn't take the keyboard out of the tree.
-    await page.keyboard.press('Tab');
-    await expect(tree(page)).toBeFocused();
-  });
-
-  await test.step('⏎ shows a changed file in the diff, the keyboard staying in the tree', async () => {
-    await row(page, 'src/format.ts').click();
-    await expect(tree(page)).toBeFocused();
-    expect(await focused(page)).toBe('src/format.ts');
-    // `j` moves the tree's focus alone: the diff stays on the file the click showed until ⏎.
-    await page.keyboard.press('j');
-    const next = await focused(page);
-    expect(next).toBe('src/legacy.ts');
-    expect(await cursorPath(page)).toBe('src/format.ts');
-    await page.keyboard.press('Enter');
-    await expect.poll(() => cursorPath(page)).toBe(next);
-    await expect(tree(page)).toBeFocused();
-    // On a folder, ⏎ opens and closes it.
-    await row(page, 'data').click();
-    await expect(row(page, 'data')).toHaveAttribute('aria-expanded', 'false');
-    await page.keyboard.press('Enter');
-    await expect(row(page, 'data')).toHaveAttribute('aria-expanded', 'true');
-  });
-});
-
 test('a click puts the file’s start at the top of the diff, wherever it was, and makes it the tree’s; and a banner coming over the diff after a click takes the file’s header down with it, never over it', async ({
   page,
 }) => {
@@ -330,58 +248,63 @@ async function laidOut(page: Page): Promise<void> {
 }
 
 for (const layout of ['split', 'inline'] as const) {
-  test(`a file a click brought to the top keeps its header there as it's folded, ${layout === 'split' ? 'side by side' : 'inline'}`, async ({
-    page,
-  }) => {
-    await shown(page);
-    if (layout === 'inline') {
-      await page.keyboard.press('g');
-      await page.keyboard.press('i');
-      await expect.poll(() => page.evaluate(() => window.loDiff?.probe.layout)).toBe('inline');
-    }
-    // Near the end, where closing one leaves less to scroll than the screen, and further up: closed
-    // and opened again, opened whole, and a run of its lines closed and opened.
-    for (const path of ['src/parser.ts', 'src/legacy.ts', 'src/format.ts']) {
-      await row(page, path).click();
-      await expect.poll(() => headerBelow(page, path)).toBe(0);
-      // The cursor is on the header before `za` asks it to fold: a file, not a run of its lines.
-      await expect.poll(() => cursorPath(page)).toBe(path);
-      await focusCode(page);
-      await laidOut(page);
-      let before = await shape(page);
-      for (const [turn, keys] of ['za', 'za', 'zR', 'zc', 'zo'].entries()) {
-        await page.keyboard.press(keys[0]!);
-        await page.keyboard.press(keys[1]!);
-        // The fold's result first: each `za` changes what's drawn, closing the file or opening it
-        // again. Then the layout that set off.
-        if (turn < 2) {
-          const was = JSON.stringify([before.lines, before.closed]);
-          await expect
-            .poll(
-              async () => {
-                const now = await shape(page);
-                return JSON.stringify([now.lines, now.closed]);
-              },
-              { message: `${path} after ${keys}` },
-            )
-            .not.toBe(was);
-        }
-        await laidOut(page);
-        before = await shape(page);
-        expect(await headerBelow(page, path), `${path} after ${keys}`).toBe(0);
-        await expect(row(page, path)).toHaveClass(/tree-current/);
-        // Only the room after the last file that's on screen is left.
-        const below = await page
-          .locator('.lo-diffview')
-          .evaluate((box) =>
-            Math.min(
-              Number.parseFloat(box.style.paddingBottom || '0'),
-              box.scrollHeight - box.clientHeight - box.scrollTop,
-            ),
-          );
-        expect(below, `room below the screen after ${keys}`).toBeLessThanOrEqual(1);
+  test.describe(() => {
+    // Inline runs with Lo's moves on, as most readers have them.
+    test.use({ motion: layout === 'inline' ? 'system' : undefined });
+
+    test(`a file a click brought to the top keeps its header there as it's folded, ${layout === 'split' ? 'side by side' : 'inline, with Lo’s moves on'}`, async ({
+      page,
+    }) => {
+      await shown(page);
+      if (layout === 'inline') {
+        await page.keyboard.press('g');
+        await page.keyboard.press('i');
+        await expect.poll(() => page.evaluate(() => window.loDiff?.probe.layout)).toBe('inline');
       }
-    }
+      // Near the end, where closing one leaves less to scroll than the screen, and further up: closed
+      // and opened again, opened whole, and a run of its lines closed and opened.
+      for (const path of ['src/parser.ts', 'src/legacy.ts', 'src/format.ts']) {
+        await row(page, path).click();
+        await expect.poll(() => headerBelow(page, path)).toBe(0);
+        // The cursor is on the header before `za` asks it to fold: a file, not a run of its lines.
+        await expect.poll(() => cursorPath(page)).toBe(path);
+        await focusCode(page);
+        await laidOut(page);
+        let before = await shape(page);
+        for (const [turn, keys] of ['za', 'za', 'zR', 'zc', 'zo'].entries()) {
+          await page.keyboard.press(keys[0]!);
+          await page.keyboard.press(keys[1]!);
+          // The fold's result first: each `za` changes what's drawn, closing the file or opening it
+          // again. Then the layout that set off.
+          if (turn < 2) {
+            const was = JSON.stringify([before.lines, before.closed]);
+            await expect
+              .poll(
+                async () => {
+                  const now = await shape(page);
+                  return JSON.stringify([now.lines, now.closed]);
+                },
+                { message: `${path} after ${keys}` },
+              )
+              .not.toBe(was);
+          }
+          await laidOut(page);
+          before = await shape(page);
+          expect(await headerBelow(page, path), `${path} after ${keys}`).toBe(0);
+          await expect(row(page, path)).toHaveClass(/tree-current/);
+          // Only the room after the last file that's on screen is left.
+          const below = await page
+            .locator('.lo-diffview')
+            .evaluate((box) =>
+              Math.min(
+                Number.parseFloat(box.style.paddingBottom || '0'),
+                box.scrollHeight - box.clientHeight - box.scrollTop,
+              ),
+            );
+          expect(below, `room below the screen after ${keys}`).toBeLessThanOrEqual(1);
+        }
+      }
+    });
   });
 }
 

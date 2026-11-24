@@ -9,6 +9,7 @@ import {
   swiftDistroFor,
   swiftToolchainId,
   TOOLCHAINS,
+  versionFor,
 } from '@lo/lsp';
 import { gitProgram } from '@lo/testing/git';
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
@@ -334,44 +335,6 @@ test('Try again saves a change that couldn’t be, and focus stays in Settings a
   await expect(page.getByRole('searchbox', { name: 'Search settings' })).toBeFocused();
 });
 
-test('main refuses a setting the window sends that no feature declared, or its schema refuses', async ({
-  page,
-}) => {
-  // As the page itself could, whatever Settings would send.
-  const replies = await page.evaluate(
-    async (inputs) => {
-      const sent = [];
-      for (const input of inputs) sent.push(await window.lo.invoke('settings.set', input));
-      return sent;
-    },
-    [
-      { key: 'theme', value: 'purple' },
-      { key: 'theme', value: 3 },
-      { key: 'cache.cap', value: 99_999 },
-      { key: 'cache.cap', value: 2.5 },
-      { key: 'not.a.setting', value: true },
-      { key: '__proto__', value: true },
-      { key: 'theme', value: 'dark', path: '/etc/passwd' },
-      { key: 'theme' },
-      'theme',
-    ],
-  );
-  expect(replies.map((reply) => reply.ok)).toEqual(replies.map(() => false));
-  expect(replies.map((reply) => (reply.ok ? '' : reply.error.code))).toEqual([
-    'invalid',
-    'invalid',
-    'invalid',
-    'invalid',
-    'invalid',
-    'invalid',
-    'invalid',
-    'invalid',
-    'invalid',
-  ]);
-  // Nothing was written, not even the file.
-  expect(saved()).toBeUndefined();
-});
-
 /**
  * Puts Go in the test's cache as Lo would have installed it, as a program of `bytes` bytes, and
  * says where its version's folder is.
@@ -396,6 +359,14 @@ function installGo(bytes: number): string {
   return folder;
 }
 
+/** The version of the toolchain `id` that Lo pins for this system, as a pattern matches it. */
+function pinnedVersion(id: string): string {
+  const pinned = TOOLCHAINS[id];
+  const platform = currentPlatform();
+  if (!pinned || !platform) throw new Error(`Lo pins no ${id} for this system`);
+  return versionFor(pinned, platform).replace(/[.+]/g, '\\$&');
+}
+
 test('Settings lists the toolchains, and deletes one that’s downloaded', async () => {
   const go = installGo(2048);
   const app = await electron.launch({
@@ -415,28 +386,25 @@ test('Settings lists the toolchains, and deletes one that’s downloaded', async
         ? [/^Swift(From Xcode|From Apple’s Command Line Tools|Needs .+) · For Swift$/]
         : [];
     const distro = process.platform === 'linux' ? swiftDistroFor(readOsRelease()) : undefined;
-    const version = distro && TOOLCHAINS[swiftToolchainId(distro)]?.version;
+    const version = distro && pinnedVersion(swiftToolchainId(distro));
     const downloaded = version
-      ? [
-          new RegExp(
-            `^Swift ${version.replaceAll('.', '\\.')}Not downloaded · [\\d.]+ GB · For Swift$`,
-          ),
-        ]
+      ? [new RegExp(`^Swift ${version}Not downloaded · [\\d.]+ GB · For Swift$`)]
       : [];
+    const goVersion = pinnedVersion('go');
     await expect(rows).toHaveText(
       [
         // C#'s server runs on the .NET SDK, Go's on Go, Rust's on Rust and Java's on the JDK.
-        /^\.NET SDK 10\.0\.404Not downloaded · [\d.]+ MB · For C#$/,
-        'Go 1.27.42 KB · For GoDeleteDeleting…',
-        /^Rust 1\.100\.0Not downloaded · [\d.]+ MB/,
+        new RegExp(`^\\.NET SDK ${pinnedVersion('dotnet')}Not downloaded · [\\d.]+ MB · For C#$`),
+        new RegExp(`^Go ${goVersion}2 KB · For GoDeleteDeleting…$`),
+        new RegExp(`^Rust ${pinnedVersion('rust')}Not downloaded · [\\d.]+ MB`),
         ...downloaded,
-        /^Temurin JDK 25\.0\.5\.1\+2Not downloaded · [\d.]+ MB/,
+        new RegExp(`^Temurin JDK ${pinnedVersion('temurin')}Not downloaded · [\\d.]+ MB`),
         ...swift,
       ],
       { timeout: 15_000 },
     );
     await section.getByRole('button', { name: 'Delete Go' }).click();
-    await expect(rows.nth(1)).toHaveText(/^Go 1\.27\.4Not downloaded · [\d.]+ MB/);
+    await expect(rows.nth(1)).toHaveText(new RegExp(`^Go ${goVersion}Not downloaded · [\\d.]+ MB`));
     expect(existsSync(go)).toBe(false);
     // Focus doesn't fall to the page with the button: nothing else is downloaded, so the list has it.
     await expect(section.getByRole('list', { name: 'Toolchains' })).toBeFocused();

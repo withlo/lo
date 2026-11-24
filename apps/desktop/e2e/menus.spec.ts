@@ -1,9 +1,6 @@
-import { realpathSync } from 'node:fs';
-import { join } from 'node:path';
-
 import type { ElectronApplication, Page } from '@playwright/test';
 
-import { appFolder, expect, middleOf, opened, signedIn as test } from './app.ts';
+import { expect, middleOf, signedIn as test } from './app.ts';
 
 const mac = process.platform === 'darwin';
 
@@ -59,108 +56,29 @@ function appMenus(app: ElectronApplication): Promise<string[]> {
   });
 }
 
-test('a right-click lists Back and Forward with their keys in this system’s form, and on Linux About Lo, and Open licenses, which have none, and a screen reader hears an item’s name and key, not its key caps', async ({
+test('⇧F10 and the menu key each open the menu of what has focus, under the keyboard’s control, and Esc gives focus back', async ({
   page,
 }) => {
   const middle = middleOf(page);
-  await middle.click({ button: 'right' });
-  const menu = menuOf(page);
-  await expect(menu).toBeVisible();
-  const items = menu.getByRole('menuitem');
-  await expect(items).toHaveText([
-    new RegExp(`^Back${mac ? '⌃o' : 'Ctrl\\+O'}$`),
-    new RegExp(`^Forward${mac ? '⌃i' : 'Ctrl\\+I'}$`),
-    // macOS's About is the system's, in the app menu; Linux's is Lo's, listed here too, with no key.
-    ...(mac ? [] : [/^About Lo$/]),
-    // Both systems list how to read Lo's license, which the About panel says to look for here.
-    /^Open licenses$/,
-  ]);
-  // Back and Forward are in the Go group, so no separator sits between them. About Lo and Open
-  // licenses, in App, sit after one.
-  await expect(menu.getByRole('separator')).toHaveCount(1);
-  // The menu is a scope of its own, which is how j and k move in it.
-  await expect(menu).toHaveAttribute('data-lo-scope', 'menu');
-
-  // The same menu, for a screen reader.
-  // The name is the label alone, since the key caps are hidden from it.
-  const back = menu.getByRole('menuitem', { name: 'Back', exact: true });
-  await expect(back).toHaveAttribute('aria-keyshortcuts', 'Control+O');
-  await expect(back.locator('kbd')).toHaveAttribute('aria-hidden', 'true');
-  const forward = menu.getByRole('menuitem', { name: 'Forward', exact: true });
-  await expect(forward).toHaveAttribute('aria-keyshortcuts', 'Control+I');
-  // With nowhere to go, both are dimmed, with nothing under them: the dimmed label says it.
-  await expect(back).toHaveAttribute('aria-disabled', 'true');
-  await expect(forward).toHaveAttribute('aria-disabled', 'true');
+  for (const key of ['Shift+F10', 'ContextMenu']) {
+    await test.step(key, async () => {
+      await middle.focus();
+      await page.keyboard.press(key);
+      const menu = menuOf(page);
+      await expect(menu).toBeVisible();
+      // From the keyboard, the first action is highlighted already, dimmed or not.
+      await expect(highlighted(page)).toContainText('Back');
+      await page.keyboard.press('j');
+      await expect(highlighted(page)).toContainText('Forward');
+      await page.keyboard.press('k');
+      await expect(highlighted(page)).toContainText('Back');
+      // Esc closes it, and focus is back where the menu was opened.
+      await page.keyboard.press('Escape');
+      await expect(menu).toBeHidden();
+      await expect(middle).toBeFocused();
+    });
+  }
 });
-
-test('Esc closes the menu and gives focus back to where it was; and j and k move through the menu, ⏎ does nothing on a dimmed action, and runs one that can run, and the menu closes', async ({
-  page,
-}) => {
-  const middle = middleOf(page);
-
-  // First, while Lo has said nothing: the one that closes the menu checks that none ran.
-  await test.step('Esc closes the menu and gives focus back to where it was', async () => {
-    await middle.click({ button: 'right' });
-    await expect(menuOf(page)).toBeVisible();
-    await page.keyboard.press('j');
-    await page.keyboard.press('Escape');
-    await expect(menuOf(page)).toBeHidden();
-    await expect(middle).toBeFocused();
-    // Nothing ran.
-    await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(page.getByRole('status').filter({ hasText: /\w/ })).toHaveCount(0);
-  });
-
-  await test.step('j and k move through the menu, ⏎ does nothing on a dimmed action, and runs one that can run, and the menu closes', async () => {
-    await middle.click({ button: 'right' });
-    const menu = menuOf(page);
-    await expect(menu).toBeVisible();
-    // Nothing is highlighted until the keys move it, and j and k move it as ↓ and ↑ do.
-    await expect(highlighted(page)).toHaveCount(0);
-    await page.keyboard.press('j');
-    await expect(highlighted(page)).toContainText('Back');
-    await page.keyboard.press('j');
-    await expect(highlighted(page)).toContainText('Forward');
-    await page.keyboard.press('k');
-    await expect(highlighted(page)).toContainText('Back');
-    await page.keyboard.press('ArrowDown');
-    await expect(highlighted(page)).toContainText('Forward');
-    // Forward, dimmed with nowhere to go, does nothing on ⏎, and says nothing: the menu stays.
-    await page.keyboard.press('Enter');
-    await expect(menu).toBeVisible();
-    await expect(page.getByRole('status').filter({ hasText: /\w/ })).toHaveCount(0);
-    // ⏎ on one that can run runs it, through the same handler as its key, and the menu closes.
-    await page.keyboard.press('j');
-    if (!mac) await page.keyboard.press('j');
-    await expect(highlighted(page)).toContainText('Open licenses');
-    await page.keyboard.press('Enter');
-    await expect(menu).toBeHidden();
-    await expect.poll(opened).toEqual([realpathSync(join(appFolder, 'dist', 'licenses.txt'))]);
-    await expect(middle).toBeFocused();
-  });
-});
-
-for (const key of ['Shift+F10', 'ContextMenu']) {
-  test(`${key} opens the menu of what has focus, under the keyboard’s control`, async ({
-    page,
-  }) => {
-    const middle = middleOf(page);
-    await middle.focus();
-    await page.keyboard.press(key);
-    const menu = menuOf(page);
-    await expect(menu).toBeVisible();
-    // From the keyboard, the first action is highlighted already, dimmed or not.
-    await expect(highlighted(page)).toContainText('Back');
-    await page.keyboard.press('j');
-    await expect(highlighted(page)).toContainText('Forward');
-    await page.keyboard.press('k');
-    await expect(highlighted(page)).toContainText('Back');
-    // Esc closes it, and focus is back where the menu was opened.
-    await page.keyboard.press('Escape');
-    await expect(menu).toBeHidden();
-    await expect(middle).toBeFocused();
-  });
-}
 
 test('on Linux, the app menu opens under the menu button by a click and by F10, with the menus macOS’s menu bar has, keeping focus where it was; opened from the strip by the keyboard, it gives focus back to what had it', async ({
   app,

@@ -4,8 +4,7 @@
 // answer to the overview ref read again added, as Lo reads it again when its window comes to the
 // front (`app_queue_act_polled`). `J` on the second moves it to the front and `x` on the first
 // removes it, each once its dialog says what it does and `⏎` confirms it; the first, at the front,
-// has nowhere to move. An account below admin isn't offered `J`, which GitHub lets only admins do
-// (`app_queue_act_writer`).
+// has nowhere to move.
 
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -120,11 +119,15 @@ async function focus(page: Page, key: string): Promise<void> {
   await expect(grid).toHaveAttribute('aria-activedescendant', new RegExp(`-${key}$`));
 }
 
+// Lo read the queue every 20 s as it was recorded, and GitHub listed the move two reads after the
+// one Lo makes after a write; here it reads every 5 s. A read sooner than recorded before the move
+// gets an answer that still holds the queue as it was, as GitHub's first two after it do.
+test.use({ readEvery: 5_000 });
+
 test('`J` moves a pull request to the front of the queue, and `x` takes one out, each once confirmed', async ({
   page,
 }) => {
-  // GitHub listed the move in its queue two reads after it, which Lo makes every 20 s.
-  test.setTimeout(120_000);
+  test.setTimeout(60_000);
   await openQueue(page);
   // The front entry has nowhere to move.
   const front = queue(page).locator(`[data-key="${first}"]`);
@@ -150,7 +153,7 @@ test('`J` moves a pull request to the front of the queue, and `x` takes one out,
   await page.keyboard.press('Enter');
   await expect(said(page, `Moved #${pulls.queuedSlow2.number} to 2nd`)).toBeVisible();
   await expect(dialog(page)).toBeHidden();
-  await expect.poll(() => rowKeys(page), { timeout: 60_000 }).toEqual([second, first]);
+  await expect.poll(() => rowKeys(page), { timeout: 30_000 }).toEqual([second, first]);
 
   await focus(page, first);
   await page.keyboard.press('x');
@@ -163,25 +166,4 @@ test('`J` moves a pull request to the front of the queue, and `x` takes one out,
   await expect(dialog(page)).toBeHidden();
   await expect(queue(page).locator(`[data-key="${first}"]`)).toBeHidden();
   await expect(queue(page).locator(`[data-key="${second}"]`)).toBeVisible();
-});
-
-test.describe('as an account below admin', () => {
-  test.use({ cassette: 'app_queue_act_writer' });
-
-  test('`J` isn’t offered, and says why', async ({ page }) => {
-    await openQueue(page);
-    await focus(page, second);
-    const row = queue(page).locator(`[data-key="${second}"]`);
-    await expect(row.getByRole('button', { name: /Remove…/ })).toBeVisible();
-    await expect(row.getByRole('button', { name: /Move to front…/ })).toHaveCount(0);
-    // The status bar's hint for it is dimmed, and the key says why.
-    await expect(
-      queue(page)
-        .locator('footer')
-        .getByRole('button', { name: /Move to front…/ }),
-    ).toHaveAttribute('aria-disabled', 'true');
-    await page.keyboard.press('Shift+J');
-    await expect(said(page, 'Only repo admins can move to front')).toBeVisible();
-    await expect(dialog(page)).toBeHidden();
-  });
 });

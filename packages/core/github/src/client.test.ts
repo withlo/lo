@@ -621,6 +621,25 @@ test('a request whose answer never begins is given up as lost, and the queue goe
   }
 });
 
+test('a client given another wait for an answer to begin gives up after it, as do the clients it gates', async () => {
+  vi.useFakeTimers();
+  try {
+    const sent: string[] = [];
+    const github = new GithubClient({ fetch: stalled(sent), answerStartMs: 2_000 }).gated(
+      new RequestQueue(0).gate(),
+    );
+    const hung = settled(github.get('/hangs', json));
+    await vi.advanceTimersByTimeAsync(2_000 - 1);
+    expect(hung.done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(hung.error).toMatchObject({
+      detail: { kind: 'network', failure: 'lost', message: "the answer didn't begin within 2 s" },
+    });
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test('an answer that has begun, or a request with a limit of its own, waits as long as that', async () => {
   vi.useFakeTimers();
   try {

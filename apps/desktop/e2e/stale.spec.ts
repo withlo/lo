@@ -338,45 +338,41 @@ test('says it was written for r1 from its first frame, and flags the block on li
 test.describe('while the local copy comes late', () => {
   test.use({ cassette: 'app_e2e_late', lateRemote: true });
 
-  // Wide, the actions beside what changed since, which takes both its lines; and narrow, one above
-  // the other, under four lines kept for it. The widths between only move where the actions go.
-  for (const width of [1440, 760]) {
-    test(`nothing on screen moves from the first frame as what changed since fills in, at ${width} wide`, async ({
-      app,
-      page,
-    }) => {
-      test.setTimeout(90_000);
-      await sizeWindow(app, width, 900);
-      await watchStill(page);
-      const id = await open(page);
-      await expect(overviewTab(page).getByRole('img')).toBeVisible({ timeout: 20_000 });
-      await overviewTab(page).click();
-      await expect(shown(page)).toBeVisible();
-      await expect
-        .poll(() => current(page, id), { timeout: 20_000 })
-        .toMatchObject({ code: 'failed' });
-      // Without the local copy, it says what it was written for, and where the pull request is.
-      await expect(banner(page).locator('.lo-ov-stale__title')).toHaveText(
-        'Written for r1 · now r2',
-      );
-      await expect(banner(page).locator('.lo-ov-stale__sub')).toHaveText('');
+  // Narrow, the actions go one above the other, under four lines kept for them, which a wide window
+  // doesn't need: beside what changed since, it takes both its lines.
+  test('nothing on screen moves from the first frame as what changed since fills in, at 760 wide', async ({
+    app,
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    await sizeWindow(app, 760, 900);
+    await watchStill(page);
+    const id = await open(page);
+    await expect(overviewTab(page).getByRole('img')).toBeVisible({ timeout: 20_000 });
+    await overviewTab(page).click();
+    await expect(shown(page)).toBeVisible();
+    await expect
+      .poll(() => current(page, id), { timeout: 20_000 })
+      .toMatchObject({ code: 'failed' });
+    // Without the local copy, it says what it was written for, and where the pull request is.
+    await expect(banner(page).locator('.lo-ov-stale__title')).toHaveText('Written for r1 · now r2');
+    await expect(banner(page).locator('.lo-ov-stale__sub')).toHaveText('');
 
-      // The local copy comes, and with it how much changed and the flag.
-      writeAppRemote(test.info().outputPath('remote'));
-      await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
-      await expect
-        .poll(() => current(page, id), { timeout: 30_000 })
-        .toMatchObject({ code: 'ready' });
-      await expect(banner(page).locator('.lo-ov-stale__sub')).toHaveText('1 file changed', {
-        timeout: 20_000,
-      });
-      await expect(
-        codeBlock(page, 'src/parser.ts', ':7–10').locator('.lo-codeblock__flag'),
-      ).toBeVisible({ timeout: 20_000 });
-      await page.waitForTimeout(1500);
-      expect(await stillMoved(page)).toEqual([]);
+    // The local copy comes, and with it how much changed and the flag.
+    writeAppRemote(test.info().outputPath('remote'));
+    await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
+    await expect
+      .poll(() => current(page, id), { timeout: 30_000 })
+      .toMatchObject({ code: 'ready' });
+    await expect(banner(page).locator('.lo-ov-stale__sub')).toHaveText('1 file changed', {
+      timeout: 20_000,
     });
-  }
+    await expect(
+      codeBlock(page, 'src/parser.ts', ':7–10').locator('.lo-codeblock__flag'),
+    ).toBeVisible({ timeout: 20_000 });
+    await page.waitForTimeout(1500);
+    expect(await stillMoved(page)).toEqual([]);
+  });
 });
 
 test('marks the lines it explains in the diff at r2, opens what it says of them, and goes there; and compares r1 with r2 in the diff, and marks r1 in the picker as the revision it describes', async ({

@@ -250,7 +250,7 @@ const menuItems = (app: ElectronApplication, name: string) =>
   }, name);
 
 test.describe('the app menu', () => {
-  test.skip(!mac, 'The test reads the menu bar, which is macOS’s.');
+  test.skip(!mac, 'Local only: it reads macOS’s menu bar, and CI runs on Linux.');
 
   test('holds Check for updates, and What’s new in Help, and leaves the rest to the update’s toast', async ({
     app,

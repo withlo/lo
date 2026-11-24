@@ -19,6 +19,9 @@ import {
   holdLimit,
   reducedMotion,
   offlineAfter,
+  pollEvery,
+  watchedEvery,
+  answerStart,
 } from './environment.ts';
 
 describe('appName', () => {
@@ -162,6 +165,24 @@ describe('devicePoll', () => {
       );
     }
   });
+});
+
+describe('the test runs’ waits for GitHub', () => {
+  it.each([
+    { read: pollEvery, name: 'LO_POLL_MS' },
+    { read: watchedEvery, name: 'LO_WATCHED_POLL_MS' },
+    { read: answerStart, name: 'LO_ANSWER_START_MS' },
+  ])(
+    '$name sets its wait in a build run from source, and nothing in a packaged one',
+    ({ read, name }) => {
+      expect(read({ packaged: false, env: { [name]: '2000' } })).toBe(2000);
+      expect(read({ packaged: false, env: {} })).toBe(undefined);
+      expect(read({ packaged: true, env: { [name]: '2000' } })).toBe(undefined);
+      for (const wait of ['', '1.5', '-1', 'soon']) {
+        expect(() => read({ packaged: false, env: { [name]: wait } })).toThrow(name);
+      }
+    },
+  );
 });
 
 describe('keymapEditor', () => {

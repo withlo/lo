@@ -11,6 +11,7 @@ import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import app from '../../features/app/window/index.ts';
 import keys from '../../features/keys/window/index.ts';
 import {
   closeMenu,
@@ -106,8 +107,12 @@ function commands() {
 
 let root: Root | undefined;
 
-function mount(node: ReactNode, system: 'mac' | 'linux' = 'mac'): HTMLElement {
-  createRegistry(commands(), system);
+function mount(
+  node: ReactNode,
+  system: 'mac' | 'linux' = 'mac',
+  all: ReturnType<typeof commands> = commands(),
+): HTMLElement {
+  createRegistry(all, system);
   const page = document.createElement('div');
   page.id = 'root';
   page.className = 'lo-app';
@@ -224,6 +229,37 @@ describe('a right-click', () => {
     expect(popup()?.getAttribute('aria-label')).toBe('Actions');
     expect(labels()).toEqual(['Back', 'Forward']);
   });
+
+  it.each(['mac', 'linux'] as const)(
+    'lists, on %s, Lo’s own actions after Back and Forward where nothing in particular was clicked: About Lo on Linux, and Open licenses, with no key',
+    (system) => {
+      const page = mount(
+        <>
+          <Clickable id="window" target={NO_TARGET}>
+            <div id="empty" />
+          </Clickable>
+          <Menus />
+        </>,
+        system,
+        [...keys.commands, ...(app.commands ?? [])],
+      );
+      rightClick(page.querySelector('#empty')!);
+      expect(labels()).toEqual([
+        'Back',
+        'Forward',
+        ...(system === 'linux' ? ['About Lo'] : []),
+        'Open licenses',
+      ]);
+      // Back and Forward are in Go, About Lo and Open licenses in App, after a separator.
+      expect(document.querySelectorAll('[role="separator"]')).toHaveLength(1);
+      expect(items().map((item) => item.querySelectorAll('kbd').length > 0)).toEqual([
+        true,
+        true,
+        ...(system === 'linux' ? [false] : []),
+        false,
+      ]);
+    },
+  );
 
   it('is taken by the innermost target that has a menu, and left to the next if none does', () => {
     const page = mount(
