@@ -93,6 +93,7 @@ import { NEW_SIDE_ONLY, NO_LINES, NOT_IN_DIFF, offersOf } from './writing.ts';
 
 const HEAD = 'a'.repeat(40);
 const OLDER = 'b'.repeat(40);
+const NEWER = 'c'.repeat(40);
 let VIEW = 'v0';
 
 // The background process prepares each file attached as it is.
@@ -1295,6 +1296,26 @@ describe('a box on a code block', () => {
     expect(keptOpen.get(VIEW)).toBe(false);
     showKeptDrafts(VIEW);
     expect(keptOpen.get(VIEW)).toBe(true);
+  });
+
+  test('a draft counted with nowhere to open counts on as main moves it to a newer push', async () => {
+    const onDiff = fakeDiff();
+    takeDrafts({ id: VIEW, drafts: [row(onLines(5, 6), 'One', { savedAt: 1 })] });
+    await Promise.resolve();
+    for (const each of onDiff.drawn) takenDown(boxIn(each), each.composer);
+    // The diff drawn anew is of another push, with nowhere to open it.
+    const other = fakeDiff();
+    other.shown.at = OLDER;
+    restore(VIEW);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(keptAway.get(VIEW).map((kept) => kept.where)).toEqual(['backoff.ts · lines 5–6 · r2']);
+    // Main moves it to a newer push, on the same lines: it's counted still, where it is now.
+    const moved = { ...onLines(5, 6), commit: NEWER };
+    takeDrafts({ id: VIEW, drafts: [row(moved, 'One', { savedAt: 1 })] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(other.drawn).toEqual([]);
+    expect(keptAway.get(VIEW)).toHaveLength(1);
+    expect(keptCount(keptAway.get(VIEW))).toBe('1 kept draft');
   });
 
   test('a box the diff drawn again had nowhere to open is kept nowhere: its block takes it once the overview has it', async () => {

@@ -787,6 +787,9 @@ test('the narrowest tabs keep their repository, cut short, their number whole, a
     await expect(stated.locator('[aria-label="Open"]')).toHaveCount(1);
     await expect(stated.locator('[aria-label="Open"]')).toBeVisible();
     await clearHovered(second.page, stated);
+    // Under the pointer, its close button over its state's ball, it's still named by its state
+    // and its title.
+    await expect(stated).toHaveAccessibleName(/^Open\b.*#\d+ Make the tab strip narrower\b/);
     await expectFits(second.page);
   } finally {
     await second.app.close();

@@ -11,7 +11,7 @@ import { missingRules } from '../test/classes.ts';
 import { cleanUp, click, render, rerender, tipOf } from '../test/dom.ts';
 import { Button } from './Button.tsx';
 import { COPIED_MS, CopyButton, CopyRoute } from './CopyButton.tsx';
-import { CHECK_AGAIN, Dialog, type DialogState } from './Dialog.tsx';
+import { Dialog, type DialogState } from './Dialog.tsx';
 import { Loading, LOADING_DELAY_MS, LOADING_SLOW_MS } from './Loading.tsx';
 import { LogoMotion } from './LogoMotion.tsx';
 import { setMotion } from './motion.ts';
@@ -680,13 +680,13 @@ describe('a dialog that does something', () => {
     expect(document.activeElement).toBe(named('Waiting'));
   });
 
-  const ending = (state: DialogState, again: string | null = null) => (
+  const ending = (state: DialogState, again: string | null = null, unconfirmed = false) => (
     <Dialog
       open
       onOpenChange={() => {}}
       title="Merge #264"
       state={state}
-      action={{ label: 'Merge #264', onRun: run, again, shortcut: 'Meta+Enter' }}
+      action={{ label: 'Merge #264', onRun: run, again, unconfirmed, shortcut: 'Meta+Enter' }}
       problem={{ title: 'Can’t merge #264' }}
     />
   );
@@ -713,10 +713,15 @@ describe('a dialog that does something', () => {
     expect(document.activeElement).toBe(named('Close'));
   });
 
-  it('says what went wrong in amber while it can only check again, and in red once it failed', async () => {
-    render(ending('failed', CHECK_AGAIN));
+  it('says what went wrong in amber while it can’t tell whether what it sent went, and in red once it failed', async () => {
+    render(ending('failed', 'Check again', true));
     await settle();
     expect(triangle()).toContain('text-warning');
+    cleanUp();
+    // "Check again" for something missing: it failed.
+    render(ending('failed', 'Check again'));
+    await settle();
+    expect(triangle()).toContain('text-danger');
     cleanUp();
     render(ending('failed', 'Try again'));
     await settle();

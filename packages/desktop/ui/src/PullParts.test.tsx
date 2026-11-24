@@ -63,13 +63,16 @@ describe('PRHeader', () => {
     expect(markup).toContain('Comparing');
   });
 
-  it('says the author merged the branches once it has merged, and wanted to once it closed', () => {
-    expect(headerOf('merged')).toContain('> merged</span>');
-    expect(headerOf('merged')).not.toContain('wants to merge');
+  it('says the author’s branch merged once it has, naming no one as merging it, and that the author wanted to once it closed', () => {
+    const merged = headerOf('merged');
+    expect(textOf(merged)).toBe('Merged #78 rozed-bot’s app/head merged into app/base');
+    expect(merged).not.toContain('wants to merge');
+    // Given up with the branches, the author's name stays whole, with nothing after it.
+    expect(merged).toMatch(/rozed-bot<span data-gives="branches">’s<\/span><\/strong>/);
     expect(headerOf('closed')).toContain('> wanted to merge</span>');
     expect(headerOf('draft')).toContain('> wants to merge</span>');
     // A branch is given up whole where it can't show a few letters, never cut to one.
-    expect(headerOf('draft')).toMatch(/data-gives="branches" class="flex min-w-48 shrink"/);
+    expect(headerOf('draft')).toMatch(/data-gives="branches" class="flex min-w-cut shrink"/);
   });
 
   it('holds the places of what hasn’t arrived, and shows no chip while all is well', () => {
@@ -271,4 +274,13 @@ function headerOf(state: 'merged' | 'closed' | 'draft'): string {
       base={{ branch: 'app/base' }}
     />,
   );
+}
+
+/** The words in `markup`, as one line read out: its tags gone, and runs of space as one. */
+function textOf(markup: string): string {
+  return markup
+    .replaceAll(/<[^>]*>/g, ' ')
+    .replaceAll(/\s+/g, ' ')
+    .replace(' ’s', '’s')
+    .trim();
 }

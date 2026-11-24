@@ -9,7 +9,7 @@
 
 import type { Page } from '@playwright/test';
 
-import { browsed, expect, MERGE, onMerge as test } from './app.ts';
+import { browsed, expect, MERGE, onMerge as test, sizeWindow } from './app.ts';
 
 const { pulls } = MERGE;
 
@@ -66,6 +66,31 @@ test('the header says whether each pull request can merge, and why not', async (
 
   await open(page, pulls.gatedPassing.number);
   await expect(status(page)).toContainText('Auto-merge is on');
+});
+
+test('the header gives up its branches and the merge status its detail whole as the window narrows, and has them back as it widens', async ({
+  app,
+  page,
+}) => {
+  await open(page, pulls.gatedFailing.number);
+  const detail = status(page).locator('[data-gives="detail"]');
+  await expect(detail).toHaveText('1 check failed · 1 unresolved · review required');
+  // The branches, each a chip, and the words and the arrow between them.
+  const branches = header(page).locator('[data-gives="branches"]');
+  await expect(branches.first()).toBeVisible();
+  const shown = () =>
+    branches.evaluateAll((each) => each.filter((one) => one.getClientRects().length > 0).length);
+  const all = await branches.count();
+  expect(await shown()).toBe(all);
+
+  // Narrow, each goes whole, never cut to a letter.
+  await sizeWindow(app, 760, 800);
+  await expect(detail).toBeHidden();
+  await expect.poll(shown).toBe(0);
+  // Wide again, both come back, though nothing in their rows was drawn again.
+  await sizeWindow(app, 1440, 900);
+  await expect(detail).toBeVisible();
+  await expect.poll(shown).toBe(all);
 });
 
 test('`m` opens the panel on its reasons, `j` and `k` move, `o` opens a check’s run, `Esc` closes it, and right-click menus do the same', async ({

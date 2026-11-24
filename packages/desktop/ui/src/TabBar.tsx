@@ -986,9 +986,10 @@ function isLoading(item: PullTab): boolean {
  * As the tab narrows, its title is cut short first, then its stack's count goes, then its
  * repository's name shortens, but never past its first letter and an ellipsis, and never past half
  * the tab. Where its number then wouldn't fit beside its mark, the state's ball or the spinner in
- * its place, the title's words go, and the mark takes their room at its end, which its close button
- * covers as it covered them; its number stays whole. The marks, the state's ball and the stack's
- * count, are named in a tooltip and to a screen reader.
+ * its place, the title's words go from sight, not from the tab's name, and the mark takes their
+ * room at its end, which its close button covers as it covered them, unseen but still named; its
+ * number stays whole. The marks, the state's ball and the stack's count, are named in a tooltip and
+ * to a screen reader.
  */
 function TabLabel({ tab: item, selected, fade }: { tab: Tab; selected: boolean; fade: Fade }) {
   const title = `${tail({ fade })} truncate ${selected ? 'font-medium' : ''}`;

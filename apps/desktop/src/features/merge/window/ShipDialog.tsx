@@ -62,6 +62,8 @@ interface Primary {
   readonly busy: boolean;
   /** What it says while busy: "Approving…". */
   readonly working?: string | undefined;
+  /** Whether it looks for an approval or a merge Lo can't tell went: "Check again". */
+  readonly unconfirmed?: boolean | undefined;
 }
 
 /** What went wrong, above the foot. */
@@ -135,7 +137,13 @@ function againOf(again: Again, id: string, number: number, looking: boolean): Pr
     case 'try':
       return { label: 'Try again', run: shipAgain, busy: false };
     case 'look':
-      return { label: 'Check again', run: checkApproval, busy: looking, working: CHECKING };
+      return {
+        label: 'Check again',
+        run: checkApproval,
+        busy: looking,
+        working: CHECKING,
+        unconfirmed: true,
+      };
     case 'panel':
       return { label: 'Merge panel', run: () => panelFromShip(id, number), busy: false };
     case 'check': {
@@ -145,6 +153,7 @@ function againOf(again: Again, id: string, number: number, looking: boolean): Pr
         run: () => void askAgain(key),
         busy: checking(key),
         working: CHECKING,
+        unconfirmed: true,
       };
     }
     case 'newer': {
@@ -424,6 +433,7 @@ export function ShipDialog() {
       action={{
         label: failed ? shipLabel(plan) : (primary?.label ?? shipLabel(plan)),
         again: failed ? (primary?.label ?? null) : undefined,
+        unconfirmed: failed && primary?.unconfirmed === true,
         onRun: () => primary?.run(),
         busy: primary?.busy === true,
         working: primary?.working,

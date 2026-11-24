@@ -106,7 +106,7 @@ describe('MergeStatus', () => {
     const reasons = host.querySelector('[data-gives="detail"]');
     expect(reasons?.textContent).toBe('Review required · 2 checks running');
     expect(reasons?.className).toContain('truncate');
-    expect(reasons?.className).toContain('min-w-48');
+    expect(reasons?.className).toContain('min-w-cut');
     expect(reasons?.parentElement?.className).toContain('give-up');
   });
 

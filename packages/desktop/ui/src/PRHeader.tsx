@@ -141,13 +141,23 @@ export function PRHeader({
                 // Its room, held until GitHub names the author, who is never assumed deleted.
                 <Skeleton className="w-48 flex-none" />
               ) : (
-                <strong className="font-semibold text-fg">{author ?? 'Deleted account'}</strong>
+                <strong className="font-semibold text-fg">
+                  {author ?? 'Deleted account'}
+                  {/* Merged, its branch is the subject: who merged it isn't always its author. */}
+                  {state === 'merged' && <span data-gives="branches">’s</span>}
+                </strong>
               )}
-              <span data-gives="branches"> {mergeWords(state)}</span>
+              {state !== 'merged' && <span data-gives="branches"> {mergeWords(state)}</span>}
               <BranchAtLeast name={head.fork ? `${head.fork}:${head.branch}` : head.branch} />
-              <span data-gives="branches" className="flex-none text-fg-subtle" aria-label="into">
-                →
-              </span>
+              {state === 'merged' ? (
+                <span data-gives="branches" className="flex-none">
+                  merged into
+                </span>
+              ) : (
+                <span data-gives="branches" className="flex-none text-fg-subtle" aria-label="into">
+                  →
+                </span>
+              )}
               <BranchAtLeast name={base.branch} base />
             </>
           )}
@@ -158,11 +168,13 @@ export function PRHeader({
   );
 }
 
-/** What the author did with the branches, as the pull request stands: "wants to merge". */
-function mergeWords(state: PullRequestState | undefined): string {
-  if (state === 'merged') return 'merged';
-  if (state === 'closed') return 'wanted to merge';
-  return 'wants to merge';
+/**
+ * What the author asks of the branches, as the pull request stands: "wants to merge", or "wanted
+ * to merge" once it's closed. A merged one says its branch "merged into" the base instead, naming
+ * no one, since Lo doesn't read who merged it.
+ */
+function mergeWords(state: Exclude<PullRequestState, 'merged'> | undefined): string {
+  return state === 'closed' ? 'wanted to merge' : 'wants to merge';
 }
 
 /**
@@ -174,7 +186,7 @@ const BRANCH_STEPS = ['branches'] as const;
 /** A branch in the header: cut short no further than a few letters, and given up whole after. */
 function BranchAtLeast({ name, base = false }: { name: string; base?: boolean }) {
   return (
-    <span data-gives="branches" className="flex min-w-48 shrink">
+    <span data-gives="branches" className="flex min-w-cut shrink">
       <Branch name={name} base={base} />
     </span>
   );

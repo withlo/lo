@@ -54,10 +54,16 @@ export interface DialogAction {
    * nothing to do but close.
    *
    * When what was sent may have gone through and its result isn't known, it's "Check again", and
-   * `onRun` then only looks for the result: it never sends the action a second time. Nothing is
-   * known to have failed then, so what went wrong takes the warn tone, not danger's.
+   * `onRun` then only looks for the result: it never sends the action a second time. Say so with
+   * `unconfirmed`.
    */
   again?: string | null | undefined;
+  /**
+   * After a failure: what was sent may have gone through, and Lo can't tell, as when GitHub's answer
+   * was lost. Nothing is known to have failed, so what went wrong is in the warn tone, not danger's,
+   * until Lo knows. "Check again" for something missing, which has failed, isn't this.
+   */
+  unconfirmed?: boolean | undefined;
   /**
    * It's at work while nothing that can't be left is: before what it asks can be confirmed, as
    * while it's checked, or while "Check again" looks. It's busy, saying `working`, and the button
@@ -148,9 +154,6 @@ export interface DialogProps {
   testId?: string | undefined;
 }
 
-/** What a dialog's main button says where whether what it sent went isn't known. */
-export const CHECK_AGAIN = 'Check again';
-
 const popup = cva(
   'move-sheet flex max-h-full max-w-full flex-col overflow-hidden rounded-lg bg-bg-overlay text-fg shadow-dialog text-ui',
   {
@@ -224,8 +227,8 @@ export function Dialog(props: DialogProps) {
   // what `⏎` presses next.
   // The main button comes and goes with the state, or with `again` in a failure that stays one.
   const drawn = action !== undefined && !(state === 'failed' && action.again === null);
-  // Whether what it sent went isn't known: nothing has failed yet, and "Check again" looks.
-  const unsure = state === 'failed' && action?.again === CHECK_AGAIN;
+  // Whether what it sent went isn't known: nothing is known to have failed.
+  const unsure = state === 'failed' && action?.unconfirmed === true;
   useLayoutEffect(() => {
     const at = panel.current;
     const to = main.current ?? leave.current;

@@ -160,6 +160,8 @@ export function SubmitDialog() {
           shortcut: shortcut('cmd+enter'),
           disabled: off,
           again: step.state === 'failed' ? step.primary.label : undefined,
+          // Its answer was lost, so Lo can't tell whether the review was submitted.
+          unconfirmed: step.state === 'failed' && step.primary.does === 'check',
           busy: step.primary.busy,
           // As wide whatever it says, from "Submit review" to "Done".
           widest: 'Submit review',

@@ -1036,6 +1036,8 @@ export function takeDrafts(given: DraftsView): void {
     else dropping?.delete(key);
   }
   const gone: Box[] = [];
+  // Those the status bar counts, kept with nowhere to open, which count on wherever main moves them.
+  const counted = new Set(keptAway.get(view).map((each) => each.box));
   for (const [key, box] of own) {
     if (rows.has(key)) continue;
     if (box.sentMark) {
@@ -1067,8 +1069,10 @@ export function takeDrafts(given: DraftsView): void {
       box.open = row.restored || first || (moved?.open ?? false);
       if (first) box.set({ restored: row.savedAt });
       own.set(key, box);
-      // Kept as the one it moved from was, in no box until one takes it.
-      if (box.kept && box.open && keptOnScreen(box)) say(view, [box]);
+      // Kept as the one it moved from was, in no box until one takes it; or counted as it was,
+      // with nowhere to open it, until a diff with its lines does.
+      const kept = box.kept !== undefined && box.open && keptOnScreen(box);
+      if (kept || (moved !== undefined && counted.has(moved.id))) say(view, [box]);
     } else if (row.home && box.home.kind !== 'block' && !box.saving && box.state.text === '') {
       // Drawn before main said anything, as the timeline's box is, with nothing typed: it takes its
       // draft's home, and opens there, never drawn where it was with the draft's text.

@@ -109,7 +109,7 @@ export function MergeStatus({
       <strong className="flex-none font-semibold text-fg">{said}</strong>
       {reasons !== undefined && reasons !== '' && (
         // Cut short no further than a few letters, then given up whole.
-        <span data-gives="detail" className="min-w-48 truncate">
+        <span data-gives="detail" className="min-w-cut truncate">
           {reasons}
         </span>
       )}

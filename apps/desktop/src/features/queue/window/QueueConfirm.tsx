@@ -274,6 +274,8 @@ export function QueueConfirm() {
           busy: shown.primary?.busy === true,
           // After a failure, what it does then, if anything: else Close alone.
           again: shown.state === 'failed' ? (shown.primary?.label ?? null) : undefined,
+          // GitHub's answer was lost: Lo can't tell whether it went.
+          unconfirmed: shown.step === 'unknown',
           keys: labels('enter'),
           shortcut: shortcut('enter'),
           // As wide while it works as at rest.
