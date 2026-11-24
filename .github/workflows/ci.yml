@@ -212,29 +212,18 @@ jobs:
       - name: Let Chromium's sandbox run
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
-      # To move the display's pointer, below.
-      - name: Install xdotool
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xdotool
-
-      # e2e depends on build, so this builds each app it tests first. One virtual display serves the
-      # whole run: by default Xvfb resets when its last client leaves, and a copy of Lo starting
-      # just then finds no display. What follows -- goes to each project's Playwright, and not to
-      # the builds. Playwright splits a project's tests by count, in file order. A project with
-      # fewer tests than shards, such as ui's one spec file, leaves some shards with none of them,
-      # which passes.
-      #
-      # The pointer goes to the display's corner first. Xvfb starts it in the middle, where each
-      # copy of Lo centers its window, so a window another worker opens or closes there takes the
-      # pointer from under the window of a test, or gives it back, at the display's middle: the
-      # page hears the mouse leave whatever Playwright's mouse rests on, and a tooltip waiting
-      # there goes. In the corner, the pointer is in no copy's window.
+      # e2e depends on build, so this builds each app it tests first. The desktop smoke test starts
+      # a virtual display for each Playwright worker (apps/desktop/e2e/display.ts), so the copies of
+      # Lo two workers run at once never take focus from each other. The one xvfb-run starts serves
+      # the ui and perf suites: by default Xvfb resets when its last client leaves, and a copy
+      # starting just then finds no display. What follows -- goes to each project's Playwright, and
+      # not to the builds. Playwright splits a project's tests by count, in file order. A project
+      # with fewer tests than shards, such as ui's one spec file, leaves some shards with none of
+      # them, which passes.
       - name: Build and run a shard of the smoke test
         run: >-
-          xvfb-run -a -s '-screen 0 1920x1080x24 -noreset' sh -c 'xdotool mousemove 0 0 && pnpm nx
-          affected -t e2e --base="$BASE_SHA" --head=HEAD --output-style=static -- --shard=${{
-          matrix.shard }}/4'
+          xvfb-run -a -s '-screen 0 1920x1080x24 -noreset' pnpm nx affected -t e2e
+          --base="$BASE_SHA" --head=HEAD --output-style=static -- --shard=${{ matrix.shard }}/4
 
       # One artifact per shard, and only on failure, so a passing run stores nothing.
       - name: Keep the smoke test's results
