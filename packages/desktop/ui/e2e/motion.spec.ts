@@ -44,11 +44,23 @@ test('a dialog gives focus back as it’s asked to close, keeps its top edge bet
   await expect.poll(() => dialog.evaluate((panel) => panel.getAnimations().length)).toBe(0);
   const rests = await top();
 
-  // A taller step grows downward.
+  // A taller step grows downward: once it has grown and come to rest, its top edge is where it was.
+  await dialog.evaluate((panel) => {
+    Reflect.set(window, 'grown', false);
+    let growing = false;
+    new MutationObserver((_, watch) => {
+      if (panel.hasAttribute('data-growing')) growing = true;
+      else if (growing) {
+        Reflect.set(window, 'grown', true);
+        watch.disconnect();
+      }
+    }).observe(panel, { attributes: true, attributeFilter: ['data-growing'] });
+  });
   await page.keyboard.press('Enter');
   await expect(dialog.getByRole('alert')).toContainText('GitHub didn’t answer.');
   await expect(dialog.getByRole('button', { name: 'Try again' })).toBeVisible();
-  await expect.poll(top).toBe(rests);
+  await expect.poll(() => page.evaluate(() => Reflect.get(window, 'grown'))).toBe(true);
+  expect(await top()).toBe(rests);
 
   await page.keyboard.press('Escape');
   // Still drawn, fading, and focus is already back where it was.

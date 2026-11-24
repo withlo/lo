@@ -38,7 +38,10 @@ export async function startDisplay(): Promise<Display> {
   const number = await new Promise<string>((resolve, reject) => {
     server.once('error', (error) => {
       reject(
-        new Error(`Xvfb couldn't start. On Linux, the smoke test needs it.`, { cause: error }),
+        new Error(
+          `Xvfb couldn't start. On Linux, the desktop app's smoke test, ui's specs and the performance suite need it.`,
+          { cause: error },
+        ),
       );
     });
     server.once('exit', (code, signal) => {
@@ -59,9 +62,14 @@ export async function startDisplay(): Promise<Display> {
       resolve(line[1]!);
     });
   });
+  // A worker can exit before its fixtures come down: Playwright exits one 30 s after its runner
+  // goes, done or not. Its display goes with it then.
+  const stopOnExit = () => server.kill();
+  process.once('exit', stopOnExit);
   return {
     name: `:${number}`,
     async stop() {
+      process.off('exit', stopOnExit);
       if (server.exitCode !== null || server.signalCode !== null) return;
       const gone = once(server, 'exit');
       server.kill();

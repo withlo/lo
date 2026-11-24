@@ -290,6 +290,13 @@ describe('a button that can’t be pressed now', () => {
     expect(host.querySelector('.tooltip')?.textContent).toContain('Done');
     // Under the pointer, it names the control's key too.
     expect(host.querySelectorAll('.tooltip kbd')).toHaveLength(1);
+    // And it goes when the pointer does.
+    act(() => {
+      button.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: host }));
+      button.dispatchEvent(new MouseEvent('mouseleave', { relatedTarget: host }));
+      vi.advanceTimersByTime(TOOLTIP_DELAY);
+    });
+    expect(host.querySelector('.tooltip')).toBeNull();
   });
 
   it('shows its tooltip for focus too, by default', () => {

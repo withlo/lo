@@ -165,7 +165,9 @@ rest of the desktop's tests keep the default.
 
 What `ui`'s components do that only a real browser shows, such as where `Tab` moves focus, is tested
 by Playwright specs in `packages/desktop/ui/e2e/`. Each builds its own page with Vite and opens it
-in Electron's Chromium (`pnpm nx run ui:e2e`), and CI runs them with the app's smoke test.
+in Electron's Chromium (`pnpm nx run ui:e2e`), and CI runs them with the app's smoke test. On Linux
+each worker opens its pages on an Xvfb display of its own, as the smoke test's workers do, so a run
+there needs Xvfb, and shows nothing on the screen.
 
 ## The desktop app
 
