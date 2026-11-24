@@ -13,7 +13,7 @@ import { Button } from './Button.tsx';
 import { useTakeFocus } from './focus.ts';
 import { Key } from './Key.tsx';
 import { motionReduced, useHeld, useOnClose } from './motion.ts';
-import { Problem, type ProblemProps } from './Problem.tsx';
+import { Problem, ProblemTone, type ProblemProps } from './Problem.tsx';
 import { useReturnFocus } from './returnFocus.ts';
 
 /** How wide a dialog is: `sm` for a question, `md` for a form, `lg` for something to read. */
@@ -54,9 +54,16 @@ export interface DialogAction {
    * nothing to do but close.
    *
    * When what was sent may have gone through and its result isn't known, it's "Check again", and
-   * `onRun` then only looks for the result: it never sends the action a second time.
+   * `onRun` then only looks for the result: it never sends the action a second time. Say so with
+   * `unconfirmed`.
    */
   again?: string | null | undefined;
+  /**
+   * After a failure: what was sent may have gone through, and Lo can't tell, as when GitHub's answer
+   * was lost. Nothing is known to have failed, so what went wrong is in the warn tone, not danger's,
+   * until Lo knows. "Check again" for something missing, which has failed, isn't this.
+   */
+  unconfirmed?: boolean | undefined;
   /**
    * It's at work while nothing that can't be left is: before what it asks can be confirmed, as
    * while it's checked, or while "Check again" looks. It's busy, saying `working`, and the button
@@ -90,6 +97,11 @@ export interface DialogProps {
   children?: ReactNode;
   /** How wide it is. `md` without one. */
   size?: DialogSize | undefined;
+  /**
+   * It's as tall as a dialog can be, whatever it holds, so it keeps one height as what it lists
+   * changes, and its body's own list scrolls inside: keyboard shortcuts.
+   */
+  tall?: boolean | undefined;
   /**
    * Where it has got to, for a dialog with an `action`. The body stays the same through all four:
    * only the foot changes, so nothing jumps.
@@ -147,6 +159,8 @@ const popup = cva(
   {
     variants: {
       size: { sm: 'w-dialog-w-sm', md: 'w-dialog-w', lg: 'w-dialog-w-lg' },
+      // The room the viewport leaves under its top edge.
+      tall: { true: 'h-full', false: '' },
     },
   },
 );
@@ -167,6 +181,7 @@ export function Dialog(props: DialogProps) {
     description,
     children,
     size,
+    tall,
     state,
     action,
     problem,
@@ -212,6 +227,8 @@ export function Dialog(props: DialogProps) {
   // what `⏎` presses next.
   // The main button comes and goes with the state, or with `again` in a failure that stays one.
   const drawn = action !== undefined && !(state === 'failed' && action.again === null);
+  // Whether what it sent went isn't known: nothing is known to have failed.
+  const unsure = state === 'failed' && action?.unconfirmed === true;
   useLayoutEffect(() => {
     const at = panel.current;
     const to = main.current ?? leave.current;
@@ -251,7 +268,7 @@ export function Dialog(props: DialogProps) {
             data-lo-scope="dialog"
             data-testid={testId}
             onKeyDown={onKeyDown}
-            className={popup({ size: size ?? 'md' })}
+            className={popup({ size: size ?? 'md', tall: tall === true })}
           >
             <div className="flex flex-none items-start gap-12 px-20 pt-16 pb-4">
               <div className="min-w-0">
@@ -269,10 +286,12 @@ export function Dialog(props: DialogProps) {
               ref={body}
               className="flex min-h-0 flex-auto flex-col gap-12 overflow-auto px-20 pt-12 pb-16"
             >
-              {children}
-              {foot === undefined && state === 'failed' && problem !== undefined && (
-                <Problem {...problem} layout="inline" />
-              )}
+              <ProblemTone value={unsure ? 'warn' : 'danger'}>
+                {children}
+                {foot === undefined && state === 'failed' && problem !== undefined && (
+                  <Problem {...problem} layout="inline" />
+                )}
+              </ProblemTone>
             </div>
             {foot !== undefined ? (
               <Foot>{foot}</Foot>

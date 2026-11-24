@@ -1,7 +1,14 @@
 // The window's registry, and the middle view keys come back to. Features' handlers reach both
 // through here, since the registry is built from their commands.
 
-import { Registry, type Command, type Entry, type System } from '@lo/ui/commands';
+import {
+  findScope,
+  Registry,
+  textKind,
+  type Command,
+  type Entry,
+  type System,
+} from '@lo/ui/commands';
 import { useSyncExternalStore } from 'react';
 
 import { refuse } from './notices.tsx';
@@ -10,13 +17,19 @@ import { refuse } from './notices.tsx';
 export interface Middle {
   /** Takes focus, as `Esc` gives it back. */
   focus(): void;
+  /**
+   * Whether focus on `element` is where `focus` puts it, so `Esc` there has nowhere to give it
+   * back to.
+   */
+  holds(element: Element): boolean;
   /** Where the tab is in it, for history: the place a jump leaves. */
   here(): Entry | undefined;
   /**
-   * `Esc` comes to it first: it closes something of its own it has open, such as a note in the
-   * diff, while focus is in it, and says whether it did. Otherwise `Esc` gives focus back to it.
+   * What `Esc` closes first, with focus on `focused`: something of its own it has open, such as a
+   * note in the diff while focus is in it, as what closes it. With nothing, `Esc` gives focus back
+   * to it. Asking closes nothing, so the palette can ask whether `Esc` would do anything.
    */
-  escape?(): boolean;
+  escape?(focused: Element | null): (() => void) | undefined;
 }
 
 let current: Registry | undefined;
@@ -92,7 +105,29 @@ export function escapeToMiddle(): void {
  * says whether it did.
  */
 export function escapeInMiddle(): boolean {
-  return middle()?.escape?.() ?? false;
+  const close = middle()?.escape?.(document.activeElement);
+  close?.();
+  return close !== undefined;
+}
+
+/**
+ * Whether `Esc` with focus on `focused` would do anything: close something the middle view has
+ * open, or give focus back to it. With focus already where the view puts it, and nothing open,
+ * it has nowhere to go.
+ */
+export function canEscape(focused: Element | null): boolean {
+  const view = middle();
+  if (!view) return !(focused?.hasAttribute('data-lo-middle') ?? false);
+  if (view.escape?.(focused) !== undefined) return true;
+  return focused === null || !view.holds(focused);
+}
+
+/**
+ * Whether `element` is the text of a code view whose scope is called `scope`: where the view's
+ * `focus` puts focus, and its keys go.
+ */
+export function inCodeOf(element: Element, scope: string): boolean {
+  return findScope(element).name === scope && textKind(element) === 'editable';
 }
 
 /** Gives focus back to the middle view, or the middle of the window while there's none. */

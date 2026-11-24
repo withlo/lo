@@ -146,13 +146,14 @@ export type Version = z.output<typeof version>;
 
 /**
  * Why Lo won't show a file whole, besides its size: the revisions compared are too large to replay
- * the older side's changes onto (`compared`), the pull request shares no history with its base, so
- * there's no older side (`unrelated`), it's a submodule, another repository's commit, the pull
- * request changes no file that was at that path (`unchanged`), or there's no file at that path in
- * the head on screen (`missing`) or in the base (`notInBase`).
+ * the older side's changes onto (`compared`, over `limit` bytes), the pull request shares no
+ * history with its base, so there's no older side (`unrelated`), it's a submodule, another
+ * repository's commit, the pull request changes no file that was at that path (`unchanged`), or
+ * there's no file at that path in the head on screen (`missing`) or in the base (`notInBase`).
  */
 export type WholeRefusal =
-  'compared' | 'unrelated' | 'submodule' | 'unchanged' | 'missing' | 'notInBase';
+  | { why: 'compared'; limit: number }
+  | { why: 'unrelated' | 'submodule' | 'unchanged' | 'missing' | 'notInBase' };
 
 /**
  * A whole file, as `diff.whole` replies: its text; or what its whole-file view says in place of
@@ -166,7 +167,7 @@ export type WholeText =
   | { kind: 'large'; size: number }
   | { kind: 'binary'; size: number }
   | { kind: 'tooLarge'; why: TooLarge }
-  | { kind: 'refused'; why: WholeRefusal }
+  | ({ kind: 'refused' } & WholeRefusal)
   | { kind: 'waiting' };
 
 export const contract = defineContract('diff', {

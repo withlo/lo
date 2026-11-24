@@ -494,6 +494,10 @@ describe('importing from gh', () => {
     await settle();
     expect(dialog('import-gh')?.textContent).toContain('Can’t find GitHub CLI');
     expect(button(dialog('import-gh'), 'Check again')).toBeDefined();
+    // Something missing has failed, though "Check again" looks for it: red.
+    expect(
+      dialog('import-gh')?.querySelector('svg[class*="text-"]')?.getAttribute('class'),
+    ).toContain('text-danger');
     act(() => closeDialog());
     // One too old to list its accounts says its version, and what gh said is behind Details.
     installBridge({

@@ -605,6 +605,8 @@ export interface DiffView extends KeySource {
    * was open. What's at the top of the screen stays where it is.
    */
   closeNote(): boolean;
+  /** Whether a note is drawn open, which `closeNote` would close. */
+  hasOpenNote(): boolean;
   /**
    * Moves the cursor to what `at` names, and brings it on screen: a line, the last line `v`
    * selected, a header, a file's header on the side the cursor is on, or a thread's line. Says

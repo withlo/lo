@@ -93,6 +93,7 @@ import { NEW_SIDE_ONLY, NO_LINES, NOT_IN_DIFF, offersOf } from './writing.ts';
 
 const HEAD = 'a'.repeat(40);
 const OLDER = 'b'.repeat(40);
+const NEWER = 'c'.repeat(40);
 let VIEW = 'v0';
 
 // The background process prepares each file attached as it is.
@@ -123,11 +124,17 @@ vi.mock('./main.ts', async (original) => ({
   }),
 }));
 
-const said = vi.hoisted(() => ({ pull: undefined as unknown, run: undefined as unknown }));
+const said = vi.hoisted(() => ({
+  pull: undefined as unknown,
+  run: undefined as unknown,
+  /** The view on screen. */
+  screen: undefined as string | undefined,
+}));
 vi.mock('../../tab/window/shared.ts', async (original) => ({
   ...(await original<typeof TabShared>()),
   pullOf: () => said.pull,
   runOf: () => said.run,
+  activeTab: () => (said.screen === undefined ? undefined : { kind: 'pull', id: said.screen }),
 }));
 
 /** A box the fake diff drew, with the events it was given. */
@@ -479,6 +486,7 @@ beforeEach(() => {
   VIEW = `v${++views}`;
   said.pull = pull();
   said.run = undefined;
+  said.screen = VIEW;
   diff.keys = true;
   bridge.calls.length = 0;
   answers['comments.commentable'] = () => IN_DIFF;
@@ -1168,6 +1176,98 @@ describe('a box on a code block', () => {
     expect(keptAway.get(VIEW)).toEqual([]);
   });
 
+  test('a box the diff takes down is counted as kept at once, and a diff drawn over the last one opens it as the last goes', async () => {
+    const { box, drawn } = await opened();
+    // The diff drawn anew is drawn over the last one, which still holds the box: nothing opens.
+    const again = fakeDiff();
+    restore(VIEW);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(again.drawn).toEqual([]);
+    expect(keptAway.get(VIEW)).toEqual([]);
+    // The last one goes with the box: it's in no box, and the status bar counts it at once.
+    takenDown(box, drawn[0]!.composer);
+    expect(keptAway.get(VIEW).map((kept) => kept.where)).toEqual(['backoff.ts · line 5 · r2']);
+    // The diff drawn anew opens it on its line, as it was, and the status bar says no more.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(again.drawn.map(({ at, composer }) => [at, composer.text])).toEqual([
+      [{ file: 'f0', side: 'new', line: 5 }, 'Ship it?'],
+    ]);
+    expect(keptAway.get(VIEW)).toEqual([]);
+  });
+
+  test('a box taken down by another comparison without its file is counted as kept, with nothing drawn again after', async () => {
+    const { box, drawn } = await opened();
+    // Another comparison, without the box's file, is drawn over the last one before that goes.
+    const other = fakeDiff();
+    other.shown.files = [];
+    restore(VIEW);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(keptAway.get(VIEW)).toEqual([]);
+    takenDown(box, drawn[0]!.composer);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(other.drawn).toEqual([]);
+    expect(keptAway.get(VIEW).map((kept) => kept.where)).toEqual(['backoff.ts · line 5 · r2']);
+    expect(keptCount(keptAway.get(VIEW))).toBe('1 kept draft');
+  });
+
+  test('a box open in a tab left is counted only once the diff drawn as the tab is shown again has nowhere to open it', async () => {
+    const { box, drawn } = await opened();
+    // Another tab is shown, and this one's diff goes with it: the box is kept, uncounted, and
+    // nothing opens it meanwhile.
+    said.screen = 'other';
+    takenDown(box, drawn[0]!.composer);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(keptAway.get(VIEW)).toEqual([]);
+    expect(drawn).toHaveLength(1);
+    // Shown again, without the box's file: the diff drawn has nowhere to open it, and counts it.
+    said.screen = VIEW;
+    const again = fakeDiff();
+    again.shown.files = [];
+    restore(VIEW);
+    expect(again.drawn).toEqual([]);
+    expect(keptAway.get(VIEW).map((kept) => kept.where)).toEqual(['backoff.ts · line 5 · r2']);
+  });
+
+  test('a box open in a tab left opens as it was in the diff drawn as the tab is shown again', async () => {
+    const { box, drawn } = await opened();
+    said.screen = 'other';
+    takenDown(box, drawn[0]!.composer);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    said.screen = VIEW;
+    const again = fakeDiff();
+    restore(VIEW);
+    expect(again.drawn.map(({ at, composer }) => [at, composer.text])).toEqual([
+      [{ file: 'f0', side: 'new', line: 5 }, 'Ship it?'],
+    ]);
+    expect(keptAway.get(VIEW)).toEqual([]);
+  });
+
+  test('a box open as its tab closes is neither counted nor opened again', async () => {
+    const { box, drawn } = await opened();
+    // Its boxes are forgotten as the tab closes, before its diff goes.
+    keepBoxesOf(new Set());
+    takenDown(box, drawn[0]!.composer);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(keptAway.get(VIEW)).toEqual([]);
+    expect(drawn).toHaveLength(1);
+  });
+
+  test('boxes the diff takes down together are placed in one go, each with all its tries', async () => {
+    const fake = fakeDiff();
+    for (const line of [3, 5, 6]) {
+      await comment(tab(), { kind: 'line', at: { file: 'f0', side: 'new', line } }, 'review');
+      fake.drawn.at(-1)!.on.change(`On line ${line}`);
+    }
+    const boxes = fake.drawn.map((each) => boxIn(each));
+    expect(boxes.every((each) => each.open)).toBe(true);
+    // The diff drawn anew doesn't have their lines yet, and they wait for them.
+    const again = fakeDiff(() => true);
+    for (const [at, each] of fake.drawn.entries()) takenDown(boxes[at]!, each.composer);
+    await Promise.resolve();
+    expect(boxes.map((each) => each.retries)).toEqual([1, 1, 1]);
+    expect(again.drawn).toEqual([]);
+  });
+
   test('drafts the diff drawn again had nowhere to open have one item in the status bar, whose list says where each is', async () => {
     const onDiff = fakeDiff();
     takeDrafts({
@@ -1196,6 +1296,26 @@ describe('a box on a code block', () => {
     expect(keptOpen.get(VIEW)).toBe(false);
     showKeptDrafts(VIEW);
     expect(keptOpen.get(VIEW)).toBe(true);
+  });
+
+  test('a draft counted with nowhere to open counts on as main moves it to a newer push', async () => {
+    const onDiff = fakeDiff();
+    takeDrafts({ id: VIEW, drafts: [row(onLines(5, 6), 'One', { savedAt: 1 })] });
+    await Promise.resolve();
+    for (const each of onDiff.drawn) takenDown(boxIn(each), each.composer);
+    // The diff drawn anew is of another push, with nowhere to open it.
+    const other = fakeDiff();
+    other.shown.at = OLDER;
+    restore(VIEW);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(keptAway.get(VIEW).map((kept) => kept.where)).toEqual(['backoff.ts · lines 5–6 · r2']);
+    // Main moves it to a newer push, on the same lines: it's counted still, where it is now.
+    const moved = { ...onLines(5, 6), commit: NEWER };
+    takeDrafts({ id: VIEW, drafts: [row(moved, 'One', { savedAt: 1 })] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(other.drawn).toEqual([]);
+    expect(keptAway.get(VIEW)).toHaveLength(1);
+    expect(keptCount(keptAway.get(VIEW))).toBe('1 kept draft');
   });
 
   test('a box the diff drawn again had nowhere to open is kept nowhere: its block takes it once the overview has it', async () => {

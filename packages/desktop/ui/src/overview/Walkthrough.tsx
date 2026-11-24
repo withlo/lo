@@ -103,10 +103,12 @@ export function Walkthrough({
         <div className="lo-walk__code">
           {shown && (
             <div className="lo-walk__codehead">
-              <span className="min-w-0 truncate">
-                <PathName path={shown.target.path} />
+              <span className="flex min-w-0">
+                <span className="min-w-0 truncate">
+                  <PathName path={shown.target.path} />
+                </span>
+                <span className="flex-none">{lineRange(shown.target.lines)}</span>
               </span>
-              <span>{lineRange(shown.target.lines)}</span>
             </div>
           )}
           <div className="lo-walk__view">{code}</div>

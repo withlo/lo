@@ -293,7 +293,7 @@ export function TypeHoverWaiting({
       }}
       {...rest}
     >
-      <Spinner size="xs" />
+      <Spinner />
       <span className="min-w-0 text-fg-muted">
         <ShownText text={server} /> is still starting.
         {known !== undefined && (

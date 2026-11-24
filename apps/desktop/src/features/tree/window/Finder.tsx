@@ -112,7 +112,7 @@ function emptyOf(state: FinderState, tree: TreeState | undefined): ReactNode {
       tree === undefined || (tree.listing.kind === 'loading' && tree.changes === null);
     return (
       <span className="inline-flex items-center gap-8">
-        <Spinner size="xs" />
+        <Spinner />
         {reading ? 'Reading files…' : 'Searching files…'}
       </span>
     );

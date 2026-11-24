@@ -13,7 +13,9 @@ import type { Target } from '@lo/ui/commands';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { refuse } from '../../../window/commands/notices.tsx';
+import { askedFrom } from '../../../window/commands/overlays.tsx';
 import {
+  canEscape,
   escapeInMiddle,
   escapeToMiddle,
   focusMiddle,
@@ -388,6 +390,17 @@ export function back(): void {
   const tab = pullOnScreen();
   if (typeof tab !== 'string' && tab.run) leaveRun();
   else focusMiddle();
+}
+
+/**
+ * Whether `Esc` in the diff does anything: with layers shown as one diff, it always does; anywhere
+ * else, what `Esc` does anywhere, with nothing to say where it'd do nothing, so the palette leaves
+ * it out there.
+ */
+export function backable(): true | '' {
+  const tab = pullOnScreen();
+  if (typeof tab !== 'string' && tab.run) return true;
+  return canEscape(askedFrom()) || '';
 }
 
 /** `gx` on a layer: opens its pull request on github.com. */

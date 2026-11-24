@@ -8,13 +8,13 @@ import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { contract as app } from '../../app/contract.ts';
-import { layerOf, viewIds, type Choice, type Tab } from '../contract.ts';
+import { layerOf, viewIds, type Choice, type PlaceChoice, type Tab } from '../contract.ts';
 import keys from '../keys.ts';
 import { follow } from './follow.ts';
 import { main } from './main.ts';
 import { moreStore, setMoreOpen } from './more.ts';
 import { choosable, chooseAccount } from './Notes.tsx';
-import { inStrip, movable, stepTab } from './order.ts';
+import { inStrip, movable, showable, stepTab } from './order.ts';
 import { middleIds, panels, rightPanel, stepAmong, toggleRight, viewCounts } from './panels.ts';
 import { PullRequestTab } from './PullRequestTab.tsx';
 import { activeTab, kinds } from './shared.ts';
@@ -30,6 +30,14 @@ declare global {
 /** Asks main to show a tab. */
 function select(choice: Choice): Promise<void> {
   return main().select(choice);
+}
+
+/** The command that shows the tab `choice` names, as it's asked, while that's one to show. */
+function showing(choice: () => PlaceChoice) {
+  return {
+    run: () => select(choice()),
+    enabled: () => showable(tabsStore.getState(), choice()),
+  };
 }
 
 /** The pull request's tab on screen, or why a key for one can't run. */
@@ -162,17 +170,17 @@ function notRecent(target: TabTarget | NoTarget): boolean {
 
 export default {
   commands: handlers(keys, {
-    show1: { run: () => select({ position: 1 }) },
-    show2: { run: () => select({ position: 2 }) },
-    show3: { run: () => select({ position: 3 }) },
-    show4: { run: () => select({ position: 4 }) },
-    show5: { run: () => select({ position: 5 }) },
-    show6: { run: () => select({ position: 6 }) },
-    show7: { run: () => select({ position: 7 }) },
-    show8: { run: () => select({ position: 8 }) },
-    showLast: { run: () => select({ last: true }) },
-    next: { run: () => select({ step: 1, within: inStrip() }) },
-    previous: { run: () => select({ step: -1, within: inStrip() }) },
+    show1: showing(() => ({ position: 1 })),
+    show2: showing(() => ({ position: 2 })),
+    show3: showing(() => ({ position: 3 })),
+    show4: showing(() => ({ position: 4 })),
+    show5: showing(() => ({ position: 5 })),
+    show6: showing(() => ({ position: 6 })),
+    show7: showing(() => ({ position: 7 })),
+    show8: showing(() => ({ position: 8 })),
+    showLast: showing(() => ({ last: true })),
+    next: showing(() => ({ step: 1, within: inStrip() })),
+    previous: showing(() => ({ step: -1, within: inStrip() })),
     moveLeft: {
       run: (target) => stepTab(target, -1),
       enabled: (target) => movable(tabsStore.getState(), target, -1, inStrip()),

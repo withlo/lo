@@ -238,9 +238,10 @@ and the whole-file view.
 - **Overviews don't come through it.** Lo reads each PR's artifact ref (`refs/lo/pr/<n>`) through
   GitHub's REST API, with or without git: it watches the ref with ETags, then reads the tree of the
   commit it holds, by the commit's ID, the artifact's files by their IDs, and the commit, for who
-  wrote it, and keeps them so an overview shows at once, offline too. As a tab opens, these reads go
-  ahead of polls, in one turn of the account's queue: the ref, the tree, the text, the first figures
-  it names and the commit. The code an overview shows comes from the local copy.
+  wrote it, and keeps them so an overview shows at once, offline too, and before a tab opened again
+  knows which account it acts as. As a tab opens, these reads go ahead of polls, in one turn of the
+  account's queue: the ref, the tree, the text, the first figures it names and the commit. The code
+  an overview shows comes from the local copy.
 - **Sign-in.** Git signs in with the account's token, and your git config is never touched.
 - **Checkouts.** Trusted repos get a checkout at the PR head for language servers. The old side is
   read straight from git.
@@ -536,11 +537,12 @@ A repo's or a user's instructions can drop, add or reorder everything except the
   copy's files replace GitHub's, a box open there comes back as it was, in the same mode with the
   same caret and undo history, on its line. Where the diff drawn anew doesn't show that line, as in
   a file closed as viewed, it goes under its file's header, still a comment on the line; only where
-  the diff has neither does the draft open under its block, if the overview has it. Otherwise it's
-  in no box, and the status bar counts it as a kept draft, until its line or block is shown again:
-  one item for all such drafts ("2 kept drafts"), which opens their list, where each is ("retry.ts ·
-  line 41 · r2"). Focus comes back only to a box that had it, and only if you've done nothing since.
-  Threads that arrive, grow or go while a block is on screen move nothing you're reading.
+  the diff has neither does the draft open under its block, if the overview has it. Until one of
+  them is shown, as while the diff is drawn anew, the draft is in no box, and the status bar counts
+  it as a kept draft: one item for all such drafts ("2 kept drafts"), which opens their list, where
+  each is ("retry.ts · line 41 · r2"). Focus comes back only to a box that had it, and only if
+  you've done nothing since. Threads that arrive, grow or go while a block is on screen move nothing
+  you're reading.
 - **From the block to the code.** Following a block jumps to the diff at that spot, or to the
   whole-file view when the code is outside the diff. `⌃o` returns to the same place in the overview.
   A menu and a key open the code beside the overview instead.

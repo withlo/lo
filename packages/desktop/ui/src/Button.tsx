@@ -176,17 +176,17 @@ export function Button({
             aria-hidden={busy === true ? undefined : true}
           >
             {busy === true ? (
-              <Spinner size={size === 'sm' ? 'xs' : 'sm'} tone="current" />
+              <Spinner tone="current" />
             ) : (
               // The ring's room, kept while nothing turns in it.
-              <span className={size === 'sm' ? 'size-8 flex-none' : 'size-12 flex-none'} />
+              <span className="size-12 flex-none" />
             )}
             {/* Without words of its own for the wait, it keeps its label, and so its name. */}
             {working ?? children}
           </span>
           {widest !== undefined && (
             <span className={face({ size: size ?? 'md', shown: false, align })} aria-hidden="true">
-              <span className={size === 'sm' ? 'size-8 flex-none' : 'size-12 flex-none'} />
+              <span className="size-12 flex-none" />
               {widest}
             </span>
           )}

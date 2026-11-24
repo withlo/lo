@@ -134,7 +134,8 @@ Dark (Lo Glow Dark) is the default. Every color comes from `tokens.json` through
   `lo-fg-disabled`. A row's layout doesn't change with its state.
 - A state that's a fact isn't a disabled button. "Installed" is an icon and the word in
   `lo-fg-muted`: `SetupDone`, or `done` on a `SetupItem`.
-- A switch that's off keeps a ring, so its track shows on every surface in both themes.
+- A switch that's off keeps a ring, so its track shows on every surface in both themes, and its
+  thumb is `lo-fg-muted`: a thumb in `lo-fg` is a near-black knob in light, which reads as on.
 - A button at work is `busy`, not disabled: see [Waiting](#waiting).
 - A control whose face doesn't say what it is, such as an icon button, names itself and its key in a
   tooltip: `hint` and `hintKeys` on `Button`, or `Tooltip` around anything else. A tooltip shows
@@ -190,8 +191,17 @@ where the action's target is.
   at: names and keys are wider on one system, or for one person, than another. It marks what goes at
   each step (`data-gives`), what comes in its place, as an icon for words (`data-takes`), and what
   it must keep whole until nothing else is left to give up, such as an author's name (`data-fit`).
-  Key chips go first; a control that gives up its words is the small control's square, with its
-  words as its tooltip.
+  What it gave up comes back as soon as there's room for it, however the room came: the window
+  widened, a panel closed, or what's beside it got shorter. A row as wide as what it draws, as one
+  beside a spacer is, doesn't grow with the window, so `useGiveUp` also watches what's beside it,
+  out to the first box as wide as its container lets it be; never fit a row only as it's drawn. Key
+  chips go first; a control that gives up its words is the small control's square, with its words as
+  its tooltip. What's cut short keeps `min-w-cut` at least, 48 px or all of its words where they're
+  shorter, so `main` isn't padded, and what can't keep that goes whole: the PR header gives up its
+  branches, with "wants to merge" and the arrow, and the merge status its detail, never cut to a
+  letter. The diff bar is the revisions note, then a `HintRow` of Compare revisions and the view's
+  own controls, 16 px apart: narrow, it drops the hint's chips, then the hint, so no two groups
+  touch.
 - **A segment can be its icon alone.** Where a `SegmentedControl` has to narrow, as a comment box's
   Write and Preview do, each segment's label holds its icon and its words, the words marked as a row
   that gives up marks them (`data-gives`). Give the segment its `name`, which a screen reader hears
@@ -200,7 +210,14 @@ where the action's target is.
 - **A command with nothing to say refuses with an empty reason.** A command only some controls
   offer, such as one of a box's notes, gives `''` from `enabled` where none offers it: a key bound
   to it then does nothing, and no toast says so. So does one whose dimmed label says it all, as Back
-  and Forward do with nowhere to go: their menu rows dim with no reason under them.
+  and Forward do with nowhere to go: their menu rows dim with no reason under them. And so does Go
+  to view with focus already where the middle view puts it and nothing there to close: each middle
+  view says where its focus goes (`holds`) and what `Esc` closes there (`escape`), without closing
+  it. The palette and keyboard shortcuts' "Here" leave out a command that refuses, so a command that
+  can't act where it's asked refuses from `enabled`, not only in `run`, and neither lists it: a tab
+  by its place with no tab there, or with that tab on screen; `j` in Recent with no rows; Open pull
+  request with none highlighted. Only what Lo can't know until the command runs, as whether the
+  clipboard holds a link, is left to `run` to say.
 - **Anything with a right-click menu has a `⋯` button.** `MoreButton` goes inside the element whose
   right-click opens the menu, at the end of its row (before a chevron that opens or closes the row,
   as on a thread's card), and opens that same menu under itself (`openMenuUnder`), so the two can
@@ -337,7 +354,9 @@ changes in the same frame.
 - What takes a button's props does the same: a `Banner`'s and a `Problem`'s action and the merge
   panel's main button (`MergeFoot`'s `primary`) each take `busy` and `working` as `Button` does.
 - `Spinner` (the `spinner` utility) alone is for a wait inside a line, such as a status bar item.
-  Never beside a button, which is `busy`, and never for a whole view.
+  Never beside a button, which is `busy`, and never for a whole view. It has one size, 12 px, the
+  ring a busy button turns, whatever the text beside it. A ball that a spinner stands in for, as a
+  status item's or a tab's, keeps a 12 px box, so nothing moves when one becomes the other.
 
 ## Empty states
 
@@ -428,7 +447,14 @@ that floats.
   outside refuse. An action's `busy` is at work while it can still be left, as while it's checked
   before it's sent, or while "Check again" looks. `widest` holds the room of its widest label from
   the first draw; `other` is a button before the one that leaves ("Open #265"); and `mainRef`
-  follows the main button. Every question Lo asks is a `Dialog` but one: whether to trust a repo is
+  follows the main button. A `Problem` in the body is red once the action failed, and amber where
+  the action is `unconfirmed`: what was sent may have gone through and Lo can't tell, as when
+  GitHub's answer was lost, so nothing is known to have failed. Set it where that's so, never by the
+  button's words: "Check again" also looks again for something missing, as GitHub CLI, which has
+  failed. `ProblemTone` gives the body's `Problem` the dialog's tone, and a foot of its own sets the
+  tone on its `Problem`. A dialog whose list changes as it's used, as Keyboard shortcuts' does as
+  you type, takes `tall`: it stays at the height a dialog can be, and its list scrolls inside, so it
+  never changes height. Every question Lo asks is a `Dialog` but one: whether to trust a repo is
   main's own native dialog, since what runs in the window could answer a question the window draws
   (`AGENTS.md`, "Trust").
 - **`Popover`** is a small panel beside what it's about: a status item's details, a picker. Give it
@@ -441,6 +467,9 @@ that floats.
   "Open link" for `⏎` on prose that links to a page, "Next tab" for `→` on tabs. A menu that can
   list more than the window holds, such as the tabs that don't fit, takes `long`: it grows to a
   palette's list at most, and scrolls.
+- **Keyboard shortcuts** lists a run of commands that differ only by number, such as Tab 1 to Tab 8,
+  as one row, "Tab 1–8" with `⌘1`–`⌘8`: each declares the same `series`. The palette still lists
+  each.
 - **`Palette`** is the box that finds things by typing, from the top of the window. A command that
   does one of two things is named there by which it would do, from its handler's `labelled`:
   "Unresolve thread" on a resolved thread. Its foot's `PaletteHint`s say what a key does, then the
@@ -537,6 +566,11 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
 
 - One window, a tab per PR (a whole stack in one tab). Rows top to bottom: tab strip
   (`lo-tabbar-h`), PR header, banners, body, status bar (`lo-statusbar-h`).
+- A narrowing tab cuts its title short first, then drops its stack's count, then shortens its
+  repository's name, never past its first letter or half the tab. Its number stays whole, and so
+  does its mark, the state's ball or the spinner: where the number then wouldn't fit beside the
+  mark, the title's words go and the mark takes their room at the tab's end, under the close button
+  where that shows.
 - Each thing the tab says has one place. A pull request it can't show is a `Problem` in place of the
   view, and nothing around it waits or acts: the header names the repo and number as text, with no
   places held, no merge status, review or revisions, and the view's controls, the panel toggles and

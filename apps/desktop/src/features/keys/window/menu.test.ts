@@ -95,7 +95,7 @@ describe('the app menu', () => {
     const { history } = registry();
     const at = { view: 'diff', at: { kind: 'file', file: 'a.ts' } } as const;
     let cursor: typeof at | undefined;
-    const stop = setMiddle({ focus: () => undefined, here: () => cursor });
+    const stop = setMiddle({ focus: () => undefined, holds: () => false, here: () => cursor });
     history.register('', 'diff', () => true);
     history.record(at);
     await settle();

@@ -1,5 +1,6 @@
-// Settings' Kept drafts row, in Storage: each open pull request with drafts the diff had nowhere to
-// open, how many, and "Show", which runs the command the palette has on that pull request's tab.
+// Settings' Kept drafts row, in Storage: each open pull request with kept drafts, those the diff
+// took down open that no box has taken since, how many, and "Show", which runs the command the
+// palette has on that pull request's tab.
 
 import { EmptyState, SettingsCommand, SettingsList, SettingsListItem } from '@lo/ui';
 import { useSyncExternalStore } from 'react';

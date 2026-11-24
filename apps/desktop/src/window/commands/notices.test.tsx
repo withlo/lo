@@ -404,7 +404,7 @@ describe('a command that did nothing', () => {
     history.register('', 'diff', () => true);
     history.record(at);
     let cursor: typeof at | undefined;
-    const stop = setMiddle({ focus: () => undefined, here: () => cursor });
+    const stop = setMiddle({ focus: () => undefined, holds: () => false, here: () => cursor });
     expect(registry().enabled('keys.back', NO_TARGET)).toBe(true);
     // The cursor goes back to the place by hand: Back from there has nowhere to go.
     cursor = at;

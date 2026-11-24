@@ -49,7 +49,7 @@ export function LayerList({ layers, label }: LayerListProps) {
         detail:
           layer.working === true ? (
             <span className="inline-flex items-center gap-8">
-              <Spinner size="xs" />
+              <Spinner />
               {withoutBidiNode(layer.detail)}
             </span>
           ) : (

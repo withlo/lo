@@ -113,20 +113,21 @@ export const TIMELINE_VIEW = 'timeline.view';
 const TIMELINE_HERE: Entry = { view: 'timeline', at: NO_TARGET };
 
 /**
- * While `shown`, makes `element` the middle view `Esc` gives focus back to, and gives it focus,
- * with `place` as where the tab is in it, for history.
+ * While `shown`, makes `own` the middle view `Esc` gives focus back to, on `home`, and gives it
+ * focus, with `place` as where the tab is in it, for history.
  */
 function useMiddle(
   shown: boolean,
   own: () => HTMLElement | null,
-  focus: () => void,
+  home: () => HTMLElement | null,
   place?: Entry,
 ): void {
   useEffect(() => {
     if (!shown) return undefined;
+    const focus = () => home()?.focus({ preventScroll: true });
     if (focusIsFree(own())) focus();
-    return setMiddle({ focus, here: () => place });
-    // `own` and `focus` only read refs, and `place` is the same throughout.
+    return setMiddle({ focus, holds: (element) => element === home(), here: () => place });
+    // `own` and `home` only read refs, and `place` is the same throughout.
   }, [shown]);
 }
 
@@ -160,7 +161,7 @@ function Note({ shown, children }: { shown: boolean; children: ReactNode }) {
   useMiddle(
     shown,
     () => root.current,
-    () => root.current?.focus({ preventScroll: true }),
+    () => root.current,
   );
   return (
     <div ref={root} tabIndex={-1} className="h-full outline-none" data-lo-timeline="note">
@@ -380,7 +381,7 @@ function Rows({ tab, shown, rows }: { tab: PullTab; shown: boolean; rows: readon
   useMiddle(
     shown,
     () => root.current,
-    () => list.current?.focus({ preventScroll: true }),
+    () => list.current,
     TIMELINE_HERE,
   );
   const { owner, repo, number } = tab;

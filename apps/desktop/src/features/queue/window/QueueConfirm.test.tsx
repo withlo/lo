@@ -435,9 +435,12 @@ describe('confirming', () => {
     await until(() => stepKind() === 'unknown');
     expect(dialog()?.textContent).toContain('Removal not confirmed');
     expect(dialog()?.textContent).toContain('GitHub didn’t respond.');
+    // Nothing is known to have failed: amber, not red.
+    expect(triangle()).toContain('text-warning');
     // Still listed as it was read: nothing is known yet.
     act(() => button('Check again')!.click());
     await until(() => stepKind() === 'failed');
+    expect(triangle()).toContain('text-danger');
     expect(calls('queue.look')).toBe(1);
     expect(calls('queue.confirm')).toBe(1);
   });
@@ -674,3 +677,12 @@ describe('what each key acts on', () => {
     expect(autoMergeOn(leftRow, merged)).toBe('#261 merged');
   });
 });
+
+/** The classes of the triangle beside what went wrong, in the dialog. */
+function triangle(): string | null | undefined {
+  return document
+    .querySelector(
+      '[role="dialog"] svg[class*="text-warning"], [role="dialog"] svg[class*="text-danger"]',
+    )
+    ?.getAttribute('class');
+}

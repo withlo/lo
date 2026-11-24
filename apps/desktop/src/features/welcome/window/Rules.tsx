@@ -44,6 +44,8 @@ export function Rules() {
       onOpenChange={(next) => welcomeStore.setState({ rules: next })}
       title="Send pull request links to Lo"
       description="Copy the rule for the app that opens your links."
+      // It shows code, which is what `lg` is for.
+      size="lg"
       initialFocus={done}
       container={document.getElementById('root')}
       testId="link-rules"

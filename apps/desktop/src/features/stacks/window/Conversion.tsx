@@ -177,6 +177,11 @@ interface Shown {
   /** The line above the buttons, while nothing went wrong. */
   readonly line?: string | null | undefined;
   readonly problem?: Said | undefined;
+  /**
+   * Whether the problem is that Lo can't tell if it went, which GitHub's page says: nothing is known
+   * to have failed, so it's in the warn tone.
+   */
+  readonly unsure?: boolean;
   /** Its main button, `⏎`. */
   readonly primary: FootButton;
   /** The others, before it. */
@@ -321,6 +326,7 @@ function conversionShown(
         ...base,
         line: view?.line,
         problem,
+        unsure: link !== null,
         primary: again,
         others: [LEAVE_CLOSE, ...(undo ? [undoButton(false)] : [])],
         step,
@@ -346,7 +352,7 @@ function shownOf(open: Open, views: ReadonlyMap<string, ConversionView>): Shown 
 
 /** What the dialog says: who it acts as, the steps, and the line above its buttons. */
 function Body({ shown }: { shown: Shown }) {
-  const { problem, line } = shown;
+  const { problem, line, unsure } = shown;
   return (
     <>
       {shown.login !== undefined && (
@@ -367,6 +373,7 @@ function Body({ shown }: { shown: Shown }) {
       {problem !== undefined && (
         <Problem
           layout="inline"
+          tone={unsure === true ? 'warn' : 'danger'}
           title={problem.title}
           // A reason may name a branch: GitHub's text.
           reason={problem.reason === null ? undefined : withoutBidi(problem.reason)}

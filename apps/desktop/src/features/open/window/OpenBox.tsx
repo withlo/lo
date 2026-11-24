@@ -52,7 +52,7 @@ const PERSON = (
 function Waiting({ children }: { children: string }) {
   return (
     <span role="status" className="flex items-center gap-8 text-fg-muted">
-      <Spinner size="xs" />
+      <Spinner />
       {children}
     </span>
   );

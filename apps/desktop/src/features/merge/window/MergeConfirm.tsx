@@ -100,6 +100,8 @@ interface Primary {
   readonly working?: string | undefined;
   /** Why it can't be pressed yet, as while a merge past the rules waits for its number. */
   readonly off?: string | undefined;
+  /** Whether it looks for a merge Lo can't tell went: "Check again". */
+  readonly unconfirmed?: boolean | undefined;
 }
 
 /** What went wrong, above the foot. */
@@ -555,7 +557,7 @@ const CHAIN_CHECKS = 'Still checking. The layers above move once it merges.';
 
 /** "Check again" for the merge named `key`, busy while it looks: it only looks. */
 function checkAgain(key: string, run: () => void): Primary {
-  return { label: 'Check again', run, busy: checking(key), working: CHECKING };
+  return { label: 'Check again', run, busy: checking(key), working: CHECKING, unconfirmed: true };
 }
 
 /** The main button while what it sent runs: busy, saying what it's doing. */
@@ -920,6 +922,7 @@ export function MergeConfirm() {
         label: failed ? label : (primary?.label ?? label),
         // After a failure, what it does then, if anything.
         again: failed ? (primary?.label ?? null) : undefined,
+        unconfirmed: failed && primary?.unconfirmed === true,
         onRun: () => primary?.run(),
         busy: primary?.busy === true,
         working: primary?.working,

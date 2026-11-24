@@ -891,7 +891,7 @@ test('says when the overview couldn’t be fetched, and reads it again on Try no
     await expect(middleView(page, 'diff.view')).toBeVisible();
     await overviewTab(page).click();
     const failed = overview(page, 'failed');
-    await expect(failed.getByRole('alert')).toContainText('Can’t fetch the overview');
+    await expect(failed.getByRole('alert')).toContainText('Can’t show the overview');
     // The count is for the eye; a screen reader hears it once, as it stood, spelled out.
     await expect(failed).toContainText(/GitHub returned an error\. Retrying in \d+ (s|min)/);
 
@@ -1068,7 +1068,7 @@ async function watchCode(page: Page): Promise<void> {
         const name = [
           head?.querySelector('.lo-codeblock__path')?.textContent,
           head?.querySelector('.lo-codeblock__lines')?.textContent,
-        ].join(' ');
+        ].join('');
         const code = block.querySelector<HTMLElement>('[data-lo-code]')?.dataset.loCode;
         const { top, bottom, height } = block.getBoundingClientRect();
         if (code === 'waiting' && !(name in rooms)) rooms[name] = height;
@@ -1098,7 +1098,7 @@ const codeHeights = (page: Page) =>
           const name = [
             head?.querySelector('.lo-codeblock__path')?.textContent,
             head?.querySelector('.lo-codeblock__lines')?.textContent,
-          ].join(' ');
+          ].join('');
           return [name, block.getBoundingClientRect().height];
         }),
       ),
@@ -1302,7 +1302,7 @@ test.describe('within the bound on what a tab holds back', () => {
         });
       }
       const { seen } = await codeSeen(page);
-      expect(Object.keys(seen ?? {})).toContain('src/parser.ts L7–10');
+      expect(Object.keys(seen ?? {})).toContain('src/parser.ts:7–10');
       for (const [name, code] of Object.entries(seen ?? {})) {
         const meant = code === 'none' || (atBound && code === 'waiting') ? code : 'drawn';
         expect(`${name}: ${code}`).toBe(`${name}: ${meant}`);
@@ -1323,7 +1323,7 @@ test.describe('within the bound on what a tab holds back', () => {
       .poll(() => current(page, id), { timeout: 30_000 })
       .toMatchObject({ code: 'ready' });
     await expect(
-      codeBlock(page, 'src/parser.ts', 'L7–10').locator('[data-lo-code="drawn"]'),
+      codeBlock(page, 'src/parser.ts', ':7–10').locator('[data-lo-code="drawn"]'),
     ).toBeAttached({ timeout: 20_000 });
     await page.waitForTimeout(1000);
     expect(await stillMoved(page)).toEqual([]);
@@ -1377,16 +1377,16 @@ test('lays out each code block as tall as it draws before a jump reaches it, so 
   await expect(shown.locator('[data-lo-code="measured"]')).toHaveCount(3, { timeout: 20_000 });
   const { rooms } = await codeSeen(page);
   expect(Object.keys(rooms).toSorted()).toEqual([
-    'README.md L1–2',
-    'src/format.ts L5–8',
-    'src/text/wrap.ts L3–5',
+    'README.md:1–2',
+    'src/format.ts:5–8',
+    'src/text/wrap.ts:3–5',
   ]);
   // Plain lines, and added ones, that fit their width are as tall as the room laid out for them in
   // the first frame; the lines that wrap took their height as they drew, off screen.
   const measured = await codeHeights(page);
-  expect(measured['README.md L1–2']).toBe(rooms['README.md L1–2']);
-  expect(measured['src/text/wrap.ts L3–5']).toBe(rooms['src/text/wrap.ts L3–5']);
-  expect(measured['src/format.ts L5–8']).toBeGreaterThan(rooms['src/format.ts L5–8'] ?? 0);
+  expect(measured['README.md:1–2']).toBe(rooms['README.md:1–2']);
+  expect(measured['src/text/wrap.ts:3–5']).toBe(rooms['src/text/wrap.ts:3–5']);
+  expect(measured['src/format.ts:5–8']).toBeGreaterThan(rooms['src/format.ts:5–8'] ?? 0);
 
   // The reader follows the link to the blocks: they draw where they are, as tall as they were.
   await watchStill(page);
@@ -1401,17 +1401,17 @@ test('lays out each code block as tall as it draws before a jump reaches it, so 
   expect(await codeHeights(page)).toEqual(measured);
   // Plain lines of a file the pull request doesn't touch, a diff of one it adds, and lines of one
   // it changes that it left alone.
-  const readme = codeBlock(page, 'README.md', 'L1–2');
+  const readme = codeBlock(page, 'README.md', ':1–2');
   expect(await linesOf(readme, '')).toEqual(['# App fixture', '']);
   expect(await linesOf(readme, '.lo-line-add')).toEqual([]);
-  const wrap = codeBlock(page, 'src/text/wrap.ts', 'L3–5');
+  const wrap = codeBlock(page, 'src/text/wrap.ts', ':3–5');
   expect(await linesOf(wrap, '.lo-line-add')).toEqual([
     '  const lines: string[] = [];',
     "  let line = '';",
     "  for (const word of text.split(' ')) {",
   ]);
   expect(await linesOf(wrap, '.lo-line-del')).toEqual([]);
-  const format = codeBlock(page, 'src/format.ts', 'L5–8');
+  const format = codeBlock(page, 'src/format.ts', ':5–8');
   expect(await linesOf(format, '')).toHaveLength(4);
   expect(await linesOf(format, '.lo-line-add')).toEqual([]);
 });
@@ -1436,7 +1436,7 @@ test('fills in its code from the local copy, at the commit it describes, as the 
 
   // Lines the pull request changed, in the file it renamed: a diff from its old name, at the first
   // push, which the second changed again.
-  const parser = codeBlock(page, 'src/parser.ts', 'L7–10');
+  const parser = codeBlock(page, 'src/parser.ts', ':7–10');
   await expect(parser.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 20_000 });
   expect(await linesOf(parser, '.lo-line-del')).toEqual([
     '/** Splits `input` into lines, on `\\n`. */',
@@ -1453,13 +1453,13 @@ test('fills in its code from the local copy, at the commit it describes, as the 
   expect(await cutElsewhere(page)).toEqual([]);
 
   // Lines it changed, and lines it didn't, in a file it changed.
-  const changed = codeBlock(page, 'src/format.ts', 'L1–3');
+  const changed = codeBlock(page, 'src/format.ts', ':1–3');
   await changed.scrollIntoViewIfNeeded();
   await expect(changed.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 20_000 });
   expect(await linesOf(changed, '.lo-line-add')).toContain(
     "export { wrap } from './text/wrap.ts';",
   );
-  const same = codeBlock(page, 'src/format.ts', 'L5–8');
+  const same = codeBlock(page, 'src/format.ts', ':5–8');
   await expect(same.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 20_000 });
   expect(await linesOf(same, '')).toEqual([
     '/** `lines` as text, each after its number. */',
@@ -1471,7 +1471,7 @@ test('fills in its code from the local copy, at the commit it describes, as the 
 
   // A file it doesn't touch is plain lines, as the first push had it: the base branch changed it
   // after, which isn't the pull request's.
-  const readme = codeBlock(page, 'README.md', 'L1–4');
+  const readme = codeBlock(page, 'README.md', ':1–4');
   await readme.scrollIntoViewIfNeeded();
   await expect(readme.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 20_000 });
   expect(await linesOf(readme, '')).toEqual([
@@ -1483,7 +1483,7 @@ test('fills in its code from the local copy, at the commit it describes, as the 
   expect(await linesOf(readme, '.lo-line-del')).toEqual([]);
 
   // A file that isn't there offers to find one of its name.
-  const cache = codeBlock(page, 'src/cache.ts', 'L1–4');
+  const cache = codeBlock(page, 'src/cache.ts', ':1–4');
   await cache.scrollIntoViewIfNeeded();
   await expect(cache).toHaveClass(/lo-codeblock--unresolved/);
   await expect(cache).toContainText('Can’t show this code');
@@ -1529,7 +1529,7 @@ test('fills in its code from the local copy, at the commit it describes, as the 
   ]);
   const at = await scrolled();
   await walk.getByRole('button', { name: 'Next' }).click();
-  await expect(walk.locator('.lo-walk__codehead')).toContainText('L13–15');
+  await expect(walk.locator('.lo-walk__codehead')).toContainText(':13–15');
   await expect(marked).toHaveText([
     'export function filled(input: string): Line[] {',
     "  return parse(input).filter((line) => line.text.trim() !== '');",
@@ -1648,7 +1648,7 @@ test.describe('while the local copy comes late', () => {
       // The code blocks near the screen fill in: the first, on the first screen, or above it.
       const drawn = shown.locator('[data-lo-code="drawn"]');
       await expect(drawn.first()).toBeAttached({ timeout: 20_000 });
-      const first = codeBlock(page, 'src/parser.ts', 'L7–10');
+      const first = codeBlock(page, 'src/parser.ts', ':7–10');
       if (place.name === 'at the top' || place.name === 'just under a code block') {
         await expect(first.locator('[data-lo-code="drawn"]')).toBeAttached();
       }
@@ -1672,7 +1672,7 @@ test.describe('while the local copy comes late', () => {
       // A block is cut short only wholly on screen with something under it, its code above a row
       // of its own: what the reader can do about a block is in its head, never under that row.
       expect(await cutElsewhere(page)).toEqual([]);
-      await codeBlock(page, 'src/cache.ts', 'L1–4')
+      await codeBlock(page, 'src/cache.ts', ':1–4')
         .getByRole('button', { name: /^Go to file…/ })
         .click();
       const finder = page.getByRole('dialog', { name: 'Go to file' });

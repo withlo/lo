@@ -7,8 +7,8 @@
 // keeps until it's sent, and the files attached to it; and acting on threads, in the diff and the
 // panel: replying, resolving, and editing and deleting your comments, with the dialog that asks
 // before a delete. The threads on an overview's code blocks are drawn under their lines too, and
-// `c` there opens a box under them. The status bar says which drafts the diff, drawn again, had
-// nowhere to open. What it keeps of a view goes as the view's tab closes.
+// `c` there opens a box under them. The status bar says which drafts the diff took down open that
+// no box has taken since. What it keeps of a view goes as the view's tab closes.
 
 import { vimOn } from '@lo/ui/code';
 import { handlers, type HeaderTarget, type LineTarget, type Target } from '@lo/ui/commands';

@@ -528,11 +528,15 @@ export function QueueTabView({ tab }: { tab: QueueTab }) {
   // The queue is the middle of the window, so `Esc` brings focus here, as does showing it when
   // focus was nowhere in particular. Focus goes to its table, the rows, while there's one.
   useEffect(() => {
-    const focusIn = () =>
-      (root.current?.querySelector<HTMLElement>('[role="grid"]') ?? root.current)?.focus();
+    const into = () => root.current?.querySelector<HTMLElement>('[role="grid"]') ?? root.current;
+    const focusIn = () => into()?.focus();
     const focused = document.activeElement;
     if (!focused || focused === document.body || focused.hasAttribute('data-lo-middle')) focusIn();
-    return setMiddle({ focus: focusIn, here: () => undefined });
+    return setMiddle({
+      focus: focusIn,
+      holds: (element) => element === into(),
+      here: () => undefined,
+    });
   }, []);
   // A table drawn once the queue is read takes focus that was on the page itself. When the table
   // goes, as for a branch with no queue, focus that went with it comes back to the page, so the

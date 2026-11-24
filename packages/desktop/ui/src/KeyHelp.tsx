@@ -138,6 +138,8 @@ export function KeyHelp({
       onOpenChange={onOpenChange}
       title="Keyboard shortcuts"
       size="lg"
+      // One height on every tab and while typing: the list scrolls inside.
+      tall
       initialFocus={search}
       container={container}
       onClosed={onClosed}
@@ -282,11 +284,27 @@ function Row({
       <span className="flex flex-none flex-wrap items-center justify-end gap-4">
         {row.keys.length === 0 ? (
           <span className="text-fg-subtle text-micro">No key</span>
+        ) : row.range ? (
+          <KeyRange keys={row.keys} />
         ) : (
           row.keys.map((keys) => <Key key={keys.join(' ')} keys={keys} />)
         )}
       </span>
     </div>
+  );
+}
+
+/** A series' keys as one range, the first's to the last's: `⌘1` – `⌘8`. */
+function KeyRange({ keys }: { keys: readonly (readonly string[])[] }) {
+  const first = keys[0];
+  const last = keys.at(-1);
+  if (!first || !last) return null;
+  return (
+    <>
+      <Key keys={first} />
+      <span className="text-fg-muted">–</span>
+      <Key keys={last} />
+    </>
   );
 }
 

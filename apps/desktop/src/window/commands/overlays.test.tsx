@@ -15,7 +15,7 @@ import {
   togglePalette,
 } from './overlays.tsx';
 import { applyKeymapFile } from './keymap.ts';
-import { createRegistry, registry } from './registry.ts';
+import { createRegistry, registry, setMiddle } from './registry.ts';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -204,6 +204,24 @@ describe('the palette', () => {
     });
     await vi.waitFor(() => expect(dialog('Keyboard shortcuts')).toBeDefined());
     expect(dialog('Command palette')).toBeUndefined();
+  });
+
+  it('leaves Go to view out with focus already where the middle view puts it, and nothing open', () => {
+    const list = document.querySelector('main')!;
+    const stop = setMiddle({
+      focus: () => list.focus(),
+      holds: (element) => element === list,
+      here: () => undefined,
+    });
+    act(() => openPalette());
+    const labels = [...(dialog('Command palette')?.querySelectorAll('[role="option"]') ?? [])].map(
+      (each) => each.textContent,
+    );
+    expect(labels.some((label) => label?.includes('Keyboard shortcuts'))).toBe(true);
+    expect(labels.some((label) => label?.includes('Go to view'))).toBe(false);
+    // Asked from there, it refuses with nothing to say, so its key does nothing either.
+    expect(registry().enabled('keys.escape', { kind: 'none' })).toBe('');
+    stop();
   });
 
   it('says why ⌥⏎ did nothing when no command matches, until what’s typed changes', () => {

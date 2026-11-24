@@ -5,7 +5,7 @@
 import type { NoTarget, TabTarget } from '@lo/ui/commands';
 import { createStore } from 'zustand/vanilla';
 
-import { shownLayerOf, type Moved, type Tab } from '../contract.ts';
+import { chosenTab, shownLayerOf, type Moved, type PlaceChoice, type Tab } from '../contract.ts';
 import { main } from './main.ts';
 import { moreStore } from './more.ts';
 import { withoutBidi } from './shared.ts';
@@ -66,6 +66,16 @@ export function movable(
   if (at + by < 0) return 'Already first';
   if (at + by >= Math.min(shown, tabs.length)) return 'Already last';
   return true;
+}
+
+/**
+ * Whether `choice` names a tab to show among `state`'s tabs: one not on screen. Otherwise, as with
+ * one tab open, or none at that place, there's nothing to say, so the palette leaves it out and its
+ * key does nothing.
+ */
+export function showable(state: TabsState, choice: PlaceChoice): true | '' {
+  const chosen = chosenTab(state, choice);
+  return (chosen !== undefined && chosen.id !== state.active) || '';
 }
 
 /** Says where a moved tab is now. */

@@ -1114,6 +1114,52 @@ describe('fetching', () => {
     expect(offline.paths().filter((path) => !path.includes('matching-refs'))).toEqual([]);
     again.tab.close();
   });
+
+  it('serves the overview it kept to a tab opened again before it knows who it acts as, and reads the rest once it does', async () => {
+    const db = database();
+    const made = overview('kept', {
+      'artifact.md': artifactText(5),
+      'figures/later.svg': svg(2),
+      'figures/never.svg': svg(3),
+    });
+    const github = new FakeGithub();
+    github.push('rozed-dev/e2e', 5, made);
+    const first = tabWith(github.client, db);
+    first.tab.update(info(), true, true);
+    await settle();
+    first.tab.close();
+
+    // Opened again, the tab shows what was kept while it works out its account.
+    const again = tabWith(github.client, db);
+    again.tab.update(info({ acting: undefined, head: undefined }), true, true);
+    expect(again.last()).toMatchObject({ overview: { id: made.commit }, saved: true });
+    const asked = github.paths().length;
+    expect(await again.tab.files(made.commit, ['artifact.md'])).toMatchObject([
+      { kind: 'file', size: artifactText(5).length },
+    ]);
+    // A figure it never read waits for the account, and is read as it once the tab knows it.
+    let figure: unknown;
+    void again.tab.files(made.commit, ['figures/later.svg']).then((files) => {
+      figure = files;
+    });
+    await settle();
+    expect(figure).toBeUndefined();
+    expect(github.paths()).toHaveLength(asked);
+    again.tab.update(info({ head: undefined }), true, true);
+    await settle();
+    expect(figure).toMatchObject([{ kind: 'file', size: svg(2).length }]);
+    expect(github.paths()).toContain(`rozed-dev/e2e/git/blobs/${idOf(svg(2))}`);
+
+    again.tab.close();
+
+    // One still waiting as the tab closes is refused, as for a tab that's gone.
+    const third = tabWith(github.client, db);
+    third.tab.update(info({ acting: undefined, head: undefined }), true, true);
+    const waiting = third.tab.files(made.commit, ['figures/never.svg']);
+    third.tab.close();
+    await expect(waiting).rejects.toMatchObject({ code: 'missing' });
+    expect(github.paths()).not.toContain(`rozed-dev/e2e/git/blobs/${idOf(svg(3))}`);
+  });
 });
 
 describe('the code', () => {
