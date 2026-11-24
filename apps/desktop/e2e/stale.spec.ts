@@ -432,6 +432,20 @@ test('marks the lines it explains in the diff at r2, opens what it says of them,
       (file) => window.loDiff?.scrollTo({ at: { kind: 'header', file, side: 'new' }, offset: 0 }),
       format,
     );
+    // Once it's there. The view moves the header on its next frame, and a click before then lets
+    // go of it, as any of the reader's does: the file stays at the foot of the screen, with its
+    // note below it.
+    await expect
+      .poll(() =>
+        page.evaluate((file) => {
+          const top = window.loDiff?.probe.spotTop({ kind: 'header', file, side: 'new' });
+          const frame = document
+            .querySelector('[data-lo-middle-view="diff.view"] .lo-diffview')
+            ?.getBoundingClientRect();
+          return top === undefined || !frame ? undefined : Math.round(top - frame.top);
+        }, format),
+      )
+      .toBe(0);
     // The ball beside the line, among those the editor draws around it, once the line is drawn in
     // the diff.
     const ballOf = () =>
@@ -475,7 +489,11 @@ test('marks the lines it explains in the diff at r2, opens what it says of them,
     // "Show in overview" goes to the block, with focus, and `⌃o` comes back to the line the
     // note is under, the mark's last, with the screen where it was.
     await page.mouse.click(ball.x, ball.y);
-    await note.getByRole('button', { name: 'Show in overview' }).click();
+    // On screen, so clicking it scrolls nothing first: the screen the diff is left on is the one
+    // the ball was found on.
+    const show = note.getByRole('button', { name: 'Show in overview' });
+    await expect(show).toBeInViewport();
+    await show.click();
     await expect(shown(page)).toBeVisible();
     await expect
       .poll(() =>
