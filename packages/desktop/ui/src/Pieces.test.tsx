@@ -485,6 +485,11 @@ describe('Problem in a status item’s details', () => {
   });
 });
 
+/** The classes of the triangle of the problem in the dialog on screen. */
+function triangle(): string | null | undefined {
+  return document.querySelector('[role="dialog"] svg')?.getAttribute('class');
+}
+
 describe('CopyButton', () => {
   it('reads Copied for two seconds, and not at all when nothing was copied', async () => {
     vi.useFakeTimers();
@@ -709,7 +714,6 @@ describe('a dialog that does something', () => {
   });
 
   it('says what went wrong in amber while it can only check again, and in red once it failed', async () => {
-    const triangle = () => document.querySelector('[role="dialog"] svg')?.getAttribute('class');
     render(ending('failed', CHECK_AGAIN));
     await settle();
     expect(triangle()).toContain('text-warning');
