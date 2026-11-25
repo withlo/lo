@@ -8,7 +8,8 @@
 // edge somewhere new ends with a width (`onEnd`). A press that never moved, `Esc`, a cancelled
 // pointer, and a drag stopped from outside, as when the edge leaves the page, end with `onCancel`,
 // and whoever draws the edge puts back what was there before the press. The window losing focus
-// ends the drag where it is.
+// ends the drag where it is, as letting go there would, but never closes a panel: a drag that was
+// showing one gone ends with nothing changed.
 
 import { takeKeys } from './commands/listener.ts';
 import type { Range } from './fit.ts';
@@ -45,7 +46,8 @@ export interface EdgeDrag {
   readonly onCancel: () => void;
   /**
    * For a panel's edge: let go within `CLOSE_REACH` of the window's side the panel is on, which
-   * shows it gone from there, it closes the panel instead, and changes no width.
+   * shows it gone from there, it closes the panel instead, and changes no width. The window losing
+   * focus there closes nothing: the drag cancels.
    */
   readonly onClose?: (() => void) | undefined;
 }
@@ -101,14 +103,23 @@ export function dragEdge(
     drag.onDrag(at, closing);
   };
 
-  /** Ends the drag: with a new width, closing the pane, or with nothing changed. */
-  const end = (how: 'let go' | 'cancel') => {
+  /**
+   * Ends the drag: with a new width, closing the pane, or with nothing changed. Left (`blur`) as the
+   * window loses focus, it ends where it is, but closes nothing.
+   */
+  const end = (how: 'let go' | 'blur' | 'cancel') => {
     if (done) return;
     done = true;
     stop();
-    if (how === 'let go' && started && closing && drag.onClose) drag.onClose();
-    else if (how === 'let go' && started && Math.abs(at - drag.from) >= 0.5) drag.onEnd(at);
-    else drag.onCancel();
+    const moved = how !== 'cancel' && started;
+    if (moved && closing) {
+      if (how === 'let go' && drag.onClose) drag.onClose();
+      else drag.onCancel();
+    } else if (moved && Math.abs(at - drag.from) >= 0.5) {
+      drag.onEnd(at);
+    } else {
+      drag.onCancel();
+    }
   };
 
   const onMove = (move: PointerEvent) => {
@@ -120,7 +131,7 @@ export function dragEdge(
     end('let go');
   };
   const onCancel = () => end('cancel');
-  const onBlur = () => end('let go');
+  const onBlur = () => end('blur');
   const stopKeys = takeKeys((key) => {
     if (key.key !== 'Escape') return false;
     end('cancel');

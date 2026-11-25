@@ -3,17 +3,20 @@
 // one for each layer of a stack it has shown, watches its pull request with its account's poller,
 // and fetches its local copy once it's shown. Other features follow a pull request's tab by its
 // view on screen. It also copies text and opens github.com pages for every feature, and shows a
-// local copy's folder and copies its path.
+// local copy's folder and copies its path. And it keeps the window's own state: the layout every
+// pull request's tab draws its row with, and where the window is, how big, and whether it fills
+// the screen, which it puts back as the window opens.
 
 import { existsSync } from 'node:fs';
 
-import { app, clipboard, shell } from 'electron';
+import { app, clipboard, screen, shell, type BrowserWindow } from 'electron';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { openPage } from '../../../main/browser.ts';
 import { offlineAfter } from '../../../main/environment.ts';
 import { defineFeature, type FeatureContext } from '../../../main/features.ts';
 import { provides } from '../../../main/services.ts';
+import { tokens } from '../../../main/tokens.ts';
 import { github } from '../../accounts/service.ts';
 import { settings } from '../../settings/service.ts';
 import { login as accountLogin } from '../../accounts/contract.ts';
@@ -34,6 +37,7 @@ import { carryOver } from './carry.ts';
 import { folderToShow } from './local.ts';
 import { createTabs, type TabList } from './tabs.ts';
 import { Watcher } from './watcher.ts';
+import { createPlaces, createWindowStore, type WindowStore } from './window.ts';
 
 /** A run's layers, as the tab keeps them. */
 const runLayers = runSchema.shape.layers;
@@ -69,6 +73,20 @@ function tabsOf({ database, publish }: FeatureContext<typeof contract>): TabList
   });
   return kept;
 }
+
+let windowStore: WindowStore | undefined;
+
+/** The window's own state, read from the database the first time anything asks for it. */
+function windowOf({ database }: FeatureContext<typeof contract>): WindowStore {
+  windowStore ??= createWindowStore(database, {
+    left: { min: tokens.size('lo-panel-left-min-w'), max: tokens.size('lo-panel-left-max-w') },
+    threads: { min: tokens.size('lo-panel-right-min-w'), max: tokens.size('lo-panel-right-max-w') },
+  });
+  return windowStore;
+}
+
+/** Stops keeping the windows' places, which the feature does from the time it starts. */
+let stopPlaces: (() => void) | undefined;
 
 /** Stops watching the key `tab.open` replaced. */
 let stopBefore: (() => void) | undefined;
@@ -165,6 +183,10 @@ export default defineFeature(contract, {
     async copy({ text }) {
       await clipboard.writeText(text);
     },
+    layout: (_input, context) => windowOf(context).layout(),
+    keepLayout(layout, context) {
+      windowOf(context).keepLayout(layout);
+    },
     async openExternal({ url }) {
       // The contract refuses anything else; this holds even if it's loosened.
       if (!isGithubPage(url)) throw new IpcError('refused', 'Lo opens only pages on github.com.');
@@ -173,6 +195,18 @@ export default defineFeature(contract, {
     },
   },
   start(context) {
+    // Each window opens where the last one was.
+    const placing = createPlaces(windowOf(context), log);
+    const follow = (_event: unknown, window: BrowserWindow) =>
+      placing.follow(
+        window,
+        screen.getAllDisplays().map((display) => display.workArea),
+      );
+    app.on('browser-window-created', follow);
+    stopPlaces = () => {
+      app.off('browser-window-created', follow);
+      placing.stop();
+    };
     // The window reads it as a pull request's tab opens, and changes it from Settings.
     const file = context.use(settings);
     file.declare(openOn);
@@ -207,6 +241,8 @@ export default defineFeature(contract, {
     watcher.follow(list.list());
   },
   stop() {
+    stopPlaces?.();
+    stopPlaces = undefined;
     stopBefore?.();
     stopBefore = undefined;
     following.clear();

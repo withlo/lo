@@ -491,7 +491,8 @@ describe('a repository’s merge queues', () => {
 describe('the migration that adds merge queues’ tabs', () => {
   it('keeps every tab kept before it as it was', () => {
     const before = Object.fromEntries(
-      Object.entries(migrations).filter(([path]) => !path.endsWith('004-queue.sql')),
+      // Those before it, and none after.
+      Object.entries(migrations).filter(([path]) => /\/00[1-3]-[^/]+\.sql$/.test(path)),
     );
     const on = openDatabase(':memory:');
     migrate(on, before);

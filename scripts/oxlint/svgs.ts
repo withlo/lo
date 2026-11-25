@@ -16,7 +16,6 @@ export const OWN_SVGS: readonly string[] = [
   'apps/desktop/src/features/overview/window/Rows.tsx',
   'apps/desktop/src/features/settings/window/Gear.tsx',
   'apps/desktop/src/features/stacks/window/Stack.tsx',
-  'apps/desktop/src/features/tab/window/RightToggle.tsx',
   'apps/desktop/src/features/tree/window/Finder.tsx',
   'apps/desktop/src/features/updates/window/Offer.tsx',
   'apps/desktop/src/features/welcome/window/Account.tsx',

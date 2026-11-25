@@ -1,9 +1,10 @@
-// A pull request's tab: its header, its banner, a row of the left panel, with its edge, the middle
-// sheet, with what goes across its top, and the right panel other features fill, with the header's
-// toggle for it, and its status bar, which ends with the keys held for a command still to come, and
-// Vim's mode while code has focus. It opens on the middle view Settings names, once Settings is
-// known. Until the diff and the threads arrive, the middle says what's coming, and a pull request
-// the tab can't show says why there.
+// A pull request's tab: its header, its banner, a row of the left panel, the middle sheet, with
+// what goes across its top, and the right panel other features fill, each panel with its edge and
+// its button at an end of the header's cluster, as the window's layout draws them, and its status
+// bar, which ends with the keys held for a command still to come, and Vim's mode while code has
+// focus. It opens on the middle view Settings names, once Settings is known. Until the diff and the
+// threads arrive, the middle says what's coming, and a pull request the tab can't show says why
+// there.
 
 import { Panes, PRHeader, StatusBar, StatusKeys, StatusMode, Swap } from '@lo/ui';
 import { focusedMode, onFocusedMode } from '@lo/ui/code';
@@ -35,14 +36,12 @@ import {
   panels,
   rightIds,
   takeRightFocus,
-  useRightOpen,
   useTabPanels,
-  viewCounts,
 } from './panels.ts';
-import { row } from './layout.ts';
+import { row, usePanelDrawn, viewCounts } from './layout.ts';
 import { Placeholder } from './Placeholder.tsx';
-import { RightToggle } from './RightToggle.tsx';
 import { LeftPanel, RightPanel } from './Row.tsx';
+import { LeftToggle, RightToggle } from './Toggles.tsx';
 import { ViewSwitch } from './ViewSwitch.tsx';
 
 /**
@@ -82,11 +81,11 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
   const connection = useHeaderConnection(tab, view);
   // A pull request the tab can't show takes the middle's place, with why, over what's drawn.
   const failed = blocked(view);
-  const { leftOpen, right: rightChosen, middle: chosen, opened } = useTabPanels(tab.id);
+  const { right: rightChosen, middle: chosen, opened } = useTabPanels(tab.id);
   const lefts = useViews(left);
   const middles = useViews(middle);
   const rights = useViews(right);
-  const rightOpen = useRightOpen();
+  const there = { left: lefts.length > 0, threads: rights.length > 0 };
   const saved = useKnownSetting(openOn);
   // A `diff` saved under the key `tab.open` replaced, until main has carried it over.
   const earlier = useKnownSetting(before);
@@ -102,9 +101,9 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
     rightIds.splice(0, Infinity, ...rights.map((each) => each.id));
   const heading = view?.header;
   const acting = view?.acting;
-  const showLeft = leftOpen && lefts.length > 0;
-  // Only as the reader opens or closes it, so the middle's width changes by their asking alone.
-  const showRight = rightOpen && rights.length > 0;
+  // As the window's layout has them, less what the row has no room for.
+  const showLeft = usePanelDrawn('left', there);
+  const showRight = usePanelDrawn('threads', there);
   // One of its views at a time: the one shown last, or the first, the threads.
   const shownRight = rights.find((each) => each.id === rightChosen) ?? rights[0];
   const threadsShown = showRight && shownRight !== undefined;
@@ -154,14 +153,15 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
           className={`flex flex-none items-center gap-12 ${failed ? 'controls-off' : ''}`}
           inert={failed}
         >
+          {there.left && <LeftToggle there={there} />}
           <ViewSwitch tab={tab} views={middles} shown={shownMiddle?.id} />
-          {rights.length > 0 && <RightToggle tab={tab} views={rights} />}
+          {there.threads && <RightToggle tab={tab} there={there} views={rights} />}
         </div>
       </PRHeader>
       <Banners tab={tab} view={view} />
       <Panes className="min-h-0 flex-1" onWidth={setRowWidth}>
         {showLeft && (
-          <LeftPanel tab={tab.id} threads={threadsShown} failed={failed}>
+          <LeftPanel there={there} failed={failed}>
             <Slot slot={left} props={{ tab }} />
           </LeftPanel>
         )}
@@ -204,7 +204,8 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
             // Another view is another panel, which takes focus as it's drawn.
             key={shownRight.id}
             ref={focusRight}
-            left={showLeft}
+            there={there}
+            failed={failed}
             label={shownRight.label}
             view={shownRight.id}
           >
