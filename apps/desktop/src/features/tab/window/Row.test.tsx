@@ -141,6 +141,21 @@ describe('focus in a panel', () => {
     expect(document.activeElement?.textContent).toBe('a.ts');
   });
 
+  it('lays out what the panel holds at its last width while a drag would close it', async () => {
+    layout.setState({ left: { open: true }, threads: { open: false } });
+    row.setState({ width: 1440 });
+    const tab = render();
+    const held = () => tab.left()?.querySelector<HTMLElement>(':scope > div');
+    await settle(() => row.setState({ drag: { edge: 'left', width: 240, closing: false } }));
+    expect(tab.left()?.style.width).toBe('240px');
+    expect(held()?.style.width).toBe('');
+    await settle(() => row.setState({ drag: { edge: 'left', width: 120, closing: true } }));
+    expect(tab.left()?.style.width).toBe('0px');
+    expect(held()?.style.width).toBe('240px');
+    await settle(() => row.setState({ drag: { edge: 'left', width: 260, closing: false } }));
+    expect(held()?.style.width).toBe('');
+  });
+
   it('goes back to the middle view as a drag that closes the panel is let go', async () => {
     layout.setState({ left: { open: false }, threads: { open: true } });
     row.setState({ width: 1440 });
@@ -175,6 +190,24 @@ describe('a panel arriving', () => {
     expect(tab.right()?.classList.contains('move-swap')).toBe(true);
     await settle(() => resetLayout());
     expect(tab.left()?.classList.contains('move-swap')).toBe(true);
+  });
+
+  it('fades in back as its key closes the other panel, but not as a drag closes it', async () => {
+    layout.setState({ left: { open: true }, threads: { open: true } });
+    row.setState({ width: 720 });
+    const tab = render();
+    await settle(() => askPanel('threads'));
+    expect(tab.left()).toBeNull();
+    await settle(() => togglePanel('threads'));
+    expect(tab.left()?.classList.contains('move-swap')).toBe(true);
+    await settle(() => askPanel('threads'));
+    expect(tab.left()).toBeNull();
+    // As the edge's `onClose` does.
+    await settle(() => {
+      row.setState({ drag: undefined });
+      closePanel('threads');
+    });
+    expect(tab.left()?.classList.contains('move-swap')).toBe(false);
   });
 
   it('is just there back from being put away, as the window widens', async () => {

@@ -5,8 +5,9 @@
 // an edge sets a width as it ends, and draws its own until then, and so do the keys that size what
 // has focus, which draw the edge as pressed while they're held. What the row has no room for at its
 // minimum is put away, the threads panel first, but never the panel asked for last before the other,
-// and comes back as soon as there's room. A panel asked for, or put back by Reset layout, fades in as
-// it arrives; one back from being put away is just there.
+// and comes back as soon as there's room. A panel asked for, put back by Reset layout, or back as its
+// key or button closes the other, fades in as it arrives; one back as the window widens, or as a drag
+// closes the other, is just there.
 
 import {
   fit,
@@ -221,11 +222,12 @@ export function closePanel(edge: Edge): void {
 
 /**
  * Opens or closes panel `edge`, as its key or its button does: one drawn closes, and one that
- * isn't is asked for. Says which it did.
+ * isn't is asked for. Says which it did. The other panel, put away for this one, fades in as it
+ * comes back.
  */
 export function togglePanel(edge: Edge): 'opened' | 'closed' {
   if (panelDrawn(edge)) {
-    closePanel(edge);
+    arrive(() => closePanel(edge));
     return 'closed';
   }
   askPanel(edge);

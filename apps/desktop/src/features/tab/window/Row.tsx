@@ -78,6 +78,26 @@ function asideClass(closing: boolean): string {
   return `flex min-w-0 flex-none flex-col bg-bg-chrome ${closing ? 'overflow-hidden' : ''}`;
 }
 
+/**
+ * The width a panel `width` wide lays out what it holds at, in the box inside it: its own, and
+ * while a drag that would close it is under way, the last it had before, clipped, so nothing in it
+ * wraps anew as the drag goes into the zone that closes it, or back out.
+ */
+function useHeldWidth(width: number, closing: boolean): number | undefined {
+  const last = useRef(width);
+  if (!closing) last.current = width;
+  return closing ? last.current : undefined;
+}
+
+/** The box inside a panel that lays out what it holds, at `width` while it's set. */
+function Held({ width, children }: { width: number | undefined; children: ReactNode }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col" style={{ width }}>
+      {children}
+    </div>
+  );
+}
+
 export interface LeftPanelProps {
   /** Which panels the tab has views for. */
   readonly there: There;
@@ -92,6 +112,7 @@ export function LeftPanel({ there, failed, children }: LeftPanelProps) {
   const stepped = useStepped('left');
   const closing = useClosing('left');
   const width = drawn.left ?? 0;
+  const held = useHeldWidth(width, closing);
   const ref = usePanel('left');
   return (
     <>
@@ -103,7 +124,7 @@ export function LeftPanel({ there, failed, children }: LeftPanelProps) {
         inert={failed}
         data-lo-left=""
       >
-        {children}
+        <Held width={held}>{children}</Held>
       </aside>
       {!failed && (
         <Splitter
@@ -136,6 +157,7 @@ export function RightPanel({ there, failed, label, view, ref, children }: RightP
   const stepped = useStepped('threads');
   const closing = useClosing('threads');
   const width = drawn.threads ?? 0;
+  const held = useHeldWidth(width, closing);
   const panel = usePanel('threads', ref);
   return (
     <>
@@ -158,7 +180,7 @@ export function RightPanel({ there, failed, label, view, ref, children }: RightP
         aria-label={label}
         data-lo-right={view}
       >
-        {children}
+        <Held width={held}>{children}</Held>
       </aside>
     </>
   );
