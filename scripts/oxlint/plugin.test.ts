@@ -526,6 +526,8 @@ function icons(source: string, path = join(ROOT, 'apps/desktop/src/file.tsx')): 
   new Visitor({
     JSXOpeningElement: (node) => rule.JSXOpeningElement(node),
     CallExpression: (node) => rule.CallExpression(node),
+    Literal: (node) => rule.Literal(node),
+    TemplateLiteral: (node) => rule.TemplateLiteral(node),
     ImportDeclaration: (node) => rule.ImportDeclaration(node),
     ImportExpression: (node) => rule.ImportExpression(node),
     ExportAllDeclaration: (node) => rule.ExportAllDeclaration(node),
@@ -558,6 +560,46 @@ test('an svg of its own is refused, in JSX or made in the DOM, and so is lucide 
   ]);
 });
 
+test('an svg is refused as markup or a data URL in a string, as a file, or made under a worked-out name', () => {
+  const source = `
+    host.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5 12h14" /></svg>';
+    host.insertAdjacentHTML('beforeend', \`<SVG class="lo-i" viewBox="\${box}">\`);
+    const drawn = <div dangerouslySetInnerHTML={{ __html: '<svg></svg>' }} />;
+    const ground = { backgroundImage: 'url("data:image/svg+xml;utf8,%3Csvg%3E")' };
+    import mark from './mark.svg';
+    import url from '../brand/mark.svg?url';
+    const raw = await import('./mark.svg?raw');
+    const shape = document.createElementNS(SVG, tag);
+    const built = document.createElementNS(SVG, \`\${kind}\`);
+    const whole = document.createElementNS(SVG, \`svg\`);
+    const compiled = jsx('svg', { viewBox: '0 0 24 24' });
+    const made = createElement(\`svg\`);
+  `;
+  expect(icons(source)).toEqual([
+    `'<svg viewBox="0 0 24 24"><path d="M5 12h14" /></svg>'`,
+    '`<SVG class="lo-i" viewBox="${box}">`',
+    "'<svg></svg>'",
+    `'url("data:image/svg+xml;utf8,%3Csvg%3E")'`,
+    "import mark from './mark.svg';",
+    "import url from '../brand/mark.svg?url';",
+    "import('./mark.svg?raw')",
+    'document.createElementNS(SVG, tag)',
+    'document.createElementNS(SVG, `${kind}`)',
+    'document.createElementNS(SVG, `svg`)',
+    "jsx('svg', { viewBox: '0 0 24 24' })",
+    'createElement(`svg`)',
+  ]);
+  // Words about an svg, an element made by a name worked out as it runs, and a file that isn't one
+  // are let through.
+  const plain = `
+    const said = 'An svg figure can’t be drawn here.';
+    const kind = 'image/svg';
+    const element = document.createElement(tag);
+    import styles from './svgs.css';
+  `;
+  expect(icons(plain)).toEqual([]);
+});
+
 test('Icon, iconElement, the mark, what draws figures and the list of icons are let through', () => {
   const svg = 'const drawn = <svg viewBox="0 0 24 24" />;';
   const made = "const made = document.createElementNS(SVG, 'svg');";
@@ -567,6 +609,11 @@ test('Icon, iconElement, the mark, what draws figures and the list of icons are 
   }
   expect(icons(made, ui('iconElement.ts'))).toEqual([]);
   expect(icons(made, ui('figures/svg.ts'))).toEqual([]);
+  // They make an svg's shapes by the names they're given, and hold its markup in strings.
+  const shapes = "const shape = document.createElementNS(SVG, node.name); const tag = '<svg>';";
+  expect(icons(shapes, ui('iconElement.ts'))).toEqual([]);
+  expect(icons(shapes, ui('figures/svg.ts'))).toEqual([]);
+  expect(icons(shapes, ui('figures/Figure.tsx'))).toHaveLength(2);
   expect(icons("import { Check } from 'lucide';", ui('icons.ts'))).toEqual([]);
   // A figure's frame draws its icons with Icon, as everything else does: only its drawing is let
   // through.

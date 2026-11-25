@@ -144,8 +144,9 @@ mark isn't an icon.
 
 - `Icon` takes a `name` from `icons.ts`, the list of the Lucide icons Lo uses, and a `size`. To use
   a new icon, add its name there. Nothing else imports `lucide`, and no component writes an `<svg>`
-  of its own: `lo/no-inline-icon` refuses one anywhere but `Icon`, the mark and figures. A code
-  view's own DOM takes `iconElement`.
+  of its own: `lo/no-inline-icon` refuses one anywhere but `Icon`, the mark and figures, as an
+  element, as markup or a data URL in a string, or as an imported file. A code view's own DOM takes
+  `iconElement`.
 - Four sizes, each with its stroke in pixels: 12 px at 1.25 px beside `text-micro`, `text-small` and
   in a key chip; 14 px at 1.25 px beside `text-ui`; 16 px at 1.5 px for an icon alone in a control
   and beside titles and reading text; 24 px at 1.5 px in an empty state. An icon that stands in for
