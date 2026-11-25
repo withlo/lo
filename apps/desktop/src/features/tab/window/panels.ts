@@ -1,18 +1,25 @@
 // Each pull request's tab's panels, for each of its views, kept while the tab is open: whether its
-// left panel is open, which of the middle views it shows, and which of the right panel's. And the
-// right panel's open state, which is the window's: it stays open or closed from tab to tab and
-// layer to layer.
+// left panel is open, which of the middle views it shows, which it opened on, and which of the right
+// panel's it shows. And the right panel's open state, which is the window's: it stays open or
+// closed from tab to tab and layer to layer.
 
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 
 import { focusMiddle } from '../../../window/commands/registry.ts';
+import type { OpenOn } from '../settings.ts';
 import { makeTabState, useKept } from './kept.ts';
 
 export interface Panels {
   readonly leftOpen: boolean;
-  /** Which middle view is on screen, by its place among them. */
-  readonly middle: number;
+  /**
+   * Which middle view is on screen, by id: none until the tab opens, on the one Settings names. One
+   * that's gone, as the overview's is while Overview is off, shows as {@link middleOf} says until
+   * it's back.
+   */
+  readonly middle?: string | undefined;
+  /** The middle view the tab opened on, by id, once it has. */
+  readonly opened?: string | undefined;
   /**
    * Which of the right panel's views it shows, by id: the one shown last, which `⌘⇧\` opens it on.
    * None for the first, the threads.
@@ -20,7 +27,34 @@ export interface Panels {
   readonly right?: string | undefined;
 }
 
-export const panels = makeTabState<Panels>(() => ({ leftOpen: true, middle: 0 }));
+export const panels = makeTabState<Panels>(() => ({ leftOpen: true }));
+
+/**
+ * The middle view a tab shows in place of one that isn't there, or that has nothing to show as the
+ * tab opens, as Overview with no overview: the timeline, where the description is first.
+ */
+export const INSTEAD = 'timeline.view';
+
+/**
+ * Which of the middle views `ids`, those there now, a tab shows: `chosen`, the one it shows by id,
+ * or before it has one, the view Settings says to open on (`open`, nothing while it isn't known);
+ * and in place of one that isn't there, the timeline, or the first there is.
+ */
+export function middleOf(
+  chosen: string | undefined,
+  ids: readonly string[],
+  open: OpenOn | undefined,
+): string | undefined {
+  const wanted = chosen ?? (open === undefined ? undefined : `${open}.view`);
+  if (wanted === undefined || ids.includes(wanted)) return wanted;
+  return ids.includes(INSTEAD) ? INSTEAD : ids[0];
+}
+
+/**
+ * The middle view each tab is opening on, as it was last drawn, until its panels keep it: so a view
+ * drawn as the tab opens knows it's the one, before the tab's own effects run.
+ */
+export const opening = new Map<string, string>();
 
 /** A tab's panels, re-rendering when they change. */
 export function useTabPanels(tab: string): Panels {
@@ -30,13 +64,14 @@ export function useTabPanels(tab: string): Panels {
 /**
  * How many views other features put in the left panel, the middle and the right panel, as the tab
  * last drew them, for the keys that open the panels and step between the views. Features list
- * their views once, as the window starts, so the counts don't change after the first tab is drawn.
+ * their views once, as the window starts, and only a view a setting turns off comes and goes.
  */
 export const viewCounts = { left: 0, middle: 0, right: 0 };
 
 /**
- * The middle views' ids, in their order, as the tab last drew them, to show one by its id, and
- * which of them have a label: the header's switch lists those, and `` ` `` steps through them.
+ * The middle views' ids, those there now, in their order, as the tab last drew them, to show one by
+ * its id, and which of them have a label: the header's switch lists those, and `` ` `` steps
+ * through them.
  */
 export const middleIds: { ids: readonly string[]; labeled: readonly boolean[] } = {
   ids: [],

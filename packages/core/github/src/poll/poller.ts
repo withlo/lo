@@ -1265,7 +1265,16 @@ export class Poller {
   forgetStackLayers(pull: PullRef): void {
     this.#layerAsks.delete(pull.key);
     this.#layerUnion.delete(pull.key);
-    if (this.#pulls.get(pull.key)?.reads.delete(STACK_LAYERS.name)) {
+    this.forgetRead(pull, STACK_LAYERS);
+  }
+
+  /**
+   * Stops a read {@link Poller.readCached} keeps for `pull`, as for one nothing needs any more: no
+   * poll or refresh makes it again, and a read under way is dropped when it ends. What the cache
+   * holds stays, for if it's asked for again.
+   */
+  forgetRead<T>(pull: PullRef, kind: ReadKind<T>): void {
+    if (this.#pulls.get(pull.key)?.reads.delete(kind.name)) {
       this.#wake();
       this.#changed();
     }

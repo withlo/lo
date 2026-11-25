@@ -1,15 +1,16 @@
 // The overview feature in the window: each pull request's tab's overview, checked as main reads
 // it, shown as the first of the tab's middle views, with its mark in the view switch and what it
 // says in the status bar; its markers in the diff; copying from its blocks' code, as in the diff;
-// the prompt `ya` copies; the setting for what a tab opens on; and the overview skill's rows, with
-// the command that installs it from a terminal, which `yc` copies.
+// the prompt `ya` copies; the overview skill's rows, with the command that installs it from a
+// terminal, which `yc` copies; and the setting that turns overviews off, which takes every one of
+// these away, and on again.
 
 import { handlers, type Target } from '@lo/ui/commands';
 import { closeCards } from '@lo/ui/overview';
 import { createElement } from 'react';
 
 import { overlay } from '../../../window/commands/overlays.tsx';
-import { escapeToMiddle } from '../../../window/commands/registry.ts';
+import { escapeToMiddle, registry } from '../../../window/commands/registry.ts';
 import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
 import { defineView } from '../../../window/slots.tsx';
@@ -20,7 +21,7 @@ import { viewIds } from '../../tab/contract.ts';
 import { activeTab, middle, showingMiddle, status } from '../../tab/window/shared.ts';
 import { setup } from '../../welcome/window/shared.ts';
 import keys from '../keys.ts';
-import { open as openOn } from '../settings.ts';
+import { on } from '../settings.ts';
 import { copyPrompt, promptNow } from './copy.ts';
 import { blockCode } from './copying.ts';
 import { OVERVIEW_VIEW } from './labels.ts';
@@ -29,6 +30,7 @@ import { followMarkers, keepMarkersOnly } from './markers.ts';
 import { OverviewMark } from './Mark.tsx';
 import { OverviewView } from './Overview.tsx';
 import { InstallCommandRow, SkillRow, SkillStep } from './Rows.tsx';
+import { followOverviews, overviews } from './shared.ts';
 import {
   besideFor,
   besides,
@@ -57,7 +59,25 @@ import {
 import { copyInstallCommand, followSkill, installable, installSkill } from './skill.ts';
 import { keepSinceOnly } from './since.ts';
 import { OverviewStatus } from './Status.tsx';
-import { catchUp, keepOnly, readAgain, states, takeRevisions, takeState } from './store.ts';
+import {
+  catchUp,
+  keepOnly,
+  readAgain,
+  states,
+  takeOverviews,
+  takeRevisions,
+  takeState,
+} from './store.ts';
+
+/** Every command of the overview's, which Settings takes out of the app with overviews. */
+const COMMANDS = Object.keys(keys.commands).map((name) => `${keys.feature}.${name}`);
+
+/** The ids of the pull requests' tabs' views open now, as main lists them. */
+function openViews(): Promise<string[]> {
+  return tabs()
+    .list()
+    .then(({ tabs: open }) => viewIds(open.filter(({ kind }) => kind === 'pull')));
+}
 
 /** The prompt the overview of the pull request on screen offers, or why there's none. */
 function promptOnScreen(): string | { why: string } {
@@ -313,19 +333,23 @@ export default {
       label: 'Overview',
       mark: OverviewMark,
       render: ({ tab, shown }) => createElement(OverviewView, { tab, shown }),
+      present: overviews,
     }),
     defineView(status, {
       id: 'overview.status',
       order: 30,
       render: ({ tab }) => createElement(OverviewStatus, { tab }),
+      present: overviews,
     }),
-    // Settings › Pull requests, first.
-    settingRow(openOn, { order: 10 }),
+    // Settings › Pull requests, first, before what a tab opens on (10). It stays while they're off,
+    // to turn them on again.
+    settingRow(on, { order: 5 }),
     // After the welcome screen's `lo` command (10) and its PR links (20).
     defineView(setup, {
       id: 'overview.skillStep',
       order: 30,
       render: () => createElement(SkillStep),
+      present: overviews,
     }),
     // Settings › Integrations, after the `lo` command (10).
     SkillRow,
@@ -336,6 +360,24 @@ export default {
     followMarkers();
     // `yy` in a block's code copies from it, as in the diff.
     setCodeElsewhere(blockCode);
+    // Off, the overview's commands go with its views, and what main said of each tab's overview;
+    // on again, each tab's comes back as main reads it.
+    let taken = true;
+    followOverviews((now) => {
+      registry().setOff(COMMANDS, !now);
+      if (now === taken) return;
+      taken = now;
+      if (!now) {
+        takeOverviews(false, []);
+        return;
+      }
+      openViews()
+        // Unless they were turned off again meanwhile.
+        .then((open) => {
+          if (taken) takeOverviews(true, open);
+        })
+        .catch((error: unknown) => console.error("Lo couldn't list the tabs:", error));
+    });
     main().subscribe('state', takeState);
     client(revisionsContract).subscribe('comparison', takeRevisions);
     // Each view of a pull request's tab keeps its overview until the tab closes.
@@ -346,9 +388,8 @@ export default {
       keepSinceOnly(ids);
       keepMarkersOnly(ids);
     });
-    tabs()
-      .list()
-      .then(({ tabs: open }) => catchUp(viewIds(open.filter(({ kind }) => kind === 'pull'))))
+    openViews()
+      .then(catchUp)
       .catch((error: unknown) => console.error("Lo couldn't list the tabs:", error));
   },
 } satisfies WindowFeature;

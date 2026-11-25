@@ -22,8 +22,11 @@ import { blocked } from './banners.ts';
 import { makeTabState, type TabState, useKept } from './kept.ts';
 import { main } from './main.ts';
 import {
+  INSTEAD,
   keptRight,
   middleIds,
+  middleOf,
+  opening,
   panels,
   putRightBack,
   rightIds,
@@ -137,7 +140,9 @@ export interface MiddleSwitch {
  * switch lists those with a label. One is on screen at a time, and `shown` says which: a view the
  * tab has shown stays drawn, hidden, while another is on screen, so coming back to it is instant
  * and finds it as it was. A hidden view keeps its keys, its focus and its place in the window's
- * history to itself until it's shown again. The tab shows the first of them as it opens.
+ * history to itself until it's shown again. The tab opens on the one Settings names, and shows the
+ * timeline in place of one that isn't there, or has nothing to show as it opens ({@link showInstead}).
+ * A view that comes and goes, as the overview's does with Overview, takes `present`.
  */
 export const middle = defineSlot<{ tab: PullTab; shown: boolean }, MiddleSwitch>('tab.middle');
 
@@ -162,16 +167,31 @@ export function MiddlePlaceholder({
  * feature asks for, such as a file whole, calls this to come on screen.
  */
 export function showMiddle(tab: string, id: string): boolean {
-  const at = middleIds.ids.indexOf(id);
-  if (at < 0) return false;
-  if (panels.get(tab).middle !== at) panels.update(tab, (current) => ({ ...current, middle: at }));
+  if (!middleIds.ids.includes(id)) return false;
+  if (panels.get(tab).middle !== id) panels.update(tab, (current) => ({ ...current, middle: id }));
   return true;
+}
+
+/**
+ * Shows the view pull request's tab `tab` opens on in place of the one Settings names, when that one
+ * has nothing to show: the timeline, where the description is first, as Overview does for a pull
+ * request with no overview. Says whether the tab has it.
+ */
+export function showInstead(tab: string): boolean {
+  return showMiddle(tab, INSTEAD);
+}
+
+/**
+ * The middle view pull request's tab `tab` opened on, by id, or is opening on as it's first drawn:
+ * nothing before it's drawn. A view drawn as the tab opens is the one when it's this.
+ */
+export function openedOn(tab: string): string | undefined {
+  return panels.get(tab).opened ?? opening.get(tab);
 }
 
 /** The id of the middle view on screen in pull request's tab `tab`. */
 export function middleShown(tab: string): string | undefined {
-  const { ids } = middleIds;
-  return ids[panels.get(tab).middle % Math.max(1, ids.length)];
+  return middleOf(panels.get(tab).middle ?? opening.get(tab), middleIds.ids, undefined);
 }
 
 /** The pull request's tab on screen, or why there's none. */
@@ -207,9 +227,9 @@ export function showingMiddle(id: string): Handler<NoTarget> {
  * views in their order, re-rendering when another is shown.
  */
 export function useMiddle(tab: string): { shown: string | undefined; ids: readonly string[] } {
-  const at = useTabState(panels, tab, (value: Panels) => value.middle);
+  const chosen = useTabState(panels, tab, (value: Panels) => value.middle);
   const { ids } = middleIds;
-  return { shown: ids[at % Math.max(1, ids.length)], ids };
+  return { shown: middleOf(chosen ?? opening.get(tab), ids, undefined), ids };
 }
 
 /**

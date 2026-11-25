@@ -890,7 +890,7 @@ for (const layout of ['inline', 'split'] as const) {
     // On the diff first, as `DIFF_FIRST` has it, in this layout. Side by side runs with Lo's moves
     // on, as most readers have them.
     test.use({
-      settings: JSON.stringify({ 'overview.open': 'diff', 'diff.layout': layout }),
+      settings: JSON.stringify({ 'tab.open': 'diff', 'diff.layout': layout }),
       motion: layout === 'split' ? 'on' : undefined,
     });
 

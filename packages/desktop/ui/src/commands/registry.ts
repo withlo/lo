@@ -87,6 +87,10 @@ export class Registry {
   /** Each tab's history, which `⌃o` and `⌃i` walk. */
   readonly history = new History();
   private readonly list: readonly Command[];
+  /** The commands there now: every one but those {@link setOff} took out. */
+  private shown: readonly Command[];
+  /** The commands taken out of the app while their feature is off, by id. */
+  private readonly off = new Set<string>();
   private readonly byId = new Map<string, Command>();
   private readonly here: (() => Entry | undefined) | undefined;
   private readonly timeout: number;
@@ -118,6 +122,7 @@ export class Registry {
   constructor(options: RegistryOptions) {
     this.system = options.system;
     this.list = options.commands;
+    this.shown = options.commands;
     for (const command of options.commands) {
       if (this.byId.has(command.id)) throw new Error(`Two commands are called ${command.id}.`);
       this.byId.set(command.id, command);
@@ -134,9 +139,34 @@ export class Registry {
     this.bindings = this.rebuild();
   }
 
-  /** Every command, in the order given. */
+  /**
+   * Every command there now, in the order given: the palette, keyboard shortcuts, the menus and
+   * the app menu list only these. One {@link setOff} took out is left out.
+   */
   commands(): readonly Command[] {
-    return this.list;
+    return this.shown;
+  }
+
+  /**
+   * Takes commands `ids` out of the app, with `off`, or puts them back: as a setting turns their
+   * feature off, every list leaves them out, their keys do nothing and pass on to what has focus,
+   * and running one refuses with nothing to say. The keymap file's lines for them stay valid, and
+   * apply again as they come back.
+   */
+  setOff(ids: Iterable<string>, off: boolean): void {
+    let changed = false;
+    for (const id of ids) {
+      if (!this.byId.has(id)) throw new Error(`There’s no command called ${id}.`);
+      if (this.off.has(id) === off) continue;
+      if (off) this.off.add(id);
+      else this.off.delete(id);
+      changed = true;
+    }
+    if (!changed) return;
+    this.shown = this.list.filter((command) => !this.off.has(command.id));
+    this.drop();
+    this.bindings = this.rebuild();
+    for (const listener of this.listeners) listener();
   }
 
   command(id: string): Command | undefined {
@@ -223,6 +253,7 @@ export class Registry {
   listed(id: string, target: Target): boolean {
     const command = this.byId.get(id);
     const handler = command?.handler;
+    if (this.off.has(id)) return false;
     if (!command || !handler?.listed) return command !== undefined;
     const fitted = fit(command.targets ?? ['none'], target);
     if (!fitted) return false;
@@ -602,6 +633,8 @@ export class Registry {
   ): { command: Command; handler: Handler; target: Target } | string {
     const command = this.byId.get(id);
     if (!command) return `There’s no command called ${id}.`;
+    // Out of the app, it has nothing to say: no toast says why nothing happened.
+    if (this.off.has(id)) return '';
     const { handler } = command;
     if (!handler) {
       return command.editor
@@ -627,8 +660,8 @@ export class Registry {
   private rebuild(): Bindings {
     const defaults = declaredBindings(this.list, this.system);
     const applied = applyKeymap(defaults, this.keymap.lines, this.byId, this.system);
-    this.live = applied.bindings;
+    this.live = applied.bindings.filter((binding) => !this.off.has(binding.command.id));
     this.errors = [...this.keymap.errors, ...applied.errors].toSorted((a, b) => a.line - b.line);
-    return new Bindings(this.system, applied.bindings, this.timeout);
+    return new Bindings(this.system, this.live, this.timeout);
   }
 }

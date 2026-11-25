@@ -18,7 +18,7 @@ import { MERGE_PULLS, writeMergeRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { Page } from '@playwright/test';
 
-import { appFolder, expect, KEYCHAIN, tabBanners, test as base } from './app.ts';
+import { appFolder, DIFF_FIRST, expect, KEYCHAIN, tabBanners, test as base } from './app.ts';
 import { type Asked, Staged } from './staged.ts';
 
 const { pulls } = MERGE_PULLS[10];
@@ -87,6 +87,9 @@ const test = base.extend<{
     });
   },
 });
+
+// Their pull requests have no overview, and the cassette doesn’t answer for their timelines.
+test.use({ settings: DIFF_FIRST });
 
 /** The header's merge status. */
 const status = (page: Page) =>
