@@ -8,13 +8,15 @@ import type { RequestGate } from '../client.ts';
 /**
  * A request waiting for its turn: starting it, or leaving the queue when it's given up on; when it
  * came, by the queue's count; for a read that may be a foreground one, its priority now; and, for a
- * read, whether it gives way while it's a background one ({@link RequestQueue.giveWayWhile}).
+ * read, whether it gives way while it's a background one ({@link RequestQueue.giveWayWhile}), and
+ * what it waits behind, if anything ({@link RequestQueue.gate}).
  */
 interface Waiter {
   start: (release: () => void) => void;
   came: number;
   priority?: (() => ReadPriority) | undefined;
   givesWay: boolean;
+  holds?: (() => boolean) | undefined;
 }
 
 /**
@@ -83,11 +85,13 @@ export class RequestQueue {
     kind: 'write' | ReadPriorityNow,
     signal?: AbortSignal,
     givesWay = false,
+    holds?: () => boolean,
   ): Promise<() => void> {
     if (signal?.aborted) return Promise.reject(abandoned(signal));
     const priority = priorityOf(kind);
     const waits = this.#writes.length + this.#leading.length + this.#reads.length > 0;
-    if (!this.#busy && !waits && !(givesWay && priority?.() !== 'foreground' && this.#ahead())) {
+    const held = holds?.() === true || (givesWay && priority?.() !== 'foreground' && this.#ahead());
+    if (!this.#busy && !waits && !held) {
       this.#busy = true;
       return Promise.resolve(this.#release());
     }
@@ -102,6 +106,7 @@ export class RequestQueue {
         came: this.#came,
         priority,
         givesWay,
+        holds,
       };
       const abandon = () => {
         const at = waiting.indexOf(waiter);
@@ -130,13 +135,16 @@ export class RequestQueue {
   /**
    * The read to go next: the first to come of those that are foreground ones now, else of those
    * that are `next` ones, else of the rest; but for those that give way while a foreground read is
-   * under way or next.
+   * under way or next, and those held behind another read.
    */
   #nextRead(): Waiter | undefined {
-    const lead = this.#leading.findIndex((waiter) => waiter.priority?.() === 'foreground');
+    const free = (waiter: Waiter) => waiter.holds?.() !== true;
+    const lead = this.#leading.findIndex(
+      (waiter) => waiter.priority?.() === 'foreground' && free(waiter),
+    );
     if (lead >= 0) return this.#leading.splice(lead, 1)[0];
     const ahead = this.#ahead();
-    const goes = (waiter: Waiter) => !ahead || !waiter.givesWay;
+    const goes = (waiter: Waiter) => (!ahead || !waiter.givesWay) && free(waiter);
     const soon = this.#leading.findIndex(
       (waiter) => waiter.priority?.() === 'next' && goes(waiter),
     );
@@ -196,13 +204,17 @@ export class RequestQueue {
    * answer is read ({@link GithubClient.gated}). A read made of many requests through it lets a
    * waiting write go between them. Each request takes its turn at `priority`, giving way as
    * {@link RequestQueue.read} says; one given up on through `signal` while it waits is never made.
+   * While `holds` says so, a request waits behind other reads whatever its priority, as the rest of
+   * a timeline does behind a pull request's files: whoever it waits behind calls
+   * {@link RequestQueue.recheck} once it may no longer.
    */
   gate(
     priority: ReadPriorityNow = 'background',
     signal?: AbortSignal,
     givesWay = true,
+    holds?: () => boolean,
   ): RequestGate {
-    return () => this.#turn(priority, signal, givesWay);
+    return () => this.#turn(priority, signal, givesWay, holds);
   }
 
   /**

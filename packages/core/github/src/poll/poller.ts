@@ -233,6 +233,12 @@ type Pause = { clock: 'wall' | 'monotonic'; until: number; reason: PauseReason }
 /** A write's result as it came: its value, or what it threw. */
 export type Settled<T> = { ok: true; value: T } | { ok: false; error: unknown };
 
+/** The rest of a read that went on beside the poll loop, and its priority as it goes. */
+interface Aside {
+  rest: Promise<Settled<Outcome>>;
+  priority: () => ReadPriority;
+}
+
 /**
  * A read {@link Poller.readCached} keeps, to run again after a write: by its name, and whether it
  * reads everything again rather than what's new, as for an edit of an item a read of the newest
@@ -400,7 +406,12 @@ function erase<T>(kind: ReadKind<T>): Kind {
   };
 }
 
-type ReadFn = (client: GithubClient, known: unknown) => Promise<unknown>;
+/**
+ * A read's run: what it reads with `client`, given what it read before, `known`. One whose first
+ * part is what someone waits on calls `aside` once that's in, and the rest goes on beside the poll
+ * loop ({@link Poller.timeline}).
+ */
+type ReadFn = (client: GithubClient, known: unknown, aside: () => void) => Promise<unknown>;
 
 /** A read the poller keeps for a pull request. */
 interface ReadState {
@@ -437,6 +448,11 @@ interface ReadState {
    * account's queue. Nothing once a run has ended.
    */
   first: ReadPriorityNow | undefined;
+  /**
+   * Whether a run of it goes on beside the poll loop, as the older pages of a timeline do once its
+   * newest is in: it isn't due again until that's over, and nobody waits on it ahead of the rest.
+   */
+  aside: boolean;
 }
 
 let readIds = 0;
@@ -735,6 +751,8 @@ export class Poller {
   #leading: ReadPriorityNow | undefined;
   /** Whether the poll loop runs, which reads that give way wait on: false once it stopped on an error. */
   #looping = true;
+  /** The priorities of the reads whose runs go on beside the loop, which polls wait for. */
+  readonly #asides = new Set<() => ReadPriority>();
   /** The error each target's polls keep failing with, so it's logged once. */
   readonly #failures = new Map<string, string>();
   #signedOut = false;
@@ -1103,12 +1121,12 @@ export class Poller {
   async readCached<T>(
     pull: PullRef,
     kind: ReadKind<T>,
-    request: (client: GithubClient, known: T | undefined) => Promise<T>,
+    request: (client: GithubClient, known: T | undefined, aside: () => void) => Promise<T>,
     first?: ReadPriorityNow,
   ): Promise<Cached<T> | undefined> {
     const { state, loaded } = this.#watching(pull);
-    const run: ReadFn = (client, known) =>
-      request(client, known === undefined ? undefined : unchecked<T>(known));
+    const run: ReadFn = (client, known, aside) =>
+      request(client, known === undefined ? undefined : unchecked<T>(known), aside);
     const existing = state.reads.get(kind.name);
     if (existing) {
       existing.run = run;
@@ -1136,6 +1154,7 @@ export class Poller {
       afresh: false,
       loading: true,
       first,
+      aside: false,
     };
     state.reads.set(kind.name, read);
     this.#wake();
@@ -1249,6 +1268,11 @@ export class Poller {
    * `first` says who waits on the first read, as a view drawing it does, and `onNewest` hears its
    * newest page while its older ones are read, when there's more than one ({@link readTimeline}):
    * it's never kept, and the read's `read` event follows with the whole timeline.
+   *
+   * The newest page is what the rows draw from, and the older ones are off screen until the reader
+   * scrolls back, so once it's in, the older pages go on beside the poll loop: the push history the
+   * rows split pushes by goes before them, and so does a pull request's files someone wants soon,
+   * for the Files panel; polls wait for them all.
    */
   timeline(
     pull: PullRef,
@@ -1258,8 +1282,18 @@ export class Poller {
     return this.readCached(
       pull,
       TIMELINE,
-      (client, known) =>
-        readTimeline(client, pull, { known, now: new Date(this.#config.now()), onNewest }),
+      (client, known, aside) =>
+        readTimeline(client, pull, {
+          known,
+          now: new Date(this.#config.now()),
+          onNewest: (newest) => {
+            try {
+              onNewest?.(newest);
+            } finally {
+              aside();
+            }
+          },
+        }),
       first,
     );
   }
@@ -2157,8 +2191,8 @@ export class Poller {
     const reads = sorted(openState.reads, ([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
     const due: { at: number; awaited: boolean; job: Extract<Job, { kind: 'read' }> }[] = [];
     for (const [name, read] of reads) {
-      // What the cache holds is still loading.
-      if (read.loading) continue;
+      // What the cache holds is still loading, or a run of it goes on beside the loop.
+      if (read.loading || read.aside) continue;
       const current = stamp(check, read.kind.watched);
       let at: number | undefined;
       if (read.value === undefined || read.stamp !== current) {
@@ -2248,7 +2282,12 @@ export class Poller {
   /** Whether someone on screen waits on one of `state`'s reads for its first value now. */
   #awaitsFirst(state: PullState): boolean {
     for (const read of state.reads.values()) {
-      if (read.value !== undefined || read.first === undefined || read.retryAt !== undefined)
+      if (
+        read.value !== undefined ||
+        read.first === undefined ||
+        read.retryAt !== undefined ||
+        read.aside
+      )
         continue;
       if (priorityNow(read.first) === 'foreground') return true;
     }
@@ -2357,8 +2396,15 @@ export class Poller {
     }
     if (lead && !next?.forced) next = lead;
     // A pull request's files someone wants soon go before polls, which would hold the queue for
-    // many requests between its pages: a poll waits for them, but for one tried at once.
-    if (next && next !== lead && !next.forced && this.#pullFiles.wanted()) {
+    // many requests between its pages, and so does the rest of a read someone waits on that went
+    // on beside the loop, as a timeline's older pages: a poll waits for them, but for one tried at
+    // once.
+    if (
+      next &&
+      next !== lead &&
+      !next.forced &&
+      (this.#pullFiles.wanted() || this.#asideWanted())
+    ) {
       return { kind: 'wait', wait: undefined };
     }
     // While the limit is low, intervals are longer and some tiers aren't polled at all. Wake at its
@@ -2409,29 +2455,83 @@ export class Poller {
       }
       if (this.#stopped) return;
       const result = await this.#run(job, client);
-      const writes = this.#finish(job, ticket, result, client);
-      for (const write of writes) {
-        try {
-          await write();
-        } catch (error) {
-          this.#log(`writing the cache: ${String(error)}`);
-        }
+      if ('rest' in result) {
+        void this.#takeInAside(job, ticket, result, client).catch((error: unknown) => {
+          this.#log(`reading beside the polls: ${String(error)}`);
+        });
+        continue;
+      }
+      await this.#take(job, ticket, result, client);
+    }
+  }
+
+  /** Takes in a poll's answer, and makes the cache writes that come of it. */
+  async #take(job: Job, ticket: number, result: Settled<Outcome>, client: GithubClient) {
+    const writes = this.#finish(job, ticket, result, client);
+    for (const write of writes) {
+      try {
+        await write();
+      } catch (error) {
+        this.#log(`writing the cache: ${String(error)}`);
       }
     }
   }
 
   /**
+   * Takes in a read whose run went on beside the loop once it's over, as the loop does its polls'
+   * answers; the polls that waited for it may go then.
+   */
+  async #takeInAside(job: Job, ticket: number, aside: Aside, client: GithubClient) {
+    const result = await aside.rest;
+    this.#asides.delete(aside.priority);
+    if (job.kind === 'read') {
+      const kept = this.#pulls.get(job.pull.key)?.reads.get(job.read.name);
+      if (kept) kept.aside = false;
+    }
+    const taking = this.#take(job, ticket, result, client);
+    this.#wake();
+    await taking;
+  }
+
+  /** Whether the rest of a read someone waits on goes on beside the loop: polls wait for it. */
+  #asideWanted(): boolean {
+    for (const priority of this.#asides) if (priority() !== 'background') return true;
+    return false;
+  }
+
+  /**
    * Runs `job`. Its requests start only once it holds the queue. A read, which can be many requests,
    * takes a turn for each, so a write can go between them; so do a repository's rulesets and
-   * lookups, after its open pull requests.
+   * lookups, after its open pull requests. A read that goes aside, once what someone waits on first
+   * is in, has the rest of it go on beside the loop, at `next` while someone waits on it, behind a
+   * pull request's files someone wants soon.
    */
-  async #run(job: Job, client: GithubClient): Promise<Settled<Outcome>> {
+  async #run(job: Job, client: GithubClient): Promise<Settled<Outcome> | Aside> {
     switch (job.kind) {
       case 'read': {
         const { read } = job;
-        const gated = client.gated(this.#queue.gate(read.priority, undefined, false));
-        return settle(
-          read.run(gated, read.known).then((value): Outcome => ({
+        const kept = this.#pulls.get(job.pull.key)?.reads.get(read.name);
+        let beside = false;
+        const priority = (): ReadPriority => {
+          const now = priorityNow(read.priority);
+          return beside && now === 'foreground' ? 'next' : now;
+        };
+        const aside = Promise.withResolvers<undefined>();
+        const goAside = () => {
+          if (beside) return;
+          beside = true;
+          if (kept) kept.aside = true;
+          this.#asides.add(priority);
+          aside.resolve(undefined);
+        };
+        const turn = this.#queue.gate(
+          priority,
+          undefined,
+          false,
+          () => beside && this.#pullFiles.wanted(),
+        );
+        const rest = settle(
+          read.run(client.gated(turn), read.known, goAside).then((value): Outcome => ({
             kind: 'read',
             name: read.name,
             value,
@@ -2440,6 +2540,8 @@ export class Poller {
             started: read.started,
           })),
         );
+        const done = await Promise.race([rest, aside.promise]);
+        return done ?? { rest, priority };
       }
       case 'repo': {
         const now = () => this.#config.now();

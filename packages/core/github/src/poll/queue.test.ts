@@ -286,3 +286,29 @@ test('a next read goes ahead of waiting background reads, polls too, behind fore
   await advanceTo(start, 1100);
   expect(log.map(([name]) => name).slice(5)).toEqual(['poll g', 'files f']);
 });
+
+test('a read held behind another waits while it says so, whatever its priority, and goes once it doesnt', async () => {
+  const queue = new RequestQueue(0);
+  const log: Log = [];
+  const start = performance.now();
+  let held = true;
+  /** A request that takes its turn through `gate`, as a client's do. */
+  const gated = (name: string, gate: ReturnType<RequestQueue['gate']>) =>
+    void gate().then(async (release) => {
+      await request(name, 100, log, start)();
+      release();
+    });
+  gated(
+    'older page',
+    queue.gate('next', undefined, false, () => held),
+  );
+  await settle();
+  void queue.read(request('poll', 100, log, start), undefined, 'background', false);
+  await advanceTo(start, 300);
+  // Held, it lets even a poll go ahead of it, and the queue stays free once that's done.
+  expect(log.map(([name]) => name)).toEqual(['poll']);
+  held = false;
+  queue.recheck();
+  await advanceTo(start, 500);
+  expect(log.map(([name]) => name)).toEqual(['poll', 'older page']);
+});

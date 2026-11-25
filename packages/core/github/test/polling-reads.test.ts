@@ -872,12 +872,8 @@ function pageAt(number: number): string {
   return `https://api.github.com/repositories/1/pulls/2/files?per_page=100&page=${number}`;
 }
 
-/**
- * A poll holds the queue for all its requests, so one that came between a pull request's pages of
- * files someone wants soon would hold them up: it waits for them instead, but for a poll tried at
- * once, as opening a pull request does.
- */
-test('a poll waits for a pull requests files someone wants soon, rather than go between their pages', async () => {
+/** PR #2's files in three pages, each linking to the next. */
+function pagedFiles(): Interaction[] {
   const [page] = cassette('rest_pull_files').interactions.map(({ interaction }) => interaction);
   if (!page) throw new Error('the cassette has no page');
   /** `page` at `url`, linking to page `next`, if any. */
@@ -892,8 +888,33 @@ test('a poll waits for a pull requests files someone wants soon, rather than go 
       },
     },
   });
-  const pages = [paged(page.request.url, 2), paged(pageAt(2), 3), paged(pageAt(3))];
-  const t = await Polling.start('pull_files_pages', [...recorded(), ...pages], { delay: 1000 });
+  return [paged(page.request.url, 2), paged(pageAt(2), 3), paged(pageAt(3))];
+}
+
+/** What a poller's requests were, in order, as what they read: polls and pages by kind. */
+function kindsOf(t: Polling): string[] {
+  return t
+    .requests()
+    .map(([, what]) => what)
+    .flatMap((what) => {
+      if (what.includes('/files')) return ['files'];
+      if (what.includes('state=open')) return ['repo'];
+      if (what.startsWith('GET /pulls/1')) return ['pull'];
+      if (what.startsWith('PullRequestCheck')) return ['check'];
+      if (what.startsWith('PullRequest')) return ['details'];
+      return [];
+    });
+}
+
+/**
+ * A poll holds the queue for all its requests, so one that came between a pull request's pages of
+ * files someone wants soon would hold them up: it waits for them instead, but for a poll tried at
+ * once, as opening a pull request does.
+ */
+test('a poll waits for a pull requests files someone wants soon, rather than go between their pages', async () => {
+  const t = await Polling.start('pull_files_pages', [...recorded(), ...pagedFiles()], {
+    delay: 1000,
+  });
   void t.poller.setOpen(pr(1));
   const limits = { maxPages: MAX_PAGES, keepRequests: 0 };
   const listed = t.poller.pullFiles(pr(2), 'head', limits, {
@@ -903,13 +924,74 @@ test('a poll waits for a pull requests files someone wants soon, rather than go 
   await t.run();
   await t.runUntil(12);
   expect((await listed).files.length).toBeGreaterThan(0);
-  const order = t
-    .requests()
-    .map(([, what]) => what)
-    .flatMap((what) =>
-      what.includes('/files') ? ['files'] : what.includes('state=open') ? ['repo'] : [],
-    );
+  const order = kindsOf(t).filter((kind) => kind === 'files' || kind === 'repo');
   expect(order.slice(0, 4)).toEqual(['files', 'files', 'files', 'repo']);
+});
+
+/** A made-up read named as a timeline is, read as a newest page and older ones. */
+const PAGED: ReadKind<number> = { name: 'Timeline', watched: PUSH_HISTORY_WATCHED };
+
+/**
+ * A tab opening on its timeline draws the rows from its newest page, and splits pushes by the push
+ * history. Once that page is in, the rest of the read goes aside: the push history goes, then the
+ * pull request's files, all their pages, for the Files panel on screen beside it, then the older
+ * pages, which are off screen until the reader scrolls back, then polls.
+ */
+test('a timelines older pages go after the push history and a pull requests files, ahead of polls', async () => {
+  const t = await Polling.start('timeline_aside', [...recorded(), ...pagedFiles()], {
+    delay: 1000,
+  });
+  const finished: string[] = [];
+  let drawn = false;
+  const page = async (github: GithubClient, name: string) => {
+    await github.get(pr(1).restPath(), readPullSummary);
+    finished.push(name);
+  };
+  void t.poller.readCached(
+    pr(1),
+    PAGED,
+    async (github, _known, aside) => {
+      await page(github, 'newest');
+      drawn = true;
+      aside();
+      await page(github, 'older');
+      await page(github, 'older');
+      return 1;
+    },
+    () => 'foreground',
+  );
+  void t.poller.readCached(
+    pr(1),
+    WAITED,
+    async (github) => {
+      await page(github, 'pushes');
+      return 1;
+    },
+    () => (drawn ? 'foreground' : 'background'),
+  );
+  void t.poller.setOpen(pr(1));
+  const limits = { maxPages: MAX_PAGES, keepRequests: 0 };
+  void t.poller
+    .pullFiles(pr(2), 'head', limits, { wanted: () => true, priority: 'next' })
+    .then(() => finished.push('files'));
+  await t.run();
+  await t.runUntil(20);
+  expect(finished).toEqual(['newest', 'pushes', 'files', 'older', 'older']);
+  // The open pull request's poll, then the newest page, the push history, the files and the older
+  // pages, and the details the poll left for after them.
+  expect(kindsOf(t).slice(0, 10)).toEqual([
+    'pull',
+    'check',
+    'pull',
+    'pull',
+    'files',
+    'files',
+    'files',
+    'pull',
+    'pull',
+    'details',
+  ]);
+  expect(t.events()).toContain('read Timeline #1');
 });
 
 /**

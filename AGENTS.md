@@ -838,7 +838,10 @@ repositories, which account opens a repository, and the pull requests opened lat
   (`RequestQueue.giveWayWhile`). A `next` read, as the Files panel's list beside another view, goes
   right after those, before the other background reads, polls included; and a poll, which holds the
   queue for all its requests, waits for a pull request's files someone wants soon rather than start
-  between their pages, but for one tried at once.
+  between their pages, but for one tried at once. A read whose first part is what someone waits on,
+  as a timeline's newest page, can go aside once that's in: the rest goes on beside the poll loop,
+  at `next` while someone waits on it, held behind a pull request's files someone wants soon
+  (`gate`'s `holds`), and polls wait for it too.
 - Each account's poller keeps what it read in the database, read back only by the build of Lo that
   wrote it (a hash of main's output folder), talking to the same GitHub.
 - The window gets each account's summary (its login and name, how it signed in, whether it's signed
@@ -1361,12 +1364,14 @@ The `timeline` feature shows a pull request's GitHub timeline as the third of it
 - The reader waits on those first reads, so while the view's tab is on screen they go ahead of polls
   in the account's queue (`foreground`), as the review threads do, in the order of the reads' names:
   what goes beside the description, which is quick, then the review threads, then the timeline, and
-  once it's in, the push history the revisions feature reads, which the rows split pushes by once
-  the revisions are settled (`settled`), so a push splits once. A timeline of more than a page sends
-  its newest page while the older pages are read (`readTimeline`'s `onNewest`, never kept): the view
-  is `loading` with that page as its timeline, and the window draws it, with "Reading older events…"
-  where the older ones go, and draws the whole timeline in its place as it comes, without waiting
-  for input.
+  once its newest page is in, the push history the revisions feature reads, which the rows split
+  pushes by once the revisions are settled (`settled`), so a push splits once. A timeline of more
+  than a page sends its newest page while the older pages are read (`readTimeline`'s `onNewest`,
+  never kept), and its older pages, off screen until the reader scrolls back, go aside once it's in:
+  after the push history and after the pull request's files for the Files panel, ahead of polls
+  (`Poller.timeline`). The view is `loading` with that page as its timeline, and the window draws
+  it, with "Reading older events…" where the older ones go, and draws the whole timeline in its
+  place as it comes, without waiting for input.
 - `window/rows.ts` turns what main sent into rows, plain functions tested alone: the description
   card, a note of older items not read, consecutive commits as one push split where a revision ends,
   with its last commit's checks, comments and submitted reviews as cards, a force-push that can
