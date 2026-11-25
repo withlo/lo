@@ -12,6 +12,7 @@ import type { Range, Text } from '@codemirror/state';
 import { Decoration } from '@codemirror/view';
 import type { FileDiff, MovedBlock } from '@lo/diff';
 
+import { bubbleOf, type Tones } from './bubbles.ts';
 import type { InlineLines } from './inline.ts';
 import type { Side } from './layout.ts';
 import { type FileLines, type Gap, inGap, type Keep, type Open, shownRuns } from './rows.ts';
@@ -97,6 +98,8 @@ export interface Common {
   ring: HeaderRing;
   /** The file's `Problem`, as the caller drew it, first under its header. */
   problem?: HeaderProblem | undefined;
+  /** The colour each bubble was drawn in last: the file's threads' bubble tints as it changes. */
+  tones?: Tones | undefined;
 }
 
 /**
@@ -255,9 +258,28 @@ function header(
     drawing: onFile.drawing ?? 0,
     draw: input.draw,
   };
-  // The left column draws the problem with the path; the right lines up beside it.
+  // The left column draws the problem with the path, and the bubble of the file's threads in its
+  // lane, whichever column they're under; the right lines up beside it.
   const problem = part === 'end' ? undefined : input.problem;
-  const widget = new HeaderWidget(input.index, input.file, part, input.ring, row, under, problem);
+  const marked =
+    part === 'end' ? [] : (input.threads.find((each) => each.line === 0)?.threads ?? []);
+  const first = marked[0];
+  const drawn = first && bubbleOf(marked.map((host) => host.thread));
+  const bubble = drawn && {
+    bubble: drawn,
+    open: first.open,
+    was: input.tones?.was(`head:${part}:${drawn.thread}`, drawn.tone),
+  };
+  const widget = new HeaderWidget(
+    input.index,
+    input.file,
+    part,
+    input.ring,
+    row,
+    under,
+    problem,
+    bubble,
+  );
   return Decoration.replace({ widget, block: true, file: input.index }).range(line.from, line.to);
 }
 

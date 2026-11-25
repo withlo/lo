@@ -16,6 +16,7 @@ import type {
 } from '../../diff/window/shared.ts';
 import type { FileThreads } from '../../tree/window/shared.ts';
 import type { Compared, ThreadRow } from '../contract.ts';
+import { markOf, type RevisionLabel } from './marks.ts';
 
 /** A view's threads placed in its diff, with what each file's hold, by its name and by its key. */
 export interface Placed extends DiffThreads {
@@ -83,14 +84,19 @@ export function versionOf(text: string): number {
   return hash >>> 0;
 }
 
+/** No revision named: a thread's lines are named without one. */
+const UNNAMED: RevisionLabel = () => undefined;
+
 /**
  * `rows`, the view's threads, placed in its diff as `drawn` shows it, the left column as
- * {@link screenOf} says. A file that shows from a revision of its own has none in its left column.
+ * {@link screenOf} says, each with its mark, which names a revision as `label` does. A file that
+ * shows from a revision of its own has none in its left column.
  */
 export function placeThreads(
   rows: readonly ThreadRow[],
   drawn: DrawnDiff,
   compared: Compared | null,
+  label: RevisionLabel = UNNAMED,
 ): Placed {
   const screen = screenOf(drawn, compared);
   const sinceScreen = Screen.replayed(drawn.at, drawn.at);
@@ -126,6 +132,7 @@ export function placeThreads(
           at: { file: file.id },
           open: Thread.startsOpen(thread),
           version: versionOf(JSON.stringify(row)),
+          mark: markOf(row, null, label),
         });
         count(file, thread);
         break;
@@ -144,6 +151,7 @@ export function placeThreads(
         at: { file: file.id, side: end.side === 'RIGHT' ? 'new' : 'old', line: end.number },
         open: Thread.startsOpen(thread),
         version: versionOf(JSON.stringify(row)),
+        mark: markOf(row, placement.lines, label),
       });
       count(file, thread);
       break;

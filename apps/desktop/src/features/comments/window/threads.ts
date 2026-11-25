@@ -6,6 +6,7 @@ import type { ThreadView } from '@lo/ui/code';
 
 import { tabState } from '../../tab/window/shared.ts';
 import type { DrawnDiff } from '../../diff/window/shared.ts';
+import { revisionLabel, revisionsOf } from '../../revisions/window/shared.ts';
 import type { FileThreads } from '../../tree/window/shared.ts';
 import type { ReviewView, ThreadsView } from '../contract.ts';
 import { excerpts } from './excerpts.ts';
@@ -62,13 +63,18 @@ export function takeReview(view: ReviewView): void {
   held.update(view.id, (now) => ({ ...now, review: view }));
 }
 
-/** View `view`'s threads placed in its diff as `drawn` shows it: none for a run of layers. */
+/**
+ * View `view`'s threads placed in its diff as `drawn` shows it, their marks naming its revisions:
+ * none for a run of layers.
+ */
 export function placedIn(view: string, drawn: DrawnDiff): Placed {
   const threads = held.get(view).threads;
+  const known = revisionsOf(view);
   const placed = placeThreads(
     threads?.status === 'run' ? [] : (threads?.threads ?? []),
     drawn,
     threads?.compared ?? null,
+    (head) => revisionLabel(known, head),
   );
   counted.set(view, placed.byKey);
   shown.set(view, new Map(placed.threads.map((thread) => [thread.id, thread.at])));

@@ -3,11 +3,12 @@
 // first, then by line, every row saying who started the thread, where it is, its replies, its state
 // and the opening of what was said, in plain words.
 
-import { type LineRef, lineRefText, panelShows, type PanelFilter } from '@lo/review';
+import { lineRefText, panelShows, type PanelFilter } from '@lo/review';
 import type { ThreadListGroup, ThreadListRow } from '@lo/ui';
 
 import { avatarImage } from '../../../window/images.ts';
-import type { CommentLinesRow, ThreadRow } from '../contract.ts';
+import type { ThreadRow } from '../contract.ts';
+import { refOf, type RevisionLabel } from './marks.ts';
 import { threadOf } from './placing.ts';
 
 /** The panel's filters, in the order `f` steps through them. */
@@ -34,33 +35,8 @@ export function filterCounts(
   return { unresolved: count('unresolved'), all: count('all'), yours: count('yours') };
 }
 
-/** Thread `row`'s lines `from` to `to`, each with its side, as a line reference holds them. */
-function span(row: ThreadRow, from: number | null, to: number): CommentLinesRow {
-  return {
-    start: from === null ? null : { side: row.startSide ?? row.side, number: from },
-    end: { side: row.side, number: to },
-  };
-}
-
-/**
- * What a thread is on, as a line reference: its file; its lines and their side on the revision
- * it's on; or for an outdated one, its lines on the revision it was written on, as `label` names
- * that revision, with no lines where GitHub no longer gives them.
- */
-export function refOf(row: ThreadRow, label: (head: string) => string | undefined): LineRef {
-  if (row.subject === 'FILE') return { lines: null };
-  if (!row.outdated && row.line !== null) {
-    return { lines: span(row, row.startLine, row.line) };
-  }
-  const line = row.originalLine ?? row.line;
-  return {
-    lines: line === null ? undefined : span(row, row.originalStartLine, line),
-    revision: row.writtenOn === null ? undefined : label(row.writtenOn),
-  };
-}
-
 /** Where a thread is, as its row says it: "Line 41", "Line 30, removed", "Line 22 · r2", "File". */
-export function whereOf(row: ThreadRow, label: (head: string) => string | undefined): string {
+export function whereOf(row: ThreadRow, label: RevisionLabel): string {
   return lineRefText(refOf(row, label));
 }
 
@@ -76,7 +52,7 @@ function sortLine(row: ThreadRow): number {
  */
 export function rowOf(
   row: ThreadRow,
-  label: (head: string) => string | undefined,
+  label: RevisionLabel,
   excerpt: (markdown: string) => string,
 ): ThreadListRow {
   const [first] = row.comments;
@@ -106,7 +82,7 @@ export interface ListOptions {
   /** The files, by path, in the order the left panel lists them. */
   readonly order: readonly string[];
   /** A revision's label, `r2`, by its head, if it's one of the pull request's. */
-  readonly label: (head: string) => string | undefined;
+  readonly label: RevisionLabel;
   /** A comment's opening as one line of plain text, from its Markdown. */
   readonly excerpt: (markdown: string) => string;
 }

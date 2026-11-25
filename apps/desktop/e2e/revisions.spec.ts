@@ -20,6 +20,7 @@ import {
   drawnWindow,
   expect,
   KEYCHAIN,
+  keysToDiff,
   test as base,
 } from './app.ts';
 
@@ -117,7 +118,7 @@ test('the picker lists the revisions and compares two, across the rebase', async
   await expect.poll(() => diffFiles(page)).toHaveLength(7);
 
   // `gv` from the diff opens the picker at the comparison on screen.
-  await page.locator('.lo-diffview').click();
+  await keysToDiff(page);
   await page.keyboard.press('g');
   await page.keyboard.press('v');
   await expect(picker(page)).toBeFocused();
@@ -154,7 +155,7 @@ test('the picker lists the revisions and compares two, across the rebase', async
   await expect(row(page, 'src/format.ts')).toHaveClass(/text-fg-dim/);
 
   // The picker's shortcut back to the whole pull request.
-  await page.locator('.lo-diffview').click();
+  await keysToDiff(page);
   await page.keyboard.press('g');
   await page.keyboard.press('v');
   await expect(picker(page)).toBeFocused();
@@ -494,13 +495,13 @@ test('opens on what changed since the reader last looked, across the rebase, and
       .toMatchObject({ markers: { lastSeen: APP_PULL.firstHead } });
 
     // The whole pull request, then `gv` and the shortcut back to since last seen.
-    await page.locator('.lo-diffview').click();
+    await keysToDiff(page);
     await page.keyboard.press('g');
     await page.keyboard.press('v');
     await expect(option(page, APP_PULL.firstHead)).toContainText('Last opened');
     await page.keyboard.press('w');
     await expect.poll(() => diffFiles(page), { timeout: 20_000 }).toHaveLength(7);
-    await page.locator('.lo-diffview').click();
+    await keysToDiff(page);
     await page.keyboard.press('g');
     await page.keyboard.press('v');
     await expect(page.getByRole('button', { name: /Since last opened · r1 → r2/ })).toBeVisible();
@@ -534,7 +535,7 @@ test('draws the whole pull request when the local copy comes late, and only offe
     await expect.poll(() => diffFiles(page)).toHaveLength(7);
     await expect(button(page)).toContainText('base → r2');
     // The reader moves on, two files down.
-    await page.locator('.lo-diffview').click();
+    await keysToDiff(page);
     await page.keyboard.press(']');
     await page.keyboard.press('f');
     await page.keyboard.press(']');

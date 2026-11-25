@@ -790,6 +790,11 @@ first, so a card drawn again doesn't flash them.
   `cm-collapsedLines`) share the same rules.
 - Side by side by default. Both sides stay on one row grid: a thread or a wrapped line on one side
   leaves space (`lo-spacer`) on the other.
+- **A marker sits against the code it's about.** Line numbers, then the thread lane, then the
+  overview lane on a side that shows new lines, then the code. A lane is as wide empty as full.
+- **A thread is a bubble, the overview is a ball.** A thread's mark is a `message-square` icon with
+  a bracket up its range, amber while unresolved or pending, grey once resolved or out of date. The
+  overview's is the Powder ball and rail. Neither borrows from the other.
 - **Filler is quieter than code.** Everything in a diff that isn't code (that space, folds of
   unchanged lines, the row under a file's header) sits on one flat ground, `lo-diff-filler`, in type
   smaller and dimmer than code. Only a run of space three lines tall or less is hatched, so a line

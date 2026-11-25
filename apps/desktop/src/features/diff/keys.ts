@@ -194,11 +194,12 @@ export default defineCommands('diff', {
   },
   /**
    * Collapses the review thread the key is on, the one `]t` landed on or the only one on the
-   * cursor's line, or expands it again.
+   * cursor's line, or expands it again. Its bubble's click does it to the bubble's thread.
    */
   toggleThread: {
     label: 'Collapse thread',
     group: 'Comments',
+    control: 'the bubble beside a thread’s last line',
     keys: ['z a'],
     targets: ['thread'],
     when: { scope: 'diff', mode: 'normal', on: 'thread' },

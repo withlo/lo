@@ -577,6 +577,15 @@ export async function sizeWindow(
   );
 }
 
+/**
+ * Sends the keys a test presses next to the diff on screen: focus goes to its newer side, or to the
+ * inline diff, and its cursor stays where it was. A click in the middle of a diff side by side
+ * would land on the newer side's line numbers, where a click comments on the line.
+ */
+export async function keysToDiff(page: Page): Promise<void> {
+  await page.locator('.lo-diffview .cm-editor:visible').last().locator('.cm-content').focus();
+}
+
 /** The banner over a pull request's tab, while it has one: what a test waits for, or for none of. */
 export function tabBanners(page: Page): Locator {
   return page.locator('[data-lo-banners] > *');

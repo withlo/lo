@@ -61,12 +61,19 @@ test('a thread goes under its line, open while unresolved, and its file counts i
     null,
   );
   expect(placed.threads).toEqual([
-    { id: 'T1', at: { file: 'd0', side: 'new', line: 5 }, open: true, version: expect.any(Number) },
+    {
+      id: 'T1',
+      at: { file: 'd0', side: 'new', line: 5 },
+      open: true,
+      version: expect.any(Number),
+      mark: expect.any(Object),
+    },
     {
       id: 'T2',
       at: { file: 'd0', side: 'old', line: 3 },
       open: false,
       version: expect.any(Number),
+      mark: expect.any(Object),
     },
   ]);
   expect(placed.counts.get('d0')).toEqual({ threads: 2, unresolved: 1, comments: 2 });
@@ -84,7 +91,13 @@ test('a file’s thread goes under its header; an outdated one, and one on no fi
     null,
   );
   expect(placed.threads).toEqual([
-    { id: 'F', at: { file: 'd0' }, open: true, version: expect.any(Number) },
+    {
+      id: 'F',
+      at: { file: 'd0' },
+      open: true,
+      version: expect.any(Number),
+      mark: { resolved: false, outdated: false, words: { lines: 'file', line: 'file' } },
+    },
   ]);
   expect(placed.counts.get('d0')).toEqual({ threads: 1, unresolved: 1, comments: 1 });
 });
@@ -160,6 +173,63 @@ test('an outdated thread shows where it was written in that revision’s whole d
     replayed: false,
   });
   expect(placed.threads.map(({ at }) => at)).toEqual([{ file: 'd0', side: 'old', line: 9 }]);
+});
+
+test('a thread’s mark says its state, where its range starts, and its lines', () => {
+  const [ranged, removed, pending, some] = placeThreads(
+    [
+      row({ startLine: 2, startSide: 'RIGHT', originalStartLine: 2, resolved: true }),
+      row({ id: 'T2', side: 'LEFT', line: 3, originalLine: 3 }),
+      row({
+        id: 'T3',
+        line: 8,
+        originalLine: 8,
+        comments: [{ ...row().comments[0]!, state: 'PENDING' }],
+      }),
+      row({
+        id: 'T4',
+        line: 9,
+        originalLine: 9,
+        comments: [row().comments[0]!, { ...row().comments[0]!, id: 'C2', state: 'PENDING' }],
+      }),
+    ],
+    drawn([file()]),
+    null,
+  ).threads.map(({ mark }) => mark);
+  expect(ranged).toEqual({
+    resolved: true,
+    outdated: false,
+    from: { side: 'new', line: 2 },
+    words: { lines: 'lines 2–5', line: 'line 5' },
+  });
+  expect(removed).toMatchObject({ from: undefined, words: { lines: 'line 3, removed' } });
+  expect(pending).toMatchObject({ resolved: false, pending: 'all' });
+  expect(some).toMatchObject({ pending: 'some' });
+});
+
+test('an outdated thread’s mark names the revision it was written on', () => {
+  const outdated = row({
+    outdated: true,
+    line: null,
+    originalLine: 9,
+    originalStartLine: 7,
+    startSide: 'RIGHT',
+    currentOn: OLDER,
+    writtenOn: OLDER,
+  });
+  const written = drawn([file()], { at: OLDER, comparison: 'base..r1' });
+  const [placed] = placeThreads(
+    [outdated],
+    written,
+    { key: 'base..r1', from: null, replayed: false },
+    (head) => (head === OLDER ? 'r1' : undefined),
+  ).threads;
+  expect(placed?.mark).toEqual({
+    resolved: false,
+    outdated: true,
+    from: { side: 'new', line: 7 },
+    words: { lines: 'lines 7–9 · r1', line: 'line 9 · r1' },
+  });
 });
 
 test('a thread’s version changes with what it shows', () => {
