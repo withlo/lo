@@ -168,6 +168,7 @@ export type Clone = Pick<
   | 'mergeBase'
   | 'isAncestor'
   | 'offline'
+  | 'folder'
   | 'close'
 >;
 
@@ -200,14 +201,15 @@ export interface LocalCopyOptions<R extends Clone = Repo> {
 }
 
 /**
- * The head on screen, ready to read: with the base branch's tip it was fetched with, and where its
- * changes start, worked out with the commit it's compared with, if any.
+ * The head on screen, ready to read: with the base branch's tip it was fetched with, where its
+ * changes start, worked out with the commit it's compared with, if any, and the clone's folder.
  */
 interface Ready {
   readonly head: Oid;
   readonly base: Oid;
   readonly mergeBase: Oid | undefined;
   readonly from: Compared | undefined;
+  readonly folder: string;
 }
 
 /** What fetching is doing, while the head on screen isn't ready. */
@@ -286,6 +288,7 @@ export class LocalCopy<R extends Clone = Repo> {
         ...(ready.from === undefined ? {} : { from: ready.from }),
         // What an earlier fetch brought, since the last fetch failed.
         offline: this.#failures > 0,
+        folder: ready.folder,
       };
     }
     const { status } = this.#options.git;
@@ -539,7 +542,7 @@ export class LocalCopy<R extends Clone = Repo> {
         }
       }
       if (this.#closed || this.#shown !== head || this.#from !== from) return;
-      this.#ready = { head, base, mergeBase, from: compared };
+      this.#ready = { head, base, mergeBase, from: compared, folder: opened.folder };
     } catch (error) {
       this.#options.log(`reading ${this.#name()}: ${failureOf(error).message}`);
     }

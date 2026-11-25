@@ -243,7 +243,14 @@ describe('TreeTab', () => {
     });
     const { tree, settled } = treeTab({ clone: () => Promise.resolve(repo) });
     tree.update({
-      ...e2eInfo({ kind: 'ready', head, base, mergeBase: base, offline: false }),
+      ...e2eInfo({
+        kind: 'ready',
+        head,
+        base,
+        mergeBase: base,
+        offline: false,
+        folder: '/cache/e2e.git',
+      }),
       repository: { owner: 'o', name: 'r' },
       number: 1,
       shown: head,
@@ -279,7 +286,14 @@ describe('TreeTab', () => {
     });
     const { tree, settled } = treeTab({ clone: () => Promise.resolve(repo) });
     tree.update({
-      ...e2eInfo({ kind: 'ready', head, base, mergeBase: base, offline: false }),
+      ...e2eInfo({
+        kind: 'ready',
+        head,
+        base,
+        mergeBase: base,
+        offline: false,
+        folder: '/cache/e2e.git',
+      }),
       shown: head,
     });
     const state = await settled((sent) => sent.changes !== null);
@@ -365,6 +379,7 @@ describe('TreeTab', () => {
         base: APP_PULL.base,
         mergeBase: null,
         offline: false,
+        folder: '/cache/e2e.git',
       }),
       provisional: true,
     };
@@ -454,7 +469,14 @@ describe('TreeTab', () => {
     );
     const { tree, settled } = treeTab({ clone: () => Promise.resolve(repo) });
     tree.update({
-      ...e2eInfo({ kind: 'ready', head, base, mergeBase: base, offline: false }),
+      ...e2eInfo({
+        kind: 'ready',
+        head,
+        base,
+        mergeBase: base,
+        offline: false,
+        folder: '/cache/e2e.git',
+      }),
       shown: head,
     });
     const state = await settled((sent) => sent.changes !== null);
@@ -661,6 +683,7 @@ describe('a stack’s layer’s tree', () => {
         mergeBase: B,
         from: { commit: B, missing: false },
         offline: false,
+        folder: '/cache/e2e.git',
       }),
     );
     const state = await settled((sent) => sent.changesFrom === 'github' && sent.changes !== null);
@@ -690,7 +713,16 @@ describe('a stack’s layer’s tree', () => {
     const { asked, github } = layerGithub();
     const { tree, sent } = treeTab({ github });
     // Ready at the head, but still settling where it meets B: nothing is read, from either.
-    tree.update(layerInfo(B, { kind: 'ready', head: C, base: C, mergeBase: C, offline: false }));
+    tree.update(
+      layerInfo(B, {
+        kind: 'ready',
+        head: C,
+        base: C,
+        mergeBase: C,
+        offline: false,
+        folder: '/cache/e2e.git',
+      }),
+    );
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(sent.at(-1)).toMatchObject({ at: C, changes: null });
     expect(asked).toEqual([]);

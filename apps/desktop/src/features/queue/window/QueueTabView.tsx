@@ -10,6 +10,7 @@
 import {
   Branch,
   Button,
+  duration,
   HintButton,
   HintRow,
   Key,
@@ -22,6 +23,7 @@ import {
   StatusBar,
   StatusItem,
   StatusKeys,
+  StatusLine,
   type QueueItem,
   type LeftEntry as TableLeft,
   type WaitingEntry as TableWaiting,
@@ -602,7 +604,19 @@ export function QueueTabView({ tab }: { tab: QueueTab }) {
         start={
           // Never shrunk: the hints give way to them.
           <span className="flex flex-none items-center gap-2">
-            <StatusItem ball={state?.failure ? 'warn' : 'ready'}>{tab.login}</StatusItem>
+            <StatusItem
+              ball={state?.failure ? 'warn' : 'ready'}
+              container={document.getElementById('root')}
+              details={
+                <StatusLine>
+                  {state?.failure
+                    ? 'Can’t check the merge queue'
+                    : `Checked as ${tab.login} · every ${duration(QUEUE_EVERY)}`}
+                </StatusLine>
+              }
+            >
+              {tab.login}
+            </StatusItem>
             {state !== undefined && state.readAt !== null && (
               <StatusItem>{updated(state.readAt, now)}</StatusItem>
             )}

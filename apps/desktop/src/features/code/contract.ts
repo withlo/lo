@@ -92,7 +92,8 @@ export type PartialWhy = z.output<typeof partialWhy>;
  * - `noGit` when Lo has no git it can run: the index reads the local copy;
  * - `waiting` for the local copy at the head on screen, or for what the tab compares;
  * - `building`, with the files read of those it reads, across both sides;
- * - `ready`, whole or `partial`: `indexed` of `total` files, and why;
+ * - `ready`, whole or `partial`: `indexed` of `total` files, and why; with the `languages` of the
+ *   files it has read, most files first, and when it was last built (`at`);
  * - `failed`, with what went wrong (`message`, empty when nothing said), which Lo tries again by
  *   itself at `retryAt`.
  */
@@ -113,6 +114,16 @@ export const indexState = z.discriminatedUnion('kind', [
         why: z.array(partialWhy),
       })
       .nullable(),
+    languages: z
+      .array(
+        z.strictObject({
+          /** The language's name, as its makers write it: "TypeScript". */
+          name: z.string().min(1).max(40),
+          files: z.number().int().positive(),
+        }),
+      )
+      .max(64),
+    at: z.number().int().nonnegative(),
   }),
   z.strictObject({
     kind: z.literal('failed'),

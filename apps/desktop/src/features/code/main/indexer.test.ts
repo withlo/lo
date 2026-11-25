@@ -7,12 +7,15 @@
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import type { IndexState } from '../contract.ts';
-import { CodeIndex, type ViewInput } from './indexer.ts';
+import { CodeIndex, languagesOf, type ViewInput } from './indexer.ts';
 import { commitOf, fakeBackground, fakeRepo, memoryStore, type FakeRepo } from './test/fake.ts';
 
 const PARSE = 'export function parse(input: string) { return input }\n';
 const FORMAT =
   "import { parse } from './parse.ts'\nexport function format() { return parse('') }\n";
+
+/** When each tree is built, as the index's clock says. */
+const BUILT_AT = 1_700_000_000_000;
 
 function setUp() {
   const background = fakeBackground();
@@ -22,6 +25,7 @@ function setUp() {
     read: (files) => background.symbols(files),
     publish: (view, state) => published.push({ view, state }),
     log: () => undefined,
+    now: () => BUILT_AT,
   });
   onTestFinished(() => index.stop());
   return { background, published, index };
@@ -50,14 +54,20 @@ describe('the syntax index', () => {
     index.follow('t1', ready(repo));
     index.follow('t1:2', ready(repo));
     await vi.waitFor(() => {
-      expect(index.state('t1')).toEqual({ kind: 'ready', partial: null });
-      expect(index.state('t1:2')).toEqual({ kind: 'ready', partial: null });
+      expect(index.state('t1')).toMatchObject({ kind: 'ready', partial: null });
+      expect(index.state('t1:2')).toMatchObject({ kind: 'ready', partial: null });
     });
     expect(background.read.toSorted()).toEqual([FORMAT, PARSE].toSorted());
     const states = published.filter(({ view }) => view === 't1').map(({ state }) => state);
     expect(states[0]).toEqual({ kind: 'waiting' });
     expect(states).toContainEqual({ kind: 'building', done: 0, total: 2 });
-    expect(states.at(-1)).toEqual({ kind: 'ready', partial: null });
+    // What it covers: each language's files, read once across both sides, and when it was built.
+    expect(states.at(-1)).toEqual({
+      kind: 'ready',
+      partial: null,
+      languages: [{ name: 'TypeScript', files: 2 }],
+      at: BUILT_AT,
+    });
     // Both sides' trees, known by ID, for the answers.
     expect(index.sides('t1')?.new.tree).toBeDefined();
     expect(index.sides('t1')?.old?.tree).toBeDefined();
@@ -68,7 +78,7 @@ describe('the syntax index', () => {
     const { background, index } = setUp();
     index.follow('t1', ready(repo, true));
     await vi.waitFor(() =>
-      expect(index.state('t1')).toEqual({
+      expect(index.state('t1')).toMatchObject({
         kind: 'ready',
         partial: { indexed: 1, total: 2, why: ['offline'] },
       }),
@@ -76,7 +86,9 @@ describe('the syntax index', () => {
     // Online again, as the clone fetches once more.
     Reflect.set(repo, 'offline', false);
     index.follow('t1', ready(repo, false));
-    await vi.waitFor(() => expect(index.state('t1')).toEqual({ kind: 'ready', partial: null }));
+    await vi.waitFor(() =>
+      expect(index.state('t1')).toMatchObject({ kind: 'ready', partial: null }),
+    );
     expect(background.read.toSorted()).toEqual([FORMAT, PARSE].toSorted());
   });
 
@@ -84,13 +96,17 @@ describe('the syntax index', () => {
     const repo = fakeRepo({ commits });
     const { background, index } = setUp();
     index.follow('t1', ready(repo));
-    await vi.waitFor(() => expect(index.state('t1')).toEqual({ kind: 'ready', partial: null }));
+    await vi.waitFor(() =>
+      expect(index.state('t1')).toMatchObject({ kind: 'ready', partial: null }),
+    );
     const clearing = index.clear();
     // Building from the start, with nothing read yet, while the store is let go of.
     expect(index.state('t1')).toMatchObject({ kind: 'building', done: 0 });
     await clearing;
     await vi.waitFor(() => expect(background.read).toHaveLength(4));
-    await vi.waitFor(() => expect(index.state('t1')).toEqual({ kind: 'ready', partial: null }));
+    await vi.waitFor(() =>
+      expect(index.state('t1')).toMatchObject({ kind: 'ready', partial: null }),
+    );
     index.follow('t1', undefined);
     expect(index.state('t1')).toBe(undefined);
     expect(index.sides('t1')).toBe(undefined);
@@ -116,7 +132,9 @@ describe('the syntax index', () => {
     expect(retryAt).toBeGreaterThanOrEqual(before + 5_000);
     // "Try now": built again before the wait ends.
     index.retryNow('t1');
-    await vi.waitFor(() => expect(index.state('t1')).toEqual({ kind: 'ready', partial: null }));
+    await vi.waitFor(() =>
+      expect(index.state('t1')).toMatchObject({ kind: 'ready', partial: null }),
+    );
   });
 
   it('leaves a tree with more files than git lists partial, and reads the other side', async () => {
@@ -124,11 +142,23 @@ describe('the syntax index', () => {
     const { background, index } = setUp();
     index.follow('t1', ready(repo));
     await vi.waitFor(() =>
-      expect(index.state('t1')).toEqual({
+      expect(index.state('t1')).toMatchObject({
         kind: 'ready',
         partial: { indexed: 1, total: 1, why: ['listing'] },
       }),
     );
     expect(background.read).toEqual([PARSE]);
+  });
+});
+
+describe('what a code index covers', () => {
+  it('counts the files read in each language by its name, most first, then by name', () => {
+    expect(languagesOf(['a:typescript', 'b:tsx', 'c:typescript', 'd:python', 'e:csharp'])).toEqual([
+      { name: 'TypeScript', files: 2 },
+      { name: 'C#', files: 1 },
+      { name: 'Python', files: 1 },
+      { name: 'TSX', files: 1 },
+    ]);
+    expect(languagesOf([])).toEqual([]);
   });
 });

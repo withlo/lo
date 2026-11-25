@@ -925,9 +925,11 @@ status bar.
   reach GitHub, the overview's `offline` problem, and the stall of a poller that can't read now,
   which the merge status and the review threads carry. Main words none of it.
 - The window gets what it shows on `tab.pull`, `tab.files` and `tab.local`, each sent only when it
-  changes, and asks for all three with `tab.state`. None of it holds a token. `tab.copy` puts up to
-  1 MiB of text on the clipboard, and `tab.openExternal` opens pages on `https://github.com/` only,
-  for every feature.
+  changes, and asks for all three with `tab.state`. None of it holds a token. A ready local copy
+  says where its clone is (`folder`), which its status bar item's details show, copy, and show in
+  Finder through `tab.showLocal`: main shows the folder it keeps for the view, never one the window
+  names. `tab.copy` puts up to 1 MiB of text on the clipboard, and `tab.openExternal` opens pages on
+  `https://github.com/` only, for every feature.
 - Its smoke test opens rozed-dev/e2e#80, whose repository `testing/fixtures/app.sh` builds with
   GitHub's commit IDs, as `LO_GIT_REMOTE`, while the replay server answers from the `app_e2e`
   cassette, recorded from the app itself (`testing/README.md`).
@@ -1696,9 +1698,11 @@ parse them under `@lo/syntax`'s limits.
   queries that read it, and each tree's paths and blobs. A row with another version is read again as
   it's needed. Past 1 GB, the trees and then the blobs no open view holds go, least recently used
   first. Settings counts it with the cache, and "Clear the cache" clears it.
-- The status bar says how far a view's index has got (`code.index`, the `indexed` topic): "Syntax
-  index 1,204 / 3,880" while it builds, again from the start once the cache is cleared, "Syntax
-  index" once it's ready, "Syntax index partial" with how much on hover.
+- The status bar says how far a view's index has got (`code.index`, the `indexed` topic): "Indexing
+  code · 1,204 / 3,880" while it builds, again from the start once the cache is cleared, "Code
+  index" once it's ready, with how many files a partial one has. Its details say what it is, its
+  state, and once it's ready, how many of the files it read are in each language, counted by blob as
+  the progress is, and when its trees were last built.
 - The window asks over the code port (`port.ts`): a port main makes with each load of the page,
   handed over through the preload as `lo:code`, in the jobs protocol's shapes (`{ id, job, input }`,
   replies, `{ cancel }`). Main checks every message as plain data and each input against the

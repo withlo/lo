@@ -1,12 +1,9 @@
 import { cva } from 'class-variance-authority';
 import { useId, type ReactNode, type Ref, type UIEvent } from 'react';
 
-import { Button, type ButtonProps } from './Button.tsx';
+import { Button } from './Button.tsx';
 import { Collapse } from './Collapse.tsx';
-import { runControl } from './commands/control.ts';
-import { NO_TARGET, type Target } from './commands/targets.ts';
-import { Ticks } from './Ticks.tsx';
-import { useControl } from './useControl.ts';
+import { CommandButton, type CommandButtonProps } from './CommandButton.tsx';
 
 /** One of Settings' groups, as the list beside it names it. */
 export interface SettingsNavItem {
@@ -330,51 +327,13 @@ export function SettingsListItem({
   );
 }
 
-export interface SettingsCommandProps extends Omit<
-  ButtonProps,
-  'onClick' | 'hint' | 'hintKeys' | 'hintShortcut' | 'disabled'
-> {
-  /** The command it runs, by its id: `keys.help`. */
-  command: string;
-  /** What it runs the command on, where the row stands for one thing: a tab's servers, say. */
-  target?: Target | undefined;
-  /** Its words, where the row says it shorter than the command's label: "Open". */
-  children?: ReactNode;
-}
+export type SettingsCommandProps = CommandButtonProps;
 
 /**
  * A row's button for a command: it runs the command as its key does, gives the command's label and
  * key in its tooltip, and while the command can't run it's dimmed with the reason. It follows the
  * keymap file, and draws nothing for a command that isn't there.
  */
-export function SettingsCommand({
-  command,
-  target = NO_TARGET,
-  children,
-  ...button
-}: SettingsCommandProps) {
-  const why = useId();
-  const control = useControl(command, target);
-  if (!control) return null;
-  const { off } = control;
-  return (
-    <>
-      <Button
-        {...button}
-        disabled={off !== undefined}
-        aria-describedby={off ? why : undefined}
-        hint={<Ticks text={off ?? control.label} />}
-        hintKeys={off === undefined ? control.keys : undefined}
-        hintShortcut={off === undefined ? control.shortcut : undefined}
-        onClick={() => runControl(command, target)}
-      >
-        {children ?? <Ticks text={control.label} />}
-      </Button>
-      {off && (
-        <span id={why} className="sr-only">
-          {off}
-        </span>
-      )}
-    </>
-  );
+export function SettingsCommand(props: SettingsCommandProps) {
+  return <CommandButton {...props} />;
 }

@@ -273,7 +273,9 @@ export interface LocalNote {
   readonly label: string;
   /** The details' one line, for a copy that's there: the commit it's at. */
   readonly at?: string | undefined;
-  /** The details' one line while it fetches: what, and how far, in Lo's words. */
+  /** Where a copy that's there is on this computer, for its details, to show or copy. */
+  readonly folder?: string | undefined;
+  /** The details' one line while it fetches or waits to: what, and how far, in Lo's words. */
   readonly line?: string | undefined;
   /** What Git last said of how far it has got while it fetches, as it came, for Details. */
   readonly said?: string | undefined;
@@ -309,7 +311,7 @@ export function localNote(
     case undefined:
       return undefined;
     case 'waiting':
-      return { ball: 'off', label: 'Local copy' };
+      return { ball: 'off', label: 'Local copy', line: `Waiting to fetch ${repository}…` };
     case 'noGit': {
       const words = gitWords(local.git);
       return {
@@ -339,11 +341,11 @@ export function localNote(
     }
     case 'ready':
       // Offline, it's there all the same: the header's chip says the tab is offline.
-      return { ball: 'ready', label: 'Local copy', at: short(local.head) };
+      return { ball: 'ready', label: 'Local copy', at: short(local.head), folder: local.folder };
     case 'retrying': {
       // A fetch waiting for GitHub to be reached again: the chip says why.
       if (view?.connection.kind === 'offline' && local.failure === 'network') {
-        return { ball: 'warn', label: 'Local copy' };
+        return { ball: 'warn', label: 'Local copy', line: `Waiting to fetch ${repository}…` };
       }
       const held = heldBy(local.failure, repository);
       const title = held === undefined ? CANT_FETCH : CANT_USE;

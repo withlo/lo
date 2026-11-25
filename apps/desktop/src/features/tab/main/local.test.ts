@@ -28,6 +28,9 @@ import {
 } from './local.ts';
 import { appRemote, folder, testGit } from './test/support.ts';
 
+/** Where the e2e repository's clone is, in the cache a test makes. */
+const CLONE = expect.stringMatching(/\/repos\/github\.com\/rozed-dev\/e2e\.git$/);
+
 const REFS: PullRequestRefs = {
   number: APP_PULL.number,
   head: parseOid(APP_PULL.head),
@@ -67,6 +70,7 @@ function fakeGit() {
   let progress: OpenOptions['progress'];
   const clone: Clone = {
     offline: false,
+    folder: '/cache/e2e.git',
     fetchPull: () => fetched.promise,
     fetchCommit: () => Promise.resolve(),
     fetchCommits: () => Promise.resolve([]),
@@ -297,6 +301,7 @@ describe('a local copy saying what git is doing', () => {
       base: APP_PULL.base,
       mergeBase: APP_PULL.base,
       offline: false,
+      folder: '/cache/e2e.git',
     });
   });
 });
@@ -318,6 +323,7 @@ describe('a local copy', { timeout: 60_000 }, () => {
       base: APP_PULL.base,
       mergeBase: APP_PULL.base,
       offline: false,
+      folder: CLONE,
     });
     expect(states[0]).toEqual({ kind: 'fetching', progress: null, attempt: 1 });
     // The token is read as the fetch starts, and only for it.
@@ -352,6 +358,7 @@ describe('a local copy', { timeout: 60_000 }, () => {
       base: APP_PULL.head,
       mergeBase: APP_PULL.base,
       offline: false,
+      folder: CLONE,
     });
     local.close();
   });
@@ -384,6 +391,7 @@ describe('a local copy', { timeout: 60_000 }, () => {
       base: APP_PULL.head,
       mergeBase: APP_PULL.base,
       offline: false,
+      folder: CLONE,
     });
     local.close();
   });
@@ -400,6 +408,7 @@ describe('a local copy', { timeout: 60_000 }, () => {
       base: APP_PULL.base,
       mergeBase: APP_PULL.firstBase,
       offline: false,
+      folder: CLONE,
     });
     local.show(APP_PULL.head);
     await expect.poll(last).toMatchObject({ kind: 'ready', head: APP_PULL.head });
@@ -481,6 +490,7 @@ describe('a local copy', { timeout: 60_000 }, () => {
       base: APP_PULL.base,
       mergeBase: APP_PULL.base,
       offline: true,
+      folder: CLONE,
     });
     expect(failing.states).toContainEqual({ kind: 'fetching', progress: null, attempt: 1 });
     expect(failing.lines.join('\n')).toContain('down');
@@ -530,6 +540,7 @@ describe("a stack's layer's local copy", { timeout: 60_000 }, () => {
       mergeBase: STACK_PULLS.b.head,
       from: { commit: STACK_PULLS.b.head, missing: false },
       offline: false,
+      folder: CLONE,
     });
     local.compareFrom(undefined);
     await expect.poll(last).toEqual({
@@ -538,6 +549,7 @@ describe("a stack's layer's local copy", { timeout: 60_000 }, () => {
       base: STACK_PULLS.root,
       mergeBase: STACK_PULLS.root,
       offline: false,
+      folder: CLONE,
     });
     local.close();
   });

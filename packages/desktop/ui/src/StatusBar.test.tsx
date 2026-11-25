@@ -28,8 +28,8 @@ async function settle(): Promise<void> {
 const details = () => document.body.querySelector<HTMLElement>('[role="dialog"]');
 
 /**
- * A local copy's item whose details hold "Try now", which fetches: then it has nothing behind it,
- * as an item with no details is text; or, with `gone`, it leaves the bar, before `#after`.
+ * A local copy's item whose details hold "Try now", which fetches: then its details close, and say
+ * what it's at; or, with `gone`, it leaves the bar, before `#after`.
  */
 function Local({ gone = false }: { gone?: boolean }) {
   const [failed, setFailed] = useState(true);
@@ -40,12 +40,15 @@ function Local({ gone = false }: { gone?: boolean }) {
           {(failed || !gone) && (
             <StatusItem
               ball={failed ? 'failed' : 'ready'}
+              open={failed ? undefined : false}
               details={
                 failed ? (
                   <button type="button" onClick={() => setFailed(false)}>
                     Try now
                   </button>
-                ) : undefined
+                ) : (
+                  <p>At 5530830</p>
+                )
               }
             >
               {failed ? 'Can’t fetch the local copy' : 'Local copy'}
@@ -105,7 +108,7 @@ describe('the details of a status item, and of the header’s chip', () => {
     const host = render(<Local />);
     await pressInDetails(host.querySelector('button')!);
     expect(details()).toBeNull();
-    const item = host.querySelector('footer span')!;
+    const item = host.querySelector('footer button')!;
     expect(item.textContent).toContain('Local copy');
     expect(document.activeElement).toBe(item);
   });

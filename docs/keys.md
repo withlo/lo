@@ -246,37 +246,39 @@ mode. In the box's preview, or on its frame, `Esc` closes it at once, from any m
 
 ## Tabs
 
-| Command               | Keys                                                   | Where                                      | ID                      |
-| --------------------- | ------------------------------------------------------ | ------------------------------------------ | ----------------------- |
-| Open pull request…    | `⌘L`, `⌘O` (macOS only)                                | Anywhere but `dialog` and `palette`        | `open.box`              |
-| Paste link            | `⌘V`                                                   | In `recent`                                | `open.paste`            |
-| Filter pull requests… | `/`                                                    | In `recent`                                | `open.filter`           |
-| Clear filter          | `⌘⌫`                                                   | In `recent`                                | `open.clearFilter`      |
-| Open pull request     | `⏎`                                                    | In `recent`                                | `open.openRecent`       |
-| Next pull request     | `j`, `↓`                                               | In `recent`                                | `open.nextRecent`       |
-| Previous pull request | `k`, `↑`                                               | In `recent`                                | `open.previousRecent`   |
-| Open on GitHub        | `g x`                                                  | In `stack`                                 | `stacks.openOnGithub`   |
-| Tab 1                 | `⌘1`                                                   | Anywhere but `dialog` and `palette`        | `tab.show1`             |
-| Tab 2                 | `⌘2`                                                   | Anywhere but `dialog` and `palette`        | `tab.show2`             |
-| Tab 3                 | `⌘3`                                                   | Anywhere but `dialog` and `palette`        | `tab.show3`             |
-| Tab 4                 | `⌘4`                                                   | Anywhere but `dialog` and `palette`        | `tab.show4`             |
-| Tab 5                 | `⌘5`                                                   | Anywhere but `dialog` and `palette`        | `tab.show5`             |
-| Tab 6                 | `⌘6`                                                   | Anywhere but `dialog` and `palette`        | `tab.show6`             |
-| Tab 7                 | `⌘7`                                                   | Anywhere but `dialog` and `palette`        | `tab.show7`             |
-| Tab 8                 | `⌘8`                                                   | Anywhere but `dialog` and `palette`        | `tab.show8`             |
-| Last tab              | `⌘9`                                                   | Anywhere but `dialog` and `palette`        | `tab.showLast`          |
-| Next tab              | `⌘⇧]`, `⌃⇥`                                            | Anywhere but `dialog` and `palette`        | `tab.next`              |
-| Previous tab          | `⌘⇧[`, `⌃⇧⇥`                                           | Anywhere but `dialog` and `palette`        | `tab.previous`          |
-| Move tab left         | `⌃⇧PgUp`                                               | Anywhere but `dialog` and `palette`        | `tab.moveLeft`          |
-| Move tab right        | `⌃⇧PgDn`                                               | Anywhere but `dialog` and `palette`        | `tab.moveRight`         |
-| More tabs             | `⌘⇧A`                                                  | Anywhere but `dialog`, `palette` and `box` | `tab.more`              |
-| Open on GitHub        | None: the app menu or the command palette              | Anywhere                                   | `tab.openOnGithub`      |
-| Copy link             | None: the app menu or the command palette              | Anywhere                                   | `tab.copyLink`          |
-| Choose account…       | None: its control, the app menu or the command palette | Anywhere but `dialog` and `palette`        | `tab.chooseAccount`     |
-| Next message          | None: its control or the command palette               | Anywhere                                   | `tab.nextBanner`        |
-| Dismiss message       | None: its control or the command palette               | Anywhere                                   | `tab.dismissBanner`     |
-| Close tab             | `⌘W`                                                   | Anywhere but `dialog` and `palette`        | `tab.close`             |
-| Open on GitHub        | `g x`                                                  | In `timeline`                              | `timeline.openOnGithub` |
+| Command                | Keys                                                   | Where                                      | ID                      |
+| ---------------------- | ------------------------------------------------------ | ------------------------------------------ | ----------------------- |
+| Open pull request…     | `⌘L`, `⌘O` (macOS only)                                | Anywhere but `dialog` and `palette`        | `open.box`              |
+| Paste link             | `⌘V`                                                   | In `recent`                                | `open.paste`            |
+| Filter pull requests…  | `/`                                                    | In `recent`                                | `open.filter`           |
+| Clear filter           | `⌘⌫`                                                   | In `recent`                                | `open.clearFilter`      |
+| Open pull request      | `⏎`                                                    | In `recent`                                | `open.openRecent`       |
+| Next pull request      | `j`, `↓`                                               | In `recent`                                | `open.nextRecent`       |
+| Previous pull request  | `k`, `↑`                                               | In `recent`                                | `open.previousRecent`   |
+| Open on GitHub         | `g x`                                                  | In `stack`                                 | `stacks.openOnGithub`   |
+| Tab 1                  | `⌘1`                                                   | Anywhere but `dialog` and `palette`        | `tab.show1`             |
+| Tab 2                  | `⌘2`                                                   | Anywhere but `dialog` and `palette`        | `tab.show2`             |
+| Tab 3                  | `⌘3`                                                   | Anywhere but `dialog` and `palette`        | `tab.show3`             |
+| Tab 4                  | `⌘4`                                                   | Anywhere but `dialog` and `palette`        | `tab.show4`             |
+| Tab 5                  | `⌘5`                                                   | Anywhere but `dialog` and `palette`        | `tab.show5`             |
+| Tab 6                  | `⌘6`                                                   | Anywhere but `dialog` and `palette`        | `tab.show6`             |
+| Tab 7                  | `⌘7`                                                   | Anywhere but `dialog` and `palette`        | `tab.show7`             |
+| Tab 8                  | `⌘8`                                                   | Anywhere but `dialog` and `palette`        | `tab.show8`             |
+| Last tab               | `⌘9`                                                   | Anywhere but `dialog` and `palette`        | `tab.showLast`          |
+| Next tab               | `⌘⇧]`, `⌃⇥`                                            | Anywhere but `dialog` and `palette`        | `tab.next`              |
+| Previous tab           | `⌘⇧[`, `⌃⇧⇥`                                           | Anywhere but `dialog` and `palette`        | `tab.previous`          |
+| Move tab left          | `⌃⇧PgUp`                                               | Anywhere but `dialog` and `palette`        | `tab.moveLeft`          |
+| Move tab right         | `⌃⇧PgDn`                                               | Anywhere but `dialog` and `palette`        | `tab.moveRight`         |
+| More tabs              | `⌘⇧A`                                                  | Anywhere but `dialog`, `palette` and `box` | `tab.more`              |
+| Open on GitHub         | None: the app menu or the command palette              | Anywhere                                   | `tab.openOnGithub`      |
+| Copy link              | None: the app menu or the command palette              | Anywhere                                   | `tab.copyLink`          |
+| Show local copy folder | None: its control or the command palette               | Anywhere                                   | `tab.showLocalCopy`     |
+| Copy local copy path   | None: its control or the command palette               | Anywhere                                   | `tab.copyLocalPath`     |
+| Choose account…        | None: its control, the app menu or the command palette | Anywhere but `dialog` and `palette`        | `tab.chooseAccount`     |
+| Next message           | None: its control or the command palette               | Anywhere                                   | `tab.nextBanner`        |
+| Dismiss message        | None: its control or the command palette               | Anywhere                                   | `tab.dismissBanner`     |
+| Close tab              | `⌘W`                                                   | Anywhere but `dialog` and `palette`        | `tab.close`             |
+| Open on GitHub         | `g x`                                                  | In `timeline`                              | `timeline.openOnGithub` |
 
 ## App
 

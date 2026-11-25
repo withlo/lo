@@ -74,7 +74,14 @@ describe('what the status bar says', () => {
     );
     expect(NOT_YET.notFetched).toBe('Can’t fetch the local copy');
     expect(
-      notYet({ kind: 'ready', head: HEAD, base: HEAD, mergeBase: HEAD, offline: false }),
+      notYet({
+        kind: 'ready',
+        head: HEAD,
+        base: HEAD,
+        mergeBase: HEAD,
+        offline: false,
+        folder: '/cache/e2e.git',
+      }),
     ).toBeUndefined();
   });
 

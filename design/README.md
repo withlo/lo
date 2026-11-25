@@ -587,11 +587,19 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
   A change to the pull request is the banner.
 - The status bar holds `StatusItem`s: a ball and a label. A ring while it's off or not there yet, a
   spinner at work, filled once ready, amber while it waits or holds back, red only once it failed,
-  and not while it waits to try again. A click opens its details: one line of state and its actions,
-  or a `Problem` once it failed; work under way names what it works on and how far it has got there
-  ("Fetching rozed-dev/e2e · 62%"), not the label again. The details are as wide as they say, 280 to
-  420 px. Items keep their place: one that has nothing to say yet shows its ring, and one that comes
-  and goes, as "Rate limit low", goes last on the left.
+  and not while it waits to try again. A click on an item with a ball always opens something, in
+  every state, a ring and a filled ball too: its details, or what its `onClick` does, as "Overview
+  ready" shows the overview. `StatusItem` won't take a ball without one or the other; only a fact
+  with no ball, as a count or "Checked 5 min ago", is text.
+- An item's details are, in order: what it is in one line, where its label doesn't say, as the code
+  index's doesn't; one line of state (`StatusLine`); the facts it knows (`StatusFacts`), such as
+  what it covers, where it is and when it last ran, never a number it doesn't know; and its actions
+  (`StatusActions` of `StatusCommand`s, a command's button with its key in its tooltip), or a
+  `Problem` once it failed. Work under way names what it works on and how far it has got there
+  ("Fetching rozed-dev/e2e · 62%"), not the label again. A path is code, whole, with a way to show
+  it in Finder and to copy it. The details are as wide as they say, 280 to 420 px. Items keep their
+  place: one that has nothing to say yet shows its ring, and one that comes and goes, as "Rate limit
+  low", goes last on the left.
 - The body is left panel (stack, then files), the middle sheet, and the threads panel. Each panel
   opens and closes with a key.
 - The window never scrolls. Panes do. The shell hides what overflows it and puts itself back if a
@@ -651,18 +659,18 @@ A preference is a setting with a row. The menu bar and the palette may toggle it
 Lo's components are React components in `packages/desktop/ui`, styled with Tailwind CSS on these
 tokens. Their code is the source for how each one looks.
 
-| Group            | Components                                                                            |
-| ---------------- | ------------------------------------------------------------------------------------- |
-| Window           | PullRequestTab, TabBar, PRHeader, StatusBar, Banner                                   |
-| Panels           | StackTree, FileTree                                                                   |
-| Controls         | Button, HintButton, MoreButton, CopyButton, Key, SegmentedControl, Switch, Input      |
-| Marks            | StatePill, Tag, Avatar, Marks                                                         |
-| Floating         | Dialog, Popover, ContextMenu, Palette, Tooltip, ToastStack                            |
-| Motion and waits | Collapse, Swap, Loading, Skeleton, Spinner, LogoMotion, Problem, EmptyState           |
-| Review           | Thread, Diff, CodeView, CommentBox                                                    |
-| Overview         | OverviewDocument, CodeBlock, Figure, Walkthrough, TabsAndFolds, Glossary              |
-| Flows            | Choice, Checklist, Composer, Peek, Timeline, SetupList, SetupItem, SetupDone          |
-| Settings         | SettingsPage, SettingsGroup, Setting, SettingsList, SettingsListItem, SettingsCommand |
+| Group            | Components                                                                                      |
+| ---------------- | ----------------------------------------------------------------------------------------------- |
+| Window           | PullRequestTab, TabBar, PRHeader, StatusBar, Banner                                             |
+| Panels           | StackTree, FileTree                                                                             |
+| Controls         | Button, CommandButton, HintButton, MoreButton, CopyButton, Key, SegmentedControl, Switch, Input |
+| Marks            | StatePill, Tag, Avatar, Marks                                                                   |
+| Floating         | Dialog, Popover, ContextMenu, Palette, Tooltip, ToastStack                                      |
+| Motion and waits | Collapse, Swap, Loading, Skeleton, Spinner, LogoMotion, Problem, EmptyState                     |
+| Review           | Thread, Diff, CodeView, CommentBox                                                              |
+| Overview         | OverviewDocument, CodeBlock, Figure, Walkthrough, TabsAndFolds, Glossary                        |
+| Flows            | Choice, Checklist, Composer, Peek, Timeline, SetupList, SetupItem, SetupDone                    |
+| Settings         | SettingsPage, SettingsGroup, Setting, SettingsList, SettingsListItem, SettingsCommand           |
 
 Build new screens from these. If something new is needed, make it from the same tokens and keep it
 to one job.

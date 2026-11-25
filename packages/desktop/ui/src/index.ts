@@ -89,14 +89,19 @@ export {
   StatusActions,
   StatusBall,
   StatusBar,
+  StatusCommand,
+  StatusFacts,
   StatusItem,
   StatusKeys,
   StatusLine,
   StatusMode,
   type StatusBallState,
+  type StatusDetails,
+  type StatusFact,
   type StatusItemProps,
 } from './StatusBar.tsx';
 export { Button, type ButtonProps } from './Button.tsx';
+export { CommandButton, type CommandButtonProps } from './CommandButton.tsx';
 export { Input, type InputProps } from './Input.tsx';
 export { Meter, type MeterProps } from './Meter.tsx';
 export { about, ago, bytes, clock, duration } from './formats.ts';

@@ -4,74 +4,104 @@ import { describe, expect, it } from 'vitest';
 
 import { indexItem } from './indexes.ts';
 
+const NOW = 1_700_000_000_000;
+const item = (state: Parameters<typeof indexItem>[0]) => indexItem(state, 'rozed-dev/e2e', NOW);
+
 describe('the code index’s status item', () => {
   it('counts while it builds, names the index once it’s ready, and says how much a partial one has', () => {
     // Its details say how far, in files.
-    expect(indexItem({ kind: 'building', done: 1204, total: 3880 }, 'rozed-dev/e2e')).toEqual({
+    expect(item({ kind: 'building', done: 1204, total: 3880 })).toEqual({
       ball: 'working',
       text: 'Indexing code · 1,204 / 3,880',
-      lines: ['Indexing rozed-dev/e2e · 1,204 / 3,880 files'],
+      facts: [{ label: 'State', value: 'Indexing rozed-dev/e2e · 1,204 / 3,880 files' }],
     });
-    expect(indexItem({ kind: 'building', done: 0, total: 0 }, 'rozed-dev/e2e')).toEqual({
+    expect(item({ kind: 'building', done: 0, total: 0 })).toEqual({
       ball: 'working',
       text: 'Indexing code…',
-      lines: ['Indexing rozed-dev/e2e…'],
+      facts: [{ label: 'State', value: 'Indexing rozed-dev/e2e…' }],
     });
-    expect(indexItem({ kind: 'ready', partial: null }, 'rozed-dev/e2e')).toEqual({
+    // Once it's ready, its details say what it covers, and when it was built.
+    expect(
+      item({
+        kind: 'ready',
+        partial: null,
+        languages: [
+          { name: 'TypeScript', files: 3102 },
+          { name: 'JavaScript', files: 640 },
+        ],
+        at: NOW - 5 * 60_000,
+      }),
+    ).toEqual({
       ball: 'ready',
       text: 'Code index',
+      facts: [
+        { label: 'State', value: 'Ready' },
+        { label: 'Files', value: '3,742' },
+        { label: 'Languages', value: 'TypeScript 3,102 · JavaScript 640' },
+        { label: 'Indexed', value: '5 min ago' },
+      ],
     });
     expect(
-      indexItem(
-        {
-          kind: 'ready',
-          partial: { indexed: 20_000, total: 31_422, why: ['files', 'offline'] },
-        },
-        'rozed-dev/e2e',
-      ),
+      item({
+        kind: 'ready',
+        partial: { indexed: 20_000, total: 31_422, why: ['files', 'offline'] },
+        languages: [{ name: 'Go', files: 20_000 }],
+        at: NOW,
+      }),
     ).toEqual({
       ball: 'warn',
       text: 'Code index · 20,000 / 31,422 files',
-      lines: ['The 20,000 files nearest the changes are indexed.', 'Offline.'],
+      facts: [
+        {
+          label: 'State',
+          value: 'Partial · 20,000 / 31,422 files',
+          why: ['The 20,000 files nearest the changes are indexed.', 'Offline.'],
+        },
+        { label: 'Languages', value: 'Go 20,000' },
+        { label: 'Indexed', value: 'just now' },
+      ],
     });
     // A tree too large to list has no files to count.
     expect(
-      indexItem(
-        { kind: 'ready', partial: { indexed: 0, total: 0, why: ['listing'] } },
-        'rozed-dev/e2e',
-      ),
+      item({
+        kind: 'ready',
+        partial: { indexed: 0, total: 0, why: ['listing'] },
+        languages: [],
+        at: NOW,
+      }),
     ).toEqual({
       ball: 'warn',
       text: 'Code index',
-      lines: ['The repo has too many files to list.'],
+      facts: [
+        { label: 'State', value: 'Partial', why: ['The repo has too many files to list.'] },
+        { label: 'Indexed', value: 'just now' },
+      ],
     });
   });
 
   it('says it can’t index the code, with when it tries again and what main said behind it', () => {
     // A wait, amber, while it's built again by itself.
-    expect(
-      indexItem(
-        { kind: 'failed', message: 'The local copy is gone.', retryAt: 20_000 },
-        'rozed-dev/e2e',
-      ),
-    ).toEqual({
+    expect(item({ kind: 'failed', message: 'The local copy is gone.', retryAt: 20_000 })).toEqual({
       ball: 'warn',
       text: 'Can’t index the code',
+      facts: [],
       failure: { message: 'The local copy is gone.', retryAt: 20_000 },
     });
-    expect(indexItem({ kind: 'failed', message: '', retryAt: null }, 'rozed-dev/e2e')).toEqual({
+    expect(item({ kind: 'failed', message: '', retryAt: null })).toEqual({
       ball: 'failed',
       text: 'Can’t index the code',
+      facts: [],
       failure: { message: '', retryAt: null },
     });
   });
 
   it('keeps its place with a ring before the local copy, and says nothing without git', () => {
-    expect(indexItem({ kind: 'waiting' }, 'rozed-dev/e2e')).toEqual({
+    expect(item({ kind: 'waiting' })).toEqual({
       ball: 'off',
       text: 'Code index',
+      facts: [{ label: 'State', value: 'Waiting for local copy…' }],
     });
-    expect(indexItem(null, 'rozed-dev/e2e')).toBe(undefined);
-    expect(indexItem({ kind: 'noGit' }, 'rozed-dev/e2e')).toBe(undefined);
+    expect(item(null)).toBe(undefined);
+    expect(item({ kind: 'noGit' })).toBe(undefined);
   });
 });

@@ -111,7 +111,14 @@ async function checkInApp(
       files: async ({ paths }) => paths.map(file),
       code: ({ commit: at, files }) =>
         codeReply(
-          { kind: 'ready', head: at, base: at, mergeBase: at, offline: false },
+          {
+            kind: 'ready',
+            head: at,
+            base: at,
+            mergeBase: at,
+            offline: false,
+            folder: '/cache/e2e.git',
+          },
           () => Promise.resolve(local.repo),
           at,
           files,

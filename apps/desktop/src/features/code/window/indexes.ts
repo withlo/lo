@@ -1,7 +1,7 @@
 // How far each view's code index has got, as main last said: kept with the view, and gone when its
 // tab closes. What its status bar item says follows from it, as a plain function tested alone.
 
-import { bytes } from '@lo/ui';
+import { ago, bytes } from '@lo/ui';
 
 import { tabState } from '../../tab/window/shared.ts';
 import type { IndexState, Indexed, PartialWhy } from '../contract.ts';
@@ -38,18 +38,32 @@ export function catchUpIndex(view: string): void {
     .finally(() => asked.delete(view));
 }
 
+/** One fact the index's details state, as `StatusFacts` draws it. */
+export interface IndexFact {
+  readonly label: string;
+  readonly value: string;
+  /** Under the value: why a partial index holds what it holds, a sentence each. */
+  readonly why?: readonly string[] | undefined;
+}
+
 /** What the status bar's item says of a view's index, and what's behind it in its details. */
 export interface IndexItem {
   readonly ball: 'off' | 'working' | 'ready' | 'warn' | 'failed';
   readonly text: string;
-  /** The details' one line: how far it has got, or why it holds what it holds. */
-  readonly lines?: readonly string[];
+  /**
+   * Its details' facts, under the line that says what it is: its state in words, then, once it's
+   * ready, what it covers and when it was built.
+   */
+  readonly facts: readonly IndexFact[];
   /**
    * That it couldn't be built, for its details' `Problem`: what main said, for Details, and when
    * it's built again by itself, if it is.
    */
   readonly failure?: { readonly message: string; readonly retryAt: number | null };
 }
+
+/** What the index is, the first line of its details. */
+export const INDEX_LINE = 'Finds definitions and references when no language server runs.';
 
 const count = (value: number) => value.toLocaleString('en-US');
 
@@ -61,44 +75,94 @@ const WHY: Readonly<Record<PartialWhy, string>> = {
   listing: 'The repo has too many files to list.',
 };
 
+/** What a ready index covers, and when it was built, as facts, `now` being the time now. */
+function covered(state: Extract<IndexState, { kind: 'ready' }>, now: number): IndexFact[] {
+  const files = state.languages.reduce((sum, language) => sum + language.files, 0);
+  return [
+    // A partial one's state counts its files already.
+    ...(state.partial || files === 0 ? [] : [{ label: 'Files', value: count(files) }]),
+    ...(state.languages.length === 0
+      ? []
+      : [
+          {
+            label: 'Languages',
+            value: state.languages
+              .map((language) => `${language.name} ${count(language.files)}`)
+              .join(' · '),
+          },
+        ]),
+    ...(state.at > 0 ? [{ label: 'Indexed', value: ago(state.at, now) }] : []),
+  ];
+}
+
 /**
- * The index's item for `repository`'s code: how far it has got while it builds, with what it
- * indexes in its details, its name once it's ready, with how much a partial one has, and why, in its
- * details. A ring while it waits for the local copy, and nothing
- * without git, which the local copy's item says. One that failed is amber while it waits to be
- * built again, as it does by itself, and red once it doesn't.
+ * The index's item for `repository`'s code, `now` being the time now: how far it has got while it
+ * builds, its name once it's ready, with how much a partial one has, and why. Its details say what
+ * it is, its state, and once it's ready, the files it read in each language and when it was built.
+ * A ring while it waits for the local copy, and nothing without git, which the local copy's item
+ * says. One that failed is amber while it waits to be built again, as it does by itself, and red
+ * once it doesn't.
  */
-export function indexItem(state: IndexState | null, repository: string): IndexItem | undefined {
+export function indexItem(
+  state: IndexState | null,
+  repository: string,
+  now: number,
+): IndexItem | undefined {
   switch (state?.kind) {
     case undefined:
     case 'noGit':
       return undefined;
     case 'waiting':
-      return { ball: 'off', text: 'Code index' };
+      return {
+        ball: 'off',
+        text: 'Code index',
+        facts: [{ label: 'State', value: 'Waiting for local copy…' }],
+      };
     case 'building':
       return state.total === 0
-        ? { ball: 'working', text: 'Indexing code…', lines: [`Indexing ${repository}…`] }
+        ? {
+            ball: 'working',
+            text: 'Indexing code…',
+            facts: [{ label: 'State', value: `Indexing ${repository}…` }],
+          }
         : {
             ball: 'working',
             text: `Indexing code · ${count(state.done)} / ${count(state.total)}`,
-            lines: [`Indexing ${repository} · ${count(state.done)} / ${count(state.total)} files`],
+            facts: [
+              {
+                label: 'State',
+                value: `Indexing ${repository} · ${count(state.done)} / ${count(state.total)} files`,
+              },
+            ],
           };
     case 'ready': {
       const { partial } = state;
-      if (!partial) return { ball: 'ready', text: 'Code index' };
+      if (!partial) {
+        return {
+          ball: 'ready',
+          text: 'Code index',
+          facts: [{ label: 'State', value: 'Ready' }, ...covered(state, now)],
+        };
+      }
+      const counted = `${count(partial.indexed)} / ${count(partial.total)} files`;
       return {
         ball: 'warn',
-        text:
-          partial.total > 0
-            ? `Code index · ${count(partial.indexed)} / ${count(partial.total)} files`
-            : 'Code index',
-        lines: partial.why.map((why) => WHY[why]),
+        text: partial.total > 0 ? `Code index · ${counted}` : 'Code index',
+        facts: [
+          {
+            label: 'State',
+            value: partial.total > 0 ? `Partial · ${counted}` : 'Partial',
+            why: partial.why.map((why) => WHY[why]),
+          },
+          ...covered(state, now),
+        ],
       };
     }
     case 'failed':
       return {
         ball: state.retryAt === null ? 'failed' : 'warn',
         text: 'Can’t index the code',
+        facts: [],
         failure: { message: state.message, retryAt: state.retryAt },
       };
     default:

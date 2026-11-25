@@ -2,9 +2,10 @@
 // opens them for other features, as links from other apps will. Each view of a pull request's tab,
 // one for each layer of a stack it has shown, watches its pull request with its account's poller,
 // and fetches its local copy once it's shown. Other features follow a pull request's tab by its
-// view on screen. It also copies text and opens github.com pages for every feature.
+// view on screen. It also copies text and opens github.com pages for every feature, and shows a
+// local copy's folder.
 
-import { app, clipboard } from 'electron';
+import { app, clipboard, shell } from 'electron';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { openPage } from '../../../main/browser.ts';
@@ -138,6 +139,15 @@ export default defineFeature(contract, {
     },
     retry({ id }) {
       pullTab(id).retry(id);
+    },
+    showLocal({ id }) {
+      const local = pullTab(id).snapshot(id)?.local.state;
+      if (local?.kind !== 'ready') {
+        throw new IpcError('notReady', 'The local copy isn’t ready.');
+      }
+      // The clone's folder as main keeps it, shown in its folder and never opened, so nothing in
+      // it runs.
+      shell.showItemInFolder(local.folder);
     },
     async choose({ id, login }) {
       await pullTab(id).choose(id, login);

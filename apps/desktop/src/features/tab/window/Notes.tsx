@@ -11,14 +11,19 @@ import {
   Button,
   Collapse,
   ContextMenu,
+  CopyFaces,
+  CopyStatus,
   Countdown,
   EmptyState,
   Problem,
   StatusActions,
+  StatusCommand,
+  StatusFacts,
   StatusItem,
   StatusLine,
   Swap,
   handOffFocus,
+  useCopySaid,
   useDetails,
   type BannerPlace,
   type BannerProps,
@@ -36,7 +41,7 @@ import {
   type ReactNode,
 } from 'react';
 
-import { focusMiddle, registry } from '../../../window/commands/registry.ts';
+import { focusMiddle, registry, systemOf } from '../../../window/commands/registry.ts';
 import { chipLabel, explain } from '../../../window/explain.ts';
 import { client } from '../../../window/ipc.ts';
 import { useViews, type View } from '../../../window/slots.tsx';
@@ -54,6 +59,7 @@ import {
   type BannerDo,
   type BannerSpec,
 } from './banners.ts';
+import { answerLocalCopies } from './localCopy.ts';
 import { main } from './main.ts';
 import {
   banners as bannerSlot,
@@ -346,7 +352,8 @@ function ConnectionActions({
 
 /**
  * The local copy's status bar item: what it's doing, or that it's there, and with what's behind it
- * in its details: the commit it's at, or why it can't be fetched and what to do about it.
+ * in its details: the commit it's at and where it is, with Show in Finder and Copy path, what it
+ * waits for, or why it can't be fetched and what to do about it.
  */
 export function LocalItem({
   tab,
@@ -381,16 +388,48 @@ export function LocalItem({
         details={problem.details}
       />
     ) : note.at !== undefined ? (
-      <StatusLine>
-        At <code className="text-fg code-small">{note.at}</code>
-      </StatusLine>
+      <>
+        <StatusLine>
+          At <code className="text-fg code-small">{note.at}</code>
+        </StatusLine>
+        {note.folder !== undefined && <Where id={tab.id} folder={note.folder} />}
+      </>
     ) : note.line !== undefined ? (
       <Fetching line={note.line} said={note.said} />
-    ) : undefined;
+    ) : (
+      // Every state says one of the above: the label stands in, so a click still opens something.
+      <StatusLine>{note.label}</StatusLine>
+    );
   return (
     <StatusItem ball={note.ball} details={details} label={note.label} container={container()}>
       {note.label}
     </StatusItem>
+  );
+}
+
+/**
+ * Where a local copy that's there is: its folder, which Show in Finder shows and Copy path copies,
+ * as their commands do from the palette. Copy path reads "Copied" for a copy made either way while
+ * it's drawn.
+ */
+function Where({ id, folder }: { id: string; folder: string }) {
+  const [said, say] = useCopySaid();
+  useEffect(() => answerLocalCopies(id, say), [id, say]);
+  return (
+    <>
+      <StatusFacts
+        items={[{ label: 'Folder', value: <code className="text-fg code-small">{folder}</code> }]}
+      />
+      <StatusActions>
+        <StatusCommand command="tab.showLocalCopy">
+          {systemOf(navigator.platform) === 'mac' ? 'Show in Finder' : 'Show in file manager'}
+        </StatusCommand>
+        <StatusCommand command="tab.copyLocalPath" variant="ghost">
+          <CopyFaces said={said}>Copy path</CopyFaces>
+        </StatusCommand>
+      </StatusActions>
+      <CopyStatus said={said} />
+    </>
   );
 }
 

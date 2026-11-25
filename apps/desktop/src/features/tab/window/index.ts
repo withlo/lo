@@ -11,6 +11,7 @@ import { contract as app } from '../../app/contract.ts';
 import { layerOf, viewIds, type Choice, type PlaceChoice, type Tab } from '../contract.ts';
 import keys from '../keys.ts';
 import { follow } from './follow.ts';
+import { copyLocalPath, localShowable, showLocalCopy } from './localCopy.ts';
 import { main } from './main.ts';
 import { moreStore, setMoreOpen } from './more.ts';
 import { choosable, chooseAccount } from './Notes.tsx';
@@ -222,6 +223,8 @@ export default {
     previousView: { run: () => stepMiddle(-1), enabled: middleSteps },
     openOnGithub: { run: openOnGithub, enabled: linkable },
     copyLink: { run: copyLink, enabled: linkable },
+    showLocalCopy: { run: showLocalCopy, enabled: localShowable },
+    copyLocalPath: { run: copyLocalPath, enabled: localShowable },
     // As a click on the banner's own button, which hands focus on as it does.
     nextBanner: { run: () => bannerButton('more')?.click(), enabled: () => pressable('more') },
     dismissBanner: {
