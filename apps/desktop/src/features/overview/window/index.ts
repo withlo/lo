@@ -19,7 +19,7 @@ import { contract as revisionsContract } from '../../revisions/contract.ts';
 import { settingRow } from '../../settings/window/shared.ts';
 import { viewIds } from '../../tab/contract.ts';
 import { activeTab, middle, showingMiddle, status } from '../../tab/window/shared.ts';
-import { setup } from '../../welcome/window/shared.ts';
+import { overviewRows, setup } from '../../welcome/window/shared.ts';
 import keys from '../keys.ts';
 import { on } from '../settings.ts';
 import { copyPrompt, promptNow } from './copy.ts';
@@ -29,7 +29,7 @@ import { main, tabs } from './main.ts';
 import { followMarkers, keepMarkersOnly } from './markers.ts';
 import { OverviewMark } from './Mark.tsx';
 import { OverviewView } from './Overview.tsx';
-import { InstallCommandRow, SkillRow, SkillStep } from './Rows.tsx';
+import { InstallCommandRow, OverviewsRow, SkillRow, SkillStep } from './Rows.tsx';
 import { followOverviews, overviews } from './shared.ts';
 import {
   besideFor,
@@ -344,6 +344,12 @@ export default {
     // Settings › Pull requests, first, before what a tab opens on (10). It stays while they're off,
     // to turn them on again.
     settingRow(on, { order: 5 }),
+    // The welcome's step that says what an overview is: first, before what a tab opens on (20).
+    defineView(overviewRows, {
+      id: 'overview.onRow',
+      order: 10,
+      render: () => createElement(OverviewsRow),
+    }),
     // After the welcome screen's `lo` command (10) and its PR links (20).
     defineView(setup, {
       id: 'overview.skillStep',

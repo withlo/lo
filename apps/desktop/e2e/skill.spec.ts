@@ -82,8 +82,8 @@ test.describe('on the welcome screen', () => {
     home,
   }) => {
     mkdirSync(join(home, '.claude'));
-    // The skill's row is on the welcome's set-up step, three on from the first.
-    for (let each = 0; each < 3; each++) {
+    // The skill's row is on the welcome's set-up step, four on from the first.
+    for (let each = 0; each < 4; each++) {
       await welcome(page)
         .getByRole('button', { name: /^Continue/ })
         .click();

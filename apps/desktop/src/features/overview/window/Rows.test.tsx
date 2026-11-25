@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-// The overview skill's rows in a window of their own, with main answered by a stand-in bridge: the
-// step on the welcome screen, the rows in Settings › Integrations, and the command in the palette.
+// The overview's rows in a window of their own, with main answered by a stand-in bridge: whether
+// there are overviews, on the welcome's step that says what one is; the skill's step on the welcome
+// screen, its rows in Settings › Integrations, and its command in the palette.
 // What main installs, and in which folders, is tested beside it, in a temporary home.
 
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -18,7 +19,7 @@ import { createRegistry } from '../../../window/commands/registry.ts';
 import { Slot, Slots } from '../../../window/slots.tsx';
 import { installBridge, type FakeBridge } from '../../../window/test/bridge.ts';
 import { rows } from '../../settings/window/shared.ts';
-import { setup } from '../../welcome/window/shared.ts';
+import { overviewRows, setup } from '../../welcome/window/shared.ts';
 import type { SkillAgent, SkillResult, SkillState } from '../contract.ts';
 import feature from './index.ts';
 import { COPIED_FOR, INSTALL_COMMAND, skillStore } from './skill.ts';
@@ -119,6 +120,9 @@ function render(): HTMLElement {
   act(() =>
     root.render(
       <Slots views={feature.views ?? []}>
+        <ul aria-label="Overviews">
+          <Slot slot={overviewRows} props={{}} />
+        </ul>
         <ul aria-label="Optional steps">
           <Slot slot={setup} props={{}} />
         </ul>
@@ -181,13 +185,60 @@ function advance(ms: number): void {
   });
 }
 
+/** The welcome's row for whether there are overviews. */
+const overviewsRow = () => document.querySelector<HTMLElement>('[aria-label="Overviews"] > li');
+/** What the window asked main to write to the settings file. */
+const writes = () =>
+  shared.calls.filter(([channel]) => channel === 'settings.set').map(([, input]) => input);
+
+describe('the welcome’s row for whether there are overviews', () => {
+  it('is the switch Settings has, on, with a line on what turning it off takes away', async () => {
+    main(state());
+    answers['settings.set'] = () => undefined;
+    render();
+    await settle();
+    const shown = overviewsRow();
+    expect(shown?.querySelector('.text-ui-strong')?.textContent).toBe('Show overviews');
+    expect(shown?.textContent).toContain(
+      'Turn off to take overviews, their prompts and the overview skill out of Lo.',
+    );
+    // A row that's a setting has no icon.
+    expect(shown?.classList.contains('setup-item-plain')).toBe(true);
+    expect(shown?.querySelector('.text-icon-muted')).toBeNull();
+    const toggle = shown?.querySelector('[role="switch"]');
+    expect(toggle?.getAttribute('aria-label')).toBe('Show overviews');
+    expect(toggle?.getAttribute('aria-checked')).toBe('true');
+    click(toggle ?? document.body);
+    await settle();
+    expect(writes()).toEqual([{ key: 'overview.on', value: false }]);
+  });
+
+  it('says under it why the file refused a change, with no toast', async () => {
+    main(state());
+    answers['settings.set'] = () => {
+      throw new IpcError('settingsFile', 'The settings file isn’t valid JSON.');
+    };
+    render();
+    await settle();
+    click(overviewsRow()?.querySelector('[role="switch"]') ?? document.body);
+    await settle();
+    const alert = overviewsRow()?.querySelector('[role="alert"]');
+    expect(alert?.querySelector('p')?.textContent).toBe('Couldn’t change whether overviews show');
+    expect(button(overviewsRow(), 'Open settings.json')).toBeDefined();
+    expect(overviewsRow()?.querySelector('[role="switch"]')?.getAttribute('aria-checked')).toBe(
+      'true',
+    );
+    expect(notices()).toEqual([]);
+  });
+});
+
 describe('the welcome screen’s step', () => {
-  it('is "Overview skill", with what it is for and a picture of an overview', async () => {
+  it('is "Overview skill", with what it is for, and no picture: the step before shows an overview', async () => {
     main(state());
     render();
     await settle();
     expect(step()?.querySelector('.text-ui-strong')?.textContent).toBe('Overview skill');
-    expect(step()?.querySelector('[role="img"]')?.textContent).toContain('parse');
+    expect(step()?.querySelector('[role="img"]')).toBeNull();
     expect(step()?.textContent).toContain('Teaches Claude Code and Codex to write overviews.');
     expect(button(step(), 'Install').disabled).toBe(false);
   });

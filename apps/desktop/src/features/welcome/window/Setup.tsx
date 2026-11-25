@@ -1,4 +1,4 @@
-// The welcome's fourth step: what Lo works with outside its window, one row each, with where each
+// The welcome's fifth step: what Lo works with outside its window, one row each, with where each
 // stands. Lo's own rows are the `lo` command and sending pull request links to Lo; other features
 // add theirs through the `welcome.setup` slot.
 

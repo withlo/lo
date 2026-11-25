@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
+import { buildCss } from '../scripts/stylesheet.ts';
 import { Button } from './Button.tsx';
 import { SetupItem, SetupList } from './Setup.tsx';
 
@@ -27,21 +28,27 @@ describe('SetupList', () => {
     expect(html).not.toContain('aria-label=');
   });
 
-  it('says a step is done where its button was, and draws its picture under its line', () => {
+  it('says a step is done where its button was', () => {
     const html = renderToStaticMarkup(
-      <SetupItem
-        icon={<svg />}
-        title="Overview skill"
-        description="Does a thing."
-        done="Installed"
-        figure={<img alt="An overview" />}
-      >
+      <SetupItem icon={<svg />} title="Overview skill" description="Does a thing." done="Installed">
         <Button size="sm">Install</Button>
       </SetupItem>,
     );
     expect(html).toContain('Installed');
     expect(html).not.toContain('<button');
-    expect(html).toContain('<img alt="An overview"/>');
+  });
+
+  it('starts a row with no icon at its words, its control at the end', async () => {
+    const html = renderToStaticMarkup(
+      <SetupItem title="Show overviews" description="Turn off to take them out.">
+        <Button size="sm">On</Button>
+      </SetupItem>,
+    );
+    expect(html).not.toContain('aria-hidden');
+    expect(html).toMatch(/<li class="[^"]*setup-item-plain/);
+    expect(html.indexOf('Show overviews')).toBeLessThan(html.indexOf('<button'));
+    const css = await buildCss(['setup-item-plain', 'col-start-1', 'col-start-2', 'col-span-2']);
+    expect(css.replaceAll(/\s+/g, ' ')).toContain('grid-template-columns: minmax(0, 1fr) auto');
   });
 
   it('says what its last press left to say under its line, and keeps its state where it was', () => {

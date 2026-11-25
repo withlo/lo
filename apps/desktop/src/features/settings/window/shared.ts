@@ -1,8 +1,9 @@
 // What the settings feature shares with other features' window code: the slot they put their rows
 // of Settings in, the settings themselves, read, changed and followed, a setting of a few options
-// as another screen offers it, the theme among them, and the file, to open.
+// as another screen offers it, the theme among them, a setting as a row outside Settings changes
+// it, and the file, to open.
 
-import { createElement, type ReactElement, type ReactNode } from 'react';
+import { createElement, useMemo, type ReactElement, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
 import { IpcError } from '../../../ipc/contract.ts';
@@ -264,12 +265,7 @@ export const themeChoice = choiceOf(theme);
  */
 export function useChoice<T extends string>(
   choice: SettingChoice<T>,
-): {
-  value: T;
-  onFile: T | undefined;
-  change: (value: T) => Promise<void>;
-  problem: ReactElement | undefined;
-} {
+): Changed<T> & { onFile: T | undefined } {
   const settings = useStore(settingsStore, (state) => state.settings);
   const { change, problem } = useChange(choice);
   return {
@@ -278,6 +274,28 @@ export function useChoice<T extends string>(
     change,
     problem,
   };
+}
+
+/** A setting as a control outside Settings has it: its value, how to change it, and what went wrong. */
+export interface Changed<T> {
+  readonly value: T;
+  /** Writes another value, and resolves once main has answered, either way. */
+  readonly change: (value: T) => Promise<void>;
+  /** The `Problem` for a change main refused, or nothing. */
+  readonly problem: ReactElement | undefined;
+}
+
+/**
+ * A feature's own setting as a row outside Settings changes it, as a row of the welcome's does,
+ * with the control its row in Settings has: its value, main's or its default until main has said;
+ * `change`, which writes another; and `problem`, the `Problem` its row in Settings shows for a
+ * change main refused, until the value or what's wrong in the file changes. No toast says it.
+ */
+export function useSettingChange<T>(setting: Setting<T>): Changed<T> {
+  const changing = useMemo(() => changingOf(setting), [setting]);
+  const value = useValue(setting);
+  const { change, problem } = useChange(changing);
+  return { value, change, problem };
 }
 
 /**
