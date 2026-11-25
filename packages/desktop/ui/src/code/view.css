@@ -193,6 +193,8 @@
   flex: none;
   gap: var(--lo-sp-2);
 }
+/* Its key caps, which `keyCap` makes, outside as `Key` draws a quiet one; `key-icons` sets the
+   inside. */
 .lo-tip kbd {
   display: inline-flex;
   align-items: center;

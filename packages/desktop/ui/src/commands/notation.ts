@@ -447,6 +447,7 @@ export function systemStrokes(sequence: Sequence, system: System): readonly Stro
 const macNames: Readonly<Record<string, string>> = {
   enter: '⏎',
   esc: 'Esc',
+  tab: '⇥',
   space: 'Space',
   backspace: '⌫',
   delete: '⌦',
@@ -484,17 +485,17 @@ const linuxNames: Readonly<Record<string, string>> = {
 
 /**
  * How `system` shows one keystroke. macOS joins symbols with no separator: `⌘⇧P`, `⌃o`, `⌥⏎`,
- * `⌃⇧⇥`, `⇧Tab`. A letter is a capital with ⌘, ⌥ or ⇧, as in macOS's menus, and stays lowercase
- * on its own or with ⌃ alone, as Vim's keys are written (`⌃o`). Linux spells modifiers out and
- * joins them with `+`: `Ctrl+Shift+P`, `Ctrl+O`, `Alt+Enter`.
+ * `⌃⇧⇥`, `⇧⇥`, and Tab is `⇥` alone too, so no key mixes a symbol with a word. A letter is a
+ * capital with ⌘, ⌥ or ⇧, as in macOS's menus, and stays lowercase on its own or with ⌃ alone, as
+ * Vim's keys are written (`⌃o`). Linux spells modifiers out and joins them with `+`:
+ * `Ctrl+Shift+P`, `Ctrl+O`, `Alt+Enter`.
  */
 export function strokeLabel(stroke: Stroke, system: System): string {
   const { key } = stroke;
   if (system === 'mac') {
     const held = `${stroke.meta ? '⌘' : ''}${stroke.ctrl ? '⌃' : ''}${stroke.alt ? '⌥' : ''}${stroke.shift ? '⇧' : ''}`;
     let label: string;
-    if (key === 'tab') label = isChord(stroke) ? '⇥' : 'Tab';
-    else if (isCharacter(key))
+    if (isCharacter(key))
       label = stroke.meta || stroke.alt || stroke.shift ? key.toUpperCase() : key;
     else label = macNames[key] ?? key.toUpperCase();
     return held + label;

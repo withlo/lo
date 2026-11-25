@@ -401,7 +401,7 @@ Each file is a CodeMirror side-by-side diff, and all files sit in one scroll, in
 panel shows. Lo computes the diff itself, so the same view shows GitHub's diff, the local diff,
 rebase-aware comparisons and moved code. Both sides stay aligned, including around review threads.
 
-- **Layout.** Side-by-side by default. `Tab` switches sides, and one key switches to inline.
+- **Layout.** Side-by-side by default. `⇥` switches sides, and one key switches to inline.
 - **Changes.** Changed words are highlighted within changed lines.
 - **Context.** Unchanged code is collapsed and expands in place. One key shows the whole file.
 - **Whitespace.** Whitespace changes are shown, and a key hides them.
@@ -862,7 +862,7 @@ draft status are read-only in Lo.
 
 It's the third middle view, after the overview and the diff. Lo reads it from GitHub when you first
 show it, before what it reads in the background, and keeps it current from then on. A long one shows
-its newest events while the older ones are read. `j` and `k` move between its events, `Tab` goes
+its newest events while the older ones are read. `j` and `k` move between its events, `⇥` goes
 through the links and buttons of the one you're on, `Esc` goes back to the list, and `gx` opens it
 on GitHub. What an event's buttons do is also on its right-click menu. A tab acting as nobody asks
 you to sign in to see it, and a run of a stack's layers has none of its own.
@@ -910,8 +910,8 @@ and how old it is, and a PR that looks ready reads "Lo may not see everything" b
 
 ### Merging
 
-- **Method.** Only the methods the repo allows are offered, and `Tab` and `⇧Tab` step through them.
-  Lo remembers the last one GitHub took in each repo. A squash commit's title and message start from
+- **Method.** Only the methods the repo allows are offered, and `⇥` and `⇧⇥` step through them. Lo
+  remembers the last one GitHub took in each repo. A squash commit's title and message start from
   what GitHub would write, and `e` edits them. Lo sends only text you typed, so an empty field
   leaves GitHub's own.
 - **Queue.** If the base branch requires a merge queue, the button becomes "Add to merge queue," and
@@ -1021,12 +1021,12 @@ chain that changed since never leaves `⏎` doing nothing.
   PR into another branch moves it there, and it comes back after a restart.
 - **What it shows.** The header names the repo and branch, the queue's settings when your account
   can read them ("squash, groups of up to 5 · next merges in about 6 min"), and a switch between the
-  repo's branches that have a queue, with how many entries each holds. `Tab` and `⇧Tab` switch
-  branches. Below it, every entry with its position, title, author, state ("Checks running",
-  "Waiting", "Will be removed"), time in the queue and estimated time to merge. The entries GitHub
-  is testing together at the front are boxed as one group, "Testing together · 3 PRs", your PRs are
-  marked, and a stack's layers are named. Past 100 entries, a note links to the rest on GitHub. A
-  branch with no queue says its PRs merge on their own.
+  repo's branches that have a queue, with how many entries each holds. `⇥` and `⇧⇥` switch branches.
+  Below it, every entry with its position, title, author, state ("Checks running", "Waiting", "Will
+  be removed"), time in the queue and estimated time to merge. The entries GitHub is testing
+  together at the front are boxed as one group, "Testing together · 3 PRs", your PRs are marked, and
+  a stack's layers are named. Past 100 entries, a note links to the rest on GitHub. A branch with no
+  queue says its PRs merge on their own.
 - **Waiting to join.** The open PRs into the branch with auto-merge on that aren't in the queue yet,
   from the 100 most recently updated, each with what it waits for ("when approved").
 - **Removals.** "Left the queue" lists up to 20 PRs per branch that Lo saw leave while it was
@@ -1066,7 +1066,7 @@ the keymap file, `~/.config/lo/keymap`. `?` shows every key.
 | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Move            | `j`/`k` line, `w`/`b` word, `gg`/`G` top and bottom                                                                                                                                                                                                                                                                                    |
 | Jump            | `]c`/`[c` change, `]f`/`[f` file, `]t`/`[t` thread, `]s`/`[s` stack layer, `gm` the other end of moved code                                                                                                                                                                                                                            |
-| Act             | `v` select lines, `c` comment, `C` comment right away, `s` suggest, `e` mark viewed, `Tab` switch side                                                                                                                                                                                                                                 |
+| Act             | `v` select lines, `c` comment, `C` comment right away, `s` suggest, `e` mark viewed, `⇥` switch side                                                                                                                                                                                                                                   |
 | Threads         | `r` reply, `x` resolve or unresolve, `i` edit your comment, `dd` delete your comment                                                                                                                                                                                                                                                   |
 | Code            | `gd` definition, `gr` references, `K` type hover, `gh` inline type hints, `gO` outline, `⌃o`/`⌃i` back and forward                                                                                                                                                                                                                     |
 | Peek            | `j`/`k` pick an answer, `⏎` go to it, `gr` the references of the same name, `Esc` close it                                                                                                                                                                                                                                             |
@@ -1076,20 +1076,20 @@ the keymap file, `~/.config/lo/keymap`. `?` shows every key.
 | Find            | `⌘L` open PR (`⌘O` too on macOS), `⌘P` files, `⌘⇧P` command palette, `/` search, `n`/`N` next and previous match                                                                                                                                                                                                                       |
 | View            | `` ` `` next middle view (overview, diff, timeline), `~` previous, `gv` compare revisions, `>`/`<` widen and narrow what has focus, `=` reset its width                                                                                                                                                                                |
 | Files           | `-` go to the file tree at the file on screen, and `-` again up to the stack tree. In the tree: `t` tree or review order, `f` changed files only, `l`/`h` (or `→`/`←`) open and close a folder, `zR`/`zM` open and close all, `⏎` show the file, `e` mark viewed, `Esc` back                                                           |
-| Overview        | `]b`/`[b` next and previous block, `⏎` follow a block to its code, `o` open its code beside the overview (`o` again or `Esc` to close), `c` comment on a block's lines, `Tab` next part of a figure, `←`/`→` walkthrough step or tab, `ya` copy a prompt for an agent                                                                  |
-| Timeline        | `j`/`k` move between events, `Tab` through its links and buttons, `Esc` back to the list, `gx` open the one you're on on GitHub, `c` comment on the PR, `i` edit your comment, `dd` delete your comment                                                                                                                                |
+| Overview        | `]b`/`[b` next and previous block, `⏎` follow a block to its code, `o` open its code beside the overview (`o` again or `Esc` to close), `c` comment on a block's lines, `⇥` next part of a figure, `←`/`→` walkthrough step or tab, `ya` copy a prompt for an agent                                                                    |
+| Timeline        | `j`/`k` move between events, `⇥` through its links and buttons, `Esc` back to the list, `gx` open the one you're on on GitHub, `c` comment on the PR, `i` edit your comment, `dd` delete your comment                                                                                                                                  |
 | Panels          | `⌘\` left panel, `⌘⇧\` threads panel. In the threads panel: `j`/`k` move, `⏎` show the thread in the diff, `x` resolve or unresolve, `f` unresolved, all or yours. In the stack tree: `j`/`k` move, `⏎` show the layer, `gx` open it on GitHub, `Esc` back, `v` choose a run of layers, `j`/`k` to grow it, `⏎` to view it as one diff |
 | Diff view       | `gi` inline or side by side, `gw` hide or show whitespace, `zo`/`zc` expand and collapse unchanged code, `zR` the whole file, `za` open or close a collapsed file or the thread at the cursor                                                                                                                                          |
 | Comment box     | `⌘⏎` add to review (in the timeline's box, comment), `⌥⏎` comment now, `⌘⇧V` write or preview, `⌘⇧A` attach files, `Esc` leave insert mode, `Esc Esc` close and keep the draft                                                                                                                                                         |
-| Merge panel     | `⏎` merge or add to the merge queue, `a` turn auto-merge on or off, `⌥⏎` merge without the rules, `Tab`/`⇧Tab` next and previous method, `e` edit the commit's title and message, `j`/`k` move between reasons, `o` open the reason's page, `]t` next unresolved conversation, `Esc` close, or back from the commit's fields           |
-| Merge queue     | `j`/`k` move, `⏎` open the PR, `x` remove, `J` to the front (admins), `a` turn auto-merge off, or on for a PR that left the queue, `Tab`/`⇧Tab` next and previous branch, `gx` open on GitHub                                                                                                                                          |
+| Merge panel     | `⏎` merge or add to the merge queue, `a` turn auto-merge on or off, `⌥⏎` merge without the rules, `⇥`/`⇧⇥` next and previous method, `e` edit the commit's title and message, `j`/`k` move between reasons, `o` open the reason's page, `]t` next unresolved conversation, `Esc` close, or back from the commit's fields               |
+| Merge queue     | `j`/`k` move, `⏎` open the PR, `x` remove, `J` to the front (admins), `a` turn auto-merge off, or on for a PR that left the queue, `⇥`/`⇧⇥` next and previous branch, `gx` open on GitHub                                                                                                                                              |
 | Revision picker | `j`/`k` move, `Space` set an end, `⏎` compare                                                                                                                                                                                                                                                                                          |
-| Palettes        | `⏎` open, `⌘⏎` the other way (a new window, the whole file), `Tab` changed files only in the file finder, `⌥⏎` show an action's key                                                                                                                                                                                                    |
+| Palettes        | `⏎` open, `⌘⏎` the other way (a new window, the whole file), `⇥` changed files only in the file finder, `⌥⏎` show an action's key                                                                                                                                                                                                      |
 | Tabs and window | `⌘1`–`⌘9` a tab, `⌘⇧]`/`⌘⇧[` or `⌃⇥`/`⌃⇧⇥` next and previous tab, `⌘W` close the tab, `⌘,` settings, `?` every key, `Menu` or `⇧F10` the right-click menu of what has focus, `g ,` open the keymap file                                                                                                                                |
 
 In code views, `m` and `gq` take the place of Vim's own keys in normal mode: Lo's code is read-only,
 so marks and formatting have no use there. The merge panel and the merge queue aren't code views, so
-`e`, `Tab`, `x` and the rest mean what their rows say. In the dialogs they open, `⏎` confirms and
+`e`, `⇥`, `x` and the rest mean what their rows say. In the dialogs they open, `⏎` confirms and
 `Esc` cancels, and the press that opened a dialog never confirms it.
 
 Copying is always `y` plus a letter; there's no single-key `y`. `⌃o` returns from anywhere a key
