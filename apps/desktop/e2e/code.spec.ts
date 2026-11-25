@@ -2,10 +2,10 @@
 // rozed-dev/e2e#80, which nothing trusts, and builds its index from the local copy, which the
 // status bar says while it builds and once it's ready. The code port main hands the page answers a
 // definition from it, and refuses a view that isn't open. Once the repo is trusted, a language
-// server, here the fake one, runs on the PR's head, its answer to a definition comes first, and
-// "Restart" in its status item starts it again; killed, it shows as failed until restarted, and
-// "Stop trusting" stops it. GitHub answers from `app_e2e`, and, once the repo
-// is trusted, from `pull_request_repositories_e2e`.
+// server, here the fake one, runs on the PR's head, its answer to a definition comes first, `gd` in
+// the diff says it's TypeScript's and `gh` shows its type hint, and "Restart" in its status item
+// starts it again; killed, it shows as failed until restarted, and "Stop trusting" stops it. GitHub
+// answers from `app_e2e`, and, once the repo is trusted, from `pull_request_repositories_e2e`.
 
 import { writeFileSync } from 'node:fs';
 
@@ -18,6 +18,7 @@ import {
   answerDialogs,
   appFolder,
   DIFF_FIRST,
+  DIFF_FIRST_VIM,
   expect,
   KEYCHAIN,
   test as base,
@@ -182,7 +183,29 @@ test('builds the syntax index of a PR nothing trusts, says so in the status bar,
   });
 });
 
-/** Where the fake server says `Line` is: line 2 of src/parser.ts, in the checkout of the head. */
+/** Where the diff's cursor is: the file's path, the side and the line. */
+function cursor(page: Page) {
+  return page.evaluate(() => {
+    const reading = window.loDiff?.probe.cursor();
+    if (reading?.at.kind !== 'line') return undefined;
+    const { at } = reading.at;
+    return {
+      path: window.loDiff?.files.find((file) => file.id === at.file)?.path,
+      side: at.side,
+      line: at.line,
+    };
+  });
+}
+
+/** Presses keys one after another, as typed. */
+async function press(page: Page, ...keys: string[]): Promise<void> {
+  for (const key of keys) await page.keyboard.press(key);
+}
+
+/**
+ * Where the fake server says `Line` is, line 2 of src/parser.ts in the checkout of the head, and
+ * the type hint it gives on src/format.ts's line 6.
+ */
 const LINE = {
   'textDocument/definition': {
     '*': [
@@ -190,6 +213,11 @@ const LINE = {
         uri: '$ROOT/src/parser.ts',
         range: { start: { line: 1, character: 17 }, end: { line: 1, character: 21 } },
       },
+    ],
+  },
+  'textDocument/inlayHint': {
+    'src/format.ts': [
+      { position: { line: 5, character: 24 }, label: ': Line', paddingLeft: false },
     ],
   },
 };
@@ -228,108 +256,152 @@ const trusting = test.extend<{ servers: TestServers }>({
   },
 });
 
-trusting(
-  'runs a language server on a trusted PR’s head, answers from it first, restarts it from its status item, and stops it once trust goes',
-  async ({ app, page, servers }) => {
-    test.setTimeout(120_000);
-    await catchCodePort(app, page);
-    const id = await open(page);
-    const status = page.locator('footer[aria-label="Status bar"]');
-    const started = () => servers.seen().filter((seen) => seen.event === 'started');
+trusting.describe('once the repo is trusted', () => {
+  // With Vim keys on: the diff's cursor goes to a word with Vim's motions (`j`, `f L`).
+  trusting.use({ settings: DIFF_FIRST_VIM });
 
-    await test.step('nothing runs until the repo is trusted', async () => {
-      await expect
-        .poll(async () => {
-          const reply = await page.evaluate((view) => window.lo.invoke('code.state', { view }), id);
-          return reply.ok ? reply.value : reply;
-        })
-        .toMatchObject({ trust: { kind: 'untrusted' } });
-      expect(started()).toEqual([]);
-      await answerDialogs(app, 'Trust repo');
-      expect(
-        await page.evaluate(
-          (view) => window.lo.invoke('code.trust', { view, repo: 'rozed-dev/e2e', pull: null }),
-          id,
-        ),
-      ).toEqual({ ok: true, value: 'trusted' });
-    });
+  trusting(
+    'runs a language server on a trusted PR’s head, answers from it first, restarts it from its status item, and stops it once trust goes',
+    async ({ app, page, servers }) => {
+      test.setTimeout(120_000);
+      await catchCodePort(app, page);
+      const id = await open(page);
+      const status = page.locator('footer[aria-label="Status bar"]');
+      const started = () => servers.seen().filter((seen) => seen.event === 'started');
 
-    let asked = 10;
-    /** Asks main where `Line`, in src/format.ts's import of it, is defined, until the server says. */
-    const answered = () =>
-      expect
-        .poll(
-          async () => {
-            asked += 1;
-            return ask(page, {
-              id: asked,
-              job: 'code.definitions',
-              input: { view: id, key: APP_PULL.head, path: 'src/format.ts', line: 1, column: 15 },
-            });
-          },
-          { timeout: 60_000 },
-        )
-        .toMatchObject({
-          ok: true,
-          value: {
-            name: 'Line',
-            answers: [
-              {
-                key: APP_PULL.head,
-                side: 'new',
-                path: 'src/parser.ts',
-                line: 2,
-                column: 17,
-                source: 'server',
-                label: 'TypeScript',
-              },
-            ],
-          },
+      await test.step('nothing runs until the repo is trusted', async () => {
+        await expect
+          .poll(async () => {
+            const reply = await page.evaluate(
+              (view) => window.lo.invoke('code.state', { view }),
+              id,
+            );
+            return reply.ok ? reply.value : reply;
+          })
+          .toMatchObject({ trust: { kind: 'untrusted' } });
+        expect(started()).toEqual([]);
+        await answerDialogs(app, 'Trust repo');
+        expect(
+          await page.evaluate(
+            (view) => window.lo.invoke('code.trust', { view, repo: 'rozed-dev/e2e', pull: null }),
+            id,
+          ),
+        ).toEqual({ ok: true, value: 'trusted' });
+      });
+
+      let asked = 10;
+      /** Asks main where `Line`, in src/format.ts's import of it, is defined, until the server says. */
+      const answered = () =>
+        expect
+          .poll(
+            async () => {
+              asked += 1;
+              return ask(page, {
+                id: asked,
+                job: 'code.definitions',
+                input: { view: id, key: APP_PULL.head, path: 'src/format.ts', line: 1, column: 15 },
+              });
+            },
+            { timeout: 60_000 },
+          )
+          .toMatchObject({
+            ok: true,
+            value: {
+              name: 'Line',
+              answers: [
+                {
+                  key: APP_PULL.head,
+                  side: 'new',
+                  path: 'src/parser.ts',
+                  line: 2,
+                  column: 17,
+                  source: 'server',
+                  label: 'TypeScript',
+                },
+              ],
+            },
+          });
+
+      await test.step('the server’s definition comes first, labelled with its name', async () => {
+        await answered();
+        // It runs on the checkout of the head.
+        const [initialize] = servers.seen().filter((seen) => seen.event === 'initialize');
+        expect(initialize?.params.rootUri).toMatch(
+          new RegExp(`/pull-${APP_PULL.number}/${APP_PULL.head}$`),
+        );
+      });
+
+      await test.step('in the diff, gd’s one answer is the server’s, its head says so, and gh shows the server’s hint on the reader’s next key', async () => {
+        await expect(page.locator('.lo-diffview')).toBeVisible({ timeout: 20_000 });
+        await expect(page.getByText('GitHub’s diff', { exact: true })).toHaveCount(0, {
+          timeout: 20_000,
         });
+        // Ready, its item is its name alone.
+        await expect(status.getByRole('button', { name: 'TypeScript', exact: true })).toBeVisible();
+        await page.locator('.lo-diffview .cm-editor').nth(1).locator('.cm-content').focus();
+        await press(page, 'g', 'g', ']', 'f', ']', 'f', ']', 'f', 'j', 'f', 'Shift+L');
+        await expect
+          .poll(() => cursor(page))
+          .toEqual({ path: 'src/format.ts', side: 'new', line: 1 });
 
-    await test.step('the server’s definition comes first, labelled with its name', async () => {
-      await answered();
-      // It runs on the checkout of the head.
-      const [initialize] = servers.seen().filter((seen) => seen.event === 'initialize');
-      expect(initialize?.params.rootUri).toMatch(
-        new RegExp(`/pull-${APP_PULL.number}/${APP_PULL.head}$`),
-      );
-    });
+        await press(page, 'g', 'd');
+        const peek = page.locator('.lo-diffpeek');
+        const head = peek.locator('.lo-diffpeek__head');
+        await expect(head).toContainText('Line · 1 definition');
+        await expect(head).toContainText('TypeScript');
+        await expect(head).not.toContainText('Code index');
+        await expect(peek.locator('.lo-diffpeek__code')).toContainText('export interface Line {');
+        await press(page, 'Escape');
+        await expect(peek).toHaveCount(0);
 
-    await test.step('“Restart” in its status item starts it again', async () => {
-      await status.getByRole('button', { name: 'TypeScript', exact: true }).click();
-      await page.getByRole('button', { name: 'Restart', exact: true }).click();
-      await expect.poll(() => started().length, { timeout: 20_000 }).toBe(2);
-      // The first was shut down, and the second answers.
-      await answered();
-      const events = servers.seen().map((seen) => seen.event);
-      expect(events.indexOf('shutdown')).toBeLessThan(events.lastIndexOf('started'));
-      expect(events.lastIndexOf('request')).toBeGreaterThan(events.lastIndexOf('started'));
-      await expect(status.getByRole('button', { name: 'TypeScript', exact: true })).toBeVisible();
-    });
+        await press(page, 'g', 'h');
+        // A hint that comes after the keys is held until the next input, so nothing moves meanwhile.
+        await expect
+          .poll(
+            async () => {
+              await press(page, 'l', 'h');
+              return page.locator('.lo-diffview .lo-inlay').allTextContents();
+            },
+            { timeout: 20_000 },
+          )
+          .toEqual([': Line']);
+      });
 
-    await test.step('killed, it shows as failed, and “Restart” beside it starts it again', async () => {
-      process.kill(-(started().at(-1)?.pid ?? 0), 'SIGKILL');
-      await expect(
-        status.getByRole('button', { name: 'TypeScript isn’t running', exact: true }),
-      ).toBeVisible({ timeout: 20_000 });
-      await status.getByRole('button', { name: 'Restart TypeScript', exact: true }).click();
-      await expect.poll(() => started().length, { timeout: 20_000 }).toBe(3);
-      await answered();
-    });
+      await test.step('“Restart” in its status item starts it again', async () => {
+        await status.getByRole('button', { name: 'TypeScript', exact: true }).click();
+        await page.getByRole('button', { name: 'Restart', exact: true }).click();
+        await expect.poll(() => started().length, { timeout: 20_000 }).toBe(2);
+        // The first was shut down, and the second answers.
+        await answered();
+        const events = servers.seen().map((seen) => seen.event);
+        expect(events.indexOf('shutdown')).toBeLessThan(events.lastIndexOf('started'));
+        expect(events.lastIndexOf('request')).toBeGreaterThan(events.lastIndexOf('started'));
+        await expect(status.getByRole('button', { name: 'TypeScript', exact: true })).toBeVisible();
+      });
 
-    await test.step('“Stop trusting” stops it', async () => {
-      const pid = started().at(-1)?.pid ?? 0;
-      await status.getByRole('button', { name: 'TypeScript', exact: true }).click();
-      await page.getByRole('button', { name: 'Stop trusting', exact: true }).click();
-      await expect.poll(() => running(pid), { timeout: 20_000 }).toBe(false);
-      await expect(
-        status.getByRole('button', { name: 'Language servers off', exact: true }),
-      ).toBeVisible();
-      expect(started()).toHaveLength(3);
-    });
-  },
-);
+      await test.step('killed, it shows as failed, and “Restart” beside it starts it again', async () => {
+        process.kill(-(started().at(-1)?.pid ?? 0), 'SIGKILL');
+        await expect(
+          status.getByRole('button', { name: 'TypeScript isn’t running', exact: true }),
+        ).toBeVisible({ timeout: 20_000 });
+        await status.getByRole('button', { name: 'Restart TypeScript', exact: true }).click();
+        await expect.poll(() => started().length, { timeout: 20_000 }).toBe(3);
+        await answered();
+      });
+
+      await test.step('“Stop trusting” stops it', async () => {
+        const pid = started().at(-1)?.pid ?? 0;
+        await status.getByRole('button', { name: 'TypeScript', exact: true }).click();
+        await page.getByRole('button', { name: 'Stop trusting', exact: true }).click();
+        await expect.poll(() => running(pid), { timeout: 20_000 }).toBe(false);
+        await expect(
+          status.getByRole('button', { name: 'Language servers off', exact: true }),
+        ).toBeVisible();
+        expect(started()).toHaveLength(3);
+      });
+    },
+  );
+});
 
 /** Whether process `pid` is still there. */
 function running(pid: number): boolean {

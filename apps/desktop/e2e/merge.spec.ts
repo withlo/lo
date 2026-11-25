@@ -1,7 +1,7 @@
 // Whether a pull request can merge: Lo, started on the replay server as rozed-bot, on a generation
 // of `testing/fixtures/merge.sh`'s pull requests in rozed-dev/e2e, as `app_merge` recorded from the
-// app. The header says, in a line, whether each can merge: ready, blocked by `e4/gated`'s rules, a
-// draft, queued, or waiting with auto-merge on. `m` opens the merge panel under it, with a row for
+// app. The header says, in a line, whether one can merge, and gives up its branches and that line's
+// detail whole as the window narrows. `m` opens the merge panel under it, with a row for
 // each reason; `j` and `k` move between them, `o` opens a check's run, and `Esc` closes it. The
 // status's right-click menu opens the panel too, and a reason's opens its page. On one
 // that's ready, `Tab` steps through the methods, and a squash shows the commit GitHub would write.
@@ -46,58 +46,34 @@ const reasons = (page: Page) => panel(page).locator('[role="option"]');
 /** The note Lo says at the bottom of the window. */
 const said = (page: Page, text: string) => page.getByRole('status').filter({ hasText: text });
 
-test('the header says whether each pull request can merge, and why not', async ({ page }) => {
-  await open(page, pulls.squash.number);
-  await expect(status(page)).toContainText('Ready to merge');
-  await expect(status(page)).toContainText(`into ${pulls.squash.base}`);
-
-  await open(page, pulls.gatedFailing.number);
-  await expect(status(page)).toContainText('Can’t merge');
-  await expect(status(page)).toContainText('1 check failed · 1 unresolved · review required');
-
-  await open(page, pulls.draft.number);
-  await expect(status(page)).toContainText('Can’t merge');
-  await expect(status(page)).toContainText('Draft');
-
-  await open(page, pulls.queuedSlow2.number);
-  // Its place and when GitHub expects it to merge come from its queue, which lists it.
-  await expect(status(page)).toContainText('Queued, 1st');
-  await expect(status(page)).toContainText(/about \d+ min/);
-
-  await open(page, pulls.gatedPassing.number);
-  await expect(status(page)).toContainText('Auto-merge is on');
-});
-
-test('the header gives up its branches and the merge status its detail whole as the window narrows, and has them back as it widens', async ({
+test('the header gives up its branches and the merge status its detail whole as the window narrows, and has them back as it widens; `m` opens the panel on its reasons, `j` and `k` move, `o` opens a check’s run, `Esc` closes it, and right-click menus do the same', async ({
   app,
   page,
 }) => {
   await open(page, pulls.gatedFailing.number);
-  const detail = status(page).locator('[data-gives="detail"]');
-  await expect(detail).toHaveText('1 check failed · 1 unresolved · review required');
-  // The branches, each a chip, and the words and the arrow between them.
-  const branches = header(page).locator('[data-gives="branches"]');
-  await expect(branches.first()).toBeVisible();
-  const shown = () =>
-    branches.evaluateAll((each) => each.filter((one) => one.getClientRects().length > 0).length);
-  const all = await branches.count();
-  expect(await shown()).toBe(all);
-
-  // Narrow, each goes whole, never cut to a letter.
-  await sizeWindow(app, 760, 800);
-  await expect(detail).toBeHidden();
-  await expect.poll(shown).toBe(0);
-  // Wide again, both come back, though nothing in their rows was drawn again.
-  await sizeWindow(app, 1440, 900);
-  await expect(detail).toBeVisible();
-  await expect.poll(shown).toBe(all);
-});
-
-test('`m` opens the panel on its reasons, `j` and `k` move, `o` opens a check’s run, `Esc` closes it, and right-click menus do the same', async ({
-  page,
-}) => {
-  await open(page, pulls.gatedFailing.number);
   await expect(status(page)).toContainText('Can’t merge');
+
+  await test.step('the header gives up its branches and the detail whole as the window narrows, and has them back as it widens', async () => {
+    const detail = status(page).locator('[data-gives="detail"]');
+    await expect(detail).toHaveText('1 check failed · 1 unresolved · review required');
+    // The branches, each a chip, and the words and the arrow between them.
+    const branches = header(page).locator('[data-gives="branches"]');
+    await expect(branches.first()).toBeVisible();
+    const shown = () =>
+      branches.evaluateAll((each) => each.filter((one) => one.getClientRects().length > 0).length);
+    const all = await branches.count();
+    expect(await shown()).toBe(all);
+
+    // Narrow, each goes whole, never cut to a letter.
+    await sizeWindow(app, 760, 800);
+    await expect(detail).toBeHidden();
+    await expect.poll(shown).toBe(0);
+    // Wide again, both come back, though nothing in their rows was drawn again.
+    await sizeWindow(app, 1440, 900);
+    await expect(detail).toBeVisible();
+    await expect.poll(shown).toBe(all);
+  });
+
   await page.keyboard.press('m');
   await expect(panel(page)).toBeVisible();
   await expect(status(page)).toHaveAttribute('aria-expanded', 'true');

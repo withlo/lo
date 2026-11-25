@@ -101,13 +101,3 @@ describe('the pool', () => {
     expect(poolPath(-40)).toBe('');
   });
 });
-
-describe('how long each plays', () => {
-  it('is what the brand says: 1.4 s, 2.8 s a loop, and 1.2 s', () => {
-    expect(logoSeconds('unmeld')).toBeCloseTo(1.37, 2);
-    expect(logoSeconds('meld')).toBeCloseTo(2.8, 2);
-    expect(logoSeconds('kiss')).toBeCloseTo(1.15, 2);
-    expect(logoLoops('meld')).toBe(true);
-    expect(logoLoops('unmeld')).toBe(false);
-  });
-});

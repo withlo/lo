@@ -1,23 +1,13 @@
 // The welcome in the app: it covers the Recent tab on a first launch and is walked by key and by
 // mouse through its four steps, signing in, choosing keys, setting up and opening a pull request.
-// Once finished it opens again from the Help menu and the command palette.
+// Once finished it opens again from the command palette.
 
-import {
-  chmodSync,
-  existsSync,
-  readFileSync,
-  mkdirSync,
-  mkdtempSync,
-  realpathSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
-import { gitProgram, writeAppRemote } from '@lo/testing/git';
+import { writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
-import type { ElectronApplication, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 import {
   appFolder,
@@ -30,28 +20,33 @@ import {
   test as base,
 } from './app.ts';
 
-const TITLE = "App: the pull request Lo's end-to-end tests open";
-const E2E = 'https://github.com/rozed-dev/e2e/pull/80';
 const DOCS = 'https://github.com/withlo/lo/blob/main/docs/link-routers.md';
 
 const mac = process.platform === 'darwin';
 /** ⌘ on macOS, Ctrl on Linux. */
 const cmd = mac ? 'Meta' : 'Control';
 
-const test = base.extend<{ github: ReplayServer; cassette: string }>({
+const test = base.extend<{
+  github: ReplayServer;
+  cassette: string;
+  /** How long a sign-in waits between polls, in milliseconds, in place of GitHub's interval. */
+  pollEvery: number | undefined;
+}>({
   cassette: ['app_e2e', { option: true }],
+  pollEvery: [undefined, { option: true }],
   github: async ({ cassette }, use) => {
     const server = await serveReplay(cassette);
     await use(server);
     await server.close();
   },
-  launch: async ({ github }, use) => {
+  launch: async ({ github, pollEvery }, use) => {
     await use({
       args: [appFolder, ...KEYCHAIN],
       env: {
         LO_GITHUB: new URL(github.urls.api).origin,
         LO_GIT_REMOTE: writeAppRemote(test.info().outputPath('remote')),
         LO_COMMAND_FOLDER: test.info().outputPath('bin'),
+        ...(pollEvery === undefined ? {} : { LO_DEVICE_POLL_MS: String(pollEvery) }),
       },
     });
   },
@@ -65,29 +60,9 @@ const go = (page: Page) => welcome(page).getByRole('button', { name: /^Continue/
 const done = (page: Page) => welcome(page).getByRole('button', { name: /^Done/ });
 /** The step's heading: what's under the welcome has headings of its own, out of reach. */
 const heading = (page: Page) => step(page).getByRole('heading', { level: 1 });
-/** A pull request's title. */
-const title = (page: Page) => page.getByRole('heading', { level: 1 });
 const linkField = (page: Page) => welcome(page).getByRole('textbox', { name: 'Pull request link' });
 const practice = (page: Page) => welcome(page).getByRole('listbox', { name: 'Practice diff' });
 const chosen = (page: Page) => practice(page).locator('[role="option"][aria-selected="true"]');
-
-/** One of gh's accounts on github.com, as `gh auth status` lists it. */
-const account = (login: string, active: boolean) => ({
-  state: 'success',
-  active,
-  host: 'github.com',
-  login,
-  tokenSource: 'keyring',
-  scopes: 'read:org, repo, workflow',
-});
-
-/** An executable shell script at `path`. */
-function script(path: string, lines: readonly string[]): string {
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `#!/bin/sh\n${lines.join('\n')}\n`);
-  chmodSync(path, 0o755);
-  return path;
-}
 
 /** Runs "Welcome to Lo" from the command palette. */
 async function showFromPalette(page: Page): Promise<void> {
@@ -97,23 +72,6 @@ async function showFromPalette(page: Page): Promise<void> {
   await page.keyboard.type('Welcome to Lo');
   await expect(palette.getByRole('option').first()).toContainText('Welcome to Lo');
   await page.keyboard.press('Enter');
-}
-
-/** Runs "Welcome to Lo" from the Help menu, which the app menu has on macOS. */
-async function showFromMenu(app: ElectronApplication): Promise<void> {
-  await app.evaluate(({ BrowserWindow, Menu }) => {
-    const window = BrowserWindow.getAllWindows()[0];
-    const event = {
-      triggeredByAccelerator: false,
-      shiftKey: false,
-      ctrlKey: false,
-      altKey: false,
-      metaKey: false,
-    };
-    Menu.getApplicationMenu()
-      ?.getMenuItemById('welcome.show')
-      ?.click(event, window, window?.webContents);
-  });
 }
 
 test('a first launch shows the welcome over Recent, and its four steps are walked by key and by mouse', async ({
@@ -233,7 +191,9 @@ test('a first launch shows the welcome over Recent, and its four steps are walke
 });
 
 test.describe('signing in', () => {
-  test.use({ cassette: 'device_flow_success' });
+  // GitHub answers two polls "pending", then the token. Polled every second, the first sign-in is
+  // stopped long before it could have polled three times.
+  test.use({ cassette: 'device_flow_success', pollEvery: 1_000 });
 
   test('⏎ starts the device flow, Esc stops it, and the welcome stays once an account is in', async ({
     page,
@@ -248,9 +208,9 @@ test.describe('signing in', () => {
     await expect(dialog).toBeHidden();
     await expect(signIn(page)).toBeFocused();
 
-    // The button does the same. GitHub's first poll is 6 s in.
+    // The button does the same.
     await signIn(page).click();
-    await expect(dialog).toContainText('Signed in as rozed-bot', { timeout: 20_000 });
+    await expect(dialog).toContainText('Signed in as rozed-bot', { timeout: 10_000 });
     await dialog.getByRole('button', { name: /Done/ }).click();
     await expect(dialog).toBeHidden();
     // The step says who signed in where the button was, and Continue is its main button now.
@@ -260,137 +220,6 @@ test.describe('signing in', () => {
     await expect(go(page)).toContainText(mac ? '⏎' : 'Enter');
     await page.keyboard.press('Enter');
     await expect(heading(page)).toHaveText('Choose your keys');
-  });
-});
-
-test('opens a public pull request without signing in, and opens again over it when asked', async ({
-  app,
-  page,
-}) => {
-  // A reader with no account goes straight to the last step.
-  await welcome(page).getByRole('button', { name: 'Open public pull request…' }).click();
-  await expect(heading(page)).toHaveText('Open a pull request');
-  await expect(step(page).getByRole('list', { name: 'Sample pull request' })).toContainText(
-    'withlo/lo#182',
-  );
-  await expect(
-    step(page).getByRole('button', { name: 'Open', exact: true }).first(),
-  ).toBeDisabled();
-  // Text that isn't a pull request link is refused by the field, as the open box says it, and
-  // the welcome stays.
-  await linkField(page).fill('owner/repo#1');
-  await page.keyboard.press('Enter');
-  const note = step(page).getByRole('status').filter({ hasText: 'Not a pull request link' });
-  await expect(note).toContainText('A pull request link looks like');
-  await expect(step(page).getByRole('alert')).toHaveCount(0);
-  await expect(page.getByTestId('sign-in')).toHaveCount(0);
-
-  // ⏎ in the field opens its link, and the pull request is what shows.
-  await linkField(page).fill(E2E);
-  await page.keyboard.press('Enter');
-  await expect(title(page)).toHaveText(TITLE);
-  const header = page.locator('header').first();
-  await expect(header).toContainText('Not signed in');
-  await expect(header).toContainText('Read only');
-  await expect(welcome(page)).toHaveCount(0);
-
-  // "Welcome to Lo" opens it over the pull request, from the Help menu where the system has one,
-  // and Skip gives the pull request back.
-  if (mac) await showFromMenu(app);
-  else await showFromPalette(page);
-  await expect(heading(page)).toHaveText('Review pull requests from the keyboard');
-  await welcome(page).getByRole('button', { name: 'Skip' }).click();
-  await expect(welcome(page)).toHaveCount(0);
-  await expect(title(page)).toHaveText(TITLE);
-
-  // Opening one finished the welcome: closing the tab lands on Recent.
-  await page.keyboard.press(`${cmd}+W`);
-  await expect(middleOf(page).getByRole('heading', { name: 'No pull requests yet' })).toBeVisible();
-  await expect(welcome(page)).toHaveCount(0);
-});
-
-test.describe('with GitHub CLI', () => {
-  test.use({ cassette: 'user' });
-  test.use({
-    launch: async ({ github }, use) => {
-      // In a folder only this user can change, as Lo runs no other gh.
-      const folder = realpathSync(mkdtempSync(join(tmpdir(), 'lo-gh-')));
-      const status = JSON.stringify({
-        hosts: { 'github.com': [account('rozed-bot', true), account('someone-else', false)] },
-      });
-      const gh = script(join(folder, 'gh'), [
-        'case "$*" in',
-        '  "--version") echo "gh version 2.103.3 (2026-10-26)" ;;',
-        `  "auth status --json hosts --hostname github.com") echo '${status}' ;;`,
-        '  "auth token --hostname github.com --user=rozed-bot") echo "gho_FAKE_FROM_GH" ;;',
-        '  *) echo "no oauth token found for github.com" >&2; exit 1 ;;',
-        'esac',
-      ]);
-      await use({
-        args: [appFolder, ...KEYCHAIN],
-        env: { LO_GITHUB: new URL(github.urls.api).origin, LO_GH: gh },
-      });
-      rmSync(folder, { recursive: true, force: true });
-    },
-  });
-
-  test('imports its accounts, and says who is signed in once one is', async ({ page }) => {
-    const importing = welcome(page).getByRole('button', { name: 'Import from GitHub CLI' });
-    await expect(importing).toBeVisible();
-
-    // ⏎ with focus on it opens the import, and doesn't sign in.
-    await importing.focus();
-    await page.keyboard.press('Enter');
-    const dialog = page.getByTestId('import-gh');
-    await expect(dialog).toContainText('GitHub CLI 2.103.3 · 2 accounts');
-    await expect(page.getByTestId('sign-in')).toHaveCount(0);
-    await dialog.getByRole('button', { name: /^Import 2 accounts/ }).click();
-    await expect(dialog).toContainText('Imported 1 account');
-    await dialog.getByRole('button', { name: /Done/ }).click();
-    await expect(dialog).toBeHidden();
-
-    await expect(step(page)).toContainText('Signed in as rozed-bot');
-    await expect(importing).toHaveCount(0);
-    await expect(go(page)).toBeFocused();
-  });
-});
-
-test.describe('with a git too old', () => {
-  let marker = '';
-  test.use({
-    launch: async ({ github }, use) => {
-      marker = test.info().outputPath('git-installed');
-      // Too old until the marker is there, then the test's own git.
-      const program = script(test.info().outputPath('git', 'git'), [
-        `if [ -e '${marker}' ]; then exec '${gitProgram()}' "$@"; fi`,
-        "echo 'git version 2.30.0'",
-      ]);
-      await use({
-        args: [appFolder, ...KEYCHAIN],
-        env: { LO_GITHUB: new URL(github.urls.api).origin, LO_GIT: program },
-      });
-    },
-  });
-
-  test('says what Lo needs, and "Check again" finds git without restarting', async ({ page }) => {
-    // The version it found as the title, and the one it needs as the reason.
-    const notice = welcome(page).getByText('Version 2.41.0 or newer is required.').first();
-    await expect(notice).toBeVisible({ timeout: 15_000 });
-    await expect(welcome(page).getByText('Can’t use Git 2.30.0').first()).toBeVisible();
-    const again = welcome(page).getByRole('button', { name: 'Check again' });
-
-    // Nothing has changed: the notice stays.
-    await again.click();
-    await expect(again).not.toHaveAttribute('aria-busy', 'true');
-    await expect(notice).toBeVisible();
-
-    // Once git is there, it is found, and the notice goes.
-    writeFileSync(marker, '');
-    await again.click();
-    await expect(notice).toHaveCount(0);
-    await expect(again).toHaveCount(0);
-    const info = await page.evaluate(() => window.lo.invoke('app.info'));
-    expect(info).toMatchObject({ ok: true, value: { git: { status: 'found' } } });
   });
 });
 

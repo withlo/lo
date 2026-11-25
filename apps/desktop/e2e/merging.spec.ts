@@ -170,23 +170,21 @@ test('`⏎` confirms a squash with the title typed, never on a held key, and the
   await done(page, `Merged #${number}`);
 });
 
-// Each was recorded from a copy of Lo of its own, so each has one.
-for (const [{ number }, method] of [
-  [pulls.merge, 'Merge commit'],
-  [pulls.rebase, 'Rebase'],
-] as const) {
-  test(`a ${method.toLowerCase()} goes with the method the panel shows`, async ({ page }) => {
-    await panelOf(page, number);
-    await roundTo(page, method);
-    await page.keyboard.press('Enter');
-    await asks(page, `Merge #${number}`);
-    expect(await facts(page)).toMatchObject({ Method: method, Into: 'merge/5/base' });
-    // The button names the pull request whatever the method.
-    await expect(dialog(page).getByRole('button', { name: `Merge #${number}` })).toBeVisible();
-    await page.keyboard.press('Enter');
-    await done(page, `Merged #${number}`);
-  });
-}
+// The method the panel shows goes with the merge: a rebase, which a round of the methods reaches
+// past a merge commit. That the merge asks GitHub for the method chosen, whichever it is, is
+// merging.test's.
+test('a rebase goes with the method the panel shows', async ({ page }) => {
+  const { number } = pulls.rebase;
+  await panelOf(page, number);
+  await roundTo(page, 'Rebase');
+  await page.keyboard.press('Enter');
+  await asks(page, `Merge #${number}`);
+  expect(await facts(page)).toMatchObject({ Method: 'Rebase', Into: 'merge/5/base' });
+  // The button names the pull request whatever the method.
+  await expect(dialog(page).getByRole('button', { name: `Merge #${number}` })).toBeVisible();
+  await page.keyboard.press('Enter');
+  await done(page, `Merged #${number}`);
+});
 
 test.describe('with its head moved just before the press', () => {
   // Lo reads the push at its first poll after the merge, not after the polls the recording waited.

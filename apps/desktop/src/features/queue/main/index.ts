@@ -5,8 +5,10 @@
 // requests' turns among merge writes, which the merge feature hands out.
 
 import { PullRef, queueRemoval, queueView, queueWaiting, RepoRef, type Poller } from '@lo/github';
+import { app } from 'electron';
 
 import { IpcError } from '../../../ipc/contract.ts';
+import { pollEvery } from '../../../main/environment.ts';
 import { defineFeature } from '../../../main/features.ts';
 import { github, type GithubAccess } from '../../accounts/service.ts';
 import { writes } from '../../merge/service.ts';
@@ -90,6 +92,7 @@ export default defineFeature(contract, {
         if (read.kind === 'queue') acts?.heard(id, read.view);
       },
       moved: (id) => acts?.drop(id),
+      every: pollEvery({ packaged: app.isPackaged, env: process.env }),
     });
     queues = shown;
     acts = new QueueActs({

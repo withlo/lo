@@ -68,11 +68,14 @@ const STEP_CELL = 'col-start-1 row-start-1 min-w-0';
 const STEP_BOX = 'flex min-w-0 flex-col gap-24';
 const BALL = 'size-8 rounded-pill move-tint';
 
-/** A step's ball: done, the one on screen, or not yet. */
-function ballOf(index: number, at: number): string {
-  if (index < at) return 'bg-fg';
-  if (index === at) return 'bg-accent';
-  return 'text-fg-subtle hollow';
+/** A step's ball, by where the walk is: done, the one on screen, or not yet. */
+const BALLS = { done: 'bg-fg', here: 'bg-accent', ahead: 'text-fg-subtle hollow' } as const;
+
+/** Where step `index` is, with the walk at step `at`. */
+function ballOf(index: number, at: number): keyof typeof BALLS {
+  if (index < at) return 'done';
+  if (index === at) return 'here';
+  return 'ahead';
 }
 
 /** Where the walk is: a ball for each step, the one on screen in the accent. */
@@ -86,9 +89,10 @@ function Progress({ step }: { step: Step }) {
   return (
     <>
       <div role="img" aria-label={said} className="flex items-center gap-8">
-        {STEPS.map((each, index) => (
-          <span key={each} className={`${BALL} ${ballOf(index, at)}`} />
-        ))}
+        {STEPS.map((each, index) => {
+          const ball = ballOf(index, at);
+          return <span key={each} data-ball={ball} className={`${BALL} ${BALLS[ball]}`} />;
+        })}
       </div>
       <span role="status" className="sr-only">
         {moved ? said : ''}

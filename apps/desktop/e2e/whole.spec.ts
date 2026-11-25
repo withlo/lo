@@ -212,61 +212,58 @@ test('gf opens the file at the cursor whole, at its line and in its side’s ver
   expect(refused).toEqual([]);
 });
 
-test('a file the pull request leaves alone opens whole from the tree, and Back returns to the diff', async ({
+test('a file the pull request leaves alone opens whole from the tree, and Back returns to the diff, or to the overview it was opened from', async ({
   page,
 }) => {
   const refused = refusals(page);
   await drawn(page);
-  await row(page, 'README.md').click();
-  await expect(code(page)).toBeVisible();
-  await expect(code(page)).toContainText('# App fixture');
-  await expect(whole(page)).toContainText('Unchanged');
-  await expect.poll(() => wholeAt(page)).toMatchObject({ path: 'README.md', version: 'new' });
-  // The keyboard stays in the tree, which marks the file.
-  await expect(tree(page)).toBeFocused();
-  await expect(row(page, 'README.md')).toHaveClass(/tree-current/);
+  await test.step('Back returns to the diff', async () => {
+    await row(page, 'README.md').click();
+    await expect(code(page)).toBeVisible();
+    await expect(code(page)).toContainText('# App fixture');
+    await expect(whole(page)).toContainText('Unchanged');
+    await expect.poll(() => wholeAt(page)).toMatchObject({ path: 'README.md', version: 'new' });
+    // The keyboard stays in the tree, which marks the file.
+    await expect(tree(page)).toBeFocused();
+    await expect(row(page, 'README.md')).toHaveClass(/tree-current/);
 
-  // ⏎ on a changed file goes back to the diff, at its header.
-  await row(page, 'src/legacy.ts').click();
-  await expect(page.locator('.lo-diffview')).toBeVisible();
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const at = window.loDiff?.probe.cursor()?.at;
-        const id = at?.kind === 'header' ? at.file : undefined;
-        return window.loDiff?.files.find((file) => file.id === id)?.path;
-      }),
-    )
-    .toBe('src/legacy.ts');
+    // ⏎ on a changed file goes back to the diff, at its header.
+    await row(page, 'src/legacy.ts').click();
+    await expect(page.locator('.lo-diffview')).toBeVisible();
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const at = window.loDiff?.probe.cursor()?.at;
+          const id = at?.kind === 'header' ? at.file : undefined;
+          return window.loDiff?.files.find((file) => file.id === id)?.path;
+        }),
+      )
+      .toBe('src/legacy.ts');
 
-  // ⌃o from the tree goes back to the file left, and the bar's Back to the diff again.
-  await press(page, 'Control+o');
-  await expect(code(page)).toBeVisible();
-  await expect(code(page)).toContainText('# App fixture');
-  await whole(page).getByRole('button', { name: /^Back/ }).click();
-  await expect(page.locator('.lo-diffview')).toBeVisible();
-  // The tree follows the diff again.
-  await expect(row(page, 'README.md')).not.toHaveClass(/tree-current/);
-  expect(refused).toEqual([]);
-});
+    // ⌃o from the tree goes back to the file left, and the bar's Back to the diff again.
+    await press(page, 'Control+o');
+    await expect(code(page)).toBeVisible();
+    await expect(code(page)).toContainText('# App fixture');
+    await whole(page).getByRole('button', { name: /^Back/ }).click();
+    await expect(page.locator('.lo-diffview')).toBeVisible();
+    // The tree follows the diff again.
+    await expect(row(page, 'README.md')).not.toHaveClass(/tree-current/);
+  });
 
-test('a file opened whole from the tree while the overview shows has a Back to it', async ({
-  page,
-}) => {
-  const refused = refusals(page);
-  await drawn(page);
-  // The overview, the view before the diff.
-  await page.locator('[data-lo-middle]').focus();
-  await press(page, '~');
-  const overview = page.locator('[data-lo-middle-view="overview.view"]');
-  await expect(overview).toBeVisible();
-  await row(page, 'README.md').click();
-  await expect(code(page)).toContainText('# App fixture');
-  const back = whole(page).getByRole('button', { name: /^Back/ });
-  await expect(back).not.toHaveAttribute('aria-disabled', 'true');
-  await back.click();
-  await expect(overview).toBeVisible();
-  await expect(code(page)).toBeHidden();
+  await test.step('opened while the overview shows, Back returns to it', async () => {
+    // The overview, the view before the diff.
+    await page.locator('[data-lo-middle]').focus();
+    await press(page, '~');
+    const overview = page.locator('[data-lo-middle-view="overview.view"]');
+    await expect(overview).toBeVisible();
+    await row(page, 'README.md').click();
+    await expect(code(page)).toContainText('# App fixture');
+    const back = whole(page).getByRole('button', { name: /^Back/ });
+    await expect(back).not.toHaveAttribute('aria-disabled', 'true');
+    await back.click();
+    await expect(overview).toBeVisible();
+    await expect(code(page)).toBeHidden();
+  });
   expect(refused).toEqual([]);
 });
 

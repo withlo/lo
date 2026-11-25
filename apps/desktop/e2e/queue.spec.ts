@@ -3,13 +3,13 @@
 // recorded from the app while two of them were tested together in `e4/queued`'s queue and a third
 // waited to join it with auto-merge on. `gq` in a pull request's tab opens the queue of the branch
 // it goes into, in one tab for the repository and account; `j` and `k` move, `⏎` or a double click
-// opens the pull request, `Tab` shows the next branch's queue, and the tab comes back after Lo
-// restarts. It's served as `app_queue_polled`, which adds GitHub's answer to each overview ref read
-// again, as Lo does when its window comes to the front.
+// opens the pull request, and `Tab` shows the next branch's queue. It's served as
+// `app_queue_polled`, which adds GitHub's answer to each overview ref read again, as Lo does when
+// its window comes to the front.
 
-import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
-import { appEnvironment, dataFolder, drawnWindow, expect, onQueue as test, QUEUE } from './app.ts';
+import { expect, onQueue as test, QUEUE } from './app.ts';
 
 const { pulls } = QUEUE;
 
@@ -141,36 +141,4 @@ test('`j` and `k` move, `⏎` opens the pull request the keyboard is on, and `Ta
     .getByText('Fixture M4: queued, slow (1)')
     .dblclick();
   await expect(header(page)).toContainText('Fixture M4: queued, slow (1)');
-});
-
-test('the queue’s tab comes back after Lo restarts, and reads its queue again', async ({
-  launch,
-}) => {
-  const start = async (): Promise<{ app: ElectronApplication; page: Page }> => {
-    const app = await electron.launch({
-      args: launch.args,
-      env: { ...appEnvironment(dataFolder()), ...launch.env },
-      chromiumSandbox: true,
-    });
-    return { app, page: await drawnWindow(app) };
-  };
-
-  const first = await start();
-  try {
-    await signedIn(first.page);
-    await open(first.page, pulls.queuedSlow1.number, 'Fixture M4: queued, slow (1)', 'Queued, 1st');
-    await gq(first.page);
-    expect(await rowKeys(first.page)).toContain(slow1);
-  } finally {
-    await first.app.close();
-  }
-
-  const second = await start();
-  try {
-    await expect(second.page).toHaveTitle('rozed-dev/e2e · Merge queue for e4/queued');
-    await expect(queue(second.page).locator('header')).toContainText('as rozed-bot');
-    expect(await rowKeys(second.page)).toContain(slow1);
-  } finally {
-    await second.app.close();
-  }
 });

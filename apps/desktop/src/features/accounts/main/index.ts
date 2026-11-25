@@ -5,15 +5,18 @@
 
 import { fileURLToPath } from 'node:url';
 
-import { RepoRef, sameLogin, TokenLeftover } from '@lo/github';
+import { RepoRef, sameLogin, TokenLeftover, type PollConfig } from '@lo/github';
 import { app, clipboard, net, safeStorage, session } from 'electron';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { openPage } from '../../../main/browser.ts';
 import {
+  answerStart,
   devicePoll,
   ghProgram,
   githubSettings,
+  pollEvery,
+  watchedEvery,
   type GithubSettings,
 } from '../../../main/environment.ts';
 import { defineFeature, STOP_LIMITS } from '../../../main/features.ts';
@@ -65,6 +68,20 @@ function thisBuild(): string {
 }
 
 const log = (message: string) => console.error(`accounts: ${message}`);
+
+/**
+ * What a test run asks of the pollers: how often they read the pull request on screen, and what
+ * they watch beyond it. Nothing in a packaged build, nor unless a test asks.
+ */
+function testPolls(): Partial<PollConfig> {
+  const options = { packaged: app.isPackaged, env: process.env };
+  const open = pollEvery(options);
+  const watched = watchedEvery(options);
+  return {
+    ...(open === undefined ? {} : { openInterval: open }),
+    ...(watched === undefined ? {} : { watchedInterval: watched }),
+  };
+}
 
 /** What the feature runs, once it has provided GitHub. */
 interface Running {
@@ -150,6 +167,8 @@ export default defineFeature(contract, {
       log,
       reread: rereadFromGh({ gh, fetch, urls, log }),
       ghToken: ghTokenForUpload({ gh, fetch, urls, log }),
+      poll: testPolls(),
+      answerStartMs: answerStart({ packaged: app.isPackaged, env: process.env }),
     });
     const signIns = new SignIns({
       fetch,

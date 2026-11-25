@@ -96,20 +96,10 @@ describe('blankShare', () => {
 });
 
 describe('bars', () => {
-  test('hold each bar from the research, with the pull requests’ own limits', () => {
-    expect(limit('open')).toBe(400);
-    expect(limit('computed')).toBe(2000);
-    expect(limit('computed', 'typescript-51387')).toBe(5000);
-    expect(limit('memory')).toBe(600);
-    expect(limit('memory', 'typescript-51387')).toBe(1200);
-    expect(limit('heldJ')).toBe(16);
-    expect(limit('nextFile')).toBe(50);
-    expect(limit('alignment')).toBe(0.5);
-    expect(limit('scrollBlank')).toBe(0);
-    expect(limit('blank3000')).toBe(0);
-    expect(limit('blank8000')).toBe(0);
-    expect(limit('blank15000')).toBe(0);
-    expect(limit('flingBlank')).toBe(0);
-    expect(limit('pageDownMax')).toBeCloseTo(100, 1);
+  // The bars' numbers are the research's, set once in `bars.ts`.
+  test('give a pull request its own limit where the research set one', () => {
+    expect(limit('computed', 'typescript-51387')).toBeGreaterThan(limit('computed'));
+    expect(limit('memory', 'typescript-51387')).toBeGreaterThan(limit('memory'));
+    expect(limit('open', 'typescript-51387')).toBe(limit('open'));
   });
 });

@@ -3,28 +3,16 @@
 // peek of its definition under the line, `⏎` goes there in the diff, on the side it's on, and `⌃o`
 // comes back; `K` shows its line in a card over the word; `gr` lists where it's used in the right
 // panel, and `⏎` goes to one, and `Esc` puts the panel back as it was; `gO` lists the file's
-// symbols; and `gh` says type hints need a language server, which Lo runs only on repos you trust.
-// Once the repo is trusted, with the fake language server standing in for TypeScript's, `gd`'s
-// answer is labelled TypeScript and `gh` shows its hint. GitHub answers from `app_e2e`, and, once
-// the repo is trusted, from `pull_request_repositories_e2e`.
+// symbols; and `gh` says type hints need a language server, which Lo runs only on repos you trust
+// (`code.spec.ts` has what a server answers once one is). GitHub answers from `app_e2e`.
 
 import { writeFileSync } from 'node:fs';
 
-import { cassette, Replay } from '@lo/testing';
 import { APP_PULL, writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { Page } from '@playwright/test';
 
-import {
-  answerDialogs,
-  appFolder,
-  DIFF_FIRST_VIM,
-  expect,
-  KEYCHAIN,
-  test as base,
-  testServers,
-  type TestServers,
-} from './app.ts';
+import { appFolder, DIFF_FIRST_VIM, expect, KEYCHAIN, test as base } from './app.ts';
 
 /** A stand-in token, never a real one: the cassette was recorded with the same. */
 const TOKEN = 'gho_FAKE_E2E_ACCOUNT';
@@ -201,109 +189,3 @@ test('gd, K, gr, gO and gh answer from the syntax index of a PR nothing trusts',
     await expect(status(page).getByText('Trust the repo to see type hints')).toBeVisible();
   });
 });
-
-/**
- * What the fake server answers: `Line`, in src/format.ts's import of it, is on line 2 of
- * src/parser.ts, and the head's src/format.ts has one hint, `: Line` after the `line` of its line 6,
- * `  return lines.map((line) => …`.
- */
-const SERVED = {
-  'textDocument/definition': {
-    '*': [
-      {
-        uri: '$ROOT/src/parser.ts',
-        range: { start: { line: 1, character: 17 }, end: { line: 1, character: 21 } },
-      },
-    ],
-  },
-  'textDocument/inlayHint': {
-    'src/format.ts': [
-      { position: { line: 5, character: 24 }, label: ': Line', paddingLeft: false },
-    ],
-  },
-};
-
-const trusting = test.extend<{ servers: TestServers }>({
-  // Playwright reads a fixture's dependencies from its first parameter, which must be a pattern.
-  // oxlint-disable-next-line no-empty-pattern
-  github: async ({}, use) => {
-    const interactions = ['app_e2e', 'pull_request_repositories_e2e'].flatMap((name) =>
-      cassette(name).interactions.map(({ interaction }) => interaction),
-    );
-    const server = await serveReplay(new Replay('app_e2e with its repositories', interactions));
-    await use(server);
-    await server.close();
-  },
-  // Playwright reads a fixture's dependencies from its first parameter, which must be a pattern.
-  // oxlint-disable-next-line no-empty-pattern
-  servers: async ({}, use) => {
-    const servers = testServers(test.info().outputPath('servers'), { answers: SERVED });
-    await use(servers);
-    // After Lo has closed, which stops them itself.
-    servers.kill();
-  },
-  launch: async ({ github, servers }, use) => {
-    const tokenFile = test.info().outputPath('token');
-    writeFileSync(tokenFile, `${TOKEN}\n`);
-    await use({
-      args: [appFolder, ...KEYCHAIN],
-      env: {
-        LO_GITHUB: new URL(github.urls.api).origin,
-        LO_TEST_TOKEN_FILE: tokenFile,
-        LO_GIT_REMOTE: writeAppRemote(test.info().outputPath('remote')),
-        ...servers.env,
-      },
-    });
-  },
-});
-
-trusting(
-  'gd is labelled with the language server’s name and gh shows its hint, once the repo is trusted',
-  async ({ app, page }) => {
-    test.setTimeout(120_000);
-    const id = await opened(page);
-    await answerDialogs(app, 'Trust repo');
-    expect(
-      await page.evaluate(
-        (view) => window.lo.invoke('code.trust', { view, repo: 'rozed-dev/e2e', pull: null }),
-        id,
-      ),
-    ).toEqual({ ok: true, value: 'trusted' });
-    // Ready, its item is its name alone.
-    await expect(status(page).getByRole('button', { name: 'TypeScript', exact: true })).toBeVisible(
-      {
-        timeout: 60_000,
-      },
-    );
-    await page.locator('.lo-diffview .cm-editor').nth(1).locator('.cm-content').focus();
-    await press(page, 'g', 'g', ']', 'f', ']', 'f', ']', 'f', 'j', 'f', 'Shift+L');
-    await expect.poll(() => cursor(page)).toEqual({ path: 'src/format.ts', side: 'new', line: 1 });
-
-    await test.step('gd’s one answer is the server’s, and its head says so', async () => {
-      await press(page, 'g', 'd');
-      const head = peek(page).locator('.lo-diffpeek__head');
-      await expect(head).toContainText('Line · 1 definition');
-      await expect(head).toContainText('TypeScript');
-      await expect(head).not.toContainText('Code index');
-      await expect(peek(page).locator('.lo-diffpeek__code')).toContainText(
-        'export interface Line {',
-      );
-      await press(page, 'Escape');
-      await expect(peek(page)).toHaveCount(0);
-    });
-
-    await test.step('gh shows the server’s hint, on the reader’s next key', async () => {
-      await press(page, 'g', 'h');
-      // A hint that comes after the keys is held until the next input, so nothing moves meanwhile.
-      await expect
-        .poll(
-          async () => {
-            await press(page, 'l', 'h');
-            return page.locator('.lo-diffview .lo-inlay').allTextContents();
-          },
-          { timeout: 20_000 },
-        )
-        .toEqual([': Line']);
-    });
-  },
-);
