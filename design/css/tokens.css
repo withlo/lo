@@ -379,7 +379,7 @@
   --lo-panel-right-min-w: 280px; /* Narrowest the threads panel is drawn, by a drag or a narrow window. */
   --lo-panel-right-max-w: 560px; /* Widest the threads panel is dragged. */
   --lo-view-min-w: 340px; /* Narrowest a view is drawn: Overview, Diff or Timeline, alone or beside another. */
-  --lo-reading-w: 904px; /* A reading view's default width with code beside: the timeline's column and lo-sp-24 either side. */
+  --lo-reading-w: calc(var(--lo-timeline-w) + 2 * var(--lo-sp-24)); /* A reading view's default width with code beside: the timeline's column and lo-sp-24 either side. */
   --lo-side-min-w: 240px; /* Narrowest a side of a side-by-side diff is drawn. */
   --lo-splitter-w: 8px; /* What an edge between panels, views or sides gives to grab: the gap between two views. */
   --lo-row-h: 24px; /* Rows in the tree and in lists. */

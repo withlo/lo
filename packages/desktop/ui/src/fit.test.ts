@@ -6,7 +6,8 @@ import { fit, fitWidths, readSizes, type Layout } from './fit.ts';
 /** The sizes as the window reads them from the tokens' variables. */
 const sizes = readSizes({
   getPropertyValue: (name) =>
-    tokens.size.tokens.find((token) => `--${token.name}` === name)?.value ?? '',
+    [...tokens.size.tokens, ...tokens.spacing.tokens].find((token) => `--${token.name}` === name)
+      ?.value ?? '',
 });
 
 /** A layout with what's named open, at the default widths. */

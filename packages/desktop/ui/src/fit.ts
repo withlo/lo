@@ -43,7 +43,9 @@ export function readSizes(style: Variables): Sizes {
       max: px('panel-right-max-w'),
     },
     view: px('view-min-w'),
-    reading: px('reading-w'),
+    // `lo-reading-w` is the timeline's column and a step either side, worked out here: as a
+    // variable, it reads back as the `calc` it's written as.
+    reading: px('timeline-w') + 2 * px('sp-24'),
     gap: px('splitter-w'),
   };
 }

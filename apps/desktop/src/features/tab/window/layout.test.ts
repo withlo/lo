@@ -15,7 +15,8 @@ beforeAll(() => {
     'panel-right-min-w': '280px',
     'panel-right-max-w': '560px',
     'view-min-w': '340px',
-    'reading-w': '904px',
+    'timeline-w': '856px',
+    'sp-24': '24px',
     'splitter-w': '8px',
   };
   for (const [name, value] of Object.entries(sizes)) {
