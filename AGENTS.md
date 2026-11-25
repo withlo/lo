@@ -1611,9 +1611,11 @@ address, which the window builds and main reads, and the `comments` feature serv
   only while its rate limit is normal and GitHub answers; it fetches the picture its `avatar_url`
   gives, on the avatars' host alone, once it has the address, so asking takes none of an image's
   turns or time. `comments/main/bots.ts` asks about each bot at most once a run, one at a time, and
-  100 bots at most, and keeps what GitHub said for the run, a bot it doesn't have included. After a
-  failed ask it asks nothing for a minute, twice as long after each failure in a row, an hour at
-  most. With no account signed in, a bot keeps its initials.
+  100 bots at most, and keeps what GitHub said for the run, a bot it doesn't have included. After an
+  ask GitHub answered with an error it asks nothing for a minute, twice as long after each failure
+  in a row, an hour at most, or until an account is added or signs in again; one the account then
+  shows (GitHub out of reach, a rate limit) waits on the account's status instead, until its poller
+  hears from GitHub again. With no account signed in, a bot keeps its initials.
 - An image is drawn as GitHub draws it: at the `width` and `height` the post gives it, its height
   following its width, inline in its text, and never wider than the text. A `<picture>` with a
   source for each `prefers-color-scheme` shows the one for Lo's theme: the window's color scheme
