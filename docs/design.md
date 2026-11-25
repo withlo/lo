@@ -345,6 +345,8 @@ option isn't offered when a PR comes from a fork, when GitHub's Stacks API isn't
 (it answers 404; github.com has no setting that turns stacks on), or when a PR is already in a merge
 queue. The tree offers it in a line over its rows, which can be dismissed for that stack, or for all
 stacks, which Settings › Pull requests turns back on; `gS` and the layer's menu still convert it.
+Dismissing the offer to convert a branch stack leaves the offer to add layers to the GitHub stack
+below them, which the stack may come to need.
 
 ## 5. The file tree
 
