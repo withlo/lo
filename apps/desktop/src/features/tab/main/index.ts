@@ -13,6 +13,7 @@ import { offlineAfter } from '../../../main/environment.ts';
 import { defineFeature, type FeatureContext } from '../../../main/features.ts';
 import { provides } from '../../../main/services.ts';
 import { github } from '../../accounts/service.ts';
+import { settings } from '../../settings/service.ts';
 import { login as accountLogin } from '../../accounts/contract.ts';
 import {
   contract,
@@ -26,6 +27,8 @@ import {
   type Tabs,
 } from '../contract.ts';
 import { tabs } from '../service.ts';
+import { before, open as openOn } from '../settings.ts';
+import { carryOver } from './carry.ts';
 import { createTabs, type TabList } from './tabs.ts';
 import { Watcher } from './watcher.ts';
 
@@ -64,6 +67,9 @@ function tabsOf({ database, publish }: FeatureContext<typeof contract>): TabList
   return kept;
 }
 
+/** Stops watching the key `tab.open` replaced. */
+let stopBefore: (() => void) | undefined;
+
 /** The watcher, which starts with the feature. */
 function watching(): Watcher {
   if (!watcher) throw new IpcError('unavailable', 'Lo hasn’t started its tabs yet.');
@@ -80,7 +86,7 @@ function pullTab(id: string): Watcher {
 }
 
 export default defineFeature(contract, {
-  uses: [github],
+  uses: [github, settings],
   provide: (context) => [
     provides(tabs, {
       list: () => viewsOnScreen(tabsOf(context).list()),
@@ -163,6 +169,13 @@ export default defineFeature(contract, {
     },
   },
   start(context) {
+    // The window reads it as a pull request's tab opens, and changes it from Settings.
+    const file = context.use(settings);
+    file.declare(openOn);
+    // A value saved under the key it replaced, carried over once.
+    stopBefore = file.watch(before, (value) => {
+      if (value !== null) void carryOver(file, value, log);
+    });
     const list = tabsOf(context);
     watcher = new Watcher({
       offlineAfter: offlineAfter({ packaged: app.isPackaged, env: process.env }),
@@ -190,6 +203,8 @@ export default defineFeature(contract, {
     watcher.follow(list.list());
   },
   stop() {
+    stopBefore?.();
+    stopBefore = undefined;
     following.clear();
     watchingTabs.clear();
     watcher?.stop();

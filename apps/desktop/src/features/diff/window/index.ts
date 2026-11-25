@@ -11,7 +11,9 @@ import { createElement } from 'react';
 import { announce, fail } from '../../../window/commands/notices.tsx';
 import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
+import { registry } from '../../../window/commands/registry.ts';
 import { defineView } from '../../../window/slots.tsx';
+import { followOverviews } from '../../overview/window/shared.ts';
 import { changeSetting, settingNow, settingRow } from '../../settings/window/shared.ts';
 import { contract as tabContract, viewIds } from '../../tab/contract.ts';
 import { activeTab, middle, showingMiddle, status, type PullTab } from '../../tab/window/shared.ts';
@@ -445,6 +447,8 @@ export default {
     settingRow(whitespace, { order: 30, command: 'diff.whitespace' }),
   ],
   start() {
+    // An overview's note has nothing to show while overviews are off.
+    followOverviews((on) => registry().setOff(['diff.overviewNote'], !on));
     main().subscribe('state', takeState);
     showTreeFiles();
     // Each view of a pull request's tab keeps its diff until the tab closes.

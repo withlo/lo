@@ -378,7 +378,9 @@ the window find them with `import.meta.glob`.
   declares the setting), the window through its `window/shared.ts` (`useSetting`, `changeSetting`,
   `watchSetting`), where a feature puts its rows of Settings in the `settings.rows` slot:
   `settingRow(setting, { order })` draws a setting's row from the setting itself, and `defineRow`
-  makes any other, such as a list, with the same one line. A change main refuses comes back as
+  makes any other, such as a list, with the same one line. A row whose line depends on what's there
+  takes `useLine`, a hook for it, while search still reads the setting's own line, and a row that
+  comes and goes with a part of Lo takes that part's `present`. A change main refuses comes back as
   `settingsFile` or `unsaved`, with main's reason and its details, and the row says it as a
   `Problem`. A setting declared with `{ window: 'read' }`, such as which repositories are trusted,
   the window shows but can't change: `settings.set` refuses it as `unwritable`, and only main writes
@@ -405,10 +407,15 @@ the window find them with `import.meta.glob`.
   `views`, each from `defineView(slot, { id, order, render })`, so a feature adds a view, a panel or
   a header item to another's screen without editing it. `<Slot slot={…} props={…} />` renders a
   slot's views in order, and `useViews(slot)` lists them for an owner that lays them out itself. A
-  slot is named for the feature whose `window/shared.ts` exports it, and views go only in exported
-  slots. Every view runs inside its own error boundary, from `<Slot>` or `useViews` alike: one that
-  throws shows a short note in its place, with "Try again", which draws it again, and its error is
-  logged. In a build run from source, it then stops the window too, so tests can't miss it.
+  view given `present` (a `Presence`: `now()` and `subscribe`) is in its slot only while that says
+  so, and comes back without a restart. Commands come and go with the registry's `setOff(ids, off)`:
+  one that's off is in no menu, list or palette, its keys are free, and running it does nothing. So
+  a setting that takes a part of Lo out, as `overview.on` does, takes its views and its commands
+  together. A slot is named for the feature whose `window/shared.ts` exports it, and views go only
+  in exported slots. Every view runs inside its own error boundary, from `<Slot>` or `useViews`
+  alike: one that throws shows a short note in its place, with "Try again", which draws it again,
+  and its error is logged. In a build run from source, it then stops the window too, so tests can't
+  miss it.
 
 Features share only through `contract.ts`, `keys.ts`, `service.ts` and `window/shared.ts`.
 `pnpm check:boundaries` reads every file in a feature's folder that Vite could bundle, in any
@@ -884,6 +891,14 @@ status bar.
   earlier fetch brought while GitHub can't be reached.
 - The head on screen is GitHub's when the tab opened. A newer push says so in a banner, and moves
   nothing until it's loaded.
+- The `tab.open` setting says which middle view a pull request's tab opens on: the overview, the
+  timeline or the diff. A tab that opens on the overview waits for it, up to `HOLD_LIMIT`, and goes
+  to the timeline, where the description is first, when there's none or it's late. The tab keeps its
+  middle view by id (`Panels.middle`): while that view isn't there, as the overview isn't with
+  `overview.on` off, the timeline stands in, and the tab goes back to it when it returns. The key
+  `tab.open` replaced, `overview.open`, stays declared, file-only: main carries a `diff` saved there
+  over once, where `tab.open` is still its default, then sets it to `null` (`tab/main/carry.ts`),
+  and the window reads it meanwhile.
 - Other features' banners go in the `tab.banners` slot. Each view there says whether it shows a
   banner for a tab (`shows`) and when that may change (`subscribe`), so the tab makes room only for
   the banners it has.
@@ -1047,9 +1062,10 @@ The diff and the tree follow it through the feature's `revisions.comparisons` se
   opens the picker at it. A build run from source takes another wait from `LO_COMPARE_WAIT_MS`, for
   its tests; a packaged build ignores it.
 - The window holds back what a tab shows first, the overview or a place in the diff, for
-  `HOLD_LIMIT`, and past it shows the diff, or the file whole. A build run from source takes another
-  bound from `LO_HOLD_LIMIT_MS`, which main hands the window in `app.info`, so a test that isn't
-  about the bound doesn't race it on a busy machine; a packaged build ignores it.
+  `HOLD_LIMIT`, and past it shows the timeline in the overview's place, and the diff, or the file
+  whole, in the place's. A build run from source takes another bound from `LO_HOLD_LIMIT_MS`, which
+  main hands the window in `app.info`, so a test that isn't about the bound doesn't race it on a
+  busy machine; a packaged build ignores it.
 - Two revisions are compared in the local copy with `compareRevisions`, across a rebase when the
   base moved, once it has both: until then the comparison on screen stays, and the note over the
   diff says what waits. The comparison is made once, for the diff and the tree, and says how it
@@ -1086,7 +1102,9 @@ them.
   and viewed counts. It reads them again when a list fetched after the state shows a layer at
   another head, and stops once the tab closes or its pull request leaves the stack. It also reads
   which pull requests have an overview, once for the repository (`overviewRefNumbers`, through
-  `poller.readCached`, kept with its ETag and read again on the 5-minute refresh).
+  `poller.readCached`, kept with its ETag and read again on the 5-minute refresh), while overviews
+  are on (the overview feature's `overviews` service). Turned off, the finder has the poller forget
+  that read (`forgetRead`), so no refresh makes it.
 - Where the layer on screen's diff starts is `@lo/stacks`' `layerStart` for its head, once the list
   the stack was found in has the head on screen (`planStart`). Before the diff is drawn, main sets
   it on the tab (`compareFrom`). Once it's drawn, a different start is only offered: `stacks.stack`
@@ -1289,6 +1307,14 @@ The `timeline` feature shows a pull request's GitHub timeline as the third of it
   `PULL_REQUEST_SIDEBAR`). The window asks with `timeline.show`, and gets each change on the
   `timeline.timeline` and `timeline.sidebar` topics. A tab acting as nobody reads none, and asks the
   reader to sign in; a run of a stack's layers has none of its own.
+- The reader waits on those first reads, so while the view's tab is on screen they go ahead of polls
+  in the account's queue (`foreground`), as the review threads do, in the order of the reads' names:
+  what goes beside the description, which is quick, then the review threads, then the timeline, and
+  once it's in, the push history the revisions feature reads, which the rows split pushes by. A
+  timeline of more than a page sends its newest page while the older pages are read
+  (`readTimeline`'s `onNewest`, never kept): the view is `loading` with that page as its timeline,
+  and the window draws it, with "Reading older events…" where the older ones go, and draws the whole
+  timeline in its place as it comes, without waiting for input.
 - `window/rows.ts` turns what main sent into rows, plain functions tested alone: the description
   card, a note of older items not read, consecutive commits as one push split where a revision ends,
   with its last commit's checks, comments and submitted reviews as cards, a force-push that can

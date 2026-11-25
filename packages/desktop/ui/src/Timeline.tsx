@@ -14,6 +14,7 @@ import { Button } from './Button.tsx';
 import { Key } from './Key.tsx';
 import { Label } from './Label.tsx';
 import { LinkButton } from './LinkButton.tsx';
+import { Spinner } from './Spinner.tsx';
 import { StateIcon } from './StatePill.tsx';
 import { Tag } from './Tag.tsx';
 import { CommentIcon } from './ThreadCount.tsx';
@@ -237,7 +238,9 @@ export interface TimelineProps extends Omit<
 /**
  * The pull request's history as one column of rows down a rail, oldest first: a listbox, whose
  * options are its rows, as the threads list is. Like the threads list it takes what a focusable
- * list takes: a ref, `tabIndex` and the rest.
+ * list takes: a ref, `tabIndex` and the rest. The column is as wide as its pane allows, up to
+ * `--lo-timeline-w`, so a post's code block of 100 columns fits; a post's prose keeps to the read
+ * measure.
  */
 export function Timeline({
   children,
@@ -250,18 +253,20 @@ export function Timeline({
   const prefix = useId();
   const rows = useMemo<Rows>(() => ({ prefix, focused }), [prefix, focused]);
   return (
-    <div className="px-24 py-24">
-      <ol
-        ref={listRef}
-        role="listbox"
-        aria-label="Timeline"
-        aria-activedescendant={focused === undefined ? undefined : rowId(prefix, focused)}
-        {...rest}
-        className={`group/timeline mx-auto flex max-w-read-measure list-none flex-col ${className}`}
-      >
-        <RowsContext value={rows}>{children}</RowsContext>
-      </ol>
-      {end}
+    <div className="@container py-24">
+      <div className="timeline-inset">
+        <ol
+          ref={listRef}
+          role="listbox"
+          aria-label="Timeline"
+          aria-activedescendant={focused === undefined ? undefined : rowId(prefix, focused)}
+          {...rest}
+          className={`group/timeline mx-auto flex max-w-timeline-w list-none flex-col ${className}`}
+        >
+          <RowsContext value={rows}>{children}</RowsContext>
+        </ol>
+        {end}
+      </div>
     </div>
   );
 }
@@ -277,7 +282,7 @@ export interface TimelineEndProps extends Omit<HTMLAttributes<HTMLDivElement>, '
  */
 export function TimelineEnd({ marker, children, className = '', ...rest }: TimelineEndProps) {
   return (
-    <div {...rest} className={`mx-auto flex max-w-read-measure gap-12 px-8 py-8 ${className}`}>
+    <div {...rest} className={`mx-auto flex max-w-timeline-w gap-12 px-8 py-8 ${className}`}>
       <Marker marker={marker} />
       <div className="min-w-0 flex-1">{children}</div>
     </div>
@@ -770,25 +775,40 @@ export function TimelineDescription({
 }
 
 export interface TimelineOlderProps extends TimelineRowAttributes {
-  /** How many events are left out. */
+  /** How many events are left out, or still to read. */
   count: number;
+  /**
+   * Whether they're still being read, while the newest are drawn: "Reading older events…", with a
+   * spinner, until they take the row's place.
+   */
+  reading?: boolean | undefined;
   /** "Open on GitHub" was pressed. */
   onSee?: (() => void) | undefined;
   focused?: boolean | undefined;
 }
 
 /**
- * Past the pages Lo reads, what's left out: "120 older events", and Open on GitHub. It's a row on
- * the rail like the others, so the line runs through it.
+ * Past the pages Lo reads, what's left out: "120 older events", and Open on GitHub. While the
+ * older events are still being read, "Reading older events…", with a spinner. It's a row on the
+ * rail like the others, so the line runs through it.
  */
-export function TimelineOlder({ count, onSee, focused, ...row }: TimelineOlderProps) {
+export function TimelineOlder({ count, reading, onSee, focused, ...row }: TimelineOlderProps) {
   return (
     <TimelineRow marker={{ glyph: 'more' }} focused={focused} {...row}>
       <div className="flex min-h-32 flex-wrap items-center gap-x-6 gap-y-2 text-fg-muted text-small">
-        <span>
-          {count.toLocaleString('en-US')} older {count === 1 ? 'event' : 'events'}
-        </span>
-        <LinkButton onClick={onSee}>Open on GitHub</LinkButton>
+        {reading ? (
+          <span className="inline-flex items-center gap-6" aria-busy="true">
+            <Spinner />
+            Reading older events…
+          </span>
+        ) : (
+          <>
+            <span>
+              {count.toLocaleString('en-US')} older {count === 1 ? 'event' : 'events'}
+            </span>
+            <LinkButton onClick={onSee}>Open on GitHub</LinkButton>
+          </>
+        )}
       </div>
     </TimelineRow>
   );

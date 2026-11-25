@@ -1,7 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { panels, rightIds, rightPanel, showRightView, stepAmong, toggleRight } from './panels.ts';
+import {
+  middleOf,
+  panels,
+  rightIds,
+  rightPanel,
+  showRightView,
+  stepAmong,
+  toggleRight,
+} from './panels.ts';
 import { putRight, rightKept, rightShown } from './shared.ts';
 
 describe('stepping through the middle views', () => {
@@ -24,6 +32,33 @@ describe('stepping through the middle views', () => {
   it('stays where it is with no other view to go to', () => {
     expect(stepAmong(0, 1, [true, false])).toBe(0);
     expect(stepAmong(0, -1, [])).toBe(0);
+  });
+});
+
+describe('the view a tab opens on', () => {
+  const ids = ['overview.view', 'diff.view', 'diff.whole', 'timeline.view'];
+
+  it('is the one Settings names, once it’s known', () => {
+    expect(middleOf(undefined, ids, undefined)).toBeUndefined();
+    expect(middleOf(undefined, ids, 'overview')).toBe('overview.view');
+    expect(middleOf(undefined, ids, 'timeline')).toBe('timeline.view');
+    expect(middleOf(undefined, ids, 'diff')).toBe('diff.view');
+  });
+
+  it('is the timeline in place of the overview while overviews are off', () => {
+    const without = ids.filter((id) => id !== 'overview.view');
+    expect(middleOf(undefined, without, 'overview')).toBe('timeline.view');
+    expect(middleOf(undefined, without, 'diff')).toBe('diff.view');
+    // One the tab showed that's gone shows as the timeline too, until it's back.
+    expect(middleOf('overview.view', without, 'diff')).toBe('timeline.view');
+    expect(middleOf('overview.view', ids, 'diff')).toBe('overview.view');
+    // With no timeline either, the first there is.
+    expect(middleOf(undefined, ['diff.view', 'diff.whole'], 'overview')).toBe('diff.view');
+  });
+
+  it('gives way to the one the tab shows, whatever Settings says after', () => {
+    expect(middleOf('diff.whole', ids, 'overview')).toBe('diff.whole');
+    expect(middleOf('diff.view', ids, undefined)).toBe('diff.view');
   });
 });
 

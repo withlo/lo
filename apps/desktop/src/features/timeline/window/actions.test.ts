@@ -50,7 +50,7 @@ describe('revealHidden', () => {
 
 /** Rows with the keys `keys`, in order. */
 function rows(...keys: string[]): Row[] {
-  return keys.map((key) => ({ kind: 'older', key, count: 1 }) satisfies Row);
+  return keys.map((key) => ({ kind: 'older', key, count: 1, reading: false }) satisfies Row);
 }
 
 describe('keptRow', () => {
