@@ -175,6 +175,32 @@ describe('indexing a tree', () => {
     });
     // A job that failed was tried again in halves, so the file beside the one it failed on was read.
     expect(background.jobs).toEqual([2, 1, 1]);
+    // Its files read leave out those skipped, as they do once the store has them all.
+    expect(built.read).toEqual(new Map([['typescript', 1]]));
+    expect((await build(repo, 'head', { background, store })).read).toEqual(
+      new Map([['typescript', 1]]),
+    );
+  });
+
+  it('counts its files read by path, in each language, a blob at two paths twice', async () => {
+    const repo = fakeRepo({
+      commits: {
+        head: {
+          'src/parse.ts': PARSE,
+          'vendor/parse.ts': PARSE,
+          'src/view.tsx': 'export function View() { return null }',
+          'tools/run.py': 'def run():\n    pass\n',
+        },
+      },
+    });
+    const built = await build(repo, 'head');
+    expect(built.read).toEqual(
+      new Map([
+        ['typescript', 2],
+        ['tsx', 1],
+        ['python', 1],
+      ]),
+    );
   });
 
   it('leaves what a job had to read again, not failed, when the background process stops', async () => {

@@ -42,7 +42,11 @@ const header = (
 
 /** A status item with a ball in `state`, as markup. */
 const ball = (state: StatusBallState) =>
-  renderToStaticMarkup(<StatusItem ball={state}>a</StatusItem>);
+  renderToStaticMarkup(
+    <StatusItem ball={state} details={<p>b</p>}>
+      a
+    </StatusItem>,
+  );
 
 describe('PRHeader', () => {
   it('shows the state, title and number, who acts, the connection and the branches', () => {
@@ -184,14 +188,18 @@ describe('StatusBar', () => {
   it('puts background work at the start, and where you are at the end', () => {
     const markup = renderToStaticMarkup(
       <StatusBar
-        start={<StatusItem ball="ready">Local copy</StatusItem>}
+        start={
+          <StatusItem ball="ready" details={<p>At 5530830</p>}>
+            Local copy
+          </StatusItem>
+        }
         end={<span>NORMAL</span>}
       />,
     );
     expect(markup).toContain('aria-label="Status bar"');
     expect(markup.indexOf('Local copy')).toBeLessThan(markup.indexOf('NORMAL'));
     expect(markup).toContain('bg-success');
-    // Text with nothing behind it has no tooltip.
+    // Never the system's tooltip.
     expect(markup).not.toContain('title=');
   });
 
@@ -239,15 +247,25 @@ describe('the parts’ styles', () => {
           />
         </BannerPlaceProvider>
         <Banner tone="danger" title="a" />
-        <StatusBar start={<StatusItem ball="working">a</StatusItem>} />
+        <StatusBar
+          start={
+            <StatusItem ball="working" details={<p>a</p>}>
+              a
+            </StatusItem>
+          }
+        />
         <StatusItem ball="warn" onClick={() => {}}>
           a
         </StatusItem>
         <StatusItem ball="failed" details={<p>a</p>}>
           a
         </StatusItem>
-        <StatusItem ball="off">a</StatusItem>
-        <StatusItem ball="ready">a</StatusItem>
+        <StatusItem ball="off" details={<p>a</p>}>
+          a
+        </StatusItem>
+        <StatusItem ball="ready" details={<p>a</p>}>
+          a
+        </StatusItem>
         <StatePill state="draft" />
         <StatePill state="merged" />
         <StatePill state="closed" />

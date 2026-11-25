@@ -50,8 +50,9 @@ describe('the store', () => {
       { oid: B, language: 'typescript' },
       { oid: A, language: 'python' },
     ];
-    expect(store.fresh('v1', blobs)).toEqual([0, 1]);
-    expect(store.fresh('v2', blobs)).toEqual([]);
+    // B was skipped, which a tree's count of files leaves out.
+    expect(store.fresh('v1', blobs)).toEqual({ found: [0, 1], skipped: [1] });
+    expect(store.fresh('v2', blobs)).toEqual({ found: [], skipped: [] });
     expect(store.kept('v1', blobs[0]!)).toEqual({
       skipped: undefined,
       definitions: parse.definitions,
@@ -63,7 +64,7 @@ describe('the store', () => {
 
     // Read again at a new version, it replaces what was kept.
     store.put('v2', [reading(A, { symbols: symbols({ references: ['other'] }) })]);
-    expect(store.fresh('v2', blobs)).toEqual([0]);
+    expect(store.fresh('v2', blobs)).toEqual({ found: [0], skipped: [] });
     expect(store.kept('v2', blobs[0]!)?.definitions).toEqual([]);
   });
 
@@ -139,7 +140,7 @@ describe('the store', () => {
     expect(store.tree('open')).toHaveLength(30);
     expect(store.tree('old')).toBe(undefined);
     expect(store.referrers('v1', 'open', 'name7', 100)).toHaveLength(30);
-    expect(store.fresh('v1', [{ oid: blob(150), language: 'typescript' }])).toEqual([]);
+    expect(store.fresh('v1', [{ oid: blob(150), language: 'typescript' }]).found).toEqual([]);
   });
 
   it('lets go of everything once cleared, as clearing the cache does', () => {
@@ -150,7 +151,7 @@ describe('the store', () => {
     store.put('v1', [reading(A, { symbols: symbols({ references: ['parse'] }) })]);
     store.setTree('t1', [{ path: 'a.ts', oid: A, language: 'typescript' }]);
     store.clear();
-    expect(store.fresh('v1', [{ oid: A, language: 'typescript' }])).toEqual([]);
+    expect(store.fresh('v1', [{ oid: A, language: 'typescript' }]).found).toEqual([]);
     expect(store.tree('t1')).toBe(undefined);
   });
 });
