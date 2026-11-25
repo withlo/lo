@@ -52,6 +52,7 @@
   --spacing-settings-nav-w: var(--lo-settings-nav-w);
   --spacing-settings-w: var(--lo-settings-w);
   --spacing-choice-min-w: var(--lo-choice-min-w);
+  --spacing-overview-example-h: var(--lo-overview-example-h);
   --spacing-dialog-w: var(--lo-dialog-w);
   --spacing-dialog-w-sm: var(--lo-dialog-w-sm);
   --spacing-dialog-w-lg: var(--lo-dialog-w-lg);

@@ -1,16 +1,18 @@
 // What the overview shares with other features' window code: whether there are overviews, which
-// Settings turns off and on, and every view and command of the overview comes and goes with; its
-// mark for a tab, as the header's view switch shows it, which the stack's tree shows for the layer
-// on screen; the review threads another feature places and draws on its code blocks, with the
-// comments written there; and whether a tab's overview has a block now, and when that may have
-// changed.
+// Settings turns off and on, and every view and command of the overview comes and goes with; what
+// one looks like, for the welcome to show; its mark for a tab, as the header's view switch shows
+// it, which the stack's tree shows for the layer on screen; the review threads another feature
+// places and draws on its code blocks, with the comments written there; and whether a tab's
+// overview has a block now, and when that may have changed.
 
 import type { Target } from '@lo/ui/commands';
+import { createElement, type ReactNode } from 'react';
 
 import type { Presence } from '../../../window/slots.tsx';
 import { settingNow, watchSetting } from '../../settings/window/shared.ts';
 import { usePull } from '../../tab/window/shared.ts';
 import { on } from '../settings.ts';
+import { Example } from './Example.tsx';
 import { markOf, newestHead, standingOf, type MarkKind } from './facts.ts';
 import { blockAt, drawnIn } from './follow.ts';
 import { useStanding } from './hooks.ts';
@@ -57,6 +59,16 @@ export const overviews: Presence = {
  */
 export function followOverviews(listener: (on: boolean) => void): () => void {
   return watchSetting(on, listener);
+}
+
+/**
+ * What an overview looks like: the top of one, its tl;dr and the code block it links to, drawn at
+ * its real size in the overview's own styles, in a frame as wide as its place that cuts it off.
+ * Nothing in it responds, and a screen reader hears what it shows. It's the same while overviews
+ * are off.
+ */
+export function OverviewExample(): ReactNode {
+  return createElement(Example);
 }
 
 /**
