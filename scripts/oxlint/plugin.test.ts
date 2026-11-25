@@ -566,12 +566,15 @@ test('an svg of its own is refused, in JSX or made in the DOM, and so is lucide 
   ]);
 });
 
-test('Icon, the mark, figures, the list of icons and a listed file are let through', () => {
+test('Icon, iconElement, the mark, figures, the list of icons and a listed file are let through', () => {
   const svg = 'const drawn = <svg viewBox="0 0 24 24" />;';
   const ui = (file: string) => join(ROOT, 'packages/desktop/ui/src', file);
   for (const file of ['Icon.tsx', 'Mark.tsx', 'LogoMotion.tsx', 'figures/Figure.tsx']) {
     expect(icons(svg, ui(file))).toEqual([]);
   }
+  expect(icons("const made = document.createElementNS(SVG, 'svg');", ui('iconElement.ts'))).toEqual(
+    [],
+  );
   expect(icons("import { Check } from 'lucide';", ui('icons.ts'))).toEqual([]);
   // The list of icons draws none, and Icon imports none.
   expect(icons("const made = document.createElementNS(SVG, 'svg');", ui('icons.ts'))).toHaveLength(

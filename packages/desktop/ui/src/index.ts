@@ -17,6 +17,7 @@ export {
 export { HintButton, type HintButtonProps } from './HintButton.tsx';
 export { HintRow, type HintRowProps } from './HintRow.tsx';
 export { Key, keyAria, type KeyAria, type KeyProps } from './Key.tsx';
+export { keyCap } from './keyCap.ts';
 export {
   Toast,
   ToastRegion,

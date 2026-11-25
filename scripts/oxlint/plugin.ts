@@ -576,10 +576,12 @@ export const ICON_MESSAGE =
 
 /**
  * The files that may write an `<svg>`, from the repository's root: `Icon`, which draws every icon,
- * the mark and its animations, and an overview's figures. A folder ends in `/`.
+ * and `iconElement`, which makes the same in a code view's own DOM, the mark and its animations,
+ * and an overview's figures. A folder ends in `/`.
  */
 const DRAWS_SVG = [
   'packages/desktop/ui/src/Icon.tsx',
+  'packages/desktop/ui/src/iconElement.ts',
   'packages/desktop/ui/src/Mark.tsx',
   'packages/desktop/ui/src/LogoMotion.tsx',
   'packages/desktop/ui/src/figures/',

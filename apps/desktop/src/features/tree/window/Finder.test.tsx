@@ -155,7 +155,7 @@ async function open() {
 const changedOnlyHint = () =>
   [...document.querySelectorAll('kbd')]
     .map((key) => key.parentElement)
-    .find((each) => each?.textContent === 'Changed files onlyTab');
+    .find((each) => each?.textContent === 'Changed files only⇥');
 
 /** Types into the field, as React hears it: through the setter React watches. */
 function type(text: string): void {
@@ -189,7 +189,7 @@ describe('opening the finder', () => {
     await open();
     const foot = [...document.querySelectorAll('kbd')].map((key) => key.parentElement?.textContent);
     expect(foot).toEqual(
-      expect.arrayContaining(['Show in diff⏎', 'Open whole file⌘⏎', 'Changed files onlyTab']),
+      expect.arrayContaining(['Show in diff⏎', 'Open whole file⌘⏎', 'Changed files only⇥']),
     );
     expect(document.querySelector('input[aria-label="Go to file"]')).not.toBeNull();
   });

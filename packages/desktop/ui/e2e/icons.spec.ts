@@ -64,3 +64,40 @@ test('each size draws its stroke in pixels, and an icon drawn by hand keeps its 
     [12, 1.31],
   ]);
 });
+
+test('a key chip draws its symbols as 12 px icons, and its names and letters as text', async () => {
+  const page = await open();
+  expect(new Set((await strokes(page, '[data-keys] kbd svg')).map(String))).toEqual(
+    new Set(['12,1.25']),
+  );
+  const chips = await page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>('[data-keys] kbd')].map((chip) => ({
+      system: chip.closest<HTMLElement>('[data-keys]')?.dataset['keys'],
+      text: chip.textContent,
+      icons: chip.querySelectorAll('svg').length,
+      // What it shows as text, leaving out each symbol's character, which is visually hidden.
+      shown: [...chip.childNodes]
+        .filter((node) => node.nodeType === Node.TEXT_NODE)
+        .map((node) => node.textContent)
+        .join(''),
+    })),
+  );
+  // No chip shows a character outside the code font's Latin: a symbol is an icon.
+  expect(chips.filter((chip) => !/^[\x20-\x7e]*$/.test(chip.shown))).toEqual([]);
+  // On macOS a chord with every modifier is four icons and its letter, and Tab is an icon alone too.
+  expect(chips).toContainEqual({ system: 'mac', text: '⌘⌃⌥⇧K', icons: 4, shown: 'K' });
+  expect(chips).toContainEqual({ system: 'mac', text: '⇧⇥', icons: 2, shown: '' });
+  expect(chips).toContainEqual({ system: 'mac', text: 'Esc', icons: 0, shown: 'Esc' });
+  // On Linux only the arrows are icons; the rest are words.
+  expect(
+    new Set(
+      chips.filter((chip) => chip.system === 'linux' && chip.icons > 0).map((chip) => chip.text),
+    ),
+  ).toEqual(new Set(['↑', '↓', '←', '→']));
+  expect(chips).toContainEqual({
+    system: 'linux',
+    text: 'Ctrl+Shift+P',
+    icons: 0,
+    shown: 'Ctrl+Shift+P',
+  });
+});

@@ -3,8 +3,7 @@
   "compilerOptions": {
     "outDir": ".tsbuild/test",
     "lib": ["ES2024", "DOM"],
-    "types": ["node", "vite/client"],
-    "jsx": "react-jsx"
+    "types": ["node", "vite/client"]
   },
   "include": [
     "src/**/*.test.ts",
