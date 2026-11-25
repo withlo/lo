@@ -226,6 +226,7 @@ function placeOf(target: Target): { file: string; side: Side } | undefined {
     case 'tab':
     case 'row':
     case 'box':
+    case 'notice':
     case 'none':
       return undefined;
     default:

@@ -10,6 +10,7 @@ import {
   type Ref,
 } from 'react';
 
+import { SegmentedControl } from './SegmentedControl.tsx';
 import { Spinner } from './Spinner.tsx';
 import { Tag } from './Tag.tsx';
 import { ThreadCount } from './ThreadCount.tsx';
@@ -474,10 +475,8 @@ export interface FileTreePanelProps {
   /** Whether the files show as the tree, or the changed ones in review order. */
   mode: 'tree' | 'review';
   onMode?: ((mode: 'tree' | 'review') => void) | undefined;
-  /** The keys of the command that lists them as the tree, as this system shows them. */
-  treeKeys?: readonly string[] | undefined;
-  /** The keys of the switch to review order, as this system shows them. */
-  reviewKeys?: readonly string[] | undefined;
+  /** The key that switches between the tree and review order, as this system shows it. */
+  modeKeys?: readonly string[] | undefined;
   changedOnly: boolean;
   onChangedOnly?: ((changedOnly: boolean) => void) | undefined;
   changedOnlyKeys?: readonly string[] | undefined;
@@ -492,18 +491,11 @@ export interface FileTreePanelProps {
   children?: ReactNode;
 }
 
-const segment = cva(
-  'inline-flex h-20 items-center rounded-pill px-8 text-small-medium whitespace-nowrap focus-visible:shadow-ring',
-  {
-    variants: {
-      pressed: {
-        true: 'bg-bg-element text-fg ring-1 ring-border-strong',
-        false:
-          'text-fg-muted hover:text-fg aria-disabled:text-fg-disabled aria-disabled:hover:text-fg-disabled',
-      },
-    },
-  },
-);
+/** The ways the files are listed: as the tree, or the changed ones in review order. */
+const MODES = [
+  { value: 'tree', label: 'Tree' },
+  { value: 'review', label: 'Review order' },
+] as const;
 
 /** What the switch that shows only the changed files is named. */
 const CHANGED_ONLY = 'Changed files only';
@@ -512,16 +504,15 @@ const CHANGED_ONLY = 'Changed files only';
 const WAITING = 'Reading files…';
 
 /**
- * The left panel's files: its head with the viewed count, the switch between the tree and review
- * order and the "Changed files only" switch, each with its key in its tooltip, then any note, then
- * the tree.
+ * The left panel's files: its head with the viewed count, the `SegmentedControl` between the tree
+ * and review order with its key after it, and the "Changed files only" switch with its key in its
+ * tooltip, then any note, then the tree.
  */
 export function FileTreePanel({
   viewed,
   mode,
   onMode,
-  treeKeys,
-  reviewKeys,
+  modeKeys,
   changedOnly,
   onChangedOnly,
   changedOnlyKeys,
@@ -531,9 +522,6 @@ export function FileTreePanel({
 }: FileTreePanelProps) {
   // Dimmed, with why: said to be disabled, not made so, so focus and the tooltip still reach it.
   const dimmed = waiting ? { 'aria-disabled': true, 'aria-description': WAITING } : {};
-  // A switch's words are on it: its tooltip is there for its key, or why it's dimmed.
-  const modeTip = (words: string, keys: readonly string[] | undefined) =>
-    waiting ? WAITING : keys !== undefined && keys.length > 0 ? words : null;
   return (
     <section aria-label="Files" className="flex min-h-0 flex-1 flex-col bg-bg-chrome">
       <div className="flex flex-none items-center gap-6 ps-16 pe-8 pt-12 pb-8">
@@ -547,41 +535,21 @@ export function FileTreePanel({
           </span>
         )}
       </div>
-      {/* It never wraps or clips: narrow, the switch gives up its words for its icon, and the
-          keys are in the tooltips. The row is the container. */}
+      {/* It never wraps or clips: narrow, "Changed files only" gives up its words for its icon,
+          its key in its tooltip. The row is the container. */}
       <div className="@container flex-none ps-12 pe-8 pb-8">
         <div className="flex items-center gap-6">
-          <div
-            role="group"
-            aria-label="File list"
-            className="inline-flex flex-none items-center gap-2 rounded-pill bg-bg-well p-2 inset-ring inset-ring-border"
-          >
-            <Tooltip label={modeTip('Tree', treeKeys)} keys={waiting ? undefined : treeKeys}>
-              <button
-                type="button"
-                aria-pressed={mode === 'tree'}
-                {...dimmed}
-                className={segment({ pressed: mode === 'tree' })}
-                onClick={() => !waiting && onMode?.('tree')}
-              >
-                Tree
-              </button>
-            </Tooltip>
-            <Tooltip
-              label={modeTip('Review order', reviewKeys)}
-              keys={waiting ? undefined : reviewKeys}
-            >
-              <button
-                type="button"
-                aria-pressed={mode === 'review'}
-                {...dimmed}
-                className={segment({ pressed: mode === 'review' })}
-                onClick={() => !waiting && onMode?.('review')}
-              >
-                Review order
-              </button>
-            </Tooltip>
-          </div>
+          <SegmentedControl
+            label="File list"
+            kind="views"
+            size="sm"
+            items={MODES}
+            value={mode}
+            onChange={(next) => onMode?.(next)}
+            keys={modeKeys}
+            disabled={waiting}
+            why={WAITING}
+          />
           <span className="flex-1" />
           <Tooltip
             label={waiting ? WAITING : CHANGED_ONLY}

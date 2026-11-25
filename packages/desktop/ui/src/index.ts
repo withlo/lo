@@ -33,6 +33,13 @@ export {
 } from './Toast.tsx';
 export { HERE, KeyHelp, type KeyHelpProblem, type KeyHelpProps } from './KeyHelp.tsx';
 export { MORE_ACTIONS, MoreButton, openMenuUnder, type MoreButtonProps } from './MoreButton.tsx';
+export {
+  DISMISS,
+  DismissButton,
+  Offer,
+  type DismissButtonProps,
+  type OfferProps,
+} from './Dismiss.tsx';
 export { Palette, PaletteHint, type PaletteGroup, type PaletteProps } from './Palette.tsx';
 export {
   Banner,
