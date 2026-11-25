@@ -8,7 +8,7 @@ import { join } from 'node:path';
 
 import { parseOid, type Repo } from '@lo/git';
 import { GithubClient, Token, type GitHubUrls } from '@lo/github';
-import { replayFetch } from '@lo/testing';
+import { fileFolders, replayFetch } from '@lo/testing';
 import { APP_PULL, gitProgram, writeAppRemote } from '@lo/testing/git';
 import { expect, onTestFinished } from 'vitest';
 
@@ -25,11 +25,12 @@ export function folder(prefix = 'lo-tree-'): string {
   return path;
 }
 
+const remoteFolder = fileFolders('lo-tree-remote-');
 let appRemote: string | undefined;
 
 /** The e2e pull request's remote, made once for the test file. */
 export function e2eRemote(): string {
-  appRemote ??= writeAppRemote(realpathSync(mkdtempSync(join(tmpdir(), 'lo-tree-remote-'))));
+  appRemote ??= writeAppRemote(remoteFolder());
   return appRemote;
 }
 

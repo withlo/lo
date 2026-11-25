@@ -19,7 +19,7 @@ import { onTestFinished } from 'vitest';
 import { Cache, type CacheOptions } from '../src/cache.ts';
 import type { Comparison } from '../src/compare.ts';
 import { type Environment, GITHUB } from '../src/environment.ts';
-import { findGit, gitAt } from '../src/find.ts';
+import { gitAt, type GitStatus } from '../src/find.ts';
 import { type Git, Runner, type RunnerSettings } from '../src/git.ts';
 import type { Repo } from '../src/repo.ts';
 
@@ -38,9 +38,24 @@ export function systemPath(): string {
   return `${dirname(gitProgram())}:/usr/bin:/bin`;
 }
 
-/** The git Lo would find in `env`: the test's own environment unless it says otherwise. */
-export async function foundGit(env: Environment = process.env): Promise<Git> {
-  const status = await findGit({ env, platform: process.platform });
+let ours: Promise<Git> | undefined;
+
+/**
+ * The git the tests run ({@link gitProgram}), as Lo takes a git the user names, with what it
+ * inherits from `env`: the test's own environment unless it says otherwise. That one is checked
+ * once for the file, since checking a git runs it.
+ */
+export function foundGit(env?: Environment): Promise<Git> {
+  if (env !== undefined) return gitIn(env);
+  ours ??= gitIn(process.env);
+  return ours;
+}
+
+function gitIn(env: Environment): Promise<Git> {
+  return gitAt(gitProgram(), { env, platform: process.platform }).then(found);
+}
+
+function found(status: GitStatus): Git {
   if (status.status !== 'found') throw new Error(`the tests need git: found ${status.status}`);
   return status.git;
 }

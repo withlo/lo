@@ -106,6 +106,33 @@ export class RemoteRepo {
   }
 
   /**
+   * Commits `files`, by path, over the last commit, and returns the commit: what writing each and
+   * {@link commit} would make of a working copy that holds nothing else, but in one git
+   * (`fast-import`), where `git add` takes seconds over thousands. The working copy is then the
+   * commit, so whatever else it held is gone.
+   */
+  commitFiles(files: Iterable<readonly [string, string]>, message: string): string {
+    const branch = git(this.work, 'symbolic-ref', '-q', 'HEAD');
+    const stream: Buffer[] = [];
+    const data = (text: string) => {
+      const bytes = Buffer.from(text);
+      stream.push(Buffer.from(`data ${bytes.length}\n`), bytes, Buffer.from('\n'));
+    };
+    stream.push(Buffer.from(`commit ${branch}\ncommitter Lo test <test@lo.invalid> now\n`));
+    data(message);
+    stream.push(Buffer.from(`from ${branch}^0\n`));
+    for (const [path, contents] of files) {
+      // Unquoted, a path runs to the end of its line.
+      if (path.includes('\n') || path.startsWith('"')) throw new Error(`can't import ${path}`);
+      stream.push(Buffer.from(`M 100644 inline ${path}\n`));
+      data(contents);
+    }
+    gitBytes(this.work, ['fast-import', '--quiet', '--date-format=now'], Buffer.concat(stream));
+    git(this.work, 'reset', '-q', '--hard');
+    return this.head();
+  }
+
+  /**
    * Commits the working copy and `files`, whose names a disk may refuse (a name that isn't
    * UTF-8), which go straight into the index.
    */

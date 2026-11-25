@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { parseOid, type Repo } from '@lo/git';
 import { GithubClient, Token } from '@lo/github';
-import { replayFetch } from '@lo/testing';
+import { fileFolders, replayFetch } from '@lo/testing';
 import { APP_PULL, gitProgram, RepoServer, writeAppRemote } from '@lo/testing/git';
 import { describe, expect, it, onTestFinished } from 'vitest';
 
@@ -21,11 +21,12 @@ function folder(prefix = 'lo-diff-'): string {
   return path;
 }
 
+const remoteFolder = fileFolders('lo-diff-remote-');
 let remote: string | undefined;
 
 /** rozed-dev/e2e's clone in a new cache, with #80 fetched into it. */
 async function e2eClone(): Promise<Repo> {
-  remote ??= writeAppRemote(realpathSync(mkdtempSync(join(tmpdir(), 'lo-diff-remote-'))));
+  remote ??= writeAppRemote(remoteFolder());
   return cloneOf(remote, {
     number: APP_PULL.number,
     head: APP_PULL.head,

@@ -1,10 +1,11 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { beforeAll, afterAll, describe, expect, test } from 'vitest';
 
-import { git, gitBytes } from './git.ts';
+import { git, gitBytes, gitProgram, testGitEnvironment } from './git.ts';
 
 let repo: string;
 
@@ -45,5 +46,21 @@ describe('gitBytes', () => {
 
   test('says what git said when it fails on input that went by file', () => {
     expect(() => gitBytes(repo, ['mktree'], 'x'.repeat(100_000))).toThrow(/git mktree .* failed/);
+  });
+});
+
+describe('gitProgram', () => {
+  test('is the git that the git on PATH runs, and the one a script runs', () => {
+    const ask = (program: string, args: string[]) =>
+      execFileSync(program, args, { env: testGitEnvironment(), encoding: 'utf8' }).trim();
+    for (const args of [['--version'], ['--exec-path']]) {
+      expect(ask(gitProgram(), args)).toBe(execFileSync('git', args, { encoding: 'utf8' }).trim());
+    }
+    expect(realpathSync(ask('sh', ['-c', 'command -v git']))).toBe(realpathSync(gitProgram()));
+  });
+
+  test('starts no gc or maintenance in the background', () => {
+    expect(git(repo, 'config', 'gc.auto')).toBe('0');
+    expect(git(repo, 'config', 'maintenance.auto')).toBe('false');
   });
 });
