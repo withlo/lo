@@ -446,6 +446,17 @@ describe('walking it', () => {
     expect(stepOnScreen()).toBe('look');
   });
 
+  it('starts each step at its top, wherever the step before was scrolled to', async () => {
+    await first();
+    await goTo('look');
+    const pane = screen()?.firstElementChild;
+    if (!(pane instanceof HTMLElement)) throw new Error('No steps pane.');
+    pane.scrollTop = 120;
+    click(button('Continue'));
+    expect(stepOnScreen()).toBe('keys');
+    expect(pane.scrollTop).toBe(0);
+  });
+
   it('marks the steps done, the one on screen and the rest, each drawn as its own', async () => {
     await first();
     await goTo('setup');
@@ -753,6 +764,17 @@ describe('the look step', () => {
       { key: 'theme', value: 'dark' },
       { key: 'theme', value: 'system' },
     ]);
+  });
+
+  it('writes the default’s card as it’s pressed while the file holds no theme Lo knows', async () => {
+    // Main hasn't said what the file holds: System is shown, but nothing is on file.
+    const { bridge } = await first({ 'settings.set': () => undefined });
+    await goTo('look');
+    const system = [...onScreen().querySelectorAll('[role="radio"]')][2];
+    expect(system?.getAttribute('aria-checked')).toBe('true');
+    click(system ?? document.body);
+    await settle();
+    expect(writes(bridge)).toEqual([{ key: 'theme', value: 'system' }]);
   });
 
   it('says under the group why the file refused a card, with no toast, and shows what’s on file', async () => {

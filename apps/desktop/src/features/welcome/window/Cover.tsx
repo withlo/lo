@@ -230,6 +230,13 @@ function Welcome(): ReactNode {
     };
   }, []);
 
+  // Each step starts at its top, in a window too short for it, wherever the step before was
+  // scrolled to; what takes focus in it then comes into view by itself.
+  const pane = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (pane.current) pane.current.scrollTop = 0;
+  }, [step]);
+
   // Each step starts with focus on its own first control, once nothing is over the welcome.
   useEffect(
     () =>
@@ -269,6 +276,7 @@ function Welcome(): ReactNode {
           the window is too short for them, they scroll in a pane of their own and the foot stays
           on screen under them; where it isn't, the two sit in the middle together. */}
       <div
+        ref={pane}
         className="mt-auto min-h-0 reveal-room overflow-auto px-24 pt-32 pb-32 gutter-both"
         onFocus={revealFocused}
       >

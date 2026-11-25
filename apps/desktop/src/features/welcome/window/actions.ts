@@ -174,12 +174,14 @@ const writing = new Map<string, number>();
  * Chooses `value` for the setting `key` from a card the reader pressed, with `write`, which ends
  * once main has answered. Each press writes its own choice, so the last one stays, and the card
  * group shows it until every write has ended, landed or not; then it shows what's on file. A press
- * on the card already on file, while nothing is being written, writes nothing.
+ * on the card already on file, while nothing is being written, writes nothing. `onFile` is nothing
+ * before main has said what the file holds, or where it holds a value that isn't a card's: then
+ * every press writes, the default card's too.
  */
 export async function choose<T>(
   key: string,
   value: T,
-  onFile: T,
+  onFile: T | undefined,
   write: (value: T) => Promise<unknown>,
 ): Promise<void> {
   if (!writing.has(key) && value === onFile) return;

@@ -220,6 +220,12 @@ export interface SettingChoice<T extends string> extends Changing<T> {
   /** Where its row is, as a path: "Settings › Appearance". */
   readonly place: string;
   readonly options: readonly ChoiceOption<T>[];
+  /**
+   * What the file holds of it, in `values`, what main said it holds: its own value, or its default
+   * where it has none. Nothing before main has said, or where the file holds a value that isn't
+   * one of its options: then a press on any card, the default's too, is a change.
+   */
+  readonly onFileIn: (values: Readonly<Record<string, unknown>> | undefined) => T | undefined;
 }
 
 /** `setting` as another screen offers it: one of a few options, with a row in Settings. */
@@ -237,6 +243,12 @@ export function choiceOf<T extends string>(setting: Setting<T>): SettingChoice<T
       const parsed = setting.schema.safeParse(option);
       return parsed.success ? [{ value: parsed.data, label }] : [];
     }),
+    onFileIn: (values) => {
+      if (values === undefined) return undefined;
+      if (!Object.hasOwn(values, setting.key)) return setting.fallback;
+      const parsed = setting.schema.safeParse(values[setting.key]);
+      return parsed.success ? parsed.data : undefined;
+    },
   };
 }
 
@@ -245,16 +257,27 @@ export const themeChoice = choiceOf(theme);
 
 /**
  * A choice's value: main's, or its default until main has said or while the file's isn't one of
- * its options. `change` writes another, and resolves once main has answered. `problem` is the
- * `Problem` the setting's row in Settings shows for a change main refused, with what to do about
- * it, until the value or what's wrong in the file changes.
+ * its options; and `onFile`, what the file holds of it, which is nothing then
+ * ({@link SettingChoice.onFileIn}). `change` writes another, and resolves once main has answered.
+ * `problem` is the `Problem` the setting's row in Settings shows for a change main refused, with
+ * what to do about it, until the value or what's wrong in the file changes.
  */
 export function useChoice<T extends string>(
   choice: SettingChoice<T>,
-): { value: T; change: (value: T) => Promise<void>; problem: ReactElement | undefined } {
+): {
+  value: T;
+  onFile: T | undefined;
+  change: (value: T) => Promise<void>;
+  problem: ReactElement | undefined;
+} {
   const settings = useStore(settingsStore, (state) => state.settings);
   const { change, problem } = useChange(choice);
-  return { value: choice.valueIn(settings?.values), change, problem };
+  return {
+    value: choice.valueIn(settings?.values),
+    onFile: choice.onFileIn(settings?.values),
+    change,
+    problem,
+  };
 }
 
 /**

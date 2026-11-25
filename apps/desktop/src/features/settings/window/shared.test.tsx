@@ -248,11 +248,11 @@ describe('choiceOf and useChoice', () => {
   /** The choice as a screen shows it: its value, and its problem's words once there is one. */
   let changing: ((value: 'split' | 'inline') => Promise<void>) | undefined;
   function Offered() {
-    const { value, change, problem } = useChoice(choice);
+    const { value, onFile, change, problem } = useChoice(choice);
     changing = change;
     return (
       <>
-        {value}
+        {value} on file: {onFile ?? 'nothing'}
         {problem}
       </>
     );
@@ -279,11 +279,15 @@ describe('choiceOf and useChoice', () => {
   it('read the value on file, or the default until main has said or for one not an option', () => {
     act(() => settingsStore.setState({ settings: undefined }));
     const shown = render(<Offered />);
-    expect(shown.text()).toBe('split');
+    // Nothing is on file before main has said, or with a value that isn't an option.
+    expect(shown.text()).toBe('split on file: nothing');
     act(() => showSettings(state({ 'diff.layout': 'inline' })));
-    expect(shown.text()).toBe('inline');
+    expect(shown.text()).toBe('inline on file: inline');
     act(() => showSettings(state({ 'diff.layout': 'wrapped' })));
-    expect(shown.text()).toBe('split');
+    expect(shown.text()).toBe('split on file: nothing');
+    // With none in the file, the default is what it holds.
+    act(() => showSettings(state({})));
+    expect(shown.text()).toBe('split on file: split');
   });
 
   it('write a change, and say why the file refused one, with no toast, until the file changes', async () => {
@@ -302,6 +306,6 @@ describe('choiceOf and useChoice', () => {
     expect(notices()).toHaveLength(toasts);
     // The file changed: what it was about may be gone.
     act(() => showSettings(state({ theme: 'dark' }, [{ message: 'Fixed' }])));
-    expect(shown.text()).toBe('split');
+    expect(shown.text()).toBe('split on file: split');
   });
 });

@@ -29,7 +29,7 @@ function Group<T extends string>({
   /** The step's first group, whose chosen card focus starts on. */
   first?: boolean;
 }) {
-  const { value, change, problem } = useChoice(choice);
+  const { value, onFile, change, problem } = useChoice(choice);
   const pressed = useStore(welcomeStore, (state) => state.choosing[choice.key]);
   const shown = choice.options.find((option) => option.value === pressed)?.value ?? value;
   const items: ChoiceItem<T>[] = choice.options.map((option) => ({
@@ -54,7 +54,7 @@ function Group<T extends string>({
           label={choice.label}
           items={items}
           value={shown}
-          onChange={(next) => void choose(choice.key, next, value, change)}
+          onChange={(next) => void choose(choice.key, next, onFile, change)}
         />
       </div>
       <Collapse open={problem !== undefined}>
