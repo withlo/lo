@@ -1,5 +1,6 @@
-// Overview markers, in a gutter of their own before the line numbers: a ball on the first line a
-// block of the pull request's overview explains, and a rail down the rest. The gutter is there from
+// Overview markers, in a lane of their own, last before the code, on the side an overview marks:
+// a ball on the first line a block of the pull request's overview explains, and a rail down the
+// rest. The ball's centre is 15 px left of the code's first column. The gutter is there from
 // the start, as wide with no markers as with them, so markers that arrive later change no line's
 // width or height, and nothing on screen moves. Unchanged lines collapsed into one block carry the
 // rail where it passes through them, and the ball where a marked range starts among them. The rail

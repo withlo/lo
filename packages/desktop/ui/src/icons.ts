@@ -17,6 +17,11 @@ import {
   CornerDownLeft,
   Delete,
   Ellipsis,
+  MessageSquare,
+  MessageSquareCheck,
+  MessageSquareDashed,
+  MessageSquareDot,
+  MessagesSquare,
   Option,
   type IconNode,
 } from 'lucide';
@@ -37,6 +42,11 @@ export const ICONS = {
   'corner-down-left': CornerDownLeft,
   delete: Delete,
   ellipsis: Ellipsis,
+  'message-square': MessageSquare,
+  'message-square-check': MessageSquareCheck,
+  'message-square-dashed': MessageSquareDashed,
+  'message-square-dot': MessageSquareDot,
+  'messages-square': MessagesSquare,
   option: Option,
 } as const satisfies Readonly<Record<string, IconNode>>;
 

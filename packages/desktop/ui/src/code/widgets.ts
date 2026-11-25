@@ -10,6 +10,7 @@ import { WidgetType } from '@codemirror/view';
 import { COMMENT_PATH, threadWords } from '../counts.ts';
 import { EDIT_SLOT } from '../edits.ts';
 import { type DrawNote, type FileHeader, viewControls } from './api.ts';
+import { type Bubble, bubbleElement, sameBubble } from './bubbles.ts';
 import type { ThreadHost } from './threads.ts';
 
 /** How each viewed mark is drawn: a ring, a filled ball, or an amber ring with a dot. */
@@ -280,13 +281,23 @@ export interface HeaderProblem {
 }
 
 /**
+ * The bubble of a file's own threads, which its header draws in the threads' lane, over the band
+ * there, and whether its thread is drawn open.
+ */
+export interface FileBubble {
+  readonly bubble: Bubble;
+  readonly open: () => boolean;
+}
+
+/**
  * A file's header, or the part of it its column draws, with the row under it where the file has
  * no lines on this side to put it in place of, and under that the threads and comment boxes on the
  * file, on the side they're on. A `Problem` with the file comes first under the header, in the
  * element the caller drew it in, which moves into whichever block draws it last. Each is part of
  * the header's block, not a block after it: CodeMirror's decoration cursor can lose a block that
  * sits after another at the same place when a chunk of decorations ends between them, and then
- * draws it where it shouldn't, above the lines it draws.
+ * draws it where it shouldn't, above the lines it draws. The column that draws the path draws the
+ * bubble of the file's threads, in the lane its band covers.
  */
 export class HeaderWidget extends WidgetType {
   readonly file: number;
@@ -296,6 +307,7 @@ export class HeaderWidget extends WidgetType {
   readonly under: UnderHeader | undefined;
   readonly ring: HeaderRing;
   readonly problem: HeaderProblem | undefined;
+  readonly bubble: FileBubble | undefined;
 
   constructor(
     file: number,
@@ -305,6 +317,7 @@ export class HeaderWidget extends WidgetType {
     row?: FileRow,
     under?: UnderHeader,
     problem?: HeaderProblem,
+    bubble?: FileBubble,
   ) {
     super();
     this.file = file;
@@ -314,6 +327,7 @@ export class HeaderWidget extends WidgetType {
     this.row = row;
     this.under = under;
     this.problem = problem;
+    this.bubble = bubble;
   }
 
   override eq(other: HeaderWidget): boolean {
@@ -325,13 +339,16 @@ export class HeaderWidget extends WidgetType {
       other.problem?.dom === this.problem?.dom &&
       other.problem?.drawing === this.problem?.drawing &&
       sameRow(other.row, this.row) &&
-      sameUnder(other.under, this.under)
+      sameUnder(other.under, this.under) &&
+      sameBubble(other.bubble?.bubble, this.bubble?.bubble)
     );
   }
 
   toDOM(): HTMLElement {
     const head = drawHeader(this.file, this.info, this.part);
     if (this.ring.file === this.file) head.classList.add(RING_CLASS);
+    const { bubble } = this;
+    if (bubble) head.append(bubbleElement(bubble.bubble, bubble.open(), 'lo-diffhead__bubble'));
     const { problem } = this;
     const row = this.row && drawRow(this.file, this.row, this.part === 'end');
     if (!problem && !row && !this.under) return head;

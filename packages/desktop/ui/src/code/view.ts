@@ -2,9 +2,10 @@
 // are each one CodeMirror document holding every file, kept level by the spacer pass; inline, one
 // document holds both, a change's deleted lines before its added ones. What each file shows comes
 // from decorations, replaced as its diff, its highlighting and the moves arrive, as runs open and
-// close, and as threads, comment boxes and overview markers' notes come and go. Overview markers
-// are drawn in a gutter of their own (`markers.ts`). A file kept out joins the documents when it's
-// loaded, and the inline document takes a file's lines once its diff decides their order.
+// close, and as threads, comment boxes and overview markers' notes come and go. Threads' marks and
+// overview markers are drawn in lanes of their own, after the line numbers and against the code
+// (`lanes.ts`, `markers.ts`). A file kept out joins the documents when it's loaded, and the inline
+// document takes a file's lines once its diff decides their order.
 //
 // Callers see none of this: they name files by their own ids, places by file, side and line, and
 // reach the view only through `DiffView` (`api.ts`). Keys reach it through the registry, which runs
@@ -97,6 +98,7 @@ import {
   ownTop,
   partlyOnScreen,
 } from './aligner.ts';
+import { type Bubble, bubbleOf, rangeTone, showOpen } from './bubbles.ts';
 import { CommentBox, placeKey } from './comments.ts';
 import {
   type FileNote,
@@ -129,6 +131,14 @@ import {
   vimOn,
   vimPending,
 } from './keys.ts';
+import {
+  type LaneRange,
+  type LaneSource,
+  laneAt,
+  lanesChanged,
+  laneThrough,
+  threadLane,
+} from './lanes.ts';
 import { Layout } from './layout.ts';
 import { swapping } from './lines.ts';
 import {
@@ -332,6 +342,22 @@ interface KeptRoom {
 /** The view's threads in one file, by where they are (`side:line`). */
 type FileThreads = Map<string, ThreadView[]>;
 
+/** A bubble in a lane, with the threads that end on its line, the first of which it opens. */
+interface LaneBubble {
+  readonly bubble: Bubble;
+  readonly ids: readonly string[];
+  /** Whether the first thread is drawn open. */
+  readonly open: () => boolean;
+}
+
+/** A file's threads' marks in one pane, by document line: their ranges, and each line's bubble. */
+interface FileLane {
+  readonly ranges: readonly LaneRange[];
+  readonly bubbles: ReadonlyMap<number, LaneBubble>;
+}
+
+const NO_LANE: FileLane = { ranges: [], bubbles: new Map() };
+
 /** A line of a file, by the file's index and where in it (`side:line`), as `#waiting` keeps it. */
 function waitKey(file: number, key: string): string {
   return `${file}|${key}`;
@@ -515,6 +541,14 @@ class View implements DiffView {
     old?: { selector: string; top: number } | undefined;
     new?: { selector: string; top: number } | undefined;
   } = {};
+  /** Counts the changes to what the threads' lanes draw, which each file's lane is kept by. */
+  #laneVersion = 0;
+  /** Whether any thread is drawn, so the lanes have anything to draw. */
+  #lanesOn = false;
+  /** Each file's lane in each pane, by `pane:file`, with the document and the count it's from. */
+  readonly #lanes = new Map<string, { doc: Text; version: number; lane: FileLane }>();
+  /** Threads drawn since the last frame, with the view seen: their marks fade in. */
+  readonly #arriving = new Set<string>();
 
   constructor(parent: HTMLElement, init: DiffInit, on: DiffEvents) {
     installVim();
@@ -1037,6 +1071,7 @@ class View implements DiffView {
     // screen stays where it is.
     const theirs = this.#readerLines();
     const changed = new Set<string>();
+    const marked = new Set<number>();
     const next: FileThreads[] = this.#ids.map(() => new Map());
     const given = new Set<string>();
     for (const thread of threads) {
@@ -1062,7 +1097,10 @@ class View implements DiffView {
           continue;
         }
         this.#waiting.delete(waitKey(file, key));
-        if (wanted) drawn.set(key, wanted);
+        if (!wanted) continue;
+        // The same threads, saying something else of themselves: a file's, its header's bubble.
+        if (key === 'new:0' && !sameMarks(drawn.get(key), wanted)) marked.add(file);
+        drawn.set(key, wanted);
       }
     });
     // A closed box's line, or a thread's the reader wrote to, is theirs until what they sent comes.
@@ -1080,6 +1118,10 @@ class View implements DiffView {
     this.#markArrived();
     this.#dropThreads();
     this.#markKeyed();
+    // Its marks in the gutter, with what the threads say of themselves now: no line moves.
+    for (const file of marked) this.#refresh(file);
+    this.#lanesMoved();
+    for (const view of this.#editors()) view.dispatch({ effects: lanesChanged.of(null) });
   }
 
   /**
@@ -1202,6 +1244,10 @@ class View implements DiffView {
     if (next === host.open) return true;
     this.#release(host);
     host.setOpen(next);
+    // Its bubble says so where it's drawn, and as it's drawn later.
+    for (const bubble of this.dom.querySelectorAll<HTMLElement>('.lo-bubble')) {
+      if (bubble.dataset.thread === id) showOpen(bubble, next);
+    }
     return true;
   }
 
@@ -1227,7 +1273,11 @@ class View implements DiffView {
 
   /** Draws `lines` with the threads they take, and has the spacer pass line up after. */
   #showLines(lines: readonly { file: number; key: string; threads: ThreadView[] }[]): void {
+    const seen = this.#seen === 'settling' || this.#seen === 'yes';
     for (const { file, key, threads } of lines) {
+      // A thread that comes to a line, once the view's been seen, fades its mark in.
+      const were = new Set((this.#threads[file]!.get(key) ?? []).map((thread) => thread.id));
+      for (const { id } of threads) if (seen && !were.has(id)) this.#arrive(id);
       if (threads.length > 0) this.#threads[file]!.set(key, threads);
       else this.#threads[file]!.delete(key);
     }
@@ -1236,6 +1286,14 @@ class View implements DiffView {
       this.#refresh(file);
     }
     this.#aligner.schedule();
+  }
+
+  /** Thread `id` came to a line: its mark fades in as it's drawn, in the next frame. */
+  #arrive(id: string): void {
+    if (this.#arriving.size === 0) {
+      requestAnimationFrame(() => requestAnimationFrame(() => this.#arriving.clear()));
+    }
+    this.#arriving.add(id);
   }
 
   /**
@@ -1484,7 +1542,8 @@ class View implements DiffView {
     const next = new Map<number, { old: OverviewAt[]; new: OverviewAt[] }>();
     const keys = new Map<string, OverviewAt>();
     for (const mark of marks) {
-      if (mark.kind !== 'overview') continue;
+      // An overview marks new lines only: the older side has no lane for it.
+      if (mark.kind !== 'overview' || mark.at.side !== 'new') continue;
       const file = this.#index.get(mark.at.file);
       const to = Math.max(mark.at.from, mark.at.to);
       if (file === undefined || to < 1) continue;
@@ -2163,6 +2222,112 @@ class View implements DiffView {
     const open = keys.flatMap((key) => this.#noteFor(key) ?? []);
     if (open.length > 0) this.#closeNotes(open);
     else this.#openNotes(keys);
+  }
+
+  // Threads' lanes ----------------------------------------------------------------------------
+
+  /** What the threads' lane of `pane` draws, by its document lines. */
+  #laneSource(pane: Pane): LaneSource {
+    const lane = (line: number): FileLane =>
+      this.#laneOf(pane, this.#fileAt(pane, Math.max(1, Math.floor(line))));
+    return {
+      // The inline editor's lane is asked as it's made, before the view has its layout.
+      active: () => this.#lanesOn && (pane !== 'inline' || this.#inline !== undefined),
+      markerAt: (line) => {
+        const { ranges, bubbles } = lane(line);
+        const there = bubbles.get(line);
+        if (ranges.length === 0 && !there) return null;
+        return laneAt(line, {
+          ranges,
+          bubble: there?.bubble,
+          open: there?.open,
+          arriving: there?.ids.some((id) => this.#arriving.has(id)),
+        });
+      },
+      markerThrough: (first, last) => laneThrough(first, last, lane(first).ranges),
+      markerBetween: (line, after) => {
+        const half = line + (after ? 0.5 : -0.5);
+        return laneThrough(half, half, lane(line).ranges);
+      },
+    };
+  }
+
+  /**
+   * File `file`'s threads' marks in `pane`, as drawn now: worked out when first asked for, and
+   * again once its threads or its document lines have changed.
+   */
+  #laneOf(pane: Pane, file: number): FileLane {
+    if (!this.#threads[file] || this.#threads[file].size === 0) return NO_LANE;
+    const key = `${pane}:${file}`;
+    const { doc } = this.#viewOf(pane).state;
+    const kept = this.#lanes.get(key);
+    if (kept?.doc === doc && kept.version === this.#laneVersion) return kept.lane;
+    const lane = this.#makeLane(pane, file);
+    this.#lanes.set(key, { doc, version: this.#laneVersion, lane });
+    return lane;
+  }
+
+  /**
+   * File `file`'s threads' marks in `pane`: a bubble on each line threads are drawn under, on that
+   * line's side, and each range's bracket in the lane of each side it has lines on. A file's own
+   * threads have theirs in its header, and a file that doesn't show its lines has none.
+   */
+  #makeLane(pane: Pane, file: number): FileLane {
+    if (this.#noteOf(file) || (pane === 'inline' && !this.#inline?.layout.lines[file])) {
+      return NO_LANE;
+    }
+    const ranges: LaneRange[] = [];
+    const bubbles = new Map<number, LaneBubble>();
+    for (const [key, threads] of this.#threads[file]!) {
+      if (key === 'new:0' || threads.length === 0) continue;
+      const end = placeOf(threads[0]!.at);
+      if (pane === 'inline' || end.side === pane) {
+        const first = threads[0]!.id;
+        bubbles.set(this.#docLine(pane, { file, ...end }), {
+          bubble: bubbleOf(threads),
+          ids: threads.map((thread) => thread.id),
+          open: () => this.#hosts.get(first)?.open ?? false,
+        });
+      }
+      for (const thread of threads) {
+        const from = thread.mark?.from;
+        if (!from || (from.side === end.side && from.line === end.line)) continue;
+        const range = this.#laneRange(pane, file, from, end);
+        if (range) ranges.push({ ...range, tone: rangeTone(thread) });
+      }
+    }
+    return { ranges, bubbles };
+  }
+
+  /**
+   * The document lines of `pane` a range of file `file`'s lines covers, from `from` to `end`. A
+   * range from one side's lines to the other's covers, in each side's column, that side's lines
+   * from the row it starts in to the row it ends in, and starts at the top of its first line where
+   * it runs on from the other side's: only its own first line takes the tick.
+   */
+  #laneRange(
+    pane: Pane,
+    file: number,
+    from: { side: Side; line: number },
+    end: { side: Side; line: number },
+  ): Omit<LaneRange, 'tone'> | undefined {
+    const first = this.#docLine(pane, { file, ...from });
+    const last = this.#docLine(pane, { file, ...end });
+    if (pane === 'inline' || from.side === end.side) {
+      if (pane !== 'inline' && pane !== end.side) return undefined;
+      return { from: Math.min(first, last), to: Math.max(first, last), tick: true };
+    }
+    if (pane === from.side) return last > first ? { from: first, to: last, tick: true } : undefined;
+    return first < last ? { from: first, to: last, tick: false } : undefined;
+  }
+
+  /**
+   * What the threads' lanes draw changed, as when threads are drawn, or what they say of themselves
+   * does: each file's lane is worked out again as it's asked for.
+   */
+  #lanesMoved(): void {
+    this.#laneVersion++;
+    this.#lanesOn = this.#threads.some((byPlace) => byPlace.size > 0);
   }
 
   /** `Esc` in the diff's code, with Vim waiting on nothing: the note opened last closes. */
@@ -3386,6 +3551,11 @@ class View implements DiffView {
    */
   #controlTarget(control: HTMLElement): Target | undefined {
     if (control === this.#add) return this.#addAt;
+    // A thread's bubble: its thread, by which it would do.
+    const { thread } = control.dataset;
+    if (thread !== undefined) {
+      return { kind: 'thread', thread, collapsed: this.#hosts.get(thread)?.open === false };
+    }
     if (this.#pin.dom.contains(control)) {
       const file = this.#pin.file;
       return file === undefined
@@ -3476,8 +3646,8 @@ class View implements DiffView {
       return;
     }
     const at = this.#placeAt(pane, view.state.doc.lineAt(block.from).number);
-    // Over the start of the line's number, past the column of overview markers, which take clicks
-    // of their own.
+    // Over the start of the line's number, clear of the lanes after it, whose marks take clicks of
+    // their own.
     const numbers = (
       view.dom.querySelector('.cm-gutters .cm-lineNumbers') ?? view.dom.querySelector('.cm-gutters')
     )?.getBoundingClientRect();
@@ -3630,18 +3800,23 @@ class View implements DiffView {
       EditorView.contentAttributes.of({ 'aria-label': side === 'old' ? 'Before' : 'After' }),
       // Which side it is, for the stylesheet: a box that spans both sides reaches over the other.
       EditorView.editorAttributes.of({ 'data-side': side }),
-      markerGutter({
-        active: () => this.#marked.size > 0,
-        markerAt: (first, last) => this.#markerAt(side, first, last),
-        markerBetween: (line, after) => this.#markerBetween(side, line, after),
-        clicked: (first, last) => this.#clickedBall(side, first, last),
-      }),
+      // From the sheet's edge in: the line numbers, the threads' lane, and on the newer side,
+      // whose lines an overview marks, the overview's lane, each mark against the code it's about.
       lineNumbers({
         formatNumber: (line) => {
           const number = layout.fileLine(side, line);
           return number === 0 ? '' : String(number);
         },
       }),
+      threadLane(this.#laneSource(side)),
+      side === 'new'
+        ? markerGutter({
+            active: () => this.#marked.size > 0,
+            markerAt: (first, last) => this.#markerAt(side, first, last),
+            markerBetween: (line, after) => this.#markerBetween(side, line, after),
+            clicked: (first, last) => this.#clickedBall(side, first, last),
+          })
+        : [],
       alignerFields(),
       marking((doc, first, last) => this.#marks(side, doc, first, last)),
       highlighting({
@@ -3698,14 +3873,15 @@ class View implements DiffView {
         extensions: [
           this.#common('inline'),
           EditorView.contentAttributes.of({ 'aria-label': 'Changes' }),
+          number('old'),
+          number('new'),
+          threadLane(this.#laneSource('inline')),
           markerGutter({
             active: () => this.#marked.size > 0,
             markerAt: (first, last) => this.#markerAt('inline', first, last),
             markerBetween: (line, after) => this.#markerBetween('inline', line, after),
             clicked: (first, last) => this.#clickedBall('inline', first, last),
           }),
-          number('old'),
-          number('new'),
           marking((doc, first, last) => this.#inlineMarks(doc, first, last)),
           highlighting({
             lineAt: (line) => {
@@ -4218,6 +4394,7 @@ class View implements DiffView {
     this.#settleUndrawn(file);
     const marker = this.#markerWithFocus();
     this.#rows[file] = this.#rowsOf(file);
+    this.#lanesMoved();
     const effects = [...more, marksChanged.of(null)];
     const split = (): void => {
       for (const side of ['old', 'new'] as const) {
@@ -4886,6 +5063,19 @@ function sameIds(
   const a = before ?? [];
   const b = after ?? [];
   return a.length === b.length && a.every((thread, index) => thread.id === b[index]!.id);
+}
+
+/** Whether the same threads say the same of themselves for their marks. */
+function sameMarks(
+  before: readonly ThreadView[] | undefined,
+  after: readonly ThreadView[],
+): boolean {
+  return (
+    before?.length === after.length &&
+    before.every(
+      (thread, index) => JSON.stringify(thread.mark) === JSON.stringify(after[index]!.mark),
+    )
+  );
 }
 
 /** A file as the view's decorations show it. */

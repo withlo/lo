@@ -413,9 +413,10 @@ each other ("moved from `api/user.ts:40`"), and only edits inside the block are 
 
 ### Overview markers
 
-Lines the overview explains carry a marker beside them. Opening it shows the explanation in place,
-with its code, emphasis and lists drawn as the overview draws them, cut at 600 characters, and a
-link to that point in the overview.
+Lines the overview explains carry a marker beside them, in a lane of their own last before the new
+code; the old side has none, since an overview explains new lines. Opening it shows the explanation
+in place, with its code, emphasis and lists drawn as the overview draws them, cut at 600 characters,
+and a link to that point in the overview.
 
 ## 7. Revisions and viewed files
 
@@ -750,6 +751,12 @@ trust.
 - **In the diff.** Threads appear under their line, and a file's threads under its header.
   Unresolved threads start open, and resolved ones start collapsed. `za` on a thread opens or
   collapses it. A file's header and its row in the file tree count its threads.
+- **Marks beside the code.** Each side has a thread lane between its line numbers and its code. A
+  thread's mark there is a bubble beside its last line, amber while it's unresolved or holds your
+  pending comments, grey once it's resolved or out of date, with a bracket up the lane to its first
+  line. Several threads on a line share one bubble. A file's threads have theirs in its header's
+  row. A click on a bubble collapses or expands its thread, as `za` does. The lane is as wide empty
+  as full, so no mark coming or going moves a line.
 - **Threads.** You can reply, resolve and unresolve, and edit or delete your own comments, from the
   thread's buttons, its right-click menu or its keys. A key acts on the thread `]t` landed on, or
   the only thread on screen on the cursor's line, or under the file's header; where there's more

@@ -6,7 +6,15 @@ import { getCM, Vim } from '@replit/codemirror-vim';
 import { afterEach, beforeAll, describe, expect, type Mock, test, vi } from 'vitest';
 
 import { testCommands, type Ran } from '../../test/commands.ts';
-import { findScope, holdRegistry, isKeySource, KEY_EVENT, Registry } from '../commands/index.ts';
+import {
+  defineCommands,
+  findScope,
+  holdRegistry,
+  isKeySource,
+  KEY_EVENT,
+  Registry,
+} from '../commands/index.ts';
+import { iconElement } from '../Icon.tsx';
 import type {
   BoxFrame,
   ComposeOptions,
@@ -25,6 +33,7 @@ import type {
   RenderProblem,
   RenderThread,
   Spot,
+  ThreadMark,
   ThreadView,
   VimKey,
 } from './api.ts';
@@ -2944,6 +2953,253 @@ describe('the inline layout', () => {
   });
 });
 
+/** A thread under the line at `place`, from line `from` of `side`, marked as `mark` says. */
+function ranged(
+  id: string,
+  place: Place,
+  from: { side: 'old' | 'new'; line: number } | undefined,
+  mark: Partial<ThreadMark> = {},
+): ThreadView {
+  const lines = from ? `lines ${from.line}–${place.line}` : `line ${place.line}`;
+  return {
+    ...thread(id, place),
+    mark: { resolved: false, from, words: { lines, line: `line ${place.line}` }, ...mark },
+  };
+}
+
+/**
+ * What the threads' lane of the editor labelled `label` draws beside each line or block it marks,
+ * top to bottom: each piece of bracket, from where to where and in which colour, the tick, and the
+ * bubble's colour and name.
+ */
+function lane(label: string): string[] {
+  const editor = parent!.querySelector(`.cm-content[aria-label="${label}"]`)?.closest('.cm-editor');
+  const marks = editor?.querySelectorAll('.lo-threadlane .lo-lanemark') ?? [];
+  return [...marks].map((mark) => {
+    const parts = [...mark.querySelectorAll('.lo-bracket')].map((piece) => {
+      const tone = piece.classList.contains('lo-bracket--warn') ? 'amber' : 'grey';
+      if (piece.classList.contains('lo-bracket--tick')) return `tick ${tone}`;
+      const end = (which: 'from' | 'to') =>
+        ['edge', 'mid', 'bubble'].find((kind) =>
+          piece.classList.contains(`lo-bracket--${which}-${kind}`),
+        );
+      return `${end('from')}-${end('to')} ${tone}`;
+    });
+    const bubble = mark.querySelector('.lo-bubble');
+    if (bubble) {
+      const tone = bubble.classList.contains('lo-bubble--warn') ? 'amber' : 'grey';
+      parts.push(`${tone} ${bubble.getAttribute('aria-label')}`);
+    }
+    return parts.join(', ');
+  });
+}
+
+describe('threads’ lane', () => {
+  test('a bubble beside a thread’s last line, and a bracket up from its first, move no line', () => {
+    const shown = open();
+    shown.setThreads([thread('one', at('a', 'new', 8))], plain().render);
+    const before = { old: drawnText('Before'), new: drawnText('After') };
+    shown.setThreads([ranged('one', at('a', 'new', 8), { side: 'new', line: 4 })], plain().render);
+    expect(lane('After')).toEqual([
+      'mid-edge amber, tick amber',
+      'edge-edge amber',
+      'edge-edge amber',
+      'edge-edge amber',
+      'edge-bubble amber, amber Unresolved thread · lines 4–8',
+    ]);
+    expect(lane('Before')).toEqual([]);
+    expect({ old: drawnText('Before'), new: drawnText('After') }).toEqual(before);
+  });
+
+  test('a thread on one line has its bubble alone, and says what it is as it changes', () => {
+    const shown = open();
+    shown.setThreads([ranged('one', at('a', 'new', 8), undefined)], plain().render);
+    expect(lane('After')).toEqual(['amber Unresolved thread · line 8']);
+    shown.setThreads(
+      [ranged('one', at('a', 'new', 8), undefined, { resolved: true })],
+      plain().render,
+    );
+    expect(lane('After')).toEqual(['grey Resolved thread · line 8']);
+    expect(parent!.querySelector('.lo-threadlane .lo-bubble svg')?.innerHTML).toBe(
+      iconElement('message-square-check', 14).innerHTML,
+    );
+    shown.setThreads([], plain().render);
+    expect(lane('After')).toEqual([]);
+  });
+
+  test('a bracket crosses collapsed lines, and starts at the first line shown past them', () => {
+    const shown = open();
+    // New lines 9 to 17 are collapsed.
+    shown.setThreads([ranged('one', at('a', 'new', 20), { side: 'new', line: 8 })], plain().render);
+    expect(lane('After')).toEqual([
+      'mid-edge amber, tick amber',
+      'edge-edge amber',
+      'edge-edge amber',
+      'edge-edge amber',
+      'edge-bubble amber, amber Unresolved thread · lines 8–20',
+    ]);
+    shown.setThreads(
+      [ranged('one', at('a', 'new', 20), { side: 'new', line: 12 })],
+      plain().render,
+    );
+    expect(lane('After')).toEqual([
+      'edge-edge amber',
+      'edge-edge amber',
+      'edge-bubble amber, amber Unresolved thread · lines 12–20',
+    ]);
+  });
+
+  test('ranges that overlap draw one bracket, each line’s piece the shortest range’s', () => {
+    const shown = open();
+    shown.setThreads(
+      [
+        ranged('long', at('a', 'new', 9), { side: 'new', line: 2 }, { resolved: true }),
+        ranged('short', at('a', 'new', 5), { side: 'new', line: 4 }),
+      ],
+      plain().render,
+    );
+    expect(lane('After')).toEqual([
+      'mid-edge grey, tick grey',
+      'edge-edge grey',
+      'edge-edge amber',
+      'edge-bubble amber, bubble-edge amber, amber Unresolved thread · lines 4–5',
+      // Past the thread drawn under line 5, then lines 6 to 8.
+      'edge-edge grey',
+      'edge-edge grey',
+      'edge-edge grey',
+      'edge-edge grey',
+      'edge-bubble grey, grey Resolved thread · lines 2–9',
+    ]);
+  });
+
+  test('several threads on a line share a bubble', () => {
+    const shown = open();
+    shown.setThreads(
+      [
+        ranged('one', at('a', 'new', 6), undefined, { resolved: true }),
+        ranged('two', at('a', 'new', 6), undefined),
+      ],
+      plain().render,
+    );
+    expect(lane('After')).toEqual(['amber 2 threads · line 6 · 1 unresolved']);
+  });
+
+  test('a range from removed lines to added ones draws in each side’s lane, its bubble on the end’s', () => {
+    const shown = open();
+    shown.setThreads(
+      [
+        ranged('old', at('a', 'old', 2), undefined),
+        ranged('across', at('a', 'new', 6), { side: 'old', line: 4 }),
+      ],
+      plain().render,
+    );
+    expect(lane('Before')).toEqual([
+      'amber Unresolved thread · line 2',
+      'mid-edge amber, tick amber',
+      'edge-edge amber',
+      'edge-edge amber',
+    ]);
+    expect(lane('After')).toEqual([
+      'edge-edge amber',
+      'edge-edge amber',
+      'edge-bubble amber, amber Unresolved thread · lines 4–6',
+    ]);
+  });
+
+  test('inline, the bracket runs past the old side’s lines', () => {
+    const shown = open();
+    shown.setLayout('inline');
+    shown.setThreads([ranged('one', at('a', 'new', 8), { side: 'new', line: 4 })], plain().render);
+    // New 4, then old 5 deleted and new 5 added, then new 6 to 8.
+    expect(lane('Changes')).toEqual([
+      'mid-edge amber, tick amber',
+      'edge-edge amber',
+      'edge-edge amber',
+      'edge-edge amber',
+      'edge-edge amber',
+      'edge-bubble amber, amber Unresolved thread · lines 4–8',
+    ]);
+  });
+
+  test('a file’s threads have their bubble in its header’s row, in the left column’s lane', () => {
+    const shown = open();
+    shown.setThreads(
+      [
+        {
+          ...onFile('mine', 'a'),
+          mark: { resolved: false, words: { lines: 'file', line: 'file' } },
+        },
+      ],
+      plain().render,
+    );
+    const left = leftHeader().querySelector('.lo-diffhead__bubble');
+    expect(left?.getAttribute('aria-label')).toBe('Unresolved thread · file');
+    expect(headerOf('h:0').querySelector('.lo-diffhead__bubble')).toBeNull();
+    shown.setThreads(
+      [
+        {
+          ...onFile('mine', 'a'),
+          mark: { resolved: true, words: { lines: 'file', line: 'file' } },
+        },
+      ],
+      plain().render,
+    );
+    expect(leftHeader().querySelector('.lo-diffhead__bubble')?.getAttribute('aria-label')).toBe(
+      'Resolved thread · file',
+    );
+    shown.setLayout('inline');
+    expect(
+      parent!.querySelector('.cm-content[aria-label="Changes"] .lo-diffhead__bubble'),
+    ).not.toBeNull();
+  });
+
+  test('a click on a bubble opens or collapses its thread, as its tip says', () => {
+    const ran: Ran[] = [];
+    const toggle = defineCommands('diff', {
+      toggleThread: {
+        label: 'Collapse thread',
+        group: 'Comments',
+        keys: ['z a'],
+        targets: ['thread'],
+        when: { scope: 'diff' },
+      },
+    });
+    const release = holdRegistry(
+      new Registry({ system: 'mac', commands: testCommands(ran, [toggle]) }),
+    );
+    vi.useFakeTimers();
+    try {
+      const shown = open();
+      shown.setThreads([ranged('one', at('a', 'new', 8), undefined)], plain().render);
+      const bubble = (): HTMLElement =>
+        parent!.querySelector<HTMLElement>('.lo-threadlane .lo-bubble')!;
+      const tipOn = (): string | undefined => {
+        bubble().dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+        vi.advanceTimersByTime(TIP_DELAY);
+        const words = document.querySelector('.lo-tip')?.textContent;
+        bubble().dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+        return words ?? undefined;
+      };
+      expect(tipOn()).toBe('Collapse threadza');
+      bubble().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      expect(ran).toEqual([
+        ['diff.toggleThread', { kind: 'thread', thread: 'one', collapsed: false }],
+      ]);
+      shown.openThread('one', false);
+      expect(bubble().getAttribute('aria-expanded')).toBe('false');
+      expect(tipOn()).toBe('Expand threadza');
+      bubble().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      expect(ran.at(-1)).toEqual([
+        'diff.toggleThread',
+        { kind: 'thread', thread: 'one', collapsed: true },
+      ]);
+    } finally {
+      vi.useRealTimers();
+      release();
+    }
+  });
+});
+
 /** An overview mark on file `a`'s lines `from` to `to` of `side`, from block `block`. */
 function overview(
   side: 'old' | 'new',
@@ -2977,6 +3233,18 @@ function markers(label: string): string[] {
   });
 }
 
+/** The gutters of the editor labelled `label`, from the sheet's edge to its code, by what each is. */
+function gutterOrder(label: string): string[] {
+  const content = parent!.querySelector(`.cm-content[aria-label="${label}"]`);
+  const gutters = content?.closest('.cm-editor')?.querySelectorAll('.cm-gutter') ?? [];
+  return [...gutters].map((gutter) => {
+    if (gutter.classList.contains('cm-lineNumbers')) return 'numbers';
+    if (gutter.classList.contains('lo-threadlane')) return 'threads';
+    if (gutter.classList.contains('lo-ovcolumn')) return 'overview';
+    return gutter.className;
+  });
+}
+
 /** What the editor labelled `label` draws in its text. */
 function drawnText(label: string): string {
   return parent!.querySelector(`.cm-content[aria-label="${label}"]`)!.innerHTML;
@@ -2992,25 +3260,27 @@ function noted(label: string): string[] {
 }
 
 describe('overview marks', () => {
-  test('their gutter is there before any mark, in both layouts', () => {
+  test('their lane is there before any mark, last before the new lines, and the old side has none', () => {
     const shown = open();
-    expect(markerColumn('Before')).not.toBeNull();
+    expect(markerColumn('Before')).toBeNull();
     expect(markerColumn('After')).not.toBeNull();
     expect(markers('After')).toEqual([]);
+    expect(gutterOrder('Before')).toEqual(['numbers', 'threads']);
+    expect(gutterOrder('After')).toEqual(['numbers', 'threads', 'overview']);
     shown.setLayout('inline');
     expect(markerColumn('Changes')).not.toBeNull();
+    expect(gutterOrder('Changes')).toEqual(['numbers', 'numbers', 'threads', 'overview']);
   });
 
-  test('marks on each side draw a ball and a rail beside their lines, and nothing else changes', () => {
+  test('marks draw a ball and a rail beside their new lines, and nothing else changes', () => {
     const shown = open();
     const before = { old: drawnText('Before'), new: drawnText('After') };
+    // An overview marks new lines only: one on the old side isn't drawn.
     shown.setMarks([overview('new', 4, 6), overview('old', 3, 2, 'two')]);
     expect(markers('After')).toEqual(['ball first', 'rail', 'rail last']);
-    expect(markers('Before')).toEqual(['ball first', 'rail last']);
     expect({ old: drawnText('Before'), new: drawnText('After') }).toEqual(before);
     shown.setMarks([]);
     expect(markers('After')).toEqual([]);
-    expect(markers('Before')).toEqual([]);
     expect({ old: drawnText('Before'), new: drawnText('After') }).toEqual(before);
   });
 
@@ -3038,19 +3308,12 @@ describe('overview marks', () => {
     expect(markers('After')).toEqual(['ball first', 'rail', 'rail last']);
   });
 
-  test('inline, both sides’ marks, the rail running past the other side’s lines', () => {
+  test('inline, the rail runs past the old side’s lines', () => {
     const shown = open();
     shown.setLayout('inline');
     shown.setMarks([overview('new', 4, 6), overview('old', 2, 3, 'two')]);
-    // Old 2, old 3; new 4, then old 5 deleted and new 5 added, and new 6.
-    expect(markers('Changes')).toEqual([
-      'ball first',
-      'rail last',
-      'ball first',
-      'rail',
-      'rail',
-      'rail last',
-    ]);
+    // New 4, then old 5 deleted and new 5 added, and new 6.
+    expect(markers('Changes')).toEqual(['ball first', 'rail', 'rail', 'rail last']);
   });
 
   test('a note opens under the range’s last line, and the ball says it’s open', () => {
@@ -3179,23 +3442,25 @@ describe('overview marks', () => {
       { ...overview('new', 1, 3), at: { file: 'd', side: 'new', from: 1, to: 3 } },
       overview('new', 39, 45),
       overview('old', 4, 6),
+      overview('new', 4, 6, 'two'),
     ]);
     expect(shown.hasNote(at('d', 'new', 2))).toBe(false);
     expect(shown.openNote(at('d', 'new', 2))).toBe(false);
     expect(shown.hasNote(at('a', 'new', 40))).toBe(false);
     expect(shown.openNote(at('a', 'new', 40))).toBe(false);
+    expect(shown.hasNote(at('a', 'old', 5))).toBe(false);
+    expect(shown.openNote(at('a', 'old', 5))).toBe(false);
     expect(shown.closeNote()).toBe(false);
-    expect(shown.hasNote(at('a', 'old', 5))).toBe(true);
-    expect(shown.openNote(at('a', 'old', 5))).toBe(true);
-    expect(noted('Before')).toHaveLength(1);
+    expect(shown.openNote(at('a', 'new', 5))).toBe(true);
+    expect(noted('After')).toHaveLength(1);
     // Closed into one block, the file draws no note, and Esc leaves it be.
     shown.setCollapsed('a', true);
-    expect(noted('Before')).toEqual([]);
+    expect(noted('After')).toEqual([]);
     expect(shown.closeNote()).toBe(false);
     shown.setCollapsed('a', false);
-    expect(noted('Before')).toHaveLength(1);
+    expect(noted('After')).toHaveLength(1);
     expect(shown.closeNote()).toBe(true);
-    expect(noted('Before')).toEqual([]);
+    expect(noted('After')).toEqual([]);
   });
 
   test('a note on lines GitHub’s diff left out isn’t opened', () => {

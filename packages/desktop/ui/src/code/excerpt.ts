@@ -6,7 +6,8 @@
 // replace mode, its jumps go to the caller as places, its style elements carry the window's nonce,
 // and its cursor doesn't blink. The cursor shows only while the excerpt has focus. Under its lines
 // it draws review threads, each in an element the caller draws it in, and comment boxes, as the
-// diff view does. Nothing on screen moves without the reader: threads that come, go or move on a
+// diff view does, and beside them the threads' lane (`lanes.ts`), whose bubble collapses its thread
+// or expands it again, as the thread's own chevron does. Nothing on screen moves without the reader: threads that come, go or move on a
 // line on screen, a thread that changes size there by itself, as an image loading, and the room a
 // box left as it closed once its comment was sent wait until what they'd move is off screen, or the
 // reader acts in the excerpt, or anywhere when no scroll can take them off. Whatever scrolls around
@@ -47,6 +48,7 @@ import type {
   ThreadView,
   VimKey,
 } from './api.ts';
+import { type Bubble, bubbleOf, rangeTone, showOpen } from './bubbles.ts';
 import { CommentBox } from './comments.ts';
 import { fileMarks } from './decorations.ts';
 import { codeEditor } from './editor.ts';
@@ -66,8 +68,10 @@ import {
   vimOn,
   vimPending,
 } from './keys.ts';
+import { type LaneRange, laneAt, lanesChanged, laneThrough, threadLane } from './lanes.ts';
 import { marking } from './marks.ts';
 import { type ThreadHost, Threads } from './threads.ts';
+import { type Tip, tips } from './tip.ts';
 import { FileNoteWidget, ThreadSizes, ThreadWidget } from './widgets.ts';
 
 /** Opens an excerpt of `init`'s file in `parent`, which tells `on` what happens in it. */
@@ -274,6 +278,10 @@ class Excerpt implements ExcerptView {
   readonly #rooms = new Map<number, CommentBox>();
   /** Whether it's been on the page a frame: until then, what it's given is how it comes. */
   #drawn = false;
+  /** What the threads' lane draws for the threads drawn: worked out as it's first asked for. */
+  #lane:
+    | { readonly ranges: readonly LaneRange[]; readonly bubbles: ReadonlyMap<number, Bubble> }
+    | undefined;
 
   constructor(parent: HTMLElement, init: ExcerptInit, on: ExcerptEvents) {
     installVim();
@@ -347,6 +355,23 @@ class Excerpt implements ExcerptView {
           codeEditor(init.nonce, () => this.#tell()),
           EditorView.contentAttributes.of({ 'aria-label': init.path }),
           sides.map((side) => this.#numbers(side)),
+          threadLane({
+            active: () => this.#threads.size > 0,
+            markerAt: (line) => {
+              const { ranges, bubbles } = this.#laneOf();
+              const bubble = bubbles.get(line);
+              const open = () =>
+                bubble !== undefined && this.#hosts.get(bubble.thread)?.open !== false;
+              return laneAt(line, { ranges, bubble, open, command: false });
+            },
+            markerThrough: (first, last) => laneThrough(first, last, this.#laneOf().ranges),
+            markerBetween: (line, after) =>
+              laneThrough(
+                line + (after ? 0.5 : -0.5),
+                line + (after ? 0.5 : -0.5),
+                this.#laneOf().ranges,
+              ),
+          }),
           marking((doc, first, last) => this.#marks(doc, first, last)),
           moreRow(this.#shown.more),
           blockField,
@@ -382,8 +407,10 @@ class Excerpt implements ExcerptView {
         if (view.hasFocus && !handlingKey(view)) this.#tellMode(mode);
       }),
       setScopeSource(this.dom, this),
+      tips(this.dom, (control) => this.#tipOf(control)),
     );
     this.dom.addEventListener('contextmenu', (event) => this.#contextMenu(event));
+    this.dom.addEventListener('click', this.#clicked);
     // The reader's pointer or key in the excerpt lets go of what waits in it; in a thread, what
     // becomes of the thread's size next is theirs.
     for (const type of TOUCH) this.dom.addEventListener(type, this.#touched, { capture: true });
@@ -437,6 +464,54 @@ class Excerpt implements ExcerptView {
     }
     return out;
   }
+
+  /**
+   * What the threads' lane draws: a bubble beside each line threads are drawn under, and a bracket
+   * up each thread's range from its first line, or from the first line shown where the excerpt
+   * starts after it.
+   */
+  #laneOf(): {
+    readonly ranges: readonly LaneRange[];
+    readonly bubbles: ReadonlyMap<number, Bubble>;
+  } {
+    if (this.#lane) return this.#lane;
+    const ranges: LaneRange[] = [];
+    const bubbles = new Map<number, Bubble>();
+    for (const [line, threads] of this.#threads) {
+      bubbles.set(line, bubbleOf(threads));
+      for (const thread of threads) {
+        const from = thread.mark?.from;
+        if (!from) continue;
+        const shown = this.#docLine(from.side, from.line);
+        const start = shown ?? (from.line < this.#docLines[from.side].first ? 1 : undefined);
+        if (start === undefined || start === line) continue;
+        ranges.push({
+          from: Math.min(start, line),
+          to: Math.max(start, line),
+          tick: shown !== undefined,
+          tone: rangeTone(thread),
+        });
+      }
+    }
+    this.#lane = { ranges, bubbles };
+    return this.#lane;
+  }
+
+  /** A bubble's tip: what a click on it does. */
+  #tipOf(control: HTMLElement): Tip | undefined {
+    const { tip } = control.dataset;
+    return tip === undefined ? undefined : { label: tip };
+  }
+
+  /** A click on a thread's bubble collapses its thread, or expands it again. */
+  readonly #clicked = (event: MouseEvent): void => {
+    const bubble =
+      event.target instanceof Element ? event.target.closest<HTMLElement>('.lo-bubble') : null;
+    const id = bubble?.dataset.thread;
+    if (!bubble || id === undefined || !this.dom.contains(bubble)) return;
+    event.preventDefault();
+    this.openThread(id, 'toggle');
+  };
 
   /** The document line that shows line `number` of `side`, if the excerpt shows it. */
   #docLine(side: Side, number: number): number | undefined {
@@ -517,6 +592,9 @@ class Excerpt implements ExcerptView {
     this.#held.delete(host);
     host.letGo();
     host.setOpen(open === 'toggle' ? !host.open : open);
+    for (const bubble of this.dom.querySelectorAll<HTMLElement>('.lo-bubble')) {
+      if (bubble.dataset.thread === id) showOpen(bubble, host.open);
+    }
     return true;
   }
 
@@ -800,8 +878,9 @@ class Excerpt implements ExcerptView {
     const lines = [
       ...new Set([...this.#threads.keys(), ...this.#boxes.keys(), ...this.#rooms.keys()]),
     ].toSorted((a, b) => a - b);
+    this.#lane = undefined;
     if (lines.length === 0) {
-      this.#view.dispatch({ effects: setBlocks.of([]) });
+      this.#view.dispatch({ effects: [setBlocks.of([]), lanesChanged.of(null)] });
       return;
     }
     const sizes = (this.#sizes ??= new ThreadSizes(this.#view.contentDOM));
@@ -814,7 +893,7 @@ class Excerpt implements ExcerptView {
       const widget = new ThreadWidget(`x:${line}`, hosts, sizes, draw, box ? [box] : []);
       return Decoration.widget({ widget, block: true, side: 2 }).range(doc.line(line).to);
     });
-    this.#view.dispatch({ effects: setBlocks.of(blocks) });
+    this.#view.dispatch({ effects: [setBlocks.of(blocks), lanesChanged.of(null)] });
   }
 
   // Moving -----------------------------------------------------------------------------------
@@ -874,6 +953,7 @@ class Excerpt implements ExcerptView {
   }
 
   destroy(): void {
+    this.dom.removeEventListener('click', this.#clicked);
     for (const type of TOUCH) this.dom.removeEventListener(type, this.#touched, { capture: true });
     document.removeEventListener('scroll', this.#scrolled, { capture: true });
     for (const type of INPUT) {
