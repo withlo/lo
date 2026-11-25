@@ -1,6 +1,7 @@
 import type { HTMLAttributes, MouseEvent, ReactNode, Ref } from 'react';
 
 import { Button } from './Button.tsx';
+import { Icon } from './Icon.tsx';
 import { openMenuUnder } from './MoreButton.tsx';
 
 /** What Dismiss is named, and its tooltip. */
@@ -40,9 +41,7 @@ export function DismissButton({ onDismiss, choices = false, ...rest }: DismissBu
       }}
       {...rest}
     >
-      <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M4 4l8 8M12 4l-8 8" />
-      </svg>
+      <Icon name="x" size={16} />
     </Button>
   );
 }
