@@ -4,6 +4,7 @@ import { Button } from './Button.tsx';
 import { runControl } from './commands/control.ts';
 import type { Target } from './commands/targets.ts';
 import { CopyFaces, CopyStatus, type CopySaid } from './CopyButton.tsx';
+import { handOffFocus } from './focus.ts';
 import { Icon } from './Icon.tsx';
 import type { IconName } from './icons.ts';
 import { Key, keyAria } from './Key.tsx';
@@ -117,21 +118,37 @@ function EmptyButton({ action, face }: { action: EmptyAction; face: ButtonFace }
   );
 }
 
-/** The buttons: in a view the first is the main one, and elsewhere each is a small one. */
+/**
+ * The buttons: in a view the first is the main one, and elsewhere each is a small one. As they go
+ * with focus in them, as when their box drops under 160 px, focus goes to `box`, the state's own,
+ * else to the scope around it, so it doesn't fall to the page.
+ */
 function Buttons({
   actions,
   fit,
+  box,
   className,
 }: {
   actions: readonly EmptyAction[];
   fit: EmptyFit;
+  box: RefObject<HTMLDivElement | null>;
   className: string;
 }) {
+  const self = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const buttons = self.current;
+    return () =>
+      handOffFocus([buttons], () => [
+        box.current,
+        box.current?.closest<HTMLElement>('[data-lo-scope]'),
+      ]);
+  }, [box]);
   return (
-    <div className={className}>
+    <div ref={self} className={className}>
+      {/* By place: two buttons may run one command, on different targets. */}
       {actions.map((action, index) => (
         <EmptyButton
-          key={typeof action === 'string' ? action : action.command}
+          key={index}
           action={action}
           face={fit === 'view' ? (index === 0 ? 'primary' : 'secondary') : 'small'}
         />
@@ -212,7 +229,7 @@ export function EmptyState({
   if (fit === 'list') {
     // The row is the container its buttons go under its text in, when it's narrow.
     return (
-      <div data-lo-empty={fit} className="@container min-w-0">
+      <div ref={box} data-lo-empty={fit} className="@container min-w-0">
         <div className="empty-list px-16 py-12 text-start">
           <Icon name={icon} size={16} className="text-icon-muted" />
           <div className="flex min-w-0 flex-col">
@@ -223,6 +240,7 @@ export function EmptyState({
             <Buttons
               actions={shown}
               fit={fit}
+              box={box}
               className="empty-list-actions flex flex-wrap items-center gap-8"
             />
           )}
@@ -265,6 +283,7 @@ export function EmptyState({
             <Buttons
               actions={shown}
               fit={fit}
+              box={box}
               className="mt-16 flex flex-wrap items-center justify-center gap-8"
             />
           )}

@@ -2,7 +2,7 @@
 
 import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { afterEach, expect, onTestFinished, test } from 'vitest';
+import { afterEach, expect, onTestFinished, test, vi } from 'vitest';
 
 import { testCommands, type Ran } from '../test/commands.ts';
 import { holdRegistry } from './commands/control.ts';
@@ -240,4 +240,48 @@ test('a row is a 14 px icon and its title alone, which nothing focuses or select
   expect(shape(host)).toEqual({ icon: 'lo-i lo-i--sm text-icon-muted', buttons: [] });
   expect(host.textContent).toBe('No commands match “zzzz”');
   expect(host.querySelector('[tabindex], [role="option"]')).toBeNull();
+});
+
+test('a button with focus that goes as its box drops under 160 px leaves focus on the box', async () => {
+  held();
+  // jsdom lays nothing out: the box is as wide as `width` says, and resized when told.
+  let width = 400;
+  let resized: (() => void) | undefined;
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(callback: () => void) {
+        resized = callback;
+      }
+      observe() {}
+      disconnect() {}
+    },
+  );
+  const measured = vi
+    .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+    .mockImplementation(() => ({ width }) as DOMRect);
+  onTestFinished(() => {
+    measured.mockRestore();
+    vi.unstubAllGlobals();
+  });
+  const host = draw(
+    <div data-lo-scope="threads">
+      <EmptyState
+        fit="panel"
+        icon="message-square"
+        title="No threads yet"
+        actions={[{ command: 'diff.comment', target: LINE }]}
+      />
+    </div>,
+  );
+  host.querySelector('button')!.focus();
+  width = 120;
+  await act(async () => resized?.());
+  const box = host.querySelector<HTMLElement>('[data-lo-empty]')!;
+  expect(host.querySelector('button')).toBeNull();
+  expect(document.activeElement).toBe(box);
+  // The reader didn't put it there, so it draws no ring, and it's no stop for Tab once it goes.
+  expect(box.hasAttribute('data-lo-caught')).toBe(true);
+  act(() => box.blur());
+  expect(box.hasAttribute('tabindex')).toBe(false);
 });
