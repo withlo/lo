@@ -20,14 +20,13 @@ import { Blobs } from './blobs.ts';
 import { codeReply, readKey } from './code.ts';
 import { SavedRefs } from './saved.ts';
 import { installSkill, skillState } from './skill.ts';
+import { Overviews } from './switch.ts';
 import { OverviewTab } from './watch.ts';
 
 const followed = new Map<string, OverviewTab>();
 const stops: (() => void)[] = [];
 /** Whether overviews are on, as the settings file says: off until Lo has read it. */
-let on = false;
-/** Who's told as overviews turn on or off. */
-const switching = new Set<(on: boolean) => void>();
+const switched = new Overviews();
 /** Whether Lo's window is in front, which reads the ref on screen more often. */
 let foreground = false;
 let kept: { blobs: Blobs; saved: SavedRefs } | undefined;
@@ -66,7 +65,7 @@ function keptIn(context: FeatureContext<typeof contract>): { blobs: Blobs; saved
 function follow(context: FeatureContext<typeof contract>, id: string): void {
   const service = context.use(tabs);
   const info = service.pull(id);
-  if (!on || !info || info.run) {
+  if (!switched.on() || !info || info.run) {
     followed.get(id)?.close();
     followed.delete(id);
     return;
@@ -98,30 +97,25 @@ function follow(context: FeatureContext<typeof contract>, id: string): void {
   tab.update(info, service.list().active === id, foreground);
 }
 
-/**
- * Turns overviews on or off, as the settings file says: off, every tab's overview closes, and
- * nothing more is read; on, each tab's is read again.
- */
+/** Turns overviews on or off, as the settings file says, through every tab. */
 function turn(context: FeatureContext<typeof contract>, now: boolean): void {
-  if (now === on) return;
-  on = now;
-  const service = context.use(tabs);
-  for (const id of followed.keys()) follow(context, id);
-  if (on) for (const tab of service.list().tabs) if (tab.kind === 'pull') follow(context, tab.id);
-  for (const listener of switching) listener(on);
+  switched.turn(now, {
+    followed: () => followed.keys(),
+    open: () =>
+      context
+        .use(tabs)
+        .list()
+        .tabs.flatMap((tab) => (tab.kind === 'pull' ? [tab.id] : [])),
+    follow: (id) => follow(context, id),
+  });
 }
 
 export default defineFeature(contract, {
   uses: [tabs, github, clearing, settings],
   provide: () => [
     provides(overviews, {
-      on: () => on,
-      onChange(listener) {
-        switching.add(listener);
-        return () => {
-          switching.delete(listener);
-        };
-      },
+      on: () => switched.on(),
+      onChange: (listener) => switched.onChange(listener),
     }),
   ],
   handlers: {
@@ -191,7 +185,6 @@ export default defineFeature(contract, {
     for (const stop of stops.splice(0)) stop();
     for (const tab of followed.values()) tab.close();
     followed.clear();
-    switching.clear();
-    on = false;
+    switched.reset();
   },
 });

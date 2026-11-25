@@ -793,10 +793,11 @@ test('goes from the tab, its menus and the palette while Settings turns overview
     await expect.poll(saved).toEqual({ 'overview.on': false });
     await expect(shows).not.toBeChecked();
     await expect(openOn.getByRole('radio')).toHaveText(['Timeline', 'Diff']);
-    // Settings still says the overview, which the timeline stands in for.
-    await expect(openOn.getByRole('radio', { name: 'Timeline' })).toHaveAttribute(
-      'aria-checked',
-      'true',
+    // Settings still says the overview: neither is chosen, so either can be, and the line says
+    // where a tab opens meanwhile.
+    await expect(openOn.getByRole('radio', { checked: true })).toHaveCount(0);
+    await expect(page.locator('[data-settings-row="tab.open"]')).toContainText(
+      'Overviews are off, so pull requests open on the timeline.',
     );
     await expect(skill).toHaveCount(0);
   });

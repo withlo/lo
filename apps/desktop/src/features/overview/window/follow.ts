@@ -21,7 +21,9 @@ import { refuse } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
 import { showPlace } from '../../diff/window/shared.ts';
 import { holdLimit } from '../../revisions/window/shared.ts';
+import { settingNow } from '../../settings/window/shared.ts';
 import { showInstead, showMiddle, tabState } from '../../tab/window/shared.ts';
+import { on } from '../settings.ts';
 import { blockId, blockIn, codeOf, type CodeAt } from './blocks.ts';
 import { OVERVIEW_VIEW } from './labels.ts';
 import { main } from './main.ts';
@@ -653,7 +655,8 @@ const registered = new Set<string>();
  * Lets tab `tab`'s history reveal its places in the overview for as long as the tab is open: a
  * block of the overview it shows, which comes on screen with the block given focus, or the
  * overview itself, left at no block, which goes to the timeline where the tab went there without
- * ever showing its overview. A block a newer overview doesn't have is gone.
+ * ever showing its overview. A block a newer overview doesn't have is gone, and every place is
+ * while Settings turns overviews off.
  */
 export function placesFor(tab: string): void {
   if (registered.has(tab)) return;
@@ -662,6 +665,7 @@ export function placesFor(tab: string): void {
     tab,
     'overview',
     (at) => {
+      if (!settingNow(on)) return false;
       if (at.kind === 'none') {
         return overviewPlace(openings.get(tab)) === 'timeline'
           ? showInstead(tab)
@@ -675,6 +679,7 @@ export function placesFor(tab: string): void {
     },
     // A block the overview on screen no longer has is gone. Before one is drawn, it can't tell.
     (at) => {
+      if (!settingNow(on)) return false;
       const tree = trees.get(tab);
       return at.kind !== 'block' || tree === undefined || blockIn(at.block, tree) !== undefined;
     },

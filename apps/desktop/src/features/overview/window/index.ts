@@ -372,7 +372,10 @@ export default {
         return;
       }
       openViews()
-        .then((open) => takeOverviews(true, open))
+        // Unless they were turned off again meanwhile.
+        .then((open) => {
+          if (taken) takeOverviews(true, open);
+        })
         .catch((error: unknown) => console.error("Lo couldn't list the tabs:", error));
     });
     main().subscribe('state', takeState);

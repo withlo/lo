@@ -895,7 +895,10 @@ status bar.
   timeline or the diff. A tab that opens on the overview waits for it, up to `HOLD_LIMIT`, and goes
   to the timeline, where the description is first, when there's none or it's late. The tab keeps its
   middle view by id (`Panels.middle`): while that view isn't there, as the overview isn't with
-  `overview.on` off, the timeline stands in, and the tab goes back to it when it returns.
+  `overview.on` off, the timeline stands in, and the tab goes back to it when it returns. The key
+  `tab.open` replaced, `overview.open`, stays declared, file-only: main carries a `diff` saved there
+  over once, where `tab.open` is still its default, then sets it to `null` (`tab/main/carry.ts`),
+  and the window reads it meanwhile.
 - Other features' banners go in the `tab.banners` slot. Each view there says whether it shows a
   banner for a tab (`shows`) and when that may change (`subscribe`), so the tab makes room only for
   the banners it has.
@@ -1098,7 +1101,8 @@ them.
   another head, and stops once the tab closes or its pull request leaves the stack. It also reads
   which pull requests have an overview, once for the repository (`overviewRefNumbers`, through
   `poller.readCached`, kept with its ETag and read again on the 5-minute refresh), while overviews
-  are on (the overview feature's `overviews` service).
+  are on (the overview feature's `overviews` service). Turned off, the finder has the poller forget
+  that read (`forgetRead`), so no refresh makes it.
 - Where the layer on screen's diff starts is `@lo/stacks`' `layerStart` for its head, once the list
   the stack was found in has the head on screen (`planStart`). Before the diff is drawn, main sets
   it on the tab (`compareFrom`). Once it's drawn, a different start is only offered: `stacks.stack`
