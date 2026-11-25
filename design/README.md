@@ -103,7 +103,7 @@ Dark (Lo Glow Dark) is the default. Every color comes from `tokens.json` through
   meta and tree rows, `text-micro` (11/14) for counts and tags, `text-label` (11/14, 600, uppercase,
   `--lo-track-label`) for panel labels.
 - Titles take the wordmark's weight: `text-title` (18/24, 700) for the PR title, `text-heading`
-  (24/30, 800) for dialogs, with `--lo-track-tight`.
+  (24/30, 800) for the welcome's step headings, with `--lo-track-tight`.
 - Reading text has its own scale: `read-body` (15/24), `read-lead` (17/27, the tl;dr), `read-h2`
   (22/28, 800), `read-h3` (16/22, 700), `read-comment` (13.5/21). Keep reading lines under
   `--lo-read-measure` (680 px). The measure is for text, not for what holds it: a code block in a
