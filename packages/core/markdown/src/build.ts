@@ -5,11 +5,22 @@
  */
 
 import { Anchors } from './anchors.ts';
-import { imageAddress } from './images.ts';
+import { imageAddress, imageSize } from './images.ts';
 import { MAX_ADDRESS, MAX_DIAGNOSTICS, type Limits } from './limits.ts';
 import { fragmentName, webLink } from './links.ts';
 import { isLogin } from './references.ts';
-import type { Diagnostic, Extension, Inline, Note, Plain, Target } from './tree.ts';
+import type { Diagnostic, Extension, Image, Inline, Note, Plain, Target } from './tree.ts';
+
+/**
+ * What an `<img>` says besides where it is and its alt text: its `width` and `height` as it
+ * gives them, and where it is in a dark theme and a light one, as a `<picture>`'s sources give.
+ */
+export interface ImageExtras {
+  width?: unknown;
+  height?: unknown;
+  dark?: string | undefined;
+  light?: string | undefined;
+}
 
 /** What building has used up, to put back when what was built is thrown away. */
 export interface Snapshot {
@@ -86,15 +97,29 @@ export class Builder<X extends Extension = Plain> {
 
   /**
    * An image from `src`, or when Lo won't load it, a link to where it is by its alt text (unless
-   * `linked`, inside a link already, where another can't go), or the alt text alone.
+   * `linked`, inside a link already, where another can't go), or the alt text alone. Its size, and
+   * where it is in each theme, are kept from `extras` where Lo would load them too; one image
+   * however many themes it has.
    */
-  image(src: unknown, alt: string, linked: boolean): Inline<X>[] {
+  image(src: unknown, alt: string, linked: boolean, extras: ImageExtras = {}): Inline<X>[] {
     if (typeof src !== 'string') return alt === '' ? [] : [{ kind: 'text', value: alt }];
     if (this.images < this.limits.images) {
       const url = this.address(src, (address) => imageAddress(address, this.page));
       if (url !== undefined) {
         this.images += 1;
-        return [{ kind: 'image', url, alt }];
+        const image: Image = { kind: 'image', url, alt };
+        const width = imageSize(extras.width);
+        const height = imageSize(extras.height);
+        if (width !== undefined) image.width = width;
+        if (height !== undefined) image.height = height;
+        for (const theme of ['dark', 'light'] as const) {
+          const given = extras[theme];
+          if (given === undefined) continue;
+          const themed = this.address(given, (address) => imageAddress(address, this.page));
+          if (themed === undefined) this.diagnose('image');
+          else image[theme] = themed;
+        }
+        return [image];
       }
       this.diagnose('image');
     }

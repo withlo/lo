@@ -8,7 +8,14 @@ export {
 } from './limits.ts';
 export { slug } from './anchors.ts';
 export { isWebLink, webLink } from './links.ts';
-export { imageAddress, imageSources, isImageAddress, type ImageSource } from './images.ts';
+export {
+  imageAddress,
+  imageSize,
+  imageSources,
+  isImageAddress,
+  MAX_IMAGE_SIZE,
+  type ImageSource,
+} from './images.ts';
 export {
   markdownTree,
   type BlockHandler,

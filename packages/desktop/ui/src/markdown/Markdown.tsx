@@ -56,7 +56,7 @@ export function Markdown<X extends Extension = Plain>({
   const image = useMemo(() => {
     if (!images) return undefined;
     const first = firstImages(tree.blocks, MAX_IMAGES);
-    return (node: Image) => (first.has(node) ? images(node.url) : undefined);
+    return (node: Image, url: string) => (first.has(node) ? images(url) : undefined);
   }, [images, tree.blocks]);
   const root = useRef<HTMLDivElement | null>(null);
   const follow = useCallback(

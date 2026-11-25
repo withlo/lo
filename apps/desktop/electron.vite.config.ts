@@ -40,19 +40,30 @@ export const OVERVIEW_CHECKER = ((): string => {
   return `${name}@${manifest.version}`;
 })();
 
-/** The fonts' licenses, shipped beside the window's files as the SIL Open Font License asks. */
-function fontLicenses(): Plugin {
+/**
+ * The licenses shipped beside the window's files: the fonts', as the SIL Open Font License asks,
+ * and the icons'. Each is its package's own file, so the licenses file names the package whatever
+ * of it the window draws.
+ */
+function shippedLicenses(): Plugin {
   const ui = createRequire(createRequire(import.meta.url).resolve('@lo/ui/styles.css'));
   const licenses = {
     'licenses/host-grotesk.txt': '@fontsource-variable/host-grotesk/LICENSE',
     'licenses/fragment-mono.txt': '@fontsource/fragment-mono/LICENSE',
+    'licenses/lucide.txt': 'lucide/LICENSE',
   };
   return {
-    name: 'lo:font-licenses',
+    name: 'lo:shipped-licenses',
     apply: 'build',
     generateBundle() {
       for (const [fileName, license] of Object.entries(licenses)) {
-        this.emitFile({ type: 'asset', fileName, source: readFileSync(ui.resolve(license)) });
+        const path = ui.resolve(license);
+        this.emitFile({
+          type: 'asset',
+          fileName,
+          originalFileName: path,
+          source: readFileSync(path),
+        });
       }
     },
   };
@@ -137,7 +148,7 @@ export default defineConfig({
   },
   renderer: {
     root: 'src/window',
-    plugins: [react(), tailwindcss(), fontLicenses(), bundledPackages(BUNDLED)],
+    plugins: [react(), tailwindcss(), shippedLicenses(), bundledPackages(BUNDLED)],
     define: { LO_OVERVIEW_CHECKER: JSON.stringify(OVERVIEW_CHECKER) },
     build: {
       outDir: 'dist/window',

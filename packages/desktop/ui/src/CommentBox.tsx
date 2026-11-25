@@ -203,7 +203,7 @@ export interface CommentBoxProps {
   frameRef?: Ref<HTMLDivElement> | undefined;
 }
 
-const box = cva('max-w-read-measure overflow-hidden rounded-md bg-bg-raised text-ui', {
+const box = cva('overflow-hidden rounded-md bg-bg-raised text-ui', {
   variants: {
     focused: { true: 'shadow-ring', false: 'ring-1 ring-border' },
   },

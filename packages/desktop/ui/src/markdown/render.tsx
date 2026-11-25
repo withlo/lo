@@ -53,6 +53,7 @@ import type {
   Target,
   Text,
 } from '@lo/markdown';
+import { imageSize } from '@lo/markdown';
 
 import { secureLink } from './links.ts';
 import type { Anchors } from './scope.ts';
@@ -96,10 +97,11 @@ export interface Rendering<X extends Extension = Plain> {
    */
   readonly dir?: 'auto' | undefined;
   /**
-   * Where to load an image from: an address on Lo's image scheme, which main serves, or nothing to
-   * show the image as a link to it. Without this, every image is a link.
+   * Where to load `url`, one of image `node`'s addresses (its own, or its dark or light theme's),
+   * from: an address on Lo's image scheme, which main serves, or nothing to show the image as a
+   * link to it. Without this, every image is a link.
    */
-  readonly image?: ((node: Image) => string | undefined) | undefined;
+  readonly image?: ((node: Image, url: string) => string | undefined) | undefined;
   /**
    * The lines a suggested change in it replaces, where the tree doesn't say, as Markdown alone
    * doesn't: those the comment is on, as the diff shows them.
@@ -364,7 +366,7 @@ export function drawBlock<X extends Extension>(node: Block<X>, r: Rendering<X>):
       return heading(plain, r);
     case 'quote':
       return (
-        <blockquote className="space-y-8 border-s-2 border-border-strong ps-12 text-fg-muted">
+        <blockquote className="comment-blocks space-y-8 border-s-2 border-border-strong ps-12 text-fg-muted">
           {drawBlocks(plain.children, r)}
         </blockquote>
       );
@@ -383,7 +385,7 @@ export function drawBlock<X extends Extension>(node: Block<X>, r: Rendering<X>):
     case 'suggestion': {
       // As the diff draws a change: the lines it replaces, where known, over the lines it suggests.
       return (
-        <div className="max-w-read-measure overflow-hidden rounded-md border border-border">
+        <div className="overflow-hidden rounded-md border border-border">
           <p className="bg-bg-chrome px-12 py-6 text-fg-muted text-small">Suggested change</p>
           <Suggested removed={plain.removed ?? r.replaced} added={plain.text} />
         </div>
@@ -445,7 +447,7 @@ function alert<X extends Extension>(node: Alert<X>, r: Rendering<X>): ReactNode 
   return (
     <div
       role="note"
-      className={`max-w-read-measure space-y-6 rounded-md border px-12 py-8 ${tone.box}`}
+      className={`comment-blocks measured space-y-6 rounded-md border px-12 py-8 ${tone.box}`}
     >
       <p className={`font-semibold ${tone.word}`}>{tone.label}</p>
       {drawBlocks(node.children, r)}
@@ -558,13 +560,15 @@ function footnotes<X extends Extension>(node: Footnotes<X>, r: Rendering<X>): Re
   );
 }
 
-/** Code as written, never highlighted: Lo can't know it's the language it says. */
+/**
+ * Code as written, never highlighted: Lo can't know it's the language it says. It takes the post's
+ * whole width, where prose keeps to the read measure, and it's set as code in a comment is
+ * (`code-small`).
+ */
 function Fence({ text, bare = false }: { text: string; bare?: boolean }) {
   return (
-    <pre
-      className={`overflow-x-auto px-12 py-8 ${bare ? 'bg-bg' : 'max-w-read-measure rounded-md bg-hover'}`}
-    >
-      <code className="rounded-none bg-transparent p-0 shadow-none code-text">{text}</code>
+    <pre className={`overflow-x-auto px-12 py-8 ${bare ? 'bg-bg' : 'rounded-md bg-hover'}`}>
+      <code className="rounded-none bg-transparent p-0 shadow-none code-small">{text}</code>
     </pre>
   );
 }
@@ -709,9 +713,24 @@ function drawInline<X extends Extension>(node: Inline<X>, r: Rendering<X>): Reac
         plain.alt === '' ? 'Image' : plain.alt,
         r,
       );
-      const src = r.image?.(plain);
-      if (src === undefined || !src.startsWith(IMAGE_SCHEME)) return link;
-      return <Picture key={src} src={src} alt={plain.alt} failed={link} />;
+      const served = (url: string | undefined) => {
+        const src = url === undefined ? undefined : r.image?.(plain, url);
+        return src?.startsWith(IMAGE_SCHEME) ? src : undefined;
+      };
+      const src = served(plain.url);
+      if (src === undefined) return link;
+      return (
+        <Picture
+          key={src}
+          src={src}
+          dark={served(plain.dark)}
+          light={served(plain.light)}
+          alt={plain.alt}
+          width={size(plain.width)}
+          height={size(plain.height)}
+          failed={link}
+        />
+      );
     }
     case 'break':
       return <br />;
@@ -745,21 +764,57 @@ function drawInline<X extends Extension>(node: Inline<X>, r: Rendering<X>): Reac
 }
 
 /**
- * An image main serves, loaded once it's near the screen and decoded off the page's thread, or
- * `failed` in its place once it can't be.
+ * `value` as an image's `width` or `height`, when it's a size as the tree writes one
+ * (`imageSize`): CSS pixels, or a percentage, within its limits.
  */
-function Picture({ src, alt, failed }: { src: string; alt: string; failed: ReactNode }) {
+function size(value: string | undefined): string | undefined {
+  return value !== undefined && imageSize(value) === value ? value : undefined;
+}
+
+/** What makes a picture follow Lo's theme: the window's color scheme is the theme Lo shows. */
+const DARK = '(prefers-color-scheme: dark)';
+const LIGHT = '(prefers-color-scheme: light)';
+
+interface PictureProps {
+  src: string;
+  /** Where it is in the dark theme, and the light, when the text gives one for each. */
+  dark?: string | undefined;
+  light?: string | undefined;
+  alt: string;
+  /** The size the text gives it, as GitHub draws it: never wider than the text it's in. */
+  width?: string | undefined;
+  height?: string | undefined;
+  failed: ReactNode;
+}
+
+/**
+ * An image main serves, inline in its text, at the size the text gives it (its height following
+ * its width, unless only a height is given) and never wider than the text: loaded once it's near
+ * the screen, in the theme Lo shows, and decoded off the page's thread, or `failed` in its place
+ * once it can't be.
+ */
+function Picture({ src, dark, light, alt, width, height, failed }: PictureProps) {
   const [broken, setBroken] = useState(false);
   if (broken) return failed;
-  return (
+  const image = (
     <img
       src={src}
       alt={alt}
+      width={width}
+      height={height}
       loading="lazy"
       decoding="async"
-      className="inline-block h-auto max-w-full align-bottom"
+      className={`inline-block max-w-full align-bottom ${height !== undefined && width === undefined ? '' : 'h-auto'}`.trim()}
       onError={() => setBroken(true)}
     />
+  );
+  if (dark === undefined && light === undefined) return image;
+  return (
+    <picture>
+      {dark !== undefined && <source media={DARK} srcSet={dark} />}
+      {light !== undefined && <source media={LIGHT} srcSet={light} />}
+      {image}
+    </picture>
   );
 }
 

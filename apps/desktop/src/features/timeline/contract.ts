@@ -197,11 +197,12 @@ export const timeline = z.strictObject({
 export type Timeline = z.output<typeof timeline>;
 
 /**
- * A view's timeline, as main has it: `loading` until it's read; `signIn` for a tab that acts as
- * nobody, which reads no timeline; `run` for a run of a stack's layers, which has none of its own;
- * `ready`; or `failed`, when it couldn't be read and nothing was read before, with why in `cause`,
- * what GitHub or the system said in `details`, and when it's read again by itself in `retryAt`, as
- * `Date.now()` counts, where that's known and the poller isn't `stalled`.
+ * A view's timeline, as main has it: `loading` until it's read, with what has come of it in
+ * `timeline` (its newest page, while the older ones are read, or nothing yet); `signIn` for a tab
+ * that acts as nobody, which reads no timeline; `run` for a run of a stack's layers, which has none
+ * of its own; `ready`; or `failed`, when it couldn't be read and nothing was read before, with why
+ * in `cause`, what GitHub or the system said in `details`, and when it's read again by itself in
+ * `retryAt`, as `Date.now()` counts, where that's known and the poller isn't `stalled`.
  */
 export const timelineView = z.strictObject({
   id: tabId,
