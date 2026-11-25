@@ -2060,7 +2060,11 @@ export class Poller {
    * poll's would.
    */
   #answeredWith(client: GithubClient, result: Settled<unknown>): void {
-    if (answered(result)) this.#offline = undefined;
+    if (answered(result) && this.#offline !== undefined) {
+      this.#offline = undefined;
+      // The loop may be waiting out the backoff, as for a read someone waits on: it goes now.
+      this.#wake();
+    }
     this.#takeIn(client);
   }
 
@@ -2286,9 +2290,14 @@ export class Poller {
       return true;
     }
     const refreshDetails = this.#foreground && rateLimit.kind !== 'openOnly';
-    return this.#openReads(now, config.now(), rateLimit, refreshDetails).some(
+    const awaited = this.#openReads(now, config.now(), rateLimit, refreshDetails).some(
       (read) => read.awaited,
     );
+    // A read someone waits on comes due on the clock as its backoff ends, which wakes nothing: the
+    // loop may be asleep with no timer, as while polls wait for a pull request's files, and those
+    // files give way to the read from now. The loop wakes to run it.
+    if (awaited && this.#leading === undefined) this.#wake();
+    return awaited;
   }
 
   /** Whether someone on screen waits on one of `state`'s reads for its first value now. */

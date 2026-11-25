@@ -1336,3 +1336,89 @@ test('writes to another layer read the layers again once a burst is over', async
   await t.runUntil(50);
   expect(stackLayerReads(t.requests())).toEqual([44]);
 });
+
+/** A made-up read named as the review threads are, which a view waits on. */
+const THREADS: ReadKind<number> = { name: 'ReviewThreads', watched: PUSH_HISTORY_WATCHED };
+
+/**
+ * A read someone waits on failed and waits out its backoff, and the reader tries again, as the
+ * Threads panel does, while the Files panel's files are read at `next` and the loop sleeps until
+ * they're in. The backoff ends between the files' pages, and they give way to the read from then:
+ * the loop wakes to run it, rather than leave both waiting until it next looks of itself.
+ */
+test('a read someone waits on whose backoff ends while polls wait for the files goes at once', async () => {
+  const t = await Polling.start('retry_due', [...recorded(), ...pagedFiles()], { delay: 1000 });
+  void t.poller.setOpen(pr(1));
+  await t.run();
+  await t.runUntil(5);
+  let fail = true;
+  const finished: [string, number][] = [];
+  const request = async (github: GithubClient) => {
+    await github.get(pr(1).restPath(), readPullSummary);
+    if (fail) {
+      fail = false;
+      throw new GithubError({ kind: 'decode', message: 'GitHub had a problem' });
+    }
+    finished.push(['threads', t.now()]);
+    return 1;
+  };
+  void t.poller.readCached(pr(1), THREADS, request, () => 'foreground');
+  await t.run();
+  await t.runUntil(8);
+  const retryWall = t.poller.readRetryAt(pr(1), THREADS);
+  if (retryWall === undefined) throw new Error('the read waits for nothing');
+  const retrySecs = (retryWall - wall(0)) / 1000;
+  // Just before the backoff ends, the panel's files start, and the reader tries again.
+  await t.runUntil(retrySecs - 1.5);
+  const limits = { maxPages: MAX_PAGES, keepRequests: 0 };
+  void t.poller
+    .pullFiles(pr(2), 'head', limits, { wanted: () => true, priority: 'next' })
+    .then(() => finished.push(['files', t.now()]));
+  void t.poller.readCached(pr(1), THREADS, request, () => 'foreground');
+  await t.run();
+  await t.runUntil(retrySecs + 20);
+  expect(finished.map(([what]) => what).toSorted()).toEqual(['files', 'threads']);
+  expect(Math.max(...finished.map(([, when]) => when))).toBeLessThan(retrySecs + 10);
+});
+
+/**
+ * GitHub couldn't be reached, and the loop waits out the backoff for a read someone waits on.
+ * Another feature's read gets an answer meanwhile, so GitHub can be reached again, and the read
+ * leads, which the Files panel's files give way to: the loop wakes to run it, rather than leave
+ * them both waiting out the rest of the backoff.
+ */
+test('a read waiting out a backoff goes once another read gets an answer, then the files', async () => {
+  const t = await Polling.start('offline_clear', [...recorded(), ...pagedFiles()], {
+    delay: 1000,
+  });
+  void t.poller.setOpen(pr(1));
+  await t.run();
+  await t.runUntil(5);
+  t.http.offline = true;
+  // The open pull request's next poll fails.
+  for (let secs = 6; secs < 60 && !t.status().offline; secs++) await t.runUntil(secs);
+  expect(t.status().offline).toBeDefined();
+  t.http.offline = false;
+  const finished: [string, number][] = [];
+  void t.poller.readCached(
+    pr(1),
+    THREADS,
+    async (github: GithubClient) => {
+      await github.get(pr(1).restPath(), readPullSummary);
+      finished.push(['threads', t.now()]);
+      return 1;
+    },
+    () => 'foreground',
+  );
+  await t.run();
+  await t.runUntil(24.5);
+  await t.finish(t.poller.readOnce((github) => github.get(pr(1).restPath(), readPullSummary)));
+  const limits = { maxPages: MAX_PAGES, keepRequests: 0 };
+  void t.poller
+    .pullFiles(pr(2), 'head', limits, { wanted: () => true, priority: 'next' })
+    .then(() => finished.push(['files', t.now()]));
+  await t.run();
+  await t.runUntil(70);
+  expect(finished.map(([what]) => what)).toEqual(['threads', 'files']);
+  expect(finished.find(([what]) => what === 'files')?.[1]).toBeLessThan(35);
+});
