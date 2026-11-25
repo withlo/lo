@@ -234,6 +234,14 @@ where the action's target is.
   letter. The diff bar is the revisions note, then a `HintRow` of Compare revisions and the view's
   own controls, 16 px apart: narrow, it drops the hint's chips, then the hint, so no two groups
   touch.
+- **A choice of two to four is one `SegmentedControl`,** never buttons or pills drawn by hand: the
+  header's view switch, the Files panel's Tree and Review order, the threads' filter, a comment
+  box's Write and Preview, and Settings' choices are all one. Its thumb slides to the segment
+  chosen, and the key that steps through them follows it. It's `md` in the header alone, and `sm`
+  everywhere else: a panel's toolbar, a box's head, a Settings row. While it can't be changed it's
+  `disabled`, and `why` is each segment's tooltip, as the Files panel's "Reading files…" is; its key
+  chip goes meanwhile, keeping its room. One thing on or off, as "Changed files only" is, stays a
+  toggle of its own.
 - **A segment can be its icon alone.** Where a `SegmentedControl` has to narrow, as a comment box's
   Write and Preview do, each segment's label holds its icon and its words, the words marked as a row
   that gives up marks them (`data-gives`). Give the segment its `name`, which a screen reader hears
