@@ -1131,6 +1131,14 @@ and nothing while there's no stack.
 - The layer on screen's overview mark and viewed count come from its tab, as they change; the other
   layers' from main.
 - A tab restored at a layer whose pull request is gone offers to show the layer it was opened at.
+- The offer over the tree to convert the stack, and the banner that offers where a layer's diff
+  starts, each have Dismiss, whose menu (a `notice` target naming the tab, which `⇧F10` on Dismiss
+  opens too) dismisses it for this stack or this layer, or for all stacks. Main keeps the first in
+  `stacks_dismissed`, for each layer the stack has then, or for the layer, and sends neither offer
+  while it's dismissed there. The tree's offer is kept by which it is, `convert` or `add` (layers
+  not yet in the GitHub stack below them), so dismissing one leaves the other. "For all stacks"
+  turns off its setting, `stacks.offerConvert` or `stacks.offerStart`, whose switch in Settings ›
+  Pull requests turns it back on; main sends no offer before it has read the file.
 
 `gS` makes the chain the pull request on screen is in a GitHub stack
 (`features/stacks/main/conversion.ts`), and the confirmation is the only way anything is sent.
@@ -1889,9 +1897,11 @@ utilities.
   reach, add a utility to `src/styles.css` with `@utility`, reading `var(--lo-*)`.
 - Variants go through `cva` from `class-variance-authority`. Prettier sorts the classes.
 - Anything that appears, leaves or changes size takes one of the moves in `design/README.md`'s
-  "Motion", by its class (`move-pop`, `move-open`) or its component (`Collapse`, `Swap`). No
-  component writes a duration or a curve of its own. `setMotion` is the one switch that turns the
-  moves off; without a call Lo follows the system.
+  "Motion", by its class (`move-pop`, `move-open`) or its component (`Collapse`, `Swap`), but a
+  pane's width, which never animates. No component writes a duration or a curve of its own.
+  `setMotion` is the one switch that turns the moves off; without a call Lo follows the system.
+- A row of panes is a `Panes`, each edge in it that moves a `Splitter`, and `fit` works out each
+  pane's width from the layout and the row's.
 - A popup (a dialog, menu, popover, tooltip or toast) is drawn by one of `ui`'s shared pieces, which
   hold how it comes and goes and where focus returns. Lint fails a Base UI popup imported anywhere
   else (`scripts/check-popups.ts`).

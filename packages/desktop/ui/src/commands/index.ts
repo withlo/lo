@@ -91,7 +91,7 @@ export {
   type KeymapLine,
 } from './keymap.ts';
 export { CAUGHT_ATTRIBUTE, catchFocus } from './focus.ts';
-export { KEY_EVENT, listen, type ListenOptions } from './listener.ts';
+export { KEY_EVENT, listen, takeKeys, type ListenOptions } from './listener.ts';
 export {
   Bindings,
   declaredBindings,
@@ -174,6 +174,7 @@ export {
   type LayerTarget,
   type LineTarget,
   type NoTarget,
+  type NoticeTarget,
   type Place,
   type Side,
   type Span,

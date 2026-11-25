@@ -33,6 +33,13 @@ export {
 } from './Toast.tsx';
 export { HERE, KeyHelp, type KeyHelpProblem, type KeyHelpProps } from './KeyHelp.tsx';
 export { MORE_ACTIONS, MoreButton, openMenuUnder, type MoreButtonProps } from './MoreButton.tsx';
+export {
+  DISMISS,
+  DismissButton,
+  Offer,
+  type DismissButtonProps,
+  type OfferProps,
+} from './Dismiss.tsx';
 export { Palette, PaletteHint, type PaletteGroup, type PaletteProps } from './Palette.tsx';
 export {
   Banner,
@@ -136,6 +143,22 @@ export {
   type TooltipProps,
 } from './Tooltip.tsx';
 export { Collapse, Swap, swapIn, type CollapseProps, type SwapProps } from './Collapse.tsx';
+export {
+  fit,
+  fitWidths,
+  readSizes,
+  type Asked,
+  type Fitted,
+  type Layout,
+  type Limits,
+  type PanelLayout,
+  type Part,
+  type Range,
+  type Sizes,
+  type ViewFocus,
+} from './fit.ts';
+export { KEY_STEP, Panes, Splitter, type PanesProps, type SplitterProps } from './Panes.tsx';
+export { CLOSE_REACH, DRAG_START, dragEdge, resizing, type EdgeDrag } from './drag.ts';
 export { besideIn, handOffFocus, type FocusTarget } from './focus.ts';
 export { Problem, type ProblemAction, type ProblemProps, useDetails } from './Problem.tsx';
 export { Countdown, countdownSaid, countdownWords, type CountdownProps } from './Countdown.tsx';

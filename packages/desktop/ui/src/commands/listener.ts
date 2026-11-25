@@ -43,6 +43,22 @@ export interface ListenOptions {
   readonly report?: ((message: string) => void) | undefined;
 }
 
+/** What takes keys ahead of the registry while it's there, the newest first. */
+const takers: ((event: KeyboardEvent) => boolean)[] = [];
+
+/**
+ * Hands every key to `take` before the registry sees it, until the function this returns is
+ * called. A key `take` says it took goes no further: for what holds a key while it lasts, as a
+ * drag holds `Esc`, which ends it, where the key would otherwise run a command.
+ */
+export function takeKeys(take: (event: KeyboardEvent) => boolean): () => void {
+  takers.unshift(take);
+  return () => {
+    const at = takers.indexOf(take);
+    if (at >= 0) takers.splice(at, 1);
+  };
+}
+
 /**
  * Starts listening for keys in `win`. Returns a function that stops.
  *
@@ -105,6 +121,11 @@ export function listen(win: Win, registry: Registry, options: ListenOptions = {}
 
   const onKey = (event: KeyboardEvent) => {
     tab = undefined;
+    if (takers.some((take) => take(event))) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
     checkLayout(event);
     const element = focused(win, event);
     const scope = findScope(element);

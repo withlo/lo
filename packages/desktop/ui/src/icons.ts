@@ -40,6 +40,7 @@ import {
   UserRound,
   UsersRound,
   Wrench,
+  X,
   type IconNode,
 } from 'lucide';
 
@@ -82,6 +83,7 @@ export const ICONS = {
   'user-round': UserRound,
   'users-round': UsersRound,
   wrench: Wrench,
+  x: X,
 } as const satisfies Readonly<Record<string, IconNode>>;
 
 /** The name of an icon Lo uses, as Lucide names it. */

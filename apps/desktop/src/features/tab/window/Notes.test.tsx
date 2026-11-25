@@ -9,6 +9,7 @@ import { act, createElement, useSyncExternalStore, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 
+import type * as Menus from '../../../window/commands/menus.tsx';
 import { createRegistry } from '../../../window/commands/registry.ts';
 import { defineView, Slots } from '../../../window/slots.tsx';
 import type { PullView } from '../contract.ts';
@@ -18,6 +19,16 @@ import { Banners, TabFailed, useHeaderConnection } from './Notes.tsx';
 import { banners, type BannerSaid, type PullTab } from './shared.ts';
 
 vi.mock('./main.ts', () => ({ main: () => ({ reload: () => Promise.resolve() }) }));
+
+// Each control whose menu a command opened, as a key does.
+const menus = vi.hoisted(() => ({ opened: [] as Element[] }));
+vi.mock('../../../window/commands/menus.tsx', async (original) => ({
+  ...(await original<typeof Menus>()),
+  openMenuOf: (element: Element) => {
+    menus.opened.push(element);
+    return true;
+  },
+}));
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -65,9 +76,14 @@ function store(said: BannerSaid | undefined) {
 /**
  * A feature's banner view, `order` in the slot, drawing what `kept` says while it says it, with a
  * button, "Show r5", that takes the banner away, as its feature's own does, and with `dismiss`, a
- * Dismiss that does too.
+ * Dismiss that does too, or one that asks where (`choices`).
  */
-function bannerView(id: string, order: number, kept: ReturnType<typeof store>, dismiss = false) {
+function bannerView(
+  id: string,
+  order: number,
+  kept: ReturnType<typeof store>,
+  dismiss: boolean | 'choices' = false,
+) {
   function Drawn() {
     const said = useSyncExternalStore(kept.subscribe, kept.get);
     return said
@@ -75,7 +91,8 @@ function bannerView(id: string, order: number, kept: ReturnType<typeof store>, d
           tone: said.tone,
           title: said.title,
           action: { label: 'Show r5', onClick: () => kept.set(undefined) },
-          ...(dismiss ? { onDismiss: () => kept.set(undefined) } : {}),
+          ...(dismiss === true ? { onDismiss: () => kept.set(undefined) } : {}),
+          ...(dismiss === 'choices' ? { dismissChoices: true } : {}),
         })
       : null;
   }
@@ -201,6 +218,23 @@ describe('the tab’s banners', () => {
     });
     expect(watched.get()).toBeUndefined();
     expect(titleOf(host)).toBe('This diff includes #83’s changes');
+  });
+
+  it('open the menu of a Dismiss that asks where, by the command that presses Dismiss, as a key does', () => {
+    menus.opened.length = 0;
+    const start = store({ tone: 'info', title: 'This diff includes #83’s changes' });
+    const host = draw(
+      <Slots views={[bannerView('stacks.start', 10, start, 'choices')]}>
+        <Banners tab={TAB} view={undefined} />
+      </Slots>,
+    );
+    expect(can('tab.dismissBanner')).toBe(true);
+    act(() => {
+      run('tab.dismissBanner');
+    });
+    expect(menus.opened).toHaveLength(1);
+    expect(menus.opened[0]).toBe(host.querySelector('[data-lo-banner="dismiss"]'));
+    expect(start.get()).toBeDefined();
   });
 
   it('hand focus to the view as the last one goes with it, as its own action takes it away', () => {

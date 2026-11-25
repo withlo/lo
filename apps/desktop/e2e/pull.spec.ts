@@ -127,6 +127,35 @@ test('opens a pull request with its header, and fetches its local copy at the he
   await expect(tabBanners(page)).toHaveCount(0);
 });
 
+test('the left panel’s edge sizes it by a drag, and by key while it has focus', async ({
+  page,
+}) => {
+  await open(page, E2E);
+  const files = page.getByRole('complementary', { name: 'Files' });
+  const edge = page.getByRole('separator', { name: 'Resize left panel' });
+  const width = () => files.evaluate((panel) => panel.getBoundingClientRect().width);
+  await expect(files.getByRole('treeitem').first()).toBeVisible();
+  await expect(edge).toHaveAttribute('aria-valuenow', '300');
+  expect(await width()).toBe(300);
+
+  // Its grip is centred on the edge, clear of the files' scrollbar's thumb.
+  await page.mouse.move(300, 400);
+  await page.mouse.down();
+  await page.mouse.move(400, 400);
+  await page.mouse.up();
+  expect(await width()).toBe(400);
+
+  await files.getByRole('treeitem').first().click();
+  expect(await files.evaluate((panel) => panel.contains(document.activeElement))).toBe(true);
+  await page.keyboard.press('>');
+  expect(await width()).toBe(432);
+  await page.keyboard.press('<');
+  await page.keyboard.press('<');
+  expect(await width()).toBe(368);
+  await page.keyboard.press('=');
+  expect(await width()).toBe(300);
+});
+
 test("says why a pull request GitHub doesn't have, or one no account can see, can't be opened", async ({
   page,
 }) => {

@@ -42,7 +42,7 @@ every code view and comment box follows at once.
 - **Copying is `y` plus a letter** (`yy`, `yl`, `yp`, `ya`). There is no single-key `y`, so none
   collides with them.
 - **Families stay families.** `]`/`[` jump forward and back, `g` goes somewhere, `z` folds, `⌘` acts
-  on the window or the review.
+  on the window or the review. `<`, `>` and `=` size what has focus.
 - **Single letters act on what has focus.** In the file tree, `t`, `f`, `l` and `h` mean tree
   things; in the diff, the table's meanings hold.
 - **A right-click menu lists what its target can do, with the keys,** and greys what can't run

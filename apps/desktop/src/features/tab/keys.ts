@@ -1,11 +1,17 @@
 // The tab strip's keys: a tab by its place, the next and previous tab, moving one, the tabs that
 // don't fit and closing one. They work wherever focus is, a text field included, but not under a
 // dialog or a palette, which hold the keys while they're open. And a pull request's tab's: its left
-// and right panels, its middle views, and the account to open it as.
+// and right panels, the width of what has focus, its middle views, and the account to open it as.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
 const outside: When = { except: ['dialog', 'palette'] };
+
+/**
+ * Where the keys that size what has focus work: in a pull request's tab, but not in a menu, a dialog,
+ * a palette or a comment box, and in code views in normal mode, over Vim's own, as `` ` `` does.
+ */
+const sizing: When = { except: ['menu', 'dialog', 'palette', 'box'], mode: 'normal' };
 
 /** The command that shows the tab at `position` in the strip, by `⌘` and its number. */
 const place = (position: number) => ({
@@ -112,6 +118,43 @@ export default defineCommands('tab', {
     toggle: 'switch',
   },
   /**
+   * Widens what has focus by a step, as dragging its edge does: the left panel, while focus is in
+   * it. A held key goes on widening it, to its limit.
+   */
+  widen: {
+    label: 'Widen',
+    description: 'The panel, view or side that has focus.',
+    group: 'View',
+    keys: ['>'],
+    overVim: true,
+    repeat: true,
+    when: sizing,
+    control: 'the edge beside what has focus, dragged',
+    bar: { menu: 'View', section: 'layout', order: 10 },
+  },
+  narrow: {
+    label: 'Narrow',
+    description: 'The panel, view or side that has focus.',
+    group: 'View',
+    keys: ['<'],
+    overVim: true,
+    repeat: true,
+    when: sizing,
+    control: 'the edge beside what has focus, dragged',
+    bar: { menu: 'View', section: 'layout', order: 20 },
+  },
+  /** Puts what has focus back to its default width, as a double-click on its edge does. */
+  resetWidth: {
+    label: 'Reset width',
+    description: 'The panel, view or side that has focus.',
+    group: 'View',
+    keys: ['='],
+    overVim: true,
+    when: sizing,
+    control: 'a double-click on the edge beside what has focus',
+    bar: { menu: 'View', section: 'layout', order: 30 },
+  },
+  /**
    * The next of a pull request's middle views the header's switch lists: overview, diff, timeline,
    * round the end. A file whole isn't one of them: it opens from a file, and `⌃o` goes back.
    */
@@ -175,10 +218,13 @@ export default defineCommands('tab', {
     group: 'Tabs',
     keys: [],
   },
-  /** Dismisses the pull request's banner on screen, as its Dismiss does, where it has one. */
+  /**
+   * Dismisses the pull request's banner on screen, as its Dismiss does, where it has one: news for
+   * good, and an offer where the reader chooses, in its menu, which opens with its first row ready.
+   */
   dismissBanner: {
     label: 'Dismiss message',
-    description: 'The one under the pull request’s header, for good.',
+    description: 'The one under the pull request’s header. An offer asks where.',
     control: 'Dismiss on the banner under the pull request’s header',
     group: 'Tabs',
     keys: [],

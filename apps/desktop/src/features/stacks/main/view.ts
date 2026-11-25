@@ -27,7 +27,7 @@ import {
 
 import type { PullState } from '../../tab/contract.ts';
 import { type Checks, type Note, type Review, type Row, type StackView } from '../contract.ts';
-import { calloutText, CHECKING_MERGED, numbers } from './words.ts';
+import { calloutKind, calloutText, CHECKING_MERGED, numbers, type CalloutKind } from './words.ts';
 
 /** What a tab's stack is worked out from. */
 export interface ViewInput {
@@ -66,6 +66,8 @@ export interface ShownRow {
 /** A tab's stack, what to keep of it, and the layers to read the state of. */
 export interface ViewOutput {
   readonly view: StackView;
+  /** Which offer `view`'s callout is, where it has one. */
+  readonly callout?: CalloutKind | undefined;
   readonly shown: Shown | undefined;
   /** The node IDs of the layers whose state the tree shows, bottom first: none for no stack. */
   readonly ids: readonly string[];
@@ -198,6 +200,7 @@ function drawn(
     };
   });
   const layers = stack.layers.flatMap((number) => layerOf(forest, number) ?? []);
+  const callout = left ? null : calloutOf(input, forest);
   return {
     view: {
       kind: 'stack',
@@ -205,8 +208,9 @@ function drawn(
       githubStack: oneGithubStack(layers),
       rows: placed.map(({ row }) => row),
       notes: [...githubNotes(layers), ...notesOf(input, forest, list, stack)],
-      callout: left ? null : calloutOf(input, forest),
+      callout: callout?.line ?? null,
     },
+    callout: callout?.kind,
     shown: { rows: placed },
     ids: placed.map(({ id }) => id).filter((id) => id !== ''),
   };
@@ -314,11 +318,14 @@ function overviewOf(
 }
 
 /**
- * What the offer to make the chain through the layer on screen a GitHub stack says, while the core
- * would plan it. The Stacks API is taken to be there until `gS` finds otherwise, and the layers'
+ * Which offer to make the chain through the layer on screen a GitHub stack the tree makes, and what
+ * it says, while the core would plan it. The Stacks API is taken to be there until `gS` finds otherwise, and the layers'
  * state must have been read, to know none of the chain is in a merge queue.
  */
-function calloutOf(input: ViewInput, forest: Stacks): string | null {
+function calloutOf(
+  input: ViewInput,
+  forest: Stacks,
+): { readonly kind: CalloutKind; readonly line: string } | null {
   const { layers } = input;
   if (!layers) return null;
   const queued = layers.layers.flatMap((read) => (read.isInMergeQueue ? [read.number] : []));
@@ -326,7 +333,7 @@ function calloutOf(input: ViewInput, forest: Stacks): string | null {
   if (conversion.kind !== 'plan') return null;
   const read = new Set(layers.layers.map((layer) => layer.number));
   if (!conversion.plan.path.every((number) => read.has(number))) return null;
-  return calloutText(conversion.plan);
+  return { kind: calloutKind(conversion.plan), line: calloutText(conversion.plan) };
 }
 
 /** What the tree says under the rows of `stack`: what Lo couldn't read, and loops. */
