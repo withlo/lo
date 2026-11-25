@@ -21,7 +21,7 @@ import {
 } from 'react';
 
 import { useMenuTarget } from '../../../window/commands/menus.tsx';
-import { registry, setMiddle } from '../../../window/commands/registry.ts';
+import { focusMiddle, registry, setMiddle } from '../../../window/commands/registry.ts';
 import { DiffBeside, showDiff } from '../../diff/window/shared.ts';
 import { afterHold } from '../../revisions/window/shared.ts';
 import { useKnownSetting } from '../../settings/window/shared.ts';
@@ -254,7 +254,13 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
   // what to open on, it's the overview's place too, so a file opened from the tree has a way back.
   const waiting = opening === 'waiting';
   useEffect(() => {
-    if (!shown) return undefined;
+    if (!shown) {
+      // Hidden, as when the tab opens on the diff, it puts focus it had on the middle of the window,
+      // nowhere in particular, for the view on screen to take as it draws. Left on a hidden view,
+      // focus stays there until the browser drops it, and that drops the keys typed meanwhile.
+      if (root.current?.contains(document.activeElement)) focusMiddle();
+      return undefined;
+    }
     const take = () => (article.current ?? root.current)?.focus({ preventScroll: true });
     // A block history brought back has focus already.
     const own = root.current;
@@ -364,8 +370,11 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
   });
 
   if (waiting) {
+    // It stands in for the middle of the window until the tab has a view to show: focus on it is
+    // nowhere in particular, so keys typed as the tab opens go on in the view that draws and takes
+    // focus from it, as they do on the middle itself.
     return (
-      <div ref={root} className="h-full outline-none" tabIndex={-1}>
+      <div ref={root} className="h-full outline-none" tabIndex={-1} data-lo-middle>
         <MiddlePlaceholder tab={tab} />
       </div>
     );

@@ -5,7 +5,7 @@
 // was, its folds open and its focus where it was. What Settings says and showing the diff are
 // stood in for, so each test says what Settings holds and sees when the tab hands over to the diff.
 
-import { commandsOf, holdRegistry, NO_TARGET } from '@lo/ui/commands';
+import { commandsOf, listen, NO_TARGET } from '@lo/ui/commands';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
@@ -23,6 +23,7 @@ import type { OverviewCommit, OverviewState, SkillState } from '../contract.ts';
 import keys from '../keys.ts';
 import { checkOverview, parseOverview } from '../background/index.ts';
 import settingsKeys from '../../settings/keys.ts';
+import stacksKeys from '../../stacks/keys.ts';
 import updatesKeys from '../../updates/keys.ts';
 import { Checking } from './checking.ts';
 import { copyPrompt as copyPromptOf } from './copy.ts';
@@ -143,14 +144,17 @@ const bridge = installBridge({
     }),
 });
 
-/** Runs of "Check for updates" and Copy prompt, whose handlers are stood in for. */
+/** Runs of "Check for updates", Copy prompt and `]s`, whose handlers are stood in for. */
 const checkUpdates = vi.hoisted(() => vi.fn<() => void>());
 const copyPrompt = vi.hoisted(() => vi.fn<() => void>());
+const nextLayer = vi.hoisted(() => vi.fn<() => void>());
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
-  // Held as the key listener holds it, so the views' buttons find their commands.
-  holdRegistry(
+  // Listened to as the window listens, which holds it too, so keys run their commands and the
+  // views' buttons find theirs.
+  listen(
+    window,
     createRegistry(
       [
         ...commandsOf(tabKeys),
@@ -163,6 +167,9 @@ beforeAll(() => {
         ...commandsOf(updatesKeys).map((command) =>
           command.id === 'updates.check' ? { ...command, handler: { run: checkUpdates } } : command,
         ),
+        ...commandsOf(stacksKeys)
+          .filter((command) => command.id === 'stacks.nextLayer')
+          .map((command) => ({ ...command, handler: { run: nextLayer } })),
       ],
       'mac',
     ),
@@ -175,7 +182,16 @@ afterEach(() => {
   showDiff.mockClear();
   checkUpdates.mockClear();
   copyPrompt.mockClear();
+  nextLayer.mockClear();
 });
+
+/** Presses `key` where focus is, as the system would. */
+function press(key: string): void {
+  const target = document.activeElement ?? document.body;
+  act(() => {
+    target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+  });
+}
 
 /** The title of the problem the view shows in the overview's place, for a standing of `kind`. */
 function problemTitle(view: HTMLElement, kind: string): string | undefined {
@@ -242,13 +258,14 @@ async function until(done: () => boolean): Promise<void> {
 }
 
 /**
- * The overview's view for `tab`, in a window of its own, with the overview's mark and its item in
- * the status bar beside it; on screen until `shown` says the reader showed another view.
+ * The overview's view for `tab`, in a window of its own, or in `parent`, with the overview's mark
+ * and its item in the status bar beside it; on screen until `shown` says the reader showed another
+ * view.
  */
-function render(tab: PullTab) {
+function render(tab: PullTab, parent: HTMLElement = document.body) {
   const container = document.createElement('div');
   container.className = 'lo-app';
-  document.body.append(container);
+  parent.append(container);
   const root = createRoot(container);
   const draw = (shown: boolean) =>
     act(() =>
@@ -456,6 +473,47 @@ describe('as the tab opens', () => {
     const view = render(tab);
     expect(openings.get(tab.id)).toMatchObject({ on: 'diff', late: true });
     expect(view.querySelector('[data-lo-overview="none"]')).not.toBeNull();
+  });
+
+  it('keeps keys typed while it waits for the overview, which takes focus from it as it draws', async () => {
+    const tab = tabOf();
+    const view = render(tab);
+    const waiting = document.activeElement;
+    expect(waits(view)).toBe(true);
+    expect(waiting instanceof HTMLElement && view.contains(waiting)).toBe(true);
+    // `]`, then the overview draws and takes focus, then `s`: `]s` as typed while the layer opens.
+    press(']');
+    const checking = checkingFor(tab);
+    act(() => states.set(tab.id, stateOf(tab)));
+    checking.take(stateOf(tab));
+    await until(() => view.querySelector('[data-lo-overview="shown"]') !== null);
+    expect(document.activeElement).not.toBe(waiting);
+    expect(view.contains(document.activeElement)).toBe(true);
+    press('s');
+    expect(nextLayer).toHaveBeenCalledOnce();
+  });
+
+  it('leaves focus on the middle of the window as it hands the tab to the diff, so keys typed then go on there', () => {
+    const middle = document.createElement('main');
+    middle.setAttribute('data-lo-middle', '');
+    middle.tabIndex = -1;
+    document.body.append(middle);
+    onTestFinished(() => middle.remove());
+    const tab = tabOf();
+    const view = render(tab, middle);
+    act(() => states.set(tab.id, stateOf(tab, { found: 'none', overview: null })));
+    expect(showDiff).toHaveBeenCalledWith(tab.id);
+    view.shown(false);
+    expect(document.activeElement).toBe(middle);
+    // `]` before the diff has drawn, and `s` once it has taken focus.
+    press(']');
+    const diff = document.createElement('div');
+    diff.setAttribute('data-lo-scope', 'diff');
+    diff.tabIndex = -1;
+    middle.append(diff);
+    diff.focus();
+    press('s');
+    expect(nextLayer).toHaveBeenCalledOnce();
   });
 });
 
