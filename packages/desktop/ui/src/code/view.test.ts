@@ -14,7 +14,7 @@ import {
   KEY_EVENT,
   Registry,
 } from '../commands/index.ts';
-import { iconElement } from '../Icon.tsx';
+import { iconElement } from '../iconElement.ts';
 import type {
   BoxFrame,
   ComposeOptions,

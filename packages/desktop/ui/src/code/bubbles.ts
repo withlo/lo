@@ -3,7 +3,7 @@
 // grey once it's resolved or out of date, and as a control that opens or collapses it. The lane
 // beside the lines draws it (`lanes.ts`), and a file's header draws a file's own threads' bubble.
 
-import { iconElement } from '../Icon.tsx';
+import { iconElement } from '../iconElement.ts';
 import type { IconName } from '../icons.ts';
 import { type ThreadMark, type ThreadView, viewControls } from './api.ts';
 
