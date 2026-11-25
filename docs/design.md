@@ -353,8 +353,9 @@ below them, which the stack may come to need.
 The left panel shows the repo's files as a tree, at the commit on screen. Its edge drags to widen or
 narrow it, between 220 and 480 px, and `>` and `<` do the same while it has focus, a step at a time;
 a double-click on the edge, or `=`, puts it back to 300 px. `Esc` during a drag puts back the width
-it had. Let go near the window's side, the edge closes the panel. Its width is the window's, the
-same in every tab.
+it had. Let go near the window's side, the edge closes the panel. `⌘\` or the button at the start of
+the header's cluster opens and closes it. Whether it's open, and its width, are the window's, the
+same in every tab, and kept when Lo restarts.
 
 ### What it shows
 
@@ -421,9 +422,10 @@ each other ("moved from `api/user.ts:40`"), and only edits inside the block are 
 
 ### Overview markers
 
-Lines the overview explains carry a marker beside them. Opening it shows the explanation in place,
-with its code, emphasis and lists drawn as the overview draws them, cut at 600 characters, and a
-link to that point in the overview.
+Lines the overview explains carry a marker beside them, in a lane of their own last before the new
+code; the old side has none, since an overview explains new lines. Opening it shows the explanation
+in place, with its code, emphasis and lists drawn as the overview draws them, cut at 600 characters,
+and a link to that point in the overview.
 
 ## 7. Revisions and viewed files
 
@@ -758,6 +760,12 @@ trust.
 - **In the diff.** Threads appear under their line, and a file's threads under its header.
   Unresolved threads start open, and resolved ones start collapsed. `za` on a thread opens or
   collapses it. A file's header and its row in the file tree count its threads.
+- **Marks beside the code.** Each side has a thread lane between its line numbers and its code. A
+  thread's mark there is a bubble beside its last line, amber while it's unresolved or holds your
+  pending comments, grey once it's resolved or out of date, with a bracket up the lane to its first
+  line. Several threads on a line share one bubble. A file's threads have theirs in its header's
+  row. A click on a bubble collapses or expands its thread, as `za` does. The lane is as wide empty
+  as full, so no mark coming or going moves a line.
 - **Threads.** You can reply, resolve and unresolve, and edit or delete your own comments, from the
   thread's buttons, its right-click menu or its keys. A key acts on the thread `]t` landed on, or
   the only thread on screen on the cursor's line, or under the file's header; where there's more
@@ -825,7 +833,20 @@ trust.
 
 The right panel. `⌘⇧\` or the toggle in the tab's header opens and closes it for the whole window,
 and opening it puts focus in its list. Opening or closing it leaves the line at the top of the diff
-where it is. The toggle counts the unresolved threads.
+where it is. The toggle counts the unresolved threads. Its edge sizes it as the left panel's does,
+between 280 and 560 px, 340 by default.
+
+The window keeps its layout, each panel open or not and its width, from tab to tab and when Lo
+restarts, and opens where it was, as big, maximized or full screen if it was, or on the display that
+holds most of its top where part of it would be off every display, no bigger than that display; on a
+display that's gone, it opens at 1280×800. Reset layout, in the View menu and the palette, puts the
+panels back as they first were. A window too narrow for a panel beside a view at its minimum (340
+px) puts it away, the threads panel first, but never the one asked for last before the other, and
+brings it back when there's room. A panel's button shows what's drawn: one put away reads unpressed,
+and pressing it asks for it, so the other gives way. One that can't fit at all is dimmed: "Widen the
+window first". A panel opened by its key, its button or Reset layout fades in, and so does one back
+as its key or button closes the other; one back as the window widens, or as a drag closes the other,
+is just there. Focus in a panel that closes or is put away goes back to the middle view.
 
 It lists the threads of the view on screen, so each layer of a stack shows its own. A run of layers
 has none of its own, and the panel says to show one of its layers. Threads are grouped by file in

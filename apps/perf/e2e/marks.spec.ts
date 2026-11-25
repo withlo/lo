@@ -33,7 +33,8 @@ for (const layout of ['split', 'inline'] as const) {
     await page.evaluate(
       (marks) => window.perfOverview(marks),
       [
-        // Above the screen, on it on both sides, and below it.
+        // Above the screen, on it, and below it. The old side has no overview lane: its marks
+        // aren't drawn, and move nothing either.
         mark('src/app.ts', 'new', 2, 4),
         mark(middle.file, 'new', middle.line - 2, middle.line + 2),
         mark(middle.file, 'old', Math.max(1, middle.line - 4), middle.line),

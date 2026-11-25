@@ -695,7 +695,9 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
   place: one that has nothing to say yet shows its ring, and one that comes and goes, as "Rate limit
   low", goes last on the left.
 - The body is left panel (stack, then files), the middle sheet, and the threads panel. Each panel
-  opens and closes with a key.
+  opens and closes with a key and with its button at its end of the header's cluster, which shows
+  what's drawn: a panel put away for room reads unpressed, and pressing it asks for it, so the other
+  gives way. One that can't fit beside a view at its minimum is dimmed: "Widen the window first".
 - Every edge in the row is a `Splitter` in a `Panes` row, and the seam of a side-by-side diff, which
   the view draws, drags with the same `dragEdge`: 8 px to grab, no line at rest, a 2 px `lo-border`
   line under the pointer, `lo-accent` while pressed. Only a drag that moves it somewhere new changes
@@ -705,6 +707,8 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
   in with Swap. Nothing draws under its minimum: `fit` puts away the threads panel, then the left
   panel, then the view without focus, never what was asked for last, and brings each back when
   there's room.
+- The layout is the window's, not a preference: one for every tab, saved as it changes, with no row
+  in Settings. Reset layout puts it back. The window opens where it was, as big.
 - The window never scrolls. Panes do. The shell hides what overflows it and puts itself back if a
   script scrolls it, and anything brought into view goes through `reveal()`, which scrolls the pane
   it's in. Lint refuses an element's `scrollIntoView` outside tests (`lo/no-scroll-into-view`). The
@@ -792,6 +796,11 @@ first, so a card drawn again doesn't flash them.
   `cm-collapsedLines`) share the same rules.
 - Side by side by default. Both sides stay on one row grid: a thread or a wrapped line on one side
   leaves space (`lo-spacer`) on the other.
+- **A marker sits against the code it's about.** Line numbers, then the thread lane, then the
+  overview lane on a side that shows new lines, then the code. A lane is as wide empty as full.
+- **A thread is a bubble, the overview is a ball.** A thread's mark is a `message-square` icon with
+  a bracket up its range, amber while unresolved or pending, grey once resolved or out of date. The
+  overview's is the Powder ball and rail. Neither borrows from the other.
 - **Filler is quieter than code.** Everything in a diff that isn't code (that space, folds of
   unchanged lines, the row under a file's header) sits on one flat ground, `lo-diff-filler`, in type
   smaller and dimmer than code. Only a run of space three lines tall or less is hatched, so a line

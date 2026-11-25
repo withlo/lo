@@ -9,6 +9,7 @@ import type { ThreadView } from '@lo/ui/code';
 
 import type { DrawnBlock } from '../../overview/window/shared.ts';
 import type { ThreadRow } from '../contract.ts';
+import { markOf, type RevisionLabel } from './marks.ts';
 import { threadOf, versionOf } from './placing.ts';
 
 /** What a block's lines show: its commit's whole diff, or a layer's, its base side its own. */
@@ -20,10 +21,14 @@ export function blockScreen(block: Pick<DrawnBlock, 'commit' | 'from'>): Screen 
 
 /**
  * `rows`, a view's threads, placed on `block`'s lines: those on lines of its file at its commit,
- * each under its last line, on the side it's on. The block's code view leaves out those on lines
- * it doesn't show.
+ * each under its last line, on the side it's on, with its mark, which names a revision as `label`
+ * does. The block's code view leaves out those on lines it doesn't show.
  */
-export function threadsOnBlock(rows: readonly ThreadRow[], block: DrawnBlock): ThreadView[] {
+export function threadsOnBlock(
+  rows: readonly ThreadRow[],
+  block: DrawnBlock,
+  label: RevisionLabel = () => undefined,
+): ThreadView[] {
   const screen = blockScreen(block);
   const placed: ThreadView[] = [];
   for (const row of rows) {
@@ -37,6 +42,7 @@ export function threadsOnBlock(rows: readonly ThreadRow[], block: DrawnBlock): T
       at: { file: block.file, side: end.side === 'RIGHT' ? 'new' : 'old', line: end.number },
       open: Thread.startsOpen(thread),
       version: versionOf(JSON.stringify(row)),
+      mark: markOf(row, placement.lines, label),
     });
   }
   return placed;

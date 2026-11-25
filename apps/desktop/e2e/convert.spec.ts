@@ -18,7 +18,7 @@ import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { Page } from '@playwright/test';
 
 import type { NoteKind, StackState } from '../src/features/stacks/contract.ts';
-import { expect, onStacks, STACK } from './app.ts';
+import { expect, keysToDiff, onStacks, STACK } from './app.ts';
 
 /** How GitHub answers, from `app_stack_convert`. */
 type Answers =
@@ -152,7 +152,7 @@ async function makeStack(page: Page): Promise<void> {
   await expect
     .poll(() => page.evaluate(() => window.loDiff?.files.length ?? 0), { timeout: 20_000 })
     .toBeGreaterThan(0);
-  await page.locator('.lo-diffview').click();
+  await keysToDiff(page);
   await page.keyboard.press('g');
   await page.keyboard.press('Shift+S');
 }

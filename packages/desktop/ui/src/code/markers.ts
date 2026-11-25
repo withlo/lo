@@ -1,5 +1,6 @@
-// Overview markers, in a gutter of their own before the line numbers: a ball on the first line a
-// block of the pull request's overview explains, and a rail down the rest. The gutter is there from
+// Overview markers, in a lane of their own, last before the code, on the side an overview marks:
+// a ball on the first line a block of the pull request's overview explains, and a rail down the
+// rest. The ball's centre is 15 px left of the code's first column. The gutter is there from
 // the start, as wide with no markers as with them, so markers that arrive later change no line's
 // width or height, and nothing on screen moves. Unchanged lines collapsed into one block carry the
 // rail where it passes through them, and the ball where a marked range starts among them. The rail
@@ -9,6 +10,7 @@
 import type { Extension } from '@codemirror/state';
 import { type BlockInfo, type EditorView, gutter, GutterMarker } from '@codemirror/view';
 
+import { lineBeside } from './lanes.ts';
 import { marksChanged } from './marks.ts';
 import { CollapsedWidget, FileNoteWidget, HeaderWidget } from './widgets.ts';
 
@@ -148,8 +150,8 @@ export function markerGutter(source: MarkerSource): Extension {
       // A file's own blocks, in place of its lines, aren't between them.
       if (widget instanceof HeaderWidget || widget instanceof FileNoteWidget) return null;
       // A block at a line's start is drawn before it; one at its end, after it.
-      const line = view.state.doc.lineAt(block.from);
-      return source.markerBetween(line.number, block.from > line.from || line.from === line.to);
+      const { line, after } = lineBeside(view, block);
+      return source.markerBetween(line, after);
     },
     lineMarkerChange: (update) =>
       update.transactions.some((transaction) =>

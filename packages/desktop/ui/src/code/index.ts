@@ -64,6 +64,7 @@ export type {
   Spot,
   Target,
   ThreadContent,
+  ThreadMark,
   ThreadView,
   Viewport,
   VimKey,
