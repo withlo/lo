@@ -1897,6 +1897,10 @@ utilities.
   else (`scripts/check-popups.ts`).
 - The fonts, Host Grotesk and Fragment Mono, are bundled as files (never `data:` addresses, which
   the content security policy blocks), and their licenses ship beside the window's files.
+- Icons come from `lucide`, through `Icon` and the list in `packages/desktop/ui/src/icons.ts`, the
+  only file that imports it. Lint fails an `<svg>` written anywhere but `Icon`, the mark and figures
+  (`lo/no-inline-icon`), or the files whose icons are still drawn by hand, which
+  `scripts/oxlint/svgs.ts` lists and which only shrinks. Its license ships beside the fonts'.
 - Screenshot baselines are made on Linux only, in `apps/desktop/e2e/snapshots/`.
 
 ## Generated files
