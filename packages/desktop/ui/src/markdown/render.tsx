@@ -383,7 +383,7 @@ export function drawBlock<X extends Extension>(node: Block<X>, r: Rendering<X>):
     case 'suggestion': {
       // As the diff draws a change: the lines it replaces, where known, over the lines it suggests.
       return (
-        <div className="max-w-read-measure overflow-hidden rounded-md border border-border">
+        <div className="overflow-hidden rounded-md border border-border">
           <p className="bg-bg-chrome px-12 py-6 text-fg-muted text-small">Suggested change</p>
           <Suggested removed={plain.removed ?? r.replaced} added={plain.text} />
         </div>
@@ -443,10 +443,7 @@ function alertTone(kind: Alert['type']): { label: string; box: string; word: str
 function alert<X extends Extension>(node: Alert<X>, r: Rendering<X>): ReactNode {
   const tone = alertTone(node.type);
   return (
-    <div
-      role="note"
-      className={`max-w-read-measure space-y-6 rounded-md border px-12 py-8 ${tone.box}`}
-    >
+    <div role="note" className={`measured space-y-6 rounded-md border px-12 py-8 ${tone.box}`}>
       <p className={`font-semibold ${tone.word}`}>{tone.label}</p>
       {drawBlocks(node.children, r)}
     </div>

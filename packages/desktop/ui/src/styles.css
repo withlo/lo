@@ -517,6 +517,14 @@
   }
 }
 
+/* A box of text in a post, such as an alert, keeps to the read measure, unless it holds a code
+   block, which takes the post's width: then only its text does, by `.lo-prose`'s own rules. */
+@utility measured {
+  &:not(:has(pre)) {
+    max-width: var(--lo-read-measure);
+  }
+}
+
 /* A suggested change's lines: each line's sign in a gutter of its own, then the line, a row on the
    code's line each. */
 @utility suggestion-lines {
