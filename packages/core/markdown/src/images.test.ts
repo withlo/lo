@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { imageAddress, imageSources, isImageAddress } from './images.ts';
+import { imageAddress, imageSize, imageSources, isImageAddress, MAX_IMAGE_SIZE } from './images.ts';
 
 test("images load only from GitHub's image hosts", () => {
   const kept = [
@@ -51,4 +51,17 @@ test('an image address is normalized, and a relative one reads from its page', (
 test('the host list is fixed', () => {
   expect(Object.isFrozen(imageSources)).toBe(true);
   expect(imageSources.every((source) => Object.isFrozen(source))).toBe(true);
+});
+
+test("an image's size reads as a browser reads one, within bounds", () => {
+  expect(imageSize('115')).toBe('115');
+  expect(imageSize(115)).toBe('115');
+  expect(imageSize(' 28px')).toBe('28');
+  expect(imageSize('012.50')).toBe('12.5');
+  expect(imageSize('50%')).toBe('50%');
+  expect(imageSize('100%')).toBe('100%');
+  expect(imageSize(String(MAX_IMAGE_SIZE))).toBe(String(MAX_IMAGE_SIZE));
+  for (const refused of ['', '0', '0%', '-5', 'wide', 'px20', '101%', '16385', undefined, null]) {
+    expect(imageSize(refused)).toBeUndefined();
+  }
 });

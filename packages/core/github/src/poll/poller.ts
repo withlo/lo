@@ -1085,11 +1085,15 @@ export class Poller {
 
   /**
    * `pull`'s push history, as {@link Poller.readCached} keeps it, read as this account. It's read
-   * again after a push, a retarget, a merge or a close, and when a review is submitted.
+   * again after a push, a retarget, a merge or a close, and when a review is submitted. `first`
+   * says who waits on the first read, as a view drawing it does.
    */
-  pushHistory(pull: PullRef): Promise<Cached<PushHistory> | undefined> {
-    return this.readCached(pull, PUSH_HISTORY, (client, known) =>
-      readPushHistory(client, pull, this.#login, known),
+  pushHistory(pull: PullRef, first?: ReadPriorityNow): Promise<Cached<PushHistory> | undefined> {
+    return this.readCached(
+      pull,
+      PUSH_HISTORY,
+      (client, known) => readPushHistory(client, pull, this.#login, known),
+      first,
     );
   }
 
@@ -1143,10 +1147,21 @@ export class Poller {
    * when an item it shows is added or deleted, the pull request is updated, the latest commit's
    * checks change or the description is edited, and on the 5-minute refresh: each time only its
    * newest page. So a change to an older item shows at the hourly full read, unless Lo made it.
+   * `first` says who waits on the first read, as a view drawing it does, and `onNewest` hears its
+   * newest page while its older ones are read, when there's more than one ({@link readTimeline}):
+   * it's never kept, and the read's `read` event follows with the whole timeline.
    */
-  timeline(pull: PullRef): Promise<Cached<PullRequestTimeline> | undefined> {
-    return this.readCached(pull, TIMELINE, (client, known) =>
-      readTimeline(client, pull, { known, now: new Date(this.#config.now()) }),
+  timeline(
+    pull: PullRef,
+    first?: ReadPriorityNow,
+    onNewest?: (timeline: PullRequestTimeline) => void,
+  ): Promise<Cached<PullRequestTimeline> | undefined> {
+    return this.readCached(
+      pull,
+      TIMELINE,
+      (client, known) =>
+        readTimeline(client, pull, { known, now: new Date(this.#config.now()), onNewest }),
+      first,
     );
   }
 
@@ -1154,11 +1169,18 @@ export class Poller {
    * `pull`'s labels, reviewers, assignees and draft state, as {@link Poller.readCached} keeps them,
    * read as this account. They're read again when the pull request is updated, its timeline gains
    * or loses an item (a label, a review request, an assignee, a draft marked or made ready, a review
-   * dismissed), or a review is submitted, and on the 5-minute refresh.
+   * dismissed), or a review is submitted, and on the 5-minute refresh. `first` says who waits on
+   * the first read, as a view drawing them does.
    */
-  pullRequestSidebar(pull: PullRef): Promise<Cached<PullRequestSidebar> | undefined> {
-    return this.readCached(pull, PULL_REQUEST_SIDEBAR, (client) =>
-      readPullRequestSidebar(client, pull),
+  pullRequestSidebar(
+    pull: PullRef,
+    first?: ReadPriorityNow,
+  ): Promise<Cached<PullRequestSidebar> | undefined> {
+    return this.readCached(
+      pull,
+      PULL_REQUEST_SIDEBAR,
+      (client) => readPullRequestSidebar(client, pull),
+      first,
     );
   }
 
@@ -1265,7 +1287,16 @@ export class Poller {
   forgetStackLayers(pull: PullRef): void {
     this.#layerAsks.delete(pull.key);
     this.#layerUnion.delete(pull.key);
-    if (this.#pulls.get(pull.key)?.reads.delete(STACK_LAYERS.name)) {
+    this.forgetRead(pull, STACK_LAYERS);
+  }
+
+  /**
+   * Stops a read {@link Poller.readCached} keeps for `pull`, as for one nothing needs any more: no
+   * poll or refresh makes it again, and a read under way is dropped when it ends. What the cache
+   * holds stays, for if it's asked for again.
+   */
+  forgetRead<T>(pull: PullRef, kind: ReadKind<T>): void {
+    if (this.#pulls.get(pull.key)?.reads.delete(kind.name)) {
       this.#wake();
       this.#changed();
     }

@@ -53,7 +53,16 @@ export type Row =
         readonly state: TimelineReviewerState;
       }[];
     }
-  | { readonly kind: 'older'; readonly key: string; readonly count: number }
+  /**
+   * The older items: left out, past the pages Lo reads, or still being read (`reading`), while the
+   * newest page is drawn.
+   */
+  | {
+      readonly kind: 'older';
+      readonly key: string;
+      readonly count: number;
+      readonly reading: boolean;
+    }
   | {
       readonly kind: 'comment';
       readonly key: string;
@@ -129,6 +138,8 @@ export interface RowsContext {
   readonly revisions: ComparisonView | undefined;
   /** The pull request's author, as its header names them. */
   readonly author: string | undefined;
+  /** Whether the timeline is its newest page, while the older items are read. */
+  readonly reading?: boolean | undefined;
 }
 
 /** What GitHub calls an account it deleted. */
@@ -523,8 +534,8 @@ function eventOf(key: string, item: Item, repository: string): Row | undefined {
 
 /**
  * The rows of `timeline`, oldest first: the description card, a note of the older items Lo didn't
- * read, then a row for each item, commits grouped into pushes. `repository` is `owner/name`, which
- * a mention from the same repository leaves out.
+ * read, or is still reading, then a row for each item, commits grouped into pushes. `repository`
+ * is `owner/name`, which a mention from the same repository leaves out.
  */
 export function rowsOf(timeline: Timeline, repository: string, context: RowsContext): Row[] {
   const byHead = revisionsByHead(context.revisions);
@@ -548,7 +559,10 @@ export function rowsOf(timeline: Timeline, repository: string, context: RowsCont
       reviewers: reviewersOf(context.sidebar, context.author ?? description.author?.login),
     },
   ];
-  if (timeline.leftOut > 0) rows.push({ kind: 'older', key: 'older', count: timeline.leftOut });
+  if (timeline.leftOut > 0) {
+    const reading = context.reading ?? false;
+    rows.push({ kind: 'older', key: 'older', count: timeline.leftOut, reading });
+  }
 
   /** The commits of the push being gathered, with the cursor of its first. */
   let push: { key: string; commits: Extract<Item, { kind: 'commit' }>['commit'][] } | undefined;

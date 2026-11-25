@@ -546,17 +546,23 @@ export interface TimelineRead {
   now?: Date | undefined;
   /** How many items to read a page: GitHub's most, 100, by default. */
   pageSize?: number | undefined;
+  /**
+   * Hears the newest page of a timeline read with nothing `known`, as for the first time, that has
+   * older pages to read, before they're read: the description and the newest items, with the older
+   * ones still to read as `leftOut`. What the read answers with in the end replaces it.
+   */
+  onNewest?: ((timeline: PullRequestTimeline) => void) | undefined;
 }
 
 /**
  * `pull`'s timeline, newest first, at most {@link MAX_TIMELINE_PAGES} pages. With `known`, read
  * before, it reads only the newest page, unless it's due to be read in full at `now` or the page
- * doesn't join `known`.
+ * doesn't join `known`. Without, `onNewest` hears the newest page while the older ones are read.
  */
 export async function readTimeline(
   client: GithubClient,
   pull: PullRef,
-  { known, now = new Date(), pageSize = PAGE_SIZE }: TimelineRead = {},
+  { known, now = new Date(), pageSize = PAGE_SIZE, onNewest }: TimelineRead = {},
 ): Promise<PullRequestTimeline> {
   const maxItems = MAX_TIMELINE_PAGES * Math.max(pageSize, 1);
   const newest = await readPage(client, pull, pageSize, undefined);
@@ -572,6 +578,13 @@ export async function readTimeline(
   if (known !== undefined && !dueInFull(known, now)) {
     const joined = joinNewestPage(known, newest, maxItems);
     if (joined !== undefined) return joined;
+  }
+  if (known === undefined) {
+    try {
+      onNewest?.(timeline(newest.entries, Math.max(0, newest.count - newest.entries.length)));
+    } catch {
+      // What hears the newest page early can't stop the read: its answer replaces the page anyway.
+    }
   }
   const seen = new Set(newest.entries.map((entry) => entry.cursor));
   const asked = new Set<string>();

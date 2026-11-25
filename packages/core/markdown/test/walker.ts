@@ -10,6 +10,7 @@ import { isDeepStrictEqual } from 'node:util';
 import {
   DEFAULT_LIMITS,
   imageAddress,
+  imageSize,
   MAX_DIAGNOSTICS,
   webLink,
   type Limits,
@@ -63,6 +64,13 @@ const oneOf = (...values: readonly unknown[]): Field => ({
 const blocks: Field = { check: isList, holds: 'blocks' };
 const inlines: Field = { check: isList, holds: 'inlines' };
 const positive = whole(1, Number.MAX_SAFE_INTEGER);
+/** An image's size, as `imageSize` writes one. */
+const size: Field = {
+  check: (value) => isString(value) && imageSize(value) === value,
+  optional: true,
+};
+/** Where an image is in a theme: checked as the image's own address is, below. */
+const themed: Field = { check: isString, optional: true };
 
 const KINDS: Record<Shape, ReadonlyMap<string, Record<string, Field>>> = {
   block: new Map(
@@ -107,7 +115,14 @@ const KINDS: Record<Shape, ReadonlyMap<string, Record<string, Field>>> = {
       strike: { children: inlines },
       inlineCode: { value: string },
       link: { target: { check: isRecord, holds: 'target' }, children: inlines },
-      image: { url: string, alt: string },
+      image: {
+        url: string,
+        alt: string,
+        width: size,
+        height: size,
+        dark: themed,
+        light: themed,
+      },
       break: {},
       sub: { children: inlines },
       sup: { children: inlines },
@@ -273,8 +288,11 @@ export function walk(tree: unknown, limits: Limits = DEFAULT_LIMITS): Walked {
     }
     if (kind === 'image' && isString(url)) {
       walked.images += 1;
-      walked.addresses += url.length;
-      if (imageAddress(url) !== url) problem(where, `loads ${url}`);
+      for (const address of [url, value['dark'], value['light']]) {
+        if (!isString(address)) continue;
+        walked.addresses += address.length;
+        if (imageAddress(address) !== address) problem(where, `loads ${address}`);
+      }
     }
     if (kind === 'mention' && isString(url) && isString(name)) {
       walked.addresses += url.length;

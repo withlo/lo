@@ -12,11 +12,19 @@ describe('avatarImage', () => {
     );
   });
 
-  it('leaves a bot, a team and any other account to its initials', () => {
-    for (const type of ['Bot', 'Team', 'EnterpriseTeam', 'Mannequin', 'EnterpriseUserAccount']) {
+  it("asks for a bot's avatar by its app's slug, which main finds the picture of", () => {
+    expect(avatarImage({ login: 'cursor', type: 'Bot' }, 28)).toBe('lo-image://bot/cursor?s=56');
+    expect(avatarImage({ login: 'github-actions[bot]', type: 'Bot' }, 20)).toBe(
+      'lo-image://bot/github-actions?s=40',
+    );
+  });
+
+  it('leaves a team and any other account to its initials', () => {
+    for (const type of ['Team', 'EnterpriseTeam', 'Mannequin', 'EnterpriseUserAccount', '']) {
       expect(avatarImage({ login: 'dependabot', type }, 28)).toBeUndefined();
     }
     expect(avatarImage({ login: 'not a login', type: 'User' }, 28)).toBeUndefined();
+    expect(avatarImage({ login: 'not a login', type: 'Bot' }, 28)).toBeUndefined();
   });
 });
 

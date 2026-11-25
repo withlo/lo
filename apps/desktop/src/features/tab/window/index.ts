@@ -8,16 +8,19 @@ import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { contract as app } from '../../app/contract.ts';
+import { settingRow } from '../../settings/window/shared.ts';
 import { layerOf, viewIds, type Choice, type PlaceChoice, type Tab } from '../contract.ts';
 import keys from '../keys.ts';
+import { open as openOn } from '../settings.ts';
 import { follow } from './follow.ts';
 import { main } from './main.ts';
 import { moreStore, setMoreOpen } from './more.ts';
 import { choosable, chooseAccount } from './Notes.tsx';
+import { OpenOnChoice, useOpenOnLine } from './OpenOn.tsx';
 import { inStrip, movable, showable, stepTab } from './order.ts';
 import { middleIds, panels, rightPanel, stepAmong, toggleRight, viewCounts } from './panels.ts';
 import { PullRequestTab } from './PullRequestTab.tsx';
-import { activeTab, kinds } from './shared.ts';
+import { activeTab, kinds, middleShown } from './shared.ts';
 import { pullsStore, showFiles, showLocal, showPull, showTabs, tabsStore } from './store.ts';
 
 declare global {
@@ -53,11 +56,9 @@ function pullOnScreen(): Extract<Tab, { kind: 'pull' }> | string {
 function stepMiddle(step: 1 | -1): void {
   const tab = pullOnScreen();
   if (typeof tab === 'string') return;
-  const { labeled } = middleIds;
-  panels.update(tab.id, (current) => ({
-    ...current,
-    middle: stepAmong(current.middle % Math.max(1, labeled.length), step, labeled),
-  }));
+  const { ids, labeled } = middleIds;
+  const at = Math.max(0, ids.indexOf(middleShown(tab.id) ?? ''));
+  panels.update(tab.id, (current) => ({ ...current, middle: ids[stepAmong(at, step, labeled)] }));
 }
 
 /** Why the middle view can't change: there's no pull request on screen, or one view at most. */
@@ -251,6 +252,8 @@ export default {
       order: 0,
       render: ({ tab }) => (tab.kind === 'pull' ? createElement(PullRequestTab, { tab }) : null),
     }),
+    // Settings › Pull requests, after whether overviews show (5).
+    settingRow(openOn, { order: 10, control: OpenOnChoice, useLine: useOpenOnLine }),
   ],
   start() {
     const tabs = main();

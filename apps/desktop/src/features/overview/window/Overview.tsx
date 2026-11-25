@@ -1,10 +1,12 @@
-// The overview, the first of a pull request's tab's middle views. As the tab opens it draws the
-// tab's placeholder until it knows whether the overview shows, for `holdLimit()` at most, then
-// stays, or hands the middle to the diff before either has drawn anything. After that it shows the
-// overview, or why there's none to show; one that comes later is offered, never switched to. A run
-// of a stack's layers on screen as one diff has none, which it says. While
-// it's on screen the overview's keys act on it (`follow.ts`), and the code of one of its blocks can
-// sit beside it, which `o` and `Esc` take away again, the block the reader is at staying put.
+// The overview, the first of a pull request's tab's middle views. A tab that opens on it, as
+// Settings says, draws the tab's placeholder until it knows whether the overview shows, for
+// `holdLimit()` at most, then stays, or hands the middle to the timeline before either has drawn
+// anything. After that it shows the overview, or why there's none to show; one that comes later is
+// offered, never switched to. A tab that opened on another view shows it as it is whenever the
+// reader comes to it. A run of a stack's layers on screen as one diff has none, which it says.
+// While it's on screen the overview's keys act on it (`follow.ts`), and the code of one of its
+// blocks can sit beside it, which `o` and `Esc` take away again, the block the reader is at staying
+// put.
 
 import { HintButton } from '@lo/ui';
 import { NO_TARGET, setScopeSource } from '@lo/ui/commands';
@@ -22,11 +24,15 @@ import {
 
 import { useMenuTarget } from '../../../window/commands/menus.tsx';
 import { focusMiddle, registry, setMiddle } from '../../../window/commands/registry.ts';
-import { DiffBeside, showDiff } from '../../diff/window/shared.ts';
+import { DiffBeside } from '../../diff/window/shared.ts';
 import { afterHold } from '../../revisions/window/shared.ts';
-import { useKnownSetting } from '../../settings/window/shared.ts';
-import { MiddlePlaceholder, useTabState, type PullTab } from '../../tab/window/shared.ts';
-import { open } from '../settings.ts';
+import {
+  MiddlePlaceholder,
+  openedOn,
+  showInstead,
+  useTabState,
+  type PullTab,
+} from '../../tab/window/shared.ts';
 import { blockIn, codeOf, onStep, stepsChanged } from './blocks.ts';
 import { knownOf, type Known, type Standing } from './facts.ts';
 import {
@@ -47,30 +53,33 @@ import {
   type DrawnOverview,
 } from './follow.ts';
 import { useStanding } from './hooks.ts';
+import { OVERVIEW_VIEW } from './labels.ts';
 import { openingOf, openings, type Opening } from './opening.ts';
 import { placeOnHead, placing } from './since.ts';
 import { Shown } from './Shown.tsx';
 import { CantShow, NoneInRun, NoOverview, ReadFailed } from './States.tsx';
 
 /**
- * What tab `tab` opens on, chosen once, once Settings is known: until then, `waiting`, which wakes
- * at the bound. Once chosen, the diff is shown if that's the choice and this view is on screen, as
- * it is when the tab opens, unless the reader picked a view while it waited: where they are wins.
+ * What tab `tab` stays on, where it opened on the overview, chosen once: until then, `waiting`,
+ * which wakes at the bound. Once chosen, the timeline is shown if that's the choice and this view
+ * is on screen, as it is when the tab opens, unless the reader picked a view while it waited: where
+ * they are wins. A tab that opened on another view, as Settings said, is on the overview at once,
+ * with the bound long passed.
  */
 export function useOpening(tab: string, known: Known, shown: boolean): Opening {
-  const setting = useKnownSetting(open);
+  const here = openedOn(tab) === OVERVIEW_VIEW;
   const opened = useTabState(openings, tab);
   const [now, setNow] = useState(Date.now);
-  const since = opened.since ?? now;
-  const decided = opened.on ?? openingOf(setting, known, now - since);
+  const since = opened.since ?? (here ? now : 0);
+  const decided = here ? (opened.on ?? openingOf(known, now - since)) : 'overview';
 
   // The overview leaves the screen while the tab waits only when the reader shows another view.
   useLayoutEffect(() => {
     const current = openings.get(tab);
-    if (!shown && current.on === undefined && !current.chose) {
+    if (here && !shown && current.on === undefined && !current.chose) {
       openings.set(tab, { ...current, chose: true });
     }
-  }, [tab, shown]);
+  }, [tab, here, shown]);
 
   useLayoutEffect(() => {
     const current = openings.get(tab);
@@ -79,16 +88,11 @@ export function useOpening(tab: string, known: Known, shown: boolean): Opening {
       if (current.since === undefined) openings.set(tab, { ...current, since });
       return;
     }
-    openings.set(tab, {
-      ...current,
-      since: current.since ?? since,
-      on: decided,
-      late: decided === 'diff' && setting !== 'diff',
-    });
-    if (decided === 'diff' && shown && !current.chose) showDiff(tab);
-  }, [tab, decided, since, setting, shown]);
+    openings.set(tab, { ...current, since: current.since ?? since, on: decided });
+    if (here && decided === 'timeline' && shown && !current.chose) showInstead(tab);
+  }, [tab, here, decided, since, shown]);
 
-  // The bound: past it, the tab opens on the diff, whatever is still to come.
+  // The bound: past it, the tab goes to the timeline, whatever is still to come.
   useEffect(() => {
     if (decided !== 'waiting') return undefined;
     return afterHold(since, () => setNow(Date.now()));
@@ -256,11 +260,11 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
   useEffect(() => {
     if (!shown) {
       // Hidden, it gives focus it had to the middle view now, as `Esc` gives it back, or to the
-      // middle of the window while there's none. As the tab opens on the diff there's none: this
-      // runs before the view shown in its place takes the middle, and the diff takes it only once
-      // drawn. So focus is nowhere in particular, for the diff to take as it draws. Left on a
-      // hidden view, focus stays there until the browser drops it, and that drops the keys typed
-      // meanwhile. Focus elsewhere, as in the stack's tree, stays where it is.
+      // middle of the window while there's none. As it hands the tab to the timeline there's none,
+      // since this runs before the view shown in its place takes the middle: focus is nowhere in
+      // particular, for that view to take as it draws. Left on a hidden view, focus stays there
+      // until the browser drops it, and that drops the keys typed meanwhile. Focus elsewhere, as in
+      // the stack's tree, stays where it is.
       if (root.current?.contains(document.activeElement)) focusMiddle();
       return undefined;
     }

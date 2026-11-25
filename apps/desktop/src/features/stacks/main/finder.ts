@@ -79,6 +79,7 @@ export type FinderPoller = Pick<
   | 'cachedRead'
   | 'readStackLayersAgain'
   | 'forgetStackLayers'
+  | 'forgetRead'
   | 'listSchedule'
   | 'onChange'
 >;
@@ -110,6 +111,11 @@ export interface FinderOptions {
   log(line: string): void;
   /** The time, in milliseconds since the Unix epoch, as the pollers' reads say when they were made. */
   now?: (() => number) | undefined;
+  /**
+   * Whether there are overviews, so the finder reads which layers have one: always, without this.
+   * Say {@link StackFinder.overviewsChanged} when it changes.
+   */
+  overviews?: (() => boolean) | undefined;
 }
 
 /** A tab the finder follows, and what it showed and asked for. */
@@ -353,12 +359,35 @@ export class StackFinder {
   }
 
   /**
+   * Says overviews turned off or on: off, what was read of which layers have one goes, and the
+   * poller stops reading it; on, each tab's repository's are read again. Each tab's stack is sent
+   * again.
+   */
+  overviewsChanged(): void {
+    if (this.#stopped) return;
+    if (!this.#overviewsOn()) {
+      this.#overviews.clear();
+      this.#overviewsAsked.clear();
+      for (const followed of this.#followed.values()) {
+        followed.overviews?.forgetRead(followed.tab.pull, OVERVIEW_REFS);
+        followed.overviews = undefined;
+      }
+    }
+    this.#refresh();
+  }
+
+  #overviewsOn(): boolean {
+    return this.#options.overviews?.() ?? true;
+  }
+
+  /**
    * Works every tab's stack out again, sends those that changed, and reads the one on screen's.
    * Where each tab's layer starts is set once every stack is worked out: setting it changes the
    * tab, which works them out again.
    */
   #refresh(): void {
     if (this.#stopped) return;
+    const overviewsOn = this.#overviewsOn();
     const used = new Set<string>();
     const pollers = new Map<Followed, FinderPoller | undefined>();
     const starts: [string, string | undefined][] = [];
@@ -369,6 +398,7 @@ export class StackFinder {
       if (!poller) continue;
       const key = forestKey(poller, tab.pull.repo);
       used.add(key);
+      if (!overviewsOn) continue;
       const read = poller.cachedRead(tab.pull, OVERVIEW_REFS);
       const kept = this.#overviews.get(key);
       if (read && (!kept || read.fetchedAt >= kept.fetchedAt)) this.#overviews.set(key, read);
@@ -388,7 +418,10 @@ export class StackFinder {
         forest: forest?.stacks,
         list,
         layers,
-        overviews: poller && this.#overviews.get(forestKey(poller, repo))?.value.numbers,
+        overviews:
+          overviewsOn && poller
+            ? this.#overviews.get(forestKey(poller, repo))?.value.numbers
+            : undefined,
         state: tab.state,
         shown: followed.shown,
       });
@@ -414,7 +447,16 @@ export class StackFinder {
         followed.sent = sent;
         this.#options.publish(state);
       }
-      this.#read(followed, poller, out.ids, list, layers, listed?.fetchedAt, read?.fetchedAt);
+      this.#read(
+        followed,
+        poller,
+        out.ids,
+        list,
+        layers,
+        listed?.fetchedAt,
+        read?.fetchedAt,
+        overviewsOn,
+      );
     }
     for (const kept of [this.#forests, this.#overviews, this.#overviewsAsked]) {
       for (const key of kept.keys()) if (!used.has(key)) kept.delete(key);
@@ -425,8 +467,8 @@ export class StackFinder {
   /**
    * Has tab `followed`'s poller read the state of the layers whose node IDs are `ids` while it's on
    * screen, and again when a list fetched after it, at `listedAt`, shows a layer at another head
-   * than the state, read at `readAt`, and which pull requests in its repository have an overview,
-   * unless that was read for another layer lately. A tab whose pull request is no longer in a stack
+   * than the state, read at `readAt`, and, while there are overviews (`overviewsOn`), which pull
+   * requests in its repository have one, unless that was read for another layer lately. A tab whose pull request is no longer in a stack
    * stops reading its layers.
    */
   #read(
@@ -437,6 +479,7 @@ export class StackFinder {
     layers: StackLayerList | undefined,
     listedAt: number | undefined,
     readAt: number | undefined,
+    overviewsOn: boolean,
   ): void {
     const { tab } = followed;
     if (ids.length === 0) {
@@ -450,7 +493,7 @@ export class StackFinder {
     }
     const repo = tab.pull.repo;
     const repoKey = forestKey(poller, repo);
-    if (followed.overviews !== poller && this.#overviewsDue(repoKey)) {
+    if (overviewsOn && followed.overviews !== poller && this.#overviewsDue(repoKey)) {
       followed.overviews = poller;
       this.#overviewsAsked.set(repoKey, this.#now());
       poller

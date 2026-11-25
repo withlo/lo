@@ -5,11 +5,14 @@ import { afterEach, beforeAll, describe, expect, it, onTestFinished } from 'vite
 
 import { installBridge } from '../../../window/test/bridge.ts';
 import type { Tab } from '../contract.ts';
-import { middleIds, panels } from './panels.ts';
+import { middleIds, opening, panels } from './panels.ts';
 import {
   activeTab,
+  middleShown,
   onClosed,
+  openedOn,
   pullOf,
+  showInstead,
   showMiddle,
   showTabOf,
   tabState,
@@ -218,11 +221,42 @@ describe('the middle views', () => {
     });
     middleIds.ids = ['overview.view', 'diff.view', 'diff.whole'];
     expect(showMiddle('fd', 'diff.whole')).toBe(true);
-    expect(panels.get('fd').middle).toBe(2);
-    expect(panels.get('bat').middle).toBe(0);
+    expect(panels.get('fd').middle).toBe('diff.whole');
+    expect(panels.get('bat').middle).toBeUndefined();
     expect(showMiddle('fd', 'timeline.view')).toBe(false);
-    expect(panels.get('fd').middle).toBe(2);
+    expect(showInstead('fd')).toBe(false);
+    expect(panels.get('fd').middle).toBe('diff.whole');
     expect(showMiddle('fd', 'diff.view')).toBe(true);
-    expect(panels.get('fd')).toEqual({ leftOpen: true, middle: 1 });
+    expect(panels.get('fd')).toEqual({ leftOpen: true, middle: 'diff.view' });
+  });
+
+  it('say which the tab opened on, and show the timeline in place of one that’s gone', () => {
+    showTabs({ tabs: [fd, bat], active: 'fd' });
+    const drawn = middleIds.ids;
+    onTestFinished(() => {
+      middleIds.ids = drawn;
+      opening.clear();
+    });
+    middleIds.ids = ['overview.view', 'diff.view', 'timeline.view'];
+    // As the tab is first drawn, before its panels keep what it opened on.
+    opening.set('bat', 'overview.view');
+    expect(openedOn('bat')).toBe('overview.view');
+    expect(middleShown('bat')).toBe('overview.view');
+    // Kept, the overview hands over to the timeline.
+    opening.delete('bat');
+    panels.update('bat', (current) => ({
+      ...current,
+      middle: 'overview.view',
+      opened: 'overview.view',
+    }));
+    expect(showInstead('bat')).toBe(true);
+    expect(middleShown('bat')).toBe('timeline.view');
+    expect(openedOn('bat')).toBe('overview.view');
+    // The overview gone while it's on screen, the timeline stands in until it's back.
+    showMiddle('bat', 'overview.view');
+    middleIds.ids = ['diff.view', 'timeline.view'];
+    expect(middleShown('bat')).toBe('timeline.view');
+    middleIds.ids = ['overview.view', 'diff.view', 'timeline.view'];
+    expect(middleShown('bat')).toBe('overview.view');
   });
 });

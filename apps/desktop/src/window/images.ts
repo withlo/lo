@@ -2,7 +2,7 @@
 // main, on the image scheme, never from its host. Main fetches each from GitHub's image hosts and
 // serves it once it has checked it's an image.
 
-import { avatarImageAddress, postImageAddress } from '../ipc/images.ts';
+import { avatarImageAddress, botImageAddress, postImageAddress } from '../ipc/images.ts';
 
 /**
  * Where to load an image in a post from, in view `view` of a pull request's tab, whose account
@@ -24,10 +24,15 @@ export interface Account {
 
 /**
  * Where to load an account's avatar from, drawn `size` pixels a side: twice that, for screens with
- * two pixels to one. Only a person's or an organization's login names its avatar on GitHub; for a
- * bot, a team or anything else, it's nothing, and the avatar stays its initials, without asking.
+ * two pixels to one. A person's or an organization's login names its avatar on GitHub; a bot's is
+ * its app's picture, which main finds through GitHub. For a team or anything else, it's nothing, and
+ * the avatar stays its initials, without asking.
  */
 export function avatarImage(account: Account, size: number): string | undefined {
-  if (account.type !== 'User' && account.type !== 'Organization') return undefined;
-  return avatarImageAddress(account.login, Math.ceil(size * 2));
+  const pixels = Math.ceil(size * 2);
+  if (account.type === 'User' || account.type === 'Organization') {
+    return avatarImageAddress(account.login, pixels);
+  }
+  if (account.type === 'Bot') return botImageAddress(account.login, pixels);
+  return undefined;
 }

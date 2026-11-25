@@ -106,7 +106,18 @@ Dark (Lo Glow Dark) is the default. Every color comes from `tokens.json` through
   (24/30, 800) for empty states and dialogs, with `--lo-track-tight`.
 - Reading text has its own scale: `read-body` (15/24), `read-lead` (17/27, the tl;dr), `read-h2`
   (22/28, 800), `read-h3` (16/22, 700), `read-comment` (13.5/21). Keep reading lines under
-  `--lo-read-measure` (680 px).
+  `--lo-read-measure` (680 px). The measure is for text, not for what holds it: a code block in a
+  post takes the post's whole width, set in `code-small`, in a list, a fold or an alert too, and
+  only the text around it keeps to the measure. The timeline's column is up to `--lo-timeline-w`
+  (856 px), so a code block of 100 columns fits beside its rail.
+- Text at a comment's size is a comment's prose, wherever it shows: a comment, a review, a
+  description, a comment's preview, a hover card's docs. Draw it with
+  `lo-prose lo-prose--comment read-comment`, spaced as GitHub spaces a comment: nothing above its
+  first block, 16 px between blocks, in a quote or an alert too, and under a heading, and 24 above a
+  heading. `lo-prose` alone is the overview's, a document with room around its sections, and never
+  right for a comment.
+- A column's width follows the pane it's in, never the window: size it from its own box
+  (`@container`), not a media query or `vw`, since panes resize.
 - Code is `--lo-code-size` on a fixed `--lo-code-line` (12.5/20) so both sides of a diff share one
   row grid.
 - Use `font-variant-numeric: tabular-nums` (`.lo-num`) wherever digits line up: counts, line
@@ -126,6 +137,27 @@ Dark (Lo Glow Dark) is the default. Every color comes from `tokens.json` through
   viewed mark, the stack rail, the overview marker, the outline and the status bar's items all use
   them. A spinner is a ball at work. Don't swap them for checkboxes or bars.
 - Don't add colored left-border stripes to cards, gradients, or shadows on things that don't float.
+
+## Icons
+
+Lo's icons come from one set, Lucide (`lucide`, ISC, pinned), drawn by `Icon` from `@lo/ui`. The
+mark isn't an icon.
+
+- `Icon` takes a `name` from `icons.ts`, the list of the Lucide icons Lo uses, and a `size`. To use
+  a new icon, add its name there. Nothing else imports `lucide`, and no component writes an `<svg>`
+  of its own: `lo/no-inline-icon` refuses one. A code view's own DOM takes `iconElement`. The files
+  whose icons are still drawn by hand are listed in `scripts/oxlint/svgs.ts`, which only shrinks.
+- Four sizes, each with its stroke in pixels: 12 px at 1.25 px beside `text-micro`, `text-small` and
+  in a key chip; 14 px at 1.25 px beside `text-ui`; 16 px at 1.5 px for an icon alone in a control
+  and beside titles and reading text; 24 px at 1.5 px in an empty state.
+- An icon takes its text's color. Alone it's `lo-icon`, or `lo-icon-muted` for file, folder and
+  secondary icons. Stroke only, round caps and joins: never filled, never two tones.
+- A character the fonts don't hold is an icon. Host Grotesk and Fragment Mono have no `⌘`, `⏎`, `→`,
+  `✓`, `⋯` or `↗`, and the system would draw each in another weight. `Glyphs` draws them, from
+  `glyphs.ts`. `· › … –` are in both fonts and stay text.
+- State is a ball, not an icon. Another brand's mark is that brand's own file, never redrawn.
+- An icon with no words beside it names itself: `label` on `Icon` for a mark, a tooltip for a
+  control.
 
 ## Controls
 
@@ -645,6 +677,10 @@ A preference is a setting with a row. The menu bar and the palette may toggle it
 - **A feature adds its own rows.** `settingRow(setting, { order })` in its `window/index.ts` draws a
   setting's row from what `defineSetting` says of it (group, label, line, options), and search reads
   the same. `defineRow` makes any other row, given its group, label and line.
+- **A switch that takes a part of Lo out takes all of it,** as "Show overviews" does: its view, menu
+  items, palette commands and keys, its banners, notes, status items and offers, the rows and
+  options in Settings that only it needs, and what main reads for it. Turned back on, it all comes
+  back at once, with no restart. The switch itself stays, beside the rows it changes.
 
 ## Components
 
@@ -656,7 +692,7 @@ tokens. Their code is the source for how each one looks.
 | Window           | PullRequestTab, TabBar, PRHeader, StatusBar, Banner                                   |
 | Panels           | StackTree, FileTree                                                                   |
 | Controls         | Button, HintButton, MoreButton, CopyButton, Key, SegmentedControl, Switch, Input      |
-| Marks            | StatePill, Tag, Avatar, Marks                                                         |
+| Marks            | Icon, Glyphs, StatePill, Tag, Avatar, Marks                                           |
 | Floating         | Dialog, Popover, ContextMenu, Palette, Tooltip, ToastStack                            |
 | Motion and waits | Collapse, Swap, Loading, Skeleton, Spinner, LogoMotion, Problem, EmptyState           |
 | Review           | Thread, Diff, CodeView, CommentBox                                                    |
@@ -832,6 +868,7 @@ push is a revision, written r3) and the shape of each kind of message. Nothing h
 - Import a popup from Base UI in a feature.
 - Give an element a `title`: the tooltip is Lo's `Tooltip`.
 - Copy macOS-only window chrome, or assume `⌘` exists on Linux.
+- Write an `<svg>` icon in a component, or type a symbol the fonts don't hold.
 
 ## Where things are
 

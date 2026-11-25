@@ -15,7 +15,7 @@ import { MERGE_PULLS, writeMergeRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { Page } from '@playwright/test';
 
-import { appFolder, expect, KEYCHAIN, test as base } from './app.ts';
+import { appFolder, DIFF_FIRST, expect, KEYCHAIN, test as base } from './app.ts';
 
 /** The generation both were recorded on. */
 const { pulls } = MERGE_PULLS[8];
@@ -57,6 +57,9 @@ const test = base.extend<{ cassette: string; github: ReplayServer; remote: strin
     });
   },
 });
+
+// Their pull requests have no overview, and the cassette doesn’t answer for their timelines.
+test.use({ settings: DIFF_FIRST });
 
 /** Opens pull request `number`'s tab once rozed-bot's account is added, and its merge panel. */
 async function panelOf(page: Page, number: number): Promise<void> {

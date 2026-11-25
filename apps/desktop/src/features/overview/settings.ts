@@ -1,25 +1,19 @@
-// The overview's setting: what a pull request's tab opens on when it has an overview. The window
-// shows it in Settings › Pull requests, and reads it as a tab opens.
+// The overview's setting: whether there are overviews at all. The window shows it in Settings ›
+// Pull requests, before what a pull request's tab opens on, and main reads it before it reads one.
 
 import { z } from 'zod';
 
 import { defineSetting } from '../settings/contract.ts';
 
 /**
- * What a pull request's tab opens on when the pull request has an overview Lo can show: the
- * overview, or the diff. Without one, it always opens on the diff.
+ * Whether there are overviews. On, as Lo starts, a pull request's tab has the Overview view, with
+ * its mark and status item, the overview's notes in the diff and its marks in a stack; Lo reads
+ * each pull request's overview, and offers the prompts that write one and the overview skill. Off,
+ * none of it is anywhere, and nothing is read. On again, it all comes back.
  */
-export const open = defineSetting(
-  'overview.open',
-  z.enum(['overview', 'diff']),
-  'overview',
-  'overview or diff',
-  {
-    group: 'pullRequests',
-    label: 'Open pull requests on',
-    named: 'where pull requests open',
-    description: 'A pull request with no overview opens on the diff.',
-    options: { overview: 'Overview', diff: 'Diff' },
-  },
-);
-export type OpenOn = typeof open.fallback;
+export const on = defineSetting('overview.on', z.boolean(), true, 'true or false', {
+  group: 'pullRequests',
+  label: 'Show overviews',
+  named: 'whether overviews show',
+  description: 'Overviews coding agents write, the prompts for them and the overview skill.',
+});

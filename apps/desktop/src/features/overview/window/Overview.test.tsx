@@ -2,8 +2,9 @@
 // The overview's view in a window of its own, with main answered by a stand-in bridge and the
 // overview checked as the window checks it, in this process: what it draws while the tab opens and
 // after, each state, and that a result checked again, or copied, leaves every node on screen as it
-// was, its folds open and its focus where it was. What Settings says and showing the diff are
-// stood in for, so each test says what Settings holds and sees when the tab hands over to the diff.
+// was, its folds open and its focus where it was. Which view the tab opened on, as Settings said,
+// and showing the timeline in the overview's place are stood in for, so each test says what the tab
+// opened on and sees when the tab hands over to the timeline.
 
 import { commandsOf, listen, NO_TARGET } from '@lo/ui/commands';
 import { act } from 'react';
@@ -16,7 +17,6 @@ import { createRegistry, here } from '../../../window/commands/registry.ts';
 import { Slots } from '../../../window/slots.tsx';
 import { installBridge } from '../../../window/test/bridge.ts';
 import { HOLD_LIMIT } from '../../revisions/contract.ts';
-import type { Setting } from '../../settings/contract.ts';
 import tabKeys from '../../tab/keys.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
 import type { OverviewCommit, OverviewState, SkillState } from '../contract.ts';
@@ -34,19 +34,15 @@ import { blockInOverview, blockKey } from './shared.ts';
 import { OverviewStatus } from './Status.tsx';
 import { checked, publish, readAgain, states } from './store.ts';
 
-/** What Settings says a pull request opens on: unknown until main has said. */
-const settings = vi.hoisted(() => ({ open: 'overview' as 'overview' | 'diff' | undefined }));
-/** The diff, shown as the tab hands over to it. */
-const showDiff = vi.hoisted(() => vi.fn<(tab: string) => boolean>(() => true));
+/** The middle view the tab opened on, as Settings said. */
+const tabs = vi.hoisted(() => ({ opened: 'overview.view' as string | undefined }));
+/** The timeline, shown in the overview's place as the tab hands over to it. */
+const showInstead = vi.hoisted(() => vi.fn<(tab: string) => boolean>(() => true));
 
-vi.mock(import('../../settings/window/shared.ts'), async (original) => ({
+vi.mock(import('../../tab/window/shared.ts'), async (original) => ({
   ...(await original()),
-  useKnownSetting: <T,>(setting: Setting<T>): T | undefined =>
-    settings.open === undefined ? undefined : setting.schema.parse(settings.open),
-}));
-vi.mock(import('../../diff/window/shared.ts'), async (original) => ({
-  ...(await original()),
-  showDiff,
+  openedOn: () => tabs.opened,
+  showInstead,
 }));
 
 const encoder = new TextEncoder();
@@ -178,8 +174,8 @@ beforeAll(() => {
 
 afterEach(() => {
   vi.useRealTimers();
-  settings.open = 'overview';
-  showDiff.mockClear();
+  tabs.opened = 'overview.view';
+  showInstead.mockClear();
   checkUpdates.mockClear();
   copyPrompt.mockClear();
   nextLayer.mockClear();
@@ -325,8 +321,8 @@ describe('as the tab opens', () => {
     act(() => states.set(tab.id, stateOf(tab)));
     checking.take(stateOf(tab));
     await until(() => view.querySelector('[data-lo-overview="shown"]') !== null);
-    expect(openings.get(tab.id)).toMatchObject({ on: 'overview', late: false, seen: true });
-    expect(showDiff).not.toHaveBeenCalled();
+    expect(openings.get(tab.id)).toMatchObject({ on: 'overview', seen: true });
+    expect(showInstead).not.toHaveBeenCalled();
     expect(view.querySelector('.lo-ov-byline')?.textContent).toContain('ravi-k · 2 d ago');
     expect(view.querySelector('.lo-ovmark--pending')).toBeNull();
     expect(view.querySelector('.lo-ovmark[role="img"]')).not.toBeNull();
@@ -366,7 +362,7 @@ describe('as the tab opens', () => {
     act(() => states.set(tab.id, unread));
     checking.take(unread);
     await until(() => view.querySelector('[data-lo-overview="shown"]') !== null);
-    expect(openings.get(tab.id)).toMatchObject({ on: 'overview', late: false });
+    expect(openings.get(tab.id)).toMatchObject({ on: 'overview' });
     expect(view.querySelector('.lo-figure[aria-busy="true"]')?.textContent).toContain(
       'Reading figure 1…',
     );
@@ -393,11 +389,11 @@ describe('as the tab opens', () => {
     act(() => states.set(tab.id, stateOf(tab, { saved: true })));
     checking.take(stateOf(tab, { saved: true }));
     await until(() => view.querySelector('[data-lo-overview="shown"]') !== null);
-    expect(openings.get(tab.id)).toMatchObject({ on: 'overview', late: false });
-    expect(showDiff).not.toHaveBeenCalled();
+    expect(openings.get(tab.id)).toMatchObject({ on: 'overview' });
+    expect(showInstead).not.toHaveBeenCalled();
   });
 
-  it('opens on the diff at the bound when a check keeps failing, says why, and only offers one that goes through later', async () => {
+  it('goes to the timeline at the bound when a check keeps failing, says why, and only offers one that goes through later', async () => {
     vi.useFakeTimers();
     const tab = tabOf();
     const commit = commitOf();
@@ -413,22 +409,22 @@ describe('as the tab opens', () => {
     act(() => {
       vi.advanceTimersByTime(1);
     });
-    expect(openings.get(tab.id)).toMatchObject({ on: 'diff', late: true });
-    expect(showDiff).toHaveBeenCalledTimes(1);
+    expect(openings.get(tab.id)).toMatchObject({ on: 'timeline' });
+    expect(showInstead).toHaveBeenCalledTimes(1);
     expect(problemTitle(view, 'unchecked')).toBe('Can’t check the overview');
     expect(view.textContent).toContain('Check again');
 
-    // The diff is on screen, and the check goes through.
+    // The timeline is on screen, and the check goes through.
     view.shown(false);
     vi.useRealTimers();
     checkingFor(tab).take(stateOf(tab, { overview: commit }));
     await until(() => checked.get(tab.id)?.kind === 'checked');
-    expect(openings.get(tab.id)).toMatchObject({ on: 'diff' });
-    expect(showDiff).toHaveBeenCalledTimes(1);
+    expect(openings.get(tab.id)).toMatchObject({ on: 'timeline' });
+    expect(showInstead).toHaveBeenCalledTimes(1);
     expect(view.querySelector('footer')?.textContent).toContain('Overview ready');
   });
 
-  it('opens on the diff at the bound when it still doesn’t know, and never comes back', () => {
+  it('goes to the timeline at the bound when it still doesn’t know, and never comes back', () => {
     vi.useFakeTimers();
     const tab = tabOf();
     const view = render(tab);
@@ -440,8 +436,8 @@ describe('as the tab opens', () => {
     act(() => {
       vi.advanceTimersByTime(1);
     });
-    expect(openings.get(tab.id)).toMatchObject({ on: 'diff', late: true });
-    expect(showDiff).toHaveBeenCalledWith(tab.id);
+    expect(openings.get(tab.id)).toMatchObject({ on: 'timeline' });
+    expect(showInstead).toHaveBeenCalledWith(tab.id);
     expect(view.querySelector('[data-lo-overview="reading"]')).not.toBeNull();
   });
 
@@ -455,33 +451,31 @@ describe('as the tab opens', () => {
     act(() => {
       vi.advanceTimersByTime(HOLD_LIMIT);
     });
-    expect(openings.get(tab.id)).toMatchObject({ on: 'diff', chose: true });
-    expect(showDiff).not.toHaveBeenCalled();
+    expect(openings.get(tab.id)).toMatchObject({ on: 'timeline', chose: true });
+    expect(showInstead).not.toHaveBeenCalled();
     expect(view.querySelector('[data-lo-overview="reading"]')).not.toBeNull();
   });
 
-  it('waits for what Settings says, and opens on the diff it says', () => {
-    vi.useFakeTimers();
-    settings.open = undefined;
+  it('shows the overview as it is, with no wait, in a tab that opened on another view', () => {
+    tabs.opened = 'diff.view';
     const tab = tabOf();
-    act(() => states.set(tab.id, stateOf(tab, { found: 'none', overview: null })));
     const view = render(tab);
-    act(() => {
-      vi.advanceTimersByTime(HOLD_LIMIT - 1);
-    });
-    expect(openings.get(tab.id).on).toBeUndefined();
-    expect(waits(view)).toBe(true);
-    settings.open = 'diff';
-    view.shown(true);
-    expect(openings.get(tab.id)).toMatchObject({ on: 'diff', late: false });
-    expect(showDiff).toHaveBeenCalledWith(tab.id);
+    expect(waits(view)).toBe(false);
+    expect(view.querySelector('[data-lo-overview="reading"]')).not.toBeNull();
+    act(() => states.set(tab.id, stateOf(tab, { found: 'none', overview: null })));
+    expect(view.querySelector('[data-lo-overview="none"]')).not.toBeNull();
+    expect(openings.get(tab.id)).toMatchObject({ on: 'overview' });
+    expect(showInstead).not.toHaveBeenCalled();
+    // Nothing is offered: the tab didn't go anywhere for want of one.
+    expect(view.querySelector('footer')?.textContent).toBe('');
   });
 
-  it('opens on the diff at once when there’s no overview', () => {
+  it('goes to the timeline at once when there’s no overview, where the description is first', () => {
     const tab = tabOf();
     act(() => states.set(tab.id, stateOf(tab, { found: 'none', overview: null })));
     const view = render(tab);
-    expect(openings.get(tab.id)).toMatchObject({ on: 'diff', late: true });
+    expect(openings.get(tab.id)).toMatchObject({ on: 'timeline' });
+    expect(showInstead).toHaveBeenCalledWith(tab.id);
     expect(view.querySelector('[data-lo-overview="none"]')).not.toBeNull();
   });
 
@@ -503,21 +497,21 @@ describe('as the tab opens', () => {
     expect(nextLayer).toHaveBeenCalledOnce();
   });
 
-  it('leaves focus on the middle of the window as it hands the tab to the diff, so keys typed then go on there', () => {
+  it('leaves focus on the middle of the window as it hands the tab to the timeline, so keys typed then go on there', () => {
     const middle = windowMiddle();
     const tab = tabOf();
     const view = render(tab, middle);
     act(() => states.set(tab.id, stateOf(tab, { found: 'none', overview: null })));
-    expect(showDiff).toHaveBeenCalledWith(tab.id);
+    expect(showInstead).toHaveBeenCalledWith(tab.id);
     view.shown(false);
     expect(document.activeElement).toBe(middle);
-    // `]` before the diff has drawn, and `s` once it has taken focus.
+    // `]` before the timeline has drawn, and `s` once it has taken focus.
     press(']');
-    const diff = document.createElement('div');
-    diff.setAttribute('data-lo-scope', 'diff');
-    diff.tabIndex = -1;
-    middle.append(diff);
-    diff.focus();
+    const timeline = document.createElement('div');
+    timeline.setAttribute('data-lo-scope', 'timeline');
+    timeline.tabIndex = -1;
+    middle.append(timeline);
+    timeline.focus();
     press('s');
     expect(nextLayer).toHaveBeenCalledOnce();
   });
@@ -686,7 +680,7 @@ describe('an overview that can’t be shown', () => {
     // It says so itself, at its own width, and no toast says it again.
     await until(() => faceOf(copy) === 'Copied');
     expect(notices().map((note) => note.title)).not.toContain('Copied prompt');
-    expect(openings.get(tab.id)).toMatchObject({ on: 'diff' });
+    expect(openings.get(tab.id)).toMatchObject({ on: 'timeline' });
   });
 
   it('says when an overview needs a newer Lo, with the way to get one', () => {
