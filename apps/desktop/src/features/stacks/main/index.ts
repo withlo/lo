@@ -14,6 +14,7 @@ import { IpcError } from '../../../ipc/contract.ts';
 import { defineFeature } from '../../../main/features.ts';
 import { provides } from '../../../main/services.ts';
 import { github } from '../../accounts/service.ts';
+import { overviews } from '../../overview/service.ts';
 import { tabs, type TabService } from '../../tab/service.ts';
 import { contract, type StackState } from '../contract.ts';
 import { forest } from '../service.ts';
@@ -86,7 +87,7 @@ function converting(): Conversions {
 }
 
 export default defineFeature(contract, {
-  uses: [tabs, github],
+  uses: [tabs, github, overviews],
   provide: () => [
     provides(forest, {
       forest: (repo, login) => finder?.forest(repo, login),
@@ -130,6 +131,7 @@ export default defineFeature(contract, {
   start(context) {
     const service = context.use(tabs);
     const access = context.use(github);
+    const switched = context.use(overviews);
     const found = new StackFinder({
       poller: (login) => access.poller(login),
       publish: (state) => {
@@ -141,6 +143,7 @@ export default defineFeature(contract, {
       },
       compareFrom: (id, commit) => service.compareFrom(id, commit),
       log,
+      overviews: () => switched.on(),
     });
     const making = new Conversions({
       poller: (login) => access.poller(login),
@@ -162,6 +165,7 @@ export default defineFeature(contract, {
       access.onEvent((event) => {
         if (event.kind === 'removed') found.forgetAccount(event.login);
       }),
+      switched.onChange(() => found.overviewsChanged()),
     );
     follow();
   },

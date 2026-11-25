@@ -208,6 +208,47 @@ describe('useViews', () => {
   });
 });
 
+describe('a view that comes and goes', () => {
+  it('is in its slot only while its presence says so, and comes back without a restart', () => {
+    let there = false;
+    const listeners = new Set<() => void>();
+    const presence = {
+      now: () => there,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    };
+    const turn = (now: boolean) => {
+      there = now;
+      act(() => {
+        for (const listener of listeners) listener();
+      });
+    };
+    const both = [
+      ...views,
+      defineView(status, {
+        id: 'overview.mark',
+        order: 0,
+        render: () => <em>mark</em>,
+        present: presence,
+      }),
+    ];
+    const page = mount(
+      <Slots views={both}>
+        <Slot slot={status} props={{ tab: '#5' }} />
+        <First />
+      </Slots>,
+    );
+    const shown = '<u>r1 → r2</u><b>#5 at 1</b><i>lines of #5</i>';
+    expect(page.innerHTML).toBe(`${shown}<u>r1 → r2</u>`);
+    turn(true);
+    expect(page.innerHTML).toBe(`<em>mark</em>${shown}<em>mark</em>`);
+    turn(false);
+    expect(page.innerHTML).toBe(`${shown}<u>r1 → r2</u>`);
+  });
+});
+
 describe('defineSlot', () => {
   it('marks what it makes, so the slots a feature shares can be found', () => {
     expect(isSlot(status)).toBe(true);

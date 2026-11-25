@@ -11,7 +11,15 @@ import { writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { ElectronApplication, Page } from '@playwright/test';
 
-import { appFolder, browsed, dataFolder, expect, KEYCHAIN, test as base } from './app.ts';
+import {
+  appFolder,
+  browsed,
+  dataFolder,
+  DIFF_FIRST,
+  expect,
+  KEYCHAIN,
+  test as base,
+} from './app.ts';
 
 /** A stand-in token, never a real one: the cassette was recorded with the same. */
 const TOKEN = 'gho_FAKE_E2E_ACCOUNT';
@@ -59,6 +67,9 @@ const test = base.extend<{
     });
   },
 });
+
+// Some of their pull requests have no overview, and the cassette doesn’t answer for timelines.
+test.use({ settings: DIFF_FIRST });
 
 /** Waits for the account from the token file. */
 async function accountIn(page: Page): Promise<void> {

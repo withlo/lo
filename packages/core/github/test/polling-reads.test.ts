@@ -310,6 +310,29 @@ test('a cached read is refreshed every five minutes and kept across restarts', a
   expect(answers.runs).toBe(3);
 });
 
+test('a cached read nothing needs any more is made no more, and its cache stays', async () => {
+  const t = await Polling.start('cached_read_refresh', recorded());
+  const answers = new Answers();
+  answers.answer(1);
+  void t.poller.setOpen(pr(1));
+  void counted(t, pr(1), answers);
+  await t.run();
+  expect(answers.runs).toBe(1);
+  t.events();
+
+  t.poller.forgetRead(pr(1), COUNTED);
+  expect(cachedCount(t)).toBeUndefined();
+  // Not on the 5-minute refresh, nor after it.
+  answers.answer(2);
+  await t.runUntil(301);
+  expect(answers.runs).toBe(1);
+  expect(t.events()).not.toContain('read Counted #1');
+  // Asked for again, it starts from what the cache kept.
+  const again = counted(t, pr(1), answers);
+  await t.run();
+  expect(await again).toBe(1);
+});
+
 /**
  * A refresh that gives the same value says so, with when GitHub confirmed it: so does a read that
  * works again after one failed, though its value hasn't changed.

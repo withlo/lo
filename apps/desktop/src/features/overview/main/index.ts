@@ -1,26 +1,32 @@
 // The overview feature in main: for each pull request's tab, its overview, read from GitHub's REST
 // API as the tab's account and sent to the window each time it changes, with its files on request.
-// What's read is kept in the database, which clearing the cache empties.
+// What's read is kept in the database, which clearing the cache empties. While Settings turns
+// overviews off, and until Lo has read the settings file, nothing is read.
 
 import type { GithubClient, ReadPriorityNow } from '@lo/github';
 import { app } from 'electron';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { defineFeature, type FeatureContext } from '../../../main/features.ts';
+import { provides } from '../../../main/services.ts';
 import { github } from '../../accounts/service.ts';
 import { clearing, settings } from '../../settings/service.ts';
 import type { Acting } from '../../tab/contract.ts';
 import { tabs } from '../../tab/service.ts';
 import { contract } from '../contract.ts';
-import { open } from '../settings.ts';
+import { overviews } from '../service.ts';
+import { on as overviewsOn } from '../settings.ts';
 import { Blobs } from './blobs.ts';
 import { codeReply, readKey } from './code.ts';
 import { SavedRefs } from './saved.ts';
 import { installSkill, skillState } from './skill.ts';
+import { Overviews } from './switch.ts';
 import { OverviewTab } from './watch.ts';
 
 const followed = new Map<string, OverviewTab>();
 const stops: (() => void)[] = [];
+/** Whether overviews are on, as the settings file says: off until Lo has read it. */
+const switched = new Overviews();
 /** Whether Lo's window is in front, which reads the ref on screen more often. */
 let foreground = false;
 let kept: { blobs: Blobs; saved: SavedRefs } | undefined;
@@ -59,7 +65,7 @@ function keptIn(context: FeatureContext<typeof contract>): { blobs: Blobs; saved
 function follow(context: FeatureContext<typeof contract>, id: string): void {
   const service = context.use(tabs);
   const info = service.pull(id);
-  if (!info || info.run) {
+  if (!switched.on() || !info || info.run) {
     followed.get(id)?.close();
     followed.delete(id);
     return;
@@ -91,8 +97,27 @@ function follow(context: FeatureContext<typeof contract>, id: string): void {
   tab.update(info, service.list().active === id, foreground);
 }
 
+/** Turns overviews on or off, as the settings file says, through every tab. */
+function turn(context: FeatureContext<typeof contract>, now: boolean): void {
+  switched.turn(now, {
+    followed: () => followed.keys(),
+    open: () =>
+      context
+        .use(tabs)
+        .list()
+        .tabs.flatMap((tab) => (tab.kind === 'pull' ? [tab.id] : [])),
+    follow: (id) => follow(context, id),
+  });
+}
+
 export default defineFeature(contract, {
   uses: [tabs, github, clearing, settings],
+  provide: () => [
+    provides(overviews, {
+      on: () => switched.on(),
+      onChange: (listener) => switched.onChange(listener),
+    }),
+  ],
   handlers: {
     current: ({ id }) => followed.get(id)?.state(),
     files: ({ id, commit, paths }) => tabOf(id).files(commit, paths),
@@ -136,8 +161,6 @@ export default defineFeature(contract, {
     },
   },
   start(context) {
-    // The window reads it as a pull request's tab opens, and changes it from Settings.
-    context.use(settings).declare(open);
     const service = context.use(tabs);
     const { blobs, saved } = keptIn(context);
     app.on('browser-window-focus', focused);
@@ -154,12 +177,14 @@ export default defineFeature(contract, {
         blobs.clear();
         saved.clear();
       }),
+      // Once the file's read: each tab's overview, if they're on.
+      context.use(settings).watch(overviewsOn, (value) => turn(context, value)),
     );
-    for (const tab of service.list().tabs) if (tab.kind === 'pull') follow(context, tab.id);
   },
   stop() {
     for (const stop of stops.splice(0)) stop();
     for (const tab of followed.values()) tab.close();
     followed.clear();
+    switched.reset();
   },
 });

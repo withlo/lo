@@ -1,12 +1,21 @@
 // Slots: places in one feature's screens that other features fill, so a feature adds a view, a
 // panel or a header item to another's screen without editing it. The owner defines each slot with
 // `defineSlot` in its `window/shared.ts` and renders it with `<Slot>`. Other features list what they
-// put in it as `views` in their WindowFeature, each made with `defineView`. Every view runs inside
-// its own error boundary, however its owner renders it: one that fails shows a short note in its
-// place, and the rest of the window goes on.
+// put in it as `views` in their WindowFeature, each made with `defineView`. A view can come and go
+// while the window runs, as a setting turns its feature off and on (`present`). Every view runs
+// inside its own error boundary, however its owner renders it: one that fails shows a short note in
+// its place, and the rest of the window goes on.
 
 import { Problem } from '@lo/ui';
-import { Component, createContext, createElement, use, useMemo, type ReactNode } from 'react';
+import {
+  Component,
+  createContext,
+  createElement,
+  use,
+  useMemo,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 
 import { detailsOf } from '../ipc/cause.ts';
 import { channelName } from '../ipc/contract.ts';
@@ -48,6 +57,17 @@ export function isSlot(value: unknown): value is Slot<unknown> {
   return typeof value === 'object' && value !== null && defined.has(value);
 }
 
+/**
+ * Whether a view is in its slot now, for one that comes and goes while the window runs, such as
+ * every view of a feature a setting turns off: what it says now, and when that may change.
+ */
+export interface Presence {
+  /** Whether the view is there now. */
+  readonly now: () => boolean;
+  /** Calls `listener` when `now` may say otherwise. Returns a function that stops it. */
+  readonly subscribe: (listener: () => void) => () => void;
+}
+
 /** What a feature puts in a slot: a component, rendered with the slot's props. */
 export interface View<Props = never> {
   readonly slot: Slot<unknown>;
@@ -56,6 +76,11 @@ export interface View<Props = never> {
   /** Where it goes among the slot's views: lower first, then by id. */
   readonly order: number;
   readonly render: (props: Props) => ReactNode;
+  /**
+   * Whether it's in its slot now, for a view that comes and goes. Without this it's always there.
+   * Gone, its slot neither lists nor draws it, as though no feature had listed it.
+   */
+  readonly present?: Presence | undefined;
 }
 
 /**
@@ -64,7 +89,12 @@ export interface View<Props = never> {
  */
 export function defineView<Props, Extra extends object = object>(
   slot: Slot<Props, Extra>,
-  view: { id: string; order: number; render: (props: Props) => ReactNode } & Extra,
+  view: {
+    id: string;
+    order: number;
+    render: (props: Props) => ReactNode;
+    present?: Presence | undefined;
+  } & Extra,
 ): View {
   if (!channelName.test(view.id)) {
     throw new Error(`A view is named <feature>.<name>, as diff.files is, not "${view.id}".`);
@@ -72,31 +102,67 @@ export function defineView<Props, Extra extends object = object>(
   return { slot, ...view };
 }
 
-/** Each slot's views, by the slot's id, in order. */
-const SlotViews = createContext<ReadonlyMap<string, readonly View[]>>(new Map());
+/** A slot's views, in order, and how to follow those that come and go. */
+interface SlotList {
+  readonly views: readonly View[];
+  /** Calls `listener` when any of its views may come or go. Returns a function that stops it. */
+  readonly subscribe: (listener: () => void) => () => void;
+  /** Which of its views are there now, as one string, the same while they stay the same. */
+  readonly snapshot: () => string;
+}
+
+const NO_VIEWS: SlotList = { views: [], subscribe: () => () => {}, snapshot: () => '' };
+
+/** Each slot's views, by the slot's id. */
+const SlotViews = createContext<ReadonlyMap<string, SlotList>>(new Map());
+
+/** `views`, a slot's in order, with how to follow those of them that come and go. */
+function listOf(views: readonly View[]): SlotList {
+  const presences = [...new Set(views.flatMap(({ present }) => (present ? [present] : [])))];
+  return {
+    views,
+    subscribe: (listener) => {
+      const stops = presences.map((presence) => presence.subscribe(listener));
+      return () => {
+        for (const stop of stops) stop();
+      };
+    },
+    snapshot: () => presences.map((presence) => (presence.now() ? '1' : '0')).join(''),
+  };
+}
 
 /** Gives every `<Slot>` inside it the views features list. Lo's window is inside one. */
 export function Slots({ views, children }: { views: readonly View[]; children: ReactNode }) {
   const bySlot = useMemo(() => {
     const grouped = Map.groupBy(views.map(contain), (view) => view.slot.id);
-    for (const list of grouped.values()) {
+    const lists = new Map<string, SlotList>();
+    for (const [id, list] of grouped) {
       list.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id, 'en'));
+      lists.set(id, listOf(list));
     }
-    return grouped;
+    return lists;
   }, [views]);
   return <SlotViews value={bySlot}>{children}</SlotViews>;
 }
 
 /**
- * The views features put in `slot`, in order, for an owner that chooses among them or lays each
- * out itself. `<Slot>` renders them all. Each one's `render` runs inside its own error boundary.
+ * The views features put in `slot` that are there now, in order, for an owner that chooses among
+ * them or lays each out itself, re-rendering as one comes or goes. `<Slot>` renders them all. Each
+ * one's `render` runs inside its own error boundary.
  */
 export function useViews<Props, Extra extends object = object>(
   slot: Slot<Props, Extra>,
 ): readonly (View<Props> & Extra)[] {
+  const list = use(SlotViews).get(slot.id) ?? NO_VIEWS;
+  const there = useSyncExternalStore(list.subscribe, list.snapshot, list.snapshot);
+  const views = useMemo(
+    // What `there` says is what the filter reads.
+    () => list.views.filter(({ present }) => present?.now() ?? true),
+    [list, there],
+  );
   // `defineView` checked each one's component against its slot's props, and what else it gives.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-  return (use(SlotViews).get(slot.id) ?? []) as readonly (View<Props> & Extra)[];
+  return views as unknown as readonly (View<Props> & Extra)[];
 }
 
 /**

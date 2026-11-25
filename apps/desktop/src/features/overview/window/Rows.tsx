@@ -18,6 +18,7 @@ import { useStore } from 'zustand';
 import { useKeys } from '../../../window/commands/registry.ts';
 import { defineRow } from '../../settings/window/shared.ts';
 import { keyOf } from './labels.ts';
+import { overviews } from './shared.ts';
 import {
   checkSkill,
   copyInstallCommand,
@@ -189,6 +190,7 @@ export const SkillRow = defineRow({
   description: 'Teaches Claude Code and Codex to write overviews.',
   words: () => ['agent', 'install', 'Claude Code', 'Codex'],
   render: Skill,
+  present: overviews,
 });
 
 /**
@@ -228,4 +230,5 @@ export const InstallCommandRow = defineRow({
   description: 'The overview skill installs from a terminal.',
   words: () => ['overview skill', 'terminal', 'install', 'copy', INSTALL_COMMAND],
   render: InstallCommand,
+  present: overviews,
 });

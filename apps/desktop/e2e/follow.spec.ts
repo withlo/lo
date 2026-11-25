@@ -83,11 +83,12 @@ async function open(page: Page): Promise<string> {
   );
   if (!reply.ok || typeof reply.value !== 'string') throw new Error(JSON.stringify(reply));
   const id = reply.value;
-  // A machine too busy to know within the bound that the overview shows opens the tab on its diff,
-  // which isn't what's tested: the overview is a switch away, and then takes focus as it would.
-  const diff = page.locator('[data-lo-middle-view="diff.view"]');
+  // A machine too busy to know within the bound that the overview shows opens the tab on its
+  // timeline, which isn't what's tested: the overview is a switch away, and then takes focus as it
+  // would.
+  const timeline = page.locator('[data-lo-middle-view="timeline.view"]');
   await expect
-    .poll(async () => (await shown(page).isVisible()) || (await diff.isVisible()), {
+    .poll(async () => (await shown(page).isVisible()) || (await timeline.isVisible()), {
       timeout: 20_000,
     })
     .toBe(true);
