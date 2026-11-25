@@ -30,12 +30,8 @@ const OUT = <Icon name="circle-arrow-up" size={14} />;
 /** "Lo 0.2.0 is ready". */
 const TICK = <Icon name="check" size={14} />;
 
-/** A spinner in the icon's place, in the 14 px it takes. */
-const WAITING = (
-  <span className="ms-2 mt-2 inline-flex">
-    <Spinner />
-  </span>
-);
+/** A spinner in the icon's place, which the toast centres on its title's line as it does an icon. */
+const WAITING = <Spinner />;
 
 /** How long a toast's buttons ignore a press after it comes or changes, in ms. */
 export const GUARD_TIME = 500;

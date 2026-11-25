@@ -1027,21 +1027,21 @@ function TabLabel({ tab: item, selected, fade }: { tab: Tab; selected: boolean; 
     case 'recent':
       return (
         <>
-          <Icon name="clock" size={14} />
+          <Icon name="clock" size={12} />
           <span className={title}>Recent pull requests</span>
         </>
       );
     case 'settings':
       return (
         <>
-          <Icon name="settings" size={14} />
+          <Icon name="settings" size={12} />
           <span className={title}>Settings</span>
         </>
       );
     case 'queue':
       return (
         <>
-          <Icon name="text-align-start" size={14} className="text-queue" />
+          <Icon name="text-align-start" size={12} className="text-queue" />
           <span className="max-w-1/2 min-w-16 shrink truncate text-fg-muted">{item.repo}</span>
           <span className={title}>Merge queue · {withoutBidi(item.branch)}</span>
         </>

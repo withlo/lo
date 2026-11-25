@@ -8,7 +8,7 @@ import type { IconName } from './icons.ts';
 import { Key } from './Key.tsx';
 import { useDetails } from './Problem.tsx';
 
-const icon = cva('flex-none', {
+const icon = cva('toast-icon flex-none', {
   variants: {
     tone: {
       info: 'text-info',
@@ -40,7 +40,10 @@ export interface ToastAction {
 export interface ToastProps {
   /** What the icon says, as its color: a status color never stands without an icon and a word. */
   tone: ToastTone;
-  /** An `Icon` of 14 px, beside the title's `text-ui`, or a `Spinner`. Without one, the tone's. */
+  /**
+   * An `Icon` of 14 px, beside the title's `text-ui`, or a `Spinner`, either centred on the title's
+   * first line. Without one, the tone's.
+   */
   icon?: ReactNode;
   /**
    * What happened, in a few words: the result, never the name of a command. A toast that goes by

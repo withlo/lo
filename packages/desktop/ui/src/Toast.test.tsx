@@ -56,7 +56,7 @@ describe('Toast', () => {
 
   it('colors the icon by its tone, and leaves out the body and buttons it hasn’t got', () => {
     const markup = renderToStaticMarkup(<Toast tone="danger" icon={icon} title="Nothing merged" />);
-    expect(markup).toContain('class="flex-none text-danger"');
+    expect(markup).toContain('class="toast-icon flex-none text-danger"');
     expect(markup).not.toContain('col-start-2');
   });
 

@@ -227,6 +227,20 @@
   z-index: var(--lo-z-tooltip);
 }
 
+/* A toast's icon, or a spinner in its place, centred on the title's first line and in the 14 px
+   an icon takes, so the title stays put as one turns into the other: the zero-width space before
+   it gives the box that line's height. A screen reader hears nothing of it (the empty alternative
+   after the `/`). */
+@utility toast-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: calc(var(--lo-sp-12) + var(--lo-sp-2));
+  &::before {
+    content: '\200b' / '';
+  }
+}
+
 /* A toast's grid: the icon, then the title, body and buttons in a column of their own, with room
    after for something at its end. It has a little less padding at the end than at the start. */
 @utility toast {
