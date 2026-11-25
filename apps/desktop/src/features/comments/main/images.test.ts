@@ -138,6 +138,18 @@ const attachment = (url: string, { authorization }: Sent) => {
 
 const NOT_FOUND = { reason: 'failed', message: 'github.com answered 404' };
 
+/**
+ * Lets what's under way go on, a turn of the event loop at a time, until `done` says it has, or
+ * fails the test after 100 turns.
+ */
+async function until(done: () => boolean): Promise<void> {
+  for (let turns = 0; turns < 100; turns++) {
+    await new Promise((resolve) => setImmediate(resolve));
+    if (done()) return;
+  }
+  throw new Error('it never happened');
+}
+
 /** Why `loading` failed. */
 async function refusal(loading: Promise<unknown>): Promise<{ reason: string; message: string }> {
   const error: unknown = await loading.then(
@@ -194,29 +206,29 @@ describe('Images', () => {
     expect(await refusal(loader.load(bot('cursor')))).toMatchObject({ reason: 'refused' });
   });
 
-  it("asks GitHub where a bot's picture is before the picture's turn, and outside its time", async () => {
-    let answer: ((avatar: string) => void) | undefined;
-    const asked: string[] = [];
+  it("asks GitHub where a bot's picture is before the picture's turn, which starts its time", async () => {
+    const answers: ((avatar: string) => void)[] = [];
     const held: ((response: Response) => void)[] = [];
-    const { loader } = images(() => new Promise<Response>((resolve) => held.push(resolve)), {
-      limits: { fetching: 1, deadline: 50 },
-      bots: (login) => {
-        asked.push(login);
-        return new Promise((resolve) => (answer = resolve));
-      },
+    const { loader, sent } = images(() => new Promise<Response>((resolve) => held.push(resolve)), {
+      limits: { fetching: 1 },
+      bots: () => new Promise((resolve) => answers.push(resolve)),
     });
-    // A post's image holds the one turn there is.
+    // A post's image holds the one turn there is, and GitHub is asked about the bot meanwhile.
     const first = loader.load(post(CAMO));
     const cursor = loader.load(bot('cursor'));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(asked).toEqual(['cursor']);
-    // Longer than an image may take, and the picture still has all its time.
-    await new Promise((resolve) => setTimeout(resolve, 60));
-    held.shift()?.(image(png()));
-    await first.catch(() => undefined);
-    answer?.('https://avatars.githubusercontent.com/in/1210556');
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    held.shift()?.(image(png()));
+    await until(() => held.length === 1 && answers.length === 1);
+    answers[0]?.('https://avatars.githubusercontent.com/in/1210556');
+    await until(() => true);
+    // The picture's address is known, and the picture still waits its turn.
+    expect(sent.map(({ url }) => url)).toEqual([CAMO]);
+    held[0]?.(image(png()));
+    await first;
+    await until(() => held.length === 2);
+    expect(sent.map(({ url }) => url)).toEqual([
+      CAMO,
+      'https://avatars.githubusercontent.com/in/1210556?s=56',
+    ]);
+    held[1]?.(image(png()));
     expect(await cursor).toMatchObject({ type: 'png' });
   });
 
