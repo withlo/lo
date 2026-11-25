@@ -207,6 +207,9 @@ mode. In the box's preview, or on its frame, `Esc` closes it at once, from any m
 | Offer single-layer diffs   | None: its right-click menu or the command palette              | Anywhere                                                                                            | `stacks.offerStart`     |
 | Left panel                 | `⌘\`                                                           | Anywhere but `dialog` and `palette`                                                                 | `tab.leftPanel`         |
 | Threads panel              | `⌘⇧\`                                                          | Anywhere but `dialog` and `palette`                                                                 | `tab.rightPanel`        |
+| Widen                      | `>`                                                            | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.widen`             |
+| Narrow                     | `<`                                                            | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.narrow`            |
+| Reset width                | `=`                                                            | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.resetWidth`        |
 | Next view                  | `` ` ``                                                        | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.nextView`          |
 | Previous view              | `~`                                                            | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.previousView`      |
 | Timeline                   | None: its control, the app menu or the command palette         | Anywhere                                                                                            | `timeline.show`         |
@@ -461,6 +464,9 @@ how Lo starts, they run Lo's command too:
 | `y a`            | Copy prompt             | `y`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `overview.copyPrompt`     |
 | `g q`            | Merge queue             | `g q`     | `diff` (normal), `file` (normal) and `peek` (normal)                 | `queue.show`              |
 | `g v`            | Compare revisions…      | `g v`     | `diff` (normal), `file` (normal) and `peek` (normal)                 | `revisions.picker`        |
+| `>`              | Widen                   | `>`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.widen`               |
+| `<`              | Narrow                  | `<`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.narrow`              |
+| `=`              | Reset width             | `=`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.resetWidth`          |
 | `` ` ``          | Next view               | `` ` ``   | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.nextView`            |
 | `~`              | Previous view           | `~`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.previousView`        |
 | `-`              | Go to files             | `-`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tree.focus`              |

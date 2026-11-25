@@ -88,11 +88,12 @@ export const barMenus: readonly BarMenu[] = [
   },
   {
     menu: 'View',
-    // Overview, Diff and Timeline; the panels; the diff's layout and what it shows; the command
-    // palette; zoom; and full screen, which is a command of Lo's on Linux.
+    // Overview, Diff and Timeline; the panels; the width of what has focus; the diff's layout and
+    // what it shows; the command palette; zoom; and full screen, which is a command of Lo's on Linux.
     parts: [
       { section: 'views' },
       { section: 'panels' },
+      { section: 'layout' },
       { section: 'diff' },
       { section: 'palette' },
       { section: 'zoom' },

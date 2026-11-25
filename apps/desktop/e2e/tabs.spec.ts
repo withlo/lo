@@ -440,7 +440,7 @@ test('⌃o and ⌃i walk the history of the tab on screen, and each tab keeps it
   ).toBe(0);
 });
 
-test('macOS’s File, View and Window menus list choosing an account, the pull request’s page and link, closing a tab, the panels, checked when shown, and stepping through tabs', async ({
+test('macOS’s File, View and Window menus list choosing an account, the pull request’s page and link, closing a tab, the panels, checked when shown, sizing what has focus, and stepping through tabs', async ({
   app,
   page,
 }) => {
@@ -470,6 +470,9 @@ test('macOS’s File, View and Window menus list choosing an account, the pull r
       'File: Close tab Command+W',
       'View: Left panel (off) Command+\\',
       'View: Threads panel (off) Command+Shift+\\',
+      'View: Widen ',
+      'View: Narrow ',
+      'View: Reset width ',
       'Window: Next tab Command+Shift+]',
       'Window: Previous tab Command+Shift+[',
     ]);
