@@ -18,6 +18,7 @@ import {
   Delete,
   Ellipsis,
   Option,
+  X,
   type IconNode,
 } from 'lucide';
 
@@ -38,6 +39,7 @@ export const ICONS = {
   delete: Delete,
   ellipsis: Ellipsis,
   option: Option,
+  x: X,
 } as const satisfies Readonly<Record<string, IconNode>>;
 
 /** The name of an icon Lo uses, as Lucide names it. */

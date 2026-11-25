@@ -6,7 +6,8 @@
 // window chose shows as one diff, in a view the tab makes of it. And making a chain a GitHub stack:
 // planned here from what GitHub says, and run here once the reader confirms the plan, unless Lo is
 // merging a pull request on its path. Each repository's stacks and conversions are offered to the
-// features that merge.
+// features that merge. What the reader dismissed for a stack or a layer is kept in the database,
+// and what they turned off is in Settings: neither is offered again.
 
 import { PullRef } from '@lo/github';
 
@@ -15,15 +16,19 @@ import { defineFeature } from '../../../main/features.ts';
 import { provides } from '../../../main/services.ts';
 import { github } from '../../accounts/service.ts';
 import { overviews } from '../../overview/service.ts';
+import { settings } from '../../settings/service.ts';
 import { tabs, type TabService } from '../../tab/service.ts';
-import { contract, type StackState } from '../contract.ts';
+import { contract, type Notice, type StackState } from '../contract.ts';
 import { forest } from '../service.ts';
+import { offerConvert, offerStart } from '../settings.ts';
 import { Conversions } from './conversion.ts';
+import { Dismissed } from './dismissed.ts';
 import { StackFinder, type FinderTab } from './finder.ts';
 import { Holds } from './holds.ts';
 
 let finder: StackFinder | undefined;
 let conversions: Conversions | undefined;
+let dismissed: Dismissed | undefined;
 /** What the features that merge hold conversions back with. */
 const holds = new Holds();
 const stops: (() => void)[] = [];
@@ -87,7 +92,7 @@ function converting(): Conversions {
 }
 
 export default defineFeature(contract, {
-  uses: [tabs, github, overviews],
+  uses: [tabs, github, overviews, settings],
   provide: () => [
     provides(forest, {
       forest: (repo, login) => finder?.forest(repo, login),
@@ -101,6 +106,25 @@ export default defineFeature(contract, {
       if (!finder?.useStart(id, commit)) {
         throw new IpcError('moved', 'The stack has changed.');
       }
+    },
+    dismiss({ id, notice }, context) {
+      if (!finder || !dismissed) throw new IpcError('stopped', 'Lo is quitting.');
+      const tab = tabsOf(context.use(tabs)).find((each) => each.id === id);
+      if (!tab) throw new IpcError('notFound', 'There’s no pull request in that tab.');
+      const stack = finder.state(id)?.stack;
+      // The tree's offer is dismissed by which it is now, so a different one can still be made.
+      const which = notice === 'start' ? 'start' : finder.callout(id);
+      if (which === undefined || (which !== 'start' && stack?.kind !== 'stack')) {
+        throw new IpcError('missing', 'That offer is no longer there.');
+      }
+      // The tree's offer is the stack's, so it's dismissed for each of its layers; the start is the
+      // layer's own.
+      const numbers =
+        which !== 'start' && stack?.kind === 'stack'
+          ? stack.rows.map((row) => row.number)
+          : [tab.pull.number];
+      dismissed.add(which, tab.pull.repo.key, numbers, Date.now());
+      finder.noticesChanged();
     },
     plan({ id }, context) {
       const service = context.use(tabs);
@@ -132,6 +156,11 @@ export default defineFeature(contract, {
     const service = context.use(tabs);
     const access = context.use(github);
     const switched = context.use(overviews);
+    const kept = new Dismissed(context.database);
+    dismissed = kept;
+    // Whether each offer is on, once the settings file has been read: none is offered before, so
+    // one turned off never shows for a moment.
+    const on: Record<Notice, boolean | undefined> = { convert: undefined, start: undefined };
     const found = new StackFinder({
       poller: (login) => access.poller(login),
       publish: (state) => {
@@ -142,6 +171,9 @@ export default defineFeature(contract, {
         });
       },
       compareFrom: (id, commit) => service.compareFrom(id, commit),
+      // Both of the tree's offers are the offer of GitHub stacks, which one setting turns off.
+      offers: (notice, repo, numbers) =>
+        on[notice === 'start' ? 'start' : 'convert'] === true && !kept.has(notice, repo, numbers),
       log,
       overviews: () => switched.on(),
     });
@@ -159,7 +191,13 @@ export default defineFeature(contract, {
       found.follow(followed);
       making.follow(new Set(followed.map((tab) => tab.id)));
     };
+    const offering = (notice: Notice) => (value: boolean) => {
+      on[notice] = value;
+      found.noticesChanged();
+    };
     stops.push(
+      context.use(settings).watch(offerConvert, offering('convert')),
+      context.use(settings).watch(offerStart, offering('start')),
       service.onTabs(follow),
       service.onPull(follow),
       access.onEvent((event) => {
@@ -176,5 +214,6 @@ export default defineFeature(contract, {
     conversions = undefined;
     finder?.stop();
     finder = undefined;
+    dismissed = undefined;
   },
 });
