@@ -85,6 +85,13 @@ function windowOf({ database }: FeatureContext<typeof contract>): WindowStore {
   return windowStore;
 }
 
+/**
+ * What keeps each open window's place now. Lo quits by stopping its features, then closing the
+ * database, and only then its windows, so the feature keeps their places as it stops.
+ */
+const keepers = new Set<() => void>();
+let placesStopped = false;
+
 /** How long the window stays still before its place is kept, as it's dragged or resized. */
 const SETTLE_MS = 500;
 
@@ -107,12 +114,19 @@ function keepPlace(window: BrowserWindow, store: WindowStore): void {
   const keep = () => {
     clearTimeout(timer);
     timer = undefined;
-    if (window.isDestroyed()) return;
-    store.keepPlace({
-      ...window.getNormalBounds(),
-      maximized: window.isMaximized(),
-      fullScreen: window.isFullScreen(),
-    });
+    // Once the feature has stopped, the database is closing: it kept the place as it stopped.
+    if (placesStopped || window.isDestroyed()) return;
+    try {
+      store.keepPlace({
+        ...window.getNormalBounds(),
+        maximized: window.isMaximized(),
+        fullScreen: window.isFullScreen(),
+      });
+    } catch (error) {
+      log(
+        `couldn't keep the window's place: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   };
   const settle = () => {
     clearTimeout(timer);
@@ -125,6 +139,8 @@ function keepPlace(window: BrowserWindow, store: WindowStore): void {
   window.on('enter-full-screen', keep);
   window.on('leave-full-screen', keep);
   window.on('close', keep);
+  keepers.add(keep);
+  window.once('closed', () => keepers.delete(keep));
 }
 
 /** Stops watching the key `tab.open` replaced. */
@@ -270,6 +286,9 @@ export default defineFeature(contract, {
     watcher.follow(list.list());
   },
   stop() {
+    for (const keep of keepers) keep();
+    keepers.clear();
+    placesStopped = true;
     stopBefore?.();
     stopBefore = undefined;
     following.clear();
