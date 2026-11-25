@@ -243,6 +243,9 @@ export class RevisionsTab {
       pending: wanted !== undefined && !same(wanted, onScreen) ? wanted : null,
       offered: this.#offered && !same(this.#offered, onScreen) ? this.#offered : null,
       waitingFor: local?.kind === 'noGit' ? 'git' : local?.kind === 'ready' ? null : 'local',
+      settled:
+        revisions !== undefined &&
+        (this.#withCommits || local?.kind === 'noGit' || local?.kind === 'failed'),
       nothingNewSince: this.#nothingNewSince ?? null,
       replay: this.#ready ? (this.#replay ?? null) : null,
       conflicted: this.#ready ? this.#conflicted : 0,

@@ -2,7 +2,7 @@
 // screen and the files the pull request changes, sent to the window each time they change, with a
 // folder's files and a search by name on request.
 
-import type { GithubClient } from '@lo/github';
+import { type GithubClient, readPullFiles } from '@lo/github';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { defineFeature, type FeatureContext } from '../../../main/features.ts';
@@ -47,6 +47,11 @@ function follow(context: FeatureContext<typeof contract>, id: string): void {
           const client = await access.client(acting.login);
           const poller = await access.poller(acting.login);
           return poller.queue.read(() => request(client));
+        },
+        async pullFiles(acting, pull, head, limits) {
+          if (acting.kind === 'anonymous') return readPullFiles(access.anonymous, pull, limits);
+          const poller = await access.poller(acting.login);
+          return poller.pullFiles(pull, head, limits);
         },
       },
       publish: (state) => context.publish('state', state),

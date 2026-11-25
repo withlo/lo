@@ -116,6 +116,9 @@ export type RevisionsProblem = z.output<typeof revisionsProblem>;
  *   reader asks for it.
  * - `waitingFor`: why revisions can't be compared yet: `local`, the local copy isn't ready, or
  *   `git`, Lo has no git.
+ * - `settled`: whether the revisions are as they stay until a push: worked out with the local
+ *   copy's commits, or with none to be had, as without git. Until then a revision may come or go as
+ *   the commits order them, so the timeline splits pushes by them only once they're settled.
  * - `nothingNewSince`: the revision a marker is on, when it's the newest and the whole pull request
  *   shows.
  * - `replay`, `conflicted` (the files the replay conflicted on) and `uncertain` (a side's base may
@@ -133,6 +136,7 @@ export const comparisonView = z.strictObject({
   pending: comparison.nullable(),
   offered: comparison.nullable(),
   waitingFor: z.enum(['local', 'git']).nullable(),
+  settled: z.boolean(),
   nothingNewSince: oid.nullable(),
   replay: replay.nullable(),
   conflicted: z.number().int().nonnegative(),

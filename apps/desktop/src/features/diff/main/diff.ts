@@ -24,9 +24,10 @@ import {
   MAX_FILES,
   MAX_PAGES,
   type PullFile,
+  type PullFiles,
   PullRef,
   readComparison,
-  readPullFiles,
+  type ReadFiles,
   RepoRef,
 } from '@lo/github';
 import { LARGE_FILE_BYTES, MAX_SHOWN_BYTES, tooLargeToShow, type TooLarge } from '@lo/review';
@@ -69,6 +70,11 @@ export interface DiffReads {
   clone(): Promise<Repo> | undefined;
   /** Runs `request` with GitHub's client for `acting`, in its turn. */
   github<T>(acting: Acting, request: (client: GithubClient) => Promise<T>): Promise<T>;
+  /**
+   * The pull request's files at `head` as GitHub lists them, read as `acting`, within `limits`:
+   * read once for the diff and the tree.
+   */
+  pullFiles(acting: Acting, pull: PullRef, head: string, limits: ReadFiles): Promise<PullFiles>;
 }
 
 export interface DiffTabOptions {
@@ -740,26 +746,18 @@ export class DiffTab {
     this.#publish();
   }
 
-  /**
-   * The pull request's files, as GitHub lists them, while `at` is still the diff on screen when
-   * its turn comes: nothing once it isn't.
-   */
+  /** The pull request's files, as GitHub lists them, while `at` is still the diff on screen. */
   async #pullFiles(at: At, acting: Acting, pull: PullRef): Promise<GithubFiles | undefined> {
-    const listed = await this.#options.reads.github(acting, (client) =>
-      this.#current(at)
-        ? readPullFiles(client, pull, {
-            maxPages: MAX_PAGES,
-            // Without an account, GitHub allows 60 requests an hour, and nothing else polls.
-            keepRequests: acting.kind === 'anonymous' ? KEEP_ANONYMOUS : KEEP_REQUESTS,
-          })
-        : Promise.resolve(undefined),
-    );
-    return (
-      listed && {
-        files: listed.files,
-        partial: listed.cutShort !== undefined || listed.files.length >= MAX_FILES,
-      }
-    );
+    if (!this.#current(at)) return undefined;
+    const listed = await this.#options.reads.pullFiles(acting, pull, at.head, {
+      maxPages: MAX_PAGES,
+      // Without an account, GitHub allows 60 requests an hour, and nothing else polls.
+      keepRequests: acting.kind === 'anonymous' ? KEEP_ANONYMOUS : KEEP_REQUESTS,
+    });
+    return {
+      files: listed.files,
+      partial: listed.cutShort !== undefined || listed.files.length >= MAX_FILES,
+    };
   }
 
   /**

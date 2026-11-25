@@ -248,6 +248,7 @@ describe('RevisionsTab', { timeout: 60_000 }, () => {
       comparison: { from: null, to: APP_PULL.head },
       pending: null,
       waitingFor: null,
+      settled: true,
       nothingNewSince: null,
       problem: null,
     });
@@ -373,10 +374,14 @@ describe('RevisionsTab', { timeout: 60_000 }, () => {
   it('fetches the heads of revisions built before the local copy was ready, once it is', async () => {
     const made = revisionsTab({ repo: await e2eClone(false), history: await e2eHistory() });
     made.tab.update(e2eInfo({ kind: 'fetching', progress: null, attempt: 1 }));
-    await made.settled((sent) => sent.status === 'ready');
+    const before = await made.settled((sent) => sent.status === 'ready');
+    // Without the copy's commits, the revisions may yet change.
+    expect(before.settled).toBe(false);
     // The copy is ready: the revisions are built again with its commits while their heads fetch.
     made.tab.update(e2eInfo());
-    const view = await made.settled((sent) => sent.revisions[0]?.available === false);
+    const view = await made.settled(
+      (sent) => sent.settled && sent.revisions[0]?.available === false,
+    );
     expect(view.revisions.map((revision) => revision.available)).toEqual([false, true]);
   });
 

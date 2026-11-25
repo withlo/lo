@@ -19,6 +19,7 @@ import {
   type PollEvent,
   type PullRequest,
   type PullSummary,
+  type ReadPriority,
   type RepoAccount,
 } from '@lo/github';
 
@@ -491,8 +492,21 @@ export class PullTab {
     if (this.#closed || acting === undefined) return;
     if (acting.kind === 'account') {
       try {
-        const poller = await this.#attach(acting.login);
-        if (this.#active) await this.#setOpen(poller);
+        const poller = await this.#attach(acting.login, this.#active);
+        if (this.#active) {
+          // The tab's read of the pull request is its first poll's too: the poll waits for it, and
+          // asks GitHub only for the rest. The read goes at once, and what it says is taken after
+          // what the cache had.
+          const reading = Promise.withResolvers<PullSummary | undefined>();
+          const opened = this.#setOpen(poller, reading.promise);
+          try {
+            reading.resolve(await this.#read(opened));
+          } finally {
+            reading.resolve(undefined);
+          }
+          await opened;
+          return;
+        }
       } catch (error) {
         // The account is gone: work it out again.
         this.#options.log(`opening ${this.pull.toString()} as ${acting.login}: ${describe(error)}`);
@@ -568,8 +582,12 @@ export class PullTab {
     }
   }
 
-  /** Watches the pull request with `login`'s poller, from now on. */
-  async #attach(login: string): Promise<Poller> {
+  /**
+   * Watches the pull request with `login`'s poller, from now on. Opening it, the tab makes it the
+   * poller's open one itself, which watches it too, rather than having it polled as a watched one
+   * first.
+   */
+  async #attach(login: string, opening = false): Promise<Poller> {
     const current = this.#poller;
     if (current && current.login.toLowerCase() === login.toLowerCase()) return current;
     this.#detach();
@@ -583,8 +601,14 @@ export class PullTab {
         this.#publish();
       }),
     );
+    if (opening) return poller;
     await poller.watch(this.pull);
-    // What the cache had, from before: its header, but never the head on screen.
+    this.#takeSaved(poller);
+    return poller;
+  }
+
+  /** What `poller`'s cache had of the pull request, from before: its header, but never the head on screen. */
+  #takeSaved(poller: Poller): void {
     const summary = poller.summary(this.pull);
     if (summary && this.#header === undefined) {
       this.#header = withSummary(undefined, summary);
@@ -596,7 +620,6 @@ export class PullTab {
         base: { branch: summary.base.ref, sha: summary.base.sha },
       };
     }
-    return poller;
   }
 
   #detach(): void {
@@ -612,33 +635,43 @@ export class PullTab {
     }
   }
 
-  /** Makes the pull request `poller`'s open one, and takes what its cache has of it. */
-  async #setOpen(poller: Poller): Promise<void> {
-    const cached = await poller.setOpen(this.pull);
+  /**
+   * Makes the pull request `poller`'s open one, and takes what its cache has of it. With `reading`,
+   * the tab's read of it, the poll waits for that and takes its summary.
+   */
+  async #setOpen(poller: Poller, reading?: Promise<PullSummary | undefined>): Promise<void> {
+    const cached = await poller.setOpen(this.pull, reading);
     if (this.#closed || poller !== this.#poller) return;
+    this.#takeSaved(poller);
     if (cached && this.#savedAt === undefined) {
       this.#takeDetails(cached.details, cached.fetchedAt, { live: false });
     }
     this.#publish();
   }
 
-  /** Reads the pull request to open it: what its local copy is fetched by. */
-  async #read(): Promise<void> {
+  /**
+   * Reads the pull request to open it: what its local copy is fetched by. While the tab is on
+   * screen, someone waits on it. What it read is taken once `after` has settled. Resolves with the
+   * summary it read, if it did.
+   */
+  async #read(after?: Promise<unknown>): Promise<PullSummary | undefined> {
     const acting = this.#acting;
-    if (acting === undefined || this.#closed) return;
+    if (acting === undefined || this.#closed) return undefined;
     const { github } = this.#options;
     try {
       let opened: Opened;
       if (acting.kind === 'account') {
         const client = await github.client(acting.login);
         const queue = this.#poller?.queue;
+        const waited = (): ReadPriority => (this.#active ? 'foreground' : 'background');
         opened = queue
-          ? await queue.read(() => readPull(client, this.pull))
+          ? await queue.read(() => readPull(client, this.pull), undefined, waited)
           : await readPull(client, this.pull);
       } else {
         opened = await readPull(github.anonymous, this.pull);
       }
-      if (this.#closed) return;
+      await settled(after);
+      if (this.#closed) return undefined;
       this.#readFailures = 0;
       this.#problem = undefined;
       this.#outOfReach = undefined;
@@ -652,8 +685,10 @@ export class PullTab {
       const { summary } = opened;
       this.#adopt(summary.head.sha, { branch: summary.base.ref, sha: summary.base.sha });
       this.#startLocal();
+      return summary;
     } catch (error) {
-      if (this.#closed) return;
+      await settled(after);
+      if (this.#closed) return undefined;
       this.#readFailures += 1;
       const now = Date.now();
       const until = rateLimitedUntil(error, now);
@@ -684,7 +719,7 @@ export class PullTab {
         this.#problem =
           problem.kind === 'failed' ? { ...problem, retryAt: again ?? null } : problem;
         this.#options.log(`reading ${this.pull.toString()}: ${describe(error)}`);
-        return;
+        return undefined;
       }
       // GitHub can't be asked now, which the header's chip says: what the poller kept shows, and
       // the local copy reads what it fetched before. With nothing kept to show, the tab can't open
@@ -697,6 +732,7 @@ export class PullTab {
         this.#outOfReach = isUnreached(error) ? this.#problem : undefined;
         this.#options.log(`reading ${this.pull.toString()}: ${describe(error)}`);
       }
+      return undefined;
     }
   }
 
@@ -1048,4 +1084,12 @@ export class PullTab {
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** Waits for `promise`, if any, to settle, whichever way. */
+async function settled(promise: Promise<unknown> | undefined): Promise<void> {
+  await promise?.then(
+    () => undefined,
+    () => undefined,
+  );
 }

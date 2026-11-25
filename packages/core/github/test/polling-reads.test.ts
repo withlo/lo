@@ -26,6 +26,7 @@ import {
 } from './support/polling.ts';
 import type { GithubClient } from '../src/client.ts';
 import { GithubError } from '../src/errors.ts';
+import { MAX_PAGES } from '../src/files.ts';
 import { PUSH_HISTORY_WATCHED } from '../src/push-history.ts';
 import { readPullSummary } from '../src/pulls.ts';
 import {
@@ -665,8 +666,9 @@ const WAITED: ReadKind<number> = { name: 'Waited', watched: PUSH_HISTORY_WATCHED
 /**
  * A read someone on screen waits on for its first value, as a diff drawing its review threads does,
  * goes ahead of everything else due once the open pull request's check is in, and its requests go
- * ahead of the reads waiting in the account's queue, as an opening tab's overview reads do. Only
- * that run: once it has a value, it waits its turn as any poll does.
+ * ahead of the reads waiting in the account's queue, as an opening tab's overview reads do. The
+ * reads waiting give way from the end of the open pull request's poll, so none takes the turn
+ * before it. Only that run: once it has a value, it waits its turn as any poll does.
  */
 test('the first run of a read someone waits on goes ahead of polls and waiting reads', async () => {
   const t = await Polling.start('read_first', recorded(), { delay: 1000 });
@@ -687,10 +689,9 @@ test('the first run of a read someone waits on goes ahead of polls and waiting r
   void t.poller.readCached(pr(1), COUNTED, read('counted'));
   await t.run();
   await t.runUntil(12);
-  // The poll ends at 3 and hands the queue to the read that came first. The read waited on goes
-  // next, ahead of the other waiting read, then the repository's poll, from 6 to 9, then the other
-  // read.
-  expect(finished).toEqual(['tree', 'waited', 'files', 'counted']);
+  // The poll ends at 3, and the read waited on goes next, then the reads waiting, then the
+  // repository's poll, from 6 to 9, then the other read.
+  expect(finished).toEqual(['waited', 'tree', 'files', 'counted']);
   expect(t.requests().map(([secs]) => secs)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
 
   finished.length = 0;
@@ -700,6 +701,87 @@ test('the first run of a read someone waits on goes ahead of polls and waiting r
   await t.run();
   await t.runUntil(16);
   expect(finished).toEqual(['tree', 'files', 'waited']);
+});
+
+/**
+ * The reads someone on screen waits on keep the account's queue between them, and between the
+ * requests of each, as a timeline's pages: a tab's reads waiting in it, as the diff's and the
+ * tree's, go after them, rather than in a gap between two of their requests.
+ */
+test('reads waiting give way to the reads someone waits on, between them and their requests', async () => {
+  const t = await Polling.start('read_first_kept', recorded(), { delay: 1000 });
+  const client = await t.accounts.client(LOGIN);
+  const finished: string[] = [];
+  const read = (name: string, requests: number) => async (github: GithubClient) => {
+    for (let made = 0; made < requests; made++) await github.get(pr(1).restPath(), readPullSummary);
+    finished.push(name);
+    return 1;
+  };
+  void t.poller.setOpen(pr(1));
+  await t.run();
+  void t.poller.queue.read(() => read('tree', 1)(client));
+  void t.poller.readCached(pr(1), COUNTED, read('counted', 2), () => 'foreground');
+  void t.poller.readCached(pr(1), WAITED, read('waited', 1), () => 'foreground');
+  await t.run();
+  await t.runUntil(8);
+  // The poll, to 3, then the reads waited on, by name, two requests and one, then the tree's.
+  expect(finished).toEqual(['counted', 'waited', 'tree']);
+});
+
+/**
+ * Opening a pull request whose reads someone waits on for their first values, as a tab opening on
+ * its timeline does, its poll asks the check, then those reads go, then its details, which nothing
+ * on screen waits on.
+ */
+test('the details of a pr opened go after the reads someone waits on', async () => {
+  const t = await Polling.start('details_after', recorded(), { delay: 1000 });
+  const finished: string[] = [];
+  const read = (name: string) => async (github: GithubClient) => {
+    await github.get(pr(1).restPath(), readPullSummary);
+    finished.push(name);
+    return 1;
+  };
+  void t.poller.readCached(pr(1), WAITED, read('waited'), () => 'foreground');
+  void t.poller.setOpen(pr(1));
+  await t.run();
+  await t.runUntil(6);
+  expect(finished).toEqual(['waited']);
+  expect(
+    t
+      .requests()
+      .map(([, what]) => what)
+      .filter((what) => what.startsWith('GET /pulls/1') || what.startsWith('PullRequest')),
+  ).toEqual(['GET /pulls/1', 'PullRequestCheck', 'GET /pulls/1', 'PullRequest']);
+  expect(t.events().filter((event) => event.includes('#1'))).toEqual([
+    'summary #1: feat: stack layer A',
+    'check #1',
+    'read Waited #1',
+    'details #1: feat: stack layer A',
+  ]);
+  expect(t.poller.pullRequest(pr(1))?.details.title).toBe('feat: stack layer A');
+});
+
+/**
+ * A pull request's files, which the diff and the tree each list from GitHub as a tab opens, are
+ * read once for both, and kept a little while for whoever asks next, by head.
+ */
+test('a pull requests files are read once for everyone who asks', async () => {
+  const files = cassette('rest_pull_files').interactions.map(({ interaction }) => interaction);
+  const t = await Polling.start('pull_files_shared', [...recorded(), ...files], { delay: 1000 });
+  const limits = { maxPages: MAX_PAGES, keepRequests: 0 };
+  const listed = Promise.all([
+    t.poller.pullFiles(pr(2), 'head', limits),
+    t.poller.pullFiles(pr(2), 'head', limits),
+  ]);
+  await t.run();
+  await t.runUntil(3);
+  const [diff, tree] = await listed;
+  expect(diff.files.length).toBeGreaterThan(0);
+  expect(tree).toBe(diff);
+  const later = t.poller.pullFiles(pr(2), 'head', limits);
+  await t.run();
+  expect(await later).toBe(diff);
+  expect(t.requests().filter(([, what]) => what.includes('/files'))).toHaveLength(1);
 });
 
 /**
