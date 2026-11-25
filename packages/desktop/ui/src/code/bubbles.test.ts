@@ -2,7 +2,7 @@
 import { describe, expect, test } from 'vitest';
 
 import type { ThreadMark, ThreadView } from './api.ts';
-import { bubbleElement, bubbleOf, rangeTone, showOpen } from './bubbles.ts';
+import { bubbleElement, bubbleOf, rangeTone, Tones } from './bubbles.ts';
 
 /** A thread under new line 35 of file `a`, marked as `mark` says. */
 function marked(id: string, mark: Partial<ThreadMark> = {}): ThreadView {
@@ -83,7 +83,10 @@ describe('a thread’s bubble', () => {
   });
 
   test('is a button for its first thread, which says whether it’s open, and no stop for Tab', () => {
-    const control = bubbleElement(bubbleOf([marked('a')]), true, 'lo-lanebubble');
+    const control = bubbleElement(bubbleOf([marked('a')]), {
+      open: true,
+      className: 'lo-lanebubble',
+    });
     expect(control.getAttribute('role')).toBe('button');
     expect(control.getAttribute('aria-label')).toBe('Unresolved thread · lines 10–35');
     expect(control.getAttribute('aria-expanded')).toBe('true');
@@ -92,8 +95,30 @@ describe('a thread’s bubble', () => {
     expect(control.dataset.tip).toBe('Collapse thread');
     expect(control.tabIndex).toBe(-1);
     expect(control.querySelector('svg.lo-i--sm')).not.toBeNull();
-    showOpen(control, false);
-    expect(control.getAttribute('aria-expanded')).toBe('false');
-    expect(control.dataset.tip).toBe('Expand thread');
+    const closed = bubbleElement(bubbleOf([marked('a')]), {
+      open: false,
+      className: 'lo-lanebubble',
+      command: false,
+    });
+    expect(closed.getAttribute('aria-expanded')).toBe('false');
+    expect(closed.dataset.tip).toBe('Expand thread');
+    expect(closed.dataset.command).toBeUndefined();
+  });
+
+  test('changing state, it tints from the colour it had to its own once it’s drawn', async () => {
+    const tones = new Tones();
+    expect(tones.was('a', 'warn')).toBeUndefined();
+    expect(tones.was('a', 'warn')).toBeUndefined();
+    expect(tones.was('a', 'quiet')).toBe('warn');
+    const control = bubbleElement(bubbleOf([marked('a', { resolved: true })]), {
+      open: false,
+      className: 'lo-lanebubble',
+      was: 'warn',
+    });
+    expect(control.classList.contains('lo-bubble--warn')).toBe(true);
+    expect(control.classList.contains('move-tint')).toBe(true);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    expect(control.classList.contains('lo-bubble--quiet')).toBe(true);
+    expect(control.classList.contains('lo-bubble--warn')).toBe(false);
   });
 });

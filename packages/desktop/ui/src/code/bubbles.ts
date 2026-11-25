@@ -96,31 +96,55 @@ export function sameBubble(a: Bubble | undefined, b: Bubble | undefined): boolea
   return a.icon === b.icon && a.tone === b.tone && a.name === b.name && a.thread === b.thread;
 }
 
+/** How a bubble is drawn: whether its thread is open, and what it's drawn after. */
+export interface BubbleDrawing {
+  /** Whether its thread is drawn open. */
+  readonly open: boolean;
+  /** Its element's own class, which places it. */
+  readonly className: string;
+  /** Whether a click runs the view's command; where it doesn't, its view runs the click itself. */
+  readonly command?: boolean | undefined;
+  /** The colour it was drawn in last, where that's changed: it tints from it to its own. */
+  readonly was?: LaneTone | undefined;
+}
+
 /**
  * A bubble as a control: a click opens or collapses its thread, as `z a` does, and its tooltip
- * says which, with the key. A screen reader hears it as a button named for its threads, which says
- * whether the thread is open. It's no stop for `Tab`. `open` is whether its thread is drawn open.
- * Where `command` is `false`, its view runs the click itself and its tooltip has no key.
+ * says which, with the key, or without one where the view runs the click itself. A screen reader
+ * hears it as a button named for its threads, which says whether the thread is open. It's no stop
+ * for `Tab`.
  */
 export function bubbleElement(
   bubble: Bubble,
-  open: boolean,
-  className: string,
-  command = true,
+  { open, className, command = true, was }: BubbleDrawing,
 ): HTMLElement {
   const control = document.createElement('span');
-  control.className = `${className} lo-bubble lo-bubble--${bubble.tone} move-tint`;
+  const tone = `lo-bubble--${bubble.tone}`;
+  const from = was === undefined || was === bubble.tone ? tone : `lo-bubble--${was}`;
+  control.className = `${className} lo-bubble ${from} move-tint`;
+  // Its colour, from the one it had: the class changes once it's drawn, which the tint moves.
+  if (from !== tone) requestAnimationFrame(() => control.classList.replace(from, tone));
   control.setAttribute('role', 'button');
   control.setAttribute('aria-label', bubble.name);
   if (command) control.dataset.command = viewControls.thread;
   control.dataset.thread = bubble.thread;
-  showOpen(control, open);
+  control.setAttribute('aria-expanded', String(open));
+  control.dataset.tip = open ? COLLAPSE_THREAD : EXPAND_THREAD;
   control.append(iconElement(bubble.icon, 14));
   return control;
 }
 
-/** Says on a bubble whether its thread is open: to a screen reader, and in its tooltip. */
-export function showOpen(control: HTMLElement, open: boolean): void {
-  control.setAttribute('aria-expanded', String(open));
-  control.dataset.tip = open ? COLLAPSE_THREAD : EXPAND_THREAD;
+/**
+ * The colour each bubble was last drawn in, by a key of the caller's for where it's drawn, so a
+ * bubble whose thread changes state tints from its old colour to its new one.
+ */
+export class Tones {
+  readonly #last = new Map<string, LaneTone>();
+
+  /** The colour the bubble at `key` had before `tone`, if it was another; `tone` is kept. */
+  was(key: string, tone: LaneTone): LaneTone | undefined {
+    const before = this.#last.get(key);
+    this.#last.set(key, tone);
+    return before === tone ? undefined : before;
+  }
 }

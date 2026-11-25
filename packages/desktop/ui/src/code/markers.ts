@@ -10,6 +10,7 @@
 import type { Extension } from '@codemirror/state';
 import { type BlockInfo, type EditorView, gutter, GutterMarker } from '@codemirror/view';
 
+import { lineBeside } from './lanes.ts';
 import { marksChanged } from './marks.ts';
 import { CollapsedWidget, FileNoteWidget, HeaderWidget } from './widgets.ts';
 
@@ -149,8 +150,8 @@ export function markerGutter(source: MarkerSource): Extension {
       // A file's own blocks, in place of its lines, aren't between them.
       if (widget instanceof HeaderWidget || widget instanceof FileNoteWidget) return null;
       // A block at a line's start is drawn before it; one at its end, after it.
-      const line = view.state.doc.lineAt(block.from);
-      return source.markerBetween(line.number, block.from > line.from || line.from === line.to);
+      const { line, after } = lineBeside(view, block);
+      return source.markerBetween(line, after);
     },
     lineMarkerChange: (update) =>
       update.transactions.some((transaction) =>

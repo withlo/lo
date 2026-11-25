@@ -12,7 +12,7 @@ import type { Range, Text } from '@codemirror/state';
 import { Decoration } from '@codemirror/view';
 import type { FileDiff, MovedBlock } from '@lo/diff';
 
-import { bubbleOf } from './bubbles.ts';
+import { bubbleOf, type Tones } from './bubbles.ts';
 import type { InlineLines } from './inline.ts';
 import type { Side } from './layout.ts';
 import { type FileLines, type Gap, inGap, type Keep, type Open, shownRuns } from './rows.ts';
@@ -98,6 +98,8 @@ export interface Common {
   ring: HeaderRing;
   /** The file's `Problem`, as the caller drew it, first under its header. */
   problem?: HeaderProblem | undefined;
+  /** The colour each bubble was drawn in last, so the file's threads' bubble tints as it changes. */
+  tones?: Tones | undefined;
 }
 
 /**
@@ -262,9 +264,11 @@ function header(
   const marked =
     part === 'end' ? [] : (input.threads.find((each) => each.line === 0)?.threads ?? []);
   const first = marked[0];
-  const bubble = first && {
-    bubble: bubbleOf(marked.map((host) => host.thread)),
-    open: () => first.open,
+  const drawn = first && bubbleOf(marked.map((host) => host.thread));
+  const bubble = drawn && {
+    bubble: drawn,
+    open: first.open,
+    was: input.tones?.was(`head:${part}:${drawn.thread}`, drawn.tone),
   };
   const widget = new HeaderWidget(
     input.index,

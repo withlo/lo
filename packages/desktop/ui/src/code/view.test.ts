@@ -3011,7 +3011,7 @@ describe('threads’ lane', () => {
     expect({ old: drawnText('Before'), new: drawnText('After') }).toEqual(before);
   });
 
-  test('a thread on one line has its bubble alone, and says what it is as it changes', () => {
+  test('a thread on one line has its bubble alone, and says what it is as it changes, tinting', async () => {
     const shown = open();
     shown.setThreads([ranged('one', at('a', 'new', 8), undefined)], plain().render);
     expect(lane('After')).toEqual(['amber Unresolved thread · line 8']);
@@ -3019,6 +3019,9 @@ describe('threads’ lane', () => {
       [ranged('one', at('a', 'new', 8), undefined, { resolved: true })],
       plain().render,
     );
+    // Drawn in the colour it had, then its own, which it tints to.
+    expect(lane('After')).toEqual(['amber Resolved thread · line 8']);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
     expect(lane('After')).toEqual(['grey Resolved thread · line 8']);
     expect(parent!.querySelector('.lo-threadlane .lo-bubble svg')?.innerHTML).toBe(
       iconElement('message-square-check', 14).innerHTML,
@@ -3147,10 +3150,48 @@ describe('threads’ lane', () => {
     expect(leftHeader().querySelector('.lo-diffhead__bubble')?.getAttribute('aria-label')).toBe(
       'Resolved thread · file',
     );
+    // Collapsed, it says so, and a press on it leaves the cursor where it is.
+    expect(leftHeader().querySelector('.lo-diffhead__bubble')?.getAttribute('aria-expanded')).toBe(
+      'true',
+    );
+    shown.openThread('mine', false);
+    const bubble = leftHeader().querySelector<HTMLElement>('.lo-diffhead__bubble')!;
+    expect(bubble.getAttribute('aria-expanded')).toBe('false');
+    expect(bubble.dataset.tip).toBe('Expand thread');
+    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 });
+    bubble.dispatchEvent(down);
+    expect(down.defaultPrevented).toBe(true);
     shown.setLayout('inline');
     expect(
       parent!.querySelector('.cm-content[aria-label="Changes"] .lo-diffhead__bubble'),
     ).not.toBeNull();
+  });
+
+  test('inline, threads on an unchanged line’s two numbers share its bubble', () => {
+    const shown = open();
+    shown.setLayout('inline');
+    shown.setThreads(
+      [ranged('old', at('a', 'old', 7), undefined), ranged('new', at('a', 'new', 7), undefined)],
+      plain().render,
+    );
+    expect(lane('Changes')).toEqual(['amber 2 threads · line 7 · 2 unresolved']);
+  });
+
+  test('a screen reader reaches the bubbles, and no other gutter', () => {
+    const shown = open();
+    shown.setThreads([ranged('one', at('a', 'new', 8), undefined)], plain().render);
+    const editor = parent!.querySelector('.cm-content[aria-label="After"]')!.closest('.cm-editor')!;
+    const gutters = editor.querySelector('.cm-gutters')!;
+    expect(gutters.hasAttribute('aria-hidden')).toBe(false);
+    expect(
+      [...gutters.children].map(
+        (each) => `${gutterName(each)} ${each.getAttribute('aria-hidden')}`,
+      ),
+    ).toEqual(['numbers true', 'threads null', 'overview true']);
+    // Nothing between it and the page hides it.
+    const bubble = editor.querySelector('.lo-bubble')!;
+    expect(bubble.closest('[aria-hidden="true"]')).toBeNull();
+    expect(bubble.getAttribute('role')).toBe('button');
   });
 
   test('a click on a bubble opens or collapses its thread, as its tip says', () => {
@@ -3237,12 +3278,15 @@ function markers(label: string): string[] {
 function gutterOrder(label: string): string[] {
   const content = parent!.querySelector(`.cm-content[aria-label="${label}"]`);
   const gutters = content?.closest('.cm-editor')?.querySelectorAll('.cm-gutter') ?? [];
-  return [...gutters].map((gutter) => {
-    if (gutter.classList.contains('cm-lineNumbers')) return 'numbers';
-    if (gutter.classList.contains('lo-threadlane')) return 'threads';
-    if (gutter.classList.contains('lo-ovcolumn')) return 'overview';
-    return gutter.className;
-  });
+  return [...gutters].map(gutterName);
+}
+
+/** What a gutter is: line numbers, the threads' lane or the overview's. */
+function gutterName(gutter: Element): string {
+  if (gutter.classList.contains('cm-lineNumbers')) return 'numbers';
+  if (gutter.classList.contains('lo-threadlane')) return 'threads';
+  if (gutter.classList.contains('lo-ovcolumn')) return 'overview';
+  return gutter.className;
 }
 
 /** What the editor labelled `label` draws in its text. */

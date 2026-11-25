@@ -11,7 +11,7 @@ import { COMMENT_PATH, threadWords } from '../counts.ts';
 import { resizing } from '../drag.ts';
 import { EDIT_SLOT } from '../edits.ts';
 import { type DrawNote, type FileHeader, viewControls } from './api.ts';
-import { type Bubble, bubbleElement, sameBubble } from './bubbles.ts';
+import { type Bubble, bubbleElement, type LaneTone, sameBubble } from './bubbles.ts';
 import type { ThreadHost } from './threads.ts';
 
 /** How each viewed mark is drawn: a ring, a filled ball, or an amber ring with a dot. */
@@ -287,7 +287,9 @@ export interface HeaderProblem {
  */
 export interface FileBubble {
   readonly bubble: Bubble;
-  readonly open: () => boolean;
+  readonly open: boolean;
+  /** The colour it was drawn in last, where that's changed: it tints from it, the first time. */
+  readonly was?: LaneTone | undefined;
 }
 
 /**
@@ -309,6 +311,8 @@ export class HeaderWidget extends WidgetType {
   readonly ring: HeaderRing;
   readonly problem: HeaderProblem | undefined;
   readonly bubble: FileBubble | undefined;
+  /** Whether its bubble tints from the colour it had, which it does the first time it's drawn. */
+  #tinting = true;
 
   constructor(
     file: number,
@@ -341,7 +345,8 @@ export class HeaderWidget extends WidgetType {
       other.problem?.drawing === this.problem?.drawing &&
       sameRow(other.row, this.row) &&
       sameUnder(other.under, this.under) &&
-      sameBubble(other.bubble?.bubble, this.bubble?.bubble)
+      sameBubble(other.bubble?.bubble, this.bubble?.bubble) &&
+      other.bubble?.open === this.bubble?.open
     );
   }
 
@@ -349,7 +354,17 @@ export class HeaderWidget extends WidgetType {
     const head = drawHeader(this.file, this.info, this.part);
     if (this.ring.file === this.file) head.classList.add(RING_CLASS);
     const { bubble } = this;
-    if (bubble) head.append(bubbleElement(bubble.bubble, bubble.open(), 'lo-diffhead__bubble'));
+    if (bubble) {
+      const control = bubbleElement(bubble.bubble, {
+        open: bubble.open,
+        className: 'lo-diffhead__bubble',
+        was: this.#tinting ? bubble.was : undefined,
+      });
+      this.#tinting = false;
+      // A press on it leaves the cursor and focus where they are; its click is the view's.
+      control.addEventListener('mousedown', (event) => event.preventDefault());
+      head.append(control);
+    }
     const { problem } = this;
     const row = this.row && drawRow(this.file, this.row, this.part === 'end');
     if (!problem && !row && !this.under) return head;
@@ -383,12 +398,15 @@ export class HeaderWidget extends WidgetType {
   }
 
   /**
-   * The header's own events are the editor's; the `Problem`, the threads and the boxes under it
-   * handle theirs.
+   * The header's own events are the editor's; the `Problem`, the threads and the boxes under it,
+   * and the bubble of the file's threads, handle theirs.
    */
   override ignoreEvent(event: Event): boolean {
     const { target } = event;
-    return target instanceof Element && target.closest('.lo-diffthread, .lo-fileproblem') !== null;
+    return (
+      target instanceof Element &&
+      target.closest('.lo-diffthread, .lo-fileproblem, .lo-diffhead__bubble') !== null
+    );
   }
 }
 
