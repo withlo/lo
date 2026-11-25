@@ -233,10 +233,11 @@ type Pause = { clock: 'wall' | 'monotonic'; until: number; reason: PauseReason }
 /** A write's result as it came: its value, or what it threw. */
 export type Settled<T> = { ok: true; value: T } | { ok: false; error: unknown };
 
-/** The rest of a read that went on beside the poll loop, and its priority as it goes. */
+/** The rest of a read that went on beside the poll loop, its priority as it goes, and the read. */
 interface Aside {
   rest: Promise<Settled<Outcome>>;
   priority: () => ReadPriority;
+  read: ReadState | undefined;
 }
 
 /**
@@ -2484,10 +2485,7 @@ export class Poller {
   async #takeInAside(job: Job, ticket: number, aside: Aside, client: GithubClient) {
     const result = await aside.rest;
     this.#asides.delete(aside.priority);
-    if (job.kind === 'read') {
-      const kept = this.#pulls.get(job.pull.key)?.reads.get(job.read.name);
-      if (kept) kept.aside = false;
-    }
+    if (aside.read) aside.read.aside = false;
     const taking = this.#take(job, ticket, result, client);
     this.#wake();
     await taking;
@@ -2541,7 +2539,7 @@ export class Poller {
           })),
         );
         const done = await Promise.race([rest, aside.promise]);
-        return done ?? { rest, priority };
+        return done ?? { rest, priority, read: kept };
       }
       case 'repo': {
         const now = () => this.#config.now();
