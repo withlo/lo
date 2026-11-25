@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { afterAll, expect, test } from 'vitest';
 
-import { git } from './git.ts';
+import { git, gitBytes } from './git.ts';
 import { RepoServer } from './repos.ts';
 
 const server = new RepoServer();
@@ -12,6 +12,12 @@ afterAll(() => server.remove());
 /** The tree of the commit the working copy `work` is at. */
 function tree(work: string): string {
   return git(work, 'rev-parse', 'HEAD^{tree}');
+}
+
+/** The message of the commit the working copy `work` is at, as stored. */
+function message(work: string): string {
+  const commit = gitBytes(work, ['cat-file', 'commit', 'HEAD']).toString('utf8');
+  return commit.slice(commit.indexOf('\n\n') + 2);
 }
 
 test('commitFiles commits what writing the files and committing them would, and checks it out', () => {
@@ -32,9 +38,8 @@ test('commitFiles commits what writing the files and committing them would, and 
 
   expect(tree(imported.work)).toBe(tree(written.work));
   expect(git(imported.work, 'rev-parse', 'HEAD^')).toBe(bases[1]);
-  expect(git(imported.work, 'log', '-1', '--format=%s %an <%ae>')).toBe(
-    'head Lo test <test@lo.invalid>',
-  );
+  expect(message(imported.work)).toBe(message(written.work));
+  expect(git(imported.work, 'log', '-1', '--format=%an <%ae>')).toBe('Lo test <test@lo.invalid>');
   expect(head).toBe(imported.head());
   // The working copy is the commit, ready for the next.
   expect(git(imported.work, 'status', '--porcelain')).toBe('');

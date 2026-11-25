@@ -157,12 +157,13 @@ right side; don't loosen the rules.
 Unit tests are `*.test.ts` files beside the code, run by Vitest. The root `vitest.config.ts` has one
 project per package. Nx runs one project's tests at a time, and Vitest uses two workers, or all of a
 CI runner's cores. A project in a file of its own takes none of the root config's options, so the
-root config sets that limit as `VITEST_MAX_WORKERS`, which every project reads. A test that runs
-git, cloning and fetching repositories it builds, takes longer when the machine is busy than the 5 s
-a test gets, so a package whose tests mostly run git sets a longer `testTimeout` for the whole
-project (`@lo/git`). The desktop app's tests that import `@lo/testing/git`, directly or through a
-module they import, are found by `gitTests()` in `apps/desktop/vitest.config.ts` and run as
-`@lo/desktop:git`, a project of their own with 30 s; the rest of the desktop's tests keep the
+root config sets that limit as `VITEST_MAX_WORKERS`, which every project reads. For another, pass
+`--maxWorkers=<n>` (or `--no-file-parallelism` for one), or set `VITEST_MAX_WORKERS=<n>`. A test
+that runs git, cloning and fetching repositories it builds, takes longer when the machine is busy
+than the 5 s a test gets, so a package whose tests mostly run git sets a longer `testTimeout` for
+the whole project (`@lo/git`). The desktop app's tests that import `@lo/testing/git`, directly or
+through a module they import, are found by `gitTests()` in `apps/desktop/vitest.config.ts` and run
+as `@lo/desktop:git`, a project of their own with 30 s; the rest of the desktop's tests keep the
 default.
 
 Most of a git test's time is starting git, so a test starts it as few times as it can:

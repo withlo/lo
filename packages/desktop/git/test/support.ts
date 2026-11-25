@@ -43,11 +43,14 @@ let ours: Promise<Git> | undefined;
 /**
  * The git the tests run ({@link gitProgram}), as Lo takes a git the user names, with what it
  * inherits from `env`: the test's own environment unless it says otherwise. That one is checked
- * once for the file, since checking a git runs it.
+ * once for the file, since checking a git runs it, and again by the next test if the check failed.
  */
 export function foundGit(env?: Environment): Promise<Git> {
   if (env !== undefined) return gitIn(env);
-  ours ??= gitIn(process.env);
+  ours ??= gitIn(process.env).catch((error: unknown) => {
+    ours = undefined;
+    throw error;
+  });
   return ours;
 }
 
