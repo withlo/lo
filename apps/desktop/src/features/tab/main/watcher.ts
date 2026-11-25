@@ -164,6 +164,11 @@ export class Watcher {
     return this.#tabs.get(id)?.clone();
   }
 
+  /** Where view `id`'s local copy is, whole, once it's ready. */
+  localFolder(id: string): string | undefined {
+    return this.#tabs.get(id)?.localFolder();
+  }
+
   /**
    * Calls `listener` with a view's id each time what {@link Watcher.info} says of it may have
    * changed, and as it closes. Returns a function that stops it.
