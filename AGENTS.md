@@ -380,12 +380,17 @@ the window find them with `import.meta.glob`.
   `settingRow(setting, { order })` draws a setting's row from the setting itself, and `defineRow`
   makes any other, such as a list, with the same one line. A row whose line depends on what's there
   takes `useLine`, a hook for it, while search still reads the setting's own line, and a row that
-  comes and goes with a part of Lo takes that part's `present`. A change main refuses comes back as
-  `settingsFile` or `unsaved`, with main's reason and its details, and the row says it as a
-  `Problem`. A setting declared with `{ window: 'read' }`, such as which repositories are trusted,
-  the window shows but can't change: `settings.set` refuses it as `unwritable`, and only main writes
-  it, with `use(settings).update(setting, change)`. `docs/settings.md` lists every setting; a test
-  fails when one is missing.
+  comes and goes with a part of Lo takes that part's `present`. A screen besides Settings that
+  offers a setting of a few options, as the welcome does, takes it as a `SettingChoice`: the feature
+  that owns the setting makes one with `choiceOf` in its `window/shared.ts`, rather than handing the
+  setting on, and the screen reads and writes it with `useChoice`, which says a change main refused
+  as the row's `Problem`, never in a toast. A feature's own row of a setting on such a screen, as
+  the welcome's overviews step has, changes it with `useSettingChange` the same way. A change main
+  refuses comes back as `settingsFile` or `unsaved`, with main's reason and its details, and the row
+  says it as a `Problem`. A setting declared with `{ window: 'read' }`, such as which repositories
+  are trusted, the window shows but can't change: `settings.set` refuses it as `unwritable`, and
+  only main writes it, with `use(settings).update(setting, change)`. `docs/settings.md` lists every
+  setting; a test fails when one is missing.
 - `migrations/001-<name>.sql`, `002-<name>.sql` and on create and change the feature's tables. At
   startup, before any handler can be asked anything, each feature's new migrations run in order,
   each in a transaction, and are recorded with their SHA-256.
@@ -940,9 +945,12 @@ status bar.
   reach GitHub, the overview's `offline` problem, and the stall of a poller that can't read now,
   which the merge status and the review threads carry. Main words none of it.
 - The window gets what it shows on `tab.pull`, `tab.files` and `tab.local`, each sent only when it
-  changes, and asks for all three with `tab.state`. None of it holds a token. `tab.copy` puts up to
-  1 MiB of text on the clipboard, and `tab.openExternal` opens pages on `https://github.com/` only,
-  for every feature.
+  changes, and asks for all three with `tab.state`. None of it holds a token. A ready local copy
+  says where its clone is (`folder`), `~` for the home folder, which its status bar item's details
+  show. Copy path and Show in Finder ask main (`tab.copyLocal`, `tab.showLocal`), which copies or
+  shows the whole path it keeps for the view, never one the window names, and refuses a folder
+  that's gone (`gone`). `tab.copy` puts up to 1 MiB of text on the clipboard, and `tab.openExternal`
+  opens pages on `https://github.com/` only, for every feature.
 - Its smoke test opens rozed-dev/e2e#80, whose repository `testing/fixtures/app.sh` builds with
   GitHub's commit IDs, as `LO_GIT_REMOTE`, while the replay server answers from the `app_e2e`
   cassette, recorded from the app itself (`testing/README.md`).
@@ -1259,9 +1267,9 @@ its own app, installs it when the reader says so.
 
 ### The welcome flow
 
-The `welcome` feature draws over a tab through the tab feature's `tab.cover` slot. It's four steps,
-one job each, walked with "Continue", "Back" and "Skip": an account, the keys, set-up, and opening a
-pull request.
+The `welcome` feature draws over a tab through the tab feature's `tab.cover` slot. It's six steps,
+one job each, walked with "Continue", "Back" and "Skip": an account, the look, the keys, overviews,
+set-up, and opening a pull request.
 
 - **When it opens.** By itself over the Recent tab, for a reader who hasn't finished it and has no
   account signed in: none is, or GitHub refused every one. "Skip", "Done" and a pull request opened
@@ -1277,30 +1285,49 @@ pull request.
      accounts feature's dialog) or importing from GitHub CLI when Lo finds one. A notice with "Check
      again" is here when Lo can't find a Git it can run: `welcome.checkGit` asks main to look again
      (`git.check()`), and what Lo finds reaches the window on `app.git`.
-  2. Standard keys or Vim keys, which is the `editor.vim` setting, written with the comments
-     feature's `chooseVimKeys`, so the last card pressed is the one that stays. A diff drawn for the
-     step is where `j`, `k` and `c` work. `c` opens the comment box every comment is written in
-     (`createComposer`), with the keys chosen. Nothing typed there is sent.
-  3. The rows in its `welcome.setup` slot: installing the `lo` command, which the open feature does,
+  2. How Lo looks: `theme` and `diff.layout`, each a group of `Choices` cards with a `picture`,
+     written as a card is pressed. The feature that owns each setting offers it from its
+     `window/shared.ts` as a `SettingChoice` (`choiceOf`), and the step reads and writes it with
+     `useChoice`. A write the file refuses is the `Problem` the setting's row in Settings shows,
+     under its group, and the cards show what's on file again.
+  3. Standard keys or Vim keys, which is the `editor.vim` setting, written with the comments
+     feature's `chooseVimKeys`. A diff drawn for the step is where `j`, `k` and `c` work. `c` opens
+     the comment box every comment is written in (`createComposer`), with the keys chosen. Nothing
+     typed there is sent.
+  4. What an overview is: the overview feature's `Example` (`OverviewExample`), then `overview.on`
+     and `tab.open` as the rows Settings has, each put in the `welcome.overviewRows` slot by the
+     feature that owns it, with no icon, and written with `useSettingChange` as it's changed. Focus
+     starts on "Continue" here, so `⏎` never flips the switch.
+  5. The rows in its `welcome.setup` slot: installing the `lo` command, which the open feature does,
      and sending pull request links to Lo, with the rules for Finicky, Velja and Choosy in
      `docs/link-routers.md`. Another feature's row goes in the slot as a `SetupItem` from `@lo/ui`,
      in `order`, and the same thing has a row in Settings. A row says how its button's press went on
      itself (`below`), never in a toast: the `lo` command's row installs with
-     `installCommand('row')`, which leaves the result for the row.
-  4. A field that opens a pull request's link through the open feature, and a sample pull request.
-     The mark plays Kiss as the step first appears.
+     `installCommand('row')`, which leaves the result for the row. The overview skill's row is there
+     only while there are overviews.
+  6. A field that opens a pull request's link through the open feature, and a sample pull request,
+     whose line says it has an overview while there are overviews. The mark plays Kiss as the step
+     first appears.
+- **Choosing.** Each press of a card writes its own choice, so the last one pressed is the one that
+  stays, and its group shows that card until every write of the setting has ended (`choosing` in the
+  welcome's store, by the setting's key); then it shows what's on file. Back, Continue and Skip
+  write nothing.
 - **Moving between steps.** Each step is drawn afresh as it shows, in a `Swap`. The mark's moves
   play once each time the welcome opens: a step the reader comes back to draws the mark at rest.
 - **Keys.** Under the welcome the tab's view is `inert`, so no key or reader reaches it. The welcome
   is a form like Settings: its scope has `data-lo-tab="browser"`, so `Tab` walks its controls. `⏎`
-  is `welcome.continue`: it presses the button with focus, opens the link in the field once it holds
-  one, and anywhere else presses the step's main button, which is "Sign in with GitHub…" on the
-  first step until an account is signed in, "Open" on the last while the field holds a link, and
-  "Continue" or "Done" otherwise. The main button carries the `⏎` chip. Every step is in the tree
-  from the start, in one grid cell, so the foot's buttons never move; the steps off screen are
-  `inert`. "Continue" holds the room of its label with its key in every state.
-- **A feature that needs set-up** adds a row to the third step and a row in Settings. It doesn't put
-  up a banner or a dialog of its own.
+  is `welcome.continue`: it presses the button, switch or segment with focus, opens the link in the
+  field once it holds one, and anywhere else presses the step's main button, which is "Sign in with
+  GitHub…" on the first step until an account is signed in, "Open" on the last while the field holds
+  a link, and "Continue" or "Done" otherwise. The main button carries the `⏎` chip. `⏎` on a
+  choice's card is "Continue", since the arrows and `Space` choose. `⇧⏎` is `welcome.back`, whose
+  control is "Back", with its key in its tooltip. Every step is in the tree from the start, in one
+  grid cell, so the foot's buttons never move; the steps off screen are `inert`. "Continue" holds
+  the room of its label with its key in every state. The foot stays on screen: in a window too short
+  for a step, the steps scroll in a pane of their own above it, and what takes focus there comes
+  into view with `reveal()`.
+- **A feature that needs set-up** adds a row to the set-up step and a row in Settings. It doesn't
+  put up a banner or a dialog of its own.
 
 ### The timeline
 
@@ -1747,9 +1774,11 @@ parse them under `@lo/syntax`'s limits.
   queries that read it, and each tree's paths and blobs. A row with another version is read again as
   it's needed. Past 1 GB, the trees and then the blobs no open view holds go, least recently used
   first. Settings counts it with the cache, and "Clear the cache" clears it.
-- The status bar says how far a view's index has got (`code.index`, the `indexed` topic): "Syntax
-  index 1,204 / 3,880" while it builds, again from the start once the cache is cleared, "Syntax
-  index" once it's ready, "Syntax index partial" with how much on hover.
+- The status bar says how far a view's index has got (`code.index`, the `indexed` topic): "Indexing
+  code · 1,204 / 3,880" while it builds, again from the start once the cache is cleared, "Code
+  index" once it's ready, with how many files a partial one has. Its details say what it is, its
+  state, and once it's ready, how many of the head's files it read are in each language, by path and
+  leaving out those it skipped, and when its trees were last built, from what it read or kept.
 - The window asks over the code port (`port.ts`): a port main makes with each load of the page,
   handed over through the preload as `lo:code`, in the jobs protocol's shapes (`{ id, job, input }`,
   replies, `{ cancel }`). Main checks every message as plain data and each input against the

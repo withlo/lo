@@ -82,13 +82,12 @@ test.describe('on the welcome screen', () => {
     home,
   }) => {
     mkdirSync(join(home, '.claude'));
-    // The skill's row is on the welcome's set-up step, two on from the first.
-    await welcome(page)
-      .getByRole('button', { name: /^Continue/ })
-      .click();
-    await welcome(page)
-      .getByRole('button', { name: /^Continue/ })
-      .click();
+    // The skill's row is on the welcome's set-up step, four on from the first.
+    for (let each = 0; each < 4; each++) {
+      await welcome(page)
+        .getByRole('button', { name: /^Continue/ })
+        .click();
+    }
     await expect(step(page)).toContainText('Teaches Claude Code and Codex to write overviews.');
     await step(page).getByRole('button', { name: 'Install', exact: true }).click();
     // The step says so, and nothing else says it again.

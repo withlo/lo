@@ -1,5 +1,6 @@
-// What the welcome does: opening and leaving, walking its steps, signing in, choosing keys,
-// looking for Git again, opening a pull request, and what `⏎` does with the control that has focus.
+// What the welcome does: opening and leaving, walking its steps, signing in, choosing how Lo looks
+// and its keys, looking for Git again, opening a pull request, and what `⏎` does with the control
+// that has focus.
 
 import { vimOn } from '@lo/ui/code';
 
@@ -27,11 +28,16 @@ export function touch(): void {
   if (!welcomeStore.getState().touched) welcomeStore.setState({ touched: true });
 }
 
+/** A choice's card, which is chosen by reaching it, with the arrows or `Space`. */
+const isCard = (element: Element) =>
+  element.getAttribute('role') === 'radio' && element.closest('[data-choices]') !== null;
+
 /**
- * `⏎` in the welcome: the control with focus does what it says, a button or a card by being
- * pressed and the link field, once it holds something, by opening its link. With focus anywhere
- * else, the empty link field included, the step's main button is pressed, the one marked
- * `data-welcome-default`. The practice's comment box keeps `⏎` to itself.
+ * `⏎` in the welcome: the button, switch or segment with focus does what it says, by being
+ * pressed, and the link field, once it holds something, opens its link. With focus anywhere else,
+ * the empty link field and a choice's card included, the step's main button is pressed, the one
+ * marked `data-welcome-default`: a card is chosen by reaching it, so `⏎` is never its own. The
+ * practice's comment box keeps `⏎` to itself.
  */
 export function enter(): void {
   touch();
@@ -39,7 +45,9 @@ export function enter(): void {
   if (screen?.contains(focused ?? null)) {
     // A comment box's keys are its own, buttons and all, as the registry has them there.
     if (focused?.closest('[data-lo-scope="box"]')) return;
-    if (focused instanceof HTMLButtonElement) {
+    const pressed =
+      focused instanceof HTMLButtonElement || focused?.getAttribute('role') === 'switch';
+    if (pressed && focused instanceof HTMLElement && !isCard(focused)) {
       focused.click();
       return;
     }
@@ -128,7 +136,7 @@ export function next(): void {
   else goTo(after);
 }
 
-/** "Back": the step before. */
+/** "Back", `welcome.back`: the step before. */
 export function back(): void {
   const before = stepFrom(welcomeStore.getState().step, -1);
   if (before !== undefined) goTo(before);
@@ -165,25 +173,53 @@ export async function checkGit(): Promise<void> {
   }));
 }
 
-/** How many choices of keys are being written. */
-let writing = 0;
+/** How many of the reader's choices are being written, by their setting's key. */
+const writing = new Map<string, number>();
+
+/**
+ * Chooses `value` for the setting `key` from a card the reader pressed, with `write`, which ends
+ * once main has answered. Each press writes its own choice, so the last one stays, and the card
+ * group shows it until every write has ended, landed or not; then it shows what's on file. A press
+ * on the card already on file, while nothing is being written, writes nothing. `onFile` is nothing
+ * before main has said what the file holds, or where it holds a value that isn't a card's: then
+ * every press writes, the default card's too.
+ */
+export async function choose<T>(
+  key: string,
+  value: T,
+  onFile: T | undefined,
+  write: (value: T) => Promise<unknown>,
+): Promise<void> {
+  if (!writing.has(key) && value === onFile) return;
+  writing.set(key, (writing.get(key) ?? 0) + 1);
+  welcomeStore.setState((state) => ({ choosing: { ...state.choosing, [key]: value } }));
+  try {
+    await write(value);
+  } finally {
+    const left = (writing.get(key) ?? 1) - 1;
+    if (left > 0) writing.set(key, left);
+    else {
+      writing.delete(key);
+      // The setting has every choice there is, or said why it couldn't take one: the cards follow
+      // it.
+      welcomeStore.setState((state) => ({
+        choosing: Object.fromEntries(
+          Object.entries(state.choosing).filter(([each]) => each !== key),
+        ),
+      }));
+    }
+  }
+}
+
+/** The setting the keys step's cards choose, by its key. */
+export const VIM = 'editor.vim';
 
 /**
  * Chooses the keys code and comment boxes are edited with: Vim's, or the standard ones. It's the
- * `editor.vim` setting, as "Vim keys" in the command palette switches it. Each press writes its own
- * choice, so the last one stays, and the cards show it until every write has ended, landed or not.
+ * `editor.vim` setting, as "Vim keys" in the command palette switches it.
  */
-export async function chooseVim(on: boolean): Promise<void> {
-  if (writing === 0 && vimOn() === on) return;
-  writing += 1;
-  welcomeStore.setState({ choosing: on });
-  try {
-    await chooseVimKeys(on);
-  } finally {
-    writing -= 1;
-    // The setting has every choice there is, or said why it couldn't take one: the cards follow it.
-    if (writing === 0) welcomeStore.setState({ choosing: undefined });
-  }
+export function chooseVim(on: boolean): Promise<void> {
+  return choose(VIM, on, vimOn(), chooseVimKeys);
 }
 
 /** Notes that the mark played `move` since the welcome opened: a step that shows again rests. */

@@ -7,8 +7,11 @@ import { createStore } from 'zustand/vanilla';
 import type { GitInfo } from '../../app/contract.ts';
 import type { GhListing } from '../../accounts/contract.ts';
 
-/** The welcome's steps, in order: signing in, choosing keys, setting up, opening a pull request. */
-export const STEPS = ['account', 'keys', 'setup', 'open'] as const;
+/**
+ * The welcome's steps, in order: signing in, choosing how Lo looks, choosing keys, what an overview
+ * is, setting up, opening a pull request.
+ */
+export const STEPS = ['account', 'look', 'keys', 'overviews', 'setup', 'open'] as const;
 export type Step = (typeof STEPS)[number];
 
 export interface WelcomeState {
@@ -50,11 +53,11 @@ export interface WelcomeState {
   /** The mark's moves played since the welcome opened, which draw the mark at rest after. */
   readonly played: readonly MarkMove[];
   /**
-   * The keys last chosen on the keys step, Vim's (`true`) or the standard ones, which its cards
-   * show while the setting is being written; `undefined` once every choice has been written or
-   * couldn't be.
+   * The card last pressed in each group of cards, by its setting's key (`theme`, `editor.vim`),
+   * which the group shows while the setting is being written. A key is there until every choice
+   * of it has been written or couldn't be; then the group shows what's on file.
    */
-  readonly choosing: boolean | undefined;
+  readonly choosing: Readonly<Record<string, unknown>>;
 }
 
 /** The mark's moves the welcome plays: Unmeld on its first step, Kiss on its last. */
@@ -75,7 +78,7 @@ export const welcomeStore = createStore<WelcomeState>()(() => ({
   rules: false,
   linked: false,
   played: [],
-  choosing: undefined,
+  choosing: {},
 }));
 
 /** Takes what Lo found of Git. */

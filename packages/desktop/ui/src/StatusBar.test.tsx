@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 // What a status item's details, and the header chip's, do with focus as they end while they have
 // it, as an action in them that changes what's behind them does: it goes back to the item, or the
-// chip, as it's drawn now, else beside it, never to the page. And the keys typed so far.
+// chip, as it's drawn now, else beside it, never to the page. And that an item with a ball always
+// opens or runs something, and the keys typed so far.
 
 import { act, useState } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -29,8 +30,8 @@ async function settle(): Promise<void> {
 const details = () => document.body.querySelector<HTMLElement>('[role="dialog"]');
 
 /**
- * A local copy's item whose details hold "Try now", which fetches: then it has nothing behind it,
- * as an item with no details is text; or, with `gone`, it leaves the bar, before `#after`.
+ * A local copy's item whose details hold "Try now", which fetches: then its details close, and say
+ * what it's at; or, with `gone`, it leaves the bar, before `#after`.
  */
 function Local({ gone = false }: { gone?: boolean }) {
   const [failed, setFailed] = useState(true);
@@ -41,12 +42,15 @@ function Local({ gone = false }: { gone?: boolean }) {
           {(failed || !gone) && (
             <StatusItem
               ball={failed ? 'failed' : 'ready'}
+              open={failed ? undefined : false}
               details={
                 failed ? (
                   <button type="button" onClick={() => setFailed(false)}>
                     Try now
                   </button>
-                ) : undefined
+                ) : (
+                  <p>At 5530830</p>
+                )
               }
             >
               {failed ? 'Can’t fetch the local copy' : 'Local copy'}
@@ -106,7 +110,7 @@ describe('the details of a status item, and of the header’s chip', () => {
     const host = render(<Local />);
     await pressInDetails(host.querySelector('button')!);
     expect(details()).toBeNull();
-    const item = host.querySelector('footer span')!;
+    const item = host.querySelector('footer button')!;
     expect(item.textContent).toContain('Local copy');
     expect(document.activeElement).toBe(item);
   });
@@ -122,6 +126,26 @@ describe('the details of a status item, and of the header’s chip', () => {
     await pressInDetails(host.querySelector('header button')!);
     expect(host.textContent).not.toContain('Offline');
     expect(document.activeElement).toBe(host.querySelector('#status'));
+  });
+});
+
+describe('a status item', () => {
+  it('takes a ball only with details or a click, so no item with one is only words', () => {
+    // @ts-expect-error A ball with nothing behind it.
+    const dead = <StatusItem ball="ready">Code index</StatusItem>;
+    const opens = (
+      <StatusItem ball="ready" details={<p>Ready</p>}>
+        Code index
+      </StatusItem>
+    );
+    const runs = (
+      <StatusItem ball="warn" onClick={() => undefined}>
+        Trust repo
+      </StatusItem>
+    );
+    // A fact with no ball, such as when something was last checked, stays words.
+    const fact = <StatusItem>Checked 5 min ago</StatusItem>;
+    expect([dead, opens, runs, fact]).toHaveLength(4);
   });
 });
 

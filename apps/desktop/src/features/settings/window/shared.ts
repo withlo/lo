@@ -1,7 +1,9 @@
 // What the settings feature shares with other features' window code: the slot they put their rows
-// of Settings in, the settings themselves, read, changed and followed, and the file, to open.
+// of Settings in, the settings themselves, read, changed and followed, a setting of a few options
+// as another screen offers it, the theme among them, a setting as a row outside Settings changes
+// it, and the file, to open.
 
-import { createElement, type ReactNode } from 'react';
+import { createElement, useMemo, type ReactElement, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
 import { IpcError } from '../../../ipc/contract.ts';
@@ -11,14 +13,24 @@ import { defineSlot, defineView, type Presence, type View } from '../../../windo
 import {
   checkRowWords,
   contract,
+  groupNames,
   type Problem,
   type Setting,
   type SettingsGroup,
   type SettingsState,
 } from '../contract.ts';
-import { SettingRowView, type ControlProps } from './Row.tsx';
+import { theme } from '../settings.ts';
+import { SettingRowView, useChange, type ControlProps } from './Row.tsx';
 import { settingsStore } from './store.ts';
-import { refusalLine, setValue, useValue, valueIn, valueNow } from './values.ts';
+import {
+  changingOf,
+  refusalLine,
+  setValue,
+  useValue,
+  valueIn,
+  valueNow,
+  type Changing,
+} from './values.ts';
 
 export type { ControlProps } from './Row.tsx';
 
@@ -188,6 +200,102 @@ export async function changeSetting<T>(setting: Setting<T>, value: T): Promise<b
   const refusal = await setValue(setting, value);
   if (refusal !== undefined) refuse(refusalLine(refusal, setting));
   return refusal === undefined;
+}
+
+/** One of a choice's options: its value, and the words its row in Settings has for it. */
+export interface ChoiceOption<T extends string> {
+  readonly value: T;
+  readonly label: string;
+}
+
+/**
+ * A setting of a few options, as a screen besides Settings offers it: the welcome offers the theme
+ * and the diff's layout as cards. All it says comes from the setting: its key, its row's label,
+ * its options with their words in the row's order, and where its row is. A feature offers one of
+ * its settings this way, made in its `window/shared.ts` with {@link choiceOf}, rather than handing
+ * the setting on; {@link useChoice} reads and changes it.
+ */
+export interface SettingChoice<T extends string> extends Changing<T> {
+  readonly key: string;
+  readonly label: string;
+  /** Where its row is, as a path: "Settings › Appearance". */
+  readonly place: string;
+  readonly options: readonly ChoiceOption<T>[];
+  /**
+   * What the file holds of it, in `values`, what main said it holds: its own value, or its default
+   * where it has none. Nothing before main has said, or where the file holds a value that isn't
+   * one of its options: then a press on any card, the default's too, is a change.
+   */
+  readonly onFileIn: (values: Readonly<Record<string, unknown>> | undefined) => T | undefined;
+}
+
+/** `setting` as another screen offers it: one of a few options, with a row in Settings. */
+export function choiceOf<T extends string>(setting: Setting<T>): SettingChoice<T> {
+  const { group, options } = setting;
+  if (group === 'file' || options === undefined) {
+    throw new Error(`The setting ${setting.key} isn’t a choice with a row in Settings.`);
+  }
+  return {
+    ...changingOf(setting),
+    key: setting.key,
+    label: setting.label,
+    place: `Settings › ${groupNames[group]}`,
+    options: Object.entries(options).flatMap(([option, label]) => {
+      const parsed = setting.schema.safeParse(option);
+      return parsed.success ? [{ value: parsed.data, label }] : [];
+    }),
+    onFileIn: (values) => {
+      if (values === undefined) return undefined;
+      if (!Object.hasOwn(values, setting.key)) return setting.fallback;
+      const parsed = setting.schema.safeParse(values[setting.key]);
+      return parsed.success ? parsed.data : undefined;
+    },
+  };
+}
+
+/** Lo's colors, as another screen offers them. */
+export const themeChoice = choiceOf(theme);
+
+/**
+ * A choice's value: main's, or its default until main has said or while the file's isn't one of
+ * its options; and `onFile`, what the file holds of it, which is nothing then
+ * ({@link SettingChoice.onFileIn}). `change` writes another, and resolves once main has answered.
+ * `problem` is the `Problem` the setting's row in Settings shows for a change main refused, with
+ * what to do about it, until the value or what's wrong in the file changes.
+ */
+export function useChoice<T extends string>(
+  choice: SettingChoice<T>,
+): Changed<T> & { onFile: T | undefined } {
+  const settings = useStore(settingsStore, (state) => state.settings);
+  const { change, problem } = useChange(choice);
+  return {
+    value: choice.valueIn(settings?.values),
+    onFile: choice.onFileIn(settings?.values),
+    change,
+    problem,
+  };
+}
+
+/** A setting as a control outside Settings has it: its value, how to change it, and what went wrong. */
+export interface Changed<T> {
+  readonly value: T;
+  /** Writes another value, and resolves once main has answered, either way. */
+  readonly change: (value: T) => Promise<void>;
+  /** The `Problem` for a change main refused, or nothing. */
+  readonly problem: ReactElement | undefined;
+}
+
+/**
+ * A feature's own setting as a row outside Settings changes it, as a row of the welcome's does,
+ * with the control its row in Settings has: its value, main's or its default until main has said;
+ * `change`, which writes another; and `problem`, the `Problem` its row in Settings shows for a
+ * change main refused, until the value or what's wrong in the file changes. No toast says it.
+ */
+export function useSettingChange<T>(setting: Setting<T>): Changed<T> {
+  const changing = useMemo(() => changingOf(setting), [setting]);
+  const value = useValue(setting);
+  const { change, problem } = useChange(changing);
+  return { value, change, problem };
 }
 
 /**

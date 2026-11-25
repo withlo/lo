@@ -21,12 +21,12 @@ import {
   type InstallReason,
 } from '@withlo/overview/install';
 
+import { written as writtenPath } from '../../../main/paths.ts';
 import type { SkillRefusal, SkillResult, SkillState } from '../contract.ts';
 
 /** `path` as a person writes it: `~` for the home folder, when it's in it. */
 export function shown(path: string, home: string = homedir()): string {
-  if (path === home) return '~';
-  return path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
+  return writtenPath(path, home);
 }
 
 /** `text` with the home folder written as `~` wherever it names a path in it. */

@@ -88,7 +88,8 @@ const PREVIOUS = new Set(['ArrowLeft', 'ArrowUp']);
  * action: the middle-view switch, the Files panel's Tree | Review order, or a setting's choices.
  * Never draw such a choice as buttons of its own. The arrow keys move between the segments
  * and choose as they go; the control's own key, when it has one, follows it. One thumb marks the
- * chosen segment and slides to the next: the Slide move.
+ * chosen segment and slides to the next: the Slide move. Segments that come or go around a choice
+ * that stays move it at once, with the segments.
  */
 export function SegmentedControl<T extends string>({
   label,
@@ -103,23 +104,29 @@ export function SegmentedControl<T extends string>({
 }: SegmentedControlProps<T>) {
   const buttons = useRef(new Map<T, HTMLButtonElement>());
   // Where the thumb is: under the chosen segment, measured, so it can slide from one to the next.
-  const [thumb, setThumb] = useState<{ left: number; width: number } | undefined>();
+  // It's put there at once (`jump`) when the segments change around a choice that doesn't, as
+  // when a segment leaves: the choice didn't move.
+  const [thumb, setThumb] = useState<{ left: number; width: number; jump: boolean } | undefined>();
   // The segments there are, which a caller's new array of the same ones doesn't change: a label
   // that changes is the observer's to see.
   const segments = JSON.stringify(items.map((item) => item.value));
+  // The choice the thumb was last measured under.
+  const measured = useRef(value);
   useLayoutEffect(() => {
     const chosen = value === undefined ? undefined : buttons.current.get(value);
-    const measure = () => {
+    const jump = measured.current === value;
+    measured.current = value;
+    const measure = (at = false) => {
       const next =
         chosen && chosen.offsetWidth > 0
-          ? { left: chosen.offsetLeft, width: chosen.offsetWidth }
+          ? { left: chosen.offsetLeft, width: chosen.offsetWidth, jump: at }
           : undefined;
       setThumb((was) => (was?.left === next?.left && was?.width === next?.width ? was : next));
     };
-    measure();
+    measure(jump);
     if (!chosen || typeof ResizeObserver === 'undefined') return undefined;
     // A label that changes, or a font that loads, moves the segments under it.
-    const watch = new ResizeObserver(measure);
+    const watch = new ResizeObserver(() => measure());
     for (const button of buttons.current.values()) watch.observe(button);
     return () => watch.disconnect();
   }, [value, segments, size]);
@@ -163,7 +170,7 @@ export function SegmentedControl<T extends string>({
         {thumb && (
           <span
             aria-hidden="true"
-            className={`absolute inset-y-2 left-0 rounded-pill bg-bg-element ring-1 ring-border-strong ${slides ? 'move-slide' : ''}`}
+            className={`absolute inset-y-2 left-0 rounded-pill bg-bg-element ring-1 ring-border-strong ${slides && !thumb.jump ? 'move-slide' : ''}`}
             style={{ translate: `${thumb.left}px 0`, width: thumb.width }}
           />
         )}

@@ -7,6 +7,7 @@
 // partial, unread. Nothing here calls Electron.
 
 import { GitError, type Oid, type Repo, type TreeEntry } from '@lo/git';
+import type { TaggedLanguage } from '@lo/syntax';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import type { IndexState } from '../contract.ts';
@@ -53,6 +54,8 @@ export interface IndexOptions {
   readonly onScreen?: (() => string | undefined) | undefined;
   readonly log: (line: string) => void;
   readonly retryFirst?: number;
+  /** The time now, which says when a tree was last built. */
+  readonly now?: () => number;
 }
 
 /** A side of a view, as its answers need it. */
@@ -85,6 +88,8 @@ interface TreeBuild {
   retry: ReturnType<typeof setTimeout> | undefined;
   /** When it's built again after it failed, by itself. */
   retryAt: number | undefined;
+  /** When it was last built. */
+  builtAt: number | undefined;
   controller: AbortController;
 }
 
@@ -228,6 +233,7 @@ export class CodeIndex {
       attempt: 0,
       retry: undefined,
       retryAt: undefined,
+      builtAt: undefined,
       controller: new AbortController(),
     };
   }
@@ -317,10 +323,11 @@ export class CodeIndex {
             moved: () => this.#publishViews(build),
             signal,
           })
-        : { tree, total: 0, files: 0, indexed: 0, partial: ['listing'] };
+        : { tree, total: 0, files: 0, indexed: 0, partial: ['listing'], read: new Map() };
       if (signal.aborted) return;
       build.built = built;
       build.state = 'built';
+      build.builtAt = (this.#options.now ?? Date.now)();
       build.attempt = 0;
       await this.#trim();
     } catch (error) {
@@ -417,7 +424,12 @@ export class CodeIndex {
       return { kind: 'failed', message: failed.failure ?? '', retryAt: failed.retryAt ?? null };
     }
     const why = [...new Set(builds.flatMap((build) => build.built?.partial ?? []))];
-    if (why.length === 0 && done.size === all.size) return { kind: 'ready', partial: null };
+    // What it covers is the head's: its files read, by path, in each language.
+    const languages = languagesOf(this.#builds.get(input.new)?.built?.read ?? new Map());
+    const at = Math.max(0, ...builds.map((build) => build.builtAt ?? 0));
+    if (why.length === 0 && done.size === all.size) {
+      return { kind: 'ready', partial: null, languages, at };
+    }
     const more = builds.reduce(
       (sum, build) => sum + (build.built ? build.built.total - build.built.files : 0),
       0,
@@ -425,6 +437,42 @@ export class CodeIndex {
     return {
       kind: 'ready',
       partial: { indexed: done.size, total: all.size + more, why: why.toSorted() },
+      languages,
+      at,
     };
   }
+}
+
+/** Each language the index reads, by the name its makers give it. */
+const LANGUAGE_NAMES: Readonly<Record<TaggedLanguage, string>> = {
+  csharp: 'C#',
+  elixir: 'Elixir',
+  go: 'Go',
+  java: 'Java',
+  javascript: 'JavaScript',
+  kotlin: 'Kotlin',
+  php: 'PHP',
+  python: 'Python',
+  ruby: 'Ruby',
+  rust: 'Rust',
+  swift: 'Swift',
+  terraform: 'Terraform',
+  tsx: 'TSX',
+  typescript: 'TypeScript',
+};
+const NAMES: ReadonlyMap<string, string> = new Map(Object.entries(LANGUAGE_NAMES));
+
+/**
+ * How many files were read in each language, from how many `read` has by the language they were
+ * read as, by its name: most files first, then by name.
+ */
+export function languagesOf(read: ReadonlyMap<string, number>): { name: string; files: number }[] {
+  const counts = new Map<string, number>();
+  for (const [language, files] of read) {
+    const name = NAMES.get(language) ?? language;
+    counts.set(name, (counts.get(name) ?? 0) + files);
+  }
+  return [...counts]
+    .map(([name, files]) => ({ name, files }))
+    .toSorted((a, b) => b.files - a.files || a.name.localeCompare(b.name, 'en'));
 }

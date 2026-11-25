@@ -6,6 +6,7 @@
 import { expect, it, vi } from 'vitest';
 
 import { installBridge } from '../../../window/test/bridge.ts';
+import type * as SettingsShared from '../../settings/window/shared.ts';
 import type * as TabShared from '../../tab/window/shared.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
 import { offerConvert, offerStart } from '../settings.ts';
@@ -30,7 +31,8 @@ const settings = vi.hoisted(() => ({
   changed: [] as [string, unknown][],
   values: new Map<string, unknown>(),
 }));
-vi.mock('../../settings/window/shared.ts', () => ({
+vi.mock('../../settings/window/shared.ts', async (original) => ({
+  ...(await original<typeof SettingsShared>()),
   changeSetting: (setting: { key: string }, value: unknown) => {
     settings.changed.push([setting.key, value]);
     return Promise.resolve(true);

@@ -10,14 +10,16 @@ import { client } from '../../../window/ipc.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { contract as app } from '../../app/contract.ts';
 import { settingRow } from '../../settings/window/shared.ts';
+import { overviewRows } from '../../welcome/window/shared.ts';
 import { layerOf, viewIds, type Choice, type PlaceChoice, type Tab } from '../contract.ts';
 import keys from '../keys.ts';
 import { open as openOn } from '../settings.ts';
 import { follow } from './follow.ts';
+import { copyLocalPath, localShowable, showLocalCopy } from './localCopy.ts';
 import { main } from './main.ts';
 import { moreStore, setMoreOpen } from './more.ts';
 import { choosable, chooseAccount } from './Notes.tsx';
-import { OpenOnChoice, useOpenOnLine } from './OpenOn.tsx';
+import { OpenOnChoice, OpenOnRow, useOpenOnLine } from './OpenOn.tsx';
 import { layout, resettable, resetWidth, steppable, stepWidth, type Open } from './layout.ts';
 import { inStrip, movable, showable, stepTab } from './order.ts';
 import { middleIds, panels, rightPanel, stepAmong, toggleRight, viewCounts } from './panels.ts';
@@ -237,6 +239,8 @@ export default {
     previousView: { run: () => stepMiddle(-1), enabled: middleSteps },
     openOnGithub: { run: openOnGithub, enabled: linkable },
     copyLink: { run: copyLink, enabled: linkable },
+    showLocalCopy: { run: showLocalCopy, enabled: localShowable },
+    copyLocalPath: { run: copyLocalPath, enabled: localShowable },
     // As a click on the banner's own button, which hands focus on as it does.
     nextBanner: { run: () => bannerButton('more')?.click(), enabled: () => pressable('more') },
     // One that asks where opens its menu as a key does, with its first row ready.
@@ -273,6 +277,12 @@ export default {
     }),
     // Settings › Pull requests, after whether overviews show (5).
     settingRow(openOn, { order: 10, control: OpenOnChoice, useLine: useOpenOnLine }),
+    // The welcome's step that says what an overview is, after whether there are overviews (10).
+    defineView(overviewRows, {
+      id: 'tab.openOnRow',
+      order: 20,
+      render: () => createElement(OpenOnRow),
+    }),
   ],
   start() {
     const tabs = main();

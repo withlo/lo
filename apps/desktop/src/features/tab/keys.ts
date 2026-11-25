@@ -1,7 +1,8 @@
 // The tab strip's keys: a tab by its place, the next and previous tab, moving one, the tabs that
 // don't fit and closing one. They work wherever focus is, a text field included, but not under a
 // dialog or a palette, which hold the keys while they're open. And a pull request's tab's: its left
-// and right panels, the width of what has focus, its middle views, and the account to open it as.
+// and right panels, the width of what has focus, its middle views, its local copy's folder, and the
+// account to open it as.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -191,6 +192,23 @@ export default defineCommands('tab', {
     group: 'Tabs',
     keys: [],
     bar: { menu: 'File', section: 'pull', order: 20 },
+  },
+  /**
+   * Shows the pull request on screen's local copy in Finder, or the system's file manager, as its
+   * status bar item's details do. Done once in a while, so it has no key.
+   */
+  showLocalCopy: {
+    label: 'Show local copy folder',
+    control: 'Show in Finder in the local copy’s details, in the status bar',
+    group: 'Tabs',
+    keys: [],
+  },
+  /** Copies where the pull request on screen's local copy is, as its details' Copy path does. */
+  copyLocalPath: {
+    label: 'Copy local copy path',
+    control: 'Copy path in the local copy’s details, in the status bar',
+    group: 'Tabs',
+    keys: [],
   },
   /**
    * Opens the pull request on screen as an account that can see it, where more than one can and

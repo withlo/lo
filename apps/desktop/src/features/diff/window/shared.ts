@@ -5,7 +5,7 @@
 // there; diffing texts another feature has, as the diff's own files are diffed; the code
 // other features draw in views of their own, whose lines the diff's keys read as its own; and
 // what code features reach of the diff and the whole-file view: a peek, a word's box, inline
-// hints and the pointer resting on a word.
+// hints and the pointer resting on a word. And its layout, as a screen besides Settings offers it.
 
 import type {
   BoxFrame,
@@ -19,9 +19,11 @@ import type {
 import { createElement, type ReactNode } from 'react';
 
 import { defineSlot, Slot } from '../../../window/slots.tsx';
+import { choiceOf } from '../../settings/window/shared.ts';
 import { showMiddle, type PullTab } from '../../tab/window/shared.ts';
 import type { DiffState } from '../contract.ts';
 import { FILES_PER_JOB, type FileResult } from '../jobs.ts';
+import { layout } from '../settings.ts';
 import { Beside } from './Beside.tsx';
 import { codeViewsOf, onCodeRest as onRest, type CodeViewKind, type CodeViews } from './code.ts';
 import { changed, explainWith, type Explainer } from './explained.ts';
@@ -37,6 +39,9 @@ export type { ShowWhen } from './places.ts';
 export type { CodeFile, CodeViewKind, CodeViews } from './code.ts';
 
 export type { CodeElsewhere } from './elsewhere.ts';
+
+/** The diff's layout, side by side or inline, as a screen besides Settings offers it. */
+export const layoutChoice = choiceOf(layout);
 
 export type { ExplainedLines, Explainer } from './explained.ts';
 export type { DiffThreads, DrawnDiff, ThreadCounts, ThreadedFile, Threader } from './threads.ts';

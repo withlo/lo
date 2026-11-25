@@ -468,6 +468,11 @@ export class PullTab {
     return this.#local?.clone;
   }
 
+  /** Where the local copy's clone is, whole, once the head on screen is ready. */
+  localFolder(): string | undefined {
+    return this.#local?.folder;
+  }
+
   snapshot(): Snapshot {
     return {
       pull: this.#view(),
