@@ -266,7 +266,7 @@ function Scene() {
             hintKeys={['y']}
             hintShortcut="y"
           >
-            <Icon name="file-code" size={16} />
+            <Icon name="copy" size={16} />
           </Button>
         </div>
       </Dialog>

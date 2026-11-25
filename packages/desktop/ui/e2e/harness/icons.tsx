@@ -89,7 +89,7 @@ function Sheet() {
         </div>
       ))}
       <p className="text-fg-muted text-small" data-glyphs="12">
-        <Glyphs text="Renamed old.ts → new.ts · r1 → r3 · ⌘⇧P ⌥⏎ ⌃⇥ ⌫ ⌦ ↑↓←→ ✓ ⋯ ↗ ⇄" />
+        <Glyphs text="Renamed old.ts → new.ts · r1 → r3 · ⌘⇧P ⌥⏎ ⌃⇥ ⌫ ⌦ ↑↓←→ ✓ ⋯ ↗" />
       </p>
       <p className="text-ui" data-glyphs="14">
         <Glyphs text="No changes in r1 → r3 · Open the run ↗" size={14} />

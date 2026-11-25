@@ -88,8 +88,7 @@ Dark (Lo Glow Dark) is the default. Every color comes from `tokens.json` through
 - Diff: whole lines use `lo-diff-add-bg` / `lo-diff-del-bg`; changed words inside them
   `lo-diff-add-word` / `lo-diff-del-word`; signs and gutters `lo-diff-add-fg` / `lo-diff-del-fg`.
   Moved code uses the `lo-diff-moved-*` tokens, never green or red: a near-neutral ground, with the
-  label over the block and the `⇄` in its gutter carrying the meaning, so it never reads as a
-  selection.
+  label over the block carrying the meaning, so it never reads as a selection.
 - Syntax uses the `lo-syn-*` tokens only, named after tree-sitter captures. Parameters, comments and
   `this` are italic; nothing else is.
 
