@@ -2,6 +2,7 @@
 // summary: its text as GitHub would render it, made by the background process, with the pull
 // request's repository as what references refer to.
 
+import { EmptyState } from '@lo/ui';
 import { Markdown, secureLink, type Followed } from '@lo/ui/markdown';
 import { useEffect, useState, type ReactNode } from 'react';
 
@@ -50,7 +51,13 @@ export function Preview({ view, text, pull, flush = false, replaced }: PreviewPr
       });
     return () => stop.abort();
   }, [text, owner, repo, number]);
-  if (text.trim() === '') return <p className="px-12 py-8 text-fg-muted">Nothing to preview</p>;
+  if (text.trim() === '') {
+    return (
+      <div className="px-12 py-8">
+        <EmptyState fit="row" icon="eye" title="Nothing to preview" />
+      </div>
+    );
+  }
   return (
     <div className={flush ? undefined : 'px-12 py-8'}>
       {rendered?.text === text ? (

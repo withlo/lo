@@ -359,7 +359,7 @@
   --lo-sp-32: 32px; /* Section breathing room in documents. */
   --lo-sp-40: 40px; /* Overview side padding. */
   --lo-sp-48: 48px; /* Space above overview sections. */
-  --lo-sp-64: 64px; /* Empty-state and welcome layouts. */
+  --lo-sp-64: 64px; /* Welcome layouts. */
   /* radius */
   --lo-r-xs: 3px; /* Keys, inline code, tags. */
   --lo-r-sm: 6px; /* Buttons, inputs, tree rows, menus items. */
@@ -411,6 +411,7 @@
   --lo-code-line-small: 18px; /* Line height of small code. */
   --lo-code-inline-size: 0.88em; /* Inline code inside prose, relative to the text. */
   --lo-read-measure: 680px; /* Widest line of reading text in overviews. */
+  --lo-empty-measure: 320px; /* Widest line of text in an empty state. */
   --lo-timeline-w: 856px; /* Widest the timeline's column gets: a code block of 100 columns fits in a post beside the rail. */
   /* motion */
   --lo-dur-fast: 90ms; /* Tint, Pop and Swap, and every exit. */

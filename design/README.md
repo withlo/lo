@@ -103,7 +103,7 @@ Dark (Lo Glow Dark) is the default. Every color comes from `tokens.json` through
   meta and tree rows, `text-micro` (11/14) for counts and tags, `text-label` (11/14, 600, uppercase,
   `--lo-track-label`) for panel labels.
 - Titles take the wordmark's weight: `text-title` (18/24, 700) for the PR title, `text-heading`
-  (24/30, 800) for empty states and dialogs, with `--lo-track-tight`.
+  (24/30, 800) for dialogs, with `--lo-track-tight`.
 - Reading text has its own scale: `read-body` (15/24), `read-lead` (17/27, the tl;dr), `read-h2`
   (22/28, 800), `read-h3` (16/22, 700), `read-comment` (13.5/21). Keep reading lines under
   `--lo-read-measure` (680 px). The measure is for text, not for what holds it: a code block in a
@@ -400,25 +400,38 @@ changes in the same frame.
 
 ## Empty states
 
-A view or a list with nothing in it shows `EmptyState`, from `@lo/ui`. With `Loading` and `Problem`
-it's one of the three things a view shows in place of its content, and it's the only shape for this
-one: never a lone line of muted text, a paragraph, or an icon over one.
+A view or a list with nothing in it shows `EmptyState`, from `@lo/ui`: an icon, a title in body
+text, and a button only where there's something to do here. With `Loading` and `Problem` it's one of
+the three things a view shows in place of its content, and it's the only shape for this one: never a
+heading, a lone line of muted text or a paragraph.
 
 ```tsx
 <EmptyState
+  icon="git-pull-request"
   title="No pull requests yet"
   line="Pull requests you open are listed here."
   actions={['open.box', 'open.paste']}
 />
 ```
 
-- `title` is what's absent, in `text-heading`: six words at most, with no full stop.
-- `line` is one line in `lo-fg-muted`, and optional: what will be listed here, or why there's
-  nothing.
-- `actions` is two commands at most, by their ids. The first is drawn as the main button. Each is a
-  real button that takes its label, its key and whether it can run from the registry, as every
-  control does: it shows the key in a chip, follows the keymap file, and while its command can't run
-  it's dimmed with the reason as its tooltip. An action is the id alone, or
+- `icon` is one name from `icons.ts`: the thing that's absent, `search-x` for a search with nothing
+  left, `funnel-x` for a filter. It's `lo-icon-muted`, never a status color or the accent.
+- `title` is what's absent, in `text-ui` and `lo-fg-muted`: six words at most, no full stop. It's
+  never set in `text-heading` or `text-title`, and it isn't a heading element.
+- `line` is one line in `text-small` and `lo-fg-subtle`, and optional.
+- `fit` says where it sits. `view` (a tab's or the sheet's whole content) and `panel` (a side panel
+  or a pane) fill their box and centre a column, the icon at 24 px; only `view` has a main button,
+  and `panel`'s are small. `list` (a list's place in a page) sits in the flow, top- and
+  left-aligned, the icon at 16 px beside the title. `row` (a popup's or a table's list) is one of
+  the list's rows, the icon at 14 px, with no line and no button.
+- Under 160 px wide, `view` and `panel` show the icon alone, named in a tooltip.
+- A list that can be empty takes its `row` where it draws its rows, at their height and inset:
+  `Palette`, `ReferencesList` and `QueueTable` take it as `empty`, as `FileTree` and `ThreadList`
+  take a `panel`. It comes in place of `Loading` or another empty state in one Swap.
+- `actions` is two commands at most, by their ids. In a `view` the first is drawn as the main
+  button. Each is a real button that takes its label, its key and whether it can run from the
+  registry, as every control does: it shows the key in a chip, follows the keymap file, and while
+  its command can't run it's dimmed with the reason as its tooltip. An action is the id alone, or
   `{ command, target, label }`: `target` is what the command runs on, as a key pressed there would,
   and `label` is other words where the command's label isn't what the view says.
 - An action whose command starts work the view waits on is `busy` until it's done, with `working`
@@ -427,10 +440,6 @@ one: never a lone line of muted text, a paragraph, or an icon over one.
   for two seconds with `CopyButton`'s own faces, whether its press or its key copied.
 - `children` is what the state holds for its actions to act on, between the line and the buttons:
   the prompt that Copy prompt copies, as code. Never more words.
-- It fills the box it's in and centres itself, so give that box the view's height. In a narrow panel
-  it wraps.
-- Its title is a heading of level 2; `level={3}` makes it one of level 3, for a list under a heading
-  of its own, as an empty list in a group of Settings is.
 - Offer the action here. A state never says where else an action lives ("from the status bar", "in
   the command palette"), and never has a button that isn't a command.
 - A filter or a search with nothing left is the same shape: "No matches" with the command that
@@ -677,8 +686,8 @@ A preference is a setting with a row. The menu bar and the palette may toggle it
   the key doesn't work in Settings.
 - **A list is a `SettingsList`:** the row's label, line and controls for adding to it, then the list
   in a box under them, each item a `SettingsListItem` with its own lead, label, line and buttons.
-  Accounts, trusted repos and toolchains share it. An empty list is an `EmptyState` in the box, with
-  what to do about it.
+  Accounts, trusted repos and toolchains share it. An empty list is an `EmptyState` `list` in the
+  box, with what to do about it.
 - **A row's button for a command is `SettingsCommand`,** which takes the command's label, key and
   reason as any control does. A row that stands for one thing, such as a pull request's language
   servers, gives it the `target` the command runs on.
@@ -771,8 +780,8 @@ own.
 The review's summary, in the submit dialog, is the same editor in the same frame, with the same head
 (`CommentBoxHeadBar`), notes, upload rows and foot bar (`CommentBoxFootBar`); it has no "Discard
 draft". While its review is sent, and until Lo knows how that went, it's held as text, not as a card
-(`hold(true, { empty: 'No summary' })`): it keeps its height, head and foot, its text is read-only
-in `lo-fg-muted`, and Write | Preview and "Attach files…" dim.
+(`hold(true, { empty: 'No summary', icon: 'file-text' })`): it keeps its height, head and foot, its
+text is read-only in `lo-fg-muted`, and Write | Preview and "Attach files…" dim.
 
 - **Head.** What the comment is on, at the left, in the words a line is named everywhere: "Line 3",
   "Lines 39–41", "Line 3, removed", "File", "Pull request", "Reply", "Edit", "Summary". Why it's on

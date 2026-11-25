@@ -70,7 +70,8 @@ function Servers({ label, description }: { label: string; description: string })
     <SettingsList label={label} description={description}>
       {running === '' ? (
         <EmptyState
-          level={3}
+          fit="list"
+          icon="server"
           title="No language servers running"
           line="Language servers for open pull requests are listed here."
         />

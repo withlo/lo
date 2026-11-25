@@ -5,7 +5,18 @@
 // tree and the file finder, and `⌃o` goes back through the tab's history to where it was opened
 // from. Keys in it act on the cursor's line, or on the file while it shows a note.
 
-import { Button, bytes, Key, Spinner, Tag, Tooltip, useControl } from '@lo/ui';
+import {
+  Button,
+  bytes,
+  EmptyState,
+  Key,
+  Loading,
+  Problem,
+  Tag,
+  Tooltip,
+  useControl,
+  type ProblemAction,
+} from '@lo/ui';
 import { keyLabels, NO_TARGET, setScopeSource, type Target } from '@lo/ui/commands';
 import { createFileView, type FileView, type Mark } from '@lo/ui/code';
 import { useEffect, useRef, type ReactNode } from 'react';
@@ -432,25 +443,14 @@ function Note({
   path: TreePath | undefined;
 }) {
   if (!open || !path) {
-    return (
-      <Said
-        title="No whole file open"
-        actions={
-          <Button onClick={() => registry().run('tree.find', NO_TARGET)}>
-            Go to file…
-            <KeyFor id="tree.find" />
-          </Button>
-        }
-      />
-    );
+    return <EmptyState icon="file-code" title="No whole file open" actions={['tree.find']} />;
   }
   const header = headerOf(open);
-  const github = (
-    <Button onClick={() => registry().run('diff.openOnGithub', header)}>
-      Open on GitHub
-      <KeyFor id="diff.openOnGithub" />
-    </Button>
-  );
+  const github: ProblemAction = {
+    label: 'Open on GitHub',
+    keys: keyOf('diff.openOnGithub'),
+    onClick: () => registry().run('diff.openOnGithub', header),
+  };
   switch (content?.kind) {
     case undefined:
     case 'reading':
@@ -463,77 +463,73 @@ function Note({
         );
       }
       return (
-        <Said>
-          <span className="inline-flex items-center gap-8">
-            <Spinner />
-            Reading file…
-          </span>
-        </Said>
+        <div className="min-h-0 flex-1">
+          <Loading status="Reading file…" />
+        </div>
       );
     case 'waiting':
       return (
-        <Said>
-          <span className="inline-flex items-center gap-8">
-            <Spinner />
-            Fetching local copy…
-          </span>
-        </Said>
+        <div className="min-h-0 flex-1">
+          <Loading status="Fetching local copy…" />
+        </div>
       );
     case 'text':
       return null;
     case 'large':
       return (
-        <Said
+        <EmptyState
+          icon="file-code"
           title={`${bytes(content.size)} file`}
-          actions={
-            <>
-              <Button variant="primary" onClick={() => registry().run('diff.loadWhole', header)}>
-                Show large file
-                <KeyFor id="diff.loadWhole" className="text-on-accent" />
-              </Button>
-              {github}
-            </>
-          }
+          actions={[
+            { command: 'diff.loadWhole', target: header },
+            { command: 'diff.openOnGithub', target: header },
+          ]}
         />
       );
     case 'binary':
-      return (
-        <Said title="Can’t show this file" actions={github}>
-          It’s a binary file, {bytes(content.size)}.
-        </Said>
-      );
+      return <CantShow reason={`It’s a binary file, ${bytes(content.size)}.`} action={github} />;
     case 'tooLarge':
-      return (
-        <Said title="Can’t show this file" actions={github}>
-          {tooLargeReason(content.why)}
-        </Said>
-      );
+      return <CantShow reason={tooLargeReason(content.why)} action={github} />;
     case 'refused':
-      return (
-        <Said title="Can’t show this file" actions={github}>
-          <Refused refusal={content} tab={tab} />
-        </Said>
-      );
+      return <CantShow reason={<Refused refusal={content} tab={tab} />} action={github} />;
     case 'failed':
       return (
-        <Said
-          title="Can’t show this file"
-          actions={
-            <>
-              <Button variant="primary" onClick={() => readAgain(tab.id, path, wholeWork(tab.id))}>
-                Try again
-              </Button>
-              {github}
-            </>
-          }
-        >
-          {content.why}
-        </Said>
+        <CantShow
+          reason={content.why}
+          action={{
+            label: 'Try again',
+            onClick: () => readAgain(tab.id, path, wholeWork(tab.id)),
+          }}
+          others={[github]}
+        />
       );
     default:
       content satisfies never;
       return null;
   }
+}
+
+/** Why the file can't be shown whole, in place of its lines, with what can be done about it. */
+function CantShow({
+  reason,
+  action,
+  others,
+}: {
+  reason: ReactNode;
+  action: ProblemAction;
+  others?: readonly ProblemAction[];
+}) {
+  return (
+    <div className="min-h-0 flex-1">
+      <Problem
+        layout="view"
+        title="Can’t show this file"
+        reason={reason}
+        action={action}
+        others={others}
+      />
+    </div>
+  );
 }
 
 /** Why Lo won't show a file whole, besides its size: the base branch by name, as code. */
@@ -567,27 +563,4 @@ function Refused({ refusal, tab }: { refusal: WholeRefusal; tab: PullTab }) {
     default:
       throw new Error(`A refusal Lo doesn’t know: ${JSON.stringify(refusal satisfies never)}`);
   }
-}
-
-/** A note in the middle of the view, with what can be done about it. */
-function Said({
-  title,
-  actions,
-  children,
-}: {
-  title?: string | undefined;
-  actions?: ReactNode;
-  children?: ReactNode;
-}) {
-  return (
-    <div className="grid min-h-0 flex-1 place-items-center overflow-auto p-32 text-center">
-      <div className="flex max-w-read-measure flex-col items-center gap-12">
-        {title && <h2 className="m-0 text-fg text-title">{title}</h2>}
-        {children !== undefined && children !== '' && (
-          <p className="m-0 text-fg-muted text-ui">{children}</p>
-        )}
-        {actions && <div className="flex flex-wrap justify-center gap-8">{actions}</div>}
-      </div>
-    </div>
-  );
 }

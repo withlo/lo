@@ -10,6 +10,7 @@ import {
 import { Avatar } from './Avatar.tsx';
 import { CheckIcon } from './Checklist.tsx';
 import { withoutBidi } from './controls.ts';
+import { EmptyState } from './EmptyState.tsx';
 import { LinkButton } from './LinkButton.tsx';
 import { Spinner } from './Spinner.tsx';
 import { StateIcon } from './StatePill.tsx';
@@ -119,8 +120,9 @@ export interface QueueTableProps extends Omit<
   /** The queue has more entries than it lists: how many, and a way to see them on GitHub. */
   more?: { count: number; onOpen: () => void } | undefined;
   /**
-   * What the table says while it lists no entries: that there are none in the queue. `null` says
-   * nothing, where the entries couldn't all be read, and what's above the table says so.
+   * What the table says while it lists no entries, as one of its rows: that there are none in the
+   * queue. `null` says nothing, where the entries couldn't all be read, and what's above the table
+   * says so.
    */
   empty?: ReactNode;
   /** The row the keyboard is on, by key. */
@@ -527,7 +529,7 @@ export function QueueTable({
   waiting = [],
   left = [],
   more,
-  empty = 'No pull requests in the queue',
+  empty = <EmptyState fit="row" icon="git-pull-request" title="No pull requests in the queue" />,
   focused,
   onRowClick,
   onRowOpen,
@@ -569,7 +571,7 @@ export function QueueTable({
 
       {items.length === 0 && empty !== null && (
         <div role="row">
-          <div role="gridcell" aria-colspan={6} className="px-12 py-16 text-fg-muted text-ui">
+          <div role="gridcell" aria-colspan={6} className="flex min-h-48 items-center px-12">
             {empty}
           </div>
         </div>

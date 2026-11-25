@@ -3,7 +3,7 @@
 :root {
   /* Interface */
   --lo-text-display: 800 40px/44px var(--lo-font-ui); /* Welcome screen headline only. */
-  --lo-text-heading: 800 24px/30px var(--lo-font-ui); /* Empty states, dialog titles. */
+  --lo-text-heading: 800 24px/30px var(--lo-font-ui); /* Dialog titles. */
   --lo-text-title: 700 18px/24px var(--lo-font-ui); /* The PR title in the header. */
   --lo-text-ui-strong: 600 13px/18px var(--lo-font-ui); /* Emphasis inside interface text. */
   --lo-text-ui: 400 13px/18px var(--lo-font-ui); /* The default for buttons, menus, banners and most chrome. */

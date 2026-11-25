@@ -68,14 +68,16 @@ export const moves = tabState<number>(() => 0);
 
 /**
  * What the panel shows when it lists nothing: the wait for the threads' first read; why there are
- * none to list, as an empty state's heading, with its one line and its button where it has them;
- * or the read that failed, with why.
+ * none to list, as an empty state's icon and title, with its one line and its button where it has
+ * them; or the read that failed, with why.
  */
 export type PanelEmpty =
   | { readonly kind: 'reading' }
   | {
       readonly kind: 'none';
-      readonly heading: string;
+      /** What's absent: the threads, the filter's matches, the layers' threads or an account. */
+      readonly icon: 'message-square' | 'funnel-x' | 'layers' | 'user-round';
+      readonly title: string;
       readonly line?: string | undefined;
       /** The command its button runs. */
       readonly action?: 'stacks.back' | 'accounts.addAccount' | 'comments.clearFilter' | undefined;
@@ -101,8 +103,9 @@ export function emptyOf(
     case 'run':
       return {
         kind: 'none',
+        icon: 'layers',
         // By how many: where each layer is in its stack isn't known here.
-        heading:
+        title:
           run && run.length > 1
             ? `No threads for these ${run.length} layers`
             : 'No threads for these layers',
@@ -110,7 +113,12 @@ export function emptyOf(
         action: 'stacks.back',
       };
     case 'signIn':
-      return { kind: 'none', heading: 'Sign in to see threads', action: 'accounts.addAccount' };
+      return {
+        kind: 'none',
+        icon: 'user-round',
+        title: 'Sign in to see threads',
+        action: 'accounts.addAccount',
+      };
     case 'failed':
       return {
         kind: 'failed',
@@ -119,8 +127,8 @@ export function emptyOf(
     case 'ready':
       // Where there are threads, the filter hides them all, and its button lists them again.
       return threads !== undefined && threads.threads.length > 0 && filter !== 'all'
-        ? { kind: 'none', heading: NO_MATCHES, action: 'comments.clearFilter' }
-        : { kind: 'none', heading: NO_THREADS };
+        ? { kind: 'none', icon: 'funnel-x', title: NO_MATCHES, action: 'comments.clearFilter' }
+        : { kind: 'none', icon: 'message-square', title: NO_THREADS };
     default:
       status satisfies never;
       return { kind: 'reading' };

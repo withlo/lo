@@ -139,7 +139,12 @@ export { Collapse, Swap, swapIn, type CollapseProps, type SwapProps } from './Co
 export { besideIn, handOffFocus, type FocusTarget } from './focus.ts';
 export { Problem, type ProblemAction, type ProblemProps, useDetails } from './Problem.tsx';
 export { Countdown, countdownSaid, countdownWords, type CountdownProps } from './Countdown.tsx';
-export { EmptyState, type EmptyAction, type EmptyStateProps } from './EmptyState.tsx';
+export {
+  EmptyState,
+  type EmptyAction,
+  type EmptyFit,
+  type EmptyStateProps,
+} from './EmptyState.tsx';
 export {
   CopyButton,
   CopyFaces,

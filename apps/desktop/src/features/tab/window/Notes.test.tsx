@@ -360,7 +360,7 @@ function buttons(logins: readonly string[]): string[] {
     problem: { kind: 'ask', logins: [...logins] },
   };
   const host = draw(<TabFailed tab={TAB} view={view} />);
-  expect(host.querySelector('h2')?.textContent).toBe('Choose an account for #80');
+  expect(host.querySelector('[data-lo-empty] p')?.textContent).toBe('Choose an account for #80');
   return [...host.querySelectorAll('button')].map((button) => button.textContent ?? '');
 }
 

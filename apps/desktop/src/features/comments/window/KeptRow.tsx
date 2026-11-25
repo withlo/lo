@@ -50,7 +50,7 @@ function KeptDrafts({ label, description }: { label: string; description: string
           {views.map((view) => (view.kind === 'pull' ? <Item key={view.id} view={view} /> : null))}
         </div>
       ) : (
-        <EmptyState level={3} title="No kept drafts" />
+        <EmptyState fit="list" icon="square-pen" title="No kept drafts" />
       )}
     </SettingsList>
   );

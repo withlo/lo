@@ -38,17 +38,23 @@ function held(): Ran[] {
   return ran;
 }
 
-test('an empty state is a heading, one line and its commands as buttons with their keys', () => {
+test('an empty state is an icon, its title, one line and its commands as buttons with keys', () => {
   const ran = held();
   const host = draw(
     <EmptyState
+      icon="message-square"
       title="No comments yet"
       line="Comments on this line are listed here."
       actions={[{ command: 'diff.comment', target: LINE, label: 'Add comment' }]}
     />,
   );
-  expect(host.querySelector('h2')?.textContent).toBe('No comments yet');
-  expect(host.querySelector('p')?.textContent).toBe('Comments on this line are listed here.');
+  // The icon is the title's, so a screen reader hears the words alone. The title is no heading.
+  expect(host.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+  expect(host.querySelector('h1, h2, h3, h4, [role="heading"]')).toBeNull();
+  expect([...host.querySelectorAll('p')].map((each) => each.textContent)).toEqual([
+    'No comments yet',
+    'Comments on this line are listed here.',
+  ]);
   const button = host.querySelector('button')!;
   expect(button.textContent).toBe('Add commentc');
   expect(button.getAttribute('aria-keyshortcuts')).toBe('c');
@@ -58,8 +64,10 @@ test('an empty state is a heading, one line and its commands as buttons with the
 
 test('a button whose command can’t run is dimmed, says why, and runs nothing', () => {
   const ran = held();
-  const host = draw(<EmptyState title="No comments yet" actions={['diff.comment']} />);
-  expect(host.querySelector('p')).toBeNull();
+  const host = draw(
+    <EmptyState icon="message-square" title="No comments yet" actions={['diff.comment']} />,
+  );
+  expect(host.querySelectorAll('p')).toHaveLength(1);
   const button = host.querySelector('button')!;
   // With no label of its own, it takes the command's.
   expect(button.textContent).toBe('Commentc');
@@ -73,21 +81,30 @@ test('a button whose command can’t run is dimmed, says why, and runs nothing',
 
 test('with no commands, or one the registry doesn’t have, it draws no button', () => {
   held();
-  expect(draw(<EmptyState title="No matches" />).querySelector('button')).toBeNull();
   expect(
-    draw(<EmptyState title="No matches" actions={['diff.nothing']} />).querySelector('button'),
+    draw(<EmptyState icon="search-x" title="No matches" />).querySelector('button'),
+  ).toBeNull();
+  expect(
+    draw(
+      <EmptyState icon="search-x" title="No matches" actions={['diff.nothing']} />,
+    ).querySelector('button'),
   ).toBeNull();
 });
 
 test('what its actions act on sits between its line and its buttons', () => {
   held();
   const host = draw(
-    <EmptyState title="No overview yet" line="One line." actions={['diff.comment']}>
+    <EmptyState
+      icon="file-text"
+      title="No overview yet"
+      line="One line."
+      actions={['diff.comment']}
+    >
       <pre>The prompt</pre>
     </EmptyState>,
   );
   const order = [...host.querySelectorAll('p, pre, button')].map((element) => element.localName);
-  expect(order).toEqual(['p', 'pre', 'button']);
+  expect(order).toEqual(['p', 'p', 'pre', 'button']);
 });
 
 test('a button busy with what it started says what it’s doing, and runs nothing more', () => {
@@ -95,6 +112,7 @@ test('a button busy with what it started says what it’s doing, and runs nothin
   const action = { command: 'diff.comment', target: LINE, label: 'Check again' } as const;
   const resting = draw(
     <EmptyState
+      icon="file-text"
       title="No overview yet"
       actions={[{ ...action, busy: false, working: 'Checking…' }]}
     />,
@@ -104,6 +122,7 @@ test('a button busy with what it started says what it’s doing, and runs nothin
   expect(resting.textContent).toBe('Check againcChecking…');
   const busy = draw(
     <EmptyState
+      icon="file-text"
       title="No overview yet"
       actions={[{ ...action, busy: true, working: 'Checking…' }]}
     />,
@@ -127,12 +146,98 @@ test('a button that copies reads what its last copy came to, as wide as its labe
   held();
   const action = { command: 'diff.comment', target: LINE, label: 'Copy prompt' } as const;
   expect(
-    said(draw(<EmptyState title="No overview yet" actions={[{ ...action, copied: null }]} />)),
+    said(
+      draw(
+        <EmptyState
+          icon="file-text"
+          title="No overview yet"
+          actions={[{ ...action, copied: null }]}
+        />,
+      ),
+    ),
   ).toEqual({ shown: ['Copy prompt'], heard: '' });
   expect(
-    said(draw(<EmptyState title="No overview yet" actions={[{ ...action, copied: 'copied' }]} />)),
+    said(
+      draw(
+        <EmptyState
+          icon="file-text"
+          title="No overview yet"
+          actions={[{ ...action, copied: 'copied' }]}
+        />,
+      ),
+    ),
   ).toEqual({ shown: ['Copied'], heard: 'Copied' });
   expect(
-    said(draw(<EmptyState title="No overview yet" actions={[{ ...action, copied: 'failed' }]} />)),
+    said(
+      draw(
+        <EmptyState
+          icon="file-text"
+          title="No overview yet"
+          actions={[{ ...action, copied: 'failed' }]}
+        />,
+      ),
+    ),
   ).toEqual({ shown: ['Couldn’t copy'], heard: 'Couldn’t copy' });
+});
+
+/** The size of `host`'s icon, by its class, and each button's look and size. */
+function shape(host: HTMLElement) {
+  return {
+    icon: host.querySelector('svg')?.getAttribute('class'),
+    buttons: [...host.querySelectorAll('button')].map((button) => ({
+      primary: button.className.includes('bg-accent'),
+      small: button.className.includes('h-control-h-sm'),
+    })),
+  };
+}
+
+test('in a view the icon is 24 px and the first button the main one; in a panel all are small', () => {
+  held();
+  const actions = ['diff.comment', { command: 'diff.comment', target: LINE }] as const;
+  expect(
+    shape(draw(<EmptyState icon="file-diff" title="No files changed" actions={actions} />)),
+  ).toEqual({
+    icon: 'lo-i lo-i--lg text-icon-muted',
+    buttons: [
+      { primary: true, small: false },
+      { primary: false, small: false },
+    ],
+  });
+  expect(
+    shape(
+      draw(<EmptyState fit="panel" icon="file-diff" title="No files changed" actions={actions} />),
+    ),
+  ).toEqual({
+    icon: 'lo-i lo-i--lg text-icon-muted',
+    buttons: [
+      { primary: false, small: true },
+      { primary: false, small: true },
+    ],
+  });
+});
+
+test('in a list the icon is 16 px beside its words, and its buttons are small', () => {
+  held();
+  const host = draw(
+    <EmptyState
+      fit="list"
+      icon="user-round"
+      title="No accounts"
+      line="Public pull requests open without one."
+      actions={[{ command: 'diff.comment', target: LINE }]}
+    />,
+  );
+  expect(shape(host)).toEqual({
+    icon: 'lo-i text-icon-muted',
+    buttons: [{ primary: false, small: true }],
+  });
+  expect(host.textContent).toBe('No accountsPublic pull requests open without one.Commentc');
+});
+
+test('a row is a 14 px icon and its title alone, which nothing focuses or selects', () => {
+  held();
+  const host = draw(<EmptyState fit="row" icon="search-x" title="No commands match “zzzz”" />);
+  expect(shape(host)).toEqual({ icon: 'lo-i lo-i--sm text-icon-muted', buttons: [] });
+  expect(host.textContent).toBe('No commands match “zzzz”');
+  expect(host.querySelector('[tabindex], [role="option"]')).toBeNull();
 });

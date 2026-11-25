@@ -1,7 +1,7 @@
 // Settings' Storage rows: how much room the cache takes against its limit, with "Clear cache" and
 // the button that shows its folder, and the limit itself.
 
-import { Button, bytes, Input, Meter, Problem, Setting, SettingsCommand } from '@lo/ui';
+import { Button, bytes, EmptyState, Input, Meter, Problem, Setting, SettingsCommand } from '@lo/ui';
 import { useEffect, useState } from 'react';
 import { useStore } from 'zustand';
 
@@ -83,7 +83,12 @@ function Usage({
     );
   }
   if (usage.status === 'unavailable') {
-    return <span className="text-fg-muted text-small">No local copies</span>;
+    // In the place the list of local copies would have, boxed as Settings' lists are.
+    return (
+      <div className="rounded-md border border-border-subtle">
+        <EmptyState fit="list" icon="hard-drive" title="No local copies" />
+      </div>
+    );
   }
   const limit = cap * GB;
   return (

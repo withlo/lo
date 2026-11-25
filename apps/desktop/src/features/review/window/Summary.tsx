@@ -33,7 +33,7 @@ import { closeDialog, summaryBox, typed } from './actions.ts';
 import { useNonce } from './page.ts';
 
 /** What the summary says, held, where it has no text. */
-const HELD = { empty: 'No summary' } as const;
+const HELD = { empty: 'No summary', icon: 'file-text' } as const;
 
 /** Why "Attach files…" is dimmed while the summary is held. */
 const SENT = 'The review is sent';
