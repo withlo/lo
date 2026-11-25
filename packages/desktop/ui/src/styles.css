@@ -89,6 +89,16 @@
   text-transform: uppercase;
 }
 
+/*
+ * A quote's or an alert's blocks in a comment's prose (`lo-prose--comment`): 16 px apart, as GitHub
+ * spaces them, over the tighter spacing they have elsewhere.
+ */
+@utility comment-blocks {
+  :where(.lo-prose--comment) & > :not(:last-child) {
+    margin-block-end: var(--lo-sp-16);
+  }
+}
+
 /* The thing on screen, as a row's background. Tailwind's own `bg-current` is the text color. */
 @utility bg-on-screen {
   background-color: var(--lo-current);

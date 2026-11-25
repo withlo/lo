@@ -53,6 +53,7 @@ import type {
   Target,
   Text,
 } from '@lo/markdown';
+import { imageSize } from '@lo/markdown';
 
 import { secureLink } from './links.ts';
 import type { Anchors } from './scope.ts';
@@ -365,7 +366,7 @@ export function drawBlock<X extends Extension>(node: Block<X>, r: Rendering<X>):
       return heading(plain, r);
     case 'quote':
       return (
-        <blockquote className="space-y-8 border-s-2 border-border-strong ps-12 text-fg-muted">
+        <blockquote className="comment-blocks space-y-8 border-s-2 border-border-strong ps-12 text-fg-muted">
           {drawBlocks(plain.children, r)}
         </blockquote>
       );
@@ -446,7 +447,7 @@ function alert<X extends Extension>(node: Alert<X>, r: Rendering<X>): ReactNode 
   return (
     <div
       role="note"
-      className={`max-w-read-measure space-y-6 rounded-md border px-12 py-8 ${tone.box}`}
+      className={`comment-blocks max-w-read-measure space-y-6 rounded-md border px-12 py-8 ${tone.box}`}
     >
       <p className={`font-semibold ${tone.word}`}>{tone.label}</p>
       {drawBlocks(node.children, r)}
@@ -760,12 +761,12 @@ function drawInline<X extends Extension>(node: Inline<X>, r: Rendering<X>): Reac
   }
 }
 
-/** A size as the tree gives one (`imageSize`): CSS pixels, or a percentage. */
-const SIZE = /^\d{1,6}(?:\.\d{1,4})?%?$/;
-
-/** `value` as an image's `width` or `height`, when it's a size. */
+/**
+ * `value` as an image's `width` or `height`, when it's a size as the tree writes one
+ * (`imageSize`): CSS pixels, or a percentage, within its limits.
+ */
 function size(value: string | undefined): string | undefined {
-  return value !== undefined && SIZE.test(value) ? value : undefined;
+  return value !== undefined && imageSize(value) === value ? value : undefined;
 }
 
 /** What makes a picture follow Lo's theme: the window's color scheme is the theme Lo shows. */

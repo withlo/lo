@@ -119,7 +119,8 @@
  * Prose at a comment's size (with `read-comment`): a comment, a review, a description, a comment's
  * preview, a hover card's docs. Spaced as GitHub spaces a comment: nothing above the first thing
  * in it or in anything in it, 16 px between blocks and under a heading, and 24 above a heading.
- * Headings past the reading scale's two take its nearest.
+ * A quote's and an alert's blocks are 16 px apart too, which the renderer's `comment-blocks`
+ * sets. Headings past the reading scale's two take its nearest.
  */
 .lo-prose--comment > * + * { margin-top: 16px; }
 .lo-prose--comment :is(h1, h2, h3, h4, h5, h6) { margin: 24px 0 0; }
