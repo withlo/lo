@@ -1,7 +1,13 @@
 import { cva } from 'class-variance-authority';
 
+import { Glyphs } from './Icon.tsx';
+
+/**
+ * A key cap's outside, and inside it a row of the key's letters and icons, centred, with no gap:
+ * `key-icons` sets each icon's margins. `keyCap` makes the same inside in a code view's own DOM.
+ */
 const cap = cva(
-  'inline-flex h-kbd-h min-w-kbd-h flex-none items-center justify-center rounded-xs key-cap px-4 whitespace-nowrap text-fg-muted code-key',
+  'key-icons inline-flex h-kbd-h min-w-kbd-h flex-none items-center justify-center rounded-xs key-cap px-4 whitespace-nowrap text-fg-muted code-key',
   {
     variants: {
       quiet: {
@@ -70,6 +76,11 @@ export function keyAria(
  * sequence's keys sit side by side, never joined with a plus sign. In a control it comes last,
  * after the label. It takes its control's state by itself: on a main button's fill it's drawn in
  * the fill's text colour, and on a dimmed control it dims with the label.
+ *
+ * A key's symbols, which the fonts don't hold (`⌘ ⌃ ⌥ ⇧ ⏎ ⇥ ⌫ ⌦` and the arrows), are icons from
+ * `glyphs.ts`, 12 px at a 1.25 px stroke, so they weigh what its letters do; its words (`Esc`,
+ * `Ctrl+Shift+P`) and letters stay text. The cap's text is the key as given, for a screen reader,
+ * a copy and a test.
  */
 export function Key({
   keys,
@@ -84,7 +95,7 @@ export function Key({
       aria-hidden={decorative ? true : undefined}
       className={cap({ quiet, className })}
     >
-      {key}
+      <Glyphs text={key} size={12} />
     </kbd>
   ));
   // A wrapper of its own carries the rule, since a key cap sets its own display.

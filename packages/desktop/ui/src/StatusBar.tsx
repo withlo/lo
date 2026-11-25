@@ -13,6 +13,7 @@ import {
 
 import { CommandButton, type CommandButtonProps } from './CommandButton.tsx';
 import { besideIn, handOffFocus } from './focus.ts';
+import { Glyphs } from './Icon.tsx';
 import { keyAria } from './Key.tsx';
 import { Popover, PopoverDescription } from './Popover.tsx';
 import { Spinner } from './Spinner.tsx';
@@ -376,7 +377,8 @@ export function StatusCommand({
 
 /**
  * The keys typed so far of a command still to come, before Vim's mode at the status bar's end, as
- * Vim shows a command it's waiting on the rest of: `g`, `2y`.
+ * Vim shows a command it's waiting on the rest of: `g`, `2y`. A key's symbol, as in `⌃w`, is its
+ * icon, as in a key chip.
  */
 export function StatusKeys({ keys }: { keys: string }) {
   return (
@@ -387,7 +389,7 @@ export function StatusKeys({ keys }: { keys: string }) {
         aria-label={`Keys typed: ${keys}`}
         data-lo-keys-typed=""
       >
-        {keys}
+        <Glyphs text={keys} size={12} />
       </span>
     </Tooltip>
   );

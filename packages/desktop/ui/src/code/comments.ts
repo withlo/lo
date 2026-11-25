@@ -40,7 +40,7 @@ import {
   type Target,
   type VimKey,
 } from '../commands/index.ts';
-import { iconElement } from '../Icon.tsx';
+import { iconElement } from '../iconElement.ts';
 import { reveal, scrollPane } from '../reveal.ts';
 import type {
   BoxFrame,

@@ -170,6 +170,21 @@
   }
 }
 
+/* Inside a key cap, a row of its letters and icons, centred on the capitals with no gap (`Key`,
+   `keyCap`). Each icon is a 12 px box with -1 px either side, so its ink, about 9 px of the 12,
+   sits about 1 px from its neighbour's, as the letters' own does; no icon is nudged on its own. A
+   zero-width space comes first, so a cap that starts with an icon still takes its baseline from
+   text, and sits on a line of text as one that starts with a letter does. A screen reader hears
+   nothing of it (the empty alternative after the `/`). */
+@utility key-icons {
+  &::before {
+    content: '\200b' / '';
+  }
+  & > .lo-i {
+    margin-inline: -1px;
+  }
+}
+
 /* Panel labels: small capitals, tracked out. */
 @utility label-caps {
   letter-spacing: var(--lo-track-label);
