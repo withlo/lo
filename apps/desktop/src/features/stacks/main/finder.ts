@@ -79,6 +79,7 @@ export type FinderPoller = Pick<
   | 'cachedRead'
   | 'readStackLayersAgain'
   | 'forgetStackLayers'
+  | 'forgetRead'
   | 'listSchedule'
   | 'onChange'
 >;
@@ -358,20 +359,19 @@ export class StackFinder {
   }
 
   /**
-   * Works every tab's stack out again, sends those that changed, and reads the one on screen's.
-   * Where each tab's layer starts is set once every stack is worked out: setting it changes the
-   * tab, which works them out again.
-   */
-  /**
-   * Says overviews turned off or on: off, what was read of which layers have one goes, and nothing
-   * more is read; on, each tab's repository's are read again. Each tab's stack is sent again.
+   * Says overviews turned off or on: off, what was read of which layers have one goes, and the
+   * poller stops reading it; on, each tab's repository's are read again. Each tab's stack is sent
+   * again.
    */
   overviewsChanged(): void {
     if (this.#stopped) return;
     if (!this.#overviewsOn()) {
       this.#overviews.clear();
       this.#overviewsAsked.clear();
-      for (const followed of this.#followed.values()) followed.overviews = undefined;
+      for (const followed of this.#followed.values()) {
+        followed.overviews?.forgetRead(followed.tab.pull, OVERVIEW_REFS);
+        followed.overviews = undefined;
+      }
     }
     this.#refresh();
   }
@@ -380,6 +380,11 @@ export class StackFinder {
     return this.#options.overviews?.() ?? true;
   }
 
+  /**
+   * Works every tab's stack out again, sends those that changed, and reads the one on screen's.
+   * Where each tab's layer starts is set once every stack is worked out: setting it changes the
+   * tab, which works them out again.
+   */
   #refresh(): void {
     if (this.#stopped) return;
     const overviewsOn = this.#overviewsOn();
