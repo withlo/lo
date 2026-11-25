@@ -106,7 +106,12 @@ Dark (Lo Glow Dark) is the default. Every color comes from `tokens.json` through
   (24/30, 800) for empty states and dialogs, with `--lo-track-tight`.
 - Reading text has its own scale: `read-body` (15/24), `read-lead` (17/27, the tl;dr), `read-h2`
   (22/28, 800), `read-h3` (16/22, 700), `read-comment` (13.5/21). Keep reading lines under
-  `--lo-read-measure` (680 px).
+  `--lo-read-measure` (680 px). The measure is for text, not for what holds it: a code block in a
+  post takes the post's whole width, set in `code-small`, in a list, a fold or an alert too, and
+  only the text around it keeps to the measure. The timeline's column is up to `--lo-timeline-w`
+  (856 px), so a code block of 100 columns fits beside its rail.
+- A column's width follows the pane it's in, never the window: size it from its own box
+  (`@container`), not a media query or `vw`, since panes resize.
 - Code is `--lo-code-size` on a fixed `--lo-code-line` (12.5/20) so both sides of a diff share one
   row grid.
 - Use `font-variant-numeric: tabular-nums` (`.lo-num`) wherever digits line up: counts, line
