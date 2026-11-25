@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import type { ThreadMark, ThreadView } from './api.ts';
 import { bubbleElement, bubbleOf, rangeTone, Tones } from './bubbles.ts';
@@ -117,7 +117,22 @@ describe('a thread’s bubble', () => {
     });
     expect(control.classList.contains('lo-bubble--warn')).toBe(true);
     expect(control.classList.contains('move-tint')).toBe(true);
-    await new Promise((resolve) => requestAnimationFrame(resolve));
+    // On the page, its style is worked out in the old colour before the class changes, so the
+    // tint has a colour to move from.
+    document.body.append(control);
+    const read: string[] = [];
+    const real = window.getComputedStyle.bind(window);
+    const style = vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => {
+      if (element === control) read.push(control.className);
+      return real(element, pseudo);
+    });
+    try {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    } finally {
+      style.mockRestore();
+      control.remove();
+    }
+    expect(read).toEqual([expect.stringContaining('lo-bubble--warn')]);
     expect(control.classList.contains('lo-bubble--quiet')).toBe(true);
     expect(control.classList.contains('lo-bubble--warn')).toBe(false);
   });

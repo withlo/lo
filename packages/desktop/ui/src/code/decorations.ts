@@ -98,7 +98,7 @@ export interface Common {
   ring: HeaderRing;
   /** The file's `Problem`, as the caller drew it, first under its header. */
   problem?: HeaderProblem | undefined;
-  /** The colour each bubble was drawn in last, so the file's threads' bubble tints as it changes. */
+  /** The colour each bubble was drawn in last: the file's threads' bubble tints as it changes. */
   tones?: Tones | undefined;
 }
 

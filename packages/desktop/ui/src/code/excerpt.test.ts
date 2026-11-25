@@ -619,7 +619,7 @@ function drawnThreads(): (string | undefined)[] {
   );
 }
 
-/** The threads' lane beside each line or block it marks: each piece's ends, the tick, the bubble. */
+/** The threads' lane by each line or block it marks: each piece's ends, the tick, the bubble. */
 function lane(): string[] {
   return [...parent!.querySelectorAll('.lo-threadlane .lo-lanemark')].map((mark) => {
     const parts = [...mark.querySelectorAll('.lo-bracket')].map((piece) => {

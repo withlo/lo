@@ -3274,7 +3274,7 @@ function markers(label: string): string[] {
   });
 }
 
-/** The gutters of the editor labelled `label`, from the sheet's edge to its code, by what each is. */
+/** The gutters of the editor labelled `label`, from the sheet's edge to its code, by name. */
 function gutterOrder(label: string): string[] {
   const content = parent!.querySelector(`.cm-content[aria-label="${label}"]`);
   const gutters = content?.closest('.cm-editor')?.querySelectorAll('.cm-gutter') ?? [];

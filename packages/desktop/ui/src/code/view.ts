@@ -2245,7 +2245,7 @@ class View implements DiffView {
     return this.#inline ? ['old', 'new', 'inline'] : ['old', 'new'];
   }
 
-  /** File `file`'s marks in the lane of `pane`, whose document is `doc`, from its header to its end. */
+  /** File `file`'s marks in the lane of `pane`, whose text is `doc`, from its header to its end. */
   #laneOf(pane: Pane, file: number, doc: Text): LaneUpdate {
     const lines =
       pane === 'inline' ? this.#inline!.layout.files[file]! : this.#layout.files[file]![pane];

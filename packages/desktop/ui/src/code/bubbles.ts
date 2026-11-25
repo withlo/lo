@@ -96,6 +96,11 @@ export function sameBubble(a: Bubble | undefined, b: Bubble | undefined): boolea
   return a.icon === b.icon && a.tone === b.tone && a.name === b.name && a.thread === b.thread;
 }
 
+/** `element`'s colour, as its style has it now: reading it works its style out. */
+function colourOf(element: Element): string {
+  return getComputedStyle(element).color;
+}
+
 /** How a bubble is drawn: whether its thread is open, and what it's drawn after. */
 export interface BubbleDrawing {
   /** Whether its thread is drawn open. */
@@ -122,8 +127,15 @@ export function bubbleElement(
   const tone = `lo-bubble--${bubble.tone}`;
   const from = was === undefined || was === bubble.tone ? tone : `lo-bubble--${was}`;
   control.className = `${className} lo-bubble ${from} move-tint`;
-  // Its colour, from the one it had: the class changes once it's drawn, which the tint moves.
-  if (from !== tone) requestAnimationFrame(() => control.classList.replace(from, tone));
+  // Its colour, from the one it had: once it's on the page, its style is worked out in that
+  // colour, which the tint then moves from as the class changes. A new element's first style has
+  // no colour before it to move from.
+  if (from !== tone) {
+    requestAnimationFrame(() => {
+      if (control.isConnected) colourOf(control);
+      control.classList.replace(from, tone);
+    });
+  }
   control.setAttribute('role', 'button');
   control.setAttribute('aria-label', bubble.name);
   if (command) control.dataset.command = viewControls.thread;

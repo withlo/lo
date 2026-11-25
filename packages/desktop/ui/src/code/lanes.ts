@@ -57,7 +57,7 @@ export interface LaneBubble {
   readonly was?: LaneTone | undefined;
 }
 
-/** Where a bracket's piece beside a line starts and ends: the cell's edge, mid-row, or the bubble. */
+/** Where a bracket's piece beside a line starts and ends: the cell's edge, mid-row, the bubble. */
 type End = 'edge' | 'mid' | 'bubble';
 
 /** One piece of a bracket beside a line or block, top to bottom. */
@@ -214,7 +214,10 @@ class LaneSpan extends RangeValue {
   }
 }
 
-/** What the lane draws in part of an editor's text, `from` to `to`, a file's, in place of what it drew. */
+/**
+ * What the lane draws in part of an editor's text, `from` to `to`, such as a file's, in place of
+ * what it drew there.
+ */
 export interface LaneUpdate {
   readonly from: number;
   readonly to: number;
@@ -337,9 +340,6 @@ function onBubble(event: Event): boolean {
  */
 const exposed = ViewPlugin.fromClass(
   class {
-    #gutters: Element | null = null;
-    #count = 0;
-
     constructor(view: EditorView) {
       this.#expose(view);
     }
@@ -351,14 +351,13 @@ const exposed = ViewPlugin.fromClass(
     #expose(view: EditorView): void {
       const gutters = view.contentDOM.previousElementSibling;
       if (!gutters?.classList.contains('cm-gutters')) return;
-      if (gutters === this.#gutters && gutters.childElementCount === this.#count) return;
-      gutters.removeAttribute('aria-hidden');
+      if (gutters.hasAttribute('aria-hidden')) gutters.removeAttribute('aria-hidden');
       for (const each of gutters.children) {
-        if (each.classList.contains('lo-threadlane')) each.removeAttribute('aria-hidden');
-        else each.setAttribute('aria-hidden', 'true');
+        const hidden = !each.classList.contains('lo-threadlane');
+        if (each.hasAttribute('aria-hidden') === hidden) continue;
+        if (hidden) each.setAttribute('aria-hidden', 'true');
+        else each.removeAttribute('aria-hidden');
       }
-      this.#gutters = gutters;
-      this.#count = gutters.childElementCount;
     }
   },
 );
