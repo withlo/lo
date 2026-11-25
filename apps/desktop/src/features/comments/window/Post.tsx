@@ -135,7 +135,7 @@ export function Post({ view, post: given, markdown, pull, replaced }: PostProps)
           onFollow={follow}
           images={image}
           replaced={replaced}
-          className="lo-prose read-comment"
+          className="lo-prose lo-prose--comment read-comment"
         />
       ) : (
         <p className="whitespace-pre-wrap">{text}</p>
