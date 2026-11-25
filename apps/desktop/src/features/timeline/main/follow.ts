@@ -1,7 +1,9 @@
 // A view's timeline in main: read through the account's poller the first time the window shows it,
 // with what goes beside its description, and kept current from then on, as the poller reads them
-// again after the pull request changes. A tab that acts as nobody, or a run of a stack's layers,
-// reads neither. Nothing here calls Electron.
+// again after the pull request changes. While its tab is on screen, the first reads go ahead of
+// polls, the push history its rows split pushes by right after them, and a long timeline's newest
+// page is drawn while its older pages are read. A tab that acts as nobody, or a run of a stack's
+// layers, reads neither. Nothing here calls Electron.
 
 import {
   causeOf,
@@ -16,6 +18,7 @@ import {
   type PollStatus,
   type PullRequestSidebar,
   type PullRequestTimeline,
+  type ReadPriority,
 } from '@lo/github';
 
 import { detailsOf, githubCause, type Cause } from '../../../ipc/cause.ts';
@@ -28,7 +31,7 @@ import type { SidebarView, TimelineView } from '../contract.ts';
  */
 export interface TimelinePoller extends Pick<
   Poller,
-  'timeline' | 'pullRequestSidebar' | 'onEvent' | 'onChange' | 'status'
+  'timeline' | 'pullRequestSidebar' | 'pushHistory' | 'onEvent' | 'onChange' | 'status'
 > {
   readAfresh(pull: PullRef, kind: typeof TIMELINE): unknown;
   readRetryAt(pull: PullRef, kind: typeof TIMELINE): number | undefined;
@@ -43,6 +46,8 @@ export interface TimelineTabOptions {
   readonly id: string;
   /** The poller of each account, as the accounts feature provides it. */
   readonly github: { poller(login: string): Promise<TimelinePoller> };
+  /** The view on screen, as the tab feature has it: the reader waits on its first read. */
+  readonly onScreen: () => string | undefined;
   /** Sends the timeline and what goes beside it to the window, each time they change. */
   readonly publish: {
     timeline(view: TimelineView): void;
@@ -103,6 +108,11 @@ export class TimelineTab {
   #poller: TimelinePoller | undefined;
   #unsubscribe: (() => void) | undefined;
   #timeline: PullRequestTimeline | undefined;
+  /**
+   * What has come of a first read of more than a page, while its older pages are read: its newest
+   * page, which the window draws until the whole timeline replaces it.
+   */
+  #newest: PullRequestTimeline | undefined;
   #sidebar: PullRequestSidebar | undefined;
   #problem: Problem | undefined;
   /** What waits for the timeline's next read to answer, as Try again does. */
@@ -121,10 +131,11 @@ export class TimelineTab {
   /** The timeline as main has it now, as the window gets it. */
   timeline(): TimelineView {
     const failure = this.#failure();
+    const status = this.#status(failure);
     return {
       id: this.id,
-      status: this.#status(failure),
-      timeline: this.#timeline ?? null,
+      status,
+      timeline: this.#timeline ?? (status === 'loading' ? this.#newest : undefined) ?? null,
       cause: failure?.cause ?? null,
       details: failure?.details ?? null,
       retryAt: failure?.retryAt ?? null,
@@ -277,6 +288,7 @@ export class TimelineTab {
     this.#unsubscribe = undefined;
     this.#poller = undefined;
     this.#timeline = undefined;
+    this.#newest = undefined;
     this.#sidebar = undefined;
     this.#problem = undefined;
     this.#landed = false;
@@ -302,11 +314,23 @@ export class TimelineTab {
       changes();
     };
     this.#restate();
+    // The reader waits on the first reads while the tab is on screen, so they go ahead of polls in
+    // the account's queue, in the order of the reads' names: what goes beside the description,
+    // which is quick, then the review threads the diff waits on, then the timeline. The rows split
+    // pushes where a revision ends, so the push history the revisions feature reads goes ahead of
+    // polls too, once the timeline is in.
+    const shown = (): boolean => this.#current(pull, login) && this.#options.onScreen() === this.id;
+    const waiting = (): ReadPriority => (shown() ? 'foreground' : 'background');
+    const after = (): ReadPriority =>
+      shown() && this.#timeline !== undefined ? 'foreground' : 'background';
+    poller.pushHistory(pull, after).catch((error: unknown) => {
+      this.#options.log(`reading the push history: ${describe(error)}`);
+    });
     const reads = await Promise.allSettled([
-      poller.timeline(pull),
-      poller.pullRequestSidebar(pull),
+      poller.timeline(pull, waiting, (newest) => this.#took(poller, pull, login, newest)),
+      poller.pullRequestSidebar(pull, waiting),
     ]);
-    if (this.#poller !== poller) return;
+    if (this.#poller !== poller || !this.#current(pull, login)) return;
     this.#landed = true;
     const [timeline, sidebar] = reads;
     if (timeline.status === 'rejected') {
@@ -314,6 +338,7 @@ export class TimelineTab {
       if (!this.#timeline) this.#fail(problemOf(timeline.reason, pull, login));
     } else if (timeline.value && !this.#timeline) {
       this.#timeline = timeline.value.value;
+      this.#newest = undefined;
       this.#publishTimeline();
     }
     if (sidebar.status === 'rejected') {
@@ -324,6 +349,16 @@ export class TimelineTab {
     }
     // With nothing saved to show, what polling says now counts.
     this.#restate();
+  }
+
+  /**
+   * The newest page of a first read of more than a page came, ahead of the older ones: it's drawn
+   * while they're read, unless the timeline is already in.
+   */
+  #took(poller: TimelinePoller, pull: PullRef, login: string, newest: PullRequestTimeline): void {
+    if (this.#poller !== poller || !this.#current(pull, login) || this.#timeline) return;
+    this.#newest = newest;
+    this.#publishTimeline();
   }
 
   /** Whether the tab still shows `pull` as `login`. */
@@ -342,6 +377,7 @@ export class TimelineTab {
           // GitHub giving the same timeline again changes nothing, unless a failure showed.
           if (cached && (cached.value !== this.#timeline || this.#problem !== undefined)) {
             this.#timeline = cached.value;
+            this.#newest = undefined;
             this.#problem = undefined;
             this.#publishTimeline();
           }

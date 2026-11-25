@@ -385,7 +385,7 @@ export function drawBlock<X extends Extension>(node: Block<X>, r: Rendering<X>):
     case 'suggestion': {
       // As the diff draws a change: the lines it replaces, where known, over the lines it suggests.
       return (
-        <div className="max-w-read-measure overflow-hidden rounded-md border border-border">
+        <div className="overflow-hidden rounded-md border border-border">
           <p className="bg-bg-chrome px-12 py-6 text-fg-muted text-small">Suggested change</p>
           <Suggested removed={plain.removed ?? r.replaced} added={plain.text} />
         </div>
@@ -447,7 +447,7 @@ function alert<X extends Extension>(node: Alert<X>, r: Rendering<X>): ReactNode 
   return (
     <div
       role="note"
-      className={`comment-blocks max-w-read-measure space-y-6 rounded-md border px-12 py-8 ${tone.box}`}
+      className={`comment-blocks measured space-y-6 rounded-md border px-12 py-8 ${tone.box}`}
     >
       <p className={`font-semibold ${tone.word}`}>{tone.label}</p>
       {drawBlocks(node.children, r)}
@@ -560,13 +560,15 @@ function footnotes<X extends Extension>(node: Footnotes<X>, r: Rendering<X>): Re
   );
 }
 
-/** Code as written, never highlighted: Lo can't know it's the language it says. */
+/**
+ * Code as written, never highlighted: Lo can't know it's the language it says. It takes the post's
+ * whole width, where prose keeps to the read measure, and it's set as code in a comment is
+ * (`code-small`).
+ */
 function Fence({ text, bare = false }: { text: string; bare?: boolean }) {
   return (
-    <pre
-      className={`overflow-x-auto px-12 py-8 ${bare ? 'bg-bg' : 'max-w-read-measure rounded-md bg-hover'}`}
-    >
-      <code className="rounded-none bg-transparent p-0 shadow-none code-text">{text}</code>
+    <pre className={`overflow-x-auto px-12 py-8 ${bare ? 'bg-bg' : 'rounded-md bg-hover'}`}>
+      <code className="rounded-none bg-transparent p-0 shadow-none code-small">{text}</code>
     </pre>
   );
 }

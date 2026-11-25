@@ -79,7 +79,9 @@
 /* Prose */
 .lo-prose { font: var(--lo-read-body); color: var(--lo-fg); }
 .lo-prose > * + * { margin-top: 14px; }
-.lo-prose :where(p, ul, ol, h2, h3, h4, table, dl) { max-width: var(--lo-read-measure); }
+/* The measure is for text. A list or a fold that holds a code block takes the width the code does,
+   and only its text keeps to the measure: its items without code, its paragraphs, its summary. */
+.lo-prose :where(p, h2, h3, h4, table, dl, ul:not(:has(pre)), ol:not(:has(pre)), li:not(:has(pre))) { max-width: var(--lo-read-measure); }
 .lo-prose h2 {
   font: var(--lo-read-h2);
   letter-spacing: var(--lo-track-tight);
@@ -349,7 +351,8 @@
 .lo-tabs__panel { padding: 14px 16px 16px; background: var(--lo-bg); }
 .lo-tabs__panel > * + * { margin-top: 12px; }
 
-.lo-fold { border-top: 1px solid var(--lo-border-subtle); border-bottom: 1px solid var(--lo-border-subtle); max-width: var(--lo-read-measure); }
+.lo-fold { border-top: 1px solid var(--lo-border-subtle); border-bottom: 1px solid var(--lo-border-subtle); }
+.lo-fold:not(:has(pre)), .lo-fold > summary { max-width: var(--lo-read-measure); }
 .lo-fold + .lo-fold { margin-top: 0; border-top: 0; }
 .lo-fold > summary {
   list-style: none;

@@ -516,6 +516,25 @@
   }
 }
 
+/* The timeline's room either side of its column, which follows the width of the pane it's in
+   (`@container`), never the window's: --lo-sp-24, and --lo-sp-12 once the pane is narrower than the
+   column at its widest with that room (--lo-timeline-w plus twice --lo-sp-24), so a post's code
+   block gets the room. */
+@utility timeline-inset {
+  padding-inline: var(--lo-sp-24);
+  @container (width < 904px) {
+    padding-inline: var(--lo-sp-12);
+  }
+}
+
+/* A box of text in a post, such as an alert, keeps to the read measure, unless it holds a code
+   block, which takes the post's width: then only its text does, by `.lo-prose`'s own rules. */
+@utility measured {
+  &:not(:has(pre)) {
+    max-width: var(--lo-read-measure);
+  }
+}
+
 /* A suggested change's lines: each line's sign in a gutter of its own, then the line, a row on the
    code's line each. */
 @utility suggestion-lines {

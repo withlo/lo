@@ -1,8 +1,9 @@
 // A pull request's timeline, the third of its tab's middle views: the description card, then
 // everything that happened to the pull request, oldest first, as GitHub lists it, and at its end
 // the box that comments on the pull request itself. Main reads it the first time it's shown, and
-// keeps it current; what comes while it's on screen waits for the reader's next key, click or
-// scroll, and the row they're reading stays where it is as it comes. The keyboard moves between its
+// keeps it current; a long one draws its newest page while the older events are read. What comes
+// while it's on screen waits for the reader's next key, click or scroll, and the row they're
+// reading stays where it is as it comes. The keyboard moves between its
 // rows (`j`, `k`), the list being one focusable element with the row the keyboard is on as its
 // active descendant. Posts draw through the comments' `Post`, from GitHub's rendering of them; your
 // own comments have Edit and Delete, and an edit's box is drawn in the comment's card.
@@ -260,12 +261,14 @@ function TimelineOf({ tab, shown }: { tab: PullTab; shown: boolean }) {
   const revisions = useTabState(comparisons, tab.id);
   const author = usePull(tab.id)?.header?.author ?? undefined;
   const timeline = view?.timeline ?? undefined;
+  const status = view?.status;
+  // A timeline that's still loading is its newest page, while the older events are read.
+  const reading = status === 'loading';
   const repository = `${tab.owner}/${tab.repo}`;
   const rows = useMemo(
-    () => timeline && rowsOf(timeline, repository, { sidebar, revisions, author }),
-    [timeline, repository, sidebar, revisions, author],
+    () => timeline && rowsOf(timeline, repository, { sidebar, revisions, author, reading }),
+    [timeline, repository, sidebar, revisions, author, reading],
   );
-  const status = view?.status;
   switch (status) {
     case 'signIn':
       return (
@@ -584,6 +587,7 @@ function RowOf({
         <TimelineOlder
           {...attributes}
           count={row.count}
+          reading={row.reading}
           onSee={() => {
             void tabs()
               .openExternal({

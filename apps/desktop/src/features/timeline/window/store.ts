@@ -100,8 +100,13 @@ export function setLooked(id: string, on: boolean): void {
  * goes on screen as it comes, and with it what came before, for a minute at most.
  */
 export function claim(view: string, write: PullWrite): void {
-  const had = write.kind === 'posted' ? holding(shownTimelines.get(view)?.timeline, write.text) : 0;
-  claims.update(view, (waiting) => [...waiting, { write, until: Date.now() + CLAIM_FOR, had }]);
+  const shown = shownTimelines.get(view)?.timeline;
+  const had = write.kind === 'posted' ? holding(shown, write.text) : 0;
+  const after = shown?.items.at(-1)?.cursor;
+  claims.update(view, (waiting) => [
+    ...waiting,
+    { write, until: Date.now() + CLAIM_FOR, had, after },
+  ]);
   // It may be here already, held.
   show(view);
 }

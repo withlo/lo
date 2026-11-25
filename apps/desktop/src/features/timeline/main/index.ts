@@ -37,6 +37,7 @@ export default defineFeature(contract, {
         tab = new TimelineTab({
           id,
           github: context.use(github),
+          onScreen: () => context.use(tabs).list().active,
           publish: {
             timeline: (view) => context.publish('timeline', view),
             sidebar: (view) => context.publish('sidebar', view),
