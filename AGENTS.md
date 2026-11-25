@@ -912,11 +912,13 @@ status bar.
   with `fit` in the row's width, which puts away what has no room, and remembers the panel asked for
   last; what's drawn, not what's kept, is what the panels' buttons, the menu's checks and
   `rightShown` say. The same row keeps the window's place (`tab/main/window.ts`): as each window is
-  made, main moves it where the last one was, as big, maximized or full screen if it was, fitted to
-  the display that holds its top, unless that display is gone, and keeps its place as it settles,
-  and as it closes or as Lo quits, whichever comes first: the database closes as the feature stops.
-  A panel asked for, or put back by Reset layout, fades in with Swap, and focus in a panel goes back
-  to the middle view as the panel stops being drawn, by any route.
+  made, main moves it where the last one was, as big, maximized or full screen if it was, unless the
+  display that held its top is gone. Part of it off every display, it's fitted to the display that
+  holds most of its top. Main keeps its place as it settles, and as it closes or as Lo quits,
+  whichever comes first: the database closes as the feature stops, and a window made after keeps
+  nothing. A panel asked for, put back by Reset layout, or back as its key or button closes the
+  other, fades in with Swap, and focus in a panel goes back to the middle view as the panel stops
+  being drawn, by any route.
 - Other features' banners go in the `tab.banners` slot. Each view there says whether it shows a
   banner for a tab (`shows`) and when that may change (`subscribe`), so the tab makes room only for
   the banners it has.

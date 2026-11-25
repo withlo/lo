@@ -102,13 +102,31 @@ describe('putting the window back', () => {
       width: 1512,
       height: 920,
     });
-    // Across two displays, it goes on the one with more of its top.
+    // Partly off both of two displays, it goes on the one with more of its top.
     const beside = { x: 1512, y: 0, width: 2560, height: 1415 };
     expect(placeIn({ x: 1300, y: 100, width: 1600, height: 1000 }, [display, beside])).toEqual({
       x: 1512,
       y: 100,
       width: 1600,
       height: 1000,
+    });
+  });
+
+  it('stays where it was while each of its corners is on a display, across two of them', () => {
+    const beside = { x: 1512, y: 0, width: 2560, height: 1415 };
+    const across = { x: 1300, y: 100, width: 1600, height: 800 };
+    expect(placeIn(across, [display, beside])).toEqual(across);
+    // Its top across the seam of two displays, one above the other.
+    const above = { x: 0, y: 0, width: 1512, height: 900 };
+    const below = { x: 0, y: 900, width: 1512, height: 900 };
+    const seam = { x: 100, y: 880, width: 1200, height: 800 };
+    expect(placeIn(seam, [above, below])).toEqual(seam);
+    // Too wide for them, it's fitted to the one with more of its top.
+    expect(placeIn({ ...seam, width: 1600 }, [above, below])).toEqual({
+      x: 0,
+      y: 100,
+      width: 1512,
+      height: 800,
     });
   });
 
@@ -271,6 +289,21 @@ describe('the window’s place', () => {
     open.emit('close');
     vi.advanceTimersByTime(SETTLE_MS);
     expect(keptPlaces).toHaveLength(1);
+  });
+
+  it('leaves a window made as Lo quits where it opened, and keeps nothing of it', () => {
+    const { store, keptPlaces } = placesFrom(kept);
+    const places = createPlaces(store, () => {});
+    places.stop();
+    // The database has closed.
+    store.place = () => {
+      throw new Error('The database is not open.');
+    };
+    const window = new FakeWindow();
+    expect(() => places.follow(window, areas)).not.toThrow();
+    expect(window.bounds).toEqual({ x: 10, y: 50, width: 1280, height: 800 });
+    window.emit('close');
+    expect(keptPlaces).toEqual([]);
   });
 
   it('says why a place can’t be kept, and the window closes anyway', () => {

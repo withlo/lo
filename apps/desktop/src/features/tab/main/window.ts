@@ -2,8 +2,8 @@
 // request's tab draws its row with, and the window's place on screen. Each is read through a schema
 // as it's read, so what a newer Lo wrote, or what's broken, reads as the first layout, or as no
 // place, and a width outside its limits comes back within them. A window goes back to its place as
-// it opens, fitted to the display it's on, and its place is kept as it settles, as it closes, and as
-// Lo quits.
+// it opens, fitted to a display only where part of it would be off every one, and its place is kept
+// as it settles, as it closes, and as Lo quits.
 
 import { z } from 'zod';
 
@@ -60,34 +60,53 @@ export interface Area {
 /** How much of a window's top must be on a display for it to go back there: enough to grab. */
 const GRAB = { width: 120, height: 32 };
 
-/** How much of the top of a window at `place`, where it's dragged from, is across `area`. */
-function grabbable(place: Area, area: Area): number {
+/** How much of the top of a window at `place`, the band it's dragged from, is on `area`. */
+function overlap(place: Area, area: Area): { across: number; down: number } {
   const across = Math.min(place.x + place.width, area.x + area.width) - Math.max(place.x, area.x);
   const down = Math.min(place.y + GRAB.height, area.y + area.height) - Math.max(place.y, area.y);
-  return across >= GRAB.width && down >= GRAB.height ? across : 0;
+  return { across: Math.max(0, across), down: Math.max(0, down) };
+}
+
+/** Whether the point at `x`, `y` is on `area`, its edges among it. */
+function onArea(x: number, y: number, area: Area): boolean {
+  return x >= area.x && x <= area.x + area.width && y >= area.y && y <= area.y + area.height;
 }
 
 /**
- * Where a window kept at `place` goes back to: the display whose work area holds most of its top,
- * where it's dragged from, by enough to grab, among the displays whose work areas are `areas`;
- * fitted to that work area, smaller if it must be, so its edges and corners can all be reached.
- * Nowhere once no display holds it, as when the display it was on is gone.
+ * Where a window kept at `place` goes back to, among the displays whose work areas are `areas`.
+ * Nowhere once its top, where it's dragged from, isn't on them by enough to grab, as when the
+ * display it was on is gone: across one display, and down the displays stacked under it, as a
+ * top across the seam between two is. Where it was while each of its corners is on a display,
+ * across two of them, say. Otherwise, fitted to the display that holds most of its top, smaller
+ * if it must be, so its edges and corners can all be reached.
  */
 export function placeIn(place: Area, areas: readonly Area[]): Area | undefined {
-  let on: Area | undefined;
-  let most = 0;
-  for (const area of areas) {
-    const across = grabbable(place, area);
-    if (across > most) [on, most] = [area, across];
+  const holding = areas
+    .map((area) => ({ area, ...overlap(place, area) }))
+    .filter((each) => each.across >= GRAB.width && each.down > 0);
+  // Work areas don't overlap, so the ones under the top add up to how much of it is on screen.
+  const down = holding.reduce((sum, each) => sum + each.down, 0);
+  const [first, ...more] = holding;
+  if (!first || down < GRAB.height) return undefined;
+  const { x, y, width, height } = place;
+  const corners = [
+    [x, y],
+    [x + width, y],
+    [x, y + height],
+    [x + width, y + height],
+  ] as const;
+  if (corners.every(([cx, cy]) => areas.some((area) => onArea(cx, cy, area)))) {
+    return { x, y, width, height };
   }
-  if (!on) return undefined;
-  const width = Math.min(place.width, on.width);
-  const height = Math.min(place.height, on.height);
+  const on = more.reduce(
+    (most, each) => (each.across * each.down > most.across * most.down ? each : most),
+    first,
+  ).area;
+  const fitted = { width: Math.min(width, on.width), height: Math.min(height, on.height) };
   return {
-    x: Math.max(on.x, Math.min(place.x, on.x + on.width - width)),
-    y: Math.max(on.y, Math.min(place.y, on.y + on.height - height)),
-    width,
-    height,
+    x: Math.max(on.x, Math.min(x, on.x + on.width - fitted.width)),
+    y: Math.max(on.y, Math.min(y, on.y + on.height - fitted.height)),
+    ...fitted,
   };
 }
 
@@ -169,14 +188,15 @@ export const SETTLE_MS = 500;
 /** The windows whose places are kept. */
 export interface Places {
   /**
-   * Puts `window` back where it was kept, as big, and maximized or full screen if it was, fitted to
-   * the display it's on, whose work areas are `areas`; unless that display is gone, when it opens
-   * where it would have. Then keeps its place each time it settles, as it closes, and as Lo quits.
+   * Puts `window` back where it was kept, as big, and maximized or full screen if it was, on the
+   * displays whose work areas are `areas`, as `placeIn` fits it to them; unless the display that held
+   * its top is gone, when it opens where it would have. Then keeps its place each time it settles, as
+   * it closes, and as Lo quits.
    */
   follow(window: PlacedWindow, areas: readonly Area[]): void;
   /**
    * Keeps each open window's place now, as Lo quits, and nothing after, as a window that closes
-   * later does: the database closes next. Lo may close its windows before it stops its features or
+   * or opens later does: the database closes next. Lo may close its windows before it stops its features or
    * after, so a window's place is kept as it closes or here, whichever comes first.
    */
   stop(): void;
@@ -188,6 +208,9 @@ export function createPlaces(store: WindowStore, log: (line: string) => void): P
   let stopped = false;
   return {
     follow(window, areas) {
+      // Lo is quitting, and the database is closing: a window made now, as by a link, stays where
+      // it opened.
+      if (stopped) return;
       const place = store.place();
       const bounds = place && placeIn(place, areas);
       if (place && bounds) {

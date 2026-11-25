@@ -9,7 +9,7 @@
 
 import { existsSync } from 'node:fs';
 
-import { app, clipboard, screen, shell } from 'electron';
+import { app, clipboard, screen, shell, type BrowserWindow } from 'electron';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { openPage } from '../../../main/browser.ts';
@@ -37,7 +37,7 @@ import { carryOver } from './carry.ts';
 import { folderToShow } from './local.ts';
 import { createTabs, type TabList } from './tabs.ts';
 import { Watcher } from './watcher.ts';
-import { createPlaces, createWindowStore, type Places, type WindowStore } from './window.ts';
+import { createPlaces, createWindowStore, type WindowStore } from './window.ts';
 
 /** A run's layers, as the tab keeps them. */
 const runLayers = runSchema.shape.layers;
@@ -85,8 +85,8 @@ function windowOf({ database }: FeatureContext<typeof contract>): WindowStore {
   return windowStore;
 }
 
-/** The window's place, kept as it changes, from the time the feature starts. */
-let places: Places | undefined;
+/** Stops keeping the windows' places, which the feature does from the time it starts. */
+let stopPlaces: (() => void) | undefined;
 
 /** Stops watching the key `tab.open` replaced. */
 let stopBefore: (() => void) | undefined;
@@ -197,13 +197,16 @@ export default defineFeature(contract, {
   start(context) {
     // Each window opens where the last one was.
     const placing = createPlaces(windowOf(context), log);
-    places = placing;
-    app.on('browser-window-created', (_event, window) =>
+    const follow = (_event: unknown, window: BrowserWindow) =>
       placing.follow(
         window,
         screen.getAllDisplays().map((display) => display.workArea),
-      ),
-    );
+      );
+    app.on('browser-window-created', follow);
+    stopPlaces = () => {
+      app.off('browser-window-created', follow);
+      placing.stop();
+    };
     // The window reads it as a pull request's tab opens, and changes it from Settings.
     const file = context.use(settings);
     file.declare(openOn);
@@ -238,8 +241,8 @@ export default defineFeature(contract, {
     watcher.follow(list.list());
   },
   stop() {
-    places?.stop();
-    places = undefined;
+    stopPlaces?.();
+    stopPlaces = undefined;
     stopBefore?.();
     stopBefore = undefined;
     following.clear();
