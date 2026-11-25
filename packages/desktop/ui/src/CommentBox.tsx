@@ -11,6 +11,7 @@ import {
 import { Avatar } from './Avatar.tsx';
 import type { BannerAction } from './Banner.tsx';
 import { Button } from './Button.tsx';
+import { EmptyState } from './EmptyState.tsx';
 import { useGiveUp } from './giveUp.ts';
 import { onVim, vimOn } from './vim.ts';
 import { Key } from './Key.tsx';
@@ -834,7 +835,7 @@ export function CommentBox({
           // The box's one ring is its focus: the preview, in the editor's place, draws none.
           className="lo-selectable px-12 py-12 text-fg shadow-none outline-none read-comment"
         >
-          {preview ?? <p className="text-fg-muted">Nothing to preview</p>}
+          {preview ?? <EmptyState fit="row" icon="eye" title="Nothing to preview" />}
         </div>
       )}
       {uploads.length > 0 && <CommentBoxUploads uploads={uploads} />}

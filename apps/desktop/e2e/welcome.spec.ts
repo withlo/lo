@@ -224,7 +224,7 @@ test('a first launch shows the welcome over Recent, and its six steps are walked
     await page.keyboard.press('Enter');
     await expect(welcome(page)).toHaveCount(0);
     const recent = middleOf(page);
-    await expect(recent.getByRole('heading', { name: 'No pull requests yet' })).toBeVisible();
+    await expect(recent.getByText('No pull requests yet', { exact: true })).toBeVisible();
     await expect(recent.getByRole('button', { name: /^Paste link/ })).toBeVisible();
     await expect(recent.getByRole('button', { name: /^Open pull request…/ }).first()).toBeVisible();
     expect(await page.evaluate(() => window.lo.invoke('welcome.state'))).toEqual({

@@ -1,7 +1,7 @@
 // The file finder over the window (`⌘P`): any file in the repository, found by name, the changed
 // ones first and marked, on the same palette the command palette and the open box use.
 
-import { FileIcon, FileMarks, Palette, PaletteHint, Spinner, Tooltip } from '@lo/ui';
+import { EmptyState, FileIcon, FileMarks, Palette, PaletteHint, Spinner, Tooltip } from '@lo/ui';
 import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
 import { useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
 import { useStore } from 'zustand';
@@ -118,10 +118,15 @@ function emptyOf(state: FinderState, tree: TreeState | undefined): ReactNode {
     );
   }
   const typed = state.query.trim() !== '';
-  if (state.changedOnly) {
-    return typed ? `No changed files match “${state.query}”` : 'No files changed';
+  if (typed) {
+    const title = state.changedOnly
+      ? `No changed files match “${state.query}”`
+      : `No files match “${state.query}”`;
+    return <EmptyState fit="row" icon="search-x" title={title} />;
   }
-  return typed ? `No files match “${state.query}”` : 'No files';
+  return (
+    <EmptyState fit="row" icon="file" title={state.changedOnly ? 'No files changed' : 'No files'} />
+  );
 }
 
 /** What the finder says about the files it can't list, if anything. */

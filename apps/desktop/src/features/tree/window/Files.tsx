@@ -2,7 +2,7 @@
 // order, with the tools that switch between them and filter to the changed files, and a note when
 // only some of the files can show.
 
-import { FileTree, FileTreePanel, Skeleton, type FileTreeRow } from '@lo/ui';
+import { EmptyState, FileTree, FileTreePanel, Skeleton, type FileTreeRow } from '@lo/ui';
 import { keyLabels, setScopeSource, type Target } from '@lo/ui/commands';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react';
 
@@ -228,6 +228,7 @@ export function Files({
           inert={holding !== undefined}
           aria-label={mode === 'review' ? 'Changed files in review order' : 'Files'}
           rows={holding?.rows ?? rows}
+          empty={<EmptyState fit="panel" icon="file-diff" title="No files changed" />}
           comparing={holding?.comparing ?? hits !== undefined}
           focused={focused}
           current={current}

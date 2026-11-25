@@ -676,7 +676,7 @@ test.describe('as a pull request opens', () => {
       await expect(overviewTab(page).getByRole('img')).toHaveAccessibleName('No overview yet');
       await overviewTab(page).click();
       await expect(overview(page, 'none')).toBeVisible();
-      await expect(page.getByRole('heading', { name: 'No overview yet' })).toBeVisible();
+      await expect(page.getByText('No overview yet', { exact: true })).toBeVisible();
       await expect(overview(page, 'none').locator('pre')).toHaveText(WRITE);
       expect(await current(page, id)).toMatchObject({ found: 'none', watching: true });
     });

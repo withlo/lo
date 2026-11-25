@@ -316,7 +316,9 @@ describe('a merge queue’s tab', () => {
       ),
     );
     const host = render();
-    expect(host.querySelector('h2')?.textContent).toBe('e4/queued has no merge queue');
+    expect(host.querySelector('[data-lo-empty] p')?.textContent).toBe(
+      'e4/queued has no merge queue',
+    );
     const alert = host.querySelector('[role="alert"]');
     expect(alert?.textContent).toContain('Can’t check the merge queue');
     expect(alert?.textContent).toContain('Offline. Retrying in 40 s.');

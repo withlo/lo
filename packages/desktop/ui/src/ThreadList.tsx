@@ -203,8 +203,9 @@ export function ThreadList({
       tabIndex={rows.length === 0 ? -1 : 0}
       aria-activedescendant={rows.some((row) => row.key === focused) ? rowId(focused) : undefined}
       // With no rows it draws no ring: there's nothing in it for focus to be on. It's as tall as
-      // its pane at least, so what it says in their place can sit in the middle of it.
-      className={`group/list flex min-h-full flex-col gap-2 px-6 pb-12 ${rows.length === 0 ? 'shadow-none' : ''} ${className}`}
+      // its pane at least, so what it says in their place can sit in the middle of it, as wide as
+      // the pane too.
+      className={`group/list flex min-h-full flex-col gap-2 ${rows.length === 0 ? 'shadow-none' : 'px-6 pb-12'} ${className}`}
       {...rest}
     >
       {rows.length === 0 && empty !== undefined && (
