@@ -3,18 +3,22 @@
 // `+` among them, which goes back down; layers selected there and shown as one diff, with the bar
 // over the middle that says so and goes back; `gS`, which converts the chain the pull request on
 // screen is in to a GitHub stack once the reader confirms what will change, with the dialog that
-// asks and says how it goes; and the banner that offers where the layer on screen's diff starts,
-// once its stack says so after the diff was drawn.
+// asks and says how it goes; the banner that offers where the layer on screen's diff starts, once
+// its stack says so after the diff was drawn; and the Dismiss of each of those two offers, with its
+// switch in Settings › Pull requests.
 
 import { handlers } from '@lo/ui/commands';
 import { createElement } from 'react';
 
 import type { WindowFeature } from '../../../window/features.ts';
 import { defineView } from '../../../window/slots.tsx';
+import { settingRow } from '../../settings/window/shared.ts';
 import { banners, dialogs, left, over } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
+import { offerConvert, offerStart } from '../settings.ts';
 import { take } from './actions.ts';
 import { ConversionDialog } from './Conversion.tsx';
+import { dismissConvert, dismissStart, offerConvertSwitch, offerStartSwitch } from './dismiss.ts';
 import { takeStack } from './layers.ts';
 import { main } from './main.ts';
 import { startSwitch, takeStack as takeOffer } from './offers.ts';
@@ -63,6 +67,10 @@ export default {
     back: { run: back, enabled: backable },
     openOnGithub: { run: openOnGithub, enabled: onLayer },
     convert: { run: convertTarget, enabled: convertible },
+    dismissConvert,
+    offerConvert: offerConvertSwitch,
+    dismissStart,
+    offerStart: offerStartSwitch,
   }),
   views: [
     // Above the files.
@@ -88,6 +96,9 @@ export default {
       render: ({ tab }) => createElement(StartBanner, { tab }),
       ...startSwitch,
     }),
+    // Settings › Pull requests, together, after the rows on how a pull request shows.
+    settingRow(offerConvert, { order: 100, command: 'stacks.offerConvert' }),
+    settingRow(offerStart, { order: 110, command: 'stacks.offerStart' }),
   ],
   start() {
     main().subscribe('stack', (state) => {

@@ -252,7 +252,7 @@ test('a file the pull request leaves alone opens whole from the tree, and Back r
 
   await test.step('opened while the overview shows, Back returns to it', async () => {
     // The overview, the view before the diff.
-    await page.locator('[data-lo-middle]').focus();
+    await page.locator('main[data-lo-middle]').focus();
     await press(page, '~');
     const overview = page.locator('[data-lo-middle-view="overview.view"]');
     await expect(overview).toBeVisible();
@@ -272,7 +272,7 @@ test('the finder’s ⌘⏎ opens any file whole, and ~ and ` step only through 
 }) => {
   const refused = refusals(page);
   await drawn(page);
-  await page.locator('[data-lo-middle]').focus();
+  await page.locator('main[data-lo-middle]').focus();
   await page.keyboard.press(`${held}+p`);
   const finder = page.getByRole('dialog', { name: 'Go to file' });
   await expect(finder.getByRole('option').first()).toBeVisible();

@@ -2,6 +2,7 @@ import { handlers, type History, type NoTarget, type TabTarget } from '@lo/ui/co
 import { createElement } from 'react';
 
 import { menuStale } from '../../../window/commands/bar.ts';
+import { openMenuOf } from '../../../window/commands/menus.tsx';
 import { announce, fail, saidBy } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
 import type { WindowFeature } from '../../../window/features.ts';
@@ -17,6 +18,7 @@ import { main } from './main.ts';
 import { moreStore, setMoreOpen } from './more.ts';
 import { choosable, chooseAccount } from './Notes.tsx';
 import { OpenOnChoice, useOpenOnLine } from './OpenOn.tsx';
+import { layout, resettable, resetWidth, steppable, stepWidth, type Open } from './layout.ts';
 import { inStrip, movable, showable, stepTab } from './order.ts';
 import { middleIds, panels, rightPanel, stepAmong, toggleRight, viewCounts } from './panels.ts';
 import { PullRequestTab } from './PullRequestTab.tsx';
@@ -151,6 +153,15 @@ function leftShown(): boolean {
   return typeof tab !== 'string' && viewCounts.left > 0 && panels.get(tab.id).leftOpen;
 }
 
+/** Which panels the pull request on screen draws, for the keys that size what has focus. */
+function rowOpen(): Open {
+  return {
+    left: leftShown(),
+    threads:
+      typeof pullOnScreen() !== 'string' && viewCounts.right > 0 && rightPanel.getState().open,
+  };
+}
+
 /** Why `target`, a tab or the one on screen, can't be closed, or `true` when it can. */
 function closable(target: TabTarget | NoTarget): true | string {
   const { tabs, active } = tabsStore.getState();
@@ -219,14 +230,22 @@ export default {
       checked: () =>
         typeof pullOnScreen() !== 'string' && viewCounts.right > 0 && rightPanel.getState().open,
     },
+    widen: { run: () => stepWidth(rowOpen(), 1), enabled: () => steppable(rowOpen(), 1) },
+    narrow: { run: () => stepWidth(rowOpen(), -1), enabled: () => steppable(rowOpen(), -1) },
+    resetWidth: { run: () => resetWidth(rowOpen()), enabled: () => resettable(rowOpen()) },
     nextView: { run: () => stepMiddle(1), enabled: middleSteps },
     previousView: { run: () => stepMiddle(-1), enabled: middleSteps },
     openOnGithub: { run: openOnGithub, enabled: linkable },
     copyLink: { run: copyLink, enabled: linkable },
     // As a click on the banner's own button, which hands focus on as it does.
     nextBanner: { run: () => bannerButton('more')?.click(), enabled: () => pressable('more') },
+    // One that asks where opens its menu as a key does, with its first row ready.
     dismissBanner: {
-      run: () => bannerButton('dismiss')?.click(),
+      run: () => {
+        const button = bannerButton('dismiss');
+        if (button?.getAttribute('aria-haspopup') === 'menu') openMenuOf(button);
+        else button?.click();
+      },
       enabled: () => pressable('dismiss'),
     },
     chooseAccount: {
@@ -268,7 +287,9 @@ export default {
     tabs.subscribe('local', showLocal);
     tabsStore.subscribe(catchUp);
     // The app menu's checks, and what it dims, follow the tabs and their panels however they move.
-    for (const store of [tabsStore, panels, rightPanel]) store.subscribe(() => menuStale());
+    for (const store of [tabsStore, panels, rightPanel, layout]) {
+      store.subscribe(() => menuStale());
+    }
     tabs
       .list()
       .then(showTabs)

@@ -1,11 +1,11 @@
-// A pull request's tab: its header, its banner, the left panel, the middle sheet, with what goes
-// across its top, and the right panel other features fill, with the header's toggle for it, and its
-// status bar, which ends with the keys held for a command still to come, and Vim's mode while code
-// has focus. It opens on the middle view Settings names, once Settings is known. Until the diff and
-// the threads arrive, the middle says what's coming, and a pull request the tab can't show says why
-// there.
+// A pull request's tab: its header, its banner, a row of the left panel, with its edge, the middle
+// sheet, with what goes across its top, and the right panel other features fill, with the header's
+// toggle for it, and its status bar, which ends with the keys held for a command still to come, and
+// Vim's mode while code has focus. It opens on the middle view Settings names, once Settings is
+// known. Until the diff and the threads arrive, the middle says what's coming, and a pull request
+// the tab can't show says why there.
 
-import { PRHeader, StatusBar, StatusKeys, StatusMode, Swap } from '@lo/ui';
+import { Panes, PRHeader, StatusBar, StatusKeys, StatusMode, Swap } from '@lo/ui';
 import { focusedMode, onFocusedMode } from '@lo/ui/code';
 import { useLayoutEffect, useState, useSyncExternalStore } from 'react';
 
@@ -39,8 +39,10 @@ import {
   useTabPanels,
   viewCounts,
 } from './panels.ts';
+import { row } from './layout.ts';
 import { Placeholder } from './Placeholder.tsx';
 import { RightToggle } from './RightToggle.tsx';
+import { LeftPanel, RightPanel } from './Row.tsx';
 import { ViewSwitch } from './ViewSwitch.tsx';
 
 /**
@@ -51,6 +53,9 @@ function focusRight(panel: HTMLElement | null): void {
   if (!panel || !takeRightFocus()) return;
   focusPanel(panel);
 }
+
+/** Keeps the row's width, as it's measured, for the panels to fit in. */
+const setRowWidth = (width: number) => row.setState({ width });
 
 const onHeldKeys = (listener: () => void) => registry().onHeldKeys(listener);
 const heldKeys = () => registry().heldKeys();
@@ -102,6 +107,7 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
   const showRight = rightOpen && rights.length > 0;
   // One of its views at a time: the one shown last, or the first, the threads.
   const shownRight = rights.find((each) => each.id === rightChosen) ?? rights[0];
+  const threadsShown = showRight && shownRight !== undefined;
   // The view Settings names, once it's known, until the tab has one of its own; then that, or the
   // timeline while it's gone.
   const shownId = middleOf(chosen, middleIds.ids, open);
@@ -153,15 +159,11 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
         </div>
       </PRHeader>
       <Banners tab={tab} view={view} />
-      <div className="flex min-h-0 flex-1">
+      <Panes className="min-h-0 flex-1" onWidth={setRowWidth}>
         {showLeft && (
-          <aside
-            className={`flex w-panel-left-w min-w-0 flex-none flex-col bg-bg-chrome ${failed ? 'controls-off' : ''}`}
-            aria-label="Files"
-            inert={failed}
-          >
+          <LeftPanel tab={tab.id} threads={threadsShown} failed={failed}>
             <Slot slot={left} props={{ tab }} />
-          </aside>
+          </LeftPanel>
         )}
         <section
           className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden sheet"
@@ -197,19 +199,19 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
             <TabFailed tab={tab} view={view} />
           </div>
         </section>
-        {showRight && shownRight && (
-          <aside
+        {threadsShown && (
+          <RightPanel
             // Another view is another panel, which takes focus as it's drawn.
             key={shownRight.id}
             ref={focusRight}
-            className="flex w-panel-right-w min-w-0 flex-none flex-col bg-bg-chrome"
-            aria-label={shownRight.label}
-            data-lo-right={shownRight.id}
+            left={showLeft}
+            label={shownRight.label}
+            view={shownRight.id}
           >
             <shownRight.render tab={tab} />
-          </aside>
+          </RightPanel>
         )}
-      </div>
+      </Panes>
       <StatusBar
         start={
           <>

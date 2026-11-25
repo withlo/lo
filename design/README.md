@@ -236,6 +236,14 @@ where the action's target is.
   letter. The diff bar is the revisions note, then a `HintRow` of Compare revisions and the view's
   own controls, 16 px apart: narrow, it drops the hint's chips, then the hint, so no two groups
   touch.
+- **A choice of two to four is one `SegmentedControl`,** never buttons or pills drawn by hand: the
+  header's view switch, the Files panel's Tree and Review order, the threads' filter, a comment
+  box's Write and Preview, and Settings' choices are all one. Its thumb slides to the segment
+  chosen, and the key that steps through them follows it. It's `md` in the header alone, and `sm`
+  everywhere else: a panel's toolbar, a box's head, a Settings row. While it can't be changed it's
+  `disabled`, and `why` is each segment's tooltip, as the Files panel's "Reading files…" is; its key
+  chip goes meanwhile, keeping its room. One thing on or off, as "Changed files only" is, stays a
+  toggle of its own.
 - **A segment can be its icon alone.** Where a `SegmentedControl` has to narrow, as a comment box's
   Write and Preview do, each segment's label holds its icon and its words, the words marked as a row
   that gives up marks them (`data-gives`). Give the segment its `name`, which a screen reader hears
@@ -267,7 +275,8 @@ where the action's target is.
 Lo moves fast. A move shows what changed and is over; only the mark's own animations take their
 time.
 
-- Anything that appears, leaves or changes size uses one of these moves.
+- Anything that appears, leaves or changes size uses one of these moves, but a pane's width, which
+  never animates (see [The window](#the-window)).
 - Exits are faster than entrances.
 - Nothing waits on an animation. Input is live from the first frame. A popup gives focus back, and
   runs what was chosen, as it starts to leave, not once it has faded. A key pressed again cancels
@@ -448,6 +457,26 @@ A feature that needs set-up adds a step to the welcome flow and a row in Setting
   as ravi-k".
 - The welcome's steps, its buttons and its keys are in `AGENTS.md`, under "The welcome flow".
 
+## Offers
+
+Something Lo offers or advises unasked, such as converting a branch stack to a GitHub stack, sits on
+the control or panel it belongs to, and the reader can dismiss it, here or everywhere.
+
+- **It's an `Offer`:** its line, Dismiss at the line's end, and its command's button under it. An
+  offer that's a change to what's on screen, such as where a layer's diff starts, is a `Banner` with
+  `dismissChoices`.
+- **Dismiss asks where.** It opens the offer's menu, which its right-click opens too (a `notice`
+  target, in a `notice` scope: `useNoticeTarget`): "Dismiss for #264", or "Dismiss for this stack",
+  where the offer is tied to one pull request or stack, then "Dismiss for all stacks", or for all of
+  whatever it's about.
+- **"For all" turns off a setting,** which brings it back: a switch in Settings › Pull requests,
+  beside the other offers', labelled "Offer GitHub stacks". A dismissal for one pull request is kept
+  in the feature's own table, so it holds through restarts.
+- **Its keys are Dismiss's menu's.** `Tab` reaches Dismiss, and `⏎` or `⇧F10` there opens its menu,
+  whose rows run as any menu's do. The palette lists them too.
+- News keeps its one-press Dismiss: it's seen once and goes. A failure has no Dismiss: it stays
+  until it's fixed.
+
 ## Floating pieces
 
 Everything that floats over the window is one of these, from `packages/desktop/ui`. Each comes and
@@ -563,7 +592,8 @@ that floats.
   place isn't said again. The diff under the row keeps its rows still as a banner comes, by
   scrolling, unless that would put the cursor's row out of its top, as the first file's header at
   the top would go: then it stays at the top and its content moves down with the row. An action that
-  can be busy takes `busy` (`false` at rest) and `working`, as a `Button` does.
+  can be busy takes `busy` (`false` at rest) and `working`, as a `Button` does. A banner that offers
+  takes `dismissChoices`, and its Dismiss asks where (see [Offers](#offers)).
 
 Base UI's popup parts (dialog, menu, popover, tooltip, toast and the like) are imported only by
 these pieces. `ui:lint` runs `scripts/check-popups.ts`, which fails on an import anywhere else, so a
@@ -634,6 +664,15 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
   and goes, as "Rate limit low", goes last on the left.
 - The body is left panel (stack, then files), the middle sheet, and the threads panel. Each panel
   opens and closes with a key.
+- Every edge in the row is a `Splitter` in a `Panes` row, and the seam of a side-by-side diff, which
+  the view draws, drags with the same `dragEdge`: 8 px to grab, no line at rest, a 2 px `lo-border`
+  line under the pointer, `lo-accent` while pressed. Only a drag that moves it somewhere new changes
+  a width; a click, `Esc`, or a drag back to where it began puts back what was there. A double-click
+  puts it back to its default. A feature never handles a drag of its own.
+- Widths never animate: a width re-wraps code. A change lands in one frame, and what arrives fades
+  in with Swap. Nothing draws under its minimum: `fit` puts away the threads panel, then the left
+  panel, then the view without focus, never what was asked for last, and brings each back when
+  there's room.
 - The window never scrolls. Panes do. The shell hides what overflows it and puts itself back if a
   script scrolls it, and anything brought into view goes through `reveal()`, which scrolls the pane
   it's in. Lint refuses an element's `scrollIntoView` outside tests (`lo/no-scroll-into-view`). The
@@ -695,18 +734,18 @@ A preference is a setting with a row. The menu bar and the palette may toggle it
 Lo's components are React components in `packages/desktop/ui`, styled with Tailwind CSS on these
 tokens. Their code is the source for how each one looks.
 
-| Group            | Components                                                                            |
-| ---------------- | ------------------------------------------------------------------------------------- |
-| Window           | PullRequestTab, TabBar, PRHeader, StatusBar, Banner                                   |
-| Panels           | StackTree, FileTree                                                                   |
-| Controls         | Button, HintButton, MoreButton, CopyButton, Key, SegmentedControl, Switch, Input      |
-| Marks            | Icon, Glyphs, StatePill, Tag, Avatar, Marks                                           |
-| Floating         | Dialog, Popover, ContextMenu, Palette, Tooltip, ToastStack                            |
-| Motion and waits | Collapse, Swap, Loading, Skeleton, Spinner, LogoMotion, Problem, EmptyState           |
-| Review           | Thread, Diff, CodeView, CommentBox                                                    |
-| Overview         | OverviewDocument, CodeBlock, Figure, Walkthrough, TabsAndFolds, Glossary              |
-| Flows            | Choice, Checklist, Composer, Peek, Timeline, SetupList, SetupItem, SetupDone          |
-| Settings         | SettingsPage, SettingsGroup, Setting, SettingsList, SettingsListItem, SettingsCommand |
+| Group            | Components                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------------ |
+| Window           | PullRequestTab, TabBar, PRHeader, StatusBar, Banner, Offer, DismissButton, Panes, Splitter |
+| Panels           | StackTree, FileTree                                                                        |
+| Controls         | Button, HintButton, MoreButton, CopyButton, Key, SegmentedControl, Switch, Input           |
+| Marks            | Icon, Glyphs, StatePill, Tag, Avatar, Marks                                                |
+| Floating         | Dialog, Popover, ContextMenu, Palette, Tooltip, ToastStack                                 |
+| Motion and waits | Collapse, Swap, Loading, Skeleton, Spinner, LogoMotion, Problem, EmptyState                |
+| Review           | Thread, Diff, CodeView, CommentBox                                                         |
+| Overview         | OverviewDocument, CodeBlock, Figure, Walkthrough, TabsAndFolds, Glossary                   |
+| Flows            | Choice, Checklist, Composer, Peek, Timeline, SetupList, SetupItem, SetupDone               |
+| Settings         | SettingsPage, SettingsGroup, Setting, SettingsList, SettingsListItem, SettingsCommand      |
 
 Build new screens from these. If something new is needed, make it from the same tokens and keep it
 to one job.

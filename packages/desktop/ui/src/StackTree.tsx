@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   type HTMLAttributes,
   type MouseEvent,
@@ -12,6 +13,8 @@ import {
 } from 'react';
 
 import { Avatar } from './Avatar.tsx';
+import { Collapse } from './Collapse.tsx';
+import { handOffFocus } from './focus.ts';
 import { StateIcon, type PullRequestState } from './StatePill.tsx';
 import { Tag } from './Tag.tsx';
 import { CommentIcon } from './ThreadCount.tsx';
@@ -114,7 +117,11 @@ export interface StackTreeProps extends Omit<HTMLAttributes<HTMLDivElement>, 'ch
   onShow?: ((key: string) => void) | undefined;
   /** A right-click on a layer. */
   onMenu?: ((key: string, event: MouseEvent<HTMLElement>) => void) | undefined;
-  /** What goes between the head and the rows, such as the offer to convert to a GitHub stack. */
+  /**
+   * What goes between the head and the rows, such as the offer to convert to a GitHub stack. It
+   * comes and goes with the Open move, and gives the tree focus as it goes while it holds it, as
+   * once its offer is dismissed.
+   */
   callout?: ReactNode;
   /** Under the rows. */
   notes?: readonly StackTreeNote[] | undefined;
@@ -523,6 +530,18 @@ export function StackTree({
 
   useKeptInView(scroller, focused, current);
 
+  // The callout leaving with focus in it, as an offer dismissed from its own button, gives the
+  // tree focus, not the page.
+  const calloutBox = useRef<HTMLDivElement>(null);
+  const hasCallout = callout !== undefined && callout !== null;
+  const hadCallout = useRef(hasCallout);
+  useLayoutEffect(() => {
+    if (hadCallout.current && !hasCallout) {
+      handOffFocus([calloutBox.current], () => [scroller.current]);
+    }
+    hadCallout.current = hasCallout;
+  });
+
   const setRefs = (element: HTMLDivElement | null) => {
     scroller.current = element;
     if (typeof treeRef === 'function') treeRef(element);
@@ -547,9 +566,13 @@ export function StackTree({
           <span className="flex flex-none items-center">{actions}</span>
         )}
       </div>
-      {callout !== undefined && callout !== null && (
-        <div className="flex-none ps-16 pe-8 pb-8">{callout}</div>
-      )}
+      <Collapse open={hasCallout} className="flex-none">
+        {hasCallout && (
+          <div ref={calloutBox} className="ps-16 pe-8 pb-8">
+            {callout}
+          </div>
+        )}
+      </Collapse>
       <div
         ref={setRefs}
         role="tree"

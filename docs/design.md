@@ -307,7 +307,8 @@ GraphQL pages. It builds the stack graph from that and refreshes it as it polls.
   place. When it learns where a layer starts only after the diff is on screen, the diff stays as it
   is, and a banner offers the change: "#4821's diff includes #4819's changes" with "Show only
   #4821's". The button reloads the diff from there, as loading a newer push does. The banner goes
-  once the diff on screen starts where it offers.
+  once the diff on screen starts where it offers, or once it's dismissed: for that layer, or for all
+  stacks, which Settings › Pull requests turns back on.
 
 ### The stack tree
 
@@ -342,11 +343,18 @@ its own place.
 GitHub stacks can't branch, so for a tree Lo converts the path through the layer you're on. The
 option isn't offered when a PR comes from a fork, when GitHub's Stacks API isn't there for the repo
 (it answers 404; github.com has no setting that turns stacks on), or when a PR is already in a merge
-queue.
+queue. The tree offers it in a line over its rows, which can be dismissed for that stack, or for all
+stacks, which Settings › Pull requests turns back on; `gS` and the layer's menu still convert it.
+Dismissing the offer to convert a branch stack leaves the offer to add layers to the GitHub stack
+below them, which the stack may come to need.
 
 ## 5. The file tree
 
-The left panel shows the repo's files as a tree, at the commit on screen.
+The left panel shows the repo's files as a tree, at the commit on screen. Its edge drags to widen or
+narrow it, between 220 and 480 px, and `>` and `<` do the same while it has focus, a step at a time;
+a double-click on the edge, or `=`, puts it back to 300 px. `Esc` during a drag puts back the width
+it had. Let go near the window's side, the edge closes the panel. Its width is the window's, the
+same in every tab.
 
 ### What it shows
 
@@ -1059,7 +1067,7 @@ the keymap file, `~/.config/lo/keymap`. `?` shows every key.
 | Copy and open   | `yy` the line, `yl` a link to it, `yp` the file's path, `gf` the whole file, `gx` on GitHub                                                                                                                                                                                                                                            |
 | Review          | `m` merge panel, `⌘⏎` submit review, `⌘⇧⏎` approve and ship, `gq` the merge queue, `gS` make this a GitHub stack                                                                                                                                                                                                                       |
 | Find            | `⌘L` open PR (`⌘O` too on macOS), `⌘P` files, `⌘⇧P` command palette, `/` search, `n`/`N` next and previous match                                                                                                                                                                                                                       |
-| View            | `` ` `` next middle view (overview, diff, timeline), `~` previous, `gv` compare revisions                                                                                                                                                                                                                                              |
+| View            | `` ` `` next middle view (overview, diff, timeline), `~` previous, `gv` compare revisions, `>`/`<` widen and narrow what has focus, `=` reset its width                                                                                                                                                                                |
 | Files           | `-` go to the file tree at the file on screen, and `-` again up to the stack tree. In the tree: `t` tree or review order, `f` changed files only, `l`/`h` (or `→`/`←`) open and close a folder, `zR`/`zM` open and close all, `⏎` show the file, `e` mark viewed, `Esc` back                                                           |
 | Overview        | `]b`/`[b` next and previous block, `⏎` follow a block to its code, `o` open its code beside the overview (`o` again or `Esc` to close), `c` comment on a block's lines, `Tab` next part of a figure, `←`/`→` walkthrough step or tab, `ya` copy a prompt for an agent                                                                  |
 | Timeline        | `j`/`k` move between events, `Tab` through its links and buttons, `Esc` back to the list, `gx` open the one you're on on GitHub, `c` comment on the PR, `i` edit your comment, `dd` delete your comment                                                                                                                                |

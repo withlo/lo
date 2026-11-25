@@ -110,7 +110,7 @@ test('⏎ reveals a changed file in the tree, and the diff shows it', async ({ p
   await shown(page);
   await expect(page.locator('.lo-diffview')).toBeVisible();
   // The tree's folders are closed, so the file has to be found there.
-  await page.locator('[data-lo-middle]').focus();
+  await page.locator('main[data-lo-middle]').focus();
   await page.keyboard.press('-');
   await expect(tree(page)).toBeFocused();
   await page.keyboard.press('z');
