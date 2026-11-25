@@ -580,3 +580,41 @@ describe('the keymap file', () => {
     expect(registry.isPending()).toBe(false);
   });
 });
+
+describe('commands taken out of the app', () => {
+  test('leave every list, their keys pass on, and they refuse with nothing to say until they’re back', () => {
+    const { registry, ran, refused, press } = setup();
+    let changes = 0;
+    registry.subscribe(() => changes++);
+    registry.setKeymap('bind x diff.markViewed\n');
+    registry.setOff(['diff.markViewed'], true);
+    expect(changes).toBe(2);
+    expect(registry.commands().map(({ id }) => id)).not.toContain('diff.markViewed');
+    expect(registry.keysOf('diff.markViewed')).toEqual([]);
+    expect(registry.listed('diff.markViewed', place(3))).toBe(false);
+    const view = new FakeView();
+    expect(press(['e', 'x'], scope('diff', view))).toEqual(['pass', 'pass']);
+    expect(registry.run('diff.markViewed', place(3))).toBe('');
+    expect(ran).toEqual([]);
+    expect(refused).toEqual([['', 'diff.markViewed']]);
+
+    // Taken out again, nothing changes.
+    registry.setOff(['diff.markViewed'], true);
+    expect(changes).toBe(2);
+
+    // Back, with the keymap file's key too.
+    registry.setOff(['diff.markViewed'], false);
+    expect(changes).toBe(3);
+    expect(registry.commands().map(({ id }) => id)).toContain('diff.markViewed');
+    expect(registry.keymapErrors()).toEqual([]);
+    expect(press(['x'], scope('diff', view))).toEqual(['stop']);
+    expect(ran.map(([id]) => id)).toEqual(['diff.markViewed']);
+  });
+
+  test('names only commands there are', () => {
+    const { registry } = setup();
+    expect(() => registry.setOff(['diff.nope'], true)).toThrow(
+      'There’s no command called diff.nope.',
+    );
+  });
+});

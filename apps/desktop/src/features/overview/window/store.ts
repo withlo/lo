@@ -30,6 +30,9 @@ export const rereading = tabState<boolean>(() => false);
 
 const checkings = new Map<string, Checking>();
 
+/** Whether the window takes what main says of overviews: not while Settings turns them off. */
+let taking = true;
+
 /**
  * Asks main to read tab `id`'s overview again now, as Check again and its key do, saying the tab is
  * `rereading` until main has: its button reads "Checking…" meanwhile.
@@ -75,8 +78,9 @@ function checkingOf(id: string): Checking {
   return checking;
 }
 
-/** Takes what main says of a tab's overview. */
+/** Takes what main says of a tab's overview, while there are overviews. */
 export function takeState(state: OverviewState): void {
+  if (!taking) return;
   states.set(state.id, state);
   checkingOf(state.id).take(state);
   markDescribed(state.id);
@@ -120,6 +124,26 @@ export function catchUp(ids: readonly string[]): void {
       })
       .catch((error: unknown) => console.error("Lo couldn't ask about a tab's revisions:", error));
   }
+}
+
+/**
+ * Takes what main says of overviews again as Settings turns them on, catching up on the tabs
+ * `open`; or as it turns them off, forgets every tab's, its checking and its revision's mark, and
+ * takes nothing more until they're on.
+ */
+export function takeOverviews(on: boolean, open: readonly string[]): void {
+  taking = on;
+  if (on) {
+    catchUp(open);
+    return;
+  }
+  for (const [id, checking] of checkings) {
+    checking.stop();
+    states.set(id, undefined);
+    checked.set(id, undefined);
+    markRevision(id, 'overview', undefined);
+  }
+  checkings.clear();
 }
 
 /** Stops checking the overviews of tabs that closed: those not in `open`. */
