@@ -1,19 +1,29 @@
-// The welcome, over a tab: four steps, one job each, that a first-time reader walks with
+// The welcome, over a tab: five steps, one job each, that a first-time reader walks with
 // "Continue", "Back" and "Skip", by mouse or by key. It opens by itself over the Recent tab until
 // the reader has finished it or signed in, and "Welcome to Lo" opens it again over any tab. It's a
-// form like Settings, so `Tab` walks its controls.
+// form like Settings, so `Tab` walks its controls. Its foot stays on screen: in a window too short
+// for a step, the step scrolls under it.
 
-import { Button, Key, Swap } from '@lo/ui';
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { Button, Key, reveal, Swap } from '@lo/ui';
+import { controlOf, runControl } from '@lo/ui/commands';
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type FocusEvent,
+  type ReactNode,
+} from 'react';
 import { useStore } from 'zustand';
 
 import { focusMiddle, setMiddle, useKeys } from '../../../window/commands/registry.ts';
 import { useAccounts, useAccountsHeard } from '../../accounts/window/shared.ts';
 import { activeTab, useTabs, type Tab } from '../../tab/window/shared.ts';
 import { AccountStep } from './Account.tsx';
-import { back, leave, loadGh, next, openFirst, setScreen, touch } from './actions.ts';
+import { leave, loadGh, next, openFirst, setScreen, touch } from './actions.ts';
 import { KeysStep } from './Keys.tsx';
 import { keyOf } from './labels.ts';
+import { LookStep } from './Look.tsx';
 import { OpenStep } from './Open.tsx';
 import { practiceEscape } from './practice.ts';
 import { SetupStep } from './Setup.tsx';
@@ -106,8 +116,47 @@ function Held({ away, children }: { away: boolean; children: ReactNode }) {
   return <span className={away ? 'invisible' : undefined}>{children}</span>;
 }
 
+/**
+ * Brings what took focus in a step into view above the foot, in the steps' own pane. What has a
+ * scope of its own, as the practice's comment box does, keeps its own scrolling.
+ */
+function revealFocused(event: FocusEvent<HTMLElement>): void {
+  const { target } = event;
+  if (target.closest('[data-lo-scope]')?.getAttribute('data-lo-scope') !== 'welcome') return;
+  reveal(target);
+}
+
+const BACK = 'welcome.back';
+
+/**
+ * "Back", `welcome.back`'s control: the step before, with its key in its tooltip. The foot's main
+ * button carries the one chip. On the first step there's no step before, and it keeps its room.
+ */
+function BackButton({ first }: { first: boolean }) {
+  const control = controlOf(BACK);
+  if (!control) return null;
+  const off = control.off !== undefined;
+  return (
+    <Held away={first}>
+      <Button
+        variant="ghost"
+        disabled={off}
+        hint={off ? '' : control.label}
+        hintKeys={off ? undefined : control.keys}
+        hintShortcut={off ? undefined : control.shortcut}
+        onClick={() => {
+          if (!off) runControl(BACK);
+        }}
+      >
+        {control.label}
+      </Button>
+    </Held>
+  );
+}
+
 const STEP_VIEWS: Readonly<Record<Step, (props: { shown: boolean }) => ReactNode>> = {
   account: AccountStep,
+  look: LookStep,
   keys: KeysStep,
   setup: SetupStep,
   open: OpenStep,
@@ -141,12 +190,19 @@ function Welcome(): ReactNode {
     };
   }, []);
 
-  /** Where the step starts: what it marks, or else the foot's main button. */
+  /**
+   * Where the step starts: what it marks, a group of cards at its chosen card, or else the foot's
+   * main button.
+   */
   const stepStart = () => {
     const screen = root.current;
     const now = welcomeStore.getState().step;
+    const marked = screen?.querySelector<HTMLElement>(
+      `[data-welcome-step="${now}"] [data-welcome-focus]`,
+    );
     return (
-      screen?.querySelector<HTMLElement>(`[data-welcome-step="${now}"] [data-welcome-focus]`) ??
+      marked?.querySelector<HTMLElement>('[role="radio"][tabindex="0"]') ??
+      marked ??
       screen?.querySelector<HTMLElement>('[data-welcome-default]')
     );
   };
@@ -173,6 +229,13 @@ function Welcome(): ReactNode {
       }
     };
   }, []);
+
+  // Each step starts at its top, in a window too short for it, wherever the step before was
+  // scrolled to; what takes focus in it then comes into view by itself.
+  const pane = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (pane.current) pane.current.scrollTop = 0;
+  }, [step]);
 
   // Each step starts with focus on its own first control, once nothing is over the welcome.
   useEffect(
@@ -207,10 +270,17 @@ function Welcome(): ReactNode {
       onKeyDownCapture={touch}
       onPointerDownCapture={touch}
       onClickCapture={touch}
-      className="absolute inset-0 flex overflow-auto bg-bg px-24 py-32 focus-visible:shadow-none"
+      className="absolute inset-0 flex flex-col bg-bg focus-visible:shadow-none"
     >
-      <div className="m-auto flex w-palette-w max-w-full flex-col gap-32">
-        <div className="grid">
+      {/* The steps, in a column as wide as a palette at every window width, over the foot. Where
+          the window is too short for them, they scroll in a pane of their own and the foot stays
+          on screen under them; where it isn't, the two sit in the middle together. */}
+      <div
+        ref={pane}
+        className="mt-auto min-h-0 reveal-room overflow-auto px-24 pt-32 pb-32 gutter-both"
+        onFocus={revealFocused}
+      >
+        <div className="mx-auto grid w-palette-w max-w-full">
           {STEPS.map((each) => {
             const View = STEP_VIEWS[each];
             const shown = each === step;
@@ -230,14 +300,12 @@ function Welcome(): ReactNode {
             );
           })}
         </div>
-        <div className="flex items-center gap-8 border-t border-border-subtle pt-16">
+      </div>
+      <div className="mb-auto flex-none px-24 pb-32">
+        <div className="mx-auto flex w-palette-w max-w-full items-center gap-8 border-t border-border-subtle pt-16">
           {/* Back's label starts where the column does, as the steps' own words do. */}
           <div className="-ms-12 flex flex-1 justify-start">
-            <Held away={first}>
-              <Button variant="ghost" disabled={first} onClick={back}>
-                Back
-              </Button>
-            </Held>
+            <BackButton first={first} />
           </div>
           <Progress step={step} />
           <div className="flex flex-1 items-center justify-end gap-8">

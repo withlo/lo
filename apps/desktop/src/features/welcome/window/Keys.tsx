@@ -1,4 +1,4 @@
-// The welcome's second step: choosing the keys code and comment boxes are edited with, the
+// The welcome's third step: choosing the keys code and comment boxes are edited with, the
 // standard ones or Vim's, over a few lines of diff to try Lo's own single keys on, by key or by
 // click, and a comment box to try the choice in.
 
@@ -29,7 +29,7 @@ import { createPortal } from 'react-dom';
 import { useStore } from 'zustand';
 
 import { registry } from '../../../window/commands/registry.ts';
-import { chooseVim } from './actions.ts';
+import { chooseVim, VIM } from './actions.ts';
 import { StepHeading } from './Heading.tsx';
 import { useNonce } from './nonce.ts';
 import { setPracticeEscape } from './practice.ts';
@@ -362,11 +362,14 @@ function Practice() {
 export function KeysStep(): ReactNode {
   const vim = useSyncExternalStore(onVim, vimOn, vimOn);
   // The last card pressed, while the setting is being written.
-  const choosing = useStore(welcomeStore, (state) => state.choosing);
-  const chosen = choosing ?? vim;
+  const pressed = useStore(welcomeStore, (state) => state.choosing[VIM]);
+  const chosen = typeof pressed === 'boolean' ? pressed : vim;
   return (
     <>
-      <StepHeading title="Choose your keys" line="Single keys and the mouse work with both." />
+      <StepHeading
+        title="Choose your keys"
+        line="Single keys and the mouse work with both. Also in Settings › Keyboard."
+      />
       <Choices
         label="Keys"
         items={EDITING}

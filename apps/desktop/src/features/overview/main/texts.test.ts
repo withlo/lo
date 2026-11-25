@@ -86,7 +86,14 @@ async function fetched(): Promise<{ repo: Repo; local: ReadyLocal }> {
   const mergeBase = await repo.mergeBase(head, baseTip);
   return {
     repo,
-    local: { kind: 'ready', head, base: baseTip, mergeBase: mergeBase ?? null, offline: false },
+    local: {
+      kind: 'ready',
+      head,
+      base: baseTip,
+      mergeBase: mergeBase ?? null,
+      offline: false,
+      folder: '/cache/e2e.git',
+    },
   };
 }
 
@@ -296,6 +303,7 @@ describe('baseOf', () => {
     base: tipOid!,
     mergeBase: forked!,
     offline: false,
+    folder: '/cache/e2e.git',
   };
 
   it('is the local copy’s own merge base at its head', async () => {

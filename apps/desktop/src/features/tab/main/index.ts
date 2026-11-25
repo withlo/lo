@@ -2,9 +2,12 @@
 // opens them for other features, as links from other apps will. Each view of a pull request's tab,
 // one for each layer of a stack it has shown, watches its pull request with its account's poller,
 // and fetches its local copy once it's shown. Other features follow a pull request's tab by its
-// view on screen. It also copies text and opens github.com pages for every feature.
+// view on screen. It also copies text and opens github.com pages for every feature, and shows a
+// local copy's folder and copies its path.
 
-import { app, clipboard } from 'electron';
+import { existsSync } from 'node:fs';
+
+import { app, clipboard, shell } from 'electron';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { openPage } from '../../../main/browser.ts';
@@ -28,6 +31,7 @@ import {
 import { tabs } from '../service.ts';
 import { before, open as openOn } from '../settings.ts';
 import { carryOver } from './carry.ts';
+import { folderToShow } from './local.ts';
 import { createTabs, type TabList } from './tabs.ts';
 import { Watcher } from './watcher.ts';
 
@@ -144,6 +148,16 @@ export default defineFeature(contract, {
     },
     retry({ id }) {
       pullTab(id).retry(id);
+    },
+    showLocal({ id }) {
+      // The clone's folder as main keeps it, shown in its folder and never opened, so nothing in
+      // it runs.
+      shell.showItemInFolder(folderToShow(pullTab(id).localFolder(id), existsSync));
+    },
+    async copyLocal({ id }) {
+      const folder = pullTab(id).localFolder(id);
+      if (folder === undefined) throw new IpcError('notReady', 'The local copy isn’t ready.');
+      await clipboard.writeText(folder);
     },
     async choose({ id, login }) {
       await pullTab(id).choose(id, login);

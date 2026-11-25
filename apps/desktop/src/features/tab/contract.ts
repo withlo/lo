@@ -491,7 +491,8 @@ export type Compared = z.output<typeof compared>;
  * - `ready`, with the head on screen, the base branch's tip it was fetched with, and where the
  *   pull request's changes start: where the two branched, or, for a stack's layer the stacks
  *   feature compares with another commit, `from`, where the head and that commit meet;
- *   `offline` when GitHub couldn't be reached, so it's what was fetched before;
+ *   `offline` when GitHub couldn't be reached, so it's what was fetched before; and `folder`,
+ *   where the clone is on this computer, as a person writes it, `~` for the home folder;
  * - `retrying` after a failure Lo tries again after by itself, at `retryAt`;
  * - `failed` after one it doesn't, until asked to try again.
  *
@@ -512,6 +513,7 @@ export const localState = z.discriminatedUnion('kind', [
     mergeBase: oid.nullable(),
     from: compared.optional(),
     offline: z.boolean(),
+    folder: z.string().min(1).max(4096),
   }),
   z.strictObject({
     kind: z.literal('retrying'),
@@ -603,6 +605,17 @@ export const contract = defineContract('tab', {
     reload: { input: byId, reply: reply<void>() },
     /** Tries again now what failed on a pull request's tab: reading it, and its local copy. */
     retry: { input: byId, reply: reply<void>() },
+    /**
+     * Shows a pull request's tab's local copy in Finder, or in the system's file manager: its
+     * clone's folder, as main has it. Refused while the copy isn't ready (`notReady`), and once its
+     * folder is gone from the disk (`gone`).
+     */
+    showLocal: { input: byId, reply: reply<void>() },
+    /**
+     * Copies the whole path of a pull request's tab's local copy, as main has it, which the window
+     * is given written shorter. Refused while the copy isn't ready (`notReady`).
+     */
+    copyLocal: { input: byId, reply: reply<void>() },
     /**
      * Opens a pull request's tab with one of the accounts that can see it, when several can, and
      * remembers it for the repository's owner.

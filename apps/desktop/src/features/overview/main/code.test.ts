@@ -457,6 +457,7 @@ describe('codeReply', () => {
         base: commit,
         mergeBase: commit,
         offline: false,
+        folder: '/cache/e2e.git',
       },
       () => Promise.resolve(repo),
       commit,
@@ -503,7 +504,14 @@ describe('stopping a read', () => {
     const controller = new AbortController();
     controller.abort();
     const reply = await codeReply(
-      { kind: 'ready', head: commit, base: commit, mergeBase: commit, offline: false },
+      {
+        kind: 'ready',
+        head: commit,
+        base: commit,
+        mergeBase: commit,
+        offline: false,
+        folder: '/cache/e2e.git',
+      },
       () => Promise.resolve(clone),
       commit,
       [{ path: 'src/a.ts', lines: true }],

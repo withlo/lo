@@ -130,9 +130,16 @@ test('builds the syntax index of a PR nothing trusts, says so in the status bar,
         },
         { timeout: 60_000, intervals: [100] },
       )
-      .toEqual({ kind: 'ready', partial: null });
+      .toMatchObject({ kind: 'ready', partial: null });
     expect(states.some((state) => state.includes('"building"'))).toBe(true);
     await expect(status.getByText('Code index', { exact: true })).toBeVisible();
+    // A click says what it is, and what it covers.
+    await status.getByRole('button', { name: 'Code index' }).click();
+    const details = page.getByRole('dialog', { name: 'Code index' });
+    await expect(details).toContainText('Ready');
+    await expect(details).toContainText('TypeScript');
+    await page.keyboard.press('Escape');
+    await expect(details).toBeHidden();
   });
 
   await test.step('the code port answers a definition from the index', async () => {

@@ -108,7 +108,14 @@ async function fetched(): Promise<{ repo: Repo; local: ReadyLocal }> {
   const mergeBase = await repo.mergeBase(head, baseTip);
   return {
     repo,
-    local: { kind: 'ready', head, base: baseTip, mergeBase: mergeBase ?? null, offline: false },
+    local: {
+      kind: 'ready',
+      head,
+      base: baseTip,
+      mergeBase: mergeBase ?? null,
+      offline: false,
+      folder: '/cache/e2e.git',
+    },
   };
 }
 
@@ -324,6 +331,7 @@ describe('SinceReads', () => {
       base: baseTip,
       mergeBase: mergeBase ?? null,
       offline: false,
+      folder: '/cache/e2e.git',
     };
     const fetches: string[] = [];
     const clone = through(repo, {
