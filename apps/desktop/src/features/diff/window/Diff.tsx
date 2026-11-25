@@ -40,7 +40,7 @@ import { holdTree, orderIn, useOrderMode } from '../../tree/window/shared.ts';
 import type { DiffProblem } from '../contract.ts';
 import { layout as layoutSetting, whitespace as whitespaceSetting } from '../settings.ts';
 import { draw, type DrawOptions, type Drawing, type Place } from './drawing.ts';
-import { inOrder, keepsBox, keptOrder, type KeptOrder, viewKey } from './files.ts';
+import { drawsView, inOrder, keepsBox, keptOrder, type KeptOrder, viewKey } from './files.ts';
 import { problemSays, type Snapshot } from './loader.ts';
 import { usePage } from './page.ts';
 import { placesFor } from './places.ts';
@@ -180,9 +180,7 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
   // A tab that comes back on screen meanwhile draws the one it had again, held, from what the
   // loader kept of it. The next is drawn over it, unseen; once its editors have measured it, in the
   // next frame, it fades in over it in one Swap, and the bar's line and the tree change with it.
-  // A diff with no files has no view: the middle says no file changed in its place.
-  const drawable =
-    key !== undefined && entries?.length !== 0 && nonceValue !== undefined && settled;
+  const drawable = drawsView({ key, entries, nonce: nonceValue, settled });
   const want = drawable ? key : undefined;
   /** What the view on screen shows, held or not, by its key. */
   const [drawnKey, setDrawnKey] = useState<string>();
