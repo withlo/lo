@@ -179,6 +179,15 @@ export { reveal, scrollPane, type RevealBlock, type RevealOptions } from './reve
 export { Steps, type StepItem, type StepsProps, type StepState } from './Steps.tsx';
 export { Mark, type MarkProps } from './Mark.tsx';
 export {
+  Glyphs,
+  Icon,
+  iconElement,
+  type GlyphsProps,
+  type IconProps,
+  type IconSize,
+} from './Icon.tsx';
+export type { IconName } from './icons.ts';
+export {
   SetupDone,
   SetupItem,
   SetupList,

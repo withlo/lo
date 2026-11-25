@@ -138,6 +138,27 @@ Dark (Lo Glow Dark) is the default. Every color comes from `tokens.json` through
   them. A spinner is a ball at work. Don't swap them for checkboxes or bars.
 - Don't add colored left-border stripes to cards, gradients, or shadows on things that don't float.
 
+## Icons
+
+Lo's icons come from one set, Lucide (`lucide`, ISC, pinned), drawn by `Icon` from `@lo/ui`. The
+mark isn't an icon.
+
+- `Icon` takes a `name` from `icons.ts`, the list of the Lucide icons Lo uses, and a `size`. To use
+  a new icon, add its name there. Nothing else imports `lucide`, and no component writes an `<svg>`
+  of its own: `lo/no-inline-icon` refuses one. A code view's own DOM takes `iconElement`. The files
+  whose icons are still drawn by hand are listed in `scripts/oxlint/svgs.ts`, which only shrinks.
+- Four sizes, each with its stroke in pixels: 12 px at 1.25 px beside `text-micro`, `text-small` and
+  in a key chip; 14 px at 1.25 px beside `text-ui`; 16 px at 1.5 px for an icon alone in a control
+  and beside titles and reading text; 24 px at 1.5 px in an empty state.
+- An icon takes its text's color. Alone it's `lo-icon`, or `lo-icon-muted` for file, folder and
+  secondary icons. Stroke only, round caps and joins: never filled, never two tones.
+- A character the fonts don't hold is an icon. Host Grotesk and Fragment Mono have no `⌘`, `⏎`, `→`,
+  `✓`, `⋯` or `↗`, and the system would draw each in another weight. `Glyphs` draws them, from
+  `glyphs.ts`. `· › … –` are in both fonts and stay text.
+- State is a ball, not an icon. Another brand's mark is that brand's own file, never redrawn.
+- An icon with no words beside it names itself: `label` on `Icon` for a mark, a tooltip for a
+  control.
+
 ## Controls
 
 - Disabled dims a control. It never removes its outline. A disabled button keeps its box and its
@@ -692,7 +713,7 @@ tokens. Their code is the source for how each one looks.
 | Window           | PullRequestTab, TabBar, PRHeader, StatusBar, Banner, Offer, DismissButton             |
 | Panels           | StackTree, FileTree                                                                   |
 | Controls         | Button, HintButton, MoreButton, CopyButton, Key, SegmentedControl, Switch, Input      |
-| Marks            | StatePill, Tag, Avatar, Marks                                                         |
+| Marks            | Icon, Glyphs, StatePill, Tag, Avatar, Marks                                           |
 | Floating         | Dialog, Popover, ContextMenu, Palette, Tooltip, ToastStack                            |
 | Motion and waits | Collapse, Swap, Loading, Skeleton, Spinner, LogoMotion, Problem, EmptyState           |
 | Review           | Thread, Diff, CodeView, CommentBox                                                    |
@@ -868,6 +889,7 @@ push is a revision, written r3) and the shape of each kind of message. Nothing h
 - Import a popup from Base UI in a feature.
 - Give an element a `title`: the tooltip is Lo's `Tooltip`.
 - Copy macOS-only window chrome, or assume `⌘` exists on Linux.
+- Write an `<svg>` icon in a component, or type a symbol the fonts don't hold.
 
 ## Where things are
 

@@ -29,8 +29,8 @@
 # - registered, with the Viewer role, for `lo:` links and web links;
 # - holding in Info.plist the copyright the builder's config gives
 #   (apps/desktop/build/electron-builder.yml), and the licenses beside its asar: licenses.txt, which
-#   isn't empty, opens with Lo's own GPL-3.0 notice and names the packages and fonts that must always
-#   be there, with Electron's license and Chromium's, and none of it in the asar;
+#   isn't empty, opens with Lo's own GPL-3.0 notice and names the packages, fonts and icons that must
+#   always be there, with Electron's license and Chromium's, and none of it in the asar;
 # - quitting at once, saying why, when started with anything but a link, a switch after whitespace
 #   included, or with a variable set that would write out or expose its traffic, such as
 #   SSLKEYLOGFILE;
@@ -320,7 +320,7 @@ else
   esac
   grep -q '^GNU GENERAL PUBLIC LICENSE$' "$licenses" || fail "licenses.txt lacks GPL-3.0's text"
   for package in electron-updater react react-dom @codemirror/view \
-    @fontsource-variable/host-grotesk @fontsource/fragment-mono; do
+    @fontsource-variable/host-grotesk @fontsource/fragment-mono lucide; do
     grep -q "^$package@[0-9][^ ]* (" "$licenses" || fail "licenses.txt doesn't name $package"
   done
 fi
