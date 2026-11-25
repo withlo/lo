@@ -7,7 +7,7 @@ import { useStore } from 'zustand';
 import { IpcError } from '../../../ipc/contract.ts';
 import { refuse } from '../../../window/commands/notices.tsx';
 import { client } from '../../../window/ipc.ts';
-import { defineSlot, defineView, type View } from '../../../window/slots.tsx';
+import { defineSlot, defineView, type Presence, type View } from '../../../window/slots.tsx';
 import {
   checkRowWords,
   contract,
@@ -49,7 +49,10 @@ export const rows = defineSlot<object, RowAbout>('settings.rows');
  * A setting that's a list, as the trusted repos are, sets `list`, and its control is drawn as the
  * list under the row's words. A setting a command changes from a view, as `gi` does the diff's
  * layout, names it in `command`, and the row shows its key. The view's `id` is the setting's key
- * unless given, and like any view's it's named for the feature: `settings.theme` for `theme`.
+ * unless given, and like any view's it's named for the feature: `settings.theme` for `theme`. A
+ * row whose line says more while something else is on, such as another feature, reads it with
+ * `useLine`, a hook: the setting's own line is what search finds it by. A row of a feature a setting
+ * turns off comes and goes with it (`present`).
  */
 export function settingRow<T>(
   setting: Setting<T>,
@@ -59,31 +62,58 @@ export function settingRow<T>(
     readonly control?: (props: ControlProps<T>) => ReactNode;
     readonly list?: boolean;
     readonly command?: string;
+    readonly useLine?: () => string;
+    readonly present?: Presence;
   },
 ): View {
-  const { group } = setting;
-  if (group === 'file') {
-    throw new Error(`The setting ${setting.key} is only in the settings file, and has no row.`);
-  }
   const plain = typeof setting.fallback === 'boolean' || setting.options !== undefined;
   if (!plain && row.control === undefined) {
     throw new Error(`The setting ${setting.key} needs a control of its own for its row.`);
   }
-  return defineView(rows, {
+  const { useLine } = row;
+  if (useLine === undefined) {
+    return defineView(rows, {
+      ...aboutOf(setting, row),
+      render: () =>
+        createElement(SettingRowView<T>, {
+          setting,
+          control: row.control,
+          list: row.list,
+          command: row.command,
+        }),
+    });
+  }
+  // A component of its own, so the hook is its own.
+  function Lined(): ReactNode {
+    const description = useLine?.() ?? setting.description;
+    checkRowWords(`The setting ${setting.key}`, setting.label, description);
+    return createElement(SettingRowView<T>, {
+      setting: { ...setting, description },
+      control: row.control,
+      list: row.list,
+      command: row.command,
+    });
+  }
+  return defineView(rows, { ...aboutOf(setting, row), render: () => createElement(Lined) });
+}
+
+/** What Settings knows of `setting`'s row besides how to draw it, and where it goes. */
+function aboutOf<T>(
+  setting: Setting<T>,
+  row: { readonly order: number; readonly id?: string; readonly present?: Presence },
+) {
+  if (setting.group === 'file') {
+    throw new Error(`The setting ${setting.key} is only in the settings file, and has no row.`);
+  }
+  return {
     id: row.id ?? setting.key,
     order: row.order,
-    group,
+    group: setting.group,
     label: setting.label,
     description: setting.description,
     settingKey: setting.key,
-    render: () =>
-      createElement(SettingRowView<T>, {
-        setting,
-        control: row.control,
-        list: row.list,
-        command: row.command,
-      }),
-  });
+    present: row.present,
+  };
 }
 
 /**
@@ -101,6 +131,8 @@ export function defineRow(row: {
   readonly description: string;
   readonly words?: () => readonly string[];
   readonly render: (about: { label: string; description: string }) => ReactNode;
+  /** Whether it's in Settings now, for a row of a feature a setting turns off. */
+  readonly present?: Presence;
 }): View {
   const { render, label, description } = row;
   checkRowWords(`The row ${row.id}`, label, description);

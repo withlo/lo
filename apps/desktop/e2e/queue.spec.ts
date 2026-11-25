@@ -7,9 +7,20 @@
 // restarts. It's served as `app_queue_polled`, which adds GitHub's answer to each overview ref read
 // again, as Lo does when its window comes to the front.
 
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
+
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
 
-import { appEnvironment, dataFolder, drawnWindow, expect, onQueue as test, QUEUE } from './app.ts';
+import {
+  appEnvironment,
+  dataFolder,
+  drawnWindow,
+  expect,
+  onQueue as test,
+  QUEUE,
+  settingsPath,
+} from './app.ts';
 
 const { pulls } = QUEUE;
 
@@ -145,7 +156,13 @@ test('`j` and `k` move, `⏎` opens the pull request the keyboard is on, and `Ta
 
 test('the queue’s tab comes back after Lo restarts, and reads its queue again', async ({
   launch,
+  settings,
 }) => {
+  // Started here, not by the app fixture: the settings file is written as that would.
+  if (settings !== undefined) {
+    mkdirSync(dirname(settingsPath(dataFolder())), { recursive: true });
+    writeFileSync(settingsPath(dataFolder()), settings);
+  }
   const start = async (): Promise<{ app: ElectronApplication; page: Page }> => {
     const app = await electron.launch({
       args: launch.args,

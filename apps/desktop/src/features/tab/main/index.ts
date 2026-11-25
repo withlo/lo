@@ -12,6 +12,7 @@ import { offlineAfter } from '../../../main/environment.ts';
 import { defineFeature, type FeatureContext } from '../../../main/features.ts';
 import { provides } from '../../../main/services.ts';
 import { github } from '../../accounts/service.ts';
+import { settings } from '../../settings/service.ts';
 import { login as accountLogin } from '../../accounts/contract.ts';
 import {
   contract,
@@ -25,6 +26,7 @@ import {
   type Tabs,
 } from '../contract.ts';
 import { tabs } from '../service.ts';
+import { open as openOn } from '../settings.ts';
 import { createTabs, type TabList } from './tabs.ts';
 import { Watcher } from './watcher.ts';
 
@@ -79,7 +81,7 @@ function pullTab(id: string): Watcher {
 }
 
 export default defineFeature(contract, {
-  uses: [github],
+  uses: [github, settings],
   provide: (context) => [
     provides(tabs, {
       list: () => viewsOnScreen(tabsOf(context).list()),
@@ -153,6 +155,8 @@ export default defineFeature(contract, {
     },
   },
   start(context) {
+    // The window reads it as a pull request's tab opens, and changes it from Settings.
+    context.use(settings).declare(openOn);
     const list = tabsOf(context);
     watcher = new Watcher({
       offlineAfter: offlineAfter({ packaged: app.isPackaged, env: process.env }),

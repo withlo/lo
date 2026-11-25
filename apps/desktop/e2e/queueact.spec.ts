@@ -15,7 +15,7 @@ import { MERGE_PULLS, writeMergeRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { Page } from '@playwright/test';
 
-import { appFolder, expect, KEYCHAIN, test as base } from './app.ts';
+import { appFolder, DIFF_FIRST, expect, KEYCHAIN, test as base } from './app.ts';
 
 const { pulls } = MERGE_PULLS[9];
 
@@ -50,6 +50,9 @@ const test = base.extend<{ cassette: string; github: ReplayServer; remote: strin
     });
   },
 });
+
+// Their pull requests have no overview, and the cassette doesn’t answer for their timelines.
+test.use({ settings: DIFF_FIRST });
 
 /** The merge queue's tab on screen. */
 const queue = (page: Page) => page.locator('[data-lo-scope="queue"]');

@@ -17,6 +17,7 @@ import {
   appEnvironment,
   appFolder,
   dataFolder,
+  DIFF_FIRST,
   drawnWindow,
   expect,
   KEYCHAIN,
@@ -60,6 +61,9 @@ const test = base.extend<{ github: ReplayServer; remote: string; tokenFile: stri
     });
   },
 });
+
+// Some of their pull requests have no overview, and the cassette doesn’t answer for timelines.
+test.use({ settings: DIFF_FIRST });
 
 type Opening = { owner: string; repo: string; number: number };
 const E2E: Opening = { owner: 'rozed-dev', repo: 'e2e', number: APP_PULL.number };

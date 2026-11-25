@@ -19,9 +19,9 @@ import {
 
 import { refuse } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
-import { showDiff, showPlace } from '../../diff/window/shared.ts';
+import { showPlace } from '../../diff/window/shared.ts';
 import { holdLimit } from '../../revisions/window/shared.ts';
-import { showMiddle, tabState } from '../../tab/window/shared.ts';
+import { showInstead, showMiddle, tabState } from '../../tab/window/shared.ts';
 import { blockId, blockIn, codeOf, type CodeAt } from './blocks.ts';
 import { OVERVIEW_VIEW } from './labels.ts';
 import { main } from './main.ts';
@@ -652,8 +652,8 @@ const registered = new Set<string>();
 /**
  * Lets tab `tab`'s history reveal its places in the overview for as long as the tab is open: a
  * block of the overview it shows, which comes on screen with the block given focus, or the
- * overview itself, left at no block, which goes to the diff where the tab opened on it without ever
- * showing its overview. A block a newer overview doesn't have is gone.
+ * overview itself, left at no block, which goes to the timeline where the tab went there without
+ * ever showing its overview. A block a newer overview doesn't have is gone.
  */
 export function placesFor(tab: string): void {
   if (registered.has(tab)) return;
@@ -663,8 +663,8 @@ export function placesFor(tab: string): void {
     'overview',
     (at) => {
       if (at.kind === 'none') {
-        return overviewPlace(openings.get(tab)) === 'diff'
-          ? showDiff(tab)
+        return overviewPlace(openings.get(tab)) === 'timeline'
+          ? showInstead(tab)
           : showMiddle(tab, OVERVIEW_VIEW);
       }
       const tree = trees.get(tab);

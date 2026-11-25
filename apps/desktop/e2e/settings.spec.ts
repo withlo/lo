@@ -149,12 +149,13 @@ test('⌘, opens Settings in one tab, and shows it again from anywhere; and Pull
       .getByRole('button', { name: 'Pull requests' })
       .click();
     const openOn = page.getByRole('radiogroup', { name: 'Open pull requests on' });
+    await expect(openOn.getByRole('radio')).toHaveText(['Overview', 'Timeline', 'Diff']);
     await expect(openOn.getByRole('radio', { name: 'Overview' })).toHaveAttribute(
       'aria-checked',
       'true',
     );
     await openOn.getByRole('radio', { name: 'Diff' }).click();
-    await expect.poll(saved).toEqual({ 'overview.open': 'diff' });
+    await expect.poll(saved).toEqual({ 'tab.open': 'diff' });
     await expect(openOn.getByRole('radio', { name: 'Diff' })).toHaveAttribute(
       'aria-checked',
       'true',
@@ -165,7 +166,7 @@ test('⌘, opens Settings in one tab, and shows it again from anywhere; and Pull
       'true',
     );
     await layout.getByRole('radio', { name: 'Inline' }).click();
-    await expect.poll(saved).toEqual({ 'overview.open': 'diff', 'diff.layout': 'inline' });
+    await expect.poll(saved).toEqual({ 'tab.open': 'diff', 'diff.layout': 'inline' });
   });
 });
 

@@ -1,15 +1,18 @@
 // A pull request's tab: its header, its banner, the left panel, the middle sheet, with what goes
 // across its top, and the right panel other features fill, with the header's toggle for it, and its
 // status bar, which ends with the keys held for a command still to come, and Vim's mode while code
-// has focus. Until the diff and the threads arrive, the middle says what's coming, and a pull
-// request the tab can't show says why there.
+// has focus. It opens on the middle view Settings names, once Settings is known. Until the diff and
+// the threads arrive, the middle says what's coming, and a pull request the tab can't show says why
+// there.
 
 import { PRHeader, StatusBar, StatusKeys, StatusMode, Swap } from '@lo/ui';
 import { focusedMode, onFocusedMode } from '@lo/ui/code';
-import { useState, useSyncExternalStore } from 'react';
+import { useLayoutEffect, useState, useSyncExternalStore } from 'react';
 
 import { registry } from '../../../window/commands/registry.ts';
 import { Slot, useViews } from '../../../window/slots.tsx';
+import { useKnownSetting } from '../../settings/window/shared.ts';
+import { open as openOn } from '../settings.ts';
 import { blocked } from './banners.ts';
 import { Banners, LimitItem, LocalItem, TabFailed, useHeaderConnection } from './Notes.tsx';
 import {
@@ -27,6 +30,8 @@ import {
 import {
   focusPanel,
   middleIds,
+  middleOf,
+  opening,
   panels,
   rightIds,
   takeRightFocus,
@@ -72,15 +77,16 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
   const connection = useHeaderConnection(tab, view);
   // A pull request the tab can't show takes the middle's place, with why, over what's drawn.
   const failed = blocked(view);
-  const { leftOpen, right: rightChosen } = useTabPanels(tab.id);
+  const { leftOpen, right: rightChosen, middle: chosen, opened } = useTabPanels(tab.id);
   const lefts = useViews(left);
   const middles = useViews(middle);
   const rights = useViews(right);
   const rightOpen = useRightOpen();
+  const open = useKnownSetting(openOn);
   viewCounts.left = lefts.length;
   viewCounts.middle = middles.length;
   viewCounts.right = rights.length;
-  if (middleIds.ids.length !== middles.length) {
+  if (middleIds.ids.join('\n') !== middles.map((each) => each.id).join('\n')) {
     middleIds.ids = middles.map((each) => each.id);
     middleIds.labeled = middles.map((each) => each.label !== undefined);
   }
@@ -93,7 +99,21 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
   const showRight = rightOpen && rights.length > 0;
   // One of its views at a time: the one shown last, or the first, the threads.
   const shownRight = rights.find((each) => each.id === rightChosen) ?? rights[0];
-  const shownMiddle = middles[panels.get(tab.id).middle % Math.max(1, middles.length)];
+  // The view Settings names, once it's known, until the tab has one of its own; then that, or the
+  // timeline while it's gone.
+  const shownId = middleOf(chosen, middleIds.ids, open);
+  if (chosen === undefined && shownId !== undefined) opening.set(tab.id, shownId);
+  // What it opened on, kept, so a change in Settings moves no tab that's open.
+  useLayoutEffect(() => {
+    if (opened !== undefined || shownId === undefined) return;
+    opening.delete(tab.id);
+    panels.update(tab.id, (current) => ({
+      ...current,
+      middle: current.middle ?? shownId,
+      opened: shownId,
+    }));
+  }, [tab.id, opened, shownId]);
+  const shownMiddle = middles.find((each) => each.id === shownId);
   // The middle views shown since the tab was drawn stay drawn, hidden while another is on screen.
   const [kept, setKept] = useState<readonly string[]>([]);
   if (shownMiddle && !kept.includes(shownMiddle.id)) setKept([...kept, shownMiddle.id]);

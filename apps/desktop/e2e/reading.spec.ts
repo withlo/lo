@@ -1,15 +1,19 @@
 // Reading a pull request's overview in the app: Lo, started on the replay server as rozed-bot,
-// opens rozed-dev/e2e#80 on its overview when it shows within the bound, and on the diff when it
-// doesn't, there's none, or Settings says so, offering one that comes later; says why one can't be
-// shown; offers a newer one pushed while it's read; opens its links to web pages in the browser;
-// fills in its code blocks and walkthrough from the local copy; and never moves what's on screen
-// without the reader: not as banners come and go, as it's checked again, as its code fills in, as
-// a newer one is offered at any width, or as what's above the line being read changes size. A
+// opens rozed-dev/e2e#80 on its overview when it shows within the bound, on the timeline when it
+// doesn't or there's none, offering one that comes later, and on the diff when Settings says so;
+// takes it out of the tab, its menus and the palette while Settings turns overviews off, and puts
+// it back as they're turned on; says why one can't be shown; offers a newer one pushed while it's
+// read; opens its links to web pages in the browser; fills in its code blocks and walkthrough from
+// the local copy; and never moves what's on screen without the reader: not as banners come and
+// go, as it's checked again, as its code fills in, as a newer one is offered at any width, or as
+// what's above the line being read changes size. A
 // server in front of the replay server answers for the overview's ref as each test says: with the
-// overview `testing/fixtures/app.sh` wrote, none, one made here, or a failure.
+// overview `testing/fixtures/app.sh` wrote, none, one made here, or a failure. It fails the
+// timeline's reads itself, which the cassette doesn't hold: these tests need only that a tab is on
+// the timeline, not what it shows.
 
 import { createHash } from 'node:crypto';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { createServer, type ServerResponse } from 'node:http';
 import { buffer } from 'node:stream/consumers';
 import { crc32, deflateSync } from 'node:zlib';
@@ -21,11 +25,15 @@ import type { ElectronApplication, Page } from '@playwright/test';
 import { HOLD_LIMIT } from '../src/features/revisions/contract.ts';
 import {
   appFolder,
+  barItem,
   browsed,
+  dataFolder,
   DIFF_FIRST,
   expect,
   KEYCHAIN,
+  keepMenus,
   rowOver,
+  settingsPath,
   sizeWindow,
   test as base,
 } from './app.ts';
@@ -64,6 +72,9 @@ const TOKEN = 'gho_FAKE_E2E_ACCOUNT';
 
 /** Where #80's overview's ref is read, past GitHub's origin. */
 const REFS = `/repos/rozed-dev/e2e/git/matching-refs/lo/pr/${APP_PULL.number}`;
+
+/** The timeline's reads, which the cassettes here don't hold. */
+const TIMELINE = /\bquery (Timeline|PullRequestSidebar)\b/;
 
 /** A file of an overview made here: its text, its bytes, or a size Lo never reads past. */
 type Made = string | Uint8Array | { size: number };
@@ -295,6 +306,9 @@ const test = base.extend<{
           }
         }
         if (overviews.some((overview) => answerFor(overview, path, outgoing))) return;
+        if (path === '/graphql' && TIMELINE.test(body.toString())) {
+          return json(outgoing, 502, { message: 'Server Error' });
+        }
         const headers = new Headers();
         for (const [name, value] of Object.entries(incoming.headers)) {
           if (typeof value === 'string' && name !== 'host') headers.set(name, value);
@@ -410,7 +424,7 @@ async function readAgain(page: Page, id: string): Promise<void> {
 }
 
 /** A middle view of the tab on screen, by its id: drawn, whether or not it's the one shown. */
-const middleView = (page: Page, id: 'overview.view' | 'diff.view') =>
+const middleView = (page: Page, id: 'overview.view' | 'diff.view' | 'timeline.view') =>
   page.locator(`[data-lo-middle-view="${id}"]`);
 
 /** The header's view switch. */
@@ -555,8 +569,8 @@ test.describe('as a pull request opens', () => {
 
     await openAsRecent(page);
     await expect(overview(page, 'shown')).toBeVisible({ timeout: 10_000 });
-    // It opened on the overview: the diff was never drawn.
-    await expect(middleView(page, 'diff.view')).toHaveCount(0);
+    // It opened on the overview: the timeline was never drawn.
+    await expect(middleView(page, 'timeline.view')).toHaveCount(0);
     await expect(overviewTab(page)).toHaveAttribute('aria-selected', 'true');
     // Written for the first push, which the second force-pushed over.
     await expect(overviewTab(page).getByRole('img')).toHaveAccessibleName('Overview · out of date');
@@ -588,7 +602,7 @@ test.describe('as a pull request opens', () => {
     });
   });
 
-  test('opens on the diff when there’s no overview, which offers the prompt to write one, and copies the prompts, by their buttons and ya, with nothing an overview says', async ({
+  test('opens on the timeline when there’s no overview, which offers the prompt to write one, and copies the prompts, by their buttons and ya, with nothing an overview says', async ({
     app,
     page,
     ref,
@@ -597,8 +611,8 @@ test.describe('as a pull request opens', () => {
     const id = await open(page);
     const none = overview(page, 'none');
 
-    await test.step('opens on the diff, which offers the prompt to write one', async () => {
-      await expect(middleView(page, 'diff.view')).toBeVisible({ timeout: 10_000 });
+    await test.step('opens on the timeline, which offers the prompt to write one', async () => {
+      await expect(middleView(page, 'timeline.view')).toBeVisible({ timeout: 10_000 });
       await expect(overviewTab(page).getByRole('img')).toHaveAccessibleName('No overview yet');
       await overviewTab(page).click();
       await expect(overview(page, 'none')).toBeVisible();
@@ -638,27 +652,27 @@ test.describe('as a pull request opens', () => {
     }
   });
 
-  test('opens on the diff when the overview comes after the bound, and offers it', async ({
+  test('opens on the timeline when the overview comes after the bound, and offers it', async ({
     page,
     ref,
   }) => {
     ref.delay = 2500;
     const id = await open(page);
-    await expect(middleView(page, 'diff.view')).toBeVisible({ timeout: 10_000 });
+    await expect(middleView(page, 'timeline.view')).toBeVisible({ timeout: 10_000 });
     await expect(middleView(page, 'overview.view')).toBeHidden();
     await expect
       .poll(() => current(page, id), { timeout: 20_000 })
       .toMatchObject({ found: 'commit' });
     const ready = page.locator('footer').getByText('Overview ready');
     await expect(ready).toBeVisible({ timeout: 10_000 });
-    // Offered, and the diff stays.
-    await expect(middleView(page, 'diff.view')).toBeVisible();
+    // Offered, and the timeline stays.
+    await expect(middleView(page, 'timeline.view')).toBeVisible();
     await expect(middleView(page, 'overview.view')).toBeHidden();
     await ready.click();
     await expect(overview(page, 'shown')).toBeVisible();
     // Seen, it's no longer offered.
-    await views(page).getByRole('tab', { name: 'Diff' }).click();
-    await expect(middleView(page, 'diff.view')).toBeVisible();
+    await views(page).getByRole('tab', { name: 'Timeline' }).click();
+    await expect(middleView(page, 'timeline.view')).toBeVisible();
     await expect(ready).toHaveCount(0);
   });
 });
@@ -672,6 +686,99 @@ const WRITE = [
   'and the commits; write artifact.md and its figures; run the',
   `checker; then push to refs/lo/pr/${APP_PULL.number}.`,
 ].join('\n');
+
+/** The settings file as an object, or nothing while there's no file. */
+function saved(): unknown {
+  try {
+    return JSON.parse(readFileSync(settingsPath(dataFolder()), 'utf8'));
+  } catch {
+    return undefined;
+  }
+}
+
+test('goes from the tab, its menus and the palette while Settings turns overviews off, and comes back as they’re turned on, with no restart', async ({
+  app,
+  page,
+}) => {
+  if (process.platform !== 'darwin') await keepMenus(app);
+  const id = await open(page);
+  await expect(overview(page, 'shown')).toBeVisible({ timeout: 20_000 });
+  const shows = page.getByRole('switch', { name: 'Show overviews' });
+  const openOn = page.getByRole('radiogroup', { name: 'Open pull requests on' });
+  const skill = page.locator('[data-settings-row="overview.skillRow"]');
+  const palette = page.getByRole('dialog', { name: 'Command palette' });
+  const input = palette.getByRole('combobox', { name: 'Command palette' });
+  /** Settings › Pull requests, which turns overviews off or on by its switch. */
+  const turn = async () => {
+    await page.evaluate(() => window.lo.invoke('tab.open', { kind: 'settings' }));
+    await page
+      .getByRole('navigation', { name: 'Settings' })
+      .getByRole('button', { name: 'Pull requests' })
+      .click();
+    await shows.click();
+  };
+  /** Back to #80's tab, by its tab in the strip, with the keys in its middle. */
+  const back = async () => {
+    await page
+      .getByRole('tablist', { name: 'Tabs' })
+      .getByRole('tab', { name: new RegExp(`e2e #${APP_PULL.number}\\b`) })
+      .click();
+    await page.locator('main[data-lo-middle]').focus();
+  };
+  /** The palette open, with `typed` in it. */
+  const typed = async (text: string) => {
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+P' : 'Control+Shift+P');
+    await expect(input).toBeFocused();
+    await input.fill(text);
+  };
+  const overviews = palette.getByRole('option', { name: /overview|^Copy prompt/i });
+
+  await test.step('Settings turns them off: the choice of first view has no Overview', async () => {
+    await turn();
+    await expect.poll(saved).toEqual({ 'overview.on': false });
+    await expect(shows).not.toBeChecked();
+    await expect(openOn.getByRole('radio')).toHaveText(['Timeline', 'Diff']);
+    // Settings still says the overview, which the timeline stands in for.
+    await expect(openOn.getByRole('radio', { name: 'Timeline' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    await expect(skill).toHaveCount(0);
+  });
+
+  await test.step('the tab is on the timeline, with no overview in its switch, menus or palette', async () => {
+    await back();
+    await expect(views(page).getByRole('tab')).toHaveText([/^Diff/, /^Timeline/]);
+    await expect(middleView(page, 'timeline.view')).toBeVisible();
+    await expect(middleView(page, 'overview.view')).toHaveCount(0);
+    await expect.poll(() => barItem(app, page, 'overview.show')).toBeNull();
+    expect(await barItem(app, page, 'timeline.show')).toBe(true);
+    await typed('Timeline');
+    await expect(palette.getByRole('option', { name: /^Timeline/ })).toBeVisible();
+    await input.fill('overview');
+    await expect(overviews).toHaveCount(0);
+    await input.fill('copy prompt');
+    await expect(overviews).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(palette).toBeHidden();
+    // Main reads no overview for the tab.
+    expect(await current(page, id)).toBeUndefined();
+  });
+
+  await test.step('turned on again, it all comes back, and the tab to its overview', async () => {
+    await turn();
+    await expect(shows).toBeChecked();
+    await expect(openOn.getByRole('radio')).toHaveText(['Overview', 'Timeline', 'Diff']);
+    await expect(skill).toHaveCount(1);
+    await back();
+    await expect(views(page).getByRole('tab')).toHaveText([/^Overview/, /^Diff/, /^Timeline/]);
+    await expect(overview(page, 'shown')).toBeVisible({ timeout: 20_000 });
+    await expect.poll(() => barItem(app, page, 'overview.show')).toBe(true);
+    await typed('overview');
+    await expect(palette.getByRole('option', { name: /^Overview/ })).toBeVisible();
+    await page.keyboard.press('Escape');
+  });
+});
 
 test('offers a newer overview pushed while one is read, and loads it only when asked; a block’s menu reads the overview again after a read failed, and loads a newer one', async ({
   page,
@@ -888,7 +995,7 @@ test('says when the overview couldn’t be fetched, and reads it again on Try no
     await expect
       .poll(() => current(page, id), { timeout: 20_000 })
       .toMatchObject({ problem: { kind: 'failed' } });
-    await expect(middleView(page, 'diff.view')).toBeVisible();
+    await expect(middleView(page, 'timeline.view')).toBeVisible();
     await overviewTab(page).click();
     const failed = overview(page, 'failed');
     await expect(failed.getByRole('alert')).toContainText('Can’t show the overview');
@@ -1131,7 +1238,7 @@ const cutElsewhere = (page: Page) =>
  * Closes tab `id`, if there is one, and opens #80's again from Recent ({@link openAsRecent}), with
  * its local copy there when it was opened before, starting `watch` as it opens; returns the new
  * tab's id. It opens on the overview, kept from the first read, once Lo knows in time that it
- * shows: a machine too busy to know within the bound opens it on the diff, which isn't what's
+ * shows: a machine too busy to know within the bound opens it on the timeline, which isn't what's
  * tested, so it's closed and opened again, three times at most, each time noted in the test's
  * results.
  */
@@ -1150,7 +1257,7 @@ async function openAgain(
     tab = await openAsRecent(page);
     /** What the tab opened on, once it has. */
     const opened = async () => {
-      if (await middleView(page, 'diff.view').isVisible()) return 'diff';
+      if (await middleView(page, 'timeline.view').isVisible()) return 'timeline';
       return (await overview(page, 'shown').isVisible()) ? 'overview' : 'waiting';
     };
     await expect.poll(opened, { timeout: 20_000 }).not.toBe('waiting');
@@ -1160,7 +1267,7 @@ async function openAgain(
     }
     test.info().annotations.push({
       type: 'opened again',
-      description: `The tab opened on its diff, try ${tries} of 3.`,
+      description: `The tab opened on its timeline, try ${tries} of 3.`,
     });
   }
 }
@@ -1231,7 +1338,8 @@ const SEEN_LATE = 100;
  * Opens #80's tab for the first time, and checks its overview's article is first seen within the
  * bound from when the tab opened, the tab's placeholder showing until then and nothing of the
  * overview before its article; returns the tab's id. A machine too busy to know in time that the
- * overview shows opens the tab on its diff, which isn't what's tested: the test is then skipped.
+ * overview shows opens the tab on its timeline, which isn't what's tested: the test is then
+ * skipped.
  */
 async function openInTime(page: Page): Promise<string> {
   await watchOpening(page);
@@ -1240,11 +1348,11 @@ async function openInTime(page: Page): Promise<string> {
   const id = await open(page);
   /** What the tab opened on, once it has. */
   const opened = async () => {
-    if (await middleView(page, 'diff.view').isVisible()) return 'diff';
+    if (await middleView(page, 'timeline.view').isVisible()) return 'timeline';
     return (await overview(page, 'shown').isVisible()) ? 'overview' : 'waiting';
   };
   await expect.poll(opened, { timeout: 20_000 }).not.toBe('waiting');
-  test.skip((await opened()) === 'diff', 'The tab opened on its diff.');
+  test.skip((await opened()) === 'timeline', 'The tab opened on its timeline.');
   const opening = await openingSeen(page);
   await expect.poll(async () => (await codeSeen(page)).seen).toBeDefined();
   const { seen } = await codeSeen(page);

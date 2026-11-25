@@ -844,7 +844,7 @@ async function watchJumps(page: Page, landing: Landing, heard: Jump['heard']): P
 for (const layout of ['inline', 'split'] as const) {
   test.describe(`${layout === 'inline' ? 'Inline' : 'Side by side'}, a change as a jump lands`, () => {
     // On the diff first, as `DIFF_FIRST` has it, in this layout.
-    test.use({ settings: JSON.stringify({ 'overview.open': 'diff', 'diff.layout': layout }) });
+    test.use({ settings: JSON.stringify({ 'tab.open': 'diff', 'diff.layout': layout }) });
 
     for (const landing of ['in its task', 'just after it', 'all along'] as const) {
       test(`leaves the screen where each jump takes it, with the change ${landing}`, async ({

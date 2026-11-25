@@ -513,15 +513,16 @@ export async function rowOver(page: Page, height = 34): Promise<() => Promise<vo
 
 /**
  * A settings file that opens a pull request on its diff, overview or not, for tests of the diff and
- * what's beside it, which would otherwise find the overview first.
+ * what's beside it, which would otherwise find the overview first, or the timeline, which their
+ * cassettes don't answer for, where there's none.
  */
-export const DIFF_FIRST = '{ "overview.open": "diff" }\n';
+export const DIFF_FIRST = '{ "tab.open": "diff" }\n';
 
 /**
  * `DIFF_FIRST` with Vim keys on, for tests of Vim's modes and motions in the code, which Lo starts
  * without.
  */
-export const DIFF_FIRST_VIM = '{ "overview.open": "diff", "editor.vim": true }\n';
+export const DIFF_FIRST_VIM = '{ "tab.open": "diff", "editor.vim": true }\n';
 
 /** A settings file that turns Vim keys on, and nothing else. */
 export const VIM_KEYS = '{ "editor.vim": true }\n';
@@ -612,6 +613,8 @@ export const onStacks = test.extend<{
   /** Where Lo finds GitHub: the replay server, or one in front of it that holds requests back. */
   githubOrigin: string;
 }>({
+  // Its pull requests have no overview, and the cassette doesn't answer for their timelines.
+  settings: [DIFF_FIRST, { option: true }],
   cassette: ['app_stack', { option: true }],
   account: [true, { option: true }],
   noGit: [false, { option: true }],
@@ -717,6 +720,8 @@ export const onMerge = test.extend<{
   github: ReplayServer;
   remote: string;
 }>({
+  // Its pull requests have no overview, and the cassette doesn't answer for their timelines.
+  settings: [DIFF_FIRST, { option: true }],
   account: [true, { option: true }],
   // oxlint-disable-next-line no-empty-pattern
   github: async ({}, use) => {
@@ -756,6 +761,8 @@ export const QUEUE = MERGE_PULLS[4];
  * for a test that restarts it.
  */
 export const onQueue = test.extend<{ github: ReplayServer; remote: string }>({
+  // Its pull requests have no overview, and the cassette doesn't answer for their timelines.
+  settings: [DIFF_FIRST, { option: true }],
   // oxlint-disable-next-line no-empty-pattern
   github: async ({}, use) => {
     const server = await serveReplay('app_queue_polled');
@@ -793,6 +800,8 @@ export const QUEUED = MERGE_PULLS[6];
  * from their repository, built on this machine.
  */
 export const onQueued = test.extend<{ cassette: string; github: ReplayServer; remote: string }>({
+  // Its pull requests have no overview, and the cassette doesn't answer for their timelines.
+  settings: [DIFF_FIRST, { option: true }],
   cassette: ['app_queued_polled', { option: true }],
   github: async ({ cassette }, use) => {
     const server = await serveReplay(cassette);
