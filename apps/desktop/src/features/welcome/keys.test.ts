@@ -38,6 +38,13 @@ describe('the welcome’s keys', () => {
     expect(runs(enter, { scope: 'welcome', text: true })).toBe('welcome.continue');
   });
 
+  it('⇧⏎ goes back in the welcome, in its link field too, and not in a comment box', () => {
+    const back = { key: 'Enter', code: 'Enter', shiftKey: true };
+    expect(runs(back, { scope: 'welcome', text: false })).toBe('welcome.back');
+    expect(runs(back, { scope: 'welcome', text: true })).toBe('welcome.back');
+    expect(runs(back, { scope: 'box', text: true })).toBeUndefined();
+  });
+
   it('takes no key anywhere else, nor a letter typed in its field', () => {
     for (const scope of ['window', 'recent', 'settings', 'dialog', 'tree']) {
       expect(runs(enter, { scope, text: false })).toBeUndefined();
@@ -45,12 +52,19 @@ describe('the welcome’s keys', () => {
     expect(runs({ key: 'j', code: 'KeyJ' }, { scope: 'welcome', text: true })).toBeUndefined();
   });
 
-  it('leaves Tab to the browser, which walks its controls, and j, k and c to the practice diff', () => {
+  it('leaves Tab to the browser, which walks its controls, the arrows and Space to its cards, and j, k and c to the practice diff', () => {
     for (const [key, code] of [
       ['Tab', 'Tab'],
       ['j', 'KeyJ'],
       ['k', 'KeyK'],
+      ['h', 'KeyH'],
+      ['l', 'KeyL'],
       ['c', 'KeyC'],
+      [' ', 'Space'],
+      ['ArrowLeft', 'ArrowLeft'],
+      ['ArrowRight', 'ArrowRight'],
+      ['ArrowUp', 'ArrowUp'],
+      ['ArrowDown', 'ArrowDown'],
     ]) {
       expect(runs({ key, code }, { scope: 'welcome', text: false })).toBeUndefined();
     }

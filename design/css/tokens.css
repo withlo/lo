@@ -400,6 +400,7 @@
   --lo-keyhelp-nav-w: 160px; /* Width of the list of areas beside keyboard shortcuts' keys. */
   --lo-settings-nav-w: 220px; /* Width of the list of groups beside Settings. */
   --lo-settings-w: 720px; /* Widest Settings' column of rows grows, in the middle of the room beside its list. */
+  --lo-choice-min-w: 144px; /* Least width of a choice's card with a picture. */
   --lo-dialog-w: 540px; /* Width of a medium dialog, the default: signing in, importing accounts, choosing an account. */
   --lo-dialog-w-sm: 420px; /* Width of a small dialog: one question and its two buttons. */
   --lo-dialog-w-lg: 720px; /* Width of a large dialog: one that holds a list or code. */

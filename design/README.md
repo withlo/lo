@@ -279,6 +279,8 @@ time.
 - Nothing waits on an animation. Input is live from the first frame. A popup gives focus back, and
   runs what was chosen, as it starts to leave, not once it has faded. A key pressed again cancels
   the last move and never queues behind it.
+- The theme changes in one frame across the window, with no fade: `setTheme` from `@lo/ui` holds
+  every transition off for the frame that draws the new colors.
 
 | Move  | What it's for                                                                                      | Runs                 | How to use it                                                   |
 | ----- | -------------------------------------------------------------------------------------------------- | -------------------- | --------------------------------------------------------------- |
@@ -453,6 +455,16 @@ A feature that needs set-up adds a step to the welcome flow and a row in Setting
   `Collapse` moves. A row says how its own press went, and no toast says it again.
 - `SetupDone` is the same mark and word by itself, for a step that's done outside a row: "Signed in
   as ravi-k".
+- A step that sets a setting shows its options as cards (`Choices`), named by the setting's own
+  option labels, with the one on file chosen, and its place in Settings at the end of the group's
+  label row. A press writes the setting at once and Continue writes nothing, so walking the welcome
+  without choosing changes nothing. A switch is a `Switch` on a row, never two cards.
+- A card's `picture` is what its option looks like, drawn from tokens, 64 px high: bars for lines of
+  code, the diff's own grounds, the real icon for a mark. Never a screenshot or an image file, and
+  no words in it. A picture follows the theme; only a picture of a theme pins one. Use one where
+  options differ in how Lo looks, not in what it does. The pictures are `@lo/ui`'s (`ThemePicture`,
+  `LayoutPicture`), drawn over one `MiniCode`.
+- The welcome's foot stays on screen. In a window too short for a step, the step scrolls under it.
 - The welcome's steps, its buttons and its keys are in `AGENTS.md`, under "The welcome flow".
 
 ## Offers

@@ -130,6 +130,8 @@ export {
 export { Avatar, avatarHue, initials, type AvatarProps } from './Avatar.tsx';
 export { Callout, type CalloutProps, type CalloutTone } from './Callout.tsx';
 export { Choices, type ChoiceItem, type ChoicesProps } from './Choices.tsx';
+export { LayoutPicture, type PictureLayout } from './pictures/LayoutPicture.tsx';
+export { ThemePicture, type PictureTheme } from './pictures/ThemePicture.tsx';
 export { SegmentedControl, type Segment, type SegmentedControlProps } from './SegmentedControl.tsx';
 export {
   Dialog,
@@ -190,6 +192,7 @@ export {
   motion,
   motionReduced,
   setMotion,
+  setTheme,
   useHeld,
   useMotionReduced,
   useOnClose,

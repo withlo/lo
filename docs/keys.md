@@ -323,6 +323,7 @@ mode. In the box's preview, or on its frame, `Esc` closes it at once, from any m
 | Go to update            | None: its control or the command palette                       | Anywhere                                                                               | `updates.focus`               |
 | Welcome to Lo           | None: its control, the app menu or the command palette         | Anywhere                                                                               | `welcome.show`                |
 | Continue                | `⏎`                                                            | In `welcome`                                                                           | `welcome.continue`            |
+| Back                    | `⇧⏎`                                                           | In `welcome`                                                                           | `welcome.back`                |
 
 ## Where keys apply
 
