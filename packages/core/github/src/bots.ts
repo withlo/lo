@@ -5,6 +5,7 @@
 // the picture is.
 
 import type { GithubClient } from './client.ts';
+import { GithubError } from './errors.ts';
 import { unchecked } from './json.ts';
 
 /** An app's slug, as GraphQL names its bot: letters, digits and hyphens. */
@@ -18,18 +19,24 @@ interface BotAccount {
 
 /**
  * Where bot `login`'s avatar is, as GitHub's answer for its account says, or nothing for a login
- * that can't be a bot's or an account that isn't one. `login` is the app's slug, as GraphQL gives
- * it; with `[bot]` after it, as REST gives it, it's the same bot. The address is GitHub's, unchecked:
- * whoever loads it checks where it is. Throws a `GithubError` when GitHub can't be asked, or has no
- * such account.
+ * that can't be a bot's, an account GitHub doesn't have (`404`), or one that isn't a bot. `login`
+ * is the app's slug, as GraphQL gives it; with `[bot]` after it, as REST gives it, it's the same
+ * bot. The address is GitHub's, unchecked: whoever loads it checks where it is. Throws a
+ * `GithubError` when GitHub can't be asked, or answers otherwise.
  */
 export async function botAvatar(client: GithubClient, login: string): Promise<string | undefined> {
   const slug = login.endsWith('[bot]') ? login.slice(0, -'[bot]'.length) : login;
   if (!SLUG.test(slug)) return undefined;
-  const account = await client.get(
-    `/users/${encodeURIComponent(`${slug}[bot]`)}`,
-    unchecked<BotAccount>,
-  );
+  let account: BotAccount;
+  try {
+    account = await client.get(
+      `/users/${encodeURIComponent(`${slug}[bot]`)}`,
+      unchecked<BotAccount>,
+    );
+  } catch (error) {
+    if (error instanceof GithubError && error.detail.kind === 'notFound') return undefined;
+    throw error;
+  }
   if (account.type !== 'Bot' || typeof account.avatar_url !== 'string') return undefined;
   return account.avatar_url;
 }

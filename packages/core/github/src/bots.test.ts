@@ -51,7 +51,12 @@ test("has no avatar for an account that isn't a bot, or one without an address",
   expect(await botAvatar(blank.client, 'cursor')).toBeUndefined();
 });
 
-test("throws GitHub's error when there's no such account", async () => {
+test("has no avatar for an account GitHub doesn't have", async () => {
   const github = client(() => json({ message: 'Not Found' }, 404));
-  await expect(botAvatar(github.client, 'gone')).rejects.toBeInstanceOf(GithubError);
+  expect(await botAvatar(github.client, 'gone')).toBeUndefined();
+});
+
+test("throws GitHub's error for any other answer", async () => {
+  const github = client(() => json({ message: 'Server Error' }, 502));
+  await expect(botAvatar(github.client, 'cursor')).rejects.toBeInstanceOf(GithubError);
 });

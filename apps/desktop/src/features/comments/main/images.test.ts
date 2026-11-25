@@ -14,6 +14,7 @@ import {
   mayFetch,
   type ImageLimits,
 } from './images.ts';
+import { BotPictures } from './bots.ts';
 
 /** Stand-in tokens, shaped like one: octocat's, and hubot's. */
 const TOKEN = 'gho_FAKEVIEWTOKENFAKEVIEWTOKENFAKEVIEWTOK';
@@ -92,8 +93,20 @@ function images(
   const tokens = options.tokens ?? { octocat: TOKEN, hubot: OTHER };
   const sent: Sent[] = [];
   const read: string[] = [];
+  const ask = options.bots;
+  const bots =
+    ask === undefined
+      ? undefined
+      : new BotPictures({
+          ask: async (login) => {
+            const given = await ask(login);
+            return given === undefined ? { kind: 'none' } : { kind: 'found', avatar: given };
+          },
+        });
   const loader = new Images({
     fetch: async (input, init) => {
+      // As fetch does, a request past its deadline isn't sent.
+      init?.signal?.throwIfAborted();
       const request = new Request(input, init);
       const one = {
         url: request.url,
@@ -110,7 +123,7 @@ function images(
       return Promise.resolve(token === undefined ? undefined : new Token(token));
     },
     limits: options.limits,
-    botAvatar: options.bots,
+    botPicture: bots === undefined ? undefined : (login) => bots.picture(login),
   });
   return { loader, sent, read };
 }
@@ -168,19 +181,8 @@ describe('Images', () => {
     expect(read).toEqual([]);
   });
 
-  it("refuses a bot's avatar GitHub puts anywhere but a picture on the avatars' host", async () => {
-    for (const given of [
-      undefined,
-      'https://avatars.githubusercontent.com/cursor',
-      'https://avatars.githubusercontent.com/in/',
-      'https://avatars.githubusercontent.com/in/0',
-      'https://avatars.githubusercontent.com/in/12/more',
-      'https://avatars.githubusercontent.com:444/in/12',
-      'http://avatars.githubusercontent.com/in/12',
-      'https://me@avatars.githubusercontent.com/in/12',
-      'https://example.com/in/12',
-      'not an address',
-    ]) {
+  it("refuses a bot's avatar GitHub has no picture for on the avatars' host", async () => {
+    for (const given of [undefined, 'https://example.com/in/12']) {
       const { loader, sent } = images(() => image(png()), {
         bots: () => Promise.resolve(given),
       });
@@ -192,21 +194,30 @@ describe('Images', () => {
     expect(await refusal(loader.load(bot('cursor')))).toMatchObject({ reason: 'refused' });
   });
 
-  it("asks GitHub again for a bot whose avatar it couldn't say", async () => {
-    let failing = true;
-    const { loader } = images(() => image(png()), {
-      bots: () =>
-        failing
-          ? Promise.reject(new Error('offline: a secret'))
-          : Promise.resolve('https://avatars.githubusercontent.com/u/9919?v=4'),
+  it("asks GitHub where a bot's picture is before the picture's turn, and outside its time", async () => {
+    let answer: ((avatar: string) => void) | undefined;
+    const asked: string[] = [];
+    const held: ((response: Response) => void)[] = [];
+    const { loader } = images(() => new Promise<Response>((resolve) => held.push(resolve)), {
+      limits: { fetching: 1, deadline: 50 },
+      bots: (login) => {
+        asked.push(login);
+        return new Promise((resolve) => (answer = resolve));
+      },
     });
-    const failed = await refusal(loader.load(bot('github-merge-queue')));
-    expect(failed).toEqual({
-      reason: 'failed',
-      message: 'GitHub couldn’t say where github-merge-queue’s avatar is',
-    });
-    failing = false;
-    expect(await loader.load(bot('github-merge-queue'))).toMatchObject({ type: 'png' });
+    // A post's image holds the one turn there is.
+    const first = loader.load(post(CAMO));
+    const cursor = loader.load(bot('cursor'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(asked).toEqual(['cursor']);
+    // Longer than an image may take, and the picture still has all its time.
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    held.shift()?.(image(png()));
+    await first.catch(() => undefined);
+    answer?.('https://avatars.githubusercontent.com/in/1210556');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    held.shift()?.(image(png()));
+    expect(await cursor).toMatchObject({ type: 'png' });
   });
 
   it("follows a bot's avatar's redirects only on the avatars' host", async () => {

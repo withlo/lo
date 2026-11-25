@@ -7,8 +7,7 @@
 //   GitHub's image hosts (`imageAddress`), or for an avatar to `avatars.githubusercontent.com`,
 //   following at most 5 redirects, each to the same list. GitHub's attachment store on S3 is
 //   reached only as an attachment's redirect. A bot's picture is the app's, at an address only
-//   GitHub knows (`/in/<app id>`), which GitHub's answer for the bot's account gives
-//   (`botAvatar`); it's asked for once a run for each bot.
+//   GitHub knows (`/in/<app id>`), which GitHub's answer for the bot's account gives (`bots.ts`).
 // - **Who asks:** a post's image is fetched as the account its view acts as, or as nobody, and
 //   kept for that account alone: what one tab's account could see never reaches another's.
 // - **The token** goes only to the first request for an attachment's address on github.com
@@ -16,7 +15,8 @@
 //   signed for a few minutes. Every other request, each redirect's included, goes without it:
 //   signed and proxied addresses need none.
 // - **What's served:** a PNG, JPEG, GIF or WebP image, by its first bytes alone, whose header gives
-//   a size no browser balks at: 16 MiB at most, fetched within 30 s. Anything else fails.
+//   a size no browser balks at: 16 MiB at most, fetched within 30 s, 6 at once. A bot's picture's
+//   address is found before its turn. Anything else fails.
 // - **What's kept:** the bytes served last, 64 MiB at most, each by the account it was fetched as
 //   and its exact address, signature and all, so only the address that fetched it finds it.
 
@@ -56,12 +56,6 @@ export const IMAGE_LIMITS: ImageLimits = {
 
 /** Where avatars are, by login. */
 export const AVATAR_HOST = 'avatars.githubusercontent.com';
-
-/**
- * Where on the avatars' host a bot's picture may be, as GitHub gives it: an app's (`/in/<id>`), or
- * an account's (`/u/<id>`).
- */
-const BOT_AVATAR_PATH = /^\/(?:in|u)\/[1-9]\d{0,11}$/;
 
 /** Where an attachment's address on github.com redirects to: its bytes, at a signed address. */
 export const ATTACHMENT_STORE = 'github-production-user-asset-6210df.s3.amazonaws.com';
@@ -111,10 +105,10 @@ export interface ImagesOptions {
   /** Account `login`'s token, read as an attachment's request starts. */
   token(login: string): Promise<Token | undefined>;
   /**
-   * Where bot `login`'s avatar is, as GitHub says (`botAvatar`), or nothing for one GitHub has no
-   * picture for. Without it, a bot's avatar is refused.
+   * Where bot `login`'s picture is on the avatars' host, with no size (`BotPictures`), or an
+   * {@link ImageError} saying why not. Without it, a bot's avatar is refused.
    */
-  botAvatar?: ((login: string) => Promise<string | undefined>) | undefined;
+  botPicture?: ((login: string) => Promise<URL>) | undefined;
   /**
    * Where to send a request for `address`, on one of GitHub's image hosts: the address itself, or
    * in a test run, a stand-in for the host. Redirects are read against the host's own address.
@@ -128,9 +122,7 @@ export class Images {
   readonly #fetch: typeof globalThis.fetch;
   readonly #acting: (view: string) => string | undefined;
   readonly #token: (login: string) => Promise<Token | undefined>;
-  readonly #botAvatar: ((login: string) => Promise<string | undefined>) | undefined;
-  /** Where each bot's picture is, by its slug in lowercase, as GitHub said, or is saying. */
-  readonly #bots = new Map<string, Promise<URL>>();
+  readonly #botPicture: ((login: string) => Promise<URL>) | undefined;
   readonly #route: (address: URL) => string;
   readonly #limits: ImageLimits;
   /** The images kept, the one served last at the end. */
@@ -146,7 +138,7 @@ export class Images {
     this.#fetch = options.fetch;
     this.#acting = (view) => options.acting(view);
     this.#token = (login) => options.token(login);
-    this.#botAvatar = options.botAvatar;
+    this.#botPicture = options.botPicture;
     this.#route = options.route ?? ((address) => address.href);
     this.#limits = { ...IMAGE_LIMITS, ...options.limits };
   }
@@ -167,7 +159,10 @@ export class Images {
     }
     let loading = this.#loading.get(key);
     if (!loading) {
-      loading = this.#inTurn(() => this.#fetched(asked, as))
+      // A bot's picture's address is found first, so asking GitHub takes no turn, and no time,
+      // of the image's.
+      loading = this.#firstAddress(asked)
+        .then((address) => this.#inTurn(() => this.#fetched(asked, address, as)))
         .then((image) => {
           this.#keep(key, image);
           return image;
@@ -203,10 +198,10 @@ export class Images {
     }
   }
 
-  /** Fetches `asked` as account `as`, or as nobody. */
-  async #fetched(asked: ImageAsked, as: string | undefined): Promise<LoadedImage> {
+  /** Fetches `asked`, from `first`, as account `as`, or as nobody. */
+  async #fetched(asked: ImageAsked, first: URL, as: string | undefined): Promise<LoadedImage> {
     const deadline = AbortSignal.timeout(this.#limits.deadline);
-    let address = await this.#firstAddress(asked);
+    let address = first;
     let from: URL | undefined;
     // Only the address the window asked for, when it's an attachment's, is asked with the token:
     // never one a redirect leads to, wherever it is.
@@ -265,48 +260,14 @@ export class Images {
     }
   }
 
-  /**
-   * Where to fetch bot `login`'s picture, `size` pixels a side: the address GitHub gives for it,
-   * asked for once a run, and again only after asking failed.
-   */
+  /** Where to fetch bot `login`'s picture, `size` pixels a side. */
   async #botAddress(login: string, size: number): Promise<URL> {
-    const key = login.toLowerCase();
-    let found = this.#bots.get(key);
-    if (!found) {
-      found = this.#botPicture(login);
-      this.#bots.set(key, found);
-      const asking = found;
-      asking.catch(() => {
-        if (this.#bots.get(key) === asking) this.#bots.delete(key);
-      });
+    if (!this.#botPicture) {
+      throw new ImageError('refused', `there’s no way to ask GitHub where ${login}’s avatar is`);
     }
-    const address = new URL(await found);
+    const address = new URL(await this.#botPicture(login));
     address.searchParams.set('s', String(size));
     return address;
-  }
-
-  async #botPicture(login: string): Promise<URL> {
-    let given: string | undefined;
-    try {
-      given = await this.#botAvatar?.(login);
-    } catch {
-      // What GitHub said is no part of the error: only that it couldn't say.
-      throw new ImageError('failed', `GitHub couldn’t say where ${login}’s avatar is`);
-    }
-    const address = given === undefined ? undefined : URL.parse(given);
-    if (
-      !address ||
-      address.protocol !== 'https:' ||
-      address.hostname !== AVATAR_HOST ||
-      address.port !== '' ||
-      address.username !== '' ||
-      address.password !== '' ||
-      !BOT_AVATAR_PATH.test(address.pathname)
-    ) {
-      throw new ImageError('refused', `GitHub has no avatar for ${login} on ${AVATAR_HOST}`);
-    }
-    // Only the picture's path: the size is the window's, and nothing else GitHub said is kept.
-    return new URL(address.pathname, address.origin);
   }
 
   /** Asks for `address`, with `token` when it's given. */

@@ -30,6 +30,7 @@ import { contract } from '../contract.ts';
 import { bodies, drafts, reviews } from '../service.ts';
 import { vim } from '../settings.ts';
 import { readBodies } from './bodies.ts';
+import { BotPictures, type BotAnswer } from './bots.ts';
 import { CommentableReads } from './commentable.ts';
 import { DraftStore } from './drafts.ts';
 import { IMAGE_LIMITS, ImageError, Images } from './images.ts';
@@ -214,6 +215,27 @@ export default defineFeature(contract, {
     // In a test run, GitHub's image hosts are the test's server, as GitHub itself is. A packaged
     // build always fetches from the hosts.
     const { images: stand } = githubSettings({ packaged: app.isPackaged, env: process.env });
+    // A bot's account is public: it's asked about as the first account signed in, in its queue as
+    // a read nobody waits on, and only while its rate limit is normal and GitHub answers. With no
+    // account signed in, a bot keeps its initials: a tab acting as nobody shows no comments.
+    const bots = new BotPictures({
+      async ask(login): Promise<BotAnswer> {
+        const access = use(github);
+        const signedIn = (await access.accounts()).find(
+          (state) => state.signedOut === undefined && !state.needsKeyring,
+        );
+        if (signedIn === undefined) return { kind: 'later', why: 'no account is signed in' };
+        const poller = await access.poller(signedIn.account.login);
+        const { rateLimit, offline, signedOut } = poller.status();
+        if (signedOut) return { kind: 'later', why: `${poller.login} is signed out` };
+        if (offline !== undefined) return { kind: 'later', why: 'GitHub can’t be reached' };
+        if (rateLimit.kind !== 'normal') {
+          return { kind: 'later', why: `${poller.login}’s rate limit is low` };
+        }
+        const avatar = await poller.readOnce((client) => botAvatar(client, login));
+        return avatar === undefined ? { kind: 'none' } : { kind: 'found', avatar };
+      },
+    });
     const images = new Images({
       fetch,
       route: (address) =>
@@ -227,17 +249,7 @@ export default defineFeature(contract, {
       async token(login) {
         return (await use(github).client(login)).token;
       },
-      // A bot's account is public: it's asked for as the first account signed in, for its rate
-      // limit, or as nobody when none is.
-      async botAvatar(login) {
-        const access = use(github);
-        const signedIn = (await access.accounts()).find((state) => state.signedOut === undefined);
-        const client =
-          signedIn === undefined
-            ? access.anonymous
-            : await access.client(signedIn.account.login).catch(() => access.anonymous);
-        return botAvatar(client, login);
-      },
+      botPicture: (login) => bots.picture(login),
     });
     stopServing = serveImages(
       session.fromPartition(windowPartition),
