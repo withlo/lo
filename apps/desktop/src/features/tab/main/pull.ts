@@ -492,8 +492,12 @@ export class PullTab {
     if (this.#closed || acting === undefined) return;
     if (acting.kind === 'account') {
       try {
-        const poller = await this.#attach(acting.login, this.#active);
-        if (this.#active) {
+        // Whether the tab is on screen is decided once the poller's had: the tab may be hidden
+        // meanwhile.
+        const poller = await this.#attach(acting.login, false);
+        if (!this.#active) {
+          await this.#watch(poller);
+        } else {
           // The tab's read of the pull request is its first poll's too: the poll waits for it, and
           // asks GitHub only for the rest. The read goes at once, and what it says is taken after
           // what the cache had.
@@ -583,11 +587,11 @@ export class PullTab {
   }
 
   /**
-   * Watches the pull request with `login`'s poller, from now on. Opening it, the tab makes it the
-   * poller's open one itself, which watches it too, rather than having it polled as a watched one
-   * first.
+   * Watches the pull request with `login`'s poller, from now on, unless not to `watch` it yet: a tab
+   * opening on screen makes it the poller's open one itself, which watches it too, rather than have
+   * it polled as a watched one first.
    */
-  async #attach(login: string, opening = false): Promise<Poller> {
+  async #attach(login: string, watch = true): Promise<Poller> {
     const current = this.#poller;
     if (current && current.login.toLowerCase() === login.toLowerCase()) return current;
     this.#detach();
@@ -601,10 +605,15 @@ export class PullTab {
         this.#publish();
       }),
     );
-    if (opening) return poller;
-    await poller.watch(this.pull);
-    this.#takeSaved(poller);
+    if (watch) await this.#watch(poller);
     return poller;
+  }
+
+  /** Watches the pull request with `poller`, and takes what its cache had. */
+  async #watch(poller: Poller): Promise<void> {
+    await poller.watch(this.pull);
+    if (this.#closed || poller !== this.#poller) return;
+    this.#takeSaved(poller);
   }
 
   /** What `poller`'s cache had of the pull request, from before: its header, but never the head on screen. */
@@ -664,8 +673,15 @@ export class PullTab {
         const client = await github.client(acting.login);
         const queue = this.#poller?.queue;
         const waited = (): ReadPriority => (this.#active ? 'foreground' : 'background');
+        // The open pull request's first poll waits for the read as the tab opens: it never gives
+        // way to what that poll leads.
         opened = queue
-          ? await queue.read(() => readPull(client, this.pull), undefined, waited)
+          ? await queue.read(
+              () => readPull(client, this.pull),
+              undefined,
+              waited,
+              after === undefined,
+            )
           : await readPull(client, this.pull);
       } else {
         opened = await readPull(github.anonymous, this.pull);

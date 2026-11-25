@@ -277,6 +277,27 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
     tab.close();
   });
 
+  it('reads the pull request once as it opens on screen: its poll takes that read for its own', async () => {
+    const replayed = replayFetch('app_e2e');
+    const asked: string[] = [];
+    const fetch: typeof globalThis.fetch = (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      if (url.pathname.endsWith(`/pulls/${APP_PULL.number}`)) asked.push(url.pathname);
+      return replayed(input, init);
+    };
+    const { github } = replayGithub('app_e2e', { fetch });
+    const git = await testGit();
+    const { tab, sent } = tabFor({ github, git });
+    tab.show();
+    await expect.poll(() => sent.local, { timeout: 40_000 }).toMatchObject({ kind: 'ready' });
+    await expect.poll(() => sent.pull?.header?.author).toBe('rozed-bot');
+    // Its first poll is over: the details it read are in.
+    const poller = await github.poller('rozed-bot');
+    await expect.poll(() => poller.pullRequest(tab.pull), { timeout: 20_000 }).toBeDefined();
+    expect(asked).toHaveLength(1);
+    tab.close();
+  });
+
   it("says a pull request GitHub doesn't have can't be opened, and fetches nothing", async () => {
     const { github } = replayGithub('app_e2e');
     const git = await testGit();

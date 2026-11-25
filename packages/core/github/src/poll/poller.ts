@@ -85,6 +85,7 @@ import {
   type Tier,
 } from './governor.ts';
 import { abandoned, RequestQueue, type ReadPriority, type ReadPriorityNow } from './queue.ts';
+import { SharedPullFiles, type FilesAsker } from './shared-files.ts';
 import {
   addToStackIn,
   createStackIn,
@@ -326,8 +327,6 @@ export interface PollerOptions {
 
 /** How long after the last of a burst of writes the stack trees that show its pull requests read their layers again. */
 const WRITES_READ_BACK_AFTER = 2000;
-/** How long a pull request's files are kept once read, for another feature that asks for them. */
-const PULL_FILES_KEPT_FOR = 30_000;
 /**
  * How long the summary a tab read as it opened a pull request stands in for the GET of the first
  * poll that follows, in milliseconds.
@@ -734,6 +733,8 @@ export class Poller {
    * on: what other reads in the queue give way to, along with a read like it that's due.
    */
   #leading: ReadPriorityNow | undefined;
+  /** Whether the poll loop runs, which reads that give way wait on: false once it stopped on an error. */
+  #looping = true;
   /** The error each target's polls keep failing with, so it's logged once. */
   readonly #failures = new Map<string, string>();
   #signedOut = false;
@@ -747,8 +748,8 @@ export class Poller {
   readonly #uploads = new RequestQueue(0);
   /** Where each repository's attachments go, by the repository's key, read once each. */
   readonly #attachmentTargets = new Map<string, Promise<AttachmentTarget>>();
-  /** The pull requests' files being read, or read lately, by pull request and head. */
-  readonly #pullFiles = new Map<string, Promise<PullFiles>>();
+  /** The pull requests' files being read, or read lately. */
+  readonly #pullFiles: SharedPullFiles;
   readonly #listeners = new Set<(event: PollEvent) => void>();
   readonly #observers = new Set<() => void>();
   #stopped = false;
@@ -764,6 +765,10 @@ export class Poller {
     this.#config = pollConfig(options.config);
     this.#queue = new RequestQueue(this.#config.writeSpacing, this.#config.monotonic);
     this.#queue.giveWayWhile(() => this.#leadAhead());
+    this.#pullFiles = new SharedPullFiles(
+      (pull, limits, gate) => this.#readPullFiles(pull, limits, gate),
+      this.#queue,
+    );
     this.#lookUpMerged = options.lookUpMerged;
     this.#seen = options.seen;
     this.#log = options.log ?? (() => {});
@@ -778,7 +783,13 @@ export class Poller {
         this.#wake();
       }
     });
-    void this.#loop().catch((error: unknown) => this.#log(`stopped polling: ${String(error)}`));
+    void this.#loop().catch((error: unknown) => {
+      this.#log(`stopped polling: ${String(error)}`);
+      // No read leads any more: none waits for one.
+      this.#looping = false;
+      this.#leading = undefined;
+      this.#queue.recheck();
+    });
   }
 
   /** Stops polling. Writes already sent finish; those waiting for a pause to end are never sent. */
@@ -1027,7 +1038,8 @@ export class Poller {
       .finally(() => {
         if (state.opening === opening) state.opening = undefined;
         this.#wake();
-      });
+      })
+      .catch((error: unknown) => this.#log(`taking the tab's read: ${String(error)}`));
     state.opening = opening;
   }
 
@@ -1753,30 +1765,17 @@ export class Poller {
   }
 
   /**
-   * `pull`'s files at `head`, as GitHub lists them ({@link readPullFiles}), within `limits`: read
-   * once for everyone who asks while they're read, and for {@link PULL_FILES_KEPT_FOR} after, as the
-   * diff and the tree each ask as a tab opens. Each page takes a turn in the account's queue as a
-   * background read. One that fails isn't kept, so the next asks again.
+   * `pull`'s files at `head`, as GitHub lists them ({@link readPullFiles}), within `limits`, for
+   * `asker`: read once for everyone who asks, as the diff and the tree each do as a tab opens, each
+   * page in its turn in the account's queue ({@link SharedPullFiles}).
    */
-  pullFiles(pull: PullRef, head: string, limits: ReadFiles): Promise<PullFiles> {
-    const key = `${pull.key}@${head}`;
-    let files = this.#pullFiles.get(key);
-    if (!files) {
-      const reading = this.#readPullFiles(pull, limits);
-      files = reading;
-      this.#pullFiles.set(key, reading);
-      const forget = () => {
-        if (this.#pullFiles.get(key) === reading) this.#pullFiles.delete(key);
-      };
-      reading.then(() => setTimeout(forget, PULL_FILES_KEPT_FOR), forget);
-    }
-    return files;
+  pullFiles(pull: PullRef, head: string, limits: ReadFiles, asker: FilesAsker): Promise<PullFiles> {
+    return this.#pullFiles.read(pull, head, limits, asker);
   }
 
-  async #readPullFiles(pull: PullRef, limits: ReadFiles): Promise<PullFiles> {
+  async #readPullFiles(pull: PullRef, limits: ReadFiles, gate: RequestGate): Promise<PullFiles> {
     const client = await this.#client();
-    const gated = client.gated(this.#queue.gate());
-    const result = await settle(readPullFiles(gated, pull, limits));
+    const result = await settle(readPullFiles(client.gated(gate), pull, limits));
     this.#answeredWith(client, result);
     if (result.ok) return result.value;
     throw result.error;
@@ -2215,9 +2214,10 @@ export class Poller {
    * between its requests: other reads in the queue give way to it, so none takes the turn there.
    */
   #leadAhead(): boolean {
-    if (this.#stopped) return false;
+    if (this.#stopped || !this.#looping) return false;
     const leading = this.#leading;
     if (leading !== undefined && priorityNow(leading) === 'foreground') return true;
+    if (this.#pullFiles.leads()) return true;
     if (this.#signedOut) return false;
     const config = this.#config;
     const now = config.monotonic();
@@ -2225,9 +2225,12 @@ export class Poller {
     if (rateLimit.kind === 'paused') return false;
     // Offline, a read waits out the backoff.
     if (this.#offline && this.#offline.retryAt > now) return false;
-    // The open pull request's poll that opening it forced, which its awaited reads come right after.
     const open = this.#open;
     const openState = open && this.#pulls.get(open.key);
+    // The open pull request's poll waits for the tab's read of it as it opens, which may be one of
+    // the reads waiting: they don't give way to that poll meanwhile.
+    if (openState?.opening) return false;
+    // The open pull request's poll that opening it forced, which its awaited reads come right after.
     if (
       openState?.schedule.isForced() &&
       interval('open', this.#foreground, rateLimit, config) !== undefined &&
@@ -2284,6 +2287,8 @@ export class Poller {
     const refreshDetails = this.#foreground && rateLimit.kind !== 'openOnly';
     const open = this.#open;
     const openState = open && this.#pulls.get(open.key);
+    /** Details a poll left for after the reads waited on. */
+    let details: Extract<Job, { kind: 'details' }> | undefined;
     // The tab opening the open pull request reads it itself: its poll goes first once that's in,
     // and nothing goes before it meanwhile.
     if (openState?.opening) return { kind: 'wait', wait: undefined };
@@ -2301,11 +2306,8 @@ export class Poller {
         haveDetails: openState.details !== undefined,
         deferDetails: this.#awaitsFirst(openState),
       }));
-      // Details a poll left for after the reads waited on: due now, behind those reads.
       const check = openState.detailsDue;
-      if (check !== undefined && (next === undefined || now < next.at)) {
-        next = { at: now, job: { kind: 'details', pull: open, check }, ticket: 0, forced: false };
-      }
+      if (check !== undefined) details = { kind: 'details', pull: open, check };
     }
     for (const state of sorted(this.#pulls.values(), (a, b) => PullRef.compare(a.pull, b.pull))) {
       if (open?.equals(state.pull) || state.loading.length > 0) continue;
@@ -2337,6 +2339,9 @@ export class Poller {
         written: state.written,
       }));
     }
+    // Details a poll left for later are due now, ahead of other polls, but for one tried at once,
+    // and behind the reads waited on.
+    if (details && !next?.forced) next = { at: now, job: details, ticket: 0, forced: false };
     // The open pull request's reads, once its check says what they watch. One someone on screen
     // waits on for its first value goes ahead of everything else due, the first of them if several,
     // but never of a poll that's tried at once whatever the backoff (opening a pull request, or

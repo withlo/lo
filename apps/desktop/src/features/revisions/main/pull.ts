@@ -48,6 +48,7 @@ import type { PullTabInfo } from '../../tab/service.ts';
 import { PATH_LIMIT, pathBytes } from '../../tree/contract.ts';
 import {
   HOLD_LIMIT,
+  SETTLE_LIMIT,
   type Compared,
   type CompareWhy,
   type ComparisonView,
@@ -96,6 +97,11 @@ export interface RevisionsTabOptions {
   readonly now?: (() => number) | undefined;
   /** How long the diff waits for the comparison "last seen here" asks for: {@link HOLD_LIMIT}. */
   readonly holdLimit?: number | undefined;
+  /**
+   * How long revisions built without the local copy's commits wait for them before they're
+   * settled: {@link SETTLE_LIMIT}.
+   */
+  readonly settleLimit?: number | undefined;
 }
 
 /** A comparison that's ready to show: what was asked, and its sides in the local copy. */
@@ -137,6 +143,9 @@ export class RevisionsTab {
   #build = 0;
   /** Whether the revisions were built with the pull request's commits from the local copy. */
   #withCommits = false;
+  /** Whether revisions built without the commits have waited for them as long as they may. */
+  #waitedForCommits = false;
+  #settleTimer: ReturnType<typeof setTimeout> | undefined;
   /** Heads GitHub no longer has, which the local copy lacks. */
   readonly #lost = new Set<string>();
   /** Heads the local copy has, as the last fetch of the revisions found. */
@@ -245,7 +254,11 @@ export class RevisionsTab {
       waitingFor: local?.kind === 'noGit' ? 'git' : local?.kind === 'ready' ? null : 'local',
       settled:
         revisions !== undefined &&
-        (this.#withCommits || local?.kind === 'noGit' || local?.kind === 'failed'),
+        (this.#withCommits ||
+          this.#waitedForCommits ||
+          local?.kind === 'noGit' ||
+          local?.kind === 'failed' ||
+          local?.kind === 'retrying'),
       nothingNewSince: this.#nothingNewSince ?? null,
       replay: this.#ready ? (this.#replay ?? null) : null,
       conflicted: this.#ready ? this.#conflicted : 0,
@@ -437,6 +450,7 @@ export class RevisionsTab {
     if (this.#closed) return;
     this.#closed = true;
     clearTimeout(this.#holdTimer);
+    clearTimeout(this.#settleTimer);
     this.#unsubscribe?.();
     this.#unsubscribe = undefined;
   }
@@ -457,6 +471,9 @@ export class RevisionsTab {
     this.#revisions = undefined;
     this.#build++;
     this.#withCommits = false;
+    this.#waitedForCommits = false;
+    clearTimeout(this.#settleTimer);
+    this.#settleTimer = undefined;
     this.#lost.clear();
     this.#present.clear();
     this.#fetched = undefined;
@@ -840,6 +857,17 @@ export class RevisionsTab {
     );
     this.#revisions = revisions;
     this.#withCommits = withCommits;
+    if (withCommits) {
+      clearTimeout(this.#settleTimer);
+      this.#settleTimer = undefined;
+    } else if (this.#settleTimer === undefined && !this.#waitedForCommits) {
+      // The local copy's commits may be late: past the limit, the revisions stand without them.
+      this.#settleTimer = setTimeout(() => {
+        this.#settleTimer = undefined;
+        this.#waitedForCommits = true;
+        this.#publish();
+      }, this.#options.settleLimit ?? SETTLE_LIMIT);
+    }
     this.#status = 'ready';
     if (this.#problem?.kind === 'read') this.#problem = undefined;
     // What was fetched was for other revisions.

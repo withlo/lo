@@ -71,9 +71,16 @@ export interface TreeReads {
   github<T>(acting: Acting, request: (client: GithubClient) => Promise<T>): Promise<T>;
   /**
    * The pull request's files at `head` as GitHub lists them, read as `acting`, within `limits`:
-   * read once for the tree and the diff.
+   * read once for the tree and the diff, and only while one of them still `wanted` them when a request's
+   * turn comes.
    */
-  pullFiles(acting: Acting, pull: PullRef, head: string, limits: ReadFiles): Promise<PullFiles>;
+  pullFiles(
+    acting: Acting,
+    pull: PullRef,
+    head: string,
+    limits: ReadFiles,
+    wanted: () => boolean,
+  ): Promise<PullFiles>;
 }
 
 export interface TreeTabOptions {
@@ -585,11 +592,12 @@ export class TreeTab {
       }
     }
     if (!this.#current(at)) return undefined;
-    const listed = await reads.pullFiles(acting, pull, at.head, {
+    const limits = {
       maxPages: MAX_PAGES,
       // Without an account, GitHub allows 60 requests an hour, and nothing else polls.
       keepRequests: acting.kind === 'anonymous' ? KEEP_ANONYMOUS : KEEP_REQUESTS,
-    });
+    };
+    const listed = await reads.pullFiles(acting, pull, at.head, limits, () => this.#current(at));
     return {
       files: listed.files,
       partial: listed.cutShort !== undefined || listed.files.length >= MAX_FILES,

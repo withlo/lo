@@ -72,9 +72,16 @@ export interface DiffReads {
   github<T>(acting: Acting, request: (client: GithubClient) => Promise<T>): Promise<T>;
   /**
    * The pull request's files at `head` as GitHub lists them, read as `acting`, within `limits`:
-   * read once for the diff and the tree.
+   * read once for the diff and the tree, and only while one of them still `wanted` them when a request's
+   * turn comes.
    */
-  pullFiles(acting: Acting, pull: PullRef, head: string, limits: ReadFiles): Promise<PullFiles>;
+  pullFiles(
+    acting: Acting,
+    pull: PullRef,
+    head: string,
+    limits: ReadFiles,
+    wanted: () => boolean,
+  ): Promise<PullFiles>;
 }
 
 export interface DiffTabOptions {
@@ -746,14 +753,20 @@ export class DiffTab {
     this.#publish();
   }
 
-  /** The pull request's files, as GitHub lists them, while `at` is still the diff on screen. */
+  /**
+   * The pull request's files, as GitHub lists them, while `at` is still the diff on screen when
+   * each request's turn comes.
+   */
   async #pullFiles(at: At, acting: Acting, pull: PullRef): Promise<GithubFiles | undefined> {
     if (!this.#current(at)) return undefined;
-    const listed = await this.#options.reads.pullFiles(acting, pull, at.head, {
+    const limits = {
       maxPages: MAX_PAGES,
       // Without an account, GitHub allows 60 requests an hour, and nothing else polls.
       keepRequests: acting.kind === 'anonymous' ? KEEP_ANONYMOUS : KEEP_REQUESTS,
-    });
+    };
+    const listed = await this.#options.reads.pullFiles(acting, pull, at.head, limits, () =>
+      this.#current(at),
+    );
     return {
       files: listed.files,
       partial: listed.cutShort !== undefined || listed.files.length >= MAX_FILES,

@@ -455,6 +455,47 @@ test('the summary a tab read as it opened a pr is its first polls', async () => 
   expect(asked()).toContain('GET /pulls/1 (since)');
 });
 
+/** A tab's read that failed leaves its first poll to read the pull request itself. */
+test('a tabs read of a pr opened that failed leaves the first poll to read it', async () => {
+  const t = await Polling.start('opened_read_failed', recorded(), { delay: 1000 });
+  const asked = () =>
+    t
+      .requests()
+      .map(([, what]) => what)
+      .filter((what) => /^(GET \/pulls\/1\b|PullRequestCheck$|PullRequest$)/.test(what));
+  const reading = Promise.withResolvers<PullSummary | undefined>();
+  void t.poller.setOpen(pr(1), reading.promise);
+  await t.run();
+  await t.runUntil(2);
+  expect(t.requests()).toEqual([]);
+  reading.resolve(undefined);
+  await t.run();
+  await t.runUntil(8);
+  expect(asked()).toEqual(['GET /pulls/1', 'PullRequestCheck', 'PullRequest']);
+});
+
+/**
+ * The summary a tab read stands in for a poll's GET only within a few seconds of it: a poll that
+ * comes later, as the next one does for a tab that read its pull request again, asks GitHub.
+ */
+test('the summary a tab read stands in for a polls GET only for a few seconds', async () => {
+  const t = await Polling.start('opened_read_late', recorded(), { delay: 1000 });
+  /** What was asked about PR #1 since last asked, in order. */
+  const asked = () =>
+    t
+      .requests()
+      .map(([, what]) => what)
+      .filter((what) => /^(GET \/pulls\/1\b|PullRequestCheck$|PullRequest$)/.test(what));
+  void t.poller.setOpen(pr(1));
+  await t.run();
+  await t.runUntil(4);
+  expect(asked()).toEqual(['GET /pulls/1', 'PullRequestCheck', 'PullRequest']);
+  void t.poller.setOpen(pr(1), Promise.resolve(readPullSummary(at(recorded(), 0).response.body)));
+  await t.run();
+  await t.runUntil(30);
+  expect(asked()).toEqual(['GET /pulls/1 (since)', 'PullRequestCheck']);
+});
+
 /** One poll of everything at `secs`: the open PR, the other PR and the repository. */
 function everything(secs: number): Logged[] {
   return [

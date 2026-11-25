@@ -2,7 +2,7 @@
 // screen and the files the pull request changes, sent to the window each time they change, with a
 // folder's files and a search by name on request.
 
-import { type GithubClient, readPullFiles } from '@lo/github';
+import type { FilesAsker, GithubClient } from '@lo/github';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { defineFeature, type FeatureContext } from '../../../main/features.ts';
@@ -48,10 +48,17 @@ function follow(context: FeatureContext<typeof contract>, id: string): void {
           const poller = await access.poller(acting.login);
           return poller.queue.read(() => request(client));
         },
-        async pullFiles(acting, pull, head, limits) {
-          if (acting.kind === 'anonymous') return readPullFiles(access.anonymous, pull, limits);
+        async pullFiles(acting, pull, head, limits, wanted) {
+          // Its panel is on screen with its tab, which waits on the files to draw.
+          const asker: FilesAsker = {
+            wanted,
+            priority: () => (service.list().active === id ? 'foreground' : 'background'),
+          };
+          if (acting.kind === 'anonymous') {
+            return access.anonymousPullFiles(pull, head, limits, asker);
+          }
           const poller = await access.poller(acting.login);
-          return poller.pullFiles(pull, head, limits);
+          return poller.pullFiles(pull, head, limits, asker);
         },
       },
       publish: (state) => context.publish('state', state),

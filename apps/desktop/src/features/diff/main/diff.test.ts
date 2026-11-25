@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { parseOid, type Repo } from '@lo/git';
-import { GithubClient, readPullFiles, Token } from '@lo/github';
+import { FilesUnwanted, GithubClient, readPullFiles, Token } from '@lo/github';
 import { replayFetch } from '@lo/testing';
 import { APP_PULL, gitProgram, RepoServer, writeAppRemote } from '@lo/testing/git';
 import { describe, expect, it, onTestFinished } from 'vitest';
@@ -116,8 +116,12 @@ function diffTab(reads: Partial<DiffReads>) {
       github,
       pullFiles:
         reads.pullFiles ??
-        ((acting, pull, _head, limits) =>
-          github(acting, (client) => readPullFiles(client, pull, limits))),
+        ((acting, pull, _head, limits, wanted) =>
+          github(acting, (client) =>
+            wanted()
+              ? readPullFiles(client, pull, limits)
+              : Promise.reject(new FilesUnwanted(pull)),
+          )),
     },
     publish: (state) => sent.push(state),
     drawn: (head) => drawn.push(head),

@@ -28,7 +28,7 @@ import type { GithubClient } from '../src/client.ts';
 import { GithubError } from '../src/errors.ts';
 import { MAX_PAGES } from '../src/files.ts';
 import { PUSH_HISTORY_WATCHED } from '../src/push-history.ts';
-import { readPullSummary } from '../src/pulls.ts';
+import { readPullSummary, type PullSummary } from '../src/pulls.ts';
 import {
   PULL_REQUEST_SIDEBAR,
   STACK_LAYERS,
@@ -762,6 +762,42 @@ test('the details of a pr opened go after the reads someone waits on', async () 
 });
 
 /**
+ * Two views of one pull request, as a stack's layer in a tab and in a run's view: one waits on a
+ * read of it for its first value while the other's read of it as its tab opened, which the open
+ * poll waits for, is in the queue as a background read. That read goes, rather than give way to a
+ * poll that waits for it.
+ */
+test('a tabs read of a pr opened goes while another view waits on a read of it', async () => {
+  const t = await Polling.start('opened_read_waited', recorded(), { delay: 1000 });
+  const client = await t.accounts.client(LOGIN);
+  const finished: string[] = [];
+  const read = (name: string) => async (github: GithubClient) => {
+    await github.get(pr(1).restPath(), readPullSummary);
+    finished.push(name);
+    return 1;
+  };
+  void t.poller.readCached(pr(1), WAITED, read('waited'), () => 'foreground');
+  const reading = Promise.withResolvers<PullSummary | undefined>();
+  void t.poller.setOpen(pr(1), reading.promise);
+  const opened = t.poller.queue.read(
+    () => client.get(pr(1).restPath(), readPullSummary),
+    undefined,
+    () => 'background',
+  );
+  opened.then(reading.resolve, () => reading.resolve(undefined));
+  await t.run();
+  await t.runUntil(6);
+  expect(finished).toEqual(['waited']);
+  expect(await opened).toMatchObject({ number: 1 });
+  expect(t.events().filter((event) => event.endsWith('#1') || event.includes('#1:'))).toEqual([
+    'summary #1: feat: stack layer A',
+    'check #1',
+    'read Waited #1',
+    'details #1: feat: stack layer A',
+  ]);
+});
+
+/**
  * A pull request's files, which the diff and the tree each list from GitHub as a tab opens, are
  * read once for both, and kept a little while for whoever asks next, by head.
  */
@@ -769,16 +805,17 @@ test('a pull requests files are read once for everyone who asks', async () => {
   const files = cassette('rest_pull_files').interactions.map(({ interaction }) => interaction);
   const t = await Polling.start('pull_files_shared', [...recorded(), ...files], { delay: 1000 });
   const limits = { maxPages: MAX_PAGES, keepRequests: 0 };
+  const asker = { wanted: () => true };
   const listed = Promise.all([
-    t.poller.pullFiles(pr(2), 'head', limits),
-    t.poller.pullFiles(pr(2), 'head', limits),
+    t.poller.pullFiles(pr(2), 'head', limits, asker),
+    t.poller.pullFiles(pr(2), 'head', limits, asker),
   ]);
   await t.run();
   await t.runUntil(3);
   const [diff, tree] = await listed;
   expect(diff.files.length).toBeGreaterThan(0);
   expect(tree).toBe(diff);
-  const later = t.poller.pullFiles(pr(2), 'head', limits);
+  const later = t.poller.pullFiles(pr(2), 'head', limits, asker);
   await t.run();
   expect(await later).toBe(diff);
   expect(t.requests().filter(([, what]) => what.includes('/files'))).toHaveLength(1);
