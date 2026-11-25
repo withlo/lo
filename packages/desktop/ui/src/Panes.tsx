@@ -82,7 +82,8 @@ export interface SplitterProps {
   /** A drag let go, or ended by the window losing focus, at a new width: save it. */
   readonly onEnd: (value: number) => void;
   /**
-   * A press that changed nothing: one with no move, one moved back to where it started, `Esc`, or a
+   * A press that changed nothing: one with no move, one moved back to where it started, `Esc`, a
+   * pointer the system took, the window losing focus while letting go would close the pane, or a
    * drag stopped because the edge went. Put back what was saved at the press.
    */
   readonly onCancel: () => void;
@@ -90,7 +91,7 @@ export interface SplitterProps {
   readonly onReset: () => void;
   /**
    * For a panel's edge: let go within `CLOSE_REACH` of the window's side the panel is on, it closes
-   * the panel instead of ending, and its saved width stays.
+   * the panel instead of ending, and its saved width stays. Only letting go closes it.
    */
   readonly onClose?: (() => void) | undefined;
 }
