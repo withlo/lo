@@ -14,12 +14,14 @@ import { vimOn } from '@lo/ui/code';
 import { handlers, type HeaderTarget, type LineTarget, type Target } from '@lo/ui/commands';
 import { createElement } from 'react';
 
+import { registry } from '../../../window/commands/registry.ts';
 import type { WindowFeature } from '../../../window/features.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { onDiffDrawn, setThreader, threadsChanged, writingDiff } from '../../diff/window/shared.ts';
 import {
   blockLines,
   blockThreadsChanged,
+  followOverviews,
   isCodeBlock,
   onOverviewChanged,
   setBlockThreads,
@@ -318,6 +320,8 @@ export default {
   ],
   start() {
     followVim();
+    // An overview's code blocks are gone while overviews are off, and the comments on them.
+    followOverviews((on) => registry().setOff(['comments.commentOnBlock'], !on));
     tabs().subscribe('tabs', ({ tabs: open }) => {
       const kept = new Set(viewIds(open));
       keepOnly(kept);
