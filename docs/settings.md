@@ -56,10 +56,10 @@ list.
 
 ## The settings
 
-Settings shows each setting but `app.gpu` as a row in one of its groups, with a line on what it does
-and, under the pointer or focus, its key. Its search (`/` or `⌘F`) finds a row by any of those. A
-setting a key also changes, such as `diff.layout`, shows the change in Settings and keeps it across
-a restart.
+Settings shows each setting but `app.gpu` and `overview.open` as a row in one of its groups, with a
+line on what it does and, under the pointer or focus, its key. Its search (`/` or `⌘F`) finds a row
+by any of those. A setting a key also changes, such as `diff.layout`, shows the change in Settings
+and keeps it across a restart.
 
 | Setting               | Takes                                     | Default      | What it does                                                                                                                                                                                                                           |
 | --------------------- | ----------------------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -67,7 +67,8 @@ a restart.
 | `window.zoom`         | a whole percent, from 50 to 200           | `100`        | How large the window draws everything. `⌘+`, `⌘-` and `⌘0` change it, a step at a time.                                                                                                                                                |
 | `motion.reduce`       | system, on or off                         | `"system"`   | Whether the window keeps still: as the system says, always, or never. Tests start Lo with every move off, whatever it says.                                                                                                            |
 | `cache.cap`           | a whole number of GB, from 1 to 10,000    | `10`         | The size Lo keeps its local copies of repos under. Past it, the least recently used go.                                                                                                                                                |
-| `overview.open`       | overview or diff                          | `"overview"` | What a pull request opens on when it has an overview Lo can show: the overview, or the diff. Without one, it always opens on the diff.                                                                                                 |
+| `overview.on`         | true or false                             | `true`       | Whether Lo has overviews. Off, there's no Overview view, no overview notes, marks, prompts or skill, and Lo reads no overview.                                                                                                         |
+| `tab.open`            | overview, timeline or diff                | `"overview"` | What a pull request opens on. Overview, for a pull request with no overview, or with `overview.on` off, opens on the timeline.                                                                                                         |
 | `diff.layout`         | split or inline                           | `"split"`    | The diff's layout: the two sides next to each other, or one column of both. `gi` switches it.                                                                                                                                          |
 | `diff.whitespace`     | show or hide                              | `"show"`     | Whether the diff shows changes to whitespace alone. `gw` switches it. GitHub's diff, shown until the local copy is ready, shows them either way.                                                                                       |
 | `tree.mode`           | tree or review                            | `"tree"`     | How the left panel lists a pull request's files: as a tree, or the changed files in review order. `t` switches it, for every pull request.                                                                                             |
@@ -78,10 +79,15 @@ a restart.
 | `editor.vim`          | true or false                             | `false`      | Whether code and comment boxes take Vim's keys. Off, they have a plain caret, and a box takes typing as soon as it has focus. Lo's own keys work either way.                                                                           |
 | `updates.check`       | true or false                             | `true`       | Whether Lo checks GitHub Releases for a newer version by itself: 30 s after it starts, then every 6 hours. Off, it checks only when you ask.                                                                                           |
 | `app.gpu`             | true or false                             | `true`       | Whether Lo draws with the graphics card. Off, it draws with the processor alone, for a window that stays blank. It applies at the next start.                                                                                          |
+| `overview.open`       | overview, diff or null                    | `null`       | Replaced by `tab.open`. Lo carries a `"diff"` saved here over to `tab.open` once, unless `tab.open` is chosen already, then sets this to `null`.                                                                                       |
 
 `app.gpu` is only in the file, since a window that draws nothing couldn't reach it in Settings. Lo
 reads it as it starts, before it draws anything, so a change applies the next time Lo starts. It
 does what Chromium's `--disable-gpu` does, since an installed Lo takes no command-line switches.
+
+`overview.open` is the key `tab.open` replaced, from when a pull request opened on its overview or
+its diff. It's only in the file, and only Lo writes it: once it has carried its value over, it's
+`null`, so a later change to `tab.open` stands.
 
 ## Trusted repos and pull requests
 

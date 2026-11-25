@@ -54,6 +54,8 @@ class FakePoller implements FinderPoller {
   readonly again: string[] = [];
   /** The pull requests whose layers were no longer to be read. */
   readonly forgotten: string[] = [];
+  /** Each other read no longer to be made: the pull request it was for, and its kind. */
+  readonly forgottenReads: [string, string][] = [];
   /** How often the poller lists repositories now. */
   schedule: ListSchedule = { every: 120_000, listing: true };
   readonly #listeners = new Set<() => void>();
@@ -103,6 +105,10 @@ class FakePoller implements FinderPoller {
     this.forgotten.push(pull.toString());
   }
 
+  forgetRead<T>(pull: PullRef, kind: ReadKind<T>): void {
+    this.forgottenReads.push([pull.toString(), kind.name]);
+  }
+
   listSchedule(): ListSchedule {
     return this.schedule;
   }
@@ -143,6 +149,7 @@ class FakePoller implements FinderPoller {
 function started(
   poller: FakePoller | undefined,
   now?: () => number,
+  overviews?: () => boolean,
   offers?: FinderOptions['offers'],
 ) {
   const sent: StackState[] = [];
@@ -158,6 +165,7 @@ function started(
     compareFrom: (id, commit) => starts.push([id, commit]),
     log: (line) => logged.push(line),
     now,
+    overviews,
     offers,
   });
   return { finder, sent, logged, starts };
@@ -298,6 +306,41 @@ describe('the stacks tabs show', () => {
     await settle();
     expect(marks('t4')).toEqual([false, false, false, false, false]);
     expect(marks('t8')).toEqual([true, false]);
+  });
+
+  it('read nothing of overviews while they’re off, forget the read, and read it again once they’re on', async () => {
+    const found = await recorded('stacks_e2e', E2E, LAYERS);
+    const poller = new FakePoller();
+    poller.set(E2E, { list: found.list, rules: found.rules });
+    let on = true;
+    const { finder } = started(poller, undefined, () => on);
+    const marks = () => {
+      const stack = finder.state('t4')?.stack;
+      return stack?.kind === 'stack' && stack.rows.map((row) => row.overview);
+    };
+    finder.follow([tab(4, { onScreen: true })]);
+    await settle();
+    poller.readOverviews(PullRef.of(E2E, 4), [3]);
+    await settle();
+    expect(marks()).toEqual([false, true, false, false, false]);
+
+    on = false;
+    finder.overviewsChanged();
+    expect(poller.forgottenReads).toEqual([['rozed-dev/e2e#4', OVERVIEW_REFS.name]]);
+    expect(marks()).toEqual([null, null, null, null, null]);
+    // Shown again, or as the poller changes, nothing is asked, and nothing it holds is shown.
+    finder.follow([tab(4), tab(8, { onScreen: true })]);
+    finder.follow([tab(4, { onScreen: true }), tab(8)]);
+    poller.changed();
+    await settle();
+    expect(poller.overviewsAsked).toEqual(['rozed-dev/e2e#4']);
+    expect(marks()).toEqual([null, null, null, null, null]);
+
+    on = true;
+    finder.overviewsChanged();
+    expect(poller.overviewsAsked).toEqual(['rozed-dev/e2e#4', 'rozed-dev/e2e#4']);
+    await settle();
+    expect(marks()).toEqual([false, true, false, false, false]);
   });
 
   it('read the layers again when the list shows one at a newer head than its state', async () => {
@@ -513,6 +556,7 @@ describe('what a tab offers', () => {
     const off = new Set<string>();
     const { finder, sent } = started(
       poller,
+      undefined,
       undefined,
       (notice, repo, numbers) =>
         !off.has(notice) && !numbers.some((number) => dismissed.has(`${notice} ${repo} ${number}`)),

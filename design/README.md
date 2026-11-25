@@ -665,6 +665,10 @@ A preference is a setting with a row. The menu bar and the palette may toggle it
 - **A feature adds its own rows.** `settingRow(setting, { order })` in its `window/index.ts` draws a
   setting's row from what `defineSetting` says of it (group, label, line, options), and search reads
   the same. `defineRow` makes any other row, given its group, label and line.
+- **A switch that takes a part of Lo out takes all of it,** as "Show overviews" does: its view, menu
+  items, palette commands and keys, its banners, notes, status items and offers, the rows and
+  options in Settings that only it needs, and what main reads for it. Turned back on, it all comes
+  back at once, with no restart. The switch itself stays, beside the rows it changes.
 
 ## Components
 

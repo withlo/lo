@@ -1,11 +1,16 @@
-// What the overview shares with other features' window code: its mark for a tab, as the header's
-// view switch shows it, which the stack's tree shows for the layer on screen; the review threads
-// another feature places and draws on its code blocks, with the comments written there; and
-// whether a tab's overview has a block now, and when that may have changed.
+// What the overview shares with other features' window code: whether there are overviews, which
+// Settings turns off and on, and every view and command of the overview comes and goes with; its
+// mark for a tab, as the header's view switch shows it, which the stack's tree shows for the layer
+// on screen; the review threads another feature places and draws on its code blocks, with the
+// comments written there; and whether a tab's overview has a block now, and when that may have
+// changed.
 
 import type { Target } from '@lo/ui/commands';
 
+import type { Presence } from '../../../window/slots.tsx';
+import { settingNow, watchSetting } from '../../settings/window/shared.ts';
 import { usePull } from '../../tab/window/shared.ts';
+import { on } from '../settings.ts';
 import { markOf, newestHead, standingOf, type MarkKind } from './facts.ts';
 import { blockAt, drawnIn } from './follow.ts';
 import { useStanding } from './hooks.ts';
@@ -26,6 +31,33 @@ import {
 
 export type { CommentOnHead, FileWhy } from './mapping.ts';
 export type { BlockLines, BlockThreads, DrawnBlock, WritingBlock } from './threaded.ts';
+
+/**
+ * Whether there are overviews now, as Settings says: on until main has said otherwise. A view of
+ * another feature's that's there only for overviews, such as a row about them, takes it as its
+ * `present`, so it comes and goes with them.
+ */
+export const overviews: Presence = {
+  now: () => settingNow(on),
+  subscribe: (listener) => {
+    // Told only of a change: what it is as it starts is what `now` says.
+    let starting = true;
+    const stop = watchSetting(on, () => {
+      if (!starting) listener();
+    });
+    starting = false;
+    return stop;
+  },
+};
+
+/**
+ * Calls `listener` with whether there are overviews once main has said, and again each time
+ * Settings turns them off or on, for a feature to take out what's there only for them, as a
+ * command of its own. Returns a function that stops it.
+ */
+export function followOverviews(listener: (on: boolean) => void): () => void {
+  return watchSetting(on, listener);
+}
 
 /**
  * Whether there's an overview: one for the newest push (`current`), for an older one (`stale`), one
@@ -91,6 +123,7 @@ export function blockKey(commit: string, path: string, start: number, end: numbe
  * not: `unknown` while Lo is still reading or checking it.
  */
 export function blockInOverview(tab: string, key: string): boolean | 'unknown' {
+  if (!overviews.now()) return false;
   if (writingBlockKeyed(tab, key)) return true;
   const standing = standingOf(states.get(tab), checked.get(tab));
   if (standing.kind === 'reading' || standing.kind === 'checking') return 'unknown';
@@ -102,11 +135,15 @@ export function blockInOverview(tab: string, key: string): boolean | 'unknown' {
 }
 
 /**
- * Calls `listener` as any tab's overview changes, as main reads it or it's checked: which blocks
- * it has may have changed. Returns a function that stops it.
+ * Calls `listener` as any tab's overview changes, as main reads it or it's checked, or overviews
+ * turn off or on: which blocks it has may have changed. Returns a function that stops it.
  */
 export function onOverviewChanged(listener: () => void): () => void {
-  const stops = [states.subscribe(listener), checked.subscribe(listener)];
+  const stops = [
+    states.subscribe(listener),
+    checked.subscribe(listener),
+    overviews.subscribe(listener),
+  ];
   return () => {
     for (const stop of stops) stop();
   };

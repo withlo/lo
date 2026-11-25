@@ -554,7 +554,9 @@ A repo's or a user's instructions can drop, add or reorder everything except the
 ### In the PR tab
 
 The overview is a third view in the middle of the tab, beside the diff and the timeline. When a PR
-has one, it opens first. A setting makes the diff open first instead.
+has one, it opens first. Without one, the PR opens on its timeline, where its description is first.
+A setting makes the timeline or the diff open first instead, and another turns overviews off: then
+there's no Overview view, no overview anywhere else in Lo, and Lo reads none.
 
 It appears as soon as its text arrives, and its code blocks fill in as the code loads. Every block
 and link can be reached and opened from the keyboard.
@@ -1136,8 +1138,8 @@ in the Help menu, the command palette and Settings opens it again.
 ### Settings
 
 Settings live in a file in `~/.config/lo/` and in a Settings screen. They cover accounts, trusted
-repos and PRs, the theme, the cache, the toolchains language servers use, and whether a PR opens on
-its overview or its diff.
+repos and PRs, the theme, the cache, the toolchains language servers use, which view a PR opens on
+(its overview, its timeline or its diff), and whether there are overviews at all.
 
 ### Opening links
 
@@ -1226,14 +1228,14 @@ its overview or its diff.
 ### Overviews
 
 - **An artifact that can't be read.** If it's invalid, too large or in a newer format, the overview
-  view says why, and the PR opens on its diff.
+  view says why, and the PR opens on its timeline.
 - **A broken code reference.** If a block's file or lines don't exist at the overview's commit, that
   block says so and the rest of the overview shows.
 - **A broken figure.** A figure that's missing or fails sanitizing is left out, with a note in its
   place.
 - **A missing commit.** If the overview's commit was force-pushed away and Lo never fetched it, the
   text still shows, and its code blocks say the code is no longer available.
-- **Fetch fails.** The PR opens on its diff, and Lo retries.
+- **Fetch fails.** The PR opens on its timeline, and Lo retries.
 
 ### The file tree
 

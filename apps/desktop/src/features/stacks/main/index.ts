@@ -15,6 +15,7 @@ import { IpcError } from '../../../ipc/contract.ts';
 import { defineFeature } from '../../../main/features.ts';
 import { provides } from '../../../main/services.ts';
 import { github } from '../../accounts/service.ts';
+import { overviews } from '../../overview/service.ts';
 import { settings } from '../../settings/service.ts';
 import { tabs, type TabService } from '../../tab/service.ts';
 import { contract, type Notice, type StackState } from '../contract.ts';
@@ -91,7 +92,7 @@ function converting(): Conversions {
 }
 
 export default defineFeature(contract, {
-  uses: [tabs, github, settings],
+  uses: [tabs, github, overviews, settings],
   provide: () => [
     provides(forest, {
       forest: (repo, login) => finder?.forest(repo, login),
@@ -150,6 +151,7 @@ export default defineFeature(contract, {
   start(context) {
     const service = context.use(tabs);
     const access = context.use(github);
+    const switched = context.use(overviews);
     const kept = new Dismissed(context.database);
     dismissed = kept;
     // Whether each offer is on, once the settings file has been read: none is offered before, so
@@ -167,6 +169,7 @@ export default defineFeature(contract, {
       compareFrom: (id, commit) => service.compareFrom(id, commit),
       offers: (notice, repo, numbers) => on[notice] === true && !kept.has(notice, repo, numbers),
       log,
+      overviews: () => switched.on(),
     });
     const making = new Conversions({
       poller: (login) => access.poller(login),
@@ -194,6 +197,7 @@ export default defineFeature(contract, {
       access.onEvent((event) => {
         if (event.kind === 'removed') found.forgetAccount(event.login);
       }),
+      switched.onChange(() => found.overviewsChanged()),
     );
     follow();
   },
