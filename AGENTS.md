@@ -1921,9 +1921,11 @@ utilities.
   reach, add a utility to `src/styles.css` with `@utility`, reading `var(--lo-*)`.
 - Variants go through `cva` from `class-variance-authority`. Prettier sorts the classes.
 - Anything that appears, leaves or changes size takes one of the moves in `design/README.md`'s
-  "Motion", by its class (`move-pop`, `move-open`) or its component (`Collapse`, `Swap`). No
-  component writes a duration or a curve of its own. `setMotion` is the one switch that turns the
-  moves off; without a call Lo follows the system.
+  "Motion", by its class (`move-pop`, `move-open`) or its component (`Collapse`, `Swap`), but a
+  pane's width, which never animates. No component writes a duration or a curve of its own.
+  `setMotion` is the one switch that turns the moves off; without a call Lo follows the system.
+- A row of panes is a `Panes`, each edge in it that moves a `Splitter`, and `fit` works out each
+  pane's width from the layout and the row's.
 - A popup (a dialog, menu, popover, tooltip or toast) is drawn by one of `ui`'s shared pieces, which
   hold how it comes and goes and where focus returns. Lint fails a Base UI popup imported anywhere
   else (`scripts/check-popups.ts`).

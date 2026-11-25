@@ -24,7 +24,15 @@
   --spacing-header-h: var(--lo-header-h);
   --spacing-statusbar-h: var(--lo-statusbar-h);
   --spacing-panel-left-w: var(--lo-panel-left-w);
+  --spacing-panel-left-min-w: var(--lo-panel-left-min-w);
+  --spacing-panel-left-max-w: var(--lo-panel-left-max-w);
   --spacing-panel-right-w: var(--lo-panel-right-w);
+  --spacing-panel-right-min-w: var(--lo-panel-right-min-w);
+  --spacing-panel-right-max-w: var(--lo-panel-right-max-w);
+  --spacing-view-min-w: var(--lo-view-min-w);
+  --spacing-reading-w: var(--lo-reading-w);
+  --spacing-side-min-w: var(--lo-side-min-w);
+  --spacing-splitter-w: var(--lo-splitter-w);
   --spacing-row-h: var(--lo-row-h);
   --spacing-control-h: var(--lo-control-h);
   --spacing-control-h-sm: var(--lo-control-h-sm);
