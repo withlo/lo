@@ -40,6 +40,7 @@
     "@lo/markdown": "workspace:*",
     "@replit/codemirror-vim": "6.4.0",
     "class-variance-authority": "0.7.1",
+    "lucide": "1.68.0",
     "react": "19.3.1",
     "tailwindcss": "4.3.5"
   },
@@ -71,6 +72,7 @@
           "{workspaceRoot}/.oxlintrc.json",
           "{workspaceRoot}/design/stylelint.config.mjs",
           "{workspaceRoot}/scripts/oxlint/plugin.ts",
+          "{workspaceRoot}/scripts/oxlint/svgs.ts",
           {
             "dependentTasksOutputFiles": "**/*.{d.ts,d.cts,d.mts,tsbuildinfo}",
             "transitive": true
