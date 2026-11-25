@@ -110,6 +110,12 @@ Dark (Lo Glow Dark) is the default. Every color comes from `tokens.json` through
   post takes the post's whole width, set in `code-small`, in a list, a fold or an alert too, and
   only the text around it keeps to the measure. The timeline's column is up to `--lo-timeline-w`
   (856 px), so a code block of 100 columns fits beside its rail.
+- Text at a comment's size is a comment's prose, wherever it shows: a comment, a review, a
+  description, a comment's preview, a hover card's docs. Draw it with
+  `lo-prose lo-prose--comment read-comment`, spaced as GitHub spaces a comment: nothing above its
+  first block, 16 px between blocks, in a quote or an alert too, and under a heading, and 24 above a
+  heading. `lo-prose` alone is the overview's, a document with room around its sections, and never
+  right for a comment.
 - A column's width follows the pane it's in, never the window: size it from its own box
   (`@container`), not a media query or `vw`, since panes resize.
 - Code is `--lo-code-size` on a fixed `--lo-code-line` (12.5/20) so both sides of a diff share one

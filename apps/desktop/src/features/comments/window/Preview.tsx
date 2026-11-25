@@ -59,7 +59,7 @@ export function Preview({ view, text, pull, flush = false, replaced }: PreviewPr
           onFollow={follow}
           images={(url) => postImage(view, url)}
           replaced={replaced}
-          className="lo-prose read-comment"
+          className="lo-prose lo-prose--comment read-comment"
         />
       ) : (
         <p className="whitespace-pre-wrap">{text}</p>

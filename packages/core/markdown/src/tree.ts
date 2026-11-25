@@ -225,6 +225,20 @@ export interface Image {
   kind: 'image';
   url: string;
   alt: string;
+  /**
+   * The size the text gives it, as `imageSize` reads an `<img>`'s `width` and `height`: a number of
+   * CSS pixels, such as `115`, or a percentage of the width it's in, such as `50%`. Without them,
+   * it's as big as it is.
+   */
+  width?: string;
+  height?: string;
+  /**
+   * Where the image is in a dark theme, and in a light one, when the text gives one for each, as a
+   * `<picture>` does with a source for each `prefers-color-scheme`: `url` is where it is
+   * otherwise. Each is on one of GitHub's image hosts, as `url` is.
+   */
+  dark?: string;
+  light?: string;
 }
 
 export interface Break {

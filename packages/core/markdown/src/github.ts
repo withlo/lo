@@ -127,10 +127,12 @@ export const SCHEMA: Schema = {
     'math-renderer',
     'ol',
     'p',
+    'picture',
     'pre',
     's',
     'samp',
     'section',
+    'source',
     'strike',
     'strong',
     'sub',
@@ -155,7 +157,8 @@ export const SCHEMA: Schema = {
       'dataFootnoteBackref',
       ['className', 'user-mention', 'team-mention', 'anchor'],
     ],
-    img: ['src', 'alt', 'title', ['className', 'emoji']],
+    img: ['src', 'alt', 'title', 'width', 'height', ['className', 'emoji']],
+    source: ['srcSet', 'media'],
     div: [
       [
         'className',
@@ -693,11 +696,11 @@ class Mapper {
           const alt = property(node, 'alt') ?? property(node, 'title') ?? '';
           return alt === '' ? [] : [{ kind: 'text', value: alt }];
         }
-        return this.builder.image(
-          property(node, 'src'),
-          collapse(property(node, 'alt') ?? ''),
-          linked,
-        );
+        return this.image(node, linked);
+      case 'picture':
+        return this.picture(node, linked);
+      case 'source':
+        return [];
       case 'br':
         return [{ kind: 'break' }];
       case 'strong':
@@ -748,6 +751,42 @@ class Mapper {
     }
   }
 
+  /** An `<img>`: where it is, its alt text, its size, and where it is in each theme, if given. */
+  private image(node: Element, linked: boolean, themes: Themes = {}): Inline[] {
+    return this.builder.image(
+      property(node, 'src'),
+      collapse(property(node, 'alt') ?? ''),
+      linked,
+      {
+        width: node.properties['width'],
+        height: node.properties['height'],
+        ...themes,
+      },
+    );
+  }
+
+  /**
+   * A `<picture>`: its `<img>`, with where it is in a dark theme and a light one where a source
+   * says, by `prefers-color-scheme`, as GitHub's pictures for each theme do. A browser takes the
+   * first source whose media matches; any other source, it would take over the image in either
+   * theme, so is passed over here, and the image shown as it is.
+   */
+  private picture(node: Element, linked: boolean): Inline[] {
+    const image = node.children.find((child) => isElement(child, 'img'));
+    if (!isElement(image)) return [];
+    const themes: Themes = {};
+    for (const source of node.children) {
+      if (source === image) break;
+      if (!isElement(source, 'source')) continue;
+      const theme = schemeOf(property(source, 'media'));
+      const at = property(source, 'srcSet')?.trim();
+      // One address, with no width or density after it: GitHub gives one for each theme.
+      if (theme === undefined || at === undefined || at === '' || /[\s,]/.test(at)) continue;
+      themes[theme] ??= at;
+    }
+    return this.image(image, linked, themes);
+  }
+
   private anchor(node: Element, linked: boolean): Inline[] {
     const href = property(node, 'href');
     if (node.properties['dataFootnoteRef'] !== undefined) {
@@ -787,6 +826,19 @@ class Mapper {
     if (href === undefined || linked) return this.inlines(node.children, linked);
     return this.builder.link(href, this.inlines(node.children, true));
   }
+}
+
+/** Where an image is in a dark theme and a light one. */
+interface Themes {
+  dark?: string;
+  light?: string;
+}
+
+/** The theme a source's `media` asks for, when it asks for one by `prefers-color-scheme` alone. */
+function schemeOf(media: string | undefined): 'dark' | 'light' | undefined {
+  const match = /^\(\s*prefers-color-scheme\s*:\s*(dark|light)\s*\)$/i.exec(media?.trim() ?? '');
+  const scheme = match?.[1]?.toLowerCase();
+  return scheme === 'dark' || scheme === 'light' ? scheme : undefined;
 }
 
 /**
