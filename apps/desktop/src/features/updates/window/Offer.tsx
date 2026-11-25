@@ -12,7 +12,7 @@
 // Settings › About shows the offer in view under its Lo row, the toast steps aside, so the offer and
 // its failure are said once.
 
-import { Button, CopyButton, Meter, Problem, Spinner, Toast, useCopy } from '@lo/ui';
+import { Button, CopyButton, Icon, Meter, Problem, Spinner, Toast, useCopy } from '@lo/ui';
 import { useLayoutEffect, useRef, type KeyboardEvent as KeyEvent, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
@@ -25,21 +25,12 @@ import { downloadingText, failureReason, failureWay } from './words.ts';
 type Offered = Extract<UpdateState, { status: 'available' }>;
 
 /** "Lo 0.2.0 is available": an arrow up in a ring, as the design draws an update arriving. */
-const OUT = (
-  <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-    <circle cx="8" cy="8" r="6.25" />
-    <path d="M8 11V5.5M5.5 8 8 5.5 10.5 8" />
-  </svg>
-);
+const OUT = <Icon name="circle-arrow-up" size={14} />;
 
 /** "Lo 0.2.0 is ready". */
-const TICK = (
-  <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-    <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />
-  </svg>
-);
+const TICK = <Icon name="check" size={14} />;
 
-/** A spinner in the icon's place, centered on the icon's 16 px. */
+/** A spinner in the icon's place, in the 14 px it takes. */
 const WAITING = (
   <span className="ms-2 mt-2 inline-flex">
     <Spinner />

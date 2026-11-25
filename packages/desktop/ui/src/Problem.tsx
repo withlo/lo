@@ -4,6 +4,7 @@ import { createContext, useContext, useId, useState, type ReactNode, type Ref } 
 import { Button } from './Button.tsx';
 import { Collapse } from './Collapse.tsx';
 import { CopyButton, useCopy } from './CopyButton.tsx';
+import { Icon } from './Icon.tsx';
 import { Key } from './Key.tsx';
 
 /**
@@ -89,7 +90,7 @@ const problem = cva('min-w-0 text-ui', {
   ],
 });
 
-const triangle = cva('lo-i lo-i--sm flex-none', {
+const triangle = cva('flex-none', {
   variants: { tone: { danger: 'text-danger', warn: 'text-warning' } },
 });
 
@@ -141,12 +142,8 @@ export function Problem({
       {others.map((each, index) => button(each, false, index))}
     </>
   );
-  const icon = (
-    <svg className={triangle({ tone })} viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M7.13 2.5a1 1 0 0 1 1.74 0l5.2 9.5a1 1 0 0 1-.87 1.5H2.8a1 1 0 0 1-.87-1.5Z" />
-      <path d="M8 6.25v3M8 11.25v.01" />
-    </svg>
-  );
+  // Beside the small text of a panel's and of details: a view's has none.
+  const icon = <Icon name="triangle-exclamation-point" size={12} className={triangle({ tone })} />;
   if (layout === 'details') {
     return (
       <div className={problem({ layout, tone })}>

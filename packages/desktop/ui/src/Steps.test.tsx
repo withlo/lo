@@ -18,9 +18,19 @@ describe('Steps', () => {
     const markup = renderToStaticMarkup(<Steps steps={steps} label="Changes" />);
     expect(markup).toMatch(/^<ol aria-label="Changes" class="[^"]*steps[^"]*">/);
     const balls = [
-      ...markup.matchAll(/<span class="[^"]*step-ball[^"]*" aria-hidden="true">([^<]*)</g),
+      ...markup.matchAll(
+        /<span class="[^"]*step-ball[^"]*" aria-hidden="true">(.*?)<\/span><span class="min-w-0">/g,
+      ),
     ];
-    expect(balls.map(([, mark]) => mark)).toEqual(['✓', '!', '3', '4', '5']);
+    // A done step's tick is its icon, with the character beside it for its text.
+    expect(balls.map(([, mark]) => mark?.replace(/<[^>]*>/g, ''))).toEqual([
+      '✓',
+      '!',
+      '3',
+      '4',
+      '5',
+    ]);
+    expect(balls[0]?.[1]).toContain('<svg');
     // Only the step being done now is the current one.
     expect(markup.match(/aria-current="step"/g)).toHaveLength(1);
     expect(markup).toMatch(/<li class="[^"]*" aria-current="step">[^]*Put #4797’s base back/);

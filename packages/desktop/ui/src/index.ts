@@ -262,7 +262,7 @@ export {
   type StackTreeProps,
 } from './StackTree.tsx';
 export { Label, labelColor, type LabelProps } from './Label.tsx';
-export { CommentIcon, ThreadCount, type ThreadCountProps } from './ThreadCount.tsx';
+export { ThreadCount, type ThreadCountProps } from './ThreadCount.tsx';
 export {
   SentPost,
   type SentPostProps,

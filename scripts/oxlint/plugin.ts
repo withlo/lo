@@ -29,7 +29,6 @@
 import { join, relative } from 'node:path';
 
 import { LO_SUBJECTS } from './subjects.ts';
-import { OWN_SVGS } from './svgs.ts';
 
 /** A syntax tree node, as oxlint hands one to a rule. */
 interface AstNode {
@@ -577,15 +576,15 @@ export const ICON_MESSAGE =
 /**
  * The files that may write an `<svg>`, from the repository's root: `Icon`, which draws every icon,
  * and `iconElement`, which makes the same in a code view's own DOM, the mark and its animations,
- * and an overview's figures. A folder ends in `/`.
+ * and what draws an overview's figures, which aren't icons.
  */
-const DRAWS_SVG = [
+const DRAWS_SVG: ReadonlySet<string> = new Set([
   'packages/desktop/ui/src/Icon.tsx',
   'packages/desktop/ui/src/iconElement.ts',
   'packages/desktop/ui/src/Mark.tsx',
   'packages/desktop/ui/src/LogoMotion.tsx',
-  'packages/desktop/ui/src/figures/',
-];
+  'packages/desktop/ui/src/figures/svg.ts',
+]);
 
 /** The one file that imports `lucide`: the list of the icons Lo uses. */
 const ICON_LIST = 'packages/desktop/ui/src/icons.ts';
@@ -607,60 +606,47 @@ function lucide(node: unknown): boolean {
  * packages': an `<svg>` element in JSX, or one made with `createElement('svg')` or
  * `createElementNS(…, 'svg')`, anywhere but `Icon`, the mark, its animations and figures
  * ({@link DRAWS_SVG}), and an import of `lucide` anywhere but `icons.ts`. Lo's icons come from one
- * set, drawn by `Icon` (`design/README.md`, "Icons"). It lets through the files `known` lists, by
- * their path from the repository's root, which still draw their own.
+ * set, drawn by `Icon` (`design/README.md`, "Icons").
  */
-export function inlineIcon(known: ReadonlySet<string>) {
-  return {
-    meta: {
-      type: 'problem',
-      docs: { description: 'Refuse an icon that isn’t drawn by `Icon`, from Lo’s list of icons.' },
-    },
-    create(context: Context) {
-      const path = context.filename === undefined ? undefined : relative(ROOT, context.filename);
-      const desktop = path === undefined || DESKTOP.test(path);
-      const drawsSvg =
-        path !== undefined &&
-        (known.has(path) ||
-          DRAWS_SVG.some((each) => (each.endsWith('/') ? path.startsWith(each) : path === each)));
-      const report = (node: AstNode): void => {
-        if (desktop) context.report({ node, message: ICON_MESSAGE });
-      };
-      const svg = (node: AstNode): void => {
-        if (!drawsSvg) report(node);
-      };
-      const source = (node: AstNode): void => {
-        if (path !== ICON_LIST && lucide(Reflect.get(node, 'source'))) report(node);
-      };
-      return {
-        JSXOpeningElement(node: AstNode): void {
-          const name: unknown = Reflect.get(node, 'name');
-          if (
-            isNode(name) &&
-            name.type === 'JSXIdentifier' &&
-            Reflect.get(name, 'name') === 'svg'
-          ) {
-            svg(node);
-          }
-        },
-        CallExpression(node: AstNode): void {
-          const name = calleeName(Reflect.get(node, 'callee'));
-          // The element's name: first, or after its namespace.
-          const at = name === 'createElement' ? 0 : name === 'createElementNS' ? 1 : undefined;
-          const args: unknown = Reflect.get(node, 'arguments');
-          if (at !== undefined && Array.isArray(args) && svgLiteral(args[at])) svg(node);
-        },
-        ImportDeclaration: source,
-        ImportExpression: source,
-        ExportAllDeclaration: source,
-        ExportNamedDeclaration: source,
-      };
-    },
-  };
-}
-
-/** `lo/no-inline-icon`, letting through the files that still draw their own: {@link OWN_SVGS}. */
-export const noInlineIcon = inlineIcon(new Set(OWN_SVGS));
+export const noInlineIcon = {
+  meta: {
+    type: 'problem',
+    docs: { description: 'Refuse an icon that isn’t drawn by `Icon`, from Lo’s list of icons.' },
+  },
+  create(context: Context) {
+    const path = context.filename === undefined ? undefined : relative(ROOT, context.filename);
+    const desktop = path === undefined || DESKTOP.test(path);
+    const drawsSvg = path !== undefined && DRAWS_SVG.has(path);
+    const report = (node: AstNode): void => {
+      if (desktop) context.report({ node, message: ICON_MESSAGE });
+    };
+    const svg = (node: AstNode): void => {
+      if (!drawsSvg) report(node);
+    };
+    const source = (node: AstNode): void => {
+      if (path !== ICON_LIST && lucide(Reflect.get(node, 'source'))) report(node);
+    };
+    return {
+      JSXOpeningElement(node: AstNode): void {
+        const name: unknown = Reflect.get(node, 'name');
+        if (isNode(name) && name.type === 'JSXIdentifier' && Reflect.get(name, 'name') === 'svg') {
+          svg(node);
+        }
+      },
+      CallExpression(node: AstNode): void {
+        const name = calleeName(Reflect.get(node, 'callee'));
+        // The element's name: first, or after its namespace.
+        const at = name === 'createElement' ? 0 : name === 'createElementNS' ? 1 : undefined;
+        const args: unknown = Reflect.get(node, 'arguments');
+        if (at !== undefined && Array.isArray(args) && svgLiteral(args[at])) svg(node);
+      },
+      ImportDeclaration: source,
+      ImportExpression: source,
+      ExportAllDeclaration: source,
+      ExportNamedDeclaration: source,
+    };
+  },
+};
 
 export default {
   meta: { name: 'lo' },

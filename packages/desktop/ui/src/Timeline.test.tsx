@@ -154,7 +154,7 @@ describe('Timeline', () => {
       'JPjun-park',
       'MCmira-chen',
     ]);
-    expect(reviewers.map((each) => tipOf(each.querySelector('svg[role="img"]')!))).toEqual([
+    expect(reviewers.map((each) => tipOf(each.querySelector('[role="img"]')!))).toEqual([
       'Requested changes',
       'Review requested',
       'Approved',

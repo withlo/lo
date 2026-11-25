@@ -11,16 +11,17 @@ import {
 
 import { Avatar } from './Avatar.tsx';
 import { Button } from './Button.tsx';
+import { Glyphs, Icon } from './Icon.tsx';
+import type { IconName } from './icons.ts';
 import { Key } from './Key.tsx';
 import { Label } from './Label.tsx';
 import { LinkButton } from './LinkButton.tsx';
 import { Spinner } from './Spinner.tsx';
-import { StateIcon } from './StatePill.tsx';
+import { STATE_ICONS } from './StatePill.tsx';
 import { Tag } from './Tag.tsx';
-import { CommentIcon } from './ThreadCount.tsx';
 import { Tooltip } from './Tooltip.tsx';
 
-/** What a one-line event or a row's marker draws, on the 16 grid. */
+/** What a one-line event or a row's marker draws: an icon, or a ring. */
 export type TimelineGlyph =
   | 'comment'
   | 'changes'
@@ -53,72 +54,33 @@ export type TimelineMarker =
   | { glyph: TimelineGlyph; tone?: TimelineTone | undefined }
   | { login: string; image?: string | undefined };
 
-const GLYPHS: Readonly<Record<TimelineGlyph, ReactNode>> = {
-  comment: (
-    <path d="M2.75 3.25c0-.55.45-1 1-1h8.5c.55 0 1 .45 1 1v6.5c0 .55-.45 1-1 1H7.5L4.75 13v-2.25h-1c-.55 0-1-.45-1-1Z" />
-  ),
-  changes: (
-    <>
-      <path d="M2.75 3.25c0-.55.45-1 1-1h8.5c.55 0 1 .45 1 1v6.5c0 .55-.45 1-1 1H7.5L4.75 13v-2.25h-1c-.55 0-1-.45-1-1Z" />
-      <path d="M6 5l4 3.5M10 5 6 8.5" />
-    </>
-  ),
-  check: <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />,
-  x: <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" />,
-  // A ring, for something still running.
-  ring: <circle cx="8" cy="8" r="3.25" />,
-  eye: (
-    <>
-      <path d="M2 8s2.25-4.25 6-4.25S14 8 14 8s-2.25 4.25-6 4.25S2 8 2 8Z" />
-      <circle cx="8" cy="8" r="1.75" />
-    </>
-  ),
-  person: (
-    <>
-      <circle cx="8" cy="5.5" r="2.5" />
-      <path d="M3 13.25c0-2.4 2.25-4 5-4s5 1.6 5 4" />
-    </>
-  ),
-  tag: (
-    <>
-      <path d="M2.5 2.5h5.25l6 6-5.25 5.25-6-6Z" />
-      <path d="M5.25 5.25h.01" />
-    </>
-  ),
-  commits: (
-    <>
-      <circle cx="8" cy="8" r="2.5" />
-      <path d="M1.5 8h4M10.5 8h4" />
-    </>
-  ),
-  force: <path d="M5 2.5v11M2.5 5 5 2.5 7.5 5M11 13.5v-11M8.5 11l2.5 2.5 2.5-2.5" />,
-  link: (
-    <path d="M6.5 9.5l3-3M7 4.5l1-1a2.47 2.47 0 0 1 3.5 3.5l-1 1M9 11.5l-1 1A2.47 2.47 0 0 1 4.5 9l1-1" />
-  ),
-  deploy: <path d="M8 13.5v-9M4.5 8 8 4.5 11.5 8M3 2.5h10" />,
-  queue: <path d="M3 4h10M3 8h10M3 12h6" />,
-  merged: <StateIcon state="merged" />,
-  closed: <StateIcon state="closed" />,
-  reopened: <StateIcon state="open" />,
-  draft: <StateIcon state="draft" />,
-  branch: (
-    <>
-      <circle cx="4.5" cy="3.75" r="1.5" />
-      <circle cx="4.5" cy="12.25" r="1.5" />
-      <circle cx="11.5" cy="5.75" r="1.5" />
-      <path d="M4.5 5.25v5.5M11.5 7.25c0 2-1.5 3-4 3.25" />
-    </>
-  ),
-  dismissed: (
-    <>
-      <circle cx="8" cy="8" r="6.25" />
-      <path d="M3.75 12.25 12.25 3.75" />
-    </>
-  ),
-  auto: <path d="M9 2 4 9h3.5L7 14l5-7H8.5Z" />,
-  stack: <path d="M8 2.5 14 5.5 8 8.5 2 5.5ZM2 8.5l6 3 6-3M2 11.25l6 3 6-3" />,
-  more: <path d="M3.5 8h.01M8 8h.01M12.5 8h.01" strokeWidth="2.4" />,
+/** Each glyph's icon, but the ring's: a ring is drawn as a ring, for something still running. */
+const GLYPHS: Readonly<Record<Exclude<TimelineGlyph, 'ring'>, IconName>> = {
+  comment: 'message-square',
+  changes: 'message-square-x',
+  check: 'check',
+  x: 'x',
+  eye: 'eye',
+  person: 'user-round',
+  tag: 'tag',
+  commits: 'git-commit-horizontal',
+  force: 'arrow-up-down',
+  link: 'link',
+  deploy: 'arrow-up-to-line',
+  queue: 'text-align-start',
+  merged: STATE_ICONS.merged,
+  closed: STATE_ICONS.closed,
+  reopened: STATE_ICONS.open,
+  draft: STATE_ICONS.draft,
+  branch: 'git-branch',
+  dismissed: 'circle-slash',
+  auto: 'zap',
+  stack: 'layers',
+  more: 'ellipsis',
 };
+
+/** A ring, for something still running: a ball, not an icon. */
+const RING = <span className="size-6 flex-none rounded-pill hollow" />;
 
 const disc = cva('relative grid size-32 flex-none place-items-center rounded-pill inset-ring-2', {
   variants: {
@@ -142,9 +104,7 @@ function Marker({ marker }: { marker: TimelineMarker }) {
   }
   return (
     <span className={disc({ tone: marker.tone ?? 'neutral' })} aria-hidden="true">
-      <svg className="lo-i lo-i--sm" viewBox="0 0 16 16">
-        {GLYPHS[marker.glyph]}
-      </svg>
+      {marker.glyph === 'ring' ? RING : <Icon name={GLYPHS[marker.glyph]} size={14} />}
     </span>
   );
 }
@@ -448,13 +408,17 @@ export function TimelineForcePush({
         <span>force-pushed{branch === 'base' && ' the base branch'}</span>{' '}
         {before !== undefined && after !== undefined && (
           <span className="inline-flex items-center gap-4">
-            <Oid>{before}</Oid>→<Oid>{after}</Oid>
+            <Oid>{before}</Oid>
+            <Glyphs text="→" />
+            <Oid>{after}</Oid>
           </span>
         )}{' '}
         {revision !== undefined && <Revision>{revision}</Revision>}
         {compare !== undefined && (
           <Button variant="ghost" size="sm" onClick={compare.onCompare}>
-            Compare {compare.from} → {compare.to}
+            <span>
+              <Glyphs text={`Compare ${compare.from} → ${compare.to}`} />
+            </span>
           </Button>
         )}
       </Line>
@@ -658,7 +622,7 @@ export function TimelineReview({
         )}
         {comments !== undefined && comments.count > 0 && (
           <div className={cardHead({ edge: 'above' })}>
-            <CommentIcon />
+            <Icon name="message-square" size={12} />
             <span>
               {comments.count} {comments.count === 1 ? 'comment' : 'comments'}
               {comments.on !== undefined && ` · ${comments.on}`}
@@ -685,25 +649,29 @@ export interface TimelineReviewer {
 }
 
 const REVIEWER_STATES: Readonly<
-  Record<TimelineReviewerState, { words: string; tone: string; shapes: ReactNode }>
+  Record<TimelineReviewerState, { words: string; tone: string; glyph: TimelineGlyph }>
 > = {
-  requested: { words: 'Review requested', tone: 'text-fg-muted', shapes: GLYPHS.ring },
-  approved: { words: 'Approved', tone: 'text-success', shapes: GLYPHS.check },
-  changes: { words: 'Requested changes', tone: 'text-danger', shapes: GLYPHS.x },
-  commented: { words: 'Commented', tone: 'text-fg-muted', shapes: GLYPHS.comment },
-  dismissed: { words: 'Review dismissed', tone: 'text-fg-muted', shapes: GLYPHS.dismissed },
+  requested: { words: 'Review requested', tone: 'text-fg-muted', glyph: 'ring' },
+  approved: { words: 'Approved', tone: 'text-success', glyph: 'check' },
+  changes: { words: 'Requested changes', tone: 'text-danger', glyph: 'x' },
+  commented: { words: 'Commented', tone: 'text-fg-muted', glyph: 'comment' },
+  dismissed: { words: 'Review dismissed', tone: 'text-fg-muted', glyph: 'dismissed' },
 };
 
 function Reviewer({ reviewer }: { reviewer: TimelineReviewer }) {
-  const { words, tone, shapes } = REVIEWER_STATES[reviewer.state];
+  const { words, tone, glyph } = REVIEWER_STATES[reviewer.state];
   return (
     <li className="inline-flex items-center gap-4">
       <Avatar login={reviewer.login} image={reviewer.image} size="sm" />
       <span className="text-fg">{reviewer.login}</span>
       <Tooltip label={words}>
-        <svg className={`lo-i lo-i--xs ${tone}`} viewBox="0 0 16 16" role="img" aria-label={words}>
-          {shapes}
-        </svg>
+        <span
+          role="img"
+          aria-label={words}
+          className={`grid size-12 flex-none place-items-center ${tone}`}
+        >
+          {glyph === 'ring' ? RING : <Icon name={GLYPHS[glyph]} size={12} />}
+        </span>
       </Tooltip>
     </li>
   );

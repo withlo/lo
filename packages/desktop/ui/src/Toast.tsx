@@ -3,6 +3,8 @@ import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } 
 
 import { Button } from './Button.tsx';
 import { Collapse } from './Collapse.tsx';
+import { Icon } from './Icon.tsx';
+import type { IconName } from './icons.ts';
 import { Key } from './Key.tsx';
 import { useDetails } from './Problem.tsx';
 
@@ -20,31 +22,11 @@ const icon = cva('flex-none', {
 export type ToastTone = 'info' | 'success' | 'warning' | 'danger';
 
 /** The icon each tone shows, so a status color never stands without one. */
-const ICONS: Readonly<Record<ToastTone, ReactNode>> = {
-  info: (
-    <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-      <circle cx="8" cy="8" r="6.25" />
-      <path d="M8 7.25v4M8 4.75v.01" />
-    </svg>
-  ),
-  success: (
-    <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-      <circle cx="8" cy="8" r="6.25" />
-      <path d="m5.5 8.25 1.75 1.75 3.25-3.5" />
-    </svg>
-  ),
-  warning: (
-    <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M7.13 2.5a1 1 0 0 1 1.74 0l5.2 9.5a1 1 0 0 1-.87 1.5H2.8a1 1 0 0 1-.87-1.5Z" />
-      <path d="M8 6.25v3M8 11.25v.01" />
-    </svg>
-  ),
-  danger: (
-    <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-      <circle cx="8" cy="8" r="6.25" />
-      <path d="M8 4.75v4M8 11.25v.01" />
-    </svg>
-  ),
+const ICONS: Readonly<Record<ToastTone, IconName>> = {
+  info: 'info',
+  success: 'circle-check',
+  warning: 'triangle-exclamation-point',
+  danger: 'circle-exclamation-point',
 };
 
 /** The one thing a toast offers to do: "Undo", "Open". */
@@ -58,7 +40,7 @@ export interface ToastAction {
 export interface ToastProps {
   /** What the icon says, as its color: a status color never stands without an icon and a word. */
   tone: ToastTone;
-  /** A 16 px icon, an `svg` with the `lo-i` class and `aria-hidden`. Without one, the tone's. */
+  /** An `Icon` of 14 px, beside the title's `text-ui`, or a `Spinner`. Without one, the tone's. */
   icon?: ReactNode;
   /**
    * What happened, in a few words: the result, never the name of a command. A toast that goes by
@@ -108,7 +90,7 @@ export function Toast({
   useEffect(() => onDetails?.(open), [open, onDetails]);
   return (
     <div className="grid w-toast-w toast items-start rounded-md bg-bg-overlay text-fg shadow-pop text-ui">
-      <span className={icon({ tone })}>{mark ?? ICONS[tone]}</span>
+      <span className={icon({ tone })}>{mark ?? <Icon name={ICONS[tone]} size={14} />}</span>
       <div className="line-clamp-3 min-w-0 font-semibold wrap-anywhere">{title}</div>
       {action !== undefined && (
         <Button size="sm" variant="ghost" onClick={action.onClick}>

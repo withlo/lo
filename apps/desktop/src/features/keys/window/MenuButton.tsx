@@ -3,7 +3,7 @@
 // commands act on what has focus, so opened from the strip by the keyboard, it acts on what had
 // focus before the strip, which gets focus back.
 
-import { SettingsCommand, STRIP_ATTRIBUTE } from '@lo/ui';
+import { Icon, SettingsCommand, STRIP_ATTRIBUTE } from '@lo/ui';
 
 import type { Client } from '../../../window/ipc.ts';
 import type { contract } from '../contract.ts';
@@ -82,9 +82,7 @@ export function MenuButton() {
       {...{ [BUTTON]: '' }}
       onMouseDown={(event) => event.preventDefault()}
     >
-      <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M3 4.5h10M3 8h10M3 11.5h10" />
-      </svg>
+      <Icon name="menu" size={16} />
     </SettingsCommand>
   );
 }

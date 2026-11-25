@@ -145,18 +145,20 @@ mark isn't an icon.
 
 - `Icon` takes a `name` from `icons.ts`, the list of the Lucide icons Lo uses, and a `size`. To use
   a new icon, add its name there. Nothing else imports `lucide`, and no component writes an `<svg>`
-  of its own: `lo/no-inline-icon` refuses one. A code view's own DOM takes `iconElement`. The files
-  whose icons are still drawn by hand are listed in `scripts/oxlint/svgs.ts`, which only shrinks.
+  of its own: `lo/no-inline-icon` refuses one anywhere but `Icon`, the mark and figures. A code
+  view's own DOM takes `iconElement`.
 - Four sizes, each with its stroke in pixels: 12 px at 1.25 px beside `text-micro`, `text-small` and
   in a key chip; 14 px at 1.25 px beside `text-ui`; 16 px at 1.5 px for an icon alone in a control
-  and beside titles and reading text; 24 px at 1.5 px in an empty state.
+  and beside titles and reading text; 24 px at 1.5 px in an empty state. An icon that stands in for
+  its words when a narrow row gives them up (`data-takes`) is alone in its control, so it's 16 px.
 - An icon takes its text's color. Alone it's `lo-icon`, or `lo-icon-muted` for file, folder and
   secondary icons. Stroke only, round caps and joins: never filled, never two tones.
 - A character the fonts don't hold is an icon. Host Grotesk and Fragment Mono have no `⌘`, `⏎`, `→`,
   `✓`, `⋯` or `↗`, and the system would draw each in another weight. `Key` draws a key's symbols and
-  `Glyphs` the rest, from `glyphs.ts`. `· › … –` are in both fonts and stay text. Some components
-  still type theirs: `Steps`' `✓`, `Checklist`'s `↗`, `MoreButton`'s `⋯` and the arrows between
-  revisions, branches, names and sizes. Each moves onto `Glyphs`, and none is added.
+  `Glyphs` the rest, from `glyphs.ts`, as `r1 → r3`; a code view's own DOM takes `glyphNodes`.
+  `Ticks`, `Tooltip` and `LinkButton` draw a string they're given through `Glyphs`. In a flex row,
+  put `Glyphs` in a `span`, so its string stays one run of text. `· › … –` are in both fonts and
+  stay text.
 - State is a ball, not an icon. Another brand's mark is that brand's own file, never redrawn.
 - An icon with no words beside it names itself: `label` on `Icon` for a mark, a tooltip for a
   control.

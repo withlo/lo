@@ -20,6 +20,7 @@ import {
   CopyButton,
   Dialog,
   duration,
+  Icon,
   Key,
   Problem,
   Spinner,
@@ -315,14 +316,7 @@ function statusOf({ state, error }: SignInDialog, expired: boolean): ReactNode {
     case 'signedIn':
       return (
         <>
-          <svg
-            className="lo-i lo-i--sm flex-none text-success"
-            viewBox="0 0 16 16"
-            aria-hidden="true"
-          >
-            <circle cx="8" cy="8" r="6.25" />
-            <path d="m5.5 8.25 1.75 1.75 3.25-3.5" />
-          </svg>
+          <Icon name="circle-check" size={12} className="text-success" />
           <span className="text-fg">
             Signed in as <strong className="font-semibold">{state.login}</strong>
             {state.name === null ? '' : ` (${state.name})`}

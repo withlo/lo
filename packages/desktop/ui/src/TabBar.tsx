@@ -17,6 +17,7 @@ import type { CommandControl } from './commands/control.ts';
 import { ContextMenu, type ContextMenuAnchor } from './ContextMenu.tsx';
 import { withoutBidi } from './controls.ts';
 import { useGiveUp } from './giveUp.ts';
+import { Icon } from './Icon.tsx';
 import { motionReduced, whenSettled } from './motion.ts';
 import { Skeleton, Spinner } from './Spinner.tsx';
 import { Tooltip } from './Tooltip.tsx';
@@ -773,9 +774,7 @@ function NewTab({
         hintShortcut={words.shortcut}
         onClick={onNew}
       >
-        <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M8 3.25v9.5M3.25 8h9.5" />
-        </svg>
+        <Icon name="plus" size={16} />
       </Button>
     </span>
   );
@@ -851,9 +850,7 @@ function MoreTabs({
         }}
       >
         <span className="lo-num">{tabs.length}</span> more
-        <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="m4.5 6.25 3.5 3.5 3.5-3.5" />
-        </svg>
+        <Icon name="chevron-down" size={12} />
       </Button>
       <ContextMenu
         open={shown && at !== undefined}
@@ -966,9 +963,7 @@ function TabItem({
               onClose?.(id);
             }}
           >
-            <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M4 4l8 8M12 4l-8 8" />
-            </svg>
+            <Icon name="x" size={16} />
           </Button>
         </span>
       )}
@@ -1032,33 +1027,21 @@ function TabLabel({ tab: item, selected, fade }: { tab: Tab; selected: boolean; 
     case 'recent':
       return (
         <>
-          <svg className="lo-i lo-i--sm flex-none" viewBox="0 0 16 16" aria-hidden="true">
-            <circle cx="8" cy="8" r="6.25" />
-            <path d="M8 4.75V8l2 1.5" />
-          </svg>
+          <Icon name="clock" size={14} />
           <span className={title}>Recent pull requests</span>
         </>
       );
     case 'settings':
       return (
         <>
-          <svg className="lo-i lo-i--sm flex-none" viewBox="0 0 16 16" aria-hidden="true">
-            <circle cx="8" cy="8" r="2.25" />
-            <path d="M8 1.75v2M8 12.25v2M1.75 8h2M12.25 8h2M3.6 3.6l1.4 1.4M11 11l1.4 1.4M3.6 12.4 5 11M11 5l1.4-1.4" />
-          </svg>
+          <Icon name="settings" size={14} />
           <span className={title}>Settings</span>
         </>
       );
     case 'queue':
       return (
         <>
-          <svg
-            className="lo-i lo-i--sm flex-none text-queue"
-            viewBox="0 0 16 16"
-            aria-hidden="true"
-          >
-            <path d="M3 4h10M3 8h10M3 12h6" />
-          </svg>
+          <Icon name="text-align-start" size={14} className="text-queue" />
           <span className="max-w-1/2 min-w-16 shrink truncate text-fg-muted">{item.repo}</span>
           <span className={title}>Merge queue · {withoutBidi(item.branch)}</span>
         </>
@@ -1082,10 +1065,7 @@ function StackCount({ layers }: { layers: number }) {
         aria-label={name}
         className="inline-flex tab-stack flex-none items-center gap-4 text-fg-muted text-micro"
       >
-        <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M8 2.25 13.75 5 8 7.75 2.25 5Z" />
-          <path d="M2.25 8 8 10.75 13.75 8M2.25 11 8 13.75 13.75 11" />
-        </svg>
+        <Icon name="layers" size={12} />
         <span className="lo-num">{layers}</span>
       </span>
     </Tooltip>

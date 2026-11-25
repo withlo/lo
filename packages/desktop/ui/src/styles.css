@@ -1213,6 +1213,18 @@
   background: radial-gradient(circle, var(--lo-warning) 0 2px, transparent 2.5px);
 }
 
+/* How many of a layer's files are viewed, in its meta: a ring with a ball at its middle, in its
+   text's colour, 9 px across in the 12 px box an icon there takes. */
+@utility ball-files {
+  width: calc(var(--lo-sp-8) + 1px);
+  height: calc(var(--lo-sp-8) + 1px);
+  margin: 1.5px;
+  flex: none;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.25px currentcolor;
+  background: radial-gradient(circle, currentcolor 0 1.75px, transparent 2.25px);
+}
+
 /* The stack tree's rows. A layer is a grid: the rail's column, then its title and meta. The rail,
    its balls and a branch's elbow are drawn from the numbers set here, so a line always meets the
    center of a ball and an elbow meets the trunk. The ball sits at the middle of the title's line. */

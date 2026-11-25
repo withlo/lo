@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
 
 import { parseSync, Visitor } from 'oxc-parser';
 import { expect, test } from 'vitest';
@@ -7,8 +7,8 @@ import { expect, test } from 'vitest';
 import plugin, {
   APOSTROPHE_MESSAGE,
   ICON_MESSAGE,
-  inlineIcon,
   loSubject,
+  noInlineIcon,
   MESSAGE,
   SCROLL_MESSAGE,
   SUBJECT_MESSAGE,
@@ -16,7 +16,6 @@ import plugin, {
   TITLE_MESSAGE,
 } from './plugin.ts';
 import { LO_SUBJECTS } from './subjects.ts';
-import { OWN_SVGS } from './svgs.ts';
 
 /** The repository's root. */
 const ROOT = join(import.meta.dirname, '..', '..');
@@ -509,17 +508,10 @@ test('the strings that still make Lo their subject are listed, and only they', (
   }).toEqual({ gone: [], unlisted: [], repeated: [] });
 });
 
-/**
- * The source of each icon `lo/no-inline-icon` reports in `source`, a file at `path`, letting
- * through the files `known` lists.
- */
-function icons(
-  source: string,
-  path = join(ROOT, 'apps/desktop/src/file.tsx'),
-  known: ReadonlySet<string> = new Set(),
-): string[] {
+/** The source of each icon `lo/no-inline-icon` reports in `source`, a file at `path`. */
+function icons(source: string, path = join(ROOT, 'apps/desktop/src/file.tsx')): string[] {
   const found: string[] = [];
-  const rule = inlineIcon(known).create({
+  const rule = noInlineIcon.create({
     report: ({ node, message }) => {
       expect(message).toBe(ICON_MESSAGE);
       const start: unknown = Reflect.get(node, 'start');
@@ -566,39 +558,22 @@ test('an svg of its own is refused, in JSX or made in the DOM, and so is lucide 
   ]);
 });
 
-test('Icon, iconElement, the mark, figures, the list of icons and a listed file are let through', () => {
+test('Icon, iconElement, the mark, what draws figures and the list of icons are let through', () => {
   const svg = 'const drawn = <svg viewBox="0 0 24 24" />;';
+  const made = "const made = document.createElementNS(SVG, 'svg');";
   const ui = (file: string) => join(ROOT, 'packages/desktop/ui/src', file);
-  for (const file of ['Icon.tsx', 'Mark.tsx', 'LogoMotion.tsx', 'figures/Figure.tsx']) {
+  for (const file of ['Icon.tsx', 'Mark.tsx', 'LogoMotion.tsx']) {
     expect(icons(svg, ui(file))).toEqual([]);
   }
-  expect(icons("const made = document.createElementNS(SVG, 'svg');", ui('iconElement.ts'))).toEqual(
-    [],
-  );
+  expect(icons(made, ui('iconElement.ts'))).toEqual([]);
+  expect(icons(made, ui('figures/svg.ts'))).toEqual([]);
   expect(icons("import { Check } from 'lucide';", ui('icons.ts'))).toEqual([]);
+  // A figure's frame draws its icons with Icon, as everything else does: only its drawing is let
+  // through.
+  expect(icons(svg, ui('figures/Figure.tsx'))).toHaveLength(1);
   // The list of icons draws none, and Icon imports none.
-  expect(icons("const made = document.createElementNS(SVG, 'svg');", ui('icons.ts'))).toHaveLength(
-    1,
-  );
+  expect(icons(made, ui('icons.ts'))).toHaveLength(1);
   expect(icons("import { Check } from 'lucide';", ui('Icon.tsx'))).toHaveLength(1);
-  const known = new Set(['apps/desktop/src/features/old.tsx']);
-  expect(icons(svg, join(ROOT, 'apps/desktop/src/features/old.tsx'), known)).toEqual([]);
-  expect(icons(svg, join(ROOT, 'apps/desktop/src/features/new.tsx'), known)).toHaveLength(1);
   // Outside the desktop app, nothing is checked.
   expect(icons(svg, join(ROOT, 'scripts/file.tsx'))).toEqual([]);
-});
-
-test('the files that still draw an svg of their own are listed, and only they', () => {
-  const found = new Set(
-    SOURCES.flatMap((folder) => sourceFiles(join(ROOT, folder)))
-      .filter((path) => icons(readFileSync(path, 'utf8'), path).length > 0)
-      .map((path) => relative(ROOT, path)),
-  );
-  // A listed file no longer found moved its icons onto Icon: take it off the list. One found but
-  // not listed is new: `lo/no-inline-icon` refuses it, so draw its icons with Icon.
-  expect({
-    gone: OWN_SVGS.filter((each) => !found.has(each)),
-    unlisted: [...found].filter((each) => !OWN_SVGS.includes(each)),
-    repeated: OWN_SVGS.filter((each, index) => OWN_SVGS.indexOf(each) !== index),
-  }).toEqual({ gone: [], unlisted: [], repeated: [] });
 });
