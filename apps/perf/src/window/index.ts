@@ -7,7 +7,7 @@
 // First, so its observers see the rest of the page run.
 import { markFirst, markLoad, markLoaded, marks, now } from './marks.ts';
 
-import { diffText, splitLines } from '@lo/diff';
+import { splitLines } from '@lo/diff';
 import {
   type Composer,
   createDiffView,
@@ -111,12 +111,6 @@ marks.view = now();
 /** The file at the top: the first with lines to show. */
 const first = pull.files.findIndex((file) => !file.skipped);
 marks.first = first;
-// A file with gaps shows GitHub's diff at once, as the diff feature does before the local copy.
-for (const file of pull.files) {
-  if (!file.gaps) continue;
-  const shown = placeholders(file);
-  view.setDiff(file.path, diffText(textOf(shown.old), textOf(shown.new)));
-}
 // Going back or forward reveals the place, and takes focus there.
 registry.history.register(tab, 'diff', (at) => {
   if (!opened().reveal(at)) return false;
@@ -146,28 +140,8 @@ function diffFile(file: PullFile): DiffFile {
   if (file.previousPath !== undefined) shown.previousPath = file.previousPath;
   if (file.skipped === 'binary') shown.skip = 'binary';
   else if (file.skipped === 'too-large') shown.skip = 'large';
-  else if (file.gaps) {
-    shown.lines = placeholders(file);
-    shown.gaps = file.gaps;
-  } else shown.lines = { old: lines(file.old), new: lines(file.new) };
+  else shown.lines = { old: lines(file.old), new: lines(file.new) };
   return shown;
-}
-
-/** A file's lines with those in its gaps blank, as GitHub's diff leaves them out. */
-function placeholders(file: PullFile): { old: string[]; new: string[] } {
-  const gaps = file.gaps ?? [];
-  const blank = (side: 'old' | 'new', text: string | undefined): string[] =>
-    lines(text).map((line, index) =>
-      gaps.some((gap) => gap.side === side && gap.from <= index + 1 && index + 1 <= gap.to)
-        ? ''
-        : line,
-    );
-  return { old: blank('old', file.old), new: blank('new', file.new) };
-}
-
-/** The text of `lines`, each ended with a line break, so blank lines at the end count. */
-function textOf(each: readonly string[]): string | undefined {
-  return each.length === 0 ? undefined : `${each.join('\n')}\n`;
 }
 
 function lines(text: string | undefined): string[] {
@@ -222,20 +196,11 @@ async function linkTo(place: Place): Promise<string> {
   return `https://github.com/${pull.repo}/pull/${pull.number}/files#diff-${hash.join('')}${side}${place.line}`;
 }
 
-/** The local copy's files waiting for the test to say they come. */
-const copies: (() => void)[] = [];
-
-// For the measurements and the key spec, which drive the page from outside; for the copy spec,
-// which says when the local copy comes, and hears how many of its files are waiting; and for the
-// marks spec, which hands the view an overview's markers, and opens and closes their notes, when
-// it likes.
+// For the measurements and the key spec, which drive the page from outside; and for the marks
+// spec, which hands the view an overview's markers, and opens and closes their notes, when it
+// likes.
 Object.assign(window, {
   diffView: view.probe,
-  perfCopy: () => {
-    const waiting = copies.splice(0);
-    for (const copy of waiting) copy();
-    return waiting.length;
-  },
   perfOverview: (given: readonly Mark[]) => opened().setMarks(given),
   perfThread: (at: Place, comments: readonly Comment[]) => {
     threads.put(at, comments);
@@ -252,21 +217,6 @@ window.addEventListener('message', (event) => {
   port.addEventListener('message', ({ data }: MessageEvent<Result>) => {
     if (data.type === 'file') {
       const id = ids[data.index]!;
-      const file = pull.files[data.index];
-      if (file?.gaps) {
-        // The local copy comes later, and takes the place of GitHub's diff: its lines, its diff,
-        // then its highlighting.
-        const copy = () => {
-          opened().setLines(id, { old: lines(file.old), new: lines(file.new) }, data.diff);
-          for (const side of ['old', 'new'] as const) {
-            const triples = data.tokens[side];
-            if (triples) opened().setTokens(id, side, triples);
-          }
-        };
-        if (pull.copyWhenAsked) copies.push(copy);
-        else setTimeout(copy, 0);
-        return;
-      }
       // The highlighting first, so the file is drawn once, with its diff.
       for (const side of ['old', 'new'] as const) {
         const triples = data.tokens[side];

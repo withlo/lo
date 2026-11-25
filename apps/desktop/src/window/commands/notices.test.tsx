@@ -173,10 +173,11 @@ describe('notices', () => {
     expect(toasts().map((each) => each.title)).toEqual(['Copied path']);
   });
 
-  it('float at the bottom right, above the status bar, as the design’s toast does', () => {
+  // Where the design's toasts float, and how they're drawn, is `@lo/ui`'s `Toast.test.tsx`.
+  it('are said in the design’s live region, each on its own', () => {
     act(() => notify('Back', 'Nowhere.'));
-    expect(status()?.closest('.toast-floating')).not.toBeNull();
-    expect(status()?.querySelector('.toast')?.className).toContain('shadow-pop');
+    expect(status()?.getAttribute('aria-atomic')).toBe('false');
+    expect(status()?.textContent).toContain('Nowhere.');
   });
 
   it('put each reason on a line of its own', () => {

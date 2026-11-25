@@ -74,7 +74,7 @@ async function listed(page: Page): Promise<unknown> {
   return reply;
 }
 
-test('the account in the token file is added as Lo starts, and the window gets only its summary; the app menu leaves accounts to Settings; Linux’s fallback is marked v10; and a build run from source goes by Lo Dev', async ({
+test('the account in the token file is added as Lo starts, and the window gets only its summary; its token is kept encrypted by safeStorage, never in a file or argv in the clear; the app menu leaves accounts to Settings; Linux’s fallback is marked v10; and a build run from source goes by Lo Dev', async ({
   app,
   page,
 }) => {
@@ -95,6 +95,31 @@ test('the account in the token file is added as Lo starts, and the window gets o
     });
     expect(JSON.stringify(reply)).not.toContain(TOKEN);
     expect(rows('SELECT login FROM accounts_accounts')).toEqual([{ login: 'rozed-bot' }]);
+  });
+
+  await test.step('the token is kept encrypted by safeStorage, and is never in a file or argv in the clear', async () => {
+    expect(rows('SELECT login FROM accounts_grants')).toEqual([{ login: 'rozed-bot' }]);
+    const sealed = sealedGrant();
+    expect(sealed.includes(TOKEN)).toBe(false);
+    for (const file of readdirSync(dataFolder(), { recursive: true, withFileTypes: true })) {
+      if (!file.isFile()) continue;
+      const path = join(file.parentPath, file.name);
+      expect(readFileSync(path).includes(TOKEN), path).toBe(false);
+    }
+    // No process Lo runs has the token in its arguments.
+    expect(execFileSync('ps', ['-A', '-ww', '-o', 'args='], { encoding: 'utf8' })).not.toContain(
+      TOKEN,
+    );
+
+    // What Lo stored is safeStorage's own ciphertext, of the whole grant, for the GitHub it's for.
+    const opened = await app.evaluate(
+      ({ safeStorage }, base64) => safeStorage.decryptStringAsync(Buffer.from(base64, 'base64')),
+      sealed.toString('base64'),
+    );
+    expect(JSON.parse(opened.result)).toEqual({
+      github: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/api$/),
+      token: TOKEN,
+    });
   });
 
   // The app menu is the Mac's.
@@ -124,35 +149,6 @@ test('the account in the token file is added as Lo starts, and the window gets o
 
   await test.step('a build run from source goes by Lo Dev, so its keychain key is its own', async () => {
     expect(await app.evaluate(({ app: electronApp }) => electronApp.getName())).toBe('Lo Dev');
-  });
-});
-
-test('the token is kept encrypted by safeStorage, and is never in a file or argv in the clear', async ({
-  app,
-  page,
-}) => {
-  await listed(page);
-  expect(rows('SELECT login FROM accounts_grants')).toEqual([{ login: 'rozed-bot' }]);
-  const sealed = sealedGrant();
-  expect(sealed.includes(TOKEN)).toBe(false);
-  for (const file of readdirSync(dataFolder(), { recursive: true, withFileTypes: true })) {
-    if (!file.isFile()) continue;
-    const path = join(file.parentPath, file.name);
-    expect(readFileSync(path).includes(TOKEN), path).toBe(false);
-  }
-  // No process Lo runs has the token in its arguments.
-  expect(execFileSync('ps', ['-A', '-ww', '-o', 'args='], { encoding: 'utf8' })).not.toContain(
-    TOKEN,
-  );
-
-  // What Lo stored is safeStorage's own ciphertext, of the whole grant, for the GitHub it's for.
-  const opened = await app.evaluate(
-    ({ safeStorage }, base64) => safeStorage.decryptStringAsync(Buffer.from(base64, 'base64')),
-    sealed.toString('base64'),
-  );
-  expect(JSON.parse(opened.result)).toEqual({
-    github: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/api$/),
-    token: TOKEN,
   });
 });
 

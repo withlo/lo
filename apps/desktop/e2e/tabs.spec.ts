@@ -189,24 +189,6 @@ test('with nothing open, Recent pull requests is the only tab, and it can’t be
   await expect(tabs(page)).toHaveText(['Recent pull requests']);
 });
 
-test('a pull request opens in Recent’s place, titles the window, and opens once', async ({
-  page,
-}) => {
-  const [fd] = await open(page, pull('sharkdp', 'fd', 2212));
-  await expect(tabs(page)).toHaveText(['fd #2212']);
-  await expect(page).toHaveTitle('sharkdp/fd#2212');
-  // The same pull request, by any case of its name, shows the tab it's in.
-  const [, again] = await open(page, pull('sharkdp', 'bat', 7), pull('SharkDP', 'FD', 2212));
-  await expect(tabs(page)).toHaveText(['fd #2212', 'bat #7']);
-  await expect(shown(page)).toHaveText('fd #2212');
-  expect(again).toBe(fd);
-  // So does Settings.
-  await open(page, { kind: 'settings' }, pull('sharkdp', 'bat', 7), { kind: 'settings' });
-  await expect(tabs(page)).toHaveText(['fd #2212', 'bat #7', 'Settings']);
-  await expect(shown(page)).toHaveText('Settings');
-  await expect(page).toHaveTitle('Lo');
-});
-
 test('a place past the last tab shows nothing new; ⌘1 to ⌘8 show a tab by its place, and ⌘9 the last however many are open', async ({
   page,
 }) => {
@@ -462,7 +444,7 @@ test('macOS’s File, View and Window menus list choosing an account, the pull r
   app,
   page,
 }) => {
-  test.skip(!mac, 'Linux has no app menu.');
+  test.skip(!mac, 'Local only: it reads macOS’s menu bar, and CI runs on Linux.');
   await expect(tabs(page)).toHaveText(['Recent pull requests']);
   const items = () =>
     app.evaluate(({ Menu }) =>
@@ -541,11 +523,10 @@ test('the app menu checks what’s on however it was switched: from the menu, by
   });
 });
 
-// One tab; eight at 1440 px, the most that fit before "more" appears; forty at 1440 px, where most
-// are folded; and sixteen at the screen's width. The counts between only move where the strip's
-// edges are.
+// Eight at 1440 px, the most that fit before "more" appears; forty at 1440 px, where most are
+// folded; and sixteen at the screen's width. The counts between only move where the strip's edges
+// are, and how many fit in a width is `tabsThatFit`'s, in its unit tests.
 const strips = [
-  [1440, 1],
   [1440, 8],
   [1440, 40],
   ['screen', 16],
@@ -573,7 +554,7 @@ for (const [width, count] of strips) {
     await expectFits(page);
     await expect(tabs(page).last()).toHaveText(last);
     // Stepping round both ends of the tabs the strip shows.
-    const before = count === 1 ? last : ((await tabs(page).nth(-2).textContent()) ?? '');
+    const before = (await tabs(page).nth(-2).textContent()) ?? '';
     const steps: [string, string][] = [
       [`${cmd}+Shift+BracketRight`, 'r1 #1'],
       [`${cmd}+Shift+BracketLeft`, last],

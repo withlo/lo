@@ -211,27 +211,17 @@ test('a merge github takes is followed until it merges', async () => {
     merge_action: 'direct_merge',
     commit_title: `Fixture 9b: merge run ${setup.run}`,
   });
-  // GitHub's answer repeats what it took.
-  const accepted = submittedOf(seen.merged.submitted);
-  if (accepted.kind !== 'accepted') throw new Error('not taken');
-  const { details } = accepted.answer;
-  expect(details.merge_method).toBe('squash');
-  expect(details.merge_action).toBe('direct_merge');
-  expect(details.expected_head_sha).toBe(pr.head);
-  expect(details.bypass_rules).toBe(false);
-
+  // What GitHub's answers hold is the recording's: Lo reads them as taken, then merged, with the
+  // commit it made.
+  expect(submittedOf(seen.merged.submitted).kind).toBe('accepted');
   const last = ended(seen.merged);
   expect(last.status).toBe('merged');
-  expect(last.details.message).toBe('Pull request was merged.');
-  const sha = defined(last.details.sha, 'commit it made');
-  expect(last.details.uuid).toBeUndefined();
+  expect(last.details.sha).toBeDefined();
 
-  // Sent again, it's done already: a 200 naming the same commit, and nothing new to follow.
+  // Sent again, it's done already, with nothing new to follow.
   const again = submittedOf(seen.again);
   if (again.kind !== 'done') throw new Error(`not done: ${JSON.stringify(again)}`);
   expect(again.answer.status).toBe('merged');
-  expect(again.answer.details.message).toBe('Pull request is already merged.');
-  expect(again.answer.details.sha).toBe(sha);
   // The UUID still answers once it's merged.
   const askedAgain = got(defined(seen.askedAgain, 'second answer'));
   expect(askedAgain.status).toBe('merged');

@@ -57,6 +57,8 @@ export interface GithubOptions {
   reread?: ((login: string) => Promise<Token | undefined>) | undefined;
   /** Reads gh's token for an account for one upload ({@link GithubAccess.ghToken}). Without it, none. */
   ghToken?: ((login: string) => Promise<Token | undefined>) | undefined;
+  /** How long each client waits for an answer to begin, for tests: the client's own unless said. */
+  answerStartMs?: number | undefined;
 }
 
 /** The {@link GithubAccess} the accounts feature provides, with what only the feature itself does. */
@@ -93,7 +95,8 @@ export class Github implements GithubAccess {
     this.#log = log;
     this.#poll = options.poll;
     this.#ghToken = options.ghToken;
-    this.anonymous = new GithubClient({ fetch, urls: this.urls });
+    const { answerStartMs } = options;
+    this.anonymous = new GithubClient({ fetch, urls: this.urls, answerStartMs });
     const web = { fetch, urls: this.urls };
     this.#loaded = Accounts.load({
       rows: options.rows ?? new AccountTable(database),
@@ -102,6 +105,7 @@ export class Github implements GithubAccess {
       reread: options.reread,
       fetch,
       urls: this.urls,
+      answerStartMs,
     }).then((accounts) => {
       if (this.#stopped) return accounts;
       this.#unsubscribe.push(

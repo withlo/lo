@@ -127,6 +127,11 @@ export interface ClientOptions {
   classify?: ((error: unknown) => NetworkFailure) | undefined;
   /** The `User-Agent` to send, such as `lo/1.2.0`. */
   userAgent?: string | undefined;
+  /**
+   * How long an answer may take to begin, in milliseconds, for a request with no wait of its own:
+   * {@link ANSWER_START_MS} unless a test says.
+   */
+  answerStartMs?: number | undefined;
 }
 
 /** What the account's responses have said about it. */
@@ -269,6 +274,7 @@ export class GithubClient {
   readonly #onUnauthorized: OnUnauthorized | undefined;
   readonly #classify: (error: unknown) => NetworkFailure;
   readonly #userAgent: string;
+  readonly #answerStart: number;
   readonly #gate: RequestGate | undefined;
 
   constructor(options: ClientOptions, shared?: Shared, gate?: RequestGate) {
@@ -285,6 +291,7 @@ export class GithubClient {
     this.#onUnauthorized = options.onUnauthorized;
     this.#classify = options.classify ?? classifyNetworkError;
     this.#userAgent = options.userAgent ?? USER_AGENT;
+    this.#answerStart = options.answerStartMs ?? ANSWER_START_MS;
     this.#gate = gate;
   }
 
@@ -302,6 +309,7 @@ export class GithubClient {
         onUnauthorized: this.#onUnauthorized,
         classify: this.#classify,
         userAgent: this.#userAgent,
+        answerStartMs: this.#answerStart,
       },
       this.#shared,
       gate,
@@ -560,7 +568,7 @@ export class GithubClient {
     const whole = limit(options.timeoutMs ?? TIMEOUT_MS, "the whole answer didn't come");
     const start =
       options.timeoutMs === undefined
-        ? limit(ANSWER_START_MS, "the answer didn't begin")
+        ? limit(this.#answerStart, "the answer didn't begin")
         : undefined;
     const began = () => clearTimeout(start);
     const init: FetchInit = {

@@ -12,9 +12,11 @@
 // `merge_shipped` for a Lo started again.
 
 import { MergeJobs, squashText } from '@lo/github';
+import { app } from 'electron';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { openPage } from '../../../main/browser.ts';
+import { pollEvery } from '../../../main/environment.ts';
 import { defineFeature } from '../../../main/features.ts';
 import { provides } from '../../../main/services.ts';
 import { github } from '../../accounts/service.ts';
@@ -139,6 +141,7 @@ export default defineFeature(contract, {
       onScreen: () => service.list().active,
       publish: (queued) => publish('queued', queued),
       log,
+      every: pollEvery({ packaged: app.isPackaged, env: process.env }),
     });
     queues = inQueue;
     const followed = new MergeReads({

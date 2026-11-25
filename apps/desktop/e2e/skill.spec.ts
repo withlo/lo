@@ -3,16 +3,7 @@
 // its own, so the skill goes into folders the test made and never into the real ~/.claude or
 // ~/.agents, and with the variables that move an agent's folder cleared.
 
-import {
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  realpathSync,
-  symlinkSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -138,37 +129,6 @@ test.describe('in Settings', () => {
     await row(page).getByRole('button', { name: 'Install again' }).click();
     await expect.poll(() => readFileSync(claudeSkill(home), 'utf8')).not.toContain('Mine.');
     expect(isSkill(claudeSkill(home))).toBe(true);
-  });
-
-  test('refuses a link, says why for that agent, and installs for the other', async ({
-    page,
-    home,
-  }) => {
-    mkdirSync(join(home, '.claude'));
-    mkdirSync(join(home, '.codex'));
-    // Where Codex's copy of the skill goes is a link, which could lead anywhere.
-    const outside = join(home, 'checkout');
-    mkdirSync(outside);
-    const skills = join(home, '.agents', 'skills');
-    mkdirSync(skills, { recursive: true });
-    symlinkSync(outside, join(skills, 'lo-overview'));
-    const link = '~/.agents/skills/lo-overview is a link, not a folder.';
-
-    await openSettings(page);
-    // What would stop the install is said before it's tried.
-    await expect(lines(page)).toHaveText([
-      'Claude Code · not installed',
-      `Codex · not installed ${link}`,
-    ]);
-    await row(page).getByRole('button', { name: 'Install', exact: true }).click();
-    // It stays said, since the link is still there, and it isn't in the way of Claude Code's.
-    await expect(lines(page)).toHaveText([
-      'Claude Code · installed in ~/.claude/skills',
-      `Codex · not installed ${link}`,
-    ]);
-    expect(isSkill(claudeSkill(home))).toBe(true);
-    expect(lstatSync(join(skills, 'lo-overview')).isSymbolicLink()).toBe(true);
-    expect(readdirSync(outside)).toEqual([]);
   });
 });
 

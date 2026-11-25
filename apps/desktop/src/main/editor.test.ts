@@ -1,5 +1,5 @@
-// Opening a file as text: the program and arguments on each system, the app for text on Linux,
-// and how programs run, each with an argument list and no shell.
+// Opening a file as text: the app for text on Linux, and how programs run, each with an argument
+// list and no shell.
 
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -13,7 +13,6 @@ import {
   launch,
   query,
   textApp,
-  textEditorCommand,
   type Linux,
   type Query,
 } from './editor.ts';
@@ -44,29 +43,8 @@ afterEach(() => {
   rmSync(folder, { recursive: true, force: true });
 });
 
-describe('textEditorCommand', () => {
-  it('is open -t on a Mac, the app for text by gio on Linux, and nothing elsewhere', async () => {
-    expect(await textEditorCommand('darwin', '/a/keymap', { linux })).toEqual({
-      command: '/usr/bin/open',
-      args: ['-t', '/a/keymap'],
-    });
-    expect(await textEditorCommand('linux', '/a/keymap', { linux })).toEqual({
-      command: 'gio',
-      args: ['launch', textEditor, '/a/keymap'],
-    });
-    expect(await textEditorCommand('win32', '/a/keymap', { linux })).toBeUndefined();
-    expect(await textEditorCommand('freebsd', '/a/keymap', { linux })).toBeUndefined();
-  });
-
-  it('is the program a test names, with the path alone', async () => {
-    expect(await textEditorCommand('linux', '/a/keymap', { linux, editor: '/t/editor' })).toEqual({
-      command: '/t/editor',
-      args: ['/a/keymap'],
-    });
-    expect(asked).not.toHaveBeenCalled();
-  });
-});
-
+// What `textEditorCommand` runs on each system is checked where Lo opens files with it: the keymap
+// (`keys/main/open.test.ts`), the settings and the licenses.
 describe('the app for text on Linux', () => {
   it('is looked for in the folders apps are listed in, the person’s own first', async () => {
     expect(applicationFolders({}, '/home/tess')).toEqual([
