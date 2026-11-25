@@ -64,19 +64,25 @@ test('a block shows the threads on its file’s lines at its commit, on their si
       at: { file: 'overview-code1', side: 'new', line: 5 },
       open: true,
       version: expect.any(Number),
+      mark: expect.objectContaining({ resolved: false, from: undefined }),
     },
     {
       id: 'T2',
       at: { file: 'overview-code1', side: 'old', line: 4 },
       open: false,
       version: expect.any(Number),
+      mark: expect.objectContaining({ resolved: true }),
     },
-    // A thread on a range goes under its last line.
+    // A thread on a range goes under its last line, and its mark says where the range starts.
     {
       id: 'T3',
       at: { file: 'overview-code1', side: 'new', line: 6 },
       open: true,
       version: expect.any(Number),
+      mark: expect.objectContaining({
+        from: { side: 'new', line: 3 },
+        words: { lines: 'lines 3–6', line: 'line 6' },
+      }),
     },
   ]);
 });
@@ -105,6 +111,7 @@ test('none on another file, on the file as a whole, or on another commit’s lin
       at: { file: 'overview-code1', side: 'new', line: 4 },
       open: true,
       version: expect.any(Number),
+      mark: expect.objectContaining({ outdated: true }),
     },
   ]);
 });

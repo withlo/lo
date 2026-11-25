@@ -12,10 +12,10 @@ import {
   rowKeys,
   stepRow,
   threadGroups,
-  refOf,
   whereOf,
   type ListOptions,
 } from './list.ts';
+import { refOf } from './marks.ts';
 
 const HEAD = 'h'.repeat(40);
 const FIRST = 'f'.repeat(40);

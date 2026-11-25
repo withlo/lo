@@ -619,6 +619,74 @@ function drawnThreads(): (string | undefined)[] {
   );
 }
 
+/** The threads' lane by each line or block it marks: each piece's ends, the tick, the bubble. */
+function lane(): string[] {
+  return [...parent!.querySelectorAll('.lo-threadlane .lo-lanemark')].map((mark) => {
+    const parts = [...mark.querySelectorAll('.lo-bracket')].map((piece) => {
+      if (piece.classList.contains('lo-bracket--tick')) return 'tick';
+      const end = (which: 'from' | 'to') =>
+        ['edge', 'mid', 'bubble'].find((kind) =>
+          piece.classList.contains(`lo-bracket--${which}-${kind}`),
+        );
+      return `${end('from')}-${end('to')}`;
+    });
+    const bubble = mark.querySelector('.lo-bubble');
+    if (bubble) parts.push(bubble.getAttribute('aria-label') ?? '');
+    return parts.join(', ');
+  });
+}
+
+/** A thread under new line `line` from new line `from`, unresolved. */
+function ranged(id: string, from: number, line: number): ThreadView {
+  return {
+    ...thread(id, line),
+    mark: {
+      resolved: false,
+      from: { side: 'new', line: from },
+      words: { lines: `lines ${from}–${line}`, line: `line ${line}` },
+    },
+  };
+}
+
+/** The threads' lane's first bubble. */
+const bubble = (): HTMLElement => parent!.querySelector<HTMLElement>('.lo-threadlane .lo-bubble')!;
+
+describe('the threads’ lane', () => {
+  test('beside the numbers: a bubble on a thread’s line, a bracket up its range', () => {
+    const shown = open();
+    const lanes = [...parent!.querySelectorAll('.cm-gutter')].map((gutter) =>
+      gutter.classList.contains('lo-threadlane') ? 'threads' : 'numbers',
+    );
+    expect(lanes).toEqual(['numbers', 'numbers', 'threads']);
+    shown.setThreads([ranged('here', 6, 8)], plain().render);
+    expect(lane()).toEqual([
+      'mid-edge, tick',
+      'edge-edge',
+      'edge-bubble, Unresolved thread · lines 6–8',
+    ]);
+    // From above the first line shown, it starts there, with no tick: new 4, old 5, new 5 and 6.
+    shown.setThreads([ranged('here', 2, 6)], plain().render);
+    expect(lane()).toEqual([
+      'edge-edge',
+      'edge-edge',
+      'edge-edge',
+      'edge-bubble, Unresolved thread · lines 2–6',
+    ]);
+  });
+
+  test('a click on a bubble collapses its thread, or expands it again, as its tip says', () => {
+    const shown = open();
+    const { render, asked } = plain();
+    shown.setThreads([thread('here', 6)], render);
+    expect(bubble().dataset.command).toBeUndefined();
+    expect(bubble().dataset.tip).toBe('Collapse thread');
+    bubble().dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    expect(asked).toEqual(['draw here', 'update here collapsed']);
+    expect(bubble().getAttribute('aria-expanded')).toBe('false');
+    expect(bubble().dataset.tip).toBe('Expand thread');
+  });
+});
+
 describe('threads and comment boxes', () => {
   test('a thread draws under its line, is the line’s target and its menu, and opens and closes', () => {
     const on = events();
