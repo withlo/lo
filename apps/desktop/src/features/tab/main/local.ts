@@ -4,6 +4,8 @@
 // it branched off the base branch, or, for a stack's layer, where it meets the commit it's compared
 // with. Nothing here calls Electron.
 
+import { homedir } from 'node:os';
+
 import {
   type Activity,
   GitError,
@@ -19,7 +21,9 @@ import {
 } from '@lo/git';
 
 import { detailsOf } from '../../../ipc/cause.ts';
+import { IpcError } from '../../../ipc/contract.ts';
 import { troubleOf } from '../../../main/git.ts';
+import { written } from '../../../main/paths.ts';
 import type { Compared, FetchFailure, LocalState } from '../contract.ts';
 
 /** The first wait before trying a failed fetch again, in milliseconds. */
@@ -198,6 +202,8 @@ export interface LocalCopyOptions<R extends Clone = Repo> {
    */
   readonly changed: (state: LocalState) => void;
   readonly log: (line: string) => void;
+  /** The home folder, which the folder it says is written with as `~`: the user's, but in a test. */
+  readonly home?: string | undefined;
 }
 
 /**
@@ -276,6 +282,14 @@ export class LocalCopy<R extends Clone = Repo> {
     return this.#state;
   }
 
+  /**
+   * Where the clone is, whole, once the head on screen is ready: what Show in Finder shows and Copy
+   * path copies. The state writes it shorter, for a person.
+   */
+  get folder(): string | undefined {
+    return this.#ready?.folder;
+  }
+
   /** The local copy as it is now. */
   #current(): LocalState {
     const ready = this.#ready;
@@ -288,7 +302,7 @@ export class LocalCopy<R extends Clone = Repo> {
         ...(ready.from === undefined ? {} : { from: ready.from }),
         // What an earlier fetch brought, since the last fetch failed.
         offline: this.#failures > 0,
-        folder: ready.folder,
+        folder: written(ready.folder, this.#options.home ?? homedir()),
       };
     }
     const { status } = this.#options.git;
@@ -594,4 +608,17 @@ export class LocalCopy<R extends Clone = Repo> {
     this.#said = said;
     this.#options.changed(state);
   }
+}
+
+/**
+ * The folder of a local copy, `folder` once it's ready, to show: refused while there's none
+ * (`notReady`), and once it's gone from the disk (`gone`), as when it was deleted outside Lo.
+ */
+export function folderToShow(
+  folder: string | undefined,
+  exists: (path: string) => boolean,
+): string {
+  if (folder === undefined) throw new IpcError('notReady', 'The local copy isn’t ready.');
+  if (!exists(folder)) throw new IpcError('gone', 'Its folder was moved or deleted.');
+  return folder;
 }

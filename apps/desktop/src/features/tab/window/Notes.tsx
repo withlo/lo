@@ -392,13 +392,10 @@ export function LocalItem({
         <StatusLine>
           At <code className="text-fg code-small">{note.at}</code>
         </StatusLine>
-        {note.folder !== undefined && <Where id={tab.id} folder={note.folder} />}
+        <Where id={tab.id} folder={note.folder} />
       </>
-    ) : note.line !== undefined ? (
-      <Fetching line={note.line} said={note.said} />
     ) : (
-      // Every state says one of the above: the label stands in, so a click still opens something.
-      <StatusLine>{note.label}</StatusLine>
+      <Fetching line={note.line} said={note.said} />
     );
   return (
     <StatusItem ball={note.ball} details={details} label={note.label} container={container()}>
@@ -408,9 +405,9 @@ export function LocalItem({
 }
 
 /**
- * Where a local copy that's there is: its folder, which Show in Finder shows and Copy path copies,
- * as their commands do from the palette. Copy path reads "Copied" for a copy made either way while
- * it's drawn.
+ * Where a local copy that's there is: its folder, `~` for the home folder, which Show in Finder
+ * shows and Copy path copies whole, as their commands do from the palette. Copy path reads "Copied"
+ * for a copy made either way while it's drawn.
  */
 function Where({ id, folder }: { id: string; folder: string }) {
   const [said, say] = useCopySaid();

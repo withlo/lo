@@ -93,7 +93,8 @@ export type PartialWhy = z.output<typeof partialWhy>;
  * - `waiting` for the local copy at the head on screen, or for what the tab compares;
  * - `building`, with the files read of those it reads, across both sides;
  * - `ready`, whole or `partial`: `indexed` of `total` files, and why; with the `languages` of the
- *   files it has read, most files first, and when it was last built (`at`);
+ *   head's files it has read, by path, most files first, leaving out those it skipped, too large
+ *   to read or failing; and when its trees were last built (`at`), from what it read or had kept;
  * - `failed`, with what went wrong (`message`, empty when nothing said), which Lo tries again by
  *   itself at `retryAt`.
  */

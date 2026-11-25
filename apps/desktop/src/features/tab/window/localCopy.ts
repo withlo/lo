@@ -1,6 +1,7 @@
 // Where a pull request's local copy is: shown in Finder, or the system's file manager, and its path
-// copied, from the status bar item's details or from the palette. A copy says how it went on the
-// details' Copy path where they're open, which reads "Copied", else in a toast.
+// copied, from the status bar item's details or from the palette. Main does both with the whole
+// path, which the window has only written shorter. A copy says how it went on the details' Copy
+// path where they're open, which reads "Copied", else in a toast.
 
 import type { CopySaid } from '@lo/ui';
 
@@ -9,18 +10,17 @@ import { activeTab } from './shared.ts';
 import { main } from './main.ts';
 import { pullsStore } from './store.ts';
 
-/** Where the local copy of view `id` is, once it's ready. */
+/** Where the local copy of view `id` is, once it's ready, as a person writes it. */
 export function localFolder(id: string): string | undefined {
   const local = pullsStore.getState().locals.get(id);
   return local?.kind === 'ready' ? local.folder : undefined;
 }
 
 /** The view on screen whose local copy is ready, or why there's none. */
-function readyOnScreen(): { id: string; folder: string } | string {
+function readyOnScreen(): { id: string } | string {
   const tab = activeTab();
   if (tab?.kind !== 'pull') return 'Open a pull request first';
-  const folder = localFolder(tab.id);
-  return folder === undefined ? 'The local copy isn’t ready' : { id: tab.id, folder };
+  return localFolder(tab.id) === undefined ? 'The local copy isn’t ready' : { id: tab.id };
 }
 
 /** Whether the view on screen's local copy can be shown or copied, or why not. */
@@ -56,15 +56,15 @@ export function answerLocalCopies(id: string, say: (said: CopySaid) => void): ()
 }
 
 /**
- * Copies the path of the view on screen's local copy, and says how that went: on its Copy path
- * where the details are open, else in a toast, as from the palette.
+ * Copies the whole path of the view on screen's local copy, which main has, and says how that
+ * went: on its Copy path where the details are open, else in a toast, as from the palette.
  */
 export async function copyLocalPath(): Promise<void> {
   const ready = readyOnScreen();
   if (typeof ready === 'string') return;
   let failed: unknown;
   try {
-    await main().copy({ text: ready.folder });
+    await main().copyLocal({ id: ready.id });
   } catch (error) {
     console.error("Lo couldn't copy the local copy's path:", error);
     failed = error;

@@ -21,6 +21,7 @@ import {
   type CopyGit,
   gitSaid,
   failureOf,
+  folderToShow,
   LocalCopy,
   paced,
   PROGRESS_EVERY,
@@ -302,6 +303,66 @@ describe('a local copy saying what git is doing', () => {
       mergeBase: APP_PULL.base,
       offline: false,
       folder: '/cache/e2e.git',
+    });
+  });
+});
+
+/** What `act` threw, if it threw. */
+function thrownBy(act: () => unknown): unknown {
+  try {
+    act();
+  } catch (error) {
+    return error;
+  }
+  return undefined;
+}
+
+/** Whether a folder is on the disk, where only the e2e repository's clone is. */
+const there = (path: string) => path === '/cache/e2e.git';
+
+describe('where a local copy is', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('says its folder with ~ for the home folder, and keeps it whole to show and copy', async () => {
+    vi.useFakeTimers();
+    const { localGit, fetched, branched } = fakeGit();
+    const states: LocalState[] = [];
+    const local = new LocalCopy({
+      git: localGit,
+      repository: { owner: 'rozed-dev', name: 'e2e' },
+      number: APP_PULL.number,
+      changed: (state) => states.push(state),
+      log: () => undefined,
+      home: '/cache',
+    });
+    local.want(REFS);
+    local.show(APP_PULL.head);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(local.folder).toBe(undefined);
+    fetched.resolve({
+      head: parseOid(APP_PULL.head),
+      headSource: { kind: 'pullRef' },
+      baseTip: parseOid(APP_PULL.base),
+      baseSource: 'branch',
+    });
+    branched.resolve(parseOid(APP_PULL.base));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(states.at(-1)).toMatchObject({ kind: 'ready', folder: '~/e2e.git' });
+    expect(local.folder).toBe('/cache/e2e.git');
+  });
+
+  it('is shown once it’s ready, and refused once its folder is gone', () => {
+    expect(folderToShow('/cache/e2e.git', there)).toBe('/cache/e2e.git');
+    expect(thrownBy(() => folderToShow(undefined, there))).toMatchObject({
+      code: 'notReady',
+      message: 'The local copy isn’t ready.',
+    });
+    // Deleted outside Lo: Finder would show nothing, so it says why.
+    expect(thrownBy(() => folderToShow('/cache/gone.git', there))).toMatchObject({
+      code: 'gone',
+      message: 'Its folder was moved or deleted.',
     });
   });
 });

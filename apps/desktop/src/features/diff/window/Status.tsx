@@ -4,8 +4,7 @@
 // alone are hidden. A click on each opens its details: what it means for the diff, and for
 // whitespace, the button that shows those changes again.
 
-import { Button, StatusActions, StatusItem, StatusLine, useControl } from '@lo/ui';
-import { NO_TARGET, runControl } from '@lo/ui/commands';
+import { StatusActions, StatusCommand, StatusItem, StatusLine } from '@lo/ui';
 import { useCallback, useSyncExternalStore } from 'react';
 
 import type { PullTab } from '../../tab/window/shared.ts';
@@ -26,21 +25,13 @@ const ONCE = 'once the local copy is ready.';
 
 /** The details of "Whitespace changes hidden": the setting holds everywhere, and its switch. */
 function Whitespace() {
-  const control = useControl('diff.whitespace', NO_TARGET);
   return (
     <>
       <StatusLine>Hidden in every pull request.</StatusLine>
       <StatusActions>
-        <Button
-          variant="secondary"
-          size="sm"
-          hint="Show whitespace changes"
-          hintKeys={control?.keys}
-          hintShortcut={control?.shortcut}
-          onClick={() => runControl('diff.whitespace', NO_TARGET)}
-        >
+        <StatusCommand command="diff.whitespace" hint="Show whitespace changes">
           Show whitespace changes
-        </Button>
+        </StatusCommand>
       </StatusActions>
     </>
   );

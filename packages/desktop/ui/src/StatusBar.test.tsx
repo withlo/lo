@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 // What a status item's details, and the header chip's, do with focus as they end while they have
 // it, as an action in them that changes what's behind them does: it goes back to the item, or the
-// chip, as it's drawn now, else beside it, never to the page.
+// chip, as it's drawn now, else beside it, never to the page. And that an item with a ball always
+// opens or runs something.
 
 import { act, useState } from 'react';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -124,5 +125,25 @@ describe('the details of a status item, and of the header’s chip', () => {
     await pressInDetails(host.querySelector('header button')!);
     expect(host.textContent).not.toContain('Offline');
     expect(document.activeElement).toBe(host.querySelector('#status'));
+  });
+});
+
+describe('a status item', () => {
+  it('takes a ball only with details or a click, so no item with one is only words', () => {
+    // @ts-expect-error A ball with nothing behind it.
+    const dead = <StatusItem ball="ready">Code index</StatusItem>;
+    const opens = (
+      <StatusItem ball="ready" details={<p>Ready</p>}>
+        Code index
+      </StatusItem>
+    );
+    const runs = (
+      <StatusItem ball="warn" onClick={() => undefined}>
+        Trust repo
+      </StatusItem>
+    );
+    // A fact with no ball, such as when something was last checked, stays words.
+    const fact = <StatusItem>Checked 5 min ago</StatusItem>;
+    expect([dead, opens, runs, fact]).toHaveLength(4);
   });
 });

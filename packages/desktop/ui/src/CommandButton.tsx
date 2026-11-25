@@ -16,6 +16,11 @@ export interface CommandButtonProps extends Omit<
   target?: Target | undefined;
   /** Its words, where it says it shorter than the command's label: "Open". */
   children?: ReactNode;
+  /**
+   * Its tooltip's words, where they aren't the command's label: the button that turns a switch off,
+   * as "Show whitespace changes" does "Hide whitespace changes".
+   */
+  hint?: string | undefined;
 }
 
 /**
@@ -28,6 +33,7 @@ export function CommandButton({
   command,
   target = NO_TARGET,
   children,
+  hint,
   ...button
 }: CommandButtonProps) {
   const why = useId();
@@ -40,7 +46,7 @@ export function CommandButton({
         {...button}
         disabled={off !== undefined}
         aria-describedby={off ? why : undefined}
-        hint={<Ticks text={off ?? control.label} />}
+        hint={<Ticks text={off ?? hint ?? control.label} />}
         hintKeys={off === undefined ? control.keys : undefined}
         hintShortcut={off === undefined ? control.shortcut : undefined}
         onClick={() => runControl(command, target)}

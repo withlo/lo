@@ -492,7 +492,7 @@ export type Compared = z.output<typeof compared>;
  *   pull request's changes start: where the two branched, or, for a stack's layer the stacks
  *   feature compares with another commit, `from`, where the head and that commit meet;
  *   `offline` when GitHub couldn't be reached, so it's what was fetched before; and `folder`,
- *   where the clone is on this computer;
+ *   where the clone is on this computer, as a person writes it, `~` for the home folder;
  * - `retrying` after a failure Lo tries again after by itself, at `retryAt`;
  * - `failed` after one it doesn't, until asked to try again.
  *
@@ -607,9 +607,15 @@ export const contract = defineContract('tab', {
     retry: { input: byId, reply: reply<void>() },
     /**
      * Shows a pull request's tab's local copy in Finder, or in the system's file manager: its
-     * clone's folder, as main has it. Refused while the copy isn't ready (`notReady`).
+     * clone's folder, as main has it. Refused while the copy isn't ready (`notReady`), and once its
+     * folder is gone from the disk (`gone`).
      */
     showLocal: { input: byId, reply: reply<void>() },
+    /**
+     * Copies the whole path of a pull request's tab's local copy, as main has it, which the window
+     * is given written shorter. Refused while the copy isn't ready (`notReady`).
+     */
+    copyLocal: { input: byId, reply: reply<void>() },
     /**
      * Opens a pull request's tab with one of the accounts that can see it, when several can, and
      * remembers it for the repository's owner.

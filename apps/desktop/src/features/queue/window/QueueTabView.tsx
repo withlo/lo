@@ -296,13 +296,21 @@ function signIn(): void {
 
 /**
  * Why the queue can't be checked now, as the error's shape says it: its cause, and when it's read
- * again, with GitHub's own words behind Details; `view` when there's no queue drawn behind it.
+ * again, with GitHub's own words behind Details: the whole `view` when there's no queue drawn
+ * behind it, `inline` over the queue, or in the account's `details` in the status bar.
  */
-function Failed({ state, now, view }: { state: QueueState; now: number; view: boolean }) {
+function Failed({
+  state,
+  now,
+  layout,
+}: {
+  state: QueueState;
+  now: number;
+  layout: 'view' | 'inline' | 'details';
+}) {
   const tryNow = useTryNow(state.id);
   const { failure } = state;
   if (!failure) return null;
-  const layout = view ? 'view' : 'inline';
   if (state.away) {
     return (
       <Problem
@@ -570,6 +578,8 @@ export function QueueTabView({ tab }: { tab: QueueTab }) {
   const reading = read === undefined || read.kind === 'reading';
   // Nothing read yet, and nothing failed: the whole view waits.
   const waiting = reading && !state?.failure;
+  // Whether the queue has been read once, which the account's item says it does every 20 s.
+  const checked = state !== undefined && state.readAt !== null;
   return (
     <div
       ref={root}
@@ -587,11 +597,11 @@ export function QueueTabView({ tab }: { tab: QueueTab }) {
         {waiting ? (
           <Loading status="Opening merge queue…" />
         ) : reading ? (
-          state && <Failed state={state} now={now} view />
+          state && <Failed state={state} now={now} layout="view" />
         ) : (
           state && (
             <div className="flex min-h-full flex-col gap-12 px-24 pt-16 pb-64">
-              <Failed state={state} now={now} view={false} />
+              <Failed state={state} now={now} layout="inline" />
               {state.read.kind === 'queue' && state.read.leftOut && (
                 <LeftOut state={state} now={now} />
               )}
@@ -605,14 +615,18 @@ export function QueueTabView({ tab }: { tab: QueueTab }) {
           // Never shrunk: the hints give way to them.
           <span className="flex flex-none items-center gap-2">
             <StatusItem
-              ball={state?.failure ? 'warn' : 'ready'}
+              ball={state?.failure ? 'warn' : checked ? 'ready' : 'working'}
               container={document.getElementById('root')}
               details={
-                <StatusLine>
-                  {state?.failure
-                    ? 'Can’t check the merge queue'
-                    : `Checked as ${tab.login} · every ${duration(QUEUE_EVERY)}`}
-                </StatusLine>
+                state?.failure ? (
+                  <Failed state={state} now={now} layout="details" />
+                ) : (
+                  <StatusLine>
+                    {checked
+                      ? `Checked as ${tab.login} · every ${duration(QUEUE_EVERY)}`
+                      : `Checking as ${tab.login}…`}
+                  </StatusLine>
+                )
               }
             >
               {tab.login}

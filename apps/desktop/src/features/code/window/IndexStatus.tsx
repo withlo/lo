@@ -8,6 +8,7 @@ import { Countdown, Problem, StatusFacts, StatusItem, StatusLine, type StatusFac
 import { useEffect, useState } from 'react';
 
 import { useTabState, type PullTab } from '../../tab/window/shared.ts';
+import type { IndexState } from '../contract.ts';
 import {
   catchUpIndex,
   indexes,
@@ -17,28 +18,31 @@ import {
   type IndexFact,
 } from './indexes.ts';
 
-/** The time now, ticking each minute while `ticking`, for "Indexed 5 min ago". */
-function useNow(ticking: boolean): number {
+/** The time now, ticking each minute, for "Built 5 min ago": only while the details are open. */
+function useNow(): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (!ticking) return undefined;
-    setNow(Date.now());
     const timer = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(timer);
-  }, [ticking]);
-  return ticking ? now : Date.now();
+  }, []);
+  return now;
 }
 
-/** A fact as `StatusFacts` draws it: a partial index's reasons under its state. */
-function drawn({ label, value, why }: IndexFact): StatusFact {
+/** A fact as `StatusFacts` draws it: a list a line each, and a partial index's reasons under it. */
+function drawn({ label, value, why = [] }: IndexFact): StatusFact {
+  const lines = typeof value === 'string' ? [value] : value;
   return {
     label,
     value:
-      why === undefined || why.length === 0 ? (
-        value
+      lines.length === 1 && why.length === 0 ? (
+        lines[0]
       ) : (
         <>
-          {value}
+          {lines.map((line) => (
+            <span key={line} className="block">
+              {line}
+            </span>
+          ))}
           {why.map((line) => (
             <span key={line} className="block text-fg-muted">
               {line}
@@ -49,41 +53,52 @@ function drawn({ label, value, why }: IndexFact): StatusFact {
   };
 }
 
-export function IndexStatus({ tab }: { tab: PullTab }) {
-  const state = useTabState(indexes, tab.id);
-  useEffect(() => catchUpIndex(tab.id), [tab.id]);
-  const now = useNow(state?.kind === 'ready');
+/**
+ * The index's details, drawn only while they're open: what it is, its facts, and why it couldn't
+ * be built.
+ */
+function IndexDetails({ state, tab }: { state: IndexState | null; tab: PullTab }) {
+  const now = useNow();
   const item = indexItem(state, `${tab.owner}/${tab.repo}`, now);
   if (!item) return null;
   const { failure } = item;
   return (
+    <>
+      <StatusLine>{INDEX_LINE}</StatusLine>
+      {item.facts.length > 0 && <StatusFacts items={item.facts.map(drawn)} />}
+      {failure !== undefined && (
+        <Problem
+          layout="details"
+          tone={item.ball === 'failed' ? 'danger' : 'warn'}
+          title="Can’t index the code"
+          reason={
+            failure.retryAt === null ? undefined : (
+              <>
+                Retrying <Countdown at={failure.retryAt} />.
+              </>
+            )
+          }
+          action={{
+            label: failure.retryAt === null ? 'Try again' : 'Try now',
+            onClick: () => retryIndex(tab.id),
+          }}
+          details={failure.message === '' ? undefined : failure.message}
+        />
+      )}
+    </>
+  );
+}
+
+export function IndexStatus({ tab }: { tab: PullTab }) {
+  const state = useTabState(indexes, tab.id);
+  useEffect(() => catchUpIndex(tab.id), [tab.id]);
+  // Its ball and words never say the time, so they need no clock of their own.
+  const item = indexItem(state, `${tab.owner}/${tab.repo}`, Date.now());
+  if (!item) return null;
+  return (
     <StatusItem
       ball={item.ball}
-      details={
-        <>
-          <StatusLine>{INDEX_LINE}</StatusLine>
-          {item.facts.length > 0 && <StatusFacts items={item.facts.map(drawn)} />}
-          {failure !== undefined && (
-            <Problem
-              layout="details"
-              tone={item.ball === 'failed' ? 'danger' : 'warn'}
-              title="Can’t index the code"
-              reason={
-                failure.retryAt === null ? undefined : (
-                  <>
-                    Retrying <Countdown at={failure.retryAt} />.
-                  </>
-                )
-              }
-              action={{
-                label: failure.retryAt === null ? 'Try again' : 'Try now',
-                onClick: () => retryIndex(tab.id),
-              }}
-              details={failure.message === '' ? undefined : failure.message}
-            />
-          )}
-        </>
-      }
+      details={<IndexDetails state={state} tab={tab} />}
       label={item.text}
       container={document.getElementById('root')}
     >

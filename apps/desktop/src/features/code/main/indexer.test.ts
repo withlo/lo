@@ -61,7 +61,7 @@ describe('the syntax index', () => {
     const states = published.filter(({ view }) => view === 't1').map(({ state }) => state);
     expect(states[0]).toEqual({ kind: 'waiting' });
     expect(states).toContainEqual({ kind: 'building', done: 0, total: 2 });
-    // What it covers: each language's files, read once across both sides, and when it was built.
+    // What it covers: the head's files read in each language, by path, and when it was built.
     expect(states.at(-1)).toEqual({
       kind: 'ready',
       partial: null,
@@ -153,12 +153,21 @@ describe('the syntax index', () => {
 
 describe('what a code index covers', () => {
   it('counts the files read in each language by its name, most first, then by name', () => {
-    expect(languagesOf(['a:typescript', 'b:tsx', 'c:typescript', 'd:python', 'e:csharp'])).toEqual([
+    expect(
+      languagesOf(
+        new Map([
+          ['typescript', 2],
+          ['tsx', 1],
+          ['python', 1],
+          ['csharp', 1],
+        ]),
+      ),
+    ).toEqual([
       { name: 'TypeScript', files: 2 },
       { name: 'C#', files: 1 },
       { name: 'Python', files: 1 },
       { name: 'TSX', files: 1 },
     ]);
-    expect(languagesOf([])).toEqual([]);
+    expect(languagesOf(new Map())).toEqual([]);
   });
 });

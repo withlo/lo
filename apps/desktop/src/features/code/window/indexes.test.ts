@@ -20,7 +20,7 @@ describe('the code index’s status item', () => {
       text: 'Indexing code…',
       facts: [{ label: 'State', value: 'Indexing rozed-dev/e2e…' }],
     });
-    // Once it's ready, its details say what it covers, and when it was built.
+    // Once it's ready, its details say what it covers, a language a line, and when it was built.
     expect(
       item({
         kind: 'ready',
@@ -37,15 +37,18 @@ describe('the code index’s status item', () => {
       facts: [
         { label: 'State', value: 'Ready' },
         { label: 'Files', value: '3,742' },
-        { label: 'Languages', value: 'TypeScript 3,102 · JavaScript 640' },
-        { label: 'Indexed', value: '5 min ago' },
+        { label: 'Languages', value: ['TypeScript · 3,102 files', 'JavaScript · 640 files'] },
+        { label: 'Built', value: '5 min ago' },
       ],
     });
     expect(
       item({
         kind: 'ready',
         partial: { indexed: 20_000, total: 31_422, why: ['files', 'offline'] },
-        languages: [{ name: 'Go', files: 20_000 }],
+        languages: [
+          { name: 'Go', files: 19_999 },
+          { name: 'Python', files: 1 },
+        ],
         at: NOW,
       }),
     ).toEqual({
@@ -57,8 +60,8 @@ describe('the code index’s status item', () => {
           value: 'Partial · 20,000 / 31,422 files',
           why: ['The 20,000 files nearest the changes are indexed.', 'Offline.'],
         },
-        { label: 'Languages', value: 'Go 20,000' },
-        { label: 'Indexed', value: 'just now' },
+        { label: 'Languages', value: ['Go · 19,999 files', 'Python · 1 file'] },
+        { label: 'Built', value: 'just now' },
       ],
     });
     // A tree too large to list has no files to count.
@@ -74,7 +77,7 @@ describe('the code index’s status item', () => {
       text: 'Code index',
       facts: [
         { label: 'State', value: 'Partial', why: ['The repo has too many files to list.'] },
-        { label: 'Indexed', value: 'just now' },
+        { label: 'Built', value: 'just now' },
       ],
     });
   });

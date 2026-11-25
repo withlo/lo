@@ -41,7 +41,8 @@ export function catchUpIndex(view: string): void {
 /** One fact the index's details state, as `StatusFacts` draws it. */
 export interface IndexFact {
   readonly label: string;
-  readonly value: string;
+  /** What it says, or a list of things, a line each. */
+  readonly value: string | readonly string[];
   /** Under the value: why a partial index holds what it holds, a sentence each. */
   readonly why?: readonly string[] | undefined;
 }
@@ -67,6 +68,9 @@ export const INDEX_LINE = 'Finds definitions and references when no language ser
 
 const count = (value: number) => value.toLocaleString('en-US');
 
+/** "1 file", "3,102 files". */
+const files = (value: number) => `${count(value)} ${value === 1 ? 'file' : 'files'}`;
+
 /** Why an index is partial, a sentence each. */
 const WHY: Readonly<Record<PartialWhy, string>> = {
   files: `The ${count(TREE_FILES)} files nearest the changes are indexed.`,
@@ -75,23 +79,24 @@ const WHY: Readonly<Record<PartialWhy, string>> = {
   listing: 'The repo has too many files to list.',
 };
 
-/** What a ready index covers, and when it was built, as facts, `now` being the time now. */
+/**
+ * What a ready index covers, the head's files it read in each language, and when its trees were
+ * built, as facts, `now` being the time now.
+ */
 function covered(state: Extract<IndexState, { kind: 'ready' }>, now: number): IndexFact[] {
-  const files = state.languages.reduce((sum, language) => sum + language.files, 0);
+  const read = state.languages.reduce((sum, language) => sum + language.files, 0);
   return [
     // A partial one's state counts its files already.
-    ...(state.partial || files === 0 ? [] : [{ label: 'Files', value: count(files) }]),
+    ...(state.partial || read === 0 ? [] : [{ label: 'Files', value: count(read) }]),
     ...(state.languages.length === 0
       ? []
       : [
           {
             label: 'Languages',
-            value: state.languages
-              .map((language) => `${language.name} ${count(language.files)}`)
-              .join(' · '),
+            value: state.languages.map((language) => `${language.name} · ${files(language.files)}`),
           },
         ]),
-    ...(state.at > 0 ? [{ label: 'Indexed', value: ago(state.at, now) }] : []),
+    ...(state.at > 0 ? [{ label: 'Built', value: ago(state.at, now) }] : []),
   ];
 }
 

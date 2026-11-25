@@ -3,7 +3,9 @@
 // one for each layer of a stack it has shown, watches its pull request with its account's poller,
 // and fetches its local copy once it's shown. Other features follow a pull request's tab by its
 // view on screen. It also copies text and opens github.com pages for every feature, and shows a
-// local copy's folder.
+// local copy's folder and copies its path.
+
+import { existsSync } from 'node:fs';
 
 import { app, clipboard, shell } from 'electron';
 
@@ -29,6 +31,7 @@ import {
 import { tabs } from '../service.ts';
 import { before, open as openOn } from '../settings.ts';
 import { carryOver } from './carry.ts';
+import { folderToShow } from './local.ts';
 import { createTabs, type TabList } from './tabs.ts';
 import { Watcher } from './watcher.ts';
 
@@ -147,13 +150,14 @@ export default defineFeature(contract, {
       pullTab(id).retry(id);
     },
     showLocal({ id }) {
-      const local = pullTab(id).snapshot(id)?.local.state;
-      if (local?.kind !== 'ready') {
-        throw new IpcError('notReady', 'The local copy isn’t ready.');
-      }
       // The clone's folder as main keeps it, shown in its folder and never opened, so nothing in
       // it runs.
-      shell.showItemInFolder(local.folder);
+      shell.showItemInFolder(folderToShow(pullTab(id).localFolder(id), existsSync));
+    },
+    async copyLocal({ id }) {
+      const folder = pullTab(id).localFolder(id);
+      if (folder === undefined) throw new IpcError('notReady', 'The local copy isn’t ready.');
+      await clipboard.writeText(folder);
     },
     async choose({ id, login }) {
       await pullTab(id).choose(id, login);

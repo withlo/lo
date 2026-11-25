@@ -268,20 +268,44 @@ export function connectionNote(
 }
 
 /** The local copy, as its status bar item says it: its ball, its label and its details. */
-export interface LocalNote {
+/** What every state of the local copy's item has: its ball and its words. */
+interface LocalNoteBase {
   readonly ball: 'off' | 'working' | 'ready' | 'warn' | 'failed';
   readonly label: string;
-  /** The details' one line, for a copy that's there: the commit it's at. */
-  readonly at?: string | undefined;
-  /** Where a copy that's there is on this computer, for its details, to show or copy. */
-  readonly folder?: string | undefined;
-  /** The details' one line while it fetches or waits to: what, and how far, in Lo's words. */
-  readonly line?: string | undefined;
-  /** What Git last said of how far it has got while it fetches, as it came, for Details. */
-  readonly said?: string | undefined;
-  /** Why it can't be fetched, for its details, with what to do about it. */
-  readonly problem?: BannerSpec | undefined;
 }
+
+/** A copy that's there: the commit it's at, and where it is on this computer, to show or copy. */
+interface ThereNote extends LocalNoteBase {
+  readonly at: string;
+  readonly folder: string;
+  readonly line?: undefined;
+  readonly said?: undefined;
+  readonly problem?: undefined;
+}
+
+/**
+ * A copy it fetches or waits to: the details' one line, what and how far, in Lo's words, and what
+ * Git last said of how far it has got, as it came, for Details.
+ */
+interface FetchingNote extends LocalNoteBase {
+  readonly at?: undefined;
+  readonly folder?: undefined;
+  readonly line: string;
+  readonly said?: string | undefined;
+  readonly problem?: undefined;
+}
+
+/** A copy it can't fetch: why, for its details, with what to do about it. */
+interface ProblemNote extends LocalNoteBase {
+  readonly at?: undefined;
+  readonly folder?: undefined;
+  readonly line?: undefined;
+  readonly said?: undefined;
+  readonly problem: BannerSpec;
+}
+
+/** The local copy's status bar item, with what its details say: always one of the three. */
+export type LocalNote = ThereNote | FetchingNote | ProblemNote;
 
 /** "62%": how far a fetch has got, from what git said of it, if it said. */
 function percentOf(progress: string | null): string | undefined {

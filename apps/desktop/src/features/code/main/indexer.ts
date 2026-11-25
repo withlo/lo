@@ -323,7 +323,7 @@ export class CodeIndex {
             moved: () => this.#publishViews(build),
             signal,
           })
-        : { tree, total: 0, files: 0, indexed: 0, partial: ['listing'] };
+        : { tree, total: 0, files: 0, indexed: 0, partial: ['listing'], read: new Map() };
       if (signal.aborted) return;
       build.built = built;
       build.state = 'built';
@@ -424,7 +424,8 @@ export class CodeIndex {
       return { kind: 'failed', message: failed.failure ?? '', retryAt: failed.retryAt ?? null };
     }
     const why = [...new Set(builds.flatMap((build) => build.built?.partial ?? []))];
-    const languages = languagesOf(done);
+    // What it covers is the head's: its files read, by path, in each language.
+    const languages = languagesOf(this.#builds.get(input.new)?.built?.read ?? new Map());
     const at = Math.max(0, ...builds.map((build) => build.builtAt ?? 0));
     if (why.length === 0 && done.size === all.size) {
       return { kind: 'ready', partial: null, languages, at };
@@ -462,15 +463,14 @@ const LANGUAGE_NAMES: Readonly<Record<TaggedLanguage, string>> = {
 const NAMES: ReadonlyMap<string, string> = new Map(Object.entries(LANGUAGE_NAMES));
 
 /**
- * How many of the files read, `done` by their blob keys, are in each language, by its name: most
- * files first, then by name.
+ * How many files were read in each language, from how many `read` has by the language they were
+ * read as, by its name: most files first, then by name.
  */
-export function languagesOf(done: Iterable<string>): { name: string; files: number }[] {
+export function languagesOf(read: ReadonlyMap<string, number>): { name: string; files: number }[] {
   const counts = new Map<string, number>();
-  for (const key of done) {
-    const language = key.slice(key.indexOf(':') + 1);
+  for (const [language, files] of read) {
     const name = NAMES.get(language) ?? language;
-    counts.set(name, (counts.get(name) ?? 0) + 1);
+    counts.set(name, (counts.get(name) ?? 0) + files);
   }
   return [...counts]
     .map(([name, files]) => ({ name, files }))
