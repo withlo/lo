@@ -106,6 +106,7 @@ export const READY: LocalState = {
   base: APP_PULL.base,
   mergeBase: APP_PULL.base,
   offline: false,
+  folder: '/cache/e2e.git',
 };
 
 /** rozed-dev/e2e#80's tab, as the tab feature says it, shown at its head. */

@@ -62,7 +62,7 @@ async function opened(page: Page): Promise<string> {
       },
       { timeout: 60_000 },
     )
-    .toEqual({ kind: 'ready', partial: null });
+    .toMatchObject({ kind: 'ready', partial: null });
   await expect(page.locator('.lo-diffview')).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText('GitHub’s diff', { exact: true })).toHaveCount(0, {
     timeout: 20_000,

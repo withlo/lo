@@ -104,6 +104,7 @@ const READY: LocalState = {
   base: APP_PULL.base,
   mergeBase: APP_PULL.base,
   offline: false,
+  folder: '/cache/e2e.git',
 };
 
 /** #80's tab, shown at its head, its local copy `local`. */

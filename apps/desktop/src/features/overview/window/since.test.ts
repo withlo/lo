@@ -126,6 +126,7 @@ const READY: LocalState = {
   base: 'b'.repeat(40),
   mergeBase: null,
   offline: false,
+  folder: '/cache/e2e.git',
 };
 
 /** Lets what's under way settle. */

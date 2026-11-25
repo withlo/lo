@@ -4,10 +4,12 @@
 // features.
 
 import { CopyRoute } from '@lo/ui';
+import { holdRegistry } from '@lo/ui/commands';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 
+import { IpcError } from '../../../ipc/contract.ts';
 import { notices } from '../../../window/commands/notices.tsx';
 import { createRegistry, focusMiddle } from '../../../window/commands/registry.ts';
 import { Slot, Slots } from '../../../window/slots.tsx';
@@ -131,7 +133,8 @@ beforeAll(() => {
     unobserve(): void {}
     disconnect(): void {}
   };
-  createRegistry(feature.commands ?? [], 'mac');
+  // The foot's Back is its command's control, as the window holds the registry for controls.
+  holdRegistry(createRegistry(feature.commands ?? [], 'mac'));
   // The features' clients keep the bridge they were made with, so there is one for the file.
   shared = install(answers);
 });
@@ -156,7 +159,7 @@ afterEach(() => {
     rules: false,
     linked: false,
     played: [],
-    choosing: undefined,
+    choosing: {},
   });
   setScreen(undefined);
 });
@@ -419,15 +422,39 @@ describe('when it opens', () => {
 describe('walking it', () => {
   it('goes on with Continue and back with Back, and says where it is to a screen reader', async () => {
     await first();
-    expect(button('Back').disabled).toBe(true);
+    // Back is dimmed on the first step, with nothing to say: there's no step before.
+    expect(button('Back').getAttribute('aria-disabled')).toBe('true');
     click(button('Continue'));
-    expect(stepOnScreen()).toBe('keys');
+    expect(stepOnScreen()).toBe('look');
     // The dots' own region, beside them.
     expect(screen()?.querySelector('[role="img"] + [role="status"].sr-only')?.textContent).toBe(
-      'Step 2 of 4',
+      'Step 2 of 5',
     );
     click(button('Back'));
     expect(stepOnScreen()).toBe('account');
+  });
+
+  it('goes back with ⇧⏎, which has nothing to do on the first step', async () => {
+    await first();
+    const back = feature.commands?.find((command) => command.id === 'welcome.back');
+    expect(back?.handler?.enabled?.({ kind: 'none' })).toBe('');
+    await goTo('keys');
+    expect(back?.handler?.enabled?.({ kind: 'none' })).toBe(true);
+    act(() => {
+      void back?.handler?.run({ kind: 'none' });
+    });
+    expect(stepOnScreen()).toBe('look');
+  });
+
+  it('starts each step at its top, wherever the step before was scrolled to', async () => {
+    await first();
+    await goTo('look');
+    const pane = screen()?.firstElementChild;
+    if (!(pane instanceof HTMLElement)) throw new Error('No steps pane.');
+    pane.scrollTop = 120;
+    click(button('Continue'));
+    expect(stepOnScreen()).toBe('keys');
+    expect(pane.scrollTop).toBe(0);
   });
 
   it('marks the steps done, the one on screen and the rest, each drawn as its own', async () => {
@@ -437,6 +464,7 @@ describe('walking it', () => {
       ...(screen()?.querySelectorAll('[role="img"][aria-label^="Step"] > span') ?? []),
     ];
     expect(balls.map((ball) => ball.getAttribute('data-ball'))).toEqual([
+      'done',
       'done',
       'done',
       'here',
@@ -469,6 +497,13 @@ describe('walking it', () => {
     const signIn = button('Sign in with GitHub');
     expect(signIn.textContent).toBe('Sign in with GitHub…⏎');
     expect(document.activeElement).toBe(signIn);
+    await goTo('look');
+    // The theme's chosen card, so the arrows choose at once.
+    expect(document.activeElement?.getAttribute('role')).toBe('radio');
+    expect(document.activeElement?.closest('[role="radiogroup"]')?.getAttribute('aria-label')).toBe(
+      'Theme',
+    );
+    expect(document.activeElement?.getAttribute('aria-checked')).toBe('true');
     await goTo('keys');
     expect(document.activeElement?.getAttribute('aria-label')).toBe('Practice diff');
     await goTo('setup');
@@ -492,7 +527,9 @@ describe('⏎', () => {
 
   it('continues from the steps after, and is Done on the last with the link field empty', async () => {
     const { bridge } = await first();
-    await goTo('keys');
+    await goTo('look');
+    act(() => enter());
+    expect(stepOnScreen()).toBe('keys');
     act(() => enter());
     expect(stepOnScreen()).toBe('setup');
     act(() => enter());
@@ -502,6 +539,17 @@ describe('⏎', () => {
     await settle();
     expect(screen()).toBeNull();
     expect(bridge.calls).toContainEqual(['welcome.finish', undefined]);
+  });
+
+  it('continues from a card with focus, which the arrows and Space choose', async () => {
+    const { bridge } = await first();
+    await goTo('look');
+    const card = document.activeElement;
+    expect(card?.getAttribute('role')).toBe('radio');
+    act(() => enter());
+    expect(stepOnScreen()).toBe('keys');
+    await settle();
+    expect(bridge.calls.some(([channel]) => channel === 'settings.set')).toBe(false);
   });
 
   it('presses the button with focus instead', async () => {
@@ -622,6 +670,134 @@ describe('the first step', () => {
   });
 });
 
+/** The look step's groups of cards, by name, each with its cards' names and which is chosen. */
+function groups(): { name: string | null; cards: string[]; chosen: string | undefined }[] {
+  return [...onScreen().querySelectorAll('[role="radiogroup"]')].map((group) => {
+    const cards = [...group.querySelectorAll('[role="radio"]')];
+    return {
+      name: group.getAttribute('aria-label'),
+      cards: cards.map((card) => card.textContent),
+      chosen: cards.find((card) => card.getAttribute('aria-checked') === 'true')?.textContent,
+    };
+  });
+}
+
+/** Presses `key` where focus is, as a person does. */
+function pressKey(key: string): void {
+  act(() => {
+    document.activeElement?.dispatchEvent(
+      new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }),
+    );
+  });
+}
+
+/** The card with focus: its group's name and its own. */
+const focused = () => ({
+  group: document.activeElement?.closest('[role="radiogroup"]')?.getAttribute('aria-label'),
+  card: document.activeElement?.textContent,
+});
+
+/** What the window asked main to write to the settings file, in order. */
+const writes = (bridge: FakeBridge) =>
+  bridge.calls.filter(([channel]) => channel === 'settings.set').map(([, input]) => input);
+
+describe('the look step', () => {
+  it('offers the theme and the diff’s layout as cards, named by their settings, with their places', async () => {
+    await first();
+    await goTo('look');
+    expect(onScreen().querySelector('h1')?.textContent).toBe('Choose how Lo looks');
+    expect(onScreen().textContent).toContain('Each choice takes effect at once.');
+    // Nothing on file: each setting's default is chosen.
+    expect(groups()).toEqual([
+      { name: 'Theme', cards: ['Dark', 'Light', 'System'], chosen: 'System' },
+      { name: 'Diff layout', cards: ['Side by side', 'Inline'], chosen: 'Side by side' },
+    ]);
+    expect(onScreen().textContent).toContain('Settings › Appearance');
+    expect(onScreen().textContent).toContain('Settings › Pull requests');
+    // Each card has its picture, which a screen reader skips.
+    const pictures = onScreen().querySelectorAll('[role="radio"] [aria-hidden="true"].rounded-sm');
+    expect(pictures).toHaveLength(5);
+  });
+
+  it('writes a card as it’s pressed, showing it until the file has it', async () => {
+    const landing: (() => void)[] = [];
+    const { bridge } = await first({
+      'settings.set': () =>
+        new Promise<void>((resolve) => {
+          landing.push(resolve);
+        }),
+    });
+    await goTo('look');
+    const light = [...onScreen().querySelectorAll('[role="radio"]')][1];
+    click(light ?? document.body);
+    expect(groups()[0]?.chosen).toBe('Light');
+    await settle();
+    expect(writes(bridge)).toEqual([{ key: 'theme', value: 'light' }]);
+    expect(welcomeStore.getState().choosing).toEqual({ theme: 'light' });
+    for (const land of landing) land();
+    await settle();
+    expect(welcomeStore.getState().choosing).toEqual({});
+  });
+
+  it('chooses along a group with ← and →, and goes between groups with ↑ and ↓, choosing nothing', async () => {
+    const { bridge } = await first({ 'settings.set': () => undefined });
+    await goTo('look');
+    expect(focused()).toEqual({ group: 'Theme', card: 'System' });
+    // Round the end, to the first.
+    pressKey('l');
+    expect(focused()).toEqual({ group: 'Theme', card: 'Dark' });
+    expect(groups()[0]?.chosen).toBe('Dark');
+    pressKey('ArrowLeft');
+    expect(focused()).toEqual({ group: 'Theme', card: 'System' });
+    await settle();
+    pressKey('j');
+    expect(focused()).toEqual({ group: 'Diff layout', card: 'Side by side' });
+    // Nothing past the last group.
+    pressKey('ArrowDown');
+    expect(focused()).toEqual({ group: 'Diff layout', card: 'Side by side' });
+    pressKey('k');
+    expect(focused()).toEqual({ group: 'Theme', card: 'System' });
+    pressKey('ArrowUp');
+    expect(focused()).toEqual({ group: 'Theme', card: 'System' });
+    await settle();
+    expect(writes(bridge)).toEqual([
+      { key: 'theme', value: 'dark' },
+      { key: 'theme', value: 'system' },
+    ]);
+  });
+
+  it('writes the default’s card as it’s pressed while the file holds no theme Lo knows', async () => {
+    // Main hasn't said what the file holds: System is shown, but nothing is on file.
+    const { bridge } = await first({ 'settings.set': () => undefined });
+    await goTo('look');
+    const system = [...onScreen().querySelectorAll('[role="radio"]')][2];
+    expect(system?.getAttribute('aria-checked')).toBe('true');
+    click(system ?? document.body);
+    await settle();
+    expect(writes(bridge)).toEqual([{ key: 'theme', value: 'system' }]);
+  });
+
+  it('says under the group why the file refused a card, with no toast, and shows what’s on file', async () => {
+    await first({
+      'settings.set': () => {
+        throw new IpcError('settingsFile', 'The settings file isn’t valid JSON.');
+      },
+    });
+    await goTo('look');
+    const inline = [...onScreen().querySelectorAll('[role="radio"]')][4];
+    click(inline ?? document.body);
+    await settle();
+    const alert = onScreen().querySelector('[role="alert"]');
+    expect(alert?.querySelector('p')?.textContent).toBe('Couldn’t change the diff layout');
+    expect(alert?.textContent).toContain('The settings file isn’t valid JSON.');
+    expect(button('Open settings.json', onScreen())).toBeDefined();
+    // Under the diff's layout, not the theme.
+    expect(alert?.closest('[role="radiogroup"]')).toBeNull();
+    expect(groups()[1]?.chosen).toBe('Side by side');
+    expect(notices()).toEqual([]);
+  });
+});
+
 /** Presses `key` on the practice diff. */
 function press(key: string): void {
   const lines = onScreen().querySelector('[role="listbox"]');
@@ -668,7 +844,7 @@ describe('the keys step', () => {
     for (const land of landing) land();
     await settle();
     await settle();
-    expect(welcomeStore.getState().choosing).toBeUndefined();
+    expect(welcomeStore.getState().choosing).toEqual({});
     expect(checked()).toEqual(['true', 'false']);
   });
 

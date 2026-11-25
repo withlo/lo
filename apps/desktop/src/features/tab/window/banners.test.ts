@@ -44,6 +44,7 @@ const ready: LocalState = {
   base: HEAD,
   mergeBase: null,
   offline: false,
+  folder: '/cache/e2e.git',
 };
 
 describe('a pull request’s tab that can’t show it', () => {
@@ -306,7 +307,11 @@ const local = (state: LocalState | undefined, pull: PullView = view()) =>
 describe('the local copy’s item', () => {
   it('is a ring until it fetches, then counts, then is filled at its head', () => {
     expect(local(undefined)).toBe(undefined);
-    expect(local({ kind: 'waiting' })).toEqual({ ball: 'off', label: 'Local copy' });
+    expect(local({ kind: 'waiting' })).toEqual({
+      ball: 'off',
+      label: 'Local copy',
+      line: 'Waiting to fetch rozed-dev/e2e…',
+    });
     // Its details name what it fetches, with what Git said behind Details.
     expect(
       local({ kind: 'fetching', progress: 'Receiving objects: 44% (543/1234)', attempt: 1 }),
@@ -327,7 +332,13 @@ describe('the local copy’s item', () => {
       label: 'Fetching local copy…',
       line: 'Fetching rozed-dev/e2e…',
     });
-    expect(local(ready)).toEqual({ ball: 'ready', label: 'Local copy', at: '5530830' });
+    // Its details say where it is, to show in Finder or copy.
+    expect(local(ready)).toEqual({
+      ball: 'ready',
+      label: 'Local copy',
+      at: '5530830',
+      folder: '/cache/e2e.git',
+    });
     // Offline, it's there all the same: only the header's chip says offline.
     expect(local({ ...ready, offline: true })).toEqual(local(ready));
   });
@@ -456,7 +467,7 @@ describe('the local copy’s item', () => {
           connection: { kind: 'offline', retryAt: null, cause: { kind: 'offline' }, error: 'x' },
         }),
       ),
-    ).toEqual({ ball: 'warn', label: 'Local copy' });
+    ).toEqual({ ball: 'warn', label: 'Local copy', line: 'Waiting to fetch rozed-dev/e2e…' });
     expect(local(retrying)?.problem?.detail).toBe('Offline.');
   });
 });

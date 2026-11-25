@@ -81,6 +81,7 @@ const READY: LocalState = {
   base: APP_PULL.base,
   mergeBase: APP_PULL.base,
   offline: false,
+  folder: '/cache/e2e.git',
 };
 
 /** rozed-dev/e2e#80's tab, shown at its head. */
@@ -585,7 +586,14 @@ describe('a whole file', { timeout: 60_000 }, () => {
     });
     const { diff, settled } = diffTab({ clone: () => Promise.resolve(repo) });
     diff.update({
-      ...e2eInfo({ kind: 'ready', head, base, mergeBase: base, offline: false }),
+      ...e2eInfo({
+        kind: 'ready',
+        head,
+        base,
+        mergeBase: base,
+        offline: false,
+        folder: '/cache/e2e.git',
+      }),
       shown: head,
     });
     await settled((each) => each.from === 'local');
@@ -872,7 +880,14 @@ describe('a stack’s layer’s diff', { timeout: 60_000 }, () => {
     expect(asked).toBe(1);
     // The local copy is ready at the head, but still works out where it meets the new start: GitHub
     // isn't asked, and nothing is read until it has.
-    const ready: LocalState = { kind: 'ready', head: C, base: C, mergeBase: C, offline: false };
+    const ready: LocalState = {
+      kind: 'ready',
+      head: C,
+      base: C,
+      mergeBase: C,
+      offline: false,
+      folder: '/cache/e2e.git',
+    };
     diff.update(layerInfo(B, ready));
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(sent.at(-1)).toMatchObject({ at: C, compareFrom: B, files: null });

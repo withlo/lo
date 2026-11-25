@@ -175,6 +175,7 @@ beforeEach(() => {
     base: 'b'.repeat(40),
     mergeBase: null,
     offline: false,
+    folder: '/cache/e2e.git',
   };
   revisions.set(tab, viewOf([revisionOf(R1, 1), revisionOf(R2, 2)]));
   texts.set('src/parser.ts', { kind: 'text', text: FIRST, base: { kind: 'same' } });
@@ -383,7 +384,14 @@ describe('a code block of an overview written for an older push', () => {
 
     // Once the copy has it, the flag says what changed by the newer push.
     notReady.delete(R3);
-    copyIs({ kind: 'ready', head: R3, base: 'b'.repeat(40), mergeBase: null, offline: false });
+    copyIs({
+      kind: 'ready',
+      head: R3,
+      base: 'b'.repeat(40),
+      mergeBase: null,
+      offline: false,
+      folder: '/cache/e2e.git',
+    });
     await until(() => flag()?.includes('in r3') === true);
     expect(flag()).toBe('Lines 7–8 changed in r3 · showing r1');
     expect(seen.some(([drawn, flagged]) => drawn && !flagged)).toBe(false);
@@ -475,6 +483,7 @@ describe('the banner', () => {
       base: 'b'.repeat(40),
       mergeBase: null,
       offline: false,
+      folder: '/cache/e2e.git',
     };
     page.again(banner());
     await until(() => detail(page) === '1 file changed');

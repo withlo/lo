@@ -19,6 +19,8 @@ import { PullTab, type Kept, type TabGithub } from './pull.ts';
 import { folder, published, replayGithub, testGit, TOKEN } from './test/support.ts';
 
 const E2E = { owner: 'rozed-dev', repo: 'e2e', number: APP_PULL.number };
+/** Where the e2e repository's clone is, in the cache a test makes. */
+const CLONE = expect.stringMatching(/\/repos\/github\.com\/rozed-dev\/e2e\.git$/);
 const TITLE = "App: the pull request Lo's end-to-end tests open";
 
 /** GitHub's own addresses, which the cassettes were recorded from. */
@@ -232,6 +234,7 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
       // The second push merged the moved base in.
       mergeBase: APP_PULL.base,
       offline: false,
+      folder: CLONE,
     });
     await expect.poll(() => sent.pull?.header?.author).toBe('rozed-bot');
     expect(sent.pull).toEqual({
@@ -401,6 +404,7 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
         base: APP_PULL.base,
         mergeBase: APP_PULL.base,
         offline: true,
+        folder: CLONE,
       });
     expect(after.sent.pull?.header?.title).toBe(TITLE);
     expect(after.sent.pull?.shown).toBe(APP_PULL.head);
@@ -536,6 +540,7 @@ describe('a pull request’s tab', { timeout: 60_000 }, () => {
         base: expect.any(String),
         mergeBase: APP_PULL.firstBase,
         offline: false,
+        folder: CLONE,
       });
     expect(sent.pull?.shown).toBe(APP_PULL.firstHead);
     expect(sent.pull?.newer).toBe(null);
