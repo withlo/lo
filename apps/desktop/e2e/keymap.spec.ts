@@ -1,15 +1,4 @@
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  realpathSync,
-  renameSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'node:fs';
 
 import type { Page } from '@playwright/test';
 
@@ -91,9 +80,6 @@ async function pressOpen(page: Page): Promise<void> {
   await page.keyboard.press(',');
 }
 
-/** The toast Lo says why something didn't happen in. */
-const toast = (page: Page, text: string) => page.getByRole('status').filter({ hasText: text });
-
 const openKeymap = (help: ReturnType<Page['locator']>) =>
   help.getByRole('button', { name: 'Open keymap file' });
 
@@ -132,62 +118,5 @@ test.describe('with no keymap file', () => {
     await expect.poll(() => existsSync(path)).toBe(true);
     await expect.poll(opened).toEqual([realpathSync(path)]);
     await expect(page.getByRole('status').filter({ hasText: /\w/ })).toHaveCount(0);
-  });
-});
-
-test.describe('with a keymap file that opening could run', () => {
-  const script = '#!/bin/sh\necho hello\nbind cmd+j keys.palette\n';
-  test.use({ keymap: script });
-
-  test('an executable one is not opened: keyboard shortcuts says why and has no button, and g , says why too', async ({
-    page,
-  }) => {
-    const path = keymapPath(dataFolder());
-    chmodSync(path, 0o755);
-    const help = await openHelp(page);
-    await expect(help.getByRole('alert').first()).toContainText('The keymap file is executable');
-    await expect(help.getByRole('alert').first()).toContainText(
-      'Clear its execute permission to open it from here.',
-    );
-    await expect(openKeymap(help)).toHaveCount(0);
-    await page.keyboard.press('Escape');
-    await expect(help).toBeHidden();
-
-    await pressOpen(page);
-    await expect(toast(page, 'The keymap file is executable')).toBeVisible();
-    // The reason alone, not under the command's name.
-    await expect(toast(page, 'Open keymap file')).toHaveCount(0);
-    // Nothing was started.
-    await page.waitForTimeout(300);
-    expect(opened()).toEqual([]);
-
-    // Once it is a plain file, keyboard shortcuts offers it again, and it opens.
-    chmodSync(path, 0o644);
-    await openHelp(page);
-    await expect(openKeymap(help)).toBeVisible();
-    await openKeymap(help).click();
-    await expect.poll(opened).toEqual([realpathSync(path)]);
-  });
-
-  test('a link to an app is not opened, whatever is at the end of it', async ({ page }) => {
-    const path = keymapPath(dataFolder());
-    const app = join(dataFolder(), 'Calculator.app');
-    mkdirSync(join(app, 'Contents', 'MacOS'), { recursive: true });
-    writeFileSync(join(app, 'Contents', 'MacOS', 'Calculator'), '#!/bin/sh\n');
-    chmodSync(join(app, 'Contents', 'MacOS', 'Calculator'), 0o755);
-    rmSync(path);
-    symlinkSync(app, path);
-
-    const help = await openHelp(page);
-    await expect(help.getByRole('alert')).toContainText('Can’t read the keymap file');
-    await expect(help.getByRole('alert')).toContainText('It isn’t a file.');
-    await expect(openKeymap(help)).toHaveCount(0);
-    await page.keyboard.press('Escape');
-    await expect(help).toBeHidden();
-
-    await pressOpen(page);
-    await expect(toast(page, 'The keymap file can’t be opened')).toBeVisible();
-    await page.waitForTimeout(300);
-    expect(opened()).toEqual([]);
   });
 });

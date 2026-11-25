@@ -93,6 +93,8 @@ export interface QueueWatchOptions {
    * it, with what it read and when it was asked for.
    */
   readonly heard?: (read: Heard) => void;
+  /** How often the queue is read while reads succeed: {@link QUEUE_EVERY} unless a test says. */
+  readonly every?: number | undefined;
   readonly now?: () => number;
 }
 
@@ -210,7 +212,7 @@ export class QueueWatch {
   readonly #leaving = new Set<string>();
   /** Bumped as the branch changes, so a read of the one before is dropped as it answers. */
   #generation = 0;
-  readonly #queue = new Cadence(QUEUE_EVERY, QUEUE_MOST);
+  readonly #queue: Cadence;
   readonly #joining = new Cadence(WAITING_EVERY, WAITING_MOST);
   readonly #others = new Cadence(WAITING_EVERY, WAITING_MOST);
   /** Why nothing is read, while the account is signed out or gone. */
@@ -220,6 +222,7 @@ export class QueueWatch {
 
   constructor(options: QueueWatchOptions) {
     this.#options = options;
+    this.#queue = new Cadence(options.every ?? QUEUE_EVERY, QUEUE_MOST);
     this.#now = options.now ?? Date.now;
     this.#branch = options.branch;
   }

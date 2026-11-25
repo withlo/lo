@@ -22,6 +22,7 @@ import { APP_PULL, writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { ElectronApplication, Page } from '@playwright/test';
 
+import { promptOf } from '../src/features/overview/window/prompts.ts';
 import { HOLD_LIMIT } from '../src/features/revisions/contract.ts';
 import {
   appFolder,
@@ -29,12 +30,14 @@ import {
   browsed,
   dataFolder,
   DIFF_FIRST,
+  drawnWindow,
   expect,
   KEYCHAIN,
   keepMenus,
   rowOver,
   settingsPath,
   sizeWindow,
+  startLo,
   test as base,
 } from './app.ts';
 
@@ -255,6 +258,82 @@ function answerFor(overview: Overview, path: string, outgoing: ServerResponse): 
   return false;
 }
 
+/**
+ * A server in front of `github` that answers for the overview's ref as `ref` says, fails the
+ * timeline's reads, and passes the rest on: where Lo finds GitHub, and what closes it.
+ */
+async function frontOf(
+  github: ReplayServer,
+  ref: Ref,
+): Promise<{ origin: string; close(): Promise<void> }> {
+  const origin = new URL(github.urls.api).origin;
+  // Every overview made here this test, so a commit once named is still read after the ref moves.
+  const overviews: Overview[] = [];
+  const front = createServer((incoming, outgoing) => {
+    void (async () => {
+      const body = await buffer(incoming);
+      // The replay server serves GitHub's REST API under /api.
+      const path = new URL(incoming.url ?? '/', origin).pathname.replace(/^\/api\//, '/');
+      const { holds } = ref;
+      if (holds.kind === 'made' && !overviews.includes(holds.overview)) {
+        overviews.push(holds.overview);
+      }
+      if (path === REFS) {
+        if (ref.delay > 0) await new Promise((resolve) => setTimeout(resolve, ref.delay));
+        if (holds.kind === 'none') return json(outgoing, 200, []);
+        if (holds.kind === 'failing') return json(outgoing, 502, { message: 'Server Error' });
+        if (holds.kind === 'made') {
+          return json(outgoing, 200, [
+            {
+              ref: `refs/lo/pr/${APP_PULL.number}`,
+              object: { sha: holds.overview.sha, type: 'commit' },
+            },
+          ]);
+        }
+      }
+      if (overviews.some((overview) => answerFor(overview, path, outgoing))) return;
+      if (path === '/graphql' && TIMELINE.test(body.toString())) {
+        return json(outgoing, 502, { message: 'Server Error' });
+      }
+      const headers = new Headers();
+      for (const [name, value] of Object.entries(incoming.headers)) {
+        if (typeof value === 'string' && name !== 'host') headers.set(name, value);
+      }
+      // The cassette has only the ref's read made again with its ETag: anything else read again,
+      // such as the open pull requests as a tab opens a second time, it answers whole.
+      if (path !== REFS) headers.delete('if-none-match');
+      const method = incoming.method ?? 'GET';
+      const response = await fetch(`${origin}${incoming.url ?? '/'}`, {
+        method,
+        headers,
+        body: method === 'GET' || method === 'HEAD' ? undefined : new Uint8Array(body),
+        redirect: 'manual',
+      });
+      const out: Record<string, string> = {};
+      response.headers.forEach((value, name) => {
+        if (!['content-length', 'content-encoding', 'transfer-encoding'].includes(name)) {
+          out[name] = value;
+        }
+      });
+      outgoing.writeHead(response.status, out);
+      outgoing.end(Buffer.from(await response.arrayBuffer()));
+    })().catch(() => {
+      // The test has ended, and the replay server with it: the request goes unanswered.
+      outgoing.destroy();
+    });
+  });
+  await new Promise<void>((resolve) => front.listen(0, '127.0.0.1', resolve));
+  const address = front.address();
+  if (address === null || typeof address === 'string') throw new Error('no port');
+  return {
+    origin: `http://127.0.0.1:${address.port}`,
+    async close() {
+      front.closeAllConnections();
+      await new Promise((resolve) => front.close(resolve));
+    },
+  };
+}
+
 const test = base.extend<{
   github: ReplayServer;
   remote: string;
@@ -267,6 +346,13 @@ const test = base.extend<{
   ref: Ref;
   /** Where Lo finds GitHub: a server in front of the replay server. */
   githubOrigin: string;
+  /**
+   * Starts Lo afresh once the copy before is closed, as the `app` fixture starts it, from the test's
+   * options, but untraced: on a new replay server, behind a new server in front of it, on an empty
+   * data folder of its own. Gives its window once it has drawn. What it started closes as the test
+   * ends, and a request its replay server couldn't answer fails the test, as the fixtures' own do.
+   */
+  afresh: () => Promise<Page>;
 }>({
   cassette: ['app_e2e', { option: true }],
   lateRemote: [false, { option: true }],
@@ -280,68 +366,9 @@ const test = base.extend<{
     await use({ holds: { kind: 'cassette' }, delay: 0 });
   },
   githubOrigin: async ({ github, ref }, use) => {
-    const origin = new URL(github.urls.api).origin;
-    // Every overview made here this test, so a commit once named is still read after the ref moves.
-    const overviews: Overview[] = [];
-    const front = createServer((incoming, outgoing) => {
-      void (async () => {
-        const body = await buffer(incoming);
-        // The replay server serves GitHub's REST API under /api.
-        const path = new URL(incoming.url ?? '/', origin).pathname.replace(/^\/api\//, '/');
-        const { holds } = ref;
-        if (holds.kind === 'made' && !overviews.includes(holds.overview)) {
-          overviews.push(holds.overview);
-        }
-        if (path === REFS) {
-          if (ref.delay > 0) await new Promise((resolve) => setTimeout(resolve, ref.delay));
-          if (holds.kind === 'none') return json(outgoing, 200, []);
-          if (holds.kind === 'failing') return json(outgoing, 502, { message: 'Server Error' });
-          if (holds.kind === 'made') {
-            return json(outgoing, 200, [
-              {
-                ref: `refs/lo/pr/${APP_PULL.number}`,
-                object: { sha: holds.overview.sha, type: 'commit' },
-              },
-            ]);
-          }
-        }
-        if (overviews.some((overview) => answerFor(overview, path, outgoing))) return;
-        if (path === '/graphql' && TIMELINE.test(body.toString())) {
-          return json(outgoing, 502, { message: 'Server Error' });
-        }
-        const headers = new Headers();
-        for (const [name, value] of Object.entries(incoming.headers)) {
-          if (typeof value === 'string' && name !== 'host') headers.set(name, value);
-        }
-        // The cassette has only the ref's read made again with its ETag: anything else read again,
-        // such as the open pull requests as a tab opens a second time, it answers whole.
-        if (path !== REFS) headers.delete('if-none-match');
-        const method = incoming.method ?? 'GET';
-        const response = await fetch(`${origin}${incoming.url ?? '/'}`, {
-          method,
-          headers,
-          body: method === 'GET' || method === 'HEAD' ? undefined : new Uint8Array(body),
-          redirect: 'manual',
-        });
-        const out: Record<string, string> = {};
-        response.headers.forEach((value, name) => {
-          if (!['content-length', 'content-encoding', 'transfer-encoding'].includes(name)) {
-            out[name] = value;
-          }
-        });
-        outgoing.writeHead(response.status, out);
-        outgoing.end(Buffer.from(await response.arrayBuffer()));
-      })().catch(() => {
-        // The test has ended, and the replay server with it: the request goes unanswered.
-        outgoing.destroy();
-      });
-    });
-    await new Promise<void>((resolve) => front.listen(0, '127.0.0.1', resolve));
-    const address = front.address();
-    if (address === null || typeof address === 'string') throw new Error('no port');
-    await use(`http://127.0.0.1:${address.port}`);
-    front.closeAllConnections();
-    await new Promise((resolve) => front.close(resolve));
+    const front = await frontOf(github, ref);
+    await use(front.origin);
+    await front.close();
   },
   remote: async ({ lateRemote }, use) => {
     const folder = test.info().outputPath('remote');
@@ -362,6 +389,39 @@ const test = base.extend<{
         LO_GIT_REMOTE: remote,
       },
     });
+  },
+  afresh: async (
+    { app, cassette, ref, launch, keymap, settings, holdLimit, motion, readEvery },
+    use,
+  ) => {
+    const started: { app: ElectronApplication; front: { close(): Promise<void> } }[] = [];
+    const servers: ReplayServer[] = [];
+    let last = app;
+    await use(async () => {
+      await last.close();
+      const github = await serveReplay(cassette);
+      servers.push(github);
+      const front = await frontOf(github, ref);
+      const data = test.info().outputPath(`data-${servers.length + 1}`);
+      last = await startLo(
+        {
+          launch: { ...launch, env: { ...launch.env, LO_GITHUB: front.origin } },
+          keymap,
+          settings,
+          holdLimit,
+          motion,
+          readEvery,
+        },
+        data,
+      );
+      started.push({ app: last, front });
+      return drawnWindow(last, motion);
+    });
+    for (const each of started) {
+      await each.app.close();
+      await each.front.close();
+    }
+    for (const github of servers) await github.close();
   },
 });
 
@@ -677,15 +737,10 @@ test.describe('as a pull request opens', () => {
   });
 });
 
-/** The prompt that writes #80's overview. */
-const WRITE = [
-  'Write a Lo overview for this pull request:',
-  `https://github.com/rozed-dev/e2e/pull/${APP_PULL.number}`,
-  '',
-  'Use the lo-overview skill. Read the diff, the description',
-  'and the commits; write artifact.md and its figures; run the',
-  `checker; then push to refs/lo/pr/${APP_PULL.number}.`,
-].join('\n');
+/** The prompt that writes #80's overview, as its words module makes it. */
+const WRITE =
+  promptOf({ kind: 'write', pull: { owner: 'rozed-dev', repo: 'e2e', number: APP_PULL.number } }) ??
+  'no prompt for #80';
 
 /** The settings file as an object, or nothing while there's no file. */
 function saved(): unknown {
@@ -894,14 +949,12 @@ test('keeps its byline as it is at any width, the commit’s name quoted and cli
   const byline = shown.locator('[data-lo-byline]');
   const name = byline.locator('[data-lo-commit-name]');
   // Wide; too narrow for the offer beside the rest; for what it describes beside who wrote it;
-  // zoomed in, to as narrow; and narrower still, where only the way to show the latest is kept
-  // whole.
+  // and zoomed in to narrower still, where only the way to show the latest is kept whole. The
+  // widths between only move where the byline breaks.
   const sizes = [
     { width: 1280, zoom: 1, whole: true },
     { width: 960, zoom: 1, whole: true },
     { width: 800, zoom: 1, whole: true },
-    { width: 720, zoom: 1, whole: true },
-    { width: 1280, zoom: 1.5, whole: true },
     { width: 1360, zoom: 2, whole: false },
   ];
   for (const [at, { width, zoom, whole }] of sizes.entries()) {
@@ -1337,95 +1390,115 @@ const SEEN_LATE = 100;
 /**
  * Opens #80's tab for the first time, and checks its overview's article is first seen within the
  * bound from when the tab opened, the tab's placeholder showing until then and nothing of the
- * overview before its article; returns the tab's id. A machine too busy to know in time that the
- * overview shows opens the tab on its timeline, which isn't what's tested: the test is then
- * skipped.
+ * overview before its article; gives the window and the tab's id. A machine too busy to know in
+ * time that the overview shows opens the tab on its timeline, which isn't what's tested: Lo is
+ * then started afresh and the tab opened for the first time again, three times at most, each time
+ * noted in the test's results, and the test fails if the third opens on the timeline too.
  */
-async function openInTime(page: Page): Promise<string> {
-  await watchOpening(page);
-  await watchStill(page);
-  await watchCode(page);
-  const id = await open(page);
-  /** What the tab opened on, once it has. */
-  const opened = async () => {
-    if (await middleView(page, 'timeline.view').isVisible()) return 'timeline';
-    return (await overview(page, 'shown').isVisible()) ? 'overview' : 'waiting';
-  };
-  await expect.poll(opened, { timeout: 20_000 }).not.toBe('waiting');
-  test.skip((await opened()) === 'timeline', 'The tab opened on its timeline.');
-  const opening = await openingSeen(page);
-  await expect.poll(async () => (await codeSeen(page)).seen).toBeDefined();
-  const { seen } = await codeSeen(page);
-  test.info().annotations.push({
-    type: 'seen',
-    description: `The overview was seen ${Math.round(opening.after)} ms after the tab opened, its code on screen ${JSON.stringify(seen)}.`,
-  });
-  expect(opening.after).toBeLessThanOrEqual(HOLD_LIMIT + FRAMES);
-  expect(opening.early).toEqual([]);
-  expect(opening.bare).toBe(0);
-  return id;
+async function openInTime(
+  first: Page,
+  afresh: () => Promise<Page>,
+): Promise<{ page: Page; id: string }> {
+  for (let tries = 1, page = first; ; tries++, page = await afresh()) {
+    await watchOpening(page);
+    await watchStill(page);
+    await watchCode(page);
+    const id = await open(page);
+    /** What the tab opened on, once it has. */
+    const opened = async () => {
+      if (await middleView(page, 'timeline.view').isVisible()) return 'timeline';
+      return (await overview(page, 'shown').isVisible()) ? 'overview' : 'waiting';
+    };
+    await expect.poll(opened, { timeout: 20_000 }).not.toBe('waiting');
+    if ((await opened()) === 'timeline') {
+      expect(
+        tries,
+        'The tab opened on its timeline each time: Lo never knew in time.',
+      ).toBeLessThan(3);
+      test.info().annotations.push({
+        type: 'started again',
+        description: `The tab opened on its timeline, try ${tries} of 3.`,
+      });
+      continue;
+    }
+    const opening = await openingSeen(page);
+    await expect.poll(async () => (await codeSeen(page)).seen).toBeDefined();
+    const { seen } = await codeSeen(page);
+    test.info().annotations.push({
+      type: 'seen',
+      description: `The overview was seen ${Math.round(opening.after)} ms after the tab opened, its code on screen ${JSON.stringify(seen)}.`,
+    });
+    expect(opening.after).toBeLessThanOrEqual(HOLD_LIMIT + FRAMES);
+    expect(opening.early).toEqual([]);
+    expect(opening.bare).toBe(0);
+    return { page, id };
+  }
 }
 
 /** The bound on what a tab holds back is what these are about, so they ask for it. */
 test.describe('within the bound on what a tab holds back', () => {
   test.use({ holdLimit: HOLD_LIMIT });
 
-  for (const [width, height] of [
-    [1440, 900],
-    [1100, 800],
-  ] as const) {
-    test(`draws the code on its first screen before it's seen, with the local copy there, cutting none and moving nothing, at ${width}×${height}`, async ({
-      app,
-      page,
-    }) => {
-      test.setTimeout(90_000);
-      await sizeWindow(app, width, height);
-      // Opened once for its local copy.
-      const first = await open(page);
-      await expect(overviewTab(page).getByRole('img')).toBeVisible({ timeout: 20_000 });
-      await expect
-        .poll(() => current(page, first), { timeout: 30_000 })
-        .toMatchObject({ code: 'ready' });
-
-      await openAgain(page, first, async () => {
-        await watchOpening(page);
-        await watchStill(page);
-        await watchCode(page);
-      });
-      const shown = overview(page, 'shown');
-      await expect(shown).toBeVisible();
-      // Seen within the tab's bound, the tab's placeholder until then, never part of the overview.
-      const opening = await openingSeen(page);
-      expect(opening.after).toBeLessThanOrEqual(HOLD_LIMIT + FRAMES);
-      expect(opening.early).toEqual([]);
-      expect(opening.bare).toBe(0);
-      await expect.poll(async () => (await codeSeen(page)).seen).toBeDefined();
-      // Every code block on the first screen was drawn before the overview was seen, unless a busy
-      // machine didn't draw them within the bound: then it's seen with room kept for them, noted.
-      const atBound = opening.after >= HOLD_LIMIT - SEEN_LATE;
-      if (atBound) {
-        test.info().annotations.push({
-          type: 'seen at the bound',
-          description: `The overview was seen ${Math.round(opening.after)} ms after the tab opened.`,
-        });
-      }
-      const { seen } = await codeSeen(page);
-      expect(Object.keys(seen ?? {})).toContain('src/parser.ts:7–10');
-      for (const [name, code] of Object.entries(seen ?? {})) {
-        const meant = code === 'none' || (atBound && code === 'waiting') ? code : 'drawn';
-        expect(`${name}: ${code}`).toBe(`${name}: ${meant}`);
-      }
-      await page.waitForTimeout(1500);
-      expect(await stillMoved(page)).toEqual([]);
-      if (!atBound) expect(await cutBlocks(page)).toEqual([]);
-    });
-  }
-
-  test('shows its overview within the bound from when its tab opens, with the local copy still coming, the tab’s placeholder until then', async ({
+  test('draws the code on its first screen before it’s seen, with the local copy there, cutting none and moving nothing, at 1440×900 and 1100×800', async ({
+    app,
     page,
   }) => {
-    test.setTimeout(60_000);
-    const id = await openInTime(page);
+    test.setTimeout(120_000);
+    // Opened once for its local copy.
+    let tab = await open(page);
+    await expect(overviewTab(page).getByRole('img')).toBeVisible({ timeout: 20_000 });
+    await expect
+      .poll(() => current(page, tab), { timeout: 30_000 })
+      .toMatchObject({ code: 'ready' });
+
+    for (const [width, height] of [
+      [1440, 900],
+      [1100, 800],
+    ] as const) {
+      await test.step(`at ${width}×${height}`, async () => {
+        await sizeWindow(app, width, height);
+        tab = await openAgain(page, tab, async () => {
+          await watchOpening(page);
+          await watchStill(page);
+          await watchCode(page);
+        });
+        const shown = overview(page, 'shown');
+        await expect(shown).toBeVisible();
+        // Seen within the tab's bound, the tab's placeholder until then, never part of the overview.
+        const opening = await openingSeen(page);
+        expect(opening.after).toBeLessThanOrEqual(HOLD_LIMIT + FRAMES);
+        expect(opening.early).toEqual([]);
+        expect(opening.bare).toBe(0);
+        await expect.poll(async () => (await codeSeen(page)).seen).toBeDefined();
+        // Every code block on the first screen was drawn before the overview was seen, unless a
+        // busy machine didn't draw them within the bound: then it's seen with room kept for them,
+        // noted.
+        const atBound = opening.after >= HOLD_LIMIT - SEEN_LATE;
+        if (atBound) {
+          test.info().annotations.push({
+            type: 'seen at the bound',
+            description: `At ${width}×${height}, the overview was seen ${Math.round(opening.after)} ms after the tab opened.`,
+          });
+        }
+        const { seen } = await codeSeen(page);
+        expect(Object.keys(seen ?? {})).toContain('src/parser.ts:7–10');
+        for (const [name, code] of Object.entries(seen ?? {})) {
+          const meant = code === 'none' || (atBound && code === 'waiting') ? code : 'drawn';
+          expect(`${name}: ${code}`).toBe(`${name}: ${meant}`);
+        }
+        await page.waitForTimeout(1500);
+        expect(await stillMoved(page)).toEqual([]);
+        if (!atBound) expect(await cutBlocks(page)).toEqual([]);
+      });
+    }
+  });
+
+  test('shows its overview within the bound from when its tab opens, with the local copy still coming, the tab’s placeholder until then', async ({
+    page: first,
+    afresh,
+  }) => {
+    test.setTimeout(120_000);
+    const { page, id } = await openInTime(first, afresh);
     // Its code fills in as the local copy comes, moving nothing on screen.
     await expect
       .poll(() => current(page, id), { timeout: 30_000 })
@@ -1698,10 +1771,11 @@ test.describe('while the local copy comes late', () => {
     test.use({ holdLimit: HOLD_LIMIT });
 
     test('shows its overview within the bound from when its tab opens, while the local copy can’t be fetched, with room kept for its code', async ({
-      page,
+      page: first,
+      afresh,
     }) => {
-      test.setTimeout(60_000);
-      const id = await openInTime(page);
+      test.setTimeout(120_000);
+      const { page, id } = await openInTime(first, afresh);
       await expect
         .poll(() => current(page, id), { timeout: 20_000 })
         .toMatchObject({ code: 'failed' });
@@ -1711,80 +1785,84 @@ test.describe('while the local copy comes late', () => {
 
   // Under a code block and at the one that offers Find, in a short window, and near the end in a
   // tall one, where the scroll can't go as far down as it was once a block above gets shorter.
+  // The last with Lo's moves on, as most readers have them, since the suite runs with them off.
   const cases = [
-    { place: underCode, width: 1100, height: 440 },
-    { place: atFind, width: 1100, height: 440 },
-    { place: atFind, width: 1440, height: 900 },
-  ];
-  for (const { place, width, height } of cases) {
-    test(`nothing on screen moves from the first frame, as figures and code fill in, the banner goes and the overview is checked again, ${place.name}, at ${width}×${height}`, async ({
-      app,
-      page,
-    }) => {
-      test.setTimeout(90_000);
-      await sizeWindow(app, width, height);
-      await watchStill(page);
-      const id = await open(page);
-      await expect(overviewTab(page).getByRole('img')).toBeVisible({ timeout: 20_000 });
-      await overviewTab(page).click();
-      const shown = overview(page, 'shown');
-      await expect(shown).toBeVisible();
-      // A banner comes over the overview, and the local copy can't be fetched.
-      const gone = await rowOver(page);
-      await expect
-        .poll(() => current(page, id), { timeout: 20_000 })
-        .toMatchObject({ code: 'failed' });
+    { place: underCode, width: 1100, height: 440, motion: undefined },
+    { place: atFind, width: 1100, height: 440, motion: undefined },
+    { place: atFind, width: 1440, height: 900, motion: 'on' },
+  ] as const;
+  for (const { place, width, height, motion } of cases) {
+    const moving = motion === 'on' ? ', with Lo’s moves on' : '';
+    test.describe(() => {
+      test.use({ motion });
+      test(`nothing on screen moves from the first frame, as figures and code fill in, the banner goes and the overview is checked again, ${place.name}, at ${width}×${height}${moving}`, async ({
+        app,
+        page,
+      }) => {
+        test.setTimeout(90_000);
+        await sizeWindow(app, width, height);
+        await watchStill(page);
+        const id = await open(page);
+        await expect(overviewTab(page).getByRole('img')).toBeVisible({ timeout: 20_000 });
+        await overviewTab(page).click();
+        const shown = overview(page, 'shown');
+        await expect(shown).toBeVisible();
+        // A banner comes over the overview, and the local copy can't be fetched.
+        const gone = await rowOver(page);
+        await expect
+          .poll(() => current(page, id), { timeout: 20_000 })
+          .toMatchObject({ code: 'failed' });
 
-      // The reader opens the fold, which keeps focus, and wheels to where they read.
-      const fold = shown.locator('details').first();
-      await fold.locator('summary').click();
-      await expect(fold).toHaveAttribute('open', '');
-      await wheelTo(page, await place.at(page));
-      await page.evaluate(() => {
-        const summary = document.querySelector<HTMLElement>('[data-lo-overview="shown"] summary');
-        summary?.setAttribute('data-focused', String(document.activeElement === summary));
+        // The reader opens the fold, which keeps focus, and wheels to where they read.
+        const fold = shown.locator('details').first();
+        await fold.locator('summary').click();
+        await expect(fold).toHaveAttribute('open', '');
+        await wheelTo(page, await place.at(page));
+        await page.evaluate(() => {
+          const summary = document.querySelector<HTMLElement>('[data-lo-overview="shown"] summary');
+          summary?.setAttribute('data-focused', String(document.activeElement === summary));
+        });
+        await expect(fold.locator('summary')).toHaveAttribute('data-focused', 'true');
+
+        // The banner goes, the local copy comes, and the overview is checked again with its code.
+        await gone();
+        writeAppRemote(test.info().outputPath('remote'));
+        await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
+        await expect
+          .poll(() => current(page, id), { timeout: 30_000 })
+          .toMatchObject({ code: 'ready' });
+        // The code blocks near the screen fill in: the first, on the first screen, or above it.
+        const drawn = shown.locator('[data-lo-code="drawn"]');
+        await expect(drawn.first()).toBeAttached({ timeout: 20_000 });
+        const first = codeBlock(page, 'src/parser.ts', ':7–10');
+        if (place === underCode) {
+          await expect(first.locator('[data-lo-code="drawn"]')).toBeAttached();
+          const [block, screen] = await Promise.all([
+            first.boundingBox(),
+            shown.locator('.lo-ov').boundingBox(),
+          ]);
+          expect((block?.y ?? 0) + (block?.height ?? 0)).toBeLessThan(screen?.y ?? 0);
+        }
+        await page.waitForTimeout(2500);
+
+        expect(await stillMoved(page)).toEqual([]);
+        await expect(fold).toHaveAttribute('open', '');
+        expect(
+          await page.evaluate(
+            () =>
+              document.activeElement ===
+              document.querySelector('[data-lo-overview="shown"] summary'),
+          ),
+        ).toBe(true);
+        // A block is cut short only wholly on screen with something under it, its code above a row
+        // of its own: what the reader can do about a block is in its head, never under that row.
+        expect(await cutElsewhere(page)).toEqual([]);
+        await codeBlock(page, 'src/cache.ts', ':1–4')
+          .getByRole('button', { name: /^Go to file…/ })
+          .click();
+        const finder = page.getByRole('dialog', { name: 'Go to file' });
+        await expect(finder.getByRole('combobox', { name: 'Go to file' })).toHaveValue('cache.ts');
       });
-      await expect(fold.locator('summary')).toHaveAttribute('data-focused', 'true');
-
-      // The banner goes, the local copy comes, and the overview is checked again with its code.
-      await gone();
-      writeAppRemote(test.info().outputPath('remote'));
-      await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
-      await expect
-        .poll(() => current(page, id), { timeout: 30_000 })
-        .toMatchObject({ code: 'ready' });
-      // The code blocks near the screen fill in: the first, on the first screen, or above it.
-      const drawn = shown.locator('[data-lo-code="drawn"]');
-      await expect(drawn.first()).toBeAttached({ timeout: 20_000 });
-      const first = codeBlock(page, 'src/parser.ts', ':7–10');
-      if (place.name === 'at the top' || place.name === 'just under a code block') {
-        await expect(first.locator('[data-lo-code="drawn"]')).toBeAttached();
-      }
-      if (place.name === 'just under a code block') {
-        const [block, screen] = await Promise.all([
-          first.boundingBox(),
-          shown.locator('.lo-ov').boundingBox(),
-        ]);
-        expect((block?.y ?? 0) + (block?.height ?? 0)).toBeLessThan(screen?.y ?? 0);
-      }
-      await page.waitForTimeout(2500);
-
-      expect(await stillMoved(page)).toEqual([]);
-      await expect(fold).toHaveAttribute('open', '');
-      expect(
-        await page.evaluate(
-          () =>
-            document.activeElement === document.querySelector('[data-lo-overview="shown"] summary'),
-        ),
-      ).toBe(true);
-      // A block is cut short only wholly on screen with something under it, its code above a row
-      // of its own: what the reader can do about a block is in its head, never under that row.
-      expect(await cutElsewhere(page)).toEqual([]);
-      await codeBlock(page, 'src/cache.ts', ':1–4')
-        .getByRole('button', { name: /^Go to file…/ })
-        .click();
-      const finder = page.getByRole('dialog', { name: 'Go to file' });
-      await expect(finder.getByRole('combobox', { name: 'Go to file' })).toHaveValue('cache.ts');
     });
   }
 });

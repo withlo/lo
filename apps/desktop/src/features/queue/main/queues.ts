@@ -39,6 +39,8 @@ export interface QueuesOptions {
    * longer stands.
    */
   readonly moved?: (id: string) => void;
+  /** How often each tab's queue is read while reads succeed, unless the watch's own. */
+  readonly every?: number | undefined;
 }
 
 /** `login` as accounts are told apart, whatever its case. */
@@ -190,6 +192,7 @@ export class Queues {
         source,
         publish: this.#options.publish,
         heard: (read) => this.#options.heard?.(id, read),
+        every: this.#options.every,
       });
       const why = this.#away.get(keyOf(tab.login));
       if (why !== undefined) watch.hold(why);

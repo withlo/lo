@@ -51,6 +51,8 @@ export interface QueueReadsOptions {
   readonly onScreen: () => string | undefined;
   readonly publish: (queued: Queued) => void;
   readonly log: (line: string) => void;
+  /** How often a queued pull request's place is read while reads succeed: {@link PLACE_EVERY} unless a test says. */
+  readonly every?: number | undefined;
   /** The time now, in milliseconds since the Unix epoch; `Date.now` unless a test says. */
   readonly now?: () => number;
 }
@@ -267,7 +269,7 @@ export class QueueReads {
       left: null,
       leaving: undefined,
       doneAt: undefined,
-      wait: PLACE_EVERY,
+      wait: this.#every(),
       timer: undefined,
       reading: false,
       poller: undefined,
@@ -309,6 +311,11 @@ export class QueueReads {
 
   #now(): number {
     return this.#options.now?.() ?? Date.now();
+  }
+
+  /** How long after a read that answered the next one comes. */
+  #every(): number {
+    return this.#options.every ?? PLACE_EVERY;
   }
 
   /** Whether `watched` is still what view `id` is watched as. */
@@ -396,7 +403,7 @@ export class QueueReads {
       watched.wait = Math.min(watched.wait * 2, PLACE_MOST);
     } else {
       const { place, joined } = read;
-      watched.wait = PLACE_EVERY;
+      watched.wait = this.#every();
       watched.place = place;
       if (place.kind === 'listed') {
         watched.joined = joined ?? watched.joined;

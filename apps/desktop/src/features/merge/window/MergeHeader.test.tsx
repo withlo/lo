@@ -287,6 +287,17 @@ it('shows nothing until main says, then opens the panel with each reason', async
   expect(panel()).toBeNull();
 });
 
+it('offers no bypass to an account GitHub won’t let past the rules', async () => {
+  onScreen(tabOf('t1', 148));
+  const page = draw(<MergeHeader tab={tabOf('t1', 148)} />);
+  const below = { ...BLOCKED, override: { kind: 'notPossible', reason: 'noPermission' } } as const;
+  act(() => bridge.push('merge.status', { id: 't1', view: { kind: 'known', state: below } }));
+  act(() => page.querySelector('button')?.click());
+  await until(() => panel() !== null);
+  expect(panel()?.querySelectorAll('[role="option"]')).toHaveLength(2);
+  expect(buttonSaying('Bypass rules and merge…', panel() ?? undefined)).toBeUndefined();
+});
+
 it('asks main for a tab drawn before main said anything', async () => {
   views.set('t2', { kind: 'known', state: state({ verdict: 'queued', position: 2 }) });
   const page = draw(<MergeHeader tab={tabOf('t2')} />);

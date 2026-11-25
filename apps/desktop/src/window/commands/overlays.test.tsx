@@ -97,6 +97,19 @@ describe('keyboard shortcuts', () => {
     expect(overlay()).toBeUndefined();
   });
 
+  it('closes on Esc, giving focus back to what had it', async () => {
+    const middle = document.querySelector('main');
+    act(() => toggleHelp());
+    const search = dialog('Keyboard shortcuts')?.querySelector('input[type="search"]');
+    await vi.waitFor(() => expect(document.activeElement).toBe(search));
+    act(() => {
+      search?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    await vi.waitFor(() => expect(dialog('Keyboard shortcuts')).toBeUndefined());
+    expect(overlay()).toBeUndefined();
+    await vi.waitFor(() => expect(document.activeElement).toBe(middle));
+  });
+
   it('shows a remap from the keymap file as it happens', () => {
     act(() => toggleHelp());
     expect(backKeys()).toEqual(['⌃o']);
@@ -222,6 +235,22 @@ describe('the palette', () => {
     // Asked from there, it refuses with nothing to say, so its key does nothing either.
     expect(registry().enabled('keys.escape', { kind: 'none' })).toBe('');
     stop();
+  });
+
+  it('says a command’s key as aria-keyshortcuts, with its key caps hidden from its name', () => {
+    act(() => openPalette());
+    const option = [...(dialog('Command palette')?.querySelectorAll('[role="option"]') ?? [])].find(
+      (each) => each.textContent?.startsWith('Keyboard shortcuts'),
+    );
+    expect(option?.getAttribute('aria-keyshortcuts')).toBe('?');
+    const caps = option?.querySelector('kbd');
+    expect(caps?.closest('[aria-hidden="true"]')).not.toBeNull();
+    // It doesn't list itself.
+    expect(
+      [...(dialog('Command palette')?.querySelectorAll('[role="option"]') ?? [])].some((each) =>
+        each.textContent?.startsWith('Command palette'),
+      ),
+    ).toBe(false);
   });
 
   it('says why ⌥⏎ did nothing when no command matches, until what’s typed changes', () => {

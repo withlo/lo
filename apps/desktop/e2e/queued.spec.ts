@@ -68,13 +68,13 @@ test('the panel of one ready for the queue says what’s ahead of it', async ({ 
 });
 
 test.describe('once the queue fails one', () => {
-  test.use({ cassette: 'app_queued_left_polled' });
+  // Lo read its pull request every 20 s as it was recorded, and GitHub took it out two reads after
+  // the first; here it reads every 5 s, so the banner comes in about 10 s.
+  test.use({ cassette: 'app_queued_left_polled', readEvery: 5_000 });
 
   test('it’s leaving, then a banner says it left, and opens the panel, which says why', async ({
     page,
   }) => {
-    // Lo reads its pull request every 20 s, and GitHub took it out about a minute later.
-    test.setTimeout(120_000);
     await open(page, pulls.queuedFail.number);
     await expect(status(page)).toContainText('Leaving merge queue');
     await expect(status(page)).toContainText('ci failed');
@@ -86,7 +86,7 @@ test.describe('once the queue fails one', () => {
 
     // The banner's one line; the panel's first row says why.
     const banner = tabBanners(page).getByText(`#${pulls.queuedFail.number} left the merge queue`);
-    await expect(banner).toBeVisible({ timeout: 90_000 });
+    await expect(banner).toBeVisible({ timeout: 25_000 });
     await page.getByRole('button', { name: /^Merge panel/ }).click();
     await expect(first).toHaveAttribute('data-key', 'left');
     await expect(first).toContainText('1 check failed in the merge queue.');

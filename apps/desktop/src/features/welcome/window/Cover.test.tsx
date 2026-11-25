@@ -430,17 +430,17 @@ describe('walking it', () => {
     expect(stepOnScreen()).toBe('account');
   });
 
-  it('draws the steps done filled, the one on screen in the accent, and the rest as rings', async () => {
+  it('marks the steps done, the one on screen and the rest, each drawn as its own', async () => {
     await first();
     await goTo('setup');
     const balls = [
       ...(screen()?.querySelectorAll('[role="img"][aria-label^="Step"] > span') ?? []),
     ];
-    expect(balls.map((ball) => ball.className.split(' ').at(-1))).toEqual([
-      'bg-fg',
-      'bg-fg',
-      'bg-accent',
-      'hollow',
+    expect(balls.map((ball) => ball.getAttribute('data-ball'))).toEqual([
+      'done',
+      'done',
+      'here',
+      'ahead',
     ]);
   });
 

@@ -75,6 +75,8 @@ declare global {
     loJumps?: {
       frames: { jumps: number; top: number; onScreen: boolean }[];
       changes: { jumps: number; scroll: number; landed: number }[];
+      /** Whether it has watched long enough: 1.5 s from when it began, and the jump has shown. */
+      done: boolean;
     };
   }
 }
@@ -681,6 +683,42 @@ test('a new order puts back what was at the top of the screen, with the cursor o
 /** When a change comes, against a jump. */
 type Landing = 'in its task' | 'just after it' | 'all along';
 
+/** Every landing. Each jump starts from another, so each meets a view yet to draw a jump's target. */
+const LANDINGS: readonly Landing[] = ['in its task', 'just after it', 'all along'];
+
+/** The landings in the order jump number `index` goes through them: from the next one each time. */
+function landingsFor(index: number): Landing[] {
+  const first = index % LANDINGS.length;
+  return [...LANDINGS.slice(first), ...LANDINGS.slice(0, first)];
+}
+
+/** How many frames in a row the diff holds still for before a jump is watched. */
+const STILL_FRAMES = 10;
+
+/**
+ * Waits until the diff has held still for {@link STILL_FRAMES} frames, its scroll and the cursor's
+ * line where they were: what a key or a click before has started is drawn.
+ */
+async function scrollStill(page: Page): Promise<void> {
+  await page.evaluate(
+    (frames) =>
+      new Promise<void>((resolve) => {
+        const view = document.querySelector<HTMLElement>('.lo-diffview');
+        let last = '';
+        let still = 0;
+        const tick = () => {
+          const now = `${view?.scrollTop} ${window.loDiff?.probe.cursor()?.top}`;
+          still = now === last ? still + 1 : 0;
+          last = now;
+          if (still >= frames) resolve();
+          else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+    STILL_FRAMES,
+  );
+}
+
 /** A way to jump, and where it takes the cursor. */
 interface Jump {
   name: string;
@@ -704,8 +742,8 @@ interface Jump {
 const finder = (page: Page) => page.getByRole('dialog', { name: 'Go to file' });
 
 /**
- * The jumps, in the order one Lo goes through them. `]f` is last: it opens a file's 5,001 lines,
- * which would change the screen for each jump after it.
+ * The jumps, in the order one Lo goes through them. `]f` is last: the first time, it opens a file's
+ * 5,001 lines, which would change the screen for each jump after it.
  */
 const JUMPS: Jump[] = [
   {
@@ -739,13 +777,14 @@ const JUMPS: Jump[] = [
     // From data/numbers.txt's header, with its 5,001 lines loaded: past them all.
     name: '`]f`',
     ready: async (page) => {
-      await press(page, ']', 'f', 'z', 'a');
-      await expect(page.locator('.lo-diffview').getByText(/^Show [0-9,]+ lines$/)).toHaveCount(0, {
-        timeout: 20_000,
-      });
+      await press(page, ']', 'f');
       await expect
         .poll(() => cursor(page))
         .toMatchObject({ path: 'data/numbers.txt', header: true });
+      // Kept out as large, its lines are opened by the first landing's step, and stay.
+      const show = page.locator('.lo-diffview').getByText(/^Show [0-9,]+ lines$/);
+      if ((await show.count()) > 0) await press(page, 'z', 'a');
+      await expect(show).toHaveCount(0, { timeout: 20_000 });
       // Its lines are in once they fill the screen below its header.
       await expect
         .poll(() =>
@@ -768,7 +807,7 @@ const JUMPS: Jump[] = [
  * closes a file that can't close, which changes nothing, but keeps what's at the top of the screen
  * in place as the local copy's files do as they come: in the jump's own task; in the next task or
  * the next frame, whichever comes first, before anything draws the jump; or every millisecond, in a
- * stream of tasks, and every frame, for 1.5 s from now.
+ * stream of tasks, and every frame, for 1.5 s from now. Whatever the landing, it watches until then.
  */
 async function watchJumps(page: Page, landing: Landing, heard: Jump['heard']): Promise<void> {
   await page.evaluate(
@@ -777,7 +816,7 @@ async function watchJumps(page: Page, landing: Landing, heard: Jump['heard']): P
       const view = document.querySelector<HTMLElement>('.lo-diffview');
       const file = diff?.files.find((each) => each.path === 'assets/mark.png')?.id;
       if (!diff || !view || file === undefined) throw new Error('no diff to watch');
-      const watched: NonNullable<Window['loJumps']> = { frames: [], changes: [] };
+      const watched: NonNullable<Window['loJumps']> = { frames: [], changes: [], done: false };
       window.loJumps = watched;
       let jumps = 0;
       let landed = view.scrollTop;
@@ -833,6 +872,11 @@ async function watchJumps(page: Page, landing: Landing, heard: Jump['heard']): P
           top: reading?.top ?? Number.NaN,
           onScreen: reading?.onScreen ?? false,
         });
+        // Watched long enough at `end`, once the jump has shown: past every change, whenever it
+        // came, and the moves after.
+        watched.done =
+          performance.now() >= end &&
+          watched.frames.some((frame) => frame.jumps === 1 && frame.onScreen);
         requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
@@ -843,25 +887,33 @@ async function watchJumps(page: Page, landing: Landing, heard: Jump['heard']): P
 
 for (const layout of ['inline', 'split'] as const) {
   test.describe(`${layout === 'inline' ? 'Inline' : 'Side by side'}, a change as a jump lands`, () => {
-    // On the diff first, as `DIFF_FIRST` has it, in this layout.
-    test.use({ settings: JSON.stringify({ 'tab.open': 'diff', 'diff.layout': layout }) });
+    // On the diff first, as `DIFF_FIRST` has it, in this layout. Side by side runs with Lo's moves
+    // on, as most readers have them.
+    test.use({
+      settings: JSON.stringify({ 'tab.open': 'diff', 'diff.layout': layout }),
+      motion: layout === 'split' ? 'on' : undefined,
+    });
 
-    for (const landing of ['in its task', 'just after it', 'all along'] as const) {
-      test(`leaves the screen where each jump takes it, with the change ${landing}`, async ({
-        page,
-      }) => {
-        test.setTimeout(60_000);
-        await drawn(page);
-        // One Lo for all the jumps, each from the first header as a fresh Lo has the cursor.
-        for (const jump of JUMPS) {
-          await test.step(jump.name, async () => {
+    test('leaves the screen where each jump takes it, with the change in its task, just after it, and all along', async ({
+      page,
+    }) => {
+      test.setTimeout(120_000);
+      await drawn(page);
+      // One Lo for every jump and landing, each from the first header as a fresh Lo has the
+      // cursor. Each jump goes with each landing before the next jump, so `]f` is last, and starts
+      // from the landing after the one the jump before started from.
+      for (const [index, jump] of JUMPS.entries()) {
+        for (const landing of landingsFor(index)) {
+          await test.step(`${jump.name}, the change ${landing}`, async () => {
             await focusDiff(page);
             await expect.poll(() => cursor(page)).toMatchObject({ path: 'assets/mark.png' });
             await jump.ready(page);
-            await page.waitForTimeout(300);
+            await scrollStill(page);
             await watchJumps(page, landing, jump.heard);
             await jump.go(page);
-            await page.waitForTimeout(1600);
+            await expect
+              .poll(() => page.evaluate(() => window.loJumps?.done ?? false), { timeout: 10_000 })
+              .toBe(true);
             const { frames, changes } = await page.evaluate(() => {
               const watched = window.loJumps;
               window.loJumps = undefined;
@@ -871,8 +923,8 @@ for (const layout of ['inline', 'split'] as const) {
             expect(frames.at(-1)?.jumps).toBe(1);
             const after = changes.filter((change) => change.jumps === 1);
             expect(after.length).toBeGreaterThan(0);
-            // Inline, the editor scrolls to the cursor a jump moved as it next measures, in the next
-            // frame: a change in the jump's task comes before the screen has moved.
+            // Inline, the editor scrolls to the cursor a jump moved as it next measures, in the
+            // next frame: a change in the jump's task comes before the screen has moved.
             if (layout === 'inline' && landing === 'in its task') {
               expect(after[0]?.scroll).toBe(after[0]?.landed);
             }
@@ -888,8 +940,8 @@ for (const layout of ['inline', 'split'] as const) {
             expect(await cursor(page)).toMatchObject(jump.to);
           });
         }
-      });
-    }
+      }
+    });
   });
 }
 
@@ -1053,65 +1105,71 @@ async function watchStill(page: Page): Promise<void> {
 test.describe('while the local copy takes GitHub’s place', () => {
   test.use({ cassette: 'app_e2e_late', lateRemote: true });
 
-  for (const order of ['tree', 'review'] as const) {
-    for (const depth of [0.25, 0.5, 0.75]) {
-      test(`nothing on screen moves, in ${order} order, ${depth * 100}% of the way down`, async ({
-        app,
-        page,
-      }) => {
-        await app.evaluate(({ BrowserWindow }) =>
-          BrowserWindow.getAllWindows()[0]?.setSize(1100, 440),
-        );
-        const id = await drawn(page, 'github', { moves: false });
-        const view = page.locator('.lo-diffview');
-        if (order === 'review') {
-          const tree = page.locator('[role="tree"][data-lo-scope="tree"]');
-          await tree.focus();
-          await page.keyboard.press('t');
-          await expect(tree).toHaveAttribute('aria-label', 'Changed files in review order');
-          await page.waitForTimeout(300);
-        }
-        // Wheeled down, with the banner that says the copy couldn't be fetched over the diff.
-        const box = await view.boundingBox();
-        await page.mouse.move((box?.x ?? 0) + (box?.width ?? 0) * 0.75, (box?.y ?? 0) + 200);
-        const goal = await view.evaluate(
-          (each, part) => Math.round((each.scrollHeight - each.clientHeight) * part),
-          depth,
-        );
-        await expect
-          .poll(
-            async () => {
-              const at = await view.evaluate((each) => each.scrollTop);
-              if (at < goal) await page.mouse.wheel(0, Math.min(120, goal - at));
-              return at >= goal - 1;
-            },
-            { timeout: 10_000 },
-          )
-          .toBe(true);
-        await page.waitForTimeout(500);
-        await watchStill(page);
+  // Each order, from three places down. The local copy takes GitHub's place only once a Lo, and
+  // stays in its data folder after, so each place is watched in a Lo of its own.
+  const places = (['tree', 'review'] as const).flatMap((order) =>
+    [0.25, 0.5, 0.75].map((depth) => [order, depth] as const),
+  );
+  for (const [order, depth] of places) {
+    test(`nothing on screen moves, in ${order} order, ${depth * 100}% of the way down`, async ({
+      app,
+      page,
+    }) => {
+      await app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()[0]?.setSize(1100, 440),
+      );
+      const id = await drawn(page, 'github', { moves: false });
+      const view = page.locator('.lo-diffview');
+      if (order === 'review') {
+        const before = await paths(page);
+        const tree = page.locator('[role="tree"][data-lo-scope="tree"]');
+        await tree.focus();
+        await page.keyboard.press('t');
+        await expect(tree).toHaveAttribute('aria-label', 'Changed files in review order');
+        await expect.poll(() => paths(page)).not.toEqual(before);
+        await scrollStill(page);
+      }
+      // Wheeled down, with the banner that says the copy couldn't be fetched over the diff.
+      const box = await view.boundingBox();
+      await page.mouse.move((box?.x ?? 0) + (box?.width ?? 0) * 0.75, (box?.y ?? 0) + 200);
+      const goal = await view.evaluate(
+        (each, part) => Math.round((each.scrollHeight - each.clientHeight) * part),
+        depth,
+      );
+      await expect
+        .poll(
+          async () => {
+            const at = await view.evaluate((each) => each.scrollTop);
+            if (at < goal) await page.mouse.wheel(0, Math.min(120, goal - at));
+            return at >= goal - 1;
+          },
+          { timeout: 10_000 },
+        )
+        .toBe(true);
+      await scrollStill(page);
+      await watchStill(page);
 
-        // The banner goes, the local copy comes and takes GitHub's place, and its moves and
-        // highlighting follow.
-        writeAppRemote(test.info().outputPath('remote'));
-        await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
-        const status = page.locator('footer');
-        await expect(status.getByText('GitHub’s diff', { exact: true })).toHaveCount(0, {
-          timeout: 30_000,
-        });
-        await expect(status.getByText(/^Diffing files · \d+ of \d+$/)).toHaveCount(0, {
-          timeout: 20_000,
-        });
-        await expect(tabBanners(page)).toHaveCount(0);
-        await page.waitForTimeout(1500);
-        const moved = await page.evaluate(() => {
-          window.loStill = true;
-          return window.loMoved ?? [];
-        });
-
-        expect(moved).toEqual([]);
+      // The banner goes, the local copy comes and takes GitHub's place, and its moves and
+      // highlighting follow.
+      writeAppRemote(test.info().outputPath('remote'));
+      await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
+      const status = page.locator('footer');
+      await expect(status.getByText('GitHub’s diff', { exact: true })).toHaveCount(0, {
+        timeout: 30_000,
       });
-    }
+      await expect(status.getByText(/^Diffing files · \d+ of \d+$/)).toHaveCount(0, {
+        timeout: 20_000,
+      });
+      await expect(tabBanners(page)).toHaveCount(0);
+      // Watched a while after, for the moves and the highlighting, which come last and say nothing.
+      await page.waitForTimeout(1500);
+      const moved = await page.evaluate(() => {
+        window.loStill = true;
+        return window.loMoved ?? [];
+      });
+
+      expect(moved).toEqual([]);
+    });
   }
 });
 

@@ -201,36 +201,7 @@ async function awayAndBack(page: Page): Promise<void> {
 
 const held = (page: Page) => page.locator('[data-lo-diff][data-lo-held]');
 
-test('keeps the diff on screen while another comparison loads, and draws it in the first frame its tab comes back in', async ({
-  page,
-}) => {
-  await shown(page);
-  await expect.poll(() => diffFiles(page)).toHaveLength(7);
-  const seen = await watchDiff(page);
-
-  // r1 → r2: the whole pull request stays, marked as at work and taking no input, until the
-  // comparison takes its place.
-  await page.locator('.lo-diffview').click();
-  await page.keyboard.press('g');
-  await page.keyboard.press('v');
-  await expect(picker(page)).toBeFocused();
-  await page.keyboard.press('j');
-  await page.keyboard.press(' ');
-  await page.keyboard.press('Enter');
-  await expect.poll(() => diffFiles(page), { timeout: 20_000 }).toEqual(['src/parser.ts']);
-  await expect(held(page)).toHaveCount(0);
-  const compared = await seen();
-  expect(compared.bare).toBe(0);
-  expect(compared.held).toBeGreaterThan(0);
-
-  // Away to Settings, and back: the diff is there in the frame the tab is.
-  await awayAndBack(page);
-  await expect(page.locator('[data-lo-pull] .lo-diffview')).toBeVisible();
-  expect(await diffFiles(page)).toEqual(['src/parser.ts']);
-  expect((await seen()).bare).toBe(0);
-});
-
-test('keeps the diff drawn, held, while the next one is worked out, and draws it again as its tab comes back meanwhile', async ({
+test('keeps the diff drawn, held, while the next one is worked out, and draws it in the first frame its tab comes back in, meanwhile and once the next is there', async ({
   app,
   page,
 }) => {
@@ -266,6 +237,12 @@ test('keeps the diff drawn, held, while the next one is worked out, and draws it
   // The comparison takes its place.
   await expect.poll(() => diffFiles(page), { timeout: 20_000 }).toEqual(['src/parser.ts']);
   await expect(held(page)).toHaveCount(0);
+  expect((await seen()).bare).toBe(0);
+
+  // Away to Settings and back once it has: the comparison is there in the frame the tab is.
+  await awayAndBack(page);
+  await expect(page.locator('[data-lo-pull] .lo-diffview')).toBeVisible();
+  expect(await diffFiles(page)).toEqual(['src/parser.ts']);
   expect((await seen()).bare).toBe(0);
 });
 

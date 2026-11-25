@@ -245,15 +245,20 @@ export function compareWait(options: { packaged: boolean; env: Environment }): n
   return Number(wait);
 }
 
+/** The longest wait a timer takes, in milliseconds: one longer fires at once. */
+const LONGEST_WAIT = 2_147_483_647;
+
 /**
  * `value`, the text of the test-only variable `name`, as a whole number of milliseconds. It throws
- * for anything else, so a test that mistypes one finds out.
+ * for anything else, so a test that mistypes one finds out. A wait below 1 ms, which would never
+ * back off or would give up at once, or past {@link LONGEST_WAIT} is left out, for Lo's own.
  */
-function milliseconds(name: string, value: string): number {
+function milliseconds(name: string, value: string): number | undefined {
   if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) {
     throw new Error(`${name} must be a whole number of milliseconds, not "${value}".`);
   }
-  return Number(value);
+  const wait = Number(value);
+  return wait >= 1 && wait <= LONGEST_WAIT ? wait : undefined;
 }
 
 /**
@@ -292,6 +297,42 @@ export function devicePoll(options: { packaged: boolean; env: Environment }): nu
   const wait = options.env.LO_DEVICE_POLL_MS;
   if (options.packaged || wait === undefined) return undefined;
   return milliseconds('LO_DEVICE_POLL_MS', wait);
+}
+
+/**
+ * How often Lo reads what's on screen, in milliseconds, from `LO_POLL_MS` in a build run from
+ * source, in place of 20 s: the pull request on screen, the place in the merge queue of one that's
+ * queued, and the merge queue's own tab, so a test needn't wait 20 s for each read; nothing to keep
+ * Lo's own. A packaged build ignores it.
+ */
+export function pollEvery(options: { packaged: boolean; env: Environment }): number | undefined {
+  const wait = options.env.LO_POLL_MS;
+  if (options.packaged || wait === undefined) return undefined;
+  return milliseconds('LO_POLL_MS', wait);
+}
+
+/**
+ * How often Lo lists each watched repository's open pull requests, and reads the pull requests it
+ * watches off screen, in milliseconds, from `LO_WATCHED_POLL_MS` in a build run from source, in
+ * place of 2 minutes. A list looks up the merged pull requests the last one left out, so a test
+ * needn't wait minutes for those either. Nothing keeps Lo's own. A packaged build ignores it.
+ */
+export function watchedEvery(options: { packaged: boolean; env: Environment }): number | undefined {
+  const wait = options.env.LO_WATCHED_POLL_MS;
+  if (options.packaged || wait === undefined) return undefined;
+  return milliseconds('LO_WATCHED_POLL_MS', wait);
+}
+
+/**
+ * How long a request to GitHub waits for its answer to begin before Lo gives up on it, in
+ * milliseconds, from `LO_ANSWER_START_MS` in a build run from source, in place of 15 s, so a test
+ * of a GitHub that never answers needn't wait that long; nothing to keep Lo's own. A packaged build
+ * ignores it.
+ */
+export function answerStart(options: { packaged: boolean; env: Environment }): number | undefined {
+  const wait = options.env.LO_ANSWER_START_MS;
+  if (options.packaged || wait === undefined) return undefined;
+  return milliseconds('LO_ANSWER_START_MS', wait);
 }
 
 /**

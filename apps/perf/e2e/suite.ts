@@ -89,8 +89,6 @@ declare global {
   interface Window {
     diffView: Probe;
     diffLoaded?: boolean;
-    /** Brings the local copy's files that are waiting, and says how many there were. */
-    perfCopy(): number;
     /** Gives the view an overview's markers, in place of those it had. */
     perfOverview(marks: readonly Mark[]): void;
     /** Opens the notes of the markers on a line, and says whether there were any. */

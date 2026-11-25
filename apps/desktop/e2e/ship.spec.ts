@@ -26,8 +26,17 @@ const { pulls } = MERGE_PULLS[10];
 /** How long GitHub's recorded answers keep a merge pending, as Lo asks after 1 s, 2 s and 4 s. */
 const MERGING = 20_000;
 
-/** How long Lo waits to look up the merged pull requests one listing left out: 2 minutes at most. */
-const LOOKUPS = 150_000;
+/**
+ * How often Lo lists a watched repository's pull requests, in place of every 2 minutes, where a test
+ * says: a listing looks up the merged pull requests the last left out, and Lo tries again as often.
+ */
+const WATCHED = 5_000;
+
+/**
+ * How long Lo may take to look up the merged pull requests one listing left out, listing every 5 s:
+ * about half a minute, as its tries again back off.
+ */
+const LOOKUPS = 60_000;
 
 /** Whether a request merges a pull request. */
 function merging({ method, url }: Asked): boolean {
@@ -43,11 +52,13 @@ function merging({ method, url }: Asked): boolean {
 const test = base.extend<{
   cassette: string;
   staged: boolean;
+  watched: number | undefined;
   github: ReplayServer;
   remote: string;
 }>({
   cassette: ['app_merge_ship', { option: true }],
   staged: [false, { option: true }],
+  watched: [undefined, { option: true }],
   github: async ({ cassette, staged }, use) => {
     const server = await serveReplay(
       staged ? new Staged(cassette, merging, { sooner: true }) : cassette,
@@ -62,7 +73,7 @@ const test = base.extend<{
     await use(writeMergeRemote(join(folder, 'remote'), 10));
     rmSync(folder, { recursive: true, force: true });
   },
-  launch: async ({ github, remote }, use) => {
+  launch: async ({ github, remote, watched }, use) => {
     const tokenFile = base.info().outputPath('token');
     writeFileSync(tokenFile, 'gho_FAKE_E2E_ACCOUNT\n');
     await use({
@@ -71,6 +82,7 @@ const test = base.extend<{
         LO_GITHUB: new URL(github.urls.api).origin,
         LO_TEST_TOKEN_FILE: tokenFile,
         LO_GIT_REMOTE: remote,
+        ...(watched === undefined ? {} : { LO_WATCHED_POLL_MS: String(watched) }),
       },
     });
   },
@@ -153,7 +165,7 @@ function merges(github: ReplayServer, number: number): number {
 }
 
 test.describe('on your own pull request', () => {
-  test.use({ staged: true });
+  test.use({ staged: true, watched: WATCHED });
 
   test('`⌘⇧⏎` approves nothing and merges it, from one confirmation', async ({ page, github }) => {
     test.setTimeout(LOOKUPS + 60_000);

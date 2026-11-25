@@ -232,13 +232,16 @@ const onStaged = test.extend<{
   /** How GitHub answers now, which a test changes as it goes. */
   stage: { answering: Answering };
   account: boolean;
+  /** How long Lo waits for an answer to begin, in milliseconds, in place of 15 s, where a test says. */
+  answerStart: number | undefined;
 }>({
   answering: ['recorded', { option: true }],
   account: [true, { option: true }],
+  answerStart: [undefined, { option: true }],
   stage: async ({ answering }, use) => {
     await use({ answering });
   },
-  launch: async ({ github, remote, tokenFile, stage, account }, use) => {
+  launch: async ({ github, remote, tokenFile, stage, account, answerStart }, use) => {
     const origin = new URL(github.urls.api).origin;
     const held = new Set<Socket>();
     const front = createHttpServer((incoming, outgoing) => {
@@ -290,6 +293,7 @@ const onStaged = test.extend<{
         ...(account ? { LO_TEST_TOKEN_FILE: tokenFile } : {}),
         LO_GIT_REMOTE: remote,
         LO_OFFLINE_AFTER_MS: '1000',
+        ...(answerStart === undefined ? {} : { LO_ANSWER_START_MS: String(answerStart) }),
       },
     });
     for (const socket of held) socket.destroy();
@@ -351,13 +355,13 @@ onStaged.describe('opened while GitHub refuses the account’s token', () => {
 });
 
 onStaged.describe('opened with nobody signed in, then GitHub takes reads and never answers', () => {
-  onStaged.use({ account: false });
+  // A request GitHub never answers is given up on once its answer hasn't begun: after 3 s here, in
+  // place of 15 s.
+  onStaged.use({ account: false, answerStart: 3_000 });
 
   onStaged(
     'says “No response” in the header’s chip, not “Offline”, and the view stays',
     async ({ page, stage }) => {
-      // A request GitHub never answers is given up on after 15 s.
-      onStaged.setTimeout(60_000);
       const id = await openAs(page, E2E);
       await expect(page.getByRole('heading', { level: 1 })).toHaveText(TITLE);
 
@@ -365,7 +369,7 @@ onStaged.describe('opened with nobody signed in, then GitHub takes reads and nev
       await page.evaluate((tab) => window.lo.invoke('tab.retry', { id: tab }), id);
       const header = page.locator('header').first();
       const chip = header.getByRole('button', { name: 'No response' });
-      await expect(chip).toBeVisible({ timeout: 30_000 });
+      await expect(chip).toBeVisible({ timeout: 15_000 });
       await expect(header.getByRole('button', { name: 'Offline' })).toHaveCount(0);
       await expect(page.getByRole('heading', { level: 1 })).toHaveText(TITLE);
       await chip.click();

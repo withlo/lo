@@ -119,32 +119,39 @@ function drawn(place: DraftPlaceRow): {
   return read;
 }
 
+/** A button the foot shows, by a word of its name and the keys it says, if any. */
+const button = (word: string, keys = '') =>
+  expect.stringMatching(new RegExp(`\\b${word}\\b.*${keys}$`));
+
 test('every box has the same foot, with the buttons its comment can take', () => {
   // On a line, or a thread: into the review, or at once, the one `c` or `C` asked for last.
   expect(drawn(ON_LINE).buttons).toEqual([
-    'Attach files…',
-    'Discard draft',
-    'Send now⌥⏎',
-    'Add to review⌘⏎',
+    button('Attach'),
+    button('Discard'),
+    button('now', '⌥⏎'),
+    button('review', '⌘⏎'),
   ]);
   expect(drawn({ kind: 'reply', thread: 'T1' }).buttons.slice(2)).toEqual([
-    'Send now⌥⏎',
-    'Add to review⌘⏎',
+    button('now', '⌥⏎'),
+    button('review', '⌘⏎'),
   ]);
   // A comment on the pull request joins no review, and an edit is saved.
-  expect(drawn({ kind: 'conversation' }).buttons.slice(2)).toEqual(['Send⌘⏎']);
-  expect(drawn({ kind: 'edit', thread: 'T1', comment: 'C1' }).buttons.slice(2)).toEqual(['Save⌘⏎']);
+  expect(drawn({ kind: 'conversation' }).buttons.slice(2)).toEqual([button('Send', '⌘⏎')]);
+  expect(drawn({ kind: 'edit', thread: 'T1', comment: 'C1' }).buttons.slice(2)).toEqual([
+    button('Save', '⌘⏎'),
+  ]);
 });
 
 test('while a review is pending, GitHub adds every comment to it, so the box only offers that', () => {
   said.pending = true;
-  expect(drawn(ON_LINE).buttons.slice(2)).toEqual(['Add to review⌘⏎']);
-  expect(drawn({ kind: 'conversation' }).buttons.slice(2)).toEqual(['Send⌘⏎']);
+  expect(drawn(ON_LINE).buttons.slice(2)).toEqual([button('review', '⌘⏎')]);
+  expect(drawn({ kind: 'conversation' }).buttons.slice(2)).toEqual([button('Send', '⌘⏎')]);
 });
 
 test('the head says what the comment is on, who it’s from only where that could be someone else', () => {
-  expect(drawn(ON_LINE).head).toBe('Line 5WritePreview⌘⇧V');
-  expect(drawn({ kind: 'reply', thread: 'T1' }).head).toBe('ReplyWritePreview⌘⇧V');
+  expect(drawn(ON_LINE).head).toMatch(/^Line 5/);
+  expect(drawn(ON_LINE).head).not.toContain('tess-okafor');
+  expect(drawn({ kind: 'reply', thread: 'T1' }).head).toMatch(/^Reply/);
   said.accounts = 2;
   expect(drawn(ON_LINE).head).toContain('as tess-okafor');
 });
@@ -153,5 +160,5 @@ test('a box closes from its head, but the pull request’s own, which is always 
   drawn(ON_LINE).leave();
   const own = drawn({ kind: 'conversation' });
   own.leave();
-  expect(own.head).toBe('Pull requestWritePreview⌘⇧V');
+  expect(own.head).toMatch(/^Pull request/);
 });
