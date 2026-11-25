@@ -149,11 +149,15 @@ test('the window opens on a fresh data folder, on Recent pull requests alone, in
     // It opens the box to open a pull request with.
     await open.click();
     await expect(page.getByRole('dialog', { name: 'Open pull request' })).toBeVisible();
-    // Their licenses ship with the window's files.
-    for (const font of ['host-grotesk', 'fragment-mono']) {
+    // Their licenses ship with the window's files, and so does the icons'.
+    for (const [name, license] of [
+      ['host-grotesk', 'SIL Open Font License'],
+      ['fragment-mono', 'SIL Open Font License'],
+      ['lucide', 'ISC License'],
+    ] as const) {
       expect(
-        await readFile(join(appFolder, 'dist', 'window', 'licenses', `${font}.txt`), 'utf8'),
-      ).toContain('SIL Open Font License');
+        await readFile(join(appFolder, 'dist', 'window', 'licenses', `${name}.txt`), 'utf8'),
+      ).toContain(license);
     }
   });
 

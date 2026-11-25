@@ -153,8 +153,10 @@ mark isn't an icon.
 - An icon takes its text's color. Alone it's `lo-icon`, or `lo-icon-muted` for file, folder and
   secondary icons. Stroke only, round caps and joins: never filled, never two tones.
 - A character the fonts don't hold is an icon. Host Grotesk and Fragment Mono have no `⌘`, `⏎`, `→`,
-  `✓`, `⋯` or `↗`, and the system would draw each in another weight. `Glyphs` draws them, from
-  `glyphs.ts`. `· › … –` are in both fonts and stay text.
+  `✓`, `⋯` or `↗`, and the system would draw each in another weight. `Key` draws a key's symbols and
+  `Glyphs` the rest, from `glyphs.ts`. `· › … –` are in both fonts and stay text. Some components
+  still type theirs: `Steps`' `✓`, `Checklist`'s `↗`, `MoreButton`'s `⋯` and the arrows between
+  revisions, branches, names and sizes. Each moves onto `Glyphs`, and none is added.
 - State is a ball, not an icon. Another brand's mark is that brand's own file, never redrawn.
 - An icon with no words beside it names itself: `label` on `Icon` for a mark, a tooltip for a
   control.
@@ -578,6 +580,12 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
   ball) is what's on screen. They can sit on different rows.
 - Show a control's key on the control with `Key` (`lo-kbd`, or `lo-keys` for a sequence). The chip
   comes last, after the label; in menus it sits at the right.
+- **A key with a symbol is an icon in its chip; a key with a name is its letters.** `Key` does this
+  from the string the keymap gives. On macOS `⌘ ⌃ ⌥ ⇧ ⏎ ⇥ ⌫ ⌦` and the arrows are icons; letters,
+  digits, punctuation, Esc, Space, Home, End, PgUp, PgDn and Menu are Fragment Mono. On Linux only
+  the arrows are icons, and the rest are words (`Ctrl+Shift+P`). The icons are 12 px at a 1.25 px
+  stroke, centred on the capitals, in the chip's color. Never draw a chip without `Key`; a code
+  view's tooltip takes `keyCap`.
 - **A chip shows where its key works now.** Always on a surface's main button, dialog buttons, menu
   and palette rows and `HintButton`. On a control that every card or row repeats, only on the one
   the keyboard is on: give those `Key` `when="focus"`, and mark the card or row `data-key-scope`
