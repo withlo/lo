@@ -255,9 +255,12 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
   const waiting = opening === 'waiting';
   useEffect(() => {
     if (!shown) {
-      // Hidden, as when the tab opens on the diff, it puts focus it had on the middle of the window,
-      // nowhere in particular, for the view on screen to take as it draws. Left on a hidden view,
-      // focus stays there until the browser drops it, and that drops the keys typed meanwhile.
+      // Hidden, it gives focus it had to the middle view now, as `Esc` gives it back, or to the
+      // middle of the window while there's none. As the tab opens on the diff there's none: this
+      // runs before the view shown in its place takes the middle, and the diff takes it only once
+      // drawn. So focus is nowhere in particular, for the diff to take as it draws. Left on a
+      // hidden view, focus stays there until the browser drops it, and that drops the keys typed
+      // meanwhile. Focus elsewhere, as in the stack's tree, stays where it is.
       if (root.current?.contains(document.activeElement)) focusMiddle();
       return undefined;
     }

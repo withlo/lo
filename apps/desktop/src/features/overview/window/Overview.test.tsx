@@ -293,6 +293,16 @@ function render(tab: PullTab, parent: HTMLElement = document.body) {
   return Object.assign(container, { shown: draw, unmount });
 }
 
+/** The middle of a window, as the window marks it, for views to be rendered in. */
+function windowMiddle(): HTMLElement {
+  const middle = document.createElement('main');
+  middle.setAttribute('data-lo-middle', '');
+  middle.tabIndex = -1;
+  document.body.append(middle);
+  onTestFinished(() => middle.remove());
+  return middle;
+}
+
 /**
  * Whether the view draws the tab's placeholder and nothing of the overview. The placeholder says
  * nothing for its first moments, so it's told by its box, not its words.
@@ -494,11 +504,7 @@ describe('as the tab opens', () => {
   });
 
   it('leaves focus on the middle of the window as it hands the tab to the diff, so keys typed then go on there', () => {
-    const middle = document.createElement('main');
-    middle.setAttribute('data-lo-middle', '');
-    middle.tabIndex = -1;
-    document.body.append(middle);
-    onTestFinished(() => middle.remove());
+    const middle = windowMiddle();
     const tab = tabOf();
     const view = render(tab, middle);
     act(() => states.set(tab.id, stateOf(tab, { found: 'none', overview: null })));
@@ -514,6 +520,24 @@ describe('as the tab opens', () => {
     diff.focus();
     press('s');
     expect(nextLayer).toHaveBeenCalledOnce();
+  });
+
+  it('leaves focus that’s elsewhere where it is as it goes from the screen, in the stack’s tree or a field', () => {
+    const middle = windowMiddle();
+    const tree = document.createElement('div');
+    tree.setAttribute('data-lo-scope', 'stack');
+    tree.tabIndex = -1;
+    const field = document.createElement('input');
+    middle.append(tree, field);
+    for (const elsewhere of [tree, field]) {
+      const tab = tabOf();
+      const view = render(tab, middle);
+      act(() => states.set(tab.id, stateOf(tab, { found: 'none', overview: null })));
+      elsewhere.focus();
+      view.shown(false);
+      expect(document.activeElement).toBe(elsewhere);
+      view.unmount();
+    }
   });
 });
 
