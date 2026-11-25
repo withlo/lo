@@ -830,12 +830,15 @@ where it is. The toggle counts the unresolved threads. Its edge sizes it as the 
 between 280 and 560 px, 340 by default.
 
 The window keeps its layout, each panel open or not and its width, from tab to tab and when Lo
-restarts, and opens where it was, as big, maximized or full screen if it was; on a display that's
-gone, it opens at 1280×800. Reset layout, in the View menu and the palette, puts the panels back as
-they first were. A window too narrow for a panel beside a view at its minimum (340 px) puts it away,
-the threads panel first, but never the one asked for last before the other, and brings it back when
-there's room. A panel's button shows what's drawn: one put away reads unpressed, and pressing it
-asks for it, so the other gives way. One that can't fit at all is dimmed: "Widen the window first".
+restarts, and opens where it was, as big, maximized or full screen if it was, and no bigger than the
+display it's on; on a display that's gone, it opens at 1280×800. Reset layout, in the View menu and
+the palette, puts the panels back as they first were. A window too narrow for a panel beside a view
+at its minimum (340 px) puts it away, the threads panel first, but never the one asked for last
+before the other, and brings it back when there's room. A panel's button shows what's drawn: one put
+away reads unpressed, and pressing it asks for it, so the other gives way. One that can't fit at all
+is dimmed: "Widen the window first". A panel opened by its key, its button or Reset layout fades in;
+one back from being put away is just there. Focus in a panel that closes or is put away goes back to
+the middle view.
 
 It lists the threads of the view on screen, so each layer of a stack shows its own. A run of layers
 has none of its own, and the panel says to show one of its layers. Threads are grouped by file in

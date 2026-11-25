@@ -9,7 +9,7 @@
 
 import { existsSync } from 'node:fs';
 
-import { app, clipboard, screen, shell, type BrowserWindow } from 'electron';
+import { app, clipboard, screen, shell } from 'electron';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { openPage } from '../../../main/browser.ts';
@@ -37,7 +37,7 @@ import { carryOver } from './carry.ts';
 import { folderToShow } from './local.ts';
 import { createTabs, type TabList } from './tabs.ts';
 import { Watcher } from './watcher.ts';
-import { createWindowStore, placeable, type WindowStore } from './window.ts';
+import { createPlaces, createWindowStore, type Places, type WindowStore } from './window.ts';
 
 /** A run's layers, as the tab keeps them. */
 const runLayers = runSchema.shape.layers;
@@ -85,63 +85,8 @@ function windowOf({ database }: FeatureContext<typeof contract>): WindowStore {
   return windowStore;
 }
 
-/**
- * What keeps each open window's place now. Lo quits by stopping its features, then closing the
- * database, and only then its windows, so the feature keeps their places as it stops.
- */
-const keepers = new Set<() => void>();
-let placesStopped = false;
-
-/** How long the window stays still before its place is kept, as it's dragged or resized. */
-const SETTLE_MS = 500;
-
-/**
- * Puts `window` back where it was kept, as big, and maximized or full screen if it was, unless the
- * display it was on is gone, when it opens where it would have; then keeps its place each time it
- * settles, and as it closes.
- */
-function keepPlace(window: BrowserWindow, store: WindowStore): void {
-  const place = store.place();
-  const areas = screen.getAllDisplays().map((display) => display.workArea);
-  if (place && placeable(place, areas)) {
-    window.setBounds({ x: place.x, y: place.y, width: place.width, height: place.height });
-    // Maximized before it shows, so it's never drawn at its normal size first. Full screen is the
-    // system's move, made once the window is there.
-    if (place.fullScreen) window.once('show', () => window.setFullScreen(true));
-    else if (place.maximized) window.once('ready-to-show', () => window.maximize());
-  }
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const keep = () => {
-    clearTimeout(timer);
-    timer = undefined;
-    // Once the feature has stopped, the database is closing: it kept the place as it stopped.
-    if (placesStopped || window.isDestroyed()) return;
-    try {
-      store.keepPlace({
-        ...window.getNormalBounds(),
-        maximized: window.isMaximized(),
-        fullScreen: window.isFullScreen(),
-      });
-    } catch (error) {
-      log(
-        `couldn't keep the window's place: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  };
-  const settle = () => {
-    clearTimeout(timer);
-    timer = setTimeout(keep, SETTLE_MS);
-  };
-  window.on('resize', settle);
-  window.on('move', settle);
-  window.on('maximize', keep);
-  window.on('unmaximize', keep);
-  window.on('enter-full-screen', keep);
-  window.on('leave-full-screen', keep);
-  window.on('close', keep);
-  keepers.add(keep);
-  window.once('closed', () => keepers.delete(keep));
-}
+/** The window's place, kept as it changes, from the time the feature starts. */
+let places: Places | undefined;
 
 /** Stops watching the key `tab.open` replaced. */
 let stopBefore: (() => void) | undefined;
@@ -251,7 +196,14 @@ export default defineFeature(contract, {
   },
   start(context) {
     // Each window opens where the last one was.
-    app.on('browser-window-created', (_event, window) => keepPlace(window, windowOf(context)));
+    const placing = createPlaces(windowOf(context), log);
+    places = placing;
+    app.on('browser-window-created', (_event, window) =>
+      placing.follow(
+        window,
+        screen.getAllDisplays().map((display) => display.workArea),
+      ),
+    );
     // The window reads it as a pull request's tab opens, and changes it from Settings.
     const file = context.use(settings);
     file.declare(openOn);
@@ -286,9 +238,8 @@ export default defineFeature(contract, {
     watcher.follow(list.list());
   },
   stop() {
-    for (const keep of keepers) keep();
-    keepers.clear();
-    placesStopped = true;
+    places?.stop();
+    places = undefined;
     stopBefore?.();
     stopBefore = undefined;
     following.clear();
