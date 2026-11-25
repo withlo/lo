@@ -14,12 +14,14 @@ export const CLAIM_FOR = 60_000;
 
 /**
  * A write of the reader's whose change the timeline shows at once, until `until`. For a comment
- * posted, `had` is how many comments with its text the timeline held as it went.
+ * posted, `after` is the cursor of the newest item the timeline on screen held as it went, and
+ * `had` how many comments with its text it held.
  */
 export interface Claim {
   readonly write: PullWrite;
   readonly until: number;
   readonly had: number;
+  readonly after?: string | undefined;
 }
 
 /** A comment's text as GitHub keeps it, to compare: Unix line ends, trimmed. */
@@ -42,8 +44,13 @@ export function holding(timeline: Timeline | null | undefined, body: string): nu
 export function shows(timeline: Timeline, claim: Claim): boolean {
   const { write } = claim;
   switch (write.kind) {
-    case 'posted':
-      return holding(timeline, write.text) > claim.had;
+    case 'posted': {
+      // The post comes after what was on screen as it went. When that was the newest page, the rest
+      // of the timeline brings what's older, which may hold a comment with the same text.
+      const at = timeline.items.findIndex(({ cursor }) => cursor === claim.after);
+      if (at === -1) return holding(timeline, write.text) > claim.had;
+      return holding({ ...timeline, items: timeline.items.slice(at + 1) }, write.text) > 0;
+    }
     case 'edited':
       return comments(timeline).some(
         (comment) => comment.id === write.comment && text(comment.body) === text(write.text),

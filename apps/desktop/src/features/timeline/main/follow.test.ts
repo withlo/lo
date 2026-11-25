@@ -234,6 +234,29 @@ describe('TimelineTab', () => {
     tab.close();
   });
 
+  it('draws nothing of a pull request the tab has left', async () => {
+    const polled = pollerOf(timeline('First'));
+    polled.empty();
+    const left = Promise.withResolvers<Cached<PullRequestTimeline> | undefined>();
+    vi.mocked(polled.poller.timeline).mockImplementationOnce(() => left.promise);
+    const { tab, timelines } = tabOf(polled.poller);
+    tab.update(info());
+    tab.show();
+    await vi.waitFor(() => expect(polled.poller.timeline).toHaveBeenCalled());
+    const onNewest = vi.mocked(polled.poller.timeline).mock.calls[0]?.[2];
+    // The tab goes to #24 as the same account, so the same poller reads it.
+    tab.update(info({ number: 24 }));
+    await vi.waitFor(() => expect(polled.poller.timeline).toHaveBeenCalledTimes(2));
+    const count = timelines.length;
+    // #23's newest page, then the whole of it.
+    onNewest?.({ ...timeline('First'), leftOut: 120 });
+    left.resolve(cached(timeline('First')));
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(timelines).toHaveLength(count);
+    expect(timelines.at(-1)).toMatchObject({ status: 'loading', timeline: null });
+    tab.close();
+  });
+
   it('says why a long timeline failed after its newest page came', async () => {
     const polled = pollerOf(timeline('First'));
     polled.empty();

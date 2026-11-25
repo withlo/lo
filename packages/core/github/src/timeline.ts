@@ -580,7 +580,11 @@ export async function readTimeline(
     if (joined !== undefined) return joined;
   }
   if (known === undefined) {
-    onNewest?.(timeline(newest.entries, Math.max(0, newest.count - newest.entries.length)));
+    try {
+      onNewest?.(timeline(newest.entries, Math.max(0, newest.count - newest.entries.length)));
+    } catch {
+      // What hears the newest page early can't stop the read: its answer replaces the page anyway.
+    }
   }
   const seen = new Set(newest.entries.map((entry) => entry.cursor));
   const asked = new Set<string>();

@@ -35,7 +35,11 @@ function said(id: string, body: string, login = 'rozed-bot'): Item {
 function timeline(items: Item[]): Timeline {
   return {
     description: { author: { login: 'mona', type: 'User' }, body: '', createdAt: AT },
-    items: items.map((item, at) => ({ cursor: `c${at}`, item })),
+    // A comment's cursor names it wherever it is, as GitHub's do.
+    items: items.map((item, at) => ({
+      cursor: item.kind === 'comment' ? `c-${item.comment.id}` : `c${at}`,
+      item,
+    })),
     leftOut: 0,
     count: items.length,
     shownUpdatedAt: AT,
@@ -99,6 +103,17 @@ describe('holding', () => {
     expect(shows(timeline([said('IC_1', 'Ship it.'), said('IC_2', 'Ship it.')]), posted(1))).toBe(
       true,
     );
+  });
+
+  test('a post made while the newest page is drawn shows once it comes after that page', () => {
+    // The newest page holds no comment with its text, but the older items the rest brings do.
+    const newest = timeline([said('IC_2', 'Two.')]);
+    const claimed: Claim = { ...posted(holding(newest, 'Ship it.')), after: 'c-IC_2' };
+    const whole = [said('IC_1', 'Ship it.'), said('IC_2', 'Two.')];
+    expect(shows(timeline(whole), claimed)).toBe(false);
+    expect(shows(timeline([...whole, said('IC_3', 'Ship it.')]), claimed)).toBe(true);
+    // Without the item it came after, it counts the comments with its text.
+    expect(shows(timeline([said('IC_1', 'Ship it.')]), claimed)).toBe(true);
   });
 
   test('an edit shows with its text, and a delete once the comment is gone', () => {
@@ -199,11 +214,25 @@ describe('holding', () => {
     const after = view([said('IC_4', 'Later.', 'ravi-k')]);
     takeTimeline(after);
     expect(shownTimelines.get(VIEW)).toBe(mine);
+    // A post made while the newest page is drawn waits for itself, not an older comment with its
+    // text the rest of the timeline brings.
+    setLooked(VIEW, false);
+    takeTimeline({ ...view([said('IC_5', 'Five.')]), status: 'loading' });
+    setLooked(VIEW, true);
+    claim(VIEW, { kind: 'posted', text: 'Ship it.' });
+    const whole = view([said('IC_3', 'Ship it.'), said('IC_5', 'Five.')]);
+    takeTimeline(whole);
+    expect(shownTimelines.get(VIEW)).toBe(whole);
+    const own = view([said('IC_3', 'Ship it.'), said('IC_5', 'Five.'), said('IC_6', 'Ship it.')]);
+    takeTimeline(own);
+    expect(shownTimelines.get(VIEW)).toBe(own);
+    takeTimeline(view([said('IC_7', 'Later.', 'ravi-k')]));
+    expect(shownTimelines.get(VIEW)).toBe(own);
     // And a claim that never comes lasts a minute.
     claim(VIEW, { kind: 'deleted', comment: 'IC_9' });
     vi.advanceTimersByTime(CLAIM_FOR);
     takeTimeline(view([]));
-    expect(shownTimelines.get(VIEW)).not.toBe(mine);
+    expect(shownTimelines.get(VIEW)).not.toBe(own);
   });
 });
 

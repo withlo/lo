@@ -196,6 +196,19 @@ test('fd 2212s timeline is read in full then by its newest page', async () => {
   expect(full.readInFullAt).toBe(hourLater.toISOString());
 });
 
+test('a throw from what hears the newest page early leaves the read to finish', async () => {
+  const fetch = replayFetch('timeline_fd_2212_paged');
+  const read = await readTimeline(client(fetch), new PullRef('sharkdp', 'fd', 2212), {
+    now: noon(),
+    pageSize: 3,
+    onNewest: () => {
+      throw new Error('gone');
+    },
+  });
+  expect(asked(fetch)).toHaveLength(4);
+  expect([read.leftOut, read.count, read.items.length]).toEqual([0, 8, 8]);
+});
+
 function bagtoad(at: string): TimelineEvent {
   return event('BagToad', at);
 }

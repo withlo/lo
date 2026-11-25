@@ -314,11 +314,11 @@ export class TimelineTab {
       changes();
     };
     this.#restate();
-    // The reader waits on the first reads while the view is on screen, so they go ahead of polls
-    // in the account's queue: what goes beside the description, which is quick, then the timeline,
-    // so the description's card draws whole. The rows split pushes where a revision ends, so the
-    // push history the revisions feature reads goes right after the timeline, rather than after
-    // the polls.
+    // The reader waits on the first reads while the tab is on screen, so they go ahead of polls in
+    // the account's queue, in the order of the reads' names: what goes beside the description,
+    // which is quick, then the review threads the diff waits on, then the timeline. The rows split
+    // pushes where a revision ends, so the push history the revisions feature reads goes ahead of
+    // polls too, once the timeline is in.
     const shown = (): boolean => this.#current(pull, login) && this.#options.onScreen() === this.id;
     const waiting = (): ReadPriority => (shown() ? 'foreground' : 'background');
     const after = (): ReadPriority =>
@@ -327,10 +327,10 @@ export class TimelineTab {
       this.#options.log(`reading the push history: ${describe(error)}`);
     });
     const reads = await Promise.allSettled([
-      poller.timeline(pull, waiting, (newest) => this.#took(poller, newest)),
+      poller.timeline(pull, waiting, (newest) => this.#took(poller, pull, login, newest)),
       poller.pullRequestSidebar(pull, waiting),
     ]);
-    if (this.#poller !== poller) return;
+    if (this.#poller !== poller || !this.#current(pull, login)) return;
     this.#landed = true;
     const [timeline, sidebar] = reads;
     if (timeline.status === 'rejected') {
@@ -355,8 +355,8 @@ export class TimelineTab {
    * The newest page of a first read of more than a page came, ahead of the older ones: it's drawn
    * while they're read, unless the timeline is already in.
    */
-  #took(poller: TimelinePoller, newest: PullRequestTimeline): void {
-    if (this.#poller !== poller || this.#closed || this.#timeline) return;
+  #took(poller: TimelinePoller, pull: PullRef, login: string, newest: PullRequestTimeline): void {
+    if (this.#poller !== poller || !this.#current(pull, login) || this.#timeline) return;
     this.#newest = newest;
     this.#publishTimeline();
   }
