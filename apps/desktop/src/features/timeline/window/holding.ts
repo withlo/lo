@@ -1,9 +1,10 @@
 // What the timeline on screen shows of what main sends: nothing on screen moves without the
 // reader's input, so a change that comes while they look, as a comment someone posts, waits for
 // their next key, click or scroll. A timeline goes on screen at once while it isn't on screen, when
-// it's the first the reader sees, and while what the reader's own write changed is still to come: a
-// comment they posted from the box at its end, or one of theirs they edited or deleted, which shows
-// as it comes, for a minute at most. Plain functions, tested alone.
+// it's the first the reader sees or fills in the newest page they see, and while what the reader's
+// own write changed is still to come: a comment they posted from the box at its end, or one of
+// theirs they edited or deleted, which shows as it comes, for a minute at most. Plain functions,
+// tested alone.
 
 import type { PullWrite } from '../../comments/window/shared.ts';
 import type { Timeline, TimelineView } from '../contract.ts';
@@ -58,8 +59,8 @@ export function shows(timeline: Timeline, claim: Claim): boolean {
 /**
  * Whether `next`, what main sent of a view's timeline, goes on screen at once, rather than waiting
  * for the reader's next key, click or scroll: when the timeline isn't on screen, when there are no
- * rows shown yet, or none to show, and while one of `claims`, the reader's own writes, is still to
- * come at `now`.
+ * rows shown yet, or none to show, when what's shown is the newest page while the rest is read,
+ * and while one of `claims`, the reader's own writes, is still to come at `now`.
  */
 export function atOnce(
   next: TimelineView,
@@ -69,7 +70,7 @@ export function atOnce(
   now: number,
 ): boolean {
   if (!onScreen) return true;
-  if (!shown?.timeline || !next.timeline) return true;
+  if (!shown?.timeline || !next.timeline || shown.status === 'loading') return true;
   return claims.some((claim) => claim.until > now);
 }
 

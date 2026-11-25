@@ -558,13 +558,15 @@ function footnotes<X extends Extension>(node: Footnotes<X>, r: Rendering<X>): Re
   );
 }
 
-/** Code as written, never highlighted: Lo can't know it's the language it says. */
+/**
+ * Code as written, never highlighted: Lo can't know it's the language it says. It takes the post's
+ * whole width, where prose keeps to the read measure, and it's set as code in a comment is
+ * (`code-small`).
+ */
 function Fence({ text, bare = false }: { text: string; bare?: boolean }) {
   return (
-    <pre
-      className={`overflow-x-auto px-12 py-8 ${bare ? 'bg-bg' : 'max-w-read-measure rounded-md bg-hover'}`}
-    >
-      <code className="rounded-none bg-transparent p-0 shadow-none code-text">{text}</code>
+    <pre className={`overflow-x-auto px-12 py-8 ${bare ? 'bg-bg' : 'rounded-md bg-hover'}`}>
+      <code className="rounded-none bg-transparent p-0 shadow-none code-small">{text}</code>
     </pre>
   );
 }

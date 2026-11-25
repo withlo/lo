@@ -114,7 +114,7 @@ describe('holding', () => {
     expect(shows(timeline([]), deleted)).toBe(true);
   });
 
-  test('what comes waits while the reader looks, but for the first rows and their own writes', () => {
+  test('what comes waits while the reader looks, but for the first rows, the rest of them and their own writes', () => {
     const shown = view([said('IC_1', 'One.')]);
     const next = view([said('IC_1', 'One.'), said('IC_2', 'Two.', 'ravi-k')]);
     expect(atOnce(next, shown, true, [], 0)).toBe(false);
@@ -123,6 +123,8 @@ describe('holding', () => {
     expect(atOnce(next, shown, true, [posted(0, 1_000)], 500)).toBe(true);
     // A minute at most.
     expect(atOnce(next, shown, true, [posted(0, 1_000)], 1_000)).toBe(false);
+    // The rest of a timeline whose newest page is drawn fills it in.
+    expect(atOnce(next, { ...shown, status: 'loading' }, true, [], 0)).toBe(true);
     expect(stillToCome([posted(0, 1_000)], next.timeline, 500)).toHaveLength(1);
     expect(stillToCome([posted(0, 1_000)], timeline([said('IC_3', 'Ship it.')]), 500)).toEqual([]);
   });
@@ -229,7 +231,7 @@ describe('what i and dd act on', () => {
       ),
     ).toBe('This comment isn’t yours');
     expect(changeTarget(row(), true, 'rozed-bot', 'edit')).toBe('Show this comment first');
-    const older: Row = { kind: 'older', key: 'older', count: 3 };
+    const older: Row = { kind: 'older', key: 'older', count: 3, reading: false };
     expect(commentIn(older, false)).toBe('This event isn’t a comment');
   });
 });
