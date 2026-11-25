@@ -265,6 +265,17 @@ export function planWords(plan: Plan, repository: string): PlanWords {
 }
 
 /**
+ * Which offer the stack's tree makes of a plan: to `convert` a branch stack to a GitHub stack, or
+ * to `add` layers to the GitHub stack below them. Each is dismissed apart from the other.
+ */
+export type CalloutKind = 'convert' | 'add';
+
+/** Which offer the stack's tree makes of `plan`. */
+export function calloutKind(plan: Plan): CalloutKind {
+  return plan.steps.at(-1)?.kind === 'addToStack' ? 'add' : 'convert';
+}
+
+/**
  * What the offer over the stack's tree says of `plan`, before anyone asks for it, in one line: a
  * branch stack merges a layer at a time, and layers that sit on a GitHub stack aren't in it.
  */

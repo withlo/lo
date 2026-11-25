@@ -174,6 +174,7 @@ export {
   type LayerTarget,
   type LineTarget,
   type NoTarget,
+  type NoticeTarget,
   type Place,
   type Side,
   type Span,

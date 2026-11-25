@@ -210,8 +210,7 @@ export function Files({
       viewed={viewedCount || undefined}
       mode={mode}
       onMode={(next) => void changeSetting(modeSetting, next)}
-      treeKeys={keyOf('tree.asTree')}
-      reviewKeys={keyOf('tree.reviewOrder')}
+      modeKeys={keyOf('tree.reviewOrder')}
       changedOnly={chosen.changedOnly}
       onChangedOnly={(changedOnly) => choices.update(tab.id, (now) => ({ ...now, changedOnly }))}
       changedOnlyKeys={keyOf('tree.changedOnly')}

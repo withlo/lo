@@ -5,6 +5,7 @@ import {
   listen,
   NO_TARGET,
   setScopeSource,
+  type NoticeTarget,
   type Target,
 } from '@lo/ui/commands';
 import { act, type ReactNode } from 'react';
@@ -19,7 +20,9 @@ import {
   Menus,
   openMenu,
   openMenuAtFocus,
+  openMenuOf,
   useMenuTarget,
+  useNoticeTarget,
 } from './menus.tsx';
 import { notice } from './notices.tsx';
 import { Overlays, overlay, closeOverlay } from './overlays.tsx';
@@ -29,7 +32,10 @@ beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
 });
 
-/** A feature declared only for these tests: commands with a menu on a file, a line and a thread. */
+/**
+ * A feature declared only for these tests: commands with a menu on a file, a line, a thread and an
+ * offer.
+ */
 const declared = defineCommands(
   'tree',
   {
@@ -60,6 +66,13 @@ const declared = defineCommands(
       keys: ['c'],
       targets: ['line'],
       menu: { on: 'line', order: 10 },
+    },
+    dismiss: {
+      label: 'Dismiss for this stack',
+      group: 'View',
+      keys: [],
+      targets: ['notice'],
+      menu: { on: 'notice', order: 10 },
     },
     open: { label: 'Open a PR', group: 'Go', keys: ['cmd+l'] },
     quit: {
@@ -99,6 +112,7 @@ function commands() {
       },
       copyPath: record('tree.copyPath'),
       comment: record('tree.comment'),
+      dismiss: record('tree.dismiss'),
       open: record('tree.open'),
       quit: record('tree.quit'),
     }),
@@ -512,6 +526,50 @@ describe('from the keyboard', () => {
     });
     expect(opened).toBe(false);
     expect(popup()).toBeNull();
+  });
+
+  it('opens an offer’s menu from its Dismiss, which is in the offer’s scope, and from a command that presses Dismiss, which leaves focus where it is', async () => {
+    const offer: NoticeTarget = { kind: 'notice', notice: 'stacks.convert', tab: 't1' };
+    function Offer() {
+      const props = useNoticeTarget(offer);
+      return (
+        <div {...props}>
+          <button id="dismiss" type="button">
+            Dismiss
+          </button>
+        </div>
+      );
+    }
+    const page = mount(
+      <>
+        <Offer />
+        <div id="tree" data-lo-scope="tree" tabIndex={-1} />
+        <Menus />
+      </>,
+    );
+    const dismiss = page.querySelector<HTMLElement>('#dismiss')!;
+    rightClick(dismiss);
+    expect(currentMenu()?.target).toEqual(offer);
+    act(() => closeMenu());
+    dismiss.focus();
+    act(() => {
+      registry().run('keys.menu', NO_TARGET);
+    });
+    expect(popup()?.getAttribute('aria-label')).toBe('Dismiss');
+    expect(currentMenu()).toMatchObject({ target: offer, keyboard: true });
+    press('Escape');
+    await vi.waitFor(() => expect(popup()).toBeNull());
+    const tree = page.querySelector<HTMLElement>('#tree')!;
+    tree.focus();
+    act(() => {
+      openMenuOf(dismiss);
+    });
+    expect(currentMenu()).toMatchObject({ target: offer, keyboard: true });
+    expect(currentMenu()?.from).toBe(tree);
+    await vi.waitFor(() => expect(items()[0]?.hasAttribute('data-highlighted')).toBe(true));
+    press('Enter');
+    await vi.waitFor(() => expect(ran).toEqual([{ id: 'tree.dismiss', target: offer }]));
+    await vi.waitFor(() => expect(document.activeElement).toBe(tree));
   });
 
   it('is a command with the menu key and ⇧F10, which opens the menu of the focused scope', () => {

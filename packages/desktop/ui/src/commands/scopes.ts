@@ -9,9 +9,11 @@ export const SCOPE_ATTRIBUTE = 'data-lo-scope';
 
 /**
  * The engine's own scopes. `window` is wherever no other scope is; `dialog` keeps the browser's
- * `Tab`; in `menu`, `j` and `k` move as `↓` and `↑` do.
+ * `Tab`; in `menu`, `j` and `k` move as `↓` and `↑` do. `notice` is an offer's, whose Dismiss asks
+ * where: its keys are the window's, and what they act on is the offer (a `notice` target), so
+ * `⇧F10` on its Dismiss opens the same menu.
  */
-export const engineScopes = ['window', 'menu', 'dialog', 'palette'] as const;
+export const engineScopes = ['window', 'menu', 'dialog', 'palette', 'notice'] as const;
 
 /** The code views' scopes, whose elements have a `KeySource`. */
 export const codeScopes = ['diff', 'file', 'peek', 'box'] as const;
