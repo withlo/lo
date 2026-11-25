@@ -15,6 +15,7 @@ import type {
   Target,
   VimKey,
 } from '../commands/index.ts';
+import type { IconName } from '../icons.ts';
 
 export type {
   FileDiff,
@@ -316,8 +317,10 @@ export interface ComposerEvents {
 /** A comment box's handle. */
 /** How a box held as text, not as a card, shows. */
 export interface HeldText {
-  /** What it says where it has no text: "No summary". */
+  /** What it says where it has no text, as an empty state's row: "No summary". */
   readonly empty: string;
+  /** The icon beside it, by its name in `icons.ts`: what's absent. */
+  readonly icon: IconName;
 }
 
 export interface Composer {

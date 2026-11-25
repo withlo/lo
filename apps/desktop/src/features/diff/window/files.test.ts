@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { FileVersions, Start } from '../contract.ts';
-import { diffFileOf, headerOf, inOrder, keepsBox, keptOrder, viewKey } from './files.ts';
+import { diffFileOf, drawsView, headerOf, inOrder, keepsBox, keptOrder, viewKey } from './files.ts';
 import type { Entry, Shown } from './loader.ts';
 
 function entry(id: string, path: string, start: Start = 'shown', place = 0): Entry {
@@ -165,6 +165,25 @@ describe('the order a diff is drawn in', () => {
 
 describe('what the middle shows', () => {
   const waiting = 'Comparing r1 with r2 once the local copy has both…';
+
+  it('draws a view of the files once they, the page and the threads are ready, and none of no files', () => {
+    const ready = { key: 'abc||', entries: [{}], nonce: 'n', settled: true };
+    expect(drawsView(ready)).toBe(true);
+    // No files changed: there's no view, so the middle can say so in its place.
+    expect(drawsView({ ...ready, entries: [] })).toBe(false);
+    expect(drawsView({ ...ready, key: undefined, entries: undefined })).toBe(false);
+    expect(drawsView({ ...ready, nonce: undefined })).toBe(false);
+    expect(drawsView({ ...ready, settled: false })).toBe(false);
+    // With no view to draw and no view held, the middle is the answer.
+    expect(
+      keepsBox({
+        drawable: drawsView({ ...ready, entries: [] }),
+        held: false,
+        said: 'No files changed',
+        waiting: null,
+      }),
+    ).toBe(false);
+  });
 
   it('keeps a view drawn, held, while the next loads or waits for what it needs', () => {
     expect(keepsBox({ drawable: true, held: false, said: undefined, waiting: null })).toBe(true);

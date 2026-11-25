@@ -1,11 +1,16 @@
 // The row of Settings for what a pull request's tab opens on: a choice of the middle views Settings
 // can name that are there now, so Overview isn't one while overviews are off, and a line on where
-// a tab opens when Overview can't be: for a pull request with none, or while overviews are off.
+// a tab opens when Overview can't be: for a pull request with none, or while overviews are off. The
+// welcome's step that says what an overview is has the same row.
 
-import { SegmentedControl } from '@lo/ui';
+import { SegmentedControl, SetupItem } from '@lo/ui';
 
 import { useViews } from '../../../window/slots.tsx';
-import { useKnownSetting, type ControlProps } from '../../settings/window/shared.ts';
+import {
+  useKnownSetting,
+  useSettingChange,
+  type ControlProps,
+} from '../../settings/window/shared.ts';
 import { open, type OpenOn } from '../settings.ts';
 import { middle } from './shared.ts';
 
@@ -21,7 +26,7 @@ function useMiddleIds(): ReadonlySet<string> {
  * The choice of the views there now. A value whose view isn't there, Overview while overviews are
  * off, chooses none of them, so any can be chosen; the row's line says where a tab opens meanwhile.
  */
-export function OpenOnChoice({ value, change }: ControlProps<OpenOn>) {
+export function OpenOnChoice({ value, change }: Pick<ControlProps<OpenOn>, 'value' | 'change'>) {
   const there = useMiddleIds();
   const items = Object.entries(open.options ?? {})
     .filter(([option]) => there.has(`${option}.view`))
@@ -51,4 +56,18 @@ export function useOpenOnLine(): string {
   if (there) return 'With Overview, a pull request that has none opens on the timeline.';
   if (value === 'overview') return 'Overviews are off, so pull requests open on the timeline.';
   return open.description;
+}
+
+/**
+ * The row on the welcome's step that says what an overview is: the label, the line and the choice
+ * the row in Settings has, written as it's changed, with the `Problem` that row shows for a change
+ * the file refused under it.
+ */
+export function OpenOnRow() {
+  const { value, change, problem } = useSettingChange(open);
+  return (
+    <SetupItem title={open.label} description={useOpenOnLine()} below={problem}>
+      <OpenOnChoice value={value} change={(next) => void change(next)} />
+    </SetupItem>
+  );
 }

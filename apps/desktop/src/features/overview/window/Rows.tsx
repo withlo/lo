@@ -1,5 +1,7 @@
-// The overview skill's rows: the step on the welcome screen, and the rows in Settings ›
-// Integrations, for installing it and for the command that installs it from a terminal.
+// The overview's rows outside Settings › Pull requests: whether there are overviews, on the
+// welcome's step that says what one is; and the overview skill's, its step on the welcome's set-up
+// step and its rows in Settings › Integrations, for installing it and for the command that installs
+// it from a terminal.
 
 import {
   Button,
@@ -10,13 +12,15 @@ import {
   Problem,
   Setting,
   SetupItem,
+  Switch,
   Ticks,
 } from '@lo/ui';
-import { Fragment, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useStore } from 'zustand';
 
 import { useKeys } from '../../../window/commands/registry.ts';
-import { defineRow } from '../../settings/window/shared.ts';
+import { defineRow, useSettingChange } from '../../settings/window/shared.ts';
+import { on } from '../settings.ts';
 import { keyOf } from './labels.ts';
 import { overviews } from './shared.ts';
 import {
@@ -52,35 +56,20 @@ function useSkill() {
   return useStore(skillStore);
 }
 
-const BOX = 'flex flex-col rounded-sm border border-border bg-bg-raised px-8 py-4';
-
 /**
- * One picture of an overview, small: a sentence about the change, then a figure of the code it
- * goes through, as an agent with the skill writes them. It's drawn, not a real overview, and a
- * screen reader hears what it shows.
+ * Whether there are overviews, a row of the welcome's step that says what one is: the switch its
+ * row in Settings has, with a line on what turning it off takes away.
  */
-function Picture() {
+export function OverviewsRow() {
+  const { value, change, problem } = useSettingChange(on);
   return (
-    <div
-      role="img"
-      aria-label="An overview: a sentence about the change, over a figure of three modules it goes through"
-      className="flex flex-col gap-8 rounded-md bg-bg-well px-12 py-8 select-none"
+    <SetupItem
+      title={on.label}
+      description="Turn off to take overviews, their prompts and the overview skill out of Lo."
+      below={problem}
     >
-      <span className="truncate text-fg-muted text-small">
-        Input becomes lines, then text. Wrap is passed on, not called.
-      </span>
-      <div className="flex min-w-0 items-center" aria-hidden="true">
-        {(['parse', 'format', 'wrap'] as const).map((name, index) => (
-          <Fragment key={name}>
-            {index > 0 && <span className="h-0 w-24 flex-none border-t border-border-strong" />}
-            <span className={BOX}>
-              <span className="text-small">{name}</span>
-              <span className="text-fg-muted code-small">src/{name}.ts</span>
-            </span>
-          </Fragment>
-        ))}
-      </div>
-    </div>
+      <Switch checked={value} aria-label={on.label} onCheckedChange={(next) => void change(next)} />
+    </SetupItem>
   );
 }
 
@@ -105,7 +94,6 @@ export function SkillStep() {
       title="Overview skill"
       description={ABOUT}
       done={installedEverywhere(state) ? 'Installed' : undefined}
-      figure={<Picture />}
       below={
         failed !== undefined ? (
           <InstallFailed details={failed} />

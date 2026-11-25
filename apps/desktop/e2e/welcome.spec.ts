@@ -1,6 +1,6 @@
 // The welcome in the app: it covers the Recent tab on a first launch and is walked by key and by
-// mouse through its five steps, signing in, choosing how Lo looks and its keys, setting up and
-// opening a pull request. Once finished it opens again from the command palette.
+// mouse through its six steps, signing in, choosing how Lo looks and its keys, what an overview is,
+// setting up and opening a pull request. Once finished it opens again from the command palette.
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -80,7 +80,7 @@ async function showFromPalette(page: Page): Promise<void> {
   await page.keyboard.press('Enter');
 }
 
-test('a first launch shows the welcome over Recent, and its five steps are walked by key and by mouse', async ({
+test('a first launch shows the welcome over Recent, and its six steps are walked by key and by mouse', async ({
   page,
 }) => {
   await test.step('the first step is over Recent, with sign-in ready', async () => {
@@ -170,10 +170,34 @@ test('a first launch shows the welcome over Recent, and its five steps are walke
     await expect.poll(settingsText).toMatch(/"editor\.vim":\s*true/);
   });
 
-  await test.step('the set-up step installs the lo command', async () => {
+  await test.step('the overviews step shows one, and turns overviews off and on again', async () => {
     // ⏎ is Continue wherever focus is in the step, off a button.
     await practice(page).focus();
     await page.keyboard.press('Enter');
+    await expect(heading(page)).toHaveText('An overview explains a pull request');
+    // Focus is on Continue, not the switch, so ⏎ goes on.
+    await expect(go(page)).toBeFocused();
+    await expect(step(page).getByRole('img', { name: /^An overview: a heading/ })).toBeVisible();
+    const on = step(page).getByRole('switch', { name: 'Show overviews' });
+    const first = step(page).getByRole('radiogroup', { name: 'Open pull requests on' });
+    await expect(on).toBeChecked();
+    await expect(first.getByRole('radio')).toHaveText(['Overview', 'Timeline', 'Diff']);
+    // Off, the first view has no Overview, and set-up has no skill to install.
+    await on.click();
+    await expect(on).not.toBeChecked();
+    await expect(first.getByRole('radio')).toHaveText(['Timeline', 'Diff']);
+    await expect.poll(settingsText).toMatch(/"overview\.on":\s*false/);
+    await go(page).click();
+    await expect(heading(page)).toHaveText('Use Lo with your other tools');
+    await expect(step(page).getByRole('listitem')).toHaveCount(2);
+    await welcome(page).getByRole('button', { name: 'Back' }).click();
+    await on.click();
+    await expect(on).toBeChecked();
+    await expect(first.getByRole('radio')).toHaveText(['Overview', 'Timeline', 'Diff']);
+  });
+
+  await test.step('the set-up step installs the lo command', async () => {
+    await go(page).click();
     await expect(heading(page)).toHaveText('Use Lo with your other tools');
     const rows = step(page).getByRole('listitem');
     await expect(rows).toHaveCount(3);
@@ -184,7 +208,7 @@ test('a first launch shows the welcome over Recent, and its five steps are walke
     expect(existsSync(join(test.info().outputPath('bin'), 'lo'))).toBe(true);
     // Back is a button, and the step is as it was left.
     await welcome(page).getByRole('button', { name: 'Back' }).click();
-    await expect(heading(page)).toHaveText('Choose your keys');
+    await expect(heading(page)).toHaveText('An overview explains a pull request');
     await go(page).click();
     await expect(command).toContainText('Installed');
   });
@@ -193,13 +217,14 @@ test('a first launch shows the welcome over Recent, and its five steps are walke
     await go(page).click();
     await expect(heading(page)).toHaveText('Open a pull request');
     await expect(linkField(page)).toBeFocused();
+    await expect(step(page)).toContainText('withlo/lo#182 · has an overview');
     await expect(welcome(page).getByRole('button', { name: 'Skip' })).toBeHidden();
     // With nothing in the field, ⏎ is Done.
     await expect(done(page)).toBeVisible();
     await page.keyboard.press('Enter');
     await expect(welcome(page)).toHaveCount(0);
     const recent = middleOf(page);
-    await expect(recent.getByRole('heading', { name: 'No pull requests yet' })).toBeVisible();
+    await expect(recent.getByText('No pull requests yet', { exact: true })).toBeVisible();
     await expect(recent.getByRole('button', { name: /^Paste link/ })).toBeVisible();
     await expect(recent.getByRole('button', { name: /^Open pull request…/ }).first()).toBeVisible();
     expect(await page.evaluate(() => window.lo.invoke('welcome.state'))).toEqual({
@@ -270,9 +295,7 @@ test('“Show rules” opens the rules for Finicky, Velja and Choosy, which copy
     });
   const dialog = page.getByTestId('link-rules');
   const show = welcome(page).getByRole('button', { name: 'Show rules' });
-  await go(page).click();
-  await go(page).click();
-  await go(page).click();
+  for (let each = 0; each < 4; each++) await go(page).click();
 
   await test.step('“Show rules” opens the rules, and ⏎ is Done', async () => {
     await show.click();

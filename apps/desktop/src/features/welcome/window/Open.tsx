@@ -14,12 +14,20 @@ import {
   SetupList,
   Ticks,
 } from '@lo/ui';
-import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useId,
+  useState,
+  useSyncExternalStore,
+  type FormEvent,
+  type ReactNode,
+} from 'react';
 
 import { refuse } from '../../../window/commands/notices.tsx';
 import { client } from '../../../window/ipc.ts';
 import { contract as open, type NotPull } from '../../open/contract.ts';
 import { isNotPull, NotPullNote, notPullWords } from '../../open/window/shared.ts';
+import { overviews } from '../../overview/window/shared.ts';
 import { openPublic } from './actions.ts';
 import { StepHeading } from './Heading.tsx';
 import { keyOf } from './labels.ts';
@@ -75,6 +83,8 @@ export function OpenStep({ shown }: { shown: boolean }): ReactNode {
   const why = useId();
   const kiss = usePlayOnce('kiss', shown);
   const typed = text.trim() !== '';
+  // It has one to read only while there are overviews: off, it opens on its timeline.
+  const withOverview = useSyncExternalStore(overviews.subscribe, overviews.now);
   const key = keyOf('welcome.continue');
 
   // With a link in the field, Open is the step's main button, in the foot's place.
@@ -206,7 +216,11 @@ export function OpenStep({ shown }: { shown: boolean }): ReactNode {
         </span>
       </form>
       <SetupList label="Sample pull request">
-        <SetupItem icon={<PullIcon />} title={SAMPLE.title} description={SAMPLE.where}>
+        <SetupItem
+          icon={<PullIcon />}
+          title={SAMPLE.title}
+          description={withOverview ? `${SAMPLE.where} · has an overview` : SAMPLE.where}
+        >
           <Button
             size="sm"
             busy={busy === 'sample'}

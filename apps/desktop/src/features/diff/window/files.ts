@@ -215,6 +215,27 @@ export function diffFileOf(entry: Entry, shown: Shown | undefined, mark?: Mark):
 }
 
 /**
+ * Whether there's a view to draw: the files are ready, in order, by their `key`, the page has its
+ * `nonce`, and the threads have `settled`. A diff with no files has no view: the middle says no file
+ * changed in its place.
+ */
+export function drawsView(middle: {
+  key: string | undefined;
+  entries: readonly unknown[] | undefined;
+  nonce: string | undefined;
+  settled: boolean;
+}): boolean {
+  const { key, entries, nonce, settled } = middle;
+  return (
+    key !== undefined &&
+    entries !== undefined &&
+    entries.length > 0 &&
+    nonce !== undefined &&
+    settled
+  );
+}
+
+/**
  * Whether the middle shows the box a view is drawn in, rather than what it says in its place: while
  * there's a view to draw, and while one drawn is held, until there's nothing to draw and the loader
  * has said why. A wait for what's next, `waiting`, such as for the local copy, leaves the view held.

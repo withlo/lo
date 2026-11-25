@@ -231,7 +231,7 @@ function Accounts({
         pointed.current = false;
       }}
     >
-      <EmptyState title={title} line={line} actions={actions} />
+      <EmptyState icon="users-round" title={title} line={line} actions={actions} />
       <ContextMenu
         open={rect !== undefined}
         onOpenChange={(next) => {

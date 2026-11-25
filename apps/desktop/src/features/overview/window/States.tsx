@@ -113,6 +113,7 @@ export function NoOverview({
         : undefined;
   return (
     <EmptyState
+      icon="file-text"
       title="No overview yet"
       line="A coding agent writes one from this prompt."
       actions={second === undefined ? [copy] : [copy, second]}
@@ -204,6 +205,7 @@ export function NoneInRun({ tab }: { tab: PullTab }) {
   const layers = useRunLayers(tab.id);
   return (
     <EmptyState
+      icon="layers"
       title={`No overview for ${layers}`}
       line="Each layer has its own."
       actions={[{ command: BACK, label: 'Show single layer' }]}

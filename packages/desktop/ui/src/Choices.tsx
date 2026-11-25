@@ -129,7 +129,9 @@ export function Choices<T extends string>({
     <div
       role="radiogroup"
       aria-label={label}
-      data-choices={across ? 'across' : undefined}
+      // How its cards are laid out, and that they're cards: chosen by reaching them, so a form's
+      // ⏎ on one goes on rather than choosing it again.
+      data-choices={across ? 'across' : 'stacked'}
       className={across ? 'grid choices-across gap-8' : 'grid gap-8'}
       onKeyDown={onKeyDown}
     >

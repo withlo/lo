@@ -52,6 +52,7 @@
   --spacing-settings-nav-w: var(--lo-settings-nav-w);
   --spacing-settings-w: var(--lo-settings-w);
   --spacing-choice-min-w: var(--lo-choice-min-w);
+  --spacing-overview-example-h: var(--lo-overview-example-h);
   --spacing-dialog-w: var(--lo-dialog-w);
   --spacing-dialog-w-sm: var(--lo-dialog-w-sm);
   --spacing-dialog-w-lg: var(--lo-dialog-w-lg);
@@ -71,6 +72,7 @@
   --spacing-code-line-small: var(--lo-code-line-small);
   --spacing-code-inline-size: var(--lo-code-inline-size);
   --spacing-read-measure: var(--lo-read-measure);
+  --spacing-empty-measure: var(--lo-empty-measure);
   --spacing-timeline-w: var(--lo-timeline-w);
   --color-ink: var(--lo-ink);
   --color-chalk: var(--lo-chalk);

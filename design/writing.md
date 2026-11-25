@@ -314,14 +314,15 @@ never answered, the button is “Check again”, which only looks.
 
 ### Empty state
 
-A view or a list with nothing in it. `EmptyState` draws it, from the heading, the line and the
-commands ([README](README.md#empty-states)).
+A view or a list with nothing in it. `EmptyState` draws it, from the icon, the title, the line and
+the commands ([README](README.md#empty-states)).
 
-| Part    | Limit                                                                           | Example                                 |
-| ------- | ------------------------------------------------------------------------------- | --------------------------------------- |
-| Heading | Six words: what’s absent.                                                       | No pull requests yet                    |
-| Line    | One, optional: what will be listed, or why there’s nothing.                     | Pull requests you open are listed here. |
-| Buttons | Two at most, each a real command with its key. The first is the primary button. | Open pull request… `⌘L`                 |
+| Part    | Limit                                                                                  | Example                                 |
+| ------- | -------------------------------------------------------------------------------------- | --------------------------------------- |
+| Icon    | One: the thing that’s absent, or the search or filter with nothing left.               | `git-pull-request`                      |
+| Title   | Six words: what’s absent. Body text, never a heading.                                  | No pull requests yet                    |
+| Line    | One, optional: what will be listed, or why there’s nothing.                            | Pull requests you open are listed here. |
+| Buttons | Two at most, each a real command with its key. The first is the main button in a view. | Open pull request… `⌘L`                 |
 
 - **Offer the action here.** Never say where else it lives: “from the status bar”, “in the command
   palette”.
@@ -333,7 +334,7 @@ commands ([README](README.md#empty-states)).
 
 |         | Before                                                                                                      | After                                     |
 | ------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| Heading | No pull requests yet                                                                                        | No pull requests yet                      |
+| Title   | No pull requests yet                                                                                        | No pull requests yet                      |
 | Line    | Paste a link to a pull request. Every pull request you open, from any account, shows up here, newest first. | Pull requests you open are listed here.   |
 | Buttons | Review a pull request · Paste a link                                                                        | Open pull request… `⌘L` · Paste link `⌘V` |
 
@@ -495,13 +496,13 @@ One row in Settings: a label, a description and a control.
 
 ### Welcome step
 
-One screen of the welcome, with one job: sign in, choose the look, choose keys, set up, open a pull
-request.
+One screen of the welcome, with one job: sign in, choose the look, choose keys, learn what an
+overview is, set up, open a pull request.
 
 | Part    | Limit                                                                                              | Example                                           |
 | ------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
 | Heading | Six words, no full stop: the step’s job. The first step’s says what Lo is for.                     | Review pull requests from the keyboard            |
-| Line    | One: what the reader gets, or where to change it later.                                            | Each of these is also in Settings › Integrations. |
+| Line    | One: what the reader gets, or where to change it later. Two on a step that explains a part of Lo.  | Each of these is also in Settings › Integrations. |
 | Row     | A label of six words, one line and one button. Once it’s done, its state takes the button’s place. | Overview skill · “Install”, then “Installed”      |
 | Buttons | “Continue” and “Skip” on every step, and “Back” from the second step on. Only these words.         | Continue                                          |
 
@@ -514,7 +515,7 @@ request.
   requests”), or in the step’s line where the step has one choice (“Also in Settings › Keyboard.”).
 - **A card has a line only for what its picture can’t show,** such as what a click does.
 - **A step that’s done says so in place:** “Signed in as ravi-k”, “Installed”.
-- **Progress** has no words on screen. To a screen reader it’s “Step 2 of 5”.
+- **Progress** has no words on screen. To a screen reader it’s “Step 2 of 6”.
 - **Never:** “Welcome!”, “Let’s get started”, “You’re all set”, “Next”, “Not now”, “Later”,
   “optional”, “if you like”, a list of features, what Lo will do later.
 
@@ -656,7 +657,7 @@ More pairs, by the rule each one shows.
   paste this prompt into a coding agent, and it writes one and pushes it to refs/lo/pr/80. Open the
   PR again once it’s pushed to see it.
 - After:
-  - Heading: No overview yet
+  - Title: No overview yet
   - Line: A coding agent writes one from this prompt.
   - Button: Copy prompt
 
