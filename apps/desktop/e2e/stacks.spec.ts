@@ -159,11 +159,17 @@ test('draws the stack above the files, with each layer’s marks, the offer and 
   await expect(stack).toContainText(/\bone layer at a time\b/);
   await expect(stack.getByRole('button', { name: /^Convert to GitHub stack/ })).toBeVisible();
   // Its Dismiss asks where: for this stack, which main keeps, or for all stacks, which turns its
-  // setting off. For this stack, it goes, and the tree has the keys.
-  await stack.getByRole('button', { name: 'Dismiss' }).click();
+  // setting off. Esc gives Dismiss focus back, where ⇧F10 opens the same menu, ready for ⏎. For
+  // this stack, it goes, and the tree has the keys.
+  const dismiss = stack.getByRole('button', { name: 'Dismiss' });
+  await dismiss.click();
   const choices = page.getByRole('menu', { name: 'Dismiss' }).getByRole('menuitem');
   await expect(choices).toHaveText([/^Dismiss for this stack/, /^Dismiss for all stacks/]);
-  await choices.first().click();
+  await page.keyboard.press('Escape');
+  await expect(dismiss).toBeFocused();
+  await page.keyboard.press('Shift+F10');
+  await expect(choices).toHaveText([/^Dismiss for this stack/, /^Dismiss for all stacks/]);
+  await page.keyboard.press('Enter');
   await expect(stack.getByRole('button', { name: /^Convert to GitHub stack/ })).toHaveCount(0);
   await expect(treeOf(page)).toBeFocused();
   // The files are still there, under the stack.

@@ -114,8 +114,8 @@ function controls(row: HTMLElement | null, kind: Control): HTMLElement[] {
  * once, so the banner itself is still, and a title that changes in place isn't said again.
  *
  * Focus stays in the row as one banner gives way to the next: "+1" hands it to the next banner's
- * "+1", or its action where it has none, and Dismiss to the next banner's Dismiss, or its action or
- * "+1". A banner that leaves while it holds focus for any other reason, as its own action takes it
+ * "+1", or its action where it has none, and Dismiss, at once or once its choice is made, to the
+ * next banner's Dismiss, or its action or "+1". A banner that leaves while it holds focus for any other reason, as its own action takes it
  * away, or a more urgent one takes its place, hands it to the next banner's action, else its "+1",
  * else its Dismiss. Either way, once it was the last, focus goes to the view under the row.
  */
@@ -127,14 +127,22 @@ export function Banner(props: BannerProps) {
   useLayoutEffect(() => drawn?.(props));
   const self = useRef<HTMLDivElement>(null);
   // Leaving while it holds focus, whatever took it away, it hands focus to the banner that takes its
-  // place. A press of "+1" or Dismiss has handed it on already, to the same button there.
+  // place. A press of "+1" or Dismiss has handed it on already, to the same button there. Dismiss
+  // with choices hasn't: focus is back on it once one is chosen, and the banner leaves after, so it
+  // goes to the same button there as well.
   const leaving = useRef(place);
   leaving.current = place;
   useLayoutEffect(
     () => () => {
       const row = leaving.current?.row.current ?? null;
       const view = leaving.current?.view;
+      const active = self.current?.ownerDocument.activeElement;
+      const fromDismiss =
+        active instanceof HTMLElement &&
+        self.current?.contains(active) === true &&
+        active.dataset['loBanner'] === 'dismiss';
       handOffFocus([self.current], () => [
+        ...(fromDismiss ? controls(row, 'dismiss') : []),
         ...controls(row, 'action'),
         ...controls(row, 'more'),
         ...controls(row, 'dismiss'),
@@ -200,7 +208,8 @@ export function Banner(props: BannerProps) {
             </Button>
           )}
           {(onDismiss || dismissChoices) && (
-            // With choices, the banner leaves once one is chosen, and hands focus on as it goes.
+            // With choices, the banner leaves once one is chosen, and hands focus on as it goes,
+            // from Dismiss, where the menu gave it back.
             <DismissButton
               choices={dismissChoices}
               onDismiss={() => {

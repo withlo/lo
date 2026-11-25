@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-// Dismissing the stacks' offers: each one's menu lists its own rows, which act on the tab on screen
-// and only while it offers them; "for this stack" or "for #84" asks main to keep it, and "for all
-// stacks" turns its setting off.
+// Dismissing the stacks' offers: each one's menu lists its own rows, which act on the tab the offer
+// is in, from the palette on the tab on screen, and only while it offers them; "for this stack" or
+// "for #84" asks main to keep it, and "for all stacks" turns its setting off.
 
 import { expect, it, vi } from 'vitest';
 
@@ -10,12 +10,12 @@ import type * as TabShared from '../../tab/window/shared.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
 import { offerConvert, offerStart } from '../settings.ts';
 import {
-  CONVERT_NOTICE,
+  convertNotice,
   dismissConvert,
   dismissStart,
   offerConvertSwitch,
   offerStartSwitch,
-  START_NOTICE,
+  startNotice,
 } from './dismiss.ts';
 import { stacks } from './layers.ts';
 import { offers } from './offers.ts';
@@ -51,7 +51,12 @@ const TAB: PullTab = {
   state: 'open',
 };
 
+/** Another pull request's tab. */
+const OTHER: PullTab = { ...TAB, id: 't2:19', repo: 'other', number: 19, title: 'd' };
+
 const NONE = { kind: 'none' } as const;
+const CONVERT_NOTICE = convertNotice(TAB);
+const START_NOTICE = startNotice(TAB);
 
 it('lists each offer’s rows in its own menu alone, and in the palette', () => {
   for (const handler of [dismissConvert, offerConvertSwitch]) {
@@ -84,6 +89,33 @@ it('dismisses an offer for the stack or layer on screen, only while it’s offer
   expect(dismissConvert.enabled?.(CONVERT_NOTICE)).toBe(true);
   expect(dismissStart.enabled?.(START_NOTICE)).toBe(true);
   expect(dismissStart.named?.(START_NOTICE)).toBe('Dismiss for #84');
+  await dismissConvert.run(CONVERT_NOTICE);
+  await dismissStart.run(START_NOTICE);
+  expect(bridge.calls.filter(([channel]) => channel === 'stacks.dismiss')).toEqual([
+    ['stacks.dismiss', { id: TAB.id, notice: 'convert' }],
+    ['stacks.dismiss', { id: TAB.id, notice: 'start' }],
+  ]);
+});
+
+it('dismisses an offer in the tab its menu was opened in, though another is on screen by then', async () => {
+  on.tab = TAB;
+  stacks.set(TAB.id, {
+    kind: 'stack',
+    root: 'main',
+    githubStack: false,
+    rows: [],
+    notes: [],
+    callout: 'This branch stack merges one layer at a time.',
+  });
+  offers.set(TAB.id, { title: 'This diff includes #83’s changes', action: 'Hide', commit: null });
+  on.tab = OTHER;
+  bridge.calls.length = 0;
+  expect(dismissConvert.enabled?.(CONVERT_NOTICE)).toBe(true);
+  expect(dismissStart.enabled?.(START_NOTICE)).toBe(true);
+  expect(dismissStart.named?.(START_NOTICE)).toBe('Dismiss for #84');
+  // From the palette, it's the tab on screen's, which offers neither.
+  expect(dismissConvert.enabled?.(NONE)).toBe('');
+  expect(dismissStart.named?.(NONE)).toBe('Dismiss for #19');
   await dismissConvert.run(CONVERT_NOTICE);
   await dismissStart.run(START_NOTICE);
   expect(bridge.calls.filter(([channel]) => channel === 'stacks.dismiss')).toEqual([

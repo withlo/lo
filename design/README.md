@@ -428,13 +428,14 @@ the control or panel it belongs to, and the reader can dismiss it, here or every
   offer that's a change to what's on screen, such as where a layer's diff starts, is a `Banner` with
   `dismissChoices`.
 - **Dismiss asks where.** It opens the offer's menu, which its right-click opens too (a `notice`
-  target): "Dismiss for #264", or "Dismiss for this stack", where the offer is tied to one pull
-  request or stack, then "Dismiss for all stacks", or for all of whatever it's about.
+  target, in a `notice` scope: `useNoticeTarget`): "Dismiss for #264", or "Dismiss for this stack",
+  where the offer is tied to one pull request or stack, then "Dismiss for all stacks", or for all of
+  whatever it's about.
 - **"For all" turns off a setting,** which brings it back: a switch in Settings › Pull requests,
   beside the other offers', labelled "Offer GitHub stacks". A dismissal for one pull request is kept
   in the feature's own table, so it holds through restarts.
-- **Its commands have no key.** The menu and the palette reach them, and the keymap file can give
-  them one.
+- **Its keys are Dismiss's menu's.** `Tab` reaches Dismiss, and `⏎` or `⇧F10` there opens its menu,
+  whose rows run as any menu's do. The palette lists them too.
 - News keeps its one-press Dismiss: it's seen once and goes. A failure has no Dismiss: it stays
   until it's fixed.
 

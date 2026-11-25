@@ -216,7 +216,7 @@ export default defineCommands(
      * Its row in the message's Dismiss menu turns it off.
      */
     offerStart: {
-      label: 'Offer layer’s own changes',
+      label: 'Offer single-layer diffs',
       group: 'View',
       keys: [],
       targets: ['notice', 'none'],

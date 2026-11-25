@@ -32,13 +32,14 @@ import {
 } from '@lo/stacks';
 
 import type { PullState } from '../../tab/contract.ts';
-import type { Notice, Offer, StackState, StackView } from '../contract.ts';
+import type { Offer, StackState, StackView } from '../contract.ts';
 import type { Forest as SharedForest } from '../service.ts';
 import type { Found } from './conversion.ts';
+import type { Dismissible } from './dismissed.ts';
 import { runOf, type Run } from './runs.ts';
 import { planStart, type StartForest } from './starts.ts';
 import { viewOf, type Shown } from './view.ts';
-import { calloutText, reasonsText } from './words.ts';
+import { calloutText, reasonsText, type CalloutKind } from './words.ts';
 
 /** A pull request's tab, as the finder follows it. */
 export interface FinderTab {
@@ -113,7 +114,7 @@ export interface FinderOptions {
    * not once it's dismissed for one of them, or turned off. Always, without this. Say
    * {@link StackFinder.noticesChanged} when it changes.
    */
-  offers?: ((notice: Notice, repo: string, numbers: readonly number[]) => boolean) | undefined;
+  offers?: ((notice: Dismissible, repo: string, numbers: readonly number[]) => boolean) | undefined;
   log(line: string): void;
   /** The time, in milliseconds since the Unix epoch, as the pollers' reads say when they were made. */
   now?: (() => number) | undefined;
@@ -142,6 +143,8 @@ interface Followed {
   start: LayerStart | undefined;
   /** The start its banner offers, if any, and the start the stack says it is. */
   offered: { readonly offer: Offer; readonly start: LayerStart | undefined } | undefined;
+  /** Which offer its stack's tree makes, dismissed or not, if any. */
+  callout: CalloutKind | undefined;
 }
 
 /** The layers a tab asked a poller to read the state of. */
@@ -219,6 +222,7 @@ export class StackFinder {
           overviews: undefined,
           start: undefined,
           offered: undefined,
+          callout: undefined,
         });
         continue;
       }
@@ -238,6 +242,11 @@ export class StackFinder {
   /** What tab `id` shows now, or nothing for a tab that isn't a pull request's. */
   state(id: string): StackState | undefined {
     return this.#followed.get(id)?.state;
+  }
+
+  /** Which offer tab `id`'s stack's tree makes now, dismissed or not, if any. */
+  callout(id: string): CalloutKind | undefined {
+    return this.#followed.get(id)?.callout;
   }
 
   /**
@@ -352,13 +361,14 @@ export class StackFinder {
   }
 
   /**
-   * `view` and `offer`, as tab `tab` offers them: the offer to convert its stack, unless it's
-   * dismissed for one of the stack's layers or turned off, and the start offered, unless it's
-   * dismissed for its layer or turned off.
+   * `view` and `offer`, as tab `tab` offers them: the offer its stack's tree makes (`callout`),
+   * unless that one is dismissed for one of the stack's layers or turned off, and the start
+   * offered, unless it's dismissed for its layer or turned off.
    */
   #offered(
     tab: FinderTab,
     view: StackView,
+    callout: CalloutKind | undefined,
     offer: Offer | null,
   ): { view: StackView; offer: Offer | null } {
     const offers = this.#options.offers;
@@ -368,7 +378,7 @@ export class StackFinder {
       view.kind === 'stack' &&
       view.callout !== null &&
       !offers(
-        'convert',
+        callout ?? 'convert',
         repo,
         view.rows.map((row) => row.number),
       )
@@ -481,7 +491,8 @@ export class StackFinder {
         plan?.note && out.view.kind === 'stack'
           ? { ...out.view, notes: [...out.view.notes, plan.note] }
           : out.view;
-      const offered = this.#offered(tab, view, plan?.offer ?? null);
+      followed.callout = out.callout;
+      const offered = this.#offered(tab, view, out.callout, plan?.offer ?? null);
       const state: StackState = { id: tab.id, stack: offered.view, offer: offered.offer };
       const sent = JSON.stringify(state);
       followed.state = state;

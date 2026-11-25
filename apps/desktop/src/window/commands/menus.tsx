@@ -7,8 +7,25 @@
 // "Already first". The same words are the toast its key gives where no control shows them.
 
 import { ContextMenu, type ContextMenuAnchor } from '@lo/ui';
-import { hasEditMenu, menuSections, textKind, type Target, type TargetKind } from '@lo/ui/commands';
-import { useEffect, useSyncExternalStore, type MouseEvent } from 'react';
+import {
+  findScope,
+  hasEditMenu,
+  menuSections,
+  scopeTarget,
+  setScopeSource,
+  textKind,
+  type NoticeTarget,
+  type Target,
+  type TargetKind,
+} from '@lo/ui/commands';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useSyncExternalStore,
+  type MouseEvent,
+  type RefCallback,
+} from 'react';
 
 import { focusedTarget } from './bar.ts';
 import { registry, useKeys } from './registry.ts';
@@ -94,6 +111,15 @@ export function openMenuAtFocus(): boolean {
 }
 
 /**
+ * Opens the menu of `element`'s scope under it, as the keyboard does, with its first row ready,
+ * and leaves focus where it is: for a command whose key presses a control that opens a menu, such
+ * as an offer's Dismiss.
+ */
+export function openMenuOf(element: Element): boolean {
+  return openMenu(scopeTarget(findScope(element)), anchorOf(element), true);
+}
+
+/**
  * Props for an element whose right-click opens the menu of `target`, or of what `target` makes of
  * the click, such as the line under the pointer. The innermost target with a menu takes the click;
  * one with no menu leaves it to the next around it. Spread them on the element.
@@ -122,6 +148,26 @@ export function useMenuTarget(
       }
     },
   };
+}
+
+/**
+ * Props for an offer whose Dismiss asks where: its right-click opens the menu of `target`, and it's
+ * a `notice` scope whose keys act on `target`, so `⇧F10` on its Dismiss opens the same menu. Spread
+ * them on the offer's element.
+ */
+export function useNoticeTarget(target: NoticeTarget): {
+  ref: RefCallback<HTMLElement>;
+  'data-lo-scope': 'notice';
+  onContextMenu: (event: MouseEvent<HTMLElement>) => void;
+} {
+  const latest = useRef(target);
+  latest.current = target;
+  const ref = useCallback(
+    (element: HTMLElement | null) =>
+      element ? setScopeSource(element, { target: () => latest.current }) : undefined,
+    [],
+  );
+  return { ref, 'data-lo-scope': 'notice', ...useMenuTarget(target) };
 }
 
 /** What a menu of each kind of target is called, for screen readers. */

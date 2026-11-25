@@ -26,7 +26,8 @@ export const offerConvert = defineSetting(
  */
 export const offerStart = defineSetting('stacks.offerStart', z.boolean(), true, 'true or false', {
   group: 'pullRequests',
-  label: 'Offer layer’s own changes',
-  named: 'the offer of a layer’s own changes',
-  description: 'When a layer’s diff also shows the layer below’s changes, an offer to hide them.',
+  label: 'Offer single-layer diffs',
+  named: 'the offer of single-layer diffs',
+  description:
+    'When a layer’s diff also shows the layer below’s changes, a message offers to hide them.',
 });

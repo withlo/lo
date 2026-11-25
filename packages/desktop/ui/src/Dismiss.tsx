@@ -1,4 +1,4 @@
-import type { HTMLAttributes, MouseEvent, ReactNode } from 'react';
+import type { HTMLAttributes, MouseEvent, ReactNode, Ref } from 'react';
 
 import { Button } from './Button.tsx';
 import { openMenuUnder } from './MoreButton.tsx';
@@ -12,7 +12,8 @@ export interface DismissButtonProps {
   /**
    * It asks where to dismiss it, for an offer or advice: it opens the menu of the element it's in,
    * as `MoreButton` does, whose rows are the choices ("Dismiss for #264", "Dismiss for all
-   * stacks"). Give that element the menu (a right-click target), so the two can't differ.
+   * stacks"). Give that element the menu (a right-click target), so the two can't differ, and make
+   * it a `notice` scope whose target is the same, so `⇧F10` on Dismiss opens it too.
    */
   choices?: boolean | undefined;
   /** What a banner marks its buttons with, for focus to go to the same one on the next. */
@@ -47,6 +48,8 @@ export function DismissButton({ onDismiss, choices = false, ...rest }: DismissBu
 }
 
 export interface OfferProps extends Omit<HTMLAttributes<HTMLDivElement>, 'children'> {
+  /** Its element, for the `notice` scope it is. */
+  ref?: Ref<HTMLDivElement> | undefined;
   /** What Lo could do, in one line, as a fact: "This branch stack merges one layer at a time." */
   line: ReactNode;
   /** The one thing to do about it: its command's button. */
@@ -56,7 +59,8 @@ export interface OfferProps extends Omit<HTMLAttributes<HTMLDivElement>, 'childr
 /**
  * An offer, on the control or panel it belongs to: its line with Dismiss at its end, and its button
  * under it. Dismiss asks where to dismiss it, so give the offer the right-click menu of those
- * choices (`onContextMenu`, in `rest`): Dismiss opens the same menu under itself.
+ * choices (`onContextMenu`, in `rest`), and make it a `notice` scope with the same target
+ * (`data-lo-scope` and `ref`): Dismiss opens that menu under itself, as `⇧F10` on it does.
  */
 export function Offer({ line, action, className = '', ...rest }: OfferProps) {
   return (

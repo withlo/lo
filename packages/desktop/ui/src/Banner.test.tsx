@@ -22,16 +22,21 @@ async function settle(): Promise<void> {
   });
 }
 
-/** A banner as the tab holds it: its title, and whether it has a button besides Dismiss. */
+/**
+ * A banner as the tab holds it: its title, whether it has a button besides Dismiss, and whether its
+ * Dismiss asks where.
+ */
 interface Shown {
   readonly title: string;
   readonly action?: boolean;
+  readonly choices?: boolean;
 }
 
 /**
  * A tab's banner row with `banners`, the first shown, "+1" moving to the next round the end, and
  * Dismiss putting the one shown away, as its action does too, as "Show r5" does once it has shown
- * it. The view under the row is `#view`.
+ * it. A Dismiss that asks where leaves it to `#choose`, a choice made in its menu. The view under
+ * the row is `#view`.
  */
 function Row({ banners }: { banners: readonly Shown[] }) {
   const [left, setLeft] = useState(banners);
@@ -62,7 +67,8 @@ function Row({ banners }: { banners: readonly Shown[] }) {
                 tone="info"
                 title={shown.title}
                 action={shown.action ? { label: 'Show r5', onClick: putAway } : undefined}
-                onDismiss={putAway}
+                onDismiss={shown.choices ? undefined : putAway}
+                dismissChoices={shown.choices}
               />
             )}
           </Swap>
@@ -70,6 +76,9 @@ function Row({ banners }: { banners: readonly Shown[] }) {
       </div>
       <button id="view" ref={view} type="button">
         The diff
+      </button>
+      <button id="choose" type="button" onClick={putAway}>
+        Dismiss for #84
       </button>
     </>
   );
@@ -110,6 +119,23 @@ describe('Banner', () => {
     expect(two.textContent).toContain('Merged #264');
     expect(two.querySelector('[aria-label^="Next"]')).toBeNull();
     expect(document.activeElement).toBe(named(two, 'Dismiss'));
+  });
+
+  it('hands focus from a Dismiss that asks where, once a choice takes its banner away, to the same button on the next', async () => {
+    const host = render(
+      <Row
+        banners={[
+          { title: 'This diff includes #83’s changes', action: true, choices: true },
+          { title: 'Merged #264', action: true },
+        ]}
+      />,
+    );
+    // The menu gives focus back to Dismiss as it closes, then its choice takes the banner away.
+    focus(named(host, 'Dismiss'));
+    click(host.querySelector('#choose')!);
+    await settle();
+    expect(host.textContent).toContain('Merged #264');
+    expect(document.activeElement).toBe(named(host, 'Dismiss'));
   });
 
   it('hands focus from Dismiss to the view under the row once it was the last', async () => {

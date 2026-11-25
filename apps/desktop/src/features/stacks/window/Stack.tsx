@@ -23,7 +23,7 @@ import {
 import { controlOf, runControl, setScopeSource, type Target } from '@lo/ui/commands';
 import { useCallback, useEffect, useRef, type MouseEvent } from 'react';
 
-import { currentMenu, openMenu, useMenuTarget } from '../../../window/commands/menus.tsx';
+import { currentMenu, openMenu, useNoticeTarget } from '../../../window/commands/menus.tsx';
 import { useKeys } from '../../../window/commands/registry.ts';
 import { useOverviewMark, type OverviewMark } from '../../overview/window/shared.ts';
 import { useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
@@ -31,7 +31,7 @@ import { useViewedCount } from '../../tree/window/shared.ts';
 import type { Checks, Note, Review, Row } from '../contract.ts';
 import { makeStack } from './actions.ts';
 import { useLayerCount } from './counts.ts';
-import { CONVERT_NOTICE } from './dismiss.ts';
+import { convertNotice } from './dismiss.ts';
 import { catchUp, choosing, focused, keyboardLayer, runTrouble, stacks } from './layers.ts';
 import { chainIn, choiceLine, type Choice } from './runs.ts';
 import { runAgain, showTarget, stackTarget, stopChoosing, takeRefocus } from './walk.ts';
@@ -92,16 +92,16 @@ function StepButton({ id, down }: { id: string; down: boolean }) {
 
 /**
  * The offer to convert the chain through the layer on screen to a GitHub stack: one line, with
- * Dismiss, whose menu (its right-click's too) dismisses it for this stack or for all, and the
- * command's button.
+ * Dismiss, whose menu (its right-click's and `⇧F10`'s too) dismisses it for this stack or for all,
+ * and the command's button.
  */
 function Offer({ line, tab }: { line: string; tab: PullTab }) {
   const control = controlOf('stacks.convert');
   const off = control?.off;
-  const menu = useMenuTarget(CONVERT_NOTICE);
+  const notice = useNoticeTarget(convertNotice(tab));
   return (
     <OfferLine
-      {...menu}
+      {...notice}
       line={withoutBidi(line)}
       action={
         <Button

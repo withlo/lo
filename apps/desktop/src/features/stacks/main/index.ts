@@ -108,18 +108,22 @@ export default defineFeature(contract, {
       }
     },
     dismiss({ id, notice }, context) {
+      if (!finder || !dismissed) throw new IpcError('stopped', 'Lo is quitting.');
       const tab = tabsOf(context.use(tabs)).find((each) => each.id === id);
-      const stack = finder?.state(id)?.stack;
-      if (!tab || !finder || !dismissed || (notice === 'convert' && stack?.kind !== 'stack')) {
-        throw new IpcError('missing', 'There’s no stack in that tab.');
+      if (!tab) throw new IpcError('notFound', 'There’s no pull request in that tab.');
+      const stack = finder.state(id)?.stack;
+      // The tree's offer is dismissed by which it is now, so a different one can still be made.
+      const which = notice === 'start' ? 'start' : finder.callout(id);
+      if (which === undefined || (which !== 'start' && stack?.kind !== 'stack')) {
+        throw new IpcError('missing', 'That offer is no longer there.');
       }
-      // The offer to convert is the stack's, so it's dismissed for each of its layers; the start
-      // is the layer's own.
+      // The tree's offer is the stack's, so it's dismissed for each of its layers; the start is the
+      // layer's own.
       const numbers =
-        notice === 'convert' && stack?.kind === 'stack'
+        which !== 'start' && stack?.kind === 'stack'
           ? stack.rows.map((row) => row.number)
           : [tab.pull.number];
-      dismissed.add(notice, tab.pull.repo.key, numbers, Date.now());
+      dismissed.add(which, tab.pull.repo.key, numbers, Date.now());
       finder.noticesChanged();
     },
     plan({ id }, context) {
@@ -167,7 +171,9 @@ export default defineFeature(contract, {
         });
       },
       compareFrom: (id, commit) => service.compareFrom(id, commit),
-      offers: (notice, repo, numbers) => on[notice] === true && !kept.has(notice, repo, numbers),
+      // Both of the tree's offers are the offer of GitHub stacks, which one setting turns off.
+      offers: (notice, repo, numbers) =>
+        on[notice === 'start' ? 'start' : 'convert'] === true && !kept.has(notice, repo, numbers),
       log,
       overviews: () => switched.on(),
     });

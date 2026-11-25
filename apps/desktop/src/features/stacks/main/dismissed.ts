@@ -2,7 +2,13 @@
 // (`stacks_dismissed`) by pull request, so each stays away through restarts.
 
 import type { Database } from '../../../main/database.ts';
-import type { Notice } from '../contract.ts';
+import type { CalloutKind } from './words.ts';
+
+/**
+ * An offer that's dismissed apart from the others: the tree's, by which it is (`convert` or `add`),
+ * or the message's that offers to hide the changes of the layer below (`start`).
+ */
+export type Dismissible = CalloutKind | 'start';
 
 export class Dismissed {
   readonly #database: Database;
@@ -28,13 +34,13 @@ export class Dismissed {
   }
 
   /** Whether `notice` was dismissed for any of `numbers`, pull requests of `repo` (`owner/name`). */
-  has(notice: Notice, repo: string, numbers: readonly number[]): boolean {
+  has(notice: Dismissible, repo: string, numbers: readonly number[]): boolean {
     const all = this.#all();
     return numbers.some((number) => all.has(keyOf(notice, repo, number)));
   }
 
   /** Dismisses `notice` for `numbers`, pull requests of `repo`, at `at`, in ms since the epoch. */
-  add(notice: Notice, repo: string, numbers: readonly number[], at: number): void {
+  add(notice: Dismissible, repo: string, numbers: readonly number[], at: number): void {
     const name = repo.toLowerCase();
     const insert = this.#database.prepare(
       'INSERT INTO stacks_dismissed (notice, repo, number, at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING',
