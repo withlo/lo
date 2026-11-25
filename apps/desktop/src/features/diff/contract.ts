@@ -215,6 +215,11 @@ export const contract = defineContract('diff', {
       input: z.strictObject({ id: tabId, at: oid, compareFrom: oid.nullable() }),
       reply: reply<void>(),
     },
+    /**
+     * Tab `id`'s diff is its view on screen, or no longer: while it is, and its tab is, the pull
+     * request's files GitHub lists go ahead of the reads the tab's other views wait on.
+     */
+    shown: { input: z.strictObject({ id: tabId, shown: z.boolean() }), reply: reply<void>() },
   },
   topics: {
     /** A pull request's tab's diff, each time it changes. */

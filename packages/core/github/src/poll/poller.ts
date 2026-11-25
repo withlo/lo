@@ -768,6 +768,7 @@ export class Poller {
     this.#pullFiles = new SharedPullFiles(
       (pull, limits, gate) => this.#readPullFiles(pull, limits, gate),
       this.#queue,
+      () => this.#wake(),
     );
     this.#lookUpMerged = options.lookUpMerged;
     this.#seen = options.seen;
@@ -2355,6 +2356,11 @@ export class Poller {
       }
     }
     if (lead && !next?.forced) next = lead;
+    // A pull request's files someone wants soon go before polls, which would hold the queue for
+    // many requests between its pages: a poll waits for them, but for one tried at once.
+    if (next && next !== lead && !next.forced && this.#pullFiles.wanted()) {
+      return { kind: 'wait', wait: undefined };
+    }
     // While the limit is low, intervals are longer and some tiers aren't polled at all. Wake at its
     // reset, when they're back.
     const untilReset =

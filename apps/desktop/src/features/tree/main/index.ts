@@ -49,10 +49,11 @@ function follow(context: FeatureContext<typeof contract>, id: string): void {
           return poller.queue.read(() => request(client));
         },
         async pullFiles(acting, pull, head, limits, wanted) {
-          // Its panel is on screen with its tab, which waits on the files to draw.
+          // The Files panel is on screen with its tab: its list goes right after what the view on
+          // screen waits on first, ahead of polls. The diff on screen asks for them sooner.
           const asker: FilesAsker = {
             wanted,
-            priority: () => (service.list().active === id ? 'foreground' : 'background'),
+            priority: () => (service.list().active === id ? 'next' : 'background'),
           };
           if (acting.kind === 'anonymous') {
             return access.anonymousPullFiles(pull, head, limits, asker);

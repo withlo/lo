@@ -255,3 +255,34 @@ test('background reads give way while a foreground read is under way or next, bu
   await advanceTo(start, 800);
   expect(log.map(([name]) => name).slice(4)).toEqual(['tree a', 'files f']);
 });
+
+test('a next read goes ahead of waiting background reads, polls too, behind foreground ones, and gives way as they do', async () => {
+  const queue = new RequestQueue(0);
+  const log: Log = [];
+  const start = performance.now();
+  let ahead = false;
+  queue.giveWayWhile(() => ahead);
+  for (const [name, priority, givesWay] of [
+    ['poll a', 'background', false],
+    ['poll b', 'background', false],
+    ['tree c', 'background', true],
+    ['files d', 'next', true],
+    ['threads e', 'foreground', true],
+  ] as const) {
+    void queue.read(request(name, 100, log, start), undefined, priority, givesWay);
+    await settle();
+  }
+  await advanceTo(start, 600);
+  expect(log.map(([name]) => name)).toEqual(['poll a', 'threads e', 'files d', 'poll b', 'tree c']);
+
+  // While a foreground read is under way or next, it gives way, as a background read does.
+  ahead = true;
+  void queue.read(request('files f', 100, log, start), undefined, 'next');
+  void queue.read(request('poll g', 100, log, start), undefined, 'background', false);
+  await advanceTo(start, 900);
+  expect(log.map(([name]) => name).slice(5)).toEqual(['poll g']);
+  ahead = false;
+  queue.recheck();
+  await advanceTo(start, 1100);
+  expect(log.map(([name]) => name).slice(5)).toEqual(['poll g', 'files f']);
+});

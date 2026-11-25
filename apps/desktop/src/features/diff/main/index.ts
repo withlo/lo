@@ -17,6 +17,8 @@ import { layout, whitespace } from '../settings.ts';
 import { DiffTab } from './diff.ts';
 
 const diffs = new Map<string, DiffTab>();
+/** The tabs whose diff is their view on screen, as the window says. */
+const onScreen = new Set<string>();
 const unfollow: (() => void)[] = [];
 
 const log = (line: string) => console.error(`diff: ${line}`);
@@ -34,6 +36,7 @@ function follow(context: FeatureContext<typeof contract>, id: string): void {
   if (!info) {
     diffs.get(id)?.close();
     diffs.delete(id);
+    onScreen.delete(id);
     return;
   }
   let diff = diffs.get(id);
@@ -50,10 +53,12 @@ function follow(context: FeatureContext<typeof contract>, id: string): void {
           return poller.queue.read(() => request(client));
         },
         async pullFiles(acting, pull, head, limits, wanted) {
-          // Its panel is on screen with its tab, which waits on the files to draw.
+          // The diff on screen waits on its files: they go first. Else they're the Files panel's,
+          // which asks for them itself.
           const asker: FilesAsker = {
             wanted,
-            priority: () => (service.list().active === id ? 'foreground' : 'background'),
+            priority: () =>
+              service.list().active === id && onScreen.has(id) ? 'foreground' : 'background',
           };
           if (acting.kind === 'anonymous') {
             return access.anonymousPullFiles(pull, head, limits, asker);
@@ -84,6 +89,10 @@ export default defineFeature(contract, {
     whole: ({ id, at, version, path, large }) => diffOf(id).whole(at, version, path, large),
     drawn({ id, at, compareFrom }) {
       diffOf(id).drawn(at, compareFrom);
+    },
+    shown({ id, shown }) {
+      if (shown) onScreen.add(id);
+      else onScreen.delete(id);
     },
   },
   start(context) {

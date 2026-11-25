@@ -32,6 +32,7 @@ import { layout as layoutSetting, whitespace as whitespaceSetting } from '../set
 import { draw, type DrawOptions, type Drawing, type Place } from './drawing.ts';
 import { inOrder, keepsBox, keptOrder, type KeptOrder, viewKey } from './files.ts';
 import { problemSays, type Snapshot } from './loader.ts';
+import { main } from './main.ts';
 import { usePage } from './page.ts';
 import { placesFor } from './places.ts';
 import { notes } from './shared.ts';
@@ -285,6 +286,13 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
   useEffect(() => {
     live(view.current)?.setShown(shown);
   }, [shown]);
+
+  // While it's on screen, main reads its files first.
+  useEffect(() => {
+    main()
+      .shown({ id: tab.id, shown })
+      .catch((error: unknown) => console.error("Lo couldn't say the diff was shown:", error));
+  }, [tab.id, shown]);
 
   // Its place on the page is held from the first frame it's seen in, as it's shown.
   useLayoutEffect(() => {

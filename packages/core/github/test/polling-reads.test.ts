@@ -35,6 +35,7 @@ import {
   type ReadKind,
   type ReadMark,
 } from '../src/poll/reads.ts';
+import type { ReadPriorityNow } from '../src/poll/queue.ts';
 import type { PullRef } from '../src/refs.ts';
 
 beforeEach(useFakeClock);
@@ -819,6 +820,96 @@ test('a pull requests files are read once for everyone who asks', async () => {
   await t.run();
   expect(await later).toBe(diff);
   expect(t.requests().filter(([, what]) => what.includes('/files'))).toHaveLength(1);
+});
+
+/**
+ * A pull request's files go as soon as who asks for them wants them. A tab opening on its timeline
+ * waits on the timeline's first read first: the Files panel's list goes right after it (`next`),
+ * still ahead of the repository's poll. A tab opening on its diff waits on the files: they go
+ * first (`foreground`). One whose view changes to the diff while its files wait has them go first
+ * from then on.
+ */
+test('a pull requests files go after the first read of the view on screen, or first for the diff', async () => {
+  const files = cassette('rest_pull_files').interactions.map(({ interaction }) => interaction);
+  const limits = { maxPages: MAX_PAGES, keepRequests: 0 };
+  /** What finished, in order, with the files asked for as `priority` says when the tab opens. */
+  const opening = async (priority: ReadPriorityNow, change?: () => void) => {
+    const t = await Polling.start('pull_files_order', [...recorded(), ...files], { delay: 1000 });
+    const finished: string[] = [];
+    const timeline = async (github: GithubClient) => {
+      await github.get(pr(1).restPath(), readPullSummary);
+      finished.push('timeline');
+      return 1;
+    };
+    void t.poller.readCached(pr(1), WAITED, timeline, () => 'foreground');
+    void t.poller.setOpen(pr(1));
+    void t.poller
+      .pullFiles(pr(2), 'head', limits, { wanted: () => true, priority })
+      .then(() => finished.push('files'));
+    await t.run();
+    change?.();
+    await t.runUntil(12);
+    const requests = t.requests().map(([, what]) => what);
+    const place = (what: string) => requests.findIndex((each) => each.includes(what));
+    return { finished, filesBeforeRepo: place('/files') < place('/pulls?state=open') };
+  };
+  const timelineOpen = await opening('next');
+  expect(timelineOpen.finished).toEqual(['timeline', 'files']);
+  expect(timelineOpen.filesBeforeRepo).toBe(true);
+  expect((await opening('foreground')).finished).toEqual(['files', 'timeline']);
+  let diffShown = false;
+  const changed = await opening(
+    () => (diffShown ? 'foreground' : 'next'),
+    () => {
+      diffShown = true;
+    },
+  );
+  expect(changed.finished).toEqual(['files', 'timeline']);
+});
+
+/** Page `number` of PR #2's files, as GitHub links to it. */
+function pageAt(number: number): string {
+  return `https://api.github.com/repositories/1/pulls/2/files?per_page=100&page=${number}`;
+}
+
+/**
+ * A poll holds the queue for all its requests, so one that came between a pull request's pages of
+ * files someone wants soon would hold them up: it waits for them instead, but for a poll tried at
+ * once, as opening a pull request does.
+ */
+test('a poll waits for a pull requests files someone wants soon, rather than go between their pages', async () => {
+  const [page] = cassette('rest_pull_files').interactions.map(({ interaction }) => interaction);
+  if (!page) throw new Error('the cassette has no page');
+  /** `page` at `url`, linking to page `next`, if any. */
+  const paged = (url: string, next?: number): Interaction => ({
+    ...page,
+    request: { ...page.request, url },
+    response: {
+      ...page.response,
+      headers: {
+        ...page.response.headers,
+        ...(next === undefined ? {} : { link: `<${pageAt(next)}>; rel="next"` }),
+      },
+    },
+  });
+  const pages = [paged(page.request.url, 2), paged(pageAt(2), 3), paged(pageAt(3))];
+  const t = await Polling.start('pull_files_pages', [...recorded(), ...pages], { delay: 1000 });
+  void t.poller.setOpen(pr(1));
+  const limits = { maxPages: MAX_PAGES, keepRequests: 0 };
+  const listed = t.poller.pullFiles(pr(2), 'head', limits, {
+    wanted: () => true,
+    priority: 'next',
+  });
+  await t.run();
+  await t.runUntil(12);
+  expect((await listed).files.length).toBeGreaterThan(0);
+  const order = t
+    .requests()
+    .map(([, what]) => what)
+    .flatMap((what) =>
+      what.includes('/files') ? ['files'] : what.includes('state=open') ? ['repo'] : [],
+    );
+  expect(order.slice(0, 4)).toEqual(['files', 'files', 'files', 'repo']);
 });
 
 /**

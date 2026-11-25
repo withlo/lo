@@ -831,10 +831,13 @@ repositories, which account opens a repository, and the pull requests opened lat
   limits, so nothing waits on it. A view's first read of its review threads goes ahead of polls and
   of the tab's other reads while it's on screen, as an opening tab's overview reads do, since the
   diff's first draw waits on it. A background read gives way to those, and to the pull request's
-  files while their tab is on screen: it waits while one is under way or next, rather than take the
+  files while the diff is on screen: it waits while one is under way or next, rather than take the
   queue between its requests, unless it's one of the poller's own, or the tab's read of the pull
   request as it opens, which the open pull request's first poll waits for
-  (`RequestQueue.giveWayWhile`).
+  (`RequestQueue.giveWayWhile`). A `next` read, as the Files panel's list beside another view, goes
+  right after those, before the other background reads, polls included; and a poll, which holds the
+  queue for all its requests, waits for a pull request's files someone wants soon rather than start
+  between their pages, but for one tried at once.
 - Each account's poller keeps what it read in the database, read back only by the build of Lo that
   wrote it (a hash of main's output folder), talking to the same GitHub.
 - The window gets each account's summary (its login and name, how it signed in, whether it's signed
@@ -971,16 +974,18 @@ Main follows each pull request's tab through `tab.tabs` (`pull`, `onPull` and `c
   (renames found, both sides downloaded first, at most 200 MB), and what's generated from the head's
   `.gitattributes` and the lockfiles `@lo/review` names. Until then it reads GitHub's tree of the
   head and the pull request's files from the REST API, the files read once for the tree and the diff
-  (`SharedPullFiles`, through `poller.pullFiles`, or `anonymousPullFiles` as nobody), kept 30 s,
-  ahead of polls while their tab is on screen, and only while one of them still wants them when a
-  page's turn comes. A tree GitHub lists only in part, or one that couldn't be read, leaves the
-  changed files alone, saying why. What the copy says replaces what GitHub said, and a new head on
-  screen starts again. A stack's layer compared with the layer below lists what changed from
-  GitHub's comparison of the two commits (`readComparison`), 300 files at most, until the copy has
-  worked out where the head meets that commit, and the pull request's own files when GitHub can't
-  compare them, without asking again. A new start reads what changed again, and keeps the files.
-  GitHub is asked only about a head it gave, never one restored from what Lo saved, and a read that
-  fails is tried again after 5 s, doubling to 5 minutes.
+  (`SharedPullFiles`, through `poller.pullFiles`, or `anonymousPullFiles` as nobody), kept 30 s, and
+  only while one of them still wants them when a page's turn comes. While their tab is on screen,
+  they go first if the diff is its view on screen, as the window says (`diff.shown`), else right
+  after the reads that view waits on first, ahead of polls (`next`), for the Files panel; they move
+  up if the diff comes on screen while they wait. A tree GitHub lists only in part, or one that
+  couldn't be read, leaves the changed files alone, saying why. What the copy says replaces what
+  GitHub said, and a new head on screen starts again. A stack's layer compared with the layer below
+  lists what changed from GitHub's comparison of the two commits (`readComparison`), 300 files at
+  most, until the copy has worked out where the head meets that commit, and the pull request's own
+  files when GitHub can't compare them, without asking again. A new start reads what changed again,
+  and keeps the files. GitHub is asked only about a head it gave, never one restored from what Lo
+  saved, and a read that fails is tried again after 5 s, doubling to 5 minutes.
 - Up to 20,000 files go to the window whole, on `tree.state`. Past that, main sends the root's
   entries, and the window asks for each folder's (`tree.folder`) as it opens one, 500 folders a
   request at most. Past 500,000, the tree shows only the changed files.

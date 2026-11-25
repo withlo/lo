@@ -14,8 +14,10 @@ export interface FilesAsker {
   /** Whether they still want the files: once nobody does as a page's turn comes, the read stops. */
   readonly wanted: () => boolean;
   /**
-   * Whether they wait on the files now: while one who still wants them does (`foreground`), the
-   * pages go ahead of polls in the queue.
+   * How soon they want the files now: the pages go in the queue as the soonest of those who still
+   * want them says, ahead of the reads someone waits on while one wants them `foreground`, as the
+   * diff on screen does, or right after those, ahead of polls, while one wants them `next`, as the
+   * Files panel beside another view does.
    */
   readonly priority?: ReadPriorityNow | undefined;
 }
@@ -33,19 +35,22 @@ export type FilesRead = (pull: PullRef, limits: ReadFiles, gate: RequestGate) =>
 
 /**
  * A pull request's files at a head, read once for everyone who asks while they're read, and kept
- * {@link PULL_FILES_KEPT_FOR} after. Each page takes a turn in the queue, if there's one, as a
- * background read, or a foreground one while an asker waits on it; and goes only while an asker
- * still wants the files, so a tab closed, or a head no longer on screen, reads no more of them. A
- * read that fails isn't kept, so the next ask reads them again.
+ * {@link PULL_FILES_KEPT_FOR} after. Each page takes a turn in the queue, if there's one, as soon
+ * as an asker wants it ({@link FilesAsker.priority}); and goes only while an asker still wants the
+ * files, so a tab closed, or a head no longer on screen, reads no more of them. A read that fails
+ * isn't kept, so the next ask reads them again.
  */
 export class SharedPullFiles {
   readonly #read: FilesRead;
   readonly #queue: RequestQueue | undefined;
+  readonly #over: (() => void) | undefined;
   readonly #reads = new Map<string, Shared>();
 
-  constructor(read: FilesRead, queue?: RequestQueue) {
+  /** Reads with `read`, each page in its turn in `queue`, calling `over` as each read ends. */
+  constructor(read: FilesRead, queue?: RequestQueue, over?: () => void) {
     this.#read = read;
     this.#queue = queue;
+    this.#over = over;
   }
 
   /** `pull`'s files at `head`, within `limits`, for `asker`. */
@@ -58,12 +63,15 @@ export class SharedPullFiles {
     }
     const askers = new Set([asker]);
     const wanting = () => [...askers].filter((each) => each.wanted());
-    const priority = (): ReadPriority =>
-      wanting().some(
-        (each) => each.priority !== undefined && priorityNow(each.priority) === 'foreground',
-      )
-        ? 'foreground'
-        : 'background';
+    // As soon as the soonest of those who still want them wants them.
+    const priority = (): ReadPriority => {
+      const wanted = new Set(
+        wanting().map((each) =>
+          each.priority === undefined ? 'background' : priorityNow(each.priority),
+        ),
+      );
+      return wanted.has('foreground') ? 'foreground' : wanted.has('next') ? 'next' : 'background';
+    };
     const turn = this.#queue?.gate(priority);
     const gate: RequestGate = async () => {
       const release = turn ? await turn() : () => {};
@@ -83,6 +91,7 @@ export class SharedPullFiles {
     const over = () => {
       entry.reading = false;
       this.#queue?.recheck();
+      this.#over?.();
     };
     files.then(
       () => {
@@ -104,6 +113,17 @@ export class SharedPullFiles {
   leads(): boolean {
     for (const shared of this.#reads.values()) {
       if (shared.reading && shared.priority() === 'foreground') return true;
+    }
+    return false;
+  }
+
+  /**
+   * Whether a read is under way that someone wants soon, `foreground` or `next`: polls, which hold
+   * the queue for many requests, wait for it rather than start between its pages.
+   */
+  wanted(): boolean {
+    for (const shared of this.#reads.values()) {
+      if (shared.reading && shared.priority() !== 'background') return true;
     }
     return false;
   }

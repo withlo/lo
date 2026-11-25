@@ -19,9 +19,11 @@ interface Waiter {
 
 /**
  * Who waits on a read: someone looking at the screen, as a pull request's tab opening on its
- * overview does (`foreground`), or nobody in particular, as for polls (`background`).
+ * overview does (`foreground`); someone looking at the screen once what they wait on first is in,
+ * as the Files panel's list beside a tab's timeline (`next`); or nobody in particular, as for polls
+ * (`background`).
  */
-export type ReadPriority = 'foreground' | 'background';
+export type ReadPriority = 'foreground' | 'next' | 'background';
 
 /**
  * A read's priority: fixed, or as it stands whenever its turn could come, for a read that stops
@@ -33,14 +35,15 @@ export type ReadPriorityNow = ReadPriority | (() => ReadPriority);
  * Runs an account's requests one at a time, spacing its writes. Waiting requests take their turns
  * first in, first out, except that a waiting write goes before every waiting read, and a waiting
  * foreground read before every waiting background read: a comment or a merge the user is waiting
- * on doesn't queue behind polls, and nor does what a tab needs to open on. A read's priority may
- * change while it waits, as its tab is hidden or shown again: it's taken as it stands whenever the
- * queue comes free, and a read that's a background one then waits in the order it came. A request
- * already under way always finishes first.
+ * on doesn't queue behind polls, and nor does what a tab needs to open on. A `next` read goes
+ * before the other background reads, polls included. A read's priority may change while it waits,
+ * as its tab is hidden or shown again: it's taken as it stands whenever the queue comes free, and a
+ * read that's a background one then waits in the order it came. A request already under way always
+ * finishes first.
  *
  * A foreground read of many requests, or one of several the poller makes in a row, frees the queue
  * between them, so a background read could take the turn there and hold the rest up. A background
- * read gives way instead while the poller says one of those is under way or next
+ * read, or a `next` one, gives way instead while the poller says one of those is under way or next
  * ({@link RequestQueue.giveWayWhile}), except the poller's own, which it makes in its turn.
  */
 export class RequestQueue {
@@ -53,7 +56,7 @@ export class RequestQueue {
   /** How many requests have waited, which orders them by when they came. */
   #came = 0;
   readonly #writes: Waiter[] = [];
-  /** Reads that are foreground ones, or may be by the time the queue comes free. */
+  /** Reads that are foreground or `next` ones, or may be by the time the queue comes free. */
   readonly #leading: Waiter[] = [];
   readonly #reads: Waiter[] = [];
   /** Whether a foreground read is under way or next, which background reads give way to. */
@@ -125,14 +128,19 @@ export class RequestQueue {
   }
 
   /**
-   * The read to go next: the first to come of those that are foreground ones now, else the first
-   * to come of the rest, but for those that give way while a foreground read is under way or next.
+   * The read to go next: the first to come of those that are foreground ones now, else of those
+   * that are `next` ones, else of the rest; but for those that give way while a foreground read is
+   * under way or next.
    */
   #nextRead(): Waiter | undefined {
     const lead = this.#leading.findIndex((waiter) => waiter.priority?.() === 'foreground');
     if (lead >= 0) return this.#leading.splice(lead, 1)[0];
     const ahead = this.#ahead();
     const goes = (waiter: Waiter) => !ahead || !waiter.givesWay;
+    const soon = this.#leading.findIndex(
+      (waiter) => waiter.priority?.() === 'next' && goes(waiter),
+    );
+    if (soon >= 0) return this.#leading.splice(soon, 1)[0];
     const read = this.#reads.findIndex(goes);
     const other = this.#leading.findIndex(goes);
     const readCame = this.#reads[read]?.came;
@@ -235,11 +243,12 @@ function pause(wait: number, signal: AbortSignal | undefined): Promise<void> {
 
 /**
  * How a read's priority stands as the queue comes free, for one that is or may become a foreground
- * one; none for a write or a background read.
+ * or a `next` one; none for a write or a background read.
  */
 function priorityOf(kind: 'write' | ReadPriorityNow): (() => ReadPriority) | undefined {
   if (typeof kind === 'function') return kind;
-  return kind === 'foreground' ? () => 'foreground' : undefined;
+  if (kind === 'write' || kind === 'background') return undefined;
+  return () => kind;
 }
 
 /** The error a request given up on through `signal` fails with: the signal's reason, if it's an error. */
