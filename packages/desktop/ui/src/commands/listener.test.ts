@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { FakeView, queue, testCommands, type Ran } from '../../test/commands.ts';
 import { defineCommands } from './declare.ts';
-import { KEY_EVENT, listen } from './listener.ts';
+import { KEY_EVENT, listen, takeKeys } from './listener.ts';
 import { Registry } from './registry.ts';
 import { setScopeSource } from './scopes.ts';
 
@@ -110,6 +110,24 @@ function listenAs(system: 'mac' | 'linux', keymap = ''): void {
 const ids = () => ran.map(([id]) => id);
 
 describe('the listener', () => {
+  test('hands a key to what takes keys first, and a key it took goes no further', () => {
+    widget('row');
+    const taken: string[] = [];
+    const stopTaking = takeKeys((event) => {
+      taken.push(event.key);
+      return event.key === 'e';
+    });
+    expect(press('row', 'e').defaultPrevented).toBe(true);
+    expect(press('row', 'q').defaultPrevented).toBe(false);
+    expect(taken).toEqual(['e', 'q']);
+    expect(ran).toEqual([]);
+    expect(log).toEqual(['row q']);
+    stopTaking();
+    press('row', 'e');
+    expect(taken).toHaveLength(2);
+    expect(ids()).toEqual(['diff.markViewed']);
+  });
+
   test('takes Lo’s keys before the focused widget sees them', () => {
     widget('row');
     const taken = press('row', 'e');
