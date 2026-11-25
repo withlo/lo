@@ -705,7 +705,7 @@ export const onStacks = test.extend<{
   githubOrigin: string;
 }>({
   // Its pull requests have no overview, and the cassette doesn't answer for their timelines.
-  settings: [DIFF_FIRST, { option: true }],
+  settings: DIFF_FIRST,
   cassette: ['app_stack', { option: true }],
   account: [true, { option: true }],
   noGit: [false, { option: true }],
@@ -812,7 +812,7 @@ export const onMerge = test.extend<{
   remote: string;
 }>({
   // Its pull requests have no overview, and the cassette doesn't answer for their timelines.
-  settings: [DIFF_FIRST, { option: true }],
+  settings: DIFF_FIRST,
   account: [true, { option: true }],
   // oxlint-disable-next-line no-empty-pattern
   github: async ({}, use) => {
@@ -853,7 +853,7 @@ export const QUEUE = MERGE_PULLS[4];
  */
 export const onQueue = test.extend<{ github: ReplayServer; remote: string }>({
   // Its pull requests have no overview, and the cassette doesn't answer for their timelines.
-  settings: [DIFF_FIRST, { option: true }],
+  settings: DIFF_FIRST,
   // oxlint-disable-next-line no-empty-pattern
   github: async ({}, use) => {
     const server = await serveReplay('app_queue_polled');
@@ -892,7 +892,7 @@ export const QUEUED = MERGE_PULLS[6];
  */
 export const onQueued = test.extend<{ cassette: string; github: ReplayServer; remote: string }>({
   // Its pull requests have no overview, and the cassette doesn't answer for their timelines.
-  settings: [DIFF_FIRST, { option: true }],
+  settings: DIFF_FIRST,
   cassette: ['app_queued_polled', { option: true }],
   github: async ({ cassette }, use) => {
     const server = await serveReplay(cassette);
