@@ -82,7 +82,7 @@ const page = (
         </div>
       </SettingsList>
       <SettingsList label="Empty">
-        <EmptyState level={3} title="Nothing here" line="Add one above." />
+        <EmptyState fit="list" icon="file" title="Nothing here" line="Add one above." />
       </SettingsList>
     </SettingsGroup>
   </SettingsPage>

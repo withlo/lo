@@ -232,6 +232,7 @@ export function SettingsTab() {
           // "Clear search"'s key works, which leaves the fields' keys to them.
           <div className="grid min-w-0 flex-1" data-lo-scope="noMatch">
             <EmptyState
+              icon="search-x"
               title={`No settings match “${searched}”`}
               actions={['settings.clearSearch']}
             />

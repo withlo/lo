@@ -273,7 +273,7 @@ test('lists the pull requests opened lately, filters them and opens one by its k
   const filter = page.getByRole('searchbox', { name: 'Filter pull requests' });
   await expect(filter).toBeFocused();
   await page.keyboard.type('nothing like it');
-  await expect(list.getByRole('heading', { name: 'No matches' })).toBeVisible();
+  await expect(list.getByText('No matches', { exact: true })).toBeVisible();
   await list.getByRole('button', { name: 'Clear filter' }).click();
   await expect(filter).toHaveValue('');
   await expect(filter).toBeFocused();

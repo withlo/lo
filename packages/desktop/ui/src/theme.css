@@ -72,6 +72,7 @@
   --spacing-code-line-small: var(--lo-code-line-small);
   --spacing-code-inline-size: var(--lo-code-inline-size);
   --spacing-read-measure: var(--lo-read-measure);
+  --spacing-empty-measure: var(--lo-empty-measure);
   --spacing-timeline-w: var(--lo-timeline-w);
   --color-ink: var(--lo-ink);
   --color-chalk: var(--lo-chalk);
