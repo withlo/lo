@@ -259,7 +259,7 @@ test('a button with focus that goes as its box drops under 160 px leaves focus o
   );
   const measured = vi
     .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
-    .mockImplementation(() => ({ width }) as DOMRect);
+    .mockImplementation(() => new DOMRect(0, 0, width, 360));
   onTestFinished(() => {
     measured.mockRestore();
     vi.unstubAllGlobals();
