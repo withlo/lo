@@ -49,6 +49,11 @@ export interface SegmentedControlProps<T extends string> {
    * the chosen segment still marked.
    */
   disabled?: boolean | undefined;
+  /**
+   * Why it can't be changed while it's `disabled`, in a few words: each segment's tooltip then, and
+   * what a screen reader hears on it, as the Files panel's "Reading files…".
+   */
+  why?: string | undefined;
 }
 
 const segment = cva(
@@ -77,7 +82,8 @@ const PREVIOUS = new Set(['ArrowLeft', 'ArrowUp']);
 
 /**
  * Two to four options in a pill track, exactly one chosen at a time, each a state rather than an
- * action: the middle-view switch, or a setting's choices. The arrow keys move between the segments
+ * action: the middle-view switch, the Files panel's Tree | Review order, or a setting's choices.
+ * Never draw such a choice as buttons of its own. The arrow keys move between the segments
  * and choose as they go; the control's own key, when it has one, follows it. One thumb marks the
  * chosen segment and slides to the next: the Slide move.
  */
@@ -90,6 +96,7 @@ export function SegmentedControl<T extends string>({
   size = 'md',
   keys,
   disabled = false,
+  why,
 }: SegmentedControlProps<T>) {
   const buttons = useRef(new Map<T, HTMLButtonElement>());
   // Where the thumb is: under the chosen segment, measured, so it can slide from one to the next.
@@ -126,6 +133,8 @@ export function SegmentedControl<T extends string>({
   }, [placed]);
   // The chosen segment takes focus by `Tab`, else the first.
   const tabbable = items.some((item) => item.value === value) ? value : items[0]?.value;
+  // Why it's dimmed, while it is: each segment's tooltip, and its description to a screen reader.
+  const refused = disabled && why !== undefined ? why : undefined;
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.metaKey || event.ctrlKey || event.altKey || disabled) return;
@@ -170,6 +179,7 @@ export function SegmentedControl<T extends string>({
               aria-checked={kind === 'choice' ? chosen : undefined}
               tabIndex={item.value === tabbable ? 0 : -1}
               aria-disabled={disabled || undefined}
+              aria-description={refused}
               aria-label={item.name}
               className={segment({
                 chosen: chosen ? (thumb ? 'thumb' : true) : false,
@@ -183,10 +193,12 @@ export function SegmentedControl<T extends string>({
               {item.label}
             </button>
           );
-          return item.tip === undefined ? (
+          // A control that can give a reason has its tooltips throughout, so its segments are the
+          // same elements whether it's dimmed or not.
+          return item.tip === undefined && why === undefined ? (
             button
           ) : (
-            <Tooltip key={item.value} label={item.tip}>
+            <Tooltip key={item.value} label={refused ?? item.tip ?? null}>
               {button}
             </Tooltip>
           );
