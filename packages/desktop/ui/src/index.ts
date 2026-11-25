@@ -17,6 +17,7 @@ export {
 export { HintButton, type HintButtonProps } from './HintButton.tsx';
 export { HintRow, type HintRowProps } from './HintRow.tsx';
 export { Key, keyAria, type KeyAria, type KeyProps } from './Key.tsx';
+export { keyCap } from './keyCap.ts';
 export {
   Toast,
   ToastRegion,
@@ -169,7 +170,12 @@ export { CLOSE_REACH, DRAG_START, dragEdge, resizing, type EdgeDrag } from './dr
 export { besideIn, handOffFocus, type FocusTarget } from './focus.ts';
 export { Problem, type ProblemAction, type ProblemProps, useDetails } from './Problem.tsx';
 export { Countdown, countdownSaid, countdownWords, type CountdownProps } from './Countdown.tsx';
-export { EmptyState, type EmptyAction, type EmptyStateProps } from './EmptyState.tsx';
+export {
+  EmptyState,
+  type EmptyAction,
+  type EmptyFit,
+  type EmptyStateProps,
+} from './EmptyState.tsx';
 export {
   CopyButton,
   CopyFaces,

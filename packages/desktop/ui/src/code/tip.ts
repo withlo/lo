@@ -3,6 +3,8 @@
 // a control's name and its key, after the pointer rests on it, and never a state or an error. A
 // control that can't run says why instead.
 
+import { keyCap } from '../keyCap.ts';
+
 /** What a control's tooltip says: its name, or why it can't run, and its key. */
 export interface Tip {
   readonly label: string;
@@ -58,11 +60,7 @@ export function tips(
       const keys = document.createElement('span');
       keys.className = 'lo-tip__keys';
       keys.setAttribute('aria-hidden', 'true');
-      for (const key of tip.keys) {
-        const cap = document.createElement('kbd');
-        cap.textContent = key;
-        keys.append(cap);
-      }
+      for (const key of tip.keys) keys.append(keyCap(key));
       popup.append(keys);
     }
     (root.closest('.lo-app') ?? document.body).append(popup);

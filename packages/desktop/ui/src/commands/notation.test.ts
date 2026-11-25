@@ -288,8 +288,8 @@ describe('display forms', () => {
     expect(forms('ctrl+o', 'mac')).toEqual(['⌃o']);
     expect(forms('ctrl+tab', 'mac')).toEqual(['⌃⇥']);
     expect(forms('ctrl+shift+tab', 'mac')).toEqual(['⌃⇧⇥']);
-    expect(forms('shift+tab', 'mac')).toEqual(['⇧Tab']);
-    expect(forms('tab', 'mac')).toEqual(['Tab']);
+    expect(forms('shift+tab', 'mac')).toEqual(['⇧⇥']);
+    expect(forms('tab', 'mac')).toEqual(['⇥']);
     // A sequence is separate keys.
     expect(forms('] f', 'mac')).toEqual([']', 'f']);
     expect(forms('g S', 'mac')).toEqual(['g', 'S']);

@@ -155,13 +155,15 @@ describe('the panel with nothing to list', () => {
     expect(emptyOf(emptyView('loading'), 'unresolved')).toEqual({ kind: 'reading' });
     expect(emptyOf(emptyView('run'), 'all', [83, 84, 85])).toEqual({
       kind: 'none',
-      heading: 'No threads for these 3 layers',
+      icon: 'layers',
+      title: 'No threads for these 3 layers',
       line: 'Each layer has its own.',
       action: 'stacks.back',
     });
     expect(emptyOf(emptyView('signIn'), 'all')).toEqual({
       kind: 'none',
-      heading: 'Sign in to see threads',
+      icon: 'user-round',
+      title: 'Sign in to see threads',
       action: 'accounts.addAccount',
     });
     expect(emptyOf(emptyView('failed', 'Offline.'), 'all')).toEqual({
@@ -177,7 +179,8 @@ describe('the panel with nothing to list', () => {
     for (const filter of ['unresolved', 'all', 'yours'] as const) {
       expect(emptyOf(emptyView('ready'), filter)).toEqual({
         kind: 'none',
-        heading: 'No threads yet',
+        icon: 'message-square',
+        title: 'No threads yet',
       });
     }
   });
@@ -187,7 +190,8 @@ describe('the panel with nothing to list', () => {
     for (const filter of ['unresolved', 'yours'] as const) {
       expect(emptyOf(resolved, filter)).toEqual({
         kind: 'none',
-        heading: 'No matches',
+        icon: 'funnel-x',
+        title: 'No matches',
         action: 'comments.clearFilter',
       });
     }

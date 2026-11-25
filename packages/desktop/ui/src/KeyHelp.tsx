@@ -9,6 +9,7 @@ import {
   type KeymapError,
 } from './commands/index.ts';
 import { Dialog, DialogSpacer } from './Dialog.tsx';
+import { EmptyState } from './EmptyState.tsx';
 import { Input } from './Input.tsx';
 import { Key } from './Key.tsx';
 import { Problem } from './Problem.tsx';
@@ -214,9 +215,18 @@ export function KeyHelp({
             {typed && found.length === 0 && `No keys or commands match “${query}”`}
           </div>
           {found.length === 0 ? (
-            <p className="m-0 py-16 text-fg-muted">
-              {typed ? `No keys or commands match “${query}”` : 'No keys here'}
-            </p>
+            // One of the list's rows, at its height.
+            <div className="flex min-h-row-h items-center py-2">
+              {typed ? (
+                <EmptyState
+                  fit="row"
+                  icon="search-x"
+                  title={`No keys or commands match “${query}”`}
+                />
+              ) : (
+                <EmptyState fit="row" icon="keyboard" title="No keys here" />
+              )}
+            </div>
           ) : (
             <div className="columns-2 gap-x-20">
               {found.map(({ group, rows }, index) => (

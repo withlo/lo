@@ -170,6 +170,21 @@
   }
 }
 
+/* Inside a key cap, a row of its letters and icons, centred on the capitals with no gap (`Key`,
+   `keyCap`). Each icon is a 12 px box with -1 px either side, so its ink, about 9 px of the 12,
+   sits about 1 px from its neighbour's, as the letters' own does; no icon is nudged on its own. A
+   zero-width space comes first, so a cap that starts with an icon still takes its baseline from
+   text, and sits on a line of text as one that starts with a letter does. A screen reader hears
+   nothing of it (the empty alternative after the `/`). */
+@utility key-icons {
+  &::before {
+    content: '\200b' / '';
+  }
+  & > .lo-i {
+    margin-inline: -1px;
+  }
+}
+
 /* Panel labels: small capitals, tracked out. */
 @utility label-caps {
   letter-spacing: var(--lo-track-label);
@@ -600,6 +615,28 @@
 @utility panel-label {
   @container (width < 320px) {
     display: none !important;
+  }
+}
+
+/* An empty list's place in a page, `EmptyState`'s `list`: its icon on its title's line (16px in the
+   line's 18px), its title and line beside it, and its buttons at the row's end, or under its text
+   where the row is narrower than 480px. Its box is the container (`@container`). */
+@utility empty-list {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--lo-sp-8);
+  & > .lo-i {
+    margin-block: 1px;
+  }
+  & > .empty-list-actions {
+    align-self: center;
+  }
+  @container (width < 480px) {
+    grid-template-columns: auto minmax(0, 1fr);
+    & > .empty-list-actions {
+      grid-column: 2;
+    }
   }
 }
 

@@ -1,7 +1,7 @@
 // Review threads in the diff: Lo, started on the replay server as rozed-bot, reads the threads on
 // the comments fixture (`testing/fixtures/comments.sh`), rozed-dev/e2e#94, and draws them under
 // their lines, or a file's under its header, unresolved ones open and resolved ones collapsed, with
-// an outdated one left out, those on the first screen with it.
+// an outdated one left out, those on the first screen with it, each with its bubble beside it.
 // Each file's header and its row in the tree count them, `]t` and `[t` walk them, and `za` opens
 // or collapses the one the cursor is on. Comments are drawn as GitHub renders them, images and all.
 // A renamed file's thread under one of its old lines shows there. A stack's layer shows its own
@@ -245,6 +245,12 @@ test('draws threads under their lines, resolved ones collapsed, and counts them'
   await expect(openCard(page, 'Is doubling enough?')).toBeVisible();
   await expect(card(page, 'Is doubling enough?')).toContainText('1 reply');
   await expect(page.getByText('This grows without bound')).toHaveCount(0);
+  // Each line's threads have a bubble in the gutter, a button a screen reader reaches, named for
+  // the thread and saying whether it's open; the file's own, in its header.
+  const bubble = (name: string) => page.getByRole('button', { name, exact: true });
+  await expect(bubble('Unresolved thread · line 2')).toHaveAttribute('aria-expanded', 'true');
+  await expect(bubble('Resolved thread · line 5')).toHaveAttribute('aria-expanded', 'false');
+  await expect(bubble('Unresolved thread · file')).toHaveAttribute('aria-expanded', 'true');
 
   // A file's header and its row in the tree count its threads, and how many are unresolved.
   // The file's own header, whose right column has the count: the copy pinned under the diff bar

@@ -915,6 +915,21 @@ status bar.
   `tab.open` replaced, `overview.open`, stays declared, file-only: main carries a `diff` saved there
   over once, where `tab.open` is still its default, then sets it to `null` (`tab/main/carry.ts`),
   and the window reads it meanwhile.
+- The row's layout is the window's, every pull request's tab alike: each panel open or not, and its
+  width, unset while it's the default. Main keeps it in `tab_window` (`tab.layout`,
+  `tab.keepLayout`), clamping each width to its limits as it's read, and a layout that won't read is
+  the first one. The window reads it before it draws a tab, so the first frame is laid out, and
+  keeps each change as it's made: a switch flipped, a drag's end, a key's step. `layout.ts` draws it
+  with `fit` in the row's width, which puts away what has no room, and remembers the panel asked for
+  last; what's drawn, not what's kept, is what the panels' buttons, the menu's checks and
+  `rightShown` say. The same row keeps the window's place (`tab/main/window.ts`): as each window is
+  made, main moves it where the last one was, as big, maximized or full screen if it was, unless the
+  display that held its top is gone. Part of it off every display, it's fitted to the display that
+  holds most of its top. Main keeps its place as it settles, and as it closes or as Lo quits,
+  whichever comes first: the database closes as the feature stops, and a window made after keeps
+  nothing. A panel asked for, put back by Reset layout, or back as its key or button closes the
+  other, fades in with Swap, and focus in a panel goes back to the middle view as the panel stops
+  being drawn, by any route.
 - Other features' banners go in the `tab.banners` slot. Each view there says whether it shows a
   banner for a tab (`shows`) and when that may change (`subscribe`), so the tab makes room only for
   the banners it has.
@@ -1948,9 +1963,10 @@ utilities.
 - The fonts, Host Grotesk and Fragment Mono, are bundled as files (never `data:` addresses, which
   the content security policy blocks), and their licenses ship beside the window's files.
 - Icons come from `lucide`, through `Icon` and the list in `packages/desktop/ui/src/icons.ts`, the
-  only file that imports it. Lint fails an `<svg>` written anywhere but `Icon`, the mark and figures
-  (`lo/no-inline-icon`), or the files whose icons are still drawn by hand, which
-  `scripts/oxlint/svgs.ts` lists and which only shrinks. Its license ships beside the fonts'.
+  only file that imports it. Lint fails an `<svg>` written anywhere but `Icon` and `iconElement`
+  (its twin for a code view's own DOM), the mark and figures (`lo/no-inline-icon`), or the files
+  whose icons are still drawn by hand, which `scripts/oxlint/svgs.ts` lists and which only shrinks.
+  Its license ships beside the fonts'.
 - Screenshot baselines are made on Linux only, in `apps/desktop/e2e/snapshots/`.
 
 ## Generated files

@@ -102,9 +102,7 @@ test('`j` and `k` move, `⏎` opens the pull request the keyboard is on, and `Ta
   await signedIn(page);
   await open(page, pulls.squash.number, 'Fixture M4: squash and merge', 'Ready to merge');
   await gq(page);
-  await expect(
-    queue(page).getByRole('heading', { name: 'merge/4/base has no merge queue' }),
-  ).toBeVisible();
+  await expect(queue(page).getByText('merge/4/base has no merge queue')).toBeVisible();
 
   // The queue of another branch shows in the same tab, which offers both.
   await open(page, pulls.queuedSlow1.number, 'Fixture M4: queued, slow (1)', 'Queued, 1st');

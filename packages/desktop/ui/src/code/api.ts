@@ -15,6 +15,7 @@ import type {
   Target,
   VimKey,
 } from '../commands/index.ts';
+import type { IconName } from '../icons.ts';
 
 export type {
   FileDiff,
@@ -219,6 +220,38 @@ export interface ThreadView {
    * is taken as false.
    */
   focused?: boolean;
+  /**
+   * How its mark in the code's gutter draws it: a bubble beside its last line, with a bracket up
+   * its range. Without it, it's an unresolved thread on its line alone, with no words.
+   */
+  mark?: ThreadMark | undefined;
+}
+
+/**
+ * What a review thread's mark in the gutter shows: whether it's resolved, holds comments of the
+ * reader's not yet sent, or is out of date, and the lines it covers. Its bubble is amber while it's
+ * unresolved or pending, and grey once it's resolved or out of date.
+ */
+export interface ThreadMark {
+  readonly resolved: boolean;
+  /**
+   * Whether it holds comments of the reader's not yet sent, in their pending review: `some` of its
+   * comments, or `all` of them, as a new thread in that review does.
+   */
+  readonly pending?: 'some' | 'all' | undefined;
+  /** Whether its lines changed after it was written: it shows on its revision alone. */
+  readonly outdated?: boolean | undefined;
+  /**
+   * The first line of its range, where it covers more than the line it's under: on that line's
+   * side, which for a range from a removed line to an added one is the other side.
+   */
+  readonly from?: { readonly side: Side; readonly line: number } | undefined;
+  /**
+   * What a screen reader hears of where it is, after the words for what it is, as the review's
+   * `lineRefText` puts them after other words: its lines, `lines 10–35`, and the line it's under
+   * alone, `line 35`, each with its revision where that's another, `line 9 · r1`.
+   */
+  readonly words: { readonly lines: string; readonly line: string };
 }
 
 /** What the caller drew for a thread, which the view keeps up to date and takes down. */
@@ -284,8 +317,10 @@ export interface ComposerEvents {
 /** A comment box's handle. */
 /** How a box held as text, not as a card, shows. */
 export interface HeldText {
-  /** What it says where it has no text: "No summary". */
+  /** What it says where it has no text, as an empty state's row: "No summary". */
   readonly empty: string;
+  /** The icon beside it, by its name in `icons.ts`: what's absent. */
+  readonly icon: IconName;
 }
 
 export interface Composer {
@@ -818,7 +853,8 @@ export interface LinesMark {
 
 /**
  * Lines a block of the pull request's overview explains: a ball on the first, a rail down the
- * rest, and a note under the last that says what the block says about them.
+ * rest, and a note under the last that says what the block says about them. An overview explains
+ * new lines only: a mark on the old side isn't drawn.
  */
 export interface OverviewMark {
   kind: 'overview';
@@ -1106,15 +1142,17 @@ export const plainKeys = {
 /**
  * The commands a diff view's own controls run, by id, on what they're drawn at: the viewed ball in
  * a file's header, the `+` that follows the pointer down the gutter, the button under the header
- * of a file that's closed, or too large to draw unasked, and collapsed lines. They run through the
- * registry the window's keys go through (`runControl` in `@lo/ui/commands`), so a control does
- * what its key does and says what its command says.
+ * of a file that's closed, or too large to draw unasked, collapsed lines, and a thread's bubble in
+ * the gutter, which opens or collapses its thread. They run through the registry the window's keys
+ * go through (`runControl` in `@lo/ui/commands`), so a control does what its key does and says
+ * what its command says.
  */
 export const viewControls = {
   viewed: 'diff.markViewed',
   comment: 'comments.comment',
   toggle: 'diff.toggleFile',
   open: 'diff.openRun',
+  thread: 'diff.toggleThread',
 } as const;
 
 export const diffMotions: Readonly<Record<string, { to: JumpTo; forward: boolean }>> = {

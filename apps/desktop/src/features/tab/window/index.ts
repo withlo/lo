@@ -20,9 +20,27 @@ import { main } from './main.ts';
 import { moreStore, setMoreOpen } from './more.ts';
 import { choosable, chooseAccount } from './Notes.tsx';
 import { OpenOnChoice, OpenOnRow, useOpenOnLine } from './OpenOn.tsx';
-import { layout, resettable, resetWidth, steppable, stepWidth, type Open } from './layout.ts';
+import { blocked } from './banners.ts';
+import {
+  drawable,
+  drawnRow,
+  firstLayout,
+  keepLayout,
+  layout,
+  loadLayout,
+  panelDrawn,
+  resetLayout,
+  resettable,
+  resetWidth,
+  row,
+  steppable,
+  stepWidth,
+  togglePanel,
+  viewCounts,
+  type Edge,
+} from './layout.ts';
 import { inStrip, movable, showable, stepTab } from './order.ts';
-import { middleIds, panels, rightPanel, stepAmong, toggleRight, viewCounts } from './panels.ts';
+import { middleIds, panels, stepAmong, toggleRight } from './panels.ts';
 import { PullRequestTab } from './PullRequestTab.tsx';
 import { activeTab, kinds, middleShown } from './shared.ts';
 import { pullsStore, showFiles, showLocal, showPull, showTabs, tabsStore } from './store.ts';
@@ -149,19 +167,31 @@ function pressable(kind: 'more' | 'dismiss'): true | string {
   return kind === 'more' ? 'No other messages' : 'This message can’t be dismissed';
 }
 
-/** Whether the pull request on screen has a left panel to show, and shows it. */
-function leftShown(): boolean {
+/** Why the pull request on screen has no row to lay out: there's none, or it can't be shown. */
+function rowless(): string | undefined {
   const tab = pullOnScreen();
-  return typeof tab !== 'string' && viewCounts.left > 0 && panels.get(tab.id).leftOpen;
+  if (typeof tab === 'string') return tab;
+  // Its panels' controls are off with the rest of what it can't show.
+  return blocked(pullsStore.getState().views.get(tab.id)) ? '' : undefined;
 }
 
-/** Which panels the pull request on screen draws, for the keys that size what has focus. */
-function rowOpen(): Open {
-  return {
-    left: leftShown(),
-    threads:
-      typeof pullOnScreen() !== 'string' && viewCounts.right > 0 && rightPanel.getState().open,
-  };
+/** Whether panel `edge` can open or close in the pull request on screen, or why not. */
+function switchable(edge: Edge, none: string): true | string {
+  const why = rowless();
+  if (why !== undefined) return why;
+  if ((edge === 'left' ? viewCounts.left : viewCounts.right) === 0) return none;
+  return drawable(edge);
+}
+
+/** Whether panel `edge` is drawn in the pull request on screen. */
+function drawnOnScreen(edge: Edge): boolean {
+  return rowless() === undefined && panelDrawn(edge);
+}
+
+/** What the app menu shows of the row: which panels are drawn, and which can't be. */
+function rowShown(): string {
+  const { left, threads, cramped } = drawnRow();
+  return JSON.stringify([left !== undefined, threads !== undefined, cramped]);
 }
 
 /** Why `target`, a tab or the one on screen, can't be closed, or `true` when it can. */
@@ -211,30 +241,23 @@ export default {
     },
     leftPanel: {
       run: () => {
-        const tab = pullOnScreen();
-        if (typeof tab === 'string') return;
-        panels.update(tab.id, (current) => ({ ...current, leftOpen: !current.leftOpen }));
+        togglePanel('left');
       },
-      enabled: () => {
-        const tab = pullOnScreen();
-        if (typeof tab === 'string') return tab;
-        return viewCounts.left > 0 || 'No left panel yet';
-      },
-      checked: leftShown,
+      enabled: () => switchable('left', 'No left panel yet'),
+      checked: () => drawnOnScreen('left'),
     },
     rightPanel: {
       run: toggleRight,
-      enabled: () => {
-        const tab = pullOnScreen();
-        if (typeof tab === 'string') return tab;
-        return viewCounts.right > 0 || 'No threads panel yet';
-      },
-      checked: () =>
-        typeof pullOnScreen() !== 'string' && viewCounts.right > 0 && rightPanel.getState().open,
+      enabled: () => switchable('threads', 'No threads panel yet'),
+      checked: () => drawnOnScreen('threads'),
     },
-    widen: { run: () => stepWidth(rowOpen(), 1), enabled: () => steppable(rowOpen(), 1) },
-    narrow: { run: () => stepWidth(rowOpen(), -1), enabled: () => steppable(rowOpen(), -1) },
-    resetWidth: { run: () => resetWidth(rowOpen()), enabled: () => resettable(rowOpen()) },
+    widen: { run: () => stepWidth(1), enabled: () => steppable(1) },
+    narrow: { run: () => stepWidth(-1), enabled: () => steppable(-1) },
+    resetWidth: { run: resetWidth, enabled: resettable },
+    resetLayout: {
+      run: resetLayout,
+      enabled: () => (rowless() === undefined && !firstLayout()) || '',
+    },
     nextView: { run: () => stepMiddle(1), enabled: middleSteps },
     previousView: { run: () => stepMiddle(-1), enabled: middleSteps },
     openOnGithub: { run: openOnGithub, enabled: linkable },
@@ -290,19 +313,36 @@ export default {
     follow(registry(), tabsStore, (title) => {
       document.title = title;
     });
+    // The layout first, so the first frame of a tab is laid out as it was kept; then each change
+    // to it is kept. Without it, the tabs draw on the first layout.
+    const laidOut = loadLayout()
+      .catch((error: unknown) => console.error("Lo couldn't read the window's layout:", error))
+      .finally(keepLayout);
     // Subscribed first, so no change between the two is missed.
-    tabs.subscribe('tabs', showTabs);
+    tabs.subscribe('tabs', (value) => void laidOut.then(() => showTabs(value)));
     tabs.subscribe('pull', showPull);
     tabs.subscribe('files', showFiles);
     tabs.subscribe('local', showLocal);
     tabsStore.subscribe(catchUp);
-    // The app menu's checks, and what it dims, follow the tabs and their panels however they move.
-    for (const store of [tabsStore, panels, rightPanel, layout]) {
+    // The app menu's checks, and what it dims, follow the tabs and their panels however they move:
+    // as the layout changes, and as the row's width puts a panel away or brings it back, but not at
+    // each frame of a drag.
+    for (const store of [tabsStore, panels, layout]) {
       store.subscribe(() => menuStale());
     }
+    let shownRow = rowShown();
+    row.subscribe(() => {
+      const now = rowShown();
+      if (now === shownRow) return;
+      shownRow = now;
+      menuStale();
+    });
     tabs
       .list()
-      .then(showTabs)
+      .then(async (value) => {
+        await laidOut;
+        showTabs(value);
+      })
       .catch((error: unknown) => console.error("Lo couldn't list its tabs:", error));
     // The smoke test records places of its own in the history, to walk them by key.
     client(app)

@@ -23,7 +23,7 @@ menu: Go, Review, Comments, Code, View, Merge, Tabs and App. Each command's ID i
 | Next thread        | `] t`             | In `diff`; in code views with Vim keys on, Vim's motion                                                 | `diff.nextThread`        |
 | Previous thread    | `[ t`             | In `diff`; in code views with Vim keys on, Vim's motion                                                 | `diff.previousThread`    |
 | Go to moved code   | `g m`             | In `diff`; in code views, only in normal mode                                                           | `diff.otherEnd`          |
-| Go to other side   | `Tab`             | In `diff`; in code views, only in normal mode                                                           | `diff.otherSide`         |
+| Go to other side   | `⇥`               | In `diff`; in code views, only in normal mode                                                           | `diff.otherSide`         |
 | Next line          | `j`               | Vim's own key, in code views                                                                            | `diff.down`              |
 | Previous line      | `k`               | Vim's own key, in code views                                                                            | `diff.up`                |
 | Select lines       | `v`               | Vim's own key, in code views                                                                            | `diff.select`            |
@@ -37,8 +37,8 @@ menu: Go, Review, Comments, Code, View, Merge, Tabs and App. Each command's ID i
 | Next block         | `] b`             | In `overview`                                                                                           | `overview.nextBlock`     |
 | Previous block     | `[ b`             | In `overview`                                                                                           | `overview.previousBlock` |
 | Go to code         | `⏎`               | In `overview`                                                                                           | `overview.follow`        |
-| Next link          | `Tab`             | In `overview`                                                                                           | `overview.nextLink`      |
-| Previous link      | `⇧Tab`            | In `overview`                                                                                           | `overview.previousLink`  |
+| Next link          | `⇥`               | In `overview`                                                                                           | `overview.nextLink`      |
+| Previous link      | `⇧⇥`              | In `overview`                                                                                           | `overview.previousLink`  |
 | Next step          | `→`               | In `overview`                                                                                           | `overview.nextStep`      |
 | Previous step      | `←`               | In `overview`                                                                                           | `overview.previousStep`  |
 | Scroll down        | `j`, `↓`          | In `overview`                                                                                           | `overview.scrollDown`    |
@@ -56,10 +56,10 @@ menu: Go, Review, Comments, Code, View, Merge, Tabs and App. Each command's ID i
 | Show layer         | `⏎`               | In `stack`                                                                                              | `stacks.show`            |
 | Next event         | `j`, `↓`          | In `timeline`                                                                                           | `timeline.down`          |
 | Previous event     | `k`, `↑`          | In `timeline`                                                                                           | `timeline.up`            |
-| Next link          | `Tab`             | In `timeline`                                                                                           | `timeline.nextLink`      |
-| Previous link      | `⇧Tab`            | In `timeline`                                                                                           | `timeline.previousLink`  |
+| Next link          | `⇥`               | In `timeline`                                                                                           | `timeline.nextLink`      |
+| Previous link      | `⇧⇥`              | In `timeline`                                                                                           | `timeline.previousLink`  |
 | Go to file…        | `⌘P`              | Anywhere but `dialog` and `palette`                                                                     | `tree.find`              |
-| Changed files only | `Tab`             | In `palette`                                                                                            | `tree.findChanged`       |
+| Changed files only | `⇥`               | In `palette`                                                                                            | `tree.findChanged`       |
 | Open whole file    | `⌘⏎`              | In `palette`                                                                                            | `tree.findWhole`         |
 | Go to files        | `-`               | Anywhere but `menu`, `dialog`, `palette`, `box`, `tree` and `stack`; in code views, only in normal mode | `tree.focus`             |
 | Next row           | `j`, `↓`          | In `tree`                                                                                               | `tree.down`              |
@@ -210,6 +210,7 @@ mode. In the box's preview, or on its frame, `Esc` closes it at once, from any m
 | Widen                      | `>`                                                            | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.widen`             |
 | Narrow                     | `<`                                                            | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.narrow`            |
 | Reset width                | `=`                                                            | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.resetWidth`        |
+| Reset layout               | None: the app menu or the command palette                      | Anywhere                                                                                            | `tab.resetLayout`       |
 | Next view                  | `` ` ``                                                        | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.nextView`          |
 | Previous view              | `~`                                                            | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.previousView`      |
 | Timeline                   | None: its control, the app menu or the command palette         | Anywhere                                                                                            | `timeline.show`         |
@@ -230,8 +231,8 @@ mode. In the box's preview, or on its frame, `Esc` closes it at once, from any m
 | Next reason              | `j`, `↓`                                          | In `merge`                                                                                                | `merge.down`           |
 | Previous reason          | `k`, `↑`                                          | In `merge`                                                                                                | `merge.up`             |
 | Open in browser          | `o`                                               | In `merge`                                                                                                | `merge.open`           |
-| Next merge method        | `Tab`                                             | In `merge`                                                                                                | `merge.nextMethod`     |
-| Previous merge method    | `⇧Tab`                                            | In `merge`                                                                                                | `merge.previousMethod` |
+| Next merge method        | `⇥`                                               | In `merge`                                                                                                | `merge.nextMethod`     |
+| Previous merge method    | `⇧⇥`                                              | In `merge`                                                                                                | `merge.previousMethod` |
 | Edit commit message      | `e`                                               | In `merge`                                                                                                | `merge.edit`           |
 | Next unresolved thread   | `] t`                                             | In `merge`                                                                                                | `merge.nextThread`     |
 | Merge…                   | `⏎`                                               | In `merge`                                                                                                | `merge.merge`          |
@@ -247,8 +248,8 @@ mode. In the box's preview, or on its frame, `Esc` closes it at once, from any m
 | Remove from merge queue… | `x`                                               | In `queue`                                                                                                | `queue.remove`         |
 | Move to front…           | `J`                                               | In `queue`                                                                                                | `queue.jump`           |
 | Turn off auto-merge      | `a`                                               | In `queue`                                                                                                | `queue.autoMerge`      |
-| Next branch              | `Tab`                                             | In `queue`                                                                                                | `queue.nextBranch`     |
-| Previous branch          | `⇧Tab`                                            | In `queue`                                                                                                | `queue.previousBranch` |
+| Next branch              | `⇥`                                               | In `queue`                                                                                                | `queue.nextBranch`     |
+| Previous branch          | `⇧⇥`                                              | In `queue`                                                                                                | `queue.previousBranch` |
 | Open on GitHub           | `g x`                                             | In `queue`                                                                                                | `queue.openOnGithub`   |
 
 ## Tabs

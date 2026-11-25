@@ -3,6 +3,7 @@
 // palette; and what the status bar says when a key finds nothing.
 
 import {
+  EmptyState,
   HintButton,
   HintRow,
   Palette,
@@ -197,7 +198,7 @@ export function ReferencesPanel({ tab }: { tab: PullTab }): ReactNode {
             const index = answers.findIndex((answer, at) => answerKey(answer, at) === key);
             if (index >= 0) goToReference(tab.id, index);
           }}
-          empty="No references listed"
+          empty={<EmptyState fit="row" icon="text-search" title="No references" />}
           className="outline-none"
           data-lo-scope="references"
         />
@@ -299,9 +300,9 @@ function OutlinePalette() {
         Reading symbols…
       </span>
     ) : typed ? (
-      `No symbols match “${state.query.trim()}”`
+      <EmptyState fit="row" icon="search-x" title={`No symbols match “${state.query.trim()}”`} />
     ) : (
-      'No symbols in this file'
+      <EmptyState fit="row" icon="list-tree" title="No symbols in this file" />
     ));
   return (
     <Palette<OutlineRow>

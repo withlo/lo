@@ -117,7 +117,9 @@ export function TrustList({ entries, onRemove }: TrustListProps) {
       tabIndex={-1}
       className="outline-none focus-visible:shadow-ring-inset"
     >
-      {entries.length === 0 && <EmptyState level={3} title="No trusted repos or pull requests" />}
+      {entries.length === 0 && (
+        <EmptyState fit="list" icon="shield" title="No trusted repos or pull requests" />
+      )}
       {entries.map((entry) => (
         <TrustRow key={entry.key} entry={entry} onRemove={remove} />
       ))}

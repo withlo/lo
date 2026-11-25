@@ -103,7 +103,7 @@ Dark (Lo Glow Dark) is the default. Every color comes from `tokens.json` through
   meta and tree rows, `text-micro` (11/14) for counts and tags, `text-label` (11/14, 600, uppercase,
   `--lo-track-label`) for panel labels.
 - Titles take the wordmark's weight: `text-title` (18/24, 700) for the PR title, `text-heading`
-  (24/30, 800) for empty states and dialogs, with `--lo-track-tight`.
+  (24/30, 800) for the welcome's step headings, with `--lo-track-tight`.
 - Reading text has its own scale: `read-body` (15/24), `read-lead` (17/27, the tl;dr), `read-h2`
   (22/28, 800), `read-h3` (16/22, 700), `read-comment` (13.5/21). Keep reading lines under
   `--lo-read-measure` (680 px). The measure is for text, not for what holds it: a code block in a
@@ -153,8 +153,10 @@ mark isn't an icon.
 - An icon takes its text's color. Alone it's `lo-icon`, or `lo-icon-muted` for file, folder and
   secondary icons. Stroke only, round caps and joins: never filled, never two tones.
 - A character the fonts don't hold is an icon. Host Grotesk and Fragment Mono have no `⌘`, `⏎`, `→`,
-  `✓`, `⋯` or `↗`, and the system would draw each in another weight. `Glyphs` draws them, from
-  `glyphs.ts`. `· › … –` are in both fonts and stay text.
+  `✓`, `⋯` or `↗`, and the system would draw each in another weight. `Key` draws a key's symbols and
+  `Glyphs` the rest, from `glyphs.ts`. `· › … –` are in both fonts and stay text. Some components
+  still type theirs: `Steps`' `✓`, `Checklist`'s `↗`, `MoreButton`'s `⋯` and the arrows between
+  revisions, branches, names and sizes. Each moves onto `Glyphs`, and none is added.
 - State is a ball, not an icon. Another brand's mark is that brand's own file, never redrawn.
 - An icon with no words beside it names itself: `label` on `Icon` for a mark, a tooltip for a
   control.
@@ -403,25 +405,38 @@ changes in the same frame.
 
 ## Empty states
 
-A view or a list with nothing in it shows `EmptyState`, from `@lo/ui`. With `Loading` and `Problem`
-it's one of the three things a view shows in place of its content, and it's the only shape for this
-one: never a lone line of muted text, a paragraph, or an icon over one.
+A view or a list with nothing in it shows `EmptyState`, from `@lo/ui`: an icon, a title in body
+text, and a button only where there's something to do here. With `Loading` and `Problem` it's one of
+the three things a view shows in place of its content, and it's the only shape for this one: never a
+heading, a lone line of muted text or a paragraph.
 
 ```tsx
 <EmptyState
+  icon="git-pull-request"
   title="No pull requests yet"
   line="Pull requests you open are listed here."
   actions={['open.box', 'open.paste']}
 />
 ```
 
-- `title` is what's absent, in `text-heading`: six words at most, with no full stop.
-- `line` is one line in `lo-fg-muted`, and optional: what will be listed here, or why there's
-  nothing.
-- `actions` is two commands at most, by their ids. The first is drawn as the main button. Each is a
-  real button that takes its label, its key and whether it can run from the registry, as every
-  control does: it shows the key in a chip, follows the keymap file, and while its command can't run
-  it's dimmed with the reason as its tooltip. An action is the id alone, or
+- `icon` is one name from `icons.ts`: the thing that's absent, `search-x` for a search with nothing
+  left, `funnel-x` for a filter. It's `lo-icon-muted`, never a status color or the accent.
+- `title` is what's absent, in `text-ui` and `lo-fg-muted`: six words at most, no full stop. It's
+  never set in `text-heading` or `text-title`, and it isn't a heading element.
+- `line` is one line in `text-small` and `lo-fg-subtle`, and optional.
+- `fit` says where it sits. `view` (a tab's or the sheet's whole content) and `panel` (a side panel
+  or a pane) fill their box and centre a column, the icon at 24 px; only `view` has a main button,
+  and `panel`'s are small. `list` (a list's place in a page) sits in the flow, top- and
+  left-aligned, the icon at 16 px beside the title. `row` (a popup's or a table's list) is one of
+  the list's rows, the icon at 14 px, with no line and no button.
+- Under 160 px wide, `view` and `panel` show the icon alone, named in a tooltip.
+- A list that can be empty takes its `row` where it draws its rows, at their height and inset:
+  `Palette`, `ReferencesList` and `QueueTable` take it as `empty`, as `FileTree` and `ThreadList`
+  take a `panel`. It comes in place of `Loading` or another empty state in one Swap.
+- `actions` is two commands at most, by their ids. In a `view` the first is drawn as the main
+  button. Each is a real button that takes its label, its key and whether it can run from the
+  registry, as every control does: it shows the key in a chip, follows the keymap file, and while
+  its command can't run it's dimmed with the reason as its tooltip. An action is the id alone, or
   `{ command, target, label }`: `target` is what the command runs on, as a key pressed there would,
   and `label` is other words where the command's label isn't what the view says.
 - An action whose command starts work the view waits on is `busy` until it's done, with `working`
@@ -430,10 +445,6 @@ one: never a lone line of muted text, a paragraph, or an icon over one.
   for two seconds with `CopyButton`'s own faces, whether its press or its key copied.
 - `children` is what the state holds for its actions to act on, between the line and the buttons:
   the prompt that Copy prompt copies, as code. Never more words.
-- It fills the box it's in and centres itself, so give that box the view's height. In a narrow panel
-  it wraps.
-- Its title is a heading of level 2; `level={3}` makes it one of level 3, for a list under a heading
-  of its own, as an empty list in a group of Settings is.
 - Offer the action here. A state never says where else an action lives ("from the status bar", "in
   the command palette"), and never has a button that isn't a command.
 - A filter or a search with nothing left is the same shape: "No matches" with the command that
@@ -621,6 +632,12 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
   ball) is what's on screen. They can sit on different rows.
 - Show a control's key on the control with `Key` (`lo-kbd`, or `lo-keys` for a sequence). The chip
   comes last, after the label; in menus it sits at the right.
+- **A key with a symbol is an icon in its chip; a key with a name is its letters.** `Key` does this
+  from the string the keymap gives. On macOS `⌘ ⌃ ⌥ ⇧ ⏎ ⇥ ⌫ ⌦` and the arrows are icons; letters,
+  digits, punctuation, Esc, Space, Home, End, PgUp, PgDn and Menu are Fragment Mono. On Linux only
+  the arrows are icons, and the rest are words (`Ctrl+Shift+P`). The icons are 12 px at a 1.25 px
+  stroke, centred on the capitals, in the chip's color. Never draw a chip without `Key`; a code
+  view's tooltip takes `keyCap`.
 - **A chip shows where its key works now.** Always on a surface's main button, dialog buttons, menu
   and palette rows and `HintButton`. On a control that every card or row repeats, only on the one
   the keyboard is on: give those `Key` `when="focus"`, and mark the card or row `data-key-scope`
@@ -676,7 +693,9 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
   place: one that has nothing to say yet shows its ring, and one that comes and goes, as "Rate limit
   low", goes last on the left.
 - The body is left panel (stack, then files), the middle sheet, and the threads panel. Each panel
-  opens and closes with a key.
+  opens and closes with a key and with its button at its end of the header's cluster, which shows
+  what's drawn: a panel put away for room reads unpressed, and pressing it asks for it, so the other
+  gives way. One that can't fit beside a view at its minimum is dimmed: "Widen the window first".
 - Every edge in the row is a `Splitter` in a `Panes` row, and the seam of a side-by-side diff, which
   the view draws, drags with the same `dragEdge`: 8 px to grab, no line at rest, a 2 px `lo-border`
   line under the pointer, `lo-accent` while pressed. Only a drag that moves it somewhere new changes
@@ -686,6 +705,8 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
   in with Swap. Nothing draws under its minimum: `fit` puts away the threads panel, then the left
   panel, then the view without focus, never what was asked for last, and brings each back when
   there's room.
+- The layout is the window's, not a preference: one for every tab, saved as it changes, with no row
+  in Settings. Reset layout puts it back. The window opens where it was, as big.
 - The window never scrolls. Panes do. The shell hides what overflows it and puts itself back if a
   script scrolls it, and anything brought into view goes through `reveal()`, which scrolls the pane
   it's in. Lint refuses an element's `scrollIntoView` outside tests (`lo/no-scroll-into-view`). The
@@ -729,8 +750,8 @@ A preference is a setting with a row. The menu bar and the palette may toggle it
   the key doesn't work in Settings.
 - **A list is a `SettingsList`:** the row's label, line and controls for adding to it, then the list
   in a box under them, each item a `SettingsListItem` with its own lead, label, line and buttons.
-  Accounts, trusted repos and toolchains share it. An empty list is an `EmptyState` in the box, with
-  what to do about it.
+  Accounts, trusted repos and toolchains share it. An empty list is an `EmptyState` `list` in the
+  box, with what to do about it.
 - **A row's button for a command is `SettingsCommand`,** which takes the command's label, key and
   reason as any control does. A row that stands for one thing, such as a pull request's language
   servers, gives it the `target` the command runs on.
@@ -773,6 +794,11 @@ first, so a card drawn again doesn't flash them.
   `cm-collapsedLines`) share the same rules.
 - Side by side by default. Both sides stay on one row grid: a thread or a wrapped line on one side
   leaves space (`lo-spacer`) on the other.
+- **A marker sits against the code it's about.** Line numbers, then the thread lane, then the
+  overview lane on a side that shows new lines, then the code. A lane is as wide empty as full.
+- **A thread is a bubble, the overview is a ball.** A thread's mark is a `message-square` icon with
+  a bracket up its range, amber while unresolved or pending, grey once resolved or out of date. The
+  overview's is the Powder ball and rail. Neither borrows from the other.
 - **Filler is quieter than code.** Everything in a diff that isn't code (that space, folds of
   unchanged lines, the row under a file's header) sits on one flat ground, `lo-diff-filler`, in type
   smaller and dimmer than code. Only a run of space three lines tall or less is hatched, so a line
@@ -823,8 +849,8 @@ own.
 The review's summary, in the submit dialog, is the same editor in the same frame, with the same head
 (`CommentBoxHeadBar`), notes, upload rows and foot bar (`CommentBoxFootBar`); it has no "Discard
 draft". While its review is sent, and until Lo knows how that went, it's held as text, not as a card
-(`hold(true, { empty: 'No summary' })`): it keeps its height, head and foot, its text is read-only
-in `lo-fg-muted`, and Write | Preview and "Attach files…" dim.
+(`hold(true, { empty: 'No summary', icon: 'file-text' })`): it keeps its height, head and foot, its
+text is read-only in `lo-fg-muted`, and Write | Preview and "Attach files…" dim.
 
 - **Head.** What the comment is on, at the left, in the words a line is named everywhere: "Line 3",
   "Lines 39–41", "Line 3, removed", "File", "Pull request", "Reply", "Edit", "Summary". Why it's on

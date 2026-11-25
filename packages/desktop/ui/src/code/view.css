@@ -193,6 +193,8 @@
   flex: none;
   gap: var(--lo-sp-2);
 }
+/* Its key caps, which `keyCap` makes, outside as `Key` draws a quiet one; `key-icons` sets the
+   inside. */
 .lo-tip kbd {
   display: inline-flex;
   align-items: center;
@@ -246,12 +248,110 @@
 }
 
 /*
- * Overview markers: a gutter as wide with none as with them, so markers that come later move
- * nothing. The ball's ring may reach past the column's edges.
+ * Overview markers: a lane as wide with none as with them, last before the code on the side an
+ * overview marks, so markers that come later move nothing. The ball's ring may reach past the
+ * lane's edges.
  */
 .lo-app .cm-editor .cm-gutter.lo-ovcolumn {
   width: 14px;
   overflow: visible;
+}
+
+/*
+ * The threads' lane, between the line numbers and the code, on the line numbers' ground: as wide
+ * with no marks as with them, so marks that come later move nothing.
+ */
+.lo-app .cm-editor .cm-gutter.lo-threadlane {
+  width: 16px;
+  overflow: visible;
+}
+.lo-lanecell {
+  position: relative;
+}
+.lo-lanemark {
+  position: absolute;
+  inset: 0;
+}
+/*
+ * A bracket up a thread's range: 2 px down the lane's middle, from the middle of the range's first
+ * line, where a 5 px tick turns toward the code, to 2 px above the bubble on its last. Amber while
+ * the thread is unresolved or pending.
+ */
+.lo-bracket {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(50% - 1px);
+  width: 2px;
+  border-radius: 1px;
+}
+.lo-bracket--warn {
+  background-color: var(--lo-warning-border);
+}
+.lo-bracket--quiet {
+  background-color: var(--lo-border);
+}
+.lo-bracket--from-mid,
+.lo-bracket--tick {
+  top: calc(var(--lo-code-line) / 2);
+}
+.lo-bracket--from-bubble {
+  top: calc((var(--lo-code-line) - 14px) / 2 + 16px);
+}
+.lo-bracket--to-bubble {
+  bottom: auto;
+  height: calc((var(--lo-code-line) - 14px) / 2 - 2px);
+}
+.lo-bracket--tick {
+  bottom: auto;
+  width: 7px;
+  height: 2px;
+}
+/*
+ * A thread's bubble: a 14 px icon on the first row of its last line, amber or grey, whose control
+ * is the lane beside the whole line. A file's own threads' is in its header's row, in the lane the
+ * band covers: the old side's, side by side, or the one before the overview's lane, inline.
+ */
+.lo-bubble {
+  display: block;
+  border-radius: var(--lo-r-xs);
+  cursor: default;
+}
+.lo-bubble:hover {
+  background-color: var(--lo-hover);
+}
+.lo-bubble:active {
+  background-color: var(--lo-press);
+}
+.lo-bubble--warn {
+  color: var(--lo-warning);
+}
+.lo-bubble--quiet {
+  color: var(--lo-fg-subtle);
+}
+.lo-bubble > .lo-i {
+  position: absolute;
+  left: 1px;
+}
+.lo-lanebubble {
+  position: absolute;
+  inset: 0;
+}
+.lo-lanebubble > .lo-i {
+  top: calc((var(--lo-code-line) - 14px) / 2);
+}
+.lo-diffhead__bubble {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -30px;
+  width: 16px;
+}
+.lo-diffhead--start > .lo-diffhead__bubble {
+  left: -16px;
+}
+.lo-diffhead__bubble > .lo-i {
+  top: calc(50% - 7px);
 }
 /* A note under the lines it's about, in the block that holds the line's threads. */
 .lo-diffthread > .lo-ovnote {
@@ -541,10 +641,21 @@
 .lo-diffcomposer.is-sent.is-focused::after {
   box-shadow: inset 0 0 0 1px var(--lo-border);
 }
-/* Held as text, as a review's summary is while it's sent, the box stays as written: its text dims. */
+/* Held as text, as a review's summary is while it's sent, the box stays as written: its text dims.
+   With no text, it says so as an empty state's row does: a 14px icon, then its words. */
 .lo-diffcomposer.is-held .cm-content,
 .lo-diffcomposer.is-held .cm-placeholder {
   color: var(--lo-fg-muted);
+}
+.lo-diffcomposer__empty {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lo-sp-8);
+  font: var(--lo-text-ui);
+  vertical-align: top;
+}
+.lo-diffcomposer__empty > .lo-i {
+  color: var(--lo-icon-muted);
 }
 .lo-diffcomposer.is-held .cm-cursor {
   display: none;

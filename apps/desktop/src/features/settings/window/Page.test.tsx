@@ -209,7 +209,9 @@ describe('the search', () => {
   it('says when nothing matches, and clears with its button, which is the command', () => {
     const page = render();
     type(page.field, 'purple');
-    expect(page.container.querySelector('h2')?.textContent).toBe('No settings match “purple”');
+    expect(page.container.querySelector('[data-lo-empty] p')?.textContent).toBe(
+      'No settings match “purple”',
+    );
     const clear = [...page.container.querySelectorAll('button')].find((each) =>
       each.textContent.startsWith('Clear search'),
     );

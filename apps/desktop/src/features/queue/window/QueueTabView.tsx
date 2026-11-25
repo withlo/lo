@@ -11,6 +11,7 @@ import {
   Branch,
   Button,
   duration,
+  EmptyState,
   HintButton,
   HintRow,
   Key,
@@ -366,11 +367,14 @@ function Body({ tab, state, now }: { tab: QueueTab; state: QueueState; now: numb
       return null;
     case 'none':
       return (
-        <div className="grid flex-1 place-items-center p-32 text-center">
-          <h2 className="m-0 text-heading">
-            <code className="font-code">{withoutBidi(tab.branch)}</code> has no merge queue
-          </h2>
-        </div>
+        <EmptyState
+          icon="git-merge"
+          title={
+            <>
+              <code className="font-code">{withoutBidi(tab.branch)}</code> has no merge queue
+            </>
+          }
+        />
       );
     case 'queue': {
       const { url } = read;

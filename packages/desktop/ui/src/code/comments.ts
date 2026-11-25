@@ -40,6 +40,7 @@ import {
   type Target,
   type VimKey,
 } from '../commands/index.ts';
+import { iconElement } from '../iconElement.ts';
 import { reveal, scrollPane } from '../reveal.ts';
 import type {
   BoxFrame,
@@ -87,6 +88,14 @@ export interface BoxPlace {
 
 export function placeKey(place: BoxPlace): string {
   return `${place.file}:${place.side}:${place.line}`;
+}
+
+/** What a box held as text says where it has none, as an empty state's row: its icon, its words. */
+function heldEmpty(text: HeldText): HTMLElement {
+  const row = document.createElement('span');
+  row.className = 'lo-diffcomposer__empty';
+  row.append(iconElement(text.icon, 14), text.empty);
+  return row;
 }
 
 /** What a box is made with. */
@@ -617,7 +626,7 @@ export class CommentBox implements BoxHost, KeySource {
     // under it moves until the comment's own card takes its place.
     if (card) this.dom.style.minHeight = on ? `${this.dom.getBoundingClientRect().height}px` : '';
     if (on) leaveToNormal(this.view);
-    const empty = on && text !== undefined ? placeholder(text.empty) : [];
+    const empty = on && text !== undefined ? placeholder(heldEmpty(text)) : [];
     this.view.dispatch({ effects: this.#held.reconfigure(on ? [readOnly(), empty] : []) });
     if (card) {
       this.#parts.sent.hidden = !on;

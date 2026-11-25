@@ -26,6 +26,7 @@ import {
   onOverviewChanged,
   setBlockThreads,
 } from '../../overview/window/shared.ts';
+import { revisionLabel, revisionsOf } from '../../revisions/window/shared.ts';
 import { settingRow } from '../../settings/window/shared.ts';
 import { setLayerCounts } from '../../stacks/window/shared.ts';
 import { viewIds } from '../../tab/contract.ts';
@@ -378,7 +379,9 @@ export default {
       threadsOn(block) {
         const threads = held.get(block.tab).threads;
         if (threads === undefined) catchUp(block.tab, () => changed(block.tab));
-        return threads?.status === 'run' ? [] : threadsOnBlock(threads?.threads ?? [], block);
+        if (threads?.status === 'run') return [];
+        const known = revisionsOf(block.tab);
+        return threadsOnBlock(threads?.threads ?? [], block, (head) => revisionLabel(known, head));
       },
       settled,
       render(tab, toggle) {

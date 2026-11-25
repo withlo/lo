@@ -40,7 +40,7 @@ export interface PaletteProps<T> {
   onRun: (item: T) => void;
   /** The highlighted item changed, as the arrows, the pointer or typing moved it. */
   onHighlight?: ((item: T | undefined) => void) | undefined;
-  /** What the list says when nothing matches. */
+  /** What the list says when nothing matches, as one of its rows: an `EmptyState` `row`. */
   empty: ReactNode;
   /** Whether what's typed is code, such as a link, set in the code font. */
   mono?: boolean | undefined;
@@ -187,8 +187,13 @@ export function Palette<T>(props: PaletteProps<T>) {
                   </Autocomplete.Group>
                 )}
               </Autocomplete.List>
-              <Autocomplete.Empty className="px-16 text-fg-muted text-ui not-empty:py-12 empty:p-0">
-                {empty}
+              {/* One of the list's rows, at its height and inset, while the list has none. */}
+              <Autocomplete.Empty className="px-6 not-empty:py-6 empty:p-0">
+                {empty !== null && empty !== undefined && (
+                  <div className="flex min-h-palette-item-h items-center px-12 py-6 text-fg-muted text-ui">
+                    {empty}
+                  </div>
+                )}
               </Autocomplete.Empty>
             </Autocomplete.Root>
             {foot !== undefined && (

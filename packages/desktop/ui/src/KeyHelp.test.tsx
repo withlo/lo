@@ -58,6 +58,7 @@ const row = (
   label,
   description: undefined,
   keys,
+  written: [],
   range: false,
   vim: false,
   editor: false,

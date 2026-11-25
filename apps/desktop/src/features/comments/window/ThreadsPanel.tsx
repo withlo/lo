@@ -11,6 +11,7 @@ import {
   Loading,
   Problem,
   reveal,
+  Swap,
   ThreadFilter,
   ThreadList,
 } from '@lo/ui';
@@ -82,8 +83,9 @@ export function Failed({ view, reason }: { view: string; reason: string | undefi
       </div>
     );
   }
+  // Inset as the list's rows are, since the list has no inset of its own while it lists nothing.
   return (
-    <div className="px-6 py-8">
+    <div className="px-12 py-8">
       <Problem
         title="Can’t show the threads"
         reason={reason}
@@ -109,9 +111,19 @@ export function Failed({ view, reason }: { view: string; reason: string | undefi
 
 /**
  * What view `view`'s panel shows when it lists nothing: the wait for the first read, an empty
- * state's heading with its line and button, or why the read failed, with a way to read again.
+ * state with its line and button, or why the read failed, with a way to read again. The empty
+ * state takes the wait's place in one Swap.
  */
 function Empty({ view, empty }: { view: string; empty: PanelEmpty }): ReactNode {
+  return (
+    <Swap id={empty.kind === 'none' ? empty.title : empty.kind} className="flex flex-1 flex-col">
+      <EmptyBody view={view} empty={empty} />
+    </Swap>
+  );
+}
+
+/** What's in {@link Empty}'s box. */
+function EmptyBody({ view, empty }: { view: string; empty: PanelEmpty }): ReactNode {
   switch (empty.kind) {
     case 'reading':
       return (
@@ -122,17 +134,15 @@ function Empty({ view, empty }: { view: string; empty: PanelEmpty }): ReactNode 
     case 'failed':
       return <Failed view={view} reason={empty.reason} />;
     case 'none':
-      // In the middle of the panel's body, under its heading, in the text's own colour: the list
-      // around it draws its words muted.
+      // The panel's body, whole, with the state in the middle of it.
       return (
-        <div className="flex flex-1 flex-col justify-center text-fg">
-          <EmptyState
-            level={3}
-            title={empty.heading}
-            line={empty.line}
-            actions={empty.action === undefined ? [] : [empty.action]}
-          />
-        </div>
+        <EmptyState
+          fit="panel"
+          icon={empty.icon}
+          title={empty.title}
+          line={empty.line}
+          actions={empty.action === undefined ? [] : [empty.action]}
+        />
       );
     default:
       empty satisfies never;
