@@ -1,11 +1,18 @@
 // The tab strip's keys: a tab by its place, the next and previous tab, moving one, the tabs that
 // don't fit and closing one. They work wherever focus is, a text field included, but not under a
 // dialog or a palette, which hold the keys while they're open. And a pull request's tab's: its left
-// and right panels, its middle views, its local copy's folder, and the account to open it as.
+// and right panels, the width of what has focus, its middle views, its local copy's folder, and the
+// account to open it as.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
 const outside: When = { except: ['dialog', 'palette'] };
+
+/**
+ * Where the keys that size what has focus work: in a pull request's tab, but not in a menu, a dialog,
+ * a palette or a comment box, and in code views in normal mode, over Vim's own, as `` ` `` does.
+ */
+const sizing: When = { except: ['menu', 'dialog', 'palette', 'box'], mode: 'normal' };
 
 /** The command that shows the tab at `position` in the strip, by `⌘` and its number. */
 const place = (position: number) => ({
@@ -110,6 +117,43 @@ export default defineCommands('tab', {
     when: outside,
     bar: { menu: 'View', section: 'panels', order: 20 },
     toggle: 'switch',
+  },
+  /**
+   * Widens what has focus by a step, as dragging its edge does: the left panel, while focus is in
+   * it. A held key goes on widening it, to its limit.
+   */
+  widen: {
+    label: 'Widen',
+    description: 'The panel, view or side that has focus.',
+    group: 'View',
+    keys: ['>'],
+    overVim: true,
+    repeat: true,
+    when: sizing,
+    control: 'the edge beside what has focus, dragged',
+    bar: { menu: 'View', section: 'layout', order: 10 },
+  },
+  narrow: {
+    label: 'Narrow',
+    description: 'The panel, view or side that has focus.',
+    group: 'View',
+    keys: ['<'],
+    overVim: true,
+    repeat: true,
+    when: sizing,
+    control: 'the edge beside what has focus, dragged',
+    bar: { menu: 'View', section: 'layout', order: 20 },
+  },
+  /** Puts what has focus back to its default width, as a double-click on its edge does. */
+  resetWidth: {
+    label: 'Reset width',
+    description: 'The panel, view or side that has focus.',
+    group: 'View',
+    keys: ['='],
+    overVim: true,
+    when: sizing,
+    control: 'a double-click on the edge beside what has focus',
+    bar: { menu: 'View', section: 'layout', order: 30 },
   },
   /**
    * The next of a pull request's middle views the header's switch lists: overview, diff, timeline,
