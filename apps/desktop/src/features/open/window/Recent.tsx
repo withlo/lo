@@ -1,7 +1,7 @@
 // Recent pull requests, the tab that stands in for an empty strip: the pull requests opened lately,
 // across every account, newest first, with a filter; or, before any, how to open one.
 
-import { Button, EmptyState, Input, Key } from '@lo/ui';
+import { Button, EmptyState, Input, Key, Swap } from '@lo/ui';
 import { keyLabels, NO_TARGET } from '@lo/ui/commands';
 import { useEffect, useRef } from 'react';
 import { useStore } from 'zustand';
@@ -77,6 +77,7 @@ function Row({ row, chosen, now }: { row: RecentPull; chosen: boolean; now: numb
 function FirstRun() {
   return (
     <EmptyState
+      icon="git-pull-request"
       title="No pull requests yet"
       line="Pull requests you open are listed here."
       actions={[
@@ -180,30 +181,44 @@ export function RecentTab() {
           data-lo-scope="recent"
           className="flex h-full flex-col px-16 pt-12 pb-32 focus-visible:shadow-none"
         >
-          {rows === undefined ? null : !any ? (
-            <FirstRun />
-          ) : shown.length === 0 ? (
-            <EmptyState title="No matches" actions={['open.clearFilter']} />
-          ) : (
-            groups.map((group) => (
-              <div
-                key={group.label}
-                role="group"
-                aria-label={group.label}
-                className="flex flex-col"
-              >
+          {/* What it lists, or the empty state in its place, which comes in one Swap. */}
+          <Swap
+            id={
+              rows === undefined
+                ? 'reading'
+                : !any
+                  ? 'none'
+                  : shown.length === 0
+                    ? 'nomatch'
+                    : 'rows'
+            }
+            className="flex flex-1 flex-col"
+          >
+            {rows === undefined ? null : !any ? (
+              <FirstRun />
+            ) : shown.length === 0 ? (
+              <EmptyState icon="search-x" title="No matches" actions={['open.clearFilter']} />
+            ) : (
+              groups.map((group) => (
                 <div
-                  className="px-12 pt-16 pb-6 text-small-medium text-fg-muted"
-                  aria-hidden="true"
+                  key={group.label}
+                  role="group"
+                  aria-label={group.label}
+                  className="flex flex-col"
                 >
-                  {group.label}
+                  <div
+                    className="px-12 pt-16 pb-6 text-small-medium text-fg-muted"
+                    aria-hidden="true"
+                  >
+                    {group.label}
+                  </div>
+                  {group.rows.map((row) => (
+                    <Row key={rowKey(row)} row={row} chosen={row === current} now={now} />
+                  ))}
                 </div>
-                {group.rows.map((row) => (
-                  <Row key={rowKey(row)} row={row} chosen={row === current} now={now} />
-                ))}
-              </div>
-            ))
-          )}
+              ))
+            )}
+          </Swap>
         </div>
       </main>
     </div>

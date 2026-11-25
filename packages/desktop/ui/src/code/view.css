@@ -543,10 +543,21 @@
 .lo-diffcomposer.is-sent.is-focused::after {
   box-shadow: inset 0 0 0 1px var(--lo-border);
 }
-/* Held as text, as a review's summary is while it's sent, the box stays as written: its text dims. */
+/* Held as text, as a review's summary is while it's sent, the box stays as written: its text dims.
+   With no text, it says so as an empty state's row does: a 14px icon, then its words. */
 .lo-diffcomposer.is-held .cm-content,
 .lo-diffcomposer.is-held .cm-placeholder {
   color: var(--lo-fg-muted);
+}
+.lo-diffcomposer__empty {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lo-sp-8);
+  font: var(--lo-text-ui);
+  vertical-align: top;
+}
+.lo-diffcomposer__empty > .lo-i {
+  color: var(--lo-icon-muted);
 }
 .lo-diffcomposer.is-held .cm-cursor {
   display: none;

@@ -540,7 +540,7 @@ describe('a run of a stack’s layers on screen as one diff', () => {
     // On screen, the run's view holds no stack: its tab in the strip does, and names the places.
     const tab: PullTab = { ...tabOf(), run: { layers: [6, 7], start: 'a'.repeat(40), from: 7 } };
     const view = render(tab);
-    expect(view.querySelector('[data-lo-overview="run"] h2')?.textContent).toBe(
+    expect(view.querySelector('[data-lo-overview="run"] [data-lo-empty] p')?.textContent).toBe(
       'No overview for these layers',
     );
     expect(view.textContent).toContain('Each layer has its own.');
@@ -574,7 +574,7 @@ describe('with no overview', () => {
     act(() => states.set(tab.id, stateOf(tab, { found: 'none', overview: null })));
     const view = render(tab);
     await until(() => buttonOf(view, 'Install overview skill') !== undefined);
-    expect(view.querySelector('h2')?.textContent).toBe('No overview yet');
+    expect(view.querySelector('[data-lo-empty] p')?.textContent).toBe('No overview yet');
     expect(view.textContent).toContain('A coding agent writes one from this prompt.');
     expect(view.querySelector('pre')?.textContent).toContain(
       'https://github.com/rozed-dev/e2e/pull/7',

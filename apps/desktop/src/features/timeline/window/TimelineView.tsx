@@ -177,6 +177,7 @@ function NoneInRun({ tab }: { tab: PullTab }) {
   const layers = useRunLayers(tab.id);
   return (
     <EmptyState
+      icon="layers"
       title={`No timeline for ${layers}`}
       line="Each layer has its own."
       actions={[{ command: 'stacks.back', label: 'Show single layer' }]}
@@ -246,6 +247,7 @@ function SignIn() {
   useKeys();
   return (
     <EmptyState
+      icon="user-round"
       title="Sign in to see comments"
       actions={[{ command: 'accounts.addAccount', label: 'Sign in with GitHub…' }]}
     />

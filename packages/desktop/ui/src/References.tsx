@@ -144,7 +144,7 @@ export interface ReferencesListProps extends Omit<
   focused?: string | undefined;
   /** A row was clicked: its key. */
   onGo?: ((key: string) => void) | undefined;
-  /** What shows when there are no references, such as why. */
+  /** What shows when there are no references, such as why: an `EmptyState` `row`. */
   empty?: ReactNode;
   /** The list itself, which takes focus. */
   listRef?: Ref<HTMLDivElement> | undefined;
@@ -196,7 +196,9 @@ export function ReferencesList({
       {...rest}
     >
       {rows.length === 0 && empty !== undefined && (
-        <div className="px-16 py-8 text-fg-muted text-small">{empty}</div>
+        <div className="flex min-h-row-h items-center px-16 pt-8 text-fg-muted text-small">
+          {empty}
+        </div>
       )}
       {groups
         .filter((group) => group.rows.length > 0)

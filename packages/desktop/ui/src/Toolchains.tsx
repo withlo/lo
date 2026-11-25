@@ -168,7 +168,9 @@ export function ToolchainList({ entries, onRemove }: ToolchainListProps) {
       tabIndex={-1}
       className="outline-none focus-visible:shadow-ring-inset"
     >
-      {entries.length === 0 && <EmptyState level={3} title="No toolchains for this computer" />}
+      {entries.length === 0 && (
+        <EmptyState fit="list" icon="wrench" title="No toolchains for this computer" />
+      )}
       {entries.map((entry) => (
         <ToolchainRow key={entry.id} entry={entry} onRemove={remove} />
       ))}

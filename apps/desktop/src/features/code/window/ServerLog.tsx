@@ -7,6 +7,7 @@ import {
   CopyStatus,
   Dialog,
   DialogSpacer,
+  EmptyState,
   Key,
   Problem,
   useCopySaid,
@@ -94,7 +95,7 @@ export function ServerLog() {
           action={{ label: 'Try again', onClick: () => setAttempt((count) => count + 1) }}
         />
       ) : log === undefined ? null : lines.length === 0 ? (
-        <p className="m-0 text-fg-muted">No log lines yet</p>
+        <EmptyState fit="panel" icon="scroll-text" title="No log lines yet" />
       ) : (
         <pre className="m-0 overflow-auto rounded-sm bg-bg-well px-12 py-8 text-fg code-small">
           {lines.join('\n')}

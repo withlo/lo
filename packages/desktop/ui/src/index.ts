@@ -170,7 +170,12 @@ export { CLOSE_REACH, DRAG_START, dragEdge, resizing, type EdgeDrag } from './dr
 export { besideIn, handOffFocus, type FocusTarget } from './focus.ts';
 export { Problem, type ProblemAction, type ProblemProps, useDetails } from './Problem.tsx';
 export { Countdown, countdownSaid, countdownWords, type CountdownProps } from './Countdown.tsx';
-export { EmptyState, type EmptyAction, type EmptyStateProps } from './EmptyState.tsx';
+export {
+  EmptyState,
+  type EmptyAction,
+  type EmptyFit,
+  type EmptyStateProps,
+} from './EmptyState.tsx';
 export {
   CopyButton,
   CopyFaces,

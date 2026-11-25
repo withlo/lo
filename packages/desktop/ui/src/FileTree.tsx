@@ -234,6 +234,8 @@ export interface FileTreeProps extends Omit<HTMLAttributes<HTMLDivElement>, 'chi
   comparing?: boolean | undefined;
   /** The scrolling element, which is the tree and takes focus. */
   treeRef?: Ref<HTMLDivElement> | undefined;
+  /** What it shows with no rows to list: an `EmptyState`, which takes the whole panel. */
+  empty?: ReactNode;
 }
 
 function treeItemId(prefix: string, index: number): string {
@@ -243,7 +245,8 @@ function treeItemId(prefix: string, index: number): string {
 /**
  * The file tree's rows: folders with their twisties and changed-file counts, files with their
  * marks, and in review order, groups' labels. It's one focusable element with `role="tree"`: the
- * row the keyboard is on is its active descendant, and only rows near the view are drawn.
+ * row the keyboard is on is its active descendant, and only rows near the view are drawn. With no
+ * rows it stays, holding `empty`, so focus isn't lost when the rows go.
  */
 export function FileTree({
   rows,
@@ -254,6 +257,7 @@ export function FileTree({
   reveal,
   comparing = false,
   treeRef,
+  empty,
   className = '',
   ...rest
 }: FileTreeProps) {
@@ -301,13 +305,16 @@ export function FileTree({
     else if (treeRef) treeRef.current = element;
   };
 
+  // With nothing to list it's a group holding the message, not a tree without items, and no stop
+  // for Tab, which would land on nothing. It's the same element either way.
+  const none = rows.length === 0 && empty !== undefined;
   return (
     <div
       ref={setRefs}
-      role="tree"
-      tabIndex={0}
+      role={none ? 'group' : 'tree'}
+      tabIndex={none ? -1 : 0}
       aria-activedescendant={focusedIndex < 0 ? undefined : treeItemId(prefix, focusedIndex)}
-      className={`group/tree relative min-h-0 flex-1 overflow-auto px-6 pb-12 outline-none ${className}`}
+      className={`group/tree relative min-h-0 flex-1 overflow-auto outline-none ${none ? 'flex flex-col' : 'px-6 pb-12'} ${className}`}
       onScroll={(event) =>
         setView({ top: event.currentTarget.scrollTop, height: event.currentTarget.clientHeight })
       }
@@ -315,6 +322,7 @@ export function FileTree({
       onBlur={() => setHasFocus(false)}
       {...rest}
     >
+      {none && empty}
       <div className="relative" style={{ height: rows.length * ROW_HEIGHT }}>
         {rows.slice(first, last).map((each, offset) => {
           const index = first + offset;

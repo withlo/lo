@@ -618,6 +618,28 @@
   }
 }
 
+/* An empty list's place in a page, `EmptyState`'s `list`: its icon on its title's line (16px in the
+   line's 18px), its title and line beside it, and its buttons at the row's end, or under its text
+   where the row is narrower than 480px. Its box is the container (`@container`). */
+@utility empty-list {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--lo-sp-8);
+  & > .lo-i {
+    margin-block: 1px;
+  }
+  & > .empty-list-actions {
+    align-self: center;
+  }
+  @container (width < 480px) {
+    grid-template-columns: auto minmax(0, 1fr);
+    & > .empty-list-actions {
+      grid-column: 2;
+    }
+  }
+}
+
 /* The timeline's room either side of its column, which follows the width of the pane it's in
    (`@container`), never the window's: --lo-sp-24, and --lo-sp-12 once the pane is narrower than the
    column at its widest with that room (--lo-timeline-w plus twice --lo-sp-24), so a post's code

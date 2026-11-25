@@ -6,7 +6,7 @@
 // so nothing on screen moves without the reader, and otherwise wait until it's drawn again. While it
 // has focus, the diff's keys act on it.
 
-import { Loading, Tooltip } from '@lo/ui';
+import { EmptyState, Glyphs, Loading, Tooltip } from '@lo/ui';
 import { createDiffView, type DiffFile, type DiffView, type Place } from '@lo/ui/code';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
@@ -91,9 +91,22 @@ export function Beside({ tab, path, line, end, note }: BesideProps) {
           line={line}
         />
       ) : files ? (
-        <Said>
-          {unchangedSays(shownPath(path), state?.comparison === null ? undefined : revisions)}
-        </Said>
+        // A range of revisions reads with its arrow drawn as an icon: `r1 → r3`.
+        <div className="flex min-h-0 flex-1 flex-col bg-bg">
+          <EmptyState
+            fit="panel"
+            icon="file-diff"
+            title={
+              <Glyphs
+                text={unchangedSays(
+                  shownPath(path),
+                  state?.comparison === null ? undefined : revisions,
+                )}
+                size={14}
+              />
+            }
+          />
+        </div>
       ) : (
         <div className="min-h-0 flex-1 bg-bg">
           <Loading status="Reading changed files…" />
@@ -116,15 +129,6 @@ function unchangedSays(
   const from = ends && (ends.from === null ? 'base' : revisionLabel(revisions, ends.from));
   const to = ends && revisions && revisionLabel(revisions, ends.to);
   return from && to ? `No changes to ${name} in ${from} → ${to}` : `No changes to ${name}`;
-}
-
-/** What shows in the code's place. */
-function Said({ children }: { children: ReactNode }) {
-  return (
-    <div className="grid min-h-0 flex-1 place-items-center bg-bg p-32 text-center text-fg-muted text-ui">
-      <p className="m-0 max-w-read-measure">{children}</p>
-    </div>
-  );
 }
 
 /** Whether the view can be drawn with what's been worked out of the file, `shown`. */
@@ -290,7 +294,11 @@ function Code({
   }, [marks, id, versions]);
 
   if (!page || !ready) {
-    return <Said>Diffing file…</Said>;
+    return (
+      <div className="min-h-0 flex-1 bg-bg">
+        <Loading status="Diffing file…" />
+      </div>
+    );
   }
   return <div ref={box} className="min-h-0 flex-1" data-lo-beside-code={id} />;
 }
