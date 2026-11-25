@@ -59,8 +59,11 @@ export function SetupDone({ children, size = 'sm' }: SetupDoneProps) {
 }
 
 export interface SetupItemProps {
-  /** An icon drawn on a 16 px grid, as the design's icons are. */
-  icon: ReactNode;
+  /**
+   * An icon drawn on a 16 px grid, as the design's icons are. A row that's a setting, with the
+   * control its row in Settings has, has none.
+   */
+  icon?: ReactNode;
   /** What the step is, in six words at most. */
   title: ReactNode;
   /** What it adds, in a line. */
@@ -70,44 +73,48 @@ export interface SetupItemProps {
    * `SetupDone`.
    */
   done?: ReactNode;
-  /** One picture of what the step adds, under its line. */
-  figure?: ReactNode;
   /**
    * What its button's last press left to say, under its line: a step still to take, such as a
    * folder to add to `PATH`, or a `Problem` where it failed. It opens and closes as `Collapse` does.
    */
   below?: ReactNode;
-  /** Its one button, at the end of the row, while it isn't done. */
+  /** Its one button, or its setting's control, at the end of the row, while it isn't done. */
   children?: ReactNode;
 }
+
+/** A row's columns: with an icon before its words, or its words from the row's start. */
+const item = cva('border-t border-border-subtle px-16 py-12 first:border-t-0', {
+  variants: { icon: { true: 'setup-item', false: 'setup-item-plain' } },
+});
+
+/** Where a row's words, its end and what's under it go, with an icon before them or without. */
+const COLUMNS = {
+  true: { words: 'col-start-2', end: 'col-start-3', below: 'col-span-2 col-start-2' },
+  false: { words: 'col-start-1', end: 'col-start-2', below: 'col-span-2 col-start-1' },
+} as const;
 
 /**
  * One thing to set up: an icon, what it is and adds, and its own button, which gives way to the
  * step's state once it's done.
  */
-export function SetupItem({
-  icon,
-  title,
-  description,
-  done,
-  figure,
-  below,
-  children,
-}: SetupItemProps) {
+export function SetupItem({ icon, title, description, done, below, children }: SetupItemProps) {
   const end = done !== undefined ? <SetupDone>{done}</SetupDone> : children;
+  const drawn = icon !== undefined;
+  const columns = COLUMNS[`${drawn}`];
   return (
-    <li className="setup-item border-t border-border-subtle px-16 py-12 first:border-t-0">
-      <span className="row-span-2 text-icon-muted" aria-hidden="true">
-        {icon}
-      </span>
-      <span className="text-ui-strong">{title}</span>
-      <span className="col-start-2 text-fg-muted text-small">{description}</span>
-      {end !== undefined && <span className="col-start-3 row-span-2 row-start-1">{end}</span>}
+    <li className={item({ icon: drawn })}>
+      {drawn && (
+        <span className="row-span-2 text-icon-muted" aria-hidden="true">
+          {icon}
+        </span>
+      )}
+      <span className={`${columns.words} text-ui-strong`}>{title}</span>
+      <span className={`${columns.words} text-fg-muted text-small`}>{description}</span>
+      {end !== undefined && <span className={`${columns.end} row-span-2 row-start-1`}>{end}</span>}
       {/* It comes and goes as the press that left it does, moving the rows under it once. */}
-      <Collapse open={below !== undefined && below !== null} className="col-span-2 col-start-2">
+      <Collapse open={below !== undefined && below !== null} className={columns.below}>
         {below !== undefined && below !== null && <div className="pt-6">{below}</div>}
       </Collapse>
-      {figure !== undefined && <div className="col-span-2 col-start-2 pt-8">{figure}</div>}
     </li>
   );
 }

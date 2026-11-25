@@ -384,12 +384,13 @@ the window find them with `import.meta.glob`.
   offers a setting of a few options, as the welcome does, takes it as a `SettingChoice`: the feature
   that owns the setting makes one with `choiceOf` in its `window/shared.ts`, rather than handing the
   setting on, and the screen reads and writes it with `useChoice`, which says a change main refused
-  as the row's `Problem`, never in a toast. A change main refuses comes back as `settingsFile` or
-  `unsaved`, with main's reason and its details, and the row says it as a `Problem`. A setting
-  declared with `{ window: 'read' }`, such as which repositories are trusted, the window shows but
-  can't change: `settings.set` refuses it as `unwritable`, and only main writes it, with
-  `use(settings).update(setting, change)`. `docs/settings.md` lists every setting; a test fails when
-  one is missing.
+  as the row's `Problem`, never in a toast. A feature's own row of a setting on such a screen, as
+  the welcome's overviews step has, changes it with `useSettingChange` the same way. A change main
+  refuses comes back as `settingsFile` or `unsaved`, with main's reason and its details, and the row
+  says it as a `Problem`. A setting declared with `{ window: 'read' }`, such as which repositories
+  are trusted, the window shows but can't change: `settings.set` refuses it as `unwritable`, and
+  only main writes it, with `use(settings).update(setting, change)`. `docs/settings.md` lists every
+  setting; a test fails when one is missing.
 - `migrations/001-<name>.sql`, `002-<name>.sql` and on create and change the feature's tables. At
   startup, before any handler can be asked anything, each feature's new migrations run in order,
   each in a transaction, and are recorded with their SHA-256.
@@ -1255,9 +1256,9 @@ its own app, installs it when the reader says so.
 
 ### The welcome flow
 
-The `welcome` feature draws over a tab through the tab feature's `tab.cover` slot. It's five steps,
-one job each, walked with "Continue", "Back" and "Skip": an account, the look, the keys, set-up, and
-opening a pull request.
+The `welcome` feature draws over a tab through the tab feature's `tab.cover` slot. It's six steps,
+one job each, walked with "Continue", "Back" and "Skip": an account, the look, the keys, overviews,
+set-up, and opening a pull request.
 
 - **When it opens.** By itself over the Recent tab, for a reader who hasn't finished it and has no
   account signed in: none is, or GitHub refused every one. "Skip", "Done" and a pull request opened
@@ -1282,14 +1283,20 @@ opening a pull request.
      feature's `chooseVimKeys`. A diff drawn for the step is where `j`, `k` and `c` work. `c` opens
      the comment box every comment is written in (`createComposer`), with the keys chosen. Nothing
      typed there is sent.
-  4. The rows in its `welcome.setup` slot: installing the `lo` command, which the open feature does,
+  4. What an overview is: the overview feature's `Example` (`OverviewExample`), then `overview.on`
+     and `tab.open` as the rows Settings has, each put in the `welcome.overviewRows` slot by the
+     feature that owns it, with no icon, and written with `useSettingChange` as it's changed. Focus
+     starts on "Continue" here, so `⏎` never flips the switch.
+  5. The rows in its `welcome.setup` slot: installing the `lo` command, which the open feature does,
      and sending pull request links to Lo, with the rules for Finicky, Velja and Choosy in
      `docs/link-routers.md`. Another feature's row goes in the slot as a `SetupItem` from `@lo/ui`,
      in `order`, and the same thing has a row in Settings. A row says how its button's press went on
      itself (`below`), never in a toast: the `lo` command's row installs with
-     `installCommand('row')`, which leaves the result for the row.
-  5. A field that opens a pull request's link through the open feature, and a sample pull request.
-     The mark plays Kiss as the step first appears.
+     `installCommand('row')`, which leaves the result for the row. The overview skill's row is there
+     only while there are overviews.
+  6. A field that opens a pull request's link through the open feature, and a sample pull request,
+     whose line says it has an overview while there are overviews. The mark plays Kiss as the step
+     first appears.
 - **Choosing.** Each press of a card writes its own choice, so the last one pressed is the one that
   stays, and its group shows that card until every write of the setting has ended (`choosing` in the
   welcome's store, by the setting's key); then it shows what's on file. Back, Continue and Skip

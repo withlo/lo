@@ -3,7 +3,7 @@
 // over which tab, how its steps are walked, and what each control asks of main and of other
 // features.
 
-import { CopyRoute } from '@lo/ui';
+import { CopyRoute, SetupItem } from '@lo/ui';
 import { holdRegistry } from '@lo/ui/commands';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -12,10 +12,11 @@ import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from '
 import { IpcError } from '../../../ipc/contract.ts';
 import { notices } from '../../../window/commands/notices.tsx';
 import { createRegistry, focusMiddle } from '../../../window/commands/registry.ts';
-import { Slot, Slots } from '../../../window/slots.tsx';
+import { defineView, Slot, Slots } from '../../../window/slots.tsx';
 import { installBridge as install, type FakeBridge } from '../../../window/test/bridge.ts';
 import type { AccountSummary, GhAccount } from '../../accounts/contract.ts';
 import type { GitInfo } from '../../app/contract.ts';
+import type * as OverviewShared from '../../overview/window/shared.ts';
 import type * as TabShared from '../../tab/window/shared.ts';
 import { cover, dialogs, type Tab } from '../../tab/window/shared.ts';
 import { enter, setScreen, show } from './actions.ts';
@@ -23,6 +24,7 @@ import feature from './index.ts';
 import { SAMPLE } from './Open.tsx';
 import { practiceEscape } from './practice.ts';
 import { routers } from './routers.ts';
+import { overviewRows } from './shared.ts';
 import { welcomeStore, type Step } from './store.ts';
 
 const recent: Tab = { id: 'recent', kind: 'recent' };
@@ -103,6 +105,45 @@ vi.mock('../../tab/window/shared.ts', async (actual) => {
   };
 });
 
+// Whether there are overviews is the overview feature's, which the last step's sample follows.
+const overviewsOn = vi.hoisted(() => {
+  let on = true;
+  const listeners = new Set<() => void>();
+  return {
+    now: () => on,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    set(next: boolean) {
+      on = next;
+      for (const listener of listeners) listener();
+    },
+  };
+});
+
+vi.mock('../../overview/window/shared.ts', async (actual) => ({
+  ...(await actual<typeof OverviewShared>()),
+  overviews: { now: overviewsOn.now, subscribe: overviewsOn.subscribe },
+}));
+
+// The overviews step's rows are the overview feature's and the tab feature's, each its own
+// setting's: stand-ins here, in the slot as each puts its row there.
+const ROWS = [
+  defineView(overviewRows, {
+    id: 'overview.onRow',
+    order: 10,
+    render: () => <SetupItem title="Show overviews" description="Turn off to take them out." />,
+  }),
+  defineView(overviewRows, {
+    id: 'tab.openOnRow',
+    order: 20,
+    render: () => <SetupItem title="Open pull requests on" description="Where a tab opens." />,
+  }),
+];
+
 /** Tells the welcome what accounts Lo has, as the accounts feature does. */
 function showAccounts(list: readonly AccountSummary[] | undefined): void {
   accounts.set(list);
@@ -144,6 +185,7 @@ afterEach(() => {
   accounts.signIn.mockClear();
   accounts.importFromGh.mockClear();
   strip.set([], undefined);
+  overviewsOn.set(true);
   welcomeStore.setState({
     shown: false,
     open: false,
@@ -241,7 +283,7 @@ function render(tab: Tab = recent): Shown {
             return Promise.resolve();
           }}
         >
-          <Slots views={feature.views ?? []}>
+          <Slots views={[...(feature.views ?? []), ...ROWS]}>
             <main data-lo-middle tabIndex={-1}>
               <div id="under" tabIndex={0}>
                 Recent pull requests
@@ -428,7 +470,7 @@ describe('walking it', () => {
     expect(stepOnScreen()).toBe('look');
     // The dots' own region, beside them.
     expect(screen()?.querySelector('[role="img"] + [role="status"].sr-only')?.textContent).toBe(
-      'Step 2 of 5',
+      'Step 2 of 6',
     );
     click(button('Back'));
     expect(stepOnScreen()).toBe('account');
@@ -453,6 +495,7 @@ describe('walking it', () => {
       ...(screen()?.querySelectorAll('[role="img"][aria-label^="Step"] > span') ?? []),
     ];
     expect(balls.map((ball) => ball.getAttribute('data-ball'))).toEqual([
+      'done',
       'done',
       'done',
       'done',
@@ -495,6 +538,9 @@ describe('walking it', () => {
     expect(document.activeElement?.getAttribute('aria-checked')).toBe('true');
     await goTo('keys');
     expect(document.activeElement?.getAttribute('aria-label')).toBe('Practice diff');
+    // Not the switch, so ⏎ never turns overviews off.
+    await goTo('overviews');
+    expect(document.activeElement).toBe(button('Continue'));
     await goTo('setup');
     expect(document.activeElement).toBe(button('Continue'));
     await goTo('open');
@@ -519,6 +565,8 @@ describe('⏎', () => {
     await goTo('look');
     act(() => enter());
     expect(stepOnScreen()).toBe('keys');
+    act(() => enter());
+    expect(stepOnScreen()).toBe('overviews');
     act(() => enter());
     expect(stepOnScreen()).toBe('setup');
     act(() => enter());
@@ -875,6 +923,51 @@ describe('the keys step', () => {
   });
 });
 
+describe('the overviews step', () => {
+  it('says what an overview is in two lines, over the top of one and the rows of its settings', async () => {
+    const { bridge } = await first();
+    await goTo('overviews');
+    const heading = onScreen().querySelector('h1');
+    expect(heading?.textContent).toBe('An overview explains a pull request');
+    const said = heading?.parentElement?.nextElementSibling;
+    expect(said?.textContent).toBe(
+      'A document that comes with a pull request. It says what changed and where to look.' +
+        'A coding agent writes it. The overview skill teaches Claude Code and Codex how.',
+    );
+    expect(said?.querySelectorAll('br')).toHaveLength(1);
+    // The example: heard as what it shows, and nothing in it reached.
+    const example = onScreen().querySelector('[role="img"]');
+    expect(example?.getAttribute('aria-label')).toBe(
+      'An overview: a heading, a sentence about the change with a link into the code, and the lines that changed in parser.ts',
+    );
+    expect(example?.firstElementChild?.hasAttribute('inert')).toBe(true);
+    expect(example?.querySelector('h2')?.textContent).toBe('tl;dr');
+    expect(example?.querySelector('.lo-lead')?.textContent).toBe(
+      String.raw`The parser now splits on \r\n as well as \n, so a file saved on Windows reads as the same lines.`,
+    );
+    expect(example?.querySelector('.lo-lead a')?.textContent).toBe('The parser');
+    expect(example?.querySelector('.lo-codeblock__head')?.textContent).toBe('src/parser.ts:9');
+    const code = [...(example?.querySelectorAll('.whitespace-pre') ?? [])];
+    expect(code.map((each) => each.textContent)).toEqual([
+      String.raw`  return input.split('\n').map(toLine);`,
+      String.raw`  return input.split(/\r?\n/).map(toLine);`,
+      '}',
+    ]);
+    // Each feature's row, in its order, in a list the heading names.
+    const list = onScreen().querySelector('ul');
+    expect(list?.getAttribute('aria-labelledby')).toBe(heading?.id);
+    expect(
+      [...(list?.querySelectorAll('li') ?? [])].map(
+        (row) => row.querySelector('.text-ui-strong')?.textContent,
+      ),
+    ).toEqual(['Show overviews', 'Open pull requests on']);
+    expect(list?.nextElementSibling?.textContent).toBe(
+      'Both are also in Settings › Pull requests.',
+    );
+    expect(bridge.calls.some(([channel]) => channel === 'settings.set')).toBe(false);
+  });
+});
+
 describe('the set-up step', () => {
   it('lists the lo command and sending links to Lo, in the slot other features add rows to', async () => {
     await first();
@@ -1094,9 +1187,19 @@ describe('opening a pull request', () => {
     });
     await goTo('open');
     const sample = onScreen().querySelector('ul[aria-label="Sample pull request"] > li');
-    expect(sample?.textContent).toContain('withlo/lo#182');
+    expect(sample?.querySelector('.text-small')?.textContent).toBe(
+      'withlo/lo#182 · has an overview',
+    );
     click(button('Open', sample ?? document));
     await settle();
     expect(bridge.calls).toContainEqual(['open.open', { text: SAMPLE.link }]);
+  });
+
+  it('leaves out that the sample has an overview while overviews are off', async () => {
+    await first();
+    await goTo('open');
+    act(() => overviewsOn.set(false));
+    const sample = onScreen().querySelector('ul[aria-label="Sample pull request"] > li');
+    expect(sample?.querySelector('.text-small')?.textContent).toBe('withlo/lo#182');
   });
 });

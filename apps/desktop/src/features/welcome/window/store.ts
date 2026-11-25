@@ -8,10 +8,10 @@ import type { GitInfo } from '../../app/contract.ts';
 import type { GhListing } from '../../accounts/contract.ts';
 
 /**
- * The welcome's steps, in order: signing in, choosing how Lo looks, choosing keys, setting up,
- * opening a pull request.
+ * The welcome's steps, in order: signing in, choosing how Lo looks, choosing keys, what an overview
+ * is, setting up, opening a pull request.
  */
-export const STEPS = ['account', 'look', 'keys', 'setup', 'open'] as const;
+export const STEPS = ['account', 'look', 'keys', 'overviews', 'setup', 'open'] as const;
 export type Step = (typeof STEPS)[number];
 
 export interface WelcomeState {

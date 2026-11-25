@@ -407,8 +407,9 @@ A feature that needs set-up adds a step to the welcome flow and a row in Setting
   an `icon`, a `title` of six words at most, a `description` of one line, and one small button as
   its child. Once it's done, pass what to say as `done` ("Installed"), and it takes the button's
   place, so the row never changes height.
-- `figure` is a picture of what the row sets up, drawn under its line from Lo's own pieces. Use it
-  only where the words can't show it, such as what an overview looks like.
+- A row that's a setting has no `icon`: the setting's label, a line, and the control its row in
+  Settings has, which writes it as it's changed. The step that says what an overview is has two, in
+  the `welcome.overviewRows` slot.
 - `below` is what the button's last press left to say, under the row's line: a step still to take
   ("Add `/opt/lo/bin` to your PATH."), or a `Problem` where it failed. It comes and goes as
   `Collapse` moves. A row says how its own press went, and no toast says it again.

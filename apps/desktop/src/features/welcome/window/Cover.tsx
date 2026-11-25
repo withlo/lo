@@ -1,4 +1,4 @@
-// The welcome, over a tab: five steps, one job each, that a first-time reader walks with
+// The welcome, over a tab: six steps, one job each, that a first-time reader walks with
 // "Continue", "Back" and "Skip", by mouse or by key. It opens by itself over the Recent tab until
 // the reader has finished it or signed in, and "Welcome to Lo" opens it again over any tab. It's a
 // form like Settings, so `Tab` walks its controls. Its foot stays on screen: in a window too short
@@ -25,6 +25,7 @@ import { KeysStep } from './Keys.tsx';
 import { keyOf } from './labels.ts';
 import { LookStep } from './Look.tsx';
 import { OpenStep } from './Open.tsx';
+import { OverviewsStep } from './Overviews.tsx';
 import { practiceEscape } from './practice.ts';
 import { SetupStep } from './Setup.tsx';
 import { STEPS, welcomeStore, type Step } from './store.ts';
@@ -158,6 +159,7 @@ const STEP_VIEWS: Readonly<Record<Step, (props: { shown: boolean }) => ReactNode
   account: AccountStep,
   look: LookStep,
   keys: KeysStep,
+  overviews: OverviewsStep,
   setup: SetupStep,
   open: OpenStep,
 };
