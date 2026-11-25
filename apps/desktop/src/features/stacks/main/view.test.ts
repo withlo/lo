@@ -299,9 +299,9 @@ describe('the offer to convert the chain to a GitHub stack', () => {
   it('says how a branch stack merges, while Lo could plan it', async () => {
     const found = await recorded('stacks_e2e', E2E, LAYERS);
     // a, b, c, and d, which sits on c by its commits.
-    expect(viewOf(input(found, 4)).view).toMatchObject({
-      callout: 'This branch stack merges one layer at a time.',
-    });
+    const out = viewOf(input(found, 4));
+    expect(out.view).toMatchObject({ callout: 'This branch stack merges one layer at a time.' });
+    expect(out.callout).toBe('convert');
   });
 
   it("isn't made until the layers' state says none is in a merge queue, nor while one is", async () => {

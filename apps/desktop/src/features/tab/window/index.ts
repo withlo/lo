@@ -2,6 +2,7 @@ import { handlers, type History, type NoTarget, type TabTarget } from '@lo/ui/co
 import { createElement } from 'react';
 
 import { menuStale } from '../../../window/commands/bar.ts';
+import { openMenuOf } from '../../../window/commands/menus.tsx';
 import { announce, fail, saidBy } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
 import type { WindowFeature } from '../../../window/features.ts';
@@ -228,8 +229,13 @@ export default {
     copyLocalPath: { run: copyLocalPath, enabled: localShowable },
     // As a click on the banner's own button, which hands focus on as it does.
     nextBanner: { run: () => bannerButton('more')?.click(), enabled: () => pressable('more') },
+    // One that asks where opens its menu as a key does, with its first row ready.
     dismissBanner: {
-      run: () => bannerButton('dismiss')?.click(),
+      run: () => {
+        const button = bannerButton('dismiss');
+        if (button?.getAttribute('aria-haspopup') === 'menu') openMenuOf(button);
+        else button?.click();
+      },
       enabled: () => pressable('dismiss'),
     },
     chooseAccount: {
