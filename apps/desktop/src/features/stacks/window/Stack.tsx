@@ -1,7 +1,7 @@
 // The stack, at the top of a pull request's tab's left panel, above the files: its tree, a row a
 // layer, with each layer's review, checks, place in the merge queue, overview, viewed count and
 // unresolved threads, the arrows that step through the layers, the offer to convert the chain to a
-// GitHub stack while Lo could, and what Lo couldn't read. Layers being selected, or on screen as
+// GitHub stack while Lo could, with Dismiss, and what Lo couldn't read. Layers being selected, or on screen as
 // one diff, share a band, and while they're selected the tree says which layers, with a hint row
 // of their keys. Nothing shows while there's no stack, and nothing holds its place while Lo looks
 // for one.
@@ -10,6 +10,7 @@ import {
   Button,
   HintButton,
   Key,
+  Offer as OfferLine,
   Problem,
   StackTree,
   type StackChecks,
@@ -22,7 +23,7 @@ import {
 import { controlOf, runControl, setScopeSource, type Target } from '@lo/ui/commands';
 import { useCallback, useEffect, useRef, type MouseEvent } from 'react';
 
-import { currentMenu, openMenu } from '../../../window/commands/menus.tsx';
+import { currentMenu, openMenu, useMenuTarget } from '../../../window/commands/menus.tsx';
 import { useKeys } from '../../../window/commands/registry.ts';
 import { useOverviewMark, type OverviewMark } from '../../overview/window/shared.ts';
 import { useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
@@ -30,6 +31,7 @@ import { useViewedCount } from '../../tree/window/shared.ts';
 import type { Checks, Note, Review, Row } from '../contract.ts';
 import { makeStack } from './actions.ts';
 import { useLayerCount } from './counts.ts';
+import { CONVERT_NOTICE } from './dismiss.ts';
 import { catchUp, choosing, focused, keyboardLayer, runTrouble, stacks } from './layers.ts';
 import { chainIn, choiceLine, type Choice } from './runs.ts';
 import { runAgain, showTarget, stackTarget, stopChoosing, takeRefocus } from './walk.ts';
@@ -89,28 +91,33 @@ function StepButton({ id, down }: { id: string; down: boolean }) {
 }
 
 /**
- * The offer to convert the chain through the layer on screen to a GitHub stack: one line, and the
+ * The offer to convert the chain through the layer on screen to a GitHub stack: one line, with
+ * Dismiss, whose menu (its right-click's too) dismisses it for this stack or for all, and the
  * command's button.
  */
 function Offer({ line, tab }: { line: string; tab: PullTab }) {
   const control = controlOf('stacks.convert');
   const off = control?.off;
+  const menu = useMenuTarget(CONVERT_NOTICE);
   return (
-    <div className="flex flex-col items-start gap-6">
-      <p className="m-0 text-fg-muted text-small">{withoutBidi(line)}</p>
-      <Button
-        size="sm"
-        disabled={off !== undefined}
-        hint={off ?? null}
-        onClick={() => {
-          if (control) runControl('stacks.convert');
-          else makeStack(tab.id, tab.number);
-        }}
-      >
-        {control?.label ?? 'Convert to GitHub stack…'}
-        {control?.keys && <Key keys={control.keys} decorative />}
-      </Button>
-    </div>
+    <OfferLine
+      {...menu}
+      line={withoutBidi(line)}
+      action={
+        <Button
+          size="sm"
+          disabled={off !== undefined}
+          hint={off ?? null}
+          onClick={() => {
+            if (control) runControl('stacks.convert');
+            else makeStack(tab.id, tab.number);
+          }}
+        >
+          {control?.label ?? 'Convert to GitHub stack…'}
+          {control?.keys && <Key keys={control.keys} decorative />}
+        </Button>
+      }
+    />
   );
 }
 

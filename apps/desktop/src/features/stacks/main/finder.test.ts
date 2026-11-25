@@ -25,6 +25,7 @@ import {
   OVERVIEW_REFRESH,
   OVERVIEW_REFS,
   StackFinder,
+  type FinderOptions,
   type FinderPoller,
   type FinderTab,
 } from './finder.ts';
@@ -139,7 +140,11 @@ class FakePoller implements FinderPoller {
  * A finder on `poller`, with what it sends, each checked as the window would take it, telling the
  * time by `now`.
  */
-function started(poller: FakePoller | undefined, now?: () => number) {
+function started(
+  poller: FakePoller | undefined,
+  now?: () => number,
+  offers?: FinderOptions['offers'],
+) {
   const sent: StackState[] = [];
   const logged: string[] = [];
   /** Each start set, by the tab it's set for: a commit, or nothing for the base branch. */
@@ -153,6 +158,7 @@ function started(poller: FakePoller | undefined, now?: () => number) {
     compareFrom: (id, commit) => starts.push([id, commit]),
     log: (line) => logged.push(line),
     now,
+    offers,
   });
   return { finder, sent, logged, starts };
 }
@@ -493,6 +499,56 @@ describe('where the layer on screen starts', () => {
       kind: 'start',
       text: 'This diff includes #83’s changes.',
     });
+  });
+});
+
+describe('what a tab offers', () => {
+  it('leaves out an offer dismissed for its stack or its layer, or turned off, and says so', async () => {
+    const found = await recorded('app_stack', E2E, [82, 83, 84, 85]);
+    const { list, rules, layers } = found;
+    if (!layers) throw new Error('No layers were read.');
+    const poller = new FakePoller();
+    // What's dismissed, as `<notice> <repo> <number>`, and what's turned off.
+    const dismissed = new Set<string>();
+    const off = new Set<string>();
+    const { finder, sent } = started(
+      poller,
+      undefined,
+      (notice, repo, numbers) =>
+        !off.has(notice) && !numbers.some((number) => dismissed.has(`${notice} ${repo} ${number}`)),
+    );
+    // #84's diff was drawn before its stack was known, so where it starts is offered.
+    finder.follow([tab(84, { onScreen: true, head: headIn(list, 84), drawn: true })]);
+    await settle();
+    poller.read(PullRef.of(E2E, 84), layers);
+    poller.set(E2E, { list, rules });
+    await settle();
+    const offered = () => {
+      const state = finder.state('t84');
+      const stack = state?.stack;
+      return [stack?.kind === 'stack' ? stack.callout : stack?.kind, state?.offer?.title ?? null];
+    };
+    expect(offered()).toEqual([
+      'This branch stack merges one layer at a time.',
+      'This diff includes #83’s changes',
+    ]);
+    const before = sent.length;
+    // The offer to convert is the stack's: dismissed for a layer below, it goes on #84 too.
+    dismissed.add('convert rozed-dev/e2e 82');
+    finder.noticesChanged();
+    expect(offered()).toEqual([null, 'This diff includes #83’s changes']);
+    // Where #84 starts is #84's own: dismissed for #83, it stays.
+    dismissed.add('start rozed-dev/e2e 83');
+    finder.noticesChanged();
+    expect(offered()).toEqual([null, 'This diff includes #83’s changes']);
+    off.add('start');
+    finder.noticesChanged();
+    expect(offered()).toEqual([null, null]);
+    expect(sent).toHaveLength(before + 2);
+    // Turned on again, it's offered again.
+    off.delete('start');
+    finder.noticesChanged();
+    expect(offered()).toEqual([null, 'This diff includes #83’s changes']);
   });
 });
 

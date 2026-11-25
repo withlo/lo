@@ -307,7 +307,8 @@ GraphQL pages. It builds the stack graph from that and refreshes it as it polls.
   place. When it learns where a layer starts only after the diff is on screen, the diff stays as it
   is, and a banner offers the change: "#4821's diff includes #4819's changes" with "Show only
   #4821's". The button reloads the diff from there, as loading a newer push does. The banner goes
-  once the diff on screen starts where it offers.
+  once the diff on screen starts where it offers, or once it's dismissed: for that layer, or for all
+  stacks, which Settings › Pull requests turns back on.
 
 ### The stack tree
 
@@ -342,7 +343,8 @@ its own place.
 GitHub stacks can't branch, so for a tree Lo converts the path through the layer you're on. The
 option isn't offered when a PR comes from a fork, when GitHub's Stacks API isn't there for the repo
 (it answers 404; github.com has no setting that turns stacks on), or when a PR is already in a merge
-queue.
+queue. The tree offers it in a line over its rows, which can be dismissed for that stack, or for all
+stacks, which Settings › Pull requests turns back on; `gS` and the layer's menu still convert it.
 
 ## 5. The file tree
 

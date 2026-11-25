@@ -144,6 +144,8 @@ function nameOf(kind: TargetKind): string {
       return 'Row actions';
     case 'box':
       return 'Comment box actions';
+    case 'notice':
+      return 'Dismiss';
     case 'none':
       return 'Actions';
     default:

@@ -126,7 +126,8 @@ export type Note = z.output<typeof note>;
  * - `stack`: the root branch its bottom layer sits on; whether every layer is in one GitHub stack
  *   (`githubStack`), which its head then says; its rows and its notes; and `callout`, the line the
  *   offer to convert it to a GitHub stack says, while Lo could convert the chain through the layer
- *   on screen.
+ *   on screen, unless the offer was dismissed for one of its layers or turned off
+ *   (`stacks.offerConvert`).
  */
 export const stackView = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('unknown') }),
@@ -155,9 +156,21 @@ export const offer = z.strictObject({
 });
 export type Offer = z.output<typeof offer>;
 
-/** A pull request's tab's stack, sent each time it changes, with a start it offers, if any. */
+/**
+ * A pull request's tab's stack, sent each time it changes, with a start it offers, if any: none
+ * once that offer was dismissed for its layer, or turned off (`stacks.offerStart`).
+ */
 export const stack = z.strictObject({ id: tabId, stack: stackView, offer: offer.nullable() });
 export type StackState = z.output<typeof stack>;
+
+/**
+ * An offer the stacks make unasked, which the reader can dismiss for one stack or layer, or turn
+ * off: `convert`, the offer over the stack's tree to convert it to a GitHub stack, dismissed for
+ * every layer it has; `start`, the banner's offer to hide the changes of the layer below, dismissed
+ * for the layer.
+ */
+export const notice = z.enum(['convert', 'start']);
+export type Notice = z.output<typeof notice>;
 
 /** A branch's name, as GitHub gives it: text. */
 const branch = z.string();
@@ -335,6 +348,12 @@ export const contract = defineContract('stacks', {
       input: z.strictObject({ id: tabId, commit: oid.nullable() }),
       reply: reply<void>(),
     },
+    /**
+     * Dismisses `notice` for the stack the layer on screen in tab `id` is in, or for its layer, as
+     * {@link notice} says, so it doesn't come back there, through restarts. Fails as `missing` for
+     * a tab that isn't a pull request's, or has no stack yet.
+     */
+    dismiss: { input: z.strictObject({ id: tabId, notice }), reply: reply<void>() },
     /**
      * Plans converting the chain the pull request in tab `id` is in to a GitHub stack, from what
      * GitHub says now, and keeps the plan for the reader to confirm, in place of the tab's last

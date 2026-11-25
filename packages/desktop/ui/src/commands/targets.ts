@@ -100,6 +100,15 @@ export interface BoxTarget {
   box: string;
 }
 
+/**
+ * Something Lo offers or advises unasked, such as the offer over a stack's tree to convert it to a
+ * GitHub stack, by its id (`stacks.convert`): what its Dismiss's menu acts on.
+ */
+export interface NoticeTarget {
+  kind: 'notice';
+  notice: string;
+}
+
 /** Nothing in particular: the command acts on the window or the review. */
 export interface NoTarget {
   kind: 'none';
@@ -115,6 +124,7 @@ export type Target =
   | TabTarget
   | RowTarget
   | BoxTarget
+  | NoticeTarget
   | NoTarget;
 
 export type TargetKind = Target['kind'];
@@ -133,6 +143,7 @@ export const targetKinds: readonly TargetKind[] = [
   'tab',
   'row',
   'box',
+  'notice',
   'none',
 ];
 
@@ -190,6 +201,7 @@ function derive(kind: TargetKind, target: Target): Target | undefined {
     case 'block':
     case 'tab':
     case 'row':
+    case 'notice':
       return undefined;
     default:
       kind satisfies never;
@@ -229,6 +241,8 @@ export function plainTarget(target: Target): Target {
       return { kind: 'row', row: target.row };
     case 'box':
       return { kind: 'box', box: target.box };
+    case 'notice':
+      return { kind: 'notice', notice: target.notice };
     case 'none':
       return NO_TARGET;
     default:

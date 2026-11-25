@@ -32,7 +32,7 @@ import {
 } from '@lo/stacks';
 
 import type { PullState } from '../../tab/contract.ts';
-import type { Offer, StackState } from '../contract.ts';
+import type { Notice, Offer, StackState, StackView } from '../contract.ts';
 import type { Forest as SharedForest } from '../service.ts';
 import type { Found } from './conversion.ts';
 import { runOf, type Run } from './runs.ts';
@@ -107,6 +107,12 @@ export interface FinderOptions {
    * it's drawn, or when the reader asks.
    */
   compareFrom(id: string, commit: string | undefined): void;
+  /**
+   * Whether `notice` is offered for pull requests `numbers` of a repository (by `RepoRef.key`):
+   * not once it's dismissed for one of them, or turned off. Always, without this. Say
+   * {@link StackFinder.noticesChanged} when it changes.
+   */
+  offers?: ((notice: Notice, repo: string, numbers: readonly number[]) => boolean) | undefined;
   log(line: string): void;
   /** The time, in milliseconds since the Unix epoch, as the pollers' reads say when they were made. */
   now?: (() => number) | undefined;
@@ -331,6 +337,41 @@ export class StackFinder {
     this.#refresh();
   }
 
+  /**
+   * Says an offer was dismissed, or turned off or on: each tab's stack is worked out again, and
+   * sent again where that changes what it offers.
+   */
+  noticesChanged(): void {
+    this.#refresh();
+  }
+
+  /**
+   * `view` and `offer`, as tab `tab` offers them: the offer to convert its stack, unless it's
+   * dismissed for one of the stack's layers or turned off, and the start offered, unless it's
+   * dismissed for its layer or turned off.
+   */
+  #offered(
+    tab: FinderTab,
+    view: StackView,
+    offer: Offer | null,
+  ): { view: StackView; offer: Offer | null } {
+    const offers = this.#options.offers;
+    if (!offers) return { view, offer };
+    const repo = tab.pull.repo.key;
+    const convert =
+      view.kind === 'stack' &&
+      view.callout !== null &&
+      !offers(
+        'convert',
+        repo,
+        view.rows.map((row) => row.number),
+      )
+        ? { ...view, callout: null }
+        : view;
+    const start = offer !== null && !offers('start', repo, [tab.pull.number]) ? null : offer;
+    return { view: convert, offer: start };
+  }
+
   /** Stops following, as Lo quits. */
   stop(): void {
     this.#stopped = true;
@@ -407,7 +448,8 @@ export class StackFinder {
         plan?.note && out.view.kind === 'stack'
           ? { ...out.view, notes: [...out.view.notes, plan.note] }
           : out.view;
-      const state: StackState = { id: tab.id, stack: view, offer: plan?.offer ?? null };
+      const offered = this.#offered(tab, view, plan?.offer ?? null);
+      const state: StackState = { id: tab.id, stack: offered.view, offer: offered.offer };
       const sent = JSON.stringify(state);
       followed.state = state;
       if (sent !== followed.sent) {

@@ -9,6 +9,7 @@ import {
 } from 'react';
 
 import { Button } from './Button.tsx';
+import { DismissButton } from './Dismiss.tsx';
 import { handOffFocus, type FocusTarget } from './focus.ts';
 import { Key } from './Key.tsx';
 
@@ -59,6 +60,11 @@ export interface BannerProps {
   action?: BannerAction | undefined;
   /** Puts it away for good, for news the reader has seen. */
   onDismiss?: (() => void) | undefined;
+  /**
+   * It's an offer or advice, so Dismiss asks where to dismiss it: it opens the menu of the element
+   * the banner is in, which lists the choices (see `DismissButton`), in place of `onDismiss`.
+   */
+  dismissChoices?: boolean | undefined;
 }
 
 /**
@@ -100,7 +106,8 @@ function controls(row: HTMLElement | null, kind: Control): HTMLElement[] {
 
 /**
  * One line under the PR header about a change to this pull request: what changed, the one thing to
- * do about it, and Dismiss. A tab shows one at a time, the most urgent, with "+1" for the rest, and
+ * do about it, and Dismiss, which asks where to dismiss one that offers or advises
+ * (`dismissChoices`). A tab shows one at a time, the most urgent, with "+1" for the rest, and
  * opens and closes the row it's in with the Open move. Offers, set-up and standing states aren't
  * banners: they go on the control they belong to. A `danger` banner is an alert; the others are
  * announced politely. In a tab's row (`BannerPlaceProvider`), the row says each one as it comes,
@@ -113,7 +120,7 @@ function controls(row: HTMLElement | null, kind: Control): HTMLElement[] {
  * else its Dismiss. Either way, once it was the last, focus goes to the view under the row.
  */
 export function Banner(props: BannerProps) {
-  const { tone, title, detail, action, onDismiss } = props;
+  const { tone, title, detail, action, onDismiss, dismissChoices = false } = props;
   const place = useContext(Place);
   const more = place?.more;
   const drawn = useContext(Drawn);
@@ -163,7 +170,7 @@ export function Banner(props: BannerProps) {
         <strong className="font-semibold">{title}</strong>
         {detail !== undefined && <span className="text-fg-muted"> {detail}</span>}
       </p>
-      {(action || onDismiss || more) && (
+      {(action || onDismiss || dismissChoices || more) && (
         <div className="flex flex-none items-center gap-6">
           {action && (
             <Button
@@ -192,23 +199,16 @@ export function Banner(props: BannerProps) {
               <span className="lo-num">+{more.count}</span>
             </Button>
           )}
-          {onDismiss && (
-            <Button
-              size="sm"
-              variant="ghost"
-              icon
-              aria-label="Dismiss"
-              hint="Dismiss"
-              onClick={() => {
-                onDismiss();
+          {(onDismiss || dismissChoices) && (
+            // With choices, the banner leaves once one is chosen, and hands focus on as it goes.
+            <DismissButton
+              choices={dismissChoices}
+              onDismiss={() => {
+                onDismiss?.();
                 handOff('dismiss');
               }}
               data-lo-banner="dismiss"
-            >
-              <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M4 4l8 8M12 4l-8 8" />
-              </svg>
-            </Button>
+            />
           )}
         </div>
       )}

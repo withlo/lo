@@ -414,6 +414,25 @@ A feature that needs set-up adds a step to the welcome flow and a row in Setting
   as ravi-k".
 - The welcome's steps, its buttons and its keys are in `AGENTS.md`, under "The welcome flow".
 
+## Offers
+
+Something Lo offers or advises unasked, such as converting a branch stack to a GitHub stack, sits on
+the control or panel it belongs to, and the reader can dismiss it, here or everywhere.
+
+- **It's an `Offer`:** its line, Dismiss at the line's end, and its command's button under it. An
+  offer that's a change to what's on screen, such as where a layer's diff starts, is a `Banner` with
+  `dismissChoices`.
+- **Dismiss asks where.** It opens the offer's menu, which its right-click opens too (a `notice`
+  target): "Dismiss for #264", or "Dismiss for this stack", where the offer is tied to one pull
+  request or stack, then "Dismiss for all stacks", or for all of whatever it's about.
+- **"For all" turns off a setting,** which brings it back: a switch in Settings › Pull requests,
+  beside the other offers', labelled "Offer GitHub stacks". A dismissal for one pull request is kept
+  in the feature's own table, so it holds through restarts.
+- **Its commands have no key.** The menu and the palette reach them, and the keymap file can give
+  them one.
+- News keeps its one-press Dismiss: it's seen once and goes. A failure has no Dismiss: it stays
+  until it's fixed.
+
 ## Floating pieces
 
 Everything that floats over the window is one of these, from `packages/desktop/ui`. Each comes and
@@ -529,7 +548,8 @@ that floats.
   place isn't said again. The diff under the row keeps its rows still as a banner comes, by
   scrolling, unless that would put the cursor's row out of its top, as the first file's header at
   the top would go: then it stays at the top and its content moves down with the row. An action that
-  can be busy takes `busy` (`false` at rest) and `working`, as a `Button` does.
+  can be busy takes `busy` (`false` at rest) and `working`, as a `Button` does. A banner that offers
+  takes `dismissChoices`, and its Dismiss asks where (see [Offers](#offers)).
 
 Base UI's popup parts (dialog, menu, popover, tooltip, toast and the like) are imported only by
 these pieces. `ui:lint` runs `scripts/check-popups.ts`, which fails on an import anywhere else, so a
@@ -653,7 +673,7 @@ tokens. Their code is the source for how each one looks.
 
 | Group            | Components                                                                            |
 | ---------------- | ------------------------------------------------------------------------------------- |
-| Window           | PullRequestTab, TabBar, PRHeader, StatusBar, Banner                                   |
+| Window           | PullRequestTab, TabBar, PRHeader, StatusBar, Banner, Offer, DismissButton             |
 | Panels           | StackTree, FileTree                                                                   |
 | Controls         | Button, HintButton, MoreButton, CopyButton, Key, SegmentedControl, Switch, Input      |
 | Marks            | StatePill, Tag, Avatar, Marks                                                         |

@@ -463,6 +463,8 @@ function sampleTarget(kind: TargetKind): Target {
       return { kind, row: 'r' };
     case 'box':
       return { kind, box: 'b' };
+    case 'notice':
+      return { kind, notice: 'n' };
     case 'none':
       return NO_TARGET;
     default:

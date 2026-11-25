@@ -1,0 +1,106 @@
+// @vitest-environment jsdom
+// Dismissing the stacks' offers: each one's menu lists its own rows, which act on the tab on screen
+// and only while it offers them; "for this stack" or "for #84" asks main to keep it, and "for all
+// stacks" turns its setting off.
+
+import { expect, it, vi } from 'vitest';
+
+import { installBridge } from '../../../window/test/bridge.ts';
+import type * as TabShared from '../../tab/window/shared.ts';
+import type { PullTab } from '../../tab/window/shared.ts';
+import { offerConvert, offerStart } from '../settings.ts';
+import {
+  CONVERT_NOTICE,
+  dismissConvert,
+  dismissStart,
+  offerConvertSwitch,
+  offerStartSwitch,
+  START_NOTICE,
+} from './dismiss.ts';
+import { stacks } from './layers.ts';
+import { offers } from './offers.ts';
+
+// The tab on screen, as the tab feature names it; the tab feature isn't loaded.
+const on = vi.hoisted(() => ({ tab: undefined as unknown }));
+vi.mock('../../tab/window/shared.ts', async (original) => ({
+  ...(await original<typeof TabShared>()),
+  activeTab: () => on.tab,
+}));
+const settings = vi.hoisted(() => ({
+  changed: [] as [string, unknown][],
+  values: new Map<string, unknown>(),
+}));
+vi.mock('../../settings/window/shared.ts', () => ({
+  changeSetting: (setting: { key: string }, value: unknown) => {
+    settings.changed.push([setting.key, value]);
+    return Promise.resolve(true);
+  },
+  settingNow: (setting: { key: string; fallback: unknown }) =>
+    settings.values.get(setting.key) ?? setting.fallback,
+}));
+
+const bridge = installBridge({ 'stacks.dismiss': () => undefined });
+
+const TAB: PullTab = {
+  id: 't1:84',
+  kind: 'pull',
+  owner: 'rozed-dev',
+  repo: 'e2e',
+  number: 84,
+  title: 'c',
+  state: 'open',
+};
+
+const NONE = { kind: 'none' } as const;
+
+it('lists each offer’s rows in its own menu alone, and in the palette', () => {
+  for (const handler of [dismissConvert, offerConvertSwitch]) {
+    expect(handler.listed?.(CONVERT_NOTICE)).toBe(true);
+    expect(handler.listed?.(START_NOTICE)).toBe(false);
+    expect(handler.listed?.(NONE)).toBe(true);
+  }
+  for (const handler of [dismissStart, offerStartSwitch]) {
+    expect(handler.listed?.(START_NOTICE)).toBe(true);
+    expect(handler.listed?.(CONVERT_NOTICE)).toBe(false);
+  }
+});
+
+it('dismisses an offer for the stack or layer on screen, only while it’s offered there', async () => {
+  on.tab = undefined;
+  expect(dismissConvert.enabled?.(NONE)).toBe('');
+  on.tab = TAB;
+  stacks.set(TAB.id, { kind: 'none' });
+  expect(dismissConvert.enabled?.(NONE)).toBe('');
+  expect(dismissStart.enabled?.(NONE)).toBe('');
+  stacks.set(TAB.id, {
+    kind: 'stack',
+    root: 'main',
+    githubStack: false,
+    rows: [],
+    notes: [],
+    callout: 'This branch stack merges one layer at a time.',
+  });
+  offers.set(TAB.id, { title: 'This diff includes #83’s changes', action: 'Hide', commit: null });
+  expect(dismissConvert.enabled?.(CONVERT_NOTICE)).toBe(true);
+  expect(dismissStart.enabled?.(START_NOTICE)).toBe(true);
+  expect(dismissStart.named?.(START_NOTICE)).toBe('Dismiss for #84');
+  await dismissConvert.run(CONVERT_NOTICE);
+  await dismissStart.run(START_NOTICE);
+  expect(bridge.calls.filter(([channel]) => channel === 'stacks.dismiss')).toEqual([
+    ['stacks.dismiss', { id: TAB.id, notice: 'convert' }],
+    ['stacks.dismiss', { id: TAB.id, notice: 'start' }],
+  ]);
+});
+
+it('turns an offer off from its menu, and either way from the palette, checked while on', async () => {
+  settings.changed.length = 0;
+  expect(offerConvertSwitch.checked?.(NONE)).toBe(true);
+  await offerConvertSwitch.run(CONVERT_NOTICE);
+  settings.values.set(offerStart.key, false);
+  expect(offerStartSwitch.checked?.(NONE)).toBe(false);
+  await offerStartSwitch.run(NONE);
+  expect(settings.changed).toEqual([
+    [offerConvert.key, false],
+    [offerStart.key, true],
+  ]);
+});

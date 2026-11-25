@@ -151,6 +151,26 @@ describe('Banner', () => {
     expect(document.activeElement).toBe(host.querySelector('#view'));
   });
 
+  it('asks where to dismiss an offer: its Dismiss opens the menu of what it’s in, and dismisses nothing itself', () => {
+    const menu = vi.fn<(event: MouseEvent) => void>();
+    const dismissed = vi.fn<() => void>();
+    const host = render(
+      <div onContextMenu={(event) => menu(event.nativeEvent)}>
+        <Banner
+          tone="info"
+          title="This diff includes #83’s changes"
+          onDismiss={dismissed}
+          dismissChoices
+        />
+      </div>,
+    );
+    const dismiss = named(host, 'Dismiss');
+    expect(dismiss.getAttribute('aria-haspopup')).toBe('menu');
+    click(dismiss);
+    expect(menu).toHaveBeenCalledOnce();
+    expect(dismissed).not.toHaveBeenCalled();
+  });
+
   it('leaves focus that was elsewhere where it is', async () => {
     const host = render(<Row banners={[{ title: 'ravi-k pushed r5' }]} />);
     const view = host.querySelector<HTMLElement>('#view')!;
