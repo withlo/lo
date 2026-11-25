@@ -9,6 +9,11 @@ import { RepoServer } from './repos.ts';
 const server = new RepoServer();
 afterAll(() => server.remove());
 
+/** The tree of the commit the working copy `work` is at. */
+function tree(work: string): string {
+  return git(work, 'rev-parse', 'HEAD^{tree}');
+}
+
 test('commitFiles commits what writing the files and committing them would, and checks it out', () => {
   const files: [string, string][] = [
     ['README.md', '# changed\n'],
@@ -25,7 +30,6 @@ test('commitFiles commits what writing the files and committing them would, and 
 
   const head = imported.commitFiles(files, 'head');
 
-  const tree = (work: string) => git(work, 'rev-parse', 'HEAD^{tree}');
   expect(tree(imported.work)).toBe(tree(written.work));
   expect(git(imported.work, 'rev-parse', 'HEAD^')).toBe(bases[1]);
   expect(git(imported.work, 'log', '-1', '--format=%s %an <%ae>')).toBe(

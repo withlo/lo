@@ -7,10 +7,12 @@ import { fileFolders } from './folders.ts';
 
 const made: string[] = [];
 
-// Registered first, so it runs last, once the folders' own removal has run.
+// Registered first, so it runs last, once the folders' own removal has run, and fails the file.
 afterAll(() => {
-  expect(made).toHaveLength(2);
-  expect(made.filter((folder) => existsSync(folder))).toEqual([]);
+  const left = made.filter((folder) => existsSync(folder));
+  if (made.length !== 2 || left.length > 0) {
+    throw new Error(`of ${made.length} folders, these are left: ${left.join(', ')}`);
+  }
 });
 
 const folder = fileFolders('lo-folders-test-');

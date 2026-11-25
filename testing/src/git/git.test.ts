@@ -49,10 +49,13 @@ describe('gitBytes', () => {
   });
 });
 
+/** What `program` prints for `args`, run in a test's git environment. */
+function ask(program: string, args: readonly string[]): string {
+  return execFileSync(program, args, { env: testGitEnvironment(), encoding: 'utf8' }).trim();
+}
+
 describe('gitProgram', () => {
   test('is the git that the git on PATH runs, and the one a script runs', () => {
-    const ask = (program: string, args: string[]) =>
-      execFileSync(program, args, { env: testGitEnvironment(), encoding: 'utf8' }).trim();
     for (const args of [['--version'], ['--exec-path']]) {
       expect(ask(gitProgram(), args)).toBe(execFileSync('git', args, { encoding: 'utf8' }).trim());
     }
