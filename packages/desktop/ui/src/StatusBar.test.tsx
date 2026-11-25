@@ -1,14 +1,15 @@
 // @vitest-environment jsdom
 // What a status item's details, and the header chip's, do with focus as they end while they have
 // it, as an action in them that changes what's behind them does: it goes back to the item, or the
-// chip, as it's drawn now, else beside it, never to the page.
+// chip, as it's drawn now, else beside it, never to the page. And the keys typed so far.
 
 import { act, useState } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { cleanUp, click, render } from '../test/dom.ts';
 import { PRHeader } from './PRHeader.tsx';
-import { StatusBar, StatusItem } from './StatusBar.tsx';
+import { StatusBar, StatusItem, StatusKeys } from './StatusBar.tsx';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -121,5 +122,16 @@ describe('the details of a status item, and of the header’s chip', () => {
     await pressInDetails(host.querySelector('header button')!);
     expect(host.textContent).not.toContain('Offline');
     expect(document.activeElement).toBe(host.querySelector('#status'));
+  });
+});
+
+describe('the keys typed so far', () => {
+  it('draw a key’s symbol as its icon, as a key chip does, and say the keys as typed', () => {
+    const host = document.createElement('div');
+    host.innerHTML = renderToStaticMarkup(<StatusKeys keys="⌃w" />);
+    const typed = host.querySelector('[data-lo-keys-typed]');
+    expect(typed?.querySelectorAll('svg.lo-i--xs')).toHaveLength(1);
+    expect(typed?.textContent).toBe('⌃w');
+    expect(typed?.getAttribute('aria-label')).toBe('Keys typed: ⌃w');
   });
 });

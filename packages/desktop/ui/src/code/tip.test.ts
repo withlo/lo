@@ -44,6 +44,16 @@ test('a tip comes once the pointer has rested on its control, and goes as it lea
   expect(shown()).toBeUndefined();
 });
 
+test('a key’s symbols are icons in its cap, which still reads as the key', () => {
+  stop();
+  stop = tips(root, (control) => ({ label: control.dataset.tip ?? '', keys: ['⌥⏎', 'Esc'] }));
+  move(ball, 'mouseover');
+  vi.advanceTimersByTime(TIP_DELAY);
+  const caps = [...document.querySelectorAll('.lo-tip kbd')];
+  expect(caps.map((cap) => cap.querySelectorAll('svg.lo-i--xs').length)).toEqual([2, 0]);
+  expect(shown()).toBe('Mark viewed⌥⏎Esc');
+});
+
 test('a scroll that cancels the wait, with the pointer still on the control, shows it once it’s over', () => {
   move(ball, 'mouseover');
   vi.advanceTimersByTime(TIP_DELAY / 2);

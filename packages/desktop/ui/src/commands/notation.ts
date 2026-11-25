@@ -485,9 +485,10 @@ const linuxNames: Readonly<Record<string, string>> = {
 
 /**
  * How `system` shows one keystroke. macOS joins symbols with no separator: `⌘⇧P`, `⌃o`, `⌥⏎`,
- * `⌃⇧⇥`, `⇧⇥`, and Tab is `⇥` alone too, so no key mixes a symbol with a word. A letter is a capital with ⌘, ⌥ or ⇧, as in macOS's menus, and stays lowercase
- * on its own or with ⌃ alone, as Vim's keys are written (`⌃o`). Linux spells modifiers out and
- * joins them with `+`: `Ctrl+Shift+P`, `Ctrl+O`, `Alt+Enter`.
+ * `⌃⇧⇥`, `⇧⇥`, and Tab is `⇥` alone too, so no key mixes a symbol with a word. A letter is a
+ * capital with ⌘, ⌥ or ⇧, as in macOS's menus, and stays lowercase on its own or with ⌃ alone, as
+ * Vim's keys are written (`⌃o`). Linux spells modifiers out and joins them with `+`:
+ * `Ctrl+Shift+P`, `Ctrl+O`, `Alt+Enter`.
  */
 export function strokeLabel(stroke: Stroke, system: System): string {
   const { key } = stroke;
