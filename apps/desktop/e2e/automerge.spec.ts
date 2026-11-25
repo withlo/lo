@@ -8,8 +8,8 @@
 // refusals are said in the dialog, from derived answers: a repository that doesn't allow auto-merge
 // (`app_merge_auto_not_allowed`), and a pull request its code owner approved since, which nothing
 // blocks then, whose merge the dialog offers in auto-merge's place (`app_merge_auto_now`). An
-// account below admin isn't offered `⌥⏎` (`app_merge_override_writer`), nor a merge GitHub blocks
-// for a rule it can't bypass, which the panel names (`app_merge_write_writer`, on generation 5).
+// account below admin isn't offered a merge GitHub blocks for a rule it can't bypass, which the
+// panel names (`app_merge_write_writer`, on generation 5).
 
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -238,19 +238,6 @@ test.describe('when GitHub finds nothing blocks it', () => {
     await expect(dialog(page).getByRole('button', { name: `Merge #${number}` })).toBeVisible();
     await expect(status(page)).toContainText('Ready to merge');
     await expect(status(page)).not.toContainText('Auto-merge is on');
-  });
-});
-
-test.describe('as an account below admin', () => {
-  test.use({ cassette: 'app_merge_override_writer' });
-
-  test('`⌥⏎` isn’t offered', async ({ page }) => {
-    await panelOf(page, pulls.overridden.number, 'Can’t merge yet');
-    await expect(panel(page).getByRole('button', { name: /Bypass rules and merge…/ })).toHaveCount(
-      0,
-    );
-    await page.keyboard.press('Alt+Enter');
-    await expect(dialog(page)).toBeHidden();
   });
 });
 

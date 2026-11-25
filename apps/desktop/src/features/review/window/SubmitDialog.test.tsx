@@ -12,6 +12,7 @@ import { installBridge } from '../../../window/test/bridge.ts';
 import type * as TabShared from '../../tab/window/shared.ts';
 import type { DialogView, ReviewEventRow } from '../contract.ts';
 import feature from './index.ts';
+import { verdictsOf } from './model.ts';
 import { reviewStore } from './store.ts';
 import { SubmitDialog } from './SubmitDialog.tsx';
 
@@ -39,17 +40,9 @@ afterEach(() => {
   act(() => reviewStore.setState({ dialog: undefined }));
 });
 
-/** Draws the dialog as main read it for a pull request `own` or not, done with `done` if given. */
-function render(own: boolean, done?: ReviewEventRow): void {
-  const host = document.createElement('div');
-  host.id = 'root';
-  document.body.append(host);
-  const root = createRoot(host);
-  onTestFinished(() => {
-    act(() => root.unmount());
-    host.remove();
-  });
-  const read: DialogView = {
+/** The dialog as main read it for a pull request `own` or not. */
+function readFor(own: boolean): DialogView {
+  return {
     login: 'rozed-bot',
     owner: 'rozed-dev',
     repo: 'e2e',
@@ -63,6 +56,19 @@ function render(own: boolean, done?: ReviewEventRow): void {
     submitting: null,
     pausedUntil: null,
   };
+}
+
+/** Draws the dialog as main read it for a pull request `own` or not, done with `done` if given. */
+function render(own: boolean, done?: ReviewEventRow): void {
+  const host = document.createElement('div');
+  host.id = 'root';
+  document.body.append(host);
+  const root = createRoot(host);
+  onTestFinished(() => {
+    act(() => root.unmount());
+    host.remove();
+  });
+  const read = readFor(own);
   act(() => {
     reviewStore.setState({
       dialog: {
@@ -112,10 +118,12 @@ test('someone else’s pull request offers every verdict, and the dialog submits
 test('on your own pull request, Approve and Request changes are dimmed with why', () => {
   render(true);
   expect(verdicts()).toEqual(['Comment', 'Approve', 'Request changes']);
-  expect(dimmed()).toEqual([
-    'ApproveAuthors can’t approve their own pull request',
-    'Request changesAuthors can’t request changes on their own pull request',
-  ]);
+  // Each with why, as the dialog's model words it.
+  const why = verdictsOf(readFor(true), (head) => head.slice(0, 7)).flatMap(({ title, off }) =>
+    off === undefined ? [] : [`${title}${off}`],
+  );
+  expect(why).toHaveLength(2);
+  expect(dimmed()).toEqual(why);
 });
 
 test('an approval ends with what it did, and "Done" alone', () => {

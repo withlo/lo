@@ -104,6 +104,8 @@ export interface AccountsOptions {
    * GitHub refuses is signed out.
    */
   reread?: ((login: string) => Promise<Token | undefined>) | undefined;
+  /** How long the accounts' clients wait for an answer to begin, unless their own: for tests. */
+  answerStartMs?: number | undefined;
 }
 
 /** Why an account is signed out: GitHub refused its token (a `401`), or its token isn't kept any more. */
@@ -211,6 +213,7 @@ export class Accounts {
   readonly #reread: ((login: string) => Promise<Token | undefined>) | undefined;
   readonly #fetch: typeof globalThis.fetch;
   readonly #urls: Partial<GitHubUrls> | undefined;
+  readonly #answerStart: number | undefined;
   readonly #now: () => number;
   #accounts: Account[];
   /** Why each account is signed out, by lowercased login. */
@@ -249,6 +252,7 @@ export class Accounts {
     this.#reread = options.reread;
     this.#fetch = options.fetch;
     this.#urls = options.urls;
+    this.#answerStart = options.answerStartMs;
     this.#now = options.now ?? (() => Math.floor(Date.now() / 1000));
     this.#accounts = accounts;
     // Accounts GitHub refused before stay signed out, without reading their grants.
@@ -613,6 +617,7 @@ export class Accounts {
       token,
       urls: this.#urls,
       onUnauthorized: (refused) => this.#renew(login, refused, 'refused'),
+      answerStartMs: this.#answerStart,
     });
   }
 

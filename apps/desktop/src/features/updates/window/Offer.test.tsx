@@ -242,12 +242,12 @@ describe.each(['dark', 'light'] as const)('in the %s theme', (theme) => {
     expect(draw(themed({ status: 'idle' })).textContent).toBe('');
   });
 
-  it('draws the main action as the one primary button, and Hide quiet', () => {
+  it('draws the main action as the one primary button', () => {
     const page = draw(themed(offer('install')));
-    const [install, whatsNew, later] = [...page.querySelectorAll('button')];
-    expect(install?.className).toContain('bg-accent');
-    expect(whatsNew?.className).not.toContain('bg-accent');
-    expect(later?.className).toContain('bg-transparent');
+    const filled = [...page.querySelectorAll('button')].map((each) =>
+      each.hasAttribute('data-fill'),
+    );
+    expect(filled).toEqual([true, false, false]);
     // Nothing is drawn as focused: the design's ring on Install is the key press's, not the toast's.
     expect(page.querySelector(':focus')).toBeNull();
   });

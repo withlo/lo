@@ -37,7 +37,7 @@ function press(target: Element, key: string): void {
 
 const sections: ContextMenuItem[][] = [
   [
-    { id: 'show', label: 'Show in the diff', keys: ['⏎'] },
+    { id: 'show', label: 'Show in the diff', keys: ['⏎'], shortcut: 'Enter' },
     { id: 'viewed', label: 'Mark viewed', keys: ['e'] },
   ],
   [
@@ -96,6 +96,17 @@ describe('ContextMenu', () => {
       items(page).map((item) => [...item.querySelectorAll('kbd')].map((kbd) => kbd.textContent)),
     ).toEqual([['⏎'], ['e'], ['y', 'p'], ['g', 'S']]);
     expect(page.querySelectorAll('[role="separator"]')).toHaveLength(1);
+  });
+
+  it('gives a screen reader an action’s key as aria-keyshortcuts, or a sequence described, never the key caps', () => {
+    const page = render(<Harness />);
+    const [show, , path] = items(page);
+    expect(show?.getAttribute('aria-keyshortcuts')).toBe('Enter');
+    expect(path?.hasAttribute('aria-keyshortcuts')).toBe(false);
+    expect(path?.getAttribute('aria-description')).toBe('Keys y then p');
+    for (const kbd of page.querySelectorAll('[role="menuitem"] kbd')) {
+      expect(kbd.closest('[aria-hidden="true"]')).not.toBeNull();
+    }
   });
 
   it('greys an action that can’t be done and says why', () => {

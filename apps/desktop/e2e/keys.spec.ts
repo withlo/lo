@@ -107,7 +107,7 @@ test('a click in the macOS app menu runs its command once, and its key never thr
   app,
   page,
 }) => {
-  test.skip(!mac, 'Linux has no app menu.');
+  test.skip(!mac, 'Local only: it reads macOS’s menu bar, and CI runs on Linux.');
   await expect.poll(() => menuContents(app)).toContain('id:keys.back');
   // Count what main sends back.
   await page.evaluate(() => {

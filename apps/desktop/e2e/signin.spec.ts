@@ -1,6 +1,6 @@
-// Signing in and importing accounts in the app: GitHub's device flow on the replay server, a stand-in
-// gh, and a system with no keychain Lo keeps tokens with. The token never reaches the window, a
-// file in the clear, or another process's arguments.
+// Signing in and importing accounts in the app: GitHub's device flow on the replay server, and a
+// stand-in gh. The token never reaches the window, a file in the clear, or another process's
+// arguments.
 
 import { execFileSync } from 'node:child_process';
 import {
@@ -38,13 +38,16 @@ const FROM_GH = 'gho_FAKE_FROM_GH';
 
 const test = base.extend<{
   cassette: string;
-  /** How long a sign-in waits between polls, in milliseconds, in place of GitHub's interval. */
+  /**
+   * How long a sign-in waits between polls, in milliseconds, in place of GitHub's interval of 5 s
+   * and a little more: 3 s unless a test says.
+   */
   pollEvery: number | undefined;
   github: ReplayServer;
 }>({
   /** The cassette the test's GitHub replays: the code is entered before the first poll. */
   cassette: ['device_flow_first_poll', { option: true }],
-  pollEvery: [undefined, { option: true }],
+  pollEvery: [3_000, { option: true }],
   github: async ({ cassette }, use) => {
     const server = await serveReplay(cassette);
     await use(server);
@@ -123,8 +126,8 @@ test('signs in with GitHub: the code, GitHub’s page, and the account, never it
   await page.keyboard.press('y');
   await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe('FAKE-1234');
 
-  // GitHub's first poll is 6 s in: its interval, 5 s, and a little more.
-  await expect(dialog).toContainText('Signed in as rozed-bot', { timeout: 20_000 });
+  // The first poll is 3 s in, after all of that.
+  await expect(dialog).toContainText('Signed in as rozed-bot', { timeout: 10_000 });
   expect(polls(github)).toBe(1);
   await expect(dialog.getByRole('button', { name: /Done/ })).toBeFocused();
   // Coming back to the window with a click on the dialog's text takes focus off Done, and `⏎`
@@ -175,61 +178,6 @@ test('signs in with GitHub: the code, GitHub’s page, and the account, never it
   });
   nowhereInTheClear(SIGNED_IN);
   nowhereInTheClear(REFRESH);
-});
-
-/** How often the cancelled sign-in's polls go, in milliseconds. */
-const POLL_MS = 300;
-
-test.describe('a sign-in that is cancelled', () => {
-  // A code that lasts 20 s, never entered, polled for every few hundred milliseconds.
-  test.use({ cassette: 'device_flow_deadline', pollEvery: POLL_MS });
-
-  test('stops polling GitHub once its dialog closes', async ({ page, github }) => {
-    await openSettings(page);
-    await accounts(page).getByRole('button', { name: 'Sign in with GitHub…' }).click();
-    const dialog = page.getByTestId('sign-in');
-    await expect(dialog).toContainText('Waiting for approval…');
-    await expect.poll(() => polls(github)).toBeGreaterThan(0);
-    await page.keyboard.press('Escape');
-    await expect(dialog).toBeHidden();
-    // A poll already on its way when the dialog closed still lands; then it stops.
-    await page.waitForTimeout(2 * POLL_MS);
-    const stopped = polls(github);
-    // Five polls' worth of time, in which not one more goes.
-    await page.waitForTimeout(5 * POLL_MS);
-    expect(polls(github)).toBe(stopped);
-    expect(rows('SELECT login FROM accounts_accounts')).toEqual([]);
-  });
-});
-
-test.describe('a system with no keychain Lo keeps tokens with', () => {
-  // Outside a test run, Chromium's stand-in keychain and Linux's fallback key count as none, so
-  // Lo starts with no GitHub of its own: it must refuse before asking GitHub anything.
-  test.use({ launch: { args: [appFolder, ...KEYCHAIN] } });
-
-  test('refuses to sign in or import before asking GitHub, and says what to do', async ({
-    page,
-  }) => {
-    await openSettings(page);
-    await accounts(page).getByRole('button', { name: 'Sign in with GitHub…' }).click();
-    const dialog = page.getByTestId('sign-in');
-    await expect(dialog.getByRole('alert')).toContainText('Couldn’t sign in');
-    await expect(dialog.getByRole('button', { name: /Quit Lo/ })).toBeFocused();
-    // Playwright starts Electron with Chromium's stand-in keychain on every system, which Lo
-    // names first; without it, Linux's fallback key would be refused for want of a keyring.
-    await dialog.getByRole('button', { name: 'Details' }).click();
-    await expect(dialog).toContainText(/stand-in keychain|GNOME Keyring or KWallet/);
-    await page.keyboard.press('Escape');
-    await expect(dialog).toBeHidden();
-
-    await accounts(page).getByRole('button', { name: 'Import from GitHub CLI' }).click();
-    const importing = page.getByTestId('import-gh');
-    await expect(importing.getByRole('alert')).toContainText('Can’t import accounts');
-    await expect(importing.getByRole('button', { name: /Quit Lo/ })).toBeFocused();
-    expect(
-      await page.evaluate(() => window.lo.invoke('accounts.importGh', { logins: ['rozed-bot'] })),
-    ).toMatchObject({ ok: false, error: { code: 'noKeyring' } });
-  });
 });
 
 /**

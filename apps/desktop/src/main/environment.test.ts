@@ -19,6 +19,9 @@ import {
   holdLimit,
   reducedMotion,
   offlineAfter,
+  pollEvery,
+  watchedEvery,
+  answerStart,
 } from './environment.ts';
 
 describe('appName', () => {
@@ -160,6 +163,41 @@ describe('devicePoll', () => {
       expect(() => devicePoll({ packaged: false, env: { LO_DEVICE_POLL_MS: wait } })).toThrow(
         'LO_DEVICE_POLL_MS',
       );
+    }
+  });
+});
+
+describe('the test runs’ waits for GitHub', () => {
+  it.each([
+    { read: pollEvery, name: 'LO_POLL_MS' },
+    { read: watchedEvery, name: 'LO_WATCHED_POLL_MS' },
+    { read: answerStart, name: 'LO_ANSWER_START_MS' },
+  ])(
+    '$name sets its wait in a build run from source, and nothing in a packaged one',
+    ({ read, name }) => {
+      expect(read({ packaged: false, env: { [name]: '2000' } })).toBe(2000);
+      expect(read({ packaged: false, env: {} })).toBe(undefined);
+      expect(read({ packaged: true, env: { [name]: '2000' } })).toBe(undefined);
+      for (const wait of ['', '1.5', '-1', 'soon']) {
+        expect(() => read({ packaged: false, env: { [name]: wait } })).toThrow(name);
+      }
+    },
+  );
+});
+
+describe('a wait in milliseconds', () => {
+  it.each([
+    { read: holdLimit, name: 'LO_HOLD_LIMIT_MS' },
+    { read: devicePoll, name: 'LO_DEVICE_POLL_MS' },
+    { read: pollEvery, name: 'LO_POLL_MS' },
+    { read: watchedEvery, name: 'LO_WATCHED_POLL_MS' },
+    { read: answerStart, name: 'LO_ANSWER_START_MS' },
+  ])('$name below 1 ms or past the longest a timer takes is Lo’s own', ({ read, name }) => {
+    const wait = (value: string) => read({ packaged: false, env: { [name]: value } });
+    expect(wait('1')).toBe(1);
+    expect(wait('2147483647')).toBe(2_147_483_647);
+    for (const value of ['0', '000', '2147483648', String(Number.MAX_SAFE_INTEGER)]) {
+      expect(wait(value)).toBe(undefined);
     }
   });
 });
