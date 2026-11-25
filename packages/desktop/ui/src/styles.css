@@ -57,6 +57,93 @@
   app-region: no-drag;
 }
 
+/* A row of panes (`Panes`): each pane is a layer of its own, so an edge's grip sits over what's
+   beside it, and nothing in a pane rises over the edge. */
+@utility panes {
+  position: relative;
+  display: flex;
+  isolation: isolate;
+  & > :not([data-lo-splitter]) {
+    isolation: isolate;
+  }
+}
+
+/* An edge between panes (`Splitter`). It takes no room, and gives lo-splitter-w to grab, centred on
+   the edge or shifted off a scrollbar under it; between two views it's the gap, all of which it
+   gives. At rest it draws nothing. Under the pointer, a 2 px line its full height, in lo-border,
+   and pressed, or moved by a key, in lo-accent, each tinting in. The cursor says which way it can
+   go: either way, or only away from the limit it's at. */
+@utility splitter {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  align-self: stretch;
+  width: 0;
+  cursor: col-resize;
+  touch-action: none;
+  &[data-lo-splitter='gap'] {
+    width: var(--lo-splitter-w);
+  }
+  &::before {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: calc(var(--lo-splitter-w) / -2);
+    width: var(--lo-splitter-w);
+  }
+  &[data-shift='end']::before,
+  &[data-lo-splitter='gap']::before {
+    inset-inline-start: 0;
+  }
+  &[data-shift='start']::before {
+    inset-inline-start: calc(var(--lo-splitter-w) * -1);
+  }
+  &::after {
+    content: '';
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: -1px;
+    width: 2px;
+    background-color: transparent;
+    pointer-events: none;
+    transition: background-color var(--lo-dur-fast) var(--lo-ease-out);
+  }
+  &[data-lo-splitter='gap']::after {
+    inset-inline-start: calc(50% - 1px);
+  }
+  &:hover::after {
+    background-color: var(--lo-border);
+  }
+  &[data-pressed]::after {
+    background-color: var(--lo-accent);
+  }
+  &:is([data-grows='end'][data-at='min'], [data-grows='start'][data-at='max']) {
+    cursor: e-resize;
+  }
+  &:is([data-grows='end'][data-at='max'], [data-grows='start'][data-at='min']) {
+    cursor: w-resize;
+  }
+}
+
+/* While an edge is dragged, nothing else is hovered or selected, and the cursor is the edge's
+   wherever the pointer goes. */
+:root[data-lo-resizing] {
+  user-select: none;
+}
+:root[data-lo-resizing] body *:not([data-lo-splitter]) {
+  pointer-events: none;
+  user-select: none;
+}
+:root[data-lo-resizing='col'] * {
+  cursor: col-resize !important;
+}
+:root[data-lo-resizing='e'] * {
+  cursor: e-resize !important;
+}
+:root[data-lo-resizing='w'] * {
+  cursor: w-resize !important;
+}
+
 /* A hollow ball, as the design draws "not yet": a ring in the current color. */
 @utility hollow {
   background: transparent;

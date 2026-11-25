@@ -233,7 +233,8 @@ where the action's target is.
 Lo moves fast. A move shows what changed and is over; only the mark's own animations take their
 time.
 
-- Anything that appears, leaves or changes size uses one of these moves.
+- Anything that appears, leaves or changes size uses one of these moves, but a pane's width, which
+  never animates (see [The window](#the-window)).
 - Exits are faster than entrances.
 - Nothing waits on an animation. Input is live from the first frame. A popup gives focus back, and
   runs what was chosen, as it starts to leave, not once it has faded. A key pressed again cancels
@@ -594,6 +595,13 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
   and goes, as "Rate limit low", goes last on the left.
 - The body is left panel (stack, then files), the middle sheet, and the threads panel. Each panel
   opens and closes with a key.
+- Every edge in the row, and the seam of a side-by-side diff, is a `Splitter` in a `Panes` row: 8 px
+  to grab, no line at rest, a 2 px `lo-border` line under the pointer, `lo-accent` while pressed. A
+  double-click puts it back. A feature never handles a drag of its own.
+- Widths never animate: a width re-wraps code. A change lands in one frame, and what arrives fades
+  in with Swap. Nothing draws under its minimum: `fit` puts away the threads panel, then the left
+  panel, then the view without focus, never what was asked for last, and brings each back when
+  there's room.
 - The window never scrolls. Panes do. The shell hides what overflows it and puts itself back if a
   script scrolls it, and anything brought into view goes through `reveal()`, which scrolls the pane
   it's in. Lint refuses an element's `scrollIntoView` outside tests (`lo/no-scroll-into-view`). The
@@ -657,7 +665,7 @@ tokens. Their code is the source for how each one looks.
 
 | Group            | Components                                                                            |
 | ---------------- | ------------------------------------------------------------------------------------- |
-| Window           | PullRequestTab, TabBar, PRHeader, StatusBar, Banner                                   |
+| Window           | PullRequestTab, TabBar, PRHeader, StatusBar, Banner, Panes, Splitter                  |
 | Panels           | StackTree, FileTree                                                                   |
 | Controls         | Button, HintButton, MoreButton, CopyButton, Key, SegmentedControl, Switch, Input      |
 | Marks            | StatePill, Tag, Avatar, Marks                                                         |
