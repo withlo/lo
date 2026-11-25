@@ -1,6 +1,6 @@
-// The welcome's keys: `⏎` presses the step's main button. Its other controls are buttons, cards and
-// a field, which `Tab` walks as it does in Settings, so their keys are the widgets' own. "Welcome
-// to Lo" opens it again, from the Help menu and the command palette.
+// The welcome's keys: `⏎` presses the step's main button, and `⇧⏎` goes back a step. Its other
+// controls are buttons, cards and a field, which `Tab` walks as it does in Settings, so their keys
+// are the widgets' own. "Welcome to Lo" opens it again, from the Help menu and the command palette.
 
 import { defineCommands } from '@lo/ui/commands';
 
@@ -25,6 +25,15 @@ export default defineCommands(
       control: 'The main button in the welcome’s foot',
       group: 'App',
       keys: ['enter'],
+      when: { scope: 'welcome' },
+    },
+    /** "Back" in the foot: the step before. On the first step there's none, and it does nothing. */
+    back: {
+      label: 'Back',
+      description: 'The welcome’s step before this one.',
+      control: 'Back in the welcome’s foot',
+      group: 'App',
+      keys: ['shift+enter'],
       when: { scope: 'welcome' },
     },
   },

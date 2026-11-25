@@ -380,12 +380,16 @@ the window find them with `import.meta.glob`.
   `settingRow(setting, { order })` draws a setting's row from the setting itself, and `defineRow`
   makes any other, such as a list, with the same one line. A row whose line depends on what's there
   takes `useLine`, a hook for it, while search still reads the setting's own line, and a row that
-  comes and goes with a part of Lo takes that part's `present`. A change main refuses comes back as
-  `settingsFile` or `unsaved`, with main's reason and its details, and the row says it as a
-  `Problem`. A setting declared with `{ window: 'read' }`, such as which repositories are trusted,
-  the window shows but can't change: `settings.set` refuses it as `unwritable`, and only main writes
-  it, with `use(settings).update(setting, change)`. `docs/settings.md` lists every setting; a test
-  fails when one is missing.
+  comes and goes with a part of Lo takes that part's `present`. A screen besides Settings that
+  offers a setting of a few options, as the welcome does, takes it as a `SettingChoice`: the feature
+  that owns the setting makes one with `choiceOf` in its `window/shared.ts`, rather than handing the
+  setting on, and the screen reads and writes it with `useChoice`, which says a change main refused
+  as the row's `Problem`, never in a toast. A change main refuses comes back as `settingsFile` or
+  `unsaved`, with main's reason and its details, and the row says it as a `Problem`. A setting
+  declared with `{ window: 'read' }`, such as which repositories are trusted, the window shows but
+  can't change: `settings.set` refuses it as `unwritable`, and only main writes it, with
+  `use(settings).update(setting, change)`. `docs/settings.md` lists every setting; a test fails when
+  one is missing.
 - `migrations/001-<name>.sql`, `002-<name>.sql` and on create and change the feature's tables. At
   startup, before any handler can be asked anything, each feature's new migrations run in order,
   each in a transaction, and are recorded with their SHA-256.
@@ -1251,9 +1255,9 @@ its own app, installs it when the reader says so.
 
 ### The welcome flow
 
-The `welcome` feature draws over a tab through the tab feature's `tab.cover` slot. It's four steps,
-one job each, walked with "Continue", "Back" and "Skip": an account, the keys, set-up, and opening a
-pull request.
+The `welcome` feature draws over a tab through the tab feature's `tab.cover` slot. It's five steps,
+one job each, walked with "Continue", "Back" and "Skip": an account, the look, the keys, set-up, and
+opening a pull request.
 
 - **When it opens.** By itself over the Recent tab, for a reader who hasn't finished it and has no
   account signed in: none is, or GitHub refused every one. "Skip", "Done" and a pull request opened
@@ -1269,18 +1273,27 @@ pull request.
      accounts feature's dialog) or importing from GitHub CLI when Lo finds one. A notice with "Check
      again" is here when Lo can't find a Git it can run: `welcome.checkGit` asks main to look again
      (`git.check()`), and what Lo finds reaches the window on `app.git`.
-  2. Standard keys or Vim keys, which is the `editor.vim` setting, written with the comments
-     feature's `chooseVimKeys`, so the last card pressed is the one that stays. A diff drawn for the
-     step is where `j`, `k` and `c` work. `c` opens the comment box every comment is written in
-     (`createComposer`), with the keys chosen. Nothing typed there is sent.
-  3. The rows in its `welcome.setup` slot: installing the `lo` command, which the open feature does,
+  2. How Lo looks: `theme` and `diff.layout`, each a group of `Choices` cards with a `picture`,
+     written as a card is pressed. The feature that owns each setting offers it from its
+     `window/shared.ts` as a `SettingChoice` (`choiceOf`), and the step reads and writes it with
+     `useChoice`. A write the file refuses is the `Problem` the setting's row in Settings shows,
+     under its group, and the cards show what's on file again.
+  3. Standard keys or Vim keys, which is the `editor.vim` setting, written with the comments
+     feature's `chooseVimKeys`. A diff drawn for the step is where `j`, `k` and `c` work. `c` opens
+     the comment box every comment is written in (`createComposer`), with the keys chosen. Nothing
+     typed there is sent.
+  4. The rows in its `welcome.setup` slot: installing the `lo` command, which the open feature does,
      and sending pull request links to Lo, with the rules for Finicky, Velja and Choosy in
      `docs/link-routers.md`. Another feature's row goes in the slot as a `SetupItem` from `@lo/ui`,
      in `order`, and the same thing has a row in Settings. A row says how its button's press went on
      itself (`below`), never in a toast: the `lo` command's row installs with
      `installCommand('row')`, which leaves the result for the row.
-  4. A field that opens a pull request's link through the open feature, and a sample pull request.
+  5. A field that opens a pull request's link through the open feature, and a sample pull request.
      The mark plays Kiss as the step first appears.
+- **Choosing.** Each press of a card writes its own choice, so the last one pressed is the one that
+  stays, and its group shows that card until every write of the setting has ended (`choosing` in the
+  welcome's store, by the setting's key); then it shows what's on file. Back, Continue and Skip
+  write nothing.
 - **Moving between steps.** Each step is drawn afresh as it shows, in a `Swap`. The mark's moves
   play once each time the welcome opens: a step the reader comes back to draws the mark at rest.
 - **Keys.** Under the welcome the tab's view is `inert`, so no key or reader reaches it. The welcome
@@ -1288,11 +1301,15 @@ pull request.
   is `welcome.continue`: it presses the button with focus, opens the link in the field once it holds
   one, and anywhere else presses the step's main button, which is "Sign in with GitHub…" on the
   first step until an account is signed in, "Open" on the last while the field holds a link, and
-  "Continue" or "Done" otherwise. The main button carries the `⏎` chip. Every step is in the tree
-  from the start, in one grid cell, so the foot's buttons never move; the steps off screen are
-  `inert`. "Continue" holds the room of its label with its key in every state.
-- **A feature that needs set-up** adds a row to the third step and a row in Settings. It doesn't put
-  up a banner or a dialog of its own.
+  "Continue" or "Done" otherwise. The main button carries the `⏎` chip. `⏎` on a choice's card is
+  "Continue", since the arrows and `Space` choose. `⇧⏎` is `welcome.back`, whose control is "Back",
+  with its key in its tooltip. Every step is in the tree from the start, in one grid cell, so the
+  foot's buttons never move; the steps off screen are `inert`. "Continue" holds the room of its
+  label with its key in every state. The foot stays on screen: in a window too short for a step, the
+  steps scroll in a pane of their own above it, and what takes focus there comes into view with
+  `reveal()`.
+- **A feature that needs set-up** adds a row to the set-up step and a row in Settings. It doesn't
+  put up a banner or a dialog of its own.
 
 ### The timeline
 

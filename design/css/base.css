@@ -113,3 +113,12 @@
   animation-iteration-count: 1 !important;
   transition-duration: 0s !important;
 }
+
+/* The theme changes in one frame. @lo/ui's setTheme() sets data-lo-theming on
+   <html> for the frame that draws the new colors, so nothing that tints, a
+   button or a card, fades from its old color to its new one. */
+:root[data-lo-theming] *,
+:root[data-lo-theming] *::before,
+:root[data-lo-theming] *::after {
+  transition-duration: 0s !important;
+}

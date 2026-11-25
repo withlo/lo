@@ -14,11 +14,18 @@ import {
   Tooltip,
 } from '@lo/ui';
 import { keyLabels, NO_TARGET } from '@lo/ui/commands';
-import { createElement, useId, useState, type ReactElement, type ReactNode } from 'react';
+import { createElement, useId, useMemo, useState, type ReactElement, type ReactNode } from 'react';
 
 import { registry, useKeys } from '../../../window/commands/registry.ts';
 import type { Setting } from '../contract.ts';
-import { nameOf, refusalMark, setValue, useRefusalMark, useValue, type Refusal } from './values.ts';
+import {
+  changingOf,
+  refusalMark,
+  useRefusalMark,
+  useValue,
+  type Changing,
+  type Refusal,
+} from './values.ts';
 
 /** What a setting's own control gets: its value now, and how to change it. */
 export interface ControlProps<T> {
@@ -103,6 +110,32 @@ function Refused({ name, refusal, again }: { name: string; refusal: Refusal; aga
   );
 }
 
+/**
+ * Changing a setting from a control: `change` writes a value, and `problem` is the `Problem` a
+ * change main refused shows under the control, with "Open `settings.json`" or "Try again", until
+ * the value or what's wrong in the file changes, which may be what it was about. `change` resolves
+ * once main has answered, either way.
+ */
+export function useChange<T>(setting: Changing<T>): {
+  change: (value: T) => Promise<void>;
+  problem: ReactElement | undefined;
+} {
+  /** The last change main refused, the value asked for, and what it was held against. */
+  const [refused, setRefused] = useState<{ refusal: Refusal; asked: T; mark: string }>();
+  const mark = useRefusalMark(setting);
+  const shown = refused !== undefined && refused.mark === mark ? refused : undefined;
+  const change = async (next: T) => {
+    setRefused(undefined);
+    const refusal = await setting.write(next);
+    // What main said of the file came before its answer, so the mark is as the refusal found it.
+    if (refusal) setRefused({ refusal, asked: next, mark: refusalMark(setting) });
+  };
+  const problem = shown ? (
+    <Refused name={setting.named} refusal={shown.refusal} again={() => void change(shown.asked)} />
+  ) : undefined;
+  return { change, problem };
+}
+
 export function SettingRowView<T>({
   setting,
   control,
@@ -125,26 +158,14 @@ export function SettingRowView<T>({
     note: setNote,
     noteId: note === undefined ? undefined : noteId,
   };
-  /** The last change main refused, the value asked for, and what it was held against. */
-  const [refused, setRefused] = useState<{ refusal: Refusal; asked: T; mark: string }>();
-  // Said until the value or what's wrong in the file changes, which may be what it was about.
-  const mark = useRefusalMark(setting);
-  const shown = refused !== undefined && refused.mark === mark ? refused : undefined;
-  const change = (next: T) => {
-    setRefused(undefined);
-    void setValue(setting, next).then((refusal) => {
-      // What main said of the file came before its answer, so the mark is as the refusal found it.
-      if (refusal) setRefused({ refusal, asked: next, mark: refusalMark(setting) });
-    });
-  };
+  const changing = useMemo(() => changingOf(setting), [setting]);
+  const { change: write, problem } = useChange(changing);
+  const change = (next: T) => void write(next);
   // What a plain control hands back is one of the setting's own values, checked again here.
   const changeTo = (next: unknown) => {
     const parsed = setting.schema.safeParse(next);
     if (parsed.success) change(parsed.data);
   };
-  const problem = shown && (
-    <Refused name={nameOf(setting)} refusal={shown.refusal} again={() => change(shown.asked)} />
-  );
   const atDefault = JSON.stringify(value) === JSON.stringify(setting.fallback);
   if (list && control) {
     return (

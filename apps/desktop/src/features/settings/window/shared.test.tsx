@@ -3,16 +3,18 @@ import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 
-import { notice } from '../../../window/commands/notices.tsx';
+import { notice, notices } from '../../../window/commands/notices.tsx';
 import { Slots, useViews } from '../../../window/slots.tsx';
 import { IpcError } from '../../../ipc/contract.ts';
 import { defineSetting, type SettingsState } from '../contract.ts';
 import { z } from 'zod';
 import {
   changeSetting,
+  choiceOf,
   defineRow,
   rows,
   settingRow,
+  useChoice,
   useProblems,
   useKnownSetting,
   useSetting,
@@ -237,5 +239,69 @@ describe('watchSetting', () => {
     stop();
     act(() => showSettings(state({})));
     expect(heard).toEqual(['split', 'inline']);
+  });
+});
+
+describe('choiceOf and useChoice', () => {
+  const choice = choiceOf(layout);
+
+  /** The choice as a screen shows it: its value, and its problem's words once there is one. */
+  let changing: ((value: 'split' | 'inline') => Promise<void>) | undefined;
+  function Offered() {
+    const { value, change, problem } = useChoice(choice);
+    changing = change;
+    return (
+      <>
+        {value}
+        {problem}
+      </>
+    );
+  }
+
+  it('say what the setting says of itself: its key, label, options and place in Settings', () => {
+    expect(choice).toMatchObject({
+      key: 'diff.layout',
+      label: 'Diff layout',
+      place: 'Settings › Pull requests',
+      options: [
+        { value: 'split', label: 'Side by side' },
+        { value: 'inline', label: 'Inline' },
+      ],
+    });
+    const name = defineSetting('test.name', z.string(), '', 'text', {
+      group: 'about',
+      label: 'Name',
+      description: 'A name.',
+    });
+    expect(() => choiceOf(name)).toThrow('isn’t a choice with a row in Settings');
+  });
+
+  it('read the value on file, or the default until main has said or for one not an option', () => {
+    act(() => settingsStore.setState({ settings: undefined }));
+    const shown = render(<Offered />);
+    expect(shown.text()).toBe('split');
+    act(() => showSettings(state({ 'diff.layout': 'inline' })));
+    expect(shown.text()).toBe('inline');
+    act(() => showSettings(state({ 'diff.layout': 'wrapped' })));
+    expect(shown.text()).toBe('split');
+  });
+
+  it('write a change, and say why the file refused one, with no toast, until the file changes', async () => {
+    const bridge = installBridge({
+      'settings.set': () => {
+        throw new IpcError('settingsFile', '`settings.json` isn’t valid JSON.\nValueExpected');
+      },
+    });
+    const shown = render(<Offered />);
+    const toasts = notices().length;
+    await act(() => changing?.('inline'));
+    expect(bridge.calls).toEqual([['settings.set', { key: 'diff.layout', value: 'inline' }]]);
+    expect(shown.text()).toContain('Couldn’t change the diff layout');
+    expect(shown.text()).toContain('settings.json isn’t valid JSON.');
+    expect(shown.text()).toContain('Open settings.json');
+    expect(notices()).toHaveLength(toasts);
+    // The file changed: what it was about may be gone.
+    act(() => showSettings(state({ theme: 'dark' }, [{ message: 'Fixed' }])));
+    expect(shown.text()).toBe('split');
   });
 });

@@ -1,7 +1,8 @@
 // What the settings feature shares with other features' window code: the slot they put their rows
-// of Settings in, the settings themselves, read, changed and followed, and the file, to open.
+// of Settings in, the settings themselves, read, changed and followed, a setting of a few options
+// as another screen offers it, the theme among them, and the file, to open.
 
-import { createElement, type ReactNode } from 'react';
+import { createElement, type ReactElement, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 
 import { IpcError } from '../../../ipc/contract.ts';
@@ -11,14 +12,24 @@ import { defineSlot, defineView, type Presence, type View } from '../../../windo
 import {
   checkRowWords,
   contract,
+  groupNames,
   type Problem,
   type Setting,
   type SettingsGroup,
   type SettingsState,
 } from '../contract.ts';
-import { SettingRowView, type ControlProps } from './Row.tsx';
+import { theme } from '../settings.ts';
+import { SettingRowView, useChange, type ControlProps } from './Row.tsx';
 import { settingsStore } from './store.ts';
-import { refusalLine, setValue, useValue, valueIn, valueNow } from './values.ts';
+import {
+  changingOf,
+  refusalLine,
+  setValue,
+  useValue,
+  valueIn,
+  valueNow,
+  type Changing,
+} from './values.ts';
 
 export type { ControlProps } from './Row.tsx';
 
@@ -188,6 +199,62 @@ export async function changeSetting<T>(setting: Setting<T>, value: T): Promise<b
   const refusal = await setValue(setting, value);
   if (refusal !== undefined) refuse(refusalLine(refusal, setting));
   return refusal === undefined;
+}
+
+/** One of a choice's options: its value, and the words its row in Settings has for it. */
+export interface ChoiceOption<T extends string> {
+  readonly value: T;
+  readonly label: string;
+}
+
+/**
+ * A setting of a few options, as a screen besides Settings offers it: the welcome offers the theme
+ * and the diff's layout as cards. All it says comes from the setting: its key, its row's label,
+ * its options with their words in the row's order, and where its row is. A feature offers one of
+ * its settings this way, made in its `window/shared.ts` with {@link choiceOf}, rather than handing
+ * the setting on; {@link useChoice} reads and changes it.
+ */
+export interface SettingChoice<T extends string> extends Changing<T> {
+  readonly key: string;
+  readonly label: string;
+  /** Where its row is, as a path: "Settings › Appearance". */
+  readonly place: string;
+  readonly options: readonly ChoiceOption<T>[];
+}
+
+/** `setting` as another screen offers it: one of a few options, with a row in Settings. */
+export function choiceOf<T extends string>(setting: Setting<T>): SettingChoice<T> {
+  const { group, options } = setting;
+  if (group === 'file' || options === undefined) {
+    throw new Error(`The setting ${setting.key} isn’t a choice with a row in Settings.`);
+  }
+  return {
+    ...changingOf(setting),
+    key: setting.key,
+    label: setting.label,
+    place: `Settings › ${groupNames[group]}`,
+    options: Object.entries(options).flatMap(([option, label]) => {
+      const parsed = setting.schema.safeParse(option);
+      return parsed.success ? [{ value: parsed.data, label }] : [];
+    }),
+  };
+}
+
+/** Lo's colors, as another screen offers them. */
+export const themeChoice = choiceOf(theme);
+
+/**
+ * A choice's value: main's, or its default until main has said or while the file's isn't one of
+ * its options. `change` writes another, and resolves once main has answered. `problem` is the
+ * `Problem` the setting's row in Settings shows for a change main refused, with what to do about
+ * it, until the value or what's wrong in the file changes.
+ */
+export function useChoice<T extends string>(
+  choice: SettingChoice<T>,
+): { value: T; change: (value: T) => Promise<void>; problem: ReactElement | undefined } {
+  const settings = useStore(settingsStore, (state) => state.settings);
+  const { change, problem } = useChange(choice);
+  return { value: choice.valueIn(settings?.values), change, problem };
 }
 
 /**
