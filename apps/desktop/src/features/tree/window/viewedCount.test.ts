@@ -12,7 +12,14 @@ const AT = 'a'.repeat(40);
 const START = 'b'.repeat(40);
 
 /** The local copy, ready at the head: a layer's says what it's compared with, other pull requests' none. */
-const PLAIN: LocalState = { kind: 'ready', head: AT, base: AT, mergeBase: AT, offline: false };
+const PLAIN: LocalState = {
+  kind: 'ready',
+  head: AT,
+  base: AT,
+  mergeBase: AT,
+  offline: false,
+  folder: '/cache/e2e.git',
+};
 const LAYER: LocalState = { ...PLAIN, from: { commit: START, missing: false } };
 
 const change = (text: string, previous?: string): Changed => ({

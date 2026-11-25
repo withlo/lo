@@ -159,7 +159,7 @@ test.describe('with Vim keys', () => {
         },
         { timeout: 60_000 },
       )
-      .toEqual({ kind: 'ready', partial: null });
+      .toMatchObject({ kind: 'ready', partial: null });
     await expect(page.getByText('GitHub’s diff', { exact: true })).toHaveCount(0, {
       timeout: 20_000,
     });

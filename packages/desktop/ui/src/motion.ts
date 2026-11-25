@@ -25,6 +25,34 @@ export function setMotion(to: Motion): void {
   for (const listener of listeners) listener();
 }
 
+/** What `<html>` holds for the one frame a theme changes in, while nothing transitions. */
+const THEMING = 'data-lo-theming';
+
+/** The frame that ends the change of theme under way, if one is. */
+let ending: number | undefined;
+
+/**
+ * Shows the window in `theme`: it writes `data-theme` on `<html>`, which the design system themes
+ * everything under from. The change is one frame: for that frame the stylesheet runs no transition,
+ * so what tints as it changes color, as a button does, takes its new color with the rest rather
+ * than fading to it.
+ */
+export function setTheme(theme: 'dark' | 'light'): void {
+  const root = document.documentElement;
+  if (root.dataset.theme === theme) return;
+  root.setAttribute(THEMING, '');
+  root.dataset.theme = theme;
+  // Held through the frame that draws the new colors, so no transition starts from the old ones,
+  // and through a later change's, which a key held down makes before these frames are over.
+  if (ending !== undefined) cancelAnimationFrame(ending);
+  ending = requestAnimationFrame(() => {
+    ending = requestAnimationFrame(() => {
+      ending = undefined;
+      root.removeAttribute(THEMING);
+    });
+  });
+}
+
 /** What `setMotion` last set, or `system`. */
 export function motion(): Motion {
   const set = globalThis.document?.documentElement.getAttribute(ATTRIBUTE);

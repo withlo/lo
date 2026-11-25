@@ -31,6 +31,13 @@ export interface Reading extends BlobKey {
   readonly read: { symbols: FileSymbols } | { skipped: Skip };
 }
 
+/** Which blobs the store has read, by their places in the list asked about, and which it skipped. */
+export interface Fresh {
+  readonly found: number[];
+  /** Those of `found` it skipped: too large to read, or failing. */
+  readonly skipped: number[];
+}
+
 /** A definition found by name in a tree. */
 export interface Found {
   readonly path: string;
@@ -192,24 +199,26 @@ export class Store {
   }
 
   /**
-   * Which of `blobs` the store has read at `version`, by their places in the list; each is marked
-   * used now.
+   * Which of `blobs` the store has read at `version`, by their places in the list, and which of
+   * those it skipped, too large to read or failing; each is marked used now.
    */
-  fresh(version: string, blobs: readonly BlobKey[]): number[] {
+  fresh(version: string, blobs: readonly BlobKey[]): Fresh {
     const find = this.#db.prepare(
-      'SELECT id FROM blobs WHERE oid = ? AND language = ? AND version = ?',
+      'SELECT id, skipped FROM blobs WHERE oid = ? AND language = ? AND version = ?',
     );
     const touch = this.#db.prepare('UPDATE blobs SET used = ? WHERE id = ?');
     const now = this.#now();
     return this.#db.transaction(() => {
       const found: number[] = [];
+      const skipped: number[] = [];
       for (const [index, blob] of blobs.entries()) {
         const row = find.get(blob.oid, blob.language, version);
         if (!row) continue;
         touch.run(now, count(row, 'id'));
         found.push(index);
+        if (skipOf(row.skipped) !== undefined) skipped.push(index);
       }
-      return found;
+      return { found, skipped };
     });
   }
 

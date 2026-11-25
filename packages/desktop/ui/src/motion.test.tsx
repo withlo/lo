@@ -17,6 +17,7 @@ import {
   motion,
   motionReduced,
   setMotion,
+  setTheme,
   useHeld,
   useMotionReduced,
   useOnClose,
@@ -58,6 +59,53 @@ describe('the one switch', () => {
     expect(host.textContent).toBe('moving');
     act(() => setMotion('reduce'));
     expect(host.textContent).toBe('still');
+  });
+});
+
+describe('a change of theme', () => {
+  it('holds every transition off for the frame that draws the new colors', () => {
+    const frames: (() => void)[] = [];
+    vi.stubGlobal('requestAnimationFrame', (next: () => void) => frames.push(next));
+    const root = document.documentElement;
+    setTheme('light');
+    expect(root.dataset.theme).toBe('light');
+    expect(root.hasAttribute('data-lo-theming')).toBe(true);
+    // The frame that draws the new colors, then the one after it.
+    frames.shift()?.();
+    expect(root.hasAttribute('data-lo-theming')).toBe(true);
+    frames.shift()?.();
+    expect(root.hasAttribute('data-lo-theming')).toBe(false);
+    // The theme it's in already changes nothing.
+    setTheme('light');
+    expect(root.hasAttribute('data-lo-theming')).toBe(false);
+    expect(frames).toEqual([]);
+  });
+
+  it('holds them off through a second change made before the first is over, as a held key makes', () => {
+    const frames = new Map<number, () => void>();
+    let last = 0;
+    vi.stubGlobal('requestAnimationFrame', (next: () => void) => {
+      last += 1;
+      frames.set(last, next);
+      return last;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (which: number) => frames.delete(which));
+    /** Runs the next frame's callback. */
+    const frame = () => {
+      const [next] = frames;
+      if (!next) throw new Error('No frame asked for.');
+      frames.delete(next[0]);
+      next[1]();
+    };
+    const root = document.documentElement;
+    setTheme('dark');
+    frame();
+    setTheme('light');
+    frame();
+    expect(root.hasAttribute('data-lo-theming')).toBe(true);
+    frame();
+    expect(root.hasAttribute('data-lo-theming')).toBe(false);
+    expect(frames.size).toBe(0);
   });
 });
 

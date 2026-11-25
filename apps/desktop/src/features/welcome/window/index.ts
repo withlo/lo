@@ -7,12 +7,12 @@ import { defineView } from '../../../window/slots.tsx';
 import { contract as app } from '../../app/contract.ts';
 import { cover, dialogs } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
-import { enter, loadState, show } from './actions.ts';
+import { back, enter, loadState, show } from './actions.ts';
 import { Cover } from './Cover.tsx';
 import { Rules } from './Rules.tsx';
 import { CommandStep, LinksRow, LinksStep, WelcomeRow } from './Setup.tsx';
 import { setup } from './shared.ts';
-import { showGit, welcomeStore } from './store.ts';
+import { showGit, STEPS, welcomeStore } from './store.ts';
 
 export default {
   commands: handlers(keys, {
@@ -20,6 +20,15 @@ export default {
     continue: {
       run: enter,
       enabled: () => (welcomeStore.getState().shown ? true : 'The welcome isn’t open'),
+    },
+    back: {
+      run: back,
+      enabled: () => {
+        const { shown, step } = welcomeStore.getState();
+        if (!shown) return 'The welcome isn’t open';
+        // On the first step, its dimmed label says it all.
+        return step === STEPS[0] ? '' : true;
+      },
     },
   }),
   views: [

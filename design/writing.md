@@ -495,7 +495,8 @@ One row in Settings: a label, a description and a control.
 
 ### Welcome step
 
-One screen of the welcome, with one job: sign in, choose keys, set up, open a pull request.
+One screen of the welcome, with one job: sign in, choose the look, choose keys, set up, open a pull
+request.
 
 | Part    | Limit                                                                                              | Example                                           |
 | ------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
@@ -509,8 +510,11 @@ One screen of the welcome, with one job: sign in, choose keys, set up, open a pu
 - **The last step** has “Done” in place of Continue, and no Skip.
 - **A step’s own action** is its command, by its label: “Sign in with GitHub…”.
 - **A choice’s cards** are named like options: “Standard”, “Vim keys”.
+- **A choice names its place:** the path, alone, at the end of its group’s label (“Settings › Pull
+  requests”), or in the step’s line where the step has one choice (“Also in Settings › Keyboard.”).
+- **A card has a line only for what its picture can’t show,** such as what a click does.
 - **A step that’s done says so in place:** “Signed in as ravi-k”, “Installed”.
-- **Progress** has no words on screen. To a screen reader it’s “Step 2 of 4”.
+- **Progress** has no words on screen. To a screen reader it’s “Step 2 of 5”.
 - **Never:** “Welcome!”, “Let’s get started”, “You’re all set”, “Next”, “Not now”, “Later”,
   “optional”, “if you like”, a list of features, what Lo will do later.
 

@@ -1,3 +1,4 @@
+import { setTheme } from '@lo/ui';
 import { handlers } from '@lo/ui/commands';
 
 import { IpcError } from '../../../ipc/contract.ts';
@@ -12,9 +13,9 @@ import keys from '../keys.ts';
 import { offerCodeViews } from './codeviews.ts';
 import Rows from './Rows.tsx';
 
-/** The design system themes everything under `<html>` from its `data-theme`. */
+/** The design system themes everything under `<html>` from its `data-theme`, in one frame. */
 function showTheme(theme: Theme): void {
-  document.documentElement.dataset.theme = theme;
+  setTheme(theme);
 }
 
 let connected: Client<typeof contract> | undefined;
