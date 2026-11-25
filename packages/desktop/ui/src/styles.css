@@ -114,7 +114,7 @@
   &:hover::after {
     background-color: var(--lo-border);
   }
-  &[data-pressed]::after {
+  &:is([data-dragging], [data-stepped])::after {
     background-color: var(--lo-accent);
   }
   &:is([data-grows='end'][data-at='min'], [data-grows='start'][data-at='max']) {
@@ -125,12 +125,12 @@
   }
 }
 
-/* While an edge is dragged, nothing else is hovered or selected, and the cursor is the edge's
-   wherever the pointer goes. */
+/* While an edge is dragged (`dragEdge`), nothing else is hovered or selected, other edges among
+   them, and the cursor is the edge's wherever the pointer goes. */
 :root[data-lo-resizing] {
   user-select: none;
 }
-:root[data-lo-resizing] body *:not([data-lo-splitter]) {
+:root[data-lo-resizing] body *:not([data-dragging]) {
   pointer-events: none;
   user-select: none;
 }

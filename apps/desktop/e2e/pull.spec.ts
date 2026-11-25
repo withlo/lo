@@ -138,10 +138,10 @@ test('the left panel’s edge sizes it by a drag, and by key while it has focus'
   await expect(edge).toHaveAttribute('aria-valuenow', '300');
   expect(await width()).toBe(300);
 
-  // Its grip is off the files' scrollbar, on the sheet's side of the edge.
-  await page.mouse.move(304, 400);
+  // Its grip is centred on the edge, clear of the files' scrollbar's thumb.
+  await page.mouse.move(300, 400);
   await page.mouse.down();
-  await page.mouse.move(404, 400);
+  await page.mouse.move(400, 400);
   await page.mouse.up();
   expect(await width()).toBe(400);
 

@@ -1,6 +1,7 @@
 // The page the panes spec drives: a row of a left panel, its edge and a middle, laid out by
 // `fitWidths` in the row's width, with Lo's keys listening, and a log of what the edge said and of
-// the keys that reached the page.
+// the keys that reached the page. The panel keeps its saved width apart from the one a drag shows,
+// as the app does, and `x` closes it, to take the edge away mid-drag.
 
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -9,7 +10,7 @@ import { listen, Registry } from '../../src/commands/index.ts';
 import { fitWidths, type Sizes } from '../../src/fit.ts';
 import { Panes, Splitter } from '../../src/Panes.tsx';
 
-/** What happened, in order: `drag 260`, `end 300`, `reset`, `close`, `key Escape`. */
+/** What happened, in order: `drag 260`, `end 300`, `cancel`, `reset`, `close`, `key Escape`. */
 const log: string[] = [];
 
 declare global {
@@ -29,15 +30,21 @@ const sizes: Sizes = {
 
 // Lo's keys, with none of its commands: a key the registry passes on reaches the page.
 listen(window, new Registry({ system: 'mac', commands: [] }));
-document.addEventListener('keydown', (event) => log.push(`key ${event.key}`));
+let closeKey = () => {};
+document.addEventListener('keydown', (event) => {
+  log.push(`key ${event.key}`);
+  if (event.key === 'x') closeKey();
+});
 
 function Scene() {
   const [row, setRow] = useState(0);
   const [saved, setSaved] = useState<number | undefined>(undefined);
+  const [drag, setDrag] = useState<{ width: number; closing: boolean } | undefined>(undefined);
   const [open, setOpen] = useState(true);
-  const [closing, setClosing] = useState(false);
+  closeKey = () => setOpen(false);
+  const closing = drag?.closing ?? false;
   const drawn = fitWidths(
-    { left: { open, width: saved }, threads: { open: false }, beside: false },
+    { left: { open, width: drag?.width ?? saved }, threads: { open: false }, beside: false },
     row,
     sizes,
   );
@@ -60,16 +67,18 @@ function Scene() {
             label="Resize left panel"
             value={width}
             range={drawn.edges.left ?? { min: width, max: width }}
-            shift="end"
             onDrag={(value, close) => {
               log.push(`drag ${Math.round(value)}${close ? ' closing' : ''}`);
-              setClosing(close);
-              setSaved(value);
+              setDrag({ width: value, closing: close });
             }}
             onEnd={(value) => {
               log.push(`end ${Math.round(value)}`);
-              setClosing(false);
+              setDrag(undefined);
               setSaved(value);
+            }}
+            onCancel={() => {
+              log.push('cancel');
+              setDrag(undefined);
             }}
             onReset={() => {
               log.push('reset');
@@ -77,6 +86,7 @@ function Scene() {
             }}
             onClose={() => {
               log.push('close');
+              setDrag(undefined);
               setOpen(false);
             }}
           />

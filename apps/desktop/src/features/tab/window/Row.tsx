@@ -3,10 +3,9 @@
 // left panel has an edge to drag.
 
 import { Splitter } from '@lo/ui';
-import { useState, type ReactNode, type Ref } from 'react';
-import { useStore } from 'zustand';
+import type { ReactNode, Ref } from 'react';
 
-import { drawnRow, layout, row, useRow, useStepped } from './layout.ts';
+import { layout, row, useClosing, useRow, useStepped } from './layout.ts';
 import { panels } from './panels.ts';
 
 export interface LeftPanelProps {
@@ -19,14 +18,14 @@ export interface LeftPanelProps {
 }
 
 /**
- * The left panel, the stack and files, and its edge. A drag on the edge sets its width, which the
- * window keeps for every tab; let go within reach of the window's side, it closes the panel, and
- * shows it gone from there.
+ * The left panel, the stack and files, and its edge. A drag on the edge sets its width as it ends
+ * somewhere new, which the window keeps for every tab; let go within reach of the window's side, it
+ * closes the panel, and shows it gone from there. Anything else puts back the width it had.
  */
 export function LeftPanel({ tab, threads, failed, children }: LeftPanelProps) {
   const drawn = useRow({ left: true, threads });
   const stepped = useStepped();
-  const [closing, setClosing] = useState(false);
+  const closing = useClosing();
   const width = drawn.left ?? 0;
   return (
     <>
@@ -44,19 +43,18 @@ export function LeftPanel({ tab, threads, failed, children }: LeftPanelProps) {
           label="Resize left panel"
           value={width}
           range={drawn.edges.left ?? { min: width, max: width }}
-          // Off the files' scrollbar, at the panel's end.
-          shift="end"
           stepped={stepped}
-          onDrag={(value, close) => {
-            setClosing(close);
-            layout.setState({ left: value });
-          }}
+          onDrag={(value, close) => row.setState({ drag: { left: value, closing: close } })}
           onEnd={(value) => {
-            setClosing(false);
             layout.setState({ left: value });
+            row.setState({ drag: undefined });
           }}
+          onCancel={() => row.setState({ drag: undefined })}
           onReset={() => layout.setState({ left: undefined })}
-          onClose={() => panels.update(tab, (current) => ({ ...current, leftOpen: false }))}
+          onClose={() => {
+            row.setState({ drag: undefined });
+            panels.update(tab, (current) => ({ ...current, leftOpen: false }));
+          }}
         />
       )}
     </>
@@ -75,11 +73,7 @@ export interface RightPanelProps {
 
 /** The right panel, as wide as the row lets the threads panel be. */
 export function RightPanel({ left, label, view, ref, children }: RightPanelProps) {
-  const width = useStore(row, (state) => state.width);
-  const drawn = useStore(
-    layout,
-    (state) => drawnRow({ left, threads: true }, width, state.left).threads,
-  );
+  const drawn = useRow({ left, threads: true }).threads;
   return (
     <aside
       ref={ref}

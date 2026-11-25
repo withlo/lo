@@ -1,7 +1,8 @@
 // The row a pull request's tab draws its body in: the left panel, the middle and the threads panel,
 // each as wide as `fitWidths` lets it be in the row's width. The left panel's width is the window's,
-// every tab's alike, kept in memory and unset while it's the default. A drag on its edge sets it, and
-// so do the keys that size what has focus, which draw the edge as pressed while they're held.
+// every tab's alike, kept in memory and unset while it's the default. A drag on its edge sets it as
+// it ends, and draws its own width until then, and so do the keys that size what has focus, which
+// draw the edge as pressed while they're held.
 
 import { fitWidths, KEY_STEP, readSizes, type Fitted, type Sizes } from '@lo/ui';
 import { useStore } from 'zustand';
@@ -11,11 +12,13 @@ import { createStore } from 'zustand/vanilla';
 export const layout = createStore<{ readonly left?: number | undefined }>()(() => ({}));
 
 /**
- * The row as it's drawn: its width, once it's measured, and the edge a key moved, while the key is
- * held.
+ * The row as it's drawn: its width, once it's measured; the left panel's edge as a drag under way
+ * has it, which `layout` takes only if the drag ends somewhere new, and whether letting go there
+ * closes the panel; and the edge a key moved, while the key is held.
  */
 export const row = createStore<{
   readonly width?: number | undefined;
+  readonly drag?: { readonly left: number; readonly closing: boolean } | undefined;
   readonly stepped?: 'left' | undefined;
 }>()(() => ({}));
 
@@ -36,15 +39,16 @@ export interface Open {
   readonly threads: boolean;
 }
 
+/** The left panel's width as it's drawn now: a drag's, while one is under way, else the window's. */
+function leftNow(): number | undefined {
+  return row.getState().drag?.left ?? layout.getState().left;
+}
+
 /**
  * The row drawn with the panels `open` says, `width` wide (as wide as they like, before it's
  * measured), with the left panel `left` wide.
  */
-export function drawnRow(
-  open: Open,
-  width = row.getState().width,
-  left = layout.getState().left,
-): Fitted {
+export function drawnRow(open: Open, width = row.getState().width, left = leftNow()): Fitted {
   return fitWidths(
     { left: { open: open.left, width: left }, threads: { open: open.threads }, beside: false },
     width ?? Infinity,
@@ -52,11 +56,17 @@ export function drawnRow(
   );
 }
 
-/** The row drawn with the panels `open` says, re-rendering as it changes. */
+/** The row drawn with the panels `open` says, re-rendering as it changes, a drag's frames among it. */
 export function useRow(open: Open): Fitted {
   const width = useStore(row, (state) => state.width);
-  const left = useStore(layout, (state) => state.left);
-  return drawnRow(open, width, left);
+  const dragged = useStore(row, (state) => state.drag?.left);
+  const saved = useStore(layout, (state) => state.left);
+  return drawnRow(open, width, dragged ?? saved);
+}
+
+/** Whether letting go of the drag under way closes the left panel, which then shows gone. */
+export function useClosing(): boolean {
+  return useStore(row, (state) => state.drag?.closing ?? false);
 }
 
 /** Whether a key moved the left panel's edge, and is still held. */

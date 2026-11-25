@@ -88,3 +88,15 @@ describe('the keys that size what has focus', () => {
     expect(layout.getState().left).toBe(400);
   });
 });
+
+describe('the left panel’s width', () => {
+  it('is a drag’s while one is under way, and the window’s, unchanged, once it’s over', () => {
+    row.setState({ width: 1440 });
+    layout.setState({ left: 360 });
+    row.setState({ drag: { left: 420, closing: false } });
+    expect(drawnRow(both).left).toBe(420);
+    expect(layout.getState().left).toBe(360);
+    row.setState({ drag: undefined });
+    expect(drawnRow(both).left).toBe(360);
+  });
+});

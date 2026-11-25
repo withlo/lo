@@ -7,16 +7,14 @@
 // or the whole gap between two views. At rest it draws nothing, since the surfaces' step divides
 // them; under the pointer, a 2 px `lo-border` line its full height; pressed, or moved by a key,
 // `lo-accent`, as the gutter's `+` spends the accent on a press. It isn't a `Tab` stop, and has no
-// tooltip: the keys that move it act on what has focus.
+// tooltip: the keys that move it act on what has focus. The drag itself is `dragEdge`'s, which an
+// edge drawn outside React uses too.
 
-import { useLayoutEffect, useRef, useState, type HTMLAttributes, type PointerEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, type HTMLAttributes } from 'react';
 import { flushSync } from 'react-dom';
 
-import { takeKeys } from './commands/listener.ts';
+import { dragEdge, limitOf } from './drag.ts';
 import type { Range } from './fit.ts';
-
-/** How near the window's side a panel's edge is let go to close the panel. */
-export const CLOSE_REACH = 110;
 
 /** How far a key moves an edge. */
 export const KEY_STEP = 32;
@@ -76,135 +74,41 @@ export interface SplitterProps {
   /** A key moved it, and is held: it draws as pressed. */
   readonly stepped?: boolean;
   /**
-   * Each frame of a drag: the width the pointer asks for, within the range, and, with `onClose`,
-   * whether letting go there closes the pane, which then shows gone.
+   * Each frame of a drag, once the pointer has moved: the width the pointer asks for, within the
+   * range, and, with `onClose`, whether letting go there closes the pane, which then shows gone.
+   * Draw it, but save nothing yet.
    */
   readonly onDrag: (value: number, closing: boolean) => void;
-  /** Let go, `Esc` (with the width the press found), or the window lost focus: where it ends. */
+  /** A drag let go, or ended by the window losing focus, at a new width: save it. */
   readonly onEnd: (value: number) => void;
+  /**
+   * A press that changed nothing: one with no move, one moved back to where it started, `Esc`, or a
+   * drag stopped because the edge went. Put back what was saved at the press.
+   */
+  readonly onCancel: () => void;
   /** A double-click: back to its default. */
   readonly onReset: () => void;
   /**
    * For a panel's edge: let go within `CLOSE_REACH` of the window's side the panel is on, it closes
-   * the panel, and keeps the width the press found.
+   * the panel instead of ending, and its saved width stays.
    */
   readonly onClose?: (() => void) | undefined;
 }
 
-/** What a drag under way holds. */
-interface Drag {
-  readonly pointer: number;
-  readonly element: HTMLElement;
-  /** Where the pointer was pressed. */
-  readonly x: number;
-  /** The width the press found. */
-  readonly from: number;
-  /** The width it's at now, and whether letting go now closes the pane. */
-  at: number;
-  closing: boolean;
-  /** Stops what the drag listens to. */
-  readonly stop: () => void;
-}
-
-/** Which limit `value` is at, if one, for the cursor that says it can only go the other way. */
-function limitOf(value: number, range: Range): 'min' | 'max' | undefined {
-  if (range.max - range.min < 0.5) return undefined;
-  if (value <= range.min + 0.5) return 'min';
-  if (value >= range.max - 0.5) return 'max';
-  return undefined;
-}
-
-/** The cursor at `limit` for an edge that `grows` one way: the arrow points the way left to go. */
-function cursorAt(limit: 'min' | 'max' | undefined, grows: 'end' | 'start'): 'col' | 'e' | 'w' {
-  if (limit === undefined) return 'col';
-  return (limit === 'min') === (grows === 'end') ? 'e' : 'w';
-}
-
 /**
- * An edge between two panes that the pointer drags. It follows the pointer each frame and stops at
- * its range's ends. `Esc` puts it back where the press found it. Nothing is selected or hovered
- * meanwhile, and the pointer can leave the window, but the window losing focus ends it there. A
- * double-click puts it back to its default.
+ * An edge between two panes that the pointer drags, with `dragEdge`. It follows the pointer each
+ * frame and stops at its range's ends. Only a drag that moves it somewhere new ends with a width;
+ * anything else cancels, `Esc` among them, and the caller puts back what was saved at the press. A
+ * drag under way when the edge goes, as when its tab closes, cancels. A double-click puts it back
+ * to its default.
  */
 export function Splitter(props: SplitterProps) {
   const { label, value, range, grows = 'end', gap = false, shift, stepped = false } = props;
   const latest = useRef(props);
   latest.current = props;
-  const drag = useRef<Drag | undefined>(undefined);
-  const [pressed, setPressed] = useState(false);
-  const limit = limitOf(value, range);
-
-  /** Ends the drag under way, at `at`, closing the pane if `close` and it can. */
-  const finish = (at: number, close: boolean) => {
-    const current = drag.current;
-    if (!current) return;
-    drag.current = undefined;
-    current.stop();
-    setPressed(false);
-    const { onEnd, onClose } = latest.current;
-    if (close && onClose) {
-      onEnd(current.from);
-      onClose();
-    } else {
-      onEnd(at);
-    }
-  };
-
-  /** Where the pointer at `x` puts the edge, and whether letting go there closes the pane. */
-  const follow = (current: Drag, x: number) => {
-    const now = latest.current;
-    const way = now.grows ?? 'end';
-    const moved = (x - current.x) * (way === 'end' ? 1 : -1);
-    current.at = Math.max(now.range.min, Math.min(now.range.max, current.from + moved));
-    const window = current.element.ownerDocument.defaultView;
-    current.closing =
-      now.onClose !== undefined &&
-      window !== null &&
-      (way === 'end' ? x <= CLOSE_REACH : x >= window.innerWidth - CLOSE_REACH);
-    const root = current.element.ownerDocument.documentElement;
-    root.dataset.loResizing = cursorAt(limitOf(current.at, now.range), way);
-    // Drawn in the frame the pointer moved in, not the next.
-    flushSync(() => now.onDrag(current.at, current.closing));
-  };
-
-  const press = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0 || drag.current) return;
-    // Focus stays where it was, so the keys go on acting on it, and no text is selected.
-    event.preventDefault();
-    const element = event.currentTarget;
-    const document = element.ownerDocument;
-    const window = document.defaultView;
-    element.setPointerCapture(event.pointerId);
-    const root = document.documentElement;
-    root.dataset.loResizing = cursorAt(limit, grows);
-    const stopKeys = takeKeys((key) => {
-      if (key.key !== 'Escape' || !drag.current) return false;
-      const current = drag.current;
-      latest.current.onDrag(current.from, false);
-      finish(current.from, false);
-      return true;
-    });
-    const blur = () => {
-      if (drag.current) finish(drag.current.at, false);
-    };
-    window?.addEventListener('blur', blur);
-    drag.current = {
-      pointer: event.pointerId,
-      element,
-      x: event.clientX,
-      from: value,
-      at: value,
-      closing: false,
-      stop: () => {
-        stopKeys();
-        window?.removeEventListener('blur', blur);
-        delete root.dataset.loResizing;
-        if (element.hasPointerCapture(event.pointerId))
-          element.releasePointerCapture(event.pointerId);
-      },
-    };
-    setPressed(true);
-  };
+  /** Stops the drag under way, if one: it then cancels. */
+  const cancel = useRef<(() => void) | undefined>(undefined);
+  useEffect(() => () => cancel.current?.(), []);
 
   return (
     <div
@@ -217,25 +121,35 @@ export function Splitter(props: SplitterProps) {
       data-lo-splitter={gap ? 'gap' : 'edge'}
       data-grows={grows}
       data-shift={shift}
-      data-at={limit}
-      data-pressed={pressed || stepped ? '' : undefined}
+      data-at={limitOf(value, range)}
+      data-stepped={stepped ? '' : undefined}
       className="splitter"
-      onPointerDown={press}
-      onPointerMove={(event) => {
-        const current = drag.current;
-        if (current?.pointer === event.pointerId) follow(current, event.clientX);
-      }}
-      onPointerUp={(event) => {
-        const current = drag.current;
-        if (current?.pointer !== event.pointerId) return;
-        follow(current, event.clientX);
-        finish(current.at, current.closing);
-      }}
-      onPointerCancel={() => {
-        if (drag.current) finish(drag.current.at, false);
-      }}
-      onLostPointerCapture={() => {
-        if (drag.current) finish(drag.current.at, false);
+      onPointerDown={(event) => {
+        if (cancel.current) return;
+        const done = () => {
+          cancel.current = undefined;
+        };
+        cancel.current = dragEdge(event.currentTarget, event.nativeEvent, {
+          from: value,
+          range: () => latest.current.range,
+          grows,
+          // Drawn in the frame the pointer moved in, not the next.
+          onDrag: (to, closing) => flushSync(() => latest.current.onDrag(to, closing)),
+          onEnd: (to) => {
+            done();
+            latest.current.onEnd(to);
+          },
+          onCancel: () => {
+            done();
+            latest.current.onCancel();
+          },
+          onClose:
+            props.onClose &&
+            (() => {
+              done();
+              latest.current.onClose?.();
+            }),
+        });
       }}
       onDoubleClick={() => latest.current.onReset()}
     />

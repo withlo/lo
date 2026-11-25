@@ -606,9 +606,11 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
   and goes, as "Rate limit low", goes last on the left.
 - The body is left panel (stack, then files), the middle sheet, and the threads panel. Each panel
   opens and closes with a key.
-- Every edge in the row, and the seam of a side-by-side diff, is a `Splitter` in a `Panes` row: 8 px
-  to grab, no line at rest, a 2 px `lo-border` line under the pointer, `lo-accent` while pressed. A
-  double-click puts it back. A feature never handles a drag of its own.
+- Every edge in the row is a `Splitter` in a `Panes` row, and the seam of a side-by-side diff, which
+  the view draws, drags with the same `dragEdge`: 8 px to grab, no line at rest, a 2 px `lo-border`
+  line under the pointer, `lo-accent` while pressed. Only a drag that moves it somewhere new changes
+  a width; a click, `Esc`, or a drag back to where it began puts back what was there. A double-click
+  puts it back to its default. A feature never handles a drag of its own.
 - Widths never animate: a width re-wraps code. A change lands in one frame, and what arrives fades
   in with Swap. Nothing draws under its minimum: `fit` puts away the threads panel, then the left
   panel, then the view without focus, never what was asked for last, and brings each back when

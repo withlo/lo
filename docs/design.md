@@ -348,8 +348,9 @@ queue.
 
 The left panel shows the repo's files as a tree, at the commit on screen. Its edge drags to widen or
 narrow it, between 220 and 480 px, and `>` and `<` do the same while it has focus, a step at a time;
-a double-click on the edge, or `=`, puts it back to 300 px. Let go near the window's side, the edge
-closes the panel. Its width is the window's, the same in every tab.
+a double-click on the edge, or `=`, puts it back to 300 px. `Esc` during a drag puts back the width
+it had. Let go near the window's side, the edge closes the panel. Its width is the window's, the
+same in every tab.
 
 ### What it shows
 
