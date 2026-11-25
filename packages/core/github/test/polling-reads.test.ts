@@ -6,6 +6,7 @@ import { cassette, type Interaction, type Json } from '@lo/testing';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import {
+  answer,
   array,
   at,
   comment,
@@ -977,21 +978,207 @@ test('a timelines older pages go after the push history and a pull requests file
   await t.run();
   await t.runUntil(20);
   expect(finished).toEqual(['newest', 'pushes', 'files', 'older', 'older']);
-  // The open pull request's poll, then the newest page, the push history, the files and the older
-  // pages, and the details the poll left for after them.
-  expect(kindsOf(t).slice(0, 10)).toEqual([
-    'pull',
-    'check',
-    'pull',
-    'pull',
-    'files',
-    'files',
-    'files',
-    'pull',
-    'pull',
-    'details',
-  ]);
+  // The open pull request's poll, then the newest page, the push history and the files; the
+  // details the poll left for later wait for the files, not the older pages, which are off screen;
+  // the repository's poll waits for them all.
+  const kinds = kindsOf(t);
+  expect(kinds.slice(0, 7)).toEqual(['pull', 'check', 'pull', 'pull', 'files', 'files', 'files']);
+  expect(kinds.slice(7, 10)).toEqual(['pull', 'details', 'pull']);
+  expect(kinds.indexOf('repo')).toBeGreaterThan(9);
   expect(t.events()).toContain('read Timeline #1');
+});
+
+/**
+ * Starts a timeline-like read of PR #1 as a tab opening on its timeline does, its newest page then
+ * `older` more, each request a second, its first run waited on; with the open pull request's poll.
+ * `rest` stands in for the older pages, when given. What finished goes in `finished`.
+ */
+function pagedTimeline(
+  t: Polling,
+  finished: string[],
+  older: number,
+  rest?: (github: GithubClient) => Promise<number>,
+): void {
+  const page = async (github: GithubClient, name: string) => {
+    await github.get(pr(1).restPath(), readPullSummary);
+    finished.push(name);
+  };
+  void t.poller.readCached(
+    pr(1),
+    PAGED,
+    async (github, _known, aside) => {
+      await page(github, 'newest');
+      aside();
+      if (rest) return rest(github);
+      for (let made = 0; made < older; made++) await page(github, 'older');
+      return 1;
+    },
+    () => 'foreground',
+  );
+  void t.poller.setOpen(pr(1));
+}
+
+/** Whether `t` has yet to ask for a pull request's files. */
+function beforeFiles(t: Polling): boolean {
+  return !t.http.log.some(([, what]) => what.includes('/files'));
+}
+
+/**
+ * The older pages of a timeline and the polls wait for a pull request's files someone wants soon,
+ * but no longer than the files are read: once their read fails, or nobody wants them any more,
+ * the older pages go, then the polls.
+ */
+test('the older pages and polls waiting on a pull requests files go once the files fail or nobody wants them', async () => {
+  const limits = { maxPages: MAX_PAGES, keepRequests: 0 };
+  /** What finished, and what was read, with `files` answering and the files wanted as `wanted` says. */
+  const opening = async (files: Interaction[], wanted: (t: Polling) => boolean) => {
+    const t = await Polling.start('timeline_files_end', [...recorded(), ...files], {
+      delay: 1000,
+    });
+    const finished: string[] = [];
+    pagedTimeline(t, finished, 2);
+    void t.poller
+      .pullFiles(pr(2), 'head', limits, { wanted: () => wanted(t), priority: 'next' })
+      .then(
+        () => finished.push('files'),
+        () => finished.push('no files'),
+      );
+    await t.run();
+    await t.runUntil(20);
+    return { finished, kinds: kindsOf(t) };
+  };
+  const [first] = pagedFiles();
+  if (!first) throw new Error('no page');
+  const notFound = answer(
+    first,
+    404,
+    [['content-type', 'application/json']],
+    '{"message":"Not Found"}',
+  );
+  const failed = await opening([notFound], () => true);
+  expect(failed.finished.toSorted()).toEqual(['newest', 'no files', 'older', 'older']);
+  expect(failed.kinds.filter((kind) => kind === 'files')).toHaveLength(1);
+  expect(failed.kinds).toContain('repo');
+  // Nobody wants them once their first page is read.
+  const unwanted = await opening(pagedFiles(), beforeFiles);
+  expect(unwanted.finished.toSorted()).toEqual(['newest', 'no files', 'older', 'older']);
+  expect(unwanted.kinds.filter((kind) => kind === 'files')).toHaveLength(1);
+  expect(unwanted.kinds).toContain('repo');
+});
+
+/**
+ * The rest of a timeline read that fails partway, beside the poll loop, fails as a read does: the
+ * view hears why, the read waits before it's tried again, and the polls that waited for it go.
+ */
+test('a timeline read that fails after its newest page says so and frees the polls', async () => {
+  const t = await Polling.start('timeline_fails', recorded(), { delay: 1000 });
+  const finished: string[] = [];
+  pagedTimeline(t, finished, 0, async (github) => {
+    await github.get(pr(1).restPath(), readPullSummary);
+    throw new GithubError({ kind: 'decode', message: 'a page that makes no sense' });
+  });
+  await t.run();
+  await t.runUntil(15);
+  expect(finished).toEqual(['newest']);
+  expect(t.events()).toContain(
+    "failed to read Timeline #1: couldn't read GitHub's answer: a page that makes no sense",
+  );
+  expect(t.poller.readRetryAt(pr(1), PAGED)).toBeDefined();
+  expect(kindsOf(t)).toContain('repo');
+});
+
+/**
+ * A tab that closes lets go of its timeline's read: the older pages beside the poll loop stop at
+ * the next one's turn, as a pull request's files nobody wants do, and nothing says it failed.
+ */
+test('a timelines older pages stop once its read is let go of', async () => {
+  const t = await Polling.start('timeline_let_go', recorded(), { delay: 1000 });
+  const finished: string[] = [];
+  pagedTimeline(t, finished, 3);
+  await t.run();
+  // The open pull request's poll from 0 to 2, the newest page to 3, the first older page to 4.
+  await t.runUntil(3.5);
+  expect(finished).toEqual(['newest']);
+  t.poller.forgetRead(pr(1), PAGED);
+  await t.run();
+  await t.runUntil(15);
+  expect(finished).toEqual(['newest', 'older']);
+  expect(t.events().filter((event) => event.includes('Timeline'))).toEqual([]);
+  expect(t.logs.filter((line) => line.includes('Timeline'))).toEqual([]);
+  expect(kindsOf(t)).toContain('repo');
+});
+
+/**
+ * A tab that closes and opens again asks for its timeline anew: a read the first one started,
+ * which ends after that, is no one's, and leaves the new read as it is, to its own run.
+ */
+test('a read let go of and asked for again isnt written by the run from before', async () => {
+  const t = await Polling.start('timeline_again', recorded(), { delay: 1000 });
+  const finished: string[] = [];
+  pagedTimeline(t, finished, 1);
+  await t.run();
+  await t.runUntil(3.5);
+  t.poller.forgetRead(pr(1), PAGED);
+  const again = t.poller.readCached(
+    pr(1),
+    PAGED,
+    async (github) => {
+      await github.get(pr(1).restPath(), readPullSummary);
+      finished.push('again');
+      return 2;
+    },
+    () => 'foreground',
+  );
+  await t.run();
+  // The run from before ends at 4: nothing of it is kept.
+  await t.runUntil(4.5);
+  expect(finished).toEqual(['newest', 'older']);
+  expect(t.poller.cachedRead(pr(1), PAGED)).toBeUndefined();
+  await t.runUntil(8);
+  expect(finished).toEqual(['newest', 'older', 'again']);
+  expect(t.poller.cachedRead(pr(1), PAGED)?.value).toBe(2);
+  await again;
+});
+
+/**
+ * Overdue polls bunch up, as after an offline spell or a rate-limit pause. Opening a pull request
+ * forces its poll, which the reads waiting give way to, the Files panel's files among them: it goes
+ * ahead of the overdue ones, which wait for the files, rather than behind them, which would wait
+ * forever.
+ */
+test('a forced open poll goes ahead of overdue polls, which wait for the files someone wants soon', async () => {
+  const t = await Polling.start('forced_ahead', [...recorded(), ...pagedFiles()], { delay: 1000 });
+  void t.poller.watch(pr(2));
+  await t.run();
+  await t.runUntil(120);
+  // The tab opens PR #1 and reads it itself, until 125, while PR #2's poll and its repository's
+  // come due.
+  const reading = Promise.withResolvers<PullSummary | undefined>();
+  void t.poller.setOpen(pr(1), reading.promise);
+  const finished: string[] = [];
+  void t.poller.readCached(
+    pr(1),
+    WAITED,
+    async (github: GithubClient) => {
+      await github.get(pr(1).restPath(), readPullSummary);
+      finished.push('waited');
+      return 1;
+    },
+    () => 'foreground',
+  );
+  await t.run();
+  await t.runUntil(125);
+  reading.resolve(undefined);
+  await t.run();
+  // The tree asks for the files once it knows the head, a moment later.
+  await t.runUntil(125.2);
+  const limits = { maxPages: MAX_PAGES, keepRequests: 0 };
+  void t.poller
+    .pullFiles(pr(2), 'head', limits, { wanted: () => true, priority: 'next' })
+    .then(() => finished.push('files'));
+  await t.run();
+  await t.runUntil(160);
+  expect(finished).toEqual(['waited', 'files']);
 });
 
 /**

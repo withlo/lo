@@ -838,10 +838,14 @@ repositories, which account opens a repository, and the pull requests opened lat
   (`RequestQueue.giveWayWhile`). A `next` read, as the Files panel's list beside another view, goes
   right after those, before the other background reads, polls included; and a poll, which holds the
   queue for all its requests, waits for a pull request's files someone wants soon rather than start
-  between their pages, but for one tried at once. A read whose first part is what someone waits on,
-  as a timeline's newest page, can go aside once that's in: the rest goes on beside the poll loop,
-  at `next` while someone waits on it, held behind a pull request's files someone wants soon
-  (`gate`'s `holds`), and polls wait for it too.
+  between their pages, but for one tried at once, which goes ahead of every poll merely due, however
+  overdue: the reads waiting give way to it, so none of them waits on a poll that waits on them. A
+  read whose first part is what someone waits on, as a timeline's newest page, can go aside once
+  that's in: the rest goes on beside the poll loop, at `next` while someone waits on it, held behind
+  a pull request's files someone wants soon (`gate`'s `holds`), and polls but the open pull
+  request's details wait for it too. It stops at its next request once its read is let go of, as its
+  tab closes, and a run of a read let go of, or of one let go of and asked for again since, writes
+  nothing.
 - Each account's poller keeps what it read in the database, read back only by the build of Lo that
   wrote it (a hash of main's output folder), talking to the same GitHub.
 - The window gets each account's summary (its login and name, how it signed in, whether it's signed
