@@ -8,6 +8,7 @@
 import { WidgetType } from '@codemirror/view';
 
 import { COMMENT_PATH, threadWords } from '../counts.ts';
+import { resizing } from '../drag.ts';
 import { EDIT_SLOT } from '../edits.ts';
 import { type DrawNote, type FileHeader, viewControls } from './api.ts';
 import { type Bubble, bubbleElement, sameBubble } from './bubbles.ts';
@@ -607,9 +608,16 @@ export class ThreadSizes {
   #inset: number | undefined;
   /** The heights blocks were drawn at, by the width and the block. */
   readonly #drawn = new Map<string, number>();
+  /**
+   * While an edge is dragged, each block's latest height and the width it was drawn at, kept in
+   * `#drawn` once the drag is over: the widths it passes through aren't kept.
+   */
+  readonly #passing = new Map<string, { width: number; height: number }>();
+  readonly #document: Document;
   readonly #observer: ResizeObserver;
 
   constructor(content: HTMLElement) {
+    this.#document = content.ownerDocument;
     this.#observer = new ResizeObserver((entries) => {
       // The content's width first, which the others' sizes are kept by.
       for (const entry of entries) {
@@ -623,7 +631,13 @@ export class ThreadSizes {
         if (target.classList.contains('lo-ovnote__text')) {
           if (this.#width > 0 && size.inlineSize > 0) this.#inset = this.#width - size.inlineSize;
         } else if (target.dataset.thread && size.blockSize > 0) {
-          this.#drawn.set(`${this.#width}:${target.dataset.thread}`, size.blockSize);
+          const key = target.dataset.thread;
+          if (resizing(this.#document)) {
+            this.#passing.set(key, { width: this.#width, height: size.blockSize });
+          } else {
+            this.#settle();
+            this.#drawn.set(`${this.#width}:${key}`, size.blockSize);
+          }
         }
       }
     });
@@ -640,7 +654,20 @@ export class ThreadSizes {
 
   /** The height the block `key` was drawn at, at the content's width now, if it was. */
   drawn(key: string): number | undefined {
+    if (resizing(this.#document)) {
+      const passing = this.#passing.get(key);
+      if (passing?.width === this.#width) return passing.height;
+    } else {
+      this.#settle();
+    }
     return this.#drawn.get(`${this.#width}:${key}`);
+  }
+
+  /** Keeps what a drag that's over left each block at: the width it ended at. */
+  #settle(): void {
+    for (const [key, { width, height }] of this.#passing)
+      this.#drawn.set(`${width}:${key}`, height);
+    this.#passing.clear();
   }
 
   /** The characters a note's text wraps at: 100 until a note has been drawn. */
@@ -652,6 +679,7 @@ export class ThreadSizes {
   destroy(): void {
     this.#observer.disconnect();
     this.#drawn.clear();
+    this.#passing.clear();
   }
 }
 
