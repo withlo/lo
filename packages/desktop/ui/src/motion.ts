@@ -28,6 +28,9 @@ export function setMotion(to: Motion): void {
 /** What `<html>` holds for the one frame a theme changes in, while nothing transitions. */
 const THEMING = 'data-lo-theming';
 
+/** The frame that ends the change of theme under way, if one is. */
+let ending: number | undefined;
+
 /**
  * Shows the window in `theme`: it writes `data-theme` on `<html>`, which the design system themes
  * everything under from. The change is one frame: for that frame the stylesheet runs no transition,
@@ -39,8 +42,15 @@ export function setTheme(theme: 'dark' | 'light'): void {
   if (root.dataset.theme === theme) return;
   root.setAttribute(THEMING, '');
   root.dataset.theme = theme;
-  // Held through the frame that draws the new colors, so no transition starts from the old ones.
-  requestAnimationFrame(() => requestAnimationFrame(() => root.removeAttribute(THEMING)));
+  // Held through the frame that draws the new colors, so no transition starts from the old ones,
+  // and through a later change's, which a key held down makes before these frames are over.
+  if (ending !== undefined) cancelAnimationFrame(ending);
+  ending = requestAnimationFrame(() => {
+    ending = requestAnimationFrame(() => {
+      ending = undefined;
+      root.removeAttribute(THEMING);
+    });
+  });
 }
 
 /** What `setMotion` last set, or `system`. */

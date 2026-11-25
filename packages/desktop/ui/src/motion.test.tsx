@@ -80,6 +80,33 @@ describe('a change of theme', () => {
     expect(root.hasAttribute('data-lo-theming')).toBe(false);
     expect(frames).toEqual([]);
   });
+
+  it('holds them off through a second change made before the first is over, as a held key makes', () => {
+    const frames = new Map<number, () => void>();
+    let last = 0;
+    vi.stubGlobal('requestAnimationFrame', (next: () => void) => {
+      last += 1;
+      frames.set(last, next);
+      return last;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (which: number) => frames.delete(which));
+    /** Runs the next frame's callback. */
+    const frame = () => {
+      const [next] = frames;
+      if (!next) throw new Error('No frame asked for.');
+      frames.delete(next[0]);
+      next[1]();
+    };
+    const root = document.documentElement;
+    setTheme('dark');
+    frame();
+    setTheme('light');
+    frame();
+    expect(root.hasAttribute('data-lo-theming')).toBe(true);
+    frame();
+    expect(root.hasAttribute('data-lo-theming')).toBe(false);
+    expect(frames.size).toBe(0);
+  });
 });
 
 describe('a popup asked to close', () => {
