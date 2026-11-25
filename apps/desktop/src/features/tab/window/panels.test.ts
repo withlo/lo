@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { FIRST_LAYOUT } from '../contract.ts';
-import { layout, viewCounts } from './layout.ts';
+import { layout, row, viewCounts } from './layout.ts';
 import {
   middleOf,
   panels,
@@ -13,6 +13,7 @@ import {
   toggleRight,
 } from './panels.ts';
 import { putRight, rightKept, rightShown } from './shared.ts';
+import { setRowSizes } from './sizes.testing.ts';
 
 describe('stepping through the middle views', () => {
   // The overview, the diff, a file whole, which has no label, and a fourth view.
@@ -68,6 +69,10 @@ describe('the view a tab opens on', () => {
 const right = () => ({ open: layout.getState().threads.open, focus: rightPanel.getState().focus });
 
 describe('the right panel’s views', () => {
+  beforeAll(() => {
+    setRowSizes();
+  });
+
   beforeEach(() => {
     viewCounts.right = 2;
   });
@@ -75,6 +80,7 @@ describe('the right panel’s views', () => {
   afterEach(() => {
     rightPanel.setState({ focus: false });
     layout.setState(FIRST_LAYOUT, true);
+    row.setState({}, true);
     rightIds.splice(0, Infinity);
     viewCounts.right = 0;
   });
@@ -120,6 +126,16 @@ describe('the right panel’s views', () => {
     putRight('t3', { open: true, right: undefined });
     expect(right()).toEqual({ open: true, focus: false });
     expect(rightShown('t3')).toBe('comments.panel');
+  });
+
+  it('opens too cramped to be drawn without taking focus as the window widens later', () => {
+    rightIds.push('comments.panel', 'code.references');
+    row.setState({ width: 600 });
+    showRightView('t5', 'code.references');
+    expect(right()).toEqual({ open: true, focus: false });
+    row.setState({ width: 1440 });
+    showRightView('t5', 'comments.panel');
+    expect(right()).toEqual({ open: true, focus: true });
   });
 
   it('takes focus at once, asked to show the view it’s drawn on already', () => {

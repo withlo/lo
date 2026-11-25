@@ -5,7 +5,8 @@
 // an edge sets a width as it ends, and draws its own until then, and so do the keys that size what
 // has focus, which draw the edge as pressed while they're held. What the row has no room for at its
 // minimum is put away, the threads panel first, but never the panel asked for last before the other,
-// and comes back as soon as there's room.
+// and comes back as soon as there's room. A panel asked for, or put back by Reset layout, fades in as
+// it arrives; one back from being put away is just there.
 
 import {
   fit,
@@ -26,6 +27,9 @@ import { main } from './main.ts';
 
 /** A panel with an edge in the row. */
 export type Edge = 'left' | 'threads';
+
+/** The panels, the left first. */
+const EDGES = ['left', 'threads'] as const;
 
 /** The window's layout of the row, every pull request's tab alike. */
 export const layout = createStore<WindowLayout>()(() => FIRST_LAYOUT);
@@ -171,22 +175,46 @@ export function drawable(edge: Edge): true | string {
   return drawn[edge] !== undefined || !drawn.cramped[edge] || 'Widen the window first';
 }
 
+/** The panels that fade in as they're next drawn: asked for, or put back by Reset layout. */
+const arriving = new Set<Edge>();
+
+/** Makes `change`, and has each panel it draws that wasn't drawn fade in as it arrives. */
+function arrive(change: () => void): void {
+  const before = drawnRow();
+  change();
+  const after = drawnRow();
+  for (const edge of EDGES) {
+    if (before[edge] === undefined && after[edge] !== undefined) arriving.add(edge);
+  }
+  // One that isn't drawn by then after all doesn't fade in later, as the window widens.
+  if (arriving.size > 0) requestAnimationFrame(() => arriving.clear());
+}
+
+/** Whether panel `edge` fades in as it's drawn now, which it does once after it's asked for. */
+export function arrives(edge: Edge): boolean {
+  return arriving.delete(edge);
+}
+
 /**
  * Asks for panel `edge`, as its key or its button does: it opens, or if it's open but put away,
  * it's drawn, and the other gives way.
  */
 export function askPanel(edge: Edge): void {
-  row.setState({ asked: edge });
-  setPanel(edge, { open: true });
+  arrive(() => {
+    row.setState({ asked: edge });
+    setPanel(edge, { open: true });
+  });
 }
 
 /**
  * Closes panel `edge`, giving focus in it, if it had it, back to the middle view, as the panel
- * goes.
+ * goes. It's no longer the panel asked for last, so it doesn't put the other away as it opens
+ * again by itself, as when a tab puts its threads panel back.
  */
 export function closePanel(edge: Edge): void {
   const had = document.querySelector(edge === 'left' ? LEFT : RIGHT);
   const focused = had?.contains(document.activeElement) ?? false;
+  if (row.getState().asked === edge) row.setState({ asked: undefined });
   setPanel(edge, { open: false });
   if (focused) focusMiddle();
 }
@@ -292,14 +320,16 @@ export function firstLayout(): boolean {
 
 /**
  * Puts the layout back as it first was, as Reset layout does: focus in a panel that closes goes
- * back to the middle view.
+ * back to the middle view, and one that opens fades in.
  */
 export function resetLayout(): void {
-  for (const edge of ['left', 'threads'] as const) {
-    if (!FIRST_LAYOUT[edge].open) closePanel(edge);
-  }
-  row.setState({ asked: undefined });
-  layout.setState(FIRST_LAYOUT, true);
+  arrive(() => {
+    for (const edge of EDGES) {
+      if (!FIRST_LAYOUT[edge].open) closePanel(edge);
+    }
+    row.setState({ asked: undefined });
+    layout.setState(FIRST_LAYOUT, true);
+  });
 }
 
 /** The layout as main last had it, as JSON, so what main sent isn't sent back. */

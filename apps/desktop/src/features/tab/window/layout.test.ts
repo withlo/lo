@@ -3,6 +3,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 
 import { FIRST_LAYOUT, type WindowLayout } from '../contract.ts';
 import {
+  closePanel,
   drawable,
   drawnRow,
   firstLayout,
@@ -14,11 +15,13 @@ import {
   resettable,
   resetWidth,
   row,
+  setOpen,
   steppable,
   stepWidth,
   togglePanel,
   viewCounts,
 } from './layout.ts';
+import { setRowSizes } from './sizes.testing.ts';
 
 /** What the window asked main to keep, in turn, and the layout main hands it. */
 const kept: WindowLayout[] = [];
@@ -34,22 +37,7 @@ vi.mock('./main.ts', () => ({
 }));
 
 beforeAll(() => {
-  // The tokens' sizes, as the design system's stylesheet sets them on the page.
-  const sizes = {
-    'panel-left-w': '300px',
-    'panel-left-min-w': '220px',
-    'panel-left-max-w': '480px',
-    'panel-right-w': '340px',
-    'panel-right-min-w': '280px',
-    'panel-right-max-w': '560px',
-    'view-min-w': '340px',
-    'timeline-w': '856px',
-    'sp-24': '24px',
-    'splitter-w': '8px',
-  };
-  for (const [name, value] of Object.entries(sizes)) {
-    document.documentElement.style.setProperty(`--lo-${name}`, value);
-  }
+  setRowSizes();
 });
 
 /** Both panels open, the left at `left` wide if given. */
@@ -177,6 +165,22 @@ describe('the panels', () => {
     // Drawn, pressing it closes it.
     togglePanel('threads');
     expect(layout.getState().threads.open).toBe(false);
+  });
+
+  it('forget the one asked for once it closes, so it puts nothing away opening by itself', () => {
+    layout.setState(both());
+    row.setState({ width: 720 });
+    togglePanel('threads');
+    expect(row.getState().asked).toBe('threads');
+    togglePanel('threads');
+    expect(row.getState().asked).toBeUndefined();
+    // Put back open, as a tab puts its threads panel back, it's put away again, not the left.
+    setOpen('threads', true);
+    expect(drawnRow()).toMatchObject({ left: 300, threads: undefined });
+    // Closing the other leaves the one asked for as it was.
+    togglePanel('threads');
+    closePanel('left');
+    expect(row.getState().asked).toBe('threads');
   });
 
   it('say to widen the window where one can’t be drawn beside a view at its minimum', () => {

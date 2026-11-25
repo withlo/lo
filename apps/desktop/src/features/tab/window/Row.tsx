@@ -1,11 +1,14 @@
 // The panels in a pull request's tab's row, each as wide as the row lets it be, so only they draw
 // again as a width changes: what they hold is handed in, drawn by the tab, and stays as it was. Each
-// has an edge to drag, on the middle's side.
+// has an edge to drag, on the middle's side. A panel asked for fades in as it arrives, and focus in
+// one goes back to the middle view as it goes, whatever takes it away.
 
-import { Splitter, type SplitterProps } from '@lo/ui';
-import type { ReactNode, Ref } from 'react';
+import { handOffFocus, Splitter, swapIn, type SplitterProps } from '@lo/ui';
+import { useCallback, useLayoutEffect, useRef, type ReactNode, type Ref } from 'react';
 
+import { focusMiddle } from '../../../window/commands/registry.ts';
 import {
+  arrives,
   closePanel,
   row,
   setWidth,
@@ -40,6 +43,41 @@ function dragged(
   };
 }
 
+/** Where focus in a panel that goes is handed: the middle view. */
+const MIDDLE = [{ focus: () => focusMiddle() }];
+
+/**
+ * The ref for panel `edge`'s element, which also goes to `forward`. As the panel is drawn it fades
+ * in, if it was asked for. As it stops being drawn, by whatever route, closed, put away for room or
+ * gone with its tab, focus in it goes back to the middle view, rather than falling to the page.
+ */
+function usePanel(edge: Edge, forward?: Ref<HTMLElement>): (element: HTMLElement | null) => void {
+  const panel = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    const element = panel.current;
+    // The move ends by itself, and takes itself off the panel, even once it's gone.
+    if (element && arrives(edge)) swapIn(element);
+    return () => handOffFocus([element], () => MIDDLE);
+  }, [edge]);
+  return useCallback(
+    (element: HTMLElement | null) => {
+      panel.current = element;
+      if (typeof forward === 'function') forward(element);
+      else if (forward) forward.current = element;
+    },
+    [forward],
+  );
+}
+
+/**
+ * A panel's classes: while a drag that would close it is under way it's drawn 0 px wide, rather
+ * than not at all, so focus in it stays there for the drag to give back, as the drag is let go or
+ * brought back.
+ */
+function asideClass(closing: boolean): string {
+  return `flex min-w-0 flex-none flex-col bg-bg-chrome ${closing ? 'overflow-hidden' : ''}`;
+}
+
 export interface LeftPanelProps {
   /** Which panels the tab has views for. */
   readonly there: There;
@@ -54,11 +92,13 @@ export function LeftPanel({ there, failed, children }: LeftPanelProps) {
   const stepped = useStepped('left');
   const closing = useClosing('left');
   const width = drawn.left ?? 0;
+  const ref = usePanel('left');
   return (
     <>
       <aside
-        className={`${closing ? 'hidden' : 'flex'} min-w-0 flex-none flex-col bg-bg-chrome ${failed ? 'controls-off' : ''}`}
-        style={{ width }}
+        ref={ref}
+        className={`${asideClass(closing)} ${failed ? 'controls-off' : ''}`}
+        style={{ width: closing ? 0 : width }}
         aria-label="Files"
         inert={failed}
         data-lo-left=""
@@ -96,6 +136,7 @@ export function RightPanel({ there, failed, label, view, ref, children }: RightP
   const stepped = useStepped('threads');
   const closing = useClosing('threads');
   const width = drawn.threads ?? 0;
+  const panel = usePanel('threads', ref);
   return (
     <>
       {!failed && (
@@ -111,9 +152,9 @@ export function RightPanel({ there, failed, label, view, ref, children }: RightP
         />
       )}
       <aside
-        ref={ref}
-        className={`${closing ? 'hidden' : 'flex'} min-w-0 flex-none flex-col bg-bg-chrome`}
-        style={{ width }}
+        ref={panel}
+        className={asideClass(closing)}
+        style={{ width: closing ? 0 : width }}
         aria-label={label}
         data-lo-right={view}
       >

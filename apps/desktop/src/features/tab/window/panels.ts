@@ -7,7 +7,16 @@ import { createStore } from 'zustand/vanilla';
 
 import type { OpenOn } from '../settings.ts';
 import { makeTabState, useKept } from './kept.ts';
-import { askPanel, closePanel, layout, panelDrawn, RIGHT, setOpen, togglePanel } from './layout.ts';
+import {
+  askPanel,
+  closePanel,
+  drawable,
+  layout,
+  panelDrawn,
+  RIGHT,
+  setOpen,
+  togglePanel,
+} from './layout.ts';
 
 export interface Panels {
   /**
@@ -120,7 +129,9 @@ export function showRightView(tab: string, id: string | undefined, focus = true)
   const drawn = document.querySelector<HTMLElement>(RIGHT);
   const shown = panelDrawn('threads') && drawn?.dataset.loRight === id;
   panels.update(tab, (current) => ({ ...current, right: id }));
-  rightPanel.setState({ focus });
+  // Only one it can draw now takes focus: one that's too cramped to doesn't take it later, from
+  // wherever focus is by then, as the window widens.
+  rightPanel.setState({ focus: focus && drawable('threads') === true });
   askPanel('threads');
   // Drawn already, it isn't drawn again to take it.
   if (shown && drawn && takeRightFocus()) focusPanel(drawn);
