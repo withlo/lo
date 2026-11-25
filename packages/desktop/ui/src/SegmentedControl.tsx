@@ -42,7 +42,10 @@ export interface SegmentedControlProps<T extends string> {
   onChange: (value: T) => void;
   /** `sm` in panel toolbars and Settings' rows. */
   size?: 'md' | 'sm' | undefined;
-  /** The key that steps through the segments, as this system shows it, after the control. */
+  /**
+   * The key that steps through the segments, as this system shows it, after the control, and only
+   * while it can be changed.
+   */
   keys?: readonly string[] | undefined;
   /**
    * It can't be changed now, as a comment box's Write | Preview while its comment is sent: dimmed,
@@ -204,7 +207,11 @@ export function SegmentedControl<T extends string>({
           );
         })}
       </div>
-      {keys !== undefined && <Key keys={keys} decorative />}
+      {/* While it can't be changed, neither can its key change it: the chip goes, keeping its
+          room, so nothing beside it moves. */}
+      {keys !== undefined && (
+        <Key keys={keys} decorative className={disabled ? 'invisible' : undefined} />
+      )}
     </span>
   );
 }
