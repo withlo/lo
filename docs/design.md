@@ -849,10 +849,11 @@ account, so attachments in private repos show. The PR's title, description, labe
 draft status are read-only in Lo.
 
 It's the third middle view, after the overview and the diff. Lo reads it from GitHub when you first
-show it, and keeps it current from then on. `j` and `k` move between its events, `Tab` goes through
-the links and buttons of the one you're on, `Esc` goes back to the list, and `gx` opens it on
-GitHub. What an event's buttons do is also on its right-click menu. A tab acting as nobody asks you
-to sign in to see it, and a run of a stack's layers has none of its own.
+show it, before what it reads in the background, and keeps it current from then on. A long one shows
+its newest events while the older ones are read. `j` and `k` move between its events, `Tab` goes
+through the links and buttons of the one you're on, `Esc` goes back to the list, and `gx` opens it
+on GitHub. What an event's buttons do is also on its right-click menu. A tab acting as nobody asks
+you to sign in to see it, and a run of a stack's layers has none of its own.
 
 What changes on GitHub while you read the timeline waits for your next key, click or scroll, and
 when it comes, what you were reading stays where it is. What your own comment, edit or delete

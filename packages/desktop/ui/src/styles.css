@@ -176,6 +176,16 @@
   text-transform: uppercase;
 }
 
+/*
+ * A quote's or an alert's blocks in a comment's prose (`lo-prose--comment`): 16 px apart, as GitHub
+ * spaces them, over the tighter spacing they have elsewhere.
+ */
+@utility comment-blocks {
+  :where(.lo-prose--comment) & > :not(:last-child) {
+    margin-block-end: var(--lo-sp-16);
+  }
+}
+
 /* The thing on screen, as a row's background. Tailwind's own `bg-current` is the text color. */
 @utility bg-on-screen {
   background-color: var(--lo-current);
@@ -590,6 +600,25 @@
 @utility panel-label {
   @container (width < 320px) {
     display: none !important;
+  }
+}
+
+/* The timeline's room either side of its column, which follows the width of the pane it's in
+   (`@container`), never the window's: --lo-sp-24, and --lo-sp-12 once the pane is narrower than the
+   column at its widest with that room (--lo-timeline-w plus twice --lo-sp-24), so a post's code
+   block gets the room. */
+@utility timeline-inset {
+  padding-inline: var(--lo-sp-24);
+  @container (width < 904px) {
+    padding-inline: var(--lo-sp-12);
+  }
+}
+
+/* A box of text in a post, such as an alert, keeps to the read measure, unless it holds a code
+   block, which takes the post's width: then only its text does, by `.lo-prose`'s own rules. */
+@utility measured {
+  &:not(:has(pre)) {
+    max-width: var(--lo-read-measure);
   }
 }
 

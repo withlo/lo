@@ -1,11 +1,13 @@
 // Images for the window, from GitHub's image hosts: a post's, by the address GitHub's rendering or
-// the post's Markdown gives, and an account's avatar, by its login. The window asks for each on
-// the image scheme (`ipc/images.ts`); main fetches it, checks that it's an image, and serves it.
+// the post's Markdown gives, an account's avatar, by its login, and a bot's, by its app's slug.
+// The window asks for each on the image scheme (`ipc/images.ts`); main fetches it, checks that
+// it's an image, and serves it.
 //
 // - **Where:** each request goes over `https` on the default port, with no user name, to one of
 //   GitHub's image hosts (`imageAddress`), or for an avatar to `avatars.githubusercontent.com`,
 //   following at most 5 redirects, each to the same list. GitHub's attachment store on S3 is
-//   reached only as an attachment's redirect.
+//   reached only as an attachment's redirect. A bot's picture is the app's, at an address only
+//   GitHub knows (`/in/<app id>`), which GitHub's answer for the bot's account gives (`bots.ts`).
 // - **Who asks:** a post's image is fetched as the account its view acts as, or as nobody, and
 //   kept for that account alone: what one tab's account could see never reaches another's.
 // - **The token** goes only to the first request for an attachment's address on github.com
@@ -13,7 +15,8 @@
 //   signed for a few minutes. Every other request, each redirect's included, goes without it:
 //   signed and proxied addresses need none.
 // - **What's served:** a PNG, JPEG, GIF or WebP image, by its first bytes alone, whose header gives
-//   a size no browser balks at: 16 MiB at most, fetched within 30 s. Anything else fails.
+//   a size no browser balks at: 16 MiB at most, fetched within 30 s, 6 at once. A bot's picture's
+//   address is found before its turn. Anything else fails.
 // - **What's kept:** the bytes served last, 64 MiB at most, each by the account it was fetched as
 //   and its exact address, signature and all, so only the address that fetched it finds it.
 
@@ -102,6 +105,11 @@ export interface ImagesOptions {
   /** Account `login`'s token, read as an attachment's request starts. */
   token(login: string): Promise<Token | undefined>;
   /**
+   * Where bot `login`'s picture is on the avatars' host, with no size (`BotPictures`), or an
+   * {@link ImageError} saying why not. Without it, a bot's avatar is refused.
+   */
+  botPicture?: ((login: string) => Promise<URL>) | undefined;
+  /**
    * Where to send a request for `address`, on one of GitHub's image hosts: the address itself, or
    * in a test run, a stand-in for the host. Redirects are read against the host's own address.
    */
@@ -114,6 +122,7 @@ export class Images {
   readonly #fetch: typeof globalThis.fetch;
   readonly #acting: (view: string) => string | undefined;
   readonly #token: (login: string) => Promise<Token | undefined>;
+  readonly #botPicture: ((login: string) => Promise<URL>) | undefined;
   readonly #route: (address: URL) => string;
   readonly #limits: ImageLimits;
   /** The images kept, the one served last at the end. */
@@ -129,6 +138,7 @@ export class Images {
     this.#fetch = options.fetch;
     this.#acting = (view) => options.acting(view);
     this.#token = (login) => options.token(login);
+    this.#botPicture = options.botPicture;
     this.#route = options.route ?? ((address) => address.href);
     this.#limits = { ...IMAGE_LIMITS, ...options.limits };
   }
@@ -149,7 +159,10 @@ export class Images {
     }
     let loading = this.#loading.get(key);
     if (!loading) {
-      loading = this.#inTurn(() => this.#fetched(asked, as))
+      // A bot's picture's address is found first, so asking GitHub takes no turn, and no time,
+      // of the image's.
+      loading = this.#firstAddress(asked)
+        .then((address) => this.#inTurn(() => this.#fetched(asked, address, as)))
         .then((image) => {
           this.#keep(key, image);
           return image;
@@ -185,10 +198,10 @@ export class Images {
     }
   }
 
-  /** Fetches `asked` as account `as`, or as nobody. */
-  async #fetched(asked: ImageAsked, as: string | undefined): Promise<LoadedImage> {
+  /** Fetches `asked`, from `first`, as account `as`, or as nobody. */
+  async #fetched(asked: ImageAsked, first: URL, as: string | undefined): Promise<LoadedImage> {
     const deadline = AbortSignal.timeout(this.#limits.deadline);
-    let address = firstAddress(asked);
+    let address = first;
     let from: URL | undefined;
     // Only the address the window asked for, when it's an attachment's, is asked with the token:
     // never one a redirect leads to, wherever it is.
@@ -230,6 +243,31 @@ export class Images {
       }
       return this.#checked(address, await this.#body(address, response, deadline));
     }
+  }
+
+  /** The address an image is first asked for at. */
+  async #firstAddress(asked: ImageAsked): Promise<URL> {
+    switch (asked.kind) {
+      case 'post':
+        return new URL(asked.address);
+      case 'avatar':
+        return new URL(`https://${AVATAR_HOST}/${asked.login}?s=${asked.size}`);
+      case 'bot':
+        return this.#botAddress(asked.login, asked.size);
+      default:
+        asked satisfies never;
+        throw new Error(`An image Lo doesn’t know: ${JSON.stringify(asked)}.`);
+    }
+  }
+
+  /** Where to fetch bot `login`'s picture, `size` pixels a side. */
+  async #botAddress(login: string, size: number): Promise<URL> {
+    if (!this.#botPicture) {
+      throw new ImageError('refused', `there’s no way to ask GitHub where ${login}’s avatar is`);
+    }
+    const address = new URL(await this.#botPicture(login));
+    address.searchParams.set('s', String(size));
+    return address;
   }
 
   /** Asks for `address`, with `token` when it's given. */
@@ -340,24 +378,12 @@ export class Images {
   }
 }
 
-/** The address an image is first asked for at. */
-function firstAddress(asked: ImageAsked): URL {
-  switch (asked.kind) {
-    case 'post':
-      return new URL(asked.address);
-    case 'avatar':
-      return new URL(`https://${AVATAR_HOST}/${asked.login}?s=${asked.size}`);
-    default:
-      asked satisfies never;
-      throw new Error(`An image Lo doesn’t know: ${JSON.stringify(asked)}.`);
-  }
-}
-
 /**
  * Whether `asked` may be fetched from `address`, reached by a redirect from `from` unless it's the
  * first: over `https` on the default port, with no user name or password, from one of GitHub's
  * image hosts. On github.com, only an attachment's address. A post's image may come from GitHub's
- * attachment store only as an attachment's redirect, and an avatar only from the avatars' host.
+ * attachment store only as an attachment's redirect, and an avatar, a bot's too, only from the
+ * avatars' host.
  */
 export function mayFetch(asked: ImageAsked, address: URL, from?: URL): boolean {
   if (address.protocol !== 'https:' || address.port !== '') return false;
@@ -370,6 +396,7 @@ export function mayFetch(asked: ImageAsked, address: URL, from?: URL): boolean {
         (address.hostname === ATTACHMENT_STORE && from !== undefined && isAttachment(from))
       );
     case 'avatar':
+    case 'bot':
       return address.hostname === AVATAR_HOST;
     default:
       asked satisfies never;
@@ -399,7 +426,8 @@ export function isAttachment(address: URL): boolean {
 /**
  * What an image is kept by. A post's image: the account it's fetched as, or nobody, and its whole
  * address but the fragment, signature included, so an address signed otherwise, or not at all,
- * never finds a signed image. An avatar, fetched as nobody for everyone: its login and size.
+ * never finds a signed image. An avatar, fetched as nobody for everyone: its login and size, and a
+ * bot's by its slug.
  */
 export function keyOf(asked: ImageAsked, as?: string): string {
   switch (asked.kind) {
@@ -410,6 +438,8 @@ export function keyOf(asked: ImageAsked, as?: string): string {
     }
     case 'avatar':
       return `avatar ${asked.login.toLowerCase()} ${asked.size}`;
+    case 'bot':
+      return `bot ${asked.login.toLowerCase()} ${asked.size}`;
     default:
       asked satisfies never;
       throw new Error(`An image Lo doesn’t know: ${JSON.stringify(asked)}.`);

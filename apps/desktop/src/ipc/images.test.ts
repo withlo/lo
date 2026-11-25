@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   avatarImageAddress,
+  botImageAddress,
   isLogin,
   MAX_AVATAR,
   postImageAddress,
@@ -75,7 +76,26 @@ describe('image addresses', () => {
     );
   });
 
+  it("names a bot's avatar by its app's slug and size, which read back as they were", () => {
+    expect(botImageAddress('cursor', 56)).toBe('lo-image://bot/cursor?s=56');
+    // REST's login for the same bot names the same avatar.
+    expect(botImageAddress('dependabot[bot]', 40)).toBe('lo-image://bot/dependabot?s=40');
+    expect(readImageAddress('lo-image://bot/cursor?s=56')).toEqual({
+      kind: 'bot',
+      login: 'cursor',
+      size: 56,
+    });
+    for (const login of ['', 'a/b', 'cursor[bot][bot]', '[bot]', 'x'.repeat(40)]) {
+      expect(botImageAddress(login, 56)).toBeUndefined();
+    }
+    expect(botImageAddress('cursor', MAX_AVATAR + 1)).toBeUndefined();
+  });
+
   it.each([
+    'lo-image://bot/cursor%5Bbot%5D?s=56',
+    'lo-image://bot/cursor',
+    'lo-image://bot/cursor?s=56&v=4',
+    'lo-image://bot/in/1210556?s=56',
     'lo-image://avatar/dependabot%5Bbot%5D?s=56',
     'lo-image://avatar/..%2Fu%2F1?s=56',
     'lo-image://avatar/octocat/more?s=56',
