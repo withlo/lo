@@ -150,6 +150,28 @@ export type Kind = Tab['kind'];
 export const tabs = z.strictObject({ tabs: z.array(tab).min(1), active: tabId });
 export type Tabs = z.output<typeof tabs>;
 
+/**
+ * A panel in the window's layout: open or not, and its width in CSS pixels, unset while it's the
+ * default.
+ */
+const panelLayout = z.strictObject({
+  open: z.boolean(),
+  width: z.number().min(0).max(100_000).optional(),
+});
+
+/**
+ * The window's layout of a pull request's tab's row, one for every tab, which main keeps across
+ * restarts: the left panel and the threads panel, each open or not and its width.
+ */
+export const windowLayout = z.strictObject({ left: panelLayout, threads: panelLayout });
+export type WindowLayout = z.output<typeof windowLayout>;
+
+/**
+ * The layout as it first is, and as Reset layout puts it back: the left panel open and the threads
+ * panel closed, each at its default width.
+ */
+export const FIRST_LAYOUT: WindowLayout = { left: { open: true }, threads: { open: false } };
+
 /** What names a pull request's tab's views: its id, and the pull request it opened on. */
 interface PullTabName {
   readonly id: string;
@@ -613,6 +635,13 @@ export const contract = defineContract('tab', {
       input: z.strictObject({ text: z.string().refine(fitsCopy, 'Too much to copy.') }),
       reply: reply<void>(),
     },
+    /**
+     * The window's layout, as main kept it: each width within its limits, and the first layout
+     * where there's none, or what's kept won't read.
+     */
+    layout: { input: z.undefined(), reply: reply<WindowLayout>() },
+    /** Keeps the window's layout, as it changes, for the next time Lo starts. */
+    keepLayout: { input: windowLayout, reply: reply<void>() },
     /** Opens a page on github.com in the browser. Nothing else opens. */
     openExternal: {
       input: z.strictObject({

@@ -1,7 +1,8 @@
 // The tab strip's keys: a tab by its place, the next and previous tab, moving one, the tabs that
 // don't fit and closing one. They work wherever focus is, a text field included, but not under a
 // dialog or a palette, which hold the keys while they're open. And a pull request's tab's: its left
-// and right panels, the width of what has focus, its middle views, and the account to open it as.
+// and right panels, the width of what has focus and the window's layout, its middle views, and the
+// account to open it as.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -118,8 +119,8 @@ export default defineCommands('tab', {
     toggle: 'switch',
   },
   /**
-   * Widens what has focus by a step, as dragging its edge does: the left panel, while focus is in
-   * it. A held key goes on widening it, to its limit.
+   * Widens what has focus by a step, as dragging its edge does: a panel, while focus is in it. A
+   * held key goes on widening it, to its limit.
    */
   widen: {
     label: 'Widen',
@@ -153,6 +154,17 @@ export default defineCommands('tab', {
     when: sizing,
     control: 'a double-click on the edge beside what has focus',
     bar: { menu: 'View', section: 'layout', order: 30 },
+  },
+  /**
+   * Puts the window's layout back as it first was: the left panel open and the threads panel
+   * closed, each at its default width. The window changing is all it says.
+   */
+  resetLayout: {
+    label: 'Reset layout',
+    description: 'Panels, views and widths as they first were.',
+    group: 'View',
+    keys: [],
+    bar: { menu: 'View', section: 'layout', order: 40 },
   },
   /**
    * The next of a pull request's middle views the header's switch lists: overview, diff, timeline,

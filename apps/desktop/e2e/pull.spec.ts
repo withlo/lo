@@ -21,6 +21,7 @@ import {
   drawnWindow,
   expect,
   KEYCHAIN,
+  sizeWindow,
   tabBanners,
   test as base,
 } from './app.ts';
@@ -154,6 +155,76 @@ test('the left panel’s edge sizes it by a drag, and by key while it has focus'
   expect(await width()).toBe(368);
   await page.keyboard.press('=');
   expect(await width()).toBe(300);
+});
+
+test('the panels are the window’s: their buttons, the threads panel’s edge, and the layout and the window’s place come back after a restart', async ({
+  app,
+  page,
+  github,
+  remote,
+}) => {
+  test.setTimeout(90_000);
+  await sizeWindow(app, 1440, 900);
+  await open(page, E2E);
+  const files = page.getByRole('complementary', { name: 'Files' });
+  const leftButton = page.locator('[data-lo-left-toggle]');
+  await expect(files.getByRole('treeitem').first()).toBeVisible();
+  await expect(leftButton).toHaveAttribute('aria-pressed', 'true');
+  await leftButton.click();
+  await expect(files).toBeHidden();
+  await expect(leftButton).toHaveAttribute('aria-pressed', 'false');
+
+  await page.locator('[data-lo-right-toggle]').click();
+  const threads = page.locator('[data-lo-right]');
+  const width = () => threads.evaluate((panel) => panel.getBoundingClientRect().width);
+  await expect(threads).toBeVisible();
+  expect(await width()).toBe(340);
+  // Its edge's grip is on the panel's side, off the diff's scrollbar.
+  const edge = await page.getByRole('separator', { name: 'Resize threads panel' }).boundingBox();
+  const x = (edge?.x ?? 0) + 4;
+  await page.mouse.move(x, 400);
+  await page.mouse.down();
+  await page.mouse.move(x - 100, 400);
+  await page.mouse.up();
+  expect(await width()).toBe(440);
+
+  const layout = { left: { open: false }, threads: { open: true, width: 440 } };
+  await expect
+    .poll(() => page.evaluate(() => window.lo.invoke('tab.layout')))
+    .toEqual({ ok: true, value: layout });
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.setPosition(60, 80));
+  await sizeWindow(app, 1400, 880);
+  await app.close();
+  // Started again with GitHub gone, the tab comes back from what it saved, and asks nothing the
+  // replay server didn't record.
+  await github.close();
+
+  const again = await electron.launch({
+    args: [appFolder, ...KEYCHAIN],
+    env: {
+      ...appEnvironment(dataFolder()),
+      LO_GITHUB: new URL(github.urls.api).origin,
+      LO_GIT_REMOTE: remote,
+    },
+    chromiumSandbox: true,
+  });
+  try {
+    const shown = await drawnWindow(again);
+    await expect(shown.getByRole('heading', { level: 1 })).toHaveText(TITLE);
+    expect(
+      await again.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.getBounds()),
+    ).toEqual({ x: 60, y: 80, width: 1400, height: 880 });
+    await expect(shown.locator('[data-lo-right]')).toBeVisible();
+    expect(
+      await shown
+        .locator('[data-lo-right]')
+        .evaluate((panel) => panel.getBoundingClientRect().width),
+    ).toBe(440);
+    await expect(shown.getByRole('complementary', { name: 'Files' })).toHaveCount(0);
+    await expect(shown.locator('[data-lo-left-toggle]')).toHaveAttribute('aria-pressed', 'false');
+  } finally {
+    await again.close();
+  }
 });
 
 test("says why a pull request GitHub doesn't have, or one no account can see, can't be opened", async ({

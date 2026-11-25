@@ -20,6 +20,7 @@ import {
 } from '../contract.ts';
 import { blocked } from './banners.ts';
 import { makeTabState, type TabState, useKept } from './kept.ts';
+import { panelDrawn } from './layout.ts';
 import { main } from './main.ts';
 import {
   INSTEAD,
@@ -30,7 +31,6 @@ import {
   panels,
   putRightBack,
   rightIds,
-  rightPanel,
   showRightView,
   type Panels,
   type RightKept,
@@ -281,9 +281,9 @@ export function putRight(tab: string, kept: RightKept): void {
   putRightBack(tab, kept);
 }
 
-/** The view pull request's tab `tab`'s right panel shows, by id, or none while it's closed. */
+/** The view pull request's tab `tab`'s right panel shows, by id, or none while it isn't drawn. */
 export function rightShown(tab: string): string | undefined {
-  if (!rightPanel.getState().open || rightIds.length === 0) return undefined;
+  if (!panelDrawn('threads') || rightIds.length === 0) return undefined;
   const chosen = panels.get(tab).right;
   return chosen !== undefined && rightIds.includes(chosen) ? chosen : rightIds[0];
 }

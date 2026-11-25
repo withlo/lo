@@ -227,7 +227,7 @@ describe('the middle views', () => {
     expect(showInstead('fd')).toBe(false);
     expect(panels.get('fd').middle).toBe('diff.whole');
     expect(showMiddle('fd', 'diff.view')).toBe(true);
-    expect(panels.get('fd')).toEqual({ leftOpen: true, middle: 'diff.view' });
+    expect(panels.get('fd')).toEqual({ middle: 'diff.view' });
   });
 
   it('say which the tab opened on, and show the timeline in place of one that’s gone', () => {

@@ -2,15 +2,18 @@
 // opens them for other features, as links from other apps will. Each view of a pull request's tab,
 // one for each layer of a stack it has shown, watches its pull request with its account's poller,
 // and fetches its local copy once it's shown. Other features follow a pull request's tab by its
-// view on screen. It also copies text and opens github.com pages for every feature.
+// view on screen. It also copies text and opens github.com pages for every feature. And it keeps
+// the window's own state: the layout every pull request's tab draws its row with, and where the
+// window is, how big, and whether it fills the screen, which it puts back as the window opens.
 
-import { app, clipboard } from 'electron';
+import { app, clipboard, screen, type BrowserWindow } from 'electron';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { openPage } from '../../../main/browser.ts';
 import { offlineAfter } from '../../../main/environment.ts';
 import { defineFeature, type FeatureContext } from '../../../main/features.ts';
 import { provides } from '../../../main/services.ts';
+import { tokens } from '../../../main/tokens.ts';
 import { github } from '../../accounts/service.ts';
 import { settings } from '../../settings/service.ts';
 import { login as accountLogin } from '../../accounts/contract.ts';
@@ -30,6 +33,7 @@ import { before, open as openOn } from '../settings.ts';
 import { carryOver } from './carry.ts';
 import { createTabs, type TabList } from './tabs.ts';
 import { Watcher } from './watcher.ts';
+import { createWindowStore, placeable, type WindowStore } from './window.ts';
 
 /** A run's layers, as the tab keeps them. */
 const runLayers = runSchema.shape.layers;
@@ -64,6 +68,59 @@ function tabsOf({ database, publish }: FeatureContext<typeof contract>): TabList
     },
   });
   return kept;
+}
+
+let windowStore: WindowStore | undefined;
+
+/** The window's own state, read from the database the first time anything asks for it. */
+function windowOf({ database }: FeatureContext<typeof contract>): WindowStore {
+  windowStore ??= createWindowStore(database, {
+    left: { min: tokens.size('lo-panel-left-min-w'), max: tokens.size('lo-panel-left-max-w') },
+    threads: { min: tokens.size('lo-panel-right-min-w'), max: tokens.size('lo-panel-right-max-w') },
+  });
+  return windowStore;
+}
+
+/** How long the window stays still before its place is kept, as it's dragged or resized. */
+const SETTLE_MS = 500;
+
+/**
+ * Puts `window` back where it was kept, as big, and maximized or full screen if it was, unless the
+ * display it was on is gone, when it opens where it would have; then keeps its place each time it
+ * settles, and as it closes.
+ */
+function keepPlace(window: BrowserWindow, store: WindowStore): void {
+  const place = store.place();
+  const areas = screen.getAllDisplays().map((display) => display.workArea);
+  if (place && placeable(place, areas)) {
+    window.setBounds({ x: place.x, y: place.y, width: place.width, height: place.height });
+    // Maximized before it shows, so it's never drawn at its normal size first. Full screen is the
+    // system's move, made once the window is there.
+    if (place.fullScreen) window.once('show', () => window.setFullScreen(true));
+    else if (place.maximized) window.once('ready-to-show', () => window.maximize());
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const keep = () => {
+    clearTimeout(timer);
+    timer = undefined;
+    if (window.isDestroyed()) return;
+    store.keepPlace({
+      ...window.getNormalBounds(),
+      maximized: window.isMaximized(),
+      fullScreen: window.isFullScreen(),
+    });
+  };
+  const settle = () => {
+    clearTimeout(timer);
+    timer = setTimeout(keep, SETTLE_MS);
+  };
+  window.on('resize', settle);
+  window.on('move', settle);
+  window.on('maximize', keep);
+  window.on('unmaximize', keep);
+  window.on('enter-full-screen', keep);
+  window.on('leave-full-screen', keep);
+  window.on('close', keep);
 }
 
 /** Stops watching the key `tab.open` replaced. */
@@ -151,6 +208,10 @@ export default defineFeature(contract, {
     async copy({ text }) {
       await clipboard.writeText(text);
     },
+    layout: (_input, context) => windowOf(context).layout(),
+    keepLayout(layout, context) {
+      windowOf(context).keepLayout(layout);
+    },
     async openExternal({ url }) {
       // The contract refuses anything else; this holds even if it's loosened.
       if (!isGithubPage(url)) throw new IpcError('refused', 'Lo opens only pages on github.com.');
@@ -159,6 +220,8 @@ export default defineFeature(contract, {
     },
   },
   start(context) {
+    // Each window opens where the last one was.
+    app.on('browser-window-created', (_event, window) => keepPlace(window, windowOf(context)));
     // The window reads it as a pull request's tab opens, and changes it from Settings.
     const file = context.use(settings);
     file.declare(openOn);

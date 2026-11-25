@@ -18,6 +18,8 @@ import {
   Delete,
   Ellipsis,
   Option,
+  PanelLeft,
+  PanelRight,
   X,
   type IconNode,
 } from 'lucide';
@@ -39,6 +41,8 @@ export const ICONS = {
   delete: Delete,
   ellipsis: Ellipsis,
   option: Option,
+  'panel-left': PanelLeft,
+  'panel-right': PanelRight,
   x: X,
 } as const satisfies Readonly<Record<string, IconNode>>;
 
