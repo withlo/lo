@@ -50,3 +50,23 @@ export function imageAddress(src: string, base?: string): string | undefined {
 export function isImageAddress(src: string): boolean {
   return imageAddress(src) !== undefined;
 }
+
+/** The most CSS pixels a side `imageSize` keeps: as many as an image may have. */
+export const MAX_IMAGE_SIZE = 16_384;
+
+/**
+ * An `<img>`'s `width` or `height` as `Image` keeps it, read as a browser reads one: a number of
+ * CSS pixels (anything after its digits, as `px`, left aside), or a percentage, written with `%`.
+ * Nothing for one that isn't more than 0, a percentage over 100, or a size over
+ * {@link MAX_IMAGE_SIZE}.
+ */
+export function imageSize(value: unknown): string | undefined {
+  const written = typeof value === 'number' ? String(value) : value;
+  if (typeof written !== 'string') return undefined;
+  const match = /^[\t\n\f\r ]*(\d{1,6}(?:\.\d{1,4})?)(%?)/.exec(written);
+  if (!match) return undefined;
+  const size = Number(match[1]);
+  const percent = match[2] === '%';
+  if (!(size > 0) || size > (percent ? 100 : MAX_IMAGE_SIZE)) return undefined;
+  return percent ? `${size}%` : String(size);
+}

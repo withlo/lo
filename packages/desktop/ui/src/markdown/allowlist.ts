@@ -2,8 +2,9 @@
  * What the renderer writes into the page, and nothing else: these elements, each with only the
  * attributes listed for it (and `class`, on any). Nothing in a tree names an element or an
  * attribute, so this is what `render.tsx`'s switches make, whatever the text said; the tests hold
- * every hostile fixture to it. No attribute holds a style or a handler, and only an image's holds
- * an address: one on Lo's image scheme, which main serves, and only when the document gives one.
+ * every hostile fixture to it. No attribute holds a style or a handler, and only an image's and its
+ * picture's sources hold an address: one on Lo's image scheme, which main serves, and only when the
+ * document gives one. A source's media is Lo's own, for its theme.
  */
 export const MARKDOWN_ELEMENTS: Readonly<Record<string, readonly string[]>> = Object.freeze({
   p: ['role', 'dir'],
@@ -42,7 +43,10 @@ export const MARKDOWN_ELEMENTS: Readonly<Record<string, readonly string[]>> = Ob
   sup: [],
   kbd: [],
   a: ['role', 'tabindex', 'aria-label'],
-  img: ['src', 'alt', 'loading', 'decoding'],
+  img: ['src', 'alt', 'width', 'height', 'loading', 'decoding'],
+  // An image for each theme: the window's color scheme picks the source.
+  picture: [],
+  source: ['media', 'srcset'],
   // The fold's chevron, Lo's own icon.
   svg: ['viewBox', 'aria-hidden'],
   path: ['d'],

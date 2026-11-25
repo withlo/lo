@@ -1138,6 +1138,14 @@ and nothing while there's no stack.
 - The layer on screen's overview mark and viewed count come from its tab, as they change; the other
   layers' from main.
 - A tab restored at a layer whose pull request is gone offers to show the layer it was opened at.
+- The offer over the tree to convert the stack, and the banner that offers where a layer's diff
+  starts, each have Dismiss, whose menu (a `notice` target naming the tab, which `⇧F10` on Dismiss
+  opens too) dismisses it for this stack or this layer, or for all stacks. Main keeps the first in
+  `stacks_dismissed`, for each layer the stack has then, or for the layer, and sends neither offer
+  while it's dismissed there. The tree's offer is kept by which it is, `convert` or `add` (layers
+  not yet in the GitHub stack below them), so dismissing one leaves the other. "For all stacks"
+  turns off its setting, `stacks.offerConvert` or `stacks.offerStart`, whose switch in Settings ›
+  Pull requests turns it back on; main sends no offer before it has read the file.
 
 `gS` makes the chain the pull request on screen is in a GitHub stack
 (`features/stacks/main/conversion.ts`), and the confirmation is the only way anything is sent.
@@ -1609,16 +1617,33 @@ dialog that opens in the panel's place (`tab.dialogs`) is confirmed.
 
 ### Images from GitHub
 
-The window shows an image from outside Lo only as `<img src="lo-image://…">`, which main serves.
-`src/ipc/images.ts` holds the two addresses, which the window builds and main reads, and the
-`comments` feature serves them.
+The window shows an image from outside Lo only at a `lo-image://…` address, which main serves: an
+`<img src>`, or a `<picture>`'s `<source srcset>`. `src/ipc/images.ts` holds the three kinds of
+address, which the window builds and main reads, and the `comments` feature serves them.
 
 - `lo-image://post/<view>/<address>` is an image in a post, at an address on one of GitHub's image
   hosts (`@lo/markdown`'s `imageAddress`), fetched as the account the view `<view>` acts as.
-  `lo-image://avatar/<login>?s=<px>` is an account's avatar. Features build both with
-  `window/images.ts`; a bot or a team gets no address, and keeps its initials. Given where from
-  (`Markdown`'s `images`), the Markdown renderer loads a text's first 30 images, lazily, and shows
-  the rest, and any that fail, as links.
+  `lo-image://avatar/<login>?s=<px>` is a person's or an organization's avatar, and
+  `lo-image://bot/<slug>?s=<px>` a bot's, by its app's slug, as GraphQL names a bot. Features build
+  them with `window/images.ts`; a team, or any other account, gets no address, and keeps its
+  initials. Given where from (`Markdown`'s `images`), the Markdown renderer loads a text's first 30
+  images, lazily, and shows the rest, and any that fail, as links.
+- A bot's picture is its app's, which GitHub keeps at an address its login doesn't name
+  (`avatars.githubusercontent.com/in/<app id>`): the bot's login there is someone else's picture, or
+  a pattern. Main asks GitHub for the bot's account (`@lo/github`'s `botAvatar`,
+  `GET /users/<slug>[bot]`) as the first account signed in, in its queue as a background read, and
+  only while its rate limit is normal and GitHub answers; it fetches the picture its `avatar_url`
+  gives, on the avatars' host alone, once it has the address, so asking takes none of an image's
+  turns or time. `comments/main/bots.ts` asks about each bot at most once a run, one at a time, and
+  100 bots at most, and keeps what GitHub said for the run, a bot it doesn't have included. After an
+  ask GitHub answered with an error it asks nothing for a minute, twice as long after each failure
+  in a row, an hour at most, or until an account is added or signs in again; one the account then
+  shows (GitHub out of reach, a rate limit) waits on the account's status instead, until its poller
+  hears from GitHub again. With no account signed in, a bot keeps its initials.
+- An image is drawn as GitHub draws it: at the `width` and `height` the post gives it, its height
+  following its width, inline in its text, and never wider than the text. A `<picture>` with a
+  source for each `prefers-color-scheme` shows the one for Lo's theme: the window's color scheme
+  follows Lo's `theme` setting.
 - Main fetches each through Chromium's network stack, as it does GitHub's requests: over `https` on
   the default port with no user name, from GitHub's image hosts or `avatars.githubusercontent.com`,
   following at most 5 redirects, each to the same hosts, within 30 s and 16 MiB, 6 at once. On
@@ -1888,6 +1913,10 @@ utilities.
   else (`scripts/check-popups.ts`).
 - The fonts, Host Grotesk and Fragment Mono, are bundled as files (never `data:` addresses, which
   the content security policy blocks), and their licenses ship beside the window's files.
+- Icons come from `lucide`, through `Icon` and the list in `packages/desktop/ui/src/icons.ts`, the
+  only file that imports it. Lint fails an `<svg>` written anywhere but `Icon`, the mark and figures
+  (`lo/no-inline-icon`), or the files whose icons are still drawn by hand, which
+  `scripts/oxlint/svgs.ts` lists and which only shrinks. Its license ships beside the fonts'.
 - Screenshot baselines are made on Linux only, in `apps/desktop/e2e/snapshots/`.
 
 ## Generated files

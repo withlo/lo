@@ -94,10 +94,11 @@ describe('the timeline', () => {
 <pre><code>&lt;img src="${dog}" data-canonical-src="https://e.com/dog.png"&gt;</code></pre>`,
     );
     expect(collect(made, 'image').map((image) => image.url)).toEqual([signed, centered, cat, old]);
-    // GitHub links each image to itself, which is the image alone; a link elsewhere stays.
+    // GitHub links each image to itself, which is the image alone; a link elsewhere stays. Its
+    // width stays too, as GitHub draws it, and its style doesn't.
     expect(made.blocks[0]).toEqual({
       kind: 'paragraph',
-      children: [{ kind: 'image', url: signed, alt: 'image' }],
+      children: [{ kind: 'image', url: signed, alt: 'image', width: '859' }],
     });
     expect(made.blocks[1]).toEqual({
       kind: 'paragraph',
@@ -124,6 +125,52 @@ describe('the timeline', () => {
       kind: 'code',
       text: `<img src="${dog}" data-canonical-src="https://e.com/dog.png">`,
     });
+  });
+
+  test("an image keeps its size, and a picture where it is in each theme, as GitHub's pictures give", () => {
+    const fix = camo('a1', 'https://cursor.com/fix-in-cursor-dark.png');
+    const light = camo('a2', 'https://cursor.com/fix-in-cursor-light.png');
+    const wide = camo('a3', 'https://e.com/wide.png');
+    // Cursor Bugbot's buttons, as GitHub renders them: a picture in a link to Cursor.
+    const made = tree(
+      `<div dir="auto"><a href="https://cursor.com/open?link=x" rel="nofollow"><themed-picture data-catalyst-inline="true"><picture><source media="(prefers-color-scheme: dark)" srcset="${fix}"><source media="(prefers-color-scheme: light)" srcset="${light}"><img alt="Fix in Cursor" width="115" height="28" src="${fix}"></picture></themed-picture></a></div>
+<p><img src="${wide}" width="50%"> <img src="${wide}" height="20px"> <img src="${wide}" width="0" height="wide"> <img src="${wide}" width="200%" height="99999"></p>
+<p><picture><source media="(prefers-color-scheme: dark)" srcset="${fix} 2x"><source media="(min-width: 1px)" srcset="${light}"><source media="(prefers-color-scheme: light)" srcset="https://e.com/light.png"><img src="${wide}"><source media="(prefers-color-scheme: dark)" srcset="${fix}"></picture></p>`,
+    );
+    expect(made.blocks[0]).toEqual({
+      kind: 'paragraph',
+      children: [
+        web('https://cursor.com/open?link=x', {
+          kind: 'image',
+          url: fix,
+          alt: 'Fix in Cursor',
+          width: '115',
+          height: '28',
+          dark: fix,
+          light,
+        }),
+      ],
+    });
+    // A percentage stays one; a size that isn't one, or is past the most, isn't kept.
+    expect(made.blocks[1]).toEqual({
+      kind: 'paragraph',
+      children: [
+        { kind: 'image', url: wide, alt: '', width: '50%' },
+        text(' '),
+        { kind: 'image', url: wide, alt: '', height: '20' },
+        text(' '),
+        { kind: 'image', url: wide, alt: '' },
+        text(' '),
+        { kind: 'image', url: wide, alt: '' },
+      ],
+    });
+    // Only a source with one address for a theme counts, and none after the image; one off
+    // GitHub's image hosts isn't kept, and is said so.
+    expect(made.blocks[2]).toEqual({
+      kind: 'paragraph',
+      children: [{ kind: 'image', url: wide, alt: '' }],
+    });
+    expect(made.diagnostics).toEqual([{ code: 'image' }]);
   });
 
   /** A rendering longer than Lo reads shows from the post's Markdown, where the image is a link. */
@@ -343,9 +390,15 @@ describe("GitHub's rendering", () => {
           web('https://github.com/rozed-dev/e2e/pull/docs/logo.png', text('relative image')),
         ],
       },
-      { kind: 'paragraph', children: [{ kind: 'image', url: logo, alt: 'html image' }] },
-      // A picture is its image.
-      { kind: 'paragraph', children: [{ kind: 'image', url: logo, alt: 'picture image' }] },
+      {
+        kind: 'paragraph',
+        children: [{ kind: 'image', url: logo, alt: 'html image', width: '100' }],
+      },
+      // A picture is its image, with where it is in the theme its source names.
+      {
+        kind: 'paragraph',
+        children: [{ kind: 'image', url: logo, alt: 'picture image', dark: logo }],
+      },
       {
         kind: 'paragraph',
         children: [web('https://www.w3.org/', { kind: 'image', url: logo, alt: 'linked image' })],

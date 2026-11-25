@@ -36,6 +36,7 @@
     "lo/no-lo-subject": "error",
     "lo/no-native-title": "error",
     "lo/no-straight-apostrophe": "error",
+    "lo/no-inline-icon": "error",
     "typescript/consistent-type-imports": "error",
     "typescript/no-explicit-any": "error",
     "import/no-cycle": "error"
@@ -83,7 +84,8 @@
       "rules": {
         "lo/no-lo-subject": "off",
         "lo/no-native-title": "off",
-        "lo/no-straight-apostrophe": "off"
+        "lo/no-straight-apostrophe": "off",
+        "lo/no-inline-icon": "off"
       }
     }
   ]

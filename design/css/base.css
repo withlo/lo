@@ -67,21 +67,27 @@
 .lo-app :hover::-webkit-scrollbar-thumb { background-color: var(--lo-press); }
 .lo-app ::-webkit-scrollbar-corner { background: transparent; }
 
-/* Icons: 16 px stroke icons drawn on a 16 grid, round caps like the mark */
+/* Icons: Lucide's, on its 24 grid, stroke only with round caps like the mark, drawn by Icon from
+   @lo/ui. Each size sets its stroke in pixels, as px × 24 ÷ the size, so an icon weighs what the
+   text beside it does: 16 px at 1.5 px (2.25), 14 and 12 px at 1.25 px (2.142857 and 2.5), and
+   24 px at 1.5 px. */
 .lo-i {
   width: 16px;
   height: 16px;
   flex: none;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.5;
+  stroke-width: 2.25;
   stroke-linecap: round;
   stroke-linejoin: round;
   vertical-align: -3px;
 }
-.lo-i--sm { width: 14px; height: 14px; vertical-align: -2px; }
-.lo-i--xs { width: 12px; height: 12px; vertical-align: -1px; stroke-width: 1.75; }
-.lo-i--fill { fill: currentColor; stroke: none; }
+.lo-i--sm { width: 14px; height: 14px; stroke-width: 2.142857; vertical-align: -2px; }
+.lo-i--xs { width: 12px; height: 12px; stroke-width: 2.5; vertical-align: -1px; }
+.lo-i--lg { width: 24px; height: 24px; stroke-width: 1.5; vertical-align: -6px; }
+/* The icons still drawn by hand on a 16 grid keep their stroke until they move onto the set. */
+.lo-i[viewBox="0 0 16 16"] { stroke-width: 1.5; }
+.lo-i--xs[viewBox="0 0 16 16"] { stroke-width: 1.75; }
 
 /* Hide visually, keep for screen readers */
 .lo-sr {

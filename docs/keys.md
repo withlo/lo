@@ -201,6 +201,10 @@ mode. In the box's preview, or on its frame, `Esc` closes it at once, from any m
 | Show layers to here        | None: its right-click menu or the command palette              | Anywhere                                                                                            | `stacks.upTo`           |
 | Stop selecting layers      | `Esc`                                                          | In `stack`                                                                                          | `stacks.cancel`         |
 | Show single layer          | `Esc`                                                          | In `diff`; in code views, only in normal mode                                                       | `stacks.back`           |
+| Dismiss for this stack     | None: its right-click menu or the command palette              | Anywhere                                                                                            | `stacks.dismissConvert` |
+| Offer GitHub stacks        | None: its right-click menu or the command palette              | Anywhere                                                                                            | `stacks.offerConvert`   |
+| Dismiss for this layer     | None: its right-click menu or the command palette              | Anywhere                                                                                            | `stacks.dismissStart`   |
+| Offer single-layer diffs   | None: its right-click menu or the command palette              | Anywhere                                                                                            | `stacks.offerStart`     |
 | Left panel                 | `⌘\`                                                           | Anywhere but `dialog` and `palette`                                                                 | `tab.leftPanel`         |
 | Threads panel              | `⌘⇧\`                                                          | Anywhere but `dialog` and `palette`                                                                 | `tab.rightPanel`        |
 | Next view                  | `` ` ``                                                        | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.nextView`          |
@@ -329,6 +333,7 @@ it beats the key for the scope, so `z a` collapses the thread it's on, and the f
 | `menu`       | A menu. Only commands that name it run there, and `j` and `k` move as `↓` and `↑` do. |
 | `dialog`     | A dialog, which keeps the browser's `Tab`.                                            |
 | `palette`    | A palette, such as the command palette.                                               |
+| `notice`     |                                                                                       |
 | `diff`       | The diff, a code view.                                                                |
 | `file`       | A whole file, a code view.                                                            |
 | `peek`       | A peek at code elsewhere, such as a definition, a code view.                          |

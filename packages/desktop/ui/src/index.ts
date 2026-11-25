@@ -33,6 +33,13 @@ export {
 } from './Toast.tsx';
 export { HERE, KeyHelp, type KeyHelpProblem, type KeyHelpProps } from './KeyHelp.tsx';
 export { MORE_ACTIONS, MoreButton, openMenuUnder, type MoreButtonProps } from './MoreButton.tsx';
+export {
+  DISMISS,
+  DismissButton,
+  Offer,
+  type DismissButtonProps,
+  type OfferProps,
+} from './Dismiss.tsx';
 export { Palette, PaletteHint, type PaletteGroup, type PaletteProps } from './Palette.tsx';
 export {
   Banner,
@@ -171,6 +178,15 @@ export {
 export { reveal, scrollPane, type RevealBlock, type RevealOptions } from './reveal.ts';
 export { Steps, type StepItem, type StepsProps, type StepState } from './Steps.tsx';
 export { Mark, type MarkProps } from './Mark.tsx';
+export {
+  Glyphs,
+  Icon,
+  iconElement,
+  type GlyphsProps,
+  type IconProps,
+  type IconSize,
+} from './Icon.tsx';
+export type { IconName } from './icons.ts';
 export {
   SetupDone,
   SetupItem,

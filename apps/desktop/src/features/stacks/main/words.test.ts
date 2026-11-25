@@ -2,13 +2,21 @@
 // pull request asked about, over rozed-dev/e2e's recorded tree (#2 a → main, #3 b → a, #4 c → b,
 // #5 e → b and #6 d → main holding c).
 
-import type { Reason } from '@lo/stacks';
+import type { Plan, Reason } from '@lo/stacks';
 import { expect, it } from 'vitest';
 
 import { E2E, forestOf, recorded } from './test/support.ts';
 import { GithubError } from '@lo/github';
 
-import { causeOf, errorText, numbers, reasonsText, sentence } from './words.ts';
+import {
+  calloutKind,
+  calloutText,
+  causeOf,
+  errorText,
+  numbers,
+  reasonsText,
+  sentence,
+} from './words.ts';
 
 it('words every reason the core gives', async () => {
   const found = await recorded('stacks_e2e', E2E);
@@ -66,4 +74,22 @@ it('says why GitHub didn’t answer as every error does', () => {
   const offline = new GithubError({ kind: 'network', failure: 'offline', message: 'offline' });
   expect(causeOf(offline, 'octo').reason).toBe('Offline.');
   expect(causeOf(new Error('boom'), 'octo')).toEqual({ reason: null, details: 'Boom.' });
+});
+
+/** A plan over #2, #3 and #4 of `steps`. */
+function plan(steps: Plan['steps']): Plan {
+  return { root: 'main', path: [2, 3, 4], steps };
+}
+
+it('names which offer the stack’s tree makes of a plan, and says it: to convert a branch stack, or to add layers to the GitHub stack below them', () => {
+  const convert = plan([{ kind: 'createStack', prs: [2, 3, 4] }]);
+  const add = plan([{ kind: 'addToStack', stack: 59, prs: [4] }]);
+  expect([calloutKind(convert), calloutText(convert)]).toEqual([
+    'convert',
+    'This branch stack merges one layer at a time.',
+  ]);
+  expect([calloutKind(add), calloutText(add)]).toEqual([
+    'add',
+    '#4 isn’t in the GitHub stack below it.',
+  ]);
 });

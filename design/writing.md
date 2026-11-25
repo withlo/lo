@@ -209,7 +209,7 @@ item. Nor does “on screen”: write “this revision”, not “the revision o
 | Discard                   | Throw away text not yet sent: “Discard draft”.                                                                                                                                                     | Delete, Drop                                         |
 | Clear                     | Empty a store or a field: “Clear cache”.                                                                                                                                                           | Purge, Wipe                                          |
 | Reset                     | Put a setting back to its default: “Reset zoom”.                                                                                                                                                   | Restore, Revert, Actual size                         |
-| Dismiss                   | Put away a banner or a toast for good.                                                                                                                                                             | Hide, Close                                          |
+| Dismiss                   | Put away a banner or a toast for good. An offer’s asks where: “Dismiss for #264”, “Dismiss for this stack”, “Dismiss for all stacks”.                                                              | Hide, Close                                          |
 | Copy                      | To the clipboard: “Copy link”. The button reads “Copied” for 2 s.                                                                                                                                  | Yank                                                 |
 | Install                   | Put something on this computer: the `lo` command, the overview skill, a language server.                                                                                                           | Set up, Add                                          |
 | Sign in, Sign out         | “Sign in with GitHub…” is the one command, for any account. “Sign in again” after a sign-out. The noun is “sign-in”. Single sign-on alone keeps GitHub’s word: “Authorize on GitHub”.              | Log in, Add an account, Connect, Authorize           |
@@ -481,6 +481,8 @@ One row in Settings: a label, a description and a control.
 | Options     | One or two words each, and not repeated in the description.  | Dark · Light · System              |
 
 - **A group’s name** is one or two words: Appearance, Pull requests.
+- **An offer’s switch** names what’s offered: “Offer GitHub stacks”. Its row turns back on what
+  “Dismiss for all stacks” turned off.
 - **Never:** “Lo”, “This setting”, “Whether to”, “Controls”, “Lets you”, the default, the setting’s
   key.
 

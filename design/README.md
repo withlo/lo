@@ -110,6 +110,12 @@ Dark (Lo Glow Dark) is the default. Every color comes from `tokens.json` through
   post takes the post's whole width, set in `code-small`, in a list, a fold or an alert too, and
   only the text around it keeps to the measure. The timeline's column is up to `--lo-timeline-w`
   (856 px), so a code block of 100 columns fits beside its rail.
+- Text at a comment's size is a comment's prose, wherever it shows: a comment, a review, a
+  description, a comment's preview, a hover card's docs. Draw it with
+  `lo-prose lo-prose--comment read-comment`, spaced as GitHub spaces a comment: nothing above its
+  first block, 16 px between blocks, in a quote or an alert too, and under a heading, and 24 above a
+  heading. `lo-prose` alone is the overview's, a document with room around its sections, and never
+  right for a comment.
 - A column's width follows the pane it's in, never the window: size it from its own box
   (`@container`), not a media query or `vw`, since panes resize.
 - Code is `--lo-code-size` on a fixed `--lo-code-line` (12.5/20) so both sides of a diff share one
@@ -131,6 +137,27 @@ Dark (Lo Glow Dark) is the default. Every color comes from `tokens.json` through
   viewed mark, the stack rail, the overview marker, the outline and the status bar's items all use
   them. A spinner is a ball at work. Don't swap them for checkboxes or bars.
 - Don't add colored left-border stripes to cards, gradients, or shadows on things that don't float.
+
+## Icons
+
+Lo's icons come from one set, Lucide (`lucide`, ISC, pinned), drawn by `Icon` from `@lo/ui`. The
+mark isn't an icon.
+
+- `Icon` takes a `name` from `icons.ts`, the list of the Lucide icons Lo uses, and a `size`. To use
+  a new icon, add its name there. Nothing else imports `lucide`, and no component writes an `<svg>`
+  of its own: `lo/no-inline-icon` refuses one. A code view's own DOM takes `iconElement`. The files
+  whose icons are still drawn by hand are listed in `scripts/oxlint/svgs.ts`, which only shrinks.
+- Four sizes, each with its stroke in pixels: 12 px at 1.25 px beside `text-micro`, `text-small` and
+  in a key chip; 14 px at 1.25 px beside `text-ui`; 16 px at 1.5 px for an icon alone in a control
+  and beside titles and reading text; 24 px at 1.5 px in an empty state.
+- An icon takes its text's color. Alone it's `lo-icon`, or `lo-icon-muted` for file, folder and
+  secondary icons. Stroke only, round caps and joins: never filled, never two tones.
+- A character the fonts don't hold is an icon. Host Grotesk and Fragment Mono have no `⌘`, `⏎`, `→`,
+  `✓`, `⋯` or `↗`, and the system would draw each in another weight. `Glyphs` draws them, from
+  `glyphs.ts`. `· › … –` are in both fonts and stay text.
+- State is a ball, not an icon. Another brand's mark is that brand's own file, never redrawn.
+- An icon with no words beside it names itself: `label` on `Icon` for a mark, a tooltip for a
+  control.
 
 ## Controls
 
@@ -207,6 +234,14 @@ where the action's target is.
   letter. The diff bar is the revisions note, then a `HintRow` of Compare revisions and the view's
   own controls, 16 px apart: narrow, it drops the hint's chips, then the hint, so no two groups
   touch.
+- **A choice of two to four is one `SegmentedControl`,** never buttons or pills drawn by hand: the
+  header's view switch, the Files panel's Tree and Review order, the threads' filter, a comment
+  box's Write and Preview, and Settings' choices are all one. Its thumb slides to the segment
+  chosen, and the key that steps through them follows it. It's `md` in the header alone, and `sm`
+  everywhere else: a panel's toolbar, a box's head, a Settings row. While it can't be changed it's
+  `disabled`, and `why` is each segment's tooltip, as the Files panel's "Reading files…" is; its key
+  chip goes meanwhile, keeping its room. One thing on or off, as "Changed files only" is, stays a
+  toggle of its own.
 - **A segment can be its icon alone.** Where a `SegmentedControl` has to narrow, as a comment box's
   Write and Preview do, each segment's label holds its icon and its words, the words marked as a row
   that gives up marks them (`data-gives`). Give the segment its `name`, which a screen reader hears
@@ -419,6 +454,26 @@ A feature that needs set-up adds a step to the welcome flow and a row in Setting
   as ravi-k".
 - The welcome's steps, its buttons and its keys are in `AGENTS.md`, under "The welcome flow".
 
+## Offers
+
+Something Lo offers or advises unasked, such as converting a branch stack to a GitHub stack, sits on
+the control or panel it belongs to, and the reader can dismiss it, here or everywhere.
+
+- **It's an `Offer`:** its line, Dismiss at the line's end, and its command's button under it. An
+  offer that's a change to what's on screen, such as where a layer's diff starts, is a `Banner` with
+  `dismissChoices`.
+- **Dismiss asks where.** It opens the offer's menu, which its right-click opens too (a `notice`
+  target, in a `notice` scope: `useNoticeTarget`): "Dismiss for #264", or "Dismiss for this stack",
+  where the offer is tied to one pull request or stack, then "Dismiss for all stacks", or for all of
+  whatever it's about.
+- **"For all" turns off a setting,** which brings it back: a switch in Settings › Pull requests,
+  beside the other offers', labelled "Offer GitHub stacks". A dismissal for one pull request is kept
+  in the feature's own table, so it holds through restarts.
+- **Its keys are Dismiss's menu's.** `Tab` reaches Dismiss, and `⏎` or `⇧F10` there opens its menu,
+  whose rows run as any menu's do. The palette lists them too.
+- News keeps its one-press Dismiss: it's seen once and goes. A failure has no Dismiss: it stays
+  until it's fixed.
+
 ## Floating pieces
 
 Everything that floats over the window is one of these, from `packages/desktop/ui`. Each comes and
@@ -534,7 +589,8 @@ that floats.
   place isn't said again. The diff under the row keeps its rows still as a banner comes, by
   scrolling, unless that would put the cursor's row out of its top, as the first file's header at
   the top would go: then it stays at the top and its content moves down with the row. An action that
-  can be busy takes `busy` (`false` at rest) and `working`, as a `Button` does.
+  can be busy takes `busy` (`false` at rest) and `working`, as a `Button` does. A banner that offers
+  takes `dismissChoices`, and its Dismiss asks where (see [Offers](#offers)).
 
 Base UI's popup parts (dialog, menu, popover, tooltip, toast and the like) are imported only by
 these pieces. `ui:lint` runs `scripts/check-popups.ts`, which fails on an import anywhere else, so a
@@ -662,10 +718,10 @@ tokens. Their code is the source for how each one looks.
 
 | Group            | Components                                                                            |
 | ---------------- | ------------------------------------------------------------------------------------- |
-| Window           | PullRequestTab, TabBar, PRHeader, StatusBar, Banner                                   |
+| Window           | PullRequestTab, TabBar, PRHeader, StatusBar, Banner, Offer, DismissButton             |
 | Panels           | StackTree, FileTree                                                                   |
 | Controls         | Button, HintButton, MoreButton, CopyButton, Key, SegmentedControl, Switch, Input      |
-| Marks            | StatePill, Tag, Avatar, Marks                                                         |
+| Marks            | Icon, Glyphs, StatePill, Tag, Avatar, Marks                                           |
 | Floating         | Dialog, Popover, ContextMenu, Palette, Tooltip, ToastStack                            |
 | Motion and waits | Collapse, Swap, Loading, Skeleton, Spinner, LogoMotion, Problem, EmptyState           |
 | Review           | Thread, Diff, CodeView, CommentBox                                                    |
@@ -841,6 +897,7 @@ push is a revision, written r3) and the shape of each kind of message. Nothing h
 - Import a popup from Base UI in a feature.
 - Give an element a `title`: the tooltip is Lo's `Tooltip`.
 - Copy macOS-only window chrome, or assume `⌘` exists on Linux.
+- Write an `<svg>` icon in a component, or type a symbol the fonts don't hold.
 
 ## Where things are
 

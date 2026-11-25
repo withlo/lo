@@ -100,6 +100,20 @@ export interface BoxTarget {
   box: string;
 }
 
+/**
+ * Something Lo offers or advises unasked, such as the offer over a stack's tree to convert it to a
+ * GitHub stack, by its id (`stacks.convert`), in the tab it's shown in: what its Dismiss's menu
+ * acts on, there, whichever tab is on screen by the time it runs.
+ */
+export interface NoticeTarget {
+  kind: 'notice';
+  notice: string;
+  /** The tab it's shown in, by its id. */
+  tab: string;
+  /** The pull request it's about, by its number, where it's about one: "Dismiss for #84". */
+  pull?: number;
+}
+
 /** Nothing in particular: the command acts on the window or the review. */
 export interface NoTarget {
   kind: 'none';
@@ -115,6 +129,7 @@ export type Target =
   | TabTarget
   | RowTarget
   | BoxTarget
+  | NoticeTarget
   | NoTarget;
 
 export type TargetKind = Target['kind'];
@@ -133,6 +148,7 @@ export const targetKinds: readonly TargetKind[] = [
   'tab',
   'row',
   'box',
+  'notice',
   'none',
 ];
 
@@ -190,6 +206,7 @@ function derive(kind: TargetKind, target: Target): Target | undefined {
     case 'block':
     case 'tab':
     case 'row':
+    case 'notice':
       return undefined;
     default:
       kind satisfies never;
@@ -229,6 +246,11 @@ export function plainTarget(target: Target): Target {
       return { kind: 'row', row: target.row };
     case 'box':
       return { kind: 'box', box: target.box };
+    case 'notice': {
+      const notice: NoticeTarget = { kind: 'notice', notice: target.notice, tab: target.tab };
+      if (target.pull !== undefined) notice.pull = target.pull;
+      return notice;
+    }
     case 'none':
       return NO_TARGET;
     default:

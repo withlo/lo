@@ -117,6 +117,20 @@
 .lo-prose :where(th, td).n { text-align: right; font-variant-numeric: tabular-nums; }
 .lo-prose :where(th, td):last-child { padding-right: 0; }
 
+/*
+ * Prose at a comment's size (with `read-comment`): a comment, a review, a description, a comment's
+ * preview, a hover card's docs. Spaced as GitHub spaces a comment: nothing above the first thing
+ * in it or in anything in it, 16 px between blocks and under a heading, and 24 above a heading.
+ * A quote's and an alert's blocks are 16 px apart too, which the renderer's `comment-blocks`
+ * sets. Headings past the reading scale's two take its nearest.
+ */
+.lo-prose--comment > * + * { margin-top: 16px; }
+.lo-prose--comment :is(h1, h2, h3, h4, h5, h6) { margin: 24px 0 0; }
+.lo-prose--comment :is(h1, h2, h3, h4, h5, h6) + :not(h1, h2, h3, h4, h5, h6) { margin-top: 16px; }
+.lo-prose.lo-prose--comment :first-child { margin-top: 0; }
+.lo-prose--comment h1 { font: var(--lo-read-h2); letter-spacing: var(--lo-track-tight); text-wrap: balance; }
+.lo-prose--comment :is(h4, h5, h6) { font: inherit; font-weight: 650; }
+
 /* A defined term: dotted underline, definition on hover or focus */
 .lo-term {
   text-decoration: underline dotted;
