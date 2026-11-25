@@ -3,7 +3,7 @@
 // (two things, kept apart), a run's band, branches, merged and closed layers, the notes and the
 // offer, and that a pull request's text is only ever drawn as text.
 
-import type { MouseEvent } from 'react';
+import { act, type MouseEvent } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { buildCss, hasRule } from '../scripts/stylesheet.ts';
@@ -881,6 +881,22 @@ describe('StackTree', () => {
         offer && tree(host).compareDocumentPosition(offer) & Node.DOCUMENT_POSITION_PRECEDING,
       ).toBeTruthy();
     });
+  });
+
+  it('gives the tree focus as its callout leaves with focus in it, as once its offer is dismissed', async () => {
+    const offer = (
+      <button type="button" data-testid="offer">
+        Dismiss
+      </button>
+    );
+    const host = render(<StackTree {...props({ callout: offer })} />);
+    host.querySelector<HTMLButtonElement>('[data-testid="offer"]')?.focus();
+    expect(document.activeElement?.textContent).toBe('Dismiss');
+    rerender(host, <StackTree {...props()} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(document.activeElement).toBe(tree(host));
   });
 
   describe('text from pull requests', () => {

@@ -175,10 +175,13 @@ export default defineCommands('tab', {
     group: 'Tabs',
     keys: [],
   },
-  /** Dismisses the pull request's banner on screen, as its Dismiss does, where it has one. */
+  /**
+   * Dismisses the pull request's banner on screen, as its Dismiss does, where it has one: news for
+   * good, and an offer where the reader chooses, in its menu, which opens with its first row ready.
+   */
   dismissBanner: {
     label: 'Dismiss message',
-    description: 'The one under the pull request’s header, for good.',
+    description: 'The one under the pull request’s header. An offer asks where.',
     control: 'Dismiss on the banner under the pull request’s header',
     group: 'Tabs',
     keys: [],

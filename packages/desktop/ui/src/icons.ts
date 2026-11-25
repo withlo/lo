@@ -23,6 +23,7 @@ import {
   MessageSquareDot,
   MessagesSquare,
   Option,
+  X,
   type IconNode,
 } from 'lucide';
 
@@ -48,6 +49,7 @@ export const ICONS = {
   'message-square-dot': MessageSquareDot,
   'messages-square': MessagesSquare,
   option: Option,
+  x: X,
 } as const satisfies Readonly<Record<string, IconNode>>;
 
 /** The name of an icon Lo uses, as Lucide names it. */

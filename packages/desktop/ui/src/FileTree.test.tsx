@@ -52,7 +52,7 @@ function markup(): string {
     <FileTreePanel
       viewed={{ viewed: 1, total: 3 }}
       mode="tree"
-      reviewKeys={['t']}
+      modeKeys={['t']}
       changedOnly
       changedOnlyKeys={['f']}
       note="Only the changed files show."
@@ -126,20 +126,31 @@ describe('FileTree', () => {
     expect(c).not.toContain('thread');
   });
 
+  it('switches between the tree and review order with the one segmented control, its key after it', () => {
+    const html = markup();
+    expect(html).toContain('role="tablist" aria-label="File list"');
+    const [tree, review] = html.split('role="tab"').slice(1);
+    expect(tree).toContain('aria-selected="true"');
+    expect(review).toContain('aria-selected="false"');
+    expect(html).toMatch(/Review order<\/button><\/div><kbd[^>]*>t<\/kbd>/);
+  });
+
   it('dims the toolbar while the files are read, saying why, and keeps it reachable', () => {
     const html = renderToStaticMarkup(
       <FileTreePanel mode="tree" changedOnly={false} waiting>
         {null}
       </FileTreePanel>,
     );
-    const buttons = html.split('<button').slice(1);
-    expect(buttons).toHaveLength(3);
-    for (const button of buttons) {
+    const [tree, review, changedOnly, ...more] = html.split('<button').slice(1);
+    expect(more).toHaveLength(0);
+    for (const button of [tree, review, changedOnly]) {
       expect(button).toContain('aria-disabled="true"');
       expect(button).toContain('aria-description="Reading files…"');
       expect(button).not.toMatch(/\sdisabled=""/);
-      expect(button).not.toContain('tabindex="-1"');
     }
+    // The chosen segment is the switch's one stop in the tab order, as any segmented control's is.
+    expect(tree).toContain('tabindex="0"');
+    expect(changedOnly).not.toContain('tabindex="-1"');
   });
 
   it("only uses utilities that Lo's stylesheet has, so no spacing is silently dropped", async () => {
