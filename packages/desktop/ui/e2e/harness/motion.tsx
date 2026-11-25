@@ -8,6 +8,7 @@ import { Button } from '../../src/Button.tsx';
 import { Collapse } from '../../src/Collapse.tsx';
 import { ContextMenu, type ContextMenuAnchor } from '../../src/ContextMenu.tsx';
 import { Dialog, type DialogState } from '../../src/Dialog.tsx';
+import { Icon } from '../../src/Icon.tsx';
 import { Loading } from '../../src/Loading.tsx';
 import { LogoMotion, type LogoPlay } from '../../src/LogoMotion.tsx';
 import { motionReduced, setMotion } from '../../src/motion.ts';
@@ -86,9 +87,7 @@ function Scene() {
             hint="Next unread file"
             hintKeys={[']', 'f']}
           >
-            <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M6 3.5 10.5 8 6 12.5" />
-            </svg>
+            <Icon name="chevron-right" size={16} />
           </Button>
           <Button disabled>Open</Button>
           <Button variant="primary" disabled>
@@ -267,10 +266,7 @@ function Scene() {
             hintKeys={['y']}
             hintShortcut="y"
           >
-            <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-              <rect x="5.25" y="5.25" width="8" height="8" rx="1.5" />
-              <path d="M10.75 3.25V3a1.25 1.25 0 0 0-1.25-1.25h-6A1.25 1.25 0 0 0 2.25 3v6.5A1.25 1.25 0 0 0 3.5 10.75h.25" />
-            </svg>
+            <Icon name="file-code" size={16} />
           </Button>
         </div>
       </Dialog>

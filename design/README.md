@@ -156,9 +156,9 @@ mark isn't an icon.
 - A character the fonts don't hold is an icon. Host Grotesk and Fragment Mono have no `⌘`, `⏎`, `→`,
   `✓`, `⋯` or `↗`, and the system would draw each in another weight. `Key` draws a key's symbols and
   `Glyphs` the rest, from `glyphs.ts`, as `r1 → r3`; a code view's own DOM takes `glyphNodes`.
-  `Ticks`, `Tooltip` and `LinkButton` draw a string they're given through `Glyphs`. In a flex row,
-  put `Glyphs` in a `span`, so its string stays one run of text. `· › … –` are in both fonts and
-  stay text.
+  `Ticks`, `Tooltip`, `Toast` and `LinkButton` draw a string they're given through `Glyphs`. In a
+  flex row, put `Glyphs` in a `span`, so its string stays one run of text. `· › … –` are in both
+  fonts and stay text.
 - State is a ball, not an icon. Another brand's mark is that brand's own file, never redrawn.
 - An icon with no words beside it names itself: `label` on `Icon` for a mark, a tooltip for a
   control.

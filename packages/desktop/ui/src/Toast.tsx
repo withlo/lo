@@ -3,7 +3,7 @@ import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } 
 
 import { Button } from './Button.tsx';
 import { Collapse } from './Collapse.tsx';
-import { Icon } from './Icon.tsx';
+import { Glyphs, Icon } from './Icon.tsx';
 import type { IconName } from './icons.ts';
 import { Key } from './Key.tsx';
 import { useDetails } from './Problem.tsx';
@@ -44,13 +44,13 @@ export interface ToastProps {
   icon?: ReactNode;
   /**
    * What happened, in a few words: the result, never the name of a command. A toast that goes by
-   * itself is this one line.
+   * itself is this one line. A string is drawn through `Glyphs`, so `r1 → r3`'s arrow is an icon.
    */
   title: ReactNode;
   /**
    * More about it, for a toast that waits for the reader. Plain words wrap, anywhere a long path
-   * needs to, and show three lines at most; a body of its own markup, such as a command to copy,
-   * shows whole.
+   * needs to, and show three lines at most, through `Glyphs` as the title is; a body of its own
+   * markup, such as a command to copy, shows whole.
    */
   body?: ReactNode;
   /** Buttons for what to do about it, for a toast that waits for the reader. */
@@ -91,7 +91,9 @@ export function Toast({
   return (
     <div className="grid w-toast-w toast items-start rounded-md bg-bg-overlay text-fg shadow-pop text-ui">
       <span className={icon({ tone })}>{mark ?? <Icon name={ICONS[tone]} size={14} />}</span>
-      <div className="line-clamp-3 min-w-0 font-semibold wrap-anywhere">{title}</div>
+      <div className="line-clamp-3 min-w-0 font-semibold wrap-anywhere">
+        {typeof title === 'string' ? <Glyphs text={title} size={14} /> : title}
+      </div>
       {action !== undefined && (
         <Button size="sm" variant="ghost" onClick={action.onClick}>
           {action.label}
@@ -99,7 +101,9 @@ export function Toast({
         </Button>
       )}
       {body !== undefined && (
-        <div className={more({ plain: typeof body === 'string' })}>{body}</div>
+        <div className={more({ plain: typeof body === 'string' })}>
+          {typeof body === 'string' ? <Glyphs text={body} /> : body}
+        </div>
       )}
       {actions !== undefined && <div className="col-start-2 mt-8 flex gap-6">{actions}</div>}
       {details !== undefined && (
