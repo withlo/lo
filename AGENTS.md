@@ -1561,10 +1561,20 @@ The window shows an image from outside Lo only as `<img src="lo-image://…">`, 
 
 - `lo-image://post/<view>/<address>` is an image in a post, at an address on one of GitHub's image
   hosts (`@lo/markdown`'s `imageAddress`), fetched as the account the view `<view>` acts as.
-  `lo-image://avatar/<login>?s=<px>` is an account's avatar. Features build both with
-  `window/images.ts`; a bot or a team gets no address, and keeps its initials. Given where from
-  (`Markdown`'s `images`), the Markdown renderer loads a text's first 30 images, lazily, and shows
-  the rest, and any that fail, as links.
+  `lo-image://avatar/<login>?s=<px>` is a person's or an organization's avatar, and
+  `lo-image://bot/<slug>?s=<px>` a bot's, by its app's slug, as GraphQL names a bot. Features build
+  them with `window/images.ts`; a team, or any other account, gets no address, and keeps its
+  initials. Given where from (`Markdown`'s `images`), the Markdown renderer loads a text's first 30
+  images, lazily, and shows the rest, and any that fail, as links.
+- A bot's picture is its app's, which GitHub keeps at an address its login doesn't name
+  (`avatars.githubusercontent.com/in/<app id>`): the bot's login there is someone else's picture, or
+  a pattern. Main asks GitHub for the bot's account (`@lo/github`'s `botAvatar`,
+  `GET /users/<slug>[bot]`) once a run for each bot, as the first account signed in, or as nobody,
+  and fetches the picture its `avatar_url` gives, on the avatars' host alone.
+- An image is drawn as GitHub draws it: at the `width` and `height` the post gives it, its height
+  following its width, inline in its text, and never wider than the text. A `<picture>` with a
+  source for each `prefers-color-scheme` shows the one for Lo's theme: the window's color scheme
+  follows Lo's `theme` setting.
 - Main fetches each through Chromium's network stack, as it does GitHub's requests: over `https` on
   the default port with no user name, from GitHub's image hosts or `avatars.githubusercontent.com`,
   following at most 5 redirects, each to the same hosts, within 30 s and 16 MiB, 6 at once. On

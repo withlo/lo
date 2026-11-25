@@ -96,10 +96,11 @@ export interface Rendering<X extends Extension = Plain> {
    */
   readonly dir?: 'auto' | undefined;
   /**
-   * Where to load an image from: an address on Lo's image scheme, which main serves, or nothing to
-   * show the image as a link to it. Without this, every image is a link.
+   * Where to load `url`, one of image `node`'s addresses (its own, or its dark or light theme's),
+   * from: an address on Lo's image scheme, which main serves, or nothing to show the image as a
+   * link to it. Without this, every image is a link.
    */
-  readonly image?: ((node: Image) => string | undefined) | undefined;
+  readonly image?: ((node: Image, url: string) => string | undefined) | undefined;
   /**
    * The lines a suggested change in it replaces, where the tree doesn't say, as Markdown alone
    * doesn't: those the comment is on, as the diff shows them.
@@ -709,9 +710,24 @@ function drawInline<X extends Extension>(node: Inline<X>, r: Rendering<X>): Reac
         plain.alt === '' ? 'Image' : plain.alt,
         r,
       );
-      const src = r.image?.(plain);
-      if (src === undefined || !src.startsWith(IMAGE_SCHEME)) return link;
-      return <Picture key={src} src={src} alt={plain.alt} failed={link} />;
+      const served = (url: string | undefined) => {
+        const src = url === undefined ? undefined : r.image?.(plain, url);
+        return src?.startsWith(IMAGE_SCHEME) ? src : undefined;
+      };
+      const src = served(plain.url);
+      if (src === undefined) return link;
+      return (
+        <Picture
+          key={src}
+          src={src}
+          dark={served(plain.dark)}
+          light={served(plain.light)}
+          alt={plain.alt}
+          width={size(plain.width)}
+          height={size(plain.height)}
+          failed={link}
+        />
+      );
     }
     case 'break':
       return <br />;
@@ -744,22 +760,58 @@ function drawInline<X extends Extension>(node: Inline<X>, r: Rendering<X>): Reac
   }
 }
 
+/** A size as the tree gives one (`imageSize`): CSS pixels, or a percentage. */
+const SIZE = /^\d{1,6}(?:\.\d{1,4})?%?$/;
+
+/** `value` as an image's `width` or `height`, when it's a size. */
+function size(value: string | undefined): string | undefined {
+  return value !== undefined && SIZE.test(value) ? value : undefined;
+}
+
+/** What makes a picture follow Lo's theme: the window's color scheme is the theme Lo shows. */
+const DARK = '(prefers-color-scheme: dark)';
+const LIGHT = '(prefers-color-scheme: light)';
+
+interface PictureProps {
+  src: string;
+  /** Where it is in the dark theme, and the light, when the text gives one for each. */
+  dark?: string | undefined;
+  light?: string | undefined;
+  alt: string;
+  /** The size the text gives it, as GitHub draws it: never wider than the text it's in. */
+  width?: string | undefined;
+  height?: string | undefined;
+  failed: ReactNode;
+}
+
 /**
- * An image main serves, loaded once it's near the screen and decoded off the page's thread, or
- * `failed` in its place once it can't be.
+ * An image main serves, inline in its text, at the size the text gives it (its height following
+ * its width, unless only a height is given) and never wider than the text: loaded once it's near
+ * the screen, in the theme Lo shows, and decoded off the page's thread, or `failed` in its place
+ * once it can't be.
  */
-function Picture({ src, alt, failed }: { src: string; alt: string; failed: ReactNode }) {
+function Picture({ src, dark, light, alt, width, height, failed }: PictureProps) {
   const [broken, setBroken] = useState(false);
   if (broken) return failed;
-  return (
+  const image = (
     <img
       src={src}
       alt={alt}
+      width={width}
+      height={height}
       loading="lazy"
       decoding="async"
-      className="inline-block h-auto max-w-full align-bottom"
+      className={`inline-block max-w-full align-bottom ${height !== undefined && width === undefined ? '' : 'h-auto'}`.trim()}
       onError={() => setBroken(true)}
     />
+  );
+  if (dark === undefined && light === undefined) return image;
+  return (
+    <picture>
+      {dark !== undefined && <source media={DARK} srcSet={dark} />}
+      {light !== undefined && <source media={LIGHT} srcSet={light} />}
+      {image}
+    </picture>
   );
 }
 

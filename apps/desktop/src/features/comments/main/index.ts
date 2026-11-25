@@ -12,7 +12,7 @@
 // comments, uploaded as the window hands them over (`./uploads.ts`).
 
 import { parseOid } from '@lo/git';
-import { attachmentTarget } from '@lo/github';
+import { attachmentTarget, botAvatar } from '@lo/github';
 import { app, net, session } from 'electron';
 
 import { readImageAddress } from '../../../ipc/images.ts';
@@ -226,6 +226,17 @@ export default defineFeature(contract, {
       },
       async token(login) {
         return (await use(github).client(login)).token;
+      },
+      // A bot's account is public: it's asked for as the first account signed in, for its rate
+      // limit, or as nobody when none is.
+      async botAvatar(login) {
+        const access = use(github);
+        const signedIn = (await access.accounts()).find((state) => state.signedOut === undefined);
+        const client =
+          signedIn === undefined
+            ? access.anonymous
+            : await access.client(signedIn.account.login).catch(() => access.anonymous);
+        return botAvatar(client, login);
       },
     });
     stopServing = serveImages(

@@ -107,6 +107,11 @@ Dark (Lo Glow Dark) is the default. Every color comes from `tokens.json` through
 - Reading text has its own scale: `read-body` (15/24), `read-lead` (17/27, the tl;dr), `read-h2`
   (22/28, 800), `read-h3` (16/22, 700), `read-comment` (13.5/21). Keep reading lines under
   `--lo-read-measure` (680 px).
+- Text at a comment's size is a comment's prose, wherever it shows: a comment, a review, a
+  description, a comment's preview, a hover card's docs. Draw it with
+  `lo-prose lo-prose--comment read-comment`, spaced as GitHub spaces a comment: nothing above its
+  first block, 16 px between blocks and under a heading, and 24 above a heading. `lo-prose` alone is
+  the overview's, a document with room around its sections, and never right for a comment.
 - Code is `--lo-code-size` on a fixed `--lo-code-line` (12.5/20) so both sides of a diff share one
   row grid.
 - Use `font-variant-numeric: tabular-nums` (`.lo-num`) wherever digits line up: counts, line

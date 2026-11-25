@@ -68,6 +68,7 @@ const redirect = (location: string, status = 302) =>
 
 const post = (address: string, view = 'tab-1'): ImageAsked => ({ kind: 'post', view, address });
 const avatar = (login: string, size = 56): ImageAsked => ({ kind: 'avatar', login, size });
+const bot = (login: string, size = 56): ImageAsked => ({ kind: 'bot', login, size });
 
 interface Sent {
   url: string;
@@ -84,6 +85,8 @@ function images(
   options: {
     tokens?: Readonly<Record<string, string | undefined>>;
     limits?: Partial<ImageLimits>;
+    /** Where GitHub says each bot's avatar is, by its slug: a bot it has none for, it says nothing. */
+    bots?: (login: string) => Promise<string | undefined>;
   } = {},
 ) {
   const tokens = options.tokens ?? { octocat: TOKEN, hubot: OTHER };
@@ -107,6 +110,7 @@ function images(
       return Promise.resolve(token === undefined ? undefined : new Token(token));
     },
     limits: options.limits,
+    botAvatar: options.bots,
   });
   return { loader, sent, read };
 }
@@ -144,6 +148,76 @@ describe('Images', () => {
       },
     ]);
     expect(read).toEqual([]);
+  });
+
+  it("fetches a bot's avatar where GitHub says its app's picture is, asking once for each bot", async () => {
+    const asked: string[] = [];
+    const { loader, sent, read } = images(() => image(png(56, 56)), {
+      bots: (login) => {
+        asked.push(login);
+        return Promise.resolve('https://avatars.githubusercontent.com/in/1210556?v=4');
+      },
+    });
+    expect(await loader.load(bot('cursor'))).toMatchObject({ type: 'png' });
+    expect(await loader.load(bot('Cursor', 40))).toMatchObject({ type: 'png' });
+    expect(asked).toEqual(['cursor']);
+    expect(sent.map(({ url, authorization }) => ({ url, authorization }))).toEqual([
+      { url: 'https://avatars.githubusercontent.com/in/1210556?s=56', authorization: null },
+      { url: 'https://avatars.githubusercontent.com/in/1210556?s=40', authorization: null },
+    ]);
+    expect(read).toEqual([]);
+  });
+
+  it("refuses a bot's avatar GitHub puts anywhere but a picture on the avatars' host", async () => {
+    for (const given of [
+      undefined,
+      'https://avatars.githubusercontent.com/cursor',
+      'https://avatars.githubusercontent.com/in/',
+      'https://avatars.githubusercontent.com/in/0',
+      'https://avatars.githubusercontent.com/in/12/more',
+      'https://avatars.githubusercontent.com:444/in/12',
+      'http://avatars.githubusercontent.com/in/12',
+      'https://me@avatars.githubusercontent.com/in/12',
+      'https://example.com/in/12',
+      'not an address',
+    ]) {
+      const { loader, sent } = images(() => image(png()), {
+        bots: () => Promise.resolve(given),
+      });
+      expect(await refusal(loader.load(bot('cursor')))).toMatchObject({ reason: 'refused' });
+      expect(sent).toEqual([]);
+    }
+    // Without a way to ask GitHub, there's no bot's avatar.
+    const { loader } = images(() => image(png()));
+    expect(await refusal(loader.load(bot('cursor')))).toMatchObject({ reason: 'refused' });
+  });
+
+  it("asks GitHub again for a bot whose avatar it couldn't say", async () => {
+    let failing = true;
+    const { loader } = images(() => image(png()), {
+      bots: () =>
+        failing
+          ? Promise.reject(new Error('offline: a secret'))
+          : Promise.resolve('https://avatars.githubusercontent.com/u/9919?v=4'),
+    });
+    const failed = await refusal(loader.load(bot('github-merge-queue')));
+    expect(failed).toEqual({
+      reason: 'failed',
+      message: 'GitHub couldn’t say where github-merge-queue’s avatar is',
+    });
+    failing = false;
+    expect(await loader.load(bot('github-merge-queue'))).toMatchObject({ type: 'png' });
+  });
+
+  it("follows a bot's avatar's redirects only on the avatars' host", async () => {
+    const { loader } = images(
+      (url) =>
+        url.includes('/in/') ? redirect('https://camo.githubusercontent.com/a') : image(png()),
+      { bots: () => Promise.resolve('https://avatars.githubusercontent.com/in/15368') },
+    );
+    expect(await refusal(loader.load(bot('github-actions')))).toMatchObject({
+      reason: 'refused',
+    });
   });
 
   it("sends the view's account's token to an attachment's address alone, and follows it to the store without", async () => {
@@ -468,6 +542,9 @@ describe('Images', () => {
     expect(keyOf(post(signed))).toBe(`post nobody ${signed}`);
     expect(keyOf(avatar('Rozed-Bot'))).toBe(keyOf(avatar('rozed-bot')));
     expect(keyOf(avatar('rozed-bot', 40))).not.toBe(keyOf(avatar('rozed-bot', 56)));
+    // A bot's slug can be a person's login: their pictures are kept apart.
+    expect(keyOf(bot('cursor'))).not.toBe(keyOf(avatar('cursor')));
+    expect(keyOf(bot('Cursor'))).toBe(keyOf(bot('cursor')));
   });
 
   it('keeps at most its limit of bytes, dropping the image served longest ago', async () => {
