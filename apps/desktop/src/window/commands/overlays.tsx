@@ -21,6 +21,7 @@ import {
 import { onVim, plainKeys, vimOn } from '@lo/ui/code';
 import {
   CheckIcon,
+  EmptyState,
   HERE,
   Key,
   KeyHelp,
@@ -350,7 +351,7 @@ function CommandPalette({
           </span>
         </>
       )}
-      empty={`No commands match “${query}”`}
+      empty={<EmptyState fit="row" icon="search-x" title={`No commands match “${query}”`} />}
       foot={
         <>
           <span className="lo-num">

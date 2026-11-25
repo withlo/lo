@@ -314,14 +314,15 @@ never answered, the button is “Check again”, which only looks.
 
 ### Empty state
 
-A view or a list with nothing in it. `EmptyState` draws it, from the heading, the line and the
-commands ([README](README.md#empty-states)).
+A view or a list with nothing in it. `EmptyState` draws it, from the icon, the title, the line and
+the commands ([README](README.md#empty-states)).
 
-| Part    | Limit                                                                           | Example                                 |
-| ------- | ------------------------------------------------------------------------------- | --------------------------------------- |
-| Heading | Six words: what’s absent.                                                       | No pull requests yet                    |
-| Line    | One, optional: what will be listed, or why there’s nothing.                     | Pull requests you open are listed here. |
-| Buttons | Two at most, each a real command with its key. The first is the primary button. | Open pull request… `⌘L`                 |
+| Part    | Limit                                                                                  | Example                                 |
+| ------- | -------------------------------------------------------------------------------------- | --------------------------------------- |
+| Icon    | One: the thing that’s absent, or the search or filter with nothing left.               | `git-pull-request`                      |
+| Title   | Six words: what’s absent. Body text, never a heading.                                  | No pull requests yet                    |
+| Line    | One, optional: what will be listed, or why there’s nothing.                            | Pull requests you open are listed here. |
+| Buttons | Two at most, each a real command with its key. The first is the main button in a view. | Open pull request… `⌘L`                 |
 
 - **Offer the action here.** Never say where else it lives: “from the status bar”, “in the command
   palette”.
@@ -333,7 +334,7 @@ commands ([README](README.md#empty-states)).
 
 |         | Before                                                                                                      | After                                     |
 | ------- | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| Heading | No pull requests yet                                                                                        | No pull requests yet                      |
+| Title   | No pull requests yet                                                                                        | No pull requests yet                      |
 | Line    | Paste a link to a pull request. Every pull request you open, from any account, shows up here, newest first. | Pull requests you open are listed here.   |
 | Buttons | Review a pull request · Paste a link                                                                        | Open pull request… `⌘L` · Paste link `⌘V` |
 
@@ -656,7 +657,7 @@ More pairs, by the rule each one shows.
   paste this prompt into a coding agent, and it writes one and pushes it to refs/lo/pr/80. Open the
   PR again once it’s pushed to see it.
 - After:
-  - Heading: No overview yet
+  - Title: No overview yet
   - Line: A coding agent writes one from this prompt.
   - Button: Copy prompt
 

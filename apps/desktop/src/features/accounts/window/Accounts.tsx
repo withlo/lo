@@ -103,7 +103,12 @@ export function AccountsSection({ label, description }: { label: string; descrip
         </div>
       )}
       {accounts !== undefined && accounts.length === 0 ? (
-        <EmptyState level={3} title="No accounts" line="Public pull requests open without one." />
+        <EmptyState
+          fit="list"
+          icon="user-round"
+          title="No accounts"
+          line="Public pull requests open without one."
+        />
       ) : (
         <div role="list" aria-label="Accounts">
           {accounts?.map((account) => (

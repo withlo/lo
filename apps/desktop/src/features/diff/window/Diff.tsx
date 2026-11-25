@@ -14,7 +14,16 @@
 // What arrives after it's drawn goes into the view in place (`drawing.ts`). The tree follows the
 // file on screen, and asks the diff to show the files it picks.
 
-import { HintButton, Spinner, motionReduced, swapIn, whenSettled } from '@lo/ui';
+import {
+  EmptyState,
+  Glyphs,
+  HintButton,
+  Problem,
+  Spinner,
+  motionReduced,
+  swapIn,
+  whenSettled,
+} from '@lo/ui';
 import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 
@@ -28,9 +37,10 @@ import {
 import { useSetting } from '../../settings/window/shared.ts';
 import { MiddlePlaceholder, tabState, usePull, type PullTab } from '../../tab/window/shared.ts';
 import { holdTree, orderIn, useOrderMode } from '../../tree/window/shared.ts';
+import type { DiffProblem } from '../contract.ts';
 import { layout as layoutSetting, whitespace as whitespaceSetting } from '../settings.ts';
 import { draw, type DrawOptions, type Drawing, type Place } from './drawing.ts';
-import { inOrder, keepsBox, keptOrder, type KeptOrder, viewKey } from './files.ts';
+import { drawsView, inOrder, keepsBox, keptOrder, type KeptOrder, viewKey } from './files.ts';
 import { problemSays, type Snapshot } from './loader.ts';
 import { main } from './main.ts';
 import { usePage } from './page.ts';
@@ -171,7 +181,7 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
   // A tab that comes back on screen meanwhile draws the one it had again, held, from what the
   // loader kept of it. The next is drawn over it, unseen; once its editors have measured it, in the
   // next frame, it fades in over it in one Swap, and the bar's line and the tree change with it.
-  const drawable = key !== undefined && nonceValue !== undefined && settled;
+  const drawable = drawsView({ key, entries, nonce: nonceValue, settled });
   const want = drawable ? key : undefined;
   /** What the view on screen shows, held or not, by its key. */
   const [drawnKey, setDrawnKey] = useState<string>();
@@ -260,7 +270,12 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
   const pull = usePull(tab.id);
   const revisionsOf = useRevisions(tab.id);
   const said = waitingSays(snapshot, pull, revisionsOf);
-  const showsBox = keepsBox({ drawable, held: stale, said, waiting: snapshot.state?.waiting });
+  const showsBox = keepsBox({
+    drawable,
+    held: stale,
+    said: said?.text,
+    waiting: snapshot.state?.waiting,
+  });
   const holding = stale && showsBox;
   useLayoutEffect(() => {
     if (showsBox) return;
@@ -457,6 +472,15 @@ function ChangeJumps({ tab }: { tab: string }) {
 }
 
 /**
+ * Why the middle has no diff to draw, and what it says of it: what the diff waits for, that no file
+ * changed, or what couldn't be read. `text` is its words.
+ */
+type Said =
+  | { readonly kind: 'waiting'; readonly text: string }
+  | { readonly kind: 'none'; readonly text: string }
+  | { readonly kind: 'failed'; readonly text: string; readonly problem: DiffProblem };
+
+/**
  * What the middle says in place of the diff, when there's something to say: why there's nothing to
  * draw. Nothing while the diff is on its way, or while the tab hasn't opened, since the tab says
  * why it can't in place of its view.
@@ -465,25 +489,44 @@ function waitingSays(
   snapshot: Snapshot,
   pull: ReturnType<typeof usePull>,
   revisions: ReturnType<typeof useRevisions>,
-): string | undefined {
+): Said | undefined {
   const { state } = snapshot;
   if (!pull?.shown) return undefined;
-  if (state?.waiting) return state.waiting;
+  if (state?.waiting) return { kind: 'waiting', text: state.waiting };
   if (state?.files?.length === 0) {
     const ends = state.comparison === null ? undefined : comparedIn(revisions);
     const from = ends && (ends.from === null ? 'base' : revisionLabel(revisions, ends.from));
     const to = ends && revisionLabel(revisions, ends.to);
-    return from && to ? `No files changed in ${from} → ${to}` : 'No files changed';
+    const text = from && to ? `No files changed in ${from} → ${to}` : 'No files changed';
+    return { kind: 'none', text };
   }
-  if (state?.problem && state.files === null) return problemSays(state.problem);
+  if (state?.problem && state.files === null) {
+    return { kind: 'failed', text: problemSays(state.problem), problem: state.problem };
+  }
   return undefined;
+}
+
+/**
+ * Why the diff couldn't be read, as a failed view says it: the words of a read that failed, or,
+ * for changes over the limit, that the diff can't show, and why.
+ */
+function DiffFailed({ said }: { said: Extract<Said, { kind: 'failed' }> }) {
+  const large = said.problem.kind === 'tooLarge';
+  return (
+    <Problem
+      layout="view"
+      title={large ? 'Can’t show the diff' : said.text}
+      reason={large ? said.text : undefined}
+    />
+  );
 }
 
 /**
  * What the middle shows until the diff is drawn. While the tab opens and its files are read, it's
  * the tab's own wait, which this view carries on from whichever drew it before: one mark from the
- * tab opening until the diff is there, over what's read now. A diff with nothing to draw says why,
- * `said`. `threads` says the view has waited a while for its threads.
+ * tab opening until the diff is there, over what's read now, or what the diff waits for, as the
+ * local copy. A diff with nothing to draw says why, `said`: no files changed, or what couldn't be
+ * read. `threads` says the view has waited a while for its threads.
  */
 function Waiting({
   tab,
@@ -491,19 +534,28 @@ function Waiting({
   threads,
 }: {
   tab: PullTab;
-  said: string | undefined;
+  said: Said | undefined;
   threads: boolean;
 }) {
   const pull = usePull(tab.id);
-  if (said !== undefined) {
+  if (said?.kind === 'none') {
+    // A range of revisions reads with its arrow drawn as an icon: `r1 → r3`.
     return (
-      <div className="grid min-h-0 flex-1 place-items-center p-32 text-center text-fg-muted text-ui">
-        <p className="max-w-read-measure">{said}</p>
+      <div className="flex min-h-0 flex-1 flex-col">
+        <EmptyState icon="file-diff" title={<Glyphs text={said.text} size={14} />} />
+      </div>
+    );
+  }
+  if (said?.kind === 'failed') {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <DiffFailed said={said} />
       </div>
     );
   }
   let status: string | undefined;
-  if (pull?.shown) status = threads ? 'Reading review threads…' : 'Reading changed files…';
+  if (said?.kind === 'waiting') status = said.text;
+  else if (pull?.shown) status = threads ? 'Reading review threads…' : 'Reading changed files…';
   return (
     <div className="min-h-0 flex-1">
       <MiddlePlaceholder tab={tab} status={status} />
