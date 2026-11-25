@@ -1313,16 +1313,16 @@ set-up, and opening a pull request.
   play once each time the welcome opens: a step the reader comes back to draws the mark at rest.
 - **Keys.** Under the welcome the tab's view is `inert`, so no key or reader reaches it. The welcome
   is a form like Settings: its scope has `data-lo-tab="browser"`, so `Tab` walks its controls. `⏎`
-  is `welcome.continue`: it presses the button with focus, opens the link in the field once it holds
-  one, and anywhere else presses the step's main button, which is "Sign in with GitHub…" on the
-  first step until an account is signed in, "Open" on the last while the field holds a link, and
-  "Continue" or "Done" otherwise. The main button carries the `⏎` chip. `⏎` on a choice's card is
-  "Continue", since the arrows and `Space` choose. `⇧⏎` is `welcome.back`, whose control is "Back",
-  with its key in its tooltip. Every step is in the tree from the start, in one grid cell, so the
-  foot's buttons never move; the steps off screen are `inert`. "Continue" holds the room of its
-  label with its key in every state. The foot stays on screen: in a window too short for a step, the
-  steps scroll in a pane of their own above it, and what takes focus there comes into view with
-  `reveal()`.
+  is `welcome.continue`: it presses the button, switch or segment with focus, opens the link in the
+  field once it holds one, and anywhere else presses the step's main button, which is "Sign in with
+  GitHub…" on the first step until an account is signed in, "Open" on the last while the field holds
+  a link, and "Continue" or "Done" otherwise. The main button carries the `⏎` chip. `⏎` on a
+  choice's card is "Continue", since the arrows and `Space` choose. `⇧⏎` is `welcome.back`, whose
+  control is "Back", with its key in its tooltip. Every step is in the tree from the start, in one
+  grid cell, so the foot's buttons never move; the steps off screen are `inert`. "Continue" holds
+  the room of its label with its key in every state. The foot stays on screen: in a window too short
+  for a step, the steps scroll in a pane of their own above it, and what takes focus there comes
+  into view with `reveal()`.
 - **A feature that needs set-up** adds a row to the set-up step and a row in Settings. It doesn't
   put up a banner or a dialog of its own.
 

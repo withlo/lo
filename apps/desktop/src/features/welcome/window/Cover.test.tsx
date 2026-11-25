@@ -3,7 +3,7 @@
 // over which tab, how its steps are walked, and what each control asks of main and of other
 // features.
 
-import { CopyRoute, SetupItem } from '@lo/ui';
+import { CopyRoute, SegmentedControl, SetupItem, Switch } from '@lo/ui';
 import { holdRegistry } from '@lo/ui/commands';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -130,17 +130,40 @@ vi.mock('../../overview/window/shared.ts', async (actual) => ({
 }));
 
 // The overviews step's rows are the overview feature's and the tab feature's, each its own
-// setting's: stand-ins here, in the slot as each puts its row there.
+// setting's: stand-ins here, with the controls each has, in the slot as each puts its row there.
+const pressedRows = { toggled: [] as boolean[], chosen: [] as string[] };
 const ROWS = [
   defineView(overviewRows, {
     id: 'overview.onRow',
     order: 10,
-    render: () => <SetupItem title="Show overviews" description="Turn off to take them out." />,
+    render: () => (
+      <SetupItem title="Show overviews" description="Turn off to take them out.">
+        <Switch
+          checked
+          aria-label="Show overviews"
+          onCheckedChange={(next) => pressedRows.toggled.push(next)}
+        />
+      </SetupItem>
+    ),
   }),
   defineView(overviewRows, {
     id: 'tab.openOnRow',
     order: 20,
-    render: () => <SetupItem title="Open pull requests on" description="Where a tab opens." />,
+    render: () => (
+      <SetupItem title="Open pull requests on" description="Where a tab opens.">
+        <SegmentedControl
+          label="Open pull requests on"
+          kind="choice"
+          size="sm"
+          items={[
+            { value: 'overview', label: 'Overview' },
+            { value: 'timeline', label: 'Timeline' },
+          ]}
+          value="overview"
+          onChange={(next) => pressedRows.chosen.push(next)}
+        />
+      </SetupItem>
+    ),
   }),
 ];
 
@@ -598,6 +621,26 @@ describe('⏎', () => {
     expect(stepOnScreen()).toBe('keys');
     await settle();
     expect(bridge.calls.some(([channel]) => channel === 'settings.set')).toBe(false);
+  });
+
+  it('presses the switch or the segment with focus, and goes on from neither', async () => {
+    pressedRows.toggled.length = 0;
+    pressedRows.chosen.length = 0;
+    await first();
+    await goTo('overviews');
+    const toggle = onScreen().querySelector<HTMLElement>('[role="switch"]');
+    act(() => toggle?.focus());
+    expect(document.activeElement).toBe(toggle);
+    act(() => enter());
+    expect(pressedRows.toggled).toEqual([false]);
+    expect(stepOnScreen()).toBe('overviews');
+    const timeline = [...onScreen().querySelectorAll<HTMLElement>('[role="radio"]')].find(
+      (each) => each.textContent === 'Timeline',
+    );
+    act(() => timeline?.focus());
+    act(() => enter());
+    expect(pressedRows.chosen).toEqual(['timeline']);
+    expect(stepOnScreen()).toBe('overviews');
   });
 
   it('presses the button with focus instead', async () => {

@@ -28,12 +28,16 @@ export function touch(): void {
   if (!welcomeStore.getState().touched) welcomeStore.setState({ touched: true });
 }
 
+/** A choice's card, which is chosen by reaching it, with the arrows or `Space`. */
+const isCard = (element: Element) =>
+  element.getAttribute('role') === 'radio' && element.closest('[data-choices]') !== null;
+
 /**
- * `⏎` in the welcome: the button with focus does what it says, by being pressed, and the link
- * field, once it holds something, opens its link. With focus anywhere else, the empty link field
- * and a choice's card included, the step's main button is pressed, the one marked
- * `data-welcome-default`: a card is chosen by reaching it, with the arrows or `Space`, so `⏎` is
- * never its own. The practice's comment box keeps `⏎` to itself.
+ * `⏎` in the welcome: the button, switch or segment with focus does what it says, by being
+ * pressed, and the link field, once it holds something, opens its link. With focus anywhere else,
+ * the empty link field and a choice's card included, the step's main button is pressed, the one
+ * marked `data-welcome-default`: a card is chosen by reaching it, so `⏎` is never its own. The
+ * practice's comment box keeps `⏎` to itself.
  */
 export function enter(): void {
   touch();
@@ -41,7 +45,9 @@ export function enter(): void {
   if (screen?.contains(focused ?? null)) {
     // A comment box's keys are its own, buttons and all, as the registry has them there.
     if (focused?.closest('[data-lo-scope="box"]')) return;
-    if (focused instanceof HTMLButtonElement && focused.getAttribute('role') !== 'radio') {
+    const pressed =
+      focused instanceof HTMLButtonElement || focused?.getAttribute('role') === 'switch';
+    if (pressed && focused instanceof HTMLElement && !isCard(focused)) {
       focused.click();
       return;
     }
