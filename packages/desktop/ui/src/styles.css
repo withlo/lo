@@ -687,6 +687,21 @@
   scrollbar-gutter: stable;
 }
 
+/* A scrolling box whose column sits in its middle, as the welcome's steps do: the same room on both
+   sides for a scrollbar that takes room, so the column stays in the middle, in line with what's
+   under the box, whether the scrollbar shows or not. */
+@utility gutter-both {
+  scrollbar-gutter: stable both-edges;
+}
+
+/* A pane that brings what takes focus in it into view with `reveal()`, as the welcome's steps do:
+   what comes into view lands 8 px clear of the pane's edges, so its focus ring shows whole. */
+@utility reveal-room {
+  & * {
+    scroll-margin-block: var(--lo-sp-8);
+  }
+}
+
 /* Settings: the list of sections beside the sections. */
 @utility settings-page {
   display: grid;
@@ -709,6 +724,14 @@
   gap: var(--lo-sp-2) var(--lo-sp-12);
 }
 
+/* A row of the welcome's that's a setting: its name and line, and the control Settings has for it. */
+@utility setup-item-plain {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--lo-sp-2) var(--lo-sp-12);
+}
+
 /* A row of a list of pull requests, and its head: its icon, repository, title, account and when. */
 @utility list-columns {
   display: grid;
@@ -717,6 +740,13 @@
     var(--lo-list-when-w);
   align-items: center;
   gap: var(--lo-sp-12);
+}
+
+/* Cards drawn across (`Choices`'s `across`) share their row equally, each at least
+   `lo-choice-min-w` wide, and wrap to another row where it can't give each that, as at 200 % zoom
+   in the smallest window. */
+@utility choices-across {
+  grid-template-columns: repeat(auto-fit, minmax(min(var(--lo-choice-min-w), 100%), 1fr));
 }
 
 /* A chosen radio ball: Powder, with a ring of the surface inside its edge. */

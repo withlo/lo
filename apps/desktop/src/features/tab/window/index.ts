@@ -10,6 +10,7 @@ import { client } from '../../../window/ipc.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { contract as app } from '../../app/contract.ts';
 import { settingRow } from '../../settings/window/shared.ts';
+import { overviewRows } from '../../welcome/window/shared.ts';
 import { layerOf, viewIds, type Choice, type PlaceChoice, type Tab } from '../contract.ts';
 import keys from '../keys.ts';
 import { open as openOn } from '../settings.ts';
@@ -18,7 +19,7 @@ import { copyLocalPath, localShowable, showLocalCopy } from './localCopy.ts';
 import { main } from './main.ts';
 import { moreStore, setMoreOpen } from './more.ts';
 import { choosable, chooseAccount } from './Notes.tsx';
-import { OpenOnChoice, useOpenOnLine } from './OpenOn.tsx';
+import { OpenOnChoice, OpenOnRow, useOpenOnLine } from './OpenOn.tsx';
 import { blocked } from './banners.ts';
 import {
   drawable,
@@ -299,6 +300,12 @@ export default {
     }),
     // Settings › Pull requests, after whether overviews show (5).
     settingRow(openOn, { order: 10, control: OpenOnChoice, useLine: useOpenOnLine }),
+    // The welcome's step that says what an overview is, after whether there are overviews (10).
+    defineView(overviewRows, {
+      id: 'tab.openOnRow',
+      order: 20,
+      render: () => createElement(OpenOnRow),
+    }),
   ],
   start() {
     const tabs = main();

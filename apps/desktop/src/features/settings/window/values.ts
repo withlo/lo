@@ -97,17 +97,39 @@ export function refusalLine(
 }
 
 /**
+ * A setting as a control changes it: its value in what main said the file holds, how to write it,
+ * and what a sentence calls it. Settings' rows change their settings this way, and so does a
+ * screen that offers one of another feature's (`SettingChoice` in `shared.ts`).
+ */
+export interface Changing<T> {
+  /** Its value in `values`, what main said the file holds: its default where that has none. */
+  readonly valueIn: (values: Readonly<Record<string, unknown>> | undefined) => T;
+  /** Writes `value`, and resolves with why the file refused it, or `undefined` once written. */
+  readonly write: (value: T) => Promise<Refusal | undefined>;
+  /** What a sentence calls it: "the theme". */
+  readonly named: string;
+}
+
+/** `setting` as a control changes it. */
+export function changingOf<T>(setting: Setting<T>): Changing<T> {
+  return {
+    valueIn: (values) => valueIn(setting, values),
+    write: (value) => setValue(setting, value),
+    named: nameOf(setting),
+  };
+}
+
+/**
  * What a refusal is held against: the setting's value and what's wrong in the file. A row says a
  * refusal until either changes, since that may be what it was about.
  */
-export function refusalMark<T>(setting: Setting<T>): string {
+export function refusalMark<T>(setting: Pick<Changing<T>, 'valueIn'>): string {
   const settings = settingsStore.getState().settings;
-  return JSON.stringify([valueIn(setting, settings?.values), settings?.problems ?? []]);
+  return JSON.stringify([setting.valueIn(settings?.values), settings?.problems ?? []]);
 }
 
 /** {@link refusalMark} as a hook: it follows the value and the file's problems. */
-export function useRefusalMark<T>(setting: Setting<T>): string {
-  const value = useValue(setting);
-  const problems = useStore(settingsStore, (state) => state.settings?.problems);
-  return JSON.stringify([value, problems ?? []]);
+export function useRefusalMark<T>(setting: Pick<Changing<T>, 'valueIn'>): string {
+  const settings = useStore(settingsStore, (state) => state.settings);
+  return JSON.stringify([setting.valueIn(settings?.values), settings?.problems ?? []]);
 }

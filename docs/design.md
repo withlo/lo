@@ -1135,22 +1135,27 @@ screen a place with `⌃⇧PgUp` and `⌃⇧PgDn`; the tabs come back in that or
 Each panel opens and closes with a key. With no PR open, Lo shows the PRs you opened recently,
 across all accounts.
 
-On first launch, Lo shows a welcome: four steps, walked with "Continue", "Back" and "Skip", by mouse
-or with `⏎`. It opens by itself until it's finished or an account is signed in, and "Welcome to Lo"
-in the Help menu, the command palette and Settings opens it again.
+On first launch, Lo shows a welcome: six steps, walked with "Continue", "Back" and "Skip", by mouse
+or with `⏎` and `⇧⏎`. It opens by itself until it's finished or an account is signed in, and
+"Welcome to Lo" in the Help menu, the command palette and Settings opens it again.
 
 1. **An account.** The Lo mark, which unmelds once, a headline and a line on what Lo is for. "Sign
    in with GitHub…" (`⏎`) starts GitHub's device flow, and "Import from GitHub CLI" is there when
    `gh` is found. When Git is missing or too old, a notice says how to install it, with a "Check
    again" button that finds Git without restarting Lo.
-2. **Keys.** Standard keys or Vim keys for code and comment boxes, and a short diff to try `j`, `k`
+2. **The look.** The theme and the diff's layout, each a row of cards with a small drawing of what
+   it does. A card changes the setting as it's pressed, and Continue changes nothing.
+3. **Keys.** Standard keys or Vim keys for code and comment boxes, and a short diff to try `j`, `k`
    and `c` on. Nothing typed there is sent.
-3. **Set-up.** One row each, with its own button: installing the `lo` command, sending pull request
-   links from other apps to Lo, and installing the overview skill. Sending links opens a dialog with
-   ready-made rules for Finicky, Velja and Choosy to copy, and a link to the docs. Lo registers as a
-   link handler when it's installed, so the row registers nothing.
-4. **A pull request.** A field for a link, which opens public pull requests without an account, and
-   a sample pull request of Lo's own.
+4. **Overviews.** Two lines on what an overview is and who writes it, the top of one drawn at its
+   real size, and two rows: whether there are overviews, and which view a pull request opens on,
+   each as Settings has it. Focus starts on Continue, so `⏎` goes on.
+5. **Set-up.** One row each, with its own button: installing the `lo` command, sending pull request
+   links from other apps to Lo, and installing the overview skill while there are overviews. Sending
+   links opens a dialog with ready-made rules for Finicky, Velja and Choosy to copy, and a link to
+   the docs. Lo registers as a link handler when it's installed, so the row registers nothing.
+6. **A pull request.** A field for a link, which opens public pull requests without an account, and
+   a sample pull request of Lo's own, which says it has an overview while there are overviews.
 
 ### Settings
 

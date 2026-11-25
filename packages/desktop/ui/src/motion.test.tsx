@@ -4,7 +4,7 @@
 // dialog growing.
 
 import { act, useState } from 'react';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { missingRules } from '../test/classes.ts';
 import { cleanUp, click, render, rerender } from '../test/dom.ts';
@@ -17,6 +17,7 @@ import {
   motion,
   motionReduced,
   setMotion,
+  setTheme,
   useHeld,
   useMotionReduced,
   useOnClose,
@@ -58,6 +59,53 @@ describe('the one switch', () => {
     expect(host.textContent).toBe('moving');
     act(() => setMotion('reduce'));
     expect(host.textContent).toBe('still');
+  });
+});
+
+describe('a change of theme', () => {
+  it('holds every transition off for the frame that draws the new colors', () => {
+    const frames: (() => void)[] = [];
+    vi.stubGlobal('requestAnimationFrame', (next: () => void) => frames.push(next));
+    const root = document.documentElement;
+    setTheme('light');
+    expect(root.dataset.theme).toBe('light');
+    expect(root.hasAttribute('data-lo-theming')).toBe(true);
+    // The frame that draws the new colors, then the one after it.
+    frames.shift()?.();
+    expect(root.hasAttribute('data-lo-theming')).toBe(true);
+    frames.shift()?.();
+    expect(root.hasAttribute('data-lo-theming')).toBe(false);
+    // The theme it's in already changes nothing.
+    setTheme('light');
+    expect(root.hasAttribute('data-lo-theming')).toBe(false);
+    expect(frames).toEqual([]);
+  });
+
+  it('holds them off through a second change made before the first is over, as a held key makes', () => {
+    const frames = new Map<number, () => void>();
+    let last = 0;
+    vi.stubGlobal('requestAnimationFrame', (next: () => void) => {
+      last += 1;
+      frames.set(last, next);
+      return last;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (which: number) => frames.delete(which));
+    /** Runs the next frame's callback. */
+    const frame = () => {
+      const [next] = frames;
+      if (!next) throw new Error('No frame asked for.');
+      frames.delete(next[0]);
+      next[1]();
+    };
+    const root = document.documentElement;
+    setTheme('dark');
+    frame();
+    setTheme('light');
+    frame();
+    expect(root.hasAttribute('data-lo-theming')).toBe(true);
+    frame();
+    expect(root.hasAttribute('data-lo-theming')).toBe(false);
+    expect(frames.size).toBe(0);
   });
 });
 
@@ -273,6 +321,23 @@ const views = (value: 'overview' | 'diff') => (
   />
 );
 
+/** Where `element` is among its parent's children. */
+const at = (element: HTMLElement) => [...(element.parentElement?.children ?? [])].indexOf(element);
+
+/** What a pull request's tab opens on, with the views there. */
+const choice = (value: string, there: readonly string[]) => (
+  <SegmentedControl
+    label="Open pull requests on"
+    kind="choice"
+    items={there.map((each) => ({ value: each, label: each }))}
+    value={value}
+    onChange={() => {}}
+  />
+);
+
+/** The control's thumb. */
+const thumb = (host: HTMLElement) => host.querySelector<HTMLElement>('[aria-hidden="true"]');
+
 describe('a thumb', () => {
   it('watches its segments once, however often its caller draws them anew', () => {
     let watchers = 0;
@@ -293,6 +358,34 @@ describe('a thumb', () => {
     // Another segment chosen is measured afresh.
     rerender(host, views('diff'));
     expect(watchers).toBe(2);
+  });
+
+  it('slides to a segment chosen, and is put at once under one that stays as another leaves', () => {
+    // Each of the group's children 60 px wide, one after another, the thumb first.
+    const width = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(60);
+    const left = vi.spyOn(HTMLElement.prototype, 'offsetLeft', 'get').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return at(this) * 60;
+    });
+    onTestFinished(() => {
+      width.mockRestore();
+      left.mockRestore();
+    });
+    vi.stubGlobal('requestAnimationFrame', (next: () => void) => {
+      next();
+      return 0;
+    });
+    const host = render(choice('timeline', ['overview', 'timeline', 'diff']));
+    rerender(host, choice('diff', ['overview', 'timeline', 'diff']));
+    expect(thumb(host)?.classList.contains('move-slide')).toBe(true);
+    expect(thumb(host)?.style.translate).toBe('180px 0');
+    // Overview leaves: Diff moves left, and the thumb with it, in one frame.
+    rerender(host, choice('diff', ['timeline', 'diff']));
+    expect(thumb(host)?.classList.contains('move-slide')).toBe(false);
+    expect(thumb(host)?.style.translate).toBe('120px 0');
+    rerender(host, choice('timeline', ['timeline', 'diff']));
+    expect(thumb(host)?.classList.contains('move-slide')).toBe(true);
   });
 });
 

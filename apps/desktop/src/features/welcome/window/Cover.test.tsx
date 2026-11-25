@@ -3,17 +3,20 @@
 // over which tab, how its steps are walked, and what each control asks of main and of other
 // features.
 
-import { CopyRoute } from '@lo/ui';
+import { CopyRoute, SegmentedControl, SetupItem, Switch } from '@lo/ui';
+import { holdRegistry } from '@lo/ui/commands';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 
+import { IpcError } from '../../../ipc/contract.ts';
 import { notices } from '../../../window/commands/notices.tsx';
 import { createRegistry, focusMiddle } from '../../../window/commands/registry.ts';
-import { Slot, Slots } from '../../../window/slots.tsx';
+import { defineView, Slot, Slots } from '../../../window/slots.tsx';
 import { installBridge as install, type FakeBridge } from '../../../window/test/bridge.ts';
 import type { AccountSummary, GhAccount } from '../../accounts/contract.ts';
 import type { GitInfo } from '../../app/contract.ts';
+import type * as OverviewShared from '../../overview/window/shared.ts';
 import type * as TabShared from '../../tab/window/shared.ts';
 import { cover, dialogs, type Tab } from '../../tab/window/shared.ts';
 import { enter, setScreen, show } from './actions.ts';
@@ -21,6 +24,7 @@ import feature from './index.ts';
 import { SAMPLE } from './Open.tsx';
 import { practiceEscape } from './practice.ts';
 import { routers } from './routers.ts';
+import { overviewRows } from './shared.ts';
 import { welcomeStore, type Step } from './store.ts';
 
 const recent: Tab = { id: 'recent', kind: 'recent' };
@@ -101,6 +105,68 @@ vi.mock('../../tab/window/shared.ts', async (actual) => {
   };
 });
 
+// Whether there are overviews is the overview feature's, which the last step's sample follows.
+const overviewsOn = vi.hoisted(() => {
+  let on = true;
+  const listeners = new Set<() => void>();
+  return {
+    now: () => on,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    set(next: boolean) {
+      on = next;
+      for (const listener of listeners) listener();
+    },
+  };
+});
+
+vi.mock('../../overview/window/shared.ts', async (actual) => ({
+  ...(await actual<typeof OverviewShared>()),
+  overviews: { now: overviewsOn.now, subscribe: overviewsOn.subscribe },
+}));
+
+// The overviews step's rows are the overview feature's and the tab feature's, each its own
+// setting's: stand-ins here, with the controls each has, in the slot as each puts its row there.
+const pressedRows = { toggled: [] as boolean[], chosen: [] as string[] };
+const ROWS = [
+  defineView(overviewRows, {
+    id: 'overview.onRow',
+    order: 10,
+    render: () => (
+      <SetupItem title="Show overviews" description="Turn off to take them out.">
+        <Switch
+          checked
+          aria-label="Show overviews"
+          onCheckedChange={(next) => pressedRows.toggled.push(next)}
+        />
+      </SetupItem>
+    ),
+  }),
+  defineView(overviewRows, {
+    id: 'tab.openOnRow',
+    order: 20,
+    render: () => (
+      <SetupItem title="Open pull requests on" description="Where a tab opens.">
+        <SegmentedControl
+          label="Open pull requests on"
+          kind="choice"
+          size="sm"
+          items={[
+            { value: 'overview', label: 'Overview' },
+            { value: 'timeline', label: 'Timeline' },
+          ]}
+          value="overview"
+          onChange={(next) => pressedRows.chosen.push(next)}
+        />
+      </SetupItem>
+    ),
+  }),
+];
+
 /** Tells the welcome what accounts Lo has, as the accounts feature does. */
 function showAccounts(list: readonly AccountSummary[] | undefined): void {
   accounts.set(list);
@@ -131,7 +197,8 @@ beforeAll(() => {
     unobserve(): void {}
     disconnect(): void {}
   };
-  createRegistry(feature.commands ?? [], 'mac');
+  // The foot's Back is its command's control, as the window holds the registry for controls.
+  holdRegistry(createRegistry(feature.commands ?? [], 'mac'));
   // The features' clients keep the bridge they were made with, so there is one for the file.
   shared = install(answers);
 });
@@ -141,6 +208,7 @@ afterEach(() => {
   accounts.signIn.mockClear();
   accounts.importFromGh.mockClear();
   strip.set([], undefined);
+  overviewsOn.set(true);
   welcomeStore.setState({
     shown: false,
     open: false,
@@ -156,7 +224,7 @@ afterEach(() => {
     rules: false,
     linked: false,
     played: [],
-    choosing: undefined,
+    choosing: {},
   });
   setScreen(undefined);
 });
@@ -238,7 +306,7 @@ function render(tab: Tab = recent): Shown {
             return Promise.resolve();
           }}
         >
-          <Slots views={feature.views ?? []}>
+          <Slots views={[...(feature.views ?? []), ...ROWS]}>
             <main data-lo-middle tabIndex={-1}>
               <div id="under" tabIndex={0}>
                 Recent pull requests
@@ -419,15 +487,39 @@ describe('when it opens', () => {
 describe('walking it', () => {
   it('goes on with Continue and back with Back, and says where it is to a screen reader', async () => {
     await first();
-    expect(button('Back').disabled).toBe(true);
+    // Back is dimmed on the first step, with nothing to say: there's no step before.
+    expect(button('Back').getAttribute('aria-disabled')).toBe('true');
     click(button('Continue'));
-    expect(stepOnScreen()).toBe('keys');
+    expect(stepOnScreen()).toBe('look');
     // The dots' own region, beside them.
     expect(screen()?.querySelector('[role="img"] + [role="status"].sr-only')?.textContent).toBe(
-      'Step 2 of 4',
+      'Step 2 of 6',
     );
     click(button('Back'));
     expect(stepOnScreen()).toBe('account');
+  });
+
+  it('goes back with ⇧⏎, which has nothing to do on the first step', async () => {
+    await first();
+    const back = feature.commands?.find((command) => command.id === 'welcome.back');
+    expect(back?.handler?.enabled?.({ kind: 'none' })).toBe('');
+    await goTo('keys');
+    expect(back?.handler?.enabled?.({ kind: 'none' })).toBe(true);
+    act(() => {
+      void back?.handler?.run({ kind: 'none' });
+    });
+    expect(stepOnScreen()).toBe('look');
+  });
+
+  it('starts each step at its top, wherever the step before was scrolled to', async () => {
+    await first();
+    await goTo('look');
+    const pane = screen()?.firstElementChild;
+    if (!(pane instanceof HTMLElement)) throw new Error('No steps pane.');
+    pane.scrollTop = 120;
+    click(button('Continue'));
+    expect(stepOnScreen()).toBe('keys');
+    expect(pane.scrollTop).toBe(0);
   });
 
   it('marks the steps done, the one on screen and the rest, each drawn as its own', async () => {
@@ -437,6 +529,8 @@ describe('walking it', () => {
       ...(screen()?.querySelectorAll('[role="img"][aria-label^="Step"] > span') ?? []),
     ];
     expect(balls.map((ball) => ball.getAttribute('data-ball'))).toEqual([
+      'done',
+      'done',
       'done',
       'done',
       'here',
@@ -469,8 +563,18 @@ describe('walking it', () => {
     const signIn = button('Sign in with GitHub');
     expect(signIn.textContent).toBe('Sign in with GitHub…⏎');
     expect(document.activeElement).toBe(signIn);
+    await goTo('look');
+    // The theme's chosen card, so the arrows choose at once.
+    expect(document.activeElement?.getAttribute('role')).toBe('radio');
+    expect(document.activeElement?.closest('[role="radiogroup"]')?.getAttribute('aria-label')).toBe(
+      'Theme',
+    );
+    expect(document.activeElement?.getAttribute('aria-checked')).toBe('true');
     await goTo('keys');
     expect(document.activeElement?.getAttribute('aria-label')).toBe('Practice diff');
+    // Not the switch, so ⏎ never turns overviews off.
+    await goTo('overviews');
+    expect(document.activeElement).toBe(button('Continue'));
     await goTo('setup');
     expect(document.activeElement).toBe(button('Continue'));
     await goTo('open');
@@ -492,7 +596,11 @@ describe('⏎', () => {
 
   it('continues from the steps after, and is Done on the last with the link field empty', async () => {
     const { bridge } = await first();
-    await goTo('keys');
+    await goTo('look');
+    act(() => enter());
+    expect(stepOnScreen()).toBe('keys');
+    act(() => enter());
+    expect(stepOnScreen()).toBe('overviews');
     act(() => enter());
     expect(stepOnScreen()).toBe('setup');
     act(() => enter());
@@ -502,6 +610,37 @@ describe('⏎', () => {
     await settle();
     expect(screen()).toBeNull();
     expect(bridge.calls).toContainEqual(['welcome.finish', undefined]);
+  });
+
+  it('continues from a card with focus, which the arrows and Space choose', async () => {
+    const { bridge } = await first();
+    await goTo('look');
+    const card = document.activeElement;
+    expect(card?.getAttribute('role')).toBe('radio');
+    act(() => enter());
+    expect(stepOnScreen()).toBe('keys');
+    await settle();
+    expect(bridge.calls.some(([channel]) => channel === 'settings.set')).toBe(false);
+  });
+
+  it('presses the switch or the segment with focus, and goes on from neither', async () => {
+    pressedRows.toggled.length = 0;
+    pressedRows.chosen.length = 0;
+    await first();
+    await goTo('overviews');
+    const toggle = onScreen().querySelector<HTMLElement>('[role="switch"]');
+    act(() => toggle?.focus());
+    expect(document.activeElement).toBe(toggle);
+    act(() => enter());
+    expect(pressedRows.toggled).toEqual([false]);
+    expect(stepOnScreen()).toBe('overviews');
+    const timeline = [...onScreen().querySelectorAll<HTMLElement>('[role="radio"]')].find(
+      (each) => each.textContent === 'Timeline',
+    );
+    act(() => timeline?.focus());
+    act(() => enter());
+    expect(pressedRows.chosen).toEqual(['timeline']);
+    expect(stepOnScreen()).toBe('overviews');
   });
 
   it('presses the button with focus instead', async () => {
@@ -622,6 +761,134 @@ describe('the first step', () => {
   });
 });
 
+/** The look step's groups of cards, by name, each with its cards' names and which is chosen. */
+function groups(): { name: string | null; cards: string[]; chosen: string | undefined }[] {
+  return [...onScreen().querySelectorAll('[role="radiogroup"]')].map((group) => {
+    const cards = [...group.querySelectorAll('[role="radio"]')];
+    return {
+      name: group.getAttribute('aria-label'),
+      cards: cards.map((card) => card.textContent),
+      chosen: cards.find((card) => card.getAttribute('aria-checked') === 'true')?.textContent,
+    };
+  });
+}
+
+/** Presses `key` where focus is, as a person does. */
+function pressKey(key: string): void {
+  act(() => {
+    document.activeElement?.dispatchEvent(
+      new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }),
+    );
+  });
+}
+
+/** The card with focus: its group's name and its own. */
+const focused = () => ({
+  group: document.activeElement?.closest('[role="radiogroup"]')?.getAttribute('aria-label'),
+  card: document.activeElement?.textContent,
+});
+
+/** What the window asked main to write to the settings file, in order. */
+const writes = (bridge: FakeBridge) =>
+  bridge.calls.filter(([channel]) => channel === 'settings.set').map(([, input]) => input);
+
+describe('the look step', () => {
+  it('offers the theme and the diff’s layout as cards, named by their settings, with their places', async () => {
+    await first();
+    await goTo('look');
+    expect(onScreen().querySelector('h1')?.textContent).toBe('Choose how Lo looks');
+    expect(onScreen().textContent).toContain('Each choice takes effect at once.');
+    // Nothing on file: each setting's default is chosen.
+    expect(groups()).toEqual([
+      { name: 'Theme', cards: ['Dark', 'Light', 'System'], chosen: 'System' },
+      { name: 'Diff layout', cards: ['Side by side', 'Inline'], chosen: 'Side by side' },
+    ]);
+    expect(onScreen().textContent).toContain('Settings › Appearance');
+    expect(onScreen().textContent).toContain('Settings › Pull requests');
+    // Each card has its picture, which a screen reader skips.
+    const pictures = onScreen().querySelectorAll('[role="radio"] [aria-hidden="true"].rounded-sm');
+    expect(pictures).toHaveLength(5);
+  });
+
+  it('writes a card as it’s pressed, showing it until the file has it', async () => {
+    const landing: (() => void)[] = [];
+    const { bridge } = await first({
+      'settings.set': () =>
+        new Promise<void>((resolve) => {
+          landing.push(resolve);
+        }),
+    });
+    await goTo('look');
+    const light = [...onScreen().querySelectorAll('[role="radio"]')][1];
+    click(light ?? document.body);
+    expect(groups()[0]?.chosen).toBe('Light');
+    await settle();
+    expect(writes(bridge)).toEqual([{ key: 'theme', value: 'light' }]);
+    expect(welcomeStore.getState().choosing).toEqual({ theme: 'light' });
+    for (const land of landing) land();
+    await settle();
+    expect(welcomeStore.getState().choosing).toEqual({});
+  });
+
+  it('chooses along a group with ← and →, and goes between groups with ↑ and ↓, choosing nothing', async () => {
+    const { bridge } = await first({ 'settings.set': () => undefined });
+    await goTo('look');
+    expect(focused()).toEqual({ group: 'Theme', card: 'System' });
+    // Round the end, to the first.
+    pressKey('l');
+    expect(focused()).toEqual({ group: 'Theme', card: 'Dark' });
+    expect(groups()[0]?.chosen).toBe('Dark');
+    pressKey('ArrowLeft');
+    expect(focused()).toEqual({ group: 'Theme', card: 'System' });
+    await settle();
+    pressKey('j');
+    expect(focused()).toEqual({ group: 'Diff layout', card: 'Side by side' });
+    // Nothing past the last group.
+    pressKey('ArrowDown');
+    expect(focused()).toEqual({ group: 'Diff layout', card: 'Side by side' });
+    pressKey('k');
+    expect(focused()).toEqual({ group: 'Theme', card: 'System' });
+    pressKey('ArrowUp');
+    expect(focused()).toEqual({ group: 'Theme', card: 'System' });
+    await settle();
+    expect(writes(bridge)).toEqual([
+      { key: 'theme', value: 'dark' },
+      { key: 'theme', value: 'system' },
+    ]);
+  });
+
+  it('writes the default’s card as it’s pressed while the file holds no theme Lo knows', async () => {
+    // Main hasn't said what the file holds: System is shown, but nothing is on file.
+    const { bridge } = await first({ 'settings.set': () => undefined });
+    await goTo('look');
+    const system = [...onScreen().querySelectorAll('[role="radio"]')][2];
+    expect(system?.getAttribute('aria-checked')).toBe('true');
+    click(system ?? document.body);
+    await settle();
+    expect(writes(bridge)).toEqual([{ key: 'theme', value: 'system' }]);
+  });
+
+  it('says under the group why the file refused a card, with no toast, and shows what’s on file', async () => {
+    await first({
+      'settings.set': () => {
+        throw new IpcError('settingsFile', 'The settings file isn’t valid JSON.');
+      },
+    });
+    await goTo('look');
+    const inline = [...onScreen().querySelectorAll('[role="radio"]')][4];
+    click(inline ?? document.body);
+    await settle();
+    const alert = onScreen().querySelector('[role="alert"]');
+    expect(alert?.querySelector('p')?.textContent).toBe('Couldn’t change the diff layout');
+    expect(alert?.textContent).toContain('The settings file isn’t valid JSON.');
+    expect(button('Open settings.json', onScreen())).toBeDefined();
+    // Under the diff's layout, not the theme.
+    expect(alert?.closest('[role="radiogroup"]')).toBeNull();
+    expect(groups()[1]?.chosen).toBe('Side by side');
+    expect(notices()).toEqual([]);
+  });
+});
+
 /** Presses `key` on the practice diff. */
 function press(key: string): void {
   const lines = onScreen().querySelector('[role="listbox"]');
@@ -668,7 +935,7 @@ describe('the keys step', () => {
     for (const land of landing) land();
     await settle();
     await settle();
-    expect(welcomeStore.getState().choosing).toBeUndefined();
+    expect(welcomeStore.getState().choosing).toEqual({});
     expect(checked()).toEqual(['true', 'false']);
   });
 
@@ -718,6 +985,51 @@ describe('the keys step', () => {
     expect(bridge.calls).toHaveLength(before);
     // With no box open, Esc is the window's again.
     expect(practiceEscape()).toBeUndefined();
+  });
+});
+
+describe('the overviews step', () => {
+  it('says what an overview is in two lines, over the top of one and the rows of its settings', async () => {
+    const { bridge } = await first();
+    await goTo('overviews');
+    const heading = onScreen().querySelector('h1');
+    expect(heading?.textContent).toBe('An overview explains a pull request');
+    const said = heading?.parentElement?.nextElementSibling;
+    expect(said?.textContent).toBe(
+      'A document that comes with a pull request. It says what changed and where to look.' +
+        'A coding agent writes it. The overview skill teaches Claude Code and Codex how.',
+    );
+    expect(said?.querySelectorAll('br')).toHaveLength(1);
+    // The example: heard as what it shows, and nothing in it reached.
+    const example = onScreen().querySelector('[role="img"]');
+    expect(example?.getAttribute('aria-label')).toBe(
+      'An overview: a heading, a sentence about the change with a link into the code, and the lines that changed in parser.ts',
+    );
+    expect(example?.firstElementChild?.hasAttribute('inert')).toBe(true);
+    expect(example?.querySelector('h2')?.textContent).toBe('tl;dr');
+    expect(example?.querySelector('.lo-lead')?.textContent).toBe(
+      String.raw`The parser now splits on \r\n as well as \n, so a file saved on Windows reads as the same lines.`,
+    );
+    expect(example?.querySelector('.lo-lead a')?.textContent).toBe('The parser');
+    expect(example?.querySelector('.lo-codeblock__head')?.textContent).toBe('src/parser.ts:9');
+    const code = [...(example?.querySelectorAll('.whitespace-pre') ?? [])];
+    expect(code.map((each) => each.textContent)).toEqual([
+      String.raw`  return input.split('\n').map(toLine);`,
+      String.raw`  return input.split(/\r?\n/).map(toLine);`,
+      '}',
+    ]);
+    // Each feature's row, in its order, in a list the heading names.
+    const list = onScreen().querySelector('ul');
+    expect(list?.getAttribute('aria-labelledby')).toBe(heading?.id);
+    expect(
+      [...(list?.querySelectorAll('li') ?? [])].map(
+        (row) => row.querySelector('.text-ui-strong')?.textContent,
+      ),
+    ).toEqual(['Show overviews', 'Open pull requests on']);
+    expect(list?.nextElementSibling?.textContent).toBe(
+      'Both are also in Settings › Pull requests.',
+    );
+    expect(bridge.calls.some(([channel]) => channel === 'settings.set')).toBe(false);
   });
 });
 
@@ -940,9 +1252,19 @@ describe('opening a pull request', () => {
     });
     await goTo('open');
     const sample = onScreen().querySelector('ul[aria-label="Sample pull request"] > li');
-    expect(sample?.textContent).toContain('withlo/lo#182');
+    expect(sample?.querySelector('.text-small')?.textContent).toBe(
+      'withlo/lo#182 · has an overview',
+    );
     click(button('Open', sample ?? document));
     await settle();
     expect(bridge.calls).toContainEqual(['open.open', { text: SAMPLE.link }]);
+  });
+
+  it('leaves out that the sample has an overview while overviews are off', async () => {
+    await first();
+    await goTo('open');
+    act(() => overviewsOn.set(false));
+    const sample = onScreen().querySelector('ul[aria-label="Sample pull request"] > li');
+    expect(sample?.querySelector('.text-small')?.textContent).toBe('withlo/lo#182');
   });
 });
