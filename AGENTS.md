@@ -985,15 +985,16 @@ Main follows each pull request's tab through `tab.tabs` (`pull`, `onPull` and `c
   (`SharedPullFiles`, through `poller.pullFiles`, or `anonymousPullFiles` as nobody), kept 30 s, and
   only while one of them still wants them when a page's turn comes. While their tab is on screen,
   they go first if the diff is its view on screen, as the window says (`diff.shown`), else right
-  after the reads that view waits on first, ahead of polls (`next`), for the Files panel; they move
-  up if the diff comes on screen while they wait. A tree GitHub lists only in part, or one that
-  couldn't be read, leaves the changed files alone, saying why. What the copy says replaces what
-  GitHub said, and a new head on screen starts again. A stack's layer compared with the layer below
-  lists what changed from GitHub's comparison of the two commits (`readComparison`), 300 files at
-  most, until the copy has worked out where the head meets that commit, and the pull request's own
-  files when GitHub can't compare them, without asking again. A new start reads what changed again,
-  and keeps the files. GitHub is asked only about a head it gave, never one restored from what Lo
-  saved, and a read that fails is tried again after 5 s, doubling to 5 minutes.
+  after the reads that view waits on first, ahead of polls (`next`), while the Files panel is drawn
+  (`tree.shown`), else in their turn; they move up if the diff, or the panel, comes on screen while
+  they wait. A tree GitHub lists only in part, or one that couldn't be read, leaves the changed
+  files alone, saying why. What the copy says replaces what GitHub said, and a new head on screen
+  starts again. A stack's layer compared with the layer below lists what changed from GitHub's
+  comparison of the two commits (`readComparison`), 300 files at most, until the copy has worked out
+  where the head meets that commit, and the pull request's own files when GitHub can't compare them,
+  without asking again. A new start reads what changed again, and keeps the files. GitHub is asked
+  only about a head it gave, never one restored from what Lo saved, and a read that fails is tried
+  again after 5 s, doubling to 5 minutes.
 - Up to 20,000 files go to the window whole, on `tree.state`. Past that, main sends the root's
   entries, and the window asks for each folder's (`tree.folder`) as it opens one, 500 folders a
   request at most. Past 500,000, the tree shows only the changed files.

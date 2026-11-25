@@ -567,7 +567,9 @@ export class TreeTab {
    * The files `at`'s pull request changes, as GitHub lists them: for a stack's layer compared with
    * another commit, those GitHub's comparison with it lists, or the pull request's own once GitHub
    * couldn't compare them, as when it no longer has the commit, as the local copy does then.
-   * Nothing once `at` is no longer the tree on screen when the request's turn comes.
+   * Once `at` is no longer the tree on screen when a request's turn comes: nothing for the
+   * comparison, and for the pull request's files a rejection with `FilesUnwanted`, as their read
+   * stops, unless someone else still wants them.
    */
   async #changedOnGithub(
     at: At,
