@@ -14,6 +14,7 @@ import {
   mayFetch,
   type ImageLimits,
 } from './images.ts';
+import { BotPictures } from './bots.ts';
 
 /** Stand-in tokens, shaped like one: octocat's, and hubot's. */
 const TOKEN = 'gho_FAKEVIEWTOKENFAKEVIEWTOKENFAKEVIEWTOK';
@@ -68,6 +69,7 @@ const redirect = (location: string, status = 302) =>
 
 const post = (address: string, view = 'tab-1'): ImageAsked => ({ kind: 'post', view, address });
 const avatar = (login: string, size = 56): ImageAsked => ({ kind: 'avatar', login, size });
+const bot = (login: string, size = 56): ImageAsked => ({ kind: 'bot', login, size });
 
 interface Sent {
   url: string;
@@ -84,13 +86,27 @@ function images(
   options: {
     tokens?: Readonly<Record<string, string | undefined>>;
     limits?: Partial<ImageLimits>;
+    /** Where GitHub says each bot's avatar is, by its slug: a bot it has none for, it says nothing. */
+    bots?: (login: string) => Promise<string | undefined>;
   } = {},
 ) {
   const tokens = options.tokens ?? { octocat: TOKEN, hubot: OTHER };
   const sent: Sent[] = [];
   const read: string[] = [];
+  const ask = options.bots;
+  const bots =
+    ask === undefined
+      ? undefined
+      : new BotPictures({
+          ask: async (login) => {
+            const given = await ask(login);
+            return given === undefined ? { kind: 'none' } : { kind: 'found', avatar: given };
+          },
+        });
   const loader = new Images({
     fetch: async (input, init) => {
+      // As fetch does, a request past its deadline isn't sent.
+      init?.signal?.throwIfAborted();
       const request = new Request(input, init);
       const one = {
         url: request.url,
@@ -107,6 +123,7 @@ function images(
       return Promise.resolve(token === undefined ? undefined : new Token(token));
     },
     limits: options.limits,
+    botPicture: bots === undefined ? undefined : (login) => bots.picture(login),
   });
   return { loader, sent, read };
 }
@@ -120,6 +137,18 @@ const attachment = (url: string, { authorization }: Sent) => {
 };
 
 const NOT_FOUND = { reason: 'failed', message: 'github.com answered 404' };
+
+/**
+ * Lets what's under way go on, a turn of the event loop at a time, until `done` says it has, or
+ * fails the test after 100 turns.
+ */
+async function until(done: () => boolean): Promise<void> {
+  for (let turns = 0; turns < 100; turns++) {
+    await new Promise((resolve) => setImmediate(resolve));
+    if (done()) return;
+  }
+  throw new Error('it never happened');
+}
 
 /** Why `loading` failed. */
 async function refusal(loading: Promise<unknown>): Promise<{ reason: string; message: string }> {
@@ -144,6 +173,74 @@ describe('Images', () => {
       },
     ]);
     expect(read).toEqual([]);
+  });
+
+  it("fetches a bot's avatar where GitHub says its app's picture is, asking once for each bot", async () => {
+    const asked: string[] = [];
+    const { loader, sent, read } = images(() => image(png(56, 56)), {
+      bots: (login) => {
+        asked.push(login);
+        return Promise.resolve('https://avatars.githubusercontent.com/in/1210556?v=4');
+      },
+    });
+    expect(await loader.load(bot('cursor'))).toMatchObject({ type: 'png' });
+    expect(await loader.load(bot('Cursor', 40))).toMatchObject({ type: 'png' });
+    expect(asked).toEqual(['cursor']);
+    expect(sent.map(({ url, authorization }) => ({ url, authorization }))).toEqual([
+      { url: 'https://avatars.githubusercontent.com/in/1210556?s=56', authorization: null },
+      { url: 'https://avatars.githubusercontent.com/in/1210556?s=40', authorization: null },
+    ]);
+    expect(read).toEqual([]);
+  });
+
+  it("refuses a bot's avatar GitHub has no picture for on the avatars' host", async () => {
+    for (const given of [undefined, 'https://example.com/in/12']) {
+      const { loader, sent } = images(() => image(png()), {
+        bots: () => Promise.resolve(given),
+      });
+      expect(await refusal(loader.load(bot('cursor')))).toMatchObject({ reason: 'refused' });
+      expect(sent).toEqual([]);
+    }
+    // Without a way to ask GitHub, there's no bot's avatar.
+    const { loader } = images(() => image(png()));
+    expect(await refusal(loader.load(bot('cursor')))).toMatchObject({ reason: 'refused' });
+  });
+
+  it("asks GitHub where a bot's picture is before the picture's turn, which starts its time", async () => {
+    const answers: ((avatar: string) => void)[] = [];
+    const held: ((response: Response) => void)[] = [];
+    const { loader, sent } = images(() => new Promise<Response>((resolve) => held.push(resolve)), {
+      limits: { fetching: 1 },
+      bots: () => new Promise((resolve) => answers.push(resolve)),
+    });
+    // A post's image holds the one turn there is, and GitHub is asked about the bot meanwhile.
+    const first = loader.load(post(CAMO));
+    const cursor = loader.load(bot('cursor'));
+    await until(() => held.length === 1 && answers.length === 1);
+    answers[0]?.('https://avatars.githubusercontent.com/in/1210556');
+    await until(() => true);
+    // The picture's address is known, and the picture still waits its turn.
+    expect(sent.map(({ url }) => url)).toEqual([CAMO]);
+    held[0]?.(image(png()));
+    await first;
+    await until(() => held.length === 2);
+    expect(sent.map(({ url }) => url)).toEqual([
+      CAMO,
+      'https://avatars.githubusercontent.com/in/1210556?s=56',
+    ]);
+    held[1]?.(image(png()));
+    expect(await cursor).toMatchObject({ type: 'png' });
+  });
+
+  it("follows a bot's avatar's redirects only on the avatars' host", async () => {
+    const { loader } = images(
+      (url) =>
+        url.includes('/in/') ? redirect('https://camo.githubusercontent.com/a') : image(png()),
+      { bots: () => Promise.resolve('https://avatars.githubusercontent.com/in/15368') },
+    );
+    expect(await refusal(loader.load(bot('github-actions')))).toMatchObject({
+      reason: 'refused',
+    });
   });
 
   it("sends the view's account's token to an attachment's address alone, and follows it to the store without", async () => {
@@ -468,6 +565,9 @@ describe('Images', () => {
     expect(keyOf(post(signed))).toBe(`post nobody ${signed}`);
     expect(keyOf(avatar('Rozed-Bot'))).toBe(keyOf(avatar('rozed-bot')));
     expect(keyOf(avatar('rozed-bot', 40))).not.toBe(keyOf(avatar('rozed-bot', 56)));
+    // A bot's slug can be a person's login: their pictures are kept apart.
+    expect(keyOf(bot('cursor'))).not.toBe(keyOf(avatar('cursor')));
+    expect(keyOf(bot('Cursor'))).toBe(keyOf(bot('cursor')));
   });
 
   it('keeps at most its limit of bytes, dropping the image served longest ago', async () => {

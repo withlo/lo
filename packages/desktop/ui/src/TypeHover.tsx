@@ -245,7 +245,7 @@ function Docs({ tree, highlight }: { tree: Tree; highlight: HighlightCode | unde
     <MarkdownProvider rendering={rendering}>
       <div
         ref={scrollByWheel}
-        className="lo-prose typehover-part typehover-docs px-12 py-8 wrap-anywhere read-comment"
+        className="lo-prose lo-prose--comment typehover-part typehover-docs px-12 py-8 wrap-anywhere read-comment"
       >
         <MarkdownBlocks blocks={shown.blocks} />
         <MarkdownNotes notes={shown.notes} />

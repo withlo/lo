@@ -221,8 +221,11 @@ describe('the groups', () => {
     expect(unread.map((each) => each.excerpt)).toEqual(['']);
     // A deleted account is GitHub's ghost, with no avatar; a pending thread says so.
     expect(listed('b')).toMatchObject({ author: 'ghost', image: undefined, pending: true });
-    // A bot has no avatar of its own to load.
-    expect(listed('c')).toMatchObject({ author: 'renovate', image: undefined });
+    // A bot's is its app's picture, which main finds.
+    expect(listed('c')).toMatchObject({
+      author: 'renovate',
+      image: 'lo-image://bot/renovate?s=40',
+    });
   });
 });
 
