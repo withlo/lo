@@ -18,7 +18,7 @@ import {
 } from '../jobs.ts';
 import { inJobs } from './batches.ts';
 import { blobKey, candidates, nearestFirst, type Candidate } from './select.ts';
-import type { Reading, TreeFile } from './store/store.ts';
+import type { Fresh, Reading, TreeFile } from './store/store.ts';
 
 /** What indexing reads of the local copy. */
 export type TreeRepo = Pick<
@@ -36,7 +36,7 @@ export type TreeRepo = Pick<
 
 /** What indexing keeps in the store. */
 export interface TreeStore {
-  fresh(version: string, blobs: readonly { oid: string; language: string }[]): Promise<number[]>;
+  fresh(version: string, blobs: readonly { oid: string; language: string }[]): Promise<Fresh>;
   put(version: string, readings: readonly Reading[]): Promise<void>;
   setTree(tree: string, files: readonly TreeFile[]): Promise<void>;
 }
@@ -67,6 +67,11 @@ export interface Built {
   readonly indexed: number;
   /** Why it isn't whole, if it isn't. */
   readonly partial: readonly PartialWhy[];
+  /**
+   * How many of its files were read, by language: each path once, so a blob at two paths counts
+   * twice, and none skipped, as too large to read or failing.
+   */
+  readonly read: ReadonlyMap<string, number>;
 }
 
 export interface BuildOptions {
@@ -165,7 +170,10 @@ export async function buildTree(options: BuildOptions): Promise<Built> {
 
   // What the store has read already, and what's left, each blob once, nearest first.
   let version = options.version;
-  const fresh = new Set(await store.fresh(version, chosen));
+  const kept = await store.fresh(version, chosen);
+  const fresh = new Set(kept.found);
+  // The blobs it skipped, too large to read or failing, which its count of files leaves out.
+  const skipped = new Set(kept.skipped.flatMap((index) => chosen[index] ?? []).map(blobKey));
   const left = new Map<string, Candidate>();
   for (const [index, file] of chosen.entries()) {
     const key = blobKey(file);
@@ -216,7 +224,10 @@ export async function buildTree(options: BuildOptions): Promise<Built> {
   }
   if (tooLarge.length > 0) {
     await store.put(version, tooLarge);
-    for (const reading of tooLarge) progress.done.add(blobKey(reading));
+    for (const reading of tooLarge) {
+      progress.done.add(blobKey(reading));
+      skipped.add(blobKey(reading));
+    }
   }
   // The tree's files, so it answers from what's read as soon as it's read.
   await store.setTree(
@@ -236,7 +247,10 @@ export async function buildTree(options: BuildOptions): Promise<Built> {
     if (readings.length === 0) return;
     stopped(signal);
     await store.put(at, readings);
-    for (const reading of readings) progress.done.add(blobKey(reading));
+    for (const reading of readings) {
+      progress.done.add(blobKey(reading));
+      if ('skipped' in reading.read) skipped.add(blobKey(reading));
+    }
     moved();
   };
   for await (const blobs of repo.readBlobs([...languages.keys()], { maxBytes: BYTES_PER_JOB })) {
@@ -249,12 +263,20 @@ export async function buildTree(options: BuildOptions): Promise<Built> {
     }
     version = await readAll(files, options.read, version, keep, signal);
   }
+  const read = new Map<string, number>();
+  for (const file of chosen) {
+    const key = blobKey(file);
+    if (progress.done.has(key) && !skipped.has(key)) {
+      read.set(file.language, (read.get(file.language) ?? 0) + 1);
+    }
+  }
   return {
     tree,
     total: possible.length - marked,
     files: chosen.length,
     indexed: chosen.filter((file) => progress.done.has(blobKey(file))).length,
     partial: [...partial],
+    read,
   };
 }
 

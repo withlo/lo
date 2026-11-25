@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useCallback,
   useLayoutEffect,
   useRef,
@@ -10,6 +11,7 @@ import {
   type RefObject,
 } from 'react';
 
+import { CommandButton, type CommandButtonProps } from './CommandButton.tsx';
 import { besideIn, handOffFocus } from './focus.ts';
 import { keyAria } from './Key.tsx';
 import { Popover, PopoverDescription } from './Popover.tsx';
@@ -67,20 +69,19 @@ export const STATUS_ITEM = 'inline-flex h-20 min-w-0 items-center gap-6 rounded-
 /** The look of an item that's a button: it answers the pointer and shows focus. */
 export const STATUS_BUTTON = `${STATUS_ITEM} hover:bg-hover hover:text-fg focus-visible:shadow-ring`;
 
-export interface StatusItemProps extends Omit<
+/** What a status item's details hold: something, never nothing. */
+export type StatusDetails = Exclude<ReactNode, null | undefined | boolean>;
+
+interface StatusItemBase extends Omit<
   ButtonHTMLAttributes<HTMLButtonElement>,
   'children' | 'title' | 'onClick'
 > {
-  /** How its work stands. Without one, it's a fact with no state of its own, as a count is. */
-  ball?: StatusBallState | undefined;
   /** Its label: the thing, and its state where the ball isn't enough. */
   children: ReactNode;
   /**
-   * What a click on it opens over it: one line of state, and what can be done about it, such as a
-   * `Problem` with its one action. An item with nothing behind it has no details, and is text.
+   * Its details' name, for a screen reader: the item's own words. Without one, its label's, where
+   * that's text.
    */
-  details?: ReactNode;
-  /** Its details' name, for a screen reader: the item's own words. */
   label?: string | undefined;
   /** Whether its details are open. Without it, the item keeps its own. */
   open?: boolean | undefined;
@@ -98,18 +99,50 @@ export interface StatusItemProps extends Omit<
   hintKeys?: readonly string[] | undefined;
   /** That key as `aria-keyshortcuts` says it, which a screen reader hears in place of the caps. */
   hintShortcut?: string | undefined;
-  /** It's a button, for something it does, without details of its own. */
-  onClick?: ButtonHTMLAttributes<HTMLButtonElement>['onClick'] | undefined;
   ref?: Ref<HTMLButtonElement> | undefined;
 }
+
+type OnClick = ButtonHTMLAttributes<HTMLButtonElement>['onClick'];
+
+/**
+ * A status item's props. One with a ball is work Lo does, and a click on it always opens something:
+ * its `details`, or what its `onClick` does, such as the view it says is ready. Only an item with
+ * no ball, a fact such as a count or a time, may be text.
+ */
+export type StatusItemProps = StatusItemBase &
+  (
+    | {
+        /** How its work stands. */
+        ball: StatusBallState;
+        /**
+         * What a click on it opens over it: one line of state, the facts it knows, and what can be
+         * done about it, such as a `Problem` with its one action.
+         */
+        details: StatusDetails;
+        onClick?: undefined;
+      }
+    | {
+        ball: StatusBallState;
+        details?: undefined;
+        /** It's a button, for something it does, without details of its own. */
+        onClick: OnClick;
+      }
+    | {
+        /** Without a ball, it's a fact with no state of its own, as a count is. */
+        ball?: undefined;
+        details?: StatusDetails | undefined;
+        onClick?: OnClick | undefined;
+      }
+  );
 
 /**
  * One piece of background work in the status bar: a ball for how it stands, and a label. It keeps
  * its place in the bar from one state to the next. With `details`, a click or `⏎` opens them over
- * it: one line of state and what to do about it. With `onClick` alone it's a button, as it is as a
- * `Popover`'s `trigger`, which gives it its click, its ref and the rest of a button's props.
- * Otherwise it's text, with no tooltip: what it says is all there is. A label cut short, in a
- * narrow window, shows whole as its tooltip.
+ * it: one line of state, the facts it knows and what to do about it. With `onClick` alone it's a
+ * button, as it is as a `Popover`'s `trigger`, which gives it its click, its ref and the rest of a
+ * button's props. An item with a ball has one or the other, whatever its state, so a click on it
+ * always opens something. Only a fact with no ball is text, with no tooltip: what it says is all
+ * there is. A label cut short, in a narrow window, shows whole as its tooltip.
  */
 export function StatusItem({
   ball,
@@ -162,7 +195,7 @@ export function StatusItem({
             {content}
           </ItemButton>
         }
-        label={label}
+        label={label ?? wordsOf(children)}
         initialFocus={initialFocus}
         container={container}
       >
@@ -192,6 +225,16 @@ export function StatusItem({
       {content}
     </ItemButton>
   );
+}
+
+/** `children` as text, where it's only text and numbers: "Showing #84 alone". */
+function wordsOf(children: ReactNode): string | undefined {
+  if (typeof children === 'string' || typeof children === 'number') return String(children);
+  if (!Array.isArray(children)) return undefined;
+  const parts: unknown[] = children;
+  return parts.every((part) => typeof part === 'string' || typeof part === 'number')
+    ? parts.join('')
+    : undefined;
 }
 
 /**
@@ -293,6 +336,42 @@ export function StatusLine({ children }: { children: ReactNode }) {
  */
 export function StatusActions({ children, flush }: { children: ReactNode; flush?: boolean }) {
   return <div className={`flex flex-wrap gap-6 ${flush ? '-ms-8' : ''}`}>{children}</div>;
+}
+
+/** One fact a status item's details state: what it is, in a word, and what it says. */
+export interface StatusFact {
+  /** A word or two: "Files", "Folder", "Indexed". */
+  label: string;
+  value: ReactNode;
+}
+
+/**
+ * The facts a status item knows, under its line, in two columns: what it covers and when it last
+ * ran, say. Each is one it knows, never a guess, and a path or a commit ID is code.
+ */
+export function StatusFacts({ items }: { items: readonly StatusFact[] }) {
+  return (
+    <dl className="m-0 facts text-small">
+      {items.map((item) => (
+        <Fragment key={item.label}>
+          <dt className="text-fg-muted">{item.label}</dt>
+          <dd className="m-0 min-w-0 break-words text-fg">{item.value}</dd>
+        </Fragment>
+      ))}
+    </dl>
+  );
+}
+
+/**
+ * A button in a status item's details for a command, in their `StatusActions`: the first, what
+ * helps most, is `secondary`, and the rest `ghost`. Its key is in its tooltip, since keys don't
+ * reach the item's work while its details have focus.
+ */
+export function StatusCommand({
+  variant = 'secondary',
+  ...props
+}: Omit<CommandButtonProps, 'size'>) {
+  return <CommandButton variant={variant} size="sm" {...props} />;
 }
 
 /**

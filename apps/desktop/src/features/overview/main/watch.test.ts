@@ -1166,7 +1166,13 @@ describe('the code', () => {
   it('says whether the code an overview names can be read, as the local copy comes', () => {
     const github = new FakeGithub();
     const { tab, sent } = tabWith(github.client);
-    const ready = { kind: 'ready', head: fakeId('head'), base: fakeId('base'), mergeBase: null };
+    const ready = {
+      kind: 'ready',
+      head: fakeId('head'),
+      base: fakeId('base'),
+      mergeBase: null,
+      folder: '/cache/e2e.git',
+    };
     // Hidden, the tab reads nothing, and says only what changed.
     tab.update(info(), false, true);
     expect(sent.at(-1)?.code).toBe('waiting');

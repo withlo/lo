@@ -92,6 +92,7 @@ const strip = (page: Page) => page.getByRole('tablist', { name: 'Tabs' });
 const status = (page: Page) => page.locator('footer[aria-label="Status bar"]');
 
 test('opens a pull request with its header, and fetches its local copy at the head it opened at', async ({
+  app,
   page,
 }) => {
   const id = await open(page, E2E);
@@ -126,6 +127,20 @@ test('opens a pull request with its header, and fetches its local copy at the he
     });
   // All's well, so there's no banner.
   await expect(tabBanners(page)).toHaveCount(0);
+
+  // The local copy's details say where it is, `~` for the home folder, and copy it whole.
+  await status(page).getByRole('button', { name: 'Local copy' }).click();
+  const details = page.getByRole('dialog', { name: 'Local copy' });
+  const folder = details.locator('dd code');
+  await expect(folder).toHaveText(/\/repos\/github\.com\/rozed-dev\/e2e\.git$/);
+  await details.getByRole('button', { name: 'Copy path' }).click();
+  await expect(details.getByRole('button', { name: 'Copied' })).toBeVisible();
+  const copied = await app.evaluate(({ clipboard }) => clipboard.readText());
+  const home = await app.evaluate((main) => main.app.getPath('home'));
+  expect(copied).toMatch(/^\/.+\/repos\/github\.com\/rozed-dev\/e2e\.git$/);
+  expect(copied.startsWith(`${home}/`) ? `~${copied.slice(home.length)}` : copied).toBe(
+    await folder.textContent(),
+  );
 });
 
 test('the left panel’s edge sizes it by a drag, and by key while it has focus', async ({

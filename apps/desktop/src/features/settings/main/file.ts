@@ -11,7 +11,7 @@
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, mkdir, open, realpath, rename, stat, unlink } from 'node:fs/promises';
-import { basename, dirname, join, sep } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 import { parseSettings, type Parsed } from './text.ts';
 
@@ -206,8 +206,4 @@ export async function signature(path: string): Promise<string> {
   }
 }
 
-/** `path` as a person would write it: the home folder as `~`. */
-export function written(path: string, home: string): string {
-  const prefix = home.endsWith(sep) ? home : `${home}${sep}`;
-  return home !== '' && path.startsWith(prefix) ? `~${sep}${path.slice(prefix.length)}` : path;
-}
+export { written } from '../../../main/paths.ts';
