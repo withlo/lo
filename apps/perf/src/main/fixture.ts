@@ -22,14 +22,8 @@ export const Fixture = z.strictObject({
       /** Each version's text, none for a side the file isn't on. */
       old: z.string().optional(),
       new: z.string().optional(),
-      /** Lines shown as GitHub's diff leaves them out, until the whole file comes. */
-      gaps: z
-        .array(z.strictObject({ side: z.enum(['old', 'new']), from: count, to: count }))
-        .optional(),
     }),
   ),
-  /** Whether a file with gaps gets its whole lines only when the test says, with `perfCopy`. */
-  copyWhenAsked: z.boolean().optional(),
   threads: z.array(
     z.strictObject({
       path: z.string().min(1),
@@ -71,7 +65,6 @@ export function readFixture(path: string): { pull: Pull; jobs: Job[]; large: Map
       number: fixture.number,
       files,
       threads,
-      copyWhenAsked: fixture.copyWhenAsked,
     },
     jobs,
     large: new Map(),

@@ -9,20 +9,18 @@
 // overview `testing/fixtures/app.sh` wrote, none, one made here, or a failure.
 
 import { createHash } from 'node:crypto';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { createServer, type ServerResponse } from 'node:http';
-import { join } from 'node:path';
 import { buffer } from 'node:stream/consumers';
 import { crc32, deflateSync } from 'node:zlib';
 
 import { APP_PULL, writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
-import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test';
+import type { ElectronApplication, Page } from '@playwright/test';
 
 import { promptOf } from '../src/features/overview/window/prompts.ts';
 import { HOLD_LIMIT } from '../src/features/revisions/contract.ts';
 import {
-  appEnvironment,
   appFolder,
   browsed,
   DIFF_FIRST,
@@ -30,8 +28,8 @@ import {
   expect,
   KEYCHAIN,
   rowOver,
-  settingsPath,
   sizeWindow,
+  startLo,
   test as base,
 } from './app.ts';
 
@@ -335,10 +333,10 @@ const test = base.extend<{
   /** Where Lo finds GitHub: a server in front of the replay server. */
   githubOrigin: string;
   /**
-   * Starts Lo afresh, as the test's fixtures started it, once the copy before is closed: on a new
-   * replay server, behind a new server in front of it, on an empty data folder of its own. Gives
-   * its window once it has drawn. What it started closes as the test ends, and a request its
-   * replay server couldn't answer fails the test, as the fixtures' own do.
+   * Starts Lo afresh once the copy before is closed, as the `app` fixture starts it, from the test's
+   * options, but untraced: on a new replay server, behind a new server in front of it, on an empty
+   * data folder of its own. Gives its window once it has drawn. What it started closes as the test
+   * ends, and a request its replay server couldn't answer fails the test, as the fixtures' own do.
    */
   afresh: () => Promise<Page>;
 }>({
@@ -378,7 +376,10 @@ const test = base.extend<{
       },
     });
   },
-  afresh: async ({ app, cassette, ref, remote, tokenFile, holdLimit, settings }, use) => {
+  afresh: async (
+    { app, cassette, ref, launch, keymap, settings, holdLimit, motion, readEvery },
+    use,
+  ) => {
     const started: { app: ElectronApplication; front: { close(): Promise<void> } }[] = [];
     const servers: ReplayServer[] = [];
     let last = app;
@@ -388,23 +389,19 @@ const test = base.extend<{
       servers.push(github);
       const front = await frontOf(github, ref);
       const data = test.info().outputPath(`data-${servers.length + 1}`);
-      if (settings !== undefined) {
-        mkdirSync(join(data, 'config'), { recursive: true });
-        writeFileSync(settingsPath(data), settings);
-      }
-      last = await electron.launch({
-        args: [appFolder, ...KEYCHAIN],
-        env: {
-          ...appEnvironment(data),
-          LO_HOLD_LIMIT_MS: String(holdLimit),
-          LO_GITHUB: front.origin,
-          LO_TEST_TOKEN_FILE: tokenFile,
-          LO_GIT_REMOTE: remote,
+      last = await startLo(
+        {
+          launch: { ...launch, env: { ...launch.env, LO_GITHUB: front.origin } },
+          keymap,
+          settings,
+          holdLimit,
+          motion,
+          readEvery,
         },
-        chromiumSandbox: true,
-      });
+        data,
+      );
       started.push({ app: last, front });
-      return drawnWindow(last);
+      return drawnWindow(last, motion);
     });
     for (const each of started) {
       await each.app.close();
@@ -1682,10 +1679,10 @@ test.describe('while the local copy comes late', () => {
   const cases = [
     { place: underCode, width: 1100, height: 440, motion: undefined },
     { place: atFind, width: 1100, height: 440, motion: undefined },
-    { place: atFind, width: 1440, height: 900, motion: 'system' },
+    { place: atFind, width: 1440, height: 900, motion: 'on' },
   ] as const;
   for (const { place, width, height, motion } of cases) {
-    const moving = motion === 'system' ? ', with Lo’s moves on' : '';
+    const moving = motion === 'on' ? ', with Lo’s moves on' : '';
     test.describe(() => {
       test.use({ motion });
       test(`nothing on screen moves from the first frame, as figures and code fill in, the banner goes and the overview is checked again, ${place.name}, at ${width}×${height}${moving}`, async ({

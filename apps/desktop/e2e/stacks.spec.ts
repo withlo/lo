@@ -327,7 +327,7 @@ test.describe('a run of layers', () => {
       // The diff's note names the run's ends, and the tab's name agrees with the heading on its top
       // layer, #C.
       await expect(page.getByRole('note', { name: 'Comparison' })).toHaveText(
-        new RegExp(`^#${STACK.b} → #${STACK.c}\\b`),
+        new RegExp(`^#${STACK.b} → #${STACK.c}\\b.*\\bevery change\\b`),
       );
       await expect(page.locator('[data-tab]').first()).toContainText(`#${STACK.c}`);
       await expect(page.locator('[data-tab]').first()).not.toContainText(`#${STACK.b}`);

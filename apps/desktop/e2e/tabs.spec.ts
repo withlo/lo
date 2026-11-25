@@ -523,10 +523,11 @@ test('the app menu checks what’s on however it was switched: from the menu, by
   });
 });
 
-// Forty at 1440 px, where most are folded, and sixteen at the screen's width. The counts between
-// only move where the strip's edges are, and how many fit in a width is `tabsThatFit`'s, in its
-// unit tests.
+// Eight at 1440 px, the most that fit before "more" appears; forty at 1440 px, where most are
+// folded; and sixteen at the screen's width. The counts between only move where the strip's edges
+// are, and how many fit in a width is `tabsThatFit`'s, in its unit tests.
 const strips = [
+  [1440, 8],
   [1440, 40],
   ['screen', 16],
 ] as const;
@@ -541,7 +542,7 @@ for (const [width, count] of strips) {
     await expect(shown(page)).toHaveText(`r${count} #${count}`);
     await expect.poll(() => openCount(page)).toBe(count);
     await expectFits(page);
-    if (width === 1440) await expect(more(page)).toHaveCount(1);
+    if (width === 1440) await expect(more(page)).toHaveCount(count > 8 ? 1 : 0);
 
     // ⌘1, and ⌘9 to the last tab, which comes into the strip if it was folded away.
     await page.keyboard.press(`${cmd}+Digit1`);

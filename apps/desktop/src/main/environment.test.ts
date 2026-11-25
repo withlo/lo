@@ -185,6 +185,23 @@ describe('the test runs’ waits for GitHub', () => {
   );
 });
 
+describe('a wait in milliseconds', () => {
+  it.each([
+    { read: holdLimit, name: 'LO_HOLD_LIMIT_MS' },
+    { read: devicePoll, name: 'LO_DEVICE_POLL_MS' },
+    { read: pollEvery, name: 'LO_POLL_MS' },
+    { read: watchedEvery, name: 'LO_WATCHED_POLL_MS' },
+    { read: answerStart, name: 'LO_ANSWER_START_MS' },
+  ])('$name below 1 ms or past the longest a timer takes is Lo’s own', ({ read, name }) => {
+    const wait = (value: string) => read({ packaged: false, env: { [name]: value } });
+    expect(wait('1')).toBe(1);
+    expect(wait('2147483647')).toBe(2_147_483_647);
+    for (const value of ['0', '000', '2147483648', String(Number.MAX_SAFE_INTEGER)]) {
+      expect(wait(value)).toBe(undefined);
+    }
+  });
+});
+
 describe('keymapEditor', () => {
   it('names the program a build run from source opens the keymap file with', () => {
     const env = { LO_KEYMAP_EDITOR: '/tmp/editor' };

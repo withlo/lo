@@ -244,6 +244,75 @@ export function appEnvironment(data: string): Record<string, string> {
 
 type LaunchOptions = NonNullable<Parameters<typeof electron.launch>[0]>;
 
+/**
+ * How a test has Lo move: every move off (`reduce`), as `undefined` leaves them too; or every move
+ * on (`on`), with Lo's Reduce motion setting off (`motion.reduce`), so the system's Reduce Motion
+ * doesn't turn them off, and the page taking the system as asking for no less motion. A window that
+ * still matches `prefers-reduced-motion: reduce`, or whose moves aren't on, fails the test.
+ */
+export type Motion = 'reduce' | 'on' | undefined;
+
+/** What a copy of Lo starts with, from a test's options, as the `app` fixture starts it. */
+export interface Start {
+  launch: LaunchOptions;
+  keymap: string | undefined;
+  settings: string | undefined;
+  holdLimit: number;
+  motion: Motion;
+  readEvery: number | undefined;
+}
+
+/** The settings file `settings` says, with Lo's Reduce motion setting off where moves are `on`. */
+function settingsFor(settings: string | undefined, motion: Motion): string | undefined {
+  if (motion !== 'on') return settings;
+  const values: unknown = settings === undefined ? {} : JSON.parse(settings);
+  if (typeof values !== 'object' || values === null || Array.isArray(values)) {
+    throw new Error(`A test with Lo's moves on needs its settings as a JSON object: ${settings}`);
+  }
+  return JSON.stringify({ ...values, 'motion.reduce': 'off' });
+}
+
+/**
+ * Starts a copy of Lo on data folder `data`, as `start` says: with the stand-ins for the text
+ * editor and the browser, the keymap and settings files the test gives, and its options in Lo's
+ * environment, `start.launch`'s own last. A live run (`live`) keeps to its own folder.
+ */
+export async function startLo(
+  start: Start,
+  data: string,
+  live = false,
+): Promise<ElectronApplication> {
+  const { env, args = [appFolder], ...options } = start.launch;
+  writeEditor(data);
+  writeBrowser(data);
+  if (start.keymap !== undefined) {
+    mkdirSync(join(data, 'config'), { recursive: true });
+    writeFileSync(keymapPath(data), start.keymap);
+  }
+  const settings = settingsFor(start.settings, start.motion);
+  if (settings !== undefined) {
+    mkdirSync(join(data, 'config'), { recursive: true });
+    writeFileSync(settingsPath(data), settings);
+  }
+  return electron.launch({
+    args: live ? liveArgs(args) : args,
+    env: {
+      ...appEnvironment(data),
+      LO_HOLD_LIMIT_MS: String(start.holdLimit),
+      ...(start.motion === undefined
+        ? {}
+        : { LO_MOTION: start.motion === 'on' ? 'system' : 'reduce' }),
+      ...(start.readEvery === undefined ? {} : { LO_POLL_MS: String(start.readEvery) }),
+      ...env,
+      // A live run's data stays in its own folder, whatever else it's started with.
+      ...(live ? { LO_USER_DATA_DIR: data } : {}),
+    },
+    // Playwright turns the sandbox off on Linux unless asked; Lo must run with it.
+    chromiumSandbox: true,
+    ...options,
+  });
+}
+
 interface Fixtures {
   /** What the keymap file says when Lo starts, or `undefined` for no file. */
   keymap: string | undefined;
@@ -253,10 +322,11 @@ interface Fixtures {
   launch: LaunchOptions;
   /**
    * How Lo moves: `reduce`, every move off, as the suite runs unless a run asks otherwise
-   * (`appEnvironment`), or `system`, the moves a reader has by default. A few of the tests that
-   * what's on screen holds still run with them on, so what most readers see is tested too.
+   * (`appEnvironment`), or `on`, the moves a reader has by default, whatever the system says (see
+   * {@link Motion}). A few of the tests that what's on screen holds still run with them on, so what
+   * most readers see is tested too.
    */
-  motion: 'reduce' | 'system' | undefined;
+  motion: Motion;
   /**
    * How often, in milliseconds, Lo reads the pull request on screen, the place of one in a merge
    * queue and the queue's tab (`LO_POLL_MS`), in place of every 20 s, for a test that waits for
@@ -315,7 +385,6 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
     use,
     testInfo,
   ) => {
-    const { env, args = [appFolder], ...options } = launch;
     if (live && testInfo.config.workers > 1) {
       // Each copy would start on the one folder, and Lo quits a second copy started on it.
       throw new Error('A live run starts one Lo at a time: run it with `nx run desktop:live`.');
@@ -323,31 +392,11 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
     const data = live
       ? liveDataFolder({ platform: process.platform, home: homedir(), env: process.env })
       : dataFolder();
-    writeEditor(data);
-    writeBrowser(data);
-    if (keymap !== undefined) {
-      mkdirSync(join(data, 'config'), { recursive: true });
-      writeFileSync(keymapPath(data), keymap);
-    }
-    if (settings !== undefined) {
-      mkdirSync(join(data, 'config'), { recursive: true });
-      writeFileSync(settingsPath(data), settings);
-    }
-    const app = await electron.launch({
-      args: live ? liveArgs(args) : args,
-      env: {
-        ...appEnvironment(data),
-        LO_HOLD_LIMIT_MS: String(holdLimit),
-        ...(motion === undefined ? {} : { LO_MOTION: motion }),
-        ...(readEvery === undefined ? {} : { LO_POLL_MS: String(readEvery) }),
-        ...env,
-        // A live run's data stays in its own folder, whatever else it's started with.
-        ...(live ? { LO_USER_DATA_DIR: data } : {}),
-      },
-      // Playwright turns the sandbox off on Linux unless asked; Lo must run with it.
-      chromiumSandbox: true,
-      ...options,
-    });
+    const app = await startLo(
+      { launch, keymap, settings, holdLimit, motion, readEvery },
+      data,
+      live,
+    );
     // In CI, a trace of the window, kept beside the test's results when it fails, which CI keeps:
     // what was on screen and asked for, for a failure that won't happen again on demand. A test that
     // closed Lo itself has no window left to trace.
@@ -365,8 +414,8 @@ export const test = base.extend<Fixtures, WorkerFixtures>({
     await app.close();
   },
   page: [
-    async ({ app }, use) => {
-      await use(await loadedAndDrawn(app));
+    async ({ app, motion }, use) => {
+      await use(await loadedAndDrawn(app, motion));
     },
     // Time of its own, so a late first frame never uses up the test's, and more of it than the
     // first frame has, so a window that never draws fails as that.
@@ -382,13 +431,13 @@ export { expect };
  * however long it took. A test that sets its own time with `test.setTimeout` does so before it
  * starts Lo, as each one does, since a later call would set it afresh and take that back.
  */
-export async function drawnWindow(app: ElectronApplication): Promise<Page> {
+export async function drawnWindow(app: ElectronApplication, motion?: Motion): Promise<Page> {
   const info = base.info();
   const timeout = info.timeout;
   const from = performance.now();
   // Zero is no limit at all, which a wait can't add to.
   if (timeout > 0) info.setTimeout(timeout + DRAW_LIMIT + 30_000);
-  const page = await loadedAndDrawn(app);
+  const page = await loadedAndDrawn(app, motion);
   if (timeout > 0) info.setTimeout(timeout + Math.ceil(performance.now() - from));
   return page;
 }
@@ -400,7 +449,7 @@ export async function drawnWindow(app: ElectronApplication): Promise<Page> {
  * Until then nothing that waits on a frame happens, such as a closed dialog leaving or a click
  * finding its target still, so a test takes a window only once it has drawn.
  */
-async function loadedAndDrawn(app: ElectronApplication): Promise<Page> {
+async function loadedAndDrawn(app: ElectronApplication, motion?: Motion): Promise<Page> {
   const page = await app.firstWindow();
   await page.waitForLoadState('load');
   await base.step(
@@ -425,7 +474,29 @@ async function loadedAndDrawn(app: ElectronApplication): Promise<Page> {
     { box: true },
   );
   if (process.platform === 'linux') await focused(app);
+  if (motion === 'on') await movesOn(page);
   return page;
+}
+
+/**
+ * Has the page take the system as asking for no less motion, then waits for Lo's Reduce motion
+ * setting, off, to keep every move on, and fails if the page still matches
+ * `prefers-reduced-motion: reduce`: a test that's there to watch Lo move would pass having watched
+ * nothing move.
+ */
+async function movesOn(page: Page): Promise<void> {
+  await base.step("Lo's moves are on", async () => {
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    const reduced = await page.evaluate(
+      () => matchMedia('(prefers-reduced-motion: reduce)').matches,
+    );
+    expect(reduced, 'The window matches prefers-reduced-motion: reduce.').toBe(false);
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.getAttribute('data-lo-motion')), {
+        message: 'Lo’s Reduce motion setting, off, didn’t turn every move on.',
+      })
+      .toBe('full');
+  });
 }
 
 /**

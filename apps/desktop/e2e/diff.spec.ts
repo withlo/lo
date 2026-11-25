@@ -75,7 +75,7 @@ declare global {
     loJumps?: {
       frames: { jumps: number; top: number; onScreen: boolean }[];
       changes: { jumps: number; scroll: number; landed: number }[];
-      /** Whether it has watched long enough: past the changes, and a while once the jump showed. */
+      /** Whether it has watched long enough: 1.5 s from when it began, and the jump has shown. */
       done: boolean;
     };
   }
@@ -683,11 +683,14 @@ test('a new order puts back what was at the top of the screen, with the cursor o
 /** When a change comes, against a jump. */
 type Landing = 'in its task' | 'just after it' | 'all along';
 
-/** Every landing, in the order a jump goes through them. */
+/** Every landing. Each jump starts from another, so each meets a view yet to draw a jump's target. */
 const LANDINGS: readonly Landing[] = ['in its task', 'just after it', 'all along'];
 
-/** How many frames a jump is watched for once it shows: about half a second's. */
-const SHOWN_FRAMES = 30;
+/** The landings in the order jump number `index` goes through them: from the next one each time. */
+function landingsFor(index: number): Landing[] {
+  const first = index % LANDINGS.length;
+  return [...LANDINGS.slice(first), ...LANDINGS.slice(0, first)];
+}
 
 /** How many frames in a row the diff holds still for before a jump is watched. */
 const STILL_FRAMES = 10;
@@ -804,11 +807,11 @@ const JUMPS: Jump[] = [
  * closes a file that can't close, which changes nothing, but keeps what's at the top of the screen
  * in place as the local copy's files do as they come: in the jump's own task; in the next task or
  * the next frame, whichever comes first, before anything draws the jump; or every millisecond, in a
- * stream of tasks, and every frame, for 1.5 s from now.
+ * stream of tasks, and every frame, for 1.5 s from now. Whatever the landing, it watches until then.
  */
 async function watchJumps(page: Page, landing: Landing, heard: Jump['heard']): Promise<void> {
   await page.evaluate(
-    ({ when, hear, shownFor }) => {
+    ({ when, hear }) => {
       const diff = window.loDiff;
       const view = document.querySelector<HTMLElement>('.lo-diffview');
       const file = diff?.files.find((each) => each.path === 'assets/mark.png')?.id;
@@ -869,18 +872,16 @@ async function watchJumps(page: Page, landing: Landing, heard: Jump['heard']): P
           top: reading?.top ?? Number.NaN,
           onScreen: reading?.onScreen ?? false,
         });
-        // Watched long enough once the changes have stopped coming and the jump has shown for
-        // half a second's frames.
-        const shown = watched.frames.findIndex((frame) => frame.jumps === 1 && frame.onScreen);
+        // Watched long enough at `end`, once the jump has shown: past every change, whenever it
+        // came, and the moves after.
         watched.done =
-          shown >= 0 &&
-          watched.frames.length - shown >= shownFor &&
-          (when !== 'all along' || performance.now() >= end);
+          performance.now() >= end &&
+          watched.frames.some((frame) => frame.jumps === 1 && frame.onScreen);
         requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
     },
-    { when: landing, hear: heard, shownFor: SHOWN_FRAMES },
+    { when: landing, hear: heard },
   );
 }
 
@@ -890,7 +891,7 @@ for (const layout of ['inline', 'split'] as const) {
     // on, as most readers have them.
     test.use({
       settings: JSON.stringify({ 'overview.open': 'diff', 'diff.layout': layout }),
-      motion: layout === 'split' ? 'system' : undefined,
+      motion: layout === 'split' ? 'on' : undefined,
     });
 
     test('leaves the screen where each jump takes it, with the change in its task, just after it, and all along', async ({
@@ -899,9 +900,10 @@ for (const layout of ['inline', 'split'] as const) {
       test.setTimeout(120_000);
       await drawn(page);
       // One Lo for every jump and landing, each from the first header as a fresh Lo has the
-      // cursor. Each jump goes with each landing before the next jump, so `]f` is last.
-      for (const jump of JUMPS) {
-        for (const landing of LANDINGS) {
+      // cursor. Each jump goes with each landing before the next jump, so `]f` is last, and starts
+      // from the landing after the one the jump before started from.
+      for (const [index, jump] of JUMPS.entries()) {
+        for (const landing of landingsFor(index)) {
           await test.step(`${jump.name}, the change ${landing}`, async () => {
             await focusDiff(page);
             await expect.poll(() => cursor(page)).toMatchObject({ path: 'assets/mark.png' });
@@ -1103,12 +1105,11 @@ async function watchStill(page: Page): Promise<void> {
 test.describe('while the local copy takes GitHub’s place', () => {
   test.use({ cassette: 'app_e2e_late', lateRemote: true });
 
-  // The local copy comes once for each Lo, so each order is watched from one place: three quarters
-  // of the way down in the tree's order, and a quarter in review order.
-  const places = [
-    ['tree', 0.75],
-    ['review', 0.25],
-  ] as const;
+  // Each order, from three places down. The local copy takes GitHub's place only once a Lo, and
+  // stays in its data folder after, so each place is watched in a Lo of its own.
+  const places = (['tree', 'review'] as const).flatMap((order) =>
+    [0.25, 0.5, 0.75].map((depth) => [order, depth] as const),
+  );
   for (const [order, depth] of places) {
     test(`nothing on screen moves, in ${order} order, ${depth * 100}% of the way down`, async ({
       app,

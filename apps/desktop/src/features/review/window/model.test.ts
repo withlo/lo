@@ -12,7 +12,6 @@ import {
   subtitleOf,
   toastOf,
   verdictsOf,
-  verdictNames,
   type StepInput,
 } from './model.ts';
 
@@ -60,24 +59,39 @@ function input(overrides: Partial<StepInput> = {}): StepInput {
 
 test('every verdict is offered, and on your own pull request Approve and Request changes say why they can’t be chosen', () => {
   const theirs = dialog();
-  expect(subtitleOf(theirs, label)).toMatch(/^e2e #4821\b.*\br3$/);
-  const offered = verdictsOf(theirs, label);
-  expect(offered.map(({ event, title, off }) => [event, title, off])).toEqual([
-    ['COMMENT', verdictNames.COMMENT, undefined],
-    ['APPROVE', verdictNames.APPROVE, undefined],
-    ['REQUEST_CHANGES', verdictNames.REQUEST_CHANGES, undefined],
+  expect(subtitleOf(theirs, label)).toBe('e2e #4821 · r3');
+  expect(verdictsOf(theirs, label)).toEqual([
+    {
+      event: 'COMMENT',
+      title: 'Comment',
+      description: 'Feedback without a verdict.',
+      off: undefined,
+    },
+    {
+      event: 'APPROVE',
+      title: 'Approve',
+      description: 'Approves the changes at r3.',
+      off: undefined,
+    },
+    {
+      event: 'REQUEST_CHANGES',
+      title: 'Request changes',
+      description: 'Asks for changes before it merges.',
+      off: undefined,
+    },
   ]);
-  // Approve names the revision it approves.
-  expect(offered[1]?.description).toMatch(/\br3\b/);
   const mine = dialog({ own: true, pending: { kind: 'none' } });
-  expect(subtitleOf(mine, label)).toBe(subtitleOf(theirs, label));
-  const [comment, ...dimmed] = verdictsOf(mine, label);
-  expect(comment?.off).toBeUndefined();
-  // Each one dimmed says why, in place of its line.
-  for (const verdict of dimmed) {
-    expect(verdict.off).toMatch(/\bown\b/);
-    expect(verdict.description).toBe(verdict.off);
-  }
+  expect(subtitleOf(mine, label)).toBe('e2e #4821 · r3');
+  const own = 'Authors can’t approve their own pull request';
+  expect(verdictsOf(mine, label).map(({ event, off }) => [event, off])).toEqual([
+    ['COMMENT', undefined],
+    ['APPROVE', own],
+    ['REQUEST_CHANGES', 'Authors can’t request changes on their own pull request'],
+  ]);
+  expect(verdictsOf(mine, label)[1]?.description).toBe(own);
+  expect(verdictsOf(mine, label)[2]?.description).toBe(
+    'Authors can’t request changes on their own pull request',
+  );
 });
 
 test('a pending review on another revision dims Approve and Request changes, with "Show r2" while GitHub has it', () => {

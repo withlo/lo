@@ -18,11 +18,6 @@ export interface PullFile {
   new?: string | undefined;
   /** Why the file isn't shown as a diff. */
   skipped?: 'too-large' | 'binary' | undefined;
-  /**
-   * Lines GitHub's diff leaves out, which the page shows as placeholders until the whole file
-   * comes, as the local copy brings it.
-   */
-  gaps?: { side: 'old' | 'new'; from: number; to: number }[] | undefined;
 }
 
 /** A review thread, on a file's line on one side, with each comment's length. */
@@ -40,11 +35,6 @@ export interface Pull {
   number: number;
   files: PullFile[];
   threads: PullThread[];
-  /**
-   * Whether a file with gaps gets its whole lines only when the test says, with `perfCopy`, as
-   * the local copy comes after GitHub's diff; otherwise as soon as its diff is worked out.
-   */
-  copyWhenAsked?: boolean | undefined;
 }
 
 /** What main sends the window when it asks for the pull request. */

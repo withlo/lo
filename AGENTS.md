@@ -163,9 +163,12 @@ longer `testTimeout` for the whole project (`@lo/git`). The desktop app's tests 
 `apps/desktop/vitest.config.ts` and run as `@lo/desktop:git`, a project of their own with 30 s; the
 rest of the desktop's tests keep the default.
 
-A string is pinned once, in its words module's own test; any other test gets the string from the
-module, or checks the kind of message and one key word. A test that restates a sentence fails each
-time it's reworded, and catches nothing its words module's test doesn't.
+A string is pinned once, in its words module's own test, or, for one with no words module, in the
+test of the module that says it, as `review/window/model.test.ts` pins the review dialog's verdicts.
+Any other test gets the string from that module, or checks the kind of message and one key word: one
+that tells it apart from the messages beside it, matched as a whole word, as `/\blink\b/` tells
+"First link" from "First block". A test that restates a sentence fails each time it's reworded, and
+catches nothing the module's own test doesn't.
 
 What `ui`'s components do that only a real browser shows, such as where `Tab` moves focus, is tested
 by Playwright specs in `packages/desktop/ui/e2e/`. Each builds its own page with Vite and opens it
@@ -851,7 +854,9 @@ repositories, which account opens a repository, and the pull requests opened lat
   in, and a merge queue's tab. `LO_WATCHED_POLL_MS` is how often it lists each watched repository's
   open pull requests, each list looking up the merged pull requests the last one left out, and reads
   the pull requests it watches off screen, in place of 2 minutes. `LO_ANSWER_START_MS` is how long a
-  request waits for GitHub's answer to begin before Lo gives up on it, in place of 15 s.
+  request waits for GitHub's answer to begin before Lo gives up on it, in place of 15 s. For these,
+  `LO_DEVICE_POLL_MS` and `LO_HOLD_LIMIT_MS`, a wait below 1 ms, or past the longest a timer takes,
+  2,147,483,647 ms, is left for Lo's own.
 
 ### A pull request's tab
 

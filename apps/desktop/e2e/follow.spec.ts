@@ -198,9 +198,11 @@ async function back(page: Page, number: number, top: number): Promise<void> {
   expect(Math.abs((await topOf(page, number)) - top)).toBeLessThanOrEqual(1);
 }
 
-/** The note Lo says at the bottom of the window. */
-const said = (page: Page, text: string | RegExp) =>
-  page.getByRole('status').filter({ hasText: text });
+/**
+ * The note Lo says at the bottom of the window, by its own text: the status holds each note there
+ * one after another, so a word at a note's end is still a whole word here.
+ */
+const said = (page: Page, text: string | RegExp) => page.getByRole('status').getByText(text);
 
 /**
  * A right-click at a block's corner, its own: one on a code block's code is the line's, with the
@@ -314,7 +316,7 @@ test(']b and [b go between the blocks, Tab between a block’s links, and ← an
 
   // At the last block, ]b says so.
   await press(page, ']', 'b');
-  await expect(said(page, /Last\b/)).toBeVisible();
+  await expect(said(page, /\bLast\b/)).toBeVisible();
   expect((await focused(page)).block).toBe(BLOCK.fold);
 });
 
@@ -376,7 +378,7 @@ test('from the overview itself, Tab goes through the outline to the first block,
       expect(await focused(page)).toMatchObject({ block: undefined, text: section });
     }
     await press(page, 'Shift+Tab');
-    await expect(said(page, /First\b/)).toBeVisible();
+    await expect(said(page, /\blink\b/)).toBeVisible();
     expect(await focused(page)).toMatchObject({ text: sections[0] });
   });
 
@@ -687,7 +689,7 @@ test('o puts a block’s code beside the overview, which follows the blocks, and
     await expect(block(page, BLOCK.format)).toHaveClass(/is-focused/);
     // The diff's keys act on it there.
     await press(page, 'g', 'i');
-    await expect(said(page, /\binline/)).toBeVisible();
+    await expect(said(page, /\binline\b/)).toBeVisible();
     await press(page, 'Escape');
     await expect(beside(page)).toHaveCount(0);
     await expect(toc).toBeVisible();

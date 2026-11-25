@@ -250,7 +250,7 @@ async function laidOut(page: Page): Promise<void> {
 for (const layout of ['split', 'inline'] as const) {
   test.describe(() => {
     // Inline runs with Lo's moves on, as most readers have them.
-    test.use({ motion: layout === 'inline' ? 'system' : undefined });
+    test.use({ motion: layout === 'inline' ? 'on' : undefined });
 
     test(`a file a click brought to the top keeps its header there as it's folded, ${layout === 'split' ? 'side by side' : 'inline, with Lo’s moves on'}`, async ({
       page,

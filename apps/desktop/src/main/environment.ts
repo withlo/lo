@@ -245,15 +245,20 @@ export function compareWait(options: { packaged: boolean; env: Environment }): n
   return Number(wait);
 }
 
+/** The longest wait a timer takes, in milliseconds: one longer fires at once. */
+const LONGEST_WAIT = 2_147_483_647;
+
 /**
  * `value`, the text of the test-only variable `name`, as a whole number of milliseconds. It throws
- * for anything else, so a test that mistypes one finds out.
+ * for anything else, so a test that mistypes one finds out. A wait below 1 ms, which would never
+ * back off or would give up at once, or past {@link LONGEST_WAIT} is left out, for Lo's own.
  */
-function milliseconds(name: string, value: string): number {
+function milliseconds(name: string, value: string): number | undefined {
   if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) {
     throw new Error(`${name} must be a whole number of milliseconds, not "${value}".`);
   }
-  return Number(value);
+  const wait = Number(value);
+  return wait >= 1 && wait <= LONGEST_WAIT ? wait : undefined;
 }
 
 /**
