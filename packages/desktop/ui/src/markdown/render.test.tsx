@@ -4,7 +4,14 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { githubTree, markdownTree, type Block, type Inline, type Tree } from '@lo/markdown';
+import {
+  githubTree,
+  markdownTree,
+  type Block,
+  type Image,
+  type Inline,
+  type Tree,
+} from '@lo/markdown';
 
 import { act } from 'react';
 
@@ -161,6 +168,16 @@ describe('Markdown', () => {
     const page = render(<Markdown tree={made} />);
     expect(page.querySelectorAll('*').length).toBeGreaterThan(50);
     expect(disallowed(page.firstElementChild!, allowed)).toEqual([]);
+  });
+
+  it('draws a code block across the post’s width, as code in a comment is set', () => {
+    const page = render(
+      <Markdown tree={tree([{ kind: 'code', text: 'const a = 1;', language: 'ts' }])} />,
+    );
+    const block = page.querySelector('pre');
+    // Only prose keeps to the read measure.
+    expect(block?.className).not.toContain('max-w-');
+    expect(block?.querySelector('code')?.className).toContain('code-small');
   });
 
   it('draws a suggested change as the diff does: the lines it replaces over the lines it suggests', () => {
@@ -422,7 +439,8 @@ describe('links', () => {
 
 /** Where main serves an image: its address, on the image scheme. */
 const served = (url: string) => `lo-image://post/tab/${encodeURIComponent(url)}`;
-const picture = (url: string, alt = 'a picture'): Inline => ({ kind: 'image', url, alt });
+const imageNode = (url: string, alt = 'a picture'): Image => ({ kind: 'image', url, alt });
+const picture = (url: string, alt = 'a picture'): Inline => imageNode(url, alt);
 
 describe('images', () => {
   it('loads an image only from main, lazily, with its alt text', () => {
@@ -448,6 +466,61 @@ describe('images', () => {
       expect(page.querySelector('img')).toBeNull();
       expect(page.querySelector('a')?.textContent).toBe('a picture');
     }
+  });
+
+  it('draws it at the size the text gives, never wider than the text', () => {
+    const url = 'https://camo.githubusercontent.com/a';
+    const sized = (extra: Partial<Image>) =>
+      render(
+        <Markdown tree={tree([paragraph({ ...imageNode(url), ...extra })])} images={served} />,
+      ).querySelector('img')!;
+    const both = sized({ width: '115', height: '28' });
+    expect([both.getAttribute('width'), both.getAttribute('height')]).toEqual(['115', '28']);
+    // Its height follows its width, as GitHub's does once the text is narrower than it.
+    expect(both.className.split(' ')).toEqual(
+      expect.arrayContaining(['max-w-full', 'h-auto', 'inline-block']),
+    );
+    expect(sized({ width: '50%' }).getAttribute('width')).toBe('50%');
+    // A height alone is kept, and the width follows it.
+    const tall = sized({ height: '20' });
+    expect(tall.getAttribute('height')).toBe('20');
+    expect(tall.classList.contains('h-auto')).toBe(false);
+    // Anything else a tree could hold there isn't written.
+    const forged = sized({ width: '1px;position:fixed', height: 'auto' });
+    expect([forged.hasAttribute('width'), forged.hasAttribute('height')]).toEqual([false, false]);
+  });
+
+  it("draws a picture for each theme where the text gives one, each from main, in Lo's theme", () => {
+    const url = 'https://camo.githubusercontent.com/dark';
+    const light = 'https://camo.githubusercontent.com/light';
+    const page = render(
+      <Markdown
+        tree={tree([paragraph({ ...imageNode(url), dark: url, light })])}
+        images={served}
+      />,
+    );
+    const sources = [...page.querySelectorAll('picture > source')].map((each) => [
+      each.getAttribute('media'),
+      each.getAttribute('srcset'),
+    ]);
+    expect(sources).toEqual([
+      ['(prefers-color-scheme: dark)', served(url)],
+      ['(prefers-color-scheme: light)', served(light)],
+    ]);
+    expect(page.querySelector('picture > img')?.getAttribute('src')).toBe(served(url));
+    // A theme's image main won't serve is left out, and the image shows in that theme.
+    const one = render(
+      <Markdown
+        tree={tree([paragraph({ ...imageNode(url), dark: url, light })])}
+        images={(address) => (address === light ? address : served(address))}
+      />,
+    );
+    expect([...one.querySelectorAll('source')].map((each) => each.getAttribute('media'))).toEqual([
+      '(prefers-color-scheme: dark)',
+    ]);
+    // Without one for either, it's the image alone.
+    const plain = render(<Markdown tree={tree([paragraph(imageNode(url))])} images={served} />);
+    expect(plain.querySelector('picture')).toBeNull();
   });
 
   it('shows its link in its place once it fails', () => {
@@ -519,7 +592,8 @@ describe('images', () => {
       );
       shown += page.querySelectorAll('img').length;
       for (const image of page.querySelectorAll('img')) {
-        expect([...image.attributes].map(({ name: attribute }) => attribute).toSorted()).toEqual([
+        const attributes = [...image.attributes].map(({ name: attribute }) => attribute);
+        expect(attributes.filter((one) => one !== 'width' && one !== 'height').toSorted()).toEqual([
           'alt',
           'class',
           'decoding',
@@ -527,6 +601,9 @@ describe('images', () => {
           'src',
         ]);
         expect(image.getAttribute('src')).toMatch(/^lo-image:\/\/post\/tab\/https%3A%2F%2F/);
+      }
+      for (const each of page.querySelectorAll('source')) {
+        expect(each.getAttribute('srcset')).toMatch(/^lo-image:\/\/post\/tab\/https%3A%2F%2F/);
       }
       const others = disallowed(page, allowed).filter((found) => !found.startsWith('img'));
       expect(others).toEqual([]);

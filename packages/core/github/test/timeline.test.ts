@@ -94,7 +94,19 @@ test('fd 2212s timeline is read in full then by its newest page', async () => {
   const fetch = replayFetch('timeline_fd_2212_paged');
   const github = client(fetch);
   const pull = new PullRef('sharkdp', 'fd', 2212);
-  const first = await readTimeline(github, pull, { now: noon(), pageSize: 3 });
+  const early: { timeline: PullRequestTimeline; asked: number }[] = [];
+  const first = await readTimeline(github, pull, {
+    now: noon(),
+    pageSize: 3,
+    onNewest: (timeline) => early.push({ timeline, asked: fetch.seen.length }),
+  });
+  // Its newest page is heard as soon as it's read, before the older pages are asked for: the
+  // description and the three newest items, with the five older ones still to read.
+  expect(early).toHaveLength(1);
+  expect(early[0]?.asked).toBe(1);
+  expect(early[0]?.timeline.description).toEqual(first.description);
+  expect(early[0]?.timeline.items).toEqual(first.items.slice(-3));
+  expect([early[0]?.timeline.leftOut, early[0]?.timeline.count]).toEqual([5, 8]);
   // Newest first, three a page. Each page is asked for before the second item of the page
   // after it, which has a later time than the first, so it holds that first item again.
   const pages = asked(fetch);
@@ -163,7 +175,15 @@ test('fd 2212s timeline is read in full then by its newest page', async () => {
 
   // Read again within the hour, it asks for its newest page alone, which joins what it has.
   const later = new Date(noon().getTime() + 60_000);
-  const again = await readTimeline(github, pull, { known: first, now: later, pageSize: 3 });
+  const heard: PullRequestTimeline[] = [];
+  const again = await readTimeline(github, pull, {
+    known: first,
+    now: later,
+    pageSize: 3,
+    onNewest: (timeline) => heard.push(timeline),
+  });
+  // With a timeline known, nothing waits on its newest page.
+  expect(heard).toEqual([]);
   expect(asked(fetch)).toHaveLength(5);
   expect(asked(fetch)[4]).toBeUndefined();
   expect(again).toEqual(first);
@@ -174,6 +194,19 @@ test('fd 2212s timeline is read in full then by its newest page', async () => {
   expect(asked(fetch)).toHaveLength(9);
   expect(full.items).toEqual(first.items);
   expect(full.readInFullAt).toBe(hourLater.toISOString());
+});
+
+test('a throw from what hears the newest page early leaves the read to finish', async () => {
+  const fetch = replayFetch('timeline_fd_2212_paged');
+  const read = await readTimeline(client(fetch), new PullRef('sharkdp', 'fd', 2212), {
+    now: noon(),
+    pageSize: 3,
+    onNewest: () => {
+      throw new Error('gone');
+    },
+  });
+  expect(asked(fetch)).toHaveLength(4);
+  expect([read.leftOut, read.count, read.items.length]).toEqual([0, 8, 8]);
 });
 
 function bagtoad(at: string): TimelineEvent {

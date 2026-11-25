@@ -39,6 +39,7 @@
         "{workspaceRoot}/.oxlintrc.json",
         "{workspaceRoot}/scripts/oxlint/plugin.ts",
         "{workspaceRoot}/scripts/oxlint/subjects.ts",
+        "{workspaceRoot}/scripts/oxlint/svgs.ts",
         "{workspaceRoot}/design/stylelint.config.mjs"
       ]
     },

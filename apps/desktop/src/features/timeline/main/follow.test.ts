@@ -10,6 +10,7 @@ import {
   type PollStatus,
   type PullRequestSidebar,
   type PullRequestTimeline,
+  type ReadPriorityNow,
 } from '@lo/github';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -90,6 +91,7 @@ function pollerOf(first: PullRequestTimeline | Error) {
     pullRequestSidebar: vi.fn<TimelinePoller['pullRequestSidebar']>(() =>
       Promise.resolve(cached(kept.sidebar)),
     ),
+    pushHistory: vi.fn<TimelinePoller['pushHistory']>(() => Promise.resolve(undefined)),
     onEvent(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -143,14 +145,21 @@ function tabOf(poller: TimelinePoller, readWait?: number) {
   const timelines: TimelineView[] = [];
   const sidebars: SidebarView[] = [];
   const asked = vi.fn<(login: string) => Promise<TimelinePoller>>(() => Promise.resolve(poller));
+  const screen: { on: string | undefined } = { on: 't1' };
   const tab = new TimelineTab({
     id: 't1',
     github: { poller: asked },
+    onScreen: () => screen.on,
     publish: { timeline: (view) => timelines.push(view), sidebar: (view) => sidebars.push(view) },
     log: () => undefined,
     readWait,
   });
-  return { tab, timelines, sidebars, asked };
+  return { tab, timelines, sidebars, asked, screen };
+}
+
+/** A read's priority as it stands now, as the poller takes it whenever the queue comes free. */
+function now(first: ReadPriorityNow | undefined): string | undefined {
+  return typeof first === 'function' ? first() : first;
 }
 
 describe('TimelineTab', () => {
@@ -172,6 +181,93 @@ describe('TimelineTab', () => {
 
     tab.close();
     expect(polled.listeners.size).toBe(0);
+  });
+
+  it('reads the timeline and what goes beside it ahead of polls while its tab is on screen, then the push history', async () => {
+    const polled = pollerOf(timeline('First'));
+    polled.empty();
+    const { tab, screen } = tabOf(polled.poller);
+    tab.update(info());
+    tab.show();
+    await vi.waitFor(() => expect(polled.poller.pullRequestSidebar).toHaveBeenCalled());
+    const read = vi.mocked(polled.poller.timeline).mock.calls[0]?.[1];
+    const beside = vi.mocked(polled.poller.pullRequestSidebar).mock.calls[0]?.[1];
+    const pushes = vi.mocked(polled.poller.pushHistory).mock.calls[0]?.[1];
+    expect([now(read), now(beside), now(pushes)]).toEqual([
+      'foreground',
+      'foreground',
+      'background',
+    ]);
+    // The rows split pushes by revision: the push history goes once the timeline is in.
+    polled.read(timeline('First'));
+    expect(now(pushes)).toBe('foreground');
+    // Another tab on screen: nobody's waiting on any of them.
+    screen.on = 't2';
+    expect([now(read), now(beside), now(pushes)]).toEqual([
+      'background',
+      'background',
+      'background',
+    ]);
+    tab.close();
+  });
+
+  it('draws a long timeline’s newest page while its older pages are read', async () => {
+    const polled = pollerOf(timeline('First'));
+    polled.empty();
+    const { tab, timelines } = tabOf(polled.poller);
+    tab.update(info());
+    tab.show();
+    await vi.waitFor(() => expect(polled.poller.timeline).toHaveBeenCalled());
+    const onNewest = vi.mocked(polled.poller.timeline).mock.calls[0]?.[2];
+    onNewest?.({ ...timeline('First'), leftOut: 120 });
+    expect(timelines.at(-1)).toMatchObject({
+      status: 'loading',
+      timeline: { leftOut: 120, description: { body: 'First' } },
+    });
+    // The whole timeline takes its place.
+    polled.read(timeline('First'));
+    expect(timelines.at(-1)).toMatchObject({ status: 'ready', timeline: { leftOut: 0 } });
+    // A later read's newest page changes nothing.
+    const count = timelines.length;
+    onNewest?.({ ...timeline('Later'), leftOut: 120 });
+    expect(timelines).toHaveLength(count);
+    tab.close();
+  });
+
+  it('draws nothing of a pull request the tab has left', async () => {
+    const polled = pollerOf(timeline('First'));
+    polled.empty();
+    const left = Promise.withResolvers<Cached<PullRequestTimeline> | undefined>();
+    vi.mocked(polled.poller.timeline).mockImplementationOnce(() => left.promise);
+    const { tab, timelines } = tabOf(polled.poller);
+    tab.update(info());
+    tab.show();
+    await vi.waitFor(() => expect(polled.poller.timeline).toHaveBeenCalled());
+    const onNewest = vi.mocked(polled.poller.timeline).mock.calls[0]?.[2];
+    // The tab goes to #24 as the same account, so the same poller reads it.
+    tab.update(info({ number: 24 }));
+    await vi.waitFor(() => expect(polled.poller.timeline).toHaveBeenCalledTimes(2));
+    const count = timelines.length;
+    // #23's newest page, then the whole of it.
+    onNewest?.({ ...timeline('First'), leftOut: 120 });
+    left.resolve(cached(timeline('First')));
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(timelines).toHaveLength(count);
+    expect(timelines.at(-1)).toMatchObject({ status: 'loading', timeline: null });
+    tab.close();
+  });
+
+  it('says why a long timeline failed after its newest page came', async () => {
+    const polled = pollerOf(timeline('First'));
+    polled.empty();
+    const { tab, timelines } = tabOf(polled.poller);
+    tab.update(info());
+    tab.show();
+    await vi.waitFor(() => expect(polled.poller.timeline).toHaveBeenCalled());
+    vi.mocked(polled.poller.timeline).mock.calls[0]?.[2]?.({ ...timeline('First'), leftOut: 120 });
+    polled.failed({ kind: 'api', status: 502, message: 'Server Error', errors: [] });
+    expect(timelines.at(-1)).toMatchObject({ status: 'failed', timeline: null });
+    tab.close();
   });
 
   it('asks a tab that acts as nobody to sign in, and reads a run’s nothing', () => {

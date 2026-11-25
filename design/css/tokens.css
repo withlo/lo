@@ -413,6 +413,7 @@
   --lo-code-line-small: 18px; /* Line height of small code. */
   --lo-code-inline-size: 0.88em; /* Inline code inside prose, relative to the text. */
   --lo-read-measure: 680px; /* Widest line of reading text in overviews. */
+  --lo-timeline-w: 856px; /* Widest the timeline's column gets: a code block of 100 columns fits in a post beside the rail. */
   /* motion */
   --lo-dur-fast: 90ms; /* Tint, Pop and Swap, and every exit. */
   --lo-dur: 160ms; /* Sheet, Open and Slide. */

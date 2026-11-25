@@ -30,6 +30,7 @@ import { contract } from '../contract.ts';
 import { bodies, drafts, reviews } from '../service.ts';
 import { vim } from '../settings.ts';
 import { readBodies } from './bodies.ts';
+import { askGitHub, BotPictures } from './bots.ts';
 import { CommentableReads } from './commentable.ts';
 import { DraftStore } from './drafts.ts';
 import { IMAGE_LIMITS, ImageError, Images } from './images.ts';
@@ -214,6 +215,13 @@ export default defineFeature(contract, {
     // In a test run, GitHub's image hosts are the test's server, as GitHub itself is. A packaged
     // build always fetches from the hosts.
     const { images: stand } = githubSettings({ packaged: app.isPackaged, env: process.env });
+    const bots = new BotPictures({ ask: (login) => askGitHub(use(github), login) });
+    stops.push(
+      // An account added, or signed in again, may ask what the others couldn't.
+      use(github).onEvent((event) => {
+        if (event.kind === 'added') bots.release();
+      }),
+    );
     const images = new Images({
       fetch,
       route: (address) =>
@@ -227,6 +235,7 @@ export default defineFeature(contract, {
       async token(login) {
         return (await use(github).client(login)).token;
       },
+      botPicture: (login) => bots.picture(login),
     });
     stopServing = serveImages(
       session.fromPartition(windowPartition),

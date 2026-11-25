@@ -4,6 +4,7 @@
 //
 //   lo-image://post/<view>/<address>   an image in a post, shown in a pull request's tab's view
 //   lo-image://avatar/<login>?s=<px>   an account's avatar, `px` pixels a side
+//   lo-image://bot/<slug>?s=<px>       a GitHub App's bot's avatar, by the app's slug
 //
 // A post's address is one of GitHub's image hosts' (`imageAddress`), checked again here and by
 // main. The view says which account main fetches it as.
@@ -18,7 +19,12 @@ export type ImageAsked =
   /** An image in a post, at an address `imageAddress` accepts, shown in view `view`. */
   | { kind: 'post'; view: string; address: string }
   /** An account's avatar, `size` pixels a side. */
-  | { kind: 'avatar'; login: string; size: number };
+  | { kind: 'avatar'; login: string; size: number }
+  /**
+   * A bot's avatar, `size` pixels a side, by its app's slug, as GraphQL names a bot: the app's
+   * picture, which GitHub keeps at an address the slug doesn't name.
+   */
+  | { kind: 'bot'; login: string; size: number };
 
 /** A GitHub login: letters, digits and hyphens, 39 at most. */
 const LOGIN = /^[A-Za-z0-9-]{1,39}$/;
@@ -56,13 +62,24 @@ export function avatarImageAddress(login: string, size: number): string | undefi
   return `${imageScheme}://avatar/${login}?s=${size}`;
 }
 
+/**
+ * The address the window loads bot `login`'s avatar from, `size` pixels a side: `login` is the
+ * app's slug, as GraphQL gives it, or the bot's login as REST does, with `[bot]` after it. Nothing
+ * for a login that isn't one or a size GitHub doesn't serve.
+ */
+export function botImageAddress(login: string, size: number): string | undefined {
+  const slug = login.endsWith('[bot]') ? login.slice(0, -'[bot]'.length) : login;
+  if (!isLogin(slug) || !isSize(size)) return undefined;
+  return `${imageScheme}://bot/${slug}?s=${size}`;
+}
+
 function isSize(size: number): boolean {
   return Number.isSafeInteger(size) && size >= 1 && size <= MAX_AVATAR;
 }
 
 /**
  * What `address`, an address the window asked for, asks for, or nothing for one that isn't exactly
- * one of the two forms above: no user name, port, fragment or anything else in it.
+ * one of the forms above: no user name, port, fragment or anything else in it.
  */
 export function readImageAddress(address: string): ImageAsked | undefined {
   const url = URL.parse(address);
@@ -81,7 +98,8 @@ export function readImageAddress(address: string): ImageAsked | undefined {
       if (!VIEW.test(view) || checked === undefined) return undefined;
       return { kind: 'post', view, address: checked };
     }
-    case 'avatar': {
+    case 'avatar':
+    case 'bot': {
       const [login] = parts;
       const params = [...url.searchParams];
       const [size] = params;
@@ -90,7 +108,8 @@ export function readImageAddress(address: string): ImageAsked | undefined {
         return undefined;
       }
       const pixels = Number(size[1]);
-      return isSize(pixels) ? { kind: 'avatar', login, size: pixels } : undefined;
+      if (!isSize(pixels)) return undefined;
+      return { kind: url.hostname === 'bot' ? 'bot' : 'avatar', login, size: pixels };
     }
     default:
       return undefined;
