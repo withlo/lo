@@ -56,10 +56,10 @@ list.
 
 ## The settings
 
-Settings shows each setting but `app.gpu` as a row in one of its groups, with a line on what it does
-and, under the pointer or focus, its key. Its search (`/` or `⌘F`) finds a row by any of those. A
-setting a key also changes, such as `diff.layout`, shows the change in Settings and keeps it across
-a restart.
+Settings shows each setting but `app.gpu` and `overview.open` as a row in one of its groups, with a
+line on what it does and, under the pointer or focus, its key. Its search (`/` or `⌘F`) finds a row
+by any of those. A setting a key also changes, such as `diff.layout`, shows the change in Settings
+and keeps it across a restart.
 
 | Setting           | Takes                                     | Default      | What it does                                                                                                                                                 |
 | ----------------- | ----------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -77,10 +77,15 @@ a restart.
 | `editor.vim`      | true or false                             | `false`      | Whether code and comment boxes take Vim's keys. Off, they have a plain caret, and a box takes typing as soon as it has focus. Lo's own keys work either way. |
 | `updates.check`   | true or false                             | `true`       | Whether Lo checks GitHub Releases for a newer version by itself: 30 s after it starts, then every 6 hours. Off, it checks only when you ask.                 |
 | `app.gpu`         | true or false                             | `true`       | Whether Lo draws with the graphics card. Off, it draws with the processor alone, for a window that stays blank. It applies at the next start.                |
+| `overview.open`   | overview, diff or null                    | `null`       | Replaced by `tab.open`. Lo carries a `"diff"` saved here over to `tab.open` once, unless `tab.open` is chosen already, then sets this to `null`.             |
 
 `app.gpu` is only in the file, since a window that draws nothing couldn't reach it in Settings. Lo
 reads it as it starts, before it draws anything, so a change applies the next time Lo starts. It
 does what Chromium's `--disable-gpu` does, since an installed Lo takes no command-line switches.
+
+`overview.open` is the key `tab.open` replaced, from when a pull request opened on its overview or
+its diff. It's only in the file, and only Lo writes it: once it has carried its value over, it's
+`null`, so a later change to `tab.open` stands.
 
 ## Trusted repos and pull requests
 

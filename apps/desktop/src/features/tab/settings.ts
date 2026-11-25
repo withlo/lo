@@ -1,5 +1,6 @@
 // The tab's setting: which of its middle views a pull request's tab opens on. The window shows it in
-// Settings › Pull requests, and reads it as a tab opens.
+// Settings › Pull requests, and reads it as a tab opens. And the key it replaced, which main carries
+// over once.
 
 import { z } from 'zod';
 
@@ -25,3 +26,22 @@ export const open = defineSetting(
   },
 );
 export type OpenOn = typeof open.fallback;
+
+/**
+ * The key `tab.open` replaced, from when a tab opened on the overview or the diff: `overview` or
+ * `diff`, or `null` once main has carried it over. Main carries a `diff` over to `tab.open` once,
+ * where `tab.open` is still its default, then sets this to `null`, so a later choice stands. Only
+ * in the file, and only main writes it.
+ */
+export const before = defineSetting(
+  'overview.open',
+  z.enum(['overview', 'diff']).nullable(),
+  null,
+  'overview, diff or null',
+  {
+    group: 'file',
+    label: 'Open on, before',
+    description: 'Replaced by where pull requests open, which takes its value once.',
+    window: 'read',
+  },
+);

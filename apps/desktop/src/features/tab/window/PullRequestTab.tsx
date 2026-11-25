@@ -12,7 +12,7 @@ import { useLayoutEffect, useState, useSyncExternalStore } from 'react';
 import { registry } from '../../../window/commands/registry.ts';
 import { Slot, useViews } from '../../../window/slots.tsx';
 import { useKnownSetting } from '../../settings/window/shared.ts';
-import { open as openOn } from '../settings.ts';
+import { before, open as openOn } from '../settings.ts';
 import { blocked } from './banners.ts';
 import { Banners, LimitItem, LocalItem, TabFailed, useHeaderConnection } from './Notes.tsx';
 import {
@@ -82,7 +82,10 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
   const middles = useViews(middle);
   const rights = useViews(right);
   const rightOpen = useRightOpen();
-  const open = useKnownSetting(openOn);
+  const saved = useKnownSetting(openOn);
+  // A `diff` saved under the key `tab.open` replaced, until main has carried it over.
+  const earlier = useKnownSetting(before);
+  const open = saved === openOn.fallback && earlier === 'diff' ? 'diff' : saved;
   viewCounts.left = lefts.length;
   viewCounts.middle = middles.length;
   viewCounts.right = rights.length;
