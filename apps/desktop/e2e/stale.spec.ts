@@ -14,7 +14,7 @@ import { APP_PULL, writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { ElectronApplication, Page } from '@playwright/test';
 
-import { appFolder, expect, KEYCHAIN, sizeWindow, test as base } from './app.ts';
+import { appFolder, expect, KEYCHAIN, keysToDiff, sizeWindow, test as base } from './app.ts';
 
 declare global {
   interface Window {
@@ -419,7 +419,7 @@ test('marks the lines it explains in the diff at r2, opens what it says of them,
 
     // src/format.ts at the top: its first line's ball opens the note of the block on lines 1–3, and
     // Esc in the diff closes it.
-    await diff.click();
+    await keysToDiff(page);
     const format = await page.evaluate(
       () => window.loDiff?.files.find((file) => file.path === 'src/format.ts')?.id,
     );
@@ -528,7 +528,7 @@ test('marks the lines it explains in the diff at r2, opens what it says of them,
     await expect(header).toContainText('r1 → r2', { timeout: 20_000 });
 
     // `gv` opens the picker, which marks r1 as the revision the overview describes, and no other.
-    await page.locator('.lo-diffview').click();
+    await keysToDiff(page);
     await page.keyboard.press('g');
     await page.keyboard.press('v');
     const picker = page.getByRole('listbox', { name: 'Compare revisions' });
