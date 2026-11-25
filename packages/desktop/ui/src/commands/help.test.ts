@@ -256,6 +256,9 @@ describe('keyboard shortcuts', () => {
     expect(ids('mark')).toEqual(['diff.markViewed']);
     expect(ids('tabs')).toEqual(['diff.escape']);
     expect(ids('⌘o')).toEqual(['diff.open']);
+    // A key's symbol can't be typed, so its words as the keymap file writes them find it too.
+    expect(ids('shift')).toEqual(['diff.palette']);
+    expect(ids('cmd+l')).toEqual(['diff.open']);
     expect(ids('] f')).toEqual(['diff.nextFile']);
     expect(ids('next file')).toEqual(['diff.nextFile']);
     expect(ids('whole pull request')).toEqual(['diff.merge']);

@@ -3,7 +3,7 @@
 // they're Vim's.
 
 import { groups, isOwned, listOf, type Command, type Group } from './declare.ts';
-import { ariaShortcut, keyLabels } from './notation.ts';
+import { ariaShortcut, keyLabels, writeStrokes } from './notation.ts';
 import type { Registry } from './registry.ts';
 import type { Target } from './targets.ts';
 
@@ -18,6 +18,11 @@ export interface HelpRow {
   readonly description: string | undefined;
   /** Its keys now, the keymap file's first: one list of key labels per sequence (`⌘⇧P`, `] f`). */
   readonly keys: readonly (readonly string[])[];
+  /**
+   * The same keys as the keymap file writes them (`cmd+shift+p`, `shift+tab`), which a search
+   * matches too: a key's symbol, such as `⇥`, can't be typed into it.
+   */
+  readonly written: readonly string[];
   /**
    * A series' row, each of its commands with one key: its keys read as a range, the first's to the
    * last's (`⌘1` – `⌘8`).
@@ -134,6 +139,9 @@ function grouped(registry: Registry, commands: readonly Command[], vim: boolean)
     const rows: HelpRow[] = [];
     for (const command of commands.filter((each) => each.group === group)) {
       const keys = liveKeys(registry, command);
+      const written = registry
+        .keysOf(command.id)
+        .map((strokes) => writeStrokes(strokes, registry.system));
       const label = command.series ?? command.label;
       const at = rows.findIndex(
         (row) => row.label === label && row.description === command.description,
@@ -145,6 +153,7 @@ function grouped(registry: Registry, commands: readonly Command[], vim: boolean)
           ...same,
           ids: [...same.ids, command.id],
           keys: [...same.keys, ...keys.filter((each) => !known.has(each.join(' ')))],
+          written: [...new Set([...same.written, ...written])],
           range: same.range && keys.length === 1,
         };
         continue;
@@ -155,6 +164,7 @@ function grouped(registry: Registry, commands: readonly Command[], vim: boolean)
         label,
         description: command.description,
         keys,
+        written,
         range: command.series !== undefined && keys.length === 1,
         vim: vim && command.vim === 'own',
         editor: command.editor === true,
@@ -242,8 +252,8 @@ export function plainLabel(label: string): string {
 
 /**
  * The groups with only the rows that match `query`: each word of it is in the row's label, its
- * description, its group's name, an id or one of its keys. A group whose name matches keeps every
- * row.
+ * description, its group's name, an id or one of its keys, as shown (`⇧⇥`) or as the keymap file
+ * writes it (`shift+tab`). A group whose name matches keeps every row.
  */
 export function filterHelp(all: readonly HelpGroup[], query: string): HelpGroup[] {
   const wanted = words(query);
@@ -252,7 +262,7 @@ export function filterHelp(all: readonly HelpGroup[], query: string): HelpGroup[
   return all.flatMap((each): HelpGroup[] => {
     if (matches(each.group.toLowerCase())) return [each];
     const rows = each.rows.filter((row) => {
-      const keys = row.keys.map((sequence) => sequence.join(' ')).join(' ');
+      const keys = [...row.keys.map((sequence) => sequence.join(' ')), ...row.written].join(' ');
       const said = `${plainLabel(row.label)} ${row.description ?? ''}`;
       return matches(`${said} ${each.group} ${row.ids.join(' ')} ${keys}`.toLowerCase());
     });

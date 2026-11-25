@@ -497,7 +497,7 @@ describe('blocks', () => {
     block = page.querySelector('.is-focused')!;
     expect(block.className).toBe('lo-block lo-block--prose is-focused');
     expect(block.firstElementChild?.localName).toBe('p');
-    expect(hints(block)).toEqual(['Next linkTab', 'Open link⏎']);
+    expect(hints(block)).toEqual(['Next link⇥', 'Open link⏎']);
 
     // Unfocused, no chip is drawn at all.
     page = focusedOn(-1);
