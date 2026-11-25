@@ -1311,6 +1311,14 @@ The `timeline` feature shows a pull request's GitHub timeline as the third of it
   `PULL_REQUEST_SIDEBAR`). The window asks with `timeline.show`, and gets each change on the
   `timeline.timeline` and `timeline.sidebar` topics. A tab acting as nobody reads none, and asks the
   reader to sign in; a run of a stack's layers has none of its own.
+- The reader waits on those first reads, so while the view's tab is on screen they go ahead of polls
+  in the account's queue (`foreground`), as the review threads do, in the order of the reads' names:
+  what goes beside the description, which is quick, then the review threads, then the timeline, and
+  once it's in, the push history the revisions feature reads, which the rows split pushes by. A
+  timeline of more than a page sends its newest page while the older pages are read
+  (`readTimeline`'s `onNewest`, never kept): the view is `loading` with that page as its timeline,
+  and the window draws it, with "Reading older events…" where the older ones go, and draws the whole
+  timeline in its place as it comes, without waiting for input.
 - `window/rows.ts` turns what main sent into rows, plain functions tested alone: the description
   card, a note of older items not read, consecutive commits as one push split where a revision ends,
   with its last commit's checks, comments and submitted reviews as cards, a force-push that can

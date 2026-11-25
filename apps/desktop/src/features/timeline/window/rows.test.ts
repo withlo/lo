@@ -127,8 +127,13 @@ describe('rowsOf', () => {
         draft: true,
         labels: [{ name: 'api', color: '2700af' }],
       }),
-      { kind: 'older', key: 'older', count: 120 },
+      { kind: 'older', key: 'older', count: 120, reading: false },
     ]);
+  });
+
+  it('says the older items are being read while the newest page is drawn', () => {
+    const rows = rowsOf(timeline([], { leftOut: 120 }), REPOSITORY, { ...none, reading: true });
+    expect(rows.at(-1)).toEqual({ kind: 'older', key: 'older', count: 120, reading: true });
   });
 
   it('groups commits into one push, split where a revision ends, each with its checks', () => {

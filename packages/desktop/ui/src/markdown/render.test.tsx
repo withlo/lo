@@ -163,6 +163,16 @@ describe('Markdown', () => {
     expect(disallowed(page.firstElementChild!, allowed)).toEqual([]);
   });
 
+  it('draws a code block across the post’s width, as code in a comment is set', () => {
+    const page = render(
+      <Markdown tree={tree([{ kind: 'code', text: 'const a = 1;', language: 'ts' }])} />,
+    );
+    const block = page.querySelector('pre');
+    // Only prose keeps to the read measure.
+    expect(block?.className).not.toContain('max-w-');
+    expect(block?.querySelector('code')?.className).toContain('code-small');
+  });
+
   it('draws a suggested change as the diff does: the lines it replaces over the lines it suggests', () => {
     const page = render(
       <Markdown

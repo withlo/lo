@@ -322,6 +322,18 @@ describe('Timeline', () => {
     expect(onSee).toHaveBeenCalledOnce();
   });
 
+  it('says the older events are being read, with no way to GitHub, while they are', () => {
+    const host = render(
+      <Timeline>
+        <TimelineOlder count={120} reading onSee={vi.fn<() => void>()} />
+      </Timeline>,
+    );
+    const older = host.querySelector('li');
+    expect(older?.textContent).toBe('Reading older events…');
+    expect(older?.querySelector('.spinner')).not.toBeNull();
+    expect(older?.querySelector('button')).toBeNull();
+  });
+
   it('is one focusable list: it takes a ref, tabIndex and the rest, and names the row the keyboard is on', () => {
     let held: HTMLOListElement | null = null;
     const host = render(
