@@ -13,6 +13,7 @@ import {
   type DiffLayout,
   type DiffView,
   type FileView,
+  type PassStats,
   type PeekFrame,
   type PeekView,
   type Place,
@@ -472,6 +473,10 @@ const harness = {
   /** How far apart the rows on screen are drawn side by side, at most. */
   misalignment(): number {
     return view().probe.misalignment().worst;
+  },
+  /** What the spacer pass has done so far. */
+  passStats(): PassStats {
+    return { ...view().probe.passStats };
   },
   /** Shares the width between the sides as the window's layout hands it: the old side `share`. */
   sides(share: number | undefined): void {

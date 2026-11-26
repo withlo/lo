@@ -334,6 +334,13 @@ export class Aligner {
   #widths: { old: number; new: number } | undefined;
   /** The holds under way on the first line under the pinned header, as the sides change width. */
   #holds = 0;
+  /**
+   * Whether the last hold was let go while a pass that ran out of rounds was still to finish: the
+   * held line stays held until a pass settles.
+   */
+  #lettingGo = false;
+  /** Whether the last pass ran out of rounds, and goes round again the next frame. */
+  #unsettled = false;
   readonly #resized: ResizeObserver;
 
   constructor(
@@ -437,7 +444,7 @@ export class Aligner {
     if (this.#paused || this.#topTaken) return;
     this.#topTaken = true;
     // A hold under way keeps its own line: what changes now is the sides' widths changing.
-    if (this.#scheduled || this.#rewrapped() || this.#holds > 0) return;
+    if (this.#scheduled || this.#rewrapped() || this.#holding()) return;
     const side = this.#anchorSide();
     const found = this.#screenLine(side, true) ?? this.#screenLine(otherSide(side), true);
     if (found) this.#anchor = { for: side, ...found };
@@ -456,7 +463,7 @@ export class Aligner {
    */
   anchorAt(side: Side, pos: number, element?: Element): void {
     if (this.#paused) return;
-    if (this.#rewrapped() || this.#holds > 0) {
+    if (this.#rewrapped() || this.#holding()) {
       this.#topTaken = true;
       this.#chosen = true;
       return;
@@ -507,7 +514,24 @@ export class Aligner {
   /** Ends a hold `holdUnder` began: the anchor goes back to the pass's own once none is left. */
   release(): void {
     this.#holds = Math.max(0, this.#holds - 1);
-    if (this.#holds > 0 || this.#anchor?.under === undefined) return;
+    if (this.#holds > 0) return;
+    // A pass still finishing what the hold was for keeps the line until it settles.
+    if (this.#unsettled) {
+      this.#lettingGo = true;
+      return;
+    }
+    this.#letGo();
+  }
+
+  /** Whether a hold keeps the line under the pinned header: one under way, or one still settling. */
+  #holding(): boolean {
+    return this.#holds > 0 || this.#lettingGo;
+  }
+
+  /** The anchor goes back to the pass's own, the hold over. */
+  #letGo(): void {
+    this.#lettingGo = false;
+    if (this.#anchor?.under === undefined) return;
     this.#anchor = { ...this.#anchor, under: undefined };
   }
 
@@ -518,6 +542,9 @@ export class Aligner {
     this.#topTaken = false;
     this.#chosen = false;
     this.#given = false;
+    // No pass is still to finish, and a hold let go has nothing left to keep.
+    this.#unsettled = false;
+    this.#lettingGo = false;
     if (!paused) this.schedule();
   }
 
@@ -578,6 +605,7 @@ export class Aligner {
     // where the reader saw it: the pass goes as it does with none.
     const given = this.#given && !this.#rewrapped();
     let changed = false;
+    let unsettled = false;
     try {
       const side = this.#anchorSide();
       let anchor = this.#anchor;
@@ -641,6 +669,7 @@ export class Aligner {
           // What it measured may have drawn rows it hasn't lined up yet, and the editors told
           // no one while it ran: go round again next frame. This frame may draw them out of step.
           this.stats.unsettled++;
+          unsettled = true;
           requestAnimationFrame(() => this.schedule());
           break;
         }
@@ -670,6 +699,9 @@ export class Aligner {
       if (changed) this.stats.changed++;
       this.stats.totalMs += ms;
       this.stats.maxMs = Math.max(this.stats.maxMs, ms);
+      this.#unsettled = unsettled;
+      // A hold let go while this pass was still to finish ends now it has.
+      if (!unsettled && this.#lettingGo && this.#holds === 0) this.#letGo();
     }
     if (Date.now() - this.#following < cursorFollow) this.#cursorInView();
   }
@@ -1429,7 +1461,7 @@ export class Aligner {
    * lasts, as `holdUnder` takes it, else as `#anchorNow` does. `was` is the anchor before.
    */
   #anchorFresh(was: Anchor | undefined): Anchor {
-    if (this.#holds > 0 && was?.under !== undefined) {
+    if (this.#holding() && was?.under !== undefined) {
       const found = this.#underNow(was.under);
       if (found) return found;
     }
