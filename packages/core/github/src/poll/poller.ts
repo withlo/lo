@@ -2263,6 +2263,8 @@ export class Poller {
   /**
    * Whether the loop runs, or runs next, a read someone on screen waits on, which frees the queue
    * between its requests: other reads in the queue give way to it, so none takes the turn there.
+   * Such a read can come due on the clock, as its backoff ends, while the loop sleeps: once this
+   * says it leads and the loop runs nothing, it wakes the loop to run it.
    */
   #leadAhead(): boolean {
     if (this.#stopped || !this.#looping) return false;
@@ -2436,8 +2438,10 @@ export class Poller {
     // is a run the loop holds now, the files themselves while the diff on screen wants them, a
     // forced poll of the open pull request, or a read someone waits on: the loop runs those last two
     // without waiting here, since a lead or a forced poll never waits, and a forced poll goes ahead
-    // of every poll merely due. While the open pull request's cache loads, its forced poll waits
-    // for that alone, which wakes the loop once it's in.
+    // of every poll merely due. A read someone waits on that comes due on the clock while the loop
+    // sleeps here, as its backoff ends, wakes the loop through `#leadAhead` once it leads. While the
+    // open pull request's cache loads, its forced poll waits for that alone, which wakes the loop
+    // once it's in.
     const behindAside = next?.job.kind !== 'details' && this.#asideWanted();
     if (next && next !== lead && !next.forced && (this.#pullFiles.wanted() || behindAside)) {
       return { kind: 'wait', wait: undefined };

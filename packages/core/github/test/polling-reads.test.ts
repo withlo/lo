@@ -1383,9 +1383,9 @@ test('a read someone waits on whose backoff ends while polls wait for the files 
 
 /**
  * GitHub couldn't be reached, and the loop waits out the backoff for a read someone waits on.
- * Another feature's read gets an answer meanwhile, so GitHub can be reached again, and the read
- * leads, which the Files panel's files give way to: the loop wakes to run it, rather than leave
- * them both waiting out the rest of the backoff.
+ * Another feature's read gets an answer meanwhile, so GitHub can be reached again: the loop wakes
+ * to run the read at once, rather than wait out the rest of the backoff, and the Files panel's
+ * files asked for after go once it's in.
  */
 test('a read waiting out a backoff goes once another read gets an answer, then the files', async () => {
   const t = await Polling.start('offline_clear', [...recorded(), ...pagedFiles()], {
@@ -1413,6 +1413,10 @@ test('a read waiting out a backoff goes once another read gets an answer, then t
   await t.run();
   await t.runUntil(24.5);
   await t.finish(t.poller.readOnce((github) => github.get(pr(1).restPath(), readPullSummary)));
+  // The answer ends the backoff, and the read waited on goes at once, before anything else wakes
+  // the loop.
+  await t.runUntil(27);
+  expect(finished.map(([what]) => what)).toEqual(['threads']);
   const limits = { maxPages: MAX_PAGES, keepRequests: 0 };
   void t.poller
     .pullFiles(pr(2), 'head', limits, { wanted: () => true, priority: 'next' })
