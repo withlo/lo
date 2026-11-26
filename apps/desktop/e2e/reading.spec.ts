@@ -786,7 +786,10 @@ test('goes from the tab, its menus and the palette while Settings turns overview
     await expect(input).toBeFocused();
     await input.fill(text);
   };
-  const overviews = palette.getByRole('option', { name: /overview|^Copy prompt/i });
+  // Code beside's description names the overview among what the diff goes beside: it's not one.
+  const overviews = palette
+    .getByRole('option', { name: /overview|^Copy prompt/i })
+    .filter({ hasNotText: /^Code beside/ });
 
   await test.step('Settings turns them off: the choice of first view has no Overview', async () => {
     await turn();
@@ -1542,7 +1545,8 @@ test('lays out each code block as tall as it draws before a jump reaches it, so 
       ),
     }),
   };
-  await sizeWindow(app, 1100, 800);
+  // Narrow enough that a line of src/format.ts wraps: the outline gives the article its room.
+  await sizeWindow(app, 900, 800);
   // Opened once for its local copy.
   const first = await open(page);
   await expect(overviewTab(page).getByRole('img')).toHaveAccessibleName('Overview', {
