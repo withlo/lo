@@ -1123,8 +1123,9 @@ The diff and the tree follow it through the feature's `revisions.comparisons` se
 - The window holds back what a tab shows first, the overview or a place in the diff, for
   `HOLD_LIMIT`, and past it shows the timeline in the overview's place, and the diff, or the file
   whole, in the place's. A build run from source takes another bound from `LO_HOLD_LIMIT_MS`, which
-  main hands the window in `app.info`, so a test that isn't about the bound doesn't race it on a
-  busy machine; a packaged build ignores it.
+  main hands the window in `app.info`, so a test doesn't race it on a busy machine; a packaged build
+  ignores it. The smoke test runs on three times the real bound, and checks what the window does by
+  it against that; only a test of the real bound itself, such as Lo giving up at it, asks for it.
 - Two revisions are compared in the local copy with `compareRevisions`, across a rebase when the
   base moved, once it has both: until then the comparison on screen stays, and the note over the
   diff says what waits. The comparison is made once, for the diff and the tree, and says how it
