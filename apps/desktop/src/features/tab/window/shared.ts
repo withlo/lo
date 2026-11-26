@@ -20,9 +20,10 @@ import {
 } from '../contract.ts';
 import { blocked } from './banners.ts';
 import { makeTabState, type TabState, useKept } from './kept.ts';
-import { panelDrawn } from './layout.ts';
+import { besideDrawn, panelDrawn } from './layout.ts';
 import { main } from './main.ts';
 import {
+  bringView,
   INSTEAD,
   keptRight,
   middleIds,
@@ -32,8 +33,8 @@ import {
   putRightBack,
   rightIds,
   showRightView,
-  type Panels,
   type RightKept,
+  type ViewKind,
 } from './panels.ts';
 import { Placeholder } from './Placeholder.tsx';
 import { activeOf, pullsStore, tabsStore, type TabsState } from './store.ts';
@@ -50,7 +51,7 @@ export type {
   Run,
   Tab,
 } from '../contract.ts';
-export type { RightKept } from './panels.ts';
+export type { RightKept, ViewKind } from './panels.ts';
 export type { TabsState } from './store.ts';
 
 /**
@@ -121,12 +122,22 @@ export const banners = defineSlot<{ tab: PullTab }, BannerSwitch>('tab.banners')
 export const left = defineSlot<{ tab: PullTab }>('tab.left');
 
 /**
- * What the header's view switch shows of a middle view. A view with no `label` isn't in the switch,
- * though `` ` `` and `~` still step to it.
+ * What the header's view switch shows of a middle view, and what the tab knows of it. A view with no
+ * `label` isn't in the switch, though `` ` `` and `~` still step to it.
  */
 export interface MiddleSwitch {
   /** Its name in the switch, a word or two: "Diff". */
   readonly label?: string | undefined;
+  /**
+   * Which of two views side by side it is, with the code beside: a view to read, on the left, or
+   * code, on the right. A view with neither isn't drawn beside another.
+   */
+  readonly kind?: ViewKind | undefined;
+  /**
+   * Whether it has nothing to show for a tab, by the tab's id, as the overview of a pull request with
+   * none: code beside then puts another reading view beside it.
+   */
+  readonly empty?: ((tab: string) => boolean) | undefined;
   /**
    * What goes before its name for a tab, such as whether the tab's pull request has an overview.
    * It says what it means itself, to a screen reader too.
@@ -137,12 +148,15 @@ export interface MiddleSwitch {
 /**
  * The middle of a pull request's tab: its overview, its diff or its timeline. Each view here is
  * one of the middle views, in order; `` ` `` and `~` go from one to the next, and the header's view
- * switch lists those with a label. One is on screen at a time, and `shown` says which: a view the
- * tab has shown stays drawn, hidden, while another is on screen, so coming back to it is instant
- * and finds it as it was. A hidden view keeps its keys, its focus and its place in the window's
- * history to itself until it's shown again. The tab opens on the one Settings names, and shows the
- * timeline in place of one that isn't there, or has nothing to show as it opens ({@link showInstead}).
- * A view that comes and goes, as the overview's does with Overview, takes `present`.
+ * switch lists those with a label. One is on screen at a time, or with the code beside, two: a
+ * reading view (`kind: 'reading'`) on the left and the code (`kind: 'code'`) on the right. `shown`
+ * says whether a view is on screen: a view the tab has shown stays drawn, hidden, while another is
+ * on screen, so coming back to it is instant and finds it as it was. A hidden view keeps its keys,
+ * its focus and its place in the window's history to itself until it's shown again; of two on
+ * screen, the one with focus has them. A view on screen takes focus as it comes only when focus is
+ * nowhere in particular. The tab opens on the one Settings names, and shows the timeline in place
+ * of one that isn't there, or has nothing to show as it opens ({@link showInstead}). A view that
+ * comes and goes, as the overview's does with Overview, takes `present`.
  */
 export const middle = defineSlot<{ tab: PullTab; shown: boolean }, MiddleSwitch>('tab.middle');
 
@@ -162,14 +176,55 @@ export function MiddlePlaceholder({
 }
 
 /**
- * Shows the middle view `id`, one of those in {@link middle}, in pull request's tab `tab`, as
- * `` ` `` and `~` step to it. Says whether the tab has it. A view that shows something another
- * feature asks for, such as a file whole, calls this to come on screen.
+ * Brings the middle view `id`, one of those in {@link middle}, into sight in pull request's tab
+ * `tab`, as `` ` `` and `~` step to it, and never changes the layout: with the code beside, a
+ * reading view takes the reading view's place and code the code's, and a view on screen already
+ * stays as it is; otherwise it's the one view on screen. Focus stays where it is. Says whether the
+ * tab has it. A view that shows something another feature asks for, such as a file whole, calls
+ * this to come into sight.
  */
 export function showMiddle(tab: string, id: string): boolean {
   if (!middleIds.ids.includes(id)) return false;
-  if (panels.get(tab).middle !== id) panels.update(tab, (current) => ({ ...current, middle: id }));
+  if (!viewsShown(tab).includes(id)) bringView(tab, id, besideDrawn());
   return true;
+}
+
+/** The middle views on screen in each pull request's tab, as it last drew them, left to right. */
+const onScreen = makeTabState<readonly string[]>(() => []);
+
+/** Says the middle views tab `tab` draws on screen now, left to right, as it draws them. */
+export function setViewsShown(tab: string, ids: readonly string[]): void {
+  if (onScreen.get(tab).join('\n') !== ids.join('\n')) onScreen.set(tab, ids);
+}
+
+/**
+ * The middle views on screen in pull request's tab `tab`, left to right: one, or with the code
+ * beside, its reading view and its code. None before the tab is drawn.
+ */
+export function viewsShown(tab: string): readonly string[] {
+  return onScreen.get(tab);
+}
+
+/**
+ * Puts focus on the middle of the window, nowhere in particular: where a view that has nothing to
+ * take focus yet, or is hidden, leaves it, so keys typed meanwhile go on in the view that takes it
+ * next, rather than being dropped.
+ */
+export function focusNowhere(): void {
+  document.querySelector<HTMLElement>('main[data-lo-middle]')?.focus({ preventScroll: true });
+}
+
+/** Whether the code is beside a reading view in the tab on screen, two views drawn. */
+export function besideNow(): boolean {
+  return besideDrawn();
+}
+
+/**
+ * Whether the code is beside a reading view in pull request's tab `tab`, as it's drawn: its code
+ * then is always inline. Re-renders as that changes.
+ */
+export function useBeside(tab: string): boolean {
+  return useKept(onScreen, tab, (ids: readonly string[]) => ids.length === 2) === true;
 }
 
 /**
@@ -189,7 +244,10 @@ export function openedOn(tab: string): string | undefined {
   return panels.get(tab).opened ?? opening.get(tab);
 }
 
-/** The id of the middle view on screen in pull request's tab `tab`. */
+/**
+ * The id of the middle view on screen in pull request's tab `tab`: with the code beside, the one of
+ * the two that has focus, or had it last.
+ */
 export function middleShown(tab: string): string | undefined {
   return middleOf(panels.get(tab).middle ?? opening.get(tab), middleIds.ids, undefined);
 }
@@ -217,19 +275,25 @@ export function showingMiddle(id: string): Handler<NoTarget> {
     },
     checked() {
       const tab = pullOnScreen();
-      return typeof tab !== 'string' && middleShown(tab.id) === id;
+      return typeof tab !== 'string' && viewsShown(tab.id).includes(id);
     },
   };
 }
 
 /**
- * The id of the middle view on screen in pull request's tab `tab`, and of each of the tab's middle
- * views in their order, re-rendering when another is shown.
+ * The middle views on screen in pull request's tab `tab`, left to right, the one of them with focus
+ * or that had it last, and each of the tab's middle views in their order, re-rendering when another
+ * is shown.
  */
-export function useMiddle(tab: string): { shown: string | undefined; ids: readonly string[] } {
-  const chosen = useTabState(panels, tab, (value: Panels) => value.middle);
+export function useMiddle(tab: string): {
+  shown: string | undefined;
+  onScreen: readonly string[];
+  ids: readonly string[];
+} {
+  const chosen = useTabState(panels, tab, (value) => value.middle);
+  const shownNow = useTabState(onScreen, tab);
   const { ids } = middleIds;
-  return { shown: middleOf(chosen ?? opening.get(tab), ids, undefined), ids };
+  return { shown: middleOf(chosen ?? opening.get(tab), ids, undefined), onScreen: shownNow, ids };
 }
 
 /**
@@ -454,6 +518,17 @@ export function useActiveTab(): Tab | undefined {
 /** The tab on screen now, a pull request's as its view on screen. */
 export function activeTab(): Tab | undefined {
   return activeOf(tabsStore.getState());
+}
+
+/**
+ * Calls `listener` each time another tab, or another view of a pull request's tab, comes on screen,
+ * with the one that has. Returns a function that stops it.
+ */
+export function onActiveTab(listener: (tab: Tab | undefined) => void): () => void {
+  return tabsStore.subscribe((next, previous) => {
+    const now = activeOf(next);
+    if (now?.id !== activeOf(previous)?.id) listener(now);
+  });
 }
 
 /**

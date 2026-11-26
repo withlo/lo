@@ -39,7 +39,12 @@ describe('the window’s layout, as main keeps it', () => {
     const on = database();
     const store = createWindowStore(on, limits);
     expect(store.layout()).toEqual(FIRST_LAYOUT);
-    const kept = { left: { open: false, width: 260 }, threads: { open: true } };
+    const kept = {
+      left: { open: false, width: 260 },
+      threads: { open: true },
+      beside: true,
+      reading: 0.4,
+    };
     store.keepLayout(kept);
     // Read again as Lo starts next.
     expect(createWindowStore(on, limits).layout()).toEqual(kept);
@@ -47,10 +52,17 @@ describe('the window’s layout, as main keeps it', () => {
 
   it('comes back with each width within its limits', () => {
     const store = createWindowStore(database(), limits);
-    store.keepLayout({ left: { open: true, width: 900 }, threads: { open: true, width: 100 } });
+    store.keepLayout({
+      left: { open: true, width: 900 },
+      threads: { open: true, width: 100 },
+      beside: true,
+      reading: 2,
+    });
     expect(store.layout()).toEqual({
       left: { open: true, width: 480 },
       threads: { open: true, width: 280 },
+      beside: true,
+      reading: 1,
     });
   });
 
@@ -63,9 +75,19 @@ describe('the window’s layout, as main keeps it', () => {
     expect(store.layout()).toEqual(FIRST_LAYOUT);
     keep('{"left": {"open": "yes"}, "threads": {"open": false}}');
     expect(store.layout()).toEqual(FIRST_LAYOUT);
-    // What a newer Lo keeps beside the panels.
-    keep('{"left": {"open": false}, "threads": {"open": true}, "beside": true}');
-    expect(store.layout()).toEqual({ left: { open: false }, threads: { open: true } });
+    // What a newer Lo keeps beside the panels, and an older Lo's, with no code beside.
+    keep('{"left": {"open": false}, "threads": {"open": true}, "beside": true, "split": 0.3}');
+    expect(store.layout()).toEqual({
+      left: { open: false },
+      threads: { open: true },
+      beside: true,
+    });
+    keep('{"left": {"open": false}, "threads": {"open": true}}');
+    expect(store.layout()).toEqual({
+      left: { open: false },
+      threads: { open: true },
+      beside: false,
+    });
   });
 
   it('keeps the window’s place beside it, each without the other', () => {

@@ -24,8 +24,16 @@ export interface PanelLimits {
 
 const keptPanel = z.object({ open: z.boolean(), width: z.number().finite().optional() });
 
-/** A layout as it's kept: what it doesn't name, as a newer Lo's might, is left out. */
-const keptLayout = z.object({ left: keptPanel, threads: keptPanel });
+/**
+ * A layout as it's kept: what it doesn't name, as a newer Lo's might, is left out, and what an
+ * older Lo didn't keep, as code beside, is as it first is.
+ */
+const keptLayout = z.object({
+  left: keptPanel,
+  threads: keptPanel,
+  beside: z.boolean().optional(),
+  reading: z.number().finite().optional(),
+});
 
 /**
  * Where the window is and how big, in the screen's points, as it is when it's neither maximized
@@ -143,9 +151,13 @@ export function createWindowStore(database: Database, limits: PanelLimits): Wind
         read('SELECT layout AS value FROM tab_window WHERE id = 1'),
       );
       if (!kept.success) return FIRST_LAYOUT;
+      const { reading } = kept.data;
       return {
         left: within(kept.data.left, limits.left),
         threads: within(kept.data.threads, limits.threads),
+        beside: kept.data.beside ?? FIRST_LAYOUT.beside,
+        // A share of the two views' room, within it.
+        ...(reading === undefined ? {} : { reading: Math.max(0, Math.min(1, reading)) }),
       };
     },
     keepLayout(layout) {

@@ -1,16 +1,26 @@
-// The panels in a pull request's tab's row, each as wide as the row lets it be, so only they draw
-// again as a width changes: what they hold is handed in, drawn by the tab, and stays as it was. Each
-// has an edge to drag, on the middle's side. A panel asked for fades in as it arrives, and focus in
-// one goes back to the middle view as it goes, whatever takes it away.
+// The panels in a pull request's tab's row, each as wide as the row lets it be, and the one view or
+// two between them, each a sheet, so only they draw again as a width changes: what they hold is
+// handed in, drawn by the tab, and stays as it was. Each panel has an edge to drag, on the middle's
+// side, and two views the gap between them. A panel asked for fades in as it arrives, and so does a
+// view that comes on screen, but for one the window's own widening brings back; focus in a panel
+// goes back to the middle view as it goes, whatever takes it away.
 
-import { handOffFocus, Splitter, swapIn, type SplitterProps } from '@lo/ui';
-import { useCallback, useLayoutEffect, useRef, type ReactNode, type Ref } from 'react';
+import { handOffFocus, Splitter, swapIn, type SplitterProps, type ViewFocus } from '@lo/ui';
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  type FocusEvent,
+  type ReactNode,
+  type Ref,
+} from 'react';
 
 import { focusMiddle } from '../../../window/commands/registry.ts';
 import {
   arrives,
   closePanel,
   row,
+  setReading,
   setWidth,
   useClosing,
   useRow,
@@ -183,5 +193,124 @@ export function RightPanel({ there, failed, label, view, ref, children }: RightP
         <Held width={held}>{children}</Held>
       </aside>
     </>
+  );
+}
+
+/** A sheet of the middle: the reading view's, on the left, or the code's, on the right. */
+export type Sheet = 'reading' | 'code';
+
+export interface ViewsRowProps {
+  /** Which panels the tab has views for, and whether it has a reading view and code. */
+  readonly there: There;
+  /** Which of two views has focus, for what's put away where there's room for one. */
+  readonly focus: ViewFocus;
+  /** Which sheets are drawn: both, side by side, or one of them alone. */
+  readonly drawn: Sheet | 'both';
+  /** The pull request can't be shown: the edge between two views isn't there. */
+  readonly failed: boolean;
+  /** What each sheet holds: its views, each drawn by the tab. */
+  readonly reading: ReactNode;
+  readonly code: ReactNode;
+  /** What goes across the top of the code with two views, or of the one view: a run's bar. */
+  readonly over: ReactNode;
+  /** What each sheet is to a screen reader. */
+  readonly labels: { readonly reading: string; readonly code: string };
+  /** Focus coming into either sheet. */
+  readonly onFocus: (event: FocusEvent<HTMLElement>) => void;
+  /** What's drawn over the whole middle: why the pull request can't be shown. */
+  readonly children?: ReactNode;
+}
+
+/**
+ * What the edge between two views does as it's dragged: it draws the drag's width for the reading
+ * view, which the window keeps for every tab as a share of the two views' room only as the drag
+ * ends somewhere new; anything else puts back what it had. A double-click puts back its default.
+ */
+function draggedViews(room: number): Omit<SplitterProps, 'label' | 'value' | 'range'> {
+  return {
+    onDrag: (width) => row.setState({ drag: { edge: 'views', width, closing: false } }),
+    onEnd: (width) => {
+      setReading(width / room);
+      row.setState({ drag: undefined });
+    },
+    onCancel: () => row.setState({ drag: undefined }),
+    onReset: () => setReading(undefined),
+  };
+}
+
+/**
+ * The middle of the row: one view, or with the code beside, the reading view's sheet and the
+ * code's, `lo-sp-8` of chrome apart, that gap being the edge between them. The sheet not drawn
+ * stays, unseen and inert, over the one that is, so what it holds keeps its place and is laid out
+ * at the width it next comes at. A sheet that comes on screen fades in, unless the window's own
+ * widening brought it back, or the tab is first drawn.
+ */
+export function ViewsRow({
+  there,
+  focus,
+  drawn,
+  failed,
+  reading,
+  code,
+  over,
+  labels,
+  onFocus,
+  children,
+}: ViewsRowProps) {
+  const fitted = useRow(there, focus);
+  const stepped = useStepped('views');
+  const both = drawn === 'both';
+  const [readingWidth = 0, codeWidth = 0] = fitted.views;
+  const sheets = { reading: useRef<HTMLElement>(null), code: useRef<HTMLElement>(null) };
+  const shows = (sheet: Sheet) => both || drawn === sheet;
+  const last = useRef<{ reading: boolean; code: boolean; width: number | undefined }>(undefined);
+  const width = row.getState().width;
+  useLayoutEffect(() => {
+    const now = { reading: shows('reading'), code: shows('code'), width };
+    const was = last.current;
+    last.current = now;
+    if (!was || was.width !== width) return;
+    for (const sheet of ['reading', 'code'] as const) {
+      const element = sheets[sheet].current;
+      if (!was[sheet] && now[sheet] && element) swapIn(element);
+    }
+  });
+  const sheetClass = (sheet: Sheet) => {
+    if (!shows(sheet)) return 'invisible absolute inset-0 flex flex-col overflow-hidden sheet';
+    const grows = both && sheet === 'reading' ? 'flex-none' : 'min-w-0 flex-1';
+    return `flex min-h-0 flex-col overflow-hidden sheet ${grows}`;
+  };
+  const overIn: Sheet = both ? 'code' : drawn;
+  const sheetOf = (sheet: Sheet, content: ReactNode) => (
+    <section
+      ref={sheets[sheet]}
+      className={sheetClass(sheet)}
+      style={both && sheet === 'reading' ? { width: readingWidth } : undefined}
+      aria-label={both ? labels[sheet] : 'Pull request'}
+      inert={!shows(sheet)}
+      data-lo-sheet={sheet}
+      onFocus={onFocus}
+    >
+      {overIn === sheet && over}
+      <div className="relative min-h-0 flex-1">{content}</div>
+    </section>
+  );
+  return (
+    <div className="relative flex min-h-0 min-w-0 flex-1" data-lo-views={both ? 'two' : 'one'}>
+      {sheetOf('reading', reading)}
+      {both && !failed && (
+        <Splitter
+          label="Resize views"
+          gap
+          value={readingWidth}
+          range={fitted.edges.views ?? { min: readingWidth, max: readingWidth }}
+          stepped={stepped}
+          {...draggedViews(readingWidth + codeWidth)}
+        />
+      )}
+      {both && failed && <span className="w-splitter-w flex-none" />}
+      {sheetOf('code', code)}
+      {children}
+    </div>
   );
 }

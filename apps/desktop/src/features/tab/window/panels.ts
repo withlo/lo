@@ -1,14 +1,20 @@
 // Each pull request's tab's panels, for each of its views, kept while the tab is open: which of the
-// middle views it shows, which it opened on, and which of the right panel's it shows. Whether each
-// panel is open is the window's layout's (`layout.ts`): it stays open or closed from tab to tab and
-// layer to layer.
+// middle views it shows, which it opened on, which of the right panel's it shows, and with the code
+// beside, its reading view, its code view and which of them had focus last. Whether each panel is
+// open, and whether the code is beside, is the window's layout's (`layout.ts`): it stays so from
+// tab to tab and layer to layer.
 
+import type { ViewFocus } from '@lo/ui';
 import { createStore } from 'zustand/vanilla';
 
 import type { OpenOn } from '../settings.ts';
 import { makeTabState, useKept } from './kept.ts';
+import { focusMiddleIn } from '../../../window/commands/registry.ts';
 import {
+  askBeside,
   askPanel,
+  besideDrawn,
+  closeBeside,
   closePanel,
   drawable,
   layout,
@@ -17,14 +23,20 @@ import {
   setOpen,
   togglePanel,
 } from './layout.ts';
+import { activeOf, tabsStore } from './store.ts';
 
 export interface Panels {
   /**
    * Which middle view is on screen, by id: none until the tab opens, on the one Settings names. One
    * that's gone, as the overview's is while Overview is off, shows as {@link middleOf} says until
-   * it's back.
+   * it's back. With the code beside, it's the one of the two that had focus last, which stays on
+   * screen alone as the code goes, or as there's room for only one.
    */
   readonly middle?: string | undefined;
+  /** Its reading view, the one it showed last, by id: the overview or the timeline. */
+  readonly reading?: string | undefined;
+  /** With the code beside, its code view, by id: the diff, or a file whole opened from it. */
+  readonly code?: string | undefined;
   /** The middle view the tab opened on, by id, once it has. */
   readonly opened?: string | undefined;
   /**
@@ -68,15 +80,113 @@ export function useTabPanels(tab: string): Panels {
   return useKept(panels, tab);
 }
 
+/** Which of two views side by side a middle view is: one to read, or code. */
+export type ViewKind = 'reading' | 'code';
+
+/** The middle views there are, in their order, and what the tab knows of each. */
+export interface MiddleList {
+  readonly ids: readonly string[];
+  /** Which of them have a label: the header's switch lists those, and `` ` `` steps through them. */
+  readonly labeled: readonly boolean[];
+  /** Which of them is a reading view, and which code, where it's either. */
+  readonly kinds: readonly (ViewKind | undefined)[];
+  /** Which of them has nothing to show for a tab, as the overview with none, where they say. */
+  readonly empty: readonly (((tab: string) => boolean) | undefined)[];
+}
+
 /**
  * The middle views' ids, those there now, in their order, as the tab last drew them, to show one by
- * its id, and which of them have a label: the header's switch lists those, and `` ` `` steps
- * through them.
+ * its id, which of them have a label, and which are reading views and which code.
  */
-export const middleIds: { ids: readonly string[]; labeled: readonly boolean[] } = {
-  ids: [],
-  labeled: [],
-};
+export const middleIds: {
+  ids: readonly string[];
+  labeled: readonly boolean[];
+  kinds: readonly (ViewKind | undefined)[];
+  empty: readonly (((tab: string) => boolean) | undefined)[];
+} = { ids: [], labeled: [], kinds: [], empty: [] };
+
+/** Which kind of view `id` is among `views`, if it's either. */
+export function kindOf(
+  id: string | undefined,
+  views: MiddleList = middleIds,
+): ViewKind | undefined {
+  return id === undefined ? undefined : views.kinds[views.ids.indexOf(id)];
+}
+
+/** What a pull request's tab shows in its middle. */
+export type OnScreen =
+  /** One view, or none before the tab knows which. */
+  | { readonly beside: false; readonly single: string | undefined }
+  /** With the code beside: a reading view, the code, and which of them has focus. */
+  | {
+      readonly beside: true;
+      readonly reading: string;
+      readonly code: string;
+      readonly focus: ViewFocus;
+    };
+
+/**
+ * The reading view tab `tab` shows beside the code with nothing of its own: the view Settings says
+ * to open on, where that's one; else the first with something to show, the overview where the pull
+ * request has one; else the timeline.
+ */
+function readingFor(tab: string, open: OpenOn | undefined, views: MiddleList): string | undefined {
+  const reading = views.ids.filter((id) => kindOf(id, views) === 'reading');
+  const named = open === undefined ? undefined : `${open}.view`;
+  if (named !== undefined && reading.includes(named)) return named;
+  const showing = reading.find((id) => !(views.empty[views.ids.indexOf(id)]?.(tab) ?? false));
+  return showing ?? (reading.includes(INSTEAD) ? INSTEAD : reading[0]);
+}
+
+/**
+ * What tab `tab`, with `panels`, shows in its middle among `views`, with the code `beside` a
+ * reading view or not, `open` being the view Settings says to open on. Alone, its view, as
+ * {@link middleOf} says. Beside, a reading view on the left: the one it shows alone, where it's
+ * one, else the last it showed, else as {@link readingFor} says; and the code on the right: the
+ * code view it shows alone, where it's one, else the one it showed beside last, else the diff. The
+ * one it showed alone has focus.
+ */
+export function viewsOf(
+  tab: string,
+  kept: Panels,
+  open: OpenOn | undefined,
+  beside: boolean,
+  views: MiddleList = middleIds,
+): OnScreen {
+  const single = middleOf(kept.middle ?? opening.get(tab), views.ids, open);
+  if (!beside || single === undefined) return { beside: false, single };
+  const kind = kindOf(single, views);
+  const there = (id: string | undefined) =>
+    id !== undefined && views.ids.includes(id) ? id : undefined;
+  const reading =
+    (kind === 'reading' ? single : undefined) ??
+    (kindOf(there(kept.reading), views) === 'reading' ? kept.reading : undefined) ??
+    readingFor(tab, open, views);
+  const code =
+    (kind === 'code' ? single : undefined) ??
+    (kindOf(there(kept.code), views) === 'code' ? kept.code : undefined) ??
+    views.ids.find((id) => kindOf(id, views) === 'code');
+  if (reading === undefined || code === undefined) return { beside: false, single };
+  return { beside: true, reading, code, focus: kind === 'code' ? 'code' : 'reading' };
+}
+
+/**
+ * Brings middle view `id` into sight in tab `tab`, without changing the layout: with two views
+ * drawn (`two`), it takes the place of the one of its kind, and has focus where that one had it;
+ * otherwise it's the view on screen. A reading view is the tab's reading view from now on.
+ */
+export function bringView(tab: string, id: string, two: boolean): void {
+  const kind = kindOf(id);
+  panels.update(tab, (current) => {
+    const reading = kind === 'reading' ? id : current.reading;
+    if (!two || kind === undefined) return { ...current, middle: id, reading };
+    const now = viewsOf(tab, current, undefined, true);
+    const replaced = now.beside ? (kind === 'reading' ? now.reading : now.code) : undefined;
+    const middle =
+      current.middle === undefined || current.middle === replaced ? id : current.middle;
+    return { ...current, middle, reading, code: kind === 'code' ? id : current.code };
+  });
+}
 
 /** The right panel's views' ids, in their order, as the tab last drew them, the threads first. */
 export const rightIds: string[] = [];
@@ -170,4 +280,34 @@ export function takeRightFocus(): boolean {
   const { focus } = rightPanel.getState();
   if (focus) rightPanel.setState({ focus: false });
   return focus;
+}
+
+/**
+ * Puts the code beside a reading view in every pull request's tab, or takes it away, as `o` and
+ * its button do, and says which. Focus stays where it is. Taken away, the view that had focus last
+ * stays on screen, and next time a reading view brings the diff, not the code it had beside it.
+ */
+export function toggleBeside(): 'opened' | 'closed' {
+  if (!besideDrawn()) {
+    askBeside();
+    return 'opened';
+  }
+  const tab = activeOf(tabsStore.getState());
+  if (tab?.kind === 'pull') panels.update(tab.id, (current) => ({ ...current, code: undefined }));
+  closeBeside();
+  return 'closed';
+}
+
+/** Where middle view `id` of the tab on screen is drawn, if it's drawn. */
+function viewElement(id: string): Element | null {
+  return document.querySelector(`[data-lo-views] [data-lo-middle-view="${CSS.escape(id)}"]`);
+}
+
+/**
+ * Gives focus to middle view `id` of the tab on screen, one of two on screen, as a click on its
+ * segment of the header's switch does. Says whether it's there to take it.
+ */
+export function focusView(id: string): boolean {
+  const element = viewElement(id);
+  return element !== null && element.closest('[inert]') === null && focusMiddleIn(element);
 }

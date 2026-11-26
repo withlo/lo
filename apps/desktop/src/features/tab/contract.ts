@@ -161,16 +161,27 @@ const panelLayout = z.strictObject({
 
 /**
  * The window's layout of a pull request's tab's row, one for every tab, which main keeps across
- * restarts: the left panel and the threads panel, each open or not and its width.
+ * restarts: the left panel and the threads panel, each open or not and its width; whether the code
+ * is beside a reading view; and the reading view's share of the two views' room once its edge has
+ * been dragged, unset while it's the default.
  */
-export const windowLayout = z.strictObject({ left: panelLayout, threads: panelLayout });
+export const windowLayout = z.strictObject({
+  left: panelLayout,
+  threads: panelLayout,
+  beside: z.boolean(),
+  reading: z.number().min(0).max(1).optional(),
+});
 export type WindowLayout = z.output<typeof windowLayout>;
 
 /**
  * The layout as it first is, and as Reset layout puts it back: the left panel open and the threads
- * panel closed, each at its default width.
+ * panel closed, each at its default width, and one view.
  */
-export const FIRST_LAYOUT: WindowLayout = { left: { open: true }, threads: { open: false } };
+export const FIRST_LAYOUT: WindowLayout = {
+  left: { open: true },
+  threads: { open: false },
+  beside: false,
+};
 
 /** What names a pull request's tab's views: its id, and the pull request it opened on. */
 interface PullTabName {

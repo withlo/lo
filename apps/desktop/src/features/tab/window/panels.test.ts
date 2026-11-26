@@ -4,6 +4,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { FIRST_LAYOUT } from '../contract.ts';
 import { layout, row, viewCounts } from './layout.ts';
 import {
+  bringView,
+  middleIds,
   middleOf,
   panels,
   rightIds,
@@ -11,6 +13,7 @@ import {
   showRightView,
   stepAmong,
   toggleRight,
+  viewsOf,
 } from './panels.ts';
 import { putRight, rightKept, rightShown } from './shared.ts';
 import { setRowSizes } from './sizes.testing.ts';
@@ -155,5 +158,75 @@ describe('the right panel’s views', () => {
     expect(document.activeElement).toBe(list);
     expect(rightPanel.getState().focus).toBe(false);
     aside.remove();
+  });
+});
+
+describe('code beside', () => {
+  // The overview, which tab `none` has nothing in, the diff, a file whole, and the timeline.
+  const views = {
+    ids: ['overview.view', 'diff.view', 'diff.whole', 'timeline.view'],
+    labeled: [true, true, false, true],
+    kinds: ['reading', 'code', 'code', 'reading'] as const,
+    empty: [(tab: string) => tab === 'none', undefined, undefined, undefined],
+  };
+
+  afterEach(() => {
+    panels.set('t1', {});
+    Object.assign(middleIds, { ids: [], labeled: [], kinds: [], empty: [] });
+  });
+
+  it('puts the diff beside the reading view the tab shows, which keeps focus', () => {
+    expect(viewsOf('t1', { middle: 'timeline.view' }, 'overview', true, views)).toEqual({
+      beside: true,
+      reading: 'timeline.view',
+      code: 'diff.view',
+      focus: 'reading',
+    });
+    // Off, the tab shows its one view.
+    expect(viewsOf('t1', { middle: 'timeline.view' }, 'overview', false, views)).toEqual({
+      beside: false,
+      single: 'timeline.view',
+    });
+  });
+
+  it('brings, beside the code, the reading view the tab showed last, else Settings’, else one with something to show', () => {
+    const fromDiff = { middle: 'diff.view' };
+    expect(
+      viewsOf('t1', { ...fromDiff, reading: 'timeline.view' }, 'overview', true, views),
+    ).toEqual({ beside: true, reading: 'timeline.view', code: 'diff.view', focus: 'code' });
+    expect(viewsOf('t1', fromDiff, 'timeline', true, views)).toMatchObject({
+      reading: 'timeline.view',
+    });
+    // Settings naming the diff: the overview where the pull request has one, else the timeline.
+    expect(viewsOf('t1', fromDiff, 'diff', true, views)).toMatchObject({
+      reading: 'overview.view',
+    });
+    expect(viewsOf('none', fromDiff, 'diff', true, views)).toMatchObject({
+      reading: 'timeline.view',
+    });
+    // A file whole keeps the code's place.
+    expect(viewsOf('t1', { middle: 'diff.whole' }, 'overview', true, views)).toMatchObject({
+      reading: 'overview.view',
+      code: 'diff.whole',
+      focus: 'code',
+    });
+  });
+
+  it('brings a view into its sheet, focus staying where it was, and alone shows it', () => {
+    Object.assign(middleIds, views);
+    panels.set('t1', { middle: 'overview.view' });
+    // The timeline takes the overview's place, and its focus.
+    bringView('t1', 'timeline.view', true);
+    expect(panels.get('t1')).toMatchObject({ middle: 'timeline.view', reading: 'timeline.view' });
+    // A file whole takes the diff's, focus staying on the timeline.
+    bringView('t1', 'diff.whole', true);
+    expect(panels.get('t1')).toMatchObject({ middle: 'timeline.view', code: 'diff.whole' });
+    expect(viewsOf('t1', panels.get('t1'), 'overview', true)).toMatchObject({
+      reading: 'timeline.view',
+      code: 'diff.whole',
+    });
+    // Alone, the view brought is the one on screen.
+    bringView('t1', 'diff.view', false);
+    expect(panels.get('t1').middle).toBe('diff.view');
   });
 });
