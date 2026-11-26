@@ -46,6 +46,7 @@ import {
   type Target,
 } from '../commands/index.ts';
 import { cutShort } from '../cut.ts';
+import { land } from '../land.ts';
 import { EDIT_SLOT_EVENT } from '../edits.ts';
 import { type Tip, TIPPED, tips } from './tip.ts';
 import type {
@@ -1049,8 +1050,8 @@ class View implements DiffView {
     this.#watchFile();
   }
 
-  setLayout(layout: DiffLayout): void {
-    if (layout !== this.#pane) this.#toggleLayout();
+  setLayout(layout: DiffLayout, options: { readonly focus?: boolean } = {}): void {
+    if (layout !== this.#pane) this.#toggleLayout(options.focus ?? true);
   }
 
   setThreads(
@@ -2378,6 +2379,23 @@ class View implements DiffView {
     this.#setRoom(Math.max(this.#roomHeight, this.dom.clientHeight));
     this.#moveCursor(found, true);
     return this.scrollTo({ at: this.#spot(found.place), offset: 0 });
+  }
+
+  land(at: Target): void {
+    const found = this.#atOf(at);
+    if (!found) return;
+    const pane: Pane = this.#pane === 'inline' ? 'inline' : found.place.side;
+    const view = this.#viewOf(pane);
+    const pos = view.state.doc.line(this.#docLine(pane, found.place)).from;
+    // Once the editor has scrolled to it and drawn it.
+    view.requestMeasure({
+      read: () => undefined,
+      write: () => {
+        const { node } = view.domAtPos(pos);
+        const line = (node instanceof Element ? node : node.parentElement)?.closest('.cm-line');
+        if (line) land(line);
+      },
+    });
   }
 
   /**
