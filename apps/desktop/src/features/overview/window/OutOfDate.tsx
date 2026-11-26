@@ -4,7 +4,7 @@
 // Compare button a code block's flag has too. The prompt that brings it up to date is `ya`'s, and
 // on a block's menu.
 
-import { Button } from '@lo/ui';
+import { Button, Glyphs } from '@lo/ui';
 import { OutOfDate } from '@lo/ui/overview';
 import { useEffect, useState } from 'react';
 
@@ -44,7 +44,9 @@ export function CompareButton({ tab, from, to }: { tab: string; from: string; to
         if (state.ok) void compareSince(tab, from, to);
       }}
     >
-      Compare {labelOf(known, from)} → {labelOf(known, to)}
+      <span>
+        <Glyphs text={`Compare ${labelOf(known, from)} → ${labelOf(known, to)}`} />
+      </span>
     </Button>
   );
 }

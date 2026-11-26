@@ -1,7 +1,7 @@
 // The header's revision button, showing what's compared ("r3 → r5"), and the revision picker it
 // opens, as `gv` does.
 
-import { keyAria, RevisionPicker, Ticks, Tooltip, useControl } from '@lo/ui';
+import { Glyphs, keyAria, RevisionPicker, Ticks, Tooltip, useControl } from '@lo/ui';
 import { keyLabels } from '@lo/ui/commands';
 import { useEffect, useState } from 'react';
 
@@ -75,9 +75,15 @@ export function Revisions({ tab }: { tab: PullTab }) {
             else openPicker();
           }}
         >
-          {view.status === 'loading' || !compared
-            ? 'Reading revisions…'
-            : comparisonLabel(view, compared)}
+          <span>
+            <Glyphs
+              text={
+                view.status === 'loading' || !compared
+                  ? 'Reading revisions…'
+                  : comparisonLabel(view, compared)
+              }
+            />
+          </span>
           {reason && <span className="text-fg-muted text-small">{reason}</span>}
         </button>
       </Tooltip>

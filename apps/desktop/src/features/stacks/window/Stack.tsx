@@ -9,6 +9,7 @@
 import {
   Button,
   HintButton,
+  Icon,
   Key,
   Offer as OfferLine,
   Problem,
@@ -83,9 +84,7 @@ function StepButton({ id, down }: { id: string; down: boolean }) {
         if (!off) runControl(id);
       }}
     >
-      <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-        <path d={down ? 'M4.5 6.25 8 9.75l3.5-3.5' : 'M4.5 9.75 8 6.25l3.5 3.5'} />
-      </svg>
+      <Icon name={down ? 'chevron-down' : 'chevron-up'} size={16} />
     </Button>
   );
 }

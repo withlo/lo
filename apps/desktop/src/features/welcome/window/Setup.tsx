@@ -18,22 +18,6 @@ import { StepHeading } from './Heading.tsx';
 import { setup } from './shared.ts';
 import { welcomeStore } from './store.ts';
 
-function TerminalIcon() {
-  return (
-    <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M3 4.5 6 8l-3 3.5M8 12h5" />
-    </svg>
-  );
-}
-
-function LinkIcon() {
-  return (
-    <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M6.5 9.5l3-3M7 4.5l1-1a2.47 2.47 0 0 1 3.5 3.5l-1 1M9 11.5l-1 1A2.47 2.47 0 0 1 4.5 9l1-1" />
-    </svg>
-  );
-}
-
 /** `lo`, as code, as a name that's code is in a label. */
 const LO = <span className="code-text">lo</span>;
 
@@ -49,7 +33,7 @@ export function CommandStep() {
   const quiet = done === null || (done?.kind === 'installed' && done.onPath);
   return (
     <SetupItem
-      icon={<TerminalIcon />}
+      icon="terminal"
       title={<>{LO} command</>}
       description={
         <>
@@ -79,7 +63,7 @@ const showRules = () => welcomeStore.setState({ rules: true });
 export function LinksStep() {
   return (
     <SetupItem
-      icon={<LinkIcon />}
+      icon="link"
       title="Send pull request links to Lo"
       description="Pull request links clicked in other apps open in Lo."
     >

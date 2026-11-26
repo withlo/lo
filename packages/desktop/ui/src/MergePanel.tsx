@@ -12,6 +12,7 @@ import {
 import { Button } from './Button.tsx';
 import { withoutBidi } from './controls.ts';
 import { useTakeFocus } from './focus.ts';
+import { Icon } from './Icon.tsx';
 import { Input } from './Input.tsx';
 import { Key } from './Key.tsx';
 import { MergeDot, type MergeKind } from './MergeStatus.tsx';
@@ -134,9 +135,7 @@ export function MergePanel({
                 hintKeys={closeKeys}
                 onClick={() => onOpenChange(false)}
               >
-                <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-                  <path d="M4 4l8 8M12 4l-8 8" />
-                </svg>
+                <Icon name="x" size={16} />
               </Button>
             </div>
             {children !== undefined && children !== null && (

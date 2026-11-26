@@ -1,7 +1,9 @@
 // An icon as `Icon` draws it, made in a code view's own DOM, where React doesn't reach, and what the
-// two share: the sizes, each size's classes, and how an icon faces the other way. It has no JSX, so
-// a code view's source, which is also built where JSX isn't, can import it.
+// two share: the sizes, each size's classes, and how an icon faces the other way; and a string as
+// `Glyphs` draws it there. It has no JSX, so a code view's source, which is also built where JSX
+// isn't, can import it.
 
+import { glyphPieces } from './glyphs.ts';
 import { ICONS, type IconName } from './icons.ts';
 
 /**
@@ -78,4 +80,20 @@ export function iconElement(
     holder.append(shape);
   }
   return icon;
+}
+
+/**
+ * `text` as `Glyphs` draws it, made in a code view's own DOM: each character the fonts don't hold,
+ * as the `←` of a rename, as its icon from `glyphs.ts` at `size`, hidden from screen readers, with
+ * the character beside it, visually hidden, so what's read aloud, copied and found as text is the
+ * string as it was.
+ */
+export function glyphNodes(text: string, size: 12 | 14 = 12): (Node | string)[] {
+  return glyphPieces(text).flatMap((piece): (Node | string)[] => {
+    if (typeof piece === 'string') return [piece];
+    const said = document.createElement('span');
+    said.className = 'sr-only';
+    said.textContent = piece.character;
+    return [iconElement(piece.glyph.icon, size, { mirrored: piece.glyph.mirrored }), said];
+  });
 }

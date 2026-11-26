@@ -5,12 +5,12 @@ import { Avatar } from './Avatar.tsx';
 import { Button } from './Button.tsx';
 import { useGiveUp } from './giveUp.ts';
 import { Icon } from './Icon.tsx';
+import type { IconName } from './icons.ts';
 import { Key, keyAria } from './Key.tsx';
 import { MoreButton } from './MoreButton.tsx';
 import { Spinner } from './Spinner.tsx';
 import { Tag, type TagTone } from './Tag.tsx';
 import { EDIT_SLOT, EDIT_SLOT_EVENT } from './edits.ts';
-import { CommentIcon } from './ThreadCount.tsx';
 import { Tooltip } from './Tooltip.tsx';
 
 /** One comment of a thread, as its card shows it. */
@@ -154,11 +154,7 @@ function replies(comments: readonly ThreadComment[]): string | undefined {
 }
 
 function Chevron({ up }: { up: boolean }) {
-  return (
-    <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-      <path d={up ? 'M3.5 10 8 5.5 12.5 10' : 'M3.5 6 8 10.5 12.5 6'} />
-    </svg>
-  );
+  return <Icon name={up ? 'chevron-up' : 'chevron-down'} size={16} />;
 }
 
 /**
@@ -239,31 +235,15 @@ export function SentPost({ state, author, image, label = 'Sending…', body }: S
   );
 }
 
-function EditIcon() {
-  return (
-    <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M10.25 3.25 12.75 5.75M3 13l.6-2.9 7.15-7.15a1.06 1.06 0 0 1 1.5 0l1 1a1.06 1.06 0 0 1 0 1.5L6.1 12.4 3 13Z" />
-    </svg>
-  );
-}
-
-function DeleteIcon() {
-  return (
-    <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M3 4.5h10M6.5 4.5V3.25a.75.75 0 0 1 .75-.75h1.5a.75.75 0 0 1 .75.75V4.5M4.5 4.5l.5 8a1 1 0 0 0 1 .95h4a1 1 0 0 0 1-.95l.5-8" />
-    </svg>
-  );
-}
-
 /**
  * A comment's own control, Edit or Delete…: its label, or, where its head has given up labels
  * (`give-up`), its icon alone, with the label as its tooltip.
  */
-function Face({ icon, children }: { icon: ReactNode; children: string }) {
+function Face({ icon, children }: { icon: IconName; children: string }) {
   return (
     <>
       <span data-takes="labels" className="inline-flex">
-        {icon}
+        <Icon name={icon} size={16} />
       </span>
       <span data-gives="labels">{children}</span>
     </>
@@ -380,16 +360,9 @@ export function Thread({
               onClick={onToggle}
             >
               {state === 'resolved' ? (
-                <svg
-                  className="lo-i lo-i--sm flex-none text-success"
-                  viewBox="0 0 16 16"
-                  aria-hidden="true"
-                >
-                  <circle cx="8" cy="8" r="6.25" />
-                  <path d="M5.5 8.25 7.25 10l3.25-3.75" />
-                </svg>
+                <Icon name="circle-check" size={12} className="text-success" />
               ) : (
-                <CommentIcon />
+                <Icon name="message-square" size={12} />
               )}
               <span className="flex-none">{word}</span>
               <Avatar login={first.author} image={first.image} size="sm" />
@@ -453,9 +426,7 @@ export function Thread({
       onClick={onResolve}
     >
       {popover ? (
-        <Face icon={<Icon name={resolved ? 'undo-2' : 'check'} size={14} />}>
-          {resolved ? 'Unresolve' : 'Resolve'}
-        </Face>
+        <Face icon={resolved ? 'undo-2' : 'check'}>{resolved ? 'Unresolve' : 'Resolve'}</Face>
       ) : resolved ? (
         'Unresolve'
       ) : (
@@ -594,7 +565,7 @@ export function Thread({
                       hintKeys={comment.id === newestMine ? keys.edit : undefined}
                       onClick={() => onEdit?.(comment.id)}
                     >
-                      <Face icon={<EditIcon />}>Edit</Face>
+                      <Face icon="pencil">Edit</Face>
                       {comment.id === newestMine && keys.edit && (
                         <Key keys={keys.edit} when="focus" decorative />
                       )}
@@ -613,7 +584,7 @@ export function Thread({
                       hintKeys={comment.id === newestMine ? keys.delete : undefined}
                       onClick={() => onDelete?.(comment.id)}
                     >
-                      <Face icon={<DeleteIcon />}>Delete…</Face>
+                      <Face icon="trash">Delete…</Face>
                       {comment.id === newestMine && keys.delete && (
                         <Key keys={keys.delete} when="focus" decorative />
                       )}

@@ -1,6 +1,8 @@
 import { cva } from 'class-variance-authority';
 import type { ReactNode } from 'react';
 
+import { Glyphs } from './Icon.tsx';
+
 /**
  * How a step stands: not yet, being done now, done, stopped at, or passed over since what came
  * before it stopped.
@@ -57,9 +59,9 @@ const SAID: Readonly<Record<StepState, string>> = {
   skipped: 'Not done',
 };
 
-/** The ball's mark: the step's number until it's done or stopped at. */
-function mark(state: StepState, place: number): string {
-  if (state === 'done') return '✓';
+/** The ball's mark: the step's number until it's done or stopped at, and a tick once it's done. */
+function mark(state: StepState, place: number): ReactNode {
+  if (state === 'done') return <Glyphs text="✓" />;
   if (state === 'stopped') return '!';
   return String(place);
 }

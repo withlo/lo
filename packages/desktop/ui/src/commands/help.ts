@@ -19,8 +19,8 @@ export interface HelpRow {
   /** Its keys now, the keymap file's first: one list of key labels per sequence (`⌘⇧P`, `] f`). */
   readonly keys: readonly (readonly string[])[];
   /**
-   * The same keys as the keymap file writes them (`cmd+shift+p`, `shift+tab`), which a search
-   * matches too: a key's symbol, such as `⇥`, can't be typed into it.
+   * The same keys as the keymap file writes them (`cmd+shift+p`, `shift+tab`), one for each of
+   * `keys`, which a search matches too: a key's symbol, such as `⇥`, can't be typed into it.
    */
   readonly written: readonly string[];
   /**
@@ -140,6 +140,8 @@ function grouped(registry: Registry, commands: readonly Command[], vim: boolean)
     const rows: HelpRow[] = [];
     for (const command of commands.filter((each) => each.group === group)) {
       const keys = liveKeys(registry, command);
+      // Written from the same strokes as the labels, one for one, so a search finds a row only by
+      // a key it shows.
       const written = registry
         .keysOf(command.id)
         .map((strokes) => writeStrokes(strokes, registry.system));
@@ -150,11 +152,15 @@ function grouped(registry: Registry, commands: readonly Command[], vim: boolean)
       const same = rows[at];
       if (same) {
         const known = new Set(same.keys.map((each) => each.join(' ')));
+        // A key the row already shows, by its label, isn't shown twice, nor found by another name.
+        const added = keys.flatMap((each, index) =>
+          known.has(each.join(' ')) ? [] : [{ keys: each, written: written[index] ?? '' }],
+        );
         rows[at] = {
           ...same,
           ids: [...same.ids, command.id],
-          keys: [...same.keys, ...keys.filter((each) => !known.has(each.join(' ')))],
-          written: [...new Set([...same.written, ...written])],
+          keys: [...same.keys, ...added.map((each) => each.keys)],
+          written: [...same.written, ...added.map((each) => each.written)],
           range: same.range && keys.length === 1,
         };
         continue;

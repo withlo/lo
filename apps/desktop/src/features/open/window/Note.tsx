@@ -2,17 +2,14 @@
 // warning, not a failure. The open box draws one under its input, and the welcome's field draws
 // the same one for text that isn't a pull request link.
 
-import { Button, Key, Ticks } from '@lo/ui';
+import { Button, Icon, Key, Ticks } from '@lo/ui';
 import { useEffect, useState } from 'react';
 
 import type { NotPull } from '../contract.ts';
 import { notPullLine } from './words.ts';
 
 const WARN_ICON = (
-  <svg className="lo-i lo-i--sm mt-2 flex-none text-warning" viewBox="0 0 16 16" aria-hidden="true">
-    <path d="M7.13 2.5a1 1 0 0 1 1.74 0l5.2 9.5a1 1 0 0 1-.87 1.5H2.8a1 1 0 0 1-.87-1.5Z" />
-    <path d="M8 6.25v3M8 11.25v.01" />
-  </svg>
+  <Icon name="triangle-exclamation-point" size={14} className="mt-2 text-warning" />
 );
 
 /** A note's one button, with the key that presses it. */

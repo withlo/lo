@@ -1,6 +1,5 @@
 // The icons' strokes in Chromium itself, where the stylesheet applies: jsdom applies none. Each size
-// sets its stroke in pixels, on Lucide's 24 grid, and an icon still drawn by hand on a 16 grid keeps
-// the stroke it had.
+// sets its stroke in pixels, on Lucide's 24 grid.
 
 import type { ElectronApplication, Page } from '@playwright/test';
 
@@ -19,7 +18,7 @@ test.afterEach(async () => {
 async function open(): Promise<Page> {
   app = await launch(await harness());
   const page = await app.firstWindow();
-  await page.waitForSelector('[data-drawn]');
+  await page.waitForSelector('[data-keys]');
   return page;
 }
 
@@ -38,7 +37,7 @@ function strokes(page: Page, selector: string): Promise<[number, number][]> {
   }, selector);
 }
 
-test('each size draws its stroke in pixels, and an icon drawn by hand keeps its own', async () => {
+test('each size draws its stroke in pixels', async () => {
   const page = await open();
   for (const [size, stroke] of [
     [12, 1.25],
@@ -57,12 +56,6 @@ test('each size draws its stroke in pixels, and an icon drawn by hand keeps its 
   expect(new Set((await strokes(page, '[data-glyphs="14"] svg')).map(String))).toEqual(
     new Set(['14,1.25']),
   );
-  // Drawn by hand on a 16 grid: 1.5 on its grid at 16 and 14 px, and 1.75 at 12, as before.
-  expect((await strokes(page, '[data-drawn] svg')).slice(0, 3)).toEqual([
-    [16, 1.5],
-    [14, 1.31],
-    [12, 1.31],
-  ]);
 });
 
 test('a key chip draws its symbols as 12 px icons, and its names and letters as text', async () => {

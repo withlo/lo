@@ -175,6 +175,14 @@ test('a toast floats fixed to the window, and a long word wraps inside it', asyn
     position: getComputedStyle(title.closest('.toast-floating')!).position,
   }));
   expect(fit).toEqual({ over: 0, lines: 3, position: 'fixed' });
+  // Its icon sits on the middle of the title's first line.
+  const off = await page.locator('.toast').evaluate((toast) => {
+    const icon = toast.querySelector(':scope > span:first-child svg')!.getBoundingClientRect();
+    const title = toast.querySelector('.line-clamp-3')!;
+    const line = Number.parseFloat(getComputedStyle(title).lineHeight);
+    return icon.top + icon.height / 2 - (title.getBoundingClientRect().top + line / 2);
+  });
+  expect(Math.abs(off)).toBeLessThanOrEqual(0.5);
 });
 
 /** How long the dialog's panel takes to come, as the page computes it. */

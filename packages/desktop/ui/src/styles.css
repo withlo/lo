@@ -227,6 +227,20 @@
   z-index: var(--lo-z-tooltip);
 }
 
+/* A toast's icon, or a spinner in its place, centred on the title's first line and in the 14 px
+   an icon takes, so the title stays put as one turns into the other: the zero-width space before
+   it gives the box that line's height. A screen reader hears nothing of it (the empty alternative
+   after the `/`). */
+@utility toast-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: calc(var(--lo-sp-12) + var(--lo-sp-2));
+  &::before {
+    content: '\200b' / '';
+  }
+}
+
 /* A toast's grid: the icon, then the title, body and buttons in a column of their own, with room
    after for something at its end. It has a little less padding at the end than at the start. */
 @utility toast {
@@ -1231,6 +1245,18 @@
 @utility ball-stale {
   box-shadow: inset 0 0 0 1.5px var(--lo-warning);
   background: radial-gradient(circle, var(--lo-warning) 0 2px, transparent 2.5px);
+}
+
+/* How many of a layer's files are viewed, in its meta: a ring with a ball at its middle, in its
+   text's colour, 9 px across in the 12 px box an icon there takes. */
+@utility ball-files {
+  width: calc(var(--lo-sp-8) + 1px);
+  height: calc(var(--lo-sp-8) + 1px);
+  margin: 1.5px;
+  flex: none;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.25px currentcolor;
+  background: radial-gradient(circle, currentcolor 0 1.75px, transparent 2.25px);
 }
 
 /* The stack tree's rows. A layer is a grid: the rail's column, then its title and meta. The rail,

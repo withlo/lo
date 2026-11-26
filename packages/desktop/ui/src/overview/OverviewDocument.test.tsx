@@ -917,6 +917,8 @@ const DOCUMENT: Readonly<Record<string, readonly string[]>> = {
   span: ['role', 'tabindex', 'aria-describedby', 'aria-hidden'],
   details: ['data-lo-block'],
   kbd: ['aria-hidden'],
+  // The shapes of Lo's own icons, as `Icon` draws them, beside the paths the renderer's have.
+  circle: ['cx', 'cy', 'r'],
 };
 
 function allowed(element: string, attribute?: string): boolean {

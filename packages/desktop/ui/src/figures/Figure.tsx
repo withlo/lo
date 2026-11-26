@@ -8,6 +8,7 @@ import type { FigureState, ImageType } from '@lo/artifact';
 import type { SvgElement } from '@lo/markdown';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
+import { Icon } from '../Icon.tsx';
 import { useDetails } from '../Problem.tsx';
 import { Spinner } from '../Spinner.tsx';
 import { Ticks } from '../Ticks.tsx';
@@ -322,10 +323,7 @@ function Broken({
   return (
     <figure className="lo-figure lo-figure--broken">
       <div className="lo-figure__frame">
-        <svg className="lo-i lo-i--sm mt-2 flex-none" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M7.13 2.5a1 1 0 0 1 1.74 0l5.2 9.5a1 1 0 0 1-.87 1.5H2.8a1 1 0 0 1-.87-1.5Z" />
-          <path d="M8 6.25v3M8 11.25v.01" />
-        </svg>
+        <Icon name="triangle-exclamation-point" size={16} className="mt-2" />
         <div className="min-w-0 flex-1">
           <p className="wrap-anywhere">
             <strong>Can’t show figure {number}</strong> {reason(why, name)}
