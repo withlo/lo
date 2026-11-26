@@ -106,6 +106,20 @@ export interface ThreadProps {
   onDelete?: ((id: string) => void) | undefined;
   /** More classes for the card, such as the space the code view leaves around it. */
   className?: string | undefined;
+  /**
+   * Where it's drawn: on a `card` of its own, under its line, or in a `popover` over the code, whose
+   * shell is its ground: open, with no ground, ring or collapse of its own, its head one line that
+   * gives up its key chips, Resolve's words and then its count as it narrows. In a popover,
+   * `focused` is the popover pinned: its key chips and its Close show, in room a preview keeps for
+   * them, so pinning it moves nothing.
+   */
+  variant?: 'card' | 'popover' | undefined;
+  /** In a popover, what the thread is on, in its head: "Lines 10–35". */
+  lines?: string | undefined;
+  /** In a popover, its Close, at the head's end: the popover's, on its first thread. */
+  onClose?: (() => void) | undefined;
+  /** Close's keys, as this system shows them. */
+  closeKeys?: readonly string[] | undefined;
 }
 
 const card = cva('max-w-read-measure overflow-hidden rounded-md text-fg', {
@@ -153,6 +167,15 @@ const HEAD_ROW =
 
 /** Where an open card's head row holds its tags and its count: they wrap in the room left them. */
 const HEAD_WORDS = 'flex min-w-0 flex-1 flex-wrap items-center gap-x-8 gap-y-4';
+
+/**
+ * What a popover's head gives up, in order, as it narrows, so it stays one line: the key chips,
+ * Resolve's words for its icon, and then the count.
+ */
+const POP_STEPS = ['keys', 'labels', 'detail'];
+
+/** The words of the control that closes a thread's popover, and its tooltip. */
+export const CLOSE_THREAD = 'Close thread';
 
 export interface SentPostProps {
   /**
@@ -249,6 +272,24 @@ function Head({ children }: { children: ReactNode }) {
 }
 
 /**
+ * A thread's head in a popover: one line, which stays over its comments as they scroll, and gives
+ * up what `POP_STEPS` names as it narrows.
+ */
+function PopoverHead({ children }: { children: ReactNode }) {
+  const head = useRef<HTMLDivElement | null>(null);
+  useGiveUp(head, POP_STEPS);
+  return (
+    <div
+      ref={head}
+      data-pop-head=""
+      className="give-up sticky top-0 z-1 flex h-32 items-center gap-8 border-b border-border-subtle bg-bg-overlay ps-12 pe-6 whitespace-nowrap text-fg-muted text-small"
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
  * A review thread: its comments, its state and a way to reply, under its line in the diff or on an
  * overview's code block. Unresolved threads start open and resolved ones collapsed to one line.
  * A comment's text is a slot for what's already drawn; Edit and Delete show only on your own
@@ -276,6 +317,10 @@ export function Thread({
   onEdit,
   onDelete,
   className = '',
+  variant = 'card',
+  lines,
+  onClose,
+  closeKeys,
 }: ThreadProps) {
   const [first] = comments;
   if (first === undefined) return null;
@@ -285,8 +330,9 @@ export function Thread({
   const word = { pending: 'Pending', resolved: 'Resolved', unresolved: 'Unresolved' }[state];
   const newestMine = comments.findLast((each) => each.mine)?.id;
   const ground = focused ? 'focused' : 'rest';
+  const popover = variant === 'popover';
 
-  if (!open) {
+  if (!open && !popover) {
     const said = replies(comments);
     const working = resolving
       ? resolved
@@ -354,6 +400,52 @@ export function Thread({
 
   const tone: TagTone = state === 'resolved' ? 'ok' : 'warning';
   const showReply = reply === undefined && canReply;
+  const resolve = canResolve && !pendingAll && (
+    <Button
+      variant="ghost"
+      size="sm"
+      // In a popover's head it gives up its words for its icon as the head narrows.
+      data-squares={popover ? 'labels' : undefined}
+      aria-label={popover ? (resolved ? 'Unresolve' : 'Resolve') : undefined}
+      // Asked already, it shows what was asked for: the word is the one being done.
+      busy={resolving}
+      working={
+        popover ? (
+          <span data-gives="labels">{resolved ? 'Resolving…' : 'Unresolving…'}</span>
+        ) : resolved ? (
+          'Resolving…'
+        ) : (
+          'Unresolving…'
+        )
+      }
+      align="end"
+      // One change to a thread at a time: while a delete is at work, it says so.
+      disabled={deleting !== undefined}
+      hint={deleting !== undefined ? 'Deleting…' : resolved ? 'Unresolve' : 'Resolve'}
+      hintKeys={keys.resolve}
+      onClick={onResolve}
+    >
+      {popover ? (
+        <Face icon={resolved ? 'undo-2' : 'check'}>{resolved ? 'Unresolve' : 'Resolve'}</Face>
+      ) : resolved ? (
+        'Unresolve'
+      ) : (
+        'Resolve'
+      )}
+      {keys.resolve && <Key keys={keys.resolve} when="focus" decorative />}
+    </Button>
+  );
+  const tagged = (
+    <>
+      <Tag tone={tone}>{word}</Tag>
+      {outdated && <Tag>Out of date</Tag>}
+      {tags.map((tag) => (
+        <Tag key={tag.label} tone={tag.tone}>
+          {tag.label}
+        </Tag>
+      ))}
+    </>
+  );
   return (
     <div
       role="group"
@@ -361,55 +453,76 @@ export function Thread({
       data-thread-state={state}
       data-focused={focused ? '' : undefined}
       data-key-scope=""
-      className={`${card({ view: 'open', ground })} ${className}`}
+      // In a popover, a preview keeps the room of the chips a pinned one shows.
+      data-key-room={popover ? '' : undefined}
+      className={
+        popover ? `text-fg ${className}` : `${card({ view: 'open', ground })} ${className}`
+      }
     >
-      <div className={HEAD_ROW}>
-        {/* The tags and the count wrap in the room the buttons leave, which they never give up. */}
-        <span className={HEAD_WORDS}>
-          <Tag tone={tone}>{word}</Tag>
-          {outdated && <Tag>Out of date</Tag>}
-          {tags.map((tag) => (
-            <Tag key={tag.label} tone={tag.tone}>
-              {tag.label}
-            </Tag>
-          ))}
-          {/* A thread only in your review says so once, in its tag: here it's counted as any is. */}
-          <span className="whitespace-nowrap">{counted(comments, pendingAll)}</span>
-        </span>
-        <span className="flex flex-none items-center gap-2">
-          {canResolve && !pendingAll && (
+      {popover ? (
+        <PopoverHead>
+          <span className="flex min-w-0 flex-1 items-center gap-8">
+            {tagged}
+            {lines !== undefined && (
+              <span data-fit className="min-w-cut truncate">
+                {lines}
+              </span>
+            )}
+            <span data-gives="detail" className="lo-num flex-none">
+              {counted(comments, pendingAll)}
+            </span>
+          </span>
+          <span className="flex flex-none items-center gap-2">
+            {resolve}
+            {menu && <MoreButton />}
+            {onClose && (
+              // Only a pinned popover has it, in room a preview keeps, so pinning moves nothing.
+              <span
+                aria-hidden={focused ? undefined : true}
+                className={focused ? 'flex move-swap' : 'invisible flex'}
+              >
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon
+                  aria-label={CLOSE_THREAD}
+                  tabIndex={focused ? undefined : -1}
+                  hint={CLOSE_THREAD}
+                  hintKeys={closeKeys}
+                  onClick={onClose}
+                >
+                  <Icon name="x" size={14} />
+                </Button>
+              </span>
+            )}
+          </span>
+        </PopoverHead>
+      ) : (
+        <div className={HEAD_ROW}>
+          {/* The tags and the count wrap in the room the buttons leave, which they never give up. */}
+          <span className={HEAD_WORDS}>
+            {tagged}
+            {/* A thread only in your review says so once, in its tag: here it's counted as any is. */}
+            <span className="whitespace-nowrap">{counted(comments, pendingAll)}</span>
+          </span>
+          <span className="flex flex-none items-center gap-2">
+            {resolve}
+            {menu && <MoreButton />}
             <Button
               variant="ghost"
               size="sm"
-              // Asked already, it shows what was asked for: the word is the one being done.
-              busy={resolving}
-              working={resolved ? 'Resolving…' : 'Unresolving…'}
-              align="end"
-              // One change to a thread at a time: while a delete is at work, it says so.
-              disabled={deleting !== undefined}
-              hint={deleting !== undefined ? 'Deleting…' : resolved ? 'Unresolve' : 'Resolve'}
-              hintKeys={keys.resolve}
-              onClick={onResolve}
+              icon
+              aria-label="Collapse thread"
+              aria-expanded
+              hint="Collapse thread"
+              hintKeys={keys.toggle}
+              onClick={onToggle}
             >
-              {resolved ? 'Unresolve' : 'Resolve'}
-              {keys.resolve && <Key keys={keys.resolve} when="focus" decorative />}
+              <Chevron up />
             </Button>
-          )}
-          {menu && <MoreButton />}
-          <Button
-            variant="ghost"
-            size="sm"
-            icon
-            aria-label="Collapse thread"
-            aria-expanded
-            hint="Collapse thread"
-            hintKeys={keys.toggle}
-            onClick={onToggle}
-          >
-            <Chevron up />
-          </Button>
-        </span>
-      </div>
+          </span>
+        </div>
+      )}
       {comments.map((comment, index) =>
         editing?.has(comment.id) ? (
           <EditSlot key={comment.id} comment={comment.id} first={index === 0} />
@@ -417,7 +530,10 @@ export function Thread({
           <div
             key={comment.id}
             data-comment={comment.id}
-            className={`flex gap-8 px-12 py-8 ${index === 0 ? '' : 'border-t border-border-subtle'}`}
+            // In a popover, the ring `j` and `k` move goes round a comment, which `i` and `d d` act
+            // on: it takes focus, though `Tab` passes it.
+            tabIndex={popover ? -1 : undefined}
+            className={`flex gap-8 px-12 py-8 ${index === 0 ? '' : 'border-t border-border-subtle'} ${popover ? 'scroll-my-8 outline-none focus-visible:shadow-ring-inset' : ''}`}
           >
             <Avatar login={comment.author} image={comment.image} size="sm" />
             <div className="min-w-0 flex-1">

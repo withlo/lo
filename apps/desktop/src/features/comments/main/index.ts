@@ -28,7 +28,7 @@ import { settings } from '../../settings/service.ts';
 import { tabs } from '../../tab/service.ts';
 import { contract } from '../contract.ts';
 import { bodies, drafts, reviews } from '../service.ts';
-import { vim } from '../settings.ts';
+import { threads as threadsSetting, vim } from '../settings.ts';
 import { readBodies } from './bodies.ts';
 import { askGitHub, BotPictures } from './bots.ts';
 import { CommentableReads } from './commentable.ts';
@@ -130,6 +130,7 @@ export default defineFeature(contract, {
   },
   start({ use, publish, database }) {
     use(settings).declare(vim);
+    use(settings).declare(threadsSetting);
     const service = use(tabs);
     const kept = new DraftStore(database);
     store = kept;

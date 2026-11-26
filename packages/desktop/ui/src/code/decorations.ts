@@ -12,6 +12,7 @@ import type { Range, Text } from '@codemirror/state';
 import { Decoration } from '@codemirror/view';
 import type { FileDiff, MovedBlock } from '@lo/diff';
 
+import type { ThreadView } from './api.ts';
 import { bubbleOf, type Tones } from './bubbles.ts';
 import type { InlineLines } from './inline.ts';
 import type { Side } from './layout.ts';
@@ -63,6 +64,15 @@ export interface ViewThread {
   peek?: PeekHost | undefined;
 }
 
+/** A file's own threads, which its header's bubble draws. */
+export interface HeaderThreads {
+  readonly threads: readonly ThreadView[];
+  /** Whether they're open: under the header, or in their popover. */
+  readonly open: boolean;
+  /** Whether threads show beside lines, where the bubble opens their popover. */
+  readonly beside: boolean;
+}
+
 /**
  * What a file shows where its lines would be, when they aren't shown as a diff: `showing` is a
  * file too large to draw unasked whose lines were asked for, and `loading` one read again after
@@ -100,6 +110,11 @@ export interface Common {
   problem?: HeaderProblem | undefined;
   /** The colour each bubble was drawn in last: the file's threads' bubble tints as it changes. */
   tones?: Tones | undefined;
+  /**
+   * The file's own threads, whose bubble its header draws, whether they're open, and whether they
+   * show beside lines, where it opens their popover. None draws no bubble.
+   */
+  fileThreads?: HeaderThreads | undefined;
 }
 
 /**
@@ -261,13 +276,12 @@ function header(
   // The left column draws the problem with the path, and the bubble of the file's threads in its
   // lane, whichever column they're under; the right lines up beside it.
   const problem = part === 'end' ? undefined : input.problem;
-  const marked =
-    part === 'end' ? [] : (input.threads.find((each) => each.line === 0)?.threads ?? []);
-  const first = marked[0];
-  const drawn = first && bubbleOf(marked.map((host) => host.thread));
+  const marked = part === 'end' ? undefined : input.fileThreads;
+  const drawn = marked && marked.threads.length > 0 ? bubbleOf(marked.threads) : undefined;
   const bubble = drawn && {
     bubble: drawn,
-    open: first.open,
+    open: marked!.open,
+    beside: marked!.beside,
     was: input.tones?.was(`head:${part}:${drawn.thread}`, drawn.tone),
   };
   const widget = new HeaderWidget(

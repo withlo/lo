@@ -31,7 +31,13 @@ import { addCodeElsewhere, type CodeElsewhere } from './elsewhere.ts';
 import { diffJobs } from './main.ts';
 import { showPlace as showCode, showThread as showThreadAt, type ShowWhen } from './places.ts';
 import { drawnFor, keysDiff, loaderOf, onDrawn, useSnapshot } from './tabs.ts';
-import { changed as changedThreads, type DrawnDiff, threadWith, type Threader } from './threads.ts';
+import {
+  changed as changedThreads,
+  changedEverywhere,
+  type DrawnDiff,
+  threadWith,
+  type Threader,
+} from './threads.ts';
 import { DIFF_VIEW } from './whole.ts';
 
 export type { ShowWhen } from './places.ts';
@@ -210,6 +216,11 @@ export function threadsChanged(tab: string): void {
   changedThreads(tab);
 }
 
+/** Says how review threads show in code changed: every diff drawn shows them so. */
+export function threadsShowChanged(): void {
+  changedEverywhere();
+}
+
 /** A pull request's tab's diff as it's drawn, where comments are written. */
 export interface WritingDiff {
   /** What it draws now, as its review threads are placed on it: its head and its files. */
@@ -236,6 +247,16 @@ export interface WritingDiff {
   vim(keys: readonly string[]): void;
   /** Opens or collapses review thread `id`, as the reader asked. Says whether the diff has it. */
   openThread(id: string, open: boolean): boolean;
+  /**
+   * Beside lines, pins the popover of review thread `id`'s line, as `⏎` does, with focus in it if
+   * `focus` says, or else where it is. Says whether there was one to pin (the code view's
+   * `pinThread`).
+   */
+  pinThread(id: string, focus?: boolean): boolean;
+  /** The review threads in the popover pinned, by their ids: none while there's none. */
+  pinned(): readonly string[];
+  /** Closes the threads' popover, focus in it going to its line. Says whether one was open. */
+  closePopover(): boolean;
   /**
    * The review threads drawn under a line, or under a file's header, by their ids: none while those
    * placed there wait to come (the code view's `threadsDrawn`).
@@ -268,6 +289,9 @@ export function writingDiff(tab: string, keys = false): WritingDiff | undefined 
     toTop: (id) => drawn.toTop(id),
     vim: (typed) => view.passKeys(typed),
     openThread: (id, open) => view.openThread(id, open),
+    pinThread: (id, focus) => view.pinThread(id, focus),
+    pinned: () => view.pinned(),
+    closePopover: () => view.closePopover(),
     threadsDrawn: (at) => view.threadsDrawn(at),
     claimThread: (id) => view.claimThread(id),
     hasFocus: () => drawn.hasFocus(),

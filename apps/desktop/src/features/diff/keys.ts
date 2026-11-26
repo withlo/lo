@@ -65,24 +65,28 @@ export default defineCommands('diff', {
     vim: 'motion',
     when: diff,
   },
-  /** The next review thread under a line, in the files' order. */
+  /**
+   * The next review thread under a line, in the files' order. Beside lines its popover is pinned,
+   * focus staying where it was, and a line's threads, in one popover, are one stop.
+   */
   nextThread: {
     label: 'Next thread',
     group: 'Go',
     bar: { menu: 'Go', section: 'steps', order: 50 },
     keys: ['] t'],
-    targets: ['line'],
+    // From the line, as Vim's motion; from a thread's popover, beside lines, as a key of its own.
+    targets: ['line', 'thread'],
     vim: 'motion',
-    when: diff,
+    when: { scope: ['diff', 'thread'] },
   },
   previousThread: {
     label: 'Previous thread',
     group: 'Go',
     bar: { menu: 'Go', section: 'steps', order: 60 },
     keys: ['[ t'],
-    targets: ['line'],
+    targets: ['line', 'thread'],
     vim: 'motion',
-    when: diff,
+    when: { scope: ['diff', 'thread'] },
   },
   /**
    * From moved code on the cursor's line to the same line at the other end, where the code went or
@@ -194,7 +198,8 @@ export default defineCommands('diff', {
   },
   /**
    * Collapses the review thread the key is on, the one `]t` landed on or the only one on the
-   * cursor's line, or expands it again. Its bubble's click does it to the bubble's thread.
+   * cursor's line, or expands it again. Its bubble's click does it to the bubble's thread. Beside
+   * lines it does nothing, saying nothing: a thread opens in its popover there.
    */
   toggleThread: {
     label: 'Collapse thread',

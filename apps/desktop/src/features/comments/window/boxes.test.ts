@@ -272,6 +272,9 @@ function fakeDiff(missing: (at: unknown) => boolean = () => false, since = false
       toggled.push(id);
       return true;
     },
+    pinThread: () => false,
+    pinned: () => [],
+    closePopover: () => false,
     claimThread: (id) => {
       claimed.push(id);
       return () => released.push(id);

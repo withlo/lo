@@ -47,6 +47,7 @@ import {
 } from '../commands/index.ts';
 import { cutShort } from '../cut.ts';
 import { EDIT_SLOT_EVENT } from '../edits.ts';
+import { land } from '../motion.ts';
 import { type Tip, TIPPED, tips } from './tip.ts';
 import type {
   Anchor,
@@ -76,14 +77,17 @@ import type {
   PeekFrame,
   PeekView,
   Place,
+  PopoverView,
   Probe,
   ProblemContent,
   ReadFailure,
+  RenderPopover,
   RenderProblem,
   RenderThread,
   Side,
   Span,
   Spot,
+  ThreadsMode,
   ThreadView,
   Viewport,
   VimKey,
@@ -104,6 +108,7 @@ import {
   type FileNote,
   fileBlocks,
   fileMarks,
+  type HeaderThreads,
   inlineBlocks,
   type ViewFile,
   type ViewThread,
@@ -132,11 +137,13 @@ import {
   vimPending,
 } from './keys.ts';
 import {
+  besideMarker,
   type LaneBubble,
   type LaneRange,
   type LaneUpdate,
   laneUpdate,
   setLane,
+  setPopped,
   threadLane,
 } from './lanes.ts';
 import { Layout } from './layout.ts';
@@ -151,6 +158,7 @@ import {
 import { lineKey, marking, marksChanged, rowKey } from './marks.ts';
 import { otherLine } from './moves.ts';
 import { PeekBlock, peekShownAt } from './peek.ts';
+import { type PopHost, type PopLines, type PopRoom, ThreadPop } from './popover.ts';
 import {
   collapsedRuns,
   type FileRows,
@@ -172,11 +180,13 @@ import {
   type HeaderProblem,
   type HeaderRing,
   headerRow,
+  HeaderWidget,
   MOVED_ATTRIBUTE,
   movedTo,
   NOTE_BLOCK_ATTRIBUTE,
   type NoteDraw,
   RING_CLASS,
+  SpacerWidget,
   ThreadSizes,
 } from './widgets.ts';
 import { watchRests, type Word, wordAnchor, wordUnder } from './words.ts';
@@ -220,6 +230,60 @@ interface At {
   file: number;
   side: Side;
   line: number;
+}
+
+/**
+ * Where the threads' popover opens, beside lines: the line threads end on, or a file's header
+ * (line 0) for its own, by its `waitKey`.
+ */
+interface PopPlace extends At {
+  readonly key: string;
+}
+
+/** 1 for a resolved thread, which a popover lists after the unresolved, else 0. */
+function resolvedRank(thread: ThreadView): number {
+  return Number(thread.mark?.resolved ?? false);
+}
+
+/** Threads in the order a popover lists them: unresolved first, then in the order they came. */
+function listed(threads: readonly ThreadView[]): ThreadView[] {
+  return threads.toSorted((a, b) => resolvedRank(a) - resolvedRank(b));
+}
+
+/**
+ * Where a line's own row is in its block, from the document's top: its text, or a file's header
+ * band, with what's drawn under it, as a comment box, but not the room that lines the sides up.
+ */
+function rowOf(block: BlockInfo): { top: number; bottom: number } {
+  const parts = Array.isArray(block.type) ? (block.type as readonly BlockInfo[]) : [block];
+  const own = parts.findIndex(
+    (part) => part.type === BlockType.Text || part.widget instanceof HeaderWidget,
+  );
+  if (own < 0) return { top: block.top, bottom: block.bottom };
+  let bottom = parts[own]!.bottom;
+  for (const part of parts.slice(own + 1)) {
+    if (part.widget instanceof SpacerWidget) break;
+    bottom = part.bottom;
+  }
+  return { top: parts[own]!.top, bottom };
+}
+
+/** Whether two sets of lines are the same. */
+function sameLines(a: ReadonlySet<number>, b: ReadonlySet<number>): boolean {
+  return a.size === b.size && [...a].every((line) => b.has(line));
+}
+
+/** Whether two files' kept lines are the same. */
+function sameKept(
+  a: { old: ReadonlySet<number>; new: ReadonlySet<number> },
+  b: { old: ReadonlySet<number>; new: ReadonlySet<number> },
+): boolean {
+  return sameLines(a.old, b.old) && sameLines(a.new, b.new);
+}
+
+/** Whether document line `line` is in `span`, if there's one. */
+function inSpan(span: { from: number; to: number } | undefined, line: number): boolean {
+  return span !== undefined && line >= span.from && line <= span.to;
 }
 
 /** What a file's note says while its lines are still coming. */
@@ -540,6 +604,16 @@ class View implements DiffView {
   readonly #tones = new Tones();
   /** Threads drawn since the last frame, with the view seen: their marks fade in. */
   readonly #arriving = new Set<string>();
+  /** How the view shows threads: beside lines, in a popover, or between them, in the flow. */
+  #mode: ThreadsMode;
+  /** The threads' popover, beside lines: one per view. */
+  readonly #pop: ThreadPop<PopPlace>;
+  /** Where the popover was last shown open, whose lines and marks say so. */
+  #popShownAt: PopPlace | undefined;
+  /** The threads the caller gave last, and what draws them, to draw them again as the mode changes. */
+  #given: { threads: readonly ThreadView[]; render: RenderThread } | undefined;
+  /** Counts the popovers asked to open once a jump's scroll is done, so only the latest opens. */
+  #popping = 0;
 
   constructor(parent: HTMLElement, init: DiffInit, on: DiffEvents) {
     installVim();
@@ -593,6 +667,8 @@ class View implements DiffView {
     this.dom = document.createElement('div');
     this.dom.className = 'lo-diffview';
     this.dom.setAttribute(SCOPE_ATTRIBUTE, 'diff');
+    this.#mode = init.threads ?? 'between';
+    this.dom.classList.toggle('is-beside', this.#mode === 'beside');
     if (init.note) {
       const tone = init.note.tone === 'plain' ? '' : ` lo-diffnote--${init.note.tone}`;
       const note = document.createElement('div');
@@ -611,6 +687,7 @@ class View implements DiffView {
       });
     this.views = { old: make('old'), new: make('new') };
     this.dom.insertBefore(this.#pin.dom, this.views.old.dom);
+    this.#pop = new ThreadPop(this.#popHost());
     this.#sizes = {
       old: new ThreadSizes(this.views.old.contentDOM),
       new: new ThreadSizes(this.views.new.contentDOM),
@@ -660,6 +737,10 @@ class View implements DiffView {
     this.dom.append(this.#add);
     this.dom.addEventListener('click', this.#runControl);
     this.dom.addEventListener('click', this.#openMore);
+    // Beside lines, a thread's mark previews its popover as the pointer rests on it, and pins it.
+    this.dom.addEventListener('pointerover', this.#hoverMark, { passive: true });
+    this.dom.addEventListener('pointerleave', this.#hoverMark, { passive: true });
+    this.dom.addEventListener('click', this.#clickMark);
     this.dom.addEventListener('mouseover', this.#hoverRow, { passive: true });
     this.dom.addEventListener('mouseleave', this.#hoverRow, { passive: true });
     // A box editing a comment goes in its place in the card, once the card has drawn the slot.
@@ -1056,9 +1137,15 @@ class View implements DiffView {
   setThreads(
     threads: readonly ThreadView[],
     render: RenderThread,
-    options: { readonly now?: boolean } = {},
+    options: { readonly now?: boolean; readonly popover?: RenderPopover } = {},
   ): void {
     this.#hosts.render = render;
+    this.#given = { threads, render };
+    if (options.popover) this.#pop.render = options.popover;
+    if (this.#mode === 'beside') {
+      this.#placeBeside(threads);
+      return;
+    }
     // What comes under the line of a comment box, open or closed since, is the reader's doing,
     // as when they sent it: it comes now, and grows. It came with no input, though, so what's on
     // screen stays where it is.
@@ -1118,6 +1205,87 @@ class View implements DiffView {
     // Their marks, with what the threads say of themselves now: no line moves.
     for (const file of marked) this.#refresh(file);
     this.#redrawLanes([...this.#laneDirty]);
+  }
+
+  /**
+   * Beside lines, each line takes its threads at once, as nothing in the flow moves for them: their
+   * marks change, and fade in where they're new. A line that comes out of a fold as a thread comes
+   * to it leaves what's on screen where it is. `switching` to this mode, the caller draws every
+   * file again, and nothing fades in.
+   */
+  #placeBeside(threads: readonly ThreadView[], switching = false): void {
+    const next: FileThreads[] = this.#ids.map(() => new Map());
+    const given = new Set<string>();
+    for (const thread of threads) {
+      const file = this.#index.get(thread.at.file);
+      const { side, line } = placeOf(thread.at);
+      if (file === undefined || ('line' in thread.at && line < 1) || given.has(thread.id)) continue;
+      given.add(thread.id);
+      const key = `${side}:${line}`;
+      const there = next[file]!.get(key);
+      if (there) there.push(thread);
+      else next[file]!.set(key, [thread]);
+    }
+    this.#wanted = next;
+    const seen = !switching && (this.#seen === 'settling' || this.#seen === 'yes');
+    const redraw = new Set<number>();
+    next.forEach((byPlace, file) => {
+      const drawn = this.#threads[file]!;
+      for (const key of new Set([...drawn.keys(), ...byPlace.keys()])) {
+        const was = drawn.get(key);
+        const now = byPlace.get(key);
+        if (now && sameIds(was, now) && sameMarks(was, now)) continue;
+        this.#laneDirty.add(file);
+        // A file's own threads' bubble is in its header.
+        if (key === 'new:0') redraw.add(file);
+        if (!seen) continue;
+        const before = new Set((was ?? []).map((thread) => thread.id));
+        for (const { id } of now ?? []) if (!before.has(id)) this.#arrive(id);
+      }
+      this.#threads[file] = byPlace;
+      const kept = this.#keep[file]!;
+      this.#keepAt(file);
+      if (!sameKept(kept, this.#keep[file]!)) redraw.add(file);
+    });
+    if (switching) return;
+    if (redraw.size > 0) {
+      this.#keepTop(() => {
+        for (const file of redraw) this.#refresh(file);
+      });
+    }
+    this.#redrawLanes([...this.#laneDirty]);
+    this.#markKeyed();
+    this.#pop.refresh();
+  }
+
+  setThreadsMode(mode: ThreadsMode): void {
+    if (mode === this.#mode) return;
+    this.#pop.close();
+    const pane = this.#activePane();
+    const view = this.#viewOf(pane);
+    const cursor = this.#placeAt(
+      pane,
+      view.state.doc.lineAt(view.state.selection.main.head).number,
+    );
+    this.#keepLine(cursor, () => {
+      this.#mode = mode;
+      this.dom.classList.toggle('is-beside', mode === 'beside');
+      if (mode === 'beside') {
+        // Nothing is drawn in the flow for a thread: what waited, or was held, takes its threads.
+        this.#held.clear();
+        this.#waiting.clear();
+        this.#arrived.clear();
+        this.#hosts.drop(() => true);
+        this.#placeBeside(this.#given?.threads ?? [], true);
+      } else if (this.#given) {
+        this.setThreads(this.#given.threads, this.#given.render, { now: true });
+      }
+      for (let file = 0; file < this.#ids.length; file++) {
+        this.#laneDirty.add(file);
+        this.#refresh(file);
+      }
+    });
+    this.#markKeyed();
   }
 
   /**
@@ -1234,6 +1402,12 @@ class View implements DiffView {
   }
 
   openThread(id: string, open: boolean | 'toggle'): boolean {
+    if (this.#mode === 'beside') {
+      // Beside lines a thread opens in the popover, which this closes, and nothing else.
+      const at = this.#popOf(id);
+      if (at && open === false && this.#pop.at?.key === at.key) this.#pop.close();
+      return at !== undefined;
+    }
     const host = this.#hosts.get(id);
     if (!host) return false;
     const next = open === 'toggle' ? !host.open : open;
@@ -2254,7 +2428,7 @@ class View implements DiffView {
       to: doc.line(lines.header + lines.count).to,
     };
     const { ranges, bubbles } = this.#makeLane(pane, file);
-    return laneUpdate(doc, span, ranges, bubbles);
+    return laneUpdate(doc, span, ranges, bubbles, true, this.#mode === 'beside');
   }
 
   /**
@@ -2269,6 +2443,12 @@ class View implements DiffView {
     const drawn = this.#threads[file];
     if (!drawn || drawn.size === 0) return { ranges, bubbles };
     if (pane === 'inline' && !this.#inline?.layout.lines[file]) return { ranges, bubbles };
+    // Beside lines, the threads whose popover is open: their marks are drawn in full colour.
+    const shown = this.#popShownAt;
+    const popped =
+      this.#mode === 'beside'
+        ? new Set(shown?.file === file ? this.#poppedThreads(shown).map((thread) => thread.id) : [])
+        : undefined;
     const ending = new Map<number, ThreadView[]>();
     for (const [key, threads] of drawn) {
       if (key === 'new:0' || threads.length === 0) continue;
@@ -2286,15 +2466,18 @@ class View implements DiffView {
             ...range,
             tone: rangeTone(thread),
             arriving: this.#arriving.has(thread.id),
+            open: popped?.has(thread.id) ?? false,
           });
         }
       }
     }
     for (const [line, threads] of ending) {
-      const bubble = bubbleOf(threads);
+      const bubble = bubbleOf(popped ? listed(threads) : threads);
       bubbles.set(line, {
         bubble,
-        open: this.#hosts.get(bubble.thread)?.open ?? false,
+        open: popped
+          ? threads.some((thread) => popped.has(thread.id))
+          : (this.#hosts.get(bubble.thread)?.open ?? false),
         arriving: threads.some((thread) => this.#arriving.has(thread.id)),
         was: this.#tones.was(`${pane}:${bubble.thread}`, bubble.tone),
       });
@@ -2322,6 +2505,254 @@ class View implements DiffView {
     }
     if (pane === from.side) return last > first ? { from: first, to: last, tick: true } : undefined;
     return first < last ? { from: first, to: last, tick: false } : undefined;
+  }
+
+  // The threads' popover, beside lines --------------------------------------------------------
+
+  pinThread(id: string, focus = false): boolean {
+    const at = this.#mode === 'beside' ? this.#popOf(id) : undefined;
+    if (!at || !this.#popLines(at)) return false;
+    this.#pop.pin(at);
+    if (focus) this.#pop.focus();
+    return this.#pop.at?.key === at.key;
+  }
+
+  showThread(id: string): boolean {
+    if (this.#mode === 'between') {
+      if (!this.openThread(id, true)) return false;
+      return this.revealAtTop({ kind: 'thread', thread: id });
+    }
+    const found = this.#atOf({ kind: 'thread', thread: id });
+    if (!found) return false;
+    this.#moveCursor(found, false);
+    this.#pinAfterScroll(id, false);
+    return true;
+  }
+
+  pinned(): readonly string[] {
+    const at = this.#pop.pinned ? this.#pop.at : undefined;
+    return at ? this.#poppedThreads(at).map((thread) => thread.id) : [];
+  }
+
+  closePopover(): boolean {
+    if (!this.#pop.open) return false;
+    this.#pop.close();
+    return true;
+  }
+
+  /** Places the popover again by its lines, once the editor has measured what it drew. */
+  readonly #placePop = { read: (): void => {}, write: (): void => this.#pop.place() };
+
+  /** What the popover asks of the view: where its lines are, what it shows, and what it changes. */
+  #popHost(): PopHost<PopPlace> {
+    return {
+      scroller: this.dom,
+      lines: (at) => this.#popLines(at),
+      room: (): PopRoom => ({
+        scroll: this.dom.scrollTop,
+        height: this.dom.clientHeight,
+        width: this.dom.clientWidth,
+        edge: this.dom.offsetWidth - this.dom.clientLeft,
+        end: this.dom.scrollHeight,
+        header: HEADER_HEIGHT,
+      }),
+      view: (at, pinned): PopoverView => {
+        const threads = this.#poppedThreads(at);
+        return { threads, pinned, label: threads.length > 0 ? bubbleOf(threads).name : '' };
+      },
+      shown: (at) => this.#popShown(at),
+      focusLine: (at) => {
+        const pane = this.#activePane();
+        const view = this.#viewOf(pane);
+        const line = view.state.doc.lineAt(view.state.selection.main.head).number;
+        if (this.#onPopLines(at, pane, line)) view.focus();
+        else this.#focusLine(at);
+      },
+      scrollBy: (by) => this.#scrollBy(by),
+      onMark: (target, at) => this.#markOf(target)?.at.key === at.key,
+    };
+  }
+
+  /** Where the popover of the line thread `id` ends on opens, if the view has the thread. */
+  #popOf(id: string): PopPlace | undefined {
+    const place = this.#threadPlace(id);
+    if (!place) return undefined;
+    const key = place.line === 0 ? 'new:0' : `${place.side}:${place.line}`;
+    return { ...place, key: waitKey(place.file, key) };
+  }
+
+  /** The pane whose lane has `at`'s bubble: a file's own threads' is the left column's header. */
+  #popPane(at: At): Pane {
+    if (this.#pane === 'inline') return 'inline';
+    return at.line === 0 ? 'old' : at.side;
+  }
+
+  /** The threads the popover at `at` shows, as it lists them. */
+  #poppedThreads(at: PopPlace): ThreadView[] {
+    const key = at.line === 0 ? 'new:0' : `${at.side}:${at.line}`;
+    return listed(this.#threads[at.file]?.get(key) ?? []);
+  }
+
+  /**
+   * The document lines of `pane` the threads of the popover at `at` are on, first to last, from the
+   * first line of the longest range: a file's header, for its own.
+   */
+  #poppedSpan(pane: Pane, at: PopPlace): { from: number; to: number } | undefined {
+    if (pane === 'inline' && !this.#inline?.layout.lines[at.file]) return undefined;
+    if (at.line === 0) {
+      const header = this.#docLine(pane, at);
+      return { from: header, to: header };
+    }
+    let span: { from: number; to: number } | undefined;
+    for (const thread of this.#poppedThreads(at)) {
+      const end = placeOf(thread.at);
+      const range = this.#laneRange(pane, at.file, thread.mark?.from ?? end, end);
+      if (!range) continue;
+      span = span
+        ? { from: Math.min(span.from, range.from), to: Math.max(span.to, range.to) }
+        : { from: range.from, to: range.to };
+    }
+    return span;
+  }
+
+  /** Whether document line `line` of `pane` is one of the popover's lines, or the row beside one. */
+  #onPopLines(at: PopPlace, pane: Pane, line: number): boolean {
+    if (inSpan(this.#poppedSpan(pane, at), line)) return true;
+    if (pane === 'inline') return false;
+    const other: Side = pane === 'old' ? 'new' : 'old';
+    return inSpan(this.#poppedSpan(other, at), this.#otherSideLine(pane, line));
+  }
+
+  /**
+   * Where the popover at `at`'s lines and lane are drawn, in the scroll's content: none while its
+   * file draws no lines.
+   */
+  #popLines(at: PopPlace): PopLines | undefined {
+    if (at.line > 0 && this.#noteOf(at.file) !== undefined) return undefined;
+    const pane = this.#popPane(at);
+    const view = this.#viewOf(pane);
+    const span = this.#poppedSpan(pane, at);
+    const lane = view.dom.querySelector('.lo-threadlane')?.getBoundingClientRect();
+    if (!span || !lane) return undefined;
+    const box = this.dom.getBoundingClientRect();
+    const top = box.top + this.dom.clientTop - this.dom.scrollTop - view.documentTop;
+    const left = box.left + this.dom.clientLeft - this.dom.scrollLeft;
+    const { doc } = view.state;
+    const first = rowOf(view.lineBlockAt(doc.line(span.from).from));
+    const last = rowOf(view.lineBlockAt(doc.line(span.to).from));
+    return { first: first.top - top, last: last.bottom - top, lane: lane.left - left };
+  }
+
+  /**
+   * The popover opened at `at`, moved there, or closed: its lines' number and lane cells take the
+   * selected tint, its marks full colour, and pinned, the cursor goes to its bubble's line unless
+   * it's on its lines already.
+   */
+  #popShown(at: PopPlace | undefined): void {
+    const was = this.#popShownAt;
+    this.#popShownAt = at;
+    for (const pane of this.#lanePanes()) {
+      const span = at && at.line > 0 ? this.#poppedSpan(pane, at) : undefined;
+      this.#viewOf(pane).dispatch({ effects: setPopped.of(span ?? null) });
+    }
+    for (const each of [was, at]) if (each) this.#laneDirty.add(each.file);
+    // A file's own threads' bubble is in its header.
+    const heads = new Set([was, at].flatMap((each) => (each?.line === 0 ? [each.file] : [])));
+    for (const file of heads) this.#refresh(file);
+    this.#redrawLanes([...this.#laneDirty]);
+    if (at && this.#pop.pinned) this.#cursorOnto(at);
+  }
+
+  /** Puts the cursor on the bubble's line of the popover at `at`, unless it's on its lines. */
+  #cursorOnto(at: PopPlace): void {
+    const active = this.#activePane();
+    const view = this.#viewOf(active);
+    const line = view.state.doc.lineAt(view.state.selection.main.head).number;
+    if (this.#onPopLines(at, active, line)) return;
+    const pane = this.#popPane(at);
+    const shown = this.#viewOf(pane);
+    this.#aligner.unfollow();
+    shown.dispatch({ selection: { anchor: shown.state.doc.line(this.#docLine(pane, at)).from } });
+    this.#lastPane = pane;
+  }
+
+  /**
+   * The cursor came to document line `line` of `pane`, at `at`: a pinned popover whose lines it
+   * left closes, and the popover of the line it's on is drawn ahead, to open whole.
+   */
+  #cursorMoved(pane: Pane, line: number, at: At): void {
+    const open = this.#pop.at;
+    if (open && this.#pop.pinned && !this.#onPopLines(open, pane, line)) this.#pop.close();
+    const key = at.line === 0 ? 'new:0' : `${at.side}:${at.line}`;
+    const ending = this.#threads[at.file]?.get(key);
+    if (ending?.length) this.#pop.build({ ...at, key: waitKey(at.file, key) });
+  }
+
+  /**
+   * Beside lines, the thread mark `target` is on, a bubble or a bracket's cell in the lane: its
+   * thread, and where its popover opens.
+   */
+  #markOf(target: EventTarget | null): { at: PopPlace; thread: string } | undefined {
+    if (this.#mode !== 'beside' || !(target instanceof Element)) return undefined;
+    if (!this.dom.contains(target) || this.#pop.dom.contains(target)) return undefined;
+    let thread = target.closest<HTMLElement>('.lo-bubble[data-beside]')?.dataset.thread;
+    if (thread === undefined) {
+      const cell = besideMarker(target);
+      const pane = cell && this.#panes().find((each) => this.#viewOf(each).dom.contains(cell));
+      if (!cell || !pane) return undefined;
+      const view = this.#viewOf(pane);
+      const height = cell.getBoundingClientRect().top + 1 - view.documentTop;
+      const line = view.state.doc.lineAt(view.lineBlockAtHeight(height).from).number;
+      thread = this.#besideThread(this.#placeAt(pane, line));
+    }
+    const at = thread === undefined ? undefined : this.#popOf(thread);
+    return at && thread !== undefined ? { at, thread } : undefined;
+  }
+
+  /** The pointer came over something, or left the view: a mark it rests on previews its popover. */
+  readonly #hoverMark = (event: PointerEvent): void => {
+    if (this.#mode !== 'beside') return;
+    this.#pop.hover(event.type === 'pointerleave' ? undefined : this.#markOf(event.target)?.at);
+  };
+
+  /** A click on a mark beside lines pins its popover, and takes focus into it, or closes it. */
+  readonly #clickMark = (event: MouseEvent): void => {
+    const marked = this.#markOf(event.target);
+    if (!marked || event.button !== 0) return;
+    event.preventDefault();
+    this.#hideAdd();
+    if (this.#pop.clicked(marked.at)) this.#pop.focus(false);
+  };
+
+  /**
+   * Pins the popover of the line thread `id` is on once the editor has brought the cursor's line on
+   * screen, as it does when it next measures, and lands the line: a jump to it. With `focus`, focus
+   * goes into it.
+   */
+  #pinAfterScroll(id: string, focus: boolean): void {
+    const asked = ++this.#popping;
+    // The frame the editor scrolls in, after it has: its measure is asked for as the cursor moves.
+    queueMicrotask(() =>
+      requestAnimationFrame(() => {
+        if (asked !== this.#popping || this.#mode !== 'beside') return;
+        const at = this.#popOf(id);
+        if (!at) return;
+        this.#pop.pin(at);
+        if (focus && this.#pop.at?.key === at.key) this.#pop.focus();
+        this.#landLine(at);
+      }),
+    );
+  }
+
+  /** The bubble's line of the popover at `at` takes Land's tint. */
+  #landLine(at: PopPlace): void {
+    if (at.line === 0) return;
+    const pane = this.#popPane(at);
+    const view = this.#viewOf(pane);
+    const { node } = view.domAtPos(view.state.doc.line(this.#docLine(pane, at)).from);
+    const element = node instanceof Element ? node : node.parentElement;
+    const line = element?.closest('.cm-line');
+    if (line) land(line);
   }
 
   /** `Esc` in the diff's code, with Vim waiting on nothing: the note opened last closes. */
@@ -2775,6 +3206,8 @@ class View implements DiffView {
     this.#peek?.block.destroy();
     cancelAnimationFrame(this.#takeFrame);
     cancelAnimationFrame(this.#addFrame);
+    this.#popping++;
+    this.#pop.destroy();
     this.#hosts.destroy();
     for (const problem of this.#problems.values()) problem.content.destroy();
     this.#problems.clear();
@@ -2906,8 +3339,34 @@ class View implements DiffView {
     ) {
       return landed.thread;
     }
+    if (this.#mode === 'beside') return this.#besideThread(at);
     const threads = this.#threads[at.file]?.get(at.line === 0 ? 'new:0' : `${at.side}:${at.line}`);
     return threads?.length === 1 ? threads[0]!.id : undefined;
+  }
+
+  /**
+   * Beside lines, the thread at `at`: of those whose bubble is on its line, the first the popover
+   * lists, or else the one with the shortest range over it.
+   */
+  #besideThread(at: At): string | undefined {
+    const ending = this.#threads[at.file]?.get(at.line === 0 ? 'new:0' : `${at.side}:${at.line}`);
+    if (ending?.length) return listed(ending)[0]!.id;
+    if (at.line === 0) return undefined;
+    const pane: Pane = this.#pane === 'inline' ? 'inline' : at.side;
+    if (pane === 'inline' && !this.#inline?.layout.lines[at.file]) return undefined;
+    const line = this.#docLine(pane, at);
+    let best: { id: string; lines: number } | undefined;
+    for (const [key, threads] of this.#threads[at.file] ?? []) {
+      if (key === 'new:0') continue;
+      for (const thread of threads) {
+        const from = thread.mark?.from;
+        const range = from && this.#laneRange(pane, at.file, from, placeOf(thread.at));
+        if (!range || line < range.from || line > range.to) continue;
+        const lines = range.to - range.from;
+        if (!best || lines < best.lines) best = { id: thread.id, lines };
+      }
+    }
+    return best?.id;
   }
 
   /** The key of the line or header thread `id` is drawn under in file `file`, while it's drawn. */
@@ -3428,6 +3887,7 @@ class View implements DiffView {
     if (landed && (landed.file !== at.file || landed.side !== at.side || landed.line !== at.line)) {
       this.#land(undefined);
     }
+    if (this.#mode === 'beside') this.#cursorMoved(pane, line.number, at);
     this.#markKeyed(at);
     const spot = this.#spot(at, head - line.from);
     const said = JSON.stringify(spot);
@@ -3571,6 +4031,8 @@ class View implements DiffView {
    * as the marker of a new thread, whose click is the line's, has its words alone.
    */
   #tipOf(control: HTMLElement): Tip | undefined {
+    // A mark beside lines has none: what the pointer resting on it shows is its thread.
+    if (control.dataset.beside !== undefined) return undefined;
     const id = control.dataset.command;
     // A mark, or a name cut short, which says what it is, and no key.
     if (id === undefined) {
@@ -3595,6 +4057,8 @@ class View implements DiffView {
       event.target instanceof Element ? event.target.closest<HTMLElement>(TIPPED) : null;
     const id = control?.dataset.command;
     if (!control || id === undefined || !this.dom.contains(control)) return;
+    // A mark beside lines pins its popover (`#clickMark`).
+    if (control.dataset.beside !== undefined) return;
     const target = this.#controlTarget(control);
     if (!target) return;
     event.preventDefault();
@@ -3678,10 +4142,14 @@ class View implements DiffView {
     // A comment box is text, which the system's own menu serves.
     if (target.closest('.lo-diffcomposer')) return;
     const card = target.closest<HTMLElement>('[data-thread-id]');
+    const marked = this.#markOf(target);
     let clicked: Target | undefined;
     if (card?.dataset.threadId) {
       const id = card.dataset.threadId;
       clicked = { kind: 'thread', thread: id, collapsed: this.#hosts.get(id)?.open === false };
+    } else if (marked) {
+      // A mark beside lines: its thread's menu, as on its card.
+      clicked = { kind: 'thread', thread: marked.thread };
     } else if (this.#pin.dom.contains(target)) {
       clicked = this.#controlTarget(this.#pin.dom);
       if (!clicked) return;
@@ -3755,6 +4223,10 @@ class View implements DiffView {
     };
     return [
       codeEditor(this.#nonce, moved),
+      // The threads' popover is placed again as what the editor draws changes size.
+      EditorView.updateListener.of((update) => {
+        if (update.geometryChanged) update.view.requestMeasure(this.#placePop);
+      }),
       fileField,
       // A file's header, and the row under it, draw a band through the gutters.
       gutterReach(),
@@ -3956,6 +4428,8 @@ class View implements DiffView {
    * gives it focus unless `focus` is false.
    */
   #toggleLayout(focus = true): void {
+    // Its lines are drawn somewhere else now.
+    this.#pop.close();
     // Focus in the peek stays there, and its line is what stays in view, the cursor going to it as
     // it would as the peek closes.
     const peek = this.#peek?.block.hasFocus === true ? this.#peek : undefined;
@@ -4152,7 +4626,9 @@ class View implements DiffView {
    */
   #viewThreads(file: number): ViewThread[] {
     const byPlace = new Map<string, ViewThread>();
-    for (const [key, threads] of this.#threads[file]!) {
+    // Beside lines, no thread is drawn in the flow.
+    const drawn = this.#mode === 'between' ? this.#threads[file]! : [];
+    for (const [key, threads] of drawn) {
       const { side, line } = placeOf(threads[0]!.at);
       const hosts = threads.flatMap((thread) => this.#hosts.get(thread.id) ?? []);
       const id = placeKey({ file, side, line });
@@ -4217,7 +4693,19 @@ class View implements DiffView {
       ring: this.#ring,
       problem: this.#problemOf(file),
       tones: this.#tones,
+      fileThreads: this.#headerThreads(file),
     };
+  }
+
+  /** File `file`'s own threads, which its header's bubble draws, if it has any. */
+  #headerThreads(file: number): HeaderThreads | undefined {
+    const threads = this.#threads[file]!.get('new:0');
+    if (!threads?.length) return undefined;
+    if (this.#mode === 'beside') {
+      const open = this.#popShownAt?.file === file && this.#popShownAt.line === 0;
+      return { threads: listed(threads), open, beside: true };
+    }
+    return { threads, open: this.#hosts.get(threads[0]!.id)?.open ?? false, beside: false };
   }
 
   /**
@@ -4682,14 +5170,16 @@ class View implements DiffView {
     for (const [key, threads] of this.#threads[file] ?? []) {
       const { side, line } = placeOf(threads[0]!.at);
       // A file's threads are under its header, on either side, whatever its lines show.
+      // Beside lines, a line's threads are one stop, as they open in one popover.
+      const each = this.#mode === 'beside' ? listed(threads).slice(0, 1) : threads;
       if (key === 'new:0') {
-        for (const { id } of threads) stops.push({ line: header, beside: false, thread: id });
+        for (const { id } of each) stops.push({ line: header, beside: false, thread: id });
         continue;
       }
       if (line === 0 || !this.#diffs[file] || this.#noteOf(file)) continue;
       const at = this.#docLine(pane, { file, side, line });
       const beside = pane !== 'inline' && side !== pane;
-      for (const { id } of threads) stops.push({ line: at, beside, thread: id });
+      for (const { id } of each) stops.push({ line: at, beside, thread: id });
     }
     return stops
       .toSorted((a, b) => a.line - b.line || Number(a.beside) - Number(b.beside))
@@ -4756,7 +5246,11 @@ class View implements DiffView {
     this.#landed = next;
     if (was?.thread === next?.thread) return;
     this.#markKeyed();
-    if (next) this.#showCard(next.thread);
+    if (!next) return;
+    // Beside lines its popover is pinned, focus staying where it was: in a popover, it's in the
+    // one pinned next.
+    if (this.#mode === 'beside') this.#pinAfterScroll(next.thread, this.#pop.hasFocus());
+    else this.#showCard(next.thread);
   }
 
   /** The thread whose card shows the keyboard is on it. */

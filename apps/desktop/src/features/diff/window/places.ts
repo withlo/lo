@@ -89,7 +89,7 @@ export function showThread(tab: string, thread: string, when: ShowWhen): boolean
     if (!has && when === 'now') return false;
     leave();
     shown(tab);
-    if (has) drawn.view.revealAtTop({ kind: 'thread', thread });
+    if (has) drawn.view.showThread(thread);
     if (when === 'both') wantThread(tab, thread);
     return true;
   }

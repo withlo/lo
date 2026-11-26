@@ -41,7 +41,7 @@ import {
 } from '../../tab/window/shared.ts';
 import { fileCountsChanged, setFileCounts } from '../../tree/window/shared.ts';
 import keys from '../keys.ts';
-import { vim } from '../settings.ts';
+import { threads as threadsSetting, vim } from '../settings.ts';
 import { DiscardedToast } from './Discarded.tsx';
 import KeptRow from './KeptRow.tsx';
 import {
@@ -98,7 +98,17 @@ import {
 } from './panel.ts';
 import { Said, tell } from './Said.tsx';
 import { ThreadsPanel, UnresolvedCount, unresolvedOf } from './ThreadsPanel.tsx';
-import { renderThreads } from './render.ts';
+import { followThreadsMode, threadsMode } from './mode.ts';
+import {
+  canShowPopover,
+  closePopover,
+  moveRing,
+  pinFirst,
+  popoverPinned,
+  ringed,
+  showPopover,
+} from './popover.ts';
+import { renderPopover, renderThreads } from './render.ts';
 import { keepOnly } from './store.ts';
 import { checkUploads, keepUploadsOf, takeProgress } from './uploads.ts';
 import {
@@ -230,17 +240,35 @@ export default {
         writingDiff(tab.id, true)?.vim(['<CR>']);
       },
     },
+    openThread: { run: showPopover, enabled: canShowPopover },
+    closeThread: { run: closePopover, enabled: popoverPinned },
+    nextComment: { run: moveRing(1) },
+    previousComment: { run: moveRing(-1) },
     reply: { run: actOn(reply), enabled: enabled(writable) },
     resolve: {
-      run: actOn(resolve),
+      // From the line beside lines, the thread's popover pins first, and that's all: where it
+      // can't, nothing changes a thread that isn't on screen.
+      run: actOn((tab, target) => {
+        if (pinFirst(tab, target) === 'shown') resolve(tab, target);
+      }),
       enabled: free,
       // Named by what it would do to the thread it's on, as its card shows it: in the thread's own
       // menu without the object.
       named: (target) => (target.kind === 'thread' && onResolved(target) ? 'Unresolve' : undefined),
       labelled: (target) => (onResolved(target) ? 'Unresolve thread' : undefined),
     },
-    edit: { run: actOn(edit), enabled: enabled(writable) },
-    remove: { run: actOn(remove), enabled: free },
+    edit: {
+      run: actOn((tab, target) => edit(tab, target, ringed(target))),
+      enabled: enabled(writable),
+    },
+    remove: {
+      // From the line beside lines, the thread's popover pins under the dialog that asks; where it
+      // can't, nothing asks to delete a comment that isn't on screen.
+      run: actOn((tab, target) => {
+        if (pinFirst(tab, target) !== 'hidden') remove(tab, target, ringed(target));
+      }),
+      enabled: free,
+    },
     discard: discarding,
     undiscard: undiscarding,
     sendAnyway: offering('sendAgain'),
@@ -285,6 +313,8 @@ export default {
   views: [
     // Settings › Keyboard, first.
     settingRow(vim, { order: 10, id: 'comments.vim' }),
+    // Settings › Pull requests, after Diff layout.
+    settingRow(threadsSetting, { order: 25 }),
     KeptRow,
     defineView(right, {
       id: 'comments.panel',
@@ -321,6 +351,7 @@ export default {
   ],
   start() {
     followVim();
+    followThreadsMode();
     // An overview's code blocks are gone while overviews are off, and the comments on them.
     followOverviews((on) => registry().setOff(['comments.commentOnBlock'], !on));
     tabs().subscribe('tabs', ({ tabs: open }) => {
@@ -368,6 +399,11 @@ export default {
       render(tab, toggle) {
         knowPull(tab);
         return renderThreads(tab, toggle);
+      },
+      mode: threadsMode,
+      popover(tab) {
+        knowPull(tab);
+        return renderPopover(tab);
       },
       settled,
       // Only from the tab on screen, whose diff marked the line.
