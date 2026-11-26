@@ -44,6 +44,7 @@ describe('the window’s layout, as main keeps it', () => {
       threads: { open: true },
       beside: true,
       reading: 0.4,
+      sides: 0.35,
     };
     store.keepLayout(kept);
     // Read again as Lo starts next.
@@ -57,12 +58,14 @@ describe('the window’s layout, as main keeps it', () => {
       threads: { open: true, width: 100 },
       beside: true,
       reading: 2,
+      sides: -0.5,
     });
     expect(store.layout()).toEqual({
       left: { open: true, width: 480 },
       threads: { open: true, width: 280 },
       beside: true,
       reading: 1,
+      sides: 0,
     });
   });
 

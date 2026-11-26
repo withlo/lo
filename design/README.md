@@ -478,7 +478,7 @@ A feature that needs set-up adds a step to the welcome flow and a row in Setting
   code, the diff's own grounds, the real icon for a mark. Never a screenshot or an image file, and
   no words in it. A picture follows the theme; only a picture of a theme pins one. Use one where
   options differ in how Lo looks, not in what it does. The pictures are `@lo/ui`'s (`ThemePicture`,
-  `LayoutPicture`), drawn over one `MiniCode`.
+  `LayoutPicture`, `ThreadsPicture`), drawn over one `MiniCode`.
 - The welcome's foot stays on screen. In a window too short for a step, the step scrolls under it.
 - The welcome's steps, its buttons and its keys are in `AGENTS.md`, under "The welcome flow".
 
@@ -733,6 +733,13 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
   a drag that moves it somewhere new changes a width; a click, `Esc`, or a drag back to where it
   began puts back what was there. A double-click puts it back to its default. A feature never
   handles a drag of its own.
+- The seam's handle runs from under the pinned file header to the view's foot, beneath what's drawn
+  on the seam (a header, the `+`, a marker, a fold, a thread, a box), which keeps the pointer and
+  every press, even one that arrived under a pointer at rest. It shares the diff's width: each side
+  keeps `lo-side-min-w` or a quarter of the diff, whichever is wider, and at twice `lo-side-min-w`
+  or less the sides split evenly with no handle. As it moves, the first row under the pinned header
+  keeps its place and the rows stay level in every frame. Sides let go at even keep no share, as the
+  default.
 - Widths never animate: a width re-wraps code. A change lands in one frame, and what arrives fades
   in with Swap. Nothing draws under its minimum: `fit` puts away the threads panel, then the left
   panel, then the view without focus, never what was asked for last, and brings each back when

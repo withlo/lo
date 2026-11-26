@@ -13,6 +13,7 @@ import {
   type DiffLayout,
   type DiffView,
   type FileView,
+  type PassStats,
   type PeekFrame,
   type PeekView,
   type Place,
@@ -43,14 +44,21 @@ let changed: string[] = [];
 
 /**
  * The file's lines: `line 1` to `line 300`, the first `wrapped` of them with words after that wrap,
- * onto more rows the narrower the view.
+ * onto more rows the narrower the view; and `added` lines that wrap the same, `added 1` and on,
+ * only on the new side, before line 20.
  */
-function setLines(wrapped: number): void {
+function setLines(wrapped: number, added = 0): void {
+  const more = ' and more words'.repeat(20);
   old = Array.from({ length: 300 }, (_, index) =>
-    index < wrapped ? `line ${index + 1}${' and more words'.repeat(20)}` : `line ${index + 1}`,
+    index < wrapped ? `line ${index + 1}${more}` : `line ${index + 1}`,
   );
   // Lines 1, 5, 9 and on: three unchanged lines between changes, which none collapse.
   changed = old.map((text, index) => (index % 4 === 0 ? `${text}, changed` : text));
+  changed.splice(
+    19,
+    0,
+    ...Array.from({ length: added }, (_, index) => `added ${index + 1}${more}`),
+  );
 }
 
 const textOf = (lines: readonly string[]): string => `${lines.join('\n')}\n`;
@@ -132,6 +140,9 @@ function peekOf(lines: number | undefined): PeekView {
 /** Each word the pointer rested on, and none as it left it. */
 const rests: (Place | undefined)[] = [];
 
+/** Each share the view said to keep as the edge between the sides moved, or none put back. */
+const shares: (number | undefined)[] = [];
+
 let shown: DiffView | undefined;
 let whole: FileView | undefined;
 
@@ -167,11 +178,16 @@ function newSide(): Element {
   return found;
 }
 
-/** Where unchanged line `line`'s text starts, down from the top of the screen. */
+/** How wide side `side` is drawn. */
+function sideWidth(side: 'old' | 'new'): number {
+  return document.querySelector(`.cm-editor[data-side="${side}"]`)!.getBoundingClientRect().width;
+}
+
+/** Where unchanged line `line`'s text starts, down from the top of the screen, long or not. */
 function lineTop(line: number): number | undefined {
   const text = `line ${line}`;
   const found = [...newSide().querySelectorAll('.cm-line')].find(
-    (each) => each.textContent === text,
+    (each) => each.textContent === text || each.textContent?.startsWith(`${text} `),
   );
   return found && found.getBoundingClientRect().top - screen().top;
 }
@@ -184,9 +200,12 @@ function root(): HTMLElement {
 }
 
 const harness = {
-  /** Draws the view in `layout`, its first `wrapped` lines long enough to wrap. */
-  open(layout: DiffLayout, wrapped = 0): void {
-    setLines(wrapped);
+  /**
+   * Draws the view in `layout`, its first `wrapped` lines long enough to wrap, and `added` lines
+   * the new side alone has before line 20, as long.
+   */
+  open(layout: DiffLayout, wrapped = 0, added = 0): void {
+    setLines(wrapped, added);
     shown = createDiffView(
       root(),
       {
@@ -211,6 +230,7 @@ const harness = {
         load: ignore,
         menu: ignore,
         rested: (at) => rests.push(at),
+        sides: (share) => shares.push(share),
       },
     );
     shown.setDiff('a', diffText(textOf(old), textOf(changed)));
@@ -330,18 +350,31 @@ const harness = {
     });
   },
   lineTop,
+  /** How far down the screen the new side's first line starting with `text` is drawn, if it is. */
+  textTop(text: string): number | undefined {
+    const found = [...newSide().querySelectorAll('.cm-line')].find((each) =>
+      each.textContent?.startsWith(text),
+    );
+    return found && found.getBoundingClientRect().top - screen().top;
+  },
   /** How far down the screen the top of what `selector` matches is. */
   top(selector: string): number | undefined {
     const found = document.querySelector(selector);
     return found ? found.getBoundingClientRect().top - screen().top : undefined;
   },
-  /** Gives the threads, each under a new line, `height` tall; `now`, as for a view not yet seen. */
-  threads(threads: { id: string; line: number; height: number }[], now = false): void {
+  /**
+   * Gives the threads, each under a line, of the new side unless said, `height` tall; `now`, as for
+   * a view not yet seen.
+   */
+  threads(
+    threads: { id: string; line: number; height: number; side?: 'old' | 'new' }[],
+    now = false,
+  ): void {
     for (const { id, height } of threads) heights.set(id, height);
     view().setThreads(
-      threads.map(({ id, line }) => ({
+      threads.map(({ id, line, side = 'new' }) => ({
         id,
-        at: { file: 'a', side: 'new', line },
+        at: { file: 'a', side, line },
         open: true,
         version: 1,
       })),
@@ -536,6 +569,29 @@ const harness = {
   /** How far apart the rows on screen are drawn side by side, at most. */
   misalignment(): number {
     return view().probe.misalignment().worst;
+  },
+  /** What the spacer pass has done so far. */
+  passStats(): PassStats {
+    return { ...view().probe.passStats };
+  },
+  /** Shares the width between the sides as the window's layout hands it: the old side `share`. */
+  sides(share: number | undefined): void {
+    view().setSides(share);
+  },
+  /** Each share the view said to keep since the page opened, or none for even again. */
+  shares(): (number | undefined)[] {
+    return shares;
+  },
+  /** How wide each side is drawn. */
+  sideWidths(): { old: number; new: number } {
+    return { old: sideWidth('old'), new: sideWidth('new') };
+  },
+  /** Where the edge between the sides is, across the page, and how far down it reaches, if shown. */
+  seam(): { x: number; top: number; bottom: number } | undefined {
+    const grip = document.querySelector<HTMLElement>('.lo-diffseam:not([hidden]) > .splitter');
+    if (!grip) return undefined;
+    const { left, top, bottom } = grip.getBoundingClientRect();
+    return { x: left, top, bottom };
   },
   /** Waits for `count` frames. */
   frames(count: number): Promise<void> {

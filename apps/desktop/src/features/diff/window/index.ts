@@ -21,6 +21,7 @@ import {
   besideNow,
   middle,
   showingMiddle,
+  sizeInView,
   status,
   type PullTab,
 } from '../../tab/window/shared.ts';
@@ -38,6 +39,7 @@ import { DiffStatus } from './Status.tsx';
 import { drawnFor, keepOnly, loaderOf, takeState, type Drawn } from './tabs.ts';
 import { threader } from './threads.ts';
 import { markViewed, viewedAt, viewedEnabled } from './viewed.ts';
+import { sidesEdge } from './sides.ts';
 import { spansOf } from './spans.ts';
 import { WholeFile } from './WholeFile.tsx';
 import {
@@ -463,6 +465,8 @@ export default {
     followOverviews((on) => registry().setOff(['diff.overviewNote'], !on));
     main().subscribe('state', takeState);
     showTreeFiles();
+    // `>`, `<` and `=` size the side the cursor is on, in a side-by-side diff with focus.
+    sizeInView(sidesEdge);
     // Each view of a pull request's tab keeps its diff until the tab closes.
     tabs().subscribe('tabs', ({ tabs: open }) => {
       const ids = new Set(viewIds(open));

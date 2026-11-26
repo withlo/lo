@@ -3,12 +3,14 @@
 // preview and attached files, for a box outside the diff, such as the submit dialog's summary; and
 // writing on a pull request itself, for its timeline: the box at the timeline's end, editing and
 // deleting your comments there, and what your own writes there changed, which the timeline shows
-// at once; the thread a review's first comment is in, for Show in diff; and choosing Vim keys, for
-// the welcome.
+// at once; the thread a review's first comment is in, for Show in diff; and choosing Vim keys and
+// how threads show in code, for the welcome.
 
 import { createElement, type ReactNode } from 'react';
 
+import { choiceOf } from '../../settings/window/shared.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
+import { threads } from '../settings.ts';
 import {
   Dropzone as DropzoneOf,
   UploadRows as UploadRowsOf,
@@ -224,3 +226,12 @@ export function onCommentWritten(listener: (view: string, write: PullWrite) => v
 export function chooseVimKeys(on: boolean): Promise<boolean> {
   return chooseVim(on);
 }
+
+/**
+ * How review threads show in code, beside lines or between them, as a screen besides Settings
+ * offers it: the welcome offers it as cards, each with a line on what its picture can't show.
+ */
+export const threadsChoice = choiceOf(threads, {
+  beside: 'A mark beside the code. Point at it or click it to read the thread.',
+  between: 'The whole thread under its line, as on GitHub.',
+});

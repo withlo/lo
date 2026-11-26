@@ -90,11 +90,16 @@ export class Pin {
 
   /**
    * Shows `pinned`, its path `start` pixels in from the sheet's edge, as its column's header has
-   * it, or nothing. A new file comes in one Swap; the same file's header drawn again, as when it's
-   * marked viewed, changes in place.
+   * it, or nothing. Side by side, with `end`, how wide the right column's gutters are, it's two
+   * columns as wide as the sides (`view.css`), its start in the old side's and its end in the new
+   * side's, short of where that side's code starts, as the header's two halves are drawn. A new
+   * file comes in one Swap; the same file's header drawn again, as when it's marked viewed, changes
+   * in place.
    */
-  show(pinned: Pinned | undefined, start: number): void {
+  show(pinned: Pinned | undefined, start: number, end?: number): void {
     this.dom.style.setProperty('--lo-pin-start', `${start}px`);
+    this.dom.classList.toggle('is-split', end !== undefined);
+    if (end !== undefined) this.dom.style.setProperty('--lo-pin-end', `${end}px`);
     const was = this.#shown;
     this.#shown = pinned;
     this.dom.style.transform = pinned && pinned.shift < 0 ? `translateY(${pinned.shift}px)` : '';

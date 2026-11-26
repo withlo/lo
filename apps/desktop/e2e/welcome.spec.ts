@@ -104,7 +104,7 @@ test('a first launch shows the welcome over Recent, and its six steps are walked
     await expect(welcome(page).getByRole('button', { name: 'Back' })).toBeHidden();
   });
 
-  await test.step('the look step chooses the theme and the diff’s layout, by key and by mouse', async () => {
+  await test.step('the look step chooses the theme, the diff’s layout and how threads show, by key and by mouse', async () => {
     await go(page).click();
     await expect(heading(page)).toHaveText('Choose how Lo looks');
     const theme = step(page).getByRole('radiogroup', { name: 'Theme' });
@@ -120,9 +120,25 @@ test('a first launch shows the welcome over Recent, and its six steps are walked
     await expect(layout.getByRole('radio', { name: 'Side by side' })).toBeChecked();
     await layout.getByRole('radio', { name: 'Inline' }).click();
     await expect(layout.getByRole('radio', { name: 'Inline' })).toBeChecked();
+    // Down again to how threads show in code, whose cards each have a line under their name. Beside
+    // lines, as Lo starts, is chosen; each is pressed in turn, and Beside lines is written.
+    await page.keyboard.press('j');
+    const threads = step(page).getByRole('radiogroup', { name: 'Threads in code' });
+    await expect(threads.getByRole('radio', { checked: true })).toBeFocused();
+    await expect(threads.getByRole('radio', { checked: true })).toHaveAccessibleName(
+      /^Beside lines/,
+    );
+    await threads.getByRole('radio', { name: /^Between lines/ }).click();
+    await threads.getByRole('radio', { name: /^Beside lines/ }).click();
+    await expect(
+      threads.getByRole('radio', {
+        name: /^Beside lines\s*A mark beside the code\. Point at it or click it to read the thread\.$/,
+      }),
+    ).toBeChecked();
     // Each is written to the settings file as it's pressed.
     await expect.poll(settingsText).toMatch(/"theme":\s*"light"/);
     await expect.poll(settingsText).toMatch(/"diff\.layout":\s*"inline"/);
+    await expect.poll(settingsText).toMatch(/"comments\.threads":\s*"beside"/);
     // ⏎ on a card is Continue, and ⇧⏎ is Back.
     await page.keyboard.press('Enter');
     await expect(heading(page)).toHaveText('Choose your keys');

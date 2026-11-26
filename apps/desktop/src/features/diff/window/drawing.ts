@@ -31,7 +31,14 @@ import {
   viewedFailureOf,
   viewedMarkOf,
 } from '../../revisions/window/shared.ts';
-import { besideNow, focusNowhereFor, viewsShown, type PullTab } from '../../tab/window/shared.ts';
+import {
+  besideNow,
+  focusNowhereFor,
+  keepSides,
+  sidesKept,
+  viewsShown,
+  type PullTab,
+} from '../../tab/window/shared.ts';
 import { followFile } from '../../tree/window/shared.ts';
 import type { Start } from '../contract.ts';
 import { hintsShown, restedIn } from './code.ts';
@@ -488,6 +495,8 @@ export function draw(options: DrawOptions): Drawing {
       hidden: !options.shown,
       renderProblem,
       threads: threader()?.mode?.() ?? 'between',
+      // The sides as the window's layout has them for every side-by-side diff, from the first frame.
+      sides: sidesKept(),
     },
     {
       cursor: settle,
@@ -510,6 +519,8 @@ export function draw(options: DrawOptions): Drawing {
       menu: (target, x, y) => {
         openMenu(target, { x, y });
       },
+      // The edge between the sides, let go somewhere new or put back: for every side-by-side diff.
+      sides: keepSides,
       arrived() {
         threader()?.arrived?.(tab.id);
       },

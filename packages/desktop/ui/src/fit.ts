@@ -5,6 +5,7 @@
 // left panel. Then the threads panel is put away, then the left panel, then the view without focus,
 // but what was asked for last goes after the others. Each comes back, at its saved width, as soon as
 // there's room for it. Widths are CSS pixels, so zoom counts: at 200 %, a 720 px window is 360.
+// Inside a side-by-side diff, `fitSides` shares the view's width between its two sides.
 
 /** A panel's default width and the narrowest and widest it's drawn. */
 export interface Limits {
@@ -206,4 +207,37 @@ export function fitWidths(saved: Layout, width: number, sizes: Sizes): Fitted {
     },
     edges,
   };
+}
+
+/** The narrowest a side of a side-by-side diff is drawn, `lo-side-min-w`, in CSS pixels. */
+export const SIDE_MIN = 240;
+
+/** How a side-by-side diff shares its width between its sides. */
+export interface FittedSides {
+  /** The old side's width; the new side takes the rest. */
+  readonly old: number;
+  /** How far the old side's edge goes, or nothing while the sides split evenly, with no edge. */
+  readonly edge?: Range | undefined;
+}
+
+/**
+ * How a side-by-side diff `width` wide shares it: the old side `share` of it, or half with none,
+ * each side keeping its minimum, `SIDE_MIN` or a quarter of the width, whichever is wider. At
+ * twice `SIDE_MIN` or less, where the edge couldn't move, the sides split evenly and have no edge.
+ * The code view's stylesheet draws the same (`--lo-side-old` in `code/view.css`).
+ */
+export function fitSides(share: number | undefined, width: number): FittedSides {
+  if (width <= 2 * SIDE_MIN) return { old: width / 2 };
+  const least = Math.max(SIDE_MIN, width / 4);
+  const edge = { min: least, max: width - least };
+  return { old: clamp((share ?? 0.5) * width, edge.min, edge.max), edge };
+}
+
+/**
+ * The old side's share to keep for it drawn `old` wide of `width`: none within half a pixel of
+ * even, which is the default, nor for a width that isn't there.
+ */
+export function shareOf(old: number, width: number): number | undefined {
+  if (!(width > 0) || !Number.isFinite(old) || Math.abs(old - width / 2) < 0.5) return undefined;
+  return clamp(old / width, 0, 1);
 }

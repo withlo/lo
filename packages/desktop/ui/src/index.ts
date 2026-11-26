@@ -133,6 +133,7 @@ export { Callout, type CalloutProps, type CalloutTone } from './Callout.tsx';
 export { Choices, type ChoiceItem, type ChoicesProps } from './Choices.tsx';
 export { LayoutPicture, type PictureLayout } from './pictures/LayoutPicture.tsx';
 export { ThemePicture, type PictureTheme } from './pictures/ThemePicture.tsx';
+export { ThreadsPicture, type PictureThreads } from './pictures/ThreadsPicture.tsx';
 export { SegmentedControl, type Segment, type SegmentedControlProps } from './SegmentedControl.tsx';
 export {
   Dialog,
@@ -153,10 +154,14 @@ export {
 export { Collapse, Swap, swapIn, type CollapseProps, type SwapProps } from './Collapse.tsx';
 export {
   fit,
+  fitSides,
   fitWidths,
   readSizes,
+  shareOf,
+  SIDE_MIN,
   type Asked,
   type Fitted,
+  type FittedSides,
   type Layout,
   type Limits,
   type PanelLayout,

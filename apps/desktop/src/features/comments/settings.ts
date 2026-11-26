@@ -31,6 +31,7 @@ export const threads = defineSetting(
   {
     group: 'pullRequests',
     label: 'Threads in code',
+    named: 'how threads show in code',
     description: 'A mark that opens over the code, or the whole thread under its line.',
     options: { beside: 'Beside lines', between: 'Between lines' },
   },

@@ -202,18 +202,24 @@ export async function changeSetting<T>(setting: Setting<T>, value: T): Promise<b
   return refusal === undefined;
 }
 
-/** One of a choice's options: its value, and the words its row in Settings has for it. */
+/**
+ * One of a choice's options: its value, the words its row in Settings has for it, and the line its
+ * card has where the feature gave one.
+ */
 export interface ChoiceOption<T extends string> {
   readonly value: T;
   readonly label: string;
+  /** What its card's picture can't show, such as what a click does. Settings' row doesn't show it. */
+  readonly description?: string;
 }
 
 /**
- * A setting of a few options, as a screen besides Settings offers it: the welcome offers the theme
- * and the diff's layout as cards. All it says comes from the setting: its key, its row's label,
- * its options with their words in the row's order, and where its row is. A feature offers one of
- * its settings this way, made in its `window/shared.ts` with {@link choiceOf}, rather than handing
- * the setting on; {@link useChoice} reads and changes it.
+ * A setting of a few options, as a screen besides Settings offers it: the welcome offers the theme,
+ * the diff's layout and how threads show in code as cards. All it says comes from the setting: its
+ * key, its row's label, its options with their words in the row's order, and where its row is; and
+ * from the feature, a line for each option's card where its picture can't say what it does. A
+ * feature offers one of its settings this way, made in its `window/shared.ts` with
+ * {@link choiceOf}, rather than handing the setting on; {@link useChoice} reads and changes it.
  */
 export interface SettingChoice<T extends string> extends Changing<T> {
   readonly key: string;
@@ -229,8 +235,15 @@ export interface SettingChoice<T extends string> extends Changing<T> {
   readonly onFileIn: (values: Readonly<Record<string, unknown>> | undefined) => T | undefined;
 }
 
-/** `setting` as another screen offers it: one of a few options, with a row in Settings. */
-export function choiceOf<T extends string>(setting: Setting<T>): SettingChoice<T> {
+/**
+ * `setting` as another screen offers it: one of a few options, with a row in Settings. `lines` is
+ * a line for each option's card, for a choice whose pictures can't show what its options do; give
+ * every option one, or none.
+ */
+export function choiceOf<T extends string>(
+  setting: Setting<T>,
+  lines?: Readonly<Record<T, string>>,
+): SettingChoice<T> {
   const { group, options } = setting;
   if (group === 'file' || options === undefined) {
     throw new Error(`The setting ${setting.key} isn’t a choice with a row in Settings.`);
@@ -242,7 +255,9 @@ export function choiceOf<T extends string>(setting: Setting<T>): SettingChoice<T
     place: `Settings › ${groupNames[group]}`,
     options: Object.entries(options).flatMap(([option, label]) => {
       const parsed = setting.schema.safeParse(option);
-      return parsed.success ? [{ value: parsed.data, label }] : [];
+      if (!parsed.success) return [];
+      const value = parsed.data;
+      return [lines === undefined ? { value, label } : { value, label, description: lines[value] }];
     }),
     onFileIn: (values) => {
       if (values === undefined) return undefined;

@@ -959,6 +959,12 @@ status bar.
   the window's middle (`focusNowhere`), so keys typed meanwhile go on in the view that takes it
   next. With two views, only the one with focus takes focus that's nowhere in particular
   (`focusNowhereFor`), and a waiting view's note keeps focus for that view, not the one beside it.
+- So is the old side's share of a side-by-side diff (`sides`, unset while even), for every diff in
+  every tab: the view draws it (`DiffView.setSides`) and says when its seam's drag or double-click
+  changes it (`DiffEvents.sides`). `fitSides` keeps each side at its minimum. `>`, `<` and `=` size
+  the side the cursor is on through the edge the diff gives `sizeInView` (`diff/window/sides.ts`),
+  as they size a panel or a view, while focus is in it. As the sides change width, the spacer pass
+  holds the first line under the pinned header where it is (`Aligner.holdUnder`).
 - Other features' banners go in the `tab.banners` slot. Each view there says whether it shows a
   banner for a tab (`shows`) and when that may change (`subscribe`), so the tab makes room only for
   the banners it has.
@@ -1354,11 +1360,12 @@ set-up, and opening a pull request.
      accounts feature's dialog) or importing from GitHub CLI when Lo finds one. A notice with "Check
      again" is here when Lo can't find a Git it can run: `welcome.checkGit` asks main to look again
      (`git.check()`), and what Lo finds reaches the window on `app.git`.
-  2. How Lo looks: `theme` and `diff.layout`, each a group of `Choices` cards with a `picture`,
-     written as a card is pressed. The feature that owns each setting offers it from its
-     `window/shared.ts` as a `SettingChoice` (`choiceOf`), and the step reads and writes it with
-     `useChoice`. A write the file refuses is the `Problem` the setting's row in Settings shows,
-     under its group, and the cards show what's on file again.
+  2. How Lo looks: `theme`, `diff.layout` and `comments.threads`, each a group of `Choices` cards
+     with a `picture`, written as a card is pressed. The feature that owns each setting offers it
+     from its `window/shared.ts` as a `SettingChoice` (`choiceOf`), with a line for each card where
+     its picture can't show what the option does, as `comments.threads` has; the step reads and
+     writes it with `useChoice`. A write the file refuses is the `Problem` the setting's row in
+     Settings shows, under its group, and the cards show what's on file again.
   3. Standard keys or Vim keys, which is the `editor.vim` setting, written with the comments
      feature's `chooseVimKeys`. A diff drawn for the step is where `j`, `k` and `c` work. `c` opens
      the comment box every comment is written in (`createComposer`), with the keys chosen. Nothing

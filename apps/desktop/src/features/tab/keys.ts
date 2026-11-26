@@ -151,8 +151,9 @@ export default defineCommands('tab', {
     bar: { menu: 'Go', section: 'history', order: 30 },
   },
   /**
-   * Widens what has focus by a step, as dragging its edge does: a panel, while focus is in it, or
-   * with the code beside, the view focus is in. A held key goes on widening it, to its limit.
+   * Widens what has focus by a step, as dragging its edge does: a panel, while focus is in it; with
+   * the code beside, the view focus is in; or in a side-by-side diff, the side the cursor is on. A
+   * held key goes on widening it, to its limit.
    */
   widen: {
     label: 'Widen',
