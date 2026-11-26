@@ -7,6 +7,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanUp, click, render } from '../test/dom.ts';
 import { missingRules } from '../test/classes.ts';
 import { SentPost, Thread, type ThreadComment, type ThreadProps } from './Thread.tsx';
+import { ThreadPopover } from './ThreadPopover.tsx';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -329,6 +330,63 @@ describe('Thread', () => {
         />
         <Thread {...PROPS} resolved open={false} excerpt="Import order" />
       </>,
+    );
+    expect(await missingRules(host)).toEqual([]);
+  });
+});
+
+describe('Thread in a popover', () => {
+  const popover = (focused: boolean) => (
+    <Thread
+      {...PROPS}
+      variant="popover"
+      lines="Lines 10–35"
+      focused={focused}
+      canResolve
+      keys={{ resolve: ['x'] }}
+      onResolve={() => {}}
+      onClose={() => {}}
+      closeKeys={['esc']}
+    />
+  );
+
+  it('has no card of its own: a head of one line, its lines and count, over its comments', () => {
+    const host = render(popover(false));
+    const thread = host.querySelector('[role="group"]')!;
+    expect(thread.querySelector('[data-pop-head]')?.textContent).toContain('Lines 10–35');
+    expect(thread.querySelector('[data-pop-head]')?.textContent).toContain('2 comments');
+    // Its comments are where the ring goes, which `j` and `k` move.
+    expect(
+      [...thread.querySelectorAll('[data-comment]')].map((each) => each.getAttribute('tabindex')),
+    ).toEqual(['-1', '-1']);
+    expect(thread.querySelector('[aria-label="Collapse thread"]')).toBeNull();
+  });
+
+  it('keeps the room of its Close and key chips in a preview, which pinning shows', () => {
+    const preview = render(popover(false));
+    const hidden = preview.querySelector('[aria-label="Close thread"]')!;
+    expect(hidden.closest('[aria-hidden="true"]')).not.toBeNull();
+    expect(hidden.getAttribute('tabindex')).toBe('-1');
+    expect(preview.querySelector('[data-key-room]')).not.toBeNull();
+    cleanUp();
+    const pinned = render(popover(true));
+    const close = pinned.querySelector('[aria-label="Close thread"]')!;
+    expect(close.closest('[aria-hidden="true"]')).toBeNull();
+    expect(close.hasAttribute('tabindex')).toBe(false);
+  });
+
+  it("only uses utilities that Lo's stylesheet has", async () => {
+    const host = render(
+      <ThreadPopover
+        label="Unresolved thread · lines 10–35"
+        threads={[
+          { id: 'one', card: popover(true) },
+          { id: 'two', card: <Thread {...PROPS} resolved variant="popover" lines="Line 35" /> },
+        ]}
+      />,
+    );
+    expect(host.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe(
+      'Unresolved thread · lines 10–35',
     );
     expect(await missingRules(host)).toEqual([]);
   });

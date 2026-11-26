@@ -29,6 +29,7 @@ import { fromMoved, movedNow } from './moved.ts';
 import { keepPlaces, openWhole, showTreeFiles } from './places.ts';
 import { DiffStatus } from './Status.tsx';
 import { keepOnly, keysDiff, loaderOf, takeState, type Drawn } from './tabs.ts';
+import { threader } from './threads.ts';
 import { markViewed, viewedAt, viewedEnabled } from './viewed.ts';
 import { spansOf } from './spans.ts';
 import { WholeFile } from './WholeFile.tsx';
@@ -336,7 +337,8 @@ export default {
     },
     toggleThread: {
       run: withDiff(({ view }, target) => void view.openThread(target.thread, 'toggle')),
-      enabled: drawnNow,
+      // Beside lines a thread opens in its popover, and doesn't collapse.
+      enabled: () => (threader()?.mode?.() === 'beside' ? '' : drawnNow()),
       named: (target) => (target.collapsed ? 'Expand' : undefined),
     },
     wholeFile: {

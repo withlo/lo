@@ -264,6 +264,7 @@ export {
 export { Label, labelColor, type LabelProps } from './Label.tsx';
 export { CommentIcon, ThreadCount, type ThreadCountProps } from './ThreadCount.tsx';
 export {
+  CLOSE_THREAD,
   SentPost,
   type SentPostProps,
   Thread,
@@ -272,6 +273,12 @@ export {
   type ThreadProps,
   type ThreadTag,
 } from './Thread.tsx';
+export {
+  type PoppedThread,
+  ringComment,
+  ThreadPopover,
+  type ThreadPopoverProps,
+} from './ThreadPopover.tsx';
 export {
   CommentBox,
   CommentBoxDropzone,

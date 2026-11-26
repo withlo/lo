@@ -27,6 +27,7 @@ import {
   BlockType,
   type EditorView,
   gutter,
+  gutterLineClass,
   GutterMarker,
   ViewPlugin,
 } from '@codemirror/view';
@@ -45,6 +46,8 @@ export interface LaneRange {
   readonly tick: boolean;
   readonly tone: LaneTone;
   readonly arriving?: boolean | undefined;
+  /** Whether its thread's popover is open: it's drawn in full colour. */
+  readonly open?: boolean | undefined;
 }
 
 /** A bubble on a line: what it says, whether its thread is open, and how it comes. */
@@ -78,8 +81,12 @@ export class LaneMarker extends GutterMarker {
   readonly tone: LaneTone;
   readonly bubble: Bubble | undefined;
   readonly open: boolean;
+  /** Whether the bracket's thread is open, in a popover: it's drawn in full colour. */
+  readonly lit: boolean;
   /** Whether the bubble runs the view's command: where it doesn't, its view runs its click. */
   readonly command: boolean;
+  /** Whether threads show beside lines, where the bubble opens a popover. */
+  readonly beside: boolean;
   #arriving: boolean;
   #was: LaneTone | undefined;
   override readonly elementClass = 'lo-lanecell';
@@ -91,6 +98,7 @@ export class LaneMarker extends GutterMarker {
     bubble: LaneBubble | undefined,
     command: boolean,
     arriving: boolean,
+    { lit = false, beside = false }: { lit?: boolean; beside?: boolean } = {},
   ) {
     super();
     this.pieces = pieces;
@@ -98,7 +106,9 @@ export class LaneMarker extends GutterMarker {
     this.tone = tone;
     this.bubble = bubble?.bubble;
     this.open = bubble?.open ?? false;
+    this.lit = lit;
     this.command = command;
+    this.beside = beside;
     this.#arriving = arriving;
     this.#was = bubble?.was;
   }
@@ -108,7 +118,9 @@ export class LaneMarker extends GutterMarker {
       other.tick === this.tick &&
       other.tone === this.tone &&
       other.open === this.open &&
+      other.lit === this.lit &&
       other.command === this.command &&
+      other.beside === this.beside &&
       other.pieces.length === this.pieces.length &&
       other.pieces.every(
         (piece, index) =>
@@ -120,15 +132,17 @@ export class LaneMarker extends GutterMarker {
 
   override toDOM(): Node {
     const cell = document.createElement('span');
-    cell.className = `lo-lanemark${this.#arriving ? ' move-swap' : ''}`;
+    // Beside lines, a bracket's cell opens its thread's popover too, and tints under the pointer.
+    cell.className = `lo-lanemark${this.#arriving ? ' move-swap' : ''}${this.beside ? ' move-tint' : ''}`;
+    const lit = this.lit ? ' is-open' : '';
     for (const piece of this.pieces) {
       const drawn = document.createElement('span');
-      drawn.className = `lo-bracket lo-bracket--${this.tone} lo-bracket--from-${piece.from} lo-bracket--to-${piece.to}`;
+      drawn.className = `lo-bracket lo-bracket--${this.tone} lo-bracket--from-${piece.from} lo-bracket--to-${piece.to}${lit}`;
       cell.append(drawn);
     }
     if (this.tick) {
       const tick = document.createElement('span');
-      tick.className = `lo-bracket lo-bracket--${this.tone} lo-bracket--tick`;
+      tick.className = `lo-bracket lo-bracket--${this.tone} lo-bracket--tick${lit}`;
       cell.append(tick);
     }
     if (this.bubble) {
@@ -138,6 +152,7 @@ export class LaneMarker extends GutterMarker {
           className: 'lo-lanebubble',
           command: this.command,
           was: this.#was,
+          beside: this.beside,
         }),
       );
     }
@@ -167,6 +182,7 @@ export function laneAt(
   ranges: readonly LaneRange[],
   bubble: LaneBubble | undefined,
   command = true,
+  beside = false,
 ): LaneMarker | null {
   let above = false;
   let below = false;
@@ -182,7 +198,8 @@ export function laneAt(
     arriving ||= range.arriving ?? false;
   }
   if (over.length === 0 && !bubble) return null;
-  const tone = shortest(over)?.tone ?? 'quiet';
+  const least = shortest(over);
+  const tone = least?.tone ?? 'quiet';
   const pieces: Piece[] = [];
   let tick = false;
   if (bubble) {
@@ -194,7 +211,10 @@ export function laneAt(
     pieces.push({ from: 'mid', to: 'edge' });
     tick = true;
   }
-  return new LaneMarker(pieces, tick, tone, bubble, command, arriving);
+  // In full colour while the popover of the thread the bracket here is drawn for is open, or the
+  // bubble's, where there's no range over the line.
+  const lit = least ? least.open === true : (bubble?.open ?? false);
+  return new LaneMarker(pieces, tick, tone, bubble, command, arriving, { lit, beside });
 }
 
 /** A range's bracket in an editor's text, from its first line's start to its last line's end. */
@@ -202,15 +222,23 @@ class LaneSpan extends RangeValue {
   readonly tone: LaneTone;
   /** How many lines it runs past its first: the shortest over a block colours it. */
   readonly lines: number;
+  /** Whether its thread's popover is open. */
+  readonly open: boolean;
 
-  constructor(tone: LaneTone, lines: number) {
+  constructor(tone: LaneTone, lines: number, open: boolean) {
     super();
     this.tone = tone;
     this.lines = lines;
+    this.open = open;
   }
 
   override eq(other: RangeValue): boolean {
-    return other instanceof LaneSpan && other.tone === this.tone && other.lines === this.lines;
+    return (
+      other instanceof LaneSpan &&
+      other.tone === this.tone &&
+      other.lines === this.lines &&
+      other.open === this.open
+    );
   }
 }
 
@@ -239,6 +267,7 @@ export function laneUpdate(
   ranges: readonly LaneRange[],
   bubbles: ReadonlyMap<number, LaneBubble>,
   command = true,
+  beside = false,
 ): LaneUpdate {
   const lines = new Set(bubbles.keys());
   const spans: Range<LaneSpan>[] = [];
@@ -246,7 +275,7 @@ export function laneUpdate(
     if (range.from >= range.to) continue;
     for (let line = range.from; line <= range.to; line++) lines.add(line);
     spans.push(
-      new LaneSpan(range.tone, range.to - range.from).range(
+      new LaneSpan(range.tone, range.to - range.from, range.open === true).range(
         doc.line(range.from).from,
         doc.line(range.to).to,
       ),
@@ -254,7 +283,7 @@ export function laneUpdate(
   }
   const marks: Range<LaneMarker>[] = [];
   for (const line of [...lines].toSorted((a, b) => a - b)) {
-    const marker = laneAt(line, ranges, bubbles.get(line), command);
+    const marker = laneAt(line, ranges, bubbles.get(line), command, beside);
     if (marker) marks.push(marker.range(doc.line(line).from));
   }
   return { from, to, marks, spans };
@@ -326,13 +355,67 @@ function past(
     if (covers(start, end) && (!best || span.lines < best.lines)) best = span;
   });
   if (!best) return null;
-  return new LaneMarker([{ from: 'edge', to: 'edge' }], false, best.tone, undefined, true, false);
+  const { tone, open } = best;
+  return new LaneMarker([{ from: 'edge', to: 'edge' }], false, tone, undefined, true, false, {
+    lit: open,
+  });
 }
 
-/** Whether `event` is on a bubble. */
+/**
+ * Whether `event` is on a bubble, or, where threads show beside lines, on a bracket's cell, which
+ * opens its thread's popover too.
+ */
 function onBubble(event: Event): boolean {
-  return event.target instanceof Element && event.target.closest('.lo-bubble') !== null;
+  const { target } = event;
+  if (!(target instanceof Element)) return false;
+  if (target.closest('.lo-bubble') !== null) return true;
+  return target.closest('.is-beside') !== null && besideMarker(target) !== undefined;
 }
+
+/**
+ * The lane's cell `element` is in, where threads show beside lines and it draws a thread's mark,
+ * a bubble or a bracket, which opens its popover: none elsewhere.
+ */
+export function besideMarker(element: Element): HTMLElement | undefined {
+  const cell = element.closest<HTMLElement>('.lo-threadlane .lo-lanecell');
+  return cell?.querySelector('.lo-bubble, .lo-bracket') ? cell : undefined;
+}
+
+/** A gutter cell beside a line a thread's popover is open on: its lines take the selected tint. */
+const poppedCell = new (class extends GutterMarker {
+  override readonly elementClass = 'is-popped';
+})();
+
+/** The document lines, first to last, of the thread whose popover is open, or none. */
+export const setPopped = StateEffect.define<{
+  readonly from: number;
+  readonly to: number;
+} | null>();
+
+/** The cells of every gutter beside the lines of the thread whose popover is open. */
+const poppedField = StateField.define<RangeSet<GutterMarker>>({
+  create: () => RangeSet.empty,
+  update(cells, transaction) {
+    let next = transaction.docChanged ? cells.map(transaction.changes) : cells;
+    for (const effect of transaction.effects) {
+      if (!effect.is(setPopped)) continue;
+      const lines = effect.value;
+      if (!lines) {
+        next = RangeSet.empty;
+        continue;
+      }
+      const { doc } = transaction.state;
+      const marks: Range<GutterMarker>[] = [];
+      const last = Math.min(lines.to, doc.lines);
+      for (let line = Math.max(1, lines.from); line <= last; line++) {
+        marks.push(poppedCell.range(doc.line(line).from));
+      }
+      next = RangeSet.of(marks);
+    }
+    return next;
+  },
+  provide: (field) => gutterLineClass.from(field),
+});
 
 /**
  * CodeMirror hides its gutters from screen readers: what's in the lane, the bubbles, is theirs to
@@ -370,6 +453,7 @@ const exposed = ViewPlugin.fromClass(
 export function threadLane(): Extension {
   return [
     laneField,
+    poppedField,
     gutter({
       class: 'lo-threadlane',
       markers: (view) => view.state.field(laneField).marks,

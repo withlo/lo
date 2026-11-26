@@ -324,6 +324,75 @@ test('walks the threads with ]t and [t, and opens or collapses one with za', asy
   await expect(openCard(page, 'The fixed second is gone')).toBeVisible();
 });
 
+test.describe('beside lines', () => {
+  test('a thread opens over the code, under its line, moving none, and closes on Esc', async ({
+    page,
+  }) => {
+    const id = await open(page, COMMENTS_PULL.number);
+    await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(AT_HEAD);
+    await settled(page);
+    await localCopy(page, id);
+    // Threads in code, beside lines: the diff draws its threads as their bubbles alone, at once.
+    await expect(card(page, 'Start a little higher?')).toBeVisible();
+    const set = await page.evaluate(() =>
+      window.lo.invoke('settings.set', { key: 'comments.threads', value: 'beside' }),
+    );
+    expect(set.ok).toBe(true);
+    await expect(card(page, 'Start a little higher?')).toHaveCount(0);
+    const bubble = page.getByRole('button', { name: 'Unresolved thread · line 2', exact: true });
+    await expect(bubble).toHaveAttribute('aria-expanded', 'false');
+    const before = await lineTop(page);
+
+    // A click pins it: under the line, its left edge on the lane's, and no line moves.
+    await bubble.click();
+    const popover = page.getByRole('dialog', { name: 'Unresolved thread · line 2' });
+    await expect(popover).toBeVisible();
+    await expect(popover).toContainText('Start a little higher?');
+    await expect(popover).toContainText('Line 2');
+    await expect(bubble).toHaveAttribute('aria-expanded', 'true');
+    await expect(popover.getByRole('button', { name: 'Close thread' })).toBeVisible();
+    expect(await moved(page, before)).toBe(0);
+    // 520 wide, its left edge on the lane's, or, where that would take it past the pane's edge,
+    // 8 inside it.
+    const edges = await bubble.evaluate((element) => {
+      const cell = element.closest('.cm-gutterElement')!.getBoundingClientRect();
+      const lane = element.closest('.lo-threadlane')!.getBoundingClientRect();
+      const pane = document.querySelector('.lo-diffview')!;
+      const right = pane.getBoundingClientRect().left + pane.clientLeft + pane.clientWidth;
+      const shown = document.querySelector('.lo-threadpop')!.getBoundingClientRect();
+      return {
+        gap: Math.round(shown.top - cell.bottom),
+        width: Math.round(shown.width),
+        across: Math.round(shown.left - lane.left) === 0 || Math.round(right - shown.right) === 8,
+      };
+    });
+    expect(edges).toEqual({ gap: 4, width: 520, across: true });
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 2');
+
+    // Esc closes it, focus going back to its line.
+    await page.keyboard.press('Escape');
+    await expect(popover).toBeHidden();
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 2');
+    await settled(page);
+
+    // `]t` pins the next thread's, focus staying in the code; `⏎` moves into it.
+    await page.keyboard.press(']');
+    await page.keyboard.press('t');
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 5');
+    const next = page.getByRole('dialog', { name: 'Resolved thread · line 5' });
+    await expect(next).toBeVisible();
+    await settled(page);
+    await page.keyboard.press('Enter');
+    await expect
+      .poll(() => page.evaluate(() => document.activeElement?.closest('[role="dialog"]') !== null))
+      .toBe(true);
+    await page.keyboard.press('Escape');
+    await expect(next).toBeHidden();
+    await settled(page);
+    expect(await moved(page, before)).toBe(0);
+  });
+});
+
 test('a thread under a renamed file’s old line shows in its older column', async ({ page }) => {
   // GitHub names it by the file's new path, docs/guide.md, on the base's side.
   await open(page, COMMENTS_RENAME_PULL.number);

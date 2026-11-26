@@ -6,7 +6,7 @@
 // reader is looking at moves: a diff waits a moment for its tab's threads before it's first drawn,
 // so those on its first screen come with it.
 
-import type { RenderThread, ThreadView } from '@lo/ui/code';
+import type { RenderPopover, RenderThread, ThreadsMode, ThreadView } from '@lo/ui/code';
 
 import type { PullTab } from '../../tab/window/shared.ts';
 
@@ -65,6 +65,10 @@ export interface Threader {
    * thread's own button that opens or collapses it calls `toggle` with its id.
    */
   render(tab: PullTab, toggle: (thread: string) => void): RenderThread;
+  /** How threads show in code now: between lines unless it says. */
+  mode?(): ThreadsMode;
+  /** What draws the threads of `tab`'s view in its popover, beside lines. */
+  popover?(tab: PullTab): RenderPopover;
   /**
    * Someone else's new comment came to a line of tab `tab`'s diff on screen, where it waits for
    * the reader's next input, its line marked: said to a screen reader.
@@ -100,6 +104,11 @@ export function threadWith(given: Threader): () => void {
 /** What places and draws the diffs' threads now, if anything does. */
 export function threader(): Threader | undefined {
   return current;
+}
+
+/** Says how threads show in code changed, so every diff drawn asks for its threads again. */
+export function changedEverywhere(): void {
+  for (const tab of listeners.keys()) changed(tab);
 }
 
 /** Says tab `tab`'s threads changed, so its diff, if it's drawn, asks for them again. */

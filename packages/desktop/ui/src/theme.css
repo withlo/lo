@@ -74,6 +74,8 @@
   --spacing-read-measure: var(--lo-read-measure);
   --spacing-empty-measure: var(--lo-empty-measure);
   --spacing-timeline-w: var(--lo-timeline-w);
+  --spacing-thread-pop-w: var(--lo-thread-pop-w);
+  --spacing-thread-pop-h: var(--lo-thread-pop-h);
   --color-ink: var(--lo-ink);
   --color-chalk: var(--lo-chalk);
   --color-powder: var(--lo-powder);

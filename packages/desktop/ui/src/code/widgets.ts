@@ -288,6 +288,8 @@ export interface HeaderProblem {
 export interface FileBubble {
   readonly bubble: Bubble;
   readonly open: boolean;
+  /** Whether threads show beside lines, where it opens the threads' popover. */
+  readonly beside?: boolean | undefined;
   /** The colour it was drawn in last, where that's changed: it tints from it, the first time. */
   readonly was?: LaneTone | undefined;
 }
@@ -346,7 +348,8 @@ export class HeaderWidget extends WidgetType {
       sameRow(other.row, this.row) &&
       sameUnder(other.under, this.under) &&
       sameBubble(other.bubble?.bubble, this.bubble?.bubble) &&
-      other.bubble?.open === this.bubble?.open
+      other.bubble?.open === this.bubble?.open &&
+      other.bubble?.beside === this.bubble?.beside
     );
   }
 
@@ -359,6 +362,7 @@ export class HeaderWidget extends WidgetType {
         open: bubble.open,
         className: 'lo-diffhead__bubble',
         was: this.#tinting ? bubble.was : undefined,
+        beside: bubble.beside,
       });
       this.#tinting = false;
       // A press on it leaves the cursor and focus where they are; its click is the view's.

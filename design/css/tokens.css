@@ -423,6 +423,8 @@
   --lo-read-measure: 680px; /* Widest line of reading text in overviews. */
   --lo-empty-measure: 320px; /* Widest line of text in an empty state. */
   --lo-timeline-w: 856px; /* Widest the timeline's column gets: a code block of 100 columns fits in a post beside the rail. */
+  --lo-thread-pop-w: 520px; /* Width of a thread's popover over the code, at every window width. */
+  --lo-thread-pop-h: 480px; /* Tallest a thread's popover gets, in a pane that has the room: past it, its comments scroll. */
   /* motion */
   --lo-dur-fast: 90ms; /* Tint, Pop and Swap, and every exit. */
   --lo-dur: 160ms; /* Sheet, Open and Slide. */

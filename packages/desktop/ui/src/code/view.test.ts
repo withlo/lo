@@ -30,6 +30,8 @@ import type {
   PeekFrame,
   PeekView,
   Place,
+  PopoverView,
+  RenderPopover,
   RenderProblem,
   RenderThread,
   Spot,
@@ -41,6 +43,7 @@ import { Aligner } from './aligner.ts';
 import { createComposer } from './composer.ts';
 import { editsText, setVim } from './keys.ts';
 import { focusedMode } from './mode.ts';
+import { REST } from './popover.ts';
 import { swapping } from './lines.ts';
 import { TIP_DELAY } from './tip.ts';
 import { createDiffView } from './view.ts';
@@ -3238,6 +3241,182 @@ describe('threads’ lane', () => {
       vi.useRealTimers();
       release();
     }
+  });
+});
+
+/**
+ * A caller's popover, beside lines: one paragraph per thread, each a comment the ring can go to,
+ * with what it was asked to draw in turn, its threads and whether it was pinned.
+ */
+function popped() {
+  const drawn: string[] = [];
+  const render: RenderPopover = (host, popover) => {
+    const draw = (shown: PopoverView): void => {
+      host.innerHTML = shown.threads
+        .map(
+          ({ id }) =>
+            `<div data-thread-id="${id}"><p data-comment="${id}.1" tabindex="-1">${id}</p></div>`,
+        )
+        .join('');
+      drawn.push(
+        `${shown.threads.map(({ id }) => id).join(' ')} ${shown.pinned ? 'pinned' : 'preview'}`,
+      );
+    };
+    draw(popover);
+    return { update: draw, destroy: () => host.replaceChildren() };
+  };
+  return { render, drawn };
+}
+
+/** The threads' popover's layer, beside lines. */
+function layer(): HTMLElement {
+  return parent!.querySelector<HTMLElement>('.lo-threadpop')!;
+}
+
+/** The bubble in the threads' lane of the new side. */
+function newBubble(): HTMLElement {
+  const content = parent!.querySelector('.cm-content[aria-label="After"]')!;
+  return content.closest('.cm-editor')!.querySelector<HTMLElement>('.lo-threadlane .lo-bubble')!;
+}
+
+describe('threads beside lines', () => {
+  test('a thread takes no room under its line: its mark alone is drawn, which runs no tip', () => {
+    const shown = open(events(), { threads: 'beside' });
+    const { render, asked } = plain();
+    shown.setThreads([], render);
+    const before = { old: drawnText('Before'), new: drawnText('After') };
+    shown.setThreads([ranged('one', at('a', 'new', 8), { side: 'new', line: 4 })], render, {
+      popover: popped().render,
+    });
+    expect(asked).toEqual([]);
+    expect({ old: drawnText('Before'), new: drawnText('After') }).toEqual(before);
+    expect(lane('After')).toEqual([
+      'mid-edge amber, tick amber',
+      'edge-edge amber',
+      'edge-edge amber',
+      'edge-edge amber',
+      'edge-bubble amber, amber Unresolved thread · lines 4–8',
+    ]);
+    expect(newBubble().dataset.beside).toBe('');
+    expect(newBubble().dataset.tip).toBeUndefined();
+  });
+
+  test('a click on its mark pins its popover, the cursor on its line, and again closes it', () => {
+    const shown = open(events(), { threads: 'beside' });
+    const { render, drawn } = popped();
+    shown.setThreads([ranged('one', at('a', 'new', 8), { side: 'new', line: 6 })], plain().render, {
+      popover: render,
+    });
+    newBubble().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(layer().hidden).toBe(false);
+    expect(drawn.at(-1)).toBe('one pinned');
+    expect(shown.pinned()).toEqual(['one']);
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 8));
+    expect(document.activeElement?.getAttribute('data-comment')).toBe('one.1');
+    // Its lines' cells take the selected ground, and its marks their full colour.
+    const content = parent!.querySelector('.cm-content[aria-label="After"]')!;
+    const editor = content.closest('.cm-editor')!;
+    expect(editor.querySelectorAll('.cm-lineNumbers .cm-gutterElement.is-popped')).toHaveLength(3);
+    expect(newBubble().getAttribute('aria-expanded')).toBe('true');
+    expect(editor.querySelectorAll('.lo-bracket.is-open').length).toBeGreaterThan(0);
+    newBubble().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(shown.pinned()).toEqual([]);
+    expect(layer().hidden).toBe(true);
+    expect(editor.querySelectorAll('.is-popped')).toHaveLength(0);
+    expect(newBubble().getAttribute('aria-expanded')).toBe('false');
+  });
+
+  test('the pointer at rest on a mark previews it, pinned by nothing, focus staying put', () => {
+    vi.useFakeTimers();
+    try {
+      const shown = open(events(), { threads: 'beside' });
+      const { render, drawn } = popped();
+      shown.setThreads([ranged('one', at('a', 'new', 8), undefined)], plain().render, {
+        popover: render,
+      });
+      newBubble().dispatchEvent(new MouseEvent('pointerover', { bubbles: true }));
+      vi.advanceTimersByTime(REST - 100);
+      expect(layer().hidden).toBe(true);
+      vi.advanceTimersByTime(100);
+      expect(layer().hidden).toBe(false);
+      expect(drawn.at(-1)).toBe('one preview');
+      expect(drawn).not.toContain('one pinned');
+      expect(shown.pinned()).toEqual([]);
+      expect(layer().contains(document.activeElement)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('Esc, or the cursor leaving its lines, closes it, focus going back to its line', () => {
+    const shown = open(events(), { threads: 'beside' });
+    shown.setThreads([ranged('one', at('a', 'new', 8), undefined)], plain().render, {
+      popover: popped().render,
+    });
+    expect(shown.pinThread('one', true)).toBe(true);
+    expect(layer().contains(document.activeElement)).toBe(true);
+    expect(shown.closePopover()).toBe(true);
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('After');
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 8));
+    shown.pinThread('one');
+    expect(shown.pinned()).toEqual(['one']);
+    shown.reveal(onLine('a', 'new', 2));
+    expect(shown.pinned()).toEqual([]);
+  });
+
+  test('`]t` lands on the next thread’s line and pins its popover once the editor has scrolled', async () => {
+    const shown = open(events(), { threads: 'beside' });
+    const { render, drawn } = popped();
+    shown.setThreads(
+      [ranged('one', at('a', 'new', 8), undefined), ranged('two', at('a', 'new', 21), undefined)],
+      plain().render,
+      { popover: render },
+    );
+    shown.reveal(onLine('a', 'new', 1));
+    shown.focus();
+    shown.jump('thread', 1);
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 8));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    expect(drawn.at(-1)).toBe('one pinned');
+    shown.jump('thread', 1);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    expect(shown.pinned()).toEqual(['two']);
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 21));
+  });
+
+  test('switching to between lines draws its threads under their lines, and back takes them away', () => {
+    const shown = open(events(), { threads: 'beside' });
+    const { render, asked } = plain();
+    shown.setThreads([thread('one', at('a', 'new', 4))], render);
+    expect(asked).toEqual([]);
+    shown.setThreadsMode('between');
+    expect(asked).toEqual(['draw one']);
+    expect(drawnThreads()).toEqual(['one']);
+    shown.setThreadsMode('beside');
+    expect(asked).toEqual(['draw one', 'destroy one']);
+    expect(drawnThreads()).toEqual([]);
+    expect(newBubble().dataset.beside).toBe('');
+  });
+
+  test('a key on the cursor’s line acts on its first thread, unresolved first, or the shortest range over it', () => {
+    const shown = open(events(), { threads: 'beside' });
+    shown.setThreads(
+      [
+        ranged('done', at('a', 'new', 8), undefined, { resolved: true }),
+        ranged('open', at('a', 'new', 8), undefined),
+        ranged('long', at('a', 'new', 14), { side: 'new', line: 2 }),
+        ranged('short', at('a', 'new', 12), { side: 'new', line: 6 }),
+      ],
+      plain().render,
+    );
+    shown.reveal(onLine('a', 'new', 8));
+    expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 'open' });
+    shown.reveal(onLine('a', 'new', 7));
+    expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 'short' });
+    shown.reveal(onLine('a', 'new', 3));
+    expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 'long' });
   });
 });
 

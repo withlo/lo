@@ -58,6 +58,7 @@ export interface HelpArea {
 const areas: readonly (readonly [scope: string, name: string])[] = [
   ['window', 'Anywhere'],
   ['diff', 'Diff'],
+  ['thread', 'Thread'],
   ['file', 'Whole file'],
   ['peek', 'Definitions'],
   ['references', 'References'],

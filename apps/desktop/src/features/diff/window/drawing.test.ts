@@ -74,6 +74,7 @@ vi.mock('@lo/ui/code', () => ({
       );
       threadsTold.push(`${described.join(', ')}${options?.now ? ' now' : ''}`);
     },
+    setThreadsMode: () => undefined,
     setMoves: () => undefined,
     loadFailed: (id) => void told.push(`failed ${id}`),
     focus: () => undefined,

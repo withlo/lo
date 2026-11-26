@@ -26,6 +26,13 @@
 // or Settings › Keyboard. Off, code and boxes have a plain caret, a box takes typing as soon as it
 // has focus, and every key here works as it does with them on, but Vim's own.
 //
+// With threads beside lines (`comments.threads`), a thread is a mark in the gutter that opens in a
+// popover over the code. On a line with a mark, `⏎` pins its popover and moves focus into it, the
+// `thread` scope, where `j` and `k` move the ring between its comments, which `i` and `dd` act on,
+// `r` and `x` act on its thread, and `Esc` closes it, focus going back to the line. From the line,
+// with its popover closed, `x` and `dd` pin it first: a key never changes a thread that isn't on
+// screen. Between lines the popover's keys are off.
+//
 // In the threads panel, the `threads` scope: `j` and `k` move between its threads, `⏎` shows the
 // one the keyboard is on in the diff, and `f` steps through what it lists: the unresolved threads,
 // every thread, or yours. `⌘⌫` clears the filter, listing every thread. `x` resolves or
@@ -40,8 +47,11 @@ const diff: When = { scope: 'diff', mode: ['normal', 'visual'] };
 /** In a comment box. */
 const box: When = { scope: 'box' };
 
-/** In the diff, on the thread the cursor's on. */
-const onThread: When = { scope: 'diff', mode: 'normal' };
+/** In the diff, on the thread the cursor's on, or in a thread's popover. */
+const onThread: When = { scope: ['diff', 'thread'], mode: 'normal' };
+
+/** In a thread's popover, beside lines. */
+const popover: When = { scope: 'thread' };
 
 /** In the threads panel. */
 const panel: When = { scope: 'threads' };
@@ -124,6 +134,46 @@ export default defineCommands(
       overVim: true,
       when: { scope: 'diff', mode: 'normal' },
     },
+    /**
+     * Beside lines, the popover of the thread on the cursor's line, pinned if it isn't, with focus
+     * in it, the ring on its first comment. Just after a line refused a comment, `⏎` comments on
+     * its file instead, as it does on a line with no mark.
+     */
+    openThread: {
+      label: 'Show thread',
+      description: 'Opens the thread on the cursor’s line and moves into it.',
+      control: 'the marker beside a thread’s lines',
+      group: 'Comments',
+      keys: ['enter'],
+      targets: ['thread'],
+      overVim: true,
+      when: { scope: 'diff', mode: 'normal', on: 'thread' },
+    },
+    /** Closes the thread's popover, as its Close does: focus goes back to its line. */
+    closeThread: {
+      label: 'Close thread',
+      control: 'Close on a thread’s popover',
+      group: 'Comments',
+      keys: ['esc'],
+      when: popover,
+    },
+    /** Moves the ring in a thread's popover to its next comment, and keeps it in view. */
+    nextComment: {
+      label: 'Next comment',
+      control: 'a click on a comment',
+      group: 'Comments',
+      keys: ['j', 'down'],
+      when: popover,
+      repeat: true,
+    },
+    previousComment: {
+      label: 'Previous comment',
+      control: 'a click on a comment',
+      group: 'Comments',
+      keys: ['k', 'up'],
+      when: popover,
+      repeat: true,
+    },
     /** A reply box in the thread, right after its card. */
     reply: {
       label: 'Reply',
@@ -148,7 +198,10 @@ export default defineCommands(
       // "Unresolve", on one that's resolved.
       menu: { on: 'thread', order: 20, label: 'Resolve' },
     },
-    /** A box with your newest comment in the thread, to edit it and save it over GitHub's text. */
+    /**
+     * A box with your newest comment in the thread, to edit it and save it over GitHub's text: in a
+     * thread's popover, the comment the ring is on.
+     */
     edit: {
       label: 'Edit comment',
       control: 'Edit on your comment',
@@ -159,7 +212,7 @@ export default defineCommands(
       when: onThread,
       menu: { on: 'thread', order: 40, label: 'Edit' },
     },
-    /** Deletes your newest comment in the thread, once you say so. */
+    /** Deletes your newest comment in the thread, once you say so: in a popover, the ringed one. */
     remove: {
       label: 'Delete comment…',
       control: 'Delete on your comment',
@@ -386,5 +439,5 @@ export default defineCommands(
       when: panel,
     },
   },
-  { scopes: ['threads'] },
+  { scopes: ['threads', 'thread'] },
 );
