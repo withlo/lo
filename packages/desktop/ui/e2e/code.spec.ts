@@ -20,10 +20,9 @@ const PINNED = 38;
 const STYLE = [
   readFileSync(new URL('../src/code/view.css', import.meta.url), 'utf8'),
   // The tokens the page's own measures need: the room a box brought on screen keeps under it, the
-  // height of the file's header pinned over the top, and the narrowest a side is drawn.
-  `:root { --lo-sp-8: 8px; --lo-file-header-h: ${PINNED}px; --lo-side-min-w: 240px; }`,
-  // What a `splitter` gives to grab: 8 px centred on its edge, as Lo's stylesheet has it.
-  `.splitter { width: 0; } .splitter::before { content: ''; position: absolute; top: 0; bottom: 0; left: -4px; width: 8px; }`,
+  // height of the file's header pinned over the top, the narrowest a side is drawn, and how wide an
+  // edge's grip is.
+  `:root { --lo-sp-8: 8px; --lo-file-header-h: ${PINNED}px; --lo-side-min-w: 240px; --lo-splitter-w: 8px; }`,
   'body { margin: 0; } #root { width: 1000px; height: 600px; } .card { background: #ddd; }',
 ].join('\n');
 
@@ -1142,13 +1141,12 @@ test('a row the new side alone has, first under the pinned header, stays where i
   }
 });
 
-test('what’s drawn under the edge between the sides keeps the pointer from it, and code gives it the pointer', async () => {
+test('what’s drawn under the edge between the sides keeps the pointer and the press, even arriving under a pointer at rest, and code gives them to the edge', async () => {
   const page = await open('split');
   const { top } = await viewBox(page);
   // Under an old line, the thread reaches the edge, on its left.
-  await page.evaluate(() =>
-    window.harness.threads([{ id: 'under', line: 24, height: 80, side: 'old' }], true),
-  );
+  const under = [{ id: 'under', line: 24, height: 80, side: 'old' as const }];
+  await page.evaluate((given) => window.harness.threads(given, true), under);
   await drawn(page, ['under']);
   const x = (await seam(page))!.x - 2;
   const thread = await page.evaluate(() => {
@@ -1157,22 +1155,162 @@ test('what’s drawn under the edge between the sides keeps the pointer from it,
     return (rect.top + rect.bottom) / 2;
   });
   const code = top + (await lineTop(page, 30))! + 5;
-  /** What has the pointer at `y` on the edge: the edge, or what's under it. */
-  const at = (y: number) =>
+  /** Whether the edge is drawn under the pointer at `y`, and the cursor there. */
+  const pointedAt = (y: number) =>
     page.evaluate(
-      ({ across, down }) =>
-        document.elementFromPoint(across, down)?.classList.contains('splitter') ? 'edge' : 'under',
+      ({ across, down }) => {
+        const pointed = document.elementFromPoint(across, down)!;
+        return {
+          near: document.querySelector('.lo-diffseam > .splitter')!.classList.contains('is-near'),
+          cursor: getComputedStyle(pointed).cursor,
+        };
+      },
       { across: x, down: y },
     );
   await page.mouse.move(x, code);
-  expect(await at(code)).toBe('edge');
-  // Over the thread, the thread keeps it until the pointer leaves it.
+  expect(await pointedAt(code)).toEqual({ near: true, cursor: 'col-resize' });
+  // Over the thread, the thread keeps the pointer.
   await page.mouse.move(x, thread);
-  await page.mouse.move(x + 0.5, thread);
-  expect(await at(thread)).toBe('under');
+  expect((await pointedAt(thread)).near).toBe(false);
+  expect((await pointedAt(thread)).cursor).not.toBe('col-resize');
+
+  // The thread goes, and comes back under the pointer at rest: the press is the thread's, and
+  // nothing drags.
+  await page.evaluate(() => window.harness.threads([], true));
+  await drawn(page, []);
+  await page.evaluate((given) => window.harness.threads(given, true), under);
+  await drawn(page, ['under']);
+  await page.evaluate(() => {
+    const pressed: string[] = [];
+    Reflect.set(window, 'loPressed', pressed);
+    document.addEventListener(
+      'pointerdown',
+      (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        pressed.push(target?.closest('.lo-diffthread') ? 'thread' : (target?.className ?? ''));
+      },
+      { capture: true },
+    );
+  });
+  await page.mouse.down();
+  await page.mouse.move(x - 40, thread);
+  await page.mouse.up();
+  const pressed = await page.evaluate(() => {
+    const kept: unknown = Reflect.get(window, 'loPressed');
+    return Array.isArray(kept) ? kept.map(String) : [];
+  });
+  expect(pressed).toEqual(['thread']);
+  expect(await page.evaluate(() => window.harness.shares())).toEqual([]);
+
+  // Over code, a press is the edge's, and drags it.
   await page.mouse.move(x, code);
-  await page.mouse.move(x + 0.5, code);
-  expect(await at(code)).toBe('edge');
+  await page.mouse.down();
+  await page.mouse.move(x - 40, code, { steps: 2 });
+  await page.mouse.up();
+  expect(await page.evaluate(() => window.harness.shares())).toHaveLength(1);
+});
+
+test('a drag whose view goes out of sight keeps a share of the width it began at, never one that isn’t a number', async () => {
+  const page = await open('split', { wrapped: 300 });
+  const { left, top, room } = await viewBox(page);
+  const edge = (await seam(page))!;
+  await page.mouse.move(edge.x, top + 300);
+  await page.mouse.down();
+  await page.mouse.move(left + 400, top + 300, { steps: 2 });
+  await page.evaluate(() => {
+    document.getElementById('root')!.style.display = 'none';
+  });
+  await page.mouse.move(left + 420, top + 300);
+  await page.mouse.up();
+  const shares = await page.evaluate(() => window.harness.shares());
+  for (const share of shares) expect(share === undefined || Number.isFinite(share)).toBe(true);
+  await page.evaluate(() => {
+    document.getElementById('root')!.style.display = '';
+  });
+  await frames(page);
+  const { old } = await sideWidths(page);
+  expect(old).toBeCloseTo((shares.at(-1) ?? 0.5) * room, 0);
+});
+
+test('the sides let go at even keep no share, as the default', async () => {
+  const page = await open('split', { wrapped: 300 });
+  const { top, room } = await viewBox(page);
+  await page.evaluate(() => window.harness.sides(0.4));
+  await frames(page);
+  const { old } = await sideWidths(page);
+  const from = Math.round((await seam(page))!.x);
+  await page.mouse.move(from, top + 300);
+  await page.mouse.down();
+  await page.mouse.move(from + 60, top + 300);
+  await page.mouse.move(from + (room / 2 - old), top + 300);
+  await page.mouse.up();
+  await frames(page);
+  expect(await page.evaluate(() => window.harness.shares())).toEqual([undefined]);
+  expect((await sideWidths(page)).old).toBeCloseTo(room / 2, 0);
+});
+
+test('a line less than a pixel short of the pinned header’s foot stays where it is as the sides are shared anew', async () => {
+  const page = await open('split', { wrapped: 300, below: PINNED - 0.5 });
+  const before = await lineTop(page, 20);
+  expect(before).toBeGreaterThan(PINNED - 1);
+  expect(before).toBeLessThan(PINNED);
+  for (const share of [0.3, 0.7]) {
+    await page.evaluate((to) => window.harness.sides(to), share);
+    await frames(page);
+    near([await lineTop(page, 20)], [before]);
+  }
+});
+
+test('threads and a comment box on screen stay level with their lines as the sides are shared anew', async () => {
+  // Tall enough that the box, which has focus, stays on screen however its side wraps: one that
+  // would run past the foot is brought back on screen, as a box is whenever its view's width changes.
+  const page = await open('split', { wrapped: 300, below: PINNED + 10, height: 1000 });
+  await page.evaluate(() =>
+    window.harness.compose(21, 'a comment that wraps as its box narrows '.repeat(3), 'old'),
+  );
+  await frames(page);
+  await page.evaluate((below) => {
+    window.harness.scrollTo(20, below);
+    window.harness.threads(
+      [
+        { id: 'old', line: 20, height: 40, side: 'old' },
+        { id: 'new', line: 20, height: 60 },
+      ],
+      true,
+    );
+  }, PINNED + 10);
+  await drawn(page, ['old', 'new']);
+  await frames(page);
+  const before = await lineTop(page, 20);
+  expect(before).toBeCloseTo(PINNED + 10, 0);
+  /** How far below its line's top each thread and the box start. */
+  const gaps = () =>
+    page.evaluate(() =>
+      (
+        [
+          ['[data-thread-id="old"]', 'old', 'line 20 '],
+          ['[data-thread-id="new"]', 'new', 'line 20 '],
+          ['.lo-diffcomposer', 'old', 'line 21 '],
+        ] as const
+      ).map(([selector, side, text]) => {
+        const found = document.querySelector(selector);
+        const line = [
+          ...document.querySelectorAll(`.cm-editor[data-side="${side}"] .cm-line`),
+        ].find((each) => each.textContent?.startsWith(text));
+        if (!found || !line) return Number.NaN;
+        return found.getBoundingClientRect().top - line.getBoundingClientRect().top;
+      }),
+    );
+  for (const share of [0.3, 0.7, undefined]) {
+    await page.evaluate((to) => window.harness.sides(to), share);
+    await frames(page);
+    expect(await page.evaluate(() => window.harness.misalignment())).toBeLessThan(1);
+    near([await lineTop(page, 20)], [before]);
+    // Each is still drawn under its line, however tall the line now wraps.
+    for (const gap of await gaps()) expect(gap).toBeGreaterThan(0);
+  }
+  const [box] = await boxesOn(page);
+  expect(box!.whole).toBe(true);
 });
 
 test('a box on a side narrower than a box may be takes both sides, and one on a wide side keeps to it', async () => {

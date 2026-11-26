@@ -156,6 +156,7 @@ export {
   fitSides,
   fitWidths,
   readSizes,
+  shareOf,
   SIDE_MIN,
   type Asked,
   type Fitted,

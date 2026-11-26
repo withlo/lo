@@ -274,6 +274,16 @@ describe('the window’s layout', () => {
     expect(layout.getState()).toEqual(FIRST_LAYOUT);
   });
 
+  it('never keeps a share that isn’t a number, and keeps one within 0 to 1', () => {
+    setSides(0.4);
+    setSides(Number.NaN);
+    setSides(Number.POSITIVE_INFINITY);
+    expect(layout.getState()).toEqual({ ...FIRST_LAYOUT, sides: 0.4 });
+    setSides(1.5);
+    expect(layout.getState().sides).toBe(1);
+    resetLayout();
+  });
+
   it('is main’s as the window starts, and main keeps each change after, but not what it sent', async () => {
     fromMain = { left: { open: false, width: 260 }, threads: { open: true }, beside: true };
     await loadLayout();

@@ -39,9 +39,11 @@
 /*
  * The edge between the sides, a `splitter` as every edge is: a row of no height first in the
  * scroll, pinned to its top, which holds it from under the pinned file header to the view's foot,
- * over the code, under the file header pinned there, the `+`, and the threads' popover. It takes
- * the pointer only over code, its line numbers and the room between rows; anything else drawn
- * there keeps it (`is-passing`).
+ * over the code, under the file header pinned there, the `+`, and the threads' popover. It never
+ * takes the pointer itself, so what's under it always gets a press: the view finds a press, or
+ * the pointer, on its grip over code, its line numbers or the room between rows, and nothing else
+ * drawn there, and then draws it under the pointer (`is-near`, and its cursor over everything in
+ * the view, `data-lo-seam`) or drags it.
  */
 .lo-diffseam {
   position: sticky;
@@ -59,10 +61,25 @@
   top: var(--lo-file-header-h);
   left: var(--lo-side-old);
   height: calc(var(--lo-seam-h, 0px) - var(--lo-file-header-h));
+  pointer-events: none;
+}
+.lo-diffseam > .splitter.is-near:not([data-dragging], [data-stepped])::after {
+  background-color: var(--lo-border);
+}
+.lo-diffseam > .splitter[data-dragging] {
   pointer-events: auto;
 }
-.lo-diffseam > .splitter.is-passing:not([data-dragging]) {
-  pointer-events: none;
+.lo-diffview[data-lo-seam='col'],
+.lo-diffview[data-lo-seam='col'] * {
+  cursor: col-resize !important;
+}
+.lo-diffview[data-lo-seam='e'],
+.lo-diffview[data-lo-seam='e'] * {
+  cursor: e-resize !important;
+}
+.lo-diffview[data-lo-seam='w'],
+.lo-diffview[data-lo-seam='w'] * {
+  cursor: w-resize !important;
 }
 .lo-diffview > .lo-diffnote {
   flex: 1 0 100%;

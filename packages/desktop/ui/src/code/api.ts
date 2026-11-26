@@ -551,6 +551,11 @@ export interface PassStats {
   passes: number;
   /** Passes that changed a spacer. */
   changed: number;
+  /**
+   * Passes that ran out of rounds before the rows were level, and went round again the next frame:
+   * their frame may draw rows out of step.
+   */
+  unsettled: number;
   totalMs: number;
   maxMs: number;
   /** The longest an editor took to forget a chunk of heights, while the page was idle. */
@@ -643,9 +648,9 @@ export interface DiffView extends KeySource {
   /**
    * Shares the width between the sides, side by side: the old side `share` of it, or half with
    * none, as the reader keeps it for every side-by-side diff. Each side keeps its minimum, the
-   * larger of 240 px and a quarter of the width, and under 480 px they split evenly, with no edge
-   * between them. The code under the file's header pinned at the top of the screen stays where it
-   * is, the rows level as the lines wrap anew.
+   * larger of 240 px and a quarter of the width, and at 480 px or less they split evenly, with no
+   * edge between them. The code under the file's header pinned at the top of the screen stays where
+   * it is, the rows level as the lines wrap anew.
    */
   setSides(share: number | undefined): void;
   /**
@@ -905,7 +910,7 @@ export interface DiffEvents {
   /**
    * The reader moved the edge between the sides somewhere new, side by side, and let go, or put it
    * back with a double-click: keep the old side's share for every side-by-side diff, or the
-   * default, half, with none, and hand it back through `setSides`.
+   * default, half, with none, as for sides let go at even, and hand it back through `setSides`.
    */
   sides?(share: number | undefined): void;
   /**
@@ -1151,12 +1156,6 @@ export interface FileEvents {
   jumped(from: Spot, to: Spot): void;
   /** A right-click: the registry's menu for what was clicked. */
   menu(target: Target, x: number, y: number): void;
-  /**
-   * The reader moved the edge between the sides somewhere new, side by side, and let go, or put it
-   * back with a double-click: keep the old side's share for every side-by-side diff, or the
-   * default, half, with none, and hand it back through `setSides`.
-   */
-  sides?(share: number | undefined): void;
   /** The pointer rested on a word, or left it: see {@link Rested}. */
   rested?: Rested;
 }

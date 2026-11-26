@@ -301,11 +301,15 @@ export function setWidth(edge: Edge, width: number | undefined): void {
   setPanel(edge, { open: layout.getState()[edge].open, width });
 }
 
-/** Changes a share the layout keeps, `reading` or `sides`, to `value`, or to none, the default. */
+/**
+ * Changes a share the layout keeps, `reading` or `sides`, to `value`, within 0 to 1, or to none,
+ * the default. A share that isn't a number changes nothing: kept, it would reach every view.
+ */
 function setShare(key: 'reading' | 'sides', value: number | undefined): void {
+  if (value !== undefined && !Number.isFinite(value)) return;
   const next: WindowLayout = { ...layout.getState() };
   if (value === undefined) delete next[key];
-  else next[key] = value;
+  else next[key] = Math.max(0, Math.min(1, value));
   layout.setState(next, true);
 }
 

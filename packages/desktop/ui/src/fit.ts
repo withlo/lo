@@ -222,13 +222,22 @@ export interface FittedSides {
 
 /**
  * How a side-by-side diff `width` wide shares it: the old side `share` of it, or half with none,
- * each side keeping its minimum, `SIDE_MIN` or a quarter of the width, whichever is wider. Under
- * twice `SIDE_MIN`, the sides split evenly and have no edge. The code view's stylesheet draws the
- * same (`--lo-side-old` in `code/view.css`).
+ * each side keeping its minimum, `SIDE_MIN` or a quarter of the width, whichever is wider. At
+ * twice `SIDE_MIN` or less, where the edge couldn't move, the sides split evenly and have no edge.
+ * The code view's stylesheet draws the same (`--lo-side-old` in `code/view.css`).
  */
 export function fitSides(share: number | undefined, width: number): FittedSides {
-  if (width < 2 * SIDE_MIN) return { old: width / 2 };
+  if (width <= 2 * SIDE_MIN) return { old: width / 2 };
   const least = Math.max(SIDE_MIN, width / 4);
   const edge = { min: least, max: width - least };
   return { old: clamp((share ?? 0.5) * width, edge.min, edge.max), edge };
+}
+
+/**
+ * The old side's share to keep for it drawn `old` wide of `width`: none within half a pixel of
+ * even, which is the default, nor for a width that isn't there.
+ */
+export function shareOf(old: number, width: number): number | undefined {
+  if (!(width > 0) || !Number.isFinite(old) || Math.abs(old - width / 2) < 0.5) return undefined;
+  return clamp(old / width, 0, 1);
 }

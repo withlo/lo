@@ -1,7 +1,7 @@
 import tokens from '@lo/design/tokens.json' with { type: 'json' };
 import { describe, expect, it } from 'vitest';
 
-import { fit, fitSides, fitWidths, readSizes, SIDE_MIN, type Layout } from './fit.ts';
+import { fit, fitSides, fitWidths, readSizes, shareOf, SIDE_MIN, type Layout } from './fit.ts';
 
 /** The sizes as the window reads them from the tokens' variables. */
 const sizes = readSizes({
@@ -212,8 +212,25 @@ describe('fitSides', () => {
     expect(fitSides(0.1, 800)).toEqual({ old: 240, edge: { min: 240, max: 560 } });
   });
 
-  it('splits evenly with no edge under twice the narrowest side', () => {
+  it('splits evenly with no edge at twice the narrowest side or less, where it couldn’t move', () => {
     expect(fitSides(0.8, 479)).toEqual({ old: 239.5 });
-    expect(fitSides(0.8, 480)).toEqual({ old: 240, edge: { min: 240, max: 240 } });
+    expect(fitSides(0.8, 480)).toEqual({ old: 240 });
+    expect(fitSides(0.8, 481)).toEqual({ old: 241, edge: { min: 240, max: 241 } });
+  });
+});
+
+describe('shareOf', () => {
+  it('is the old side’s share of the width, or none at even, within half a pixel', () => {
+    expect(shareOf(300, 1000)).toBe(0.3);
+    expect(shareOf(500, 1000)).toBeUndefined();
+    expect(shareOf(500.4, 1000)).toBeUndefined();
+    expect(shareOf(500.6, 1000)).toBeCloseTo(0.5006, 6);
+  });
+
+  it('is none for a width that isn’t there or a width that isn’t a number, never NaN', () => {
+    expect(shareOf(0, 0)).toBeUndefined();
+    expect(shareOf(300, Number.NaN)).toBeUndefined();
+    expect(shareOf(Number.NaN, 1000)).toBeUndefined();
+    expect(shareOf(1200, 1000)).toBe(1);
   });
 });

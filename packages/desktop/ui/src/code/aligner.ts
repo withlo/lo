@@ -264,7 +264,14 @@ const wheelAnchoring = 250;
  * key moved on screen.
  */
 export class Aligner {
-  readonly stats: PassStats = { passes: 0, changed: 0, totalMs: 0, maxMs: 0, forgetMaxMs: 0 };
+  readonly stats: PassStats = {
+    passes: 0,
+    changed: 0,
+    unsettled: 0,
+    totalMs: 0,
+    maxMs: 0,
+    forgetMaxMs: 0,
+  };
   readonly #views: { old: EditorView; new: EditorView };
   readonly #layout: Layout;
   readonly #rows: (file: number) => FileRows;
@@ -424,12 +431,13 @@ export class Aligner {
    * lines are now would keep the move. When a change has been made since the last pass, the anchor
    * that pass left, or the scroll took, stands. So it does when the editors have changed width
    * since, as when a panel opens beside the diff: their lines wrap anew, and those above the screen
-   * have moved what's on it before the pass hears of it.
+   * have moved what's on it before the pass hears of it. A hold under way (`holdUnder`) stands too.
    */
   anchorTop(): void {
     if (this.#paused || this.#topTaken) return;
     this.#topTaken = true;
-    if (this.#scheduled || this.#rewrapped()) return;
+    // A hold under way keeps its own line: what changes now is the sides' widths changing.
+    if (this.#scheduled || this.#rewrapped() || this.#holds > 0) return;
     const side = this.#anchorSide();
     const found = this.#screenLine(side, true) ?? this.#screenLine(otherSide(side), true);
     if (found) this.#anchor = { for: side, ...found };
@@ -443,11 +451,12 @@ export class Aligner {
    * while it's drawn. It stands, as `anchorTop`'s does, until the pass runs. A line that isn't
    * drawn leaves the anchor as it is. So does a change of the editors' width since the last pass,
    * as for `anchorTop`: where the line is drawn now is where its new wrapping put it, not where the
-   * reader saw it, and the anchor that pass left stands, chosen as this one would have been.
+   * reader saw it, and the anchor that pass left stands, chosen as this one would have been. So
+   * does a hold under way (`holdUnder`): a box that grows as the sides narrow is the sides' change.
    */
   anchorAt(side: Side, pos: number, element?: Element): void {
     if (this.#paused) return;
-    if (this.#rewrapped()) {
+    if (this.#rewrapped() || this.#holds > 0) {
       this.#topTaken = true;
       this.#chosen = true;
       return;
@@ -472,9 +481,12 @@ export class Aligner {
    * header pinned there, where it is, whatever has focus: the sides are about to change width, as
    * the edge between them moves, and every line wraps anew. Each pass keeps it there until
    * `release`, or until the scroll moves, which takes the line then under the header. A hold
-   * already on that line, with the scroll where it was, stands as it is, so a drag's frames and a
-   * held key's steps all keep the line where the first found it. Holds nest: each `release`
-   * ends one.
+   * already on that line, with the scroll where it was, stands as it is, so a drag, one hold from
+   * its press until the frame after it ends is drawn, keeps the line where the press found it in
+   * every frame. A key's step is a hold of its own, let go once the frame after it is drawn: each
+   * step of a held key takes the line under the header afresh, which is the line the step before
+   * held, where it held it, unless something else moved it between. While a hold lasts,
+   * `anchorTop` and `anchorAt` leave it as it is. Holds nest: each `release` ends one.
    */
   holdUnder(below: number): void {
     this.#holds++;
@@ -627,7 +639,8 @@ export class Aligner {
         if (turn === rounds) {
           this.#restore(anchor);
           // What it measured may have drawn rows it hasn't lined up yet, and the editors told
-          // no one while it ran: go round again next frame.
+          // no one while it ran: go round again next frame. This frame may draw them out of step.
+          this.stats.unsettled++;
           requestAnimationFrame(() => this.schedule());
           break;
         }
@@ -1424,18 +1437,20 @@ export class Aligner {
   }
 
   /**
-   * The first row drawn whose own top is `below` pixels or more under the top of the screen: the
-   * higher of the two sides' first lines there, the side that anchors the scroll's where they're
-   * level. As `holdUnder` keeps it.
+   * The first row drawn whose own top is `below` pixels or more under the top of the screen, or
+   * less than `ON_SCREEN` short of that, so as good as all of it shows: the higher of the two sides'
+   * first lines there, the side that anchors the scroll's where they're level. As `holdUnder` keeps
+   * it.
    */
   #underNow(below: number): Anchor | undefined {
     const side = this.#anchorSide();
     const screen = this.#scroller.getBoundingClientRect();
+    const from = below - ON_SCREEN;
     const under = new DOMRect(
       screen.x,
-      screen.y + below,
+      screen.y + from,
       screen.width,
-      Math.max(0, screen.height - below),
+      Math.max(0, screen.height - from),
     );
     // The row that's first is the higher of the two sides' first lines: in an added file, the new
     // side's, with nothing beside it on the old side till the next file.
