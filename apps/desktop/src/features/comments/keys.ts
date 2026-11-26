@@ -122,22 +122,30 @@ export default defineCommands(
       menu: { on: 'block', order: 25 },
     },
     /**
-     * Beside lines, on a line a draft's mark is on, its box opened again, as a click on the mark
-     * does. Just after a line refused a comment, as GitHub takes none there, a comment on its file
-     * instead, as the toast's "Comment on file" does. Otherwise it's Vim's `⏎`. Its id is the one
-     * keymap files bind it by.
+     * Just after a line refused a comment, as GitHub takes none there, a comment on its file instead.
+     * Otherwise it's Vim's `⏎`.
      */
     onFileInstead: {
-      label: 'Open draft',
-      description:
-        'On a draft’s mark, opens it. Just after a line takes no comment, comments on its file.',
-      control:
-        'a draft’s mark beside lines, or Comment on file on the toast after a line takes none',
+      label: 'Comment on file',
+      control: 'Comment on file on the toast after a line takes no comment',
       group: 'Comments',
       keys: ['enter'],
       targets: ['line'],
       overVim: true,
       when: { scope: 'diff', mode: 'normal' },
+    },
+    /**
+     * Beside lines, on a line a draft's mark is on, its box opened again, as a click on its own
+     * mark does: on a thread's, `⏎` shows the thread, the draft in it.
+     */
+    openDraft: {
+      label: 'Open draft',
+      control: 'a draft’s own mark beside lines',
+      group: 'Comments',
+      keys: ['enter'],
+      targets: ['draft'],
+      overVim: true,
+      when: { scope: 'diff', mode: 'normal', on: 'draft' },
     },
     /**
      * Beside lines, the popover of the thread on the cursor's line, pinned if it isn't, with focus

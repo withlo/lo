@@ -705,8 +705,9 @@ export interface DiffView extends KeySource {
   setDrafts(drafts: readonly DraftMark[]): void;
   /**
    * Beside lines, opens the box of the draft whose mark is on line `at`, or on thread `thread`'s
-   * line, as a click on the mark does: one in a thread the popover there shows first. Says whether
-   * there was one.
+   * line, as a click on the mark does: one closed, one in a thread the popover there shows first,
+   * else focuses one open there. Says whether there was one. A key's line target says where there
+   * is (`draft`).
    */
   openDraft(at: Place | { readonly thread: string }): boolean;
   /**
@@ -1296,8 +1297,9 @@ export const plainKeys = {
 /**
  * The commands a diff view's own controls run, by id, on what they're drawn at: the viewed ball in
  * a file's header, the `+` that follows the pointer down the gutter, the button under the header
- * of a file that's closed, or too large to draw unasked, collapsed lines, and a thread's bubble in
- * the gutter, which opens or collapses its thread, or its popover beside lines. They run through
+ * of a file that's closed, or too large to draw unasked, collapsed lines, a thread's bubble in
+ * the gutter, which opens or collapses its thread, or its popover beside lines, and a draft's own
+ * bubble beside lines, which opens its box. They run through
  * the registry the window's keys go through (`runControl` in `@lo/ui/commands`), so a control does
  * what its key does and says what its command says.
  */
@@ -1308,6 +1310,7 @@ export const viewControls = {
   open: 'diff.openRun',
   thread: 'diff.toggleThread',
   popover: 'comments.openThread',
+  draft: 'comments.openDraft',
 } as const;
 
 export const diffMotions: Readonly<Record<string, { to: JumpTo; forward: boolean }>> = {

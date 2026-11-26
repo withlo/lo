@@ -38,8 +38,19 @@ export interface LineTarget {
   across?: readonly Span[];
   /** The thread `]t` landed on, or the only one on the cursor's line. */
   thread?: string;
+  /**
+   * A draft's mark is on the line, beside lines: its own, or the dot on the threads' mark there. A
+   * line gives it as a draft only where it gives no thread.
+   */
+  draft?: true;
   /** The comment box the key is in, by its caller's name for it. */
   box?: string;
+}
+
+/** A draft's mark beside lines, by the line it's on: what `⏎` there opens. */
+export interface DraftTarget {
+  kind: 'draft';
+  at: Place;
 }
 
 export interface FileTarget {
@@ -126,6 +137,7 @@ export type Target =
   | HeaderTarget
   | FileTarget
   | ThreadTarget
+  | DraftTarget
   | LayerTarget
   | BlockTarget
   | TabTarget
@@ -145,6 +157,7 @@ export const targetKinds: readonly TargetKind[] = [
   'header',
   'file',
   'thread',
+  'draft',
   'layer',
   'block',
   'tab',
@@ -202,6 +215,14 @@ function derive(kind: TargetKind, target: Target): Target | undefined {
       return (target.kind === 'line' || target.kind === 'header') && target.box !== undefined
         ? { kind: 'box', box: target.box }
         : undefined;
+    // Never with a thread: the thread's commands take the line, and the draft is in the thread.
+    case 'draft':
+      return target.kind === 'line' &&
+        target.draft === true &&
+        target.thread === undefined &&
+        'line' in target.at
+        ? { kind: 'draft', at: target.at }
+        : undefined;
     case 'line':
     case 'header':
     case 'layer':
@@ -225,6 +246,7 @@ export function plainTarget(target: Target): Target {
     case 'line': {
       const line: LineTarget = { kind: 'line', at: plainAt(target.at) };
       if (target.thread !== undefined) line.thread = target.thread;
+      if (target.draft === true) line.draft = true;
       if (target.box !== undefined) line.box = target.box;
       return line;
     }
@@ -240,6 +262,8 @@ export function plainTarget(target: Target): Target {
       return target.comment === undefined
         ? { kind: 'thread', thread: target.thread }
         : { kind: 'thread', thread: target.thread, comment: target.comment };
+    case 'draft':
+      return { kind: 'draft', at: plainPlace(target.at) };
     case 'layer':
       return { kind: 'layer', layer: target.layer };
     case 'block':
@@ -265,10 +289,20 @@ export function plainTarget(target: Target): Target {
 }
 
 function plainAt(at: Place | Span): Place | Span {
-  if ('line' in at) {
-    const place: Place = { file: at.file, side: at.side, line: at.line };
-    if (at.column !== undefined) place.column = at.column;
-    return place;
-  }
+  if ('line' in at) return plainPlace(at);
   return { file: at.file, side: at.side, from: at.from, to: at.to };
+}
+
+function plainPlace(at: Place): Place {
+  const place: Place = { file: at.file, side: at.side, line: at.line };
+  if (at.column !== undefined) place.column = at.column;
+  return place;
+}
+
+/**
+ * Whether one target can give both kinds `a` and `b`, so that keys for what each acts on meet. A
+ * line gives a draft only where it gives no thread.
+ */
+export function together(a: TargetKind, b: TargetKind): boolean {
+  return !((a === 'thread' && b === 'draft') || (a === 'draft' && b === 'thread'));
 }

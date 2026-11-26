@@ -1508,6 +1508,28 @@ describe('a box on a code block', () => {
 });
 
 describe('sending', () => {
+  test.each([
+    ['as the diff is drawn again', false],
+    ['as its tab goes to the background', true],
+  ])(
+    'a send that fails with its box taken down %s says so in the box alone, with no toast',
+    async (_, background) => {
+      const { drawn, box } = await opened();
+      const before = notice();
+      let answer: ((outcome: SendOutcome) => void) | undefined;
+      answers['comments.send'] = () => new Promise<SendOutcome>((resolve) => (answer = resolve));
+      const sent = send(box, 'review');
+      if (background) said.screen = 'elsewhere';
+      takenDown(box, drawn[0]!.composer);
+      expect(box.composer).toBeUndefined();
+      answer?.({ kind: 'refused', refusal: { kind: 'github', message: 'Validation failed' } });
+      await sent;
+      expect(box.state.refusal).toEqual({ kind: 'github', message: 'Validation failed' });
+      expect(notice()).toBe(before);
+      expect(heard.at(-1)).toBe('Couldn’t send the comment. Validation failed');
+    },
+  );
+
   test('sent, the box closes as after a send, and a thread on a newer push is marked', async () => {
     const { drawn, box } = await opened();
     const outcome: SendOutcome = {
@@ -1988,9 +2010,9 @@ describe('beside lines', () => {
     expect(offersOf(box.state)).toEqual(['checkAgain']);
     await send(box, 'review');
     expect(asked('comments.send')).toHaveLength(1);
-    // Looked for, and not posted, closed again: a toast says that too.
-    shut(drawn[1]!, true);
+    // Looked for, closed again as it's looked for, and not posted: a toast says that too.
     standsOnFive({ sending: 'checking', sent: 'Ship it?' });
+    shut(drawn[1]!, true);
     standsOnFive({ sending: 'notPosted' });
     expect(notice()).toMatchObject({
       title: 'Couldn’t send the comment',
@@ -1999,12 +2021,12 @@ describe('beside lines', () => {
     });
   });
 
-  test('between lines too, a box closed as its comment went says how it went in a toast', async () => {
+  test('a box closed as its comment went says how it went in a toast once threads are between lines', async () => {
     const { drawn, box } = await opened();
     let answer: ((outcome: SendOutcome) => void) | undefined;
     answers['comments.send'] = () => new Promise<SendOutcome>((resolve) => (answer = resolve));
     const sent = send(box, 'review');
-    // Threads went between lines as it went: the box closed, keeping its draft.
+    // Threads went between lines as it went: the box closed, keeping its draft, and stayed so.
     shut(drawn[0]!, true);
     threadsShow.mode = 'between';
     answer?.({ kind: 'refused', refusal: { kind: 'github', message: 'Validation failed' } });

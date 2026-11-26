@@ -69,9 +69,9 @@ describe('a thread’s bubble', () => {
       thread: '',
       draft: true,
     });
-    // Its click runs Comment on its line, as `c` there does, which opens its box again.
+    // Its click runs Open draft on its line, as `⏎` there does, which opens its box again.
     const control = bubbleElement(bubble, { open: false, className: 'lo-lanebubble' });
-    expect(control.dataset.command).toBe('comments.comment');
+    expect(control.dataset.command).toBe('comments.openDraft');
     expect(control.dataset.draft).toBe('');
     expect(control.dataset.thread).toBeUndefined();
     expect(control.classList.contains('lo-bubble--muted')).toBe(true);

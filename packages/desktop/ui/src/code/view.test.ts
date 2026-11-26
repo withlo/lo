@@ -3617,14 +3617,21 @@ describe('writing beside lines', () => {
     expect(newBubble().querySelector('svg')?.innerHTML).toBe(
       iconElement('message-square-dashed', 14).innerHTML,
     );
-    expect(newBubble().dataset.command).toBe(viewControls.comment);
+    expect(newBubble().dataset.command).toBe(viewControls.draft);
     expect({ old: drawnText('Before'), new: drawnText('After') }).toEqual(before);
+    // Its last line is a draft's for keys, which `⏎` opens there; the others aren't.
+    shown.reveal(onLine('a', 'new', 6));
+    expect(shown.keyState().target).toMatchObject({ at: at('a', 'new', 6), draft: true });
+    shown.reveal(onLine('a', 'new', 5));
+    expect(shown.keyState().target).not.toHaveProperty('draft');
     expect(shown.openDraft(at('a', 'new', 6))).toBe(true);
     expect(shown.openDraft(at('a', 'new', 5))).toBe(false);
     expect(opened).toEqual(['draft']);
-    // Between lines nothing draws it.
+    // Between lines nothing draws it, and no line is a draft's.
     shown.setThreadsMode('between');
     expect(lane('After')).toEqual([]);
+    shown.reveal(onLine('a', 'new', 6));
+    expect(shown.keyState().target).not.toHaveProperty('draft');
     expect(shown.openDraft(at('a', 'new', 6))).toBe(false);
   });
 

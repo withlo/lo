@@ -2740,19 +2740,26 @@ class View implements DiffView {
   }
 
   openDraft(at: Place | { readonly thread: string }): boolean {
-    if (this.#mode !== 'beside') return false;
-    let place: PopPlace | undefined;
+    let place: At | undefined;
     if ('thread' in at) place = this.#popOf(at.thread);
     else {
       const file = this.#index.get(at.file);
-      if (file !== undefined) {
-        const end = { file, ...placeOf(at) };
-        place = { ...end, key: this.#popKey(end) };
-      }
+      if (file !== undefined) place = { file, ...placeOf(at) };
     }
-    const draft = place && this.#draftsAt(place).find((each) => each.shown !== true);
+    const draft = place && this.#draftOn(place);
     draft?.open();
     return draft !== undefined;
+  }
+
+  /**
+   * Beside lines, the draft whose mark is on line `at`, its own or the dot on its thread's: one
+   * whose box is closed, one in a thread the popover there shows first, else one open there, whose
+   * box it focuses.
+   */
+  #draftOn(at: At): DraftMark | undefined {
+    if (this.#mode !== 'beside') return undefined;
+    const drafts = this.#draftsAt({ ...at, key: this.#popKey(at) });
+    return drafts.find((each) => each.shown !== true) ?? drafts[0];
   }
 
   /**
@@ -3097,7 +3104,8 @@ class View implements DiffView {
   #atOf(at: Target): { place: At; column: number } | undefined {
     const fileOf = (id: string): number | undefined => this.#index.get(id);
     switch (at.kind) {
-      case 'line': {
+      case 'line':
+      case 'draft': {
         const file = fileOf(at.at.file);
         if (file === undefined) return undefined;
         const line = 'line' in at.at ? at.at.line : Math.max(at.at.from, at.at.to);
@@ -3574,8 +3582,11 @@ class View implements DiffView {
       if (thread !== undefined) header.thread = thread;
       return header;
     }
-    const place = this.#outward(at, column);
-    return thread === undefined ? { kind: 'line', at: place } : { kind: 'line', at: place, thread };
+    const line: LineTarget = { kind: 'line', at: this.#outward(at, column) };
+    if (thread !== undefined) line.thread = thread;
+    // A draft's mark on it, beside lines: what `⏎` there, and a click on the mark, open.
+    else if (this.#draftOn(at)) line.draft = true;
+    return line;
   }
 
   /**

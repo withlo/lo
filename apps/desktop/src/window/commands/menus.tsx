@@ -174,6 +174,7 @@ export function useNoticeTarget(target: NoticeTarget): {
 function nameOf(kind: TargetKind): string {
   switch (kind) {
     case 'line':
+    case 'draft':
       return 'Line actions';
     case 'header':
     case 'file':

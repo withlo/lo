@@ -235,14 +235,18 @@ export default {
       },
       enabled: enabled(writable),
     },
-    // `⏎` is Vim's but just after a line refused a comment, and, beside lines, on a draft's mark.
+    // `⏎` is Vim's but just after a line refused a comment.
     onFileInstead: {
-      run: (target) => {
+      run: () => {
         const tab = activeTab();
         if (tab?.kind !== 'pull' || takeOffer(tab)) return;
-        const diff = writingDiff(tab.id);
-        if (target.kind === 'line' && 'line' in target.at && diff?.openDraft(target.at)) return;
-        diff?.vim(['<CR>']);
+        writingDiff(tab.id)?.vim(['<CR>']);
+      },
+    },
+    openDraft: {
+      run: (target) => {
+        const tab = activeTab();
+        if (tab?.kind === 'pull') writingDiff(tab.id)?.openDraft(target.at);
       },
     },
     openThread: { run: showPopover, enabled: canShowPopover },

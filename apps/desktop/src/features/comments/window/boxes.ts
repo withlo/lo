@@ -111,7 +111,6 @@ import {
   NO_LINES,
   NOT_IN_DIFF,
   notesOf,
-  offerLabels,
   offersOf,
   type Offer,
   ON_FILE_NOT_IN_DIFF,
@@ -348,6 +347,13 @@ export class Box {
   lastHow: Send;
   /** Whether main marked its draft sent, as after GitHub's answer to it was lost. */
   sentMark = false;
+  /**
+   * Whether it was closed while its comment was on its way: by the reader, another box or the
+   * popover moving on, or threads going between lines. How that went is said in a toast, as nothing
+   * else says it, until it's drawn again. Never as the diff takes it down, to draw it again or
+   * as its tab goes, which draws it again with what it says.
+   */
+  closedSending = false;
   /** What its view's threads held as it was last sent, to tell its comment's card by as it comes. */
   before: Before | undefined;
   retries = 0;
@@ -576,6 +582,7 @@ function eventsOf(box: Box): ComposerEvents {
       void send(box, how);
     },
     close(keep) {
+      box.closedSending = sendingNow(box.state);
       box.composer = undefined;
       box.open = false;
       // Shut, it's kept nowhere, and takes no focus the next time it opens by itself.
@@ -693,6 +700,7 @@ function drew(box: Box, composer: Composer, where: 'diff' | 'block'): void {
   if (composer.text !== text) composer.replace(0, composer.text.length, text);
   composer.hold(sendingNow(box.state));
   box.set({ mode: composer.mode, previewing: composer.previewing });
+  box.closedSending = false;
   box.focusOnOpen = false;
   box.retries = 0;
   box.kept = undefined;
@@ -1361,13 +1369,12 @@ export async function comment(
     // Where main couldn't read the file's patch, it takes a comment on the file only.
     const said = takes ? NOT_IN_DIFF : NO_LINES;
     offered = { view, file: file.id, how, said };
-    // Its button runs the command `⏎` does, which, just after this, comments on the file: named
-    // for what it does here, not for the command, which on a draft's mark opens the draft.
+    // Its button is the command's control, as `⏎` runs it.
     const instead = controlOf(ON_FILE_INSTEAD, target);
     refuse(
       said,
       instead && {
-        label: offerLabels.onFile,
+        label: instead.label,
         keys: instead.keys,
         onClick: () => void runControl(ON_FILE_INSTEAD, target),
       },
@@ -1522,14 +1529,16 @@ export async function send(box: Box, how: Send): Promise<void> {
 
 /**
  * Says `note` in a toast, of box `box`'s comment that wasn't sent, or may not have been, where the
- * box isn't drawn to say it, as one closed while it was on its way: beside lines as the popover
+ * box was closed while it was on its way ({@link Box.closedSending}): beside lines as the popover
  * moved on, or as threads went between lines. Its "Show thread" opens the box again where it was
- * written, the draft in it, the note saying the rest. Says whether it did: not for a box the
- * diff doesn't draw, which says it itself as it opens.
+ * written, the draft in it, the note saying the rest. Says whether it did: not for a box drawn,
+ * or one the diff took down, which says it itself as it's drawn again, nor for one the diff
+ * doesn't draw.
  */
 function toastAway(box: Box, note: BoxNote): boolean {
   const { place } = box.state;
-  if (box.composer || place.kind === 'conversation' || opensAt(box).kind !== 'diff') return false;
+  if (!box.closedSending || box.composer || place.kind === 'conversation') return false;
+  if (opensAt(box).kind !== 'diff') return false;
   const doing = place.kind === 'edit' ? 'edit' : 'comment';
   notify(note.title ?? couldnt(doing), note.text, {
     action: { label: SHOW_THREAD, onClick: () => showDraft(box) },
@@ -1547,11 +1556,11 @@ const SHOW_THREAD = 'Show thread';
  * Opens box `box` again where it was written, focused, its draft in it, as its mark's click, `⏎` on
  * its line or a toast's "Show thread" does: in its view's diff, which comes on screen first where
  * it isn't, and opens it once it's drawn if the reader has done nothing since. Nothing for a box
- * that's gone, as one discarded or sent meanwhile.
+ * that's gone, as one discarded or sent meanwhile, or with its tab closed.
  */
 function showDraft(box: Box): void {
   const { view } = box;
-  if (boxesOf(view).get(box.key) !== box) return;
+  if (views.get(view)?.get(box.key) !== box) return;
   const diff = writingDiff(view);
   if (!diff || activeTab()?.id !== view) {
     const asked = inputsSoFar();

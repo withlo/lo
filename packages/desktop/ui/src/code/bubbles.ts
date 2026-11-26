@@ -154,8 +154,8 @@ export interface BubbleDrawing {
  * A bubble as a control: a click opens or collapses its thread, as `z a` does, and its tooltip
  * says which, with the key, or without one where the view runs the click itself. A screen reader
  * hears it as a button named for its threads, which says whether the thread is open. It's no stop
- * for `Tab`. A draft's own runs Comment on its line, as `c` there does, which opens its box again,
- * and its tooltip says so.
+ * for `Tab`. A draft's own runs Open draft on its line, as `⏎` there does, which opens its box
+ * again, and its tooltip says so.
  */
 export function bubbleElement(
   bubble: Bubble,
@@ -178,7 +178,7 @@ export function bubbleElement(
   control.setAttribute('aria-label', bubble.name);
   control.setAttribute('aria-expanded', String(open));
   if (bubble.draft) {
-    control.dataset.command = viewControls.comment;
+    control.dataset.command = viewControls.draft;
     control.dataset.draft = '';
   } else if (beside) {
     control.dataset.thread = bubble.thread;
