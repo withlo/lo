@@ -1,7 +1,7 @@
 // Recent pull requests, the tab that stands in for an empty strip: the pull requests opened lately,
 // across every account, newest first, with a filter; or, before any, how to open one.
 
-import { Button, EmptyState, Input, Key, Swap } from '@lo/ui';
+import { Button, EmptyState, Icon, Input, Key, Swap } from '@lo/ui';
 import { keyLabels, NO_TARGET } from '@lo/ui/commands';
 import { useEffect, useRef } from 'react';
 import { useStore } from 'zustand';
@@ -32,18 +32,6 @@ function KeyFor({ id, className }: { id: string; className?: string }) {
   return keys ? <Key keys={keys} decorative className={className} /> : null;
 }
 
-/** The icon of a pull request, in no state's color: Lo keeps no state for the list. */
-function PullIcon() {
-  return (
-    <svg className="lo-i text-icon-muted" viewBox="0 0 16 16" aria-hidden="true">
-      <circle cx="4.5" cy="3.75" r="1.5" />
-      <circle cx="4.5" cy="12.25" r="1.5" />
-      <circle cx="11.5" cy="12.25" r="1.5" />
-      <path d="M4.5 5.25v5.5M11.5 10.75V6.5c0-1.1-.9-2-2-2H7.5M9 3 7.5 4.5 9 6" />
-    </svg>
-  );
-}
-
 /** The id of a row's element, for the list's `aria-activedescendant`. */
 function rowId(row: RecentPull): string {
   return `recent-${rowKey(row).replace(/[^a-z0-9-]/g, '-')}`;
@@ -59,7 +47,8 @@ function Row({ row, chosen, now }: { row: RecentPull; chosen: boolean; now: numb
       onClick={() => void openRow(row)}
       className={`list-columns min-h-list-row-h cursor-default rounded-sm px-12 text-fg text-ui hover:bg-hover ${chosen ? 'bg-current-strong' : ''}`}
     >
-      <PullIcon />
+      {/* A pull request's icon, in no state's color: Lo keeps no state for the list. */}
+      <Icon name="git-pull-request" size={14} className="text-icon-muted" />
       <span className="truncate text-fg-muted code-small">
         {row.owner}/<span className="text-fg">{row.repo}</span>{' '}
         <span className="tabular-nums">#{row.number}</span>

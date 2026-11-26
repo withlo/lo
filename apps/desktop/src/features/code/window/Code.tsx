@@ -261,12 +261,6 @@ function HoverCard() {
   );
 }
 
-const OUTLINE_ICON = (
-  <svg className="lo-i text-fg-muted" viewBox="0 0 16 16" aria-hidden="true">
-    <path d="M3 4h10M5.5 8H13M5.5 12H13" />
-  </svg>
-);
-
 /** A symbol's row: as deep as it's nested, what it is, its name, and its line. */
 function OutlineItem({ row }: { row: OutlineRow }) {
   return (
@@ -313,7 +307,7 @@ function OutlinePalette() {
       onClosed={outlineClosed}
       label="Outline"
       placeholder="Filter by name"
-      icon={OUTLINE_ICON}
+      icon="list-tree"
       query={state.query}
       onQueryChange={typeOutline}
       groups={[{ items: shown }]}

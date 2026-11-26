@@ -10,6 +10,8 @@ import {
   type Ref,
 } from 'react';
 
+import { Glyphs, Icon } from './Icon.tsx';
+import type { IconName } from './icons.ts';
 import { SegmentedControl } from './SegmentedControl.tsx';
 import { Spinner } from './Spinner.tsx';
 import { Tag } from './Tag.tsx';
@@ -112,56 +114,43 @@ const row = cva(
 /** The twisty of a folder: it turns down when the folder opens. */
 function Twisty({ open }: { open: boolean }) {
   return (
-    <svg
-      className={`lo-i lo-i--xs text-fg-subtle transition-transform ease-out ${open ? 'rotate-90' : ''}`}
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-    >
-      <path d="M6 3.5 10.5 8 6 12.5" />
-    </svg>
+    <Icon
+      name="chevron-right"
+      size={12}
+      className={`text-fg-subtle transition-transform ease-out ${open ? 'rotate-90' : ''}`}
+    />
   );
 }
 
-function FolderIcon({ open, dim }: { open: boolean; dim: boolean }) {
-  return (
-    <svg
-      className={`lo-i lo-i--sm ${dim ? 'text-fg-disabled' : 'text-icon-muted'}`}
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-    >
-      {open ? (
-        <>
-          <path d="M1.75 12V4.25c0-.69.56-1.25 1.25-1.25h2.9l1.5 1.5H12c.69 0 1.25.56 1.25 1.25V7" />
-          <path d="M1.75 12 3.7 7.65c.2-.4.6-.65 1.05-.65h9c.5 0 .85.52.66.98l-1.55 3.77c-.2.47-.65.78-1.16.78H2.25" />
-        </>
-      ) : (
-        <path d="M1.75 4.25c0-.69.56-1.25 1.25-1.25h2.9l1.5 1.5H13c.69 0 1.25.56 1.25 1.25v6.25c0 .69-.56 1.25-1.25 1.25H3c-.69 0-1.25-.56-1.25-1.25Z" />
-      )}
-    </svg>
-  );
+/** The colour of a file's or a folder's icon: set back, as an unchanged file is beside changed ones. */
+function muted(dim: boolean): string {
+  return dim ? 'text-fg-disabled' : 'text-icon-muted';
 }
+
+function FolderIcon({ open, dim }: { open: boolean; dim: boolean }) {
+  return <Icon name={open ? 'folder-open' : 'folder'} size={12} className={muted(dim)} />;
+}
+
+/** Each kind of file's icon: a page, with a mark for a symlink or a submodule. */
+const FILE_ICONS: Readonly<Record<FileTreeFile['entry'], IconName>> = {
+  file: 'file',
+  symlink: 'file-symlink',
+  submodule: 'file-box',
+};
 
 /** A file's icon: a page, with a mark for a symlink or a submodule. */
 export function FileIcon({
   entry = 'file',
   dim = false,
+  size = 12,
 }: {
   entry?: FileTreeFile['entry'];
   /** Set back, as an unchanged file is beside changed ones. */
   dim?: boolean;
+  /** 12 in a tree's `text-small` rows, 14 beside `text-ui`, as in a palette's. */
+  size?: 12 | 14;
 }) {
-  return (
-    <svg
-      className={`lo-i lo-i--sm ${dim ? 'text-fg-disabled' : 'text-icon-muted'}`}
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-    >
-      <path d="M4.5 1.75h4.75l3 3v8.75c0 .41-.34.75-.75.75h-7c-.41 0-.75-.34-.75-.75V2.5c0-.41.34-.75.75-.75Z" />
-      <path d="M9 1.75V5h3.25" />
-      {entry === 'symlink' && <path d="M6.25 11.25 9.75 7.75M7.25 7.75h2.5v2.5" />}
-      {entry === 'submodule' && <path d="M6 9.5h4M6 11.5h4" />}
-    </svg>
-  );
+  return <Icon name={FILE_ICONS[entry]} size={size} className={muted(dim)} />;
 }
 
 /**
@@ -453,7 +442,7 @@ function Row({
           }
         >
           <span className="min-w-0 shrink-first overflow-hidden text-ellipsis text-fg-muted text-micro">
-            ← {each.previous}
+            <Glyphs text={`← ${each.previous}`} />
           </span>
         </Tooltip>
       )}
@@ -571,9 +560,7 @@ export function FileTreePanel({
               className={`inline-flex h-control-h-sm flex-none items-center gap-4 rounded-pill px-8 text-small-medium whitespace-nowrap focus-visible:shadow-ring ${changedOnly ? 'bg-accent-soft text-fg-accent inset-ring inset-ring-accent-line' : 'text-fg-muted inset-ring inset-ring-border hover:bg-hover hover:text-fg'} aria-disabled:bg-transparent aria-disabled:text-fg-disabled aria-disabled:hover:bg-transparent aria-disabled:hover:text-fg-disabled`}
               onClick={() => !waiting && onChangedOnly?.(!changedOnly)}
             >
-              <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M2.5 3.5h11l-4.25 5v3.75L6.75 13.5V8.5Z" />
-              </svg>
+              <Icon name="funnel" size={12} />
               <span className="panel-label">{CHANGED_ONLY}</span>
             </button>
           </Tooltip>

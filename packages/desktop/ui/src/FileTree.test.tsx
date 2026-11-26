@@ -71,7 +71,8 @@ describe('FileTree', () => {
     // A closed folder's count; an open one has none.
     expect(html).toContain('aria-label="2 changed files"');
     expect(html).not.toContain('aria-label="3 changed files"');
-    expect(html).toContain('← b.ts');
+    // A rename's arrow is its icon, with the character beside it for its text.
+    expect(html).toContain('<span class="sr-only">←</span> b.ts');
     // Each mark is named, in its tooltip and to a screen reader, and none by a native title.
     expect(html).toContain('aria-label="Changed since viewed"');
     expect(html).toContain('aria-label="Modified"');

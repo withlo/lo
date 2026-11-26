@@ -4,7 +4,7 @@
 // revisions, then what the diff puts there. While the diff holds the view it drew, the note says
 // what that view compares, and changes with it.
 
-import { HintButton, HintRow, Tooltip } from '@lo/ui';
+import { Glyphs, HintButton, HintRow, Tooltip } from '@lo/ui';
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 
 import { useKeys } from '../../../window/commands/registry.ts';
@@ -57,7 +57,9 @@ export function Note({
         className="flex min-w-0 flex-1 items-center"
       >
         <Tooltip label={note.text} cut>
-          <span className="min-w-0 flex-1 truncate">{note.text}</span>
+          <span className="min-w-0 flex-1 truncate">
+            <Glyphs text={note.text} />
+          </span>
         </Tooltip>
       </div>
       {/* Once what it says is cut to nothing, the controls give up their key chips, then Compare

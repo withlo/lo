@@ -4,6 +4,8 @@
 import { afterEach, expect, test } from 'vitest';
 
 import { cleanUp, render, tipOf } from '../test/dom.ts';
+import { Glyphs } from './Icon.tsx';
+import { Key } from './Key.tsx';
 import { StatusItem } from './StatusBar.tsx';
 import { Tooltip, TooltipGroup } from './Tooltip.tsx';
 
@@ -41,6 +43,36 @@ test('a name with a part cut short, as a path whose folder ellipsizes, shows who
   Object.defineProperty(folder, 'clientWidth', { configurable: true, value: 40 });
   Object.defineProperty(folder, 'scrollWidth', { configurable: true, value: 80 });
   expect(tipOf(host.querySelector('span')!)).toBe(PATH);
+});
+
+test('a name with an icon in it, or a key chip, is whole: the character kept for a screen reader is never cut', () => {
+  const host = render(
+    <TooltipGroup>
+      <Tooltip label="base → r5 · whole pull request" cut>
+        <span id="range">
+          <Glyphs text="base → r5 · whole pull request" />
+        </span>
+      </Tooltip>
+      <Tooltip label="Next thread" cut>
+        <span id="key">
+          Next thread <Key keys={['⇧⏎']} />
+        </span>
+      </Tooltip>
+    </TooltipGroup>,
+  );
+  const hidden = [...host.querySelectorAll('.sr-only')];
+  expect(hidden.map((each) => each.textContent)).toEqual(['→', '⇧', '⏎']);
+  // A browser draws each in a 1 px box its character always overflows.
+  for (const each of hidden) {
+    Object.defineProperty(each, 'clientWidth', { configurable: true, value: 1 });
+    Object.defineProperty(each, 'scrollWidth', { configurable: true, value: 12 });
+  }
+  expect(tipOf(host.querySelector('#range')!)).toBeUndefined();
+  expect(tipOf(host.querySelector('#key')!)).toBeUndefined();
+  // Cut short where it's drawn, it still shows whole.
+  expect(tipOf(host.querySelector('#range')!, { cut: true })).toBe(
+    'base → r5 · whole pull request',
+  );
 });
 
 test('a mark shows its name alone, with no key', () => {

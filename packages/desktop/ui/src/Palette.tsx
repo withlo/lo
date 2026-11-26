@@ -3,6 +3,8 @@ import { Dialog } from '@base-ui/react/dialog';
 import { useCallback, useRef, type ReactNode } from 'react';
 
 import { useTakeFocus } from './focus.ts';
+import { Icon } from './Icon.tsx';
+import type { IconName } from './icons.ts';
 import { Key, type KeyAria } from './Key.tsx';
 import { useHeld, useOnClose } from './motion.ts';
 import { useReturnFocus } from './returnFocus.ts';
@@ -44,8 +46,8 @@ export interface PaletteProps<T> {
   empty: ReactNode;
   /** Whether what's typed is code, such as a link, set in the code font. */
   mono?: boolean | undefined;
-  /** The icon before the input, in place of the prompt's. */
-  icon?: ReactNode;
+  /** The icon before the input, in place of the prompt's (`terminal`). */
+  icon?: IconName | undefined;
   /** A note at the end of the input, on where what's in it came from: "from clipboard". */
   mode?: ReactNode;
   /**
@@ -80,7 +82,17 @@ export function Palette<T>(props: PaletteProps<T>) {
   const { itemChecked, container, onClosed } = props;
   // What it shows stays as it was while it leaves.
   const held = useHeld(open, props);
-  const { label, placeholder, query, groups, renderItem, empty, mono, icon, mode } = held;
+  const {
+    label,
+    placeholder,
+    query,
+    groups,
+    renderItem,
+    empty,
+    mono,
+    icon = 'terminal',
+    mode,
+  } = held;
   const { message, foot } = held;
   const input = useRef<HTMLInputElement>(null);
   const popup = useRef<HTMLDivElement | null>(null);
@@ -127,11 +139,7 @@ export function Palette<T>(props: PaletteProps<T>) {
               onItemHighlighted={(item: T | undefined) => onHighlight?.(item)}
             >
               <div className="flex h-palette-input-h flex-none items-center gap-12 border-b border-border-subtle ps-16 pe-12">
-                {icon ?? (
-                  <svg className="lo-i text-fg-muted" viewBox="0 0 16 16" aria-hidden="true">
-                    <path d="M4 5.5 7 8l-3 2.5M8.5 11h3.5" />
-                  </svg>
-                )}
+                <Icon name={icon} size={16} className="text-fg-muted" />
                 <Autocomplete.Input
                   ref={input}
                   placeholder={placeholder}

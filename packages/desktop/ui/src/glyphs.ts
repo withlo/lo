@@ -33,8 +33,6 @@ export const GLYPHS: ReadonlyMap<string, Glyph> = new Map<string, Glyph>([
   ['✓', { icon: 'check' }],
   // More actions.
   ['⋯', { icon: 'ellipsis' }],
-  // Moved code, in its gutter.
-  ['⇄', { icon: 'arrow-left-right' }],
 ]);
 
 /** A character of {@link GLYPHS} in a string, with how it's drawn. */

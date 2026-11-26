@@ -15,9 +15,10 @@ import {
 import { Avatar } from './Avatar.tsx';
 import { Collapse } from './Collapse.tsx';
 import { handOffFocus } from './focus.ts';
-import { StateIcon, type PullRequestState } from './StatePill.tsx';
+import { Icon } from './Icon.tsx';
+import type { IconName } from './icons.ts';
+import { STATE_ICONS, type PullRequestState } from './StatePill.tsx';
 import { Tag } from './Tag.tsx';
-import { CommentIcon } from './ThreadCount.tsx';
 import { Tooltip } from './Tooltip.tsx';
 
 /** What a layer's reviews say. */
@@ -225,37 +226,10 @@ const REVIEWS: Record<StackReview, { word: string; tone: string }> = {
   required: { word: 'Review required', tone: 'text-review-required' },
 };
 
-const CHECKS: Record<StackChecks, { words: string; tone: string; icon: ReactNode }> = {
-  passing: {
-    words: 'Checks passed',
-    tone: 'text-check-pass',
-    icon: (
-      <>
-        <circle cx="8" cy="8" r="6.25" />
-        <path d="M5.5 8.25 7.25 10l3.25-3.75" />
-      </>
-    ),
-  },
-  running: {
-    words: 'Checks running',
-    tone: 'text-check-running',
-    icon: (
-      <>
-        <circle cx="8" cy="8" r="6.25" />
-        <path d="M8 4.75V8l2 1.5" />
-      </>
-    ),
-  },
-  failing: {
-    words: 'Checks failed',
-    tone: 'text-check-fail',
-    icon: (
-      <>
-        <circle cx="8" cy="8" r="6.25" />
-        <path d="M5.75 5.75l4.5 4.5M10.25 5.75l-4.5 4.5" />
-      </>
-    ),
-  },
+const CHECKS: Record<StackChecks, { words: string; tone: string; icon: IconName }> = {
+  passing: { words: 'Checks passed', tone: 'text-check-pass', icon: 'circle-check' },
+  running: { words: 'Checks running', tone: 'text-check-running', icon: 'clock' },
+  failing: { words: 'Checks failed', tone: 'text-check-fail', icon: 'circle-x' },
 };
 
 const OVERVIEWS: Record<StackOverview, { words: string; className: string }> = {
@@ -264,15 +238,6 @@ const OVERVIEWS: Record<StackOverview, { words: string; className: string }> = {
   error: { words: 'Overview · can’t show', className: 'lo-ovmark lo-ovmark--error' },
   none: { words: 'No overview yet', className: 'lo-ovmark lo-ovmark--none' },
 };
-
-/** A small icon on the 16 grid. */
-function Icon({ children }: { children: ReactNode }) {
-  return (
-    <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
-      {children}
-    </svg>
-  );
-}
 
 /** One thing in a layer's meta, which wraps as a whole and never runs wider than the row. */
 function Item({
@@ -315,7 +280,7 @@ function Unresolved({ threads }: { threads: StackTreeLayer['threads'] }) {
         data-open=""
         className="lo-num inline-flex flex-none items-center gap-2 text-fg"
       >
-        <CommentIcon />
+        <Icon name="message-square" size={12} />
         {threads.unresolved}
         {more ? '+' : ''}
       </span>
@@ -334,10 +299,7 @@ function Viewed({ viewed }: { viewed: NonNullable<StackTreeLayer['viewed']> }) {
         aria-label={said}
         className="inline-flex max-w-full min-w-0 items-center gap-4 whitespace-nowrap text-fg-muted"
       >
-        <Icon>
-          <circle cx="8" cy="8" r="5.75" />
-          <circle cx="8" cy="8" r="2.5" fill="currentColor" stroke="none" />
-        </Icon>
+        <span className="ball-files" aria-hidden="true" />
         <span className="lo-num">{count}</span>
       </span>
     </Tooltip>
@@ -361,9 +323,7 @@ function Meta({ layer }: { layer: StackTreeLayer }) {
       )}
       {said !== undefined && (
         <Item tone={said.tone}>
-          <Icon>
-            <StateIcon state={state} />
-          </Icon>
+          <Icon name={STATE_ICONS[state]} size={12} />
           {said.word}
           {state !== 'draft' && layer.when !== undefined && ` ${layer.when}`}
         </Item>
@@ -377,7 +337,7 @@ function Meta({ layer }: { layer: StackTreeLayer }) {
             aria-label={checked.words}
             data-checks={checks}
           >
-            <Icon>{checked.icon}</Icon>
+            <Icon name={checked.icon} size={12} />
           </span>
         </Tooltip>
       )}
@@ -588,12 +548,7 @@ export function StackTree({
       >
         <div role="presentation" className="flex h-row-h items-center gap-8 px-8">
           <span className="flex w-16 flex-none justify-center text-fg-muted">
-            <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
-              <circle cx="4.5" cy="3.75" r="1.5" />
-              <circle cx="4.5" cy="12.25" r="1.5" />
-              <circle cx="11.5" cy="5" r="1.5" />
-              <path d="M4.5 5.25v5.5M11.5 6.5c0 2.75-4 2.5-6.6 4.4" />
-            </svg>
+            <Icon name="git-branch" size={12} />
           </span>
           <Tooltip label={root} cut={middleOut(root, BRANCH_SHOWN) === root}>
             <span aria-hidden="true" className="min-w-0 truncate text-fg-muted code-small">

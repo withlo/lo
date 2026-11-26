@@ -6,6 +6,7 @@ import {
   Callout,
   Collapse,
   CopyButton,
+  Icon,
   Key,
   LogoMotion,
   Mark,
@@ -23,23 +24,6 @@ import { checkGit, goTo } from './actions.ts';
 import { keyOf } from './labels.ts';
 import { usePlayOnce } from './played.ts';
 import { gitProblem, welcomeStore } from './store.ts';
-
-function PersonIcon() {
-  return (
-    <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-      <circle cx="8" cy="5.25" r="2.75" />
-      <path d="M3 13.5c.5-2.5 2.5-4 5-4s4.5 1.5 5 4" />
-    </svg>
-  );
-}
-
-function TerminalIcon() {
-  return (
-    <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M3 4.5 6 8l-3 3.5M8 12h5" />
-    </svg>
-  );
-}
 
 /** Looks for Git again. */
 function look(): void {
@@ -151,7 +135,7 @@ export function AccountStep({ shown }: { shown: boolean }): ReactNode {
               data-welcome-focus
               onClick={signIn}
             >
-              <PersonIcon />
+              <Icon name="user-round" size={14} />
               Sign in with GitHub…
               {key && <Key keys={key} decorative className="text-on-accent" />}
             </Button>
@@ -161,7 +145,7 @@ export function AccountStep({ shown }: { shown: boolean }): ReactNode {
                 hint={nothing ? 'GitHub CLI isn’t signed in' : null}
                 onClick={importFromGh}
               >
-                <TerminalIcon />
+                <Icon name="terminal" size={14} />
                 Import from GitHub CLI
               </Button>
             )}

@@ -179,7 +179,6 @@
 .lo-sign { text-align: center; user-select: none; }
 .lo-sign--del::before { content: "\2212"; color: var(--lo-diff-del-fg); }
 .lo-sign--add::before { content: "+"; color: var(--lo-diff-add-fg); }
-.lo-sign--move::before { content: "\21C4"; color: var(--lo-diff-moved-fg); }
 
 /*
  * Filler: everything in a diff that isn't code (aligned empty space, folds, the row under a

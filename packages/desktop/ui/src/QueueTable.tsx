@@ -11,9 +11,10 @@ import { Avatar } from './Avatar.tsx';
 import { CheckIcon } from './Checklist.tsx';
 import { withoutBidi } from './controls.ts';
 import { EmptyState } from './EmptyState.tsx';
+import { Icon } from './Icon.tsx';
 import { LinkButton } from './LinkButton.tsx';
 import { Spinner } from './Spinner.tsx';
-import { StateIcon } from './StatePill.tsx';
+import { STATE_ICONS } from './StatePill.tsx';
 import { Tag } from './Tag.tsx';
 import { Tooltip } from './Tooltip.tsx';
 
@@ -185,9 +186,7 @@ function LeftIcon({ reason }: { reason: LeftReason }) {
     case 'merged':
       return (
         <span className={tone}>
-          <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-            <StateIcon state="merged" />
-          </svg>
+          <Icon name={STATE_ICONS.merged} size={14} />
         </span>
       );
     case 'failed':
@@ -205,10 +204,7 @@ function LeftIcon({ reason }: { reason: LeftReason }) {
     case 'timedOut':
       return (
         <span className={tone}>
-          <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-            <circle cx="8" cy="8" r="6.25" />
-            <path d="M8 4.75V8l2 1.5" />
-          </svg>
+          <Icon name="clock" size={14} />
         </span>
       );
     case 'removed':

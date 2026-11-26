@@ -10,6 +10,7 @@ import type { ReactNode, Ref } from 'react';
 import type { CodeRange } from '@lo/artifact';
 import type { Code } from '@lo/markdown';
 
+import { Icon } from '../Icon.tsx';
 import { lineRange } from './placeholders.tsx';
 import { ExcerptSpace } from './space.tsx';
 
@@ -73,10 +74,7 @@ export function CodeBlock({
 export function CodeFlag({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
     <div className="lo-codeblock__flag" role="note" data-lo-code-flag="">
-      <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M7.13 2.5a1 1 0 0 1 1.74 0l5.2 9.5a1 1 0 0 1-.87 1.5H2.8a1 1 0 0 1-.87-1.5Z" />
-        <path d="M8 6.25v3M8 11.25v.01" />
-      </svg>
+      <Icon name="triangle-exclamation-point" size={12} />
       <span className="lo-codeblock__flagtext">{children}</span>
       {action}
     </div>
@@ -145,10 +143,7 @@ export function CodeNote({
 }) {
   return (
     <div className="lo-codeblock__msg">
-      <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M7.13 2.5a1 1 0 0 1 1.74 0l5.2 9.5a1 1 0 0 1-.87 1.5H2.8a1 1 0 0 1-.87-1.5Z" />
-        <path d="M8 6.25v3M8 11.25v.01" />
-      </svg>
+      <Icon name="triangle-exclamation-point" size={16} />
       <div className="lo-codeblock__said min-w-0">
         <strong className="block">{title}</strong>
         {children}
@@ -166,10 +161,7 @@ export function Illustration({ node }: { node: Code }) {
   return (
     <div className="lo-codeblock lo-codeblock--illustration">
       <div className="lo-codeblock__head">
-        <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M8 1.75a6.25 6.25 0 1 1 0 12.5a6.25 6.25 0 1 1 0-12.5Z" />
-          <path d="M8 7.25V11M8 5v.01" />
-        </svg>
+        <Icon name="info" size={12} />
         <span>
           <strong>Illustration</strong> · not from this pull request
         </span>

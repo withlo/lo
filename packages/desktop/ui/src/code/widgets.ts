@@ -7,9 +7,10 @@
 
 import { WidgetType } from '@codemirror/view';
 
-import { COMMENT_PATH, threadWords } from '../counts.ts';
+import { threadWords } from '../counts.ts';
 import { resizing } from '../drag.ts';
 import { EDIT_SLOT } from '../edits.ts';
+import { glyphNodes, iconElement } from '../iconElement.ts';
 import { type DrawNote, type FileHeader, viewControls } from './api.ts';
 import { type Bubble, bubbleElement, type LaneTone, sameBubble } from './bubbles.ts';
 import type { ThreadHost } from './threads.ts';
@@ -111,7 +112,8 @@ function headerStart(info: HeaderInfo): HTMLElement[] {
   parts.push(path);
   if (info.previousPath && info.previousPath !== info.path) {
     // As the file tree writes it: the new path first, then where it was.
-    const was = element('span', 'lo-path__was', `← ${info.previousPath}`);
+    const was = element('span', 'lo-path__was');
+    was.append(...glyphNodes(`← ${info.previousPath}`));
     was.dataset.tip = `Renamed from ${info.previousPath}`;
     parts.push(was);
   }
@@ -135,7 +137,12 @@ function headerEnd(info: HeaderInfo): HTMLElement {
   const { header } = info;
   const end = element('span', 'lo-filehead__end');
   const tags = header.tags ?? [];
-  if (tags.length > 0) end.append(element('span', 'lo-diffhead__tags', tags.join(' · ')));
+  if (tags.length > 0) {
+    // A binary file's sizes read with their arrow drawn as an icon: `1 KB → 2 KB`.
+    const said = element('span', 'lo-diffhead__tags');
+    said.append(...glyphNodes(tags.join(' · ')));
+    end.append(said);
+  }
   const threads = header.threads && header.threads.total > 0 ? header.threads : undefined;
   const ball = header.viewed && viewedBall(header.viewed);
   if (ball?.tag) end.append(ball.tag);
@@ -158,7 +165,7 @@ function headerEnd(info: HeaderInfo): HTMLElement {
   more.setAttribute('aria-label', label);
   more.setAttribute('aria-haspopup', 'menu');
   more.dataset.tip = label;
-  more.append(moreIcon());
+  more.append(iconElement('ellipsis', 16));
   end.append(more);
   return end;
 }
@@ -188,24 +195,6 @@ export function drawHeader(
   }
   if (part !== 'start') head.append(headerEnd(info));
   return head;
-}
-
-/** The `⋯` icon: three dots on the 16 grid. */
-function moreIcon(): SVGElement {
-  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  icon.setAttribute('class', 'lo-i lo-i--sm');
-  icon.setAttribute('viewBox', '0 0 16 16');
-  icon.setAttribute('aria-hidden', 'true');
-  for (const x of [3.5, 8, 12.5]) {
-    const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    dot.setAttribute('cx', String(x));
-    dot.setAttribute('cy', '8');
-    dot.setAttribute('r', '1.1');
-    dot.setAttribute('fill', 'currentColor');
-    dot.setAttribute('stroke', 'none');
-    icon.append(dot);
-  }
-  return icon;
 }
 
 /**
@@ -1030,14 +1019,7 @@ function threadCount(total: number, unresolved: number): HTMLElement {
   count.dataset.tip = said;
   count.setAttribute('role', 'img');
   count.setAttribute('aria-label', said);
-  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  icon.setAttribute('class', 'lo-i lo-i--xs');
-  icon.setAttribute('viewBox', '0 0 16 16');
-  icon.setAttribute('aria-hidden', 'true');
-  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  path.setAttribute('d', COMMENT_PATH);
-  icon.append(path);
-  count.append(icon, String(total));
+  count.append(iconElement('message-square', 12), String(total));
   return count;
 }
 

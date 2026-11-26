@@ -29,7 +29,6 @@
 import { join, relative } from 'node:path';
 
 import { LO_SUBJECTS } from './subjects.ts';
-import { OWN_SVGS } from './svgs.ts';
 
 /** A syntax tree node, as oxlint hands one to a rule. */
 interface AstNode {
@@ -577,22 +576,64 @@ export const ICON_MESSAGE =
 /**
  * The files that may write an `<svg>`, from the repository's root: `Icon`, which draws every icon,
  * and `iconElement`, which makes the same in a code view's own DOM, the mark and its animations,
- * and an overview's figures. A folder ends in `/`.
+ * and what draws an overview's figures, which aren't icons.
  */
-const DRAWS_SVG = [
+const DRAWS_SVG: ReadonlySet<string> = new Set([
   'packages/desktop/ui/src/Icon.tsx',
   'packages/desktop/ui/src/iconElement.ts',
   'packages/desktop/ui/src/Mark.tsx',
   'packages/desktop/ui/src/LogoMotion.tsx',
-  'packages/desktop/ui/src/figures/',
-];
+  'packages/desktop/ui/src/figures/svg.ts',
+]);
+
+/** What makes an element from its name, first: the DOM's, React's and JSX's compiled form. */
+const ELEMENT_MAKERS: ReadonlySet<string> = new Set(['createElement', 'jsx', 'jsxs', 'jsxDEV']);
 
 /** The one file that imports `lucide`: the list of the icons Lo uses. */
 const ICON_LIST = 'packages/desktop/ui/src/icons.ts';
 
-/** Whether `node` is the string `svg`, as a literal. */
+/** `node`'s text, when it's a string written out whole: a literal, or a template with no `${}`. */
+function wholeString(node: unknown): string | undefined {
+  if (!isNode(node)) return undefined;
+  if (node.type === 'Literal') {
+    const value: unknown = Reflect.get(node, 'value');
+    return typeof value === 'string' ? value : undefined;
+  }
+  if (node.type !== 'TemplateLiteral') return undefined;
+  const expressions: unknown = Reflect.get(node, 'expressions');
+  const texts = templateTexts(node);
+  return Array.isArray(expressions) && expressions.length === 0 && texts.length === 1
+    ? texts[0]
+    : undefined;
+}
+
+/** The text between a template literal's `${}`, each part as it's read. */
+function templateTexts(node: AstNode): string[] {
+  const quasis: unknown = Reflect.get(node, 'quasis');
+  if (!Array.isArray(quasis)) return [];
+  return quasis.flatMap((quasi: unknown) => {
+    const value: unknown = isNode(quasi) ? Reflect.get(quasi, 'value') : undefined;
+    const text: unknown =
+      typeof value === 'object' && value !== null ? Reflect.get(value, 'cooked') : undefined;
+    return typeof text === 'string' ? [text] : [];
+  });
+}
+
+/** Whether `node` is the string `svg`, as a literal or a template with nothing in it. */
 function svgLiteral(node: unknown): boolean {
-  return isNode(node) && node.type === 'Literal' && Reflect.get(node, 'value') === 'svg';
+  return wholeString(node) === 'svg';
+}
+
+/** Whether `text` holds an svg to be drawn: its markup, or a data URL of one. */
+function holdsSvg(text: string): boolean {
+  return /<svg\b|data:image\/svg\+xml/i.test(text);
+}
+
+/** Whether `node`, a module's name, is an svg file, imported as its markup or its URL. */
+function svgFile(node: unknown): boolean {
+  if (!isNode(node) || node.type !== 'Literal') return false;
+  const name: unknown = Reflect.get(node, 'value');
+  return typeof name === 'string' && /\.svg(?:[?#]|$)/i.test(name);
 }
 
 /** Whether `node`, a module's name, is `lucide` or a file in it. */
@@ -604,63 +645,71 @@ function lucide(node: unknown): boolean {
 
 /**
  * `lo/no-inline-icon` refuses an icon of a component's own, in the desktop app's source and its
- * packages': an `<svg>` element in JSX, or one made with `createElement('svg')` or
- * `createElementNS(…, 'svg')`, anywhere but `Icon`, the mark, its animations and figures
- * ({@link DRAWS_SVG}), and an import of `lucide` anywhere but `icons.ts`. Lo's icons come from one
- * set, drawn by `Icon` (`design/README.md`, "Icons"). It lets through the files `known` lists, by
- * their path from the repository's root, which still draw their own.
+ * packages', anywhere but `Icon`, the mark, its animations and figures ({@link DRAWS_SVG}): an
+ * `<svg>` element in JSX; one made with `createElement('svg')`, `jsx('svg')` or
+ * `createElementNS(…, 'svg')`, or with `createElementNS` and a name worked out as it runs; a string
+ * holding `<svg` or an svg's data URL, as markup to set; and an imported `.svg` file. It refuses an
+ * import of `lucide` anywhere but `icons.ts`. Lo's icons come from one set, drawn by `Icon`
+ * (`design/README.md`, "Icons").
  */
-export function inlineIcon(known: ReadonlySet<string>) {
-  return {
-    meta: {
-      type: 'problem',
-      docs: { description: 'Refuse an icon that isn’t drawn by `Icon`, from Lo’s list of icons.' },
-    },
-    create(context: Context) {
-      const path = context.filename === undefined ? undefined : relative(ROOT, context.filename);
-      const desktop = path === undefined || DESKTOP.test(path);
-      const drawsSvg =
-        path !== undefined &&
-        (known.has(path) ||
-          DRAWS_SVG.some((each) => (each.endsWith('/') ? path.startsWith(each) : path === each)));
-      const report = (node: AstNode): void => {
-        if (desktop) context.report({ node, message: ICON_MESSAGE });
-      };
-      const svg = (node: AstNode): void => {
-        if (!drawsSvg) report(node);
-      };
-      const source = (node: AstNode): void => {
-        if (path !== ICON_LIST && lucide(Reflect.get(node, 'source'))) report(node);
-      };
-      return {
-        JSXOpeningElement(node: AstNode): void {
-          const name: unknown = Reflect.get(node, 'name');
+export const noInlineIcon = {
+  meta: {
+    type: 'problem',
+    docs: { description: 'Refuse an icon that isn’t drawn by `Icon`, from Lo’s list of icons.' },
+  },
+  create(context: Context) {
+    const path = context.filename === undefined ? undefined : relative(ROOT, context.filename);
+    const desktop = path === undefined || DESKTOP.test(path);
+    const drawsSvg = path !== undefined && DRAWS_SVG.has(path);
+    const report = (node: AstNode): void => {
+      if (desktop) context.report({ node, message: ICON_MESSAGE });
+    };
+    const svg = (node: AstNode): void => {
+      if (!drawsSvg) report(node);
+    };
+    const source = (node: AstNode): void => {
+      const from: unknown = Reflect.get(node, 'source');
+      if (path !== ICON_LIST && lucide(from)) report(node);
+      else if (svgFile(from)) svg(node);
+    };
+    return {
+      JSXOpeningElement(node: AstNode): void {
+        const name: unknown = Reflect.get(node, 'name');
+        if (isNode(name) && name.type === 'JSXIdentifier' && Reflect.get(name, 'name') === 'svg') {
+          svg(node);
+        }
+      },
+      CallExpression(node: AstNode): void {
+        const name = calleeName(Reflect.get(node, 'callee'));
+        const args: unknown = Reflect.get(node, 'arguments');
+        if (!Array.isArray(args)) return;
+        // The element's name: first, or after its namespace. In a namespace, which only an svg's
+        // shapes take here, a name worked out as it runs could be any of them.
+        if (name === 'createElementNS') {
           if (
-            isNode(name) &&
-            name.type === 'JSXIdentifier' &&
-            Reflect.get(name, 'name') === 'svg'
+            args[1] !== undefined &&
+            (svgLiteral(args[1]) || wholeString(args[1]) === undefined)
           ) {
             svg(node);
           }
-        },
-        CallExpression(node: AstNode): void {
-          const name = calleeName(Reflect.get(node, 'callee'));
-          // The element's name: first, or after its namespace.
-          const at = name === 'createElement' ? 0 : name === 'createElementNS' ? 1 : undefined;
-          const args: unknown = Reflect.get(node, 'arguments');
-          if (at !== undefined && Array.isArray(args) && svgLiteral(args[at])) svg(node);
-        },
-        ImportDeclaration: source,
-        ImportExpression: source,
-        ExportAllDeclaration: source,
-        ExportNamedDeclaration: source,
-      };
-    },
-  };
-}
-
-/** `lo/no-inline-icon`, letting through the files that still draw their own: {@link OWN_SVGS}. */
-export const noInlineIcon = inlineIcon(new Set(OWN_SVGS));
+        } else if (name !== undefined && ELEMENT_MAKERS.has(name) && svgLiteral(args[0])) {
+          svg(node);
+        }
+      },
+      Literal(node: AstNode): void {
+        const value: unknown = Reflect.get(node, 'value');
+        if (typeof value === 'string' && holdsSvg(value)) svg(node);
+      },
+      TemplateLiteral(node: AstNode): void {
+        if (templateTexts(node).some(holdsSvg)) svg(node);
+      },
+      ImportDeclaration: source,
+      ImportExpression: source,
+      ExportAllDeclaration: source,
+      ExportNamedDeclaration: source,
+    };
+  },
+};
 
 export default {
   meta: { name: 'lo' },
