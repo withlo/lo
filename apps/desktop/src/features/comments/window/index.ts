@@ -246,9 +246,10 @@ export default {
     previousComment: { run: moveRing(-1) },
     reply: { run: actOn(reply), enabled: enabled(writable) },
     resolve: {
-      // From the line beside lines, the thread's popover pins first, and that's all.
+      // From the line beside lines, the thread's popover pins first, and that's all: where it
+      // can't, nothing changes a thread that isn't on screen.
       run: actOn((tab, target) => {
-        if (!pinFirst(tab, target)) resolve(tab, target);
+        if (pinFirst(tab, target) === 'shown') resolve(tab, target);
       }),
       enabled: free,
       // Named by what it would do to the thread it's on, as its card shows it: in the thread's own
@@ -261,10 +262,10 @@ export default {
       enabled: enabled(writable),
     },
     remove: {
-      // From the line beside lines, the thread's popover pins under the dialog that asks.
+      // From the line beside lines, the thread's popover pins under the dialog that asks; where it
+      // can't, nothing asks to delete a comment that isn't on screen.
       run: actOn((tab, target) => {
-        pinFirst(tab, target);
-        remove(tab, target, ringed(target));
+        if (pinFirst(tab, target) !== 'hidden') remove(tab, target, ringed(target));
       }),
       enabled: free,
     },

@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-import type { PopoverView } from './api.ts';
+import { testCommands } from '../../test/commands.ts';
+import { listen } from '../commands/listener.ts';
+import { Registry } from '../commands/registry.ts';
+import type { PopoverView, RenderPopover } from './api.ts';
 import {
   across,
   AGAIN,
@@ -147,8 +150,37 @@ function drawing() {
 }
 
 let pop: ThreadPop<At> | undefined;
+let stopListening: (() => void) | undefined;
+
+/** Lo's key listener on the window, as the app has it, with the engine's test commands. */
+function listening(): void {
+  stopListening = listen(window, new Registry({ system: 'mac', commands: testCommands() }));
+}
+
+/** Presses `key` on what has focus, or the page, as the system would, and returns the event. */
+function press(key: string, init: KeyboardEventInit = {}): KeyboardEvent {
+  const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
+  (document.activeElement ?? document.body).dispatchEvent(event);
+  return event;
+}
+
+/** A popover of threads, each a card of a link and a button, one per id its view lists. */
+const cards: RenderPopover = (host, popover) => {
+  const draw = (shown: PopoverView): void => {
+    host.innerHTML = `<div data-thread-pop tabindex="-1">${shown.threads
+      .map(
+        ({ id }) =>
+          `<div data-thread-id="${id}"><a href="#${id}">${id}</a><button>${id} resolve</button><p data-comment="${id}.1" tabindex="-1">text</p></div>`,
+      )
+      .join('')}</div>`;
+  };
+  draw(popover);
+  return { update: draw, destroy: () => host.replaceChildren() };
+};
 
 afterEach(() => {
+  stopListening?.();
+  stopListening = undefined;
   pop?.destroy();
   pop = undefined;
   vi.useRealTimers();
@@ -248,21 +280,96 @@ describe('ThreadPop', () => {
     expect(pop.pinned).toBe(true);
   });
 
-  test('a key closes a preview, never a pinned one', () => {
+  test('a key closes a preview, one Lo’s commands take too, but not a modifier alone', () => {
     vi.useFakeTimers();
+    listening();
     const { host, mark } = hostOf();
     pop = new ThreadPop(host);
     pop.render = drawing().render;
     const { at } = mark(5);
     pop.hover(at);
     vi.advanceTimersByTime(REST);
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift' }));
+    press('Meta', { metaKey: true });
+    vi.advanceTimersByTime(1);
     expect(pop.open).toBe(true);
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'j' }));
+    // `?` is a command's, which the listener takes: it goes no further than the window.
+    expect(press('?', { shiftKey: true }).defaultPrevented).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(pop.open).toBe(false);
+    pop.hover(undefined);
+    pop.hover(at);
+    vi.advanceTimersByTime(REST);
+    expect(pop.open).toBe(true);
+    press('j');
+    vi.advanceTimersByTime(1);
     expect(pop.open).toBe(false);
     pop.pin(at);
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'j' }));
+    press('?', { shiftKey: true });
+    vi.advanceTimersByTime(1);
     expect(pop.pinned).toBe(true);
+  });
+
+  test('Tab goes through its links and controls, and round from either end', () => {
+    listening();
+    const { host, mark } = hostOf();
+    // In the diff's scope, as the view puts it, whose own Tab goes nowhere.
+    const diff = document.createElement('div');
+    diff.dataset.loScope = 'diff';
+    document.body.append(diff);
+    diff.append(host.scroller);
+    pop = new ThreadPop(host);
+    pop.render = cards;
+    pop.pin(mark(5).at);
+    pop.focus(false);
+    const [link, button] = [...pop.dom.querySelectorAll<HTMLElement>('a, button')];
+    // From the popover itself, and from its link, the page's own Tab moves on.
+    expect(press('Tab').defaultPrevented).toBe(false);
+    link!.focus();
+    expect(press('Tab').defaultPrevented).toBe(false);
+    // From its last, round to its first; and back from its first to its last.
+    button!.focus();
+    expect(press('Tab').defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(link);
+    expect(press('Tab', { shiftKey: true }).defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(button);
+  });
+
+  test('placed again, it takes the height the pane lets it have now', () => {
+    let height = 600;
+    const { host, mark } = hostOf();
+    pop = new ThreadPop({ ...host, room: () => ({ ...room, height }) });
+    pop.render = cards;
+    pop.pin(mark(5).at);
+    expect(pop.dom.style.getPropertyValue('--lo-pop-max')).toBe('480px');
+    height = 300;
+    pop.place();
+    expect(pop.dom.style.getPropertyValue('--lo-pop-max')).toBe('246px');
+  });
+
+  test('focus on a thread that goes from it comes back to it, not to the page', async () => {
+    const { host, mark } = hostOf();
+    let ids = ['t5', 'u5'];
+    pop = new ThreadPop({
+      ...host,
+      view: (at, pinned) => ({
+        threads: ids.map((id) => ({
+          id,
+          at: { file: 'a', side: 'new', line: at.line },
+          open: true,
+          version: 1,
+        })),
+        pinned,
+        label: 'Unresolved thread · line 5',
+      }),
+    });
+    pop.render = cards;
+    pop.pin(mark(5).at);
+    pop.dom.querySelector<HTMLElement>('[data-thread-id="u5"] button')!.focus();
+    ids = ['t5'];
+    pop.refresh();
+    await Promise.resolve();
+    expect(pop.open).toBe(true);
+    expect(document.activeElement?.hasAttribute('data-thread-pop')).toBe(true);
   });
 
   test('closing with focus in it hands focus to its line', () => {

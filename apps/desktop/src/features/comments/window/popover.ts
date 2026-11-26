@@ -50,15 +50,19 @@ export function moveRing(by: 1 | -1): () => void {
 }
 
 /**
- * Beside lines, a key from the line on a thread whose popover isn't pinned: it pins, its thread on
- * screen before the key changes it. Says whether it did.
+ * Beside lines, what a key from the line does first to the thread it's on, as a key never changes
+ * a thread that isn't on screen: its popover pinned already, nothing (`shown`); else it pins
+ * (`pinned`), or, where it can't, the key does nothing more (`hidden`). Between lines, from a
+ * thread's popover, or on a thread there's none of, which the key says, it's `shown`.
  */
-export function pinFirst(tab: PullTab, target: ThreadKeyTarget): boolean {
-  if (target.kind === 'thread' || threadsMode() !== 'beside') return false;
+export function pinFirst(tab: PullTab, target: ThreadKeyTarget): 'shown' | 'pinned' | 'hidden' {
+  if (target.kind === 'thread' || threadsMode() !== 'beside') return 'shown';
   const row = threadFor(tab.id, target);
+  if (typeof row === 'string') return 'shown';
   const diff = writingDiff(tab.id, true) ?? writingDiff(tab.id);
-  if (typeof row === 'string' || !diff || diff.pinned().includes(row.id)) return false;
-  return diff.pinThread(row.id);
+  if (!diff) return 'hidden';
+  if (diff.pinned().includes(row.id)) return 'shown';
+  return diff.pinThread(row.id) ? 'pinned' : 'hidden';
 }
 
 /** The comment a key in a thread's popover acts on: the one the ring is on, if it's on one. */

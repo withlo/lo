@@ -11,7 +11,13 @@
 // drawn: it's built as the pointer comes to a mark, ahead of the rest, so it's whole in the first
 // frame after it opens.
 
-import { SCOPE_ATTRIBUTE, setScopeSource, type ThreadTarget } from '../commands/index.ts';
+import {
+  KEY_EVENT,
+  SCOPE_ATTRIBUTE,
+  setScopeSource,
+  TAB_ATTRIBUTE,
+  type ThreadTarget,
+} from '../commands/index.ts';
 import { whenSettled } from '../motion.ts';
 import type { PopoverContent, PopoverView, RenderPopover } from './api.ts';
 
@@ -38,6 +44,25 @@ const FREE = 16;
 
 /** What opens over everything, from a popover too: a menu, or a dialog it asks in. */
 const OVER = '[role="menu"], [role="dialog"], [role="alertdialog"]';
+
+/** A key pressed alone that's no key of its own, as `⌘` held for a click: it closes no preview. */
+const MODIFIERS: readonly string[] = ['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Fn'];
+
+/** What `Tab` can stop on, before what's disabled, hidden or taken out of the order is left out. */
+const TABBABLE = 'a[href], button, input, select, textarea, summary, [tabindex], [contenteditable]';
+
+/** The elements in `root` that `Tab` stops on, in its order. */
+function tabStops(root: HTMLElement): HTMLElement[] {
+  return [...root.querySelectorAll<HTMLElement>(TABBABLE)].filter(
+    (each) =>
+      each.tabIndex >= 0 &&
+      !each.matches(':disabled') &&
+      each.closest('[inert], [hidden]') === null &&
+      // Where the page can tell, as in a closed `<details>` or a control kept invisible.
+      (typeof each.checkVisibility !== 'function' ||
+        each.checkVisibility({ visibilityProperty: true })),
+  );
+}
 
 /** A size token's value in pixels, as the stylesheet has it, or `fallback` where it has none. */
 function token(name: string, fallback: number): number {
@@ -225,6 +250,11 @@ export class ThreadPop<At extends PopAt> {
   #inside = false;
   /** When a preview last closed. */
   #closedAt = -Infinity;
+  /** Whether the key a preview heard was a modifier alone, which closes nothing. */
+  #lone = false;
+  #keyed: ReturnType<typeof setTimeout> | undefined;
+  /** Whether focus is in it, or was until what it was on went, with nothing taking it since. */
+  #focusedIn = false;
   #leaving: (() => void) | undefined;
   readonly #stops: (() => void)[] = [];
   readonly #sized: ResizeObserver | undefined;
@@ -236,6 +266,16 @@ export class ThreadPop<At extends PopAt> {
     this.dom.hidden = true;
     this.dom.tabIndex = -1;
     this.dom.setAttribute(SCOPE_ATTRIBUTE, 'thread');
+    // `Tab` goes through its links and controls, round from its last to its first, as in a dialog.
+    this.dom.setAttribute(TAB_ATTRIBUTE, 'browser');
+    this.dom.addEventListener('keydown', (event) => this.#tabbed(event));
+    this.dom.addEventListener('focusin', () => {
+      this.#focusedIn = true;
+    });
+    // Focus taken elsewhere: not focus lost as what it was on went.
+    this.dom.addEventListener('focusout', (event) => {
+      if (event.relatedTarget !== null) this.#focusedIn = false;
+    });
     this.#content = document.createElement('div');
     this.dom.append(this.#content);
     this.#stops.push(setScopeSource(this.dom, { target: () => this.#target() }));
@@ -252,7 +292,13 @@ export class ThreadPop<At extends PopAt> {
       if (this.#state === 'preview') this.#pinHere();
     });
     const pressed = (event: Event): void => this.#pressed(event);
-    const typed = (event: KeyboardEvent): void => this.#typed(event);
+    // A key closes a preview once the key listener says it's the reader's input, those Lo's
+    // commands take, which go no further, among them. A modifier alone, which Lo's commands never
+    // take, is told apart as it goes on past them.
+    const heard = (): void => this.#heard();
+    const alone = (event: KeyboardEvent): void => {
+      if (MODIFIERS.includes(event.key)) this.#lone = true;
+    };
     // The pane's scroll closes a preview, not a scroll of the comments in it.
     const wheeled = (event: WheelEvent): void => {
       const { target } = event;
@@ -261,13 +307,22 @@ export class ThreadPop<At extends PopAt> {
       this.close();
     };
     document.addEventListener('pointerdown', pressed, true);
-    document.addEventListener('keydown', typed, true);
+    document.addEventListener(KEY_EVENT, heard);
+    window.addEventListener('keydown', alone, true);
     host.scroller.addEventListener('wheel', wheeled, { passive: true });
     this.#stops.push(
       () => document.removeEventListener('pointerdown', pressed, true),
-      () => document.removeEventListener('keydown', typed, true),
+      () => document.removeEventListener(KEY_EVENT, heard),
+      () => window.removeEventListener('keydown', alone, true),
       () => host.scroller.removeEventListener('wheel', wheeled),
     );
+    // Focus in it that falls to nothing as what it shows changes, as a thread with focus in it
+    // goes from a popover of two, comes back to it.
+    if (typeof MutationObserver !== 'undefined') {
+      const kept = new MutationObserver(() => this.#refocus());
+      kept.observe(this.#content, { childList: true, subtree: true });
+      this.#stops.push(() => kept.disconnect());
+    }
     // As what it shows grows or shrinks, as an image loads or a reply comes, it's placed again,
     // from the edge by its line.
     if (typeof ResizeObserver !== 'undefined') {
@@ -410,7 +465,10 @@ export class ThreadPop<At extends PopAt> {
     if (this.#state !== 'closed') this.#host.shown(at);
   }
 
-  /** Places it again where it is, by its lines as they are now, as a resize asks. */
+  /**
+   * Places it again where it is, by its lines as they are now, as a resize asks, as tall as the
+   * pane lets it be now.
+   */
   place(): void {
     if (this.#state === 'closed' || !this.#at) return;
     const lines = this.#host.lines(this.#at);
@@ -419,12 +477,15 @@ export class ThreadPop<At extends PopAt> {
       this.close();
       return;
     }
-    this.#put(placePop(this.#host.room(), lines, this.#content.offsetHeight, this.#side));
+    const room = this.#host.room();
+    this.dom.style.setProperty('--lo-pop-max', `${popMax(room)}px`);
+    this.#put(placePop(room, lines, this.#content.offsetHeight, this.#side));
   }
 
   destroy(): void {
     clearTimeout(this.#rest);
     clearTimeout(this.#crossing);
+    clearTimeout(this.#keyed);
     this.#leaving?.();
     this.#sized?.disconnect();
     for (const stop of this.#stops) stop();
@@ -540,11 +601,44 @@ export class ThreadPop<At extends PopAt> {
     this.close(false);
   }
 
-  /** A key closes a preview. */
-  #typed(event: KeyboardEvent): void {
+  /**
+   * A key closes a preview, once its keydown has gone as far as it goes: a modifier alone goes on
+   * to say so first.
+   */
+  #heard(): void {
     if (this.#state !== 'preview') return;
-    if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock'].includes(event.key)) return;
-    this.close();
+    this.#lone = false;
+    clearTimeout(this.#keyed);
+    this.#keyed = setTimeout(() => {
+      if (this.#state === 'preview' && !this.#lone) this.close();
+    }, 0);
+  }
+
+  /**
+   * `Tab` in it goes to its next link or control, as the page's own does, and from its last round
+   * to its first, as in a dialog; `⇧Tab` the other way. It never takes focus out of it.
+   */
+  #tabbed(event: KeyboardEvent): void {
+    if (event.key !== 'Tab' || event.defaultPrevented) return;
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement) || !this.dom.contains(active)) return;
+    const stops = tabStops(this.dom);
+    const way = event.shiftKey
+      ? Node.DOCUMENT_POSITION_PRECEDING
+      : Node.DOCUMENT_POSITION_FOLLOWING;
+    if (stops.some((stop) => stop !== active && (active.compareDocumentPosition(stop) & way) !== 0))
+      return;
+    event.preventDefault();
+    const to = event.shiftKey ? stops.at(-1) : stops[0];
+    to?.focus();
+  }
+
+  /** Focus that was in it, left with nothing as what it was on went, comes back to it. */
+  #refocus(): void {
+    if (this.#state === 'closed' || !this.#focusedIn || this.hasFocus()) return;
+    const active = document.activeElement;
+    if (active === null || active === document.body) this.focus(false);
   }
 
   /**
