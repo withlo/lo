@@ -369,10 +369,18 @@ test.describe('beside lines', () => {
     });
     expect(edges).toEqual({ gap: 4, width: 520, across: true });
     await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 2');
-    // Focus is in it, on no comment, and `j` rings its first.
+    // Focus is in it, on no comment, `Tab` goes to its controls, and `j` rings its first comment.
     await expect
       .poll(() => page.evaluate(() => document.activeElement?.closest('[role="dialog"]') !== null))
       .toBe(true);
+    await page.keyboard.press('Tab');
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          document.activeElement?.closest('[role="dialog"]') ? document.activeElement.tagName : '',
+        ),
+      )
+      .toBe('BUTTON');
     await page.keyboard.press('j');
     await expect
       .poll(() =>
