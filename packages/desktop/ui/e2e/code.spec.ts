@@ -43,18 +43,23 @@ test.afterEach(async () => {
  */
 async function open(
   layout: DiffLayout,
-  { wrapped = 0, below = 0, height }: { wrapped?: number; below?: number; height?: number } = {},
+  {
+    wrapped = 0,
+    below = 0,
+    height,
+    added = 0,
+  }: { wrapped?: number; below?: number; height?: number; added?: number } = {},
 ): Promise<Page> {
   app = await launch(await harness());
   const page = await app.firstWindow();
   await page.waitForFunction(() => 'harness' in window);
   await page.evaluate(
-    ({ shown, lines, under, tall }) => {
+    ({ shown, lines, under, tall, more }) => {
       if (tall !== undefined) window.harness.setHeight(tall);
-      window.harness.open(shown, lines);
+      window.harness.open(shown, lines, more);
       window.harness.scrollTo(20, under);
     },
-    { shown: layout, lines: wrapped, under: below, tall: height },
+    { shown: layout, lines: wrapped, under: below, tall: height, more: added },
   );
   await frames(page);
   return page;
@@ -1116,6 +1121,25 @@ test('the sides shared anew leave the first line under the pinned header where i
   const { old, new: added } = await sideWidths(page);
   expect(Math.abs(old - added)).toBeLessThan(1);
   expect(await seam(page)).toBeUndefined();
+});
+
+test('a row the new side alone has, first under the pinned header, stays where it is as the sides are shared anew, with focus on the old side', async () => {
+  // New line 20 is the first of six the old side doesn't have, and old line 20 comes after them.
+  const page = await open('split', { wrapped: 300, below: PINNED + 10, added: 6 });
+  const { top } = await viewBox(page);
+  // A click on old code on screen gives the old side focus, and moves nothing.
+  const old = await page.locator('.cm-editor[data-side="old"] .cm-content').boundingBox();
+  await page.mouse.click(old!.x + 40, top + 400);
+  await frames(page);
+  const first = () => page.evaluate(() => window.harness.textTop('added 1 '));
+  const before = await first();
+  expect(before).toBeCloseTo(PINNED + 10, 0);
+  for (const share of [0.3, 0.7]) {
+    await page.evaluate((to) => window.harness.sides(to), share);
+    await frames(page);
+    near([await first()], [before]);
+    expect(await page.evaluate(() => window.harness.misalignment())).toBeLessThan(1);
+  }
 });
 
 test('what’s drawn under the edge between the sides keeps the pointer from it, and code gives it the pointer', async () => {

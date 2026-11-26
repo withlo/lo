@@ -139,16 +139,16 @@ describe('the keys that size what has focus', () => {
     row.setState({ width: 1440 });
     const sized: (number | undefined)[] = [];
     let width = 500;
-    let kept = false;
+    let moved = false;
     const stop = sizeInView({
       sized: () =>
         document.activeElement?.id === 'code' ? { width, min: 300, max: 540 } : undefined,
       size: (to) => {
         sized.push(to);
         width = to ?? 450;
-        kept = to !== undefined;
+        moved = to !== undefined;
       },
-      resettable: () => kept,
+      resettable: () => moved,
     });
     // In the panel, the panel's.
     document.getElementById('left')?.focus();

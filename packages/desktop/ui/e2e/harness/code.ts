@@ -41,14 +41,21 @@ let changed: string[] = [];
 
 /**
  * The file's lines: `line 1` to `line 300`, the first `wrapped` of them with words after that wrap,
- * onto more rows the narrower the view.
+ * onto more rows the narrower the view; and `added` lines that wrap the same, `added 1` and on,
+ * only on the new side, before line 20.
  */
-function setLines(wrapped: number): void {
+function setLines(wrapped: number, added = 0): void {
+  const more = ' and more words'.repeat(20);
   old = Array.from({ length: 300 }, (_, index) =>
-    index < wrapped ? `line ${index + 1}${' and more words'.repeat(20)}` : `line ${index + 1}`,
+    index < wrapped ? `line ${index + 1}${more}` : `line ${index + 1}`,
   );
   // Lines 1, 5, 9 and on: three unchanged lines between changes, which none collapse.
   changed = old.map((text, index) => (index % 4 === 0 ? `${text}, changed` : text));
+  changed.splice(
+    19,
+    0,
+    ...Array.from({ length: added }, (_, index) => `added ${index + 1}${more}`),
+  );
 }
 
 const textOf = (lines: readonly string[]): string => `${lines.join('\n')}\n`;
@@ -146,6 +153,11 @@ function newSide(): Element {
   return found;
 }
 
+/** How wide side `side` is drawn. */
+function sideWidth(side: 'old' | 'new'): number {
+  return document.querySelector(`.cm-editor[data-side="${side}"]`)!.getBoundingClientRect().width;
+}
+
 /** Where unchanged line `line`'s text starts, down from the top of the screen, long or not. */
 function lineTop(line: number): number | undefined {
   const text = `line ${line}`;
@@ -163,9 +175,12 @@ function root(): HTMLElement {
 }
 
 const harness = {
-  /** Draws the view in `layout`, its first `wrapped` lines long enough to wrap. */
-  open(layout: DiffLayout, wrapped = 0): void {
-    setLines(wrapped);
+  /**
+   * Draws the view in `layout`, its first `wrapped` lines long enough to wrap, and `added` lines
+   * the new side alone has before line 20, as long.
+   */
+  open(layout: DiffLayout, wrapped = 0, added = 0): void {
+    setLines(wrapped, added);
     shown = createDiffView(
       root(),
       {
@@ -310,6 +325,13 @@ const harness = {
     });
   },
   lineTop,
+  /** How far down the screen the new side's first line starting with `text` is drawn, if it is. */
+  textTop(text: string): number | undefined {
+    const found = [...newSide().querySelectorAll('.cm-line')].find((each) =>
+      each.textContent?.startsWith(text),
+    );
+    return found && found.getBoundingClientRect().top - screen().top;
+  },
   /** How far down the screen the top of what `selector` matches is. */
   top(selector: string): number | undefined {
     const found = document.querySelector(selector);
@@ -461,9 +483,7 @@ const harness = {
   },
   /** How wide each side is drawn. */
   sideWidths(): { old: number; new: number } {
-    const width = (side: string): number =>
-      document.querySelector(`.cm-editor[data-side="${side}"]`)!.getBoundingClientRect().width;
-    return { old: width('old'), new: width('new') };
+    return { old: sideWidth('old'), new: sideWidth('new') };
   },
   /** Where the edge between the sides is, across the page, and how far down it reaches, if shown. */
   seam(): { x: number; top: number; bottom: number } | undefined {

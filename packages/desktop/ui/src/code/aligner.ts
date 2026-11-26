@@ -1436,20 +1436,23 @@ export class Aligner {
       screen.width,
       Math.max(0, screen.height - below),
     );
+    // The row that's first is the higher of the two sides' first lines: in an added file, the new
+    // side's, with nothing beside it on the old side till the next file.
+    let first: { side: Side; pos: number; top: number } | undefined;
     for (const each of [side, otherSide(side)]) {
       const found = lineOnScreen(this.#views[each], under, true);
-      if (found) {
-        return {
-          for: side,
-          side: each,
-          pos: found.pos,
-          offset: found.top - screen.top,
-          scrollTop: this.#scroller.scrollTop,
-          under: below,
-        };
-      }
+      if (found && (!first || found.top < first.top - 0.5)) first = { side: each, ...found };
     }
-    return undefined;
+    return (
+      first && {
+        for: side,
+        side: first.side,
+        pos: first.pos,
+        offset: first.top - screen.top,
+        scrollTop: this.#scroller.scrollTop,
+        under: below,
+      }
+    );
   }
 
   /**

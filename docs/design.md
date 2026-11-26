@@ -402,7 +402,12 @@ Each file is a CodeMirror side-by-side diff, and all files sit in one scroll, in
 panel shows. Lo computes the diff itself, so the same view shows GitHub's diff, the local diff,
 rebase-aware comparisons and moved code. Both sides stay aligned, including around review threads.
 
-- **Layout.** Side-by-side by default. `⇥` switches sides, and one key switches to inline.
+- **Layout.** Side-by-side by default. `⇥` switches sides, and one key switches to inline. The seam
+  between the sides drags to share the width between them, and `>`, `<` and `=` widen, narrow and
+  even the side the cursor is on. The share is the window's, kept for every diff and across
+  restarts. Each side keeps at least 240 px or a quarter of the diff, and a diff under 480 px splits
+  evenly. As the sides change width, the first row under the file's header stays where it is, and
+  the rows stay level.
 - **Changes.** Changed words are highlighted within changed lines.
 - **Context.** Unchanged code is collapsed and expands in place. One key shows the whole file.
 - **Whitespace.** Whitespace changes are shown, and a key hides them.

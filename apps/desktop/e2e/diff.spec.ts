@@ -22,8 +22,10 @@ import {
   expect,
   keepMenus,
   KEYCHAIN,
+  keysToDiff,
   rowOver,
   settingsPath,
+  sizeWindow,
   tabBanners,
   test as base,
 } from './app.ts';
@@ -470,6 +472,69 @@ test('answers its keys: files, changes, sides, layout, whitespace and folds, Esc
         );
     });
   }
+});
+
+test('the edge between the sides: a drag keeps the old side’s share in the tab’s layout, `>`, `<` and `=` size the side the cursor is on, and Reset layout puts them even', async ({
+  app,
+  page,
+}) => {
+  await sizeWindow(app, 1440, 900);
+  await drawn(page);
+  await focusDiff(page);
+  // To src/format.ts's first change, on the new side.
+  await press(page, ']', 'f', ']', 'f', ']', 'f', ']', 'c');
+  await expect
+    .poll(() => cursor(page))
+    .toMatchObject({ path: 'src/format.ts', header: false, pane: 'new' });
+  const view = page.locator('.lo-diffview');
+  const edge = view.getByRole('separator', { name: 'Resize sides' });
+  const room = await view.evaluate((box) => box.clientWidth);
+  const old = () =>
+    view
+      .locator('.cm-editor[data-side="old"]')
+      .evaluate((side) => side.getBoundingClientRect().width);
+  const share = async () => {
+    const reply = await page.evaluate(() => window.lo.invoke('tab.layout'));
+    const sides: unknown =
+      reply.ok && typeof reply.value === 'object' && reply.value !== null
+        ? Reflect.get(reply.value, 'sides')
+        : reply;
+    return sides;
+  };
+  expect(await old()).toBeCloseTo(room / 2, 0);
+  await expect(edge).toHaveAttribute('aria-valuenow', String(Math.round(room / 2)));
+
+  // Dragged 100 px over code, the old side keeps its share of the width.
+  const { x, y } = (await edge.boundingBox())!;
+  await page.mouse.move(x, y + 160);
+  await page.mouse.down();
+  await page.mouse.move(x - 100, y + 160, { steps: 4 });
+  await page.mouse.up();
+  expect(await old()).toBeCloseTo(room / 2 - 100, 0);
+  await expect.poll(share).toBeCloseTo((room / 2 - 100) / room, 3);
+
+  // `>` widens the side the cursor is on, `<` narrows it, and across on the old side `>` widens
+  // that one. `=` puts them even, kept so.
+  await keysToDiff(page);
+  await press(page, '>');
+  expect(await old()).toBeCloseTo(room / 2 - 132, 0);
+  await press(page, '<', '<');
+  expect(await old()).toBeCloseTo(room / 2 - 68, 0);
+  await press(page, 'Tab');
+  await expect.poll(async () => (await cursor(page))?.pane).toBe('old');
+  await press(page, '>');
+  expect(await old()).toBeCloseTo(room / 2 - 36, 0);
+  await expect.poll(share).toBeCloseTo((room / 2 - 36) / room, 3);
+  await press(page, '=');
+  expect(await old()).toBeCloseTo(room / 2, 0);
+  await expect.poll(share).toBeUndefined();
+
+  // Reset layout puts them even as well.
+  await press(page, '<');
+  await expect.poll(share).toBeDefined();
+  await clickBarItem(app, page, 'tab.resetLayout');
+  await expect.poll(share).toBeUndefined();
+  expect(await old()).toBeCloseTo(room / 2, 0);
 });
 
 test('Find…, by its key in the diff or from the app menu wherever focus is, opens the search at the foot of the diff’s code, and is dimmed with no diff on screen', async ({

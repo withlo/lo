@@ -959,6 +959,12 @@ status bar.
   the window's middle (`focusNowhere`), so keys typed meanwhile go on in the view that takes it
   next. With two views, only the one with focus takes focus that's nowhere in particular
   (`focusNowhereFor`), and a waiting view's note keeps focus for that view, not the one beside it.
+- So is the old side's share of a side-by-side diff (`sides`, unset while even), for every diff in
+  every tab: the view draws it (`DiffView.setSides`) and says when its seam's drag or double-click
+  changes it (`DiffEvents.sides`). `fitSides` keeps each side at its minimum. `>`, `<` and `=` size
+  the side the cursor is on through the edge the diff gives `sizeInView` (`diff/window/sides.ts`),
+  as they size a panel or a view, while focus is in it. As the sides change width, the spacer pass
+  holds the first line under the pinned header where it is (`Aligner.holdUnder`).
 - Other features' banners go in the `tab.banners` slot. Each view there says whether it shows a
   banner for a tab (`shows`) and when that may change (`subscribe`), so the tab makes room only for
   the banners it has.
