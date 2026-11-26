@@ -15,6 +15,7 @@ import {
   createFileView,
   type ExcerptView,
   type FileView,
+  type RenderPopover,
   type RenderThread,
 } from '@lo/ui/code';
 import {
@@ -212,8 +213,8 @@ function turn(first: FirstDraw | undefined): { ready: Promise<void>; done: () =>
  * draws before the overview is seen. When `head`, the head on screen, isn't the overview's commit,
  * it's drawn once what changed in its file by the head is in too, its changed lines marked, and
  * says which to `changed` as it's drawn, for its flag. The review threads on its lines at the
- * overview's commit are drawn under them, waiting a moment for their first read before it's
- * drawn, and comments are written under its lines.
+ * overview's commit show as they do in the diff, beside its lines or between them, waiting a moment
+ * for their first read before it's drawn, and comments are written under its lines.
  */
 function ExcerptCode({
   tab,
@@ -341,6 +342,7 @@ function ExcerptCode({
         stale: marked.current,
         vimKeys: keys.vimKeys(),
         nonce: page.nonce,
+        threads: blockThreader()?.mode?.() ?? 'between',
       },
       QUIET,
     );
@@ -359,7 +361,8 @@ function ExcerptCode({
       lines: { start, end: Math.max(start, Math.min(end, code.lines.new.length)) },
       named: { start, end },
     };
-    let rendering: { threader: object; render: RenderThread } | undefined;
+    let rendering:
+      { threader: object; render: RenderThread; popover: RenderPopover | undefined } | undefined;
     const threads = () => {
       const threader = blockThreader();
       if (!threader) return;
@@ -367,9 +370,13 @@ function ExcerptCode({
         rendering = {
           threader,
           render: threader.render(pullTab.current, (thread) => view.openThread(thread, 'toggle')),
+          popover: threader.popover?.(pullTab.current),
         };
       }
-      view.setThreads(threader.threadsOn(block), rendering.render);
+      // As they show in the diff: beside its lines, in the popover every block shares, or under them.
+      view.setThreadsMode(threader.mode?.() ?? 'between');
+      const { render, popover } = rendering;
+      view.setThreads(threader.threadsOn(block), render, popover ? { popover } : {});
     };
     threads();
     const unthread = onBlockThreads(tab, threads);

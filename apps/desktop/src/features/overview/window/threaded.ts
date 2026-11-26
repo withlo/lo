@@ -1,9 +1,11 @@
 // The review threads on an overview's code blocks, which another feature, such as the comments,
 // places and draws, and the comments written on a block, under its lines. A block asks for its
-// threads as it's drawn, and again each time they change, and gives them to its code view, which
-// has the threader draw each one in an element of its own; what would move a line on screen waits
-// in the view. A block waits a moment for its tab's threads before it's first drawn, so those on
-// its lines come with it. Each block drawn is kept here while it is, as the keys and menus find it.
+// threads as it's drawn, and again each time they change or how they show does, and gives them to
+// its code view, which shows them as the diff does: beside its lines, in a popover the threader
+// draws, one for every block in the overview, or between them, each in an element of its own; what
+// would move a line on screen waits in the view. A block waits a moment for its tab's threads
+// before it's first drawn, so those on its lines come with it. Each block drawn is kept here while
+// it is, as the keys and menus find it.
 
 import type {
   BoxFrame,
@@ -12,8 +14,10 @@ import type {
   ComposerEvents,
   ExcerptView,
   Place,
+  RenderPopover,
   RenderThread,
   Span,
+  ThreadsMode,
   ThreadView,
 } from '@lo/ui/code';
 import type { Target } from '@lo/ui/commands';
@@ -75,8 +79,27 @@ export interface BlockThreads {
    * thread's own button that opens or collapses it calls `toggle` with its id.
    */
   render(tab: PullTab, toggle: (thread: string) => void): RenderThread;
+  /** How threads show in code now: between lines unless it says. */
+  mode?(): ThreadsMode;
+  /** What draws the threads of `tab`'s blocks in their popover, beside lines. */
+  popover?(tab: PullTab): RenderPopover;
   /** `block` was drawn: the boxes open under its lines open again there, unfocused. */
   drawn(block: WritingBlock): void;
+}
+
+/** A code block's threads' popover, beside lines, as the keys in it and on its lines act on it. */
+export interface BlockPopover {
+  /**
+   * Pins the popover of the line thread `id` is on, the cursor on the line; with `focus`, focus
+   * goes into it. Says whether there was one to pin.
+   */
+  pinThread(id: string, focus?: boolean): boolean;
+  /** The threads of its popover pinned, by their ids. */
+  pinned(): readonly string[];
+  /** Whether its popover is pinned. */
+  popoverPinned(): boolean;
+  /** Closes its popover, focus in it going to its line. Says whether one was open. */
+  closePopover(): boolean;
 }
 
 /** How long a block, the first time its code is ready, waits for its threads' first read. */
@@ -106,6 +129,11 @@ export function blockThreader(): BlockThreads | undefined {
 /** Says tab `tab`'s threads changed, so its blocks drawn ask for them again. */
 export function changed(tab: string): void {
   for (const listener of listeners.get(tab) ?? []) listener();
+}
+
+/** Says every tab's blocks' threads changed, as how they show did: they ask for them again. */
+export function changedEverywhere(): void {
+  for (const tab of listeners.keys()) changed(tab);
 }
 
 /** Calls `listener` each time tab `tab`'s threads change. Returns a function that stops it. */
@@ -188,6 +216,25 @@ export function drawBlock(block: DrawnBlock, view: ExcerptView, element: HTMLEle
   return () => {
     if (drawnBlocks.get(block.file) === entry) drawnBlocks.delete(block.file);
   };
+}
+
+/**
+ * Tab `tab`'s block drawn with focus in its code or its threads' popover, if one has: what a key
+ * there acts on.
+ */
+export function blockWithFocus(tab: string): BlockPopover | undefined {
+  for (const { writing, view } of drawnBlocks.values()) {
+    if (writing.block.tab === tab && view.hasFocus()) return view;
+  }
+  return undefined;
+}
+
+/** Tab `tab`'s block drawn whose threads' popover is pinned, if one is: one at most. */
+export function blockPinned(tab: string): BlockPopover | undefined {
+  for (const { writing, view } of drawnBlocks.values()) {
+    if (writing.block.tab === tab && view.popoverPinned()) return view;
+  }
+  return undefined;
 }
 
 /** Tab `tab`'s block with key `key`, while it's drawn. */

@@ -56,6 +56,7 @@ import { OVERVIEW_VIEW } from './labels.ts';
 import { openingOf, openings, type Opening } from './opening.ts';
 import { Shown } from './Shown.tsx';
 import { CantShow, NoneInRun, NoOverview, ReadFailed } from './States.tsx';
+import { blockPinned } from './threaded.ts';
 
 /**
  * What tab `tab` stays on, where it opened on the overview, chosen once: until then, `waiting`,
@@ -244,7 +245,14 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
         const now = drawnIn(tab.id);
         return (now && hereIn(now)) ?? { view: 'overview', at: NO_TARGET };
       },
-      escape: () => (cardsOpen() ? closeCards : undefined),
+      // A term's card open closes on `Esc`, and then a code block's threads' popover pinned, with
+      // focus in the overview.
+      escape: (focus) => {
+        if (cardsOpen()) return closeCards;
+        const pinned = blockPinned(tab.id);
+        if (!pinned || !focus || !root.current?.contains(focus)) return undefined;
+        return () => void pinned.closePopover();
+      },
     });
   }, [tab.id, shown, waiting]);
 

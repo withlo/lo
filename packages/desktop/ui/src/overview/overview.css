@@ -489,6 +489,8 @@
    reckoning (`hold.ts`), which the window's scroll anchoring would add to. */
 .lo-ov {
   overflow-anchor: none;
+  /* The frame of what's laid over its content, as its code blocks' thread popover. */
+  position: relative;
 }
 
 /* An overview whose blocks are still drawing before it's first seen: laid out, unseen, the box

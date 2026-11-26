@@ -453,6 +453,11 @@ export default {
         knowPull(tab);
         return renderThreads(tab, toggle);
       },
+      mode: threadsMode,
+      popover(tab) {
+        knowPull(tab);
+        return renderPopover(tab);
+      },
       drawn: restoreBlock,
     });
     setFileCounts({ countsIn });

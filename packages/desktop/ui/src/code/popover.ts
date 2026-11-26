@@ -1,6 +1,7 @@
 // A code view's thread popover, beside lines: the threads that end on one line, over the code, in a
 // layer of the view's own scroll, so it moves with its line and passes under the pinned file header
-// as code does. One per code view. The pointer resting on a mark previews it; a click on the mark,
+// as code does. One per code view, or one for every code view in a scroll, as an overview's code
+// blocks share theirs (`sharedPop`). The pointer resting on a mark previews it; a click on the mark,
 // or on anything in the preview, pins it, which shows its Close and key chips in the room the
 // preview kept for them, and moves nothing. It never covers its lines unless they fill the pane:
 // under the last line, else above the first, else at the pane's foot. Opened by a click or a key it
@@ -217,18 +218,20 @@ export interface PopAt {
 export interface PopHost<At extends PopAt> {
   /** The box that scrolls, whose content the popover's layer is in. */
   readonly scroller: HTMLElement;
+  /** What draws what it shows at `at`, once the view has something to. */
+  render(at: At): RenderPopover | undefined;
   /** Where `at`'s lines and lane are drawn now, or none while they aren't. */
   lines(at: At): PopLines | undefined;
-  /** The pane, as it is now. */
-  room(): PopRoom;
+  /** The pane `at`'s lines are in, as it is now. */
+  room(at: At): PopRoom;
   /** What it shows at `at` now: no threads once there are none. */
   view(at: At, pinned: boolean): PopoverView;
   /** It opened at `at`, moved there, or closed: the marks and lines say so. */
   shown(at: At | undefined): void;
   /** Gives focus to `at`'s line, the cursor on it, as a popover closing hands it back. */
   focusLine(at: At): void;
-  /** Scrolls the pane by `by`, down or up, as the view's own scroll. */
-  scrollBy(by: number): void;
+  /** Scrolls the pane of `at`'s lines by `by`, down or up, as the view's own scroll. */
+  scrollBy(by: number, at: At): void;
   /** Whether `target` is on `at`'s mark. */
   onMark(target: Element, at: At): boolean;
   /**
@@ -241,8 +244,8 @@ export interface PopHost<At extends PopAt> {
    * to another line on purpose. Focus is the popover's to move.
    */
   release(at: At): void;
-  /** What it shows was drawn, or drawn again: a comment box goes in the slot drawn for it. */
-  drawn(): void;
+  /** What it shows at `at` was drawn, or drawn again: a comment box goes in the slot drawn for it. */
+  drawn(at: At): void;
 }
 
 /** Whether `view` shows nothing: no threads, and no comment box. */
@@ -250,14 +253,50 @@ function nothingIn(view: PopoverView): boolean {
   return view.threads.length === 0 && view.box === undefined;
 }
 
+/**
+ * A code view's thread popover, as the view's threads open it at their lines: its own
+ * (`ThreadPop`), or its handle on the one it shares with the views in its scroll (`sharedPop`),
+ * which is open, pinned, focused or drawn for the view only while it's at the view's lines.
+ */
+export interface Popover<At extends PopAt> {
+  /** The layer in the scroll's content. */
+  readonly dom: HTMLElement;
+  /** Where it's open, if it is. */
+  readonly at: At | undefined;
+  readonly pinned: boolean;
+  readonly open: boolean;
+  /** Whether focus is in it. */
+  hasFocus(): boolean;
+  /** What it shows at `at`, built ahead, unseen, for the pointer or the cursor that came to it. */
+  build(at: At): void;
+  /** The pointer came to a mark, or left the one it was on. */
+  hover(at: At | undefined): void;
+  /** A click on `at`'s mark: pinned there, or closed if it was. Says whether it's pinned now. */
+  clicked(at: At): boolean;
+  /** Pins it at `at`, the pane scrolled the least that shows it whole unless not `scroll`ed. */
+  pin(at: At, scroll?: boolean): void;
+  /** Focus into it: on its first comment with `ring`, else on the popover itself. */
+  focus(ring?: boolean): void;
+  /** Closes it, the comment box in it first; focus in it goes to its line unless not `focus`. */
+  close(focus?: boolean): void;
+  /** Closes it at once, and takes down what it holds, built ahead or fading. */
+  clear(): void;
+  /** What it shows changed: drawn again, and placed again. */
+  refresh(): void;
+  /** What draws it changed: drawn anew. */
+  redraw(): void;
+  /** Placed again where it is, by its lines as they are now. */
+  place(): void;
+  destroy(): void;
+}
+
 /** A code view's one thread popover: its layer, what's drawn in it, and how it comes and goes. */
-export class ThreadPop<At extends PopAt> {
+export class ThreadPop<At extends PopAt> implements Popover<At> {
   /** The layer in the scroll's content: a scope of its own for the keys, `thread`. */
   readonly dom: HTMLElement;
   readonly #host: PopHost<At>;
   /** What the caller draws in, inside the layer: an element of its own each time it draws anew. */
   readonly #content: HTMLElement;
-  #render: RenderPopover | undefined;
   #drawn: PopoverContent | undefined;
   /** What it's drawn for, built ahead or shown. */
   #built: At | undefined;
@@ -355,10 +394,8 @@ export class ThreadPop<At extends PopAt> {
     host.scroller.prepend(this.dom);
   }
 
-  set render(render: RenderPopover | undefined) {
-    if (render === this.#render) return;
-    this.#render = render;
-    // Drawn anew by the new caller.
+  /** What draws it changed: drawn anew, by the new caller. */
+  redraw(): void {
     this.#drop();
     if (this.#at && this.#state !== 'closed') this.#draw(this.#at);
   }
@@ -366,6 +403,11 @@ export class ThreadPop<At extends PopAt> {
   /** Where it's open, if it is. */
   get at(): At | undefined {
     return this.#state === 'closed' ? undefined : this.#at;
+  }
+
+  /** What it's drawn for: where it's open, or what it built ahead while it's closed. */
+  get built(): At | undefined {
+    return this.#built;
   }
 
   get pinned(): boolean {
@@ -504,7 +546,7 @@ export class ThreadPop<At extends PopAt> {
       return;
     }
     this.#drawn.update(view);
-    this.#host.drawn();
+    this.#host.drawn(at);
     if (this.#state !== 'closed') this.#host.shown(at);
   }
 
@@ -520,7 +562,7 @@ export class ThreadPop<At extends PopAt> {
       this.close();
       return;
     }
-    const room = this.#host.room();
+    const room = this.#host.room(this.#at);
     this.dom.style.setProperty('--lo-pop-max', `${popMax(room)}px`);
     this.#put(placePop(room, lines, this.#content.offsetHeight, this.#side));
   }
@@ -538,13 +580,13 @@ export class ThreadPop<At extends PopAt> {
 
   /** Draws what it shows at `at`, unseen. */
   #draw(at: At): void {
-    const render = this.#render;
+    const render = this.#host.render(at);
     if (!render) return;
     const view = this.#host.view(at, this.#state === 'pinned');
     if (nothingIn(view)) return;
     if (this.#drawn && this.#built?.key === at.key) {
       this.#drawn.update(view);
-      this.#host.drawn();
+      this.#host.drawn(at);
       return;
     }
     this.#drop();
@@ -553,7 +595,7 @@ export class ThreadPop<At extends PopAt> {
     const host = document.createElement('div');
     this.#content.replaceChildren(host);
     this.#drawn = render(host, view, () => this.close());
-    this.#host.drawn();
+    this.#host.drawn(at);
   }
 
   #drop(): void {
@@ -571,7 +613,7 @@ export class ThreadPop<At extends PopAt> {
    */
   #open(at: At, state: 'preview' | 'pinned', scroll = true): void {
     const lines = this.#host.lines(at);
-    if (!lines || !this.#render) return;
+    if (!lines || !this.#host.render(at)) return;
     if (this.#state !== 'closed' && this.#at && this.#at.key !== at.key) {
       this.#host.release(this.#at);
     }
@@ -589,7 +631,7 @@ export class ThreadPop<At extends PopAt> {
     this.#leaving?.();
     this.#leaving = undefined;
     delete this.dom.dataset.endingStyle;
-    const room = this.#host.room();
+    const room = this.#host.room(at);
     this.dom.style.setProperty('--lo-pop-max', `${popMax(room)}px`);
     this.dom.style.width = `${across(lines, room.width, room.edge).width}px`;
     // Laid out unseen, as wide as it goes, to be measured and placed before it's seen.
@@ -601,7 +643,7 @@ export class ThreadPop<At extends PopAt> {
       this.#content.offsetHeight,
       state === 'pinned' && scroll ? 'opened' : 'preview',
     );
-    if (placed.scroll !== 0) this.#host.scrollBy(placed.scroll);
+    if (placed.scroll !== 0) this.#host.scrollBy(placed.scroll, at);
     this.#put(placed);
     this.dom.dataset.side = placed.side === 'above' ? 'top' : 'bottom';
     if (moving || was === 'closed') {
@@ -628,7 +670,7 @@ export class ThreadPop<At extends PopAt> {
     this.#state = 'pinned';
     clearTimeout(this.#crossing);
     this.#drawn?.update(this.#host.view(this.#at, true));
-    this.#host.drawn();
+    this.#host.drawn(this.#at);
     this.#host.shown(this.#at);
   }
 
@@ -711,5 +753,179 @@ export class ThreadPop<At extends PopAt> {
       '';
     const comment = inside?.closest<HTMLElement>('[data-comment]')?.dataset.comment;
     return comment === undefined ? { kind: 'thread', thread } : { kind: 'thread', thread, comment };
+  }
+}
+
+/** A code view with a handle on the popover it shares: what it asks of it, and its own number. */
+interface Member {
+  readonly id: number;
+  readonly host: PopHost<PopAt>;
+}
+
+/** Where a shared popover opens: a view's place, by a key no other view's place has. */
+interface Owned extends PopAt {
+  readonly at: PopAt;
+  readonly member: Member;
+}
+
+/** The popover the code views in one scroll share, by the scroll. */
+const sharedPops = new WeakMap<HTMLElement, SharedPop>();
+
+/**
+ * A handle on the one popover of the code views in `host`'s scroll, as an overview's code blocks
+ * share theirs: one layer, made with the first handle and taken down with the last. Open for one
+ * view's lines, it's open for no other's: each view sees it open, pinned, focused or drawn only
+ * while it's at its own lines, and a view's pointer previews nothing while another's is pinned.
+ */
+export function sharedPop<At extends PopAt>(host: PopHost<At>): Popover<At> {
+  let shared = sharedPops.get(host.scroller);
+  if (!shared) {
+    shared = new SharedPop(host.scroller);
+    sharedPops.set(host.scroller, shared);
+  }
+  return new SharedHandle<At>(shared, shared.join(host));
+}
+
+/** One popover for the code views in a scroll, which asks of each view about its own places. */
+class SharedPop {
+  readonly pop: ThreadPop<Owned>;
+  readonly #scroller: HTMLElement;
+  readonly #members = new Set<Member>();
+  #next = 0;
+  /** The view it was last shown open for, told as it closes or opens for another view. */
+  #shownFor: Member | undefined;
+
+  constructor(scroller: HTMLElement) {
+    this.#scroller = scroller;
+    this.pop = new ThreadPop<Owned>({
+      scroller,
+      render: (owned) => owned.member.host.render(owned.at),
+      lines: (owned) => owned.member.host.lines(owned.at),
+      room: (owned) => owned.member.host.room(owned.at),
+      view: (owned, pinned) => owned.member.host.view(owned.at, pinned),
+      shown: (owned) => {
+        const was = this.#shownFor;
+        this.#shownFor = owned?.member;
+        if (was && was !== owned?.member) was.host.shown(undefined);
+        if (owned) owned.member.host.shown(owned.at);
+      },
+      focusLine: (owned) => owned.member.host.focusLine(owned.at),
+      scrollBy: (by, owned) => owned.member.host.scrollBy(by, owned.at),
+      onMark: (target, owned) => owned.member.host.onMark(target, owned.at),
+      holds: (owned) => owned.member.host.holds(owned.at),
+      release: (owned) => owned.member.host.release(owned.at),
+      drawn: (owned) => owned.member.host.drawn(owned.at),
+    });
+  }
+
+  /** A view takes a handle on it. */
+  join(host: PopHost<PopAt>): Member {
+    const member = { id: this.#next++, host };
+    this.#members.add(member);
+    return member;
+  }
+
+  /** A view lets its handle go: what it drew for the view goes, and with the last view, it all. */
+  leave(member: Member): void {
+    if (!this.#members.delete(member)) return;
+    if (this.pop.built?.member === member) this.pop.clear();
+    if (this.#shownFor === member) this.#shownFor = undefined;
+    if (this.#members.size > 0) return;
+    this.pop.destroy();
+    if (sharedPops.get(this.#scroller) === this) sharedPops.delete(this.#scroller);
+  }
+}
+
+/** A view's handle on the popover it shares, which sees it only as it's at the view's lines. */
+class SharedHandle<At extends PopAt> implements Popover<At> {
+  readonly #shared: SharedPop;
+  readonly #member: Member;
+  /** The view's places it's been handed, by their keys as the shared popover knows them. */
+  readonly #places = new Map<string, At>();
+
+  constructor(shared: SharedPop, member: Member) {
+    this.#shared = shared;
+    this.#member = member;
+  }
+
+  get dom(): HTMLElement {
+    return this.#shared.pop.dom;
+  }
+
+  get at(): At | undefined {
+    return this.#mine(this.#shared.pop.at);
+  }
+
+  get pinned(): boolean {
+    return this.#shared.pop.pinned && this.open;
+  }
+
+  get open(): boolean {
+    return this.at !== undefined;
+  }
+
+  hasFocus(): boolean {
+    return this.open && this.#shared.pop.hasFocus();
+  }
+
+  build(at: At): void {
+    this.#shared.pop.build(this.#own(at));
+  }
+
+  hover(at: At | undefined): void {
+    this.#shared.pop.hover(at && this.#own(at));
+  }
+
+  clicked(at: At): boolean {
+    return this.#shared.pop.clicked(this.#own(at));
+  }
+
+  pin(at: At, scroll = true): void {
+    this.#shared.pop.pin(this.#own(at), scroll);
+  }
+
+  focus(ring = true): void {
+    if (this.open) this.#shared.pop.focus(ring);
+  }
+
+  close(focus = true): void {
+    if (this.open) this.#shared.pop.close(focus);
+  }
+
+  clear(): void {
+    if (this.#drawsHere()) this.#shared.pop.clear();
+  }
+
+  refresh(): void {
+    if (this.#drawsHere()) this.#shared.pop.refresh();
+  }
+
+  redraw(): void {
+    if (this.#drawsHere()) this.#shared.pop.redraw();
+  }
+
+  place(): void {
+    if (this.open) this.#shared.pop.place();
+  }
+
+  destroy(): void {
+    this.#shared.leave(this.#member);
+  }
+
+  /** `at`, as the shared popover knows it. */
+  #own(at: At): Owned {
+    const key = `${this.#member.id}|${at.key}`;
+    this.#places.set(key, at);
+    return { key, at, member: this.#member };
+  }
+
+  /** The view's own place, of `owned`, if it's the view's. */
+  #mine(owned: Owned | undefined): At | undefined {
+    return owned?.member === this.#member ? this.#places.get(owned.key) : undefined;
+  }
+
+  /** Whether what's drawn in it, open or built ahead, is the view's. */
+  #drawsHere(): boolean {
+    return this.#shared.pop.built?.member === this.#member;
   }
 }

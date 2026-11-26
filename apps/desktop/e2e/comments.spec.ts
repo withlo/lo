@@ -469,45 +469,88 @@ test('a thread under a renamed file’s old line shows in its older column', asy
   await expect(tree.getByRole('img', { name: '1 unresolved' })).toBeVisible();
 });
 
-onStacks(
-  'a layer of a stack shows its own threads, in its diff and on its overview’s code block',
-  async ({ page }) => {
-    test.setTimeout(60_000);
-    await open(page, STACK.b);
-    await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(['src/cost.ts new 5']);
-    const bubble = page.getByRole('button', { name: 'Unresolved thread · line 5', exact: true });
-    await expect(bubble).toBeVisible();
+for (const mode of ['beside', 'between'] as const) {
+  test.describe(`${mode} lines`, () => {
+    if (mode === 'between') onStacks.use({ settings: DIFF_FIRST_BETWEEN });
 
-    await test.step('its overview’s code block on those lines shows the thread under its line', async () => {
-      await settled(page);
-      await page.keyboard.press('~');
-      const block = page
-        .locator('[data-lo-middle-view="overview.view"] .lo-codeblock')
-        .filter({ has: page.locator('.lo-codeblock__path', { hasText: 'src/cost.ts' }) });
-      await expect(block.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 20_000 });
-      const thread = block.locator('[role="group"][aria-label$="thread by rozed-bot"]');
-      await expect(thread).toContainText('GitHub rounds each 100 nodes up');
-      // Under line 5, the line it's on.
-      const above = await thread.evaluate(
-        (element) => element.closest('.cm-content > *')?.previousElementSibling?.textContent,
-      );
-      expect(above).toBe('  return Math.max(1, Math.ceil(nodes / 100));');
-      await page.keyboard.press('`');
-      await expect(page.locator('.lo-diffview')).toBeVisible();
-    });
+    onStacks(
+      'a layer of a stack shows its own threads, in its diff and on its overview’s code block',
+      async ({ page }) => {
+        test.setTimeout(60_000);
+        await open(page, STACK.b);
+        await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(['src/cost.ts new 5']);
+        const bubble = page.getByRole('button', {
+          name: 'Unresolved thread · line 5',
+          exact: true,
+        });
+        await expect(bubble).toBeVisible();
 
-    await settled(page);
-    await page.keyboard.press('[');
-    await page.keyboard.press('s');
-    await expect
-      .poll(() => page.evaluate(() => window.loDiff?.files.map((file) => file.path)), {
-        timeout: 20_000,
-      })
-      .toEqual(['src/plans.ts']);
-    await expect.poll(() => placed(page)).toEqual([]);
-    await expect(bubble).toHaveCount(0);
-  },
-);
+        await test.step(`its overview’s code block on those lines shows the thread ${mode} lines`, async () => {
+          await settled(page);
+          await page.keyboard.press('~');
+          const block = page
+            .locator('[data-lo-middle-view="overview.view"] .lo-codeblock')
+            .filter({ has: page.locator('.lo-codeblock__path', { hasText: 'src/cost.ts' }) });
+          await expect(block.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 20_000 });
+          const thread = '[role="group"][aria-label$="thread by rozed-bot"]';
+          if (mode === 'between') {
+            await expect(block.locator(thread)).toContainText('GitHub rounds each 100 nodes up');
+            // Under line 5, the line it's on.
+            const above = await block
+              .locator(thread)
+              .evaluate(
+                (element) =>
+                  element.closest('.cm-content > *')?.previousElementSibling?.textContent,
+              );
+            expect(above).toBe('  return Math.max(1, Math.ceil(nodes / 100));');
+          } else {
+            // Its mark beside line 5, and nothing under the line.
+            const mark = block.getByRole('button', {
+              name: 'Unresolved thread · line 5',
+              exact: true,
+            });
+            await expect(mark).toBeVisible();
+            await expect(block.locator(thread)).toHaveCount(0);
+            // A click pins its popover, over the code in the overview's own scroll.
+            await mark.click();
+            const popover = page.locator(
+              '[data-lo-middle-view="overview.view"] .lo-ov > .lo-threadpop',
+            );
+            await expect(popover.locator(thread)).toContainText('GitHub rounds each 100 nodes up');
+            // `]t` there moves between the diff's threads, which the block hasn't.
+            await page.keyboard.press(']');
+            await page.keyboard.press('t');
+            await expect(page.getByText('Go to the diff first')).toBeVisible();
+            await expect(popover).toBeVisible();
+            // `Esc` closes it, focus going back to its line in the block.
+            await page.keyboard.press('Escape');
+            await expect(popover).toBeHidden();
+            await expect
+              .poll(() =>
+                page.evaluate(
+                  () => document.activeElement?.closest('.lo-codeblock')?.textContent ?? '',
+                ),
+              )
+              .toContain('src/cost.ts');
+          }
+          await page.keyboard.press('`');
+          await expect(page.locator('.lo-diffview')).toBeVisible();
+        });
+
+        await settled(page);
+        await page.keyboard.press('[');
+        await page.keyboard.press('s');
+        await expect
+          .poll(() => page.evaluate(() => window.loDiff?.files.map((file) => file.path)), {
+            timeout: 20_000,
+          })
+          .toEqual(['src/plans.ts']);
+        await expect.poll(() => placed(page)).toEqual([]);
+        await expect(bubble).toHaveCount(0);
+      },
+    );
+  });
+}
 
 onStacks(
   'the threads panel shows the layer on screen’s threads, and the stack counts each layer’s',

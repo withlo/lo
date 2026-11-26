@@ -108,6 +108,7 @@ function hostOf() {
   const released: string[] = [];
   const host: PopHost<At> = {
     scroller,
+    render: () => undefined,
     lines: () => lines,
     room: () => room,
     view: (at, pinned): PopoverView => ({
@@ -157,6 +158,11 @@ function drawing() {
   return { render, drawn };
 }
 
+/** `host`, its popover drawn by `render`. */
+function drawnBy(host: PopHost<At>, render: RenderPopover): PopHost<At> {
+  return { ...host, render: () => render };
+}
+
 let pop: ThreadPop<At> | undefined;
 let stopListening: (() => void) | undefined;
 
@@ -200,8 +206,7 @@ describe('ThreadPop', () => {
     vi.useFakeTimers();
     const { host, mark } = hostOf();
     const { render, drawn } = drawing();
-    pop = new ThreadPop(host);
-    pop.render = render;
+    pop = new ThreadPop(drawnBy(host, render));
     const { at } = mark(5);
     pop.hover(at);
     // Built ahead, unseen.
@@ -218,8 +223,7 @@ describe('ThreadPop', () => {
   test('the next preview, within AGAIN of the last closing, opens at once', () => {
     vi.useFakeTimers();
     const { host, mark } = hostOf();
-    pop = new ThreadPop(host);
-    pop.render = drawing().render;
+    pop = new ThreadPop(drawnBy(host, drawing().render));
     const first = mark(5);
     const second = mark(9);
     pop.hover(first.at);
@@ -236,8 +240,7 @@ describe('ThreadPop', () => {
   test('a preview waits for the pointer crossing into it, and closes once it’s left both', () => {
     vi.useFakeTimers();
     const { host, mark } = hostOf();
-    pop = new ThreadPop(host);
-    pop.render = drawing().render;
+    pop = new ThreadPop(drawnBy(host, drawing().render));
     pop.hover(mark(5).at);
     vi.advanceTimersByTime(REST);
     pop.hover(undefined);
@@ -253,8 +256,7 @@ describe('ThreadPop', () => {
     vi.useFakeTimers();
     const { host, mark, shown } = hostOf();
     const { render, drawn } = drawing();
-    pop = new ThreadPop(host);
-    pop.render = render;
+    pop = new ThreadPop(drawnBy(host, render));
     const { at } = mark(5);
     pop.hover(at);
     vi.advanceTimersByTime(REST);
@@ -273,8 +275,7 @@ describe('ThreadPop', () => {
 
   test('a press in a preview pins it; a press elsewhere closes it, but not on its mark', () => {
     const { host, mark, scroller } = hostOf();
-    pop = new ThreadPop(host);
-    pop.render = drawing().render;
+    pop = new ThreadPop(drawnBy(host, drawing().render));
     const { at, element } = mark(5);
     pop.pin(at);
     element.dispatchEvent(new Event('pointerdown', { bubbles: true }));
@@ -290,8 +291,7 @@ describe('ThreadPop', () => {
 
   test('holding a box, only the box closing closes it; closed or moved on purpose, it lets the box go first', () => {
     const { host, mark, scroller, boxed, released } = hostOf();
-    pop = new ThreadPop(host);
-    pop.render = drawing().render;
+    pop = new ThreadPop(drawnBy(host, drawing().render));
     const five = mark(5).at;
     const nine = mark(9).at;
     pop.pin(five);
@@ -315,8 +315,7 @@ describe('ThreadPop', () => {
     vi.useFakeTimers();
     listening();
     const { host, mark } = hostOf();
-    pop = new ThreadPop(host);
-    pop.render = drawing().render;
+    pop = new ThreadPop(drawnBy(host, drawing().render));
     const { at } = mark(5);
     pop.hover(at);
     vi.advanceTimersByTime(REST);
@@ -348,8 +347,7 @@ describe('ThreadPop', () => {
     diff.dataset.loScope = 'diff';
     document.body.append(diff);
     diff.append(host.scroller);
-    pop = new ThreadPop(host);
-    pop.render = cards;
+    pop = new ThreadPop(drawnBy(host, cards));
     pop.pin(mark(5).at);
     pop.focus(false);
     const [link, button] = [...pop.dom.querySelectorAll<HTMLElement>('a, button')];
@@ -368,8 +366,7 @@ describe('ThreadPop', () => {
   test('placed again, it takes the height the pane lets it have now', () => {
     let height = 600;
     const { host, mark } = hostOf();
-    pop = new ThreadPop({ ...host, room: () => ({ ...room, height }) });
-    pop.render = cards;
+    pop = new ThreadPop(drawnBy({ ...host, room: () => ({ ...room, height }) }, cards));
     pop.pin(mark(5).at);
     expect(pop.dom.style.getPropertyValue('--lo-pop-max')).toBe('480px');
     height = 300;
@@ -381,7 +378,7 @@ describe('ThreadPop', () => {
     const { host, mark } = hostOf();
     let ids = ['t5', 'u5'];
     pop = new ThreadPop({
-      ...host,
+      ...drawnBy(host, cards),
       view: (at, pinned) => ({
         threads: ids.map((id) => ({
           id,
@@ -393,7 +390,6 @@ describe('ThreadPop', () => {
         label: 'Unresolved thread · line 5',
       }),
     });
-    pop.render = cards;
     pop.pin(mark(5).at);
     pop.dom.querySelector<HTMLElement>('[data-thread-id="u5"] button')!.focus();
     ids = ['t5'];
@@ -405,8 +401,7 @@ describe('ThreadPop', () => {
 
   test('closing with focus in it hands focus to its line', () => {
     const { host, mark, focused } = hostOf();
-    pop = new ThreadPop(host);
-    pop.render = drawing().render;
+    pop = new ThreadPop(drawnBy(host, drawing().render));
     const { at } = mark(5);
     pop.pin(at);
     pop.dom.querySelector('button')!.focus();
@@ -417,11 +412,12 @@ describe('ThreadPop', () => {
 
   test('focus goes into it on its first comment, the ring the keys move', () => {
     const { host, mark } = hostOf();
-    pop = new ThreadPop(host);
-    pop.render = (element, popover) => {
-      element.innerHTML = `<div data-thread-id="${popover.threads[0]!.id}"><p data-comment="c2" tabindex="-1">text</p></div>`;
-      return { update() {}, destroy() {} };
-    };
+    pop = new ThreadPop(
+      drawnBy(host, (element, popover) => {
+        element.innerHTML = `<div data-thread-id="${popover.threads[0]!.id}"><p data-comment="c2" tabindex="-1">text</p></div>`;
+        return { update() {}, destroy() {} };
+      }),
+    );
     pop.pin(mark(5).at);
     pop.focus();
     expect(document.activeElement?.getAttribute('data-comment')).toBe('c2');
@@ -429,11 +425,12 @@ describe('ThreadPop', () => {
 
   test('a click on its mark takes focus into it with no comment ringed', () => {
     const { host, mark } = hostOf();
-    pop = new ThreadPop(host);
-    pop.render = (element, popover) => {
-      element.innerHTML = `<div data-thread-pop tabindex="-1"><div data-thread-id="${popover.threads[0]!.id}"><p data-comment="c2" tabindex="-1">text</p></div></div>`;
-      return { update() {}, destroy() {} };
-    };
+    pop = new ThreadPop(
+      drawnBy(host, (element, popover) => {
+        element.innerHTML = `<div data-thread-pop tabindex="-1"><div data-thread-id="${popover.threads[0]!.id}"><p data-comment="c2" tabindex="-1">text</p></div></div>`;
+        return { update() {}, destroy() {} };
+      }),
+    );
     pop.pin(mark(5).at);
     pop.focus(false);
     expect(document.activeElement?.hasAttribute('data-thread-pop')).toBe(true);

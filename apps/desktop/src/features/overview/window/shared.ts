@@ -2,8 +2,8 @@
 // Settings turns off and on, and every view and command of the overview comes and goes with; what
 // one looks like, for the welcome to show; its mark for a tab, as the header's view switch shows
 // it, which the stack's tree shows for the layer on screen; the review threads another feature
-// places and draws on its code blocks, with the comments written there; and whether a tab's
-// overview has a block now, and when that may have changed.
+// places and draws on its code blocks, with their popover and the comments written there; and
+// whether a tab's overview has a block now, and when that may have changed.
 
 import type { Target } from '@lo/ui/commands';
 import { createElement, type ReactNode } from 'react';
@@ -24,15 +24,24 @@ import {
   blockKey as keyOfBlock,
   blockLinesOf,
   blockThreadsWith,
+  blockWithFocus as withFocus,
   changed,
+  changedEverywhere,
   type BlockLines,
+  type BlockPopover,
   type BlockThreads,
   writingBlockKeyed,
   type WritingBlock,
 } from './threaded.ts';
 
 export type { CommentOnHead, FileWhy } from './mapping.ts';
-export type { BlockLines, BlockThreads, DrawnBlock, WritingBlock } from './threaded.ts';
+export type {
+  BlockLines,
+  BlockPopover,
+  BlockThreads,
+  DrawnBlock,
+  WritingBlock,
+} from './threaded.ts';
 
 /**
  * Whether there are overviews now, as Settings says: on until main has said otherwise. A view of
@@ -90,10 +99,11 @@ export function useOverviewMark(tab: string): OverviewMark | undefined {
 /**
  * Gives the overviews' code blocks what places and draws their review threads, such as the
  * comments: a block drawn asks it for the threads on its lines at the commit the overview
- * describes, has its code view draw each under its line, open or collapsed as it says, and asks
- * again on `blockThreadsChanged`. What would move a line on screen waits until it's off screen or
- * the reader acts. A block drawn tells it, for the boxes open there. Returns a function that takes
- * it back.
+ * describes and how they show, has its code view show them so, beside its lines in a popover it
+ * draws or between them, each under its line, open or collapsed as it says, and asks again on
+ * `blockThreadsChanged` and `blockThreadsShowChanged`. What would move a line on screen waits until
+ * it's off screen or the reader acts. A block drawn tells it, for the boxes open there. Returns a
+ * function that takes it back.
  */
 export function setBlockThreads(threads: BlockThreads): () => void {
   return blockThreadsWith(threads);
@@ -102,6 +112,19 @@ export function setBlockThreads(threads: BlockThreads): () => void {
 /** Says tab `tab`'s review threads changed, so its code blocks drawn ask for them again. */
 export function blockThreadsChanged(tab: string): void {
   changed(tab);
+}
+
+/** Says how review threads show in code changed: every code block drawn shows them so. */
+export function blockThreadsShowChanged(): void {
+  changedEverywhere();
+}
+
+/**
+ * Pull request's tab `tab`'s code block with focus in its code or its threads' popover, if one
+ * has: where a key on a thread, or in its popover, acts.
+ */
+export function blockWithFocus(tab: string): BlockPopover | undefined {
+  return withFocus(tab);
 }
 
 /**
