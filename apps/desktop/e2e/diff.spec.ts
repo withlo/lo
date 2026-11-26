@@ -478,6 +478,7 @@ test('the edge between the sides: a drag keeps the old side’s share in the tab
   app,
   page,
 }) => {
+  if (process.platform !== 'darwin') await keepMenus(app);
   await sizeWindow(app, 1440, 900);
   await drawn(page);
   await focusDiff(page);
