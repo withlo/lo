@@ -13,14 +13,56 @@
   overflow-y: auto;
   /* The view anchors the scroll itself, so the browser's anchoring must stay out of it. */
   overflow-anchor: none;
+  /*
+   * The old side's width: its share of the view's (`--lo-sides`, half until the reader moves the
+   * edge between the sides), each side keeping its minimum, `lo-side-min-w` or a quarter of the
+   * width, whichever is wider. Under twice the minimum the sides split evenly. `fitSides` works out
+   * the same. A percentage is of the box that uses it, and each that does is as wide as the view.
+   */
+  --lo-side-old: clamp(
+    min(50%, max(var(--lo-side-min-w), 25%)),
+    calc(var(--lo-sides, 0.5) * 100%),
+    max(50%, calc(100% - max(var(--lo-side-min-w), 25%)))
+  );
 }
 /*
- * The sides share the width evenly. Their basis is above 0, or with a note they'd fit beside it on
- * its line, with no width at all.
+ * The new side, or the inline layout's one column, takes what the old side leaves. Its basis is
+ * above 0, or with a note it'd fit beside it on its line, with no width at all.
  */
 .lo-diffview > .cm-editor {
   flex: 1 1 1px;
   min-width: 0;
+}
+.lo-diffview > .cm-editor[data-side='old'] {
+  flex: 0 0 var(--lo-side-old);
+}
+/*
+ * The edge between the sides, a `splitter` as every edge is: a row of no height first in the
+ * scroll, pinned to its top, which holds it from under the pinned file header to the view's foot,
+ * over the code, under the file header pinned there, the `+`, and the threads' popover. It takes
+ * the pointer only over code, its line numbers and the room between rows; anything else drawn
+ * there keeps it (`is-passing`).
+ */
+.lo-diffseam {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  flex: 0 0 100%;
+  height: 0;
+  pointer-events: none;
+}
+.lo-diffseam[hidden] {
+  display: none;
+}
+.lo-diffseam > .splitter {
+  position: absolute;
+  top: var(--lo-file-header-h);
+  left: var(--lo-side-old);
+  height: calc(var(--lo-seam-h, 0px) - var(--lo-file-header-h));
+  pointer-events: auto;
+}
+.lo-diffseam > .splitter.is-passing:not([data-dragging]) {
+  pointer-events: none;
 }
 .lo-diffview > .lo-diffnote {
   flex: 1 0 100%;
@@ -43,6 +85,26 @@
 }
 .lo-diffview > .lo-diffpin[hidden] {
   display: none;
+}
+/*
+ * Side by side, the pinned copy is two columns as wide as the sides, as the header it copies is:
+ * its start in the old side's, from where its code starts (`--lo-pin-start`), and its end in the
+ * new side's, short of where that side's code starts (`--lo-pin-end`).
+ */
+.lo-diffview > .lo-diffpin.is-split > .lo-diffhead {
+  display: grid;
+  grid-template-columns: var(--lo-side-old) minmax(0, 1fr);
+  padding: 0;
+}
+.lo-diffpin.is-split > .lo-diffhead > .lo-diffhead__start {
+  grid-column: 1;
+  padding-inline: calc(var(--lo-pin-start, 0px) + 8px) 8px;
+}
+.lo-diffpin.is-split > .lo-diffhead > .lo-filehead__end {
+  grid-column: 2;
+  justify-self: end;
+  max-width: calc(100% - var(--lo-pin-end, 0px) - 16px);
+  margin-right: 8px;
 }
 .lo-diffview > .cm-editor + .cm-editor {
   box-shadow: inset 1px 0 0 var(--lo-border);
@@ -563,31 +625,33 @@
 }
 
 /*
- * Side by side, where a side is too narrow for a comment box, the box takes both sides
- * (`is-spanned`): it reaches over the other side, where the room kept for it is, by as far as the
- * view measured, and is drawn over the gutters between, which sit over the code.
+ * Side by side, where a side is too narrow for a comment box, a box on that side takes both sides
+ * (`is-spanned-old`, `is-spanned-new`): it reaches over the other side, where the room kept for it
+ * is, by as far as the view measured, and is drawn over the gutters between, which sit over the
+ * code. Each side is measured by its own width, as the edge between them leaves it.
  */
 /*
  * A box reaches over the other side only while the other side has none, so two boxes never cover
  * each other: with one on each side, each keeps its own side. Each editor says its side
  * (`data-side`), so no `:has()` is inside another, which Chromium drops the whole rule for.
  */
-.lo-diffview.is-spanned:not(:has(> .cm-editor[data-side='old'] .lo-diffcomposer))
+.lo-diffview.is-spanned-new:not(:has(> .cm-editor[data-side='old'] .lo-diffcomposer))
   > .cm-editor[data-side='new']
   .lo-diffcomposer {
   margin-inline-start: calc(-1 * var(--lo-reach-new));
 }
-.lo-diffview.is-spanned:not(:has(> .cm-editor[data-side='new'] .lo-diffcomposer))
+.lo-diffview.is-spanned-old:not(:has(> .cm-editor[data-side='new'] .lo-diffcomposer))
   > .cm-editor[data-side='old']
   .lo-diffcomposer {
   margin-inline-end: calc(-1 * var(--lo-reach-old));
 }
-.lo-diffview.is-spanned .lo-diffcomposer {
+.lo-diffview.is-spanned-new > .cm-editor[data-side='new'] .lo-diffcomposer,
+.lo-diffview.is-spanned-old > .cm-editor[data-side='old'] .lo-diffcomposer {
   /* Over its editor's gutters, at 200. */
   z-index: 201;
 }
 /* Each editor draws over the one before it: the old side, reaching over the new, comes above. */
-.lo-diffview.is-spanned:not(:has(> .cm-editor[data-side='new'] .lo-diffcomposer))
+.lo-diffview.is-spanned-old:not(:has(> .cm-editor[data-side='new'] .lo-diffcomposer))
   > .cm-editor[data-side='old']:has(.lo-diffcomposer) {
   z-index: 1;
 }

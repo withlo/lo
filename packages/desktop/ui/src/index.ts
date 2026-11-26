@@ -153,10 +153,13 @@ export {
 export { Collapse, Swap, swapIn, type CollapseProps, type SwapProps } from './Collapse.tsx';
 export {
   fit,
+  fitSides,
   fitWidths,
   readSizes,
+  SIDE_MIN,
   type Asked,
   type Fitted,
+  type FittedSides,
   type Layout,
   type Limits,
   type PanelLayout,

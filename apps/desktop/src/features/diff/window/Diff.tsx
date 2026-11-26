@@ -40,6 +40,7 @@ import {
   tabState,
   useBeside,
   usePull,
+  useSides,
   type PullTab,
 } from '../../tab/window/shared.ts';
 import { holdTree, orderIn, useOrderMode } from '../../tree/window/shared.ts';
@@ -313,6 +314,14 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
     const focus = !moved || box.current?.contains(document.activeElement) === true;
     view.current?.view.setLayout(layout, { focus });
   }, [layout, beside]);
+
+  // The sides share the width as the window's layout keeps it for every side-by-side diff, changed
+  // here, in another tab, or by Reset layout: in the frame it changes in.
+  const sides = useSides();
+  useLayoutEffect(() => {
+    view.current?.view.setSides(sides);
+    coming.current?.made.view.setSides(sides);
+  }, [sides]);
 
   useEffect(() => {
     live(view.current)?.setShown(shown);

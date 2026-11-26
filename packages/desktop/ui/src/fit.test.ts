@@ -1,7 +1,7 @@
 import tokens from '@lo/design/tokens.json' with { type: 'json' };
 import { describe, expect, it } from 'vitest';
 
-import { fit, fitWidths, readSizes, type Layout } from './fit.ts';
+import { fit, fitSides, fitWidths, readSizes, SIDE_MIN, type Layout } from './fit.ts';
 
 /** The sizes as the window reads them from the tokens' variables. */
 const sizes = readSizes({
@@ -194,5 +194,26 @@ describe('fitWidths', () => {
       min: 340,
       max: 792,
     });
+  });
+});
+
+describe('fitSides', () => {
+  it('is the narrowest a side is drawn as the tokens have it', () => {
+    const token = tokens.size.tokens.find((each) => each.name === 'lo-side-min-w');
+    expect(token?.value).toBe(`${SIDE_MIN}px`);
+  });
+
+  it('gives the old side its share, half by default, each side keeping a quarter or 240', () => {
+    expect(fitSides(undefined, 2260)).toEqual({ old: 1130, edge: { min: 565, max: 1695 } });
+    expect(fitSides(0.3, 1000).old).toBe(300);
+    expect(fitSides(0.1, 1000).old).toBe(250);
+    expect(fitSides(0.9, 1000).old).toBe(750);
+    // Under 960, 240 is more than a quarter.
+    expect(fitSides(0.1, 800)).toEqual({ old: 240, edge: { min: 240, max: 560 } });
+  });
+
+  it('splits evenly with no edge under twice the narrowest side', () => {
+    expect(fitSides(0.8, 479)).toEqual({ old: 239.5 });
+    expect(fitSides(0.8, 480)).toEqual({ old: 240, edge: { min: 240, max: 240 } });
   });
 });

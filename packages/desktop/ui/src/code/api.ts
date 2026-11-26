@@ -190,6 +190,24 @@ export interface DiffInit {
   renderProblem?: RenderProblem | undefined;
   /** How it shows review threads: between lines unless said. `setThreadsMode` changes it. */
   threads?: ThreadsMode | undefined;
+  /**
+   * The old side's share of the width side by side, as the reader keeps it for every side-by-side
+   * diff: half with none. `setSides` changes it.
+   */
+  sides?: number | undefined;
+}
+
+/**
+ * The side the cursor is on, side by side, as the keys that size what has focus see it: how wide
+ * it's drawn, the narrowest and widest the edge between the sides makes it, and the width the two
+ * share, in CSS pixels.
+ */
+export interface SideEdge {
+  readonly side: Side;
+  readonly width: number;
+  readonly min: number;
+  readonly max: number;
+  readonly room: number;
 }
 
 /**
@@ -623,6 +641,24 @@ export interface DiffView extends KeySource {
    */
   setLayout(layout: DiffLayout, options?: { readonly focus?: boolean }): void;
   /**
+   * Shares the width between the sides, side by side: the old side `share` of it, or half with
+   * none, as the reader keeps it for every side-by-side diff. Each side keeps its minimum, the
+   * larger of 240 px and a quarter of the width, and under 480 px they split evenly, with no edge
+   * between them. The code under the file's header pinned at the top of the screen stays where it
+   * is, the rows level as the lines wrap anew.
+   */
+  setSides(share: number | undefined): void;
+  /**
+   * The side the cursor is on and the edge beside it, as the keys that size what has focus move it:
+   * none inline, out of sight, or where the sides split evenly.
+   */
+  sideEdge(): SideEdge | undefined;
+  /**
+   * Draws the edge between the sides pressed, as a key that moved it does, until a key is let go,
+   * the pointer moves or the window loses focus.
+   */
+  pressSides(): void;
+  /**
    * Replaces the threads drawn under lines, and under files' headers, each drawn by `render` in an
    * element of its own the first time it's drawn, and kept up to date through what that returns. A
    * file's threads go under its header in the newer column, or in the inline layout's one, whether
@@ -867,6 +903,12 @@ export interface DiffEvents {
   /** A right-click: the registry's menu for what was clicked. */
   menu(target: Target, x: number, y: number): void;
   /**
+   * The reader moved the edge between the sides somewhere new, side by side, and let go, or put it
+   * back with a double-click: keep the old side's share for every side-by-side diff, or the
+   * default, half, with none, and hand it back through `setSides`.
+   */
+  sides?(share: number | undefined): void;
+  /**
    * Someone else's new thread came to a line on screen, where it waits for the reader's next
    * input with its line marked "New thread": for the host to tell a screen reader, which isn't
    * reading where the mark is.
@@ -1109,6 +1151,12 @@ export interface FileEvents {
   jumped(from: Spot, to: Spot): void;
   /** A right-click: the registry's menu for what was clicked. */
   menu(target: Target, x: number, y: number): void;
+  /**
+   * The reader moved the edge between the sides somewhere new, side by side, and let go, or put it
+   * back with a double-click: keep the old side's share for every side-by-side diff, or the
+   * default, half, with none, and hand it back through `setSides`.
+   */
+  sides?(share: number | undefined): void;
   /** The pointer rested on a word, or left it: see {@link Rested}. */
   rested?: Rested;
 }

@@ -63,6 +63,7 @@ export type {
   Rested,
   Send,
   Side,
+  SideEdge,
   Span,
   Spot,
   Target,

@@ -19,9 +19,11 @@ const PINNED = 38;
 
 const STYLE = [
   readFileSync(new URL('../src/code/view.css', import.meta.url), 'utf8'),
-  // The tokens the page's own measures need: the room a box brought on screen keeps under it, and
-  // the height of the file's header pinned over the top.
-  `:root { --lo-sp-8: 8px; --lo-file-header-h: ${PINNED}px; }`,
+  // The tokens the page's own measures need: the room a box brought on screen keeps under it, the
+  // height of the file's header pinned over the top, and the narrowest a side is drawn.
+  `:root { --lo-sp-8: 8px; --lo-file-header-h: ${PINNED}px; --lo-side-min-w: 240px; }`,
+  // What a `splitter` gives to grab: 8 px centred on its edge, as Lo's stylesheet has it.
+  `.splitter { width: 0; } .splitter::before { content: ''; position: absolute; top: 0; bottom: 0; left: -4px; width: 8px; }`,
   'body { margin: 0; } #root { width: 1000px; height: 600px; } .card { background: #ddd; }',
 ].join('\n');
 
@@ -1007,4 +1009,160 @@ test('side by side and narrow, a box takes both sides, and two boxes, one on eac
   expect(both).toHaveLength(2);
   for (const each of both) expect(each).toMatchObject({ whole: true });
   expect(Math.max(...both.map((each) => each.width))).toBeLessThan(280);
+});
+
+/**
+ * The page side by side with every line long enough to wrap, new line 20 the first under the
+ * pinned header, 10 px below it.
+ */
+async function wrappedUnderPin(): Promise<Page> {
+  return open('split', { wrapped: 300, below: PINNED + 10 });
+}
+
+/** Where the edge between the sides is, and how far down it reaches, while it's shown. */
+function seam(page: Page) {
+  return page.evaluate(() => window.harness.seam());
+}
+
+/** How wide each side is drawn. */
+function sideWidths(page: Page): Promise<{ old: number; new: number }> {
+  return page.evaluate(() => window.harness.sideWidths());
+}
+
+/** The view's box on the page, and how wide it shows its sides, short of a scrollbar. */
+function viewBox(page: Page): Promise<{ left: number; top: number; room: number }> {
+  return page.evaluate(() => {
+    const box = document.querySelector('.lo-diffview')!;
+    const { left, top } = box.getBoundingClientRect();
+    return { left, top, room: box.clientWidth };
+  });
+}
+
+test('the edge between the sides follows the pointer within its limits, the rows level and the first line under the pinned header where it is in every frame', async () => {
+  const page = await wrappedUnderPin();
+  const { left, top, room } = await viewBox(page);
+  const before = await lineTop(page, 20);
+  expect(before).toBeGreaterThan(PINNED);
+  const edge = (await seam(page))!;
+  expect(edge.x - left).toBeCloseTo(room / 2, 0);
+  // It reaches from under the pinned header.
+  expect(edge.top - top).toBeCloseTo(PINNED, 0);
+
+  const y = top + 300;
+  await page.mouse.move(edge.x, y);
+  await page.mouse.down();
+  // Each move is drawn, lined up and put back in its own frame, before it's painted.
+  for (const x of [470, 400, 330, 300, 360, 640, 720]) {
+    await page.mouse.move(left + x, y);
+    expect((await sideWidths(page)).old).toBeCloseTo(x, 0);
+    expect(await page.evaluate(() => window.harness.misalignment())).toBeLessThan(1);
+    near([await lineTop(page, 20)], [before]);
+  }
+  // A quarter of the width is the least either side is drawn.
+  await page.mouse.move(left + 100, y);
+  expect((await sideWidths(page)).old).toBeCloseTo(room / 4, 0);
+  await page.mouse.move(left + room - 20, y);
+  expect((await sideWidths(page)).new).toBeCloseTo(room / 4, 0);
+  await page.mouse.move(left + 700, y);
+  await page.mouse.up();
+  await frames(page);
+  const shares = await page.evaluate(() => window.harness.shares());
+  expect(shares).toHaveLength(1);
+  expect(shares[0]! * room).toBeCloseTo(700, 0);
+  expect((await sideWidths(page)).old).toBeCloseTo(700, 0);
+  near([await lineTop(page, 20)], [before]);
+});
+
+test('`Esc` puts the edge between the sides back where the press found it, and a double-click puts the sides even', async () => {
+  const page = await open('split', { wrapped: 300 });
+  const { room, top } = await viewBox(page);
+  await page.evaluate(() => window.harness.sides(0.4));
+  await frames(page);
+  expect((await sideWidths(page)).old).toBeCloseTo(0.4 * room, 0);
+  const edge = (await seam(page))!;
+  await page.mouse.move(edge.x, top + 300);
+  await page.mouse.down();
+  await page.mouse.move(edge.x + 200, top + 300);
+  expect((await sideWidths(page)).old).toBeCloseTo(0.4 * room + 200, 0);
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await frames(page);
+  expect((await sideWidths(page)).old).toBeCloseTo(0.4 * room, 0);
+  expect(await page.evaluate(() => window.harness.shares())).toEqual([]);
+
+  await page.mouse.dblclick(edge.x, top + 300);
+  await frames(page);
+  expect((await sideWidths(page)).old).toBeCloseTo(room / 2, 0);
+  expect(await page.evaluate(() => window.harness.shares())).toEqual([undefined]);
+  expect(await page.evaluate(() => window.harness.misalignment())).toBeLessThan(1);
+});
+
+test('the sides shared anew leave the first line under the pinned header where it is, and under 480 px split evenly with no edge', async () => {
+  const page = await wrappedUnderPin();
+  const { room } = await viewBox(page);
+  const before = await lineTop(page, 20);
+  for (const share of [0.3, 0.75, undefined]) {
+    await page.evaluate((to) => window.harness.sides(to), share);
+    await frames(page);
+    expect((await sideWidths(page)).old).toBeCloseTo((share ?? 0.5) * room, 0);
+    expect(await page.evaluate(() => window.harness.misalignment())).toBeLessThan(1);
+    near([await lineTop(page, 20)], [before]);
+  }
+  await page.evaluate(() => {
+    window.harness.sides(0.3);
+    window.harness.narrow(470);
+  });
+  await frames(page);
+  const { old, new: added } = await sideWidths(page);
+  expect(Math.abs(old - added)).toBeLessThan(1);
+  expect(await seam(page)).toBeUndefined();
+});
+
+test('what’s drawn under the edge between the sides keeps the pointer from it, and code gives it the pointer', async () => {
+  const page = await open('split');
+  const { top } = await viewBox(page);
+  // Under an old line, the thread reaches the edge, on its left.
+  await page.evaluate(() =>
+    window.harness.threads([{ id: 'under', line: 24, height: 80, side: 'old' }], true),
+  );
+  await drawn(page, ['under']);
+  const x = (await seam(page))!.x - 2;
+  const thread = await page.evaluate(() => {
+    const block = document.querySelector('[data-thread-id="under"]')!.closest('.lo-diffthread')!;
+    const rect = block.getBoundingClientRect();
+    return (rect.top + rect.bottom) / 2;
+  });
+  const code = top + (await lineTop(page, 30))! + 5;
+  /** What has the pointer at `y` on the edge: the edge, or what's under it. */
+  const at = (y: number) =>
+    page.evaluate(
+      ({ across, down }) =>
+        document.elementFromPoint(across, down)?.classList.contains('splitter') ? 'edge' : 'under',
+      { across: x, down: y },
+    );
+  await page.mouse.move(x, code);
+  expect(await at(code)).toBe('edge');
+  // Over the thread, the thread keeps it until the pointer leaves it.
+  await page.mouse.move(x, thread);
+  await page.mouse.move(x + 0.5, thread);
+  expect(await at(thread)).toBe('under');
+  await page.mouse.move(x, code);
+  await page.mouse.move(x + 0.5, code);
+  expect(await at(code)).toBe('edge');
+});
+
+test('a box on a side narrower than a box may be takes both sides, and one on a wide side keeps to it', async () => {
+  const page = await open('split');
+  await page.evaluate(() => {
+    window.harness.sides(0.25);
+    window.harness.compose(22, '', 'old');
+  });
+  await frames(page);
+  const [spanned] = await boxesOn(page);
+  expect(spanned!.width).toBeGreaterThan(700);
+  expect(spanned!.whole).toBe(true);
+  await page.evaluate(() => window.harness.sides(0.75));
+  await frames(page);
+  const [kept] = await boxesOn(page);
+  expect(kept!.width).toBeLessThan(700);
 });

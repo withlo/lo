@@ -33,7 +33,11 @@ const keptLayout = z.object({
   threads: keptPanel,
   beside: z.boolean().optional(),
   reading: z.number().finite().optional(),
+  sides: z.number().finite().optional(),
 });
+
+/** A share of a width, kept, within it. */
+const share = (value: number): number => Math.max(0, Math.min(1, value));
 
 /**
  * Where the window is and how big, in the screen's points, as it is when it's neither maximized
@@ -151,13 +155,14 @@ export function createWindowStore(database: Database, limits: PanelLimits): Wind
         read('SELECT layout AS value FROM tab_window WHERE id = 1'),
       );
       if (!kept.success) return FIRST_LAYOUT;
-      const { reading } = kept.data;
+      const { reading, sides } = kept.data;
       return {
         left: within(kept.data.left, limits.left),
         threads: within(kept.data.threads, limits.threads),
         beside: kept.data.beside ?? FIRST_LAYOUT.beside,
-        // A share of the two views' room, within it.
-        ...(reading === undefined ? {} : { reading: Math.max(0, Math.min(1, reading)) }),
+        // Shares of the two views' room, and of a diff's width, each within it.
+        ...(reading === undefined ? {} : { reading: share(reading) }),
+        ...(sides === undefined ? {} : { sides: share(sides) }),
       };
     },
     keepLayout(layout) {

@@ -9,7 +9,9 @@
 // then the view without focus, but never what was asked for last before the others, and comes back
 // as soon as there's room. A panel asked for, put back by Reset layout, or back as its key or button
 // closes the other, fades in as it arrives; one back as the window widens, or as a drag closes the
-// other, is just there.
+// other, is just there. The layout keeps the old side's share of a side-by-side diff's width too,
+// for every one: the diff draws its own sides, and a view with an edge inside it, as that diff has
+// between its sides, has the keys that size what has focus move it (`sizeInView`).
 
 import {
   fit,
@@ -299,14 +301,69 @@ export function setWidth(edge: Edge, width: number | undefined): void {
   setPanel(edge, { open: layout.getState()[edge].open, width });
 }
 
+/** Changes a share the layout keeps, `reading` or `sides`, to `value`, or to none, the default. */
+function setShare(key: 'reading' | 'sides', value: number | undefined): void {
+  const next: WindowLayout = { ...layout.getState() };
+  if (value === undefined) delete next[key];
+  else next[key] = value;
+  layout.setState(next, true);
+}
+
 /**
  * Keeps the reading view at `share` of the two views' room, or at its default with none, as the
  * edge between them is dragged or put back.
  */
 export function setReading(share: number | undefined): void {
-  const { left, threads, beside } = layout.getState();
-  const next: WindowLayout = { left, threads, beside };
-  layout.setState(share === undefined ? next : { ...next, reading: share }, true);
+  setShare('reading', share);
+}
+
+/**
+ * Keeps the old side at `share` of a side-by-side diff's width, for every one, or at half with
+ * none, as the edge between the sides is dragged or put back.
+ */
+export function setSides(share: number | undefined): void {
+  setShare('sides', share);
+}
+
+/**
+ * An edge inside a middle view, as the one a side-by-side diff has between its sides: where focus
+ * is in that view, and nothing round the view has an edge to move, the keys that size what has
+ * focus move it.
+ */
+export interface ViewEdge {
+  /**
+   * How wide what focus is beside is drawn, and the narrowest and widest the edge makes it, or
+   * nothing while focus isn't there or it has no edge.
+   */
+  readonly sized: () =>
+    { readonly width: number; readonly min: number; readonly max: number } | undefined;
+  /**
+   * Draws what focus is beside `width` wide, or back at its default with none, keeps it, and draws
+   * the edge pressed while the key is held.
+   */
+  readonly size: (width: number | undefined) => void;
+  /** Whether what focus is beside has a width of its own to put back. */
+  readonly resettable: () => boolean;
+}
+
+/** The edges inside middle views, as features said them. */
+const viewEdges = new Set<ViewEdge>();
+
+/** Has the keys that size what has focus move `edge` too. Returns a function that stops it. */
+export function sizeInView(edge: ViewEdge): () => void {
+  viewEdges.add(edge);
+  return () => {
+    viewEdges.delete(edge);
+  };
+}
+
+/** The edge inside a view focus is beside, and how it's sized, if there's one. */
+function inView(): { edge: ViewEdge; width: number; min: number; max: number } | undefined {
+  for (const edge of viewEdges) {
+    const drawn = edge.sized();
+    if (drawn) return { edge, ...drawn };
+  }
+  return undefined;
 }
 
 /**
@@ -355,14 +412,19 @@ const PANELS = [
 /** Where the views' sheets are on the DOM, each named for its kind: `reading` or `code`. */
 export const SHEET = '[data-lo-sheet]';
 
+/** What the keys that size what has focus act on, and how it's drawn now. */
+type Sized =
+  | { edge: RowEdge; width: number; min: number; max: number; by: 1 | -1; room: number }
+  | { edge: ViewEdge; width: number; min: number; max: number; by: 1; room: 0 };
+
 /**
- * What the keys that size what has focus act on: the panel focus is in, as it's drawn; or, with
- * two views drawn, the edge between them, for the view focus is in, the reading view's width
- * growing (`by` 1) as it widens or the code's (`by` -1). Nothing has an edge anywhere else, and
- * nothing while an edge is dragged, whose drag the keys would undo.
+ * What the keys that size what has focus act on: the panel focus is in, as it's drawn; with two
+ * views drawn, the edge between them, for the view focus is in, the reading view's width growing
+ * (`by` 1) as it widens or the code's (`by` -1); or else an edge inside the view focus is in, as a
+ * side-by-side diff has between its sides, for the side the cursor is on. Nothing has an edge
+ * anywhere else, and nothing while an edge is dragged, whose drag the keys would undo.
  */
-function sized():
-  { edge: RowEdge; width: number; min: number; max: number; by: 1 | -1; room: number } | undefined {
+function sized(): Sized | undefined {
   if (resizing(document)) return undefined;
   const focused = document.activeElement;
   const drawn = drawnRow();
@@ -377,8 +439,10 @@ function sized():
   const sheet = focused?.closest<HTMLElement>(SHEET)?.dataset['loSheet'];
   const [reading, code] = drawn.views;
   const range = drawn.edges.views;
-  if (sheet === undefined || reading === undefined || code === undefined || !range) {
-    return undefined;
+  if (sheet === undefined) return undefined;
+  if (reading === undefined || code === undefined || !range) {
+    const inside = inView();
+    return inside && { ...inside, by: 1, room: 0 };
   }
   return {
     edge: 'views',
@@ -404,15 +468,14 @@ export function stepWidth(step: 1 | -1): void {
   const edge = sized();
   if (!edge) return;
   const width = Math.max(edge.min, Math.min(edge.max, edge.width + step * edge.by * KEY_STEP));
-  if (edge.edge === 'views') setReading(width / edge.room);
-  else setWidth(edge.edge, width);
-  showStepped(edge.edge);
+  sizeTo(edge, width);
 }
 
 /** Whether what has focus has a width of its own to put back, or `''` where it doesn't. */
 export function resettable(): true | '' {
   const edge = sized();
   if (!edge) return '';
+  if (typeof edge.edge === 'object') return edge.edge.resettable() || '';
   const saved = layout.getState();
   return (edge.edge === 'views' ? saved.reading : saved[edge.edge].width) !== undefined || '';
 }
@@ -420,9 +483,17 @@ export function resettable(): true | '' {
 /** Puts what has focus back to its default width. */
 export function resetWidth(): void {
   const edge = sized();
-  if (!edge) return;
-  if (edge.edge === 'views') setReading(undefined);
-  else setWidth(edge.edge, undefined);
+  if (edge) sizeTo(edge, undefined);
+}
+
+/** Sizes what `edge` sizes to `width`, or its default with none, and draws its edge pressed. */
+function sizeTo(edge: Sized, width: number | undefined): void {
+  if (typeof edge.edge === 'object') {
+    edge.edge.size(width);
+    return;
+  }
+  if (edge.edge === 'views') setReading(width === undefined ? undefined : width / edge.room);
+  else setWidth(edge.edge, width);
   showStepped(edge.edge);
 }
 
@@ -435,7 +506,8 @@ export function firstLayout(): boolean {
     now.threads.open === FIRST_LAYOUT.threads.open &&
     now.threads.width === undefined &&
     now.beside === FIRST_LAYOUT.beside &&
-    now.reading === undefined
+    now.reading === undefined &&
+    now.sides === undefined
   );
 }
 

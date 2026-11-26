@@ -20,7 +20,16 @@ import {
 } from '../contract.ts';
 import { blocked } from './banners.ts';
 import { makeTabState, type TabState, useKept } from './kept.ts';
-import { besideDrawn, layout, panelDrawn, SHEET, viewFocus } from './layout.ts';
+import {
+  besideDrawn,
+  layout,
+  panelDrawn,
+  setSides,
+  SHEET,
+  sizeInView as sizeInViewOf,
+  viewFocus,
+  type ViewEdge,
+} from './layout.ts';
 import { main } from './main.ts';
 import {
   bringView,
@@ -51,6 +60,7 @@ export type {
   Run,
   Tab,
 } from '../contract.ts';
+export type { ViewEdge } from './layout.ts';
 export type { RightKept, ViewKind } from './panels.ts';
 export type { TabsState } from './store.ts';
 
@@ -264,6 +274,35 @@ export function focusNowhereFor(own: Element | null): boolean {
   if (!nowhere) return false;
   const sheet = own?.closest(SHEET)?.getAttribute('data-lo-sheet');
   return !sheet || sheet === viewFocus.now;
+}
+
+/**
+ * The old side's share of a side-by-side diff's width, as the window's layout keeps it for every
+ * one, or none for the default, half. Re-renders as it changes, as when Reset layout puts it back.
+ */
+export function useSides(): number | undefined {
+  return useStore(layout, (saved) => saved.sides);
+}
+
+/**
+ * Keeps the old side's share of a side-by-side diff's width for every one, or with none puts it
+ * back to half: the window's layout, kept across restarts.
+ */
+export function keepSides(share: number | undefined): void {
+  setSides(share);
+}
+
+/** The old side's share of a side-by-side diff's width, as the window's layout keeps it now. */
+export function sidesKept(): number | undefined {
+  return layout.getState().sides;
+}
+
+/**
+ * Has the keys that size what has focus (`>`, `<`, `=`) move an edge inside a middle view while
+ * focus is in it, as the one between a side-by-side diff's sides. Returns a function that stops it.
+ */
+export function sizeInView(edge: ViewEdge): () => void {
+  return sizeInViewOf(edge);
 }
 
 /**

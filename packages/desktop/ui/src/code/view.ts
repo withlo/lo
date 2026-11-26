@@ -46,7 +46,9 @@ import {
   type Target,
 } from '../commands/index.ts';
 import { cutShort } from '../cut.ts';
+import { dragEdge, limitOf, resizing } from '../drag.ts';
 import { EDIT_SLOT_EVENT } from '../edits.ts';
+import { fitSides } from '../fit.ts';
 import { land } from '../motion.ts';
 import { type Tip, TIPPED, tips } from './tip.ts';
 import type {
@@ -85,6 +87,7 @@ import type {
   RenderProblem,
   RenderThread,
   Side,
+  SideEdge,
   Span,
   Spot,
   ThreadsMode,
@@ -318,6 +321,21 @@ const CARD_CLEAR = 8;
 const BOX_FLOOR = 256;
 /** The space each side of what's under a line (`.lo-diffthread`), in pixels. */
 const UNDER_INSET = 12;
+
+/**
+ * What the edge between the sides takes the pointer over, besides code's own lines: the editors
+ * around them, their line numbers, and the room that lines the rows up.
+ */
+const UNDER_CODE = [
+  '.lo-diffview',
+  '.cm-editor',
+  '.cm-scroller',
+  '.cm-content',
+  '.cm-gutters',
+  '.cm-lineNumbers',
+  '.cm-lineNumbers > .cm-gutterElement',
+  '.lo-spacer:not(.is-under)',
+].join(', ');
 
 const setFile = StateEffect.define<{
   file: number;
@@ -615,6 +633,24 @@ class View implements DiffView {
   #given: { threads: readonly ThreadView[]; render: RenderThread } | undefined;
   /** Counts the popovers asked to open once a jump's scroll is done, so only the latest opens. */
   #popping = 0;
+  /** The old side's share of the width side by side, as the reader keeps it: half with none. */
+  #sides: number | undefined;
+  /** The share drawn now: the kept one, or a drag's under way. */
+  #shownSides: number | undefined;
+  /**
+   * The edge between the sides: a row pinned to the top of the scroll, and in it the edge's grip,
+   * a `splitter` as every edge is.
+   */
+  readonly #seam = document.createElement('div');
+  readonly #grip = document.createElement('div');
+  /** Stops the drag of the edge between the sides under way, if one: it then cancels. */
+  #seamDrag: (() => void) | undefined;
+  /** What's drawn under the edge between the sides and keeps the pointer from it, while one does. */
+  #passing: Element | undefined;
+  /** Where the pointer last was over the view, to see what's under the edge as the code scrolls. */
+  #pointer: { x: number; y: number } | undefined;
+  /** Stops drawing the edge between the sides pressed, as a key that moved it does, while it is. */
+  #unpress: (() => void) | undefined;
 
   constructor(parent: HTMLElement, init: DiffInit, on: DiffEvents) {
     installVim();
@@ -677,6 +713,20 @@ class View implements DiffView {
       note.textContent = init.note.text;
       this.dom.append(note);
     }
+    // The edge between the sides, first, so the row it's pinned in starts at the scroll's top.
+    this.#seam.className = 'lo-diffseam';
+    this.#seam.hidden = true;
+    this.#grip.className = 'splitter';
+    this.#grip.setAttribute('role', 'separator');
+    this.#grip.setAttribute('aria-orientation', 'vertical');
+    this.#grip.setAttribute('aria-label', 'Resize sides');
+    this.#grip.dataset.loSplitter = 'edge';
+    this.#grip.dataset.grows = 'end';
+    this.#seam.append(this.#grip);
+    this.dom.prepend(this.#seam);
+    this.#sides = init.sides;
+    this.#shownSides = init.sides;
+    if (init.sides !== undefined) this.dom.style.setProperty('--lo-sides', String(init.sides));
     parent.append(this.dom);
     const make = (side: Side): EditorView =>
       new EditorView({
@@ -726,6 +776,13 @@ class View implements DiffView {
     // The box itself, not what's inside its padding, which is the room after the last file.
     this.#boxWatch.observe(this.dom, { box: 'border-box' });
     this.dom.addEventListener('contextmenu', (event) => this.#contextMenu(event));
+    // The edge between the sides: a press drags it, a double-click puts it back, and what's drawn
+    // under it keeps the pointer from it wherever it isn't code.
+    this.#grip.addEventListener('pointerdown', this.#pressSeam);
+    this.#grip.addEventListener('dblclick', this.#resetSeam);
+    this.dom.addEventListener('pointermove', this.#followSeam, { passive: true, capture: true });
+    this.dom.addEventListener('pointerleave', this.#leaveSeam, { passive: true });
+    this.dom.addEventListener('scroll', this.#seamScrolled, { passive: true });
     // The view's own controls: the viewed ball in a file's header and the `+` in the gutter.
     this.#add.className = 'lo-gutteradd';
     this.#add.type = 'button';
@@ -964,6 +1021,7 @@ class View implements DiffView {
    */
   readonly #keepPlace = (): void => {
     this.#reach();
+    this.#drawSeam();
     // A scroll whose event hasn't come yet is the reader's, or the view's, not the box's.
     this.#placeChosen();
     this.#boxHeight = this.dom.clientHeight;
@@ -1133,6 +1191,38 @@ class View implements DiffView {
 
   setLayout(layout: DiffLayout, options: { readonly focus?: boolean } = {}): void {
     if (layout !== this.#pane) this.#toggleLayout(options.focus ?? true);
+  }
+
+  setSides(share: number | undefined): void {
+    if (share === this.#sides) return;
+    this.#sides = share;
+    // A drag under way draws its own until it ends, and then what's kept.
+    if (this.#seamDrag) return;
+    this.#resizeSides(() => this.#drawSides(share));
+  }
+
+  sideEdge(): SideEdge | undefined {
+    if (this.#pane !== 'split') return undefined;
+    const room = this.dom.clientWidth;
+    const { old, edge } = fitSides(this.#sides, room);
+    if (!edge) return undefined;
+    const side = this.#activePane() === 'old' ? 'old' : 'new';
+    const width = side === 'old' ? old : room - old;
+    return { side, width, min: edge.min, max: edge.max, room };
+  }
+
+  pressSides(): void {
+    if (this.#unpress) return;
+    const grip = this.#grip;
+    grip.setAttribute('data-stepped', '');
+    const ends = ['keyup', 'pointermove', 'blur'] as const;
+    const end = (): void => {
+      grip.removeAttribute('data-stepped');
+      for (const type of ends) window.removeEventListener(type, end, true);
+      this.#unpress = undefined;
+    };
+    for (const type of ends) window.addEventListener(type, end, true);
+    this.#unpress = end;
   }
 
   setThreads(
@@ -3196,6 +3286,11 @@ class View implements DiffView {
   }
 
   destroy(): void {
+    // A drag of the edge between the sides under way is over, and puts nothing back.
+    const drag = this.#seamDrag;
+    this.#seamDrag = undefined;
+    drag?.();
+    this.#unpress?.();
     // A hold's check still to come finds it over.
     this.#holding = undefined;
     cancelAnimationFrame(this.#seenFrame);
@@ -3943,12 +4038,15 @@ class View implements DiffView {
         // The next file's header pushes it up as it comes under it.
         const next = file + 1 < this.#files.length ? headerTop(file + 1) : Infinity;
         const shift = Math.min(0, next - HEADER_HEIGHT);
-        // The path starts where the left column's code does.
+        // The path starts where the left column's code does, and side by side, the end stops
+        // short of where the right column's does.
         const start = gutterWidth(pane === 'inline' ? view : this.views.old);
-        return { file, pinned, shift, start };
+        const end = pane === 'inline' ? undefined : gutterWidth(this.views.new);
+        return { file, pinned, shift, start, end };
       },
-      write: ({ file, pinned, shift, start }) => {
-        this.#pin.show(pinned ? { file, info: this.#files[file]!, shift } : undefined, start);
+      write: ({ file, pinned, shift, start, end }) => {
+        const shown = pinned ? { file, info: this.#files[file]!, shift } : undefined;
+        this.#pin.show(shown, start, end);
         if (file === this.#said.file) return;
         this.#said.file = file;
         this.#on.file(this.#ids[file]!);
@@ -4473,6 +4571,7 @@ class View implements DiffView {
       this.views.new.dom.hidden = true;
       inline.view.dom.hidden = false;
       this.#reach();
+      this.#drawSeam();
       this.#moveBoxes();
       shown = 'inline';
     } else {
@@ -4482,6 +4581,7 @@ class View implements DiffView {
       this.views.new.dom.hidden = false;
       this.#aligner.paused = false;
       this.#reach();
+      this.#drawSeam();
       this.#moveBoxes();
       // The cursor stays on screen as the sides settle, as after any key that moves it.
       this.#aligner.follow();
@@ -4499,23 +4599,189 @@ class View implements DiffView {
   }
 
   /**
-   * Side by side, where a side is narrower than a comment box may be (`BOX_FLOOR`), every box takes
-   * both sides: it reaches over the other side, where the room kept for it is, and over the
-   * gutters between (`view.css`). How far it reaches each way is measured as the view changes width
-   * or layout. A view out of sight keeps what it had.
+   * Side by side, where a side is narrower than a comment box may be (`BOX_FLOOR`), every box on
+   * that side takes both sides: it reaches over the other side, where the room kept for it is, and
+   * over the gutters between (`view.css`). Each side is measured by its own width, as the edge
+   * between them leaves it, and how far a box reaches each way as the view changes width or layout,
+   * or the edge moves. A view out of sight keeps what it had.
    */
   #reach(): void {
     if (this.dom.clientWidth === 0) return;
     const old = this.views.old.contentDOM.getBoundingClientRect();
     const now = this.views.new.contentDOM.getBoundingClientRect();
-    const narrow =
-      this.#pane === 'split' && Math.min(old.width, now.width) - 2 * UNDER_INSET < BOX_FLOOR;
-    this.dom.classList.toggle('is-spanned', narrow);
-    if (!narrow) return;
+    const narrow = (side: DOMRect): boolean =>
+      this.#pane === 'split' && side.width - 2 * UNDER_INSET < BOX_FLOOR;
+    this.dom.classList.toggle('is-spanned-old', narrow(old));
+    this.dom.classList.toggle('is-spanned-new', narrow(now));
+    if (!narrow(old) && !narrow(now)) return;
     const start = this.dom.getBoundingClientRect().left + this.dom.clientLeft;
     const end = start + this.dom.clientWidth;
     this.dom.style.setProperty('--lo-reach-new', `${Math.max(0, now.left - start)}px`);
     this.dom.style.setProperty('--lo-reach-old', `${Math.max(0, end - old.right)}px`);
+  }
+
+  // The edge between the sides -----------------------------------------------------------------
+
+  /**
+   * Draws the old side at `share` of the width, or half with none, as a drag or what's kept has it:
+   * the stylesheet sizes both sides from it (`--lo-side-old`), and the boxes and the edge follow.
+   */
+  #drawSides(share: number | undefined): void {
+    this.#shownSides = share;
+    if (share === undefined) this.dom.style.removeProperty('--lo-sides');
+    else this.dom.style.setProperty('--lo-sides', String(share));
+    this.#reach();
+    this.#drawSeam();
+  }
+
+  /**
+   * Changes the sides' widths with `change`, side by side and in sight, holding the first line
+   * under the pinned header where it is while they wrap anew: the spacer pass keeps it there as it
+   * lines the rows up, before the frame is drawn, and lets go after it.
+   */
+  #resizeSides(change: () => void): void {
+    if (this.#pane !== 'split' || this.dom.clientWidth === 0) {
+      change();
+      return;
+    }
+    this.#aligner.holdUnder(this.#pinBelow());
+    change();
+    requestAnimationFrame(() => this.#aligner.release());
+  }
+
+  /** How far under the top of the screen the code starts: under the pinned header, while one is. */
+  #pinBelow(): number {
+    return this.#pin.dom.hidden ? 0 : HEADER_HEIGHT;
+  }
+
+  /**
+   * Shows the edge between the sides where they have one: side by side and in sight, at least
+   * twice the narrowest a side is drawn. It reaches the view's foot, and says where it is to a
+   * screen reader, and at a limit, by its cursor, which way it can go.
+   */
+  #drawSeam(): void {
+    const room = this.dom.clientWidth;
+    const shown = this.#pane === 'split' && room > 0 ? fitSides(this.#shownSides, room) : undefined;
+    const edge = shown?.edge;
+    this.#seam.hidden = edge === undefined;
+    if (!shown || !edge) {
+      this.#pass(undefined);
+      return;
+    }
+    const grip = this.#grip;
+    grip.style.setProperty('--lo-seam-h', `${this.dom.clientHeight}px`);
+    grip.setAttribute('aria-valuenow', String(Math.round(shown.old)));
+    grip.setAttribute('aria-valuemin', String(Math.round(edge.min)));
+    grip.setAttribute('aria-valuemax', String(Math.round(edge.max)));
+    const at = limitOf(shown.old, edge);
+    if (at === undefined) delete grip.dataset.at;
+    else grip.dataset.at = at;
+  }
+
+  /**
+   * A press on the edge between the sides: it drags, as every edge does (`dragEdge`), the old side
+   * following the pointer in each frame within its limits, the first line under the pinned header
+   * held where it is throughout. Let go somewhere new, the share is kept; anything else puts back
+   * what was there. What's drawn under it that keeps the pointer keeps the press too.
+   */
+  readonly #pressSeam = (event: PointerEvent): void => {
+    if (this.#seamDrag || this.#pane !== 'split') return;
+    const room = this.dom.clientWidth;
+    const start = fitSides(this.#sides, room);
+    if (!start.edge) return;
+    const keeper = this.#keeperUnder(event.clientX, event.clientY);
+    if (keeper) {
+      this.#pass(keeper);
+      return;
+    }
+    this.#aligner.holdUnder(this.#pinBelow());
+    const done = (): void => {
+      this.#seamDrag = undefined;
+      requestAnimationFrame(() => this.#aligner.release());
+    };
+    this.#seamDrag = dragEdge(this.#grip, event, {
+      from: start.old,
+      range: () => fitSides(this.#sides, this.dom.clientWidth).edge ?? { min: 0, max: 0 },
+      grows: 'end',
+      onDrag: (width) => this.#drawSides(width / this.dom.clientWidth),
+      onEnd: (width) => {
+        done();
+        const share = width / this.dom.clientWidth;
+        this.#sides = share;
+        this.#drawSides(share);
+        this.#on.sides?.(share);
+      },
+      onCancel: () => {
+        done();
+        this.#drawSides(this.#sides);
+      },
+    });
+    if (!this.#seamDrag) this.#aligner.release();
+  };
+
+  /** A double-click on the edge between the sides: even again, kept so. */
+  readonly #resetSeam = (): void => {
+    if (this.#sides === undefined && this.#shownSides === undefined) return;
+    this.#sides = undefined;
+    this.#resizeSides(() => this.#drawSides(undefined));
+    this.#on.sides?.(undefined);
+  };
+
+  readonly #followSeam = (event: PointerEvent): void => {
+    this.#pointer = { x: event.clientX, y: event.clientY };
+    this.#seamUnder(event.target);
+  };
+
+  readonly #leaveSeam = (): void => {
+    this.#pointer = undefined;
+  };
+
+  /** The code scrolled under a pointer at rest: what's under the edge now may keep it, or not. */
+  readonly #seamScrolled = (): void => {
+    const at = this.#pointer;
+    if (!at || (this.#passing === undefined && !this.#grip.matches(':hover'))) return;
+    this.#seamUnder(this.dom.ownerDocument.elementFromPoint(at.x, at.y));
+  };
+
+  /**
+   * Lets what's drawn under the edge between the sides keep the pointer from it, `over` being what
+   * the pointer is over: the edge gives way over anything but code, its line numbers and the room
+   * between rows, and takes the pointer again once it leaves what it gave way to.
+   */
+  #seamUnder(over: EventTarget | null): void {
+    const at = this.#pointer;
+    if (!at || resizing(this.dom.ownerDocument)) return;
+    let target = over;
+    const passing = this.#passing;
+    if (passing && !(target instanceof Node && passing.contains(target))) {
+      this.#pass(undefined);
+      target = this.dom.ownerDocument.elementFromPoint(at.x, at.y);
+    }
+    if (target !== this.#grip) return;
+    const keeper = this.#keeperUnder(at.x, at.y);
+    if (keeper) this.#pass(keeper);
+  }
+
+  /**
+   * What keeps the pointer from the edge between the sides at `x`, `y`, drawn under it: a control,
+   * or the block it's in, as a file's header, the row under it, a fold, a note, a thread, a box or a
+   * lane's mark; none over code, its line numbers or the room between rows.
+   */
+  #keeperUnder(x: number, y: number): Element | undefined {
+    const under = this.dom.ownerDocument
+      .elementsFromPoint(x, y)
+      .find((each) => each !== this.#grip);
+    if (!under) return undefined;
+    const control = under.closest('button, a[href], [role="button"]');
+    if (control && this.dom.contains(control)) return control;
+    if (under.closest('.cm-line') || under.matches(UNDER_CODE)) return undefined;
+    return under.closest('.cm-content > *, .cm-gutter, .lo-diffview > *') ?? under;
+  }
+
+  /** The edge between the sides gives way to `keeper`, under it, or with none takes the pointer. */
+  #pass(keeper: Element | undefined): void {
+    this.#passing = keeper;
+    this.#grip.classList.toggle('is-passing', keeper !== undefined);
   }
 
   /** Shows `pane`, scrolled to `place` with the cursor there, and focus in it unless `focus` is false. */

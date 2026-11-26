@@ -162,14 +162,16 @@ const panelLayout = z.strictObject({
 /**
  * The window's layout of a pull request's tab's row, one for every tab, which main keeps across
  * restarts: the left panel and the threads panel, each open or not and its width; whether the code
- * is beside a reading view; and the reading view's share of the two views' room once its edge has
- * been dragged, unset while it's the default.
+ * is beside a reading view; the reading view's share of the two views' room once its edge has been
+ * dragged; and the old side's share of a side-by-side diff's width, for every one, once the edge
+ * between the sides has been: each share unset while it's the default.
  */
 export const windowLayout = z.strictObject({
   left: panelLayout,
   threads: panelLayout,
   beside: z.boolean(),
   reading: z.number().min(0).max(1).optional(),
+  sides: z.number().min(0).max(1).optional(),
 });
 export type WindowLayout = z.output<typeof windowLayout>;
 
