@@ -26,7 +26,9 @@ import { liveArgs, liveDataFolder } from './live.ts';
  * How long the window holds back what a tab shows first, in a test that isn't about that bound:
  * three times the real one, so a busy machine is never late enough to race it, and no longer, since
  * a test that leaves the overview before it's drawn is waiting on the bound to let it go. A test
- * that is about the bound asks for it itself, with `test.use({ holdLimit: HOLD_LIMIT })`.
+ * that is about the bound asks for it itself, with `test.use({ holdLimit: HOLD_LIMIT })`, unless
+ * it needs Lo to know what a tab shows before the bound, which a busy CI runner can take most of
+ * the real one to: then it keeps this one, and checks against it.
  */
 export const HELD_LONG = 3_000;
 

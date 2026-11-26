@@ -1,7 +1,7 @@
 /**
  * A git server over HTTP on this machine: `git http-backend` serving the bare repositories in a
  * folder to one token at a time, as GitHub does once renewing an account's token revokes the one
- * before.
+ * before. A test can hold its answers, as a slow network would, and decide when they come.
  */
 
 import { spawn } from 'node:child_process';
@@ -30,6 +30,9 @@ export class GitHttpServer {
   #accepted: string;
   readonly #signedInWith: string[] = [];
   #onRefused: ((token: string) => void) | undefined;
+  /** What a request waits for before it's answered, while the server holds them. */
+  #held: Promise<void> | undefined;
+  #waiting = 0;
 
   private constructor(server: ReturnType<typeof createServer>, url: string, token: string) {
     this.#server = server;
@@ -66,6 +69,24 @@ export class GitHttpServer {
     this.#onRefused = onRefused;
   }
 
+  /**
+   * Holds every request from now, as a slow network would, until the function it returns lets
+   * them go: git waits for each answer, and gets it then.
+   */
+  hold(): () => void {
+    const { promise, resolve } = Promise.withResolvers<void>();
+    this.#held = promise;
+    return () => {
+      if (this.#held === promise) this.#held = undefined;
+      resolve();
+    };
+  }
+
+  /** How many requests the server holds now. */
+  get waiting(): number {
+    return this.#waiting;
+  }
+
   /** The tokens git signed in with, in order, accepted or not. */
   signedInWith(): string[] {
     return [...this.#signedInWith];
@@ -84,6 +105,12 @@ export class GitHttpServer {
     program: string,
   ): Promise<void> {
     const body = await buffer(request);
+    if (this.#held !== undefined) {
+      this.#waiting += 1;
+      await this.#held.finally(() => {
+        this.#waiting -= 1;
+      });
+    }
     const token = basicPassword(request.headers.authorization);
     if (token !== undefined) this.#signedInWith.push(token);
     if (token !== this.#accepted) {
