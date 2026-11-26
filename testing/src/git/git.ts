@@ -1,12 +1,35 @@
 /** A test's own git: the `git` on `PATH`, without the user's or the system's config. */
 
 import { execFileSync } from 'node:child_process';
-import { closeSync, mkdtempSync, openSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import {
+  closeSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readlinkSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { devNull, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-/** The environment a test's git runs in: none of the user's settings, and a fixed author. */
+/**
+ * The environment a test's git runs in: none of the user's settings, and a fixed author. A script
+ * that runs `git`, as the fixtures do, runs {@link gitProgram}.
+ */
 export function testGitEnvironment(): Record<string, string> {
+  const env = withoutSettings();
+  const { folder } = gitFound();
+  if (folder !== undefined) env.PATH = `${folder}${delimiter}${env.PATH ?? ''}`;
+  return env;
+}
+
+/** {@link testGitEnvironment}, but for `PATH`, which is this process's. */
+function withoutSettings(): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [name, value] of Object.entries(process.env)) {
     if (value !== undefined && !name.startsWith('GIT_') && name !== 'XDG_CONFIG_HOME') {
@@ -18,6 +41,13 @@ export function testGitEnvironment(): Record<string, string> {
     HOME: tmpdir(),
     GIT_CONFIG_GLOBAL: devNull,
     GIT_CONFIG_NOSYSTEM: '1',
+    // No gc or maintenance in the background, which git starts after a big commit or fetch: it
+    // takes the machine's time from the tests, and writes in folders they're removing.
+    GIT_CONFIG_COUNT: '2',
+    GIT_CONFIG_KEY_0: 'gc.auto',
+    GIT_CONFIG_VALUE_0: '0',
+    GIT_CONFIG_KEY_1: 'maintenance.auto',
+    GIT_CONFIG_VALUE_1: 'false',
     GIT_AUTHOR_NAME: 'Lo test',
     GIT_AUTHOR_EMAIL: 'test@lo.invalid',
     GIT_COMMITTER_NAME: 'Lo test',
@@ -60,7 +90,7 @@ export function gitBytes(
   input?: Uint8Array | string,
 ): Buffer {
   const run = (stdin: 'pipe' | number, piped?: Uint8Array | string) =>
-    execFileSync('git', args, {
+    execFileSync(gitProgram(), args, {
       cwd: dir,
       env: testGitEnvironment(),
       input: piped,
@@ -87,12 +117,58 @@ export function git(dir: string, ...args: string[]): string {
   return gitBytes(dir, args).toString('utf8').trim();
 }
 
-/** The `git` on `PATH`, as an absolute path, for tests that need a real git to wrap or compare. */
+/** Apple's `git`, which runs the developer tools' git: Xcode's, or the Command Line Tools'. */
+const APPLE_GIT = '/usr/bin/git';
+
+/** Where the tests keep folders of their own for `PATH`, each holding only a link named `git`. */
+const LINKS = fileURLToPath(new URL('../../../node_modules/.cache/lo-testing/', import.meta.url));
+
+/** The tests' git, and the folder that puts it first on `PATH`, if `PATH` has another first. */
+interface Found {
+  readonly program: string;
+  readonly folder: string | undefined;
+}
+
+let found: Found | undefined;
+
+/**
+ * The `git` on `PATH`, as an absolute path, for tests that run a real git, wrap it or compare with
+ * it. On a Mac, where that's Apple's, it's the git Apple's runs: Apple's looks up the developer
+ * tools each time it runs, which makes a short git command take three times as long, and the
+ * tests run thousands.
+ */
 export function gitProgram(): string {
-  const found = execFileSync('sh', ['-c', 'command -v git'], {
-    env: testGitEnvironment(),
-    encoding: 'utf8',
-  }).trim();
-  if (!found.startsWith('/')) throw new Error(`the tests need git on PATH, not ${found}`);
+  return gitFound().program;
+}
+
+/** {@link gitProgram}, found once for each test file, and for Apple's, its folder. */
+function gitFound(): Found {
+  if (found !== undefined) return found;
+  const env = withoutSettings();
+  const onPath = execFileSync('sh', ['-c', 'command -v git'], { env, encoding: 'utf8' }).trim();
+  if (!onPath.startsWith('/')) throw new Error(`the tests need git on PATH, not ${onPath}`);
+  if (process.platform !== 'darwin' || onPath !== APPLE_GIT) {
+    found = { program: onPath, folder: undefined };
+    return found;
+  }
+  const program = execFileSync('xcrun', ['--find', 'git'], { env, encoding: 'utf8' }).trim();
+  const folder = join(LINKS, createHash('sha256').update(program).digest('hex').slice(0, 16));
+  const link = join(folder, 'git');
+  if (linkTarget(link) !== program) {
+    // Made beside it and moved into place, so a file starting meanwhile never finds it half made.
+    mkdirSync(folder, { recursive: true });
+    const made = join(folder, `git-${process.pid}-${randomUUID()}`);
+    symlinkSync(program, made);
+    renameSync(made, link);
+  }
+  found = { program, folder };
   return found;
+}
+
+function linkTarget(path: string): string | undefined {
+  try {
+    return readlinkSync(path);
+  } catch {
+    return undefined;
+  }
 }

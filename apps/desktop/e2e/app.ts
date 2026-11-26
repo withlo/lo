@@ -23,10 +23,12 @@ import {
 import { liveArgs, liveDataFolder } from './live.ts';
 
 /**
- * How long the window holds back what a tab shows first, in a test that isn't about that bound:
- * three times the real one, so a busy machine is never late enough to race it, and no longer, since
- * a test that leaves the overview before it's drawn is waiting on the bound to let it go. A test
- * that is about the bound asks for it itself, with `test.use({ holdLimit: HOLD_LIMIT })`.
+ * How long the window holds back what a tab shows first: three times the real bound, so a busy
+ * machine is never late enough to race it, and no longer, since a test that leaves the overview
+ * before it's drawn is waiting on the bound to let it go. A test of what the window does by the
+ * bound keeps this one too, and checks against it: Lo knowing what a tab shows can take a busy CI
+ * runner most of the real one. Only a test of the real bound itself, such as Lo giving up at it,
+ * asks for it, with `test.use({ holdLimit: HOLD_LIMIT })`.
  */
 export const HELD_LONG = 3_000;
 
@@ -334,8 +336,8 @@ interface Fixtures {
    */
   readEvery: number | undefined;
   /**
-   * How long, in milliseconds, the window holds back what a tab shows first. Long unless a test is
-   * about that bound, which it asks for with `HOLD_LIMIT`.
+   * How long, in milliseconds, the window holds back what a tab shows first: {@link HELD_LONG},
+   * unless a test is about the real bound itself, which it asks for with `HOLD_LIMIT`.
    */
   holdLimit: number;
   /**
