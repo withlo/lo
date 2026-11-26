@@ -103,6 +103,9 @@ function hostOf() {
   const marks = new Map<string, HTMLElement>();
   const shown: (string | undefined)[] = [];
   const focused: string[] = [];
+  /** The popovers holding a comment box, by their keys, and those whose box was let go. */
+  const boxed = new Set<string>();
+  const released: string[] = [];
   const host: PopHost<At> = {
     scroller,
     lines: () => lines,
@@ -123,6 +126,11 @@ function hostOf() {
     focusLine: (at) => focused.push(at.key),
     scrollBy: () => {},
     onMark: (target, at) => marks.get(at.key)?.contains(target) ?? false,
+    holds: (at) => boxed.has(at.key),
+    release: (at) => {
+      if (boxed.delete(at.key)) released.push(at.key);
+    },
+    drawn: () => {},
   };
   const mark = (line: number): { at: At; element: HTMLElement } => {
     const element = document.createElement('span');
@@ -130,7 +138,7 @@ function hostOf() {
     marks.set(`l${line}`, element);
     return { at: { key: `l${line}`, line }, element };
   };
-  return { host, scroller, mark, shown, focused };
+  return { host, scroller, mark, shown, focused, boxed, released };
 }
 
 /** What a popover draws: one button, saying whether it's pinned. */
@@ -278,6 +286,29 @@ describe('ThreadPop', () => {
     vi.advanceTimersByTime(REST);
     pop.dom.querySelector('button')!.dispatchEvent(new Event('pointerdown', { bubbles: true }));
     expect(pop.pinned).toBe(true);
+  });
+
+  test('holding a box, only the box closing closes it; closed or moved on purpose, it lets the box go first', () => {
+    const { host, mark, scroller, boxed, released } = hostOf();
+    pop = new ThreadPop(host);
+    pop.render = drawing().render;
+    const five = mark(5).at;
+    const nine = mark(9).at;
+    pop.pin(five);
+    boxed.add('l5');
+    // A press outside leaves it be.
+    scroller.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(pop.pinned).toBe(true);
+    expect(released).toEqual([]);
+    // Moved to another line, the box goes first.
+    pop.pin(nine);
+    expect(released).toEqual(['l5']);
+    expect(pop.at?.key).toBe('l9');
+    // Closed, the box goes first.
+    boxed.add('l9');
+    pop.close();
+    expect(released).toEqual(['l5', 'l9']);
+    expect(pop.open).toBe(false);
   });
 
   test('a key closes a preview, one Lo’s commands take too, but not a modifier alone', () => {

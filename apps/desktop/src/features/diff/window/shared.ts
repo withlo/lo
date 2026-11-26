@@ -13,6 +13,7 @@ import type {
   ComposeOptions,
   Composer,
   ComposerEvents,
+  DraftMark,
   OnFile,
   Place,
   Span,
@@ -247,6 +248,18 @@ export interface WritingDiff {
   pinThread(id: string, focus?: boolean): boolean;
   /** The review threads in the popover pinned, by their ids: none while there's none. */
   pinned(): readonly string[];
+  /** Whether the threads' popover is pinned, with threads in it or a comment box alone. */
+  popoverPinned(): boolean;
+  /**
+   * Beside lines, the comments not sent its marks show: a new comment's while its box is open, and
+   * each draft whose box closed (the code view's `setDrafts`).
+   */
+  setDrafts(drafts: readonly DraftMark[]): void;
+  /**
+   * Beside lines, opens the box of the draft whose mark is on a line, or on a thread's, as a click on
+   * the mark does. Says whether there was one (the code view's `openDraft`).
+   */
+  openDraft(at: Place | { readonly thread: string }): boolean;
   /** Closes the threads' popover, focus in it going to its line. Says whether one was open. */
   closePopover(): boolean;
   /**
@@ -279,6 +292,9 @@ export function writingDiff(tab: string): WritingDiff | undefined {
     openThread: (id, open) => view.openThread(id, open),
     pinThread: (id, focus) => view.pinThread(id, focus),
     pinned: () => view.pinned(),
+    popoverPinned: () => view.popoverPinned(),
+    setDrafts: (drafts) => view.setDrafts(drafts),
+    openDraft: (at) => view.openDraft(at),
     closePopover: () => view.closePopover(),
     threadsDrawn: (at) => view.threadsDrawn(at),
     claimThread: (id) => view.claimThread(id),

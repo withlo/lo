@@ -279,6 +279,7 @@ export {
 } from './Thread.tsx';
 export {
   type PoppedThread,
+  ReplySlot,
   ringComment,
   ThreadPopover,
   type ThreadPopoverProps,

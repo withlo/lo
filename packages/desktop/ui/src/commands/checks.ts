@@ -36,7 +36,7 @@ import {
 } from './match.ts';
 import { parseKeys, systemStrokes, writeStrokes, type Stroke, type System } from './notation.ts';
 import { codeScopes, engineScopes, type Mode } from './scopes.ts';
-import { fit, NO_TARGET, type Target, type TargetKind } from './targets.ts';
+import { fit, NO_TARGET, together, type Target, type TargetKind } from './targets.ts';
 import { vimDefaults } from './vim.ts';
 
 /** The systems Lo runs on, as the checks try each. */
@@ -453,6 +453,8 @@ function sampleTarget(kind: TargetKind): Target {
       return { kind, file: 'f' };
     case 'thread':
       return { kind, thread: 't' };
+    case 'draft':
+      return { kind, at: { file: 'f', side: 'new', line: 1 } };
     case 'layer':
       return { kind, layer: 1 };
     case 'block':
@@ -512,7 +514,9 @@ export function checkMenus(features: readonly Declarations[]): string[] {
  * one for the focused scope beats one for anywhere, on the same keys, so `z a` can collapse a
  * thread on one and the file elsewhere, and `⌘⏎` can add to the review in a box and submit it
  * elsewhere, unless the key is one the box's
- * editor handles itself (`editor`), which a command for anywhere would take from it. A motion
+ * editor handles itself (`editor`), which a command for anywhere would take from it. Two for what
+ * the key acts on never meet where no one target gives both (`together`): `⏎` shows a thread on
+ * one, and opens a draft on another. A motion
  * against another command in a code view has no such exception, since matching never takes the
  * motion there. Nor may a binding start with a key the engine takes first: `j` or `k` in a menu.
  */
@@ -556,6 +560,9 @@ function engineTakes(binding: Binding, site: Site): string | undefined {
 /** How two bindings that hold at the same site clash there, if they do. */
 function clash(a: Binding, b: Binding, site: Site): string | undefined {
   const { system } = site;
+  // Each for what the key acts on, where no one target gives both: only one ever holds.
+  const on = [a.command.when?.on, b.command.when?.on] as const;
+  if (on[0] !== undefined && on[1] !== undefined && !together(on[0], on[1])) return undefined;
   const [short, long] = a.strokes.length <= b.strokes.length ? [a, b] : [b, a];
   if (!startsWith(long.strokes, short.strokes)) return undefined;
   if (short.strokes.length === long.strokes.length) {

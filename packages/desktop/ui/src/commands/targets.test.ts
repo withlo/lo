@@ -40,6 +40,24 @@ test('a line or a header in a comment box gives the box, and nothing else does',
   expect(plainTarget({ kind: 'box', box: 'b1' })).toEqual({ kind: 'box', box: 'b1' });
 });
 
+test('a line with a draft’s mark gives the draft, but where it gives a thread, or is lines', () => {
+  const at = { file: 'a.ts', side: 'new', line: 4 } as const;
+  const drafted: LineTarget = { kind: 'line', at, draft: true };
+  expect(fit(['draft'], drafted)).toEqual({ kind: 'draft', at });
+  expect(isOn(drafted, 'draft')).toBe(true);
+  expect(fit(['draft'], { ...drafted, thread: 't1' })).toBeUndefined();
+  expect(isOn({ ...drafted, thread: 't1' }, 'draft')).toBe(false);
+  expect(fit(['draft'], { kind: 'line', at })).toBeUndefined();
+  const lines: LineTarget = {
+    kind: 'line',
+    at: { file: 'a.ts', side: 'new', from: 3, to: 4 },
+    draft: true,
+  };
+  expect(fit(['draft'], lines)).toBeUndefined();
+  expect(plainTarget(drafted)).toEqual(drafted);
+  expect(plainTarget({ kind: 'draft', at })).toEqual({ kind: 'draft', at });
+});
+
 test('a target that fits none of the kinds is refused', () => {
   expect(fit(['line'], { kind: 'none' })).toBeUndefined();
   expect(fit(['block'], line)).toBeUndefined();

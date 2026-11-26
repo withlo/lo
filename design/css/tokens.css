@@ -93,7 +93,7 @@
   --lo-diff-del-word: #4d1f22; /* Changed words inside removed lines. */
   --lo-diff-del-gutter: #3a1e1e; /* Line-number gutter on removed lines. */
   --lo-diff-moved-fg: #a5c5e9; /* Moved-code labels, the move sign and its line numbers. */
-  --lo-diff-moved-bg: #182431; /* Lines of a moved block. */
+  --lo-diff-moved-bg: #1a1e27; /* Lines of a moved block. */
   --lo-diff-moved-border: #2e445c; /* Top edge of a moved block's label. */
   --lo-diff-moved-edit: #2a4466; /* Edits inside a moved block, the only part highlighted. */
   --lo-diff-hunk-bg: #191f27; /* GitHub hunk headers (@@ … @@), before the local copy is ready. */

@@ -766,11 +766,11 @@ export function draw(options: DrawOptions): Drawing {
         root: () => parent,
         holds: (element) => parent.contains(element) && inCodeOf(element, 'diff'),
         here: () => entryAt(view.keyState().target),
-        // A thread's popover pinned over the diff closes on `Esc` in the diff, and then an
-        // overview's note open in it.
+        // A thread's popover pinned over the diff, or a new comment's, closes on `Esc` in the
+        // diff, and then an overview's note open in it.
         escape: (focused) => {
           if (!parent.contains(focused)) return undefined;
-          if (view.pinned().length > 0) return () => void view.closePopover();
+          if (view.popoverPinned()) return () => void view.closePopover();
           return view.hasOpenNote() ? () => view.closeNote() : undefined;
         },
       }),

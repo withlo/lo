@@ -9,6 +9,7 @@ import type {
   Composer,
   ComposerEvents,
   ComposeOptions,
+  DraftMark,
   OnFile,
   Place,
   Span,
@@ -62,6 +63,7 @@ import {
   keptOpen,
   LAND_WAIT,
   landBoxes,
+  openDraftsBetween,
   discardable,
   discarding,
   lastDiscarded,
@@ -79,6 +81,7 @@ import {
   takeJoined,
   takenDown,
   takeOffer,
+  drafted,
   editing,
   replying,
   timelineBox,
@@ -150,6 +153,10 @@ interface Drawn {
     closed?: 'close' | 'landed' | 'dismiss';
   };
 }
+
+/** How threads show in code, as the setting says. */
+const threadsShow = vi.hoisted(() => ({ mode: 'between' as 'beside' | 'between' }));
+vi.mock('./mode.ts', () => ({ threadsMode: () => threadsShow.mode }));
 
 const diff = vi.hoisted(() => ({
   current: undefined as unknown,
@@ -233,6 +240,8 @@ function fakeDiff(missing: (at: unknown) => boolean = () => false, since = false
   /** The threads drawn under each line or header, by `where`. */
   const onScreen = new Map<string, string[]>();
   const vim = vi.fn<(keys: readonly string[]) => void>();
+  /** The drafts its marks show beside lines, as last told. */
+  const drafts: { current: readonly DraftMark[] } = { current: [] };
   const shown: { -readonly [K in keyof DrawnDiff]: DrawnDiff[K] } = {
     at: HEAD,
     comparison: null,
@@ -273,6 +282,11 @@ function fakeDiff(missing: (at: unknown) => boolean = () => false, since = false
     },
     pinThread: () => false,
     pinned: () => [],
+    popoverPinned: () => false,
+    setDrafts: (given) => {
+      drafts.current = given;
+    },
+    openDraft: () => false,
     closePopover: () => false,
     claimThread: (id) => {
       claimed.push(id);
@@ -282,7 +296,7 @@ function fakeDiff(missing: (at: unknown) => boolean = () => false, since = false
     hasFocus: () => false,
   };
   diff.current = writing;
-  return { drawn, writing, vim, claimed, released, toggled, onScreen, shown };
+  return { drawn, writing, vim, claimed, released, toggled, onScreen, shown, drafts };
 }
 
 /** A line or header, as a key. */
@@ -495,6 +509,7 @@ beforeEach(() => {
   answers['comments.discard'] = () => undefined;
   overview.blocks.clear();
   overview.has.clear();
+  threadsShow.mode = 'between';
 });
 
 afterEach(() => {
@@ -1493,6 +1508,28 @@ describe('a box on a code block', () => {
 });
 
 describe('sending', () => {
+  test.each([
+    ['as the diff is drawn again', false],
+    ['as its tab goes to the background', true],
+  ])(
+    'a send that fails with its box taken down %s says so in the box alone, with no toast',
+    async (_, background) => {
+      const { drawn, box } = await opened();
+      const before = notice();
+      let answer: ((outcome: SendOutcome) => void) | undefined;
+      answers['comments.send'] = () => new Promise<SendOutcome>((resolve) => (answer = resolve));
+      const sent = send(box, 'review');
+      if (background) said.screen = 'elsewhere';
+      takenDown(box, drawn[0]!.composer);
+      expect(box.composer).toBeUndefined();
+      answer?.({ kind: 'refused', refusal: { kind: 'github', message: 'Validation failed' } });
+      await sent;
+      expect(box.state.refusal).toEqual({ kind: 'github', message: 'Validation failed' });
+      expect(notice()).toBe(before);
+      expect(heard.at(-1)).toBe('Couldn’t send the comment. Validation failed');
+    },
+  );
+
   test('sent, the box closes as after a send, and a thread on a newer push is marked', async () => {
     const { drawn, box } = await opened();
     const outcome: SendOutcome = {
@@ -1792,6 +1829,234 @@ function uploadIds(): unknown[] {
 function png(): File {
   return new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], 'shot.png');
 }
+
+/** Lets the boxes tell the diff of their drafts, which they do once what changed them is done. */
+function marked(): Promise<void> {
+  return new Promise((resolve) => queueMicrotask(resolve));
+}
+
+/** Main's draft on line 5, which `opened` opens, standing as `changes` say. */
+function standsOnFive(changes: Partial<DraftRow>): void {
+  takeDrafts({ id: VIEW, drafts: [row(onLines(null, 5), 'Ship it?', changes)] });
+}
+
+describe('beside lines', () => {
+  beforeEach(() => {
+    threadsShow.mode = 'beside';
+  });
+
+  test('a draft restored stays closed, its mark on its lines, which opens it focused', async () => {
+    const { drawn, drafts } = fakeDiff();
+    takeDrafts({ id: VIEW, drafts: [row(onLines(4, 6), 'Kept', { restored: true, savedAt: 1 })] });
+    restore(VIEW);
+    await marked();
+    expect(drawn).toEqual([]);
+    expect(drafts.current).toMatchObject([
+      { at: { file: 'f0', side: 'new', from: 4, to: 6 }, words: 'lines 4–6' },
+    ]);
+    drafts.current[0]!.open();
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0]).toMatchObject({ options: { focus: true } });
+    expect(drawn[0]!.composer.text).toBe('Kept');
+    // Open, a new comment's box still has its mark, where its popover is.
+    await marked();
+    expect(drafts.current).toHaveLength(1);
+  });
+
+  test('`c` on the line a closed draft’s mark is on opens that draft, its words in it', async () => {
+    const { drawn, drafts } = fakeDiff();
+    takeDrafts({ id: VIEW, drafts: [row(onLines(4, 6), 'On a range', { restored: true })] });
+    restore(VIEW);
+    await comment(tab(), { kind: 'line', at: { file: 'f0', side: 'new', line: 6 } }, 'review');
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0]!.at).toEqual({ file: 'f0', side: 'new', from: 4, to: 6 });
+    expect(drawn[0]!.composer.text).toBe('On a range');
+    shut(drawn[0]!, true);
+    await marked();
+    expect(drafts.current).toHaveLength(1);
+  });
+
+  test('lines selected, or `s`, where a closed draft’s mark is, open a box of their own', async () => {
+    const { drawn, drafts } = fakeDiff();
+    takeDrafts({ id: VIEW, drafts: [row(onLines(4, 6), 'On a range', { restored: true })] });
+    restore(VIEW);
+    const selected = { file: 'f0', side: 'new', from: 5, to: 6 } as const;
+    await comment(tab(), { kind: 'line', at: selected }, 'review');
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0]!.at).toEqual(selected);
+    expect(drawn[0]!.composer.text).toBe('');
+    shut(drawn[0]!, false);
+    await comment(
+      tab(),
+      { kind: 'line', at: { file: 'f0', side: 'new', line: 6 } },
+      'review',
+      true,
+    );
+    expect(drawn).toHaveLength(2);
+    expect(drawn[1]!.composer.text).toContain('```suggestion');
+    expect(drawn[1]!.composer.text).not.toContain('On a range');
+    shut(drawn[1]!, false);
+    await marked();
+    expect(drafts.current).toMatchObject([{ words: 'lines 4–6' }]);
+  });
+
+  test('a reply closed with words in it puts the dot on its thread, and its popover’s tag', async () => {
+    const { drawn, drafts } = withThreads(threadRow('t1', 5));
+    takeDrafts({
+      id: VIEW,
+      drafts: [row({ kind: 'reply', thread: 't1' }, 'A reply', { restored: true })],
+    });
+    restore(VIEW);
+    await marked();
+    expect(drawn).toEqual([]);
+    expect(drafts.current).toMatchObject([{ at: { thread: 't1' }, words: '' }]);
+    expect(drafted.get(VIEW)).toEqual(new Set(['t1']));
+  });
+
+  test('a reply’s draft is marked on its thread before the thread is drawn, for its mark to take', async () => {
+    const { drawn, drafts } = fakeDiff();
+    takeDrafts({
+      id: VIEW,
+      drafts: [row({ kind: 'reply', thread: 't1' }, 'A reply', { restored: true })],
+    });
+    restore(VIEW);
+    await marked();
+    expect(drawn).toEqual([]);
+    expect(drafts.current).toMatchObject([{ at: { thread: 't1' }, words: '' }]);
+  });
+
+  test('a draft restored whose send isn’t confirmed stays closed, its mark on its line', async () => {
+    const { drawn, drafts } = fakeDiff();
+    const before = notice();
+    takeDrafts({
+      id: VIEW,
+      drafts: [
+        row(onLines(null, 5), 'Ship it?', {
+          restored: true,
+          sending: 'unknown',
+          sent: 'Ship it?',
+        }),
+      ],
+    });
+    restore(VIEW);
+    await marked();
+    expect(drawn).toEqual([]);
+    expect(notice()).toBe(before);
+    expect(drafts.current).toMatchObject([
+      { at: { file: 'f0', side: 'new', line: 5 }, words: 'line 5' },
+    ]);
+    drafts.current[0]!.open();
+    expect(drawn).toHaveLength(1);
+    const box = boxIn(drawn[0]!);
+    expect(offersOf(box.state)).toEqual(['checkAgain']);
+    expect(asked('comments.send')).toEqual([]);
+  });
+
+  test('a send that fails with its box closed says so in a toast, whose “Show thread” opens it again', async () => {
+    const { drawn, box } = await opened();
+    let answer: ((outcome: SendOutcome) => void) | undefined;
+    answers['comments.send'] = () => new Promise<SendOutcome>((resolve) => (answer = resolve));
+    const sent = send(box, 'review');
+    // The popover moved on as it went: the box closes, keeping its draft.
+    shut(drawn[0]!, true);
+    expect(box.composer).toBeUndefined();
+    answer?.({ kind: 'refused', refusal: { kind: 'github', message: 'Validation failed' } });
+    await sent;
+    expect(notice()).toMatchObject({
+      title: 'Couldn’t send the comment',
+      body: 'Validation failed',
+      action: { label: 'Show thread' },
+    });
+    expect(box.state.text).toBe('Ship it?');
+    notice()!.action!.onClick();
+    expect(drawn).toHaveLength(2);
+    expect(drawn[1]).toMatchObject({ options: { focus: true } });
+    expect(drawn[1]!.composer.text).toBe('Ship it?');
+    expect(box.state.refusal).toEqual({ kind: 'github', message: 'Validation failed' });
+    expect(asked('comments.send')).toHaveLength(1);
+    // The toast says it to a screen reader: nothing says it again.
+    expect(heard).not.toContain('Couldn’t send the comment. Validation failed');
+  });
+
+  test('a send whose answer is lost with its box closed keeps its mark, and its toast warns once', async () => {
+    const { drawn, box, drafts } = await opened();
+    let answer: ((outcome: SendOutcome) => void) | undefined;
+    answers['comments.send'] = () => new Promise<SendOutcome>((resolve) => (answer = resolve));
+    const sent = send(box, 'review');
+    standsOnFive({ sending: 'sending', sent: 'Ship it?' });
+    shut(drawn[0]!, true);
+    answer?.({ kind: 'lost' });
+    await sent;
+    standsOnFive({ sending: 'checking', sent: 'Ship it?' });
+    await marked();
+    expect(drafts.current).toMatchObject([
+      { at: { file: 'f0', side: 'new', line: 5 }, words: 'line 5' },
+    ]);
+    const told = heard.length;
+    standsOnFive({ sending: 'unknown', sent: 'Ship it?' });
+    expect(notice()).toMatchObject({
+      title: 'Comment not confirmed',
+      body: 'GitHub didn’t respond.',
+      tone: 'warning',
+      action: { label: 'Show thread' },
+    });
+    expect(heard.slice(told)).toEqual([]);
+    await marked();
+    expect(drafts.current).toHaveLength(1);
+    // Its line's `c` opens it, which only looks for it: nothing sends it again.
+    await comment(tab(), { kind: 'line', at: { file: 'f0', side: 'new', line: 5 } }, 'review');
+    expect(drawn).toHaveLength(2);
+    expect(drawn[1]!.composer.text).toBe('Ship it?');
+    expect(offersOf(box.state)).toEqual(['checkAgain']);
+    await send(box, 'review');
+    expect(asked('comments.send')).toHaveLength(1);
+    // Looked for, closed again as it's looked for, and not posted: a toast says that too.
+    standsOnFive({ sending: 'checking', sent: 'Ship it?' });
+    shut(drawn[1]!, true);
+    standsOnFive({ sending: 'notPosted' });
+    expect(notice()).toMatchObject({
+      title: 'Couldn’t send the comment',
+      tone: 'danger',
+      action: { label: 'Show thread' },
+    });
+  });
+
+  test('a box closed as its comment went says how it went in a toast once threads are between lines', async () => {
+    const { drawn, box } = await opened();
+    let answer: ((outcome: SendOutcome) => void) | undefined;
+    answers['comments.send'] = () => new Promise<SendOutcome>((resolve) => (answer = resolve));
+    const sent = send(box, 'review');
+    // Threads went between lines as it went: the box closed, keeping its draft, and stayed so.
+    shut(drawn[0]!, true);
+    threadsShow.mode = 'between';
+    answer?.({ kind: 'refused', refusal: { kind: 'github', message: 'Validation failed' } });
+    await sent;
+    expect(notice()).toMatchObject({
+      title: 'Couldn’t send the comment',
+      action: { label: 'Show thread' },
+    });
+  });
+
+  test('as threads go between lines, each draft closed beside them opens in the flow', () => {
+    const { drawn } = fakeDiff();
+    takeDrafts({ id: VIEW, drafts: [row(onLines(4, 6), 'Kept', { restored: true })] });
+    restore(VIEW);
+    expect(drawn).toEqual([]);
+    threadsShow.mode = 'between';
+    openDraftsBetween();
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0]!.options?.focus).toBeFalsy();
+    expect(drawn[0]!.composer.text).toBe('Kept');
+  });
+
+  test('a box drawn as its send fails says why itself, with no toast', async () => {
+    const { box } = await opened();
+    const before = notice();
+    answers['comments.send'] = () => ({ kind: 'refused', refusal: { kind: 'notInDiff' } });
+    await send(box, 'now');
+    expect(notice()).toBe(before);
+  });
+});
 
 describe('files attached', () => {
   /** Each upload's answer, given by the test once main is asked. */
