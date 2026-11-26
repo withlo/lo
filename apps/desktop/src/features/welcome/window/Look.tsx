@@ -3,10 +3,18 @@
 // Settings at the end of the label's row. A press writes the setting at once, and the window
 // follows it, so Continue writes nothing.
 
-import { Choices, Collapse, LayoutPicture, ThemePicture, type ChoiceItem } from '@lo/ui';
+import {
+  Choices,
+  Collapse,
+  LayoutPicture,
+  ThemePicture,
+  ThreadsPicture,
+  type ChoiceItem,
+} from '@lo/ui';
 import type { ReactNode } from 'react';
 import { useStore } from 'zustand';
 
+import { threadsChoice } from '../../comments/window/shared.ts';
 import { layoutChoice } from '../../diff/window/shared.ts';
 import { themeChoice, useChoice, type SettingChoice } from '../../settings/window/shared.ts';
 import { choose } from './actions.ts';
@@ -15,9 +23,9 @@ import { welcomeStore } from './store.ts';
 
 /**
  * A setting's group of cards: its label and its place in Settings, then a card for each option,
- * with `picture` drawing what it looks like. It shows the card last pressed while the setting is
- * being written, then what's on file, and under it the `Problem` its row in Settings shows when
- * the file refused it.
+ * with `picture` drawing what it looks like, and its line where the feature gave it one. It shows
+ * the card last pressed while the setting is being written, then what's on file, and under it the
+ * `Problem` its row in Settings shows when the file refused it.
  */
 function Group<T extends string>({
   choice,
@@ -36,6 +44,7 @@ function Group<T extends string>({
     value: option.value,
     title: option.label,
     picture: picture(option.value),
+    ...(option.description === undefined ? {} : { description: option.description }),
   }));
   return (
     <div>
@@ -71,6 +80,7 @@ export function LookStep(): ReactNode {
       <div className="flex flex-col gap-16">
         <Group first choice={themeChoice} picture={(theme) => <ThemePicture theme={theme} />} />
         <Group choice={layoutChoice} picture={(layout) => <LayoutPicture layout={layout} />} />
+        <Group choice={threadsChoice} picture={(threads) => <ThreadsPicture threads={threads} />} />
       </div>
     </>
   );

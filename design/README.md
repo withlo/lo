@@ -477,7 +477,7 @@ A feature that needs set-up adds a step to the welcome flow and a row in Setting
   code, the diff's own grounds, the real icon for a mark. Never a screenshot or an image file, and
   no words in it. A picture follows the theme; only a picture of a theme pins one. Use one where
   options differ in how Lo looks, not in what it does. The pictures are `@lo/ui`'s (`ThemePicture`,
-  `LayoutPicture`), drawn over one `MiniCode`.
+  `LayoutPicture`, `ThreadsPicture`), drawn over one `MiniCode`.
 - The welcome's foot stays on screen. In a window too short for a step, the step scrolls under it.
 - The welcome's steps, its buttons and its keys are in `AGENTS.md`, under "The welcome flow".
 

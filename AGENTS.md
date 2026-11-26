@@ -1326,11 +1326,12 @@ set-up, and opening a pull request.
      accounts feature's dialog) or importing from GitHub CLI when Lo finds one. A notice with "Check
      again" is here when Lo can't find a Git it can run: `welcome.checkGit` asks main to look again
      (`git.check()`), and what Lo finds reaches the window on `app.git`.
-  2. How Lo looks: `theme` and `diff.layout`, each a group of `Choices` cards with a `picture`,
-     written as a card is pressed. The feature that owns each setting offers it from its
-     `window/shared.ts` as a `SettingChoice` (`choiceOf`), and the step reads and writes it with
-     `useChoice`. A write the file refuses is the `Problem` the setting's row in Settings shows,
-     under its group, and the cards show what's on file again.
+  2. How Lo looks: `theme`, `diff.layout` and `comments.threads`, each a group of `Choices` cards
+     with a `picture`, written as a card is pressed. The feature that owns each setting offers it
+     from its `window/shared.ts` as a `SettingChoice` (`choiceOf`), with a line for each card where
+     its picture can't show what the option does, as `comments.threads` has; the step reads and
+     writes it with `useChoice`. A write the file refuses is the `Problem` the setting's row in
+     Settings shows, under its group, and the cards show what's on file again.
   3. Standard keys or Vim keys, which is the `editor.vim` setting, written with the comments
      feature's `chooseVimKeys`. A diff drawn for the step is where `j`, `k` and `c` work. `c` opens
      the comment box every comment is written in (`createComposer`), with the keys chosen. Nothing
