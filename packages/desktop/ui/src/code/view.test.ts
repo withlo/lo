@@ -3312,7 +3312,9 @@ describe('threads beside lines', () => {
     expect(drawn.at(-1)).toBe('one pinned');
     expect(shown.pinned()).toEqual(['one']);
     expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 8));
-    expect(document.activeElement?.getAttribute('data-comment')).toBe('one.1');
+    // Focus is in it, with no comment ringed: the click draws no ring.
+    expect(layer().contains(document.activeElement)).toBe(true);
+    expect(document.activeElement?.closest('[data-comment]')).toBeNull();
     // Its lines' cells take the selected ground, and its marks their full colour.
     const content = parent!.querySelector('.cm-content[aria-label="After"]')!;
     const editor = content.closest('.cm-editor')!;

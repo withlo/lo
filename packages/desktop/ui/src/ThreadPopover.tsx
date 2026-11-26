@@ -31,7 +31,9 @@ export function ThreadPopover({ label, threads }: ThreadPopoverProps) {
       role="dialog"
       aria-label={label}
       data-thread-pop=""
-      className="thread-pop rounded-md border border-border bg-bg-overlay text-fg shadow-pop text-ui"
+      // Focus comes to it as a click on its mark opens it, with no ring: `j` rings a comment.
+      tabIndex={-1}
+      className="thread-pop rounded-md border border-border bg-bg-overlay text-fg shadow-pop outline-none text-ui"
     >
       {threads.map(({ id, card }, index) => (
         <div

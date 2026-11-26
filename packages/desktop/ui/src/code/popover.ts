@@ -63,7 +63,13 @@ export interface PopRoom {
   /** How far it's scrolled. */
   readonly scroll: number;
   readonly height: number;
+  /** How wide what scrolls shows: its own width less its scrollbar's room. */
   readonly width: number;
+  /**
+   * Where its edge is, from the left of what scrolls: past `width` by its scrollbar's room, which
+   * is the pane's, though nothing in what scrolls can go over it.
+   */
+  readonly edge: number;
   /** How tall its content is: as far as it can scroll, with its height. */
   readonly end: number;
   /** How tall the pinned file header is, over the top of what scrolls. */
@@ -86,17 +92,21 @@ export function popMax(room: PopRoom, most = token('--lo-thread-pop-h', 480)): n
 }
 
 /**
- * Where a popover goes across, in a pane `width` wide: `lo-thread-pop-w` wide at any width, on its
- * thread lane's left edge, over the other side where its own hasn't the room; where that would
- * take it past the pane's edge, as in a narrow window, it comes back to 8 px inside it.
+ * Where a popover goes across, in a pane whose scroll shows `width` and whose edge is `edge` from
+ * its left: `lo-thread-pop-w` wide at any width, on its thread lane's left edge, where that leaves
+ * it 8 px inside the pane's edge and off its scrollbar; else over the other side, back to there.
+ * In a pane too narrow for it, as with a panel open in a narrow window, it narrows to fit there,
+ * 8 px inside its left edge.
  */
 export function across(
   lines: PopLines,
   width: number,
+  edge = width,
   wide = token('--lo-thread-pop-w', 520),
 ): { left: number; width: number } {
-  const shown = Math.max(0, Math.min(wide, width - 2 * EDGE));
-  return { left: Math.max(EDGE, Math.min(lines.lane, width - EDGE - shown)), width: shown };
+  const right = Math.min(width, edge - EDGE);
+  const shown = Math.max(0, Math.min(wide, right - EDGE));
+  return { left: Math.max(EDGE, Math.min(lines.lane, right - shown)), width: shown };
 }
 
 /** How far to scroll to show `top` to `bottom` in `room` whole, the least, as `reveal` does. */
@@ -126,7 +136,7 @@ export function placePop(
   height: number,
   how: 'preview' | 'opened' | PopSide,
 ): Placed {
-  const { left, width } = across(lines, room.width);
+  const { left, width } = across(lines, room.width, room.edge);
   const under = lines.last + GAP;
   const above = lines.first - GAP - height;
   const placed = (side: PopSide, top: number, scroll = 0): Placed => ({
@@ -348,10 +358,15 @@ export class ThreadPop<At extends PopAt> {
     this.#open(at, 'pinned');
   }
 
-  /** Focus into it, on its first comment, the ring the keys move. */
-  focus(): void {
-    const first = this.dom.querySelector<HTMLElement>('[data-comment]');
-    (first ?? this.dom).focus({ preventScroll: true });
+  /**
+   * Focus into it: with `ring`, on its first comment, the ring the keys move, as `⏎` takes it;
+   * without, on the popover itself, as a click on its mark takes it, which draws no ring, so the
+   * click changes nothing in it but its Close and chips. `j` then rings the first comment.
+   */
+  focus(ring = true): void {
+    const first = ring ? this.dom.querySelector<HTMLElement>('[data-comment]') : null;
+    const popover = this.dom.querySelector<HTMLElement>('[data-thread-pop]');
+    (first ?? popover ?? this.dom).focus({ preventScroll: true });
   }
 
   /**
@@ -462,7 +477,7 @@ export class ThreadPop<At extends PopAt> {
     delete this.dom.dataset.endingStyle;
     const room = this.#host.room();
     this.dom.style.setProperty('--lo-pop-max', `${popMax(room)}px`);
-    this.dom.style.width = `${across(lines, room.width).width}px`;
+    this.dom.style.width = `${across(lines, room.width, room.edge).width}px`;
     // Laid out unseen, as wide as it goes, to be measured and placed before it's seen.
     this.dom.style.visibility = 'hidden';
     this.dom.hidden = false;

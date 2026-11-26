@@ -2552,6 +2552,7 @@ class View implements DiffView {
         scroll: this.dom.scrollTop,
         height: this.dom.clientHeight,
         width: this.dom.clientWidth,
+        edge: this.dom.offsetWidth - this.dom.clientLeft,
         end: this.dom.scrollHeight,
         header: HEADER_HEIGHT,
       }),
@@ -2720,7 +2721,7 @@ class View implements DiffView {
     if (!marked || event.button !== 0) return;
     event.preventDefault();
     this.#hideAdd();
-    if (this.#pop.clicked(marked.at)) this.#pop.focus();
+    if (this.#pop.clicked(marked.at)) this.#pop.focus(false);
   };
 
   /**

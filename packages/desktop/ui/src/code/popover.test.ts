@@ -17,19 +17,30 @@ import {
 } from './popover.ts';
 
 /** A pane 600 px tall and 1200 wide, scrolled 1000 px into 5000, under a 38 px header. */
-const room: PopRoom = { scroll: 1000, height: 600, width: 1200, end: 5000, header: 38 };
+const room: PopRoom = { scroll: 1000, height: 600, width: 1200, edge: 1200, end: 5000, header: 38 };
 
 /** Lines 1200 to 1240 of the content, their lane at 40. */
 const lines: PopLines = { first: 1200, last: 1240, lane: 40 };
 
 describe('across', () => {
   test('it’s 520 wide on its lane, over the other side where its own hasn’t the room', () => {
-    expect(across({ ...lines, lane: 940 }, 2560, 520)).toEqual({ left: 940, width: 520 });
-    expect(across(lines, 1200, 520)).toEqual({ left: 40, width: 520 });
+    expect(across({ ...lines, lane: 940 }, 2560, 2560, 520)).toEqual({ left: 940, width: 520 });
+    expect(across(lines, 1200, 1200, 520)).toEqual({ left: 40, width: 520 });
   });
 
   test('as wide in a narrow pane, it comes back to 8 inside the pane’s edge', () => {
-    expect(across({ ...lines, lane: 400 }, 720, 520)).toEqual({ left: 192, width: 520 });
+    expect(across({ ...lines, lane: 400 }, 720, 720, 520)).toEqual({ left: 192, width: 520 });
+  });
+
+  test('it keeps off a scrollbar, whose room counts as the pane’s', () => {
+    // A 12 px scrollbar: on its lane, 4 px off the scrollbar and 16 inside the pane's edge.
+    expect(across({ ...lines, lane: 604 }, 1128, 1140, 520)).toEqual({ left: 604, width: 520 });
+    // Over the other side, as far as the scrollbar.
+    expect(across({ ...lines, lane: 400 }, 708, 720, 520)).toEqual({ left: 188, width: 520 });
+  });
+
+  test('in a pane too narrow for it, it narrows to 8 inside its left and to the scrollbar', () => {
+    expect(across({ ...lines, lane: 104 }, 408, 420, 520)).toEqual({ left: 8, width: 400 });
   });
 });
 
@@ -276,5 +287,17 @@ describe('ThreadPop', () => {
     pop.pin(mark(5).at);
     pop.focus();
     expect(document.activeElement?.getAttribute('data-comment')).toBe('c2');
+  });
+
+  test('a click on its mark takes focus into it with no comment ringed', () => {
+    const { host, mark } = hostOf();
+    pop = new ThreadPop(host);
+    pop.render = (element, popover) => {
+      element.innerHTML = `<div data-thread-pop tabindex="-1"><div data-thread-id="${popover.threads[0]!.id}"><p data-comment="c2" tabindex="-1">text</p></div></div>`;
+      return { update() {}, destroy() {} };
+    };
+    pop.pin(mark(5).at);
+    pop.focus(false);
+    expect(document.activeElement?.hasAttribute('data-thread-pop')).toBe(true);
   });
 });

@@ -7,7 +7,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanUp, click, render } from '../test/dom.ts';
 import { missingRules } from '../test/classes.ts';
 import { SentPost, Thread, type ThreadComment, type ThreadProps } from './Thread.tsx';
-import { ThreadPopover } from './ThreadPopover.tsx';
+import { ringComment, ThreadPopover } from './ThreadPopover.tsx';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -389,5 +389,26 @@ describe('Thread in a popover', () => {
       'Unresolved thread · lines 10–35',
     );
     expect(await missingRules(host)).toEqual([]);
+  });
+
+  it('moves the ring from comment to comment, from the popover itself to its first', () => {
+    const host = render(
+      <ThreadPopover
+        label="Unresolved thread · lines 10–35"
+        threads={[{ id: 'one', card: popover(true) }]}
+      />,
+    );
+    const shell = host.querySelector<HTMLElement>('[data-thread-pop]')!;
+    const ringed = () => document.activeElement?.getAttribute('data-comment');
+    // A click on its mark puts focus on the popover, with no comment ringed.
+    shell.focus();
+    expect(ringComment(1)).toBe(true);
+    expect(ringed()).toBe('c1');
+    expect(ringComment(1)).toBe(true);
+    expect(ringed()).toBe('c2');
+    // Not past the last.
+    expect(ringComment(1)).toBe(false);
+    expect(ringComment(-1)).toBe(true);
+    expect(ringed()).toBe('c1');
   });
 });

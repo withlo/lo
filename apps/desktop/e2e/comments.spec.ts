@@ -353,21 +353,32 @@ test.describe('beside lines', () => {
     await expect(popover.getByRole('button', { name: 'Close thread' })).toBeVisible();
     expect(await moved(page, before)).toBe(0);
     // 520 wide, its left edge on the lane's, or, where that would take it past the pane's edge,
-    // 8 inside it.
+    // back to 8 inside it, and off its scrollbar.
     const edges = await bubble.evaluate((element) => {
       const cell = element.closest('.cm-gutterElement')!.getBoundingClientRect();
       const lane = element.closest('.lo-threadlane')!.getBoundingClientRect();
       const pane = document.querySelector('.lo-diffview')!;
-      const right = pane.getBoundingClientRect().left + pane.clientLeft + pane.clientWidth;
+      const box = pane.getBoundingClientRect();
+      const right = Math.min(box.left + pane.clientLeft + pane.clientWidth, box.right - 8);
       const shown = document.querySelector('.lo-threadpop')!.getBoundingClientRect();
       return {
         gap: Math.round(shown.top - cell.bottom),
         width: Math.round(shown.width),
-        across: Math.round(shown.left - lane.left) === 0 || Math.round(right - shown.right) === 8,
+        across: Math.round(shown.left - lane.left) === 0 || Math.round(right - shown.right) === 0,
       };
     });
     expect(edges).toEqual({ gap: 4, width: 520, across: true });
     await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 2');
+    // Focus is in it, on no comment, and `j` rings its first.
+    await expect
+      .poll(() => page.evaluate(() => document.activeElement?.closest('[role="dialog"]') !== null))
+      .toBe(true);
+    await page.keyboard.press('j');
+    await expect
+      .poll(() =>
+        page.evaluate(() => document.activeElement?.closest('[data-comment]')?.textContent ?? ''),
+      )
+      .toContain('Start a little higher?');
 
     // Esc closes it, focus going back to its line.
     await page.keyboard.press('Escape');
