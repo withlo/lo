@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { parseOid, type Repo } from '@lo/git';
-import { GithubClient, Token, type GitHubUrls } from '@lo/github';
+import { FilesUnwanted, GithubClient, readPullFiles, Token, type GitHubUrls } from '@lo/github';
 import { fileFolders, replayFetch } from '@lo/testing';
 import { APP_PULL, gitProgram, writeAppRemote } from '@lo/testing/git';
 import { expect, onTestFinished } from 'vitest';
@@ -138,12 +138,21 @@ export function treeTab(
 ) {
   const sent: TreeState[] = [];
   const lines: string[] = [];
+  const github =
+    reads.github ?? (() => Promise.reject(new Error('this test reads nothing from GitHub')));
   const tree = new TreeTab({
     id: 't1',
     reads: {
       clone: reads.clone ?? (() => undefined),
-      github:
-        reads.github ?? (() => Promise.reject(new Error('this test reads nothing from GitHub'))),
+      github,
+      pullFiles:
+        reads.pullFiles ??
+        ((acting, pull, _head, limits, wanted) =>
+          github(acting, (client) =>
+            wanted()
+              ? readPullFiles(client, pull, limits)
+              : Promise.reject(new FilesUnwanted(pull)),
+          )),
     },
     publish: (state) => sent.push(state),
     log: (line) => lines.push(line),

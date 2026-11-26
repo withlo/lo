@@ -1,6 +1,6 @@
 // The page the icons spec reads: every icon of the set at each of its sizes, each beside the text it
-// sits with, the characters `Glyphs` draws, key chips as each system writes them, and an icon still
-// drawn by hand on a 16 grid, in both themes.
+// sits with, the characters `Glyphs` draws, and key chips as each system writes them, in both
+// themes.
 
 import { createRoot } from 'react-dom/client';
 
@@ -89,25 +89,13 @@ function Sheet() {
         </div>
       ))}
       <p className="text-fg-muted text-small" data-glyphs="12">
-        <Glyphs text="Renamed old.ts → new.ts · r1 → r3 · ⌘⇧P ⌥⏎ ⌃⇥ ⌫ ⌦ ↑↓←→ ✓ ⋯ ↗ ⇄" />
+        <Glyphs text="Renamed old.ts → new.ts · r1 → r3 · ⌘⇧P ⌥⏎ ⌃⇥ ⌫ ⌦ ↑↓←→ ✓ ⋯ ↗" />
       </p>
       <p className="text-ui" data-glyphs="14">
         <Glyphs text="No changes in r1 → r3 · Open the run ↗" size={14} />
       </p>
       <Chips system="mac" />
       <Chips system="linux" />
-      <div className="flex items-center gap-8 text-icon-muted text-ui" data-drawn>
-        <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M6 3.5 10.5 8 6 12.5" />
-        </svg>
-        <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M6 3.5 10.5 8 6 12.5" />
-        </svg>
-        <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M6 3.5 10.5 8 6 12.5" />
-        </svg>
-        <span>Drawn by hand on a 16 grid</span>
-      </div>
     </div>
   );
 }

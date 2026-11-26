@@ -23,6 +23,7 @@ import {
   type GithubCause,
   type GithubErrorDetail,
 } from '../errors.ts';
+import { readPullFiles, type PullFiles, type ReadFiles } from '../files.ts';
 import { unchecked } from '../json.ts';
 import { readMergeFacts, type MergeFacts } from '../merge.ts';
 import type {
@@ -84,6 +85,7 @@ import {
   type Tier,
 } from './governor.ts';
 import { abandoned, RequestQueue, type ReadPriority, type ReadPriorityNow } from './queue.ts';
+import { SharedPullFiles, type FilesAsker } from './shared-files.ts';
 import {
   addToStackIn,
   createStackIn,
@@ -231,6 +233,21 @@ type Pause = { clock: 'wall' | 'monotonic'; until: number; reason: PauseReason }
 /** A write's result as it came: its value, or what it threw. */
 export type Settled<T> = { ok: true; value: T } | { ok: false; error: unknown };
 
+/** Why the rest of a read beside the poll loop stopped: the read was let go of, as its tab closed. */
+class ReadLetGo extends Error {
+  constructor(name: string, pull: PullRef) {
+    super(`${pull.toString()}'s ${name} isn't read any more`);
+    this.name = 'ReadLetGo';
+  }
+}
+
+/** The rest of a read that went on beside the poll loop, its priority as it goes, and the read. */
+interface Aside {
+  rest: Promise<Settled<Outcome>>;
+  priority: () => ReadPriority;
+  read: ReadState | undefined;
+}
+
 /**
  * A read {@link Poller.readCached} keeps, to run again after a write: by its name, and whether it
  * reads everything again rather than what's new, as for an edit of an item a read of the newest
@@ -325,6 +342,11 @@ export interface PollerOptions {
 
 /** How long after the last of a burst of writes the stack trees that show its pull requests read their layers again. */
 const WRITES_READ_BACK_AFTER = 2000;
+/**
+ * How long the summary a tab read as it opened a pull request stands in for the GET of the first
+ * poll that follows, in milliseconds.
+ */
+const SUMMARY_FRESH_FOR = 5000;
 /** How long a repository's rulesets are kept before they're read again. */
 const TRUNK_RULES_MAX_AGE = 30 * 60_000;
 /**
@@ -393,7 +415,12 @@ function erase<T>(kind: ReadKind<T>): Kind {
   };
 }
 
-type ReadFn = (client: GithubClient, known: unknown) => Promise<unknown>;
+/**
+ * A read's run: what it reads with `client`, given what it read before, `known`. One whose first
+ * part is what someone waits on calls `aside` once that's in, and the rest goes on beside the poll
+ * loop ({@link Poller.timeline}).
+ */
+type ReadFn = (client: GithubClient, known: unknown, aside: () => void) => Promise<unknown>;
 
 /** A read the poller keeps for a pull request. */
 interface ReadState {
@@ -430,6 +457,11 @@ interface ReadState {
    * account's queue. Nothing once a run has ended.
    */
   first: ReadPriorityNow | undefined;
+  /**
+   * Whether a run of it goes on beside the poll loop, as the older pages of a timeline do once its
+   * newest is in: it isn't due again until that's over, and nobody waits on it ahead of the rest.
+   */
+  aside: boolean;
 }
 
 let readIds = 0;
@@ -455,6 +487,14 @@ interface PullState {
   reads: Map<string, ReadState>;
   /** Loads from the cache under way, which the pull request isn't polled during. */
   loading: Promise<void>[];
+  /**
+   * The tab's own read of the pull request as it opens, which its first poll waits for and takes
+   * the summary from, so it isn't read twice; and when that read came, until the poll has taken it.
+   */
+  opening?: Promise<void> | undefined;
+  readAt?: number | undefined;
+  /** The check whose details the last poll left for after the reads waited on, until fetched. */
+  detailsDue?: PullRequestCheck | undefined;
 }
 
 interface RepoState {
@@ -487,6 +527,8 @@ interface OfflineState {
 
 /** One run of a read, as a poll. */
 interface ReadJob {
+  /** Which read it's a run of ({@link ReadState.id}): another of the same name, asked for since, isn't it. */
+  id: number;
   name: string;
   run: ReadFn;
   known: unknown;
@@ -502,14 +544,26 @@ interface ReadJob {
 
 /** One poll: a few requests run back to back in the account's queue. */
 type Job =
-  /** The open pull request: a free conditional GET, the 1-point check, then its details only when either says something changed. */
+  /**
+   * The open pull request: a free conditional GET, the 1-point check, then its details only when
+   * either says something changed. A summary read just now, as the tab's own read as it opens, stands
+   * in for the GET (`fresh`).
+   */
   | {
       kind: 'open';
       pull: PullRef;
       summary: PullSummary | undefined;
+      fresh: boolean;
       check: PullRequestCheck | undefined;
       haveDetails: boolean;
+      /**
+       * Whether details that need fetching wait for the reads someone on screen waits on, which go
+       * after the check, as a `details` job of their own.
+       */
+      deferDetails: boolean;
     }
+  /** The open pull request's details, which its poll left for after the reads waited on. */
+  | { kind: 'details'; pull: PullRef; check: PullRequestCheck }
   /** Another watched pull request: the conditional GET alone. */
   | { kind: 'watched'; pull: PullRef; summary: PullSummary | undefined }
   /**
@@ -540,7 +594,10 @@ type Outcome =
       summary: Conditional<PullSummary>;
       check: PullRequestCheck;
       details: PullRequest | undefined;
+      /** Whether the details need fetching, but were left for a `details` job. */
+      deferred: boolean;
     }
+  | { kind: 'details'; check: PullRequestCheck; details: PullRequest }
   | { kind: 'watched'; summary: Conditional<PullSummary> }
   | {
       kind: 'repo';
@@ -698,6 +755,15 @@ export class Poller {
   /** Wakes each write waiting for a pause to end, so it sees that the poller stopped. */
   readonly #pauseWaiters = new Set<() => void>();
   #offline: OfflineState | undefined;
+  /**
+   * The priority of the read the loop runs, or is about to, while it's one someone on screen waits
+   * on: what other reads in the queue give way to, along with a read like it that's due.
+   */
+  #leading: ReadPriorityNow | undefined;
+  /** Whether the poll loop runs, which reads that give way wait on: false once it stopped on an error. */
+  #looping = true;
+  /** The priorities of the reads whose runs go on beside the loop, which polls wait for. */
+  readonly #asides = new Set<() => ReadPriority>();
   /** The error each target's polls keep failing with, so it's logged once. */
   readonly #failures = new Map<string, string>();
   #signedOut = false;
@@ -711,6 +777,8 @@ export class Poller {
   readonly #uploads = new RequestQueue(0);
   /** Where each repository's attachments go, by the repository's key, read once each. */
   readonly #attachmentTargets = new Map<string, Promise<AttachmentTarget>>();
+  /** The pull requests' files being read, or read lately. */
+  readonly #pullFiles: SharedPullFiles;
   readonly #listeners = new Set<(event: PollEvent) => void>();
   readonly #observers = new Set<() => void>();
   #stopped = false;
@@ -725,6 +793,12 @@ export class Poller {
     this.#cache = options.cache;
     this.#config = pollConfig(options.config);
     this.#queue = new RequestQueue(this.#config.writeSpacing, this.#config.monotonic);
+    this.#queue.giveWayWhile(() => this.#leadAhead());
+    this.#pullFiles = new SharedPullFiles(
+      (pull, limits, gate) => this.#readPullFiles(pull, limits, gate),
+      this.#queue,
+      () => this.#wake(),
+    );
     this.#lookUpMerged = options.lookUpMerged;
     this.#seen = options.seen;
     this.#log = options.log ?? (() => {});
@@ -739,13 +813,20 @@ export class Poller {
         this.#wake();
       }
     });
-    void this.#loop().catch((error: unknown) => this.#log(`stopped polling: ${String(error)}`));
+    void this.#loop().catch((error: unknown) => {
+      this.#log(`stopped polling: ${String(error)}`);
+      // No read leads any more: none waits for one.
+      this.#looping = false;
+      this.#leading = undefined;
+      this.#queue.recheck();
+    });
   }
 
   /** Stops polling. Writes already sent finish; those waiting for a pause to end are never sent. */
   stop(): void {
     this.#stopped = true;
     this.#unsubscribe();
+    this.#queue.recheck();
     this.#wake();
     for (const wake of this.#pauseWaiters) wake();
   }
@@ -915,10 +996,14 @@ export class Poller {
    * refreshes its details. Resolves with its cached details, if there are any, once the cache has
    * answered, before any request.
    */
-  async setOpen(pull: PullRef | undefined): Promise<PullRequestAnswer | undefined> {
+  async setOpen(
+    pull: PullRef | undefined,
+    reading?: Promise<PullSummary | undefined>,
+  ): Promise<PullRequestAnswer | undefined> {
     if (pull === undefined ? this.#open === undefined : this.#open?.equals(pull)) {
       if (pull === undefined) return undefined;
       const state = this.#pulls.get(pull.key);
+      if (state && reading) this.#waitForRead(state, reading);
       if (state) await this.#loaded(state.loading);
       return this.pullRequest(pull);
     }
@@ -936,6 +1021,7 @@ export class Poller {
         if (this.#pulls.get(pull.key) === state) state.details ??= details;
       });
     }
+    if (reading) this.#waitForRead(state, reading);
     state.schedule.force();
     this.#openedAt = this.#config.now();
     this.#wake();
@@ -943,6 +1029,48 @@ export class Poller {
     await Promise.all([loaded, this.#loaded(state.loading)]);
     if (this.#open?.equals(pull)) this.#recordRecent(pull);
     return this.pullRequest(pull);
+  }
+
+  /**
+   * Has the open pull request's poll wait for `reading`, the tab's own read of it, and take the
+   * summary it read as the poll's, as hearing it from GitHub just now: it's kept and sent as a
+   * poll's is, and the poll asks GitHub only for the rest. One that fails leaves the poll to read it.
+   */
+  #waitForRead(state: PullState, reading: Promise<PullSummary | undefined>): void {
+    const opening = reading
+      .then(
+        (summary) => {
+          if (summary === undefined || this.#pulls.get(state.pull.key) !== state) return;
+          const wall = this.#config.now();
+          state.readAt = wall;
+          const answer = { notModified: false, value: summary, etag: undefined } as const;
+          const taken = takeSummary(state, answer, wall);
+          if (!taken) return;
+          // As for a watched pull request, the details are fetched again, even if the check doesn't
+          // show what changed.
+          state.check = undefined;
+          this.#emit({ kind: 'summary', pull: state.pull, summary: taken });
+          const writes: CacheWrite[] = [
+            () => this.#cache.remove(this.#login, state.pull.key, CHECK),
+            () =>
+              this.#cache.put(this.#login, state.pull.key, [
+                { name: SUMMARY, entry: { value: taken, fetchedAt: wall } },
+              ]),
+          ];
+          const seen = this.#seen;
+          if (seen) writes.push(() => seen(this.#login, state.pull, [taken.head.sha], wall));
+          for (const write of writes) {
+            write().catch((error: unknown) => this.#log(`writing the cache: ${String(error)}`));
+          }
+        },
+        () => undefined,
+      )
+      .finally(() => {
+        if (state.opening === opening) state.opening = undefined;
+        this.#wake();
+      })
+      .catch((error: unknown) => this.#log(`taking the tab's read: ${String(error)}`));
+    state.opening = opening;
   }
 
   /** A watched pull request's details, as last fetched. */
@@ -1004,12 +1132,12 @@ export class Poller {
   async readCached<T>(
     pull: PullRef,
     kind: ReadKind<T>,
-    request: (client: GithubClient, known: T | undefined) => Promise<T>,
+    request: (client: GithubClient, known: T | undefined, aside: () => void) => Promise<T>,
     first?: ReadPriorityNow,
   ): Promise<Cached<T> | undefined> {
     const { state, loaded } = this.#watching(pull);
-    const run: ReadFn = (client, known) =>
-      request(client, known === undefined ? undefined : unchecked<T>(known));
+    const run: ReadFn = (client, known, aside) =>
+      request(client, known === undefined ? undefined : unchecked<T>(known), aside);
     const existing = state.reads.get(kind.name);
     if (existing) {
       existing.run = run;
@@ -1037,6 +1165,7 @@ export class Poller {
       afresh: false,
       loading: true,
       first,
+      aside: false,
     };
     state.reads.set(kind.name, read);
     this.#wake();
@@ -1150,6 +1279,11 @@ export class Poller {
    * `first` says who waits on the first read, as a view drawing it does, and `onNewest` hears its
    * newest page while its older ones are read, when there's more than one ({@link readTimeline}):
    * it's never kept, and the read's `read` event follows with the whole timeline.
+   *
+   * The newest page is what the rows draw from, and the older ones are off screen until the reader
+   * scrolls back, so once it's in, the older pages go on beside the poll loop: the push history the
+   * rows split pushes by goes before them, and so does a pull request's files someone wants soon,
+   * for the Files panel; polls wait for them all.
    */
   timeline(
     pull: PullRef,
@@ -1159,8 +1293,18 @@ export class Poller {
     return this.readCached(
       pull,
       TIMELINE,
-      (client, known) =>
-        readTimeline(client, pull, { known, now: new Date(this.#config.now()), onNewest }),
+      (client, known, aside) =>
+        readTimeline(client, pull, {
+          known,
+          now: new Date(this.#config.now()),
+          onNewest: (newest) => {
+            try {
+              onNewest?.(newest);
+            } finally {
+              aside();
+            }
+          },
+        }),
       first,
     );
   }
@@ -1667,6 +1811,23 @@ export class Poller {
   }
 
   /**
+   * `pull`'s files at `head`, as GitHub lists them ({@link readPullFiles}), within `limits`, for
+   * `asker`: read once for everyone who asks, as the diff and the tree each do as a tab opens, each
+   * page in its turn in the account's queue ({@link SharedPullFiles}).
+   */
+  pullFiles(pull: PullRef, head: string, limits: ReadFiles, asker: FilesAsker): Promise<PullFiles> {
+    return this.#pullFiles.read(pull, head, limits, asker);
+  }
+
+  async #readPullFiles(pull: PullRef, limits: ReadFiles, gate: RequestGate): Promise<PullFiles> {
+    const client = await this.#client();
+    const result = await settle(readPullFiles(client.gated(gate), pull, limits));
+    this.#answeredWith(client, result);
+    if (result.ok) return result.value;
+    throw result.error;
+  }
+
+  /**
    * The HTML GitHub renders for the posts on `pull` whose node IDs are `ids`, and for its
    * description when asked ({@link readRenderedBodies}), read as this account. Each request asks
    * for up to 100 posts and takes a turn in the account's queue as a read
@@ -1899,7 +2060,11 @@ export class Poller {
    * poll's would.
    */
   #answeredWith(client: GithubClient, result: Settled<unknown>): void {
-    if (answered(result)) this.#offline = undefined;
+    if (answered(result) && this.#offline !== undefined) {
+      this.#offline = undefined;
+      // The loop may be waiting out the backoff, as for a read someone waits on: it goes now.
+      this.#wake();
+    }
     this.#takeIn(client);
   }
 
@@ -2014,6 +2179,144 @@ export class Poller {
     }
   }
 
+  /**
+   * The open pull request's reads that are due at some point, once its check says what they watch,
+   * in the order of their names: when each is due, and whether someone on screen waits on it for its
+   * first value now.
+   */
+  #openReads(
+    now: number,
+    wall: number,
+    rateLimit: RateLimitState,
+    refreshDetails: boolean,
+  ): { at: number; awaited: boolean; job: Extract<Job, { kind: 'read' }> }[] {
+    const config = this.#config;
+    const open = this.#open;
+    const openState = open && this.#pulls.get(open.key);
+    if (
+      !open ||
+      !openState ||
+      openState.latestCheck === undefined ||
+      openState.loading.length > 0 ||
+      interval('open', this.#foreground, rateLimit, config) === undefined
+    ) {
+      return [];
+    }
+    const check = openState.latestCheck;
+    const reads = sorted(openState.reads, ([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    const due: { at: number; awaited: boolean; job: Extract<Job, { kind: 'read' }> }[] = [];
+    for (const [name, read] of reads) {
+      // What the cache holds is still loading, or a run of it goes on beside the loop.
+      if (read.loading || read.aside) continue;
+      const current = stamp(check, read.kind.watched);
+      let at: number | undefined;
+      if (read.value === undefined || read.stamp !== current) {
+        at = now;
+      } else if (refreshDetails && read.fetchedAt !== undefined) {
+        at = now + Math.max(config.detailsMaxAge - (wall - read.fetchedAt), 0);
+      }
+      // A write reads it back a little later.
+      if (read.againAt !== undefined)
+        at = at === undefined ? read.againAt : Math.min(at, read.againAt);
+      // A read that keeps failing waits longer each time, whatever made it due.
+      if (at !== undefined && read.retryAt !== undefined) at = Math.max(at, read.retryAt);
+      if (at === undefined) continue;
+      const first = read.value === undefined ? read.first : undefined;
+      due.push({
+        at,
+        awaited: first !== undefined && priorityNow(first) === 'foreground' && at <= now,
+        job: {
+          kind: 'read',
+          pull: open,
+          read: {
+            id: read.id,
+            name,
+            run: read.run,
+            known: read.afresh ? undefined : read.value,
+            stamp: current,
+            generation: read.generation,
+            started: now,
+            priority: first ?? 'background',
+          },
+        },
+      });
+    }
+    return due;
+  }
+
+  /**
+   * What `job` leads as, as the loop runs it, from its choosing until the next job's, through its
+   * cache writes: a read's priority, and, for the open pull request's poll, foreground while
+   * someone on screen waits on one of its reads for its first value, which come right after it.
+   * Nothing for the rest.
+   */
+  #leadingFor(job: Job): ReadPriorityNow | undefined {
+    if (job.kind === 'read') return job.read.priority;
+    if (job.kind !== 'open') return undefined;
+    const state = this.#pulls.get(job.pull.key);
+    return () =>
+      state !== undefined && this.#open?.equals(job.pull) === true && this.#awaitsFirst(state)
+        ? 'foreground'
+        : 'background';
+  }
+
+  /**
+   * Whether the loop runs, or runs next, a read someone on screen waits on, which frees the queue
+   * between its requests: other reads in the queue give way to it, so none takes the turn there.
+   * Such a read can come due on the clock, as its backoff ends, while the loop sleeps: once this
+   * says it leads and the loop runs nothing, it wakes the loop to run it.
+   */
+  #leadAhead(): boolean {
+    if (this.#stopped || !this.#looping) return false;
+    const leading = this.#leading;
+    if (leading !== undefined && priorityNow(leading) === 'foreground') return true;
+    if (this.#pullFiles.leads()) return true;
+    if (this.#signedOut) return false;
+    const config = this.#config;
+    const now = config.monotonic();
+    const rateLimit = this.#status.rateLimit;
+    if (rateLimit.kind === 'paused') return false;
+    // Offline, a read waits out the backoff.
+    if (this.#offline && this.#offline.retryAt > now) return false;
+    const open = this.#open;
+    const openState = open && this.#pulls.get(open.key);
+    // The open pull request's poll waits for the tab's read of it as it opens, which may be one of
+    // the reads waiting: they don't give way to that poll meanwhile.
+    if (openState?.opening) return false;
+    // The open pull request's poll that opening it forced, which its awaited reads come right after.
+    if (
+      openState?.schedule.isForced() &&
+      interval('open', this.#foreground, rateLimit, config) !== undefined &&
+      this.#awaitsFirst(openState)
+    ) {
+      return true;
+    }
+    const refreshDetails = this.#foreground && rateLimit.kind !== 'openOnly';
+    const awaited = this.#openReads(now, config.now(), rateLimit, refreshDetails).some(
+      (read) => read.awaited,
+    );
+    // A read someone waits on comes due on the clock as its backoff ends, which wakes nothing: the
+    // loop may be asleep with no timer, as while polls wait for a pull request's files, and those
+    // files give way to the read from now. The loop wakes to run it.
+    if (awaited && this.#leading === undefined) this.#wake();
+    return awaited;
+  }
+
+  /** Whether someone on screen waits on one of `state`'s reads for its first value now. */
+  #awaitsFirst(state: PullState): boolean {
+    for (const read of state.reads.values()) {
+      if (
+        read.value !== undefined ||
+        read.first === undefined ||
+        read.retryAt !== undefined ||
+        read.aside
+      )
+        continue;
+      if (priorityNow(read.first) === 'foreground') return true;
+    }
+    return false;
+  }
+
   /** The next poll to run, or how long to wait for one. */
   #nextStep(): Step {
     this.#refreshStatus();
@@ -2036,10 +2339,19 @@ export class Poller {
     // The open pull request first, then the other pull requests, then the repositories; earliest
     // due first.
     let next: { at: number; job: Job; ticket: number; forced: boolean } | undefined;
+    // A poll tried at once whatever the backoff (opening a pull request, or coming back to the
+    // foreground) goes ahead of every poll that's merely due, however overdue: what someone waits
+    // on comes right after it, and the reads waiting in the queue give way to it meanwhile.
     const consider = (schedule: Schedule, tier: Tier, job: () => Job) => {
       const at = due(schedule, tier);
-      if (at !== undefined && (next === undefined || at < next.at)) {
-        next = { at, job: job(), ticket: schedule.forced, forced: schedule.isForced() };
+      if (at === undefined) return;
+      const forced = schedule.isForced();
+      if (
+        next === undefined ||
+        (forced && !next.forced) ||
+        (forced === next.forced && at < next.at)
+      ) {
+        next = { at, job: job(), ticket: schedule.forced, forced };
       }
     };
     // In the foreground, and unless the rate limit is very low, details older than
@@ -2047,18 +2359,27 @@ export class Poller {
     const refreshDetails = this.#foreground && rateLimit.kind !== 'openOnly';
     const open = this.#open;
     const openState = open && this.#pulls.get(open.key);
+    /** Details a poll left for after the reads waited on. */
+    let details: Extract<Job, { kind: 'details' }> | undefined;
+    // The tab opening the open pull request reads it itself: its poll goes first once that's in,
+    // and nothing goes before it meanwhile.
+    if (openState?.opening) return { kind: 'wait', wait: undefined };
     if (open && openState && openState.loading.length === 0) {
       consider(openState.schedule, 'open', () => ({
         kind: 'open',
         pull: open,
         summary: openState.summary?.value,
+        fresh: openState.readAt !== undefined && wall - openState.readAt < SUMMARY_FRESH_FOR,
         check:
           openState.check &&
           (!refreshDetails || wall - openState.check.fetchedAt < config.detailsMaxAge)
             ? openState.check.value
             : undefined,
         haveDetails: openState.details !== undefined,
+        deferDetails: this.#awaitsFirst(openState),
       }));
+      const check = openState.detailsDue;
+      if (check !== undefined) details = { kind: 'details', pull: open, check };
     }
     for (const state of sorted(this.#pulls.values(), (a, b) => PullRef.compare(a.pull, b.pull))) {
       if (open?.equals(state.pull) || state.loading.length > 0) continue;
@@ -2090,63 +2411,41 @@ export class Poller {
         written: state.written,
       }));
     }
+    // Details a poll left for later are due now, ahead of other polls, but for one tried at once,
+    // and behind the reads waited on.
+    if (details && !next?.forced) next = { at: now, job: details, ticket: 0, forced: false };
     // The open pull request's reads, once its check says what they watch. One someone on screen
     // waits on for its first value goes ahead of everything else due, the first of them if several,
     // but never of a poll that's tried at once whatever the backoff (opening a pull request, or
     // coming back to the foreground): that one goes first, and the read after it.
     let lead: typeof next;
-    if (
-      open &&
-      openState &&
-      openState.latestCheck !== undefined &&
-      openState.loading.length === 0 &&
-      interval('open', this.#foreground, rateLimit, config) !== undefined
-    ) {
-      const check = openState.latestCheck;
-      const reads = sorted(openState.reads, ([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-      for (const [name, read] of reads) {
-        // What the cache holds is still loading.
-        if (read.loading) continue;
-        const current = stamp(check, read.kind.watched);
-        let at: number | undefined;
-        if (read.value === undefined || read.stamp !== current) {
-          at = now;
-        } else if (refreshDetails && read.fetchedAt !== undefined) {
-          at = now + Math.max(config.detailsMaxAge - (wall - read.fetchedAt), 0);
-        }
-        // A write reads it back a little later.
-        if (read.againAt !== undefined)
-          at = at === undefined ? read.againAt : Math.min(at, read.againAt);
-        // A read that keeps failing waits longer each time, whatever made it due.
-        if (at !== undefined && read.retryAt !== undefined) at = Math.max(at, read.retryAt);
-        if (at === undefined) continue;
-        const first = read.value === undefined ? read.first : undefined;
-        const awaited = first !== undefined && priorityNow(first) === 'foreground' && at <= now;
-        if (awaited ? lead === undefined : next === undefined || at < next.at) {
-          const chosen = {
-            at,
-            job: {
-              kind: 'read' as const,
-              pull: open,
-              read: {
-                name,
-                run: read.run,
-                known: read.afresh ? undefined : read.value,
-                stamp: current,
-                generation: read.generation,
-                started: now,
-                priority: first ?? 'background',
-              },
-            },
-            ticket: 0,
-            forced: false,
-          };
-          if (awaited) lead = chosen;
-          else next = chosen;
-        }
+    for (const read of this.#openReads(now, wall, rateLimit, refreshDetails)) {
+      if (read.awaited ? lead === undefined : next === undefined || read.at < next.at) {
+        const chosen = { at: read.at, job: read.job, ticket: 0, forced: false };
+        if (read.awaited) lead = chosen;
+        else next = chosen;
       }
     }
     if (lead && !next?.forced) next = lead;
+    // A pull request's files someone wants soon go before polls, which would hold the queue for
+    // many requests between its pages, and so does the rest of a read someone waits on that went
+    // on beside the loop, as a timeline's older pages: a poll waits for them, but for one tried at
+    // once. The details a poll left for later wait only for the files: the older pages are off
+    // screen.
+    //
+    // This never waits on what waits on it. The files give way only while `#leadAhead` says
+    // something leads, and the rest of a read beside the loop waits only for the files. What leads
+    // is a run the loop holds now, the files themselves while the diff on screen wants them, a
+    // forced poll of the open pull request, or a read someone waits on: the loop runs those last two
+    // without waiting here, since a lead or a forced poll never waits, and a forced poll goes ahead
+    // of every poll merely due. A read someone waits on that comes due on the clock while the loop
+    // sleeps here, as its backoff ends, wakes the loop through `#leadAhead` once it leads. While the
+    // open pull request's cache loads, its forced poll waits for that alone, which wakes the loop
+    // once it's in.
+    const behindAside = next?.job.kind !== 'details' && this.#asideWanted();
+    if (next && next !== lead && !next.forced && (this.#pullFiles.wanted() || behindAside)) {
+      return { kind: 'wait', wait: undefined };
+    }
     // While the limit is low, intervals are longer and some tiers aren't polled at all. Wake at its
     // reset, when they're back.
     const untilReset =
@@ -2176,6 +2475,8 @@ export class Poller {
   async #loop(): Promise<void> {
     while (!this.#stopped) {
       const step = this.#nextStep();
+      this.#leading = step.kind === 'run' ? this.#leadingFor(step.job) : undefined;
+      this.#queue.recheck();
       if (step.kind === 'wait') {
         // Timers stop while the computer sleeps, and waits are worked out from the wall clock, so
         // none is trusted for longer than `maxWait`.
@@ -2193,29 +2494,93 @@ export class Poller {
       }
       if (this.#stopped) return;
       const result = await this.#run(job, client);
-      const writes = this.#finish(job, ticket, result, client);
-      for (const write of writes) {
-        try {
-          await write();
-        } catch (error) {
-          this.#log(`writing the cache: ${String(error)}`);
-        }
+      if ('rest' in result) {
+        void this.#takeInAside(job, ticket, result, client).catch((error: unknown) => {
+          this.#log(`reading beside the polls: ${String(error)}`);
+        });
+        continue;
+      }
+      await this.#take(job, ticket, result, client);
+    }
+  }
+
+  /** Takes in a poll's answer, and makes the cache writes that come of it. */
+  async #take(job: Job, ticket: number, result: Settled<Outcome>, client: GithubClient) {
+    const writes = this.#finish(job, ticket, result, client);
+    for (const write of writes) {
+      try {
+        await write();
+      } catch (error) {
+        this.#log(`writing the cache: ${String(error)}`);
       }
     }
   }
 
   /**
+   * Takes in a read whose run went on beside the loop once it's over, as the loop does its polls'
+   * answers; the polls that waited for it may go then.
+   */
+  async #takeInAside(job: Job, ticket: number, aside: Aside, client: GithubClient) {
+    const result = await aside.rest;
+    this.#asides.delete(aside.priority);
+    if (aside.read) aside.read.aside = false;
+    const taking = this.#take(job, ticket, result, client);
+    this.#wake();
+    await taking;
+  }
+
+  /** Whether the rest of a read someone waits on goes on beside the loop: polls wait for it. */
+  #asideWanted(): boolean {
+    for (const priority of this.#asides) if (priority() !== 'background') return true;
+    return false;
+  }
+
+  /**
    * Runs `job`. Its requests start only once it holds the queue. A read, which can be many requests,
    * takes a turn for each, so a write can go between them; so do a repository's rulesets and
-   * lookups, after its open pull requests.
+   * lookups, after its open pull requests. A read that goes aside, once what someone waits on first
+   * is in, has the rest of it go on beside the loop, at `next` while someone waits on it, behind a
+   * pull request's files someone wants soon.
    */
-  async #run(job: Job, client: GithubClient): Promise<Settled<Outcome>> {
+  async #run(job: Job, client: GithubClient): Promise<Settled<Outcome> | Aside> {
     switch (job.kind) {
       case 'read': {
         const { read } = job;
-        const gated = client.gated(this.#queue.gate(read.priority));
-        return settle(
-          read.run(gated, read.known).then((value): Outcome => ({
+        const kept = this.#pulls.get(job.pull.key)?.reads.get(read.name);
+        /** Whether the read is still the one kept, not let go of, as by its tab closing. */
+        const current = () => this.#pulls.get(job.pull.key)?.reads.get(read.name)?.id === read.id;
+        let beside = false;
+        const priority = (): ReadPriority => {
+          if (beside && !current()) return 'background';
+          const now = priorityNow(read.priority);
+          return beside && now === 'foreground' ? 'next' : now;
+        };
+        const aside = Promise.withResolvers<undefined>();
+        const goAside = () => {
+          if (beside) return;
+          beside = true;
+          if (kept) kept.aside = true;
+          this.#asides.add(priority);
+          aside.resolve(undefined);
+        };
+        const turn = this.#queue.gate(
+          priority,
+          undefined,
+          false,
+          () => beside && current() && this.#pullFiles.wanted(),
+        );
+        // Beside the loop, a read let go of stops at its next request, as a pull request's files
+        // nobody wants do.
+        const gate: RequestGate = async () => {
+          const release = await turn();
+          if (beside && !current()) {
+            release();
+            throw new ReadLetGo(read.name, job.pull);
+          }
+          return release;
+        };
+        const rest = settle(
+          read.run(client.gated(gate), read.known, goAside).then((value): Outcome => ({
             kind: 'read',
             name: read.name,
             value,
@@ -2224,17 +2589,32 @@ export class Poller {
             started: read.started,
           })),
         );
+        const done = await Promise.race([rest, aside.promise]);
+        return done ?? { rest, priority, read: kept };
       }
       case 'repo': {
         const now = () => this.#config.now();
-        const listed = await settle(this.#queue.read(() => pollRepo(client, job, now)));
+        const listed = await settle(
+          this.#queue.read(() => pollRepo(client, job, now), undefined, 'background', false),
+        );
         if (!listed.ok) return listed;
-        const gated = client.gated(this.#queue.gate());
+        const gated = client.gated(this.#queue.gate('background', undefined, false));
         return settle(this.#finishRepo(gated, job, listed.value));
+      }
+      case 'details': {
+        const { owner, name } = job.pull.repo;
+        const reading = async (): Promise<Outcome> => ({
+          kind: 'details',
+          check: job.check,
+          details: await pullRequest(client, owner, name, job.pull.number),
+        });
+        return settle(this.#queue.read(reading, undefined, 'background', false));
       }
       case 'open':
       case 'watched':
-        return settle(this.#queue.read(() => pollPull(client, job)));
+        return settle(
+          this.#queue.read(() => pollPull(client, job), undefined, 'background', false),
+        );
       default:
         throw new Error(`a poll Lo doesn't know: ${JSON.stringify(job satisfies never)}`);
     }
@@ -2279,23 +2659,31 @@ export class Poller {
     const wall = this.#config.now();
     const target = targetOf(job);
     const read = job.kind === 'read' ? job.read.name : undefined;
-    if (job.kind === 'read') {
-      // Whatever came of it, a run someone may have waited on is over: what follows are polls.
-      const kept = this.#pulls.get(job.pull.key)?.reads.get(job.read.name);
-      if (kept) kept.first = undefined;
+    // A read, or details a poll left for later, keeps apart from its pull request's polls.
+    const polls = read === undefined && job.kind !== 'details';
+    const kept =
+      job.kind === 'read' ? this.#pulls.get(job.pull.key)?.reads.get(job.read.name) : undefined;
+    // A run of a read let go of, or of one let go of and asked for again since, which is another,
+    // is no one's: what it read, or how it failed, goes nowhere.
+    const dropped = job.kind === 'read' && kept?.id !== job.read.id;
+    // Whatever came of it, a run someone may have waited on is over: what follows are polls.
+    if (kept && !dropped) kept.first = undefined;
+    if (job.kind === 'details') {
+      // Fetched or not, the next poll fetches them if they're still out of date.
+      const state = this.#pulls.get(job.pull.key);
+      if (state?.detailsDue === job.check) state.detailsDue = undefined;
     }
     let writes: CacheWrite[] = [];
     if (answered(result)) this.#offline = undefined;
     if (result.ok) {
       this.#secondaryAttempts = 0;
       this.#failures.delete(target.key);
-      // A read keeps its own times, apart from its pull request's polls.
-      if (read === undefined) this.#schedule(target)?.polled(now, ticket);
-      writes = this.#apply(result.value, target, wall);
+      if (polls) this.#schedule(target)?.polled(now, ticket);
+      if (!dropped) writes = this.#apply(result.value, target, wall);
     } else {
       const detail = detailOf(result.error);
       if (detail.kind === 'network' || detail.kind === 'tokenUnavailable') {
-        if (read === undefined) this.#schedule(target)?.serve(ticket);
+        if (polls) this.#schedule(target)?.serve(ticket);
         const failure = new GithubError(detail);
         this.#backOff(failure, failure.said(), now, wall);
       } else if (detail.kind === 'rateLimited') {
@@ -2305,10 +2693,12 @@ export class Poller {
         // for an account imported from it.
         this.#signedOut = true;
       } else if (read !== undefined && target instanceof PullRef) {
-        this.#log(`reading ${read} for ${target.toString()}: ${new GithubError(detail).message}`);
-        this.#readFailed(target, read, now);
-        if (this.#isWatched(target)) {
-          this.#emit({ kind: 'readFailed', pull: target, name: read, error: detail });
+        if (!dropped) {
+          this.#log(`reading ${read} for ${target.toString()}: ${new GithubError(detail).message}`);
+          this.#readFailed(target, read, now);
+          if (this.#isWatched(target)) {
+            this.#emit({ kind: 'readFailed', pull: target, name: read, error: detail });
+          }
         }
       } else {
         // Logged once while it keeps failing the same way.
@@ -2318,7 +2708,7 @@ export class Poller {
           this.#failures.set(target.key, message);
         }
         if (this.#isWatched(target)) {
-          this.#schedule(target)?.polled(now, ticket);
+          if (polls) this.#schedule(target)?.polled(now, ticket);
           this.#emit({ kind: 'failed', target, error: detail });
         }
       }
@@ -2400,6 +2790,32 @@ export class Poller {
       : this.#repos.get(target.key)?.schedule;
   }
 
+  /**
+   * Takes `details`, fetched at `check`, as `state`'s, with the cache writes that keep them on
+   * `writes`. Returns them if they changed.
+   */
+  #takeDetails(
+    state: PullState,
+    check: PullRequestCheck,
+    details: PullRequest,
+    wall: number,
+    writes: CacheWrite[],
+  ): PullRequest | undefined {
+    const changed = !state.details || !sameJson(state.details.value, details);
+    state.details = { value: details, fetchedAt: wall };
+    state.check = { value: check, fetchedAt: wall };
+    const login = this.#login;
+    const key = state.pull.key;
+    // Together, so a restart never pairs old details with a newer check.
+    writes.push(() =>
+      this.#cache.put(login, key, [
+        { name: DETAILS, entry: { value: details, fetchedAt: wall } },
+        { name: CHECK, entry: { value: check, fetchedAt: wall } },
+      ]),
+    );
+    return changed ? details : undefined;
+  }
+
   #apply(outcome: Outcome, target: Target, wall: number): CacheWrite[] {
     const writes: CacheWrite[] = [];
     const login = this.#login;
@@ -2421,24 +2837,16 @@ export class Poller {
         if (!(target instanceof PullRef)) return writes;
         const state = this.#pulls.get(target.key);
         if (!state) return writes;
+        state.readAt = undefined;
         const summary = takeSummary(state, outcome.summary, wall);
         const check = outcome.check;
         const changedCheck = sameJson(state.latestCheck, check) ? undefined : check;
         if (changedCheck) state.latestCheck = check;
         let changedDetails: PullRequest | undefined;
+        state.detailsDue = outcome.deferred ? check : undefined;
         if (outcome.details) {
-          const details = outcome.details;
-          if (!state.details || !sameJson(state.details.value, details)) changedDetails = details;
-          state.details = { value: details, fetchedAt: wall };
-          state.check = { value: check, fetchedAt: wall };
-          // Together, so a restart never pairs old details with a newer check.
-          writes.push(() =>
-            cache.put(login, target.key, [
-              { name: DETAILS, entry: { value: details, fetchedAt: wall } },
-              { name: CHECK, entry: { value: check, fetchedAt: wall } },
-            ]),
-          );
-        } else {
+          changedDetails = this.#takeDetails(state, check, outcome.details, wall, writes);
+        } else if (!outcome.deferred) {
           // Nothing changed: the details are current as of now.
           if (state.details) state.details.fetchedAt = wall;
           touch(DETAILS);
@@ -2451,6 +2859,24 @@ export class Poller {
           touch(SUMMARY);
         }
         if (changedCheck) this.#emit({ kind: 'check', pull: target, check: changedCheck });
+        if (changedDetails) {
+          if (this.#open?.equals(target)) this.#recordRecent(target);
+          this.#emit({ kind: 'details', pull: target, details: changedDetails });
+        }
+        return writes;
+      }
+      case 'details': {
+        if (!(target instanceof PullRef)) return writes;
+        const state = this.#pulls.get(target.key);
+        if (!state) return writes;
+        const changedDetails = this.#takeDetails(
+          state,
+          outcome.check,
+          outcome.details,
+          wall,
+          writes,
+        );
+        see(target, [changedDetails?.headRefOid]);
         if (changedDetails) {
           if (this.#open?.equals(target)) this.#recordRecent(target);
           this.#emit({ kind: 'details', pull: target, details: changedDetails });
@@ -2673,14 +3099,19 @@ async function pollPull(
   client: GithubClient,
   job: Extract<Job, { kind: 'open' | 'watched' }>,
 ): Promise<Outcome> {
-  const summary = await getSummary(client, job.pull, job.summary);
+  const summary: Conditional<PullSummary> =
+    job.kind === 'open' && job.fresh
+      ? { notModified: true }
+      : await getSummary(client, job.pull, job.summary);
   if (job.kind === 'watched') return { kind: 'watched', summary };
   const { owner, name } = job.pull.repo;
   const check = await pullRequestCheck(client, owner, name, job.pull.number);
   const changed =
     !job.haveDetails || summaryChanged(summary, job.summary) || !sameJson(job.check, check);
-  const details = changed ? await pullRequest(client, owner, name, job.pull.number) : undefined;
-  return { kind: 'open', summary, check, details };
+  const deferred = changed && job.deferDetails;
+  const details =
+    changed && !deferred ? await pullRequest(client, owner, name, job.pull.number) : undefined;
+  return { kind: 'open', summary, check, details, deferred };
 }
 
 /**

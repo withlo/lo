@@ -72,7 +72,6 @@
           "{workspaceRoot}/.oxlintrc.json",
           "{workspaceRoot}/design/stylelint.config.mjs",
           "{workspaceRoot}/scripts/oxlint/plugin.ts",
-          "{workspaceRoot}/scripts/oxlint/svgs.ts",
           {
             "dependentTasksOutputFiles": "**/*.{d.ts,d.cts,d.mts,tsbuildinfo}",
             "transitive": true

@@ -47,6 +47,7 @@ class FakePoller implements FinderPoller {
   readonly overviewRequests: ((
     client: GithubClient,
     known: OverviewRefNumbers | undefined,
+    aside: () => void,
   ) => Promise<unknown>)[] = [];
   /** Each read of layers asked for: the pull request it's for, and the layers' node IDs. */
   readonly asked: [string, string[]][] = [];
@@ -78,12 +79,14 @@ class FakePoller implements FinderPoller {
   readCached<T>(
     pull: PullRef,
     kind: ReadKind<T>,
-    request: (client: GithubClient, known: T | undefined) => Promise<T>,
+    request: (client: GithubClient, known: T | undefined, aside: () => void) => Promise<T>,
   ): Promise<Cached<T> | undefined> {
     if (kind.name !== OVERVIEW_REFS.name) throw new Error(`The finder read ${kind.name}`);
     this.overviewsAsked.push(pull.toString());
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the kind asked for is this.
-    this.overviewRequests.push(request as (client: GithubClient, known: unknown) => Promise<T>);
+    this.overviewRequests.push(
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the kind asked for is this.
+      request as (client: GithubClient, known: unknown, aside: () => void) => Promise<T>,
+    );
     return Promise.resolve(this.cachedRead(pull, kind));
   }
 
@@ -296,7 +299,7 @@ describe('the stacks tabs show', () => {
       },
       token: new Token('gho_FAKE'),
     });
-    expect(await poller.overviewRequests.at(-1)?.(client, undefined)).toEqual({
+    expect(await poller.overviewRequests.at(-1)?.(client, undefined, () => {})).toEqual({
       numbers: [3],
       etag: 'W/"refs"',
     });

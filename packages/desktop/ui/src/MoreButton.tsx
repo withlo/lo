@@ -1,6 +1,7 @@
 import type { MouseEvent } from 'react';
 
 import { Button } from './Button.tsx';
+import { Icon } from './Icon.tsx';
 
 export interface MoreButtonProps {
   /** What it's the actions of, where a row has several: "More actions for retry.ts". */
@@ -42,7 +43,7 @@ export function MoreButton({ label = MORE_ACTIONS }: MoreButtonProps) {
       hint={label}
       onClick={(event: MouseEvent<HTMLButtonElement>) => openMenuUnder(event.currentTarget)}
     >
-      <span aria-hidden>⋯</span>
+      <Icon name="ellipsis" size={16} />
     </Button>
   );
 }

@@ -1,7 +1,7 @@
 // The open box (`⌘L`): a link to a pull request, filled in from the clipboard when it holds one,
 // with what it opens and as whom, or why it can't, and what `⏎` does about it.
 
-import { Palette, PaletteHint, Problem, Spinner, StatePill, Ticks } from '@lo/ui';
+import { Icon, Palette, PaletteHint, Problem, Spinner, StatePill, Ticks } from '@lo/ui';
 import { keyLabels, parseKeys, systemStrokes } from '@lo/ui/commands';
 import type { ReactNode } from 'react';
 import { useStore } from 'zustand';
@@ -34,19 +34,8 @@ function labels(keys: string): string[] {
   return keyLabels(systemStrokes(parseKeys(keys), system), system);
 }
 
-const LINK_ICON = (
-  <svg className="lo-i text-fg-muted" viewBox="0 0 16 16" aria-hidden="true">
-    <path d="M6.5 9.5l3-3M7 4.5l1-1a2.47 2.47 0 0 1 3.5 3.5l-1 1M9 11.5l-1 1A2.47 2.47 0 0 1 4.5 9l1-1" />
-  </svg>
-);
-
 /** An account, as the box draws one beside its name. */
-const PERSON = (
-  <svg className="lo-i lo-i--sm flex-none text-fg-muted" viewBox="0 0 16 16" aria-hidden="true">
-    <circle cx="8" cy="5.25" r="2.75" />
-    <path d="M3 13.5c.5-2.5 2.5-4 5-4s4.5 1.5 5 4" />
-  </svg>
-);
+const PERSON = <Icon name="user-round" size={14} className="text-fg-muted" />;
 
 /** A wait under the input: a turning ring and what's being done. */
 function Waiting({ children }: { children: string }) {
@@ -217,7 +206,7 @@ export function OpenBox() {
       label="Open pull request"
       placeholder="Paste pull request link"
       mono
-      icon={LINK_ICON}
+      icon="link"
       mode={state.fromClipboard ? 'From clipboard' : undefined}
       query={state.text}
       onQueryChange={typeText}

@@ -9,6 +9,7 @@ import {
 } from 'react';
 
 import { cutShort } from './cut.ts';
+import { Glyphs } from './Icon.tsx';
 import { Key } from './Key.tsx';
 
 /** How long the pointer rests on a control before its tooltip comes, in milliseconds. */
@@ -98,7 +99,13 @@ export function Tooltip({ label, keys, side = 'bottom', on, cut, children }: Too
       <Base.Portal container={container ?? globalThis.document?.querySelector('.lo-app')}>
         <Base.Positioner side={side} sideOffset={6} collisionPadding={8} className="z-tooltip">
           <Base.Popup className="tooltip move-pop flex items-center gap-8 rounded-sm bg-bg-overlay px-8 py-4 text-fg shadow-pop text-small">
-            {label}
+            {typeof label === 'string' ? (
+              <span>
+                <Glyphs text={label} />
+              </span>
+            ) : (
+              label
+            )}
             {keys !== undefined && keys.length > 0 && <Key keys={keys} quiet decorative />}
           </Base.Popup>
         </Base.Positioner>

@@ -1,5 +1,8 @@
 import { cva } from 'class-variance-authority';
 
+import { Icon } from './Icon.tsx';
+import type { IconName } from './icons.ts';
+
 /** A pull request's state, as GitHub has it. */
 export type PullRequestState = 'open' | 'draft' | 'merged' | 'closed';
 
@@ -24,59 +27,20 @@ const WORDS: Record<PullRequestState, string> = {
   closed: 'Closed',
 };
 
+/** Each state's icon, as GitHub draws it. */
+export const STATE_ICONS: Readonly<Record<PullRequestState, IconName>> = {
+  open: 'git-pull-request',
+  draft: 'git-pull-request-draft',
+  merged: 'git-merge',
+  closed: 'git-pull-request-closed',
+};
+
 /** A pull request's state as its icon, its word and GitHub's color for it, always all three. */
 export function StatePill({ state }: { state: PullRequestState }) {
   return (
     <span className={pill({ state })}>
-      <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-        <StateIcon state={state} />
-      </svg>
+      <Icon name={STATE_ICONS[state]} size={12} />
       {WORDS[state]}
     </span>
   );
-}
-
-/** The shapes of a state's icon, for an `svg` the caller draws: `lo-i` on a 16 grid. */
-export function StateIcon({ state }: { state: PullRequestState }) {
-  switch (state) {
-    case 'open':
-      return (
-        <>
-          <circle cx="4.5" cy="3.75" r="1.5" />
-          <circle cx="4.5" cy="12.25" r="1.5" />
-          <circle cx="11.5" cy="12.25" r="1.5" />
-          <path d="M4.5 5.25v5.5M11.5 10.75V6.5c0-1.1-.9-2-2-2H7.5M9 3 7.5 4.5 9 6" />
-        </>
-      );
-    case 'draft':
-      return (
-        <>
-          <circle cx="4.5" cy="3.75" r="1.5" />
-          <circle cx="4.5" cy="12.25" r="1.5" />
-          <circle cx="11.5" cy="12.25" r="1.5" />
-          <path d="M4.5 5.25v5.5M11.5 3.5v.01M11.5 6.75v.01M11.5 9.5v.01" />
-        </>
-      );
-    case 'merged':
-      return (
-        <>
-          <circle cx="4.5" cy="3.75" r="1.5" />
-          <circle cx="4.5" cy="12.25" r="1.5" />
-          <circle cx="11.5" cy="8.75" r="1.5" />
-          <path d="M4.5 5.25v5.5M4.5 5.25c0 2 1.5 3.5 3.5 3.5h2" />
-        </>
-      );
-    case 'closed':
-      return (
-        <>
-          <circle cx="4.5" cy="3.75" r="1.5" />
-          <circle cx="4.5" cy="12.25" r="1.5" />
-          <circle cx="11.5" cy="12.25" r="1.5" />
-          <path d="M4.5 5.25v5.5M11.5 10.75V8.25M10 3l3 3M13 3l-3 3" />
-        </>
-      );
-    default:
-      state satisfies never;
-      throw new Error(`A pull request state Lo doesn’t know: ${String(state)}.`);
-  }
 }

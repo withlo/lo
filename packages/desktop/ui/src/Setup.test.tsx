@@ -9,10 +9,10 @@ describe('SetupList', () => {
   it('is a labelled list of steps, one row each', () => {
     const html = renderToStaticMarkup(
       <SetupList label="Optional steps">
-        <SetupItem icon={<svg />} title="Install the tool" description="Does a thing.">
+        <SetupItem icon="terminal" title="Install the tool" description="Does a thing.">
           <Button size="sm">Install</Button>
         </SetupItem>
-        <SetupItem icon={<svg />} title="Send links" description="Does another." />
+        <SetupItem icon="link" title="Send links" description="Does another." />
       </SetupList>,
     );
     expect(html).toMatch(/^<ul aria-label="Optional steps"/);
@@ -30,7 +30,12 @@ describe('SetupList', () => {
 
   it('says a step is done where its button was', () => {
     const html = renderToStaticMarkup(
-      <SetupItem icon={<svg />} title="Overview skill" description="Does a thing." done="Installed">
+      <SetupItem
+        icon="file-text"
+        title="Overview skill"
+        description="Does a thing."
+        done="Installed"
+      >
         <Button size="sm">Install</Button>
       </SetupItem>,
     );
@@ -54,7 +59,7 @@ describe('SetupList', () => {
   it('says what its last press left to say under its line, and keeps its state where it was', () => {
     const html = renderToStaticMarkup(
       <SetupItem
-        icon={<svg />}
+        icon="terminal"
         title="lo command"
         description="Does a thing."
         done="Installed"
@@ -68,7 +73,7 @@ describe('SetupList', () => {
 
   it('hides a step’s icon from screen readers, and draws a button only when it has one', () => {
     const html = renderToStaticMarkup(
-      <SetupItem icon={<svg />} title="Send links" description="Does another." />,
+      <SetupItem icon="link" title="Send links" description="Does another." />,
     );
     expect(html).toContain('aria-hidden="true"');
     expect(html).not.toContain('<button');

@@ -2,6 +2,7 @@ import { useId, type HTMLAttributes, type ReactNode, type Ref } from 'react';
 
 import { Button } from './Button.tsx';
 import { showFormat } from './controls.ts';
+import { Icon } from './Icon.tsx';
 import { Key } from './Key.tsx';
 import { ShownText } from './ShownText.tsx';
 import { PathName, SourceMark, type AnswerSource } from './Source.tsx';
@@ -96,16 +97,6 @@ function definitions(count: number): string {
   return `${count} ${count === 1 ? 'definition' : 'definitions'}`;
 }
 
-/** An eye: the mark of looking at something without leaving where you are. */
-function EyeIcon() {
-  return (
-    <svg className="lo-i lo-i--sm flex-none" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M2 8s2.25-4.25 6-4.25S14 8 14 8s-2.25 4.25-6 4.25S2 8 2 8Z" />
-      <circle cx="8" cy="8" r="1.75" />
-    </svg>
-  );
-}
-
 /** What a peek's head shows: the word, how many answers, and its two buttons. */
 export interface PeekHeadProps {
   /** The word the peek answers for. */
@@ -152,7 +143,8 @@ export function PeekHead({
 }: PeekHeadProps) {
   return (
     <>
-      <EyeIcon />
+      {/* An eye: the mark of looking at something without leaving where you are. */}
+      <Icon name="eye" size={12} />
       <span className="max-w-full min-w-0 truncate">
         <strong className="font-semibold text-fg">
           <ShownText text={name} />
@@ -189,9 +181,7 @@ export function PeekHead({
           hintKeys={keys?.close}
           onClick={() => onClose?.()}
         >
-          <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M4 4l8 8M12 4l-8 8" />
-          </svg>
+          <Icon name="x" size={16} />
         </Button>
       </span>
     </>

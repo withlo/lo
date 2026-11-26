@@ -1,4 +1,5 @@
 import { Button } from './Button.tsx';
+import { Glyphs, Icon } from './Icon.tsx';
 import { Key } from './Key.tsx';
 import { Tooltip } from './Tooltip.tsx';
 
@@ -84,10 +85,7 @@ export function RunBar({
       aria-label={name}
       className="@container flex min-w-0 flex-none items-center gap-12 border-b border-accent-line bg-accent-soft py-4 ps-16 pe-8 text-fg text-ui"
     >
-      <svg className="lo-i flex-none text-fg-accent" viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M8 2.25 13.75 5 8 7.75 2.25 5Z" />
-        <path d="M2.25 8 8 10.75 13.75 8M2.25 11 8 13.75 13.75 11" />
-      </svg>
+      <Icon name="layers" size={14} className="text-fg-accent" />
       <Tooltip label={said} cut>
         <p className="min-w-0 truncate" role={problem ? 'alert' : undefined}>
           <strong className="font-semibold">{problem?.title ?? name}</strong>{' '}
@@ -98,7 +96,7 @@ export function RunBar({
         <span className="flex items-center gap-6 text-fg-muted code-small">
           {between !== undefined && (
             <span className="run-branches min-w-0 truncate">
-              {between.from} → {between.to}
+              <Glyphs text={`${between.from} → ${between.to}`} />
               {count !== undefined && ' · '}
             </span>
           )}

@@ -55,6 +55,7 @@ import type {
 } from '@lo/markdown';
 import { imageSize } from '@lo/markdown';
 
+import { Icon } from '../Icon.tsx';
 import { secureLink } from './links.ts';
 import type { Anchors } from './scope.ts';
 
@@ -659,9 +660,7 @@ export function Fold<X extends Extension>({
           if (event.key === 'Enter' && !modified(event)) toggle(event);
         }}
       >
-        <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M6 3.5 10.5 8 6 12.5" />
-        </svg>
+        <Icon name="chevron-right" size={16} />
         <span className="min-w-0">{drawInlines(node.summary, r)}</span>
         {kind !== undefined && <span className="lo-fold__kind">{kind}</span>}
         {summaryEnd}

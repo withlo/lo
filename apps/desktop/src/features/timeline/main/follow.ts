@@ -1,9 +1,9 @@
 // A view's timeline in main: read through the account's poller the first time the window shows it,
 // with what goes beside its description, and kept current from then on, as the poller reads them
 // again after the pull request changes. While its tab is on screen, the first reads go ahead of
-// polls, the push history its rows split pushes by right after them, and a long timeline's newest
-// page is drawn while its older pages are read. A tab that acts as nobody, or a run of a stack's
-// layers, reads neither. Nothing here calls Electron.
+// polls, and a long timeline's newest page is drawn while its older pages are read: the push
+// history its rows split pushes by goes right after that page, ahead of the older ones. A tab that
+// acts as nobody, or a run of a stack's layers, reads neither. Nothing here calls Electron.
 
 import {
   causeOf,
@@ -318,11 +318,14 @@ export class TimelineTab {
     // the account's queue, in the order of the reads' names: what goes beside the description,
     // which is quick, then the review threads the diff waits on, then the timeline. The rows split
     // pushes where a revision ends, so the push history the revisions feature reads goes ahead of
-    // polls too, once the timeline is in.
+    // polls too, once the rows can draw: as soon as the timeline's newest page is in, ahead of its
+    // older pages.
     const shown = (): boolean => this.#current(pull, login) && this.#options.onScreen() === this.id;
     const waiting = (): ReadPriority => (shown() ? 'foreground' : 'background');
     const after = (): ReadPriority =>
-      shown() && this.#timeline !== undefined ? 'foreground' : 'background';
+      shown() && (this.#timeline !== undefined || this.#newest !== undefined)
+        ? 'foreground'
+        : 'background';
     poller.pushHistory(pull, after).catch((error: unknown) => {
       this.#options.log(`reading the push history: ${describe(error)}`);
     });

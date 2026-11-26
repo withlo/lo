@@ -36,6 +36,7 @@ function viewOf(revisions: RevisionRow[]): ComparisonView {
     pending: null,
     offered: null,
     waitingFor: null,
+    settled: true,
     nothingNewSince: null,
     replay: null,
     conflicted: 0,

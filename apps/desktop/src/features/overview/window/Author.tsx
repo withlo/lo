@@ -2,7 +2,7 @@
 // login; the name a commit gives its author, which anyone can write, is drawn quoted, plain and
 // clipped to one short line, so no name can pass for the rest of the byline.
 
-import { Avatar } from '@lo/ui';
+import { Avatar, Icon } from '@lo/ui';
 import type { ReactNode } from 'react';
 
 import { withoutBidi } from '../../tab/window/shared.ts';
@@ -35,12 +35,7 @@ export function CommitName({ name }: { name: string }) {
 /** The byline's picture of who wrote it: their avatar for a login, else a plain figure. */
 export function AuthorPicture({ author }: { author: Author }) {
   if (author.kind === 'login') return <Avatar login={author.login} size="sm" />;
-  return (
-    <svg className="lo-i lo-ov-byline__figure" viewBox="0 0 16 16" aria-hidden="true">
-      <circle cx="8" cy="5.75" r="2.75" />
-      <path d="M3 13.5c.6-2.6 2.6-4 5-4s4.4 1.4 5 4" />
-    </svg>
-  );
+  return <Icon name="user-round" size={16} className="lo-ov-byline__figure" />;
 }
 
 /** Who wrote it and when, as the byline says it: "ravi-k · 2 d ago". */

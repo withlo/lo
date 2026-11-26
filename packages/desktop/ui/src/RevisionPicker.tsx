@@ -2,6 +2,7 @@ import { cva } from 'class-variance-authority';
 import { useCallback, useRef, type ReactNode, type Ref } from 'react';
 
 import { Button } from './Button.tsx';
+import { Glyphs, Icon } from './Icon.tsx';
 import { Key } from './Key.tsx';
 import { Popover } from './Popover.tsx';
 import { Tag } from './Tag.tsx';
@@ -99,30 +100,12 @@ function rowId(prefix: string, key: string): string {
   return `${prefix}-${key}`;
 }
 
-/** The arrows that mark a forced push. */
-function ForcedIcon() {
-  return (
-    <svg className="lo-i lo-i--xs flex-none text-warning" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M5 2.5v11M2.5 5 5 2.5 7.5 5M11 13.5v-11M8.5 11l2.5 2.5 2.5-2.5" />
-    </svg>
-  );
-}
-
-/** The eye that marks "last seen here". */
-function SeenIcon() {
-  return (
-    <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M2 8s2.25-4.25 6-4.25S14 8 14 8s-2.25 4.25-6 4.25S2 8 2 8Z" />
-      <circle cx="8" cy="8" r="1.75" />
-    </svg>
-  );
-}
-
 /** A revision's marker. */
 function RevisionMark({ tag }: { tag: RevisionTag }) {
   return (
     <Tag tone={tag.kind === 'newest' ? 'info' : 'neutral'}>
-      {tag.kind === 'seen' && <SeenIcon />}
+      {/* The eye that marks "last seen here". */}
+      {tag.kind === 'seen' && <Icon name="eye" size={12} />}
       {tag.kind === 'overview' && <span className="lo-ovmark lo-ovmark--tag" aria-hidden="true" />}
       {tag.label}
     </Tag>
@@ -222,7 +205,8 @@ export function RevisionPicker({
               </span>
               <span className="flex min-w-0 flex-1 flex-col gap-2">
                 <span className="flex min-w-0 items-center gap-6">
-                  {each.forced && <ForcedIcon />}
+                  {/* The arrows that mark a forced push. */}
+                  {each.forced && <Icon name="arrow-up-down" size={12} className="text-warning" />}
                   <span
                     className={`min-w-0 truncate ${each.base ? 'rounded-xs bg-hover px-6 code-small' : ''}`}
                   >
@@ -253,7 +237,9 @@ export function RevisionPicker({
               className={`inline-flex h-control-h-sm items-center gap-6 rounded-pill px-8 text-small-medium whitespace-nowrap focus-visible:shadow-ring ${shortcut.pressed ? 'bg-accent-soft text-fg-accent inset-ring inset-ring-accent-line' : 'text-fg-muted inset-ring inset-ring-border hover:bg-hover hover:text-fg'}`}
               onClick={() => onShortcut?.(shortcut.id)}
             >
-              {shortcut.label}
+              <span>
+                <Glyphs text={shortcut.label} />
+              </span>
               {shortcut.keys && <Key keys={shortcut.keys} quiet decorative />}
             </button>
           ))}
@@ -273,7 +259,9 @@ export function RevisionPicker({
           disabled={compare.disabled}
           onClick={() => onCompare?.()}
         >
-          {compare.label}
+          <span>
+            <Glyphs text={compare.label} />
+          </span>
           {compare.keys && <Key keys={compare.keys} quiet decorative />}
         </Button>
       </div>
