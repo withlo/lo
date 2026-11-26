@@ -670,6 +670,9 @@ class View implements DiffView {
     this.#shownSides = sides;
     if (sides !== undefined) this.dom.style.setProperty('--lo-sides', String(sides));
     parent.append(this.dom);
+    // Before the editors, whose first drawing reads what the lanes' and headers' marks show. Its
+    // popover's layer goes first in the scroll, before the edge between the sides.
+    this.#beside = new Beside(this.#besideHost());
     const make = (side: Side): EditorView =>
       new EditorView({
         parent: this.dom,
@@ -680,7 +683,6 @@ class View implements DiffView {
       });
     this.views = { old: make('old'), new: make('new') };
     this.dom.insertBefore(this.#pin.dom, this.views.old.dom);
-    this.#beside = new Beside(this.#besideHost());
     this.#sizes = {
       old: new ThreadSizes(this.views.old.contentDOM),
       new: new ThreadSizes(this.views.new.contentDOM),

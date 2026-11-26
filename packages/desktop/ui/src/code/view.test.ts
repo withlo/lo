@@ -3289,6 +3289,21 @@ function newBubble(): HTMLElement {
 }
 
 describe('threads beside lines', () => {
+  test('the editors draw their files from the first with nothing failing, the popover’s layer first in the scroll', () => {
+    const failed = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      // Each file's diff known as it opens, so the editors mark its lines as they're made.
+      const known = files.map((file) =>
+        file.lines ? { ...file, diff: diffOf(file.lines) } : file,
+      );
+      open(events(), { threads: 'beside', files: known });
+      expect(failed).not.toHaveBeenCalled();
+      expect(parent!.querySelector('.lo-diffview')!.firstElementChild).toBe(layer());
+    } finally {
+      failed.mockRestore();
+    }
+  });
+
   test('a thread takes no room under its line: its mark alone is drawn, which runs no tip', () => {
     const shown = open(events(), { threads: 'beside' });
     const { render, asked } = plain();
