@@ -12,16 +12,17 @@
   background: var(--lo-bg);
   scroll-padding-top: 24px;
 }
-@container lo-middle (width < 980px) {
-  .lo-ov { grid-template-columns: minmax(0, 1fr); }
-  .lo-ov__toc { display: none; }
-}
-
 /* Outline: the sections in the order the writer chose */
 .lo-ov__toc {
   position: sticky; top: 0; align-self: start;
   display: flex; flex-direction: column; gap: 1px;
   padding: 30px 8px 24px 16px;
+}
+/* Under 980px of the view's own box, the outline gives its room to the article: after the outline's
+   own rule, which would otherwise draw it again. */
+@container lo-middle (width < 980px) {
+  .lo-ov { grid-template-columns: minmax(0, 1fr); }
+  .lo-ov__toc { display: none; }
 }
 .lo-toc__label {
   padding: 0 8px 8px;

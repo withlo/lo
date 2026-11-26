@@ -20,7 +20,7 @@ import {
 } from '../contract.ts';
 import { blocked } from './banners.ts';
 import { makeTabState, type TabState, useKept } from './kept.ts';
-import { besideDrawn, panelDrawn } from './layout.ts';
+import { besideDrawn, panelDrawn, SHEET } from './layout.ts';
 import { main } from './main.ts';
 import {
   bringView,
@@ -217,6 +217,15 @@ export function focusNowhere(): void {
 /** Whether the code is beside a reading view in the tab on screen, two views drawn. */
 export function besideNow(): boolean {
   return besideDrawn();
+}
+
+/**
+ * Whether focus is in one of the views of the tab on screen, the reading view or the code, rather
+ * than in a panel or elsewhere: a link to code from there gives the code focus, as one from a panel
+ * leaves it in the panel.
+ */
+export function focusInView(): boolean {
+  return (document.activeElement?.closest(SHEET) ?? null) !== null;
 }
 
 /**

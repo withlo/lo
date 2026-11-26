@@ -868,14 +868,15 @@ labeled with the revision and line they were written on. It lists the unresolved
 and `f` steps to all threads, then to yours: the ones you started or replied in.
 
 `j` and `k` move through it, and `x` resolves or unresolves the thread the keyboard is on. `⏎` or a
-click shows the thread in the diff, opened, at the top of the screen, and focus stays in the panel.
-It's a jump, so `⌃o` goes back. A thread the diff on screen doesn't show, such as an outdated one,
-shows in the whole diff of the revision it's on, which Lo compares first, saying so: "Showing r1 for
-this thread", with Back. `⌃o` then goes back to the comparison before and the place in it, and `⌃i`
-comes forward again. The last move wins: a comparison still coming is called off, with what Lo said
-of it, when the diff on screen shows the next thread asked for, or when `⌃o` or `⌃i` goes elsewhere
-first. A file-level thread shows its file's header. In the diff, `]t` and `[t` jump between threads,
-a stop for each, a file's threads under its header included, and the thread landed on is ringed.
+click shows the thread in the diff, opened, at the top of the screen, and focus stays in the panel;
+with code beside, its line Lands. It's a jump, so `⌃o` goes back. A thread the diff on screen
+doesn't show, such as an outdated one, shows in the whole diff of the revision it's on, which Lo
+compares first, saying so: "Showing r1 for this thread", with Back. `⌃o` then goes back to the
+comparison before and the place in it, and `⌃i` comes forward again. The last move wins: a
+comparison still coming is called off, with what Lo said of it, when the diff on screen shows the
+next thread asked for, or when `⌃o` or `⌃i` goes elsewhere first. A file-level thread shows its
+file's header. In the diff, `]t` and `[t` jump between threads, a stop for each, a file's threads
+under its header included, and the thread landed on is ringed.
 
 ### Timeline
 

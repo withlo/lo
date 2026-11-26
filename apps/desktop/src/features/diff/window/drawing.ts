@@ -30,7 +30,7 @@ import {
   viewedFailureOf,
   viewedMarkOf,
 } from '../../revisions/window/shared.ts';
-import type { PullTab } from '../../tab/window/shared.ts';
+import { besideNow, type PullTab } from '../../tab/window/shared.ts';
 import { followFile } from '../../tree/window/shared.ts';
 import type { Start } from '../contract.ts';
 import { hintsShown, restedIn } from './code.ts';
@@ -577,7 +577,8 @@ export function draw(options: DrawOptions): Drawing {
    * What the diff waits to show, once this view is on screen and can: a thread another feature
    * asked for, once it has it, opened, its line at the top of the screen, with focus staying where
    * it is; or a place in the tab's history, in a view of another comparison than the one it was
-   * asked for in front of, with the cursor on it and focus in it.
+   * asked for in front of, with the cursor on it and focus in it. With code beside a reading view,
+   * the line Lands.
    */
   const showWanted = () => {
     const wanted = wantedIn(tab.id);
@@ -585,12 +586,15 @@ export function draw(options: DrawOptions): Drawing {
     if (wanted.kind === 'thread') {
       if (!view.openThread(wanted.thread, true)) return;
       shownWanted(tab.id);
-      view.revealAtTop({ kind: 'thread', thread: wanted.thread });
+      const thread = { kind: 'thread', thread: wanted.thread } as const;
+      view.revealAtTop(thread);
+      if (besideNow()) view.land(thread);
       return;
     }
     if (wanted.left === drawnName(at, comparison)) return;
     shownWanted(tab.id);
     view.reveal(wanted.target);
+    if (besideNow()) view.land(wanted.target);
     view.focus();
   };
   // Each file's diff and highlighting came with it.
@@ -748,12 +752,14 @@ export function draw(options: DrawOptions): Drawing {
     // A place asked for while another middle view was on screen, as `⌃o` back from a whole file
     // asks for the place it left. The cursor already there stays as it is: revealing it again
     // would scroll it to the screen's edge, moving what's on screen. A file the tree asked for
-    // comes to the top, wherever the cursor is.
+    // comes to the top, wherever the cursor is. With code beside a reading view, where the diff
+    // came in the code's place to show it, the place Lands.
     const waiting = takeReveal(tab.id);
     if (waiting?.top && waiting.target.kind === 'file') toTop(waiting.target.file);
     else if (waiting && !samePlace(waiting.target, view.keyState().target)) {
       view.reveal(waiting.target);
     }
+    if (waiting && besideNow()) view.land(waiting.target);
     showWanted();
     // Focus that's nowhere in particular, or left behind in a middle view now hidden, comes to the
     // diff, as it does to any middle view.

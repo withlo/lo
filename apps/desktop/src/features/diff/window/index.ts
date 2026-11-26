@@ -309,17 +309,18 @@ export default {
         return typeof code === 'string' ? code : true;
       },
     },
+    // Checked as the diff is drawn: inline beside a reading view, whatever Settings says.
     sideBySide: {
       run: withDiff((drawn) => setLayout(drawn, 'split')),
       enabled: layoutNow,
-      checked: () => settingNow(layout) === 'split',
+      checked: () => !besideNow() && settingNow(layout) === 'split',
     },
     inline: {
       run: withDiff((drawn) =>
         setLayout(drawn, drawn.view.probe.layout === 'split' ? 'inline' : 'split'),
       ),
       enabled: layoutNow,
-      checked: () => settingNow(layout) === 'inline',
+      checked: () => besideNow() || settingNow(layout) === 'inline',
     },
     whitespace: {
       run: withDiff(async ({ loader }) => {

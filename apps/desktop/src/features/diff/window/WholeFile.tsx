@@ -24,6 +24,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { openMenu } from '../../../window/commands/menus.tsx';
 import { inCodeOf, registry, setMiddle, useKeys } from '../../../window/commands/registry.ts';
 import {
+  besideNow,
   focusNowhere,
   MiddlePlaceholder,
   tabState,
@@ -305,7 +306,11 @@ export function WholeFile({ tab, shown }: { tab: PullTab; shown: boolean }) {
         return;
       }
       answered.set(tab.id, open.ask.count);
-      if (open.ask.at) made.reveal(open.ask.at);
+      if (open.ask.at) {
+        made.reveal(open.ask.at);
+        // In the code's place beside a reading view, as a link or a follow brought it.
+        if (besideNow()) made.land(open.ask.at);
+      }
       if (open.ask.focus || focusIsFree(scope.current)) made.focus();
       return;
     }

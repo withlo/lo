@@ -16,7 +16,7 @@ import {
   comparisonHere,
   holdLimit,
 } from '../../revisions/window/shared.ts';
-import { besideNow, showMiddle } from '../../tab/window/shared.ts';
+import { besideNow, focusInView, showMiddle } from '../../tab/window/shared.ts';
 import { fileKey, type TreePath } from '../../tree/contract.ts';
 import { onShowFile, pathOf } from '../../tree/window/shared.ts';
 import type { Version } from '../contract.ts';
@@ -126,7 +126,8 @@ export type ShowWhen = 'now' | 'drawn' | 'both';
  * Shows review thread `thread` in tab `tab`'s diff, as `when` says: opens it and puts its line at
  * the top of the screen, a jump. With the diff on screen, `now` says whether it has the thread; a
  * diff not on screen comes on screen, and shows it once it's drawn with it, unless the reader does
- * anything else first. Focus stays where it is.
+ * anything else first. Focus stays where it is, as in the threads panel, which asks this: but with
+ * code beside a reading view, the line Lands, and focus in either view goes to the code.
  */
 export function showThread(tab: string, thread: string, when: ShowWhen): boolean {
   const drawn = drawnFor(tab);
@@ -135,7 +136,14 @@ export function showThread(tab: string, thread: string, when: ShowWhen): boolean
     if (!has && when === 'now') return false;
     leave();
     shown(tab);
-    if (has) drawn.view.revealAtTop({ kind: 'thread', thread });
+    if (has) {
+      const at = { kind: 'thread', thread } as const;
+      drawn.view.revealAtTop(at);
+      if (besideNow()) {
+        drawn.view.land(at);
+        if (focusInView()) drawn.view.focus();
+      }
+    }
     if (when === 'both') wantThread(tab, thread);
     return true;
   }
@@ -432,7 +440,9 @@ function coming(tab: string, id: string): boolean {
 /**
  * Shows the files the tree asks for: a changed one in the diff, its header at the top of the
  * screen with focus staying in the tree, and the diff brought back to show it; any one whole.
- * Either is a jump, which `⌃o` comes back from, whether a key or a click asked for it.
+ * Either is a jump, which `⌃o` comes back from, whether a key or a click asked for it. With code
+ * beside a reading view, the header Lands, and focus in either view, as Go to file… gives it
+ * back there, goes to the code.
  */
 export function showTreeFiles(): void {
   onShowFile('diff', (tab, key) => {
@@ -444,6 +454,10 @@ export function showTreeFiles(): void {
       if (drawn.order.includes(target.file)) {
         leave();
         drawn.toTop(target.file);
+        if (besideNow()) {
+          drawn.view.land(target);
+          if (focusInView()) drawn.view.focus();
+        }
       } else if (coming(tab, target.file)) {
         // A view of other files is about to be drawn, as the local copy's are: it shows it.
         leave();
@@ -456,6 +470,6 @@ export function showTreeFiles(): void {
     showMiddle(tab, DIFF_VIEW);
   });
   onShowFile('whole', (tab, key, path) =>
-    openWhole(tab, { key, path, version: 'new', focus: false }),
+    openWhole(tab, { key, path, version: 'new', focus: besideNow() && focusInView() }),
   );
 }
