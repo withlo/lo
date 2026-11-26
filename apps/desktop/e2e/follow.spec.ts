@@ -4,9 +4,9 @@
 // through its outline to the first block, `←` and `→` step a walkthrough or tabs, `⏎` follows a
 // block, a link or a part to its code in the diff, or to the file whole where the diff doesn't have
 // it, where its lines are in r2, though the overview was written for r1, and `⌃o` comes back to the
-// block. `o` puts the block's code beside the overview, following
-// the blocks, and `o` or `Esc` takes it away. A block's right-click menu does the same, and gives
-// focus back to what had it. What the reader is at stays where it is through each, or comes on
+// block. `o` puts the diff beside the overview, which follows the blocks while focus stays on them,
+// `⏎` goes to the code there, and `o` takes it away. A block's right-click menu goes to its code, and
+// gives focus back to what had it. What the reader is at stays where it is through each, or comes on
 // screen where that's off it now.
 
 import { writeFileSync } from 'node:fs';
@@ -127,9 +127,6 @@ const shown = (page: Page) =>
 /** The overview's block numbered `number`. */
 const block = (page: Page, number: number) =>
   shown(page).locator(`.lo-ov__article > [data-lo-block="${number}"]`);
-
-/** The code beside the overview. */
-const beside = (page: Page) => page.locator('[data-lo-beside]');
 
 /** What has focus: the block it's in, whether it's the block's own focus, and what it says. */
 function focused(page: Page) {
@@ -321,7 +318,7 @@ test(']b and [b go between the blocks, Tab between a block’s links, and ← an
   expect((await focused(page)).block).toBe(BLOCK.fold);
 });
 
-test('from the overview itself, Tab goes through the outline to the first block, and ⇧Tab back; a block’s menu goes to its code, puts it beside, and copies the prompt, and gives focus back to what had it', async ({
+test('from the overview itself, Tab goes through the outline to the first block, and ⇧Tab back; a block’s menu goes to its code and copies the prompt, and gives focus back to what had it', async ({
   app,
   page,
 }) => {
@@ -383,7 +380,7 @@ test('from the overview itself, Tab goes through the outline to the first block,
     expect(await focused(page)).toMatchObject({ text: sections[0] });
   });
 
-  await test.step('a block’s menu goes to its code, puts it beside, and copies the prompt', async () => {
+  await test.step('a block’s menu goes to its code and copies the prompt', async () => {
     await block(page, BLOCK.parser).scrollIntoViewIfNeeded();
     await block(page, BLOCK.parser).click(CORNER);
     await expect(menu).toBeVisible();
@@ -392,19 +389,16 @@ test('from the overview itself, Tab goes through the outline to the first block,
     // Nothing newer was pushed, and nothing failed.
     await expect(menu.getByRole('menuitem', { name: /Show latest overview/ })).toHaveCount(0);
     await expect(menu.getByRole('menuitem', { name: /^Try again/ })).toHaveCount(0);
-    await menu.getByRole('menuitem', { name: /^Code beside/ }).click();
-    await expect(beside(page).locator('.lo-split__bar .lo-path')).toHaveText('src/parser.ts');
-    await block(page, BLOCK.parser).click(CORNER);
-    // With the code beside, the menu names what it does now.
-    await menu.getByRole('menuitem', { name: /^Close code beside/ }).click();
-    await expect(beside(page)).toHaveCount(0);
+    // Code beside is the window's, not a block's.
+    await expect(menu.getByRole('menuitem', { name: /^Code beside/ })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
 
     // A block with no code lists neither.
     await block(page, BLOCK.tabs).scrollIntoViewIfNeeded();
     await block(page, BLOCK.tabs).click(CORNER);
     await expect(menu.getByRole('menuitem', { name: /^Copy prompt/ })).toBeVisible();
     await expect(menu.getByRole('menuitem', { name: /^Go to code/ })).toHaveCount(0);
-    await expect(menu.getByRole('menuitem', { name: /^Code beside/ })).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(menu).toHaveCount(0);
 
@@ -438,8 +432,8 @@ test('from the overview itself, Tab goes through the outline to the first block,
     await block(page, BLOCK.parser).scrollIntoViewIfNeeded();
     await block(page, BLOCK.parser).click(CORNER);
     await expect(menu).toBeVisible();
-    await menu.getByRole('menuitem', { name: /^Code beside/ }).click();
-    await expect(beside(page)).toBeVisible();
+    await menu.getByRole('menuitem', { name: /^Copy prompt/ }).click();
+    await expect(menu).toHaveCount(0);
     expect(await focused(page)).toMatchObject({ block: BLOCK.parser, own: true });
     await block(page, BLOCK.parser).click(CORNER);
     await expect(menu).toBeVisible();
@@ -633,7 +627,7 @@ test('⌃o puts the block back where it was: cut by the top of the screen, the w
   });
 });
 
-test('o puts a block’s code beside the overview, which follows the blocks, and o or Esc takes it away, moving nothing; and the palette offers Close code beside only while code is beside', async ({
+test('o puts the diff beside the overview, inline, which follows the blocks, focus staying; ⏎ goes to the code there, ⌃o comes back, Esc leaves it, and o takes it away', async ({
   app,
   page,
 }) => {
@@ -642,130 +636,66 @@ test('o puts a block’s code beside the overview, which follows the blocks, and
   await open(page);
   const toc = shown(page).locator('.lo-ov__toc');
   await expect(toc).toBeVisible();
+  const views = page.locator('[data-lo-views]');
+  const button = page.getByRole('button', { name: 'Code beside', exact: true });
+  const lines = page
+    .locator('[data-lo-sheet="code"] [data-lo-middle-view="diff.view"]')
+    .getByRole('textbox', { name: 'Changes' });
 
-  await test.step('o puts a block’s code beside the overview, which follows the blocks', async () => {
+  await test.step('o puts the diff beside the overview, and the overview keeps focus', async () => {
     await toBlock(page, BLOCK.parser);
-    let top = await topOf(page, BLOCK.parser);
+    await expect(button).toHaveAttribute('aria-pressed', 'false');
     await press(page, 'o');
-    await expect(beside(page)).toBeVisible();
-    await expect(beside(page).locator('.lo-split__bar .lo-path')).toHaveText('src/parser.ts');
-    // The outline gives the code its room; the block stays where it was, with focus.
-    await expect(toc).toHaveCount(0);
-    expect(Math.abs((await topOf(page, BLOCK.parser)) - top)).toBeLessThanOrEqual(1);
+    await expect(views).toHaveAttribute('data-lo-views', 'two');
+    await expect(button).toHaveAttribute('aria-pressed', 'true');
+    await expect(lines.first()).toBeVisible({ timeout: 20_000 });
+    // The outline gives way in the narrower sheet.
+    await expect(toc).toBeHidden();
     expect(await focused(page)).toMatchObject({ block: BLOCK.parser, own: true });
-    await expect(block(page, BLOCK.parser).locator('.lo-block__hints')).toContainText(
-      'Close code beside',
-    );
-    // The block's first line, on screen in the code, inline.
-    const code = beside(page).locator('[data-lo-beside-code]');
-    const lines = code.getByRole('textbox', { name: 'Changes' });
-    const onScreen = async (text: string) => {
-      const line = lines.locator('.cm-line', { hasText: text });
-      await expect(line).toBeVisible({ timeout: 20_000 });
-      const box = await code.boundingBox();
-      const at = await line.boundingBox();
-      return (
-        (at?.y ?? -1) >= (box?.y ?? 0) &&
-        (at?.y ?? 0) + (at?.height ?? 0) <= (box?.y ?? 0) + (box?.height ?? 0)
-      );
-    };
-    expect(await onScreen('Empty input has no lines')).toBe(true);
-    await expect(beside(page).locator('.lo-split__bar')).toContainText('Inline');
-
-    // ]b takes the code along to each block with code, and leaves it at a block without.
-    await press(page, ']', 'b');
-    expect((await focused(page)).block).toBe(BLOCK.formatHead);
-    await expect(beside(page).locator('.lo-split__bar .lo-path')).toHaveText('src/format.ts');
-    await press(page, ']', 'b');
-    expect((await focused(page)).block).toBe(BLOCK.formatTerm);
-    await expect(beside(page).locator('.lo-split__bar .lo-path')).toHaveText('src/format.ts');
-    await press(page, ']', 'b');
-    expect((await focused(page)).block).toBe(BLOCK.format);
-    expect(await onScreen('/** `lines` as text, each after its number. */')).toBe(true);
-
-    // In the code, its block keeps its ring, and Esc takes the code away, focus back on the block.
-    top = await topOf(page, BLOCK.format);
-    await lines.focus();
-    expect((await focused(page)).block).toBeUndefined();
-    await expect(block(page, BLOCK.format)).toHaveClass(/is-focused/);
-    // The diff's keys act on it there.
-    await press(page, 'g', 'i');
-    await expect(said(page, /\binline\b/)).toBeVisible();
-    await press(page, 'Escape');
-    await expect(beside(page)).toHaveCount(0);
-    await expect(toc).toBeVisible();
-    expect(await focused(page)).toMatchObject({ block: BLOCK.format, own: true });
-    expect(Math.abs((await topOf(page, BLOCK.format)) - top)).toBeLessThanOrEqual(1);
-
-    // o opens it again, and o closes it, the block staying put each time.
-    await press(page, 'o');
-    await expect(beside(page)).toBeVisible();
-    expect(Math.abs((await topOf(page, BLOCK.format)) - top)).toBeLessThanOrEqual(1);
-    await press(page, 'o');
-    await expect(beside(page)).toHaveCount(0);
-    expect(Math.abs((await topOf(page, BLOCK.format)) - top)).toBeLessThanOrEqual(1);
-
-    // The button over the code takes it away too.
-    await press(page, 'o');
-    await beside(page)
-      .getByRole('button', { name: /^Close code beside/ })
-      .click();
-    await expect(beside(page)).toHaveCount(0);
-    expect(await focused(page)).toMatchObject({ block: BLOCK.format, own: true });
-
-    // Tab through a figure's parts keeps the figure's code beside: it follows the block, not the part.
-    await toBlock(page, BLOCK.figure);
-    await press(page, 'o');
-    const path = beside(page).locator('.lo-split__bar .lo-path');
-    await expect(path).toHaveText('src/parser.ts');
-    await press(page, 'Tab', 'Tab', 'Tab');
-    expect(await focused(page)).toMatchObject({
-      block: BLOCK.figure,
-      text: 'src/format.ts · lines 6–8',
-    });
-    await expect(path).toHaveText('src/parser.ts');
-    await press(page, 'o');
-    await expect(beside(page)).toHaveCount(0);
-
-    // A block with no code has none to show.
-    await toBlock(page, BLOCK.tabs);
-    await press(page, 'o');
-    await expect(said(page, /\bcode\b/)).toBeVisible();
-    await expect(beside(page)).toHaveCount(0);
-
-    // A file the pull request doesn't change says so.
-    await toBlock(page, BLOCK.readme);
-    await press(page, 'o');
-    await expect(beside(page)).toContainText(/\bchanges\b.*README\.md/);
   });
 
-  await test.step('the palette offers Close code beside only while code is beside', async () => {
-    const palette = page.getByRole('dialog', { name: 'Command palette' });
-    const input = palette.getByRole('combobox', { name: 'Command palette' });
-    const offered = palette.getByRole('option', { name: /^Close code beside/ });
-    const openPalette = async () => {
-      await press(page, process.platform === 'darwin' ? 'Meta+Shift+P' : 'Control+Shift+P');
-      await expect(input).toBeFocused();
-      // Code beside matches as well, so the palette has something to list either way.
-      await input.fill('code beside');
-    };
-
-    // The README's block, where the step before left code beside, is closed first.
-    await press(page, 'o');
-    await expect(beside(page)).toHaveCount(0);
+  await test.step(']b takes the diff along to each block with code, focus staying on the block', async () => {
+    await press(page, ']', 'b');
+    expect(await focused(page)).toMatchObject({ block: BLOCK.formatHead, own: true });
+    await expect
+      .poll(async () => (await diffCursor(page))?.path, { timeout: 20_000 })
+      .toBe('src/format.ts');
     await toBlock(page, BLOCK.parser);
-    await openPalette();
-    await expect(palette.getByRole('option').first()).toBeVisible();
-    await expect(offered).toHaveCount(0);
-    await press(page, 'Escape');
-    await expect(palette).toBeHidden();
-
-    await press(page, 'o');
-    await expect(beside(page)).toBeVisible();
-    await openPalette();
-    await expect(offered).toHaveCount(1);
-    await press(page, 'Enter');
-    await expect(beside(page)).toHaveCount(0);
+    await expect
+      .poll(async () => (await diffCursor(page))?.path, { timeout: 20_000 })
+      .toBe('src/parser.ts');
     expect(await focused(page)).toMatchObject({ block: BLOCK.parser, own: true });
+  });
+
+  await test.step('⏎ goes to the code beside, nothing switching, and ⌃o comes back to the block', async () => {
+    const top = await topOf(page, BLOCK.parser);
+    await press(page, 'Enter');
+    await expect(lines.first()).toBeFocused();
+    await expect(views).toHaveAttribute('data-lo-views', 'two');
+    await expect
+      .poll(() => diffCursor(page), { timeout: 20_000 })
+      .toEqual({ path: 'src/parser.ts', header: false, line: 7, side: 'new' });
+    // The diff beside is inline, whatever Settings says.
+    await press(page, 'g', 'i');
+    await expect(said(page, 'Code beside is inline')).toBeVisible();
+    await back(page, BLOCK.parser, top);
+  });
+
+  await test.step('Esc leaves code beside on, and o takes it away, the block keeping focus', async () => {
+    await lines.first().focus();
+    await press(page, 'Escape');
+    await expect(views).toHaveAttribute('data-lo-views', 'two');
+    await shown(page).locator('.lo-ov').focus();
+    await toBlock(page, BLOCK.parser);
+    await press(page, 'o');
+    await expect(views).toHaveAttribute('data-lo-views', 'one');
+    await expect(button).toHaveAttribute('aria-pressed', 'false');
+    await expect(toc).toBeVisible();
+    expect(await focused(page)).toMatchObject({ block: BLOCK.parser, own: true });
+    // The header's button puts it back.
+    await button.click();
+    await expect(views).toHaveAttribute('data-lo-views', 'two');
+    await button.click();
+    await expect(views).toHaveAttribute('data-lo-views', 'one');
   });
 });

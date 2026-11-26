@@ -6,11 +6,9 @@
 // these away, and on again.
 
 import { handlers, type Target } from '@lo/ui/commands';
-import { closeCards } from '@lo/ui/overview';
 import { createElement } from 'react';
 
-import { overlay } from '../../../window/commands/overlays.tsx';
-import { escapeToMiddle, registry } from '../../../window/commands/registry.ts';
+import { registry } from '../../../window/commands/registry.ts';
 import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
 import { defineView } from '../../../window/slots.tsx';
@@ -18,7 +16,7 @@ import { setCodeElsewhere } from '../../diff/window/shared.ts';
 import { contract as revisionsContract } from '../../revisions/contract.ts';
 import { settingRow } from '../../settings/window/shared.ts';
 import { viewIds } from '../../tab/contract.ts';
-import { activeTab, middle, showingMiddle, status } from '../../tab/window/shared.ts';
+import { activeTab, middle, runOf, showingMiddle, status } from '../../tab/window/shared.ts';
 import { overviewRows, setup } from '../../welcome/window/shared.ts';
 import keys from '../keys.ts';
 import { on } from '../settings.ts';
@@ -26,16 +24,14 @@ import { copyPrompt, promptNow } from './copy.ts';
 import { blockCode } from './copying.ts';
 import { OVERVIEW_VIEW } from './labels.ts';
 import { main, tabs } from './main.ts';
+import { standingOf } from './facts.ts';
 import { followMarkers, keepMarkersOnly } from './markers.ts';
 import { OverviewMark } from './Mark.tsx';
 import { OverviewView } from './Overview.tsx';
 import { InstallCommandRow, OverviewsRow, SkillRow, SkillStep } from './Rows.tsx';
 import { followOverviews, overviews } from './shared.ts';
 import {
-  besideFor,
-  besides,
   blockAt,
-  closeBesideAt,
   codeIn,
   drawnIn,
   focusBlock,
@@ -52,7 +48,6 @@ import {
   step,
   stepName,
   stepsIn,
-  toggleBeside,
   type DrawnOverview,
   type Scroll,
 } from './follow.ts';
@@ -63,6 +58,7 @@ import {
   catchUp,
   keepOnly,
   readAgain,
+  checked,
   states,
   takeOverviews,
   takeRevisions,
@@ -144,7 +140,7 @@ function withBlock(act: (overview: DrawnOverview, block: HTMLElement) => void) {
   };
 }
 
-/** Whether the block `target` names points at code, which its menu lists going to and showing beside. */
+/** Whether the block `target` names points at code, which its menu lists going to. */
 function hasCode(target: Target): boolean {
   const found = blockOf(target);
   return typeof found === 'string' || codeIn(found.overview, found.block) !== undefined;
@@ -244,45 +240,6 @@ export default {
       listed: hasCode,
       named: naming(followName),
     },
-    beside: {
-      run: (target) => {
-        const overview = onScreen();
-        if (typeof overview === 'string') return;
-        const found = blockOf(target);
-        toggleBeside(overview, typeof found === 'string' ? undefined : found.block);
-      },
-      enabled: (target) => {
-        const overview = onScreen();
-        if (typeof overview === 'string') return overview;
-        if (besides.get(overview.tab) !== undefined) return true;
-        const found = blockOf(target);
-        const chosen = besideFor(overview, typeof found === 'string' ? undefined : found.block);
-        return typeof chosen === 'string' ? chosen : true;
-      },
-      listed: hasCode,
-      // Pressed again, it closes the code beside.
-      named: () => {
-        const overview = onScreen();
-        if (typeof overview === 'string') return undefined;
-        return besides.get(overview.tab) === undefined ? undefined : 'Close code beside';
-      },
-    },
-    closeBeside: {
-      run: () => {
-        // A term's card closes first, as `Esc` closes it anywhere in the overview.
-        if (closeCards()) return;
-        const overview = onScreen();
-        if (typeof overview !== 'string' && closeBesideAt(overview)) return;
-        escapeToMiddle();
-      },
-      enabled: () => {
-        const tab = activeTab();
-        if (tab?.kind === 'pull' && besides.get(tab.id) !== undefined) return true;
-        // From the palette or key help, it only closes the code beside. Its key, which reaches it
-        // only in the overview, still closes a term's card or gives the overview focus.
-        return overlay() === undefined ? true : 'Code beside is closed';
-      },
-    },
     scrollDown: scrolling('down'),
     scrollUp: scrolling('up'),
     top: scrolling('top'),
@@ -331,6 +288,11 @@ export default {
       id: OVERVIEW_VIEW,
       order: 10,
       label: 'Overview',
+      kind: 'reading',
+      // A pull request with no overview, or a run of layers, which has none, has nothing to read
+      // beside the code: the timeline is.
+      empty: (tab) =>
+        runOf(tab) !== undefined || standingOf(states.get(tab), checked.get(tab)).kind === 'none',
       mark: OverviewMark,
       render: ({ tab, shown }) => createElement(OverviewView, { tab, shown }),
       present: overviews,

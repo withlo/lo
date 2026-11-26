@@ -1260,7 +1260,7 @@ export async function comment(
   suggest = false,
 ): Promise<void> {
   const view = tab.id;
-  const diff = writingDiff(view, true);
+  const diff = writingDiff(view);
   if (!diff) return;
   knowPull(tab);
   const drawn = diff.drawn();
@@ -1270,7 +1270,7 @@ export async function comment(
   if (!file || path === undefined) return;
   const commentable = await commentableOf(view, drawn.at, path, previousOf(file));
   // The reader moved on meanwhile: to another tab, or the diff drawn again.
-  if (writingDiff(view, true)?.drawn().at !== drawn.at) return;
+  if (writingDiff(view)?.drawn().at !== drawn.at) return;
   const takes = commentableOn(screenFor(view, diff, file.since), commentable);
   if (target.kind === 'header') {
     if (takes && !takes.takesFileComment()) {

@@ -36,7 +36,7 @@ vi.mock('../../revisions/window/shared.ts', () => ({
 vi.mock('./tabs.ts', async (original) => ({
   ...(await original<typeof Tabs>()),
   loaderOf: () => seen.loader,
-  keysDiff: () => ({
+  drawnFor: () => ({
     loader: seen.loader,
     view: {
       reveal: (at: unknown) => {

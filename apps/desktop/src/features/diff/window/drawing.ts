@@ -734,6 +734,7 @@ export function draw(options: DrawOptions): Drawing {
       }),
       setMiddle({
         focus: () => view.focus(),
+        root: () => parent,
         holds: (element) => parent.contains(element) && inCodeOf(element, 'diff'),
         here: () => entryAt(view.keyState().target),
         // An overview's note open in the diff closes on `Esc` in the diff.

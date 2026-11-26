@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 // What the stack's keys do in the window: `-` in the file tree, which goes up to the stack only
 // when the view on screen has one; choosing a run of layers and showing it as one diff; and leaving
-// a run on screen for the layer it was chosen from, which `]s` and `[s` go on from.
+// a run on screen for the layer it was chosen from, which `]s` and `[s` go on from, as they go on
+// from a layer asked for that main hasn't shown yet.
 
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
@@ -184,6 +185,19 @@ describe(']s and [s with a count', () => {
     walking(-1).run(undefined, 2);
     await answered();
     expect(bridge.calls.at(-1)).toEqual(['tab.layer', { id: top.id, number: 83 }]);
+  });
+});
+
+describe(']s again before main has answered', () => {
+  it('goes on from the layer asked for, not the one still on screen', async () => {
+    const tab = showing(82, STACK);
+    walking(1).run();
+    walking(1).run();
+    await answered();
+    expect(bridge.calls).toEqual([
+      ['tab.layer', { id: tab.id, number: 83 }],
+      ['tab.layer', { id: tab.id, number: 84 }],
+    ]);
   });
 });
 

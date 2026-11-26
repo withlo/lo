@@ -11,7 +11,7 @@ import { comparedIn, revisionsOf } from '../../revisions/window/shared.ts';
 import { tabState } from '../../tab/window/shared.ts';
 import { pathOf } from '../../tree/window/shared.ts';
 import type { FileVersions } from '../contract.ts';
-import { keysDiff, loaderOf } from './tabs.ts';
+import { drawnFor, loaderOf } from './tabs.ts';
 import { changeAt, changedIn, known, opened, pathIn, reads, wholeDrawn } from './whole.ts';
 
 /** Which of a tab's code views: the diff, or the file whole. */
@@ -67,7 +67,7 @@ function commitOf(tab: string, side: Side): string | undefined {
 /** The view of `kind` in tab `tab`, as the keys act on it, if it's drawn. */
 function viewOf(tab: string, kind: CodeViewKind) {
   if (kind === 'file') return wholeDrawn(tab)?.view();
-  return keysDiff(tab)?.view;
+  return drawnFor(tab)?.view;
 }
 
 /** A pull request's tab's code views, as code features reach them. */
@@ -101,7 +101,7 @@ export function codeViewsOf(tab: string): CodeViews {
   return {
     onScreen() {
       if (wholeDrawn(tab)) return opened.get(tab) ? 'file' : undefined;
-      return keysDiff(tab) ? 'diff' : undefined;
+      return drawnFor(tab) ? 'diff' : undefined;
     },
     fileAt(at) {
       const loader = loaderOf(tab);
@@ -125,7 +125,7 @@ export function codeViewsOf(tab: string): CodeViews {
         if (open?.version !== 'new' || content?.kind !== 'text') return [];
         return [{ file: open.id, lines: content.lines.length }];
       }
-      const drawn = keysDiff(tab);
+      const drawn = drawnFor(tab);
       if (!drawn) return [];
       return drawn.view.filesOnScreen().flatMap((file) => {
         const lines = drawn.loader.shown(file)?.lines.new.length ?? 0;

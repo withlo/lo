@@ -12,7 +12,6 @@ import { OverviewDocument, blockNumber, blockStops } from '@lo/ui/overview';
 
 import { blockId } from './blocks.ts';
 import {
-  besideFor,
   blockAt,
   followName,
   followOf,
@@ -273,9 +272,6 @@ describe('following a block', () => {
     const { overview, stops, tree } = drawn();
     const tabs = stops.find((stop) => kindOf(tree, stop) === 'tabs')!;
     expect(followOf(overview, tabs)).toBe('No code or link in this block');
-    expect(besideFor(overview, tabs)).toBe('No code in this block');
-    const code = stops.find((stop) => kindOf(tree, stop) === 'excerpt')!;
-    expect(besideFor(overview, code)).toBe(blockNumber(code));
   });
 });
 

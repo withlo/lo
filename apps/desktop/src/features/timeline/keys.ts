@@ -1,9 +1,10 @@
 // The timeline's keys, in its own view, the `timeline` scope: moving between its rows, opening the
 // row the keyboard is on on GitHub, and going through its links and buttons with `Tab`, `Esc` going
 // back to the list. `c` puts focus in the box at the timeline's end, which comments on the pull
-// request itself; on one of your comments, `i` edits it and `dd` deletes it, after asking. What a
-// row's buttons do is also on the row's right-click menu, and in the palette for the row the
-// keyboard is on, without a key of its own where it has none.
+// request itself; on one of your comments, `i` edits it and `dd` deletes it, after asking; on a
+// review, `⏎` shows its comments in the diff. What a row's buttons do is also on the row's
+// right-click menu, and in the palette for the row the keyboard is on, without a key of its own
+// where it has none.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -96,14 +97,18 @@ export default defineCommands(
       when: timeline,
       menu: { on: 'row', order: 0 },
     },
-    /** Shows the diff, where a review's comments are, as its "Show in diff" does. */
+    /**
+     * Shows a review's comments in the diff, at its first comment's thread, as its "Show in diff"
+     * does. On a link or button in the row, `⏎` is the link's or button's own.
+     */
     showInDiff: {
       label: 'Show in diff',
       group: 'Comments',
-      keys: [],
+      keys: ['enter'],
       targets: ['row'],
       when: timeline,
       menu: { on: 'row', order: 10 },
+      control: 'Show in diff on a review with comments',
     },
     /**
      * Compares the revisions before and after a force-push, and shows the diff, as its "Compare"

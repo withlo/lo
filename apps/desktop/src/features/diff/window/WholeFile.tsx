@@ -24,6 +24,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { openMenu } from '../../../window/commands/menus.tsx';
 import { inCodeOf, registry, setMiddle, useKeys } from '../../../window/commands/registry.ts';
 import {
+  focusNowhere,
   MiddlePlaceholder,
   tabState,
   useLocalCopy,
@@ -199,6 +200,7 @@ export function WholeFile({ tab, shown }: { tab: PullTab; shown: boolean }) {
     const stops = [
       setMiddle({
         focus: () => (view.current ? view.current.focus() : element?.focus()),
+        root: () => element,
         holds: (focused) =>
           view.current
             ? (element?.contains(focused) ?? false) && inCodeOf(focused, 'file')
@@ -288,8 +290,10 @@ export function WholeFile({ tab, shown }: { tab: PullTab; shown: boolean }) {
   }, [id, version, marked, hints]);
 
   // Each ask answered once, while the view is on screen: its place, and focus when it asks for it
-  // or focus is free. Without code to show, the view's note takes focus in its place. Shown again
-  // with nothing new asked, as after `` ` ``, it takes focus that's free.
+  // or focus is free. Without code to show, the view's note takes focus in its place. While the
+  // file's still read there's neither: focus waits in the middle of the window, nowhere in
+  // particular, so keys typed meanwhile go on in the code once it's drawn and takes focus. Shown
+  // again with nothing new asked, as after `` ` ``, it takes focus that's free.
   const settled = content !== undefined && content.kind !== 'reading' && content.kind !== 'waiting';
   useEffect(() => {
     if (!shown) return;
@@ -305,7 +309,10 @@ export function WholeFile({ tab, shown }: { tab: PullTab; shown: boolean }) {
       if (open.ask.focus || focusIsFree(scope.current)) made.focus();
       return;
     }
-    if ((fresh && open.ask.focus) || focusIsFree(scope.current)) scope.current?.focus();
+    if ((fresh && open.ask.focus) || focusIsFree(scope.current)) {
+      if (settled || !open) scope.current?.focus();
+      else focusNowhere();
+    }
     if (open && fresh && settled) answered.set(tab.id, open.ask.count);
   }, [tab.id, open, lines, settled, shown]);
 

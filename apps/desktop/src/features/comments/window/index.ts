@@ -125,7 +125,7 @@ function writable(): PullTab | string {
 function inDiff(): PullTab | string {
   const tab = writable();
   if (typeof tab === 'string') return tab;
-  if (writingDiff(tab.id, true)) return tab;
+  if (writingDiff(tab.id)) return tab;
   return noDiff(tab.id, 'Go to the diff to comment');
 }
 
@@ -227,7 +227,7 @@ export default {
       run: () => {
         const tab = activeTab();
         if (tab?.kind !== 'pull' || takeOffer(tab)) return;
-        writingDiff(tab.id, true)?.vim(['<CR>']);
+        writingDiff(tab.id)?.vim(['<CR>']);
       },
     },
     reply: { run: actOn(reply), enabled: enabled(writable) },

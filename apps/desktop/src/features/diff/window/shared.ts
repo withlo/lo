@@ -1,11 +1,12 @@
 // What the diff shares with other features' window code: the slot over the diff, where what it
-// compares is said; showing the diff, and a place in it or the file whole; how many files it shows; one file of it beside
-// another view; the lines another feature explains, which the diff marks; the review threads
-// another feature places under its lines, showing one of them, and the comment boxes it opens
-// there; diffing texts another feature has, as the diff's own files are diffed; the code
-// other features draw in views of their own, whose lines the diff's keys read as its own; and
-// what code features reach of the diff and the whole-file view: a peek, a word's box, inline
-// hints and the pointer resting on a word. And its layout, as a screen besides Settings offers it.
+// compares is said; showing the diff, and a place in it or the file whole, by a link or as the
+// code beside a reading view follows it; how many files it shows; the lines another feature
+// explains, which the diff marks; the review threads another feature places under its lines,
+// showing one of them, and the comment boxes it opens there; diffing texts another feature has, as
+// the diff's own files are diffed; the code other features draw in views of their own, whose lines
+// the diff's keys read as its own; and what code features reach of the diff and the whole-file
+// view: a peek, a word's box, inline hints and the pointer resting on a word. And its layout, as a
+// screen besides Settings offers it.
 
 import type {
   BoxFrame,
@@ -16,21 +17,26 @@ import type {
   Place,
   Span,
 } from '@lo/ui/code';
-import { createElement, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
-import { defineSlot, Slot } from '../../../window/slots.tsx';
+import { defineSlot } from '../../../window/slots.tsx';
 import { choiceOf } from '../../settings/window/shared.ts';
 import { showMiddle, type PullTab } from '../../tab/window/shared.ts';
 import type { DiffState } from '../contract.ts';
 import { FILES_PER_JOB, type FileResult } from '../jobs.ts';
 import { layout } from '../settings.ts';
-import { Beside } from './Beside.tsx';
 import { codeViewsOf, onCodeRest as onRest, type CodeViewKind, type CodeViews } from './code.ts';
 import { changed, explainWith, type Explainer } from './explained.ts';
 import { addCodeElsewhere, type CodeElsewhere } from './elsewhere.ts';
 import { diffJobs } from './main.ts';
-import { showPlace as showCode, showThread as showThreadAt, type ShowWhen } from './places.ts';
-import { drawnFor, keysDiff, loaderOf, onDrawn, useSnapshot } from './tabs.ts';
+import {
+  goToThread as goToThreadAt,
+  showPlace as showCode,
+  showThread as showThreadAt,
+  type ShowHow,
+  type ShowWhen,
+} from './places.ts';
+import { drawnFor, loaderOf, onDrawn, useSnapshot } from './tabs.ts';
 import { changed as changedThreads, type DrawnDiff, threadWith, type Threader } from './threads.ts';
 import { DIFF_VIEW } from './whole.ts';
 
@@ -105,7 +111,9 @@ export function onDiffState(tab: string, listener: () => void): () => void {
  * base's, as a definition the syntax index found there is, which shows on the diff's old side, or
  * for a file the comparison leaves alone, which is the same at both, the file whole at the head. A
  * caller with a place at another commit maps it there first. Where the tab was is recorded in its
- * history, so `⌃o` comes back, and focus goes to the code.
+ * history, so `⌃o` comes back, and focus goes to the code. With code beside a reading view, the
+ * line Lands. To `follow`, as the code beside follows what has focus in the reading view, records
+ * nothing and leaves focus where it is.
  */
 export function showPlace(
   tab: string,
@@ -113,9 +121,12 @@ export function showPlace(
   line: number | undefined,
   marked?: { from: number; to: number },
   side: 'old' | 'new' = 'new',
+  how: ShowHow = 'go',
 ): void {
-  showCode(tab, path, line, marked, side);
+  showCode(tab, path, line, marked, side, how);
 }
+
+export type { ShowHow };
 
 /**
  * Pull request's tab `tab`'s code views, the diff and the whole-file view, as code features reach
@@ -151,25 +162,6 @@ export async function highlightText(
     { signal },
   );
   return tokens?.new;
-}
-
-/**
- * One file of pull request's tab `tab`'s diff, as the comparison on screen shows it, inline, with
- * line `line` of it at the head near the top: for the code beside another view. Under its bar,
- * which names the file and ends with `end`, the diff's own note says what's compared. While it has
- * focus the diff's keys act on it, and it records nothing in the tab's history: the view it's
- * beside does.
- */
-export function DiffBeside(props: {
-  tab: PullTab;
-  path: string;
-  line: number | undefined;
-  end?: ReactNode;
-}): ReactNode {
-  return createElement(Beside, {
-    ...props,
-    note: createElement(Slot, { slot: notes, props: { tab: props.tab } }),
-  });
 }
 
 /**
@@ -251,13 +243,9 @@ export interface WritingDiff {
   hasFocus(): boolean;
 }
 
-/**
- * Pull request's tab `tab`'s diff while it's drawn, where comments are written. With `keys`, the
- * one the keys act on, which is nothing while a file of the diff beside another view has them,
- * since that draws no threads.
- */
-export function writingDiff(tab: string, keys = false): WritingDiff | undefined {
-  const drawn = keys ? keysDiff(tab) : drawnFor(tab);
+/** Pull request's tab `tab`'s diff while it's drawn, where comments are written. */
+export function writingDiff(tab: string): WritingDiff | undefined {
+  const drawn = drawnFor(tab);
   const threaded = drawn?.threaded;
   if (!drawn || !threaded) return undefined;
   const { view } = drawn;
@@ -293,6 +281,18 @@ export function onDiffDrawn(listener: (tab: string) => void): () => void {
  */
 export function showThread(tab: string, thread: string, when: ShowWhen = 'now'): boolean {
   return showThreadAt(tab, thread, when);
+}
+
+/**
+ * Shows review thread `thread` in pull request's tab `tab`'s diff as a link to code does, opened:
+ * to `go` puts its line at the top of the screen, the cursor on it and focus in the code, a jump
+ * `⌃o` comes back from; to `follow`, as the code beside a reading view follows what has focus
+ * there, brings it on screen if it's off it, records nothing and leaves focus where it is. With
+ * code beside, its line Lands. A diff not on screen comes on screen and shows it once it's drawn
+ * with it. Says whether the diff on screen has the thread.
+ */
+export function goToThread(tab: string, thread: string, how: ShowHow = 'go'): boolean {
+  return goToThreadAt(tab, thread, how);
 }
 
 /**
