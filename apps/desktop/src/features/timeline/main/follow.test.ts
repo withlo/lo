@@ -198,7 +198,11 @@ describe('TimelineTab', () => {
       'foreground',
       'background',
     ]);
-    // The rows split pushes by revision: the push history goes once the timeline is in.
+    // The rows split pushes by revision: the push history goes once they can draw, as the newest
+    // page of a long timeline comes, ahead of its older pages, or once the timeline is in.
+    const onNewest = vi.mocked(polled.poller.timeline).mock.calls[0]?.[2];
+    onNewest?.({ ...timeline('First'), leftOut: 120 });
+    expect(now(pushes)).toBe('foreground');
     polled.read(timeline('First'));
     expect(now(pushes)).toBe('foreground');
     // Another tab on screen: nobody's waiting on any of them.

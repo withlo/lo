@@ -2,10 +2,13 @@
 
 import type {
   Account,
+  FilesAsker,
   GithubClient,
   GitHubUrls,
   Poller,
+  PullFiles,
   PullRef,
+  ReadFiles,
   RecentPull,
   RepoAccount,
   RepoRef,
@@ -60,6 +63,16 @@ export interface GithubAccess {
   readonly urls: GitHubUrls;
   /** A client signed in as nobody, for public repositories: not polled, and never recent. */
   readonly anonymous: GithubClient;
+  /**
+   * `pull`'s files at `head` as {@link anonymous} reads them, within `limits`, for `asker`: once for
+   * everyone who asks, as a poller's are ({@link Poller.pullFiles}).
+   */
+  anonymousPullFiles(
+    pull: PullRef,
+    head: string,
+    limits: ReadFiles,
+    asker: FilesAsker,
+  ): Promise<PullFiles>;
   /** Every account, oldest first, and how each is. */
   accounts(): Promise<AccountState[]>;
   /**

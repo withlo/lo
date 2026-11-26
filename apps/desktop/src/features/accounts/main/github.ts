@@ -11,16 +11,21 @@ import {
   GITHUB_URLS,
   GithubClient,
   Poller,
+  readPullFiles,
   refreshGrant,
+  SharedPullFiles,
   Token,
   type AccountRows,
   type AccountSource,
   type AccountsEvent,
   type AuthenticatedUser,
+  type FilesAsker,
   type Grant,
   type GitHubUrls,
   type PollConfig,
+  type PullFiles,
   type PullRef,
+  type ReadFiles,
   type RecentPull,
   type RepoAccount,
   type RepoRef,
@@ -65,6 +70,8 @@ export interface GithubOptions {
 export class Github implements GithubAccess {
   readonly urls: GitHubUrls;
   readonly anonymous: GithubClient;
+  /** Pull requests' files read as nobody, once for everyone who asks. */
+  readonly #anonymousFiles: SharedPullFiles;
   readonly #cache: AnswerCache;
   readonly #fetch: typeof globalThis.fetch;
   readonly #log: (message: string) => void;
@@ -97,6 +104,9 @@ export class Github implements GithubAccess {
     this.#ghToken = options.ghToken;
     const { answerStartMs } = options;
     this.anonymous = new GithubClient({ fetch, urls: this.urls, answerStartMs });
+    this.#anonymousFiles = new SharedPullFiles((pull, limits, gate) =>
+      readPullFiles(this.anonymous.gated(gate), pull, limits),
+    );
     const web = { fetch, urls: this.urls };
     this.#loaded = Accounts.load({
       rows: options.rows ?? new AccountTable(database),
@@ -159,6 +169,15 @@ export class Github implements GithubAccess {
 
   async rememberAccountForRepo(repo: RepoRef, login: string): Promise<void> {
     await (await this.#loaded).rememberAccountForRepo(repo, login);
+  }
+
+  anonymousPullFiles(
+    pull: PullRef,
+    head: string,
+    limits: ReadFiles,
+    asker: FilesAsker,
+  ): Promise<PullFiles> {
+    return this.#anonymousFiles.read(pull, head, limits, asker);
   }
 
   recent(limit?: number): RecentPull[] {

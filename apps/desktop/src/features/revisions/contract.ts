@@ -24,6 +24,13 @@ const time = z.number().int().nonnegative();
 export const HOLD_LIMIT = 1_000;
 
 /**
+ * How long revisions built without the local copy's commits wait for them before they're taken as
+ * settled, in milliseconds: about as long as a local copy takes to catch up as a tab opens. A copy
+ * later than that changes them once more at most.
+ */
+export const SETTLE_LIMIT = 2_000;
+
+/**
  * When a revision was pushed: exactly, by a time (a review, a check or Lo's poller saw it then), or
  * not known.
  */
@@ -116,6 +123,10 @@ export type RevisionsProblem = z.output<typeof revisionsProblem>;
  *   reader asks for it.
  * - `waitingFor`: why revisions can't be compared yet: `local`, the local copy isn't ready, or
  *   `git`, Lo has no git.
+ * - `settled`: whether the revisions are as they stay until a push: worked out with the local
+ *   copy's commits; or without them, when none are to be had (no git, or the copy failed or waits
+ *   to try again) or they're later than {@link SETTLE_LIMIT}. Until then a revision may come or go
+ *   as the commits order them, so the timeline splits pushes by them only once they're settled.
  * - `nothingNewSince`: the revision a marker is on, when it's the newest and the whole pull request
  *   shows.
  * - `replay`, `conflicted` (the files the replay conflicted on) and `uncertain` (a side's base may
@@ -133,6 +144,7 @@ export const comparisonView = z.strictObject({
   pending: comparison.nullable(),
   offered: comparison.nullable(),
   waitingFor: z.enum(['local', 'git']).nullable(),
+  settled: z.boolean(),
   nothingNewSince: oid.nullable(),
   replay: replay.nullable(),
   conflicted: z.number().int().nonnegative(),

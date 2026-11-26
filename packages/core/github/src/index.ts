@@ -58,6 +58,7 @@ export * from './poll/governor.ts';
 export * from './poll/poller.ts';
 export * from './poll/queue.ts';
 export * from './poll/reads.ts';
+export * from './poll/shared-files.ts';
 export * from './merge-writes.ts';
 export * from './review-writes.ts';
 export * from './poll/merge-writes.ts';

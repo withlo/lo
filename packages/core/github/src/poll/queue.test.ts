@@ -230,3 +230,85 @@ test('a request given up on while waiting doesnt hold up the rest', async () => 
     ['last', 100, 200],
   ]);
 });
+
+test('background reads give way while a foreground read is under way or next, but the poller’s own', async () => {
+  const queue = new RequestQueue(0);
+  const log: Log = [];
+  const start = performance.now();
+  let ahead = true;
+  queue.giveWayWhile(() => ahead);
+  // The queue is free between two of the poller's foreground requests: a tab's read waits.
+  void queue.read(request('tree a', 100, log, start));
+  await settle();
+  expect(log).toEqual([]);
+  void queue.read(request('page b', 100, log, start), undefined, 'foreground', false);
+  void queue.read(request('page c', 100, log, start), undefined, 'foreground', false);
+  // A write, and the poller's own poll, go as ever.
+  void queue.write(request('write d', 100, log, start));
+  void queue.read(request('poll e', 100, log, start), undefined, 'background', false);
+  await advanceTo(start, 500);
+  expect(log.map(([name]) => name)).toEqual(['page b', 'write d', 'page c', 'poll e']);
+  // Once nothing is, the read that gave way goes, before one that came after it.
+  ahead = false;
+  void queue.read(request('files f', 100, log, start));
+  await settle();
+  await advanceTo(start, 800);
+  expect(log.map(([name]) => name).slice(4)).toEqual(['tree a', 'files f']);
+});
+
+test('a next read goes ahead of waiting background reads, polls too, behind foreground ones, and gives way as they do', async () => {
+  const queue = new RequestQueue(0);
+  const log: Log = [];
+  const start = performance.now();
+  let ahead = false;
+  queue.giveWayWhile(() => ahead);
+  for (const [name, priority, givesWay] of [
+    ['poll a', 'background', false],
+    ['poll b', 'background', false],
+    ['tree c', 'background', true],
+    ['files d', 'next', true],
+    ['threads e', 'foreground', true],
+  ] as const) {
+    void queue.read(request(name, 100, log, start), undefined, priority, givesWay);
+    await settle();
+  }
+  await advanceTo(start, 600);
+  expect(log.map(([name]) => name)).toEqual(['poll a', 'threads e', 'files d', 'poll b', 'tree c']);
+
+  // While a foreground read is under way or next, it gives way, as a background read does.
+  ahead = true;
+  void queue.read(request('files f', 100, log, start), undefined, 'next');
+  void queue.read(request('poll g', 100, log, start), undefined, 'background', false);
+  await advanceTo(start, 900);
+  expect(log.map(([name]) => name).slice(5)).toEqual(['poll g']);
+  ahead = false;
+  queue.recheck();
+  await advanceTo(start, 1100);
+  expect(log.map(([name]) => name).slice(5)).toEqual(['poll g', 'files f']);
+});
+
+test('a read held behind another waits while it says so, whatever its priority, and goes once it doesnt', async () => {
+  const queue = new RequestQueue(0);
+  const log: Log = [];
+  const start = performance.now();
+  let held = true;
+  /** A request that takes its turn through `gate`, as a client's do. */
+  const gated = (name: string, gate: ReturnType<RequestQueue['gate']>) =>
+    void gate().then(async (release) => {
+      await request(name, 100, log, start)();
+      release();
+    });
+  gated(
+    'older page',
+    queue.gate('next', undefined, false, () => held),
+  );
+  await settle();
+  void queue.read(request('poll', 100, log, start), undefined, 'background', false);
+  await advanceTo(start, 300);
+  // Held, it lets even a poll go ahead of it, and the queue stays free once that's done.
+  expect(log.map(([name]) => name)).toEqual(['poll']);
+  held = false;
+  queue.recheck();
+  await advanceTo(start, 500);
+  expect(log.map(([name]) => name)).toEqual(['poll', 'older page']);
+});

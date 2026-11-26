@@ -232,6 +232,7 @@ describe('the prompt each overview offers, and its revisions', () => {
       pending: null,
       offered: null,
       waitingFor: null,
+      settled: true,
       nothingNewSince: null,
       replay: null,
       conflicted: 0,

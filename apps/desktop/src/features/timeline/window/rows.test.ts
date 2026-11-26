@@ -60,6 +60,7 @@ function revisions(...rows: RevisionRow[]): ComparisonView {
     pending: null,
     offered: null,
     waitingFor: null,
+    settled: true,
     nothingNewSince: null,
     replay: null,
     conflicted: 0,
@@ -172,6 +173,18 @@ describe('rowsOf', () => {
       },
       { kind: 'checks', key: 'checks:c2', state: 'passed', oid: head('d'), revision: 2 },
     ]);
+  });
+
+  it('splits pushes only by revisions that are settled', () => {
+    const items = [commit('a'), commit('b'), commit('c')];
+    const unsettled = { ...revisions(revision('a', 1), revision('c', 2)), settled: false };
+    expect(rowsAfter(items, { revisions: unsettled })).toEqual(rowsAfter(items));
+    expect(rowsAfter(items, { revisions: unsettled })).toEqual([
+      expect.objectContaining({ kind: 'push', key: 'c0', revision: undefined }),
+    ]);
+    expect(
+      rowsAfter(items, { revisions: { ...unsettled, settled: true } }).map((row) => row.key),
+    ).toEqual(['c0', 'c1']);
   });
 
   it('ends a push at the next row, and leaves out what has none', () => {

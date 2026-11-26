@@ -53,6 +53,22 @@ function listIn(mode: 'tree' | 'review'): void {
   });
 }
 
+// What the panel says to main of its being drawn; anything else it asks fails, as with no main.
+const said = vi.hoisted(() => [] as unknown[]);
+vi.mock('./main.ts', async () => {
+  const { client } = await import('../../../window/ipc.ts');
+  const { contract } = await import('../contract.ts');
+  const connected = client(contract, {
+    invoke: (channel, input) => {
+      if (channel !== 'tree.shown') return Promise.reject(new Error('no main here'));
+      said.push(input);
+      return Promise.resolve({ ok: true, value: undefined });
+    },
+    subscribe: () => () => {},
+  });
+  return { main: () => connected };
+});
+
 // The viewed marks, as `e` reads and toggles them, by path.
 const marks = vi.hoisted(() => new Set<string>());
 vi.mock('../../revisions/window/shared.ts', async (original) => ({
@@ -195,6 +211,22 @@ describe('the files panel', () => {
     expect(container.querySelector('[role="note"]')?.textContent).toBe(
       'First 300 changed files shown',
     );
+  });
+
+  it('tells main while it’s drawn, so the files it lists are read soon only then', () => {
+    said.length = 0;
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    act(() => root.render(<Files tab={TAB} onRow={vi.fn<() => void>()} />));
+    expect(said).toEqual([{ id: TAB.id, shown: true }]);
+    // The panel closed, as ⌘\ does.
+    act(() => root.unmount());
+    container.remove();
+    expect(said).toEqual([
+      { id: TAB.id, shown: true },
+      { id: TAB.id, shown: false },
+    ]);
   });
 });
 
