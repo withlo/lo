@@ -492,8 +492,10 @@ export class Aligner {
    * its press until the frame after it ends is drawn, keeps the line where the press found it in
    * every frame. A key's step is a hold of its own, let go once the frame after it is drawn: each
    * step of a held key takes the line under the header afresh, which is the line the step before
-   * held, where it held it, unless something else moved it between. While a hold lasts,
-   * `anchorTop` and `anchorAt` leave it as it is. Holds nest: each `release` ends one.
+   * held, where it held it, unless something else moved it between. Where it held it, not where
+   * it's drawn: on a screen that scrolls by whole pixels, the line is drawn a fraction of one off
+   * where it's held, and steps taken from where it's drawn would walk it off the screen. While a
+   * hold lasts, `anchorTop` and `anchorAt` leave it as it is. Holds nest: each `release` ends one.
    */
   holdUnder(below: number): void {
     this.#holds++;
@@ -508,7 +510,27 @@ export class Aligner {
       return;
     }
     const found = this.#underNow(below);
+    if (anchor && found && this.#heldBefore(anchor, found, below)) {
+      this.#anchor = { ...anchor, for: found.for, under: below };
+      return;
+    }
     if (found) this.#anchor = found;
+  }
+
+  /**
+   * Whether `anchor`, the line the pass keeps, is the one a hold `below` would take but for where
+   * the scroll rounded it to: the scroll where the pass left it, the line drawn less than
+   * `ON_SCREEN` off where it's kept, and kept under the pinned header, the line `found`, first
+   * there as drawn, or one above it that's first as it's kept.
+   */
+  #heldBefore(anchor: Anchor, found: Anchor, below: number): boolean {
+    if (anchor.element !== undefined) return false;
+    if (Math.abs(anchor.scrollTop - this.#scroller.scrollTop) >= 0.5) return false;
+    const same = anchor.side === found.side && anchor.pos === found.pos;
+    if (!same && (anchor.offset < below - ON_SCREEN || anchor.offset >= found.offset)) return false;
+    const drawn = drawnTop(this.#views[anchor.side], anchor.pos);
+    if (drawn === undefined) return false;
+    return Math.abs(drawn - this.#scroller.getBoundingClientRect().top - anchor.offset) < ON_SCREEN;
   }
 
   /** Ends a hold `holdUnder` began: the anchor goes back to the pass's own once none is left. */

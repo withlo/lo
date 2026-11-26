@@ -1249,62 +1249,18 @@ test('the sides let go at even keep no share, as the default', async () => {
   expect((await sideWidths(page)).old).toBeCloseTo(room / 2, 0);
 });
 
-test('a line less than a pixel short of the pinned header’s foot stays where it is as the sides are shared anew', async () => {
+test('a line less than a pixel short of the pinned header’s foot stays where it is as the sides are shared anew, again and again', async () => {
   const page = await open('split', { wrapped: 300, below: PINNED - 0.5 });
   const before = await lineTop(page, 20);
   expect(before).toBeGreaterThan(PINNED - 1);
   expect(before).toBeLessThan(PINNED);
-  for (const share of [0.3, 0.7]) {
-    // TEMP: each frame as the sides change, to see why the line moves where it does.
-    const trace = await page.evaluate(async (to) => {
-      const view = document.querySelector('.lo-diffview')!;
-      const top = (side: string, line: number): number | null => {
-        const found = [
-          ...document.querySelectorAll(`.cm-editor[data-side="${side}"] .cm-line`),
-        ].find(
-          (each) =>
-            each.textContent === `line ${line}` || each.textContent?.startsWith(`line ${line} `),
-        );
-        return found
-          ? Math.round(
-              (found.getBoundingClientRect().top - view.getBoundingClientRect().top) * 1000,
-            ) / 1000
-          : null;
-      };
-      let scroller = document.querySelector('.cm-editor[data-side="new"]')?.parentElement ?? null;
-      while (scroller && scroller.scrollHeight <= scroller.clientHeight)
-        scroller = scroller.parentElement;
-      const snap = (at: string) => ({
-        at,
-        st: scroller?.scrollTop,
-        o19: top('old', 19),
-        o20: top('old', 20),
-        n18: top('new', 18),
-        n19: top('new', 19),
-        n20: top('new', 20),
-        n21: top('new', 21),
-      });
-      const seen = [snap('start')];
-      window.harness.sides(to);
-      seen.push(snap('set'));
-      for (let index = 0; index < 6; index++) {
-        await new Promise((resolve) => requestAnimationFrame(resolve));
-        seen.push(snap(`f${index}`));
-      }
-      return {
-        dpr: devicePixelRatio,
-        width: view.clientWidth,
-        seen,
-        stats: window.harness.passStats(),
-      };
-    }, share);
-    console.log('TRACE', JSON.stringify(trace));
+  // On a screen that scrolls by whole pixels, each share draws it a fraction of one off where it's
+  // held, and no more: steps one after another don't walk it past a pixel short, onto the next line.
+  for (const share of [0.3, 0.7, 0.4, 0.6]) {
+    await page.evaluate((to) => window.harness.sides(to), share);
     await frames(page);
     const after = await lineTop(page, 20);
-    expect(
-      Math.abs(after! - before!),
-      JSON.stringify({ share, before, after, trace }),
-    ).toBeLessThan(1);
+    expect(Math.abs(after! - before!), JSON.stringify({ share, before, after })).toBeLessThan(1);
   }
 });
 
