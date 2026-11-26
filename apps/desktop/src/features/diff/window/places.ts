@@ -137,9 +137,9 @@ export function showThread(tab: string, thread: string, when: ShowWhen): boolean
     leave();
     shown(tab);
     if (has) {
-      const at = { kind: 'thread', thread } as const;
-      drawn.view.revealAtTop(at);
+      drawn.view.showThread(thread);
       if (besideNow()) {
+        const at = { kind: 'thread', thread } as const;
         drawn.view.land(at);
         if (focusInView()) drawn.view.focus();
       }

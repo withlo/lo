@@ -4,6 +4,7 @@
 // and, under it, how a change asked of it stands while GitHub's answer was lost. A comment's text
 // is drawn as GitHub renders it, through `Post`.
 
+import { lineRefText } from '@lo/review';
 import { ago, Button, Callout, Problem, Thread, type ThreadComment } from '@lo/ui';
 import { keyLabels } from '@lo/ui/commands';
 import { useRef, type MouseEvent, type ReactNode } from 'react';
@@ -35,6 +36,7 @@ import {
 import { editing, replacedIn, replying } from './boxes.ts';
 import { useExcerpt } from './excerpts.ts';
 import { landed } from './landed.ts';
+import { refOf } from './marks.ts';
 import { Post, type PostPull } from './Post.tsx';
 import { held } from './threads.ts';
 
@@ -62,10 +64,25 @@ export interface CardProps {
   readonly focused?: boolean;
   /** Opens or collapses it, as its own buttons ask. */
   readonly onToggle: () => void;
+  /**
+   * Drawn in a popover over the code, beside lines, not under its line: its head says its lines,
+   * and `focused` is the popover pinned, its Close and key chips shown.
+   */
+  readonly popover?: boolean;
+  /** In a popover, its Close: the popover's, on its first thread. */
+  readonly onClose?: (() => void) | undefined;
 }
 
 /** View `tab`'s thread `id`, as main last sent it: nothing once it's gone. */
-export function Card({ tab, id, open, focused = false, onToggle }: CardProps): ReactNode {
+export function Card({
+  tab,
+  id,
+  open,
+  focused = false,
+  onToggle,
+  popover = false,
+  onClose,
+}: CardProps): ReactNode {
   const view = tab.id;
   const pull: PostPull = { owner: tab.owner, repo: tab.repo, number: tab.number };
   const threads = useTabState(held, view, (value) => value.threads);
@@ -103,10 +120,20 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
   );
   const thread = { kind: 'thread' as const, thread: id };
   const note = actNote(asked, row, isClosed);
+  // In a popover, a note under the card stands inside its edges.
+  const under = popover ? 'mx-12 mb-8 mt-8' : 'mt-8 max-w-read-measure';
   return (
     <>
       <ThreadCard
         row={row}
+        popover={
+          popover
+            ? {
+                lines: lineRefText(refOf(row, (head) => revisionLabel(revisions, head))),
+                onClose,
+              }
+            : undefined
+        }
         asked={asked}
         atWork={!kept}
         open={open}
@@ -132,13 +159,13 @@ export function Card({ tab, id, open, focused = false, onToggle }: CardProps): R
         }}
       />
       {thrown ? (
-        <div data-act-note="" className="mt-8 max-w-read-measure">
+        <div data-act-note="" className={under}>
           <ThrewProblem view={view} id={id} thrown={thrown} />
         </div>
       ) : (
         note &&
         asked && (
-          <div data-act-note="" className="mt-8 max-w-read-measure">
+          <div data-act-note="" className={under}>
             <ActCallout
               note={note}
               onAgain={() =>
@@ -268,9 +295,15 @@ export function ThreadCard({
   replying: replied = false,
   editing: edited,
   actions,
+  popover,
   now = Date.now(),
 }: {
   row: ThreadRow;
+  /**
+   * Drawn in a popover over the code: what its head says it's on, "Lines 10–35", and its Close,
+   * the popover's, on its first thread.
+   */
+  popover?: { readonly lines: string; readonly onClose?: (() => void) | undefined } | undefined;
   /**
    * The change asked of it that GitHub hasn't answered for: the card shows it done already, with
    * its control at work, and goes back to what `row` says if it doesn't go.
@@ -363,6 +396,10 @@ export function ThreadCard({
       }}
       // Every card is drawn in a code view, whose right-click on it opens the thread's menu.
       menu
+      variant={popover ? 'popover' : 'card'}
+      lines={popover?.lines}
+      onClose={popover?.onClose}
+      closeKeys={popover?.onClose && keysOf('comments.closeThread')}
       onToggle={onToggle}
       onReply={actions?.onReply}
       onResolve={actions?.onResolve}

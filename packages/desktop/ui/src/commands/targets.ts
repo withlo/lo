@@ -69,6 +69,8 @@ export interface ThreadTarget {
    * called by which it would do.
    */
   collapsed?: boolean;
+  /** The comment of it the keyboard's ring is on, as in a thread's popover: what `i` edits. */
+  comment?: string;
 }
 
 /** A layer of a stack, by its pull request's number. */
@@ -235,7 +237,9 @@ export function plainTarget(target: Target): Target {
     case 'file':
       return { kind: 'file', file: target.file };
     case 'thread':
-      return { kind: 'thread', thread: target.thread };
+      return target.comment === undefined
+        ? { kind: 'thread', thread: target.thread }
+        : { kind: 'thread', thread: target.thread, comment: target.comment };
     case 'layer':
       return { kind: 'layer', layer: target.layer };
     case 'block':

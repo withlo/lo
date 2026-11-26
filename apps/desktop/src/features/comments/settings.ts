@@ -1,5 +1,6 @@
-// The setting for the keys code and comments are edited with: whether Vim's are on. The window
-// follows it (`./window/vim.ts`), and "Vim keys" in the command palette switches it.
+// The comments' settings: the keys code and comments are edited with, whether Vim's are on, which
+// the window follows (`./window/vim.ts`) and "Vim keys" in the command palette switches; and how
+// review threads show in code (`./window/mode.ts`).
 
 import { z } from 'zod';
 
@@ -16,3 +17,20 @@ export const vim = defineSetting('editor.vim', z.boolean(), false, 'true or fals
   named: 'Vim keys',
   description: 'Modal editing in code views and comment boxes.',
 });
+
+/**
+ * How a review thread shows in code: `beside` its lines, a mark in the gutter that opens over the
+ * code, so no line moves; or `between` them, the whole thread under its line, as GitHub draws it.
+ */
+export const threads = defineSetting(
+  'comments.threads',
+  z.enum(['beside', 'between']),
+  'between',
+  'beside or between',
+  {
+    group: 'pullRequests',
+    label: 'Threads in code',
+    description: 'A mark that opens over the code, or the whole thread under its line.',
+    options: { beside: 'Beside lines', between: 'Between lines' },
+  },
+);

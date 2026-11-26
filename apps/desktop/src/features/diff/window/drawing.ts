@@ -14,6 +14,7 @@ import {
   type Mark,
   type Place as Line,
   type Probe,
+  type RenderPopover,
   type RenderThread,
   type Spot,
   type Target,
@@ -486,6 +487,7 @@ export function draw(options: DrawOptions): Drawing {
       // Drawn behind another middle view, its place is held once it's first shown.
       hidden: !options.shown,
       renderProblem,
+      threads: threader()?.mode?.() ?? 'between',
     },
     {
       cursor: settle,
@@ -558,17 +560,26 @@ export function draw(options: DrawOptions): Drawing {
   // drawn by it, now and each time they change. The headers count what each file's hold.
   const threaded = (): DrawnDiff => ({ at, comparison, compareFrom, files: threadFiles(latest) });
   const toggle = (thread: string) => view.openThread(thread, 'toggle');
-  let rendering: { readonly from: object; readonly render: RenderThread } | undefined;
+  let rendering:
+    | {
+        readonly from: object;
+        readonly render: RenderThread;
+        readonly popover: RenderPopover | undefined;
+      }
+    | undefined;
   /** With `now`, as the view is made, before the reader has seen it, they all come at once. */
   const showThreads = (now = false) => {
     const given = threader();
     const next = given?.threadsIn(tab.id, threaded()) ?? NO_THREADS;
-    if (given && rendering?.from !== given)
-      rendering = { from: given, render: given.render(tab, toggle) };
+    if (given && rendering?.from !== given) {
+      rendering = { from: given, render: given.render(tab, toggle), popover: given.popover?.(tab) };
+    }
+    // Beside lines or between them, as the threader says now.
+    view.setThreadsMode(given?.mode?.() ?? 'between');
     const before = placed;
     placed = next;
     if (!sameThreads(before.threads, next.threads) && rendering) {
-      view.setThreads(next.threads, rendering.render, { now });
+      view.setThreads(next.threads, rendering.render, { now, popover: rendering.popover });
     }
     const counted = new Set([...before.counts.keys(), ...next.counts.keys()]);
     if ([...counted].some((id) => !sameCounts(before.counts.get(id), next.counts.get(id)))) {
@@ -589,9 +600,8 @@ export function draw(options: DrawOptions): Drawing {
     if (wanted.kind === 'thread') {
       if (!view.openThread(wanted.thread, true)) return;
       shownWanted(tab.id);
-      const thread = { kind: 'thread', thread: wanted.thread } as const;
-      view.revealAtTop(thread);
-      if (besideNow()) view.land(thread);
+      view.showThread(wanted.thread);
+      if (besideNow()) view.land({ kind: 'thread', thread: wanted.thread });
       return;
     }
     if (wanted.left === drawnName(at, comparison)) return;
@@ -744,9 +754,13 @@ export function draw(options: DrawOptions): Drawing {
         root: () => parent,
         holds: (element) => parent.contains(element) && inCodeOf(element, 'diff'),
         here: () => entryAt(view.keyState().target),
-        // An overview's note open in the diff closes on `Esc` in the diff.
-        escape: (focused) =>
-          parent.contains(focused) && view.hasOpenNote() ? () => view.closeNote() : undefined,
+        // A thread's popover pinned over the diff closes on `Esc` in the diff, and then an
+        // overview's note open in it.
+        escape: (focused) => {
+          if (!parent.contains(focused)) return undefined;
+          if (view.pinned().length > 0) return () => void view.closePopover();
+          return view.hasOpenNote() ? () => view.closeNote() : undefined;
+        },
       }),
     ];
     // The tree marks the file at the top of the screen again.

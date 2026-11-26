@@ -188,6 +188,8 @@ export interface DiffInit {
   hidden?: boolean | undefined;
   /** What draws a file's `problem` under its header. Without it, none is drawn. */
   renderProblem?: RenderProblem | undefined;
+  /** How it shows review threads: between lines unless said. `setThreadsMode` changes it. */
+  threads?: ThreadsMode | undefined;
 }
 
 /**
@@ -269,6 +271,43 @@ export interface ThreadContent {
  * such as an image loading, waits while the thread is on screen. So draw what's known at once.
  */
 export type RenderThread = (host: HTMLElement, thread: ThreadView) => ThreadContent;
+
+/**
+ * How a code view shows review threads: `beside` its lines, as a mark in a lane of the gutter that
+ * opens a popover over the code, so no thread moves a line; or `between` them, in the flow, each
+ * under its line with space on the other side, as GitHub draws them.
+ */
+export type ThreadsMode = 'beside' | 'between';
+
+/**
+ * What a thread popover shows: the threads that end on one line, or on a file, in the order they
+ * show, unresolved first, and whether it's pinned. A preview is the pinned popover without its
+ * Close and key chips, which it keeps the room of, so pinning it moves nothing.
+ */
+export interface PopoverView {
+  readonly threads: readonly ThreadView[];
+  readonly pinned: boolean;
+  /** What a screen reader calls it: its first thread's mark's name, "Unresolved thread · line 5". */
+  readonly label: string;
+}
+
+/** What the caller drew in a popover, which the view keeps up to date and takes down. */
+export interface PopoverContent {
+  /** What it shows changed: draw it again. */
+  update(popover: PopoverView): void;
+  destroy(): void;
+}
+
+/**
+ * Draws a popover's threads in `host`, an element the view makes for it in a layer of its own
+ * scroll: at once, since the view measures it as it's drawn to place it, and shows it whole in the
+ * next frame. Its Close calls `close`, which gives focus to the threads' line.
+ */
+export type RenderPopover = (
+  host: HTMLElement,
+  popover: PopoverView,
+  close: () => void,
+) => PopoverContent;
 
 /** Where a jump goes: the next change, file or thread, counted from the cursor. */
 export type JumpTo = 'change' | 'file' | 'thread';
@@ -603,8 +642,40 @@ export interface DiffView extends KeySource {
   setThreads(
     threads: readonly ThreadView[],
     render: RenderThread,
-    options?: { readonly now?: boolean },
+    options?: { readonly now?: boolean; readonly popover?: RenderPopover },
   ): void;
+  /**
+   * Shows review threads beside lines or between them, drawn again in one frame, the cursor's row
+   * where it is on screen, or else what's at the top of the screen. Beside lines, no thread is
+   * drawn in the flow: each has its bubble and bracket in the lane, and opens in one popover over
+   * the code, drawn by the `popover` `setThreads` was last given. Its pointer resting on a mark
+   * previews its threads, and a click, `pinThread` or `]t` pins them, until `Esc`, Close, a click
+   * on the mark again, a press outside, or the cursor leaving their lines closes it. A popover never
+   * covers its lines unless they fill the pane. A box opened beside lines is still drawn under its
+   * line, where the popover goes under it.
+   */
+  setThreadsMode(mode: ThreadsMode): void;
+  /**
+   * Beside lines, pins the popover of the line thread `id` is on, as a key opens it: under the
+   * line, the pane scrolled the least that shows it whole, the cursor on the line. One pinned there
+   * already stays as it is. With `focus`, focus goes into it, its first comment ringed; otherwise
+   * it stays where it is. Says whether there was one to pin: between lines, or for a thread the
+   * view doesn't have, there's none.
+   */
+  pinThread(id: string, focus?: boolean): boolean;
+  /**
+   * Moves the cursor to the line thread `id` is on, lands it, and shows the thread: beside lines,
+   * its popover pinned under the line, as `pinThread` pins it; between lines, opened, its line put
+   * at the top of the screen. Focus stays where it is. A jump the reader asked for. Says whether
+   * the view has it.
+   */
+  showThread(id: string): boolean;
+  /** The threads of the popover pinned, by their ids: none while it's closed or a preview. */
+  pinned(): readonly string[];
+  /**
+   * Closes the popover, as `Esc` does: focus in it goes to its line. Says whether one was open.
+   */
+  closePopover(): boolean;
   /**
    * Opens a thread, collapses it, or the other of the two, as the reader asked: the caller draws it
    * again, its line staying where it is. Says whether the view has the thread.
@@ -1155,9 +1226,9 @@ export const plainKeys = {
  * The commands a diff view's own controls run, by id, on what they're drawn at: the viewed ball in
  * a file's header, the `+` that follows the pointer down the gutter, the button under the header
  * of a file that's closed, or too large to draw unasked, collapsed lines, and a thread's bubble in
- * the gutter, which opens or collapses its thread. They run through the registry the window's keys
- * go through (`runControl` in `@lo/ui/commands`), so a control does what its key does and says
- * what its command says.
+ * the gutter, which opens or collapses its thread, or its popover beside lines. They run through
+ * the registry the window's keys go through (`runControl` in `@lo/ui/commands`), so a control does
+ * what its key does and says what its command says.
  */
 export const viewControls = {
   viewed: 'diff.markViewed',
@@ -1165,6 +1236,7 @@ export const viewControls = {
   toggle: 'diff.toggleFile',
   open: 'diff.openRun',
   thread: 'diff.toggleThread',
+  popover: 'comments.openThread',
 } as const;
 
 export const diffMotions: Readonly<Record<string, { to: JumpTo; forward: boolean }>> = {

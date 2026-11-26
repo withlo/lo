@@ -20,8 +20,8 @@ menu: Go, Review, Comments, Code, View, Merge, Tabs and App. Each command's ID i
 | Previous change    | `[ c`             | In `diff`; in code views with Vim keys on, Vim's motion                                                 | `diff.previousChange`    |
 | Next file          | `] f`             | In `diff`; in code views with Vim keys on, Vim's motion                                                 | `diff.nextFile`          |
 | Previous file      | `[ f`             | In `diff`; in code views with Vim keys on, Vim's motion                                                 | `diff.previousFile`      |
-| Next thread        | `] t`             | In `diff`; in code views with Vim keys on, Vim's motion                                                 | `diff.nextThread`        |
-| Previous thread    | `[ t`             | In `diff`; in code views with Vim keys on, Vim's motion                                                 | `diff.previousThread`    |
+| Next thread        | `] t`             | In `diff` and `thread`; in code views with Vim keys on, Vim's motion                                    | `diff.nextThread`        |
+| Previous thread    | `[ t`             | In `diff` and `thread`; in code views with Vim keys on, Vim's motion                                    | `diff.previousThread`    |
 | Go to moved code   | `g m`             | In `diff`; in code views, only in normal mode                                                           | `diff.otherEnd`          |
 | Go to other side   | `⇥`               | In `diff`; in code views, only in normal mode                                                           | `diff.otherSide`         |
 | Next line          | `j`               | Vim's own key, in code views                                                                            | `diff.down`              |
@@ -83,42 +83,46 @@ menu: Go, Review, Comments, Code, View, Merge, Tabs and App. Each command's ID i
 
 ## Comments
 
-| Command                 | Keys                                                           | Where                                                                                                  | ID                        |
-| ----------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------- |
-| Comment                 | `c`                                                            | In `diff`; in code views, only in normal and visual mode                                               | `comments.comment`        |
-| Comment now             | `C`                                                            | In `diff`; in code views, only in normal and visual mode                                               | `comments.commentNow`     |
-| Suggest change          | `s`                                                            | In `diff`; in code views, only in normal and visual mode                                               | `comments.suggest`        |
-| Comment on file         | `c`                                                            | In `tree`                                                                                              | `comments.commentOnFile`  |
-| Comment on lines        | `c`                                                            | In `overview` and `file`; in code views, only in normal and visual mode                                | `comments.commentOnBlock` |
-| Comment on file         | `⏎`                                                            | In `diff`; in code views, only in normal mode                                                          | `comments.onFileInstead`  |
-| Reply                   | `r`                                                            | In `diff`; in code views, only in normal mode                                                          | `comments.reply`          |
-| Resolve thread          | `x`                                                            | In `diff`; in code views, only in normal mode                                                          | `comments.resolve`        |
-| Edit comment            | `i`                                                            | In `diff`; in code views, only in normal mode                                                          | `comments.edit`           |
-| Delete comment…         | `d d`                                                          | In `diff`; in code views, only in normal mode                                                          | `comments.remove`         |
-| Discard draft           | None: its control, its right-click menu or the command palette | In `box`                                                                                               | `comments.discard`        |
-| Undo discard            | None: its control or the command palette                       | Anywhere                                                                                               | `comments.undiscard`      |
-| Send again              | None: its control, its right-click menu or the command palette | In `box`                                                                                               | `comments.sendAnyway`     |
-| Check again             | None: its control, its right-click menu or the command palette | In `box`                                                                                               | `comments.checkAgain`     |
-| Move comment to file    | None: its control, its right-click menu or the command palette | In `box`                                                                                               | `comments.moveToFile`     |
-| Add to review           | `⌘⏎`                                                           | In `box`; the editor's own key, which the keymap file can't change                                     | `comments.addToReview`    |
-| Send now                | `⌥⏎`                                                           | In `box`; the editor's own key, which the keymap file can't change                                     | `comments.postNow`        |
-| Preview                 | `⌘⇧V`                                                          | In `box`; the editor's own key, which the keymap file can't change                                     | `comments.preview`        |
-| Attach files…           | `⌘⇧A`                                                          | In `box`; the editor's own key, which the keymap file can't change                                     | `comments.attach`         |
-| Leave INSERT mode       | `Esc`                                                          | Vim's own key, in code views                                                                           | `comments.leaveInsert`    |
-| Close comment box       | `Esc`                                                          | In `box`; in code views, only in normal mode; the editor's own key, which the keymap file can't change | `comments.close`          |
-| Show kept drafts        | None: its control or the command palette                       | Anywhere                                                                                               | `comments.keptDrafts`     |
-| Next thread             | `j`, `↓`                                                       | In `threads`                                                                                           | `comments.nextThread`     |
-| Previous thread         | `k`, `↑`                                                       | In `threads`                                                                                           | `comments.previousThread` |
-| Show in diff            | `⏎`                                                            | In `threads`                                                                                           | `comments.showThread`     |
-| Resolve thread          | `x`                                                            | In `threads`                                                                                           | `comments.resolveInPanel` |
-| Next thread filter      | `f`                                                            | In `threads`                                                                                           | `comments.filterThreads`  |
-| Clear filter            | `⌘⌫`                                                           | In `threads`                                                                                           | `comments.clearFilter`    |
-| Collapse thread         | `z a`                                                          | In `diff`; in code views, only in normal mode; only on a thread                                        | `diff.toggleThread`       |
-| Comment on pull request | `c`                                                            | In `timeline`                                                                                          | `timeline.comment`        |
-| Edit comment            | `i`                                                            | In `timeline`                                                                                          | `timeline.editComment`    |
-| Delete comment…         | `d d`                                                          | In `timeline`                                                                                          | `timeline.deleteComment`  |
-| Show comment            | None: its right-click menu or the command palette              | In `timeline`                                                                                          | `timeline.showComment`    |
-| Show in diff            | `⏎`                                                            | In `timeline`                                                                                          | `timeline.showInDiff`     |
+| Command                 | Keys                                                           | Where                                                                                                  | ID                         |
+| ----------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------- |
+| Comment                 | `c`                                                            | In `diff`; in code views, only in normal and visual mode                                               | `comments.comment`         |
+| Comment now             | `C`                                                            | In `diff`; in code views, only in normal and visual mode                                               | `comments.commentNow`      |
+| Suggest change          | `s`                                                            | In `diff`; in code views, only in normal and visual mode                                               | `comments.suggest`         |
+| Comment on file         | `c`                                                            | In `tree`                                                                                              | `comments.commentOnFile`   |
+| Comment on lines        | `c`                                                            | In `overview` and `file`; in code views, only in normal and visual mode                                | `comments.commentOnBlock`  |
+| Comment on file         | `⏎`                                                            | In `diff`; in code views, only in normal mode                                                          | `comments.onFileInstead`   |
+| Show thread             | `⏎`                                                            | In `diff`; in code views, only in normal mode; only on a thread                                        | `comments.openThread`      |
+| Close thread            | `Esc`                                                          | In `thread`                                                                                            | `comments.closeThread`     |
+| Next comment            | `j`, `↓`                                                       | In `thread`                                                                                            | `comments.nextComment`     |
+| Previous comment        | `k`, `↑`                                                       | In `thread`                                                                                            | `comments.previousComment` |
+| Reply                   | `r`                                                            | In `diff` and `thread`; in code views, only in normal mode                                             | `comments.reply`           |
+| Resolve thread          | `x`                                                            | In `diff` and `thread`; in code views, only in normal mode                                             | `comments.resolve`         |
+| Edit comment            | `i`                                                            | In `diff` and `thread`; in code views, only in normal mode                                             | `comments.edit`            |
+| Delete comment…         | `d d`                                                          | In `diff` and `thread`; in code views, only in normal mode                                             | `comments.remove`          |
+| Discard draft           | None: its control, its right-click menu or the command palette | In `box`                                                                                               | `comments.discard`         |
+| Undo discard            | None: its control or the command palette                       | Anywhere                                                                                               | `comments.undiscard`       |
+| Send again              | None: its control, its right-click menu or the command palette | In `box`                                                                                               | `comments.sendAnyway`      |
+| Check again             | None: its control, its right-click menu or the command palette | In `box`                                                                                               | `comments.checkAgain`      |
+| Move comment to file    | None: its control, its right-click menu or the command palette | In `box`                                                                                               | `comments.moveToFile`      |
+| Add to review           | `⌘⏎`                                                           | In `box`; the editor's own key, which the keymap file can't change                                     | `comments.addToReview`     |
+| Send now                | `⌥⏎`                                                           | In `box`; the editor's own key, which the keymap file can't change                                     | `comments.postNow`         |
+| Preview                 | `⌘⇧V`                                                          | In `box`; the editor's own key, which the keymap file can't change                                     | `comments.preview`         |
+| Attach files…           | `⌘⇧A`                                                          | In `box`; the editor's own key, which the keymap file can't change                                     | `comments.attach`          |
+| Leave INSERT mode       | `Esc`                                                          | Vim's own key, in code views                                                                           | `comments.leaveInsert`     |
+| Close comment box       | `Esc`                                                          | In `box`; in code views, only in normal mode; the editor's own key, which the keymap file can't change | `comments.close`           |
+| Show kept drafts        | None: its control or the command palette                       | Anywhere                                                                                               | `comments.keptDrafts`      |
+| Next thread             | `j`, `↓`                                                       | In `threads`                                                                                           | `comments.nextThread`      |
+| Previous thread         | `k`, `↑`                                                       | In `threads`                                                                                           | `comments.previousThread`  |
+| Show in diff            | `⏎`                                                            | In `threads`                                                                                           | `comments.showThread`      |
+| Resolve thread          | `x`                                                            | In `threads`                                                                                           | `comments.resolveInPanel`  |
+| Next thread filter      | `f`                                                            | In `threads`                                                                                           | `comments.filterThreads`   |
+| Clear filter            | `⌘⌫`                                                           | In `threads`                                                                                           | `comments.clearFilter`     |
+| Collapse thread         | `z a`                                                          | In `diff`; in code views, only in normal mode; only on a thread                                        | `diff.toggleThread`        |
+| Comment on pull request | `c`                                                            | In `timeline`                                                                                          | `timeline.comment`         |
+| Edit comment            | `i`                                                            | In `timeline`                                                                                          | `timeline.editComment`     |
+| Delete comment…         | `d d`                                                          | In `timeline`                                                                                          | `timeline.deleteComment`   |
+| Show comment            | None: its right-click menu or the command palette              | In `timeline`                                                                                          | `timeline.showComment`     |
+| Show in diff            | `⏎`                                                            | In `timeline`                                                                                          | `timeline.showInDiff`      |
 
 The comment box's editor runs these keys itself, so Lo's key engine never does: the command palette
 and menus don't offer them, and neither the keymap file nor a `vim` line in it can change them. A
@@ -347,6 +351,7 @@ it beats the key for the scope, so `z a` collapses the thread it's on, and the f
 | `box`        | A comment box, a code view with an insert mode.                                       |
 | `references` | Named by `code`.                                                                      |
 | `threads`    | Named by `comments`.                                                                  |
+| `thread`     | Named by `comments`.                                                                  |
 | `merge`      | Named by `merge`.                                                                     |
 | `commit`     | Named by `merge`.                                                                     |
 | `recent`     | Named by `open`.                                                                      |
@@ -451,6 +456,7 @@ how Lo starts, they run Lo's command too:
 | `C`              | Comment now             | `C`       | `diff`                                                               | `comments.commentNow`     |
 | `s`              | Suggest change          | `s`       | `diff`                                                               | `comments.suggest`        |
 | `⏎`              | Comment on file         | `⏎`       | `diff` (normal)                                                      | `comments.onFileInstead`  |
+| `⏎`              | Show thread             | `⏎`       | `diff` (normal)                                                      | `comments.openThread`     |
 | `r`              | Reply                   | `r`       | `diff` (normal)                                                      | `comments.reply`          |
 | `x`              | Resolve thread          | `x`       | `diff` (normal)                                                      | `comments.resolve`        |
 | `i`              | Edit comment            | `i`       | `diff` (normal)                                                      | `comments.edit`           |

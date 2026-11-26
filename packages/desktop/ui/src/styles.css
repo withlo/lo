@@ -629,6 +629,26 @@
   [data-key-scope]:is([data-focused], :focus-visible, :has(:focus-visible)) & {
     display: inline-flex;
   }
+  /* In a thread's popover, a preview keeps the room of the chips a pinned one shows, so pinning it,
+     which shows them, moves nothing. */
+  [data-key-room] & {
+    display: inline-flex;
+    visibility: hidden;
+  }
+  [data-key-room][data-focused] & {
+    visibility: visible;
+    animation: lo-swap var(--lo-dur-fast) var(--lo-ease-out);
+  }
+}
+
+/* A thread's popover over the code (`ThreadPopover`): as wide as the code view places it, and as
+   tall as its threads, up to the most the view lets it be (`--lo-pop-max`), past which they scroll
+   inside it. */
+@utility thread-pop {
+  width: 100%;
+  max-height: var(--lo-pop-max, var(--lo-thread-pop-h));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* A side panel's toolbar narrower than its one step gives up the words of a control that keeps an

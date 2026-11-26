@@ -111,6 +111,11 @@ export interface BubbleDrawing {
   readonly command?: boolean | undefined;
   /** The colour it was drawn in last, where that's changed: it tints from it to its own. */
   readonly was?: LaneTone | undefined;
+  /**
+   * Whether threads show beside lines: a click opens the thread's popover, or closes it, and the
+   * pointer resting on it previews it, so it has no tooltip. Its name is heard, never shown.
+   */
+  readonly beside?: boolean | undefined;
 }
 
 /**
@@ -121,12 +126,12 @@ export interface BubbleDrawing {
  */
 export function bubbleElement(
   bubble: Bubble,
-  { open, className, command = true, was }: BubbleDrawing,
+  { open, className, command = true, was, beside = false }: BubbleDrawing,
 ): HTMLElement {
   const control = document.createElement('span');
   const tone = `lo-bubble--${bubble.tone}`;
   const from = was === undefined || was === bubble.tone ? tone : `lo-bubble--${was}`;
-  control.className = `${className} lo-bubble ${from} move-tint`;
+  control.className = `${className} lo-bubble ${from} move-tint${open ? ' is-open' : ''}`;
   // Its colour, from the one it had: once it's on the page, its style is worked out in that
   // colour, which the tint then moves from as the class changes. A new element's first style has
   // no colour before it to move from.
@@ -138,10 +143,15 @@ export function bubbleElement(
   }
   control.setAttribute('role', 'button');
   control.setAttribute('aria-label', bubble.name);
-  if (command) control.dataset.command = viewControls.thread;
   control.dataset.thread = bubble.thread;
   control.setAttribute('aria-expanded', String(open));
-  control.dataset.tip = open ? COLLAPSE_THREAD : EXPAND_THREAD;
+  if (beside) {
+    control.dataset.command = viewControls.popover;
+    control.dataset.beside = '';
+  } else {
+    if (command) control.dataset.command = viewControls.thread;
+    control.dataset.tip = open ? COLLAPSE_THREAD : EXPAND_THREAD;
+  }
   control.append(iconElement(bubble.icon, 14));
   return control;
 }
