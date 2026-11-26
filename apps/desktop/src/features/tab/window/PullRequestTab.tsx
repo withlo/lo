@@ -1,14 +1,24 @@
-// A pull request's tab: its header, its banner, a row of the left panel, the middle sheet, with
-// what goes across its top, and the right panel other features fill, each panel with its edge and
-// its button at an end of the header's cluster, as the window's layout draws them, and its status
-// bar, which ends with the keys held for a command still to come, and Vim's mode while code has
-// focus. It opens on the middle view Settings names, once Settings is known. Until the diff and the
-// threads arrive, the middle says what's coming, and a pull request the tab can't show says why
-// there.
+// A pull request's tab: its header, its banner, a row of the left panel, one middle sheet or two,
+// with what goes across the top of the code, and the right panel other features fill, each panel
+// with its edge and its button at an end of the header's cluster, as the window's layout draws
+// them, and its status bar, which ends with the keys held for a command still to come, and Vim's
+// mode while code has focus. With the code beside, the middle is a reading view on the left and
+// the code on the right, each a sheet. It opens on the middle view Settings names, once Settings is
+// known. Until the diff and the threads arrive, the middle says what's coming, and a pull request
+// the tab can't show says why there.
 
-import { Panes, PRHeader, StatusBar, StatusKeys, StatusMode, Swap } from '@lo/ui';
+import { Panes, PRHeader, StatusBar, StatusKeys, StatusMode, Swap, type ViewFocus } from '@lo/ui';
 import { focusedMode, onFocusedMode } from '@lo/ui/code';
-import { useLayoutEffect, useState, useSyncExternalStore } from 'react';
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type FocusEvent,
+  type ReactNode,
+} from 'react';
+import { useStore } from 'zustand';
 
 import { registry } from '../../../window/commands/registry.ts';
 import { Slot, useViews } from '../../../window/slots.tsx';
@@ -17,12 +27,14 @@ import { before, open as openOn } from '../settings.ts';
 import { blocked } from './banners.ts';
 import { Banners, LimitItem, LocalItem, TabFailed, useHeaderConnection } from './Notes.tsx';
 import {
+  focusNowhere,
   header,
   headerStatus,
   left,
   middle,
   over,
   right,
+  setViewsShown,
   status,
   useLocalCopy,
   usePull,
@@ -30,18 +42,19 @@ import {
 } from './shared.ts';
 import {
   focusPanel,
+  kindOf,
   middleIds,
-  middleOf,
   opening,
   panels,
   rightIds,
   takeRightFocus,
   useTabPanels,
+  viewsOf,
 } from './panels.ts';
-import { row, usePanelDrawn, viewCounts } from './layout.ts';
-import { Placeholder } from './Placeholder.tsx';
-import { LeftPanel, RightPanel } from './Row.tsx';
-import { LeftToggle, RightToggle } from './Toggles.tsx';
+import { layout, row, useBesideDrawn, usePanelDrawn, viewCounts, viewFocus } from './layout.ts';
+import { MiddleViewOf, Placeholder, useAllWaiting } from './Placeholder.tsx';
+import { LeftPanel, RightPanel, ViewsRow, type Sheet } from './Row.tsx';
+import { BesideToggle, LeftToggle, RightToggle } from './Toggles.tsx';
 import { ViewSwitch } from './ViewSwitch.tsx';
 
 /**
@@ -55,6 +68,22 @@ function focusRight(panel: HTMLElement | null): void {
 
 /** Keeps the row's width, as it's measured, for the panels to fit in. */
 const setRowWidth = (width: number) => row.setState({ width });
+
+/** Which sheet a middle view is drawn in: code on the right, anything else on the left. */
+function sheetOf(id: string): Sheet {
+  return kindOf(id) === 'code' ? 'code' : 'reading';
+}
+
+/**
+ * Moves focus that was in a middle view as it's hidden to the window's middle, where it's nowhere
+ * in particular, before the browser drops it: so keys typed meanwhile go on in the view that comes,
+ * as it takes focus, rather than being dropped with it.
+ */
+function catchHidden(views: HTMLElement | null): void {
+  const focused = document.activeElement;
+  const hidden = focused?.closest('[inert]');
+  if (views && hidden && views.contains(hidden)) focusNowhere();
+}
 
 const onHeldKeys = (listener: () => void) => registry().onHeldKeys(listener);
 const heldKeys = () => registry().heldKeys();
@@ -81,11 +110,18 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
   const connection = useHeaderConnection(tab, view);
   // A pull request the tab can't show takes the middle's place, with why, over what's drawn.
   const failed = blocked(view);
-  const { right: rightChosen, middle: chosen, opened } = useTabPanels(tab.id);
+  const kept = useTabPanels(tab.id);
+  const { right: rightChosen, middle: chosen, opened } = kept;
   const lefts = useViews(left);
   const middles = useViews(middle);
   const rights = useViews(right);
-  const there = { left: lefts.length > 0, threads: rights.length > 0 };
+  const readings = middles.filter((each) => each.kind === 'reading').length;
+  const codes = middles.filter((each) => each.kind === 'code').length;
+  const there = {
+    left: lefts.length > 0,
+    threads: rights.length > 0,
+    beside: readings > 0 && codes > 0,
+  };
   const saved = useKnownSetting(openOn);
   // A `diff` saved under the key `tab.open` replaced, until main has carried it over.
   const earlier = useKnownSetting(before);
@@ -93,9 +129,13 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
   viewCounts.left = lefts.length;
   viewCounts.middle = middles.length;
   viewCounts.right = rights.length;
+  viewCounts.reading = readings;
+  viewCounts.code = codes;
   if (middleIds.ids.join('\n') !== middles.map((each) => each.id).join('\n')) {
     middleIds.ids = middles.map((each) => each.id);
     middleIds.labeled = middles.map((each) => each.label !== undefined);
+    middleIds.kinds = middles.map((each) => each.kind);
+    middleIds.empty = middles.map((each) => each.empty);
   }
   if (rightIds.length !== rights.length)
     rightIds.splice(0, Infinity, ...rights.map((each) => each.id));
@@ -108,9 +148,20 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
   const shownRight = rights.find((each) => each.id === rightChosen) ?? rights[0];
   const threadsShown = showRight && shownRight !== undefined;
   // The view Settings names, once it's known, until the tab has one of its own; then that, or the
-  // timeline while it's gone.
-  const shownId = middleOf(chosen, middleIds.ids, open);
+  // timeline while it's gone. With the code beside, a reading view and the code, the one Settings
+  // names, or the tab showed alone, with focus.
+  const beside = useStore(layout, (window) => window.beside) && there.beside;
+  const want = viewsOf(tab.id, kept, open, beside);
+  const single = want.beside ? (want.focus === 'code' ? want.code : want.reading) : want.single;
+  const shownId = single;
   if (chosen === undefined && shownId !== undefined) opening.set(tab.id, shownId);
+  const focus: ViewFocus = want.beside ? want.focus : sheetOf(shownId ?? '');
+  viewFocus.now = focus;
+  // Two views as there's room for them, but one across the middle while both only wait.
+  const roomForTwo = useBesideDrawn(there, focus);
+  const bothWait = useAllWaiting(tab.id, want.beside ? [want.reading, want.code] : []);
+  const two = want.beside && roomForTwo && !bothWait;
+  const onScreen = two ? [want.reading, want.code] : shownId === undefined ? [] : [shownId];
   // What it opened on, kept, so a change in Settings moves no tab that's open.
   useLayoutEffect(() => {
     if (opened !== undefined || shownId === undefined) return;
@@ -123,8 +174,53 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
   }, [tab.id, opened, shownId]);
   const shownMiddle = middles.find((each) => each.id === shownId);
   // The middle views shown since the tab was drawn stay drawn, hidden while another is on screen.
-  const [kept, setKept] = useState<readonly string[]>([]);
-  if (shownMiddle && !kept.includes(shownMiddle.id)) setKept([...kept, shownMiddle.id]);
+  const [drawnViews, setDrawnViews] = useState<readonly string[]>([]);
+  const fresh = onScreen.filter((id) => !drawnViews.includes(id));
+  if (fresh.length > 0) setDrawnViews([...drawnViews, ...fresh]);
+  useLayoutEffect(() => setViewsShown(tab.id, onScreen));
+  // Focus left in a view as it's hidden goes where keys typed meanwhile go on.
+  const views = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => catchHidden(views.current));
+  // Focus coming into one of two views makes it the one with focus, which stays as the code goes.
+  const onViewFocus = useCallback(
+    (event: FocusEvent<HTMLElement>) => {
+      const id = event.target.closest('[data-lo-middle-view]')?.getAttribute('data-lo-middle-view');
+      if (!two || !id || panels.get(tab.id).middle === id) return;
+      panels.update(tab.id, (current) => ({ ...current, middle: id }));
+    },
+    [tab.id, two],
+  );
+  const sheetViews = (sheet: Sheet): ReactNode => {
+    const here = onScreen.find((id) => sheetOf(id) === sheet);
+    const drawnHere = middles.filter(
+      (each) => sheetOf(each.id) === sheet && (each.id === here || drawnViews.includes(each.id)),
+    );
+    // One shown in another's place fades in over it, a Swap that keeps them all drawn; the first
+    // the sheet shows is just there.
+    return (
+      <Swap id={here} keep className="absolute inset-0">
+        {drawnHere.map((each) => {
+          const shown = each.id === here;
+          const seen = shown && !failed;
+          return (
+            <div
+              key={each.id}
+              className={
+                seen ? 'absolute inset-0 middle-view' : 'invisible absolute inset-0 middle-view'
+              }
+              inert={!seen}
+              data-lo-middle-view={each.id}
+            >
+              <MiddleViewOf value={each.id}>
+                <each.render tab={tab} shown={shown} />
+              </MiddleViewOf>
+            </div>
+          );
+        })}
+      </Swap>
+    );
+  };
+  const readingLabel = middles.find((each) => each.id === onScreen[0])?.label ?? 'Pull request';
   return (
     <div className="flex h-full min-h-0 flex-col" data-lo-pull={tab.id}>
       <PRHeader
@@ -154,7 +250,8 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
           inert={failed}
         >
           {there.left && <LeftToggle there={there} />}
-          <ViewSwitch tab={tab} views={middles} shown={shownMiddle?.id} />
+          <ViewSwitch tab={tab} views={middles} shown={shownMiddle?.id} onScreen={onScreen} />
+          {there.beside && <BesideToggle there={there} />}
           {there.threads && <RightToggle tab={tab} there={there} views={rights} />}
         </div>
       </PRHeader>
@@ -165,40 +262,23 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
             <Slot slot={left} props={{ tab }} />
           </LeftPanel>
         )}
-        <section
-          className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden sheet"
-          aria-label="Pull request"
-        >
-          <Slot slot={over} props={{ tab }} />
-          <div className="relative min-h-0 flex-1">
-            {/* One shown in another's place fades in over it, a Swap that keeps them all drawn; the
-            first the tab shows is just there. A pull request the tab can't show says why over
-            them, and stays still as they change under it. */}
-            <Swap id={shownMiddle?.id} keep className="absolute inset-0">
-              {shownMiddle ? (
-                middles
-                  .filter((each) => each === shownMiddle || kept.includes(each.id))
-                  .map((each) => {
-                    const shown = each === shownMiddle;
-                    const seen = shown && !failed;
-                    return (
-                      <div
-                        key={each.id}
-                        className={seen ? 'absolute inset-0' : 'invisible absolute inset-0'}
-                        inert={!seen}
-                        data-lo-middle-view={each.id}
-                      >
-                        <each.render tab={tab} shown={shown} />
-                      </div>
-                    );
-                  })
-              ) : (
-                <Placeholder tab={tab.id} />
-              )}
-            </Swap>
+        <div ref={views} className="flex min-h-0 min-w-0 flex-1">
+          <ViewsRow
+            there={there}
+            focus={focus}
+            drawn={two ? 'both' : sheetOf(shownId ?? '')}
+            failed={failed}
+            reading={shownMiddle ? sheetViews('reading') : <Placeholder tab={tab.id} />}
+            code={sheetViews('code')}
+            over={<Slot slot={over} props={{ tab }} />}
+            labels={{ reading: readingLabel, code: 'Code beside' }}
+            onFocus={onViewFocus}
+          >
+            {/* A pull request the tab can't show says why over the whole middle, and stays still
+            as the views change under it. */}
             <TabFailed tab={tab} view={view} />
-          </div>
-        </section>
+          </ViewsRow>
+        </div>
         {threadsShown && (
           <RightPanel
             // Another view is another panel, which takes focus as it's drawn.

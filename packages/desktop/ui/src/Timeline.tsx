@@ -82,7 +82,7 @@ const GLYPHS: Readonly<Record<Exclude<TimelineGlyph, 'ring'>, IconName>> = {
 /** A ring, for something still running: a ball, not an icon. */
 const RING = <span className="size-6 flex-none rounded-pill hollow" />;
 
-const disc = cva('relative grid size-32 flex-none place-items-center rounded-pill inset-ring-2', {
+const disc = cva('relative grid tl-marker flex-none place-items-center rounded-pill inset-ring-2', {
   variants: {
     tone: {
       neutral: 'bg-bg text-icon-muted inset-ring-border',
@@ -170,7 +170,7 @@ export function TimelineRow({
       aria-selected={on}
       {...rest}
       data-focused={on ? '' : undefined}
-      className={`tl-row flex gap-12 rounded-md py-8 ${on ? 'group-focus-visible/timeline:shadow-ring-inset' : ''} ${className}`}
+      className={`tl-row flex tl-marked rounded-md py-8 ${on ? 'group-focus-visible/timeline:shadow-ring-inset' : ''} ${className}`}
     >
       <Marker marker={marker} />
       <div className="min-w-0 flex-1">{children}</div>
@@ -242,7 +242,7 @@ export interface TimelineEndProps extends Omit<HTMLAttributes<HTMLDivElement>, '
  */
 export function TimelineEnd({ marker, children, className = '', ...rest }: TimelineEndProps) {
   return (
-    <div {...rest} className={`mx-auto flex max-w-timeline-w gap-12 px-8 py-8 ${className}`}>
+    <div {...rest} className={`mx-auto flex max-w-timeline-w tl-marked px-8 py-8 ${className}`}>
       <Marker marker={marker} />
       <div className="min-w-0 flex-1">{children}</div>
     </div>

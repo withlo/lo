@@ -26,6 +26,7 @@ import { showDiff } from '../../diff/window/shared.ts';
 import { contract as tabContract } from '../../tab/contract.ts';
 import {
   activeTab,
+  onActiveTab,
   pullOf,
   runViewOf,
   withoutBidi,
@@ -95,8 +96,16 @@ export function showLayer(tab: PullTab, number: number): Promise<string | undefi
 }
 
 /**
+ * The layer `]s` or `[s` last asked main to show, from the tab on screen then, until another tab is
+ * on screen or main can't show it: a step typed meanwhile, before main's answer reaches the window,
+ * goes on from it, rather than asking for the same layer again.
+ */
+let asking: { readonly tab: string; readonly layer: number } | undefined;
+
+/**
  * Where `]s` (`by` 1) or `[s` (-1) goes from the layer on screen, or from a run's, the layer it was
- * chosen from, `count` layers on but no further than the last or the first, or why it can't go one.
+ * chosen from, or from the layer still being asked for, `count` layers on but no further than the
+ * last or the first, or why it can't go one.
  */
 function stepOnScreen(by: 1 | -1, count = 1): { tab: PullTab; layer: number } | string {
   const tab = pullOnScreen();
@@ -105,7 +114,8 @@ function stepOnScreen(by: 1 | -1, count = 1): { tab: PullTab; layer: number } | 
   if (view?.kind !== 'stack' && pullOf(tab.id)?.acting?.kind === 'anonymous') {
     return 'Sign in to see the stack';
   }
-  const step = stepFrom(view, tab.run?.from ?? tab.number, by);
+  const from = asking?.tab === tab.id ? asking.layer : (tab.run?.from ?? tab.number);
+  const step = stepFrom(view, from, by);
   if ('why' in step) return step.why;
   let { layer } = step;
   for (let left = count - 1; left > 0; left--) {
@@ -124,7 +134,19 @@ export function walking(by: 1 | -1) {
   return {
     run: (_target?: unknown, count = 1) => {
       const step = stepOnScreen(by, count);
-      if (typeof step !== 'string') void showLayer(step.tab, step.layer);
+      if (typeof step === 'string') return;
+      const ask = { tab: step.tab.id, layer: step.layer };
+      asking = ask;
+      const done = () => {
+        stop();
+        if (asking === ask) asking = undefined;
+      };
+      const stop = onActiveTab((now) => {
+        if (now?.id !== ask.tab) done();
+      });
+      void showLayer(step.tab, step.layer).then((shown) => {
+        if (shown === undefined || shown === ask.tab) done();
+      });
     },
     enabled: () => {
       const step = stepOnScreen(by);

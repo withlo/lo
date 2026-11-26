@@ -1,4 +1,4 @@
-import { handlers } from '@lo/ui/commands';
+import { handlers, type Entry } from '@lo/ui/commands';
 import { createElement } from 'react';
 
 import { barItems, focusedTarget, onMenuStale, runFromBar } from '../../../window/commands/bar.ts';
@@ -16,7 +16,7 @@ import type { WindowFeature } from '../../../window/features.ts';
 import { client, type Client } from '../../../window/ipc.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { onSettingsChange } from '../../settings/window/shared.ts';
-import { stripEnd } from '../../tab/window/shared.ts';
+import { bringBeside, stripEnd } from '../../tab/window/shared.ts';
 import { contract } from '../contract.ts';
 import keys from '../keys.ts';
 import { MenuButton, openAppMenu, watchStripFocus } from './MenuButton.tsx';
@@ -73,6 +73,14 @@ function main(): Client<typeof contract> {
   return client(contract);
 }
 
+/**
+ * After `⌃o` or `⌃i` came to `entry`: the view that was beside its place as the tab left it, as a
+ * link from the code put another there, comes back beside it.
+ */
+function cameBack(entry: Entry | undefined): void {
+  if (entry?.beside !== undefined) bringBeside(entry.beside);
+}
+
 /** Applies the keymap file main reads, and each change to it. */
 function syncKeymap(file: Client<typeof contract>): void {
   let pushed = false;
@@ -122,13 +130,13 @@ export default {
     // and say nothing. A place that's gone, or that's where the cursor is, isn't somewhere to go.
     back: {
       run() {
-        registry().history.back(here());
+        cameBack(registry().history.back(here()));
       },
       enabled: () => registry().history.canBack(here()) || '',
     },
     forward: {
       run() {
-        registry().history.forward(here());
+        cameBack(registry().history.forward(here()));
       },
       enabled: () => registry().history.canForward(here()) || '',
     },

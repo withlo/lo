@@ -1,12 +1,12 @@
 // The overview feature's keys: copying a prompt for a coding agent, anywhere in a pull request's
 // tab; installing the overview skill, which has none; and, in Settings, copying the command that
 // installs it from a terminal. In the overview's own view, the `overview` scope: moving between its
-// blocks and within one, following a block to its code, the code beside it, and scrolling; and, on
-// a block's menu, showing the latest overview or reading it again, which have none.
+// blocks and within one, following a block to its code, and scrolling; and, on a block's menu,
+// showing the latest overview or reading it again, which have none.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
-/** In the overview, not in the code beside it, which is a code view of its own. */
+/** In the overview, not in the code beside it, which is a view of its own. */
 const overview: When = { scope: 'overview' };
 
 export default defineCommands(
@@ -30,14 +30,14 @@ export default defineCommands(
       group: 'Go',
       keys: ['] b'],
       when: overview,
-      control: 'Next block under the outline, and over an overview beside its code',
+      control: 'Next block under the outline, or a click on the block',
     },
     previousBlock: {
       label: 'Previous block',
       group: 'Go',
       keys: ['[ b'],
       when: overview,
-      control: 'Previous block under the outline',
+      control: 'Previous block under the outline, or a click on the block',
     },
     /**
      * Follows the block that has focus, or the link, part or control in it that has: code goes to
@@ -53,27 +53,6 @@ export default defineCommands(
       when: overview,
       menu: { on: 'block', order: 10 },
       control: 'Go to code on a focused block’s chip',
-    },
-    /** Splits the middle: the overview, and the block's file in the diff beside it, inline. */
-    beside: {
-      label: 'Code beside',
-      group: 'View',
-      keys: ['o'],
-      targets: ['block', 'none'],
-      when: overview,
-      menu: { on: 'block', order: 20 },
-      control: 'Code beside on the chip of a focused block with code',
-    },
-    /**
-     * Closes the code beside the overview, as the button over it does, after a term's card that's
-     * open. With neither open, focus goes back to the overview, as `Esc` does in any middle view.
-     */
-    closeBeside: {
-      label: 'Close code beside',
-      group: 'View',
-      keys: ['esc'],
-      when: overview,
-      control: 'Close code beside, over the code beside',
     },
     /**
      * In the block that has focus, its next link, figure part or control, round through the block

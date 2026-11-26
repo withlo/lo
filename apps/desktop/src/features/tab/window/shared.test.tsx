@@ -5,9 +5,11 @@ import { afterEach, beforeAll, describe, expect, it, onTestFinished } from 'vite
 
 import { installBridge } from '../../../window/test/bridge.ts';
 import type { Tab } from '../contract.ts';
+import { viewFocus } from './layout.ts';
 import { middleIds, opening, panels } from './panels.ts';
 import {
   activeTab,
+  focusNowhereFor,
   middleShown,
   onClosed,
   openedOn,
@@ -258,5 +260,81 @@ describe('the middle views', () => {
     expect(middleShown('bat')).toBe('timeline.view');
     middleIds.ids = ['overview.view', 'diff.view', 'timeline.view'];
     expect(middleShown('bat')).toBe('overview.view');
+  });
+});
+
+/** The window's middle with the code beside a reading view, each with a view drawn in it. */
+function drawTwo() {
+  const main = document.createElement('main');
+  main.setAttribute('data-lo-middle', '');
+  main.tabIndex = -1;
+  const view = (sheet: string) => {
+    const section = document.createElement('section');
+    section.setAttribute('data-lo-sheet', sheet);
+    const own = document.createElement('div');
+    own.tabIndex = -1;
+    section.append(own);
+    main.append(section);
+    return own;
+  };
+  const reading = view('reading');
+  const code = view('code');
+  // The reading view's note while it waits, which holds keys typed meanwhile.
+  const note = document.createElement('div');
+  note.setAttribute('data-lo-middle', '');
+  note.tabIndex = -1;
+  reading.append(note);
+  const panel = document.createElement('button');
+  document.body.append(main, panel);
+  const focus = viewFocus.now;
+  onTestFinished(() => {
+    viewFocus.now = focus;
+    main.remove();
+    panel.remove();
+  });
+  return { main, reading, code, note, panel };
+}
+
+describe('focus nowhere in particular', () => {
+  it('goes to the view with focus, of two side by side', () => {
+    const { main, reading, code } = drawTwo();
+    main.focus();
+    viewFocus.now = 'reading';
+    expect(focusNowhereFor(reading)).toBe(true);
+    expect(focusNowhereFor(code)).toBe(false);
+    viewFocus.now = 'code';
+    expect(focusNowhereFor(reading)).toBe(false);
+    expect(focusNowhereFor(code)).toBe(true);
+  });
+
+  it('isn’t a waiting view’s note, which the code beside leaves to that view', () => {
+    const { reading, code, note } = drawTwo();
+    viewFocus.now = 'reading';
+    note.focus();
+    expect(focusNowhereFor(code)).toBe(false);
+    viewFocus.now = 'code';
+    expect(focusNowhereFor(code)).toBe(false);
+    // The note's view takes it back as itself, not as focus nowhere in particular.
+    expect(focusNowhereFor(reading)).toBe(false);
+  });
+
+  it('is focus left in a view now hidden, but not focus in a view or a panel', () => {
+    const { reading, code, panel } = drawTwo();
+    viewFocus.now = 'code';
+    reading.focus();
+    expect(focusNowhereFor(code)).toBe(false);
+    reading.closest('section')?.setAttribute('inert', '');
+    expect(focusNowhereFor(code)).toBe(true);
+    panel.focus();
+    expect(focusNowhereFor(code)).toBe(false);
+  });
+
+  it('goes to a view drawn outside the two, whichever has focus', () => {
+    const own = document.createElement('div');
+    document.body.append(own);
+    onTestFinished(() => own.remove());
+    const was = document.activeElement;
+    if (was instanceof HTMLElement) was.blur();
+    expect(focusNowhereFor(own)).toBe(true);
   });
 });

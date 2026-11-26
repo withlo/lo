@@ -25,6 +25,9 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { openMenu } from '../../../window/commands/menus.tsx';
 import { inCodeOf, registry, setMiddle, useKeys } from '../../../window/commands/registry.ts';
 import {
+  besideNow,
+  focusNowhere,
+  focusNowhereFor,
   MiddlePlaceholder,
   tabState,
   useLocalCopy,
@@ -101,18 +104,10 @@ function headerOf(open: Opened): Target {
 }
 
 /**
- * Whether focus is nowhere in particular, on the view itself, or left behind in a middle view now
- * hidden, so the code can take it.
+ * Whether focus is on the view itself, or nowhere in particular for it, so the code can take it.
  */
 function focusIsFree(own: HTMLElement | null): boolean {
-  const focused = document.activeElement;
-  return (
-    !focused ||
-    focused === document.body ||
-    focused === own ||
-    focused.hasAttribute('data-lo-middle') ||
-    focused.closest('[inert]') !== null
-  );
+  return (own !== null && document.activeElement === own) || focusNowhereFor(own);
 }
 
 /** The first key `id` has now, as this system shows it, if it has one. */
@@ -200,6 +195,7 @@ export function WholeFile({ tab, shown }: { tab: PullTab; shown: boolean }) {
     const stops = [
       setMiddle({
         focus: () => (view.current ? view.current.focus() : element?.focus()),
+        root: () => element,
         holds: (focused) =>
           view.current
             ? (element?.contains(focused) ?? false) && inCodeOf(focused, 'file')
@@ -289,8 +285,10 @@ export function WholeFile({ tab, shown }: { tab: PullTab; shown: boolean }) {
   }, [id, version, marked, hints]);
 
   // Each ask answered once, while the view is on screen: its place, and focus when it asks for it
-  // or focus is free. Without code to show, the view's note takes focus in its place. Shown again
-  // with nothing new asked, as after `` ` ``, it takes focus that's free.
+  // or focus is free. Without code to show, the view's note takes focus in its place. While the
+  // file's still read there's neither: focus waits in the middle of the window, nowhere in
+  // particular, so keys typed meanwhile go on in the code once it's drawn and takes focus. Shown
+  // again with nothing new asked, as after `` ` ``, it takes focus that's free.
   const settled = content !== undefined && content.kind !== 'reading' && content.kind !== 'waiting';
   useEffect(() => {
     if (!shown) return;
@@ -302,11 +300,18 @@ export function WholeFile({ tab, shown }: { tab: PullTab; shown: boolean }) {
         return;
       }
       answered.set(tab.id, open.ask.count);
-      if (open.ask.at) made.reveal(open.ask.at);
+      if (open.ask.at) {
+        made.reveal(open.ask.at);
+        // In the code's place beside a reading view, as a link or a follow brought it.
+        if (besideNow()) made.land(open.ask.at);
+      }
       if (open.ask.focus || focusIsFree(scope.current)) made.focus();
       return;
     }
-    if ((fresh && open.ask.focus) || focusIsFree(scope.current)) scope.current?.focus();
+    if ((fresh && open.ask.focus) || focusIsFree(scope.current)) {
+      if (settled || !open) scope.current?.focus();
+      else focusNowhere();
+    }
     if (open && fresh && settled) answered.set(tab.id, open.ask.count);
   }, [tab.id, open, lines, settled, shown]);
 

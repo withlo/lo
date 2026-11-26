@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import type { Entry } from '@lo/ui/commands';
+import type { Entry, View } from '@lo/ui/commands';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   canEscape,
   escapeToMiddle,
   focusMiddle,
+  focusMiddleIn,
   here,
   inCodeOf,
   setMiddle,
@@ -134,5 +135,47 @@ describe('the middle view', () => {
     expect(document.activeElement).toBe(element);
     expect(here()).toBeUndefined();
     expect(canEscape(element)).toBe(false);
+  });
+});
+
+/** A view drawn in its own box, which focus can be in. */
+function drawn(name: View): { middle: Middle; box: HTMLElement; focus: () => void } {
+  const box = document.createElement('div');
+  box.tabIndex = -1;
+  box.dataset['name'] = name;
+  document.body.append(box);
+  const focus = () => box.focus();
+  return {
+    box,
+    focus,
+    middle: {
+      focus,
+      root: () => box,
+      holds: (element) => element === box,
+      here: () => ({ view: name, at: { kind: 'none' } }),
+    },
+  };
+}
+
+describe('two middle views side by side', () => {
+  it('is the one focus is in, or was in last, for Esc and history', () => {
+    const reading = drawn('overview');
+    const code = drawn('diff');
+    taken.push(setMiddle(reading.middle), setMiddle(code.middle));
+    // Focus in neither yet: the newest.
+    expect(here()?.view).toBe('diff');
+    reading.focus();
+    expect(here()?.view).toBe('overview');
+    // Focus in a panel: the view that had it last.
+    const panel = document.createElement('button');
+    document.body.append(panel);
+    panel.focus();
+    expect(here()?.view).toBe('overview');
+    focusMiddle();
+    expect(document.activeElement).toBe(reading.box);
+    // A click in the other view gives it focus.
+    expect(focusMiddleIn(code.box)).toBe(true);
+    expect(document.activeElement).toBe(code.box);
+    expect(here()?.view).toBe('diff');
   });
 });
