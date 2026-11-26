@@ -73,7 +73,9 @@ import {
   landBoxes,
   knowPull,
   markDrafts,
+  marksSoon,
   noDiff,
+  openDraftsBetween,
   restore,
   reopenAll,
   restoreBlock,
@@ -354,7 +356,10 @@ export default {
   ],
   start() {
     followVim();
-    followThreadsMode();
+    // Between lines no mark shows a draft: each one's box opens in the flow, as Lo starts.
+    followThreadsMode((next) => {
+      if (next === 'between') queueMicrotask(openDraftsBetween);
+    });
     // An overview's code blocks are gone while overviews are off, and the comments on them.
     followOverviews((on) => registry().setOff(['comments.commentOnBlock'], !on));
     tabs().subscribe('tabs', ({ tabs: open }) => {
@@ -387,6 +392,8 @@ export default {
       // A change GitHub took that the threads now show is done with, in the same drawing.
       settleActs(view.id);
       changed(view.id);
+      // A reply's or an edit's mark is on its thread's, which may have come only now.
+      marksSoon(view.id);
       // Once they're drawn: a box that showed its comment until its card came goes with it.
       landBoxes(view.id);
     });

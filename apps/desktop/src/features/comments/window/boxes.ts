@@ -99,6 +99,7 @@ import { wrotePull } from './written.ts';
 import {
   blockComment,
   blockWhere,
+  type BoxNote,
   type BoxWhere,
   boxAt,
   commentableOn,
@@ -110,6 +111,7 @@ import {
   NO_LINES,
   NOT_IN_DIFF,
   notesOf,
+  offerLabels,
   offersOf,
   type Offer,
   ON_FILE_NOT_IN_DIFF,
@@ -117,7 +119,6 @@ import {
   placeKey,
   placeOf,
   type Refusal,
-  refusalNote,
   sentFromBlock,
   sentLabel,
   SIGN_IN,
@@ -293,7 +294,8 @@ function mayFocus(box: Box): boolean {
  * Says what changed in how a box's comment stands, to a screen reader, and shows it: that it's on
  * its way, or being looked for, which brings its card on screen whole; and, once the box is written
  * in again with a note on it, the note, with focus back in the box, where what the note offers is
- * one key away. Neither takes focus, or the screen, from a reader who has left the box.
+ * one key away, or, where the box closed while its comment was on its way, in a toast. Neither
+ * takes focus, or the screen, from a reader who has left the box.
  */
 function told(box: Box, was: BoxState): void {
   const now = box.state;
@@ -317,6 +319,8 @@ function told(box: Box, was: BoxState): void {
   if (first === undefined) return;
   const before = notesOf(was)[0];
   if (!heldBefore && before?.title === first.title && before?.text === first.text) return;
+  // Its box closed while it was on its way: a toast says it, to a screen reader too.
+  if (heldBefore && toastAway(box, first)) return;
   tell([first.title, first.text].filter((each) => each !== undefined && each !== '').join('. '));
   if (box.composer && mayFocus(box)) box.composer.focus();
 }
@@ -1168,10 +1172,6 @@ export function openAt(
     open.composer.focus();
     return open;
   }
-  // Beside lines, the draft whose mark is on the line, its box closed, is the box there, its words
-  // in it, as a click on the mark opens it.
-  const marked = closedAt(view, home, place, spot);
-  if (marked) return openAt(view, diff, home, marked.state.place, how, draft, where);
   let box = own.get(key);
   if (!box) {
     box = new Box(view, place, how, draft);
@@ -1206,23 +1206,46 @@ export function openAt(
 }
 
 /**
- * Beside lines, the draft in view `view`'s diff whose box is closed at `spot`, where a new comment
- * at `place` would open, and where there's none at `place` itself to open with its words: the one
- * whose mark is on the line.
+ * Opens, in the flow, each draft whose box is closed in a pull request's diff, as threads go between
+ * lines, where no mark shows it: as drafts open as Lo starts. One still on its way opens holding
+ * it; one sent opens nowhere.
  */
-function closedAt(
-  view: string,
-  home: Home,
-  place: DraftPlaceRow,
-  spot: string | undefined,
-): Box | undefined {
-  if (threadsMode() !== 'beside' || home.kind !== 'diff' || spot === undefined) return undefined;
+export function openDraftsBetween(): void {
+  for (const [view, own] of views) {
+    let opened = false;
+    for (const box of own.values()) {
+      if (box.open || box.composer || sentBoxes.has(box)) continue;
+      const { place, text } = box.state;
+      if (place.kind === 'conversation' || text.trim() === '' || opensAt(box).kind !== 'diff') {
+        continue;
+      }
+      box.open = true;
+      box.focusOnOpen = false;
+      opened = true;
+    }
+    if (!opened) continue;
+    restore(view);
+    replyingChanged(view);
+  }
+}
+
+/**
+ * Beside lines, the draft in view `view`'s diff whose box is closed and ends on the line of `place`,
+ * a new comment's on one line, where there's none at `place` itself with words in it: the one whose
+ * mark is on the line, which `c` there opens, as a click on the mark does. Lines selected open a
+ * box on those lines alone.
+ */
+function markedAt(view: string, place: DraftPlaceRow): Box | undefined {
+  if (threadsMode() !== 'beside' || place.kind !== 'thread' || place.lines?.start !== null) {
+    return undefined;
+  }
   const own = boxesOf(view);
   if ((own.get(placeKey(place))?.state.text.trim() ?? '') !== '') return undefined;
+  const spot = spotOf(IN_DIFF, place);
   return [...own.values()].find(
     (each) =>
       !each.composer &&
-      !each.sentMark &&
+      !sentBoxes.has(each) &&
       each.state.text.trim() !== '' &&
       opensAt(each).kind === 'diff' &&
       spotOf(IN_DIFF, each.state.place) === spot,
@@ -1338,12 +1361,13 @@ export async function comment(
     // Where main couldn't read the file's patch, it takes a comment on the file only.
     const said = takes ? NOT_IN_DIFF : NO_LINES;
     offered = { view, file: file.id, how, said };
-    // Its button is the command's control, as `⏎` runs it.
+    // Its button runs the command `⏎` does, which, just after this, comments on the file: named
+    // for what it does here, not for the command, which on a draft's mark opens the draft.
     const instead = controlOf(ON_FILE_INSTEAD, target);
     refuse(
       said,
       instead && {
-        label: instead.label,
+        label: offerLabels.onFile,
         keys: instead.keys,
         onClick: () => void runControl(ON_FILE_INSTEAD, target),
       },
@@ -1356,7 +1380,10 @@ export async function comment(
   }
   const place = placeOf(drawn.at, path, on);
   if (!suggest) {
-    openAt(view, diff, IN_DIFF, place, how);
+    // On one line, with none selected, a draft whose mark is on it opens: never for lines
+    // selected, nor for a suggestion, which would replace that draft's lines.
+    const marked = 'line' in target.at ? markedAt(view, place) : undefined;
+    openAt(view, diff, IN_DIFF, marked?.state.place ?? place, how);
     return;
   }
   const lines = {
@@ -1478,7 +1505,6 @@ export async function send(box: Box, how: Send): Promise<void> {
       }
       case 'refused':
         box.set({ refusal: outcome.refusal });
-        failedAway(box);
         break;
       case 'lost':
         break;
@@ -1489,27 +1515,29 @@ export async function send(box: Box, how: Send): Promise<void> {
     box.set({
       refusal: { kind: 'github', message: error instanceof Error ? error.message : String(error) },
     });
-    failedAway(box);
   } finally {
     box.set({ busy: false });
   }
 }
 
 /**
- * Box `box`'s comment wasn't sent, and, beside lines, the box isn't drawn to say why, as one closed
- * while it was on its way as the popover moved on: a toast says why, and its "Show thread" opens
- * the box again where it was written, the draft in it, the note saying the rest.
+ * Says `note` in a toast, of box `box`'s comment that wasn't sent, or may not have been, where the
+ * box isn't drawn to say it, as one closed while it was on its way: beside lines as the popover
+ * moved on, or as threads went between lines. Its "Show thread" opens the box again where it was
+ * written, the draft in it, the note saying the rest. Says whether it did: not for a box the
+ * diff doesn't draw, which says it itself as it opens.
  */
-function failedAway(box: Box): void {
-  const { place, refusal } = box.state;
-  if (box.composer || !refusal || place.kind === 'conversation') return;
-  if (threadsMode() !== 'beside' || opensAt(box).kind !== 'diff') return;
+function toastAway(box: Box, note: BoxNote): boolean {
+  const { place } = box.state;
+  if (box.composer || place.kind === 'conversation' || opensAt(box).kind !== 'diff') return false;
   const doing = place.kind === 'edit' ? 'edit' : 'comment';
-  const said = refusalNote(refusal, doing, loginOf(box.view));
-  notify(said.title ?? couldnt(doing), said.text, {
+  notify(note.title ?? couldnt(doing), note.text, {
     action: { label: SHOW_THREAD, onClick: () => showDraft(box) },
-    details: said.details,
+    details: note.details,
+    // A comment nobody knows went is a wait, as its box's note says it: one that didn't, a failure.
+    tone: note.tone === 'danger' ? 'danger' : 'warning',
   });
+  return true;
 }
 
 /** The toast's button that opens a box whose comment wasn't sent again. */
@@ -2270,7 +2298,7 @@ export const drafted = tabState<ReadonlySet<string>>(() => new Set());
 const marking = new Set<string>();
 
 /** Tells view `view`'s diff of its drafts once what's changing them is done: once for them all. */
-function marksSoon(view: string): void {
+export function marksSoon(view: string): void {
   if (marking.has(view)) return;
   marking.add(view);
   queueMicrotask(() => {
@@ -2291,16 +2319,23 @@ export function markDrafts(view: string): void {
   const threads = new Set<string>();
   for (const box of views.get(view)?.values() ?? []) {
     const { place, text } = box.state;
-    if (place.kind === 'conversation' || box.sentMark || sentBoxes.has(box)) continue;
+    // One sent and not known to have gone is a draft still, as nobody knows it went: its mark is
+    // where "Check again" is.
+    if (place.kind === 'conversation' || sentBoxes.has(box)) continue;
     if (opensAt(box).kind !== 'diff') continue;
     const shown = box.composer !== undefined && box.drawnIn === 'diff';
     const written = text.trim() !== '';
-    if (place.kind === 'thread' ? !shown && !written : shown || !written) continue;
-    if (place.kind !== 'thread' && place.thread !== null) threads.add(place.thread);
-    const at = diff && inDiffAt(box, diff)?.at;
-    if (!at) continue;
-    const words = place.kind === 'thread' ? lineRefText({ lines: place.lines }, true) : '';
-    marks.push({ at, words, shown, open: () => showDraft(box) });
+    const open = () => showDraft(box);
+    if (place.kind === 'thread') {
+      if (!shown && !written) continue;
+      const at = diff && inDiffAt(box, diff)?.at;
+      if (at) marks.push({ at, words: lineRefText({ lines: place.lines }, true), shown, open });
+      continue;
+    }
+    if (shown || !written || place.thread === null) continue;
+    threads.add(place.thread);
+    // Its thread's mark, wherever the thread is drawn, once it is: the diff finds it.
+    marks.push({ at: { thread: place.thread }, words: '', open });
   }
   const was = drafted.get(view);
   if (was.size !== threads.size || [...threads].some((each) => !was.has(each))) {

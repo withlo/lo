@@ -3499,6 +3499,13 @@ describe('writing beside lines', () => {
     ]);
     expect(lane('After')).toEqual(['muted Draft · line 7']);
     expect(drawn.at(-1)).toBe('Draft · line 7 pinned');
+    // Told the same again, as each time its draft is saved while it's typed: nothing's drawn again.
+    const times = drawn.length;
+    shown.setDrafts([
+      { at: at('a', 'new', 7), words: 'line 7', shown: true, open: () => undefined },
+    ]);
+    expect(drawn).toHaveLength(times);
+    expect(lane('After')).toEqual(['muted Draft · line 7']);
   });
 
   test('Esc closes the box, keeping its draft, and the popover it opened, focus back on its line', () => {
@@ -3576,6 +3583,18 @@ describe('writing beside lines', () => {
     expect(newBubble().querySelector('svg')?.innerHTML).toBe(
       iconElement('message-square-dot', 14).innerHTML,
     );
+  });
+
+  test('a reply’s draft told before its thread comes puts the dot on the thread’s mark once it does', () => {
+    const shown = open(events(), { threads: 'beside' });
+    const { render } = slotted();
+    shown.setThreads([], plain().render, { popover: render });
+    shown.setDrafts([{ at: { thread: 'one' }, words: '', open: () => undefined }]);
+    expect(lane('After')).toEqual([]);
+    shown.setThreads([ranged('one', at('a', 'new', 8), undefined)], plain().render, {
+      popover: render,
+    });
+    expect(lane('After')).toEqual(['amber Unresolved thread · line 8 · draft']);
   });
 
   test('a draft’s mark on lines with no thread is dashed and muted, its range bracketed, and a click or ⏎ opens it', () => {

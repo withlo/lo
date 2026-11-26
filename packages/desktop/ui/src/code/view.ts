@@ -2719,16 +2719,18 @@ class View implements DiffView {
   }
 
   setDrafts(drafts: readonly DraftMark[]): void {
+    const was = this.#drafts;
+    this.#drafts = drafts;
+    // The same marks, as each time a draft is saved while it's typed: nothing to draw again.
+    if (this.#mode !== 'beside' || sameDrafts(was, drafts)) return;
     const files = new Set<number>();
     const heads = new Set<number>();
-    for (const each of [...this.#drafts, ...drafts]) {
+    for (const each of [...was, ...drafts]) {
       const at = this.#draftAt(each);
       if (!at) continue;
       files.add(at.end.file);
       if (at.end.line === 0) heads.add(at.end.file);
     }
-    this.#drafts = drafts;
-    if (this.#mode !== 'beside') return;
     for (const file of files) this.#laneDirty.add(file);
     // A file's own draft's bubble is in its header, which draws the same height with or without.
     for (const file of heads) this.#refresh(file);
@@ -6144,6 +6146,21 @@ function sameMarks(
     before.every(
       (thread, index) => JSON.stringify(thread.mark) === JSON.stringify(after[index]!.mark),
     )
+  );
+}
+
+/** Whether two lists of drafts' marks draw the same marks: what each one opens isn't drawn. */
+function sameDrafts(before: readonly DraftMark[], after: readonly DraftMark[]): boolean {
+  return (
+    before.length === after.length &&
+    before.every((draft, index) => {
+      const other = after[index]!;
+      return (
+        draft.words === other.words &&
+        (draft.shown ?? false) === (other.shown ?? false) &&
+        JSON.stringify(draft.at) === JSON.stringify(other.at)
+      );
+    })
   );
 }
 

@@ -1503,9 +1503,11 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
   for a reply, the edit slot for an edit) and the view moves the box in, one box at a time. Only the
   box closing closes the popover, and moving the popover closes the box first, keeping its draft.
   The window keeps every draft as between lines, and tells the diff where each one not sent is
-  (`setDrafts`): a closed draft's mark, a new comment's dashed bubble or the dot on a thread, opens
-  its box again, as `⏎` and `c` on the line do. A draft that would open by itself stays closed
-  there. A send that fails with its box closed says so in a toast whose "Show thread" opens it.
+  (`setDrafts`), one not confirmed too: a closed draft's mark, a new comment's dashed bubble or the
+  dot on a thread, opens its box again, as `⏎` and `c` on the line do (not `s`, nor lines selected).
+  A draft that would open by itself stays closed there, and opens in the flow as threads go between
+  lines. A send that fails, or isn't confirmed, with its box closed, in either mode, says so in a
+  toast whose "Show thread" opens it.
 - `comments.send` plans each write with `@lo/review`'s `YourReview` and sends it with the poller's
   `sendReview`, one write to a pull request at a time, each planned from your pending review as read
   after the last one's answer. The box's text is held, read-only, while it's sent. A refusal keeps

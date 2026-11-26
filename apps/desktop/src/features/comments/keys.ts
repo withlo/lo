@@ -122,13 +122,17 @@ export default defineCommands(
       menu: { on: 'block', order: 25 },
     },
     /**
-     * Just after a line refused a comment, as GitHub takes none there, a comment on its file instead.
      * Beside lines, on a line a draft's mark is on, its box opened again, as a click on the mark
-     * does. Otherwise it's Vim's `⏎`.
+     * does. Just after a line refused a comment, as GitHub takes none there, a comment on its file
+     * instead, as the toast's "Comment on file" does. Otherwise it's Vim's `⏎`. Its id is the one
+     * keymap files bind it by.
      */
     onFileInstead: {
-      label: 'Comment on file',
-      control: 'Comment on file on the toast after a line takes no comment',
+      label: 'Open draft',
+      description:
+        'On a draft’s mark, opens it. Just after a line takes no comment, comments on its file.',
+      control:
+        'a draft’s mark beside lines, or Comment on file on the toast after a line takes none',
       group: 'Comments',
       keys: ['enter'],
       targets: ['line'],
