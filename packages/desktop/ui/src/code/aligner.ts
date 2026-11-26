@@ -1424,8 +1424,9 @@ export class Aligner {
   }
 
   /**
-   * The first line drawn whose own top is `below` pixels or more under the top of the screen, in
-   * the editor that anchors the scroll, or else the other: as `holdUnder` keeps it.
+   * The first row drawn whose own top is `below` pixels or more under the top of the screen: the
+   * higher of the two sides' first lines there, the side that anchors the scroll's where they're
+   * level. As `holdUnder` keeps it.
    */
   #underNow(below: number): Anchor | undefined {
     const side = this.#anchorSide();
