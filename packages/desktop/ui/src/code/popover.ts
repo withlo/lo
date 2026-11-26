@@ -274,7 +274,8 @@ export class ThreadPop<At extends PopAt> {
       this.#sized = new ResizeObserver(() => this.place());
       this.#sized.observe(this.#content);
     }
-    host.scroller.append(this.dom);
+    // First in the scroll, out of its flow: what the view draws keeps its order after it.
+    host.scroller.prepend(this.dom);
   }
 
   set render(render: RenderPopover | undefined) {
