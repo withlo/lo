@@ -19,7 +19,7 @@ const INPUT = [KEY_EVENT, 'pointerdown', 'wheel'] as const;
  * of, which isn't the one to show it in, named as {@link drawnName} names it.
  */
 export type Wanted =
-  | { readonly kind: 'thread'; readonly thread: string }
+  | { readonly kind: 'thread'; readonly thread: string; readonly focus: boolean }
   | { readonly kind: 'place'; readonly target: Target; readonly left: string };
 
 /** What each tab's diff waits to show, and what stops it waiting. */
@@ -45,9 +45,12 @@ function want(tab: string, what: Wanted): void {
   for (const type of INPUT) window.addEventListener(type, stop, true);
 }
 
-/** Has tab `tab`'s diff show thread `thread` once it's drawn with it. */
-export function wantThread(tab: string, thread: string): void {
-  want(tab, { kind: 'thread', thread });
+/**
+ * Has tab `tab`'s diff show thread `thread` once it's drawn with it, and with `focus`, give the code
+ * focus, as a link to it from a view does.
+ */
+export function wantThread(tab: string, thread: string, focus = false): void {
+  want(tab, { kind: 'thread', thread, focus });
 }
 
 /**

@@ -42,7 +42,8 @@ every code view and comment box follows at once.
 - **Copying is `y` plus a letter** (`yy`, `yl`, `yp`, `ya`). There is no single-key `y`, so none
   collides with them.
 - **Families stay families.** `]`/`[` jump forward and back, `g` goes somewhere, `z` folds, `⌘` acts
-  on the window or the review. `<`, `>` and `=` size what has focus.
+  on the window or the review. `\` is the row: `⌘\` and `⌘⇧\` its panels, `\` the other view. `<`,
+  `>` and `=` size what has focus.
 - **Single letters act on what has focus.** In the file tree, `t`, `f`, `l` and `h` mean tree
   things; in the diff, the table's meanings hold.
 - **A right-click menu lists what its target can do, with the keys,** and greys what can't run
@@ -108,7 +109,7 @@ in Settings.
 - In code, the cursor glows while the view has focus and goes hollow when it loses it.
 - The mode (`NORMAL`, `V-LINE`, `INSERT`) shows only with Vim keys on, and then once in the status
   bar and in the focused box.
-- `Esc` always returns focus to the middle view and closes the nearest popover.
+- `Esc` always returns focus to the view that had it last and closes the nearest popover.
 - **Focus never falls to the page with what had it.** When the focused element leaves the page, as a
   Try again does that goes once pressed, the browser drops focus on the body, where none of the
   view's keys work. Instead focus goes to the nearest part of the view still there: the nearest

@@ -203,7 +203,7 @@ test('the panels are the window’s: their buttons, the threads panel’s edge, 
   await page.mouse.up();
   expect(await width()).toBe(440);
 
-  const layout = { left: { open: false }, threads: { open: true, width: 440 } };
+  const layout = { left: { open: false }, threads: { open: true, width: 440 }, beside: false };
   await expect
     .poll(() => page.evaluate(() => window.lo.invoke('tab.layout')))
     .toEqual({ ok: true, value: layout });

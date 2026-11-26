@@ -1,12 +1,14 @@
 // What the timeline's keys do on the timeline on screen: move between its rows and through the
 // links and buttons of the row the keyboard is on, and what a row's buttons do, which its menu and
-// the palette offer too, for the row right-clicked or the one the keyboard is on.
+// the palette offer too, for the row right-clicked or the one the keyboard is on. A review shows its
+// comments in the diff, and with code beside, the diff follows the review the keyboard is on.
 
 import { reveal } from '@lo/ui';
 import type { RowTarget, Target } from '@lo/ui/commands';
 
 import { notify } from '../../../window/commands/notices.tsx';
-import { showDiff } from '../../diff/window/shared.ts';
+import { firstThreadOf } from '../../comments/window/shared.ts';
+import { goToThread, showDiff, type ShowHow } from '../../diff/window/shared.ts';
 import { activeTab, type PullTab } from '../../tab/window/shared.ts';
 import type { Row, RevisionMark } from './rows.ts';
 import { focusedRows, shownHidden } from './store.ts';
@@ -147,6 +149,40 @@ const STOPS = 'a[href], button, input, select, textarea, [tabindex]';
 
 /** Where an edit of your comment is drawn, in its card: it keeps focus, as a link or button does. */
 const EDIT = '[data-lo-timeline="edit"]';
+
+/**
+ * The link or button in a row of the timeline that has focus, if one has: `⏎` there is its own, as
+ * it is on any link or button.
+ */
+export function stopWithFocus(): HTMLElement | undefined {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement) || !active.matches(STOPS)) return undefined;
+  if (active.closest(EDIT) !== null) return undefined;
+  const row = active.closest('li[data-key]');
+  return row?.closest('[data-lo-scope="timeline"]') ? active : undefined;
+}
+
+/** Whether Show in diff runs on `row`: a review that left comments in threads. */
+export function hasCode(row: Row): boolean {
+  return row.kind === 'review' && row.comments > 0;
+}
+
+/**
+ * Shows review `row`'s comments in tab `tab`'s diff, at its first comment's thread, `how` says how:
+ * to `go`, as Show in diff does, a jump with focus in the code; to `follow`, as the code beside
+ * follows the review the keyboard is on, nothing recorded and focus where it is. Without the
+ * thread, as before the threads are read, `go` shows the diff as it is, and `follow` does nothing.
+ */
+export function showReviewInDiff(tab: string, row: Row, how: ShowHow): void {
+  if (row.kind !== 'review') return;
+  const author = row.author?.login;
+  const thread =
+    author === undefined
+      ? undefined
+      : firstThreadOf(tab, { author, from: row.started, to: row.at });
+  if (thread !== undefined && goToThread(tab, thread, how)) return;
+  if (how === 'go') showDiff(tab);
+}
 
 /** Whether `target`, what a click landed on, is in a link or button of a row, or in an edit box. */
 export function inStop(target: EventTarget | null): boolean {

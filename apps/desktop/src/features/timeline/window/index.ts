@@ -2,7 +2,7 @@
 // views, read the first time it's shown, its keys, and its rows' menu: `c` comments on the pull
 // request in the box at its end, and `i` and `dd` edit and delete your comments there.
 
-import { handlers } from '@lo/ui/commands';
+import { handlers, type RowTarget } from '@lo/ui/commands';
 import { createElement } from 'react';
 
 import type { WindowFeature } from '../../../window/features.ts';
@@ -15,16 +15,18 @@ import {
 } from '../../comments/window/shared.ts';
 import { middle, showingMiddle, type PullTab } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
-import { showDiff } from '../../diff/window/shared.ts';
 import {
   compare,
+  hasCode,
   move,
   nextLink,
   onRow,
   onScreen,
   openOnGithub,
   revealHidden,
+  showReviewInDiff,
   stillHidden,
+  stopWithFocus,
 } from './actions.ts';
 import { main, revisions } from './main.ts';
 import type { Row } from './rows.ts';
@@ -48,6 +50,26 @@ function whyNot(tab: PullTab, row: Row, change: 'edit' | 'delete'): string | und
   const comment = yourCommentIn(tab, row, change);
   return typeof comment === 'string' ? comment : undefined;
 }
+
+/** Show in diff, on a review with comments. */
+const inDiff = onRow(
+  (row) => (hasCode(row) ? undefined : 'No comments from this event'),
+  (row, { tab }) => showReviewInDiff(tab.id, row, 'go'),
+);
+
+/**
+ * Show in diff, and `⏎` on the timeline: on a link or button in a row that has focus, the key is
+ * the link's or button's own, as it is anywhere.
+ */
+const shownInDiff = {
+  run: async (target: RowTarget) => {
+    const stop = stopWithFocus();
+    if (stop) stop.click();
+    else await inDiff.run(target);
+  },
+  enabled: (target: RowTarget) => stopWithFocus() !== undefined || inDiff.enabled(target),
+  listed: inDiff.listed,
+};
 
 export default {
   commands: handlers(keys, {
@@ -82,13 +104,7 @@ export default {
         stillHidden(tab.id, row) ? undefined : 'This event isn’t a hidden comment',
       (row, timeline) => revealHidden(timeline, row.key),
     ),
-    showInDiff: onRow(
-      (row) =>
-        row.kind === 'review' && row.comments > 0 ? undefined : 'No comments from this event',
-      (_, { tab }) => {
-        showDiff(tab.id);
-      },
-    ),
+    showInDiff: shownInDiff,
     compare: onRow(
       (row) =>
         row.kind === 'forcePush' && row.compare ? undefined : 'Nothing to compare on this event',
@@ -109,6 +125,7 @@ export default {
       id: TIMELINE_VIEW,
       order: 30,
       label: 'Timeline',
+      kind: 'reading',
       render: ({ tab, shown }) => createElement(TimelineMiddle, { tab, shown }),
     }),
   ],

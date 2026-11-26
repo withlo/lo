@@ -310,7 +310,6 @@ export function Shown({
   scroller,
   onScreen = true,
   focused,
-  beside = false,
 }: {
   tab: PullTab;
   standing: ShownStanding;
@@ -319,8 +318,6 @@ export function Shown({
   onScreen?: boolean;
   /** The block that shows its ring and its keys, by its number. */
   focused?: number | undefined;
-  /** Whether the code is beside it, which takes the outline's room. */
-  beside?: boolean;
 }) {
   const { parsed, result, commit, header } = standing;
   const { outcome } = result.checked;
@@ -357,8 +354,7 @@ export function Shown({
     }),
     [tab, parsed.tree, header.commit, written, head, result.code, code],
   );
-  // What each focused block's chip offers, run on that block, asked again as the code beside opens
-  // or closes, which one of them then does.
+  // What each focused block's chip offers, run on that block.
   const generation = context.tree;
   const hints = useCallback(
     (block: Parameters<typeof blockHints>[0], number: number) =>
@@ -366,7 +362,7 @@ export function Shown({
         ...hint,
         target: { kind: 'block' as const, block: blockId(generation, number) },
       })),
-    [generation, beside],
+    [generation],
   );
   const excerpt = useCallback(
     (node: Excerpt) => <ExcerptBlock node={node} context={context} />,
@@ -441,7 +437,6 @@ export function Shown({
           drawing={drawing}
           seen={seen}
           focused={focused}
-          outline={!beside}
           outlineFoot={<OutlineFoot drawing={drawing} />}
           hints={hints}
           onFollow={follow}

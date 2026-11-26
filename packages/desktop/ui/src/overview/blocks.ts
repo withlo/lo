@@ -60,9 +60,9 @@ export function isStop(block: OverviewBlock): boolean {
 export function blockHints(block: OverviewBlock): readonly BlockHint[] {
   switch (block.kind) {
     case 'excerpt':
-      return [FOLLOW, BESIDE];
+      return [FOLLOW];
     case 'walkthrough':
-      return [STEP, FOLLOW, BESIDE];
+      return [STEP, FOLLOW];
     case 'figure':
       return block.parts.length > 0 ? [LINK, FOLLOW] : [];
     case 'tabs':
@@ -89,7 +89,6 @@ export function blockHints(block: OverviewBlock): readonly BlockHint[] {
 }
 
 const FOLLOW: BlockHint = { command: 'overview.follow' };
-const BESIDE: BlockHint = { command: 'overview.beside' };
 const STEP: BlockHint = { command: 'overview.nextStep' };
 const LINK: BlockHint = { command: 'overview.nextLink' };
 

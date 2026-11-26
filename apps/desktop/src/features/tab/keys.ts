@@ -1,8 +1,9 @@
 // The tab strip's keys: a tab by its place, the next and previous tab, moving one, the tabs that
 // don't fit and closing one. They work wherever focus is, a text field included, but not under a
 // dialog or a palette, which hold the keys while they're open. And a pull request's tab's: its left
-// and right panels, the width of what has focus and the window's layout, its middle views, its
-// local copy's folder, and the account to open it as.
+// and right panels, the code beside a reading view, the width of what has focus and the window's
+// layout, its middle views and going from one to the other, its local copy's folder, and the
+// account to open it as.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -13,6 +14,9 @@ const outside: When = { except: ['dialog', 'palette'] };
  * a palette or a comment box, and in code views in normal mode, over Vim's own, as `` ` `` does.
  */
 const sizing: When = { except: ['menu', 'dialog', 'palette', 'box'], mode: 'normal' };
+
+/** Where `o` puts the code beside: as the keys that size what has focus, but not in the merge panel. */
+const besideWhen: When = { except: ['menu', 'dialog', 'palette', 'box', 'merge'], mode: 'normal' };
 
 /** The command that shows the tab at `position` in the strip, by `⌘` and its number. */
 const place = (position: number) => ({
@@ -119,8 +123,36 @@ export default defineCommands('tab', {
     toggle: 'switch',
   },
   /**
-   * Widens what has focus by a step, as dragging its edge does: a panel, while focus is in it. A
-   * held key goes on widening it, to its limit.
+   * Puts the diff beside the reading view, the overview or the timeline, inline, in every pull
+   * request's tab, or takes it away: an arrangement of the window's, kept as it is. From the diff
+   * alone, the tab's reading view comes on its left. Focus stays where it is; taken away, the view
+   * that had focus stays.
+   */
+  beside: {
+    label: 'Code beside',
+    description: 'The diff to the right of the overview or the timeline.',
+    group: 'View',
+    keys: ['o'],
+    overVim: true,
+    when: besideWhen,
+    bar: { menu: 'View', section: 'panels', order: 30 },
+    toggle: 'switch',
+  },
+  /**
+   * Gives focus to the other of two views on screen, the reading view or the code, as a click in it
+   * does. With room for only one, the other is drawn in its place.
+   */
+  otherView: {
+    label: 'Go to other view',
+    group: 'Go',
+    keys: ['\\'],
+    when: sizing,
+    control: 'a click in the other view',
+    bar: { menu: 'Go', section: 'history', order: 30 },
+  },
+  /**
+   * Widens what has focus by a step, as dragging its edge does: a panel, while focus is in it, or
+   * with the code beside, the view focus is in. A held key goes on widening it, to its limit.
    */
   widen: {
     label: 'Widen',
@@ -168,7 +200,8 @@ export default defineCommands('tab', {
   },
   /**
    * The next of a pull request's middle views the header's switch lists: overview, diff, timeline,
-   * round the end. A file whole isn't one of them: it opens from a file, and `⌃o` goes back.
+   * round the end; with the code beside, the next reading view, in the reading view's place. A file
+   * whole isn't one of them: it opens from a file, and `⌃o` goes back.
    */
   nextView: {
     label: 'Next view',

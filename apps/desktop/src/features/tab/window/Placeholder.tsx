@@ -5,12 +5,22 @@
 // A tab that's opening is one wait, whichever view draws it: the tab before it has a view, the
 // overview while it chooses what to open on, the diff until its files are drawn. Each draws this,
 // and each takes the wait up where the last left it: the mark keeps going round where it was on
-// screen, and only its line changes, swapping in what the view reads.
+// screen, and only its line changes, swapping in what the view reads. With the code beside, while
+// both views wait, the tab draws one of them across the middle, so it's one wait there too.
 
 import { Loading, LOADING_DELAY_MS } from '@lo/ui';
 import { keyLabels } from '@lo/ui/commands';
-import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import {
+  createContext,
+  use,
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from 'react';
 import { useStore } from 'zustand';
+import { createStore } from 'zustand/vanilla';
 
 import { registry, useKeys } from '../../../window/commands/registry.ts';
 import { main } from './main.ts';
@@ -32,6 +42,34 @@ interface Wait {
 }
 
 const waits = new Map<string, Wait>();
+
+/** The middle view a placeholder is drawn in, by its id, as the tab draws each view. */
+export const MiddleViewOf = createContext<string | undefined>(undefined);
+
+/** The middle views each tab has waiting, drawing a placeholder, by tab and view, with how many. */
+const waitingViews = createStore<ReadonlyMap<string, ReadonlyMap<string, number>>>()(
+  () => new Map(),
+);
+
+/** Counts a placeholder in view `view` of tab `tab` in (1) or out (-1). */
+function countWaiting(tab: string, view: string, by: 1 | -1): void {
+  const all = new Map(waitingViews.getState());
+  const views = new Map(all.get(tab));
+  const count = (views.get(view) ?? 0) + by;
+  if (count > 0) views.set(view, count);
+  else views.delete(view);
+  if (views.size > 0) all.set(tab, views);
+  else all.delete(tab);
+  waitingViews.setState(all, true);
+}
+
+/** Whether each of `views` in tab `tab` draws only a placeholder, re-rendering as that changes. */
+export function useAllWaiting(tab: string, views: readonly string[]): boolean {
+  return useStore(waitingViews, (all) => {
+    const waiting = all.get(tab);
+    return views.length > 0 && views.every((view) => (waiting?.get(view) ?? 0) > 0);
+  });
+}
 
 /** The room a held mark keeps from its box's edges: enough for it, its line and Cancel. */
 const HELD_MARGIN = 72;
@@ -124,6 +162,13 @@ function closeKeys(): string[] | undefined {
 export function Placeholder({ tab, status }: { tab: string; status?: string | undefined }) {
   const view = useStore(pullsStore, (state) => state.views.get(tab));
   const { since, before } = useWait(tab);
+  // The view it's drawn in waits while it's there.
+  const middle = use(MiddleViewOf);
+  useLayoutEffect(() => {
+    if (middle === undefined) return undefined;
+    countWaiting(tab, middle, 1);
+    return () => countWaiting(tab, middle, -1);
+  }, [tab, middle]);
   const box = useHeldPlace(tab);
   const shown = useCallback(
     (line: string) => {

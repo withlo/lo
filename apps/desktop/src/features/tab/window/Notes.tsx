@@ -142,7 +142,7 @@ export function TabFailed({ tab, view }: { tab: PullTab; view: PullView | undefi
       onClick: () => run(tab.id, each.do),
     });
     return (
-      <div className="absolute inset-0 bg-bg" data-lo-failed>
+      <div className="absolute inset-0 sheet" data-lo-failed>
         <Problem
           layout="view"
           title={failure.title}
@@ -222,7 +222,7 @@ function Accounts({
   return (
     <div
       ref={box}
-      className="absolute inset-0 bg-bg"
+      className="absolute inset-0 sheet"
       data-lo-failed
       onPointerDownCapture={() => {
         pointed.current = true;

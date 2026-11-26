@@ -30,15 +30,53 @@ export interface Middle {
    * to it. Asking closes nothing, so the palette can ask whether `Esc` would do anything.
    */
   escape?(focused: Element | null): (() => void) | undefined;
+  /**
+   * The view's own element, for a view one of two on screen side by side, as a pull request's
+   * reading view and its code are: of those, the one focus is in, or was in last, is the middle.
+   */
+  root?(): Element | null;
 }
 
 let current: Registry | undefined;
 /** The views that are the middle of the window, the newest on top: a cover over a tab's own. */
 const middles: Middle[] = [];
 
-/** The middle view now: the newest one still there. */
+/** What focus was last on in a view side by side with another, to tell which had it last. */
+let lastIn: Element | undefined;
+
+/** Notes where focus goes, while it goes into a view side by side with another. */
+function noteFocus(event: FocusEvent): void {
+  const { target } = event;
+  if (!(target instanceof Element)) return;
+  if (middles.some((view) => view.root?.()?.contains(target))) lastIn = target;
+}
+
+/**
+ * The middle view now: the newest one still there, or, where it's one of the views side by side
+ * at the top, the one of them focus is in, or was in last.
+ */
 function middle(): Middle | undefined {
-  return middles.at(-1);
+  const top = middles.at(-1);
+  if (!top?.root) return top;
+  const beside: Middle[] = [];
+  for (let at = middles.length - 1; at >= 0 && middles[at]!.root; at--) beside.push(middles[at]!);
+  const focused = document.activeElement;
+  const holding = (element: Element | null | undefined) =>
+    element ? beside.find((view) => view.root?.()?.contains(element)) : undefined;
+  return holding(focused) ?? holding(lastIn) ?? top;
+}
+
+/**
+ * Gives focus to the middle view drawn in `element`, one of the views side by side: as `\` goes to
+ * the other view. Says whether there's one there.
+ */
+export function focusMiddleIn(element: Element): boolean {
+  const view = middles.findLast((each) => {
+    const root = each.root?.();
+    return root !== null && root !== undefined && element.contains(root);
+  });
+  view?.focus();
+  return view !== undefined;
 }
 
 /** Builds the window's registry from every feature's commands. */
@@ -78,11 +116,18 @@ export function useKeys(): number {
   );
 }
 
+/** Whether the window notes where focus goes, which it does once a view side by side is drawn. */
+let listening = false;
+
 /**
  * Makes `view` the middle view. Returns a function that takes it back, for when the view goes: the
  * one it covered, if it's still there, is the middle again.
  */
 export function setMiddle(view: Middle): () => void {
+  if (view.root && !listening) {
+    listening = true;
+    document.addEventListener('focusin', noteFocus, true);
+  }
   middles.push(view);
   return () => {
     const at = middles.lastIndexOf(view);

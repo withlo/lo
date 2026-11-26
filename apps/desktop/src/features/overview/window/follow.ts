@@ -2,8 +2,8 @@
 // each tab, which the keys act on; the block that has focus, or the one at the top of the screen;
 // `]b` and `[b`, `Tab` within a block, stepping a walkthrough or tabs, and the article's scroll;
 // following a block, link or part to its code, which the tab's history records so `⌃o` comes back
-// to the block; and the code beside the overview, which follows the block that has focus. Nothing
-// here moves what's on screen but a key, a click or a menu asks it to.
+// to the block; and, with code beside, the diff following the block that has focus to its code.
+// Nothing here moves what's on screen but a key, a click or a menu asks it to.
 
 import type { OverviewTree } from '@lo/artifact';
 import { KEY_EVENT, type Entry, type Target } from '@lo/ui/commands';
@@ -19,7 +19,7 @@ import {
 
 import { refuse } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
-import { showPlace } from '../../diff/window/shared.ts';
+import { showPlace, type ShowHow } from '../../diff/window/shared.ts';
 import { holdLimit } from '../../revisions/window/shared.ts';
 import { settingNow } from '../../settings/window/shared.ts';
 import { showInstead, showMiddle, tabState } from '../../tab/window/shared.ts';
@@ -36,7 +36,7 @@ export interface DrawnOverview {
   readonly tree: OverviewTree;
   /** The number Lo gave the tree, which its blocks' ids carry. */
   readonly generation: number;
-  /** The view's own element, around the overview and the code beside it. */
+  /** The view's own element, around the overview. */
   readonly root: HTMLElement;
   /** The overview's scrolling element, once it's drawn. */
   scroller(): HTMLElement | null;
@@ -56,9 +56,6 @@ export function setDrawn(overview: DrawnOverview): () => void {
 export function drawnIn(tab: string): DrawnOverview | undefined {
   return drawn.get(tab);
 }
-
-/** The block whose code is beside the overview in each tab, by its id, while it's open. */
-export const besides = tabState<string | undefined>(() => undefined);
 
 /** The number Lo gave the tree each tab's overview last showed, whose blocks history can reveal. */
 export const trees = tabState<number | undefined>(() => undefined);
@@ -85,30 +82,18 @@ export function focusedBlock(overview: DrawnOverview): HTMLElement | undefined {
   return article ? blockOf(article, document.activeElement) : undefined;
 }
 
-/** The block whose code is beside the overview, while it's open. */
-function besideBlock(overview: DrawnOverview): HTMLElement | undefined {
-  const id = besides.get(overview.tab);
-  const index = id === undefined ? undefined : blockIn(id, overview.generation);
-  return index === undefined ? undefined : blockElement(overview, index);
-}
-
-/** Whether focus is in the view, the overview or the code beside it. */
-function focusIn(overview: DrawnOverview): boolean {
-  return overview.root.contains(document.activeElement);
-}
-
-/**
- * The block the reader is at: the one with focus; while focus is in the code beside, the one that
- * shows it; otherwise the first at the top of the screen.
- */
+/** The block the reader is at: the one with focus, or else the first at the top of the screen. */
 export function currentBlock(overview: DrawnOverview): HTMLElement | undefined {
-  const focused = focusedBlock(overview);
-  if (focused) return focused;
-  if (focusIn(overview)) {
-    const beside = besideBlock(overview);
-    if (beside) return beside;
-  }
-  return onScreen(overview)[0];
+  return focusedBlock(overview) ?? onScreen(overview)[0];
+}
+
+/** Where on the page the block the reader is at sits, by its number, to keep it there. */
+export function placeIn(overview: DrawnOverview): { block: number; top: number } | undefined {
+  const block = currentBlock(overview);
+  const index = block && blockNumber(block);
+  return block && index !== undefined
+    ? { block: index, top: block.getBoundingClientRect().top }
+    : undefined;
 }
 
 /** The blocks with any of themselves on screen, first to last. */
@@ -247,9 +232,7 @@ export function nextBlock(
     return NOT_DRAWN;
   }
   const stops = blockStops(article);
-  const focused = fromScreen
-    ? undefined
-    : (focusedBlock(overview) ?? (focusIn(overview) ? besideBlock(overview) : undefined));
+  const focused = fromScreen ? undefined : focusedBlock(overview);
   let next: HTMLElement | undefined;
   if (focused) {
     next = stops[stops.indexOf(focused) + by];
@@ -328,8 +311,8 @@ export function focusLink(overview: DrawnOverview, element: HTMLElement | SVGEle
 
 /**
  * The control with focus in the overview's view, if it's outside the overview's blocks: a section
- * in its outline, the byline's offer, a link no block holds, or the button over the code beside
- * it. With no overview drawn, any of the view's own, such as its Retry now.
+ * in its outline, the byline's offer, or a link no block holds. With no overview drawn, any of the
+ * view's own, such as its Retry now.
  */
 export function looseControl(overview: DrawnOverview | undefined): HTMLElement | undefined {
   const active = document.activeElement;
@@ -411,6 +394,15 @@ export function follow(overview: DrawnOverview, block: HTMLElement): void {
 }
 
 /**
+ * With code beside the overview, has the diff follow `block`, which focus just landed on, to the
+ * code it points at, as `⏎` would show it: nothing recorded, nothing said, and focus where it is.
+ */
+export function followBlock(overview: DrawnOverview, block: HTMLElement): void {
+  const code = codeIn(overview, block);
+  if (code) goToCode(overview.tab, code, 'follow');
+}
+
+/**
  * What the reader does that stops code waiting to be placed, as they've moved on: a key, as the key
  * listener tells of it once it's their input (`KEY_EVENT`), those Lo's commands take among them; a
  * click; or the wheel.
@@ -426,13 +418,13 @@ const placings = new Map<string, () => void>();
  * place the tab is at recorded first. Until Lo knows how the file changed since the commit, it
  * waits, for up to `holdLimit()`, then goes where the lines were; the reader moving on first stops
  * it. For a file gone from the head on screen, or lines Lo can't place there, a note says why it
- * can't.
+ * can't. To `follow`, as the code beside follows a block, records nothing and says nothing.
  */
-export function goToCode(tab: string, code: CodeAt): void {
+export function goToCode(tab: string, code: CodeAt, how: ShowHow = 'go'): void {
   placings.get(tab)?.();
   const working = placing(tab, code.path);
   if (!working) {
-    goOnHead(tab, code);
+    goOnHead(tab, code, how);
     return;
   }
   const stop = () => {
@@ -443,7 +435,7 @@ export function goToCode(tab: string, code: CodeAt): void {
   const go = () => {
     if (placings.get(tab) !== stop) return;
     stop();
-    goOnHead(tab, code);
+    goOnHead(tab, code, how);
   };
   const bound = setTimeout(go, holdLimit());
   void working.then(go, go);
@@ -453,10 +445,16 @@ export function goToCode(tab: string, code: CodeAt): void {
 }
 
 /** Shows `code` where it is at the head on screen, as far as Lo knows, or says why it can't. */
-function goOnHead(tab: string, code: CodeAt): void {
+function goOnHead(tab: string, code: CodeAt, how: ShowHow): void {
   const { path, lines } = code;
   const head = placeOnHead(tab, path, lines);
   const since = writtenIn(tab);
+  if (how === 'follow') {
+    if (head && (!lines || head.line !== undefined)) {
+      showPlace(tab, head.path, head.line, head.lines, 'new', how);
+    }
+    return;
+  }
   if (!head) {
     const name = path.slice(path.lastIndexOf('/') + 1);
     refuse(since === undefined ? `${name} was deleted` : `${name} was deleted since ${since}`);
@@ -549,77 +547,6 @@ export function scroll(overview: DrawnOverview, how: Scroll): void {
       how satisfies never;
       throw new Error(`A scroll Lo doesn’t know: ${String(how)}.`);
   }
-}
-
-/** Where on the page the block the reader was at sat as the code beside came or went. */
-const kept = new Map<string, { block: number; top: number }>();
-
-/** Notes where on the page the block the reader is at sits, for `keptPlace`. */
-function keepPlace(overview: DrawnOverview): void {
-  const block = currentBlock(overview);
-  const index = block && blockNumber(block);
-  if (!block || index === undefined) {
-    kept.delete(overview.tab);
-    return;
-  }
-  kept.set(overview.tab, { block: index, top: block.getBoundingClientRect().top });
-}
-
-/**
- * Where on the page the block the reader was at sat in tab `tab`'s overview as the code beside
- * last came or went, once: the overview, narrower or wider, scrolls to put it back there.
- */
-export function keptPlace(tab: string): { block: number; top: number } | undefined {
-  const place = kept.get(tab);
-  kept.delete(tab);
-  return place;
-}
-
-/**
- * Opens the code beside the overview for `block`, or the first block with code on screen without
- * one; or closes it, when it's open. Says why, when there's no code to show.
- */
-export function toggleBeside(overview: DrawnOverview, block: HTMLElement | undefined): void {
-  if (besides.get(overview.tab) !== undefined) {
-    keepPlace(overview);
-    besides.set(overview.tab, undefined);
-    return;
-  }
-  const chosen = besideFor(overview, block);
-  if (typeof chosen === 'string') return;
-  keepPlace(overview);
-  besides.set(overview.tab, blockId(overview.generation, chosen));
-}
-
-/** The block the code beside opens for: `block`, or the first with code on screen. Or why none. */
-export function besideFor(
-  overview: DrawnOverview,
-  block: HTMLElement | undefined,
-): number | string {
-  const chosen = block ?? onScreen(overview).find((each) => codeIn(overview, each) !== undefined);
-  const index = chosen && blockNumber(chosen);
-  if (!chosen || index === undefined) return 'Go to a code block first';
-  return codeIn(overview, chosen) ? index : 'No code in this block';
-}
-
-/** Closes the code beside the overview in tab `tab`, if it's open, and says whether it was. */
-export function closeBeside(tab: string): boolean {
-  if (besides.get(tab) === undefined) return false;
-  const overview = drawn.get(tab);
-  if (overview) keepPlace(overview);
-  besides.set(tab, undefined);
-  return true;
-}
-
-/**
- * Closes the code beside the overview, if it's open, focus going to the block the reader is at.
- * Says whether it was open.
- */
-export function closeBesideAt(overview: DrawnOverview): boolean {
-  const block = currentBlock(overview);
-  if (!closeBeside(overview.tab)) return false;
-  if (block) focusTargetOf(block).focus({ preventScroll: true });
-  return true;
 }
 
 /** The tabs whose newer overview was asked for, with the tree each showed then, if any. */

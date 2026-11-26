@@ -64,6 +64,39 @@ describe('SegmentedControl', () => {
     expect(markup(false)).toMatch(/<kbd(?![^>]*invisible)[^>]*>t<\/kbd>/);
     expect(markup(true)).toMatch(/<kbd[^>]*invisible[^>]*>t<\/kbd>/);
   });
+  it('marks every view on screen current, and a click on one that is gives it focus', () => {
+    const views = [
+      { value: 'overview', label: 'Overview' },
+      { value: 'diff', label: 'Diff' },
+      { value: 'timeline', label: 'Timeline' },
+    ] as const;
+    const chose: string[] = [];
+    const host = render(
+      <SegmentedControl
+        label="View"
+        kind="views"
+        items={views}
+        value="timeline"
+        current={['diff', 'timeline']}
+        onChange={(view) => chose.push(view)}
+      />,
+    );
+    const marks = [...host.querySelectorAll('[role="tab"]')].map((tab) => [
+      tab.textContent,
+      tab.getAttribute('aria-current'),
+      tab.getAttribute('aria-selected'),
+    ]);
+    expect(marks).toEqual([
+      ['Overview', null, 'false'],
+      ['Diff', 'true', 'false'],
+      ['Timeline', 'true', 'true'],
+    ]);
+    // Both on screen take a click, the chosen one too, for focus.
+    click(segment(host, 'Timeline'));
+    click(segment(host, 'Diff'));
+    click(segment(host, 'Overview'));
+    expect(chose).toEqual(['timeline', 'diff', 'overview']);
+  });
 });
 
 /** The panel with its switch, `waiting` while the files are read. */

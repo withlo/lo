@@ -16,7 +16,14 @@ import { defineView } from '../../../window/slots.tsx';
 import { followOverviews } from '../../overview/window/shared.ts';
 import { changeSetting, settingNow, settingRow } from '../../settings/window/shared.ts';
 import { contract as tabContract, viewIds } from '../../tab/contract.ts';
-import { activeTab, middle, showingMiddle, status, type PullTab } from '../../tab/window/shared.ts';
+import {
+  activeTab,
+  besideNow,
+  middle,
+  showingMiddle,
+  status,
+  type PullTab,
+} from '../../tab/window/shared.ts';
 import type { TreePath } from '../../tree/contract.ts';
 import type { FileVersions } from '../contract.ts';
 import keys from '../keys.ts';
@@ -28,7 +35,7 @@ import { main } from './main.ts';
 import { fromMoved, movedNow } from './moved.ts';
 import { keepPlaces, openWhole, showTreeFiles } from './places.ts';
 import { DiffStatus } from './Status.tsx';
-import { keepOnly, keysDiff, loaderOf, takeState, type Drawn } from './tabs.ts';
+import { drawnFor, keepOnly, loaderOf, takeState, type Drawn } from './tabs.ts';
 import { threader } from './threads.ts';
 import { markViewed, viewedAt, viewedEnabled } from './viewed.ts';
 import { spansOf } from './spans.ts';
@@ -49,12 +56,12 @@ import {
 
 const tabs = () => client(tabContract);
 
-/** The diff on screen, or the file of it beside another view that has focus, or why a key can't run. */
+/** The diff on screen, or why a key can't run. */
 function onScreen(): Drawn | string {
   const tab = activeTab();
   if (tab?.kind !== 'pull') return 'Open a pull request first';
   if (wholeDrawn(tab.id)) return 'Go to the diff first';
-  return keysDiff(tab.id) ?? 'Reading changed files…';
+  return drawnFor(tab.id) ?? 'Reading changed files…';
 }
 
 /** Runs `act` on the diff on screen. */
@@ -215,11 +222,11 @@ async function setLayout({ view }: Drawn, next: 'split' | 'inline'): Promise<voi
   await changeSetting(layout, next);
 }
 
-/** Whether the diff on screen can change its layout: code beside another view can't. */
+/** Whether the diff on screen can change its layout: code beside a reading view is inline. */
 function layoutNow(): true | string {
   const drawn = onScreen();
   if (typeof drawn === 'string') return drawn;
-  return !drawn.beside || 'Code beside is always inline';
+  return !besideNow() || 'Code beside is inline';
 }
 
 /** What a copy says once it's done, or what failed, in a note: no button in view says it. */
@@ -303,17 +310,18 @@ export default {
         return typeof code === 'string' ? code : true;
       },
     },
+    // Checked as the diff is drawn: inline beside a reading view, whatever Settings says.
     sideBySide: {
       run: withDiff((drawn) => setLayout(drawn, 'split')),
       enabled: layoutNow,
-      checked: () => settingNow(layout) === 'split',
+      checked: () => !besideNow() && settingNow(layout) === 'split',
     },
     inline: {
       run: withDiff((drawn) =>
         setLayout(drawn, drawn.view.probe.layout === 'split' ? 'inline' : 'split'),
       ),
       enabled: layoutNow,
-      checked: () => settingNow(layout) === 'inline',
+      checked: () => besideNow() || settingNow(layout) === 'inline',
     },
     whitespace: {
       run: withDiff(async ({ loader }) => {
@@ -430,6 +438,7 @@ export default {
       id: DIFF_VIEW,
       order: 20,
       label: 'Diff',
+      kind: 'code',
       render: ({ tab, shown }) => createElement(Diff, { tab, shown }),
     }),
     // After the diff. With no label, it's not one of the views `` ` `` steps through: a file opens
@@ -437,6 +446,7 @@ export default {
     defineView(middle, {
       id: WHOLE_VIEW,
       order: 25,
+      kind: 'code',
       render: ({ tab, shown }) => createElement(WholeFile, { tab, shown }),
     }),
     defineView(status, {

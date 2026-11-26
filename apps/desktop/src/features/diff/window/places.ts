@@ -1,8 +1,10 @@
 // Where the keys and the tree take a pull request's tab's diff and its whole-file view: a place in
 // the tab's history, shown in the view it's in, which comes on screen to show it, and in the diff
 // in the comparison it was in, which is compared again first; a changed file the tree shows in the
-// diff; a review thread another feature shows in the diff; and any file opened whole. Only one
-// middle view is drawn at a time, so a place in the other waits for it to be drawn.
+// diff; a review thread another feature shows in the diff; and any file opened whole. A place in a
+// view not on screen waits for it to be drawn. With code beside a reading view, the code on screen
+// shows a link's place where it is, and the line Lands; and it follows what has focus in the reading
+// view, recording nothing and leaving focus there.
 
 import { KEY_EVENT, type Side, type Target } from '@lo/ui/commands';
 
@@ -14,7 +16,7 @@ import {
   comparisonHere,
   holdLimit,
 } from '../../revisions/window/shared.ts';
-import { showMiddle } from '../../tab/window/shared.ts';
+import { besideNow, focusInView, showMiddle } from '../../tab/window/shared.ts';
 import { fileKey, type TreePath } from '../../tree/contract.ts';
 import { onShowFile, pathOf } from '../../tree/window/shared.ts';
 import type { Version } from '../contract.ts';
@@ -25,6 +27,48 @@ import { changeAt, changedIn, DIFF_VIEW, known, opened, versionOf, WHOLE_VIEW } 
 
 /** How many files have been asked to open whole, so each ask is told from the last. */
 let asks = 0;
+
+/**
+ * How a place in code is shown: `go`, as a link to code goes, a jump recorded in the tab's history
+ * first, with focus going to the code; `follow`, as the code beside a reading view follows what has
+ * focus there, with nothing recorded, nothing said, and focus where it is.
+ */
+export type ShowHow = 'go' | 'follow';
+
+/** A follow asked for while a key repeats, which waits for the key to come up: only the last. */
+let afterRepeat: (() => void) | undefined;
+/** Whether the key held down repeats, as the window last heard. */
+let repeating = false;
+/** Whether the window's keys are heard for that yet. */
+let hearing = false;
+
+/** Runs `follow` now, or while a key repeats, once the key comes up: the code waits for the last press. */
+function whenRested(follow: () => void): void {
+  if (!hearing) {
+    hearing = true;
+    window.addEventListener(
+      'keydown',
+      (event) => {
+        repeating = event.repeat;
+      },
+      true,
+    );
+    const rest = () => {
+      repeating = false;
+      const run = afterRepeat;
+      afterRepeat = undefined;
+      run?.();
+    };
+    window.addEventListener('keyup', rest, true);
+    window.addEventListener('blur', rest);
+  }
+  if (repeating) {
+    afterRepeat = follow;
+    return;
+  }
+  afterRepeat = undefined;
+  follow();
+}
 
 /**
  * Records where the tab is in the middle view in its history, as a jump does: for the middle
@@ -40,7 +84,8 @@ function leave(): void {
 /**
  * Opens the file `key`, at `path`, whole in tab `tab`, in `version` where it has one, with its
  * cursor at `at` when given and the lines `marked` picked out, and brings the whole-file view on
- * screen. Focus goes to it with `focus`, and otherwise only when it's nowhere in particular.
+ * screen. Focus goes to it with `focus`, and otherwise only when it's nowhere in particular. Where
+ * the tab was is recorded in its history first, unless it's a `follow`.
  */
 export function openWhole(
   tab: string,
@@ -52,8 +97,9 @@ export function openWhole(
     marked?: { from: number; to: number } | undefined;
     focus: boolean;
   },
+  how: ShowHow = 'go',
 ): void {
-  leave();
+  if (how === 'go') leave();
   const loader = loaderOf(tab);
   const change = changedIn(loader.snapshot().state?.files, file.key);
   asks += 1;
@@ -80,7 +126,8 @@ export type ShowWhen = 'now' | 'drawn' | 'both';
  * Shows review thread `thread` in tab `tab`'s diff, as `when` says: opens it and puts its line at
  * the top of the screen, a jump. With the diff on screen, `now` says whether it has the thread; a
  * diff not on screen comes on screen, and shows it once it's drawn with it, unless the reader does
- * anything else first. Focus stays where it is.
+ * anything else first. Focus stays where it is, as in the threads panel, which asks this: but with
+ * code beside a reading view, the line Lands, and focus in either view goes to the code.
  */
 export function showThread(tab: string, thread: string, when: ShowWhen): boolean {
   const drawn = drawnFor(tab);
@@ -89,13 +136,54 @@ export function showThread(tab: string, thread: string, when: ShowWhen): boolean
     if (!has && when === 'now') return false;
     leave();
     shown(tab);
-    if (has) drawn.view.showThread(thread);
+    if (has) {
+      drawn.view.showThread(thread);
+      if (besideNow()) {
+        const at = { kind: 'thread', thread } as const;
+        drawn.view.land(at);
+        if (focusInView()) drawn.view.focus();
+      }
+    }
     if (when === 'both') wantThread(tab, thread);
     return true;
   }
   leave();
-  wantThread(tab, thread);
+  wantThread(tab, thread, besideNow() && focusInView());
   if (!drawn) showMiddle(tab, DIFF_VIEW);
+  return true;
+}
+
+/**
+ * Shows review thread `thread` in tab `tab`'s diff, as a link to code does, `how` says how: to `go`
+ * is a jump, the thread shown as the view shows one, the cursor on its line and focus in the code;
+ * to `follow` brings its line on screen only if it's off it, once a key held to get there is let
+ * go. Either opens it, and with code beside a reading view, its line Lands. A diff not on screen
+ * comes on screen, and shows it once it's drawn with it, taking focus to `go`. Says whether the
+ * diff on screen has the thread; to `follow`, whether there's a diff on screen to follow it in.
+ */
+export function goToThread(tab: string, thread: string, how: ShowHow): boolean {
+  const drawn = drawnFor(tab);
+  if (!drawn) {
+    if (how === 'go') leave();
+    wantThread(tab, thread, how === 'go');
+    showMiddle(tab, DIFF_VIEW);
+    return true;
+  }
+  const at = { kind: 'thread', thread } as const;
+  if (how === 'follow') {
+    whenRested(() => {
+      if (drawnFor(tab) !== drawn || !drawn.view.openThread(thread, true)) return;
+      drawn.view.reveal(at);
+      if (besideNow()) drawn.view.land(at);
+    });
+    return true;
+  }
+  if (!drawn.view.openThread(thread, true)) return false;
+  leave();
+  shown(tab);
+  drawn.view.showThread(thread);
+  if (besideNow()) drawn.view.land(at);
+  drawn.view.focus();
   return true;
 }
 
@@ -125,7 +213,8 @@ const INPUT = [KEY_EVENT, 'pointerdown', 'wheel'] as const;
  * its history first, as a jump's place, and focus goes to the code. Until the diff's files are
  * known, which has the file isn't: a note says it waits for them, for up to `holdLimit()`. Past
  * that it's dropped; once the reader does anything else, it's dropped and the note goes with it. A
- * later place asked for in the tab takes its place.
+ * later place asked for in the tab takes its place. To `follow` records nothing and leaves focus
+ * where it is; it waits for no files, and for a key that repeats to come up.
  */
 export function showPlace(
   tab: string,
@@ -133,12 +222,19 @@ export function showPlace(
   line: number | undefined,
   marked?: { from: number; to: number },
   side: Side = 'new',
+  how: ShowHow = 'go',
 ): void {
+  if (how === 'follow') {
+    whenRested(() => {
+      if (loaderOf(tab).snapshot().state?.files) place(tab, path, line, marked, side, how);
+    });
+    return;
+  }
   leave();
   waiting.get(tab)?.();
   const loader = loaderOf(tab);
   if (loader.snapshot().state?.files) {
-    place(tab, path, line, marked, side);
+    place(tab, path, line, marked, side, how);
     return;
   }
   refuse(WAITING);
@@ -157,7 +253,7 @@ export function showPlace(
     if (!loader.snapshot().state?.files) return;
     stop();
     withdraw(WAITING, '');
-    place(tab, path, line, marked, side);
+    place(tab, path, line, marked, side, how);
   });
   // Not the key or click that asked for the place: the window has heard it already.
   for (const type of INPUT) window.addEventListener(type, moved, true);
@@ -171,9 +267,11 @@ function place(
   line: number | undefined,
   marked: { from: number; to: number } | undefined,
   side: Side,
+  how: ShowHow,
 ): void {
   const loader = loaderOf(tab);
   const change = changeAt(loader.snapshot().state?.files, path, side);
+  const focus = how === 'go';
   if (change) {
     const file = loader.ids.of(keyOf(change));
     // A file the pull request deletes has no head's side, nor one it adds a base's.
@@ -185,24 +283,29 @@ function place(
     const drawn = drawnFor(tab);
     if (drawn) {
       drawn.view.reveal(target);
-      drawn.view.focus();
+      if (besideNow()) drawn.view.land(target);
+      if (focus) drawn.view.focus();
       return;
     }
-    revealWhenDrawn(tab, { target, focus: true });
+    revealWhenDrawn(tab, { target, focus });
     showMiddle(tab, DIFF_VIEW);
     return;
   }
   const whole: TreePath = { text: path };
   const key = fileKey(whole);
   const file = loader.ids.of(key);
-  openWhole(tab, {
-    key,
-    path: whole,
-    version: 'new',
-    at: line === undefined ? undefined : { kind: 'line', at: { file, side: 'new', line } },
-    marked,
-    focus: true,
-  });
+  openWhole(
+    tab,
+    {
+      key,
+      path: whole,
+      version: 'new',
+      at: line === undefined ? undefined : { kind: 'line', at: { file, side: 'new', line } },
+      marked,
+      focus,
+    },
+    how,
+  );
 }
 
 /** The whole path of the file `key` names in tab `tab`, as it was opened, the diff has it, or the tree. */
@@ -281,15 +384,14 @@ function revealWhole(tab: string, target: Target): boolean {
  * Whether tab `tab`'s diff could still show `target`, in `within`, asked without showing it: a
  * file the comparison on screen has, drawn or read. A place in another comparison is compared
  * again first, and what can't be told counts as there: while another comparison is coming or the
- * files load, as a diff held while the next one loads, where GitHub listed only some, or with one
- * file drawn beside the overview.
+ * files load, as a diff held while the next one loads, or where GitHub listed only some.
  */
 function inDiff(tab: string, target: Target, within: string | undefined): boolean {
   if (within !== undefined && within !== comparisonHere(tab)) return true;
   const file = placeOf(target)?.file;
   const drawn = drawnFor(tab);
   const { ready } = loaderOf(tab).snapshot();
-  if (file === undefined || !drawn || drawn.beside || !ready || ready.partial) return true;
+  if (file === undefined || !drawn || !ready || ready.partial) return true;
   if (comparisonComing(tab) !== undefined) return true;
   return drawn.order.includes(file) || ready.entries.some((entry) => entry.id === file);
 }
@@ -339,7 +441,9 @@ function coming(tab: string, id: string): boolean {
 /**
  * Shows the files the tree asks for: a changed one in the diff, its header at the top of the
  * screen with focus staying in the tree, and the diff brought back to show it; any one whole.
- * Either is a jump, which `⌃o` comes back from, whether a key or a click asked for it.
+ * Either is a jump, which `⌃o` comes back from, whether a key or a click asked for it. With code
+ * beside a reading view, the header Lands, and focus in either view, as Go to file… gives it
+ * back there, goes to the code.
  */
 export function showTreeFiles(): void {
   onShowFile('diff', (tab, key) => {
@@ -351,6 +455,10 @@ export function showTreeFiles(): void {
       if (drawn.order.includes(target.file)) {
         leave();
         drawn.toTop(target.file);
+        if (besideNow()) {
+          drawn.view.land(target);
+          if (focusInView()) drawn.view.focus();
+        }
       } else if (coming(tab, target.file)) {
         // A view of other files is about to be drawn, as the local copy's are: it shows it.
         leave();
@@ -363,6 +471,6 @@ export function showTreeFiles(): void {
     showMiddle(tab, DIFF_VIEW);
   });
   onShowFile('whole', (tab, key, path) =>
-    openWhole(tab, { key, path, version: 'new', focus: false }),
+    openWhole(tab, { key, path, version: 'new', focus: besideNow() && focusInView() }),
   );
 }

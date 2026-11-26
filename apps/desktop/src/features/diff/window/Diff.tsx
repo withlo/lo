@@ -35,7 +35,13 @@ import {
   useViewedMarks,
 } from '../../revisions/window/shared.ts';
 import { useSetting } from '../../settings/window/shared.ts';
-import { MiddlePlaceholder, tabState, usePull, type PullTab } from '../../tab/window/shared.ts';
+import {
+  MiddlePlaceholder,
+  tabState,
+  useBeside,
+  usePull,
+  type PullTab,
+} from '../../tab/window/shared.ts';
 import { holdTree, orderIn, useOrderMode } from '../../tree/window/shared.ts';
 import type { DiffProblem } from '../contract.ts';
 import { layout as layoutSetting, whitespace as whitespaceSetting } from '../settings.ts';
@@ -105,7 +111,11 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
     orders.set(tab.id, kept);
     return kept.order;
   }, [ready, mode, tab.id]);
-  const layout = useSetting(layoutSetting);
+  // Code beside a reading view is inline, whatever Settings says: it's half the width.
+  const beside = useBeside(tab.id);
+  const chosen = useSetting(layoutSetting);
+  const layout = beside ? 'inline' : chosen;
+  const besideWas = useRef(beside);
   const whitespace = useSetting(whitespaceSetting);
   const marks = useViewedMarks(tab.id);
   const page = usePage();
@@ -294,9 +304,15 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
     [],
   );
 
-  useEffect(() => {
-    view.current?.view.setLayout(layout);
-  }, [layout]);
+  // The layout changes in the frame the code goes beside a reading view or comes back, and focus
+  // stays where it was, in the code or out of it; a layout chosen in Settings takes focus to the
+  // line the cursor's on.
+  useLayoutEffect(() => {
+    const moved = besideWas.current !== beside;
+    besideWas.current = beside;
+    const focus = !moved || box.current?.contains(document.activeElement) === true;
+    view.current?.view.setLayout(layout, { focus });
+  }, [layout, beside]);
 
   useEffect(() => {
     live(view.current)?.setShown(shown);

@@ -39,6 +39,12 @@ export interface SegmentedControlProps<T extends string> {
   items: readonly Segment<T>[];
   /** The segment chosen, if any is. */
   value: T | undefined;
+  /**
+   * For `views`, the segments whose views are on screen, where more than the chosen one is, as with
+   * the code beside a reading view: neighbours, which the thumb spans, each `aria-current`. A click
+   * on any of them calls `onChange`, as its view takes focus.
+   */
+  current?: readonly T[] | undefined;
   onChange: (value: T) => void;
   /** `sm` in panel toolbars and Settings' rows. */
   size?: 'md' | 'sm' | undefined;
@@ -96,6 +102,7 @@ export function SegmentedControl<T extends string>({
   kind,
   items,
   value,
+  current,
   onChange,
   size = 'md',
   keys,
@@ -110,26 +117,37 @@ export function SegmentedControl<T extends string>({
   // The segments there are, which a caller's new array of the same ones doesn't change: a label
   // that changes is the observer's to see.
   const segments = JSON.stringify(items.map((item) => item.value));
-  // The choice the thumb was last measured under.
-  const measured = useRef(value);
+  // The segments the thumb covers: the chosen one, or those on screen with it.
+  const spanned =
+    current !== undefined && value !== undefined && current.includes(value) && current.length > 1
+      ? current
+      : value === undefined
+        ? []
+        : [value];
+  const covered = JSON.stringify(spanned);
+  // What the thumb was last measured under.
+  const measured = useRef(covered);
   useLayoutEffect(() => {
-    const chosen = value === undefined ? undefined : buttons.current.get(value);
-    const jump = measured.current === value;
-    measured.current = value;
+    const under = spanned
+      .map((each) => buttons.current.get(each))
+      .filter((button): button is HTMLButtonElement => button !== undefined);
+    const jump = measured.current === covered;
+    measured.current = covered;
     const measure = (at = false) => {
-      const next =
-        chosen && chosen.offsetWidth > 0
-          ? { left: chosen.offsetLeft, width: chosen.offsetWidth, jump: at }
-          : undefined;
+      const laid = under.filter((button) => button.offsetWidth > 0);
+      const left = Math.min(...laid.map((button) => button.offsetLeft));
+      const right = Math.max(...laid.map((button) => button.offsetLeft + button.offsetWidth));
+      const next = laid.length > 0 ? { left, width: right - left, jump: at } : undefined;
       setThumb((was) => (was?.left === next?.left && was?.width === next?.width ? was : next));
     };
     measure(jump);
-    if (!chosen || typeof ResizeObserver === 'undefined') return undefined;
+    if (under.length === 0 || typeof ResizeObserver === 'undefined') return undefined;
     // A label that changes, or a font that loads, moves the segments under it.
     const watch = new ResizeObserver(() => measure());
     for (const button of buttons.current.values()) watch.observe(button);
     return () => watch.disconnect();
-  }, [value, segments, size]);
+    // `spanned` is what `covered` says.
+  }, [covered, segments, size]);
   // It's put in place, not slid there, the first time.
   const placed = thumb !== undefined;
   const [slides, setSlides] = useState(false);
@@ -176,6 +194,7 @@ export function SegmentedControl<T extends string>({
         )}
         {items.map((item) => {
           const chosen = item.value === value;
+          const onScreen = spanned.length > 1 && spanned.includes(item.value);
           const button = (
             <button
               key={item.value}
@@ -186,18 +205,19 @@ export function SegmentedControl<T extends string>({
               type="button"
               role={kind === 'views' ? 'tab' : 'radio'}
               aria-selected={kind === 'views' ? chosen : undefined}
+              aria-current={onScreen || undefined}
               aria-checked={kind === 'choice' ? chosen : undefined}
               tabIndex={item.value === tabbable ? 0 : -1}
               aria-disabled={disabled || undefined}
               aria-description={refused}
               aria-label={item.name}
               className={segment({
-                chosen: chosen ? (thumb ? 'thumb' : true) : false,
-                tone: disabled ? 'off' : chosen ? 'chosen' : 'rest',
+                chosen: chosen || onScreen ? (thumb ? 'thumb' : true) : false,
+                tone: disabled ? 'off' : chosen || onScreen ? 'chosen' : 'rest',
                 size,
               })}
               onClick={() => {
-                if (!chosen && !disabled) onChange(item.value);
+                if ((!chosen || onScreen) && !disabled) onChange(item.value);
               }}
             >
               {item.label}

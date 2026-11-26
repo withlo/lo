@@ -3,7 +3,8 @@
 // preview and attached files, for a box outside the diff, such as the submit dialog's summary; and
 // writing on a pull request itself, for its timeline: the box at the timeline's end, editing and
 // deleting your comments there, and what your own writes there changed, which the timeline shows
-// at once; and choosing Vim keys and how threads show in code, for the welcome.
+// at once; the thread a review's first comment is in, for Show in diff; and choosing Vim keys and
+// how threads show in code, for the welcome.
 
 import { createElement, type ReactNode } from 'react';
 
@@ -46,6 +47,7 @@ import {
   type UploadsHold,
 } from './uploads.ts';
 import { chooseVimKeys as chooseVim } from './vim.ts';
+import { held, threadOfReview } from './threads.ts';
 import { onPullWrite, type PullWrite } from './written.ts';
 
 export type { PostRef } from './bodies.ts';
@@ -57,6 +59,19 @@ export type { Attachable, UploadsHold } from './uploads.ts';
 export type { BoxUploads } from './Attached.tsx';
 export type { PullBoxProps, PullEditProps, PullNoteProps } from './TimelineBox.tsx';
 export type { PullWrite } from './written.ts';
+
+/**
+ * The review thread a review's first comment is in, in pull request's tab `tab`, as far as Lo can
+ * tell from the threads main has sent: the earliest comment its author wrote from when they started
+ * it, `from`, to when they submitted it, `to`. None while the threads aren't read, or with none
+ * that fits.
+ */
+export function firstThreadOf(
+  tab: string,
+  review: { readonly author: string; readonly from: string; readonly to: string },
+): string | undefined {
+  return threadOfReview(held.get(tab).threads?.threads ?? [], review);
+}
 
 /**
  * A post's text, drawn as GitHub draws it, from its HTML, which the post asks main for as it comes
