@@ -335,8 +335,9 @@ describe('Thread', () => {
   });
 });
 
-describe('Thread in a popover', () => {
-  const popover = (focused: boolean) => (
+/** A thread in a popover, pinned where `focused` says. */
+function popover(focused: boolean) {
+  return (
     <Thread
       {...PROPS}
       variant="popover"
@@ -349,7 +350,14 @@ describe('Thread in a popover', () => {
       closeKeys={['esc']}
     />
   );
+}
 
+/** The comment the ring is on, by its id. */
+function ringed(): string | null | undefined {
+  return document.activeElement?.getAttribute('data-comment');
+}
+
+describe('Thread in a popover', () => {
   it('has no card of its own: a head of one line, its lines and count, over its comments', () => {
     const host = render(popover(false));
     const thread = host.querySelector('[role="group"]')!;
@@ -399,7 +407,6 @@ describe('Thread in a popover', () => {
       />,
     );
     const shell = host.querySelector<HTMLElement>('[data-thread-pop]')!;
-    const ringed = () => document.activeElement?.getAttribute('data-comment');
     // A click on its mark puts focus on the popover, with no comment ringed.
     shell.focus();
     expect(ringComment(1)).toBe(true);
