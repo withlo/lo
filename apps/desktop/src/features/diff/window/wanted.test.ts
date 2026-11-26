@@ -16,8 +16,11 @@ describe('what the diff waits to show', () => {
     wantPlace('tab', PLACE, drawnName('h', null));
     expect(wantedIn('tab')).toEqual({ kind: 'place', target: PLACE, left: 'h|' });
     wantThread('tab', 'T2');
-    expect(wantedIn('tab')).toEqual({ kind: 'thread', thread: 'T2' });
+    expect(wantedIn('tab')).toEqual({ kind: 'thread', thread: 'T2', focus: false });
     expect(wantedIn('other')).toBeUndefined();
+    // As a link from a view asks for it: with focus in the code.
+    wantThread('tab', 'T3', true);
+    expect(wantedIn('tab')).toEqual({ kind: 'thread', thread: 'T3', focus: true });
   });
 
   it('goes once it’s shown, the reader does anything else, or its tab closes', () => {
@@ -33,7 +36,7 @@ describe('what the diff waits to show', () => {
     wantThread('kept', 'T2');
     keepWanted(new Set(['kept']));
     expect(wantedIn('tab')).toBeUndefined();
-    expect(wantedIn('kept')).toEqual({ kind: 'thread', thread: 'T2' });
+    expect(wantedIn('kept')).toEqual({ kind: 'thread', thread: 'T2', focus: false });
   });
 
   it('names the diff it was asked for in front of by its head and comparison', () => {

@@ -11,6 +11,7 @@ import type { DrawnDiff, ThreadCounts } from './threads.ts';
 import { Loader, type LoaderWork } from './loader.ts';
 import { followLabel } from './moved.ts';
 import { drawnFor, revealWhenDrawn } from './tabs.ts';
+import { wantThread } from './wanted.ts';
 
 /** What the stand-in view was told, in order, and the files it says are on screen. */
 const told: string[] = [];
@@ -18,6 +19,8 @@ let onScreen: string[] = [];
 /** Where the stand-in view's cursor went and what it scrolled to, and its headers, in order. */
 const moved: string[] = [];
 const headers: string[] = [];
+/** What the stand-in view had last moved to each time it was given focus. */
+const focused: string[] = [];
 /** The threads the stand-in view was given, and what each header counts of them, in order. */
 const threadsTold: string[] = [];
 const counted: string[] = [];
@@ -77,7 +80,12 @@ vi.mock('@lo/ui/code', () => ({
     setThreadsMode: () => undefined,
     setMoves: () => undefined,
     loadFailed: (id) => void told.push(`failed ${id}`),
-    focus: () => undefined,
+    focus: () => void focused.push(moved.at(-1) ?? ''),
+    openThread: () => true,
+    showThread: (id) => {
+      moved.push(`show ${id}`);
+      return true;
+    },
     reveal: (target) => {
       moved.push(`reveal ${target.kind === 'file' ? target.file : target.kind}`);
       return true;
@@ -273,6 +281,7 @@ function byFrame(): { stop: () => Promise<string[][]> } {
 beforeEach(() => {
   told.length = 0;
   moved.length = 0;
+  focused.length = 0;
   headers.length = 0;
   tops.clear();
   tookLines = undefined;
@@ -602,6 +611,27 @@ describe('a file the tree shows', () => {
     revealWhenDrawn(TAB.id, { target: { kind: 'file', file: 'd1' }, focus: false });
     await drawnGithub(work, ['src/a.ts', 'src/b.ts']);
     expect(moved).toEqual(['reveal d1']);
+  });
+});
+
+describe('a thread asked for before the diff is drawn', () => {
+  it('shows as it’s drawn, with focus in the code where a link asked for it', async () => {
+    // Focus somewhere of its own, as on the timeline, so only the ask gives the code focus.
+    const timeline = document.body.appendChild(document.createElement('button'));
+    timeline.focus();
+    wantThread(TAB.id, 'T1', true);
+    await drawnGithub(work, ['src/a.ts']);
+    expect(moved).toContain('show T1');
+    expect(focused).toContain('show T1');
+    drawing?.stop();
+    moved.length = 0;
+    focused.length = 0;
+    timeline.focus();
+    // As the threads panel asks: focus stays where it is.
+    wantThread(TAB.id, 'T2');
+    await drawnGithub(work, ['src/a.ts']);
+    expect(moved).toContain('show T2');
+    expect(focused).toEqual([]);
   });
 });
 

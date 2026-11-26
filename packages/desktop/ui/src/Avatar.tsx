@@ -6,8 +6,9 @@ const avatar = cva(
   {
     variants: {
       size: {
-        // Where a person is the marker of a row, such as the timeline's comments.
-        xl: 'size-32',
+        // Where a person is the marker of a row, such as the timeline's comments: smaller in a
+        // narrow timeline (`tl-marker`).
+        xl: 'tl-marker',
         lg: 'size-avatar-lg',
         // Beside a line of small text, such as an overview's byline.
         sm: 'size-20',

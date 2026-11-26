@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ThreadCommentRow, ThreadRow, ThreadsView } from '../contract.ts';
 import { excerptOf } from './excerpts.ts';
-import { held, listed, takeThreads } from './threads.ts';
+import { held, listed, takeThreads, threadOfReview } from './threads.ts';
 
 /** The reads of openings the background process was asked for, to answer when a test says. */
 const reads: { bodies: string[]; answer: () => void; fail: () => void }[] = [];
@@ -181,5 +181,33 @@ describe('the threads a panel lists', () => {
     takeThreads(bare);
     expect(listed.get(id)).toBe(bare);
     expect(reads).toHaveLength(0);
+  });
+});
+
+/** A thread with one comment by `author`, written at `at`, in `state`. */
+function written(id: string, author: string, at: string, state: 'SUBMITTED' | 'PENDING') {
+  const made = thread(id, id);
+  return { ...made, comments: [{ ...comment(id), author, createdAt: at, state }] };
+}
+
+describe('the thread a review’s first comment is in', () => {
+  it('is the earliest its author wrote between starting and submitting it', () => {
+    const threads = [
+      written('T_before', 'ravi-k', '2026-11-13T10:00:00Z', 'SUBMITTED'),
+      written('T_later', 'ravi-k', '2026-11-13T11:05:00Z', 'SUBMITTED'),
+      written('T_first', 'Ravi-K', '2026-11-13T11:01:00Z', 'SUBMITTED'),
+      written('T_other', 'mira-chen', '2026-11-13T11:00:30Z', 'SUBMITTED'),
+      written('T_pending', 'ravi-k', '2026-11-13T11:00:10Z', 'PENDING'),
+    ];
+    const review = { author: 'ravi-k', from: '2026-11-13T11:00:00Z', to: '2026-11-13T11:10:00Z' };
+    expect(threadOfReview(threads, review)).toBe('T_first');
+  });
+
+  it('takes a single comment GitHub timed a second after its review, and nothing with none', () => {
+    const threads = [written('T_1', 'ravi-k', '2026-11-13T11:00:01Z', 'SUBMITTED')];
+    const at = '2026-11-13T11:00:00Z';
+    expect(threadOfReview(threads, { author: 'ravi-k', from: at, to: at })).toBe('T_1');
+    expect(threadOfReview(threads, { author: 'mira-chen', from: at, to: at })).toBeUndefined();
+    expect(threadOfReview([], { author: 'ravi-k', from: at, to: at })).toBeUndefined();
   });
 });

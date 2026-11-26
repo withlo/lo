@@ -91,6 +91,8 @@ export type Row =
       readonly hidden: boolean;
       /** How many comments it left in threads. */
       readonly comments: number;
+      /** When its author started it: its comments were written from then until `at`. */
+      readonly started: string;
     }
   | {
       readonly kind: 'push';
@@ -642,6 +644,7 @@ export function rowsOf(timeline: Timeline, repository: string, context: RowsCont
         revision: review.commit === undefined ? undefined : byHead.get(review.commit)?.number,
         hidden: review.hidden,
         comments: review.comments,
+        started: review.createdAt,
       });
     } else if (item.kind === 'forcePushed') {
       const head = item.branch === 'head';

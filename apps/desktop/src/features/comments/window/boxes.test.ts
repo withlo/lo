@@ -159,11 +159,10 @@ vi.mock('./mode.ts', () => ({ threadsMode: () => threadsShow.mode }));
 
 const diff = vi.hoisted(() => ({
   current: undefined as unknown,
-  keys: true,
   shown: [] as string[],
 }));
 vi.mock('../../diff/window/shared.ts', () => ({
-  writingDiff: (_view: string, keys = false) => (keys && !diff.keys ? undefined : diff.current),
+  writingDiff: () => diff.current,
   showDiff: (view: string) => diff.shown.push(view),
   diffStateOf: () => undefined,
 }));
@@ -503,7 +502,6 @@ beforeEach(() => {
   said.pull = pull();
   said.run = undefined;
   said.screen = VIEW;
-  diff.keys = true;
   bridge.calls.length = 0;
   answers['comments.commentable'] = () => IN_DIFF;
   answers['comments.draft'] = () => undefined;

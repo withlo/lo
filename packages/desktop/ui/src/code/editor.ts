@@ -11,6 +11,7 @@ import { drawSelection, EditorView, highlightActiveLineGutter } from '@codemirro
 
 import { hang } from './hang.ts';
 import { handlingKey, readOnly, switchVim } from './keys.ts';
+import { landings } from './landing.ts';
 import { plainCode } from './plain.ts';
 import { leaveOnScreen } from './screen.ts';
 
@@ -28,6 +29,7 @@ export function codeEditor(nonce: string, moved: () => void): Extension {
     readOnly(),
     EditorView.lineWrapping,
     hang(),
+    landings(),
     EditorView.cspNonce.of(nonce),
     leaveOnScreen,
     EditorView.updateListener.of((update) => {

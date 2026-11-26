@@ -6,7 +6,8 @@
 // reading stays where it is as it comes. The keyboard moves between its
 // rows (`j`, `k`), the list being one focusable element with the row the keyboard is on as its
 // active descendant. Posts draw through the comments' `Post`, from GitHub's rendering of them; your
-// own comments have Edit and Delete, and an edit's box is drawn in the comment's card.
+// own comments have Edit and Delete, and an edit's box is drawn in the comment's card. With code
+// beside, the diff follows the review the keyboard is on to its first comment.
 
 import {
   Countdown,
@@ -54,13 +55,15 @@ import {
   PullCommentNote,
   useEditsOnPull,
 } from '../../comments/window/shared.ts';
-import { showDiff } from '../../diff/window/shared.ts';
 import {
+  besideNow,
+  focusNowhereFor,
   MiddlePlaceholder,
   showMiddle,
   usePull,
   useRunLayers,
   useTabState,
+  viewsShown,
   withoutBidi,
   type PullTab,
 } from '../../tab/window/shared.ts';
@@ -68,12 +71,15 @@ import type { TimelineView } from '../contract.ts';
 import {
   compare,
   focusRow,
+  hasCode,
   inStop,
   keptRow,
   revealHidden,
   rowTarget,
   setDrawn,
+  showReviewInDiff,
   stillHidden,
+  type DrawnTimeline,
 } from './actions.ts';
 import { main, tabs } from './main.ts';
 import { keepPlace, readingPlace, type ReadingPlace } from './place.ts';
@@ -93,42 +99,32 @@ import { when } from './words.ts';
 import { commentIn, isYours } from './yours.ts';
 
 /**
- * Whether focus is nowhere in particular, in the view itself, or left behind in a middle view now
- * hidden, so the timeline can take it as it comes on screen.
+ * Whether focus is in the view itself, or nowhere in particular for it, so the timeline can take it
+ * as it comes on screen.
  */
 function focusIsFree(own: HTMLElement | null): boolean {
-  const focused = document.activeElement;
-  return (
-    !focused ||
-    focused === document.body ||
-    (own !== null && own.contains(focused)) ||
-    focused.hasAttribute('data-lo-middle') ||
-    focused.closest('[inert]') !== null
-  );
+  return (own !== null && own.contains(document.activeElement)) || focusNowhereFor(own);
 }
 
 /** The id of the timeline among the tab's middle views. */
 export const TIMELINE_VIEW = 'timeline.view';
 
-/** The timeline as a place in its tab's history: it keeps no place within it. */
-const TIMELINE_HERE: Entry = { view: 'timeline', at: NO_TARGET };
-
 /**
  * While `shown`, makes `own` the middle view `Esc` gives focus back to, on `home`, and gives it
- * focus, with `place` as where the tab is in it, for history.
+ * focus, with `here` saying where the tab is in it, for history.
  */
 function useMiddle(
   shown: boolean,
   own: () => HTMLElement | null,
   home: () => HTMLElement | null,
-  place?: Entry,
+  here: () => Entry | undefined = () => undefined,
 ): void {
   useEffect(() => {
     if (!shown) return undefined;
     const focus = () => home()?.focus({ preventScroll: true });
     if (focusIsFree(own())) focus();
-    return setMiddle({ focus, holds: (element) => element === home(), here: () => place });
-    // `own` and `home` only read refs, and `place` is the same throughout.
+    return setMiddle({ focus, root: own, holds: (element) => element === home(), here });
+    // `own`, `home` and `here` only read refs.
   }, [shown]);
 }
 
@@ -156,8 +152,20 @@ export function TimelineMiddle({ tab, shown }: { tab: PullTab; shown: boolean })
   return <TimelineOf tab={tab} shown={shown} />;
 }
 
-/** What the middle shows in place of the timeline, which `Esc` gives focus to. */
-function Note({ shown, children }: { shown: boolean; children: ReactNode }) {
+/**
+ * What the middle shows in place of the timeline, which `Esc` gives focus to. While the timeline is
+ * read, it stands in for the middle of the window: focus on it is nowhere in particular, so keys
+ * typed meanwhile go on in the rows once they're drawn and take focus.
+ */
+function Note({
+  shown,
+  waiting = false,
+  children,
+}: {
+  shown: boolean;
+  waiting?: boolean;
+  children: ReactNode;
+}) {
   const root = useRef<HTMLDivElement>(null);
   useMiddle(
     shown,
@@ -165,7 +173,13 @@ function Note({ shown, children }: { shown: boolean; children: ReactNode }) {
     () => root.current,
   );
   return (
-    <div ref={root} tabIndex={-1} className="h-full outline-none" data-lo-timeline="note">
+    <div
+      ref={root}
+      tabIndex={-1}
+      className="h-full outline-none"
+      data-lo-timeline="note"
+      data-lo-middle={waiting || undefined}
+    >
       {children}
     </div>
   );
@@ -296,7 +310,7 @@ function TimelineOf({ tab, shown }: { tab: PullTab; shown: boolean }) {
       return rows ? (
         <Rows tab={tab} shown={shown} rows={rows} />
       ) : (
-        <Note shown={shown}>
+        <Note shown={shown} waiting>
           <MiddlePlaceholder tab={tab} status="Reading timeline…" />
         </Note>
       );
@@ -378,20 +392,45 @@ function Rows({ tab, shown, rows }: { tab: PullTab; shown: boolean; rows: readon
   const edits = useEditsOnPull(tab.id);
   useHolding(tab.id, shown, root, rows);
   useKeptRow(tab.id, rows);
-  // The timeline is a place in the tab's history, so a file opened from it has a way back.
+  const { owner, repo, number } = tab;
+  const pull = useMemo<PostPull>(() => ({ owner, repo, number }), [owner, repo, number]);
+  const drawn = useMemo(() => ({ tab, rows, list: () => list.current }), [tab, rows]);
+  const latest = useRef<DrawnTimeline>(drawn);
+  latest.current = drawn;
+  // The timeline is a place in the tab's history, at the row the keyboard is on, so a file opened
+  // from it, or code a review showed, has a way back to it.
   useEffect(
-    () => registry().history.register(tab.id, 'timeline', () => showMiddle(tab.id, TIMELINE_VIEW)),
+    () =>
+      registry().history.register(tab.id, 'timeline', (at) => {
+        const timeline = latest.current;
+        const there = viewsShown(tab.id).includes(TIMELINE_VIEW);
+        if (at.kind === 'row' && timeline.rows.some((row) => row.key === at.row)) {
+          focusRow(timeline, at.row);
+        }
+        showMiddle(tab.id, TIMELINE_VIEW);
+        // On screen already, beside the code, it takes focus back itself.
+        if (there) timeline.list()?.focus({ preventScroll: true });
+        return true;
+      }),
     [tab.id],
   );
   useMiddle(
     shown,
     () => root.current,
     () => list.current,
-    TIMELINE_HERE,
+    () => ({ view: 'timeline', at: rowTarget(latest.current) }),
   );
-  const { owner, repo, number } = tab;
-  const pull = useMemo<PostPull>(() => ({ owner, repo, number }), [owner, repo, number]);
-  const drawn = useMemo(() => ({ tab, rows, list: () => list.current }), [tab, rows]);
+  // With code beside, the keyboard landing on a review, by a key or a click, has the diff follow it
+  // to its first comment: focus stays on the timeline, and history records nothing.
+  const followed = useRef(focused);
+  useEffect(() => {
+    const was = followed.current;
+    followed.current = focused;
+    if (!shown || focused === undefined || focused === was || !besideNow()) return;
+    if (!root.current?.contains(document.activeElement)) return;
+    const row = rows.find((each) => each.key === focused);
+    if (row && hasCode(row)) showReviewInDiff(tab.id, row, 'follow');
+  }, [tab.id, shown, focused, rows]);
   // While it's on screen, the keys act on it, on the row the keyboard is on.
   useLayoutEffect(() => (shown ? setDrawn(drawn) : undefined), [shown, drawn]);
   useEffect(() => {
@@ -653,7 +692,7 @@ function RowOf({
             )
           }
           comments={{ count: row.comments }}
-          onShowInDiff={() => showDiff(tab)}
+          onShowInDiff={() => showReviewInDiff(tab, row, 'go')}
         />
       );
     case 'push':

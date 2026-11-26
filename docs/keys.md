@@ -54,6 +54,7 @@ menu: Go, Review, Comments, Code, View, Merge, Tabs and App. Each command's ID i
 | Next layer         | `j`, `↓`          | In `stack`                                                                                              | `stacks.down`            |
 | Previous layer     | `k`, `↑`          | In `stack`                                                                                              | `stacks.up`              |
 | Show layer         | `⏎`               | In `stack`                                                                                              | `stacks.show`            |
+| Go to other view   | `\`               | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode                  | `tab.otherView`          |
 | Next event         | `j`, `↓`          | In `timeline`                                                                                           | `timeline.down`          |
 | Previous event     | `k`, `↑`          | In `timeline`                                                                                           | `timeline.up`            |
 | Next link          | `⇥`               | In `timeline`                                                                                           | `timeline.nextLink`      |
@@ -121,7 +122,7 @@ menu: Go, Review, Comments, Code, View, Merge, Tabs and App. Each command's ID i
 | Edit comment            | `i`                                                            | In `timeline`                                                                                          | `timeline.editComment`     |
 | Delete comment…         | `d d`                                                          | In `timeline`                                                                                          | `timeline.deleteComment`   |
 | Show comment            | None: its right-click menu or the command palette              | In `timeline`                                                                                          | `timeline.showComment`     |
-| Show in diff            | None: its right-click menu or the command palette              | In `timeline`                                                                                          | `timeline.showInDiff`      |
+| Show in diff            | `⏎`                                                            | In `timeline`                                                                                          | `timeline.showInDiff`      |
 
 The comment box's editor runs these keys itself, so Lo's key engine never does: the command palette
 and menus don't offer them, and neither the keymap file nor a `vim` line in it can change them. A
@@ -187,8 +188,6 @@ mode. In the box's preview, or on its frame, `Esc` closes it at once, from any m
 | Collapse file              | `z a`                                                          | In `diff`; in code views, only in normal mode                                                       | `diff.toggleFile`       |
 | Command palette            | `⌘⇧P`                                                          | Anywhere                                                                                            | `keys.palette`          |
 | Overview                   | None: its control, the app menu or the command palette         | Anywhere                                                                                            | `overview.show`         |
-| Code beside                | `o`                                                            | In `overview`                                                                                       | `overview.beside`       |
-| Close code beside          | `Esc`                                                          | In `overview`                                                                                       | `overview.closeBeside`  |
 | Show latest overview       | None: its right-click menu or the command palette              | Anywhere                                                                                            | `overview.loadNewer`    |
 | Try again                  | None: its right-click menu or the command palette              | Anywhere                                                                                            | `overview.retry`        |
 | Copy prompt                | `y a`                                                          | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `overview.copyPrompt`   |
@@ -211,6 +210,7 @@ mode. In the box's preview, or on its frame, `Esc` closes it at once, from any m
 | Offer single-layer diffs   | None: its right-click menu or the command palette              | Anywhere                                                                                            | `stacks.offerStart`     |
 | Left panel                 | `⌘\`                                                           | Anywhere but `dialog` and `palette`                                                                 | `tab.leftPanel`         |
 | Threads panel              | `⌘⇧\`                                                          | Anywhere but `dialog` and `palette`                                                                 | `tab.rightPanel`        |
+| Code beside                | `o`                                                            | Anywhere but `menu`, `dialog`, `palette`, `box` and `merge`; in code views, only in normal mode     | `tab.beside`            |
 | Widen                      | `>`                                                            | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.widen`             |
 | Narrow                     | `<`                                                            | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.narrow`            |
 | Reset width                | `=`                                                            | Anywhere but `menu`, `dialog`, `palette` and `box`; in code views, only in normal mode              | `tab.resetWidth`        |
@@ -474,6 +474,7 @@ how Lo starts, they run Lo's command too:
 | `y a`            | Copy prompt             | `y`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `overview.copyPrompt`     |
 | `g q`            | Merge queue             | `g q`     | `diff` (normal), `file` (normal) and `peek` (normal)                 | `queue.show`              |
 | `g v`            | Compare revisions…      | `g v`     | `diff` (normal), `file` (normal) and `peek` (normal)                 | `revisions.picker`        |
+| `o`              | Code beside             | `o`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.beside`              |
 | `>`              | Widen                   | `>`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.widen`               |
 | `<`              | Narrow                  | `<`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.narrow`              |
 | `=`              | Reset width             | `=`       | `diff` (normal), `file` (normal) and `peek` (normal)                 | `tab.resetWidth`          |

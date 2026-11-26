@@ -437,6 +437,24 @@ function drawn(name: string): number[] {
 }
 
 describe('what it draws', () => {
+  test('a line landed on takes the Land tint, kept as the line is drawn again, until it fades', () => {
+    const shown = open(events(), {
+      marks: [{ kind: 'lines', at: { file: 'a', side: 'new', from: 2, to: 2 } }],
+    });
+    shown.land(onLine(3));
+    expect(drawn('move-land')).toEqual([3]);
+    // The line drawn again, its marks changing, keeps it.
+    shown.setMarks([{ kind: 'lines', at: { file: 'a', side: 'new', from: 3, to: 3 } }]);
+    expect(drawn('move-land')).toEqual([3]);
+    // Another line takes it from the first.
+    shown.land(onLine(5));
+    expect(drawn('move-land')).toEqual([5]);
+    // Faded, it goes.
+    const line = parent!.querySelector('.move-land')!;
+    line.dispatchEvent(new Event('animationend', { bubbles: true }));
+    expect(drawn('move-land')).toEqual([]);
+  });
+
   test('marks pick out their lines, on its file and side only', () => {
     const shown = open(events(), {
       marks: [{ kind: 'lines', at: { file: 'a', side: 'new', from: 4, to: 2 } }],

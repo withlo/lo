@@ -48,6 +48,7 @@ import { drawnTop, lineOnScreen, partlyOnScreen } from './aligner.ts';
 import { codeEditor } from './editor.ts';
 import { type FileTokens, highlighting, lineStarts, tokensChanged } from './highlight.ts';
 import { columnAt, type HintAt, hintRanges, hintsOf, sameHintList } from './hints.ts';
+import { landLine } from './landing.ts';
 import {
   addCodeEditor,
   clearVim,
@@ -286,6 +287,12 @@ class WholeFile implements FileView {
       scrollIntoView: true,
     });
     return true;
+  }
+
+  land(at: Target): void {
+    const found = this.#lineOf(at);
+    if (!found) return;
+    landLine(this.#view, found.line);
   }
 
   /** The document line `at` names, and the column on it, if it's in this file and side. */

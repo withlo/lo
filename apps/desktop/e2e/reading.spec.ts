@@ -10,7 +10,8 @@
 // server in front of the replay server answers for the overview's ref as each test says: with the
 // overview `testing/fixtures/app.sh` wrote, none, one made here, or a failure. It fails the
 // timeline's reads itself, which the cassette doesn't hold: these tests need only that a tab is on
-// the timeline, not what it shows.
+// the timeline, not what it shows. The local copy comes from a folder, or from a git server that
+// holds it until the test lets it come.
 
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -18,7 +19,7 @@ import { createServer, type ServerResponse } from 'node:http';
 import { buffer } from 'node:stream/consumers';
 import { crc32, deflateSync } from 'node:zlib';
 
-import { APP_PULL, writeAppRemote } from '@lo/testing/git';
+import { APP_PULL, GitHttpServer, writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { ElectronApplication, Page } from '@playwright/test';
 
@@ -30,14 +31,12 @@ import {
   browsed,
   dataFolder,
   DIFF_FIRST,
-  drawnWindow,
   expect,
   KEYCHAIN,
   keepMenus,
   rowOver,
   settingsPath,
   sizeWindow,
-  startLo,
   test as base,
 } from './app.ts';
 
@@ -336,26 +335,29 @@ async function frontOf(
 
 const test = base.extend<{
   github: ReplayServer;
-  remote: string;
+  /**
+   * Where Lo fetches the local copy from, and what lets it come when the test holds it
+   * (`heldCopy`); else it comes as soon as Lo asks.
+   */
+  copy: { remote: string; come: () => void };
   tokenFile: string;
   /** The cassette GitHub answers from. */
   cassette: string;
   /** Whether the remote is written only once the test says, so the local copy comes late. */
   lateRemote: boolean;
+  /**
+   * Whether the remote is served over HTTP, which holds every request until the test lets the
+   * copy come: it's still coming, however fast the machine.
+   */
+  heldCopy: boolean;
   /** What the overview's ref holds, which the test changes as it goes. */
   ref: Ref;
   /** Where Lo finds GitHub: a server in front of the replay server. */
   githubOrigin: string;
-  /**
-   * Starts Lo afresh once the copy before is closed, as the `app` fixture starts it, from the test's
-   * options, but untraced: on a new replay server, behind a new server in front of it, on an empty
-   * data folder of its own. Gives its window once it has drawn. What it started closes as the test
-   * ends, and a request its replay server couldn't answer fails the test, as the fixtures' own do.
-   */
-  afresh: () => Promise<Page>;
 }>({
   cassette: ['app_e2e', { option: true }],
   lateRemote: [false, { option: true }],
+  heldCopy: [false, { option: true }],
   github: async ({ cassette }, use) => {
     const server = await serveReplay(cassette);
     await use(server);
@@ -370,9 +372,18 @@ const test = base.extend<{
     await use(front.origin);
     await front.close();
   },
-  remote: async ({ lateRemote }, use) => {
+  copy: async ({ lateRemote, heldCopy }, use) => {
     const folder = test.info().outputPath('remote');
-    await use(lateRemote ? `file://${folder}` : writeAppRemote(folder));
+    if (!heldCopy) {
+      await use({ remote: lateRemote ? `file://${folder}` : writeAppRemote(folder), come() {} });
+      return;
+    }
+    writeAppRemote(folder);
+    const server = await GitHttpServer.start(folder, TOKEN);
+    const come = server.hold();
+    await use({ remote: server.url, come });
+    come();
+    await server.close();
   },
   // oxlint-disable-next-line no-empty-pattern
   tokenFile: async ({}, use) => {
@@ -380,48 +391,15 @@ const test = base.extend<{
     writeFileSync(file, `${TOKEN}\n`);
     await use(file);
   },
-  launch: async ({ githubOrigin, remote, tokenFile }, use) => {
+  launch: async ({ githubOrigin, copy, tokenFile }, use) => {
     await use({
       args: [appFolder, ...KEYCHAIN],
       env: {
         LO_GITHUB: githubOrigin,
         LO_TEST_TOKEN_FILE: tokenFile,
-        LO_GIT_REMOTE: remote,
+        LO_GIT_REMOTE: copy.remote,
       },
     });
-  },
-  afresh: async (
-    { app, cassette, ref, launch, keymap, settings, holdLimit, motion, readEvery },
-    use,
-  ) => {
-    const started: { app: ElectronApplication; front: { close(): Promise<void> } }[] = [];
-    const servers: ReplayServer[] = [];
-    let last = app;
-    await use(async () => {
-      await last.close();
-      const github = await serveReplay(cassette);
-      servers.push(github);
-      const front = await frontOf(github, ref);
-      const data = test.info().outputPath(`data-${servers.length + 1}`);
-      last = await startLo(
-        {
-          launch: { ...launch, env: { ...launch.env, LO_GITHUB: front.origin } },
-          keymap,
-          settings,
-          holdLimit,
-          motion,
-          readEvery,
-        },
-        data,
-      );
-      started.push({ app: last, front });
-      return drawnWindow(last, motion);
-    });
-    for (const each of started) {
-      await each.app.close();
-      await each.front.close();
-    }
-    for (const github of servers) await github.close();
   },
 });
 
@@ -610,10 +588,9 @@ async function wheelTo(page: Page, part: number): Promise<void> {
     .toBe(true);
 }
 
+// What a tab opens on, by the suite's bound, which Lo knows within; the test of Lo giving up at the
+// bound asks for the real one.
 test.describe('as a pull request opens', () => {
-  // How long a tab holds back what it shows first is what these are about.
-  test.use({ holdLimit: HOLD_LIMIT });
-
   test('opens on its overview when Lo knows in time that it shows, with who wrote it and its mark', async ({
     page,
   }) => {
@@ -712,28 +689,33 @@ test.describe('as a pull request opens', () => {
     }
   });
 
-  test('opens on the timeline when the overview comes after the bound, and offers it', async ({
-    page,
-    ref,
-  }) => {
-    ref.delay = 2500;
-    const id = await open(page);
-    await expect(middleView(page, 'timeline.view')).toBeVisible({ timeout: 10_000 });
-    await expect(middleView(page, 'overview.view')).toBeHidden();
-    await expect
-      .poll(() => current(page, id), { timeout: 20_000 })
-      .toMatchObject({ found: 'commit' });
-    const ready = page.locator('footer').getByText('Overview ready');
-    await expect(ready).toBeVisible({ timeout: 10_000 });
-    // Offered, and the timeline stays.
-    await expect(middleView(page, 'timeline.view')).toBeVisible();
-    await expect(middleView(page, 'overview.view')).toBeHidden();
-    await ready.click();
-    await expect(overview(page, 'shown')).toBeVisible();
-    // Seen, it's no longer offered.
-    await views(page).getByRole('tab', { name: 'Timeline' }).click();
-    await expect(middleView(page, 'timeline.view')).toBeVisible();
-    await expect(ready).toHaveCount(0);
+  test.describe('past the real bound', () => {
+    // Lo giving up at the bound is what this is about, so it asks for the real one.
+    test.use({ holdLimit: HOLD_LIMIT });
+
+    test('opens on the timeline when the overview comes after the bound, and offers it', async ({
+      page,
+      ref,
+    }) => {
+      ref.delay = 2500;
+      const id = await open(page);
+      await expect(middleView(page, 'timeline.view')).toBeVisible({ timeout: 10_000 });
+      await expect(middleView(page, 'overview.view')).toBeHidden();
+      await expect
+        .poll(() => current(page, id), { timeout: 20_000 })
+        .toMatchObject({ found: 'commit' });
+      const ready = page.locator('footer').getByText('Overview ready');
+      await expect(ready).toBeVisible({ timeout: 10_000 });
+      // Offered, and the timeline stays.
+      await expect(middleView(page, 'timeline.view')).toBeVisible();
+      await expect(middleView(page, 'overview.view')).toBeHidden();
+      await ready.click();
+      await expect(overview(page, 'shown')).toBeVisible();
+      // Seen, it's no longer offered.
+      await views(page).getByRole('tab', { name: 'Timeline' }).click();
+      await expect(middleView(page, 'timeline.view')).toBeVisible();
+      await expect(ready).toHaveCount(0);
+    });
   });
 });
 
@@ -786,7 +768,10 @@ test('goes from the tab, its menus and the palette while Settings turns overview
     await expect(input).toBeFocused();
     await input.fill(text);
   };
-  const overviews = palette.getByRole('option', { name: /overview|^Copy prompt/i });
+  // Code beside's description names the overview among what the diff goes beside: it's not one.
+  const overviews = palette
+    .getByRole('option', { name: /overview|^Copy prompt/i })
+    .filter({ hasNotText: /^Code beside/ });
 
   await test.step('Settings turns them off: the choice of first view has no Overview', async () => {
     await turn();
@@ -1291,39 +1276,30 @@ const cutElsewhere = (page: Page) =>
 /**
  * Closes tab `id`, if there is one, and opens #80's again from Recent ({@link openAsRecent}), with
  * its local copy there when it was opened before, starting `watch` as it opens; returns the new
- * tab's id. It opens on the overview, kept from the first read, once Lo knows in time that it
- * shows: a machine too busy to know within the bound opens it on the timeline, which isn't what's
- * tested, so it's closed and opened again, three times at most, each time noted in the test's
- * results.
+ * tab's id once it's on the overview, kept from the first read. A tab whose overview Lo doesn't
+ * know shows by the bound opens on its timeline, and the test fails: the suite's bound, which Lo
+ * knows within, unless the test asked for the real one.
  */
 async function openAgain(
   page: Page,
   id: string | undefined,
   watch: () => Promise<void>,
 ): Promise<string> {
-  let tab = id;
-  for (let tries = 1; ; tries++) {
-    if (tab !== undefined) {
-      await page.evaluate((each) => window.lo.invoke('tab.close', { id: each }), tab);
-      await expect(views(page)).toHaveCount(0);
-    }
-    await watch();
-    tab = await openAsRecent(page);
-    /** What the tab opened on, once it has. */
-    const opened = async () => {
-      if (await middleView(page, 'timeline.view').isVisible()) return 'timeline';
-      return (await overview(page, 'shown').isVisible()) ? 'overview' : 'waiting';
-    };
-    await expect.poll(opened, { timeout: 20_000 }).not.toBe('waiting');
-    if ((await opened()) === 'overview' || tries === 3) {
-      await expect(overviewTab(page)).toHaveAttribute('aria-selected', 'true');
-      return tab;
-    }
-    test.info().annotations.push({
-      type: 'opened again',
-      description: `The tab opened on its timeline, try ${tries} of 3.`,
-    });
+  if (id !== undefined) {
+    await page.evaluate((each) => window.lo.invoke('tab.close', { id: each }), id);
+    await expect(views(page)).toHaveCount(0);
   }
+  await watch();
+  const tab = await openAsRecent(page);
+  /** What the tab opened on, once it has. */
+  const opened = async () => {
+    if (await middleView(page, 'timeline.view').isVisible()) return 'timeline';
+    return (await overview(page, 'shown').isVisible()) ? 'overview' : 'waiting';
+  };
+  await expect.poll(opened, { timeout: 20_000 }).not.toBe('waiting');
+  expect(await opened(), 'The tab opened on its timeline: Lo knew too late.').toBe('overview');
+  await expect(overviewTab(page)).toHaveAttribute('aria-selected', 'true');
+  return tab;
 }
 
 /**
@@ -1389,60 +1365,52 @@ const FRAMES = process.env.CI ? 250 : 2 * 17;
 const SEEN_LATE = 100;
 
 /**
- * Opens #80's tab for the first time, and checks its overview's article is first seen within the
- * bound from when the tab opened, the tab's placeholder showing until then and nothing of the
- * overview before its article; gives the window and the tab's id. A machine too busy to know in
- * time that the overview shows opens the tab on its timeline, which isn't what's tested: Lo is
- * then started afresh and the tab opened for the first time again, three times at most, each time
- * noted in the test's results, and the test fails if the third opens on the timeline too.
+ * Opens #80's tab for the first time, and checks it opens on the overview, whose article is first
+ * seen within `bound` from when the tab opened, the tab's placeholder showing until then and
+ * nothing of the overview before its article; gives the tab's id, and how each code block on
+ * screen was as the article was first seen, by its head. The bound is the one Lo was started with,
+ * the suite's: whether Lo knows within it that the overview shows depends on the machine, since Lo
+ * checks an overview on two background workers, each started for it, which a busy CI runner can
+ * take most of the real bound to start. That isn't what's tested: a tab that doesn't know in time
+ * opens on its timeline, and the test fails.
  */
 async function openInTime(
-  first: Page,
-  afresh: () => Promise<Page>,
-): Promise<{ page: Page; id: string }> {
-  for (let tries = 1, page = first; ; tries++, page = await afresh()) {
-    await watchOpening(page);
-    await watchStill(page);
-    await watchCode(page);
-    const id = await open(page);
-    /** What the tab opened on, once it has. */
-    const opened = async () => {
-      if (await middleView(page, 'timeline.view').isVisible()) return 'timeline';
-      return (await overview(page, 'shown').isVisible()) ? 'overview' : 'waiting';
-    };
-    await expect.poll(opened, { timeout: 20_000 }).not.toBe('waiting');
-    if ((await opened()) === 'timeline') {
-      expect(
-        tries,
-        'The tab opened on its timeline each time: Lo never knew in time.',
-      ).toBeLessThan(3);
-      test.info().annotations.push({
-        type: 'started again',
-        description: `The tab opened on its timeline, try ${tries} of 3.`,
-      });
-      continue;
-    }
-    const opening = await openingSeen(page);
-    await expect.poll(async () => (await codeSeen(page)).seen).toBeDefined();
-    const { seen } = await codeSeen(page);
-    test.info().annotations.push({
-      type: 'seen',
-      description: `The overview was seen ${Math.round(opening.after)} ms after the tab opened, its code on screen ${JSON.stringify(seen)}.`,
-    });
-    expect(opening.after).toBeLessThanOrEqual(HOLD_LIMIT + FRAMES);
-    expect(opening.early).toEqual([]);
-    expect(opening.bare).toBe(0);
-    return { page, id };
-  }
+  page: Page,
+  bound: number,
+): Promise<{ id: string; code: Record<string, string> }> {
+  await watchOpening(page);
+  await watchStill(page);
+  await watchCode(page);
+  const id = await open(page);
+  /** What the tab opened on, once it has. */
+  const opened = async () => {
+    if (await middleView(page, 'timeline.view').isVisible()) return 'timeline';
+    return (await overview(page, 'shown').isVisible()) ? 'overview' : 'waiting';
+  };
+  await expect.poll(opened, { timeout: 20_000 }).not.toBe('waiting');
+  expect(await opened(), 'The tab opened on its timeline: Lo knew too late.').toBe('overview');
+  const opening = await openingSeen(page);
+  await expect.poll(async () => (await codeSeen(page)).seen).toBeDefined();
+  const { seen } = await codeSeen(page);
+  test.info().annotations.push({
+    type: 'seen',
+    description: `The overview was seen ${Math.round(opening.after)} ms after the tab opened, its code on screen ${JSON.stringify(seen)}.`,
+  });
+  expect(opening.after).toBeLessThanOrEqual(bound + FRAMES);
+  expect(opening.early).toEqual([]);
+  expect(opening.bare).toBe(0);
+  return { id, code: seen ?? {} };
 }
 
-/** The bound on what a tab holds back is what these are about, so they ask for it. */
+/**
+ * The bound on what a tab holds back is what these are about. It's Lo's in these tests, which it
+ * knows within, as {@link openInTime} says: what the window does by the bound is what's tested.
+ */
 test.describe('within the bound on what a tab holds back', () => {
-  test.use({ holdLimit: HOLD_LIMIT });
-
   test('draws the code on its first screen before it’s seen, with the local copy there, cutting none and moving nothing, at 1440×900 and 1100×800', async ({
     app,
     page,
+    holdLimit,
   }) => {
     test.setTimeout(120_000);
     // Opened once for its local copy.
@@ -1467,14 +1435,14 @@ test.describe('within the bound on what a tab holds back', () => {
         await expect(shown).toBeVisible();
         // Seen within the tab's bound, the tab's placeholder until then, never part of the overview.
         const opening = await openingSeen(page);
-        expect(opening.after).toBeLessThanOrEqual(HOLD_LIMIT + FRAMES);
+        expect(opening.after).toBeLessThanOrEqual(holdLimit + FRAMES);
         expect(opening.early).toEqual([]);
         expect(opening.bare).toBe(0);
         await expect.poll(async () => (await codeSeen(page)).seen).toBeDefined();
         // Every code block on the first screen was drawn before the overview was seen, unless a
         // busy machine didn't draw them within the bound: then it's seen with room kept for them,
         // noted.
-        const atBound = opening.after >= HOLD_LIMIT - SEEN_LATE;
+        const atBound = opening.after >= holdLimit - SEEN_LATE;
         if (atBound) {
           test.info().annotations.push({
             type: 'seen at the bound',
@@ -1493,14 +1461,27 @@ test.describe('within the bound on what a tab holds back', () => {
       });
     }
   });
+});
+
+/**
+ * The local copy held until the test lets it come, so the overview's code can't be there by the
+ * bound, however fast the machine. The bound is Lo's in these tests, which it knows within.
+ */
+test.describe('while the local copy is still coming', () => {
+  test.use({ heldCopy: true });
 
   test('shows its overview within the bound from when its tab opens, with the local copy still coming, the tab’s placeholder until then', async ({
-    page: first,
-    afresh,
+    page,
+    copy,
+    holdLimit,
   }) => {
-    test.setTimeout(120_000);
-    const { page, id } = await openInTime(first, afresh);
+    test.setTimeout(60_000);
+    const { id, code } = await openInTime(page, holdLimit);
+    // It didn't wait for its code, which waits for the local copy: no block on screen had drawn it.
+    expect(Object.keys(code)).toContain('src/parser.ts:7–10');
+    expect(Object.values(code)).not.toContain('drawn');
     // Its code fills in as the local copy comes, moving nothing on screen.
+    copy.come();
     await expect
       .poll(() => current(page, id), { timeout: 30_000 })
       .toMatchObject({ code: 'ready' });
@@ -1542,7 +1523,8 @@ test('lays out each code block as tall as it draws before a jump reaches it, so 
       ),
     }),
   };
-  await sizeWindow(app, 1100, 800);
+  // Narrow enough that a line of src/format.ts wraps: the outline gives the article its room.
+  await sizeWindow(app, 900, 800);
   // Opened once for its local copy.
   const first = await open(page);
   await expect(overviewTab(page).getByRole('img')).toHaveAccessibleName('Overview', {
@@ -1768,20 +1750,17 @@ test.describe('while the local copy comes late', () => {
         }),
   };
 
-  test.describe('within the bound on what a tab holds back', () => {
-    test.use({ holdLimit: HOLD_LIMIT });
-
-    test('shows its overview within the bound from when its tab opens, while the local copy can’t be fetched, with room kept for its code', async ({
-      page: first,
-      afresh,
-    }) => {
-      test.setTimeout(120_000);
-      const { page, id } = await openInTime(first, afresh);
-      await expect
-        .poll(() => current(page, id), { timeout: 20_000 })
-        .toMatchObject({ code: 'failed' });
-      expect(await stillMoved(page)).toEqual([]);
-    });
+  // The bound is Lo's in these tests, which it knows within, as for the copy still coming.
+  test('shows its overview within the bound from when its tab opens, while the local copy can’t be fetched, with room kept for its code', async ({
+    page,
+    holdLimit,
+  }) => {
+    test.setTimeout(60_000);
+    const { id } = await openInTime(page, holdLimit);
+    await expect
+      .poll(() => current(page, id), { timeout: 20_000 })
+      .toMatchObject({ code: 'failed' });
+    expect(await stillMoved(page)).toEqual([]);
   });
 
   // Under a code block and at the one that offers Find, in a short window, and near the end in a

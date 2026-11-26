@@ -12,11 +12,11 @@ import { threadFor, type ThreadKeyTarget } from './acts.ts';
 import { takeOffer } from './boxes.ts';
 import { threadsMode } from './mode.ts';
 
-/** The diff of the pull request on screen, the one the keys act on first, while it's drawn. */
+/** The diff of the pull request on screen, while it's drawn. */
 function diffOnScreen(): ReturnType<typeof writingDiff> {
   const tab = activeTab();
   if (tab?.kind !== 'pull') return undefined;
-  return writingDiff(tab.id, true) ?? writingDiff(tab.id);
+  return writingDiff(tab.id);
 }
 
 /**
@@ -61,7 +61,7 @@ export function pinFirst(tab: PullTab, target: ThreadKeyTarget): 'shown' | 'pinn
   if (target.kind === 'thread' || threadsMode() !== 'beside') return 'shown';
   const row = threadFor(tab.id, target);
   if (typeof row === 'string') return 'shown';
-  const diff = writingDiff(tab.id, true) ?? writingDiff(tab.id);
+  const diff = writingDiff(tab.id);
   if (!diff) return 'hidden';
   if (diff.pinned().includes(row.id)) return 'shown';
   return diff.pinThread(row.id) ? 'pinned' : 'hidden';

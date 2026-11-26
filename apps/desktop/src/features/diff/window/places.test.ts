@@ -2,7 +2,9 @@
 // Following a reference to code before a tab's diff has its files: the place waits for them, for a
 // while, saying so, then shows in the diff when it has the file, and whole when it doesn't; or
 // it's dropped once it's waited too long, or, its note taken back, once the reader does anything
-// else, a key Lo takes included.
+// else, a key Lo takes included. With code beside, a link's place shows where the diff is, its line
+// Landing, and a follow records nothing, leaves focus be, and waits for a key that repeats; a thread
+// the threads panel shows Lands, with focus left in the panel.
 
 import { defineCommands, handlers, KEY_EVENT, listen, Registry } from '@lo/ui/commands';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
@@ -10,8 +12,9 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 import type * as TabShared from '../../tab/window/shared.ts';
 import type { DiffState, FileVersions } from '../contract.ts';
 import { keyOf, Loader } from './loader.ts';
-import { keepPlaces, showPlace } from './places.ts';
+import { goToThread, keepPlaces, showPlace, showThread } from './places.ts';
 import type * as Tabs from './tabs.ts';
+import { wantedIn } from './wanted.ts';
 import { opened } from './whole.ts';
 
 const seen = vi.hoisted(() => ({
@@ -19,6 +22,13 @@ const seen = vi.hoisted(() => ({
   middles: [] as string[],
   reveals: [] as unknown[],
   notes: [] as string[],
+  /** The diff drawn, if it is, and whether the code is beside a reading view. */
+  drawn: undefined as unknown,
+  beside: false,
+  /** Whether focus is in one of the views, rather than a panel. */
+  inView: false,
+  /** What the tab's history recorded. */
+  recorded: [] as unknown[],
 }));
 
 vi.mock('../../../window/commands/notices.tsx', () => ({
@@ -31,8 +41,10 @@ vi.mock('../../../window/commands/notices.tsx', () => ({
 }));
 
 vi.mock('../../../window/commands/registry.ts', () => ({
-  here: () => undefined,
-  registry: () => ({ history: { record: () => undefined, register: () => undefined } }),
+  here: () => ({ view: 'overview', at: { kind: 'none' } }),
+  registry: () => ({
+    history: { record: (entry: unknown) => seen.recorded.push(entry), register: () => undefined },
+  }),
 }));
 
 vi.mock('../../tab/window/shared.ts', async (original) => ({
@@ -41,12 +53,14 @@ vi.mock('../../tab/window/shared.ts', async (original) => ({
     seen.middles.push(view);
     return true;
   },
+  besideNow: () => seen.beside,
+  focusInView: () => seen.inView,
 }));
 
 vi.mock('./tabs.ts', async (original) => ({
   ...(await original<typeof Tabs>()),
   loaderOf: () => seen.loader,
-  drawnFor: () => undefined,
+  drawnFor: () => seen.drawn,
   revealWhenDrawn: (_tab: string, reveal: unknown) => {
     seen.reveals.push(reveal);
   },
@@ -120,6 +134,10 @@ beforeEach(() => {
   seen.middles.length = 0;
   seen.reveals.length = 0;
   seen.notes.length = 0;
+  seen.recorded.length = 0;
+  seen.drawn = undefined;
+  seen.beside = false;
+  seen.inView = false;
 });
 
 afterEach(() => {
@@ -243,5 +261,96 @@ describe('showPlace', () => {
     expect(seen.reveals).toEqual([
       { target: { kind: 'file', file: idOf(diff, 'src/parser.ts') }, focus: true },
     ]);
+  });
+});
+
+/** The diff drawn beside a reading view, which says what was asked of it. */
+function drawnDiff() {
+  const asked: string[] = [];
+  seen.drawn = {
+    view: {
+      reveal: (at: { kind: string }) => asked.push(`reveal ${at.kind}`),
+      revealAtTop: (at: { kind: string }) => asked.push(`top ${at.kind}`),
+      showThread: (id: string) => asked.push(`show ${id}`),
+      openThread: (id: string) => {
+        asked.push(`open ${id}`);
+        return true;
+      },
+      land: (at: { kind: string }) => asked.push(`land ${at.kind}`),
+      focus: () => asked.push('focus'),
+    },
+  };
+  seen.beside = true;
+  return asked;
+}
+
+describe('with code beside', () => {
+  it('shows a link’s place where the diff is, its line Landing, with focus in the code', () => {
+    const diff = loader();
+    diff.take(state([changed('src/parser.ts')]));
+    const asked = drawnDiff();
+    showPlace('t1', 'src/parser.ts', 7);
+    expect(asked).toEqual(['reveal line', 'land line', 'focus']);
+    // Nothing switched, and where the tab was is recorded, for ⌃o.
+    expect(seen.middles).toEqual([]);
+    expect(seen.recorded).toHaveLength(1);
+  });
+
+  it('follows with nothing recorded and focus left be, once a key that repeats comes up', () => {
+    const diff = loader();
+    diff.take(state([changed('src/parser.ts'), changed('src/format.ts')]));
+    const asked = drawnDiff();
+    showPlace('t1', 'src/parser.ts', 7, undefined, 'new', 'follow');
+    expect(asked).toEqual(['reveal line', 'land line']);
+    expect(seen.recorded).toEqual([]);
+    // A held key: the code waits for its last press.
+    asked.length = 0;
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', repeat: true }));
+    showPlace('t1', 'src/parser.ts', 8, undefined, 'new', 'follow');
+    showPlace('t1', 'src/format.ts', 2, undefined, 'new', 'follow');
+    expect(asked).toEqual([]);
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'j' }));
+    expect(asked).toEqual(['reveal line', 'land line']);
+    expect(seen.recorded).toEqual([]);
+  });
+
+  it('shows a thread the threads panel asks for, its line Landing, focus left in the panel', () => {
+    const asked = drawnDiff();
+    seen.inView = false;
+    expect(showThread('t1', 'T1', 'now')).toBe(true);
+    expect(asked).toEqual(['open T1', 'show T1', 'land thread']);
+    // From a view, as from the palette there, the code takes focus.
+    asked.length = 0;
+    seen.inView = true;
+    showThread('t1', 'T1', 'now');
+    expect(asked).toEqual(['open T1', 'show T1', 'land thread', 'focus']);
+  });
+
+  it('asks a diff not on screen for a thread, with focus in the code for a link, not a follow', () => {
+    seen.beside = true;
+    seen.inView = true;
+    expect(goToThread('t1', 'T1', 'go')).toBe(true);
+    expect(wantedIn('t1')).toEqual({ kind: 'thread', thread: 'T1', focus: true });
+    expect(seen.middles).toEqual(['diff.view']);
+    goToThread('t1', 'T2', 'follow');
+    expect(wantedIn('t1')).toEqual({ kind: 'thread', thread: 'T2', focus: false });
+    // From the threads panel, focus stays there.
+    seen.inView = false;
+    showThread('t1', 'T3', 'now');
+    expect(wantedIn('t1')).toEqual({ kind: 'thread', thread: 'T3', focus: false });
+  });
+
+  it('follows to a thread, opening only the last asked for, once a key that repeats comes up', () => {
+    const asked = drawnDiff();
+    expect(goToThread('t1', 'T1', 'follow')).toBe(true);
+    expect(asked).toEqual(['open T1', 'reveal thread', 'land thread']);
+    asked.length = 0;
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', repeat: true }));
+    goToThread('t1', 'T2', 'follow');
+    goToThread('t1', 'T3', 'follow');
+    expect(asked).toEqual([]);
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'j' }));
+    expect(asked).toEqual(['open T3', 'reveal thread', 'land thread']);
+    expect(seen.recorded).toEqual([]);
   });
 });

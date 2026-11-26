@@ -660,8 +660,10 @@ export interface DiffView extends KeySource {
   /**
    * Lays the diff out again, keeping the cursor's line on screen: or, with focus in the peek, the
    * peek's line, where the cursor goes, as it does as the peek closes, and focus stays in the peek.
+   * The reader changed it, so focus comes to the code, unless `focus` is false, as when the code
+   * goes beside another view: then focus stays where it is.
    */
-  setLayout(layout: DiffLayout): void;
+  setLayout(layout: DiffLayout, options?: { readonly focus?: boolean }): void;
   /**
    * Replaces the threads drawn under lines, and under files' headers, each drawn by `render` in an
    * element of its own the first time it's drawn, and kept up to date through what that returns. A
@@ -787,6 +789,11 @@ export interface DiffView extends KeySource {
    * it is.
    */
   revealAtTop(at: Target): boolean;
+  /**
+   * Marks the line `at` names with the Land move once the editor has drawn it where it is: where a
+   * jump or a link brought the cursor, as `reveal` did. Nothing for a place the view doesn't have.
+   */
+  land(at: Target): void;
   /**
    * Closes a shown file into one block, as `za` does, or opens it again; a file kept out or not
    * shown as a diff has nothing to close. Not a jump, and the cursor stays.
@@ -1132,6 +1139,11 @@ export interface FileView extends KeySource {
    * it is: `focus()` takes it there.
    */
   reveal(at: Target): boolean;
+  /**
+   * Marks the line `at` names with the Land move once the editor has drawn it where it is, as
+   * `DiffView.land` does. Nothing for a place the view doesn't have.
+   */
+  land(at: Target): void;
   /**
    * Scrolls the view's own box, and nothing around it, so line `line` is near the top of what it
    * shows, or as near as the file's end lets it: for a view inside something else that scrolls,

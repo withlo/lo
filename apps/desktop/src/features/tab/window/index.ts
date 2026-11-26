@@ -22,6 +22,8 @@ import { choosable, chooseAccount } from './Notes.tsx';
 import { OpenOnChoice, OpenOnRow, useOpenOnLine } from './OpenOn.tsx';
 import { blocked } from './banners.ts';
 import {
+  besideDrawable,
+  besideDrawn,
   drawable,
   drawnRow,
   firstLayout,
@@ -40,9 +42,19 @@ import {
   type Edge,
 } from './layout.ts';
 import { inStrip, movable, showable, stepTab } from './order.ts';
-import { middleIds, panels, stepAmong, toggleRight } from './panels.ts';
+import {
+  bringView,
+  focusView,
+  kindOf,
+  middleIds,
+  panels,
+  stepAmong,
+  toggleBeside,
+  toggleRight,
+  viewsOf,
+} from './panels.ts';
 import { PullRequestTab } from './PullRequestTab.tsx';
-import { activeTab, kinds, middleShown } from './shared.ts';
+import { activeTab, kinds, middleShown, viewsShown } from './shared.ts';
 import { pullsStore, showFiles, showLocal, showPull, showTabs, tabsStore } from './store.ts';
 
 declare global {
@@ -72,23 +84,88 @@ function pullOnScreen(): Extract<Tab, { kind: 'pull' }> | string {
 }
 
 /**
+ * The views `` ` `` and `~` step through, by whether each has a label: those the header's switch
+ * lists, or with the code beside, its reading views, which take the reading view's place.
+ */
+function steppedThrough(two: boolean): readonly boolean[] {
+  const { labeled, ids } = middleIds;
+  return two ? labeled.map((has, at) => has && kindOf(ids[at]) === 'reading') : labeled;
+}
+
+/**
  * Steps the tab on screen's middle view by `step` among those the header's switch lists, round the
- * ends. A view with no label, such as a file whole, opens from what it shows and isn't stepped to.
+ * ends; with the code beside, its reading view among the reading views. A view with no label, such
+ * as a file whole, opens from what it shows and isn't stepped to.
  */
 function stepMiddle(step: 1 | -1): void {
   const tab = pullOnScreen();
   if (typeof tab === 'string') return;
-  const { ids, labeled } = middleIds;
-  const at = Math.max(0, ids.indexOf(middleShown(tab.id) ?? ''));
-  panels.update(tab.id, (current) => ({ ...current, middle: ids[stepAmong(at, step, labeled)] }));
+  const two = besideDrawn();
+  const { ids } = middleIds;
+  const from = two ? viewsShown(tab.id)[0] : middleShown(tab.id);
+  const at = Math.max(0, ids.indexOf(from ?? ''));
+  const next = ids[stepAmong(at, step, steppedThrough(two))];
+  if (next !== undefined) bringView(tab.id, next, two);
 }
 
-/** Why the middle view can't change: there's no pull request on screen, or one view at most. */
+/**
+ * Why the middle view can't change: there's no pull request on screen, or one view at most, or
+ * with the code beside, one reading view, with nothing to say.
+ */
 function middleSteps(): true | string {
   const tab = pullOnScreen();
   if (typeof tab === 'string') return tab;
-  const listed = middleIds.labeled.filter(Boolean).length;
-  return listed > 1 ? true : 'Only one view so far';
+  const two = besideDrawn();
+  const listed = steppedThrough(two).filter(Boolean).length;
+  if (listed > 1) return true;
+  return two ? '' : 'Only one view so far';
+}
+
+/** Why the code can't be put beside a reading view, or taken away, in the tab on screen. */
+function besideSwitch(): true | string {
+  const tab = activeTab();
+  // Recent, Settings and a merge queue have no row to lay out.
+  if (tab?.kind !== 'pull') return '';
+  const why = rowless();
+  if (why !== undefined) return why;
+  if (viewCounts.reading === 0 || viewCounts.code === 0) return '';
+  return besideDrawable();
+}
+
+/**
+ * The other of the two views on screen in the tab on screen, from the one focus is in, or why
+ * there's none to go to: `''`, with nothing to say, where there's one view, or focus isn't in one.
+ */
+function otherView(): string {
+  const tab = activeTab();
+  if (tab?.kind !== 'pull' || rowless() !== undefined) return '';
+  const saved = layout.getState();
+  if (!saved.beside || viewCounts.reading === 0 || viewCounts.code === 0) return '';
+  const id = document.activeElement
+    ?.closest('[data-lo-views] [data-lo-middle-view]')
+    ?.getAttribute('data-lo-middle-view');
+  const shown = viewsShown(tab.id);
+  if (!id || !shown.includes(id)) return '';
+  if (shown.length === 2) return shown.find((each) => each !== id) ?? '';
+  // With room for one, the other of the tab's two.
+  const two = viewsOf(tab.id, panels.get(tab.id), undefined, true);
+  if (!two.beside) return '';
+  return kindOf(id) === 'code' ? two.reading : two.code;
+}
+
+/**
+ * Goes to the other view, as `\` does: focus goes into it, or with room for only one, it's drawn in
+ * the place of the one that had focus, and takes it.
+ */
+function goToOtherView(): void {
+  const tab = activeTab();
+  const id = otherView();
+  if (tab?.kind !== 'pull' || id === '') return;
+  if (viewsShown(tab.id).length === 2) {
+    focusView(id);
+    return;
+  }
+  panels.update(tab.id, (current) => ({ ...current, middle: id }));
 }
 
 /** Asks main what it has for every view of a pull request's tab the window has heard nothing of. */
@@ -190,8 +267,8 @@ function drawnOnScreen(edge: Edge): boolean {
 
 /** What the app menu shows of the row: which panels are drawn, and which can't be. */
 function rowShown(): string {
-  const { left, threads, cramped } = drawnRow();
-  return JSON.stringify([left !== undefined, threads !== undefined, cramped]);
+  const { left, threads, views, cramped } = drawnRow();
+  return JSON.stringify([left !== undefined, threads !== undefined, views.length, cramped]);
 }
 
 /** Why `target`, a tab or the one on screen, can't be closed, or `true` when it can. */
@@ -251,6 +328,14 @@ export default {
       enabled: () => switchable('threads', 'No threads panel yet'),
       checked: () => drawnOnScreen('threads'),
     },
+    beside: {
+      run: () => {
+        toggleBeside();
+      },
+      enabled: besideSwitch,
+      checked: () => rowless() === undefined && besideDrawn(),
+    },
+    otherView: { run: goToOtherView, enabled: () => otherView() !== '' || '' },
     widen: { run: () => stepWidth(1), enabled: () => steppable(1) },
     narrow: { run: () => stepWidth(-1), enabled: () => steppable(-1) },
     resetWidth: { run: resetWidth, enabled: resettable },

@@ -40,7 +40,7 @@ afterEach(() => {
   row.setState({}, true);
 });
 
-const there: There = { left: true, threads: true };
+const there: There = { left: true, threads: true, beside: true };
 
 /** A pull request's tab's row, as the tab draws it: a panel only while it's drawn. */
 function Tab() {

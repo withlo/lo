@@ -349,7 +349,7 @@ export function threadFor(view: string, target: ThreadKeyTarget): ThreadRow | st
   let id: string | undefined;
   if (target.kind === 'thread' || target.thread !== undefined) id = target.thread;
   else {
-    const diff = writingDiff(view, true) ?? writingDiff(view);
+    const diff = writingDiff(view);
     if (!diff) return noDiff(view);
     const under = diff.threadsDrawn(
       target.kind === 'header'
@@ -393,7 +393,7 @@ export function reply(tab: PullTab, target: ThreadKeyTarget): void {
     refuse(noReply(loginOf(tab.id)));
     return;
   }
-  const diff = writingDiff(tab.id, true) ?? writingDiff(tab.id);
+  const diff = writingDiff(tab.id);
   if (!diff || shownAt(tab.id, row.id) === undefined) {
     refuse(NOT_HERE);
     return;
@@ -565,7 +565,7 @@ export async function edit(tab: PullTab, target: ThreadKeyTarget, comment?: stri
   if (!row) return;
   const chosen = yours(view, row, 'edit', comment);
   if (!chosen) return;
-  const diff = writingDiff(view, true) ?? writingDiff(view);
+  const diff = writingDiff(view);
   if (!diff || shownAt(view, row.id) === undefined) {
     refuse(NOT_HERE);
     return;

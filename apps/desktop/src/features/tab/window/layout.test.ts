@@ -44,6 +44,7 @@ beforeAll(() => {
 const both = (left?: number): WindowLayout => ({
   left: left === undefined ? { open: true } : { open: true, width: left },
   threads: { open: true },
+  beside: false,
 });
 
 beforeEach(() => {
@@ -216,14 +217,16 @@ describe('the window’s layout', () => {
   });
 
   it('is main’s as the window starts, and main keeps each change after, but not what it sent', async () => {
-    fromMain = { left: { open: false, width: 260 }, threads: { open: true } };
+    fromMain = { left: { open: false, width: 260 }, threads: { open: true }, beside: true };
     await loadLayout();
     expect(layout.getState()).toEqual(fromMain);
     const stop = keepLayout();
     layout.setState(fromMain, true);
     expect(kept).toEqual([]);
     togglePanel('left');
-    expect(kept).toEqual([{ left: { open: true, width: 260 }, threads: { open: true } }]);
+    expect(kept).toEqual([
+      { left: { open: true, width: 260 }, threads: { open: true }, beside: true },
+    ]);
     stop();
   });
 });

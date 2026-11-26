@@ -118,6 +118,7 @@ import { codeEditor } from './editor.ts';
 import { gutterReach, gutterWidth, HEADER_HEIGHT, Pin } from './heads.ts';
 import { type FileTokens, highlighting, lineStarts, tokensChanged } from './highlight.ts';
 import { columnAt, type FileHints, hintRanges, hintsOf, sameHints } from './hints.ts';
+import { landLine } from './landing.ts';
 import { InlineLayout, inlineLines, inlineText } from './inline.ts';
 import {
   addCodeEditor,
@@ -1199,8 +1200,8 @@ class View implements DiffView {
     this.#watchFile();
   }
 
-  setLayout(layout: DiffLayout): void {
-    if (layout !== this.#pane) this.#toggleLayout();
+  setLayout(layout: DiffLayout, options: { readonly focus?: boolean } = {}): void {
+    if (layout !== this.#pane) this.#toggleLayout(options.focus ?? true);
   }
 
   setThreads(
@@ -3051,6 +3052,14 @@ class View implements DiffView {
     this.#setRoom(Math.max(this.#roomHeight, this.dom.clientHeight));
     this.#moveCursor(found, true);
     return this.scrollTo({ at: this.#spot(found.place), offset: 0 });
+  }
+
+  land(at: Target): void {
+    const found = this.#atOf(at);
+    if (!found) return;
+    const pane: Pane = this.#pane === 'inline' ? 'inline' : found.place.side;
+    const view = this.#viewOf(pane);
+    landLine(view, this.#docLine(pane, found.place));
   }
 
   /**

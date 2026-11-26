@@ -381,7 +381,6 @@ function onBlock(block: OverviewBlock, number: number) {
 /** The block keys the focused block's chip offers. */
 const BLOCK_KEYS = defineCommands('overview', {
   follow: blockKey('Go to code', 'enter'),
-  beside: blockKey('Code beside', 'o'),
   nextStep: blockKey('Next step', 'right'),
   nextLink: blockKey('Next link', 'tab'),
 });
@@ -478,10 +477,10 @@ describe('blocks', () => {
     let block = page.querySelector('.is-focused')!;
     expect(block.className).toBe('lo-block is-focused');
     expect(page.querySelectorAll('.is-focused')).toHaveLength(1);
-    expect(hints(block)).toEqual(['Go to code⏎', 'Code besideo']);
+    expect(hints(block)).toEqual(['Go to code⏎']);
     // A click on one runs its command, and nothing else the block does.
-    click(block.querySelectorAll('.lo-block__hints button')[1]!);
-    expect(ran).toEqual(['overview.beside']);
+    click(block.querySelectorAll('.lo-block__hints button')[0]!);
+    expect(ran).toEqual(['overview.follow']);
 
     page = focusedOn(at('tabs'));
     expect(hints(page.querySelector('.is-focused')!)).toEqual(['Next tab→']);

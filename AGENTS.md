@@ -156,12 +156,24 @@ right side; don't loosen the rules.
 
 Unit tests are `*.test.ts` files beside the code, run by Vitest. The root `vitest.config.ts` has one
 project per package. Nx runs one project's tests at a time, and Vitest uses two workers, or all of a
-CI runner's cores. A test that runs git, cloning and fetching repositories it builds, takes longer
-when the machine is busy than the 5 s a test gets, so a package whose tests mostly run git sets a
-longer `testTimeout` for the whole project (`@lo/git`). The desktop app's tests that import
-`@lo/testing/git`, directly or through a module they import, are found by `gitTests()` in
-`apps/desktop/vitest.config.ts` and run as `@lo/desktop:git`, a project of their own with 30 s; the
-rest of the desktop's tests keep the default.
+CI runner's cores. A project in a file of its own takes none of the root config's options, so the
+root config sets that limit as `VITEST_MAX_WORKERS`, which every project reads. For another, pass
+`--maxWorkers=<n>` (or `--no-file-parallelism` for one), or set `VITEST_MAX_WORKERS=<n>`. A test
+that runs git, cloning and fetching repositories it builds, takes longer when the machine is busy
+than the 5 s a test gets, so a package whose tests mostly run git sets a longer `testTimeout` for
+the whole project (`@lo/git`). The desktop app's tests that import `@lo/testing/git`, directly or
+through a module they import, are found by `gitTests()` in `apps/desktop/vitest.config.ts` and run
+as `@lo/desktop:git`, a project of their own with 30 s; the rest of the desktop's tests keep the
+default.
+
+Most of a git test's time is starting git, so a test starts it as few times as it can:
+
+- Run the git `@lo/testing/git` finds, `gitProgram()`: on a Mac it skips Apple's `/usr/bin/git`,
+  which looks up the developer tools each time it starts. Its `git()` and `testGitEnvironment()` run
+  that one, scripts included, without gc or maintenance in the background.
+- Build what a test file's tests share once for the file, as `appRemote()` does, in a folder from
+  `fileFolders()`, which removes it once they've run. A test makes its own only of what it changes.
+- Commit thousands of files with `RemoteRepo.commitFiles`, not by writing each and `git add`.
 
 A string is pinned once, in its words module's own test, or, for one with no words module, in the
 test of the module that says it, as `review/window/model.test.ts` pins the review dialog's verdicts.
@@ -933,8 +945,20 @@ status bar.
   holds most of its top. Main keeps its place as it settles, and as it closes or as Lo quits,
   whichever comes first: the database closes as the feature stops, and a window made after keeps
   nothing. A panel asked for, put back by Reset layout, or back as its key or button closes the
-  other, fades in with Swap, and focus in a panel goes back to the middle view as the panel stops
-  being drawn, by any route.
+  other, fades in with Swap, and focus in a panel goes back to the view that had it last as the
+  panel stops being drawn, by any route.
+- Code beside is part of that layout (`beside`, and the reading view's share, `reading`): two views,
+  a reading view (a middle view of `kind: 'reading'`, the overview or the timeline) on the left and
+  the code view (`kind: 'code'`, the diff, always inline, or a file whole) on the right, each in a
+  sheet of its own (`ViewsRow`). Each view stays in its sheet, drawn while hidden, so none is drawn
+  again as code beside comes and goes. A view comes on screen through `showMiddle`, which never
+  changes the layout: a view already drawn is scrolled, not switched to. A link to code from a view
+  gives the code focus; one from a panel leaves focus in the panel. What only follows leaves focus
+  where it is and records no history. A middle view that gives `setMiddle` its `root` is the one
+  `Esc` and history use while focus is in it, or was last. Focus in a view as it's hidden goes to
+  the window's middle (`focusNowhere`), so keys typed meanwhile go on in the view that takes it
+  next. With two views, only the one with focus takes focus that's nowhere in particular
+  (`focusNowhereFor`), and a waiting view's note keeps focus for that view, not the one beside it.
 - Other features' banners go in the `tab.banners` slot. Each view there says whether it shows a
   banner for a tab (`shows`) and when that may change (`subscribe`), so the tab makes room only for
   the banners it has.
@@ -1111,8 +1135,9 @@ The diff and the tree follow it through the feature's `revisions.comparisons` se
 - The window holds back what a tab shows first, the overview or a place in the diff, for
   `HOLD_LIMIT`, and past it shows the timeline in the overview's place, and the diff, or the file
   whole, in the place's. A build run from source takes another bound from `LO_HOLD_LIMIT_MS`, which
-  main hands the window in `app.info`, so a test that isn't about the bound doesn't race it on a
-  busy machine; a packaged build ignores it.
+  main hands the window in `app.info`, so a test doesn't race it on a busy machine; a packaged build
+  ignores it. The smoke test runs on three times the real bound, and checks what the window does by
+  it against that; only a test of the real bound itself, such as Lo giving up at it, asks for it.
 - Two revisions are compared in the local copy with `compareRevisions`, across a rebase when the
   base moved, once it has both: until then the comparison on screen stays, and the note over the
   diff says what waits. The comparison is made once, for the diff and the tree, and says how it
