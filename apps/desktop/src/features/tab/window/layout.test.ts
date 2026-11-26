@@ -16,6 +16,9 @@ import {
   resetWidth,
   row,
   setOpen,
+  setReading,
+  setSides,
+  sizeInView,
   steppable,
   stepWidth,
   togglePanel,
@@ -128,6 +131,47 @@ describe('the keys that size what has focus', () => {
     expect(layout.getState().left.width).toBe(400);
   });
 
+  it('size what an edge inside the view focus is in sizes, where nothing round the view has one', () => {
+    document.body.innerHTML =
+      '<aside data-lo-left><button id="left">a.ts</button></aside>' +
+      '<section data-lo-sheet="code"><button id="code">Code</button></section>';
+    layout.setState(both());
+    row.setState({ width: 1440 });
+    const sized: (number | undefined)[] = [];
+    let width = 500;
+    let moved = false;
+    const stop = sizeInView({
+      sized: () =>
+        document.activeElement?.id === 'code' ? { width, min: 300, max: 540 } : undefined,
+      size: (to) => {
+        sized.push(to);
+        width = to ?? 450;
+        moved = to !== undefined;
+      },
+      resettable: () => moved,
+    });
+    // In the panel, the panel's.
+    document.getElementById('left')?.focus();
+    stepWidth(1);
+    expect(sized).toEqual([]);
+    document.getElementById('code')?.focus();
+    expect(resettable()).toBe('');
+    stepWidth(1);
+    expect(sized).toEqual([532]);
+    expect(steppable(1)).toBe(true);
+    stepWidth(1);
+    expect(sized).toEqual([532, 540]);
+    expect(steppable(1)).toBe('');
+    stepWidth(-1);
+    expect(sized).toEqual([532, 540, 508]);
+    expect(resettable()).toBe(true);
+    resetWidth();
+    expect(sized).toEqual([532, 540, 508, undefined]);
+    expect(resettable()).toBe('');
+    stop();
+    expect(steppable(1)).toBe('');
+  });
+
   it('refuse while an edge is dragged, so `Esc` puts back the width the drag found', () => {
     panels('left');
     layout.setState({ left: { open: true, width: 400 } });
@@ -214,6 +258,30 @@ describe('the window’s layout', () => {
     expect(layout.getState()).toEqual(FIRST_LAYOUT);
     expect(row.getState().asked).toBeUndefined();
     expect(firstLayout()).toBe(true);
+  });
+
+  it('keeps the old side’s share beside the reading view’s, and puts both back with the rest', () => {
+    setSides(0.3);
+    setReading(0.6);
+    expect(layout.getState()).toEqual({ ...FIRST_LAYOUT, sides: 0.3, reading: 0.6 });
+    setReading(undefined);
+    expect(layout.getState()).toEqual({ ...FIRST_LAYOUT, sides: 0.3 });
+    expect(firstLayout()).toBe(false);
+    setSides(undefined);
+    expect(firstLayout()).toBe(true);
+    setSides(0.7);
+    resetLayout();
+    expect(layout.getState()).toEqual(FIRST_LAYOUT);
+  });
+
+  it('never keeps a share that isn’t a number, and keeps one within 0 to 1', () => {
+    setSides(0.4);
+    setSides(Number.NaN);
+    setSides(Number.POSITIVE_INFINITY);
+    expect(layout.getState()).toEqual({ ...FIRST_LAYOUT, sides: 0.4 });
+    setSides(1.5);
+    expect(layout.getState().sides).toBe(1);
+    resetLayout();
   });
 
   it('is main’s as the window starts, and main keeps each change after, but not what it sent', async () => {

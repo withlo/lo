@@ -12,9 +12,11 @@
 @import './overview/overview.css' layer(components);
 
 /* Classes in ui's components; the window's own are found from its stylesheet. The code view styles
-   itself in code/view.css, so its files hold none. */
+   itself in code/view.css, so its files hold none, but for the edge between a side-by-side diff's
+   sides, which is a `splitter` as every edge is. */
 @source './';
 @source not './code';
+@source inline('splitter');
 
 /* Where Tailwind can't reach. */
 

@@ -27,7 +27,9 @@
 // tops take in the pass's spacers; the pass puts that right, but for the scroll that brings a
 // moved cursor into view. For a second after a key moves a cursor, until the wheel, a pointer or
 // the scrollbar takes the scroll, the pass keeps the cursor's line on screen, which CodeMirror's
-// measuring after a far jump can leave it off.
+// measuring after a far jump can leave it off. While the edge between the sides moves, the anchor
+// is held on the first line under the file's header pinned at the top, whatever has focus, so the
+// code there stays put in every frame as both sides wrap anew.
 
 import { type Extension, StateEffect, StateField } from '@codemirror/state';
 import {
@@ -232,6 +234,8 @@ interface Anchor {
   offset: number;
   /** The scroll when the anchor was taken. */
   scrollTop: number;
+  /** Taken under the pinned header for a hold, which keeps it while the scroll stays. */
+  under?: number;
 }
 
 /**
@@ -260,7 +264,14 @@ const wheelAnchoring = 250;
  * key moved on screen.
  */
 export class Aligner {
-  readonly stats: PassStats = { passes: 0, changed: 0, totalMs: 0, maxMs: 0, forgetMaxMs: 0 };
+  readonly stats: PassStats = {
+    passes: 0,
+    changed: 0,
+    unsettled: 0,
+    totalMs: 0,
+    maxMs: 0,
+    forgetMaxMs: 0,
+  };
   readonly #views: { old: EditorView; new: EditorView };
   readonly #layout: Layout;
   readonly #rows: (file: number) => FileRows;
@@ -321,6 +332,15 @@ export class Aligner {
   #lined: { old?: { from: number; to: number }; new?: { from: number; to: number } } = {};
   /** How wide each editor's text was when the last pass lined it up, which is where it wraps. */
   #widths: { old: number; new: number } | undefined;
+  /** The holds under way on the first line under the pinned header, as the sides change width. */
+  #holds = 0;
+  /**
+   * Whether the last hold was let go while a pass that ran out of rounds was still to finish: the
+   * held line stays held until a pass settles, or the scroll moves.
+   */
+  #lettingGo = false;
+  /** Whether the last pass ran out of rounds, and goes round again the next frame. */
+  #unsettled = false;
   readonly #resized: ResizeObserver;
 
   constructor(
@@ -340,8 +360,10 @@ export class Aligner {
       'scroll',
       () => {
         const top = this.#scroller.scrollTop;
+        if (this.#running || top === this.#anchor?.scrollTop) return;
+        // A hold let go, still settling, has nothing left to keep once the scroll moves.
+        if (this.#lettingGo && this.#holds === 0) this.#letGo();
         const anchor = this.#anchor;
-        if (this.#running || top === anchor?.scrollTop) return;
         if (anchor) this.#direction = top > anchor.scrollTop ? 1 : -1;
         // The wheel, as the editors' text has changed width since the last pass: what's on screen
         // has moved as the lines wrapped anew, which the pass puts back, so the line anchored
@@ -350,7 +372,7 @@ export class Aligner {
         this.#anchor =
           anchor && this.#wheeledOff
             ? { ...anchor, offset: anchor.offset - (top - anchor.scrollTop), scrollTop: top }
-            : this.#anchorNow();
+            : this.#anchorFresh(anchor);
         this.#scrolled = true;
         this.schedule();
       },
@@ -418,12 +440,13 @@ export class Aligner {
    * lines are now would keep the move. When a change has been made since the last pass, the anchor
    * that pass left, or the scroll took, stands. So it does when the editors have changed width
    * since, as when a panel opens beside the diff: their lines wrap anew, and those above the screen
-   * have moved what's on it before the pass hears of it.
+   * have moved what's on it before the pass hears of it. A hold under way (`holdUnder`) stands too.
    */
   anchorTop(): void {
     if (this.#paused || this.#topTaken) return;
     this.#topTaken = true;
-    if (this.#scheduled || this.#rewrapped()) return;
+    // A hold under way keeps its own line: what changes now is the sides' widths changing.
+    if (this.#scheduled || this.#rewrapped() || this.#holding()) return;
     const side = this.#anchorSide();
     const found = this.#screenLine(side, true) ?? this.#screenLine(otherSide(side), true);
     if (found) this.#anchor = { for: side, ...found };
@@ -437,11 +460,12 @@ export class Aligner {
    * while it's drawn. It stands, as `anchorTop`'s does, until the pass runs. A line that isn't
    * drawn leaves the anchor as it is. So does a change of the editors' width since the last pass,
    * as for `anchorTop`: where the line is drawn now is where its new wrapping put it, not where the
-   * reader saw it, and the anchor that pass left stands, chosen as this one would have been.
+   * reader saw it, and the anchor that pass left stands, chosen as this one would have been. So
+   * does a hold under way (`holdUnder`): a box that grows as the sides narrow is the sides' change.
    */
   anchorAt(side: Side, pos: number, element?: Element): void {
     if (this.#paused) return;
-    if (this.#rewrapped()) {
+    if (this.#rewrapped() || this.#holding()) {
       this.#topTaken = true;
       this.#chosen = true;
       return;
@@ -461,6 +485,80 @@ export class Aligner {
     };
   }
 
+  /**
+   * Holds the first line drawn `below` pixels or more under the top of the screen, past the file's
+   * header pinned there, where it is, whatever has focus: the sides are about to change width, as
+   * the edge between them moves, and every line wraps anew. Each pass keeps it there until
+   * `release`, or until the scroll moves, which takes the line then under the header. A hold
+   * already on that line, with the scroll where it was, stands as it is, so a drag, one hold from
+   * its press until the frame after it ends is drawn, keeps the line where the press found it in
+   * every frame. A key's step is a hold of its own, let go once the frame after it is drawn: each
+   * step of a held key takes the line under the header afresh, which is the line the step before
+   * held, where it held it, unless something else moved it between. Where it held it, not where
+   * it's drawn: on a screen that scrolls by whole pixels, the line is drawn a fraction of one off
+   * where it's held, and steps taken from where it's drawn would walk it off the screen. While a
+   * hold lasts, `anchorTop` and `anchorAt` leave it as it is. Holds nest: each `release` ends one.
+   */
+  holdUnder(below: number): void {
+    this.#holds++;
+    if (this.#paused) return;
+    const anchor = this.#anchor;
+    const kept =
+      anchor?.under === below && Math.abs(anchor.scrollTop - this.#scroller.scrollTop) < 0.5;
+    // Changed width since the last pass, what's drawn is where its new wrapping put it: the anchor
+    // that pass left stands.
+    if (kept || this.#scheduled || this.#rewrapped()) {
+      if (anchor) this.#anchor = { ...anchor, under: below };
+      return;
+    }
+    const found = this.#underNow(below);
+    if (anchor && found && this.#heldBefore(anchor, found, below)) {
+      this.#anchor = { ...anchor, for: found.for, under: below };
+      return;
+    }
+    if (found) this.#anchor = found;
+  }
+
+  /**
+   * Whether `anchor`, the line the pass keeps, is the one a hold `below` would take but for where
+   * the scroll rounded it to: the scroll where the pass left it, the line drawn less than
+   * `ON_SCREEN` off where it's kept, and kept under the pinned header, the line `found`, first
+   * there as drawn, or one above it that's first as it's kept.
+   */
+  #heldBefore(anchor: Anchor, found: Anchor, below: number): boolean {
+    if (anchor.element !== undefined) return false;
+    if (Math.abs(anchor.scrollTop - this.#scroller.scrollTop) >= 0.5) return false;
+    const same = anchor.side === found.side && anchor.pos === found.pos;
+    if (!same && (anchor.offset < below - ON_SCREEN || anchor.offset >= found.offset)) return false;
+    const drawn = drawnTop(this.#views[anchor.side], anchor.pos);
+    if (drawn === undefined) return false;
+    return Math.abs(drawn - this.#scroller.getBoundingClientRect().top - anchor.offset) < ON_SCREEN;
+  }
+
+  /** Ends a hold `holdUnder` began: the anchor goes back to the pass's own once none is left. */
+  release(): void {
+    this.#holds = Math.max(0, this.#holds - 1);
+    if (this.#holds > 0) return;
+    // A pass still finishing what the hold was for keeps the line until it settles.
+    if (this.#unsettled) {
+      this.#lettingGo = true;
+      return;
+    }
+    this.#letGo();
+  }
+
+  /** Whether a hold keeps the line under the pinned header: one under way, or one still settling. */
+  #holding(): boolean {
+    return this.#holds > 0 || this.#lettingGo;
+  }
+
+  /** The anchor goes back to the pass's own, the hold over. */
+  #letGo(): void {
+    this.#lettingGo = false;
+    if (this.#anchor?.under === undefined) return;
+    this.#anchor = { ...this.#anchor, under: undefined };
+  }
+
   /** Stops the pass, or starts it again. */
   set paused(paused: boolean) {
     this.#paused = paused;
@@ -468,6 +566,9 @@ export class Aligner {
     this.#topTaken = false;
     this.#chosen = false;
     this.#given = false;
+    // No pass is still to finish, and a hold let go has nothing left to keep.
+    this.#unsettled = false;
+    this.#lettingGo = false;
     if (!paused) this.schedule();
   }
 
@@ -528,15 +629,16 @@ export class Aligner {
     // where the reader saw it: the pass goes as it does with none.
     const given = this.#given && !this.#rewrapped();
     let changed = false;
+    let unsettled = false;
     try {
       const side = this.#anchorSide();
       let anchor = this.#anchor;
       if (
         !anchor ||
-        (anchor.for !== side && !this.#chosen) ||
+        (anchor.for !== side && !this.#chosen && anchor.under === undefined) ||
         (!this.#scrolled && Math.abs(anchor.scrollTop - this.#scroller.scrollTop) > 0.5)
       ) {
-        anchor = this.#anchorNow();
+        anchor = this.#anchorFresh(anchor);
       }
       this.#scrolled = false;
       for (const seenSide of ['old', 'new'] as const) {
@@ -583,13 +685,15 @@ export class Aligner {
           // `anchorAt` gave for the change this pass lines up, as one a peek opens under, is on it
           // while some of it is, partly above the top, or at the top where a jump left it a
           // fraction of a pixel above.
-          anchor = this.#anchorNow();
+          anchor = this.#anchorFresh(anchor);
         }
         // The last round only measures, so what's drawn covers where the scroll ended up.
         if (turn === rounds) {
           this.#restore(anchor);
           // What it measured may have drawn rows it hasn't lined up yet, and the editors told
-          // no one while it ran: go round again next frame.
+          // no one while it ran: go round again next frame. This frame may draw them out of step.
+          this.stats.unsettled++;
+          unsettled = true;
           requestAnimationFrame(() => this.schedule());
           break;
         }
@@ -619,6 +723,9 @@ export class Aligner {
       if (changed) this.stats.changed++;
       this.stats.totalMs += ms;
       this.stats.maxMs = Math.max(this.stats.maxMs, ms);
+      this.#unsettled = unsettled;
+      // A hold let go while this pass was still to finish ends now it has.
+      if (!unsettled && this.#lettingGo && this.#holds === 0) this.#letGo();
     }
     if (Date.now() - this.#following < cursorFollow) this.#cursorInView();
   }
@@ -738,7 +845,8 @@ export class Aligner {
     if (last > doc.lines) return;
     const used = this.#usedLines(view === this.#views.old ? 'old' : 'new');
     if (last >= used.first - keptLines && first <= used.last + keptLines) return;
-    const anchor = this.#anchorNow();
+    // What's on screen stays as it is: a hold's line, or the line the pass would take now.
+    const anchor = this.#anchor?.under === undefined ? this.#anchorNow() : this.#anchor;
     // The stretches between those already forgotten, which a new one mustn't overlap.
     const stretches: { from: number; to: number }[] = [];
     let from = doc.line(first).from;
@@ -1370,6 +1478,53 @@ export class Aligner {
       offset: ownTop(block) - y,
       scrollTop: this.#scroller.scrollTop,
     };
+  }
+
+  /**
+   * A new anchor, where the pass takes one from what's drawn: under the pinned header while a hold
+   * lasts, as `holdUnder` takes it, else as `#anchorNow` does. `was` is the anchor before.
+   */
+  #anchorFresh(was: Anchor | undefined): Anchor {
+    if (this.#holding() && was?.under !== undefined) {
+      const found = this.#underNow(was.under);
+      if (found) return found;
+    }
+    return this.#anchorNow();
+  }
+
+  /**
+   * The first row drawn whose own top is `below` pixels or more under the top of the screen, or
+   * less than `ON_SCREEN` short of that, so as good as all of it shows: the higher of the two sides'
+   * first lines there, the side that anchors the scroll's where they're level. As `holdUnder` keeps
+   * it.
+   */
+  #underNow(below: number): Anchor | undefined {
+    const side = this.#anchorSide();
+    const screen = this.#scroller.getBoundingClientRect();
+    const from = below - ON_SCREEN;
+    const under = new DOMRect(
+      screen.x,
+      screen.y + from,
+      screen.width,
+      Math.max(0, screen.height - from),
+    );
+    // The row that's first is the higher of the two sides' first lines: in an added file, the new
+    // side's, with nothing beside it on the old side till the next file.
+    let first: { side: Side; pos: number; top: number } | undefined;
+    for (const each of [side, otherSide(side)]) {
+      const found = lineOnScreen(this.#views[each], under, true);
+      if (found && (!first || found.top < first.top - 0.5)) first = { side: each, ...found };
+    }
+    return (
+      first && {
+        for: side,
+        side: first.side,
+        pos: first.pos,
+        offset: first.top - screen.top,
+        scrollTop: this.#scroller.scrollTop,
+        under: below,
+      }
+    );
   }
 
   /**
