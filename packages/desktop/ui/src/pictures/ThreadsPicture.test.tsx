@@ -43,6 +43,9 @@ describe('ThreadsPicture', () => {
     const popover = frame.lastElementChild;
     expect(popover?.getAttribute('class')).toContain('absolute');
     expect(popover?.getAttribute('class')).toContain('bg-bg-overlay');
+    // In a narrow card it keeps inside the frame, and its bars inside it.
+    expect(popover?.getAttribute('class')).toContain('overflow-hidden');
+    expect(popover?.getAttribute('style')).toContain('max-width:calc(100% - 22px)');
   });
 
   it('draws the thread between lines in the flow, under its line, and selects nothing', () => {
@@ -51,7 +54,7 @@ describe('ThreadsPicture', () => {
     // The six lines and the thread after the third, with its own empty number and lane.
     expect(drawn).toHaveLength(7);
     expect(drawn[3]?.[2]).not.toContain('bg-diff');
-    expect(frame.querySelectorAll('.bg-bg-raised')).toHaveLength(1);
+    expect(frame.querySelectorAll('.bg-bg-raised.overflow-hidden')).toHaveLength(1);
     expect(drawn[3]?.slice(0, 2).every((each) => each.includes('bg-bg'))).toBe(true);
     expect(frame.querySelector('[class*="bg-selected"]')).toBeNull();
     expect(frame.querySelector('svg[class*="text-warning"]')).not.toBeNull();

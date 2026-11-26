@@ -1,6 +1,6 @@
-// A picture of how a review thread shows in code: beside its lines, a bubble in the thread lane with
-// the thread open over the code, which hasn't moved; or between them, the thread in the flow under
-// its line, pushing the code after it down.
+// A picture of how a review thread shows in code: beside its lines, a bubble in the thread lane
+// with the thread open over the code, which hasn't moved; or between them, the thread in the flow
+// under its line, pushing the code after it down.
 
 import type { ReactNode } from 'react';
 
@@ -14,15 +14,24 @@ export type PictureThreads = 'beside' | 'between';
 const AT = 2;
 /** The room between the thread's line and the thread, beside lines or between them. */
 const GAP = 2;
-/** The thread's popover: its left edge on the lane's, under its line. */
+/**
+ * How far in a thread keeps from the code's edges: from both, between lines; beside them, from the
+ * frame's end.
+ */
+const INSET = 6;
+/**
+ * The thread's popover: its left edge on the lane's, under its line, and in a narrow card no wider
+ * than leaves its right edge inside the frame.
+ */
 const POPOVER = {
   left: MINI.gutter,
   top: MINI.top + (AT + 1) * MINI.row + GAP,
   width: 132,
+  maxWidth: `calc(100% - ${MINI.gutter + INSET}px)`,
   height: 26,
 } as const;
-/** The thread between lines: how tall it is, and how far in from the code's edges. */
-const CARD = { height: 20, inset: 6 } as const;
+/** How tall the thread between lines is. */
+const CARD_HEIGHT = 20;
 
 /** Inline's six lines, under one column of numbers, with the thread's bubble on the third. */
 function lines(selected: boolean): MiniLine[] {
@@ -37,15 +46,21 @@ function lines(selected: boolean): MiniLine[] {
   );
 }
 
-/** What a thread holds, as bars: its first comment's author, as a ball and a name, over its words. */
+/**
+ * What a thread holds, as bars: its first comment's author, as a ball and a name, over its words.
+ * In a narrow card the bars get shorter, so none reaches past the thread's edge.
+ */
 function Comment() {
   return (
     <span className="flex size-full flex-col justify-center gap-2" style={{ paddingInline: 6 }}>
-      <span className="flex items-center gap-4">
+      <span className="flex min-w-0 items-center gap-4">
         <span className="flex-none rounded-pill bg-fg-muted" style={{ width: 8, height: 8 }} />
-        <span className="flex-none rounded-pill bg-fg" style={{ width: 28, height: 4 }} />
+        <span className="min-w-0 rounded-pill bg-fg" style={{ width: 28, height: 4 }} />
       </span>
-      <span className="flex-none rounded-pill bg-fg-muted" style={{ width: 96, height: 4 }} />
+      <span
+        className="max-w-full flex-none rounded-pill bg-fg-muted"
+        style={{ width: 96, height: 4 }}
+      />
     </span>
   );
 }
@@ -63,7 +78,7 @@ export function ThreadsPicture({ threads }: { threads: PictureThreads }): ReactN
         <>
           <MiniCode lines={lines(true)} lane />
           <span
-            className="absolute rounded-sm border border-border bg-bg-overlay shadow-pop"
+            className="absolute overflow-hidden rounded-sm border border-border bg-bg-overlay shadow-pop"
             style={POPOVER}
           >
             <Comment />
@@ -76,10 +91,10 @@ export function ThreadsPicture({ threads }: { threads: PictureThreads }): ReactN
           between={{
             after: AT,
             children: (
-              <span className="block" style={{ paddingBlock: GAP, paddingInline: CARD.inset }}>
+              <span className="block" style={{ paddingBlock: GAP, paddingInline: INSET }}>
                 <span
-                  className="block rounded-sm border border-border bg-bg-raised"
-                  style={{ height: CARD.height }}
+                  className="block overflow-hidden rounded-sm border border-border bg-bg-raised"
+                  style={{ height: CARD_HEIGHT }}
                 >
                   <Comment />
                 </span>

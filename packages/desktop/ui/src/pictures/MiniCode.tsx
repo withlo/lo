@@ -104,8 +104,8 @@ function Lane({ mark, selected }: { mark?: ReactNode; selected?: boolean | undef
  * `numbers` of `2`, as an inline diff draws them, it has a column of the old side's numbers and one
  * of the new side's: a removed line has only the old, an added one only the new. With `lane`, a
  * thread lane 12 px wide sits between the numbers and the code, holding each line's `mark`, and
- * `between` is drawn in the flow under its line, moving the lines after it down, as a thread between
- * lines does.
+ * `between` is drawn in the flow under its line, moving the lines after it down, as a thread
+ * between lines does.
  */
 export function MiniCode({
   lines,
