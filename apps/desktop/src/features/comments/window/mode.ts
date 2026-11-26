@@ -20,6 +20,9 @@ const BESIDE = [
 
 let mode: ThreadsMode = threads.fallback;
 
+/** What's told each time threads show another way, once the diffs show it. */
+let changed: ((next: ThreadsMode) => void) | undefined;
+
 /** Whether main has said what the settings are since the window asked. */
 let told = false;
 
@@ -29,6 +32,7 @@ function show(next: ThreadsMode): void {
   if (next === mode) return;
   mode = next;
   threadsShowChanged();
+  changed?.(next);
 }
 
 function take(state: SettingsState): void {
@@ -42,8 +46,12 @@ export function threadsMode(): ThreadsMode {
   return mode;
 }
 
-/** Follows the setting: as the file has it now, and each time it changes. */
-export function followThreadsMode(): void {
+/**
+ * Follows the setting: as the file has it now, and each time it changes, when `then` is told how
+ * threads show now, once the diffs show it.
+ */
+export function followThreadsMode(then?: (next: ThreadsMode) => void): void {
+  changed = then;
   registry().setOff(BESIDE, mode !== 'beside');
   client(settings).subscribe('state', take);
   client(settings)

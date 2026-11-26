@@ -409,6 +409,23 @@ describe('menu items', () => {
   });
 });
 
+/** A command on `⏎` in the tree for what the key acts on, a `kind`. */
+function enterOn(kind: 'thread' | 'draft', label: string) {
+  return {
+    label,
+    group: 'Comments' as const,
+    keys: ['enter'],
+    targets: [kind],
+    when: { scope: 'tree', on: kind },
+  };
+}
+
+/** The clashes of `⏎` in the tree for a thread, and `⏎` there for an `other`. */
+function enterClashes(other: 'thread' | 'draft'): string[] {
+  const commands = { show: enterOn('thread', 'Show thread'), open: enterOn(other, 'Open') };
+  return checkClashes([feature(commands, 'diff', ['tree'])]);
+}
+
 describe('clashes', () => {
   test('fail two commands on the same key in the same scope', () => {
     expect(
@@ -449,6 +466,13 @@ describe('clashes', () => {
         ),
       ]),
     ).toEqual([]);
+  });
+
+  test('pass one for a thread beside one for a draft, on the same key, but not two for a thread', () => {
+    expect(enterClashes('draft')).toEqual([]);
+    expect(enterClashes('thread')).toEqual([
+      '`enter` runs both diff.show and diff.open, in tree, on macOS and Linux.',
+    ]);
   });
 
   test('fail a key that starts another’s sequence', () => {

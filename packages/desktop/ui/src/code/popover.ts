@@ -10,6 +10,11 @@
 // The caller draws what it shows (`RenderPopover`), at once, since it's measured and placed as it's
 // drawn: it's built as the pointer comes to a mark, ahead of the rest, so it's whole in the first
 // frame after it opens.
+//
+// A comment box written in it, as a reply's, is the view's, which puts it in the slot the caller
+// draws for it. While one is open, only the box closing closes the popover: a press outside leaves
+// it be, and what closes it on purpose, or moves it to another line, closes the box first, keeping
+// its draft.
 
 import {
   KEY_EVENT,
@@ -226,6 +231,23 @@ export interface PopHost<At extends PopAt> {
   scrollBy(by: number): void;
   /** Whether `target` is on `at`'s mark. */
   onMark(target: Element, at: At): boolean;
+  /**
+   * Whether what it shows at `at` holds a comment box being written: only the box closing closes
+   * it then, so a press outside leaves it be.
+   */
+  holds(at: At): boolean;
+  /**
+   * Closes the comment box it shows at `at`, if one is, keeping its draft, as it's closed or moves
+   * to another line on purpose. Focus is the popover's to move.
+   */
+  release(at: At): void;
+  /** What it shows was drawn, or drawn again: a comment box goes in the slot drawn for it. */
+  drawn(): void;
+}
+
+/** Whether `view` shows nothing: no threads, and no comment box. */
+function nothingIn(view: PopoverView): boolean {
+  return view.threads.length === 0 && view.box === undefined;
 }
 
 /** A code view's one thread popover: its layer, what's drawn in it, and how it comes and goes. */
@@ -391,7 +413,7 @@ export class ThreadPop<At extends PopAt> {
 
   /**
    * A click on `at`'s mark: pins its popover, in place if it's the preview there, or closes it if
-   * it's pinned there. Says whether it's pinned now.
+   * it's pinned there, the comment box in it first. Says whether it's pinned now.
    */
   clicked(at: At): boolean {
     clearTimeout(this.#rest);
@@ -407,11 +429,15 @@ export class ThreadPop<At extends PopAt> {
     return true;
   }
 
-  /** Pins it at `at`, as a key opens it, unless it's pinned there already. */
-  pin(at: At): void {
+  /**
+   * Pins it at `at`, as a key opens it, unless it's pinned there already: the pane scrolls the
+   * least that shows it whole. Not `scroll`ed, as for what opens with no input of the reader's, it
+   * goes where it has room on screen, as a preview does, and nothing on screen moves.
+   */
+  pin(at: At, scroll = true): void {
     if (this.#at?.key === at.key && this.#state === 'pinned') return;
     clearTimeout(this.#rest);
-    this.#open(at, 'pinned');
+    this.#open(at, 'pinned', scroll);
   }
 
   /**
@@ -426,13 +452,16 @@ export class ThreadPop<At extends PopAt> {
   }
 
   /**
-   * Closes it, fading. Focus in it goes to its line as it starts to leave, unless `focus` is false,
-   * as for a press elsewhere, which takes it there.
+   * Closes it, fading, the comment box in it first, keeping its draft. Focus in it goes to its line
+   * as it starts to leave, unless `focus` is false, as for a press elsewhere, which takes it there.
    */
   close(focus = true): void {
     if (this.#state === 'closed') return;
     const at = this.#at!;
     const held = this.hasFocus();
+    this.#host.release(at);
+    // What letting the box go did may have closed it already.
+    if (!this.open) return;
     if (this.#state === 'preview') this.#closedAt = performance.now();
     this.#state = 'closed';
     clearTimeout(this.#crossing);
@@ -456,12 +485,13 @@ export class ThreadPop<At extends PopAt> {
     const at = this.#state === 'closed' ? this.#built : this.#at;
     if (!at || !this.#drawn) return;
     const view = this.#host.view(at, this.#state === 'pinned');
-    if (view.threads.length === 0) {
+    if (nothingIn(view)) {
       if (this.#state !== 'closed') this.close();
       this.#drop();
       return;
     }
     this.#drawn.update(view);
+    this.#host.drawn();
     if (this.#state !== 'closed') this.#host.shown(at);
   }
 
@@ -498,9 +528,10 @@ export class ThreadPop<At extends PopAt> {
     const render = this.#render;
     if (!render) return;
     const view = this.#host.view(at, this.#state === 'pinned');
-    if (view.threads.length === 0) return;
+    if (nothingIn(view)) return;
     if (this.#drawn && this.#built?.key === at.key) {
       this.#drawn.update(view);
+      this.#host.drawn();
       return;
     }
     this.#drop();
@@ -509,6 +540,7 @@ export class ThreadPop<At extends PopAt> {
     const host = document.createElement('div');
     this.#content.replaceChildren(host);
     this.#drawn = render(host, view, () => this.close());
+    this.#host.drawn();
   }
 
   #drop(): void {
@@ -519,10 +551,17 @@ export class ThreadPop<At extends PopAt> {
     this.#content.replaceChildren();
   }
 
-  /** Opens it at `at`: placed, and whole, in the frame it's first seen in. */
-  #open(at: At, state: 'preview' | 'pinned'): void {
+  /**
+   * Opens it at `at`: placed, and whole, in the frame it's first seen in. Pinned, it's placed as a
+   * key opens it, with the least scroll, unless not `scroll`ed. One open on another line, holding
+   * a comment box, lets the box go first.
+   */
+  #open(at: At, state: 'preview' | 'pinned', scroll = true): void {
     const lines = this.#host.lines(at);
     if (!lines || !this.#render) return;
+    if (this.#state !== 'closed' && this.#at && this.#at.key !== at.key) {
+      this.#host.release(this.#at);
+    }
     const moving = this.#state !== 'closed' && this.#at?.key !== at.key;
     // The one open elsewhere goes at once: one popover per view.
     if (moving && this.#state === 'preview') this.#closedAt = performance.now();
@@ -547,7 +586,7 @@ export class ThreadPop<At extends PopAt> {
       room,
       lines,
       this.#content.offsetHeight,
-      state === 'pinned' ? 'opened' : 'preview',
+      state === 'pinned' && scroll ? 'opened' : 'preview',
     );
     if (placed.scroll !== 0) this.#host.scrollBy(placed.scroll);
     this.#put(placed);
@@ -576,6 +615,7 @@ export class ThreadPop<At extends PopAt> {
     this.#state = 'pinned';
     clearTimeout(this.#crossing);
     this.#drawn?.update(this.#host.view(this.#at, true));
+    this.#host.drawn();
     this.#host.shown(this.#at);
   }
 
@@ -590,12 +630,15 @@ export class ThreadPop<At extends PopAt> {
     }, CROSS);
   }
 
-  /** A press anywhere: one outside it and its mark closes it. */
+  /**
+   * A press anywhere: one outside it and its mark closes it, unless it holds a comment box being
+   * written, which only the box closing closes.
+   */
   #pressed(event: Event): void {
     if (this.#state === 'closed' || !this.#at) return;
     const { target } = event;
     if (!(target instanceof Element) || this.dom.contains(target)) return;
-    if (this.#host.onMark(target, this.#at)) return;
+    if (this.#host.onMark(target, this.#at) || this.#host.holds(this.#at)) return;
     // What it opened over everything, as its thread's menu, is its own.
     if (target.closest(OVER) !== null) return;
     this.close(false);

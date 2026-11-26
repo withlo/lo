@@ -38,13 +38,14 @@ export function renderThreads(tab: PullTab, toggle: (thread: string) => void): R
 
 /**
  * What draws the popover of `tab`'s view, beside lines: the cards of the threads on its line, each
- * as a popover draws it, the first with the popover's Close. It's drawn at once, the first time, as
- * the view measures it to place it.
+ * as a popover draws it, the first with the popover's Close, and the slot of the comment box open
+ * in it: a reply's or an edit's in its thread's card, a new comment's after them. It's drawn at
+ * once each time, as the view measures it to place it, and puts the box in its slot.
  */
 export function renderPopover(tab: PullTab): RenderPopover {
   return (host, popover, close) => {
     const root = createRoot(host);
-    const draw = ({ threads, pinned, label }: PopoverView) => {
+    const draw = ({ threads, pinned, label, box }: PopoverView) => {
       const cards = threads.map(({ id }, index) => ({
         id,
         card: createElement(Card, {
@@ -55,15 +56,18 @@ export function renderPopover(tab: PullTab): RenderPopover {
           onToggle: () => {},
           popover: true,
           onClose: index === 0 ? close : undefined,
+          box: box?.thread === id ? { edits: box.edits } : undefined,
         }),
       }));
-      root.render(createElement(ThreadPopover, { label, threads: cards }));
+      const alone = box !== undefined && box.thread === undefined;
+      root.render(createElement(ThreadPopover, { label, threads: cards, box: alone }));
     };
     flushSync(() => draw(popover));
     let gone = false;
     return {
+      // At once too: a comment box opening in it goes in the slot drawn for it.
       update(next) {
-        if (!gone) draw(next);
+        if (!gone) flushSync(() => draw(next));
       },
       destroy() {
         gone = true;

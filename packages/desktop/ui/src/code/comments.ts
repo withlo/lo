@@ -609,6 +609,11 @@ export class CommentBox implements BoxHost, KeySource {
     });
   }
 
+  /** Whether it's held, as while what it sent is on its way. */
+  get held(): boolean {
+    return this.#holding;
+  }
+
   /**
    * Holds the text as it is, leaving Vim's insert mode, or lets it go. Held, the box is the comment
    * it sent: its `sent` part shows in place of everything else, and the rest comes back, with the

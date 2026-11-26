@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
 
+import { announceSlot, NEW_SLOT, REPLY_SLOT } from './edits.ts';
+
 /** One thread in a popover: its id, and its card. */
 export interface PoppedThread {
   readonly id: string;
@@ -15,6 +17,11 @@ export interface ThreadPopoverProps {
   label: string;
   /** The threads, in the order they show: unresolved first, then oldest. The first has Close. */
   threads: readonly PoppedThread[];
+  /**
+   * A new comment's box is in it, after the threads, or alone: it draws the slot the code view puts
+   * the box in (`NEW_SLOT`), a hairline over it where threads are above.
+   */
+  box?: boolean | undefined;
 }
 
 /**
@@ -25,7 +32,7 @@ export interface ThreadPopoverProps {
  * inside it, each thread's head staying over its comments. To a screen reader it's a dialog that
  * doesn't hold focus in, named for its first thread.
  */
-export function ThreadPopover({ label, threads }: ThreadPopoverProps) {
+export function ThreadPopover({ label, threads, box = false }: ThreadPopoverProps) {
   return (
     <div
       role="dialog"
@@ -44,8 +51,25 @@ export function ThreadPopover({ label, threads }: ThreadPopoverProps) {
           {card}
         </div>
       ))}
+      {box && (
+        <div
+          ref={announceSlot}
+          {...{ [NEW_SLOT]: '' }}
+          className={
+            threads.length === 0 ? 'p-8' : 'mt-12 border-t border-border-subtle px-12 py-8'
+          }
+        />
+      )}
     </div>
   );
+}
+
+/**
+ * Where a reply's box goes in a thread's card in a popover, in place of the row that offers one,
+ * as the card's `reply`: the code view puts the box in it.
+ */
+export function ReplySlot({ thread }: { thread: string }) {
+  return <div ref={announceSlot} {...{ [REPLY_SLOT]: thread }} />;
 }
 
 /** The room kept between a ringed comment and the edges of what its popover shows. */

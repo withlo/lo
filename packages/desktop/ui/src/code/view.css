@@ -289,7 +289,8 @@
 .lo-bracket--warn {
   background-color: var(--lo-warning-border);
 }
-.lo-bracket--quiet {
+.lo-bracket--quiet,
+.lo-bracket--muted {
   background-color: var(--lo-border);
 }
 .lo-bracket--from-mid,
@@ -330,6 +331,10 @@
 .lo-bubble--quiet {
   color: var(--lo-fg-subtle);
 }
+/* A draft's, on lines with no thread: the dashed bubble, muted, as an unsent draft is. */
+.lo-bubble--muted {
+  color: var(--lo-fg-muted);
+}
 .lo-bubble > .lo-i {
   position: absolute;
   left: 1px;
@@ -356,12 +361,13 @@
 }
 /*
  * Beside lines, a bracket's cell is its thread's mark too, as a bubble is: it takes the pointer's
- * hover. While a thread's popover is open, its bubble and bracket are drawn in full colour.
+ * hover. A draft's alone isn't: its bubble is. While a thread's popover is open, its bubble and
+ * bracket are drawn in full colour.
  */
-.is-beside .lo-lanemark:not(:has(.lo-bubble)):hover {
+.is-beside .lo-lanemark:not(:has(.lo-bubble)):has(.lo-bracket--warn, .lo-bracket--quiet):hover {
   background-color: var(--lo-hover);
 }
-.is-beside .lo-lanemark:not(:has(.lo-bubble)):active {
+.is-beside .lo-lanemark:not(:has(.lo-bubble)):has(.lo-bracket--warn, .lo-bracket--quiet):active {
   background-color: var(--lo-press);
 }
 .lo-bubble--quiet.is-open {
@@ -370,7 +376,8 @@
 .lo-bracket--warn.is-open {
   background-color: var(--lo-warning);
 }
-.lo-bracket--quiet.is-open {
+.lo-bracket--quiet.is-open,
+.lo-bracket--muted.is-open {
   background-color: var(--lo-fg-muted);
 }
 /* The lines of a thread whose popover is open: their number and lane cells take the selected ground. */

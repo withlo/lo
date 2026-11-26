@@ -71,6 +71,11 @@ export interface HeaderThreads {
   readonly open: boolean;
   /** Whether threads show beside lines, where the bubble opens their popover. */
   readonly beside: boolean;
+  /**
+   * Beside lines, a draft on the file, or in one of its threads: the dot on their bubble, or the
+   * draft's own where it has none.
+   */
+  readonly draft?: { readonly words: string } | undefined;
 }
 
 /**
@@ -277,12 +282,15 @@ function header(
   // lane, whichever column they're under; the right lines up beside it.
   const problem = part === 'end' ? undefined : input.problem;
   const marked = part === 'end' ? undefined : input.fileThreads;
-  const drawn = marked && marked.threads.length > 0 ? bubbleOf(marked.threads) : undefined;
+  const drawn =
+    marked && (marked.threads.length > 0 || marked.draft)
+      ? bubbleOf(marked.threads, marked.draft)
+      : undefined;
   const bubble = drawn && {
     bubble: drawn,
     open: marked!.open,
     beside: marked!.beside,
-    was: input.tones?.was(`head:${part}:${drawn.thread}`, drawn.tone),
+    was: input.tones?.was(`head:${part}:${drawn.thread || 'draft'}`, drawn.tone),
   };
   const widget = new HeaderWidget(
     input.index,

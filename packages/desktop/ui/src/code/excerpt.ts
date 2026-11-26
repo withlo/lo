@@ -903,7 +903,8 @@ class Excerpt implements ExcerptView {
   /** The document line `at` names, and the column on it, if the excerpt shows it. */
   #lineOf(at: Target): { line: number; column: number } | undefined {
     switch (at.kind) {
-      case 'line': {
+      case 'line':
+      case 'draft': {
         const place = at.at;
         if (place.file !== this.#id) return undefined;
         const number = 'line' in place ? place.line : Math.max(place.from, place.to);

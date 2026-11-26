@@ -91,6 +91,7 @@ menu: Go, Review, Comments, Code, View, Merge, Tabs and App. Each command's ID i
 | Comment on file         | `c`                                                            | In `tree`                                                                                              | `comments.commentOnFile`   |
 | Comment on lines        | `c`                                                            | In `overview` and `file`; in code views, only in normal and visual mode                                | `comments.commentOnBlock`  |
 | Comment on file         | `⏎`                                                            | In `diff`; in code views, only in normal mode                                                          | `comments.onFileInstead`   |
+| Open draft              | `⏎`                                                            | In `diff`; in code views, only in normal mode; only on a draft                                         | `comments.openDraft`       |
 | Show thread             | `⏎`                                                            | In `diff`; in code views, only in normal mode; only on a thread                                        | `comments.openThread`      |
 | Close thread            | `Esc`                                                          | In `thread`                                                                                            | `comments.closeThread`     |
 | Next comment            | `j`, `↓`                                                       | In `thread`                                                                                            | `comments.nextComment`     |
@@ -456,6 +457,7 @@ how Lo starts, they run Lo's command too:
 | `C`              | Comment now             | `C`       | `diff`                                                               | `comments.commentNow`     |
 | `s`              | Suggest change          | `s`       | `diff`                                                               | `comments.suggest`        |
 | `⏎`              | Comment on file         | `⏎`       | `diff` (normal)                                                      | `comments.onFileInstead`  |
+| `⏎`              | Open draft              | `⏎`       | `diff` (normal)                                                      | `comments.openDraft`      |
 | `⏎`              | Show thread             | `⏎`       | `diff` (normal)                                                      | `comments.openThread`     |
 | `r`              | Reply                   | `r`       | `diff` (normal)                                                      | `comments.reply`          |
 | `x`              | Resolve thread          | `x`       | `diff` (normal)                                                      | `comments.resolve`        |

@@ -135,6 +135,19 @@ export default defineCommands(
       when: { scope: 'diff', mode: 'normal' },
     },
     /**
+     * Beside lines, on a line a draft's mark is on, its box opened again, as a click on its own
+     * mark does: on a thread's, `⏎` shows the thread, the draft in it.
+     */
+    openDraft: {
+      label: 'Open draft',
+      control: 'a draft’s own mark beside lines',
+      group: 'Comments',
+      keys: ['enter'],
+      targets: ['draft'],
+      overVim: true,
+      when: { scope: 'diff', mode: 'normal', on: 'draft' },
+    },
+    /**
      * Beside lines, the popover of the thread on the cursor's line, pinned if it isn't, with focus
      * in it, the ring on its first comment. Just after a line refused a comment, `⏎` comments on
      * its file instead, as it does on a line with no mark.

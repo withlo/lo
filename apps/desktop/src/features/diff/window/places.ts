@@ -318,6 +318,7 @@ function pathFor(tab: string, key: string): TreePath {
 function placeOf(target: Target): { file: string; side: Side } | undefined {
   switch (target.kind) {
     case 'line':
+    case 'draft':
       return { file: target.at.file, side: target.at.side };
     case 'header':
       return { file: target.file, side: target.side };

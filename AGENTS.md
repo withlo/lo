@@ -1498,6 +1498,19 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
   until that diff has placed it or couldn't. Focus comes back only to a box that had it, with no
   key, click, wheel or app menu command since, no key held for the rest of a sequence, and focus
   where the redraw left it.
+- Beside lines (`comments.threads`), the code view puts a box in its threads' popover, not in the
+  flow: the caller draws its slot (`ThreadPopover`'s `box` for a new comment, `ReplySlot` in a card
+  for a reply, the edit slot for an edit) and the view moves the box in, one box at a time. Only the
+  box closing closes the popover, and moving the popover closes the box first, keeping its draft.
+  The window keeps every draft as between lines, and tells the diff where each one not sent is
+  (`setDrafts`), one not confirmed too: a closed draft's mark, a new comment's dashed bubble or the
+  dot on a thread, opens its box again, as `⏎` and `c` on the line do (not `s`, nor lines selected).
+  A key's line target says a mark is there (`draft`), which gives `comments.openDraft` a `draft`
+  target where the line gives no thread, so its `⏎` never meets `comments.openThread`'s. A draft
+  that would open by itself stays closed there, and opens in the flow as threads go between lines. A
+  send that fails, or isn't confirmed, after its box was closed while it was on its way, in either
+  mode, says so in a toast whose "Show thread" opens it; one the diff took down to draw it again
+  says so in the box.
 - `comments.send` plans each write with `@lo/review`'s `YourReview` and sends it with the poller's
   `sendReview`, one write to a pull request at a time, each planned from your pending review as read
   after the last one's answer. The box's text is held, read-only, while it's sent. A refusal keeps

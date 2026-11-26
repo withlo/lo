@@ -27,7 +27,7 @@ import {
   takesSuggestion,
   type LineRef,
 } from '@lo/review';
-import type { Composer, ComposerEvents, KeptBox, Mode, Send } from '@lo/ui/code';
+import type { Composer, ComposerEvents, DraftMark, KeptBox, Mode, Send } from '@lo/ui/code';
 import {
   type BoxTarget,
   controlOf,
@@ -39,7 +39,7 @@ import {
   type Target,
 } from '@lo/ui/commands';
 
-import { announce, notice, refuse, withdraw } from '../../../window/commands/notices.tsx';
+import { announce, notice, notify, refuse, withdraw } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
 import { offlineLabel } from '../../../window/explain.ts';
 import { client } from '../../../window/ipc.ts';
@@ -60,7 +60,14 @@ import {
   type WritingBlock,
 } from '../../overview/window/shared.ts';
 import { contract as revisionsContract } from '../../revisions/contract.ts';
-import { activeTab, pullOf, runOf, tabState, type PullTab } from '../../tab/window/shared.ts';
+import {
+  activeTab,
+  pullOf,
+  runOf,
+  showTabOf,
+  tabState,
+  type PullTab,
+} from '../../tab/window/shared.ts';
 import type {
   ActOutcome,
   Commentable,
@@ -74,6 +81,7 @@ import type {
   ThreadRow,
 } from '../contract.ts';
 import { main, tabs } from './main.ts';
+import { threadsMode } from './mode.ts';
 import { screenOf } from './placing.ts';
 import type { PostPull } from './Post.tsx';
 import { tell } from './Said.tsx';
@@ -91,6 +99,7 @@ import { wrotePull } from './written.ts';
 import {
   blockComment,
   blockWhere,
+  type BoxNote,
   type BoxWhere,
   boxAt,
   commentableOn,
@@ -112,6 +121,7 @@ import {
   sentFromBlock,
   sentLabel,
   SIGN_IN,
+  couldnt,
   whyOf,
   NOTHING_TO_DISCARD,
   NOTHING_TO_UNDO,
@@ -283,7 +293,8 @@ function mayFocus(box: Box): boolean {
  * Says what changed in how a box's comment stands, to a screen reader, and shows it: that it's on
  * its way, or being looked for, which brings its card on screen whole; and, once the box is written
  * in again with a note on it, the note, with focus back in the box, where what the note offers is
- * one key away. Neither takes focus, or the screen, from a reader who has left the box.
+ * one key away, or, where the box closed while its comment was on its way, in a toast. Neither
+ * takes focus, or the screen, from a reader who has left the box.
  */
 function told(box: Box, was: BoxState): void {
   const now = box.state;
@@ -307,6 +318,8 @@ function told(box: Box, was: BoxState): void {
   if (first === undefined) return;
   const before = notesOf(was)[0];
   if (!heldBefore && before?.title === first.title && before?.text === first.text) return;
+  // Its box closed while it was on its way: a toast says it, to a screen reader too.
+  if (heldBefore && toastAway(box, first)) return;
   tell([first.title, first.text].filter((each) => each !== undefined && each !== '').join('. '));
   if (box.composer && mayFocus(box)) box.composer.focus();
 }
@@ -334,6 +347,13 @@ export class Box {
   lastHow: Send;
   /** Whether main marked its draft sent, as after GitHub's answer to it was lost. */
   sentMark = false;
+  /**
+   * Whether it was closed while its comment was on its way: by the reader, another box or the
+   * popover moving on, or threads going between lines. How that went is said in a toast, as nothing
+   * else says it, until it's drawn again. Never as the diff takes it down, to draw it again or
+   * as its tab goes, which draws it again with what it says.
+   */
+  closedSending = false;
   /** What its view's threads held as it was last sent, to tell its comment's card by as it comes. */
   before: Before | undefined;
   retries = 0;
@@ -562,6 +582,7 @@ function eventsOf(box: Box): ComposerEvents {
       void send(box, how);
     },
     close(keep) {
+      box.closedSending = sendingNow(box.state);
       box.composer = undefined;
       box.open = false;
       // Shut, it's kept nowhere, and takes no focus the next time it opens by itself.
@@ -679,6 +700,7 @@ function drew(box: Box, composer: Composer, where: 'diff' | 'block'): void {
   if (composer.text !== text) composer.replace(0, composer.text.length, text);
   composer.hold(sendingNow(box.state));
   box.set({ mode: composer.mode, previewing: composer.previewing });
+  box.closedSending = false;
   box.focusOnOpen = false;
   box.retries = 0;
   box.kept = undefined;
@@ -913,9 +935,19 @@ export function restore(view: string): void {
   if (!diff || !own) return;
   let again = false;
   let moved = false;
+  let closed = false;
+  const beside = threadsMode() === 'beside';
   const nowhere: Box[] = [];
   for (const box of own.values()) {
     if (!box.open || box.composer || opensAt(box).kind !== 'diff') continue;
+    // Beside lines, a box opens in the popover, one at a time, as the reader asks for it: a draft
+    // that would open by itself stays closed, its mark on its lines, and so does one the reader
+    // asked for that couldn't open. One the diff took down as it was drawn again opens as it was.
+    if (beside && !box.kept && !box.focusOnOpen) {
+      box.open = false;
+      closed = true;
+      continue;
+    }
     if (box.kept) {
       const went = placeKept(box, box.kept, diff);
       if (went === 'waits') again = true;
@@ -927,6 +959,7 @@ export function restore(view: string): void {
     }
   }
   if (moved) queueMicrotask(() => reopen(view));
+  if (closed) replyingChanged(view);
   if (nowhere.length > 0) say(view, nowhere);
   if (again && !retrying.has(view)) {
     retrying.set(
@@ -1180,6 +1213,53 @@ export function openAt(
   return box;
 }
 
+/**
+ * Opens, in the flow, each draft whose box is closed in a pull request's diff, as threads go between
+ * lines, where no mark shows it: as drafts open as Lo starts. One still on its way opens holding
+ * it; one sent opens nowhere.
+ */
+export function openDraftsBetween(): void {
+  for (const [view, own] of views) {
+    let opened = false;
+    for (const box of own.values()) {
+      if (box.open || box.composer || sentBoxes.has(box)) continue;
+      const { place, text } = box.state;
+      if (place.kind === 'conversation' || text.trim() === '' || opensAt(box).kind !== 'diff') {
+        continue;
+      }
+      box.open = true;
+      box.focusOnOpen = false;
+      opened = true;
+    }
+    if (!opened) continue;
+    restore(view);
+    replyingChanged(view);
+  }
+}
+
+/**
+ * Beside lines, the draft in view `view`'s diff whose box is closed and ends on the line of `place`,
+ * a new comment's on one line, where there's none at `place` itself with words in it: the one whose
+ * mark is on the line, which `c` there opens, as a click on the mark does. Lines selected open a
+ * box on those lines alone.
+ */
+function markedAt(view: string, place: DraftPlaceRow): Box | undefined {
+  if (threadsMode() !== 'beside' || place.kind !== 'thread' || place.lines?.start !== null) {
+    return undefined;
+  }
+  const own = boxesOf(view);
+  if ((own.get(placeKey(place))?.state.text.trim() ?? '') !== '') return undefined;
+  const spot = spotOf(IN_DIFF, place);
+  return [...own.values()].find(
+    (each) =>
+      !each.composer &&
+      !sentBoxes.has(each) &&
+      each.state.text.trim() !== '' &&
+      opensAt(each).kind === 'diff' &&
+      spotOf(IN_DIFF, each.state.place) === spot,
+  );
+}
+
 /** A file's path in the base, for one the pull request renames. */
 function previousOf(file: { path: string | null; old: string | null }): string | null {
   return file.path !== null && file.old !== null && file.old !== file.path ? file.old : null;
@@ -1307,7 +1387,10 @@ export async function comment(
   }
   const place = placeOf(drawn.at, path, on);
   if (!suggest) {
-    openAt(view, diff, IN_DIFF, place, how);
+    // On one line, with none selected, a draft whose mark is on it opens: never for lines
+    // selected, nor for a suggestion, which would replace that draft's lines.
+    const marked = 'line' in target.at ? markedAt(view, place) : undefined;
+    openAt(view, diff, IN_DIFF, marked?.state.place ?? place, how);
     return;
   }
   const lines = {
@@ -1442,6 +1525,63 @@ export async function send(box: Box, how: Send): Promise<void> {
   } finally {
     box.set({ busy: false });
   }
+}
+
+/**
+ * Says `note` in a toast, of box `box`'s comment that wasn't sent, or may not have been, where the
+ * box was closed while it was on its way ({@link Box.closedSending}): beside lines as the popover
+ * moved on, or as threads went between lines. Its "Show thread" opens the box again where it was
+ * written, the draft in it, the note saying the rest. Says whether it did: not for a box drawn,
+ * or one the diff took down, which says it itself as it's drawn again, nor for one the diff
+ * doesn't draw.
+ */
+function toastAway(box: Box, note: BoxNote): boolean {
+  const { place } = box.state;
+  if (!box.closedSending || box.composer || place.kind === 'conversation') return false;
+  if (opensAt(box).kind !== 'diff') return false;
+  const doing = place.kind === 'edit' ? 'edit' : 'comment';
+  notify(note.title ?? couldnt(doing), note.text, {
+    action: { label: SHOW_THREAD, onClick: () => showDraft(box) },
+    details: note.details,
+    // A comment nobody knows went is a wait, as its box's note says it: one that didn't, a failure.
+    tone: note.tone === 'danger' ? 'danger' : 'warning',
+  });
+  return true;
+}
+
+/** The toast's button that opens a box whose comment wasn't sent again. */
+const SHOW_THREAD = 'Show thread';
+
+/**
+ * Opens box `box` again where it was written, focused, its draft in it, as its mark's click, `⏎` on
+ * its line or a toast's "Show thread" does: in its view's diff, which comes on screen first where
+ * it isn't, and opens it once it's drawn if the reader has done nothing since. Nothing for a box
+ * that's gone, as one discarded or sent meanwhile, or with its tab closed.
+ */
+function showDraft(box: Box): void {
+  const { view } = box;
+  if (views.get(view)?.get(box.key) !== box) return;
+  const diff = writingDiff(view);
+  if (!diff || activeTab()?.id !== view) {
+    const asked = inputsSoFar();
+    const stop = onDiffDrawn((drawn) => {
+      if (drawn !== view) return;
+      stop();
+      if (inputsSoFar() === asked && writingDiff(view)) showDraft(box);
+    });
+    showTabOf(view)
+      .then(() => showDiff(view))
+      .catch((error: unknown) => {
+        stop();
+        console.error("Lo couldn't show the tab:", error);
+      });
+    return;
+  }
+  box.open = true;
+  box.focusOnOpen = true;
+  box.kept = undefined;
+  show(box, diff);
+  replyingChanged(view);
 }
 
 /**
@@ -2127,6 +2267,7 @@ export function leftTimeline(box: Box, composer: Composer): void {
  */
 function replyingChanged(view: string): void {
   timelineChanged(view);
+  marksSoon(view);
   const now = new Set<string>();
   // Each comment an edit box is open on, with its thread.
   const edits = new Map<string, string>();
@@ -2154,6 +2295,62 @@ function replyingChanged(view: string): void {
     if (was.has(thread) !== now.has(thread) && diff) claimBriefly(diff, thread);
   }
   replying.set(view, now);
+}
+
+/**
+ * Each view's threads that hold a draft whose box is closed, a reply's or an edit's, which share
+ * the dot on their mark with a pending comment beside lines: the popover's head says which.
+ */
+export const drafted = tabState<ReadonlySet<string>>(() => new Set());
+
+/** The views whose diff is told of their drafts once what's changing them is done. */
+const marking = new Set<string>();
+
+/** Tells view `view`'s diff of its drafts once what's changing them is done: once for them all. */
+export function marksSoon(view: string): void {
+  if (marking.has(view)) return;
+  marking.add(view);
+  queueMicrotask(() => {
+    marking.delete(view);
+    markDrafts(view);
+  });
+}
+
+/**
+ * Tells view `view`'s diff of the comments written in it that aren't sent, which its marks show
+ * beside lines: a new comment's while its box is open there, and once it's closed with words in
+ * it, and a reply's or an edit's once its box is closed with words in it. Each one's mark opens its
+ * box again. Notes which threads hold one of the last, whose popover's head says so.
+ */
+export function markDrafts(view: string): void {
+  const diff = writingDiff(view);
+  const marks: DraftMark[] = [];
+  const threads = new Set<string>();
+  for (const box of views.get(view)?.values() ?? []) {
+    const { place, text } = box.state;
+    // One sent and not known to have gone is a draft still, as nobody knows it went: its mark is
+    // where "Check again" is.
+    if (place.kind === 'conversation' || sentBoxes.has(box)) continue;
+    if (opensAt(box).kind !== 'diff') continue;
+    const shown = box.composer !== undefined && box.drawnIn === 'diff';
+    const written = text.trim() !== '';
+    const open = () => showDraft(box);
+    if (place.kind === 'thread') {
+      if (!shown && !written) continue;
+      const at = diff && inDiffAt(box, diff)?.at;
+      if (at) marks.push({ at, words: lineRefText({ lines: place.lines }, true), shown, open });
+      continue;
+    }
+    if (shown || !written || place.thread === null) continue;
+    threads.add(place.thread);
+    // Its thread's mark, wherever the thread is drawn, once it is: the diff finds it.
+    marks.push({ at: { thread: place.thread }, words: '', open });
+  }
+  const was = drafted.get(view);
+  if (was.size !== threads.size || [...threads].some((each) => !was.has(each))) {
+    drafted.set(view, threads);
+  }
+  diff?.setDrafts(marks);
 }
 
 /** The thread of view `view` that holds the comment with id `id`, by its own. */

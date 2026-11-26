@@ -39,6 +39,7 @@ import type {
   ThreadView,
   VimKey,
 } from './api.ts';
+import { viewControls } from './api.ts';
 import { Aligner } from './aligner.ts';
 import { createComposer } from './composer.ts';
 import { editsText, setVim } from './keys.ts';
@@ -2980,7 +2981,11 @@ function lane(label: string): string[] {
   const marks = editor?.querySelectorAll('.lo-threadlane .lo-lanemark') ?? [];
   return [...marks].map((mark) => {
     const parts = [...mark.querySelectorAll('.lo-bracket')].map((piece) => {
-      const tone = piece.classList.contains('lo-bracket--warn') ? 'amber' : 'grey';
+      const tone = piece.classList.contains('lo-bracket--warn')
+        ? 'amber'
+        : piece.classList.contains('lo-bracket--muted')
+          ? 'muted'
+          : 'grey';
       if (piece.classList.contains('lo-bracket--tick')) return `tick ${tone}`;
       const end = (which: 'from' | 'to') =>
         ['edge', 'mid', 'bubble'].find((kind) =>
@@ -2990,7 +2995,11 @@ function lane(label: string): string[] {
     });
     const bubble = mark.querySelector('.lo-bubble');
     if (bubble) {
-      const tone = bubble.classList.contains('lo-bubble--warn') ? 'amber' : 'grey';
+      const tone = bubble.classList.contains('lo-bubble--warn')
+        ? 'amber'
+        : bubble.classList.contains('lo-bubble--muted')
+          ? 'muted'
+          : 'grey';
       parts.push(`${tone} ${bubble.getAttribute('aria-label')}`);
     }
     return parts.join(', ');
@@ -3419,6 +3428,254 @@ describe('threads beside lines', () => {
     expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 'short' });
     shown.reveal(onLine('a', 'new', 3));
     expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 'long' });
+  });
+});
+
+/**
+ * A caller's popover that draws a comment box's slots, as `ThreadPopover` and its cards do: each
+ * thread's comment, or an edit's slot in its place, then a reply's slot, and a new comment's after
+ * the threads. What it was asked to draw in turn: its name, and whether it was pinned. It draws
+ * again only what changed, as React does, so a box in a slot stays in it.
+ */
+function slotted() {
+  const drawn: string[] = [];
+  const render: RenderPopover = (host, popover) => {
+    let last = '';
+    const draw = ({ threads, pinned, label, box }: PopoverView): void => {
+      const html = [
+        ...threads.map(({ id }) => {
+          const comment =
+            box?.thread === id && box.edits === `${id}.1`
+              ? `<div data-edit-slot="${id}.1"></div>`
+              : `<p data-comment="${id}.1" tabindex="-1">${id}</p>`;
+          const reply =
+            box?.thread === id && box.edits === undefined
+              ? `<div data-reply-slot="${id}"></div>`
+              : '';
+          return `<div data-thread-id="${id}">${comment}${reply}</div>`;
+        }),
+        box !== undefined && box.thread === undefined ? '<div data-new-slot=""></div>' : '',
+      ].join('');
+      if (html !== last) host.innerHTML = html;
+      last = html;
+      drawn.push(`${label} ${pinned ? 'pinned' : 'preview'}`);
+    };
+    draw(popover);
+    return { update: draw, destroy: () => host.replaceChildren() };
+  };
+  return { render, drawn };
+}
+
+/** The slot of the popover's comment box that holds it, by its attribute, if it's in one. */
+function boxSlot(): string | undefined {
+  const box = layer().querySelector('.lo-diffcomposer');
+  const slot = box?.parentElement;
+  if (!slot) return undefined;
+  for (const name of ['data-new-slot', 'data-reply-slot', 'data-edit-slot']) {
+    if (slot.hasAttribute(name)) return `${name}=${slot.getAttribute(name)}`;
+  }
+  return slot.className;
+}
+
+describe('writing beside lines', () => {
+  test('a new comment’s box opens alone in a popover under its line, and no line moves', () => {
+    const shown = open(events(), { threads: 'beside' });
+    const { render, drawn } = slotted();
+    shown.setThreads([], plain().render, { popover: render });
+    const before = { old: drawnText('Before'), new: drawnText('After') };
+    const on = composerEvents();
+    shown.compose(at('a', 'new', 7), 'A draft', on);
+    expect(layer().hidden).toBe(false);
+    expect(boxSlot()).toBe('data-new-slot=');
+    expect(shown.popoverPinned()).toBe(true);
+    expect(shown.pinned()).toEqual([]);
+    expect(drawn.at(-1)).toMatch(/pinned$/);
+    expect({ old: drawnText('Before'), new: drawnText('After') }).toEqual(before);
+    expect(parent!.querySelectorAll('.lo-diffcomposer')).toHaveLength(1);
+    expect(vimIn('Comment').content.contains(document.activeElement)).toBe(true);
+    // Told of it, its line has the draft's bubble, which names the popover.
+    shown.setDrafts([
+      { at: at('a', 'new', 7), words: 'line 7', shown: true, open: () => undefined },
+    ]);
+    expect(lane('After')).toEqual(['muted Draft · line 7']);
+    expect(drawn.at(-1)).toBe('Draft · line 7 pinned');
+    // Told the same again, as each time its draft is saved while it's typed: nothing's drawn again.
+    const times = drawn.length;
+    shown.setDrafts([
+      { at: at('a', 'new', 7), words: 'line 7', shown: true, open: () => undefined },
+    ]);
+    expect(drawn).toHaveLength(times);
+    expect(lane('After')).toEqual(['muted Draft · line 7']);
+  });
+
+  test('Esc closes the box, keeping its draft, and the popover it opened, focus back on its line', () => {
+    const shown = open(events(), { threads: 'beside' });
+    shown.setThreads([], plain().render, { popover: slotted().render });
+    const on = composerEvents();
+    shown.compose(at('a', 'new', 7), 'A draft', on);
+    const { content } = vimIn('Comment');
+    press(content, 'Escape');
+    expect(layer().hidden).toBe(false);
+    press(content, 'Escape');
+    expect(on.close).toHaveBeenCalledWith(true);
+    expect(layer().hidden).toBe(true);
+    expect(shown.popoverPinned()).toBe(false);
+    expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('After');
+    expect(shown.probe.cursor()?.at).toMatchObject(onLine('a', 'new', 7));
+  });
+
+  test('with a box open, a press in the code leaves the popover be, and closing it closes the box first', () => {
+    const shown = open(events(), { threads: 'beside' });
+    shown.setThreads([], plain().render, { popover: slotted().render });
+    const on = composerEvents();
+    shown.compose(at('a', 'new', 7), 'A draft', on);
+    vimIn('After').content.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    expect(layer().hidden).toBe(false);
+    expect(on.close).not.toHaveBeenCalled();
+    expect(shown.closePopover()).toBe(true);
+    expect(on.close).toHaveBeenCalledWith(true);
+    expect(layer().hidden).toBe(true);
+    expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
+  });
+
+  test('a reply’s box takes its Reply row’s place, and an edit’s is the comment, one box at a time', () => {
+    const shown = open(events(), { threads: 'beside' });
+    shown.setThreads([ranged('one', at('a', 'new', 8), undefined)], plain().render, {
+      popover: slotted().render,
+    });
+    const before = { old: drawnText('Before'), new: drawnText('After') };
+    const reply = composerEvents();
+    shown.compose({ thread: 'one' }, 'A reply', reply);
+    expect(boxSlot()).toBe('data-reply-slot=one');
+    expect(shown.pinned()).toEqual(['one']);
+    const edit = composerEvents();
+    shown.compose({ thread: 'one' }, 'Edited', edit, undefined, { name: 'edit', edits: 'one.1' });
+    // The reply's closed first, keeping its draft.
+    expect(reply.close).toHaveBeenCalledWith(true);
+    expect(boxSlot()).toBe('data-edit-slot=one.1');
+    expect(layer().querySelector('[data-comment="one.1"]')).toBeNull();
+    expect(parent!.querySelectorAll('.lo-diffcomposer')).toHaveLength(1);
+    expect({ old: drawnText('Before'), new: drawnText('After') }).toEqual(before);
+    // A reply's or an edit's popover stays as its box closes, showing its thread.
+    press(vimIn('Comment').content, 'Escape');
+    press(vimIn('Comment').content, 'Escape');
+    expect(edit.close).toHaveBeenCalledWith(true);
+    expect(layer().hidden).toBe(false);
+    expect(shown.pinned()).toEqual(['one']);
+    expect(layer().querySelector('[data-comment="one.1"]')).not.toBeNull();
+  });
+
+  test('a new comment on a line with a thread goes after it, and a draft there puts the dot on it', () => {
+    const shown = open(events(), { threads: 'beside' });
+    shown.setThreads([ranged('one', at('a', 'new', 8), undefined)], plain().render, {
+      popover: slotted().render,
+    });
+    shown.compose(at('a', 'new', 8), '', composerEvents());
+    expect(boxSlot()).toBe('data-new-slot=');
+    expect(layer().querySelector('[data-thread-id="one"]')).not.toBeNull();
+    // Open, its box puts no dot on the thread.
+    shown.setDrafts([{ at: at('a', 'new', 8), words: 'line 8', shown: true, open: () => {} }]);
+    expect(lane('After')).toEqual(['amber Unresolved thread · line 8']);
+    shown.closePopover();
+    shown.setDrafts([{ at: { thread: 'one' }, words: '', open: () => undefined }]);
+    expect(lane('After')).toEqual(['amber Unresolved thread · line 8 · draft']);
+    expect(newBubble().querySelector('svg')?.innerHTML).toBe(
+      iconElement('message-square-dot', 14).innerHTML,
+    );
+  });
+
+  test('a reply’s draft told before its thread comes puts the dot on the thread’s mark once it does', () => {
+    const shown = open(events(), { threads: 'beside' });
+    const { render } = slotted();
+    shown.setThreads([], plain().render, { popover: render });
+    shown.setDrafts([{ at: { thread: 'one' }, words: '', open: () => undefined }]);
+    expect(lane('After')).toEqual([]);
+    shown.setThreads([ranged('one', at('a', 'new', 8), undefined)], plain().render, {
+      popover: render,
+    });
+    expect(lane('After')).toEqual(['amber Unresolved thread · line 8 · draft']);
+  });
+
+  test('a draft’s mark on lines with no thread is dashed and muted, its range bracketed, and a click or ⏎ opens it', () => {
+    const shown = open(events(), { threads: 'beside' });
+    shown.setThreads([], plain().render, { popover: slotted().render });
+    const before = { old: drawnText('Before'), new: drawnText('After') };
+    const opened: string[] = [];
+    shown.setDrafts([
+      {
+        at: { file: 'a', side: 'new', from: 4, to: 6 },
+        words: 'lines 4–6',
+        open: () => opened.push('draft'),
+      },
+    ]);
+    expect(lane('After')).toEqual([
+      'mid-edge muted, tick muted',
+      'edge-edge muted',
+      'edge-bubble muted, muted Draft · lines 4–6',
+    ]);
+    expect(newBubble().querySelector('svg')?.innerHTML).toBe(
+      iconElement('message-square-dashed', 14).innerHTML,
+    );
+    expect(newBubble().dataset.command).toBe(viewControls.draft);
+    expect({ old: drawnText('Before'), new: drawnText('After') }).toEqual(before);
+    // Its last line is a draft's for keys, which `⏎` opens there; the others aren't.
+    shown.reveal(onLine('a', 'new', 6));
+    expect(shown.keyState().target).toMatchObject({ at: at('a', 'new', 6), draft: true });
+    shown.reveal(onLine('a', 'new', 5));
+    expect(shown.keyState().target).not.toHaveProperty('draft');
+    expect(shown.openDraft(at('a', 'new', 6))).toBe(true);
+    expect(shown.openDraft(at('a', 'new', 5))).toBe(false);
+    expect(opened).toEqual(['draft']);
+    // Between lines nothing draws it, and no line is a draft's.
+    shown.setThreadsMode('between');
+    expect(lane('After')).toEqual([]);
+    shown.reveal(onLine('a', 'new', 6));
+    expect(shown.keyState().target).not.toHaveProperty('draft');
+    expect(shown.openDraft(at('a', 'new', 6))).toBe(false);
+  });
+
+  test('a sent box stays as its comment until the thread it made comes in its place', () => {
+    const shown = open(events(), { threads: 'beside' });
+    shown.setThreads([], plain().render, { popover: slotted().render });
+    const box = shown.compose(at('a', 'new', 7), 'Sent', composerEvents());
+    box.hold(true);
+    box.close();
+    // Focus goes to its line; the popover stays pinned with what was sent in it.
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('After');
+    expect(layer().hidden).toBe(false);
+    expect(layer().querySelector('.lo-diffcomposer')).not.toBeNull();
+    shown.setThreads([ranged('made', at('a', 'new', 7), undefined)], plain().render, {
+      popover: slotted().render,
+    });
+    expect(layer().querySelector('.lo-diffcomposer')).toBeNull();
+    expect(layer().querySelector('[data-thread-id="made"]')).not.toBeNull();
+    expect(shown.pinned()).toEqual(['made']);
+  });
+
+  test('a sent box whose thread came while it was on its way goes as it closes', () => {
+    const shown = open(events(), { threads: 'beside' });
+    shown.setThreads([], plain().render, { popover: slotted().render });
+    const box = shown.compose(at('a', 'new', 7), 'Sent', composerEvents());
+    box.hold(true);
+    shown.setThreads([ranged('made', at('a', 'new', 7), undefined)], plain().render, {
+      popover: slotted().render,
+    });
+    expect(layer().querySelector('.lo-diffcomposer')).not.toBeNull();
+    box.close();
+    expect(layer().querySelector('.lo-diffcomposer')).toBeNull();
+    expect(shown.pinned()).toEqual(['made']);
+  });
+
+  test('a box open as threads go between lines closes, keeping its draft', () => {
+    const shown = open(events(), { threads: 'beside' });
+    shown.setThreads([], plain().render, { popover: slotted().render });
+    const on = composerEvents();
+    shown.compose(at('a', 'new', 7), 'A draft', on);
+    shown.setThreadsMode('between');
+    expect(on.close).toHaveBeenCalledWith(true);
+    expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
+    expect(layer().hidden).toBe(true);
   });
 });
 
