@@ -16,8 +16,9 @@ code editor it started as.
    failing; purple is merged; amber is waiting or changed. Never use these colors for decoration.
 4. **The keyboard is discoverable.** Every action has a key and a visible control. A control shows
    its key where the key works now, and in its tooltip everywhere else.
-5. **The middle view is a sheet.** The overview, diff and timeline sit on the ground (`lo-bg`) with
-   round top corners, set into the lighter chrome the way the mark's ball sits in its socket.
+5. **Each view is a sheet.** The overview, diff and timeline sit on the ground (`lo-bg`) with round
+   top corners, set into the lighter chrome the way the mark's ball sits in its socket. Two views
+   side by side are two sheets, `lo-sp-8` of chrome apart.
 6. **Show what's true.** Real code, real states, real counts. Don't fake progress, round away errors
    or hide why something can't happen.
 
@@ -692,15 +693,22 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
   it in Finder and to copy it. The details are as wide as they say, 280 to 420 px. Items keep their
   place: one that has nothing to say yet shows its ring, and one that comes and goes, as "Rate limit
   low", goes last on the left.
-- The body is left panel (stack, then files), the middle sheet, and the threads panel. Each panel
-  opens and closes with a key and with its button at its end of the header's cluster, which shows
-  what's drawn: a panel put away for room reads unpressed, and pressing it asks for it, so the other
-  gives way. One that can't fit beside a view at its minimum is dimmed: "Widen the window first".
-- Every edge in the row is a `Splitter` in a `Panes` row, and the seam of a side-by-side diff, which
-  the view draws, drags with the same `dragEdge`: 8 px to grab, no line at rest, a 2 px `lo-border`
-  line under the pointer, `lo-accent` while pressed. Only a drag that moves it somewhere new changes
-  a width; a click, `Esc`, or a drag back to where it began puts back what was there. A double-click
-  puts it back to its default. A feature never handles a drag of its own.
+- The body is one row: the left panel (stack, then files), one view or two, and the threads panel.
+  Two views are a reading view, Overview or Timeline, with the diff beside it on the right, inline:
+  Code beside. Nothing else tiles. Each panel, and Code beside, opens and closes with a key and with
+  its button in the header's cluster, which shows what's drawn: one put away for room reads
+  unpressed, and pressing it asks for it, so the others give way. One that can't fit beside a view
+  at its minimum is dimmed: "Widen the window first".
+- A view comes on screen through `showMiddle`, which never changes the layout: a view already drawn
+  is scrolled, not switched to. A link to code gives the code focus, and with code beside, its line
+  Lands. What only follows, as the code beside follows what has focus in the reading view, leaves
+  focus where it is and records no history.
+- Every edge in the row, the gap between two views among them, is a `Splitter` in a `Panes` row, and
+  the seam of a side-by-side diff, which the view draws, drags with the same `dragEdge`: 8 px to
+  grab, no line at rest, a 2 px `lo-border` line under the pointer, `lo-accent` while pressed. Only
+  a drag that moves it somewhere new changes a width; a click, `Esc`, or a drag back to where it
+  began puts back what was there. A double-click puts it back to its default. A feature never
+  handles a drag of its own.
 - Widths never animate: a width re-wraps code. A change lands in one frame, and what arrives fades
   in with Swap. Nothing draws under its minimum: `fit` puts away the threads panel, then the left
   panel, then the view without focus, never what was asked for last, and brings each back when

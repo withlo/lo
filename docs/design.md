@@ -555,7 +555,8 @@ A repo's or a user's instructions can drop, add or reorder everything except the
   you're reading.
 - **From the block to the code.** Following a block jumps to the diff at that spot, or to the
   whole-file view when the code is outside the diff. `⌃o` returns to the same place in the overview.
-  A menu and a key open the code beside the overview instead.
+  With code beside, the diff on the right goes there and the line Lands, nothing switches, and
+  following focus from block to block takes the diff along to each block's code.
 - **From the code to the overview.** In the diff, lines the overview explains carry a marker
   (section 6).
 
@@ -846,7 +847,17 @@ brings it back when there's room. A panel's button shows what's drawn: one put a
 and pressing it asks for it, so the other gives way. One that can't fit at all is dimmed: "Widen the
 window first". A panel opened by its key, its button or Reset layout fades in, and so does one back
 as its key or button closes the other; one back as the window widens, or as a drag closes the other,
-is just there. Focus in a panel that closes or is put away goes back to the middle view.
+is just there. Focus in a panel that closes or is put away goes back to the view that had it last.
+
+Code beside, `o` or the header's button between the view switch and the threads panel's, shows two
+views: the overview or the timeline on the left, and the diff, always inline, on the right, two
+sheets with a gap between them that drags as the panels' edges do. It's part of the window's layout,
+kept for every tab and across restarts; `Esc` doesn't close it, and `o` again does. The view
+switch's thumb spans both views on screen; `` ` `` steps the reading view, and `\` goes to the other
+view. A link to code shows it in the diff on the right, its line Landing, and gives the code focus;
+`⌃o` goes back to where the link was. Focus moving from block to block in the overview, or from
+review to review on the timeline, takes the diff along, leaving focus where it is. Under 480 px, the
+timeline's markers are smaller, so its cards keep the room.
 
 It lists the threads of the view on screen, so each layer of a stack shows its own. A run of layers
 has none of its own, and the panel says to show one of its layers. Threads are grouped by file in
@@ -1088,10 +1099,10 @@ the keymap file, `~/.config/lo/keymap`. `?` shows every key.
 | Copy and open   | `yy` the line, `yl` a link to it, `yp` the file's path, `gf` the whole file, `gx` on GitHub                                                                                                                                                                                                                                            |
 | Review          | `m` merge panel, `⌘⏎` submit review, `⌘⇧⏎` approve and ship, `gq` the merge queue, `gS` make this a GitHub stack                                                                                                                                                                                                                       |
 | Find            | `⌘L` open PR (`⌘O` too on macOS), `⌘P` files, `⌘⇧P` command palette, `/` search, `n`/`N` next and previous match                                                                                                                                                                                                                       |
-| View            | `` ` `` next middle view (overview, diff, timeline), `~` previous, `gv` compare revisions, `>`/`<` widen and narrow what has focus, `=` reset its width                                                                                                                                                                                |
+| View            | `` ` `` next middle view (overview, diff, timeline), `~` previous, `o` code beside, `\` the other view, `gv` compare revisions, `>`/`<` widen and narrow what has focus, `=` reset its width                                                                                                                                           |
 | Files           | `-` go to the file tree at the file on screen, and `-` again up to the stack tree. In the tree: `t` tree or review order, `f` changed files only, `l`/`h` (or `→`/`←`) open and close a folder, `zR`/`zM` open and close all, `⏎` show the file, `e` mark viewed, `Esc` back                                                           |
-| Overview        | `]b`/`[b` next and previous block, `⏎` follow a block to its code, `o` open its code beside the overview (`o` again or `Esc` to close), `c` comment on a block's lines, `⇥` next part of a figure, `←`/`→` walkthrough step or tab, `ya` copy a prompt for an agent                                                                    |
-| Timeline        | `j`/`k` move between events, `⇥` through its links and buttons, `Esc` back to the list, `gx` open the one you're on on GitHub, `c` comment on the PR, `i` edit your comment, `dd` delete your comment                                                                                                                                  |
+| Overview        | `]b`/`[b` next and previous block, `⏎` follow a block to its code, `c` comment on a block's lines, `⇥` next part of a figure, `←`/`→` walkthrough step or tab, `ya` copy a prompt for an agent                                                                                                                                         |
+| Timeline        | `j`/`k` move between events, `⇥` through its links and buttons, `Esc` back to the list, `⏎` show a review's comments in the diff, `gx` open the one you're on on GitHub, `c` comment on the PR, `i` edit your comment, `dd` delete your comment                                                                                        |
 | Panels          | `⌘\` left panel, `⌘⇧\` threads panel. In the threads panel: `j`/`k` move, `⏎` show the thread in the diff, `x` resolve or unresolve, `f` unresolved, all or yours. In the stack tree: `j`/`k` move, `⏎` show the layer, `gx` open it on GitHub, `Esc` back, `v` choose a run of layers, `j`/`k` to grow it, `⏎` to view it as one diff |
 | Diff view       | `gi` inline or side by side, `gw` hide or show whitespace, `zo`/`zc` expand and collapse unchanged code, `zR` the whole file, `za` open or close a collapsed file or the thread at the cursor                                                                                                                                          |
 | Comment box     | `⌘⏎` add to review (in the timeline's box, comment), `⌥⏎` comment now, `⌘⇧V` write or preview, `⌘⇧A` attach files, `Esc` leave insert mode, `Esc Esc` close and keep the draft                                                                                                                                                         |
@@ -1139,8 +1150,8 @@ screen a place with `⌃⇧PgUp` and `⌃⇧PgDn`; the tabs come back in that or
 - **Header.** The PR's title, number and author, the account you're acting as, the merge status and
   the revision picker.
 - **Left.** The stack tree, with the file tree below it.
-- **Middle.** The overview, the diff or the timeline. One key cycles between them. When code is
-  opened beside the overview, the middle splits in two and the diff shows in its inline layout.
+- **Middle.** The overview, the diff or the timeline. One key cycles between them. With code beside,
+  the overview or the timeline sits on the left and the diff, inline, on the right.
 - **Right.** The threads panel, or the references `gr` lists, one at a time.
 
 Each panel opens and closes with a key. With no PR open, Lo shows the PRs you opened recently,
