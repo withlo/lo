@@ -831,7 +831,21 @@ repositories, which account opens a repository, and the pull requests opened lat
   (`comments.attachable`): it's read with the account's client, outside the queue, with the same
   limits, so nothing waits on it. A view's first read of its review threads goes ahead of polls and
   of the tab's other reads while it's on screen, as an opening tab's overview reads do, since the
-  diff's first draw waits on it.
+  diff's first draw waits on it. A background read gives way to those, and to the pull request's
+  files while the diff is on screen: it waits while one is under way or next, rather than take the
+  queue between its requests, unless it's one of the poller's own, or the tab's read of the pull
+  request as it opens, which the open pull request's first poll waits for
+  (`RequestQueue.giveWayWhile`). A `next` read, as the Files panel's list beside another view, goes
+  right after those, before the other background reads, polls included; and a poll, which holds the
+  queue for all its requests, waits for a pull request's files someone wants soon rather than start
+  between their pages, but for one tried at once, which goes ahead of every poll merely due, however
+  overdue: the reads waiting give way to it, so none of them waits on a poll that waits on them. A
+  read whose first part is what someone waits on, as a timeline's newest page, can go aside once
+  that's in: the rest goes on beside the poll loop, at `next` while someone waits on it, held behind
+  a pull request's files someone wants soon (`gate`'s `holds`), and polls but the open pull
+  request's details wait for it too. It stops at its next request once its read is let go of, as its
+  tab closes, and a run of a read let go of, or of one let go of and asked for again since, writes
+  nothing.
 - Each account's poller keeps what it read in the database, read back only by the build of Lo that
   wrote it (a hash of main's output folder), talking to the same GitHub.
 - The window gets each account's summary (its login and name, how it signed in, whether it's signed
@@ -890,10 +904,12 @@ status bar.
   the last place shown, and the tab there folds, so a drag or a key moves exactly what's shown.
   `⌘⇧]`, `⌘⇧[` and the moving keys stay within the tabs shown (`within` in `tab.select` and
   `tab.move`).
-- The first time a tab is shown, main reads the pull request and fetches it into the local copy
-  through `@lo/git`, with the account's token, read as each fetch starts. A fetch that fails is
-  tried again after 5 s, doubling to 5 minutes, unless waiting won't help, and a tab reads what an
-  earlier fetch brought while GitHub can't be reached.
+- The first time a tab is shown, main reads the pull request, ahead of polls while it's on screen,
+  and fetches it into the local copy through `@lo/git`, with the account's token, read as each fetch
+  starts. A fetch that fails is tried again after 5 s, doubling to 5 minutes, unless waiting won't
+  help, and a tab reads what an earlier fetch brought while GitHub can't be reached. The poller
+  takes that read for its first poll of the pull request (`setOpen`), which reads its details only
+  after the first reads of the view on screen.
 - The head on screen is GitHub's when the tab opened. A newer push says so in a banner, and moves
   nothing until it's loaded.
 - The `tab.open` setting says which middle view a pull request's tab opens on: the overview, the
@@ -980,14 +996,20 @@ Main follows each pull request's tab through `tab.tabs` (`pull`, `onPull` and `c
   from it: the files from the commit's trees, what changed from the merge base with the base branch
   (renames found, both sides downloaded first, at most 200 MB), and what's generated from the head's
   `.gitattributes` and the lockfiles `@lo/review` names. Until then it reads GitHub's tree of the
-  head and the pull request's files from the REST API. A tree GitHub lists only in part, or one that
-  couldn't be read, leaves the changed files alone, saying why. What the copy says replaces what
-  GitHub said, and a new head on screen starts again. A stack's layer compared with the layer below
-  lists what changed from GitHub's comparison of the two commits (`readComparison`), 300 files at
-  most, until the copy has worked out where the head meets that commit, and the pull request's own
-  files when GitHub can't compare them, without asking again. A new start reads what changed again,
-  and keeps the files. GitHub is asked only about a head it gave, never one restored from what Lo
-  saved, and a read that fails is tried again after 5 s, doubling to 5 minutes.
+  head and the pull request's files from the REST API, the files read once for the tree and the diff
+  (`SharedPullFiles`, through `poller.pullFiles`, or `anonymousPullFiles` as nobody), kept 30 s, and
+  only while one of them still wants them when a page's turn comes. While their tab is on screen,
+  they go first if the diff is its view on screen, as the window says (`diff.shown`), else right
+  after the reads that view waits on first, ahead of polls (`next`), while the Files panel is drawn
+  (`tree.shown`), else in their turn; they move up if the diff, or the panel, comes on screen while
+  they wait. A tree GitHub lists only in part, or one that couldn't be read, leaves the changed
+  files alone, saying why. What the copy says replaces what GitHub said, and a new head on screen
+  starts again. A stack's layer compared with the layer below lists what changed from GitHub's
+  comparison of the two commits (`readComparison`), 300 files at most, until the copy has worked out
+  where the head meets that commit, and the pull request's own files when GitHub can't compare them,
+  without asking again. A new start reads what changed again, and keeps the files. GitHub is asked
+  only about a head it gave, never one restored from what Lo saved, and a read that fails is tried
+  again after 5 s, doubling to 5 minutes.
 - Up to 20,000 files go to the window whole, on `tree.state`. Past that, main sends the root's
   entries, and the window asks for each folder's (`tree.folder`) as it opens one, 500 folders a
   request at most. Past 500,000, the tree shows only the changed files.
@@ -1068,7 +1090,11 @@ The diff and the tree follow it through the feature's `revisions.comparisons` se
   poller saw (`revisions_seen`), once the history's head is GitHub's newest the tab knows of. Once
   the local copy is ready, it fetches every revision's head into it, and the tips of the base branch
   each was pushed on, and works out where each branched off. A revision whose head GitHub no longer
-  has, and the copy lacks, is no longer available, and can't be compared.
+  has, and the copy lacks, is no longer available, and can't be compared. The revisions are built
+  again with the copy's commits once it's ready, and are settled from then (`settled`); or without
+  them when there are none to be had (no git, or the copy failed or waits to try again), or once
+  they're `SETTLE_LIMIT` (2 s) late, so a copy later than that changes them once more at most. Until
+  then a revision may come or go.
 - Two markers say where the reader left off: the commit of the account's last review, from the push
   history, and "last seen here", the newest revision the diff was drawn with when the reader last
   left the pull request: for another tab, as the tab closes, or as Lo quits (`revisions_lastseen`).
@@ -1358,11 +1384,14 @@ The `timeline` feature shows a pull request's GitHub timeline as the third of it
 - The reader waits on those first reads, so while the view's tab is on screen they go ahead of polls
   in the account's queue (`foreground`), as the review threads do, in the order of the reads' names:
   what goes beside the description, which is quick, then the review threads, then the timeline, and
-  once it's in, the push history the revisions feature reads, which the rows split pushes by. A
-  timeline of more than a page sends its newest page while the older pages are read
-  (`readTimeline`'s `onNewest`, never kept): the view is `loading` with that page as its timeline,
-  and the window draws it, with "Reading older events…" where the older ones go, and draws the whole
-  timeline in its place as it comes, without waiting for input.
+  once its newest page is in, the push history the revisions feature reads, which the rows split
+  pushes by once the revisions are settled (`settled`), so a push splits once. A timeline of more
+  than a page sends its newest page while the older pages are read (`readTimeline`'s `onNewest`,
+  never kept), and its older pages, off screen until the reader scrolls back, go aside once it's in:
+  after the push history and after the pull request's files for the Files panel, ahead of polls
+  (`Poller.timeline`). The view is `loading` with that page as its timeline, and the window draws
+  it, with "Reading older events…" where the older ones go, and draws the whole timeline in its
+  place as it comes, without waiting for input.
 - `window/rows.ts` turns what main sent into rows, plain functions tested alone: the description
   card, a note of older items not read, consecutive commits as one push split where a revision ends,
   with its last commit's checks, comments and submitted reviews as cards, a force-push that can

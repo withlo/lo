@@ -175,6 +175,7 @@ function revisionsTab(options: {
   history: PushHistory | undefined;
   marks?: Marks;
   holdLimit?: number;
+  settleLimit?: number;
 }) {
   const database = openDatabase(':memory:');
   migrate(database, migrations);
@@ -194,6 +195,7 @@ function revisionsTab(options: {
     },
     log: (line) => logged.push(line),
     holdLimit: options.holdLimit,
+    settleLimit: options.settleLimit,
   });
   onTestFinished(() => tab.close());
   return {
@@ -249,6 +251,7 @@ describe('RevisionsTab', { timeout: 60_000 }, () => {
       comparison: { from: null, to: APP_PULL.head },
       pending: null,
       waitingFor: null,
+      settled: true,
       nothingNewSince: null,
       problem: null,
     });
@@ -374,11 +377,44 @@ describe('RevisionsTab', { timeout: 60_000 }, () => {
   it('fetches the heads of revisions built before the local copy was ready, once it is', async () => {
     const made = revisionsTab({ repo: await e2eClone(false), history: await e2eHistory() });
     made.tab.update(e2eInfo({ kind: 'fetching', progress: null, attempt: 1 }));
-    await made.settled((sent) => sent.status === 'ready');
+    const before = await made.settled((sent) => sent.status === 'ready');
+    // Without the copy's commits, the revisions may yet change.
+    expect(before.settled).toBe(false);
     // The copy is ready: the revisions are built again with its commits while their heads fetch.
     made.tab.update(e2eInfo());
-    const view = await made.settled((sent) => sent.revisions[0]?.available === false);
+    const view = await made.settled(
+      (sent) => sent.settled && sent.revisions[0]?.available === false,
+    );
     expect(view.revisions.map((revision) => revision.available)).toEqual([false, true]);
+  });
+
+  it('takes revisions built without the local copy’s commits as settled once they’re late, or it waits to try again', async () => {
+    const late = revisionsTab({
+      repo: await e2eClone(false),
+      history: await e2eHistory(),
+      settleLimit: 200,
+    });
+    late.tab.update(e2eInfo({ kind: 'fetching', progress: null, attempt: 1 }));
+    const first = await late.settled((sent) => sent.status === 'ready');
+    expect(first.settled).toBe(false);
+    // Past the limit, they stand without the commits, and stay settled once the commits come.
+    await late.settled((sent) => sent.settled);
+    late.tab.update(e2eInfo());
+    await late.settled((sent) => sent.settled && sent.revisions[0]?.available === false);
+    const since = late.sent.slice(late.sent.findIndex((sent) => sent.settled));
+    expect(since.every((sent) => sent.settled)).toBe(true);
+
+    const retrying = revisionsTab({ repo: await e2eClone(false), history: await e2eHistory() });
+    retrying.tab.update(
+      e2eInfo({
+        kind: 'retrying',
+        failure: 'network',
+        attempt: 1,
+        retryAt: Date.now() + 60_000,
+      }),
+    );
+    const view = await retrying.settled((sent) => sent.status === 'ready');
+    expect(view.settled).toBe(true);
   });
 
   it('refuses a comparison that isn’t from an older revision to a newer one', async () => {
