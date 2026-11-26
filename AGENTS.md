@@ -940,11 +940,13 @@ status bar.
   the code view (`kind: 'code'`, the diff, always inline, or a file whole) on the right, each in a
   sheet of its own (`ViewsRow`). Each view stays in its sheet, drawn while hidden, so none is drawn
   again as code beside comes and goes. A view comes on screen through `showMiddle`, which never
-  changes the layout: a view already drawn is scrolled, not switched to. A link to code gives the
-  code focus. What only follows leaves focus where it is and records no history. A middle view that
-  gives `setMiddle` its `root` is the one `Esc` and history use while focus is in it, or was last.
-  Focus in a view as it's hidden goes to the window's middle (`focusNowhere`), so keys typed
-  meanwhile go on in the view that takes it next.
+  changes the layout: a view already drawn is scrolled, not switched to. A link to code from a view
+  gives the code focus; one from a panel leaves focus in the panel. What only follows leaves focus
+  where it is and records no history. A middle view that gives `setMiddle` its `root` is the one
+  `Esc` and history use while focus is in it, or was last. Focus in a view as it's hidden goes to
+  the window's middle (`focusNowhere`), so keys typed meanwhile go on in the view that takes it
+  next. With two views, only the one with focus takes focus that's nowhere in particular
+  (`focusNowhereFor`), and a waiting view's note keeps focus for that view, not the one beside it.
 - Other features' banners go in the `tab.banners` slot. Each view there says whether it shows a
   banner for a tab (`shows`) and when that may change (`subscribe`), so the tab makes room only for
   the banners it has.

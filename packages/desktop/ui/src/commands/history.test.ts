@@ -160,6 +160,17 @@ describe('history', () => {
     expect(revealed.at(-1)).toEqual([line('b.ts', 'new', 1).at, undefined]);
   });
 
+  test('keeps the view that was beside a place, which isn’t part of the place', () => {
+    const history = new History();
+    viewer(history, '', 'diff');
+    const left = { ...line('a.ts', 'new', 8), beside: 'timeline.view' };
+    history.record(left);
+    expect(history.entries()).toEqual([left]);
+    // Back at the same line, with or without it, the tab is there already.
+    expect(history.canBack(line('a.ts', 'new', 8))).toBe(false);
+    expect(history.back(line('a.ts', 'new', 9))).toEqual(left);
+  });
+
   test('keeps one history per tab', () => {
     const history = new History();
     const one = viewer(history, 'one', 'diff');

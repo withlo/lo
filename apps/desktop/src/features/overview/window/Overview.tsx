@@ -23,21 +23,27 @@ import { useMenuTarget } from '../../../window/commands/menus.tsx';
 import { focusMiddle, registry, setMiddle } from '../../../window/commands/registry.ts';
 import { afterHold } from '../../revisions/window/shared.ts';
 import {
+  beforeBeside,
   besideNow,
+  focusNowhereFor,
   MiddlePlaceholder,
   openedOn,
   showInstead,
+  useBeside,
   useTabState,
   type PullTab,
 } from '../../tab/window/shared.ts';
 import { onStep, stepsChanged } from './blocks.ts';
 import { knownOf, type Known, type Standing } from './facts.ts';
 import {
+  blockElement,
   drawnIn,
   focusedBlock,
   followBlock,
   hereIn,
+  holdBlock,
   loadedNewer,
+  placeIn,
   placesFor,
   setDrawn,
   takeReveal,
@@ -139,18 +145,11 @@ function Body({
 }
 
 /**
- * Whether focus is nowhere in particular, on the view itself, or left behind in a middle view now
- * hidden, so the overview can take it as it comes on screen.
+ * Whether focus is in the view itself, or nowhere in particular for it, so the overview can take it
+ * as it comes on screen.
  */
 function focusIsFree(own: HTMLElement): boolean {
-  const focused = document.activeElement;
-  return (
-    !focused ||
-    focused === document.body ||
-    own.contains(focused) ||
-    focused.hasAttribute('data-lo-middle') ||
-    focused.closest('[inert]') !== null
-  );
+  return own.contains(document.activeElement) || focusNowhereFor(own);
 }
 
 /**
@@ -287,19 +286,21 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
     });
   }, [tab.id, waiting]);
 
-  // The block with focus, as focus moves. With code beside, focus landing on another block, by a
-  // key or a click, has the diff follow it to its code.
+  // The block with focus, as focus moves. With code beside, focus landing on another block than the
+  // one it was last in, by a key or a click, has the diff follow it to its code; focus coming back
+  // to the same block, as from the code, leaves the diff where it is.
+  const followed = useRef<number | undefined>(undefined);
   useEffect(() => {
     const element = root.current;
     if (!element) return undefined;
     const track = (event: FocusEvent) => {
       const drawn = drawnIn(tab.id);
       const block = drawn && focusedBlock(drawn);
-      setFocused(block && blockNumber(block));
-      if (event.type !== 'focusin' || !drawn || !block || !besideNow()) return;
-      const blocks = drawn.scroller()?.querySelector('.lo-ov__article');
-      const from = event.relatedTarget instanceof Element ? event.relatedTarget : null;
-      if (blocks && blockAround(blocks, from) !== block) followBlock(drawn, block);
+      const number = block && blockNumber(block);
+      setFocused(number);
+      if (event.type !== 'focusin' || !drawn || !block || number === followed.current) return;
+      followed.current = number;
+      if (besideNow()) followBlock(drawn, block);
     };
     element.addEventListener('focusin', track);
     element.addEventListener('focusout', track);
@@ -308,6 +309,29 @@ function Overview({ tab, shown }: { tab: PullTab; shown: boolean }) {
       element.removeEventListener('focusout', track);
     };
   }, [tab.id, waiting]);
+
+  // The block the reader is at stays where it is on the page as the code beside comes and goes:
+  // as the overview takes its new width, and as the blocks above it settle to it.
+  const place = useRef<{ block: number; top: number } | undefined>(undefined);
+  useEffect(() => {
+    if (!shown) return undefined;
+    return beforeBeside(() => {
+      const drawn = drawnIn(tab.id);
+      place.current = drawn && placeIn(drawn);
+      // Only as the views take their new widths: kept no longer, where the window has no room.
+      requestAnimationFrame(() => {
+        place.current = undefined;
+      });
+    });
+  }, [tab.id, shown]);
+  const beside = useBeside(tab.id);
+  useLayoutEffect(() => {
+    const kept = place.current;
+    place.current = undefined;
+    const drawn = drawnIn(tab.id);
+    const block = drawn && kept && blockElement(drawn, kept.block);
+    return drawn && kept && block ? holdBlock(drawn, block, kept.top) : undefined;
+  }, [tab.id, beside]);
 
   // A right-click on a block: the block's menu.
   const menu = useMenuTarget((event) => {

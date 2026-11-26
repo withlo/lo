@@ -21,6 +21,12 @@ export interface Entry {
   view: View;
   at: Target;
   within?: string | undefined;
+  /**
+   * The view beside this one as the tab left the place, by its id, where the jump from it put
+   * another there: as a link from the code beside a reading view shows another reading view. Not
+   * part of the place; whoever walks the history to it brings that view back.
+   */
+  beside?: string | undefined;
 }
 
 /**
@@ -234,6 +240,7 @@ export class History {
       view: entry.view,
       at: plainTarget(entry.at),
       ...(entry.within === undefined ? {} : { within: entry.within }),
+      ...(entry.beside === undefined ? {} : { beside: entry.beside }),
     });
     const over = list.entries.length - this.limit;
     if (over > 0) {

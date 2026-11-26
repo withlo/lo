@@ -57,6 +57,7 @@ import {
 } from '../../comments/window/shared.ts';
 import {
   besideNow,
+  focusNowhereFor,
   MiddlePlaceholder,
   showMiddle,
   usePull,
@@ -98,18 +99,11 @@ import { when } from './words.ts';
 import { commentIn, isYours } from './yours.ts';
 
 /**
- * Whether focus is nowhere in particular, in the view itself, or left behind in a middle view now
- * hidden, so the timeline can take it as it comes on screen.
+ * Whether focus is in the view itself, or nowhere in particular for it, so the timeline can take it
+ * as it comes on screen.
  */
 function focusIsFree(own: HTMLElement | null): boolean {
-  const focused = document.activeElement;
-  return (
-    !focused ||
-    focused === document.body ||
-    (own !== null && own.contains(focused)) ||
-    focused.hasAttribute('data-lo-middle') ||
-    focused.closest('[inert]') !== null
-  );
+  return (own !== null && own.contains(document.activeElement)) || focusNowhereFor(own);
 }
 
 /** The id of the timeline among the tab's middle views. */

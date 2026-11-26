@@ -54,10 +54,11 @@ function list(view: ThreadsView): void {
 const SLACK = 1000;
 
 /**
- * The review thread a review's first comment is in, among `threads`. GitHub doesn't say which
- * review a thread's comment came with, so it's the thread of the earliest comment the review's
- * author wrote while the review was open: from when they started it, `from`, to when they submitted
- * it, `to`. None when none fits.
+ * The review thread a review's first comment is in, among `threads`: the thread of the earliest
+ * comment the review's author wrote while the review was open, from when they started it, `from`,
+ * to when they submitted it, `to`. None when none fits. GitHub does say which review a comment came
+ * with (`PullRequestReviewComment.pullRequestReview`), but the threads Lo reads don't ask for it,
+ * and asking would change the query every recorded reply is matched by; the times say the same.
  */
 export function threadOfReview(
   threads: readonly ThreadRow[],

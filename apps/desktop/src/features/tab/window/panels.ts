@@ -127,14 +127,15 @@ export type OnScreen =
 
 /**
  * The reading view tab `tab` shows beside the code with nothing of its own: the view Settings says
- * to open on, where that's one; else the first with something to show, the overview where the pull
- * request has one; else the timeline.
+ * to open on, where that's one with something to show; else the first with something to show, the
+ * overview where the pull request has one; else the timeline.
  */
 function readingFor(tab: string, open: OpenOn | undefined, views: MiddleList): string | undefined {
   const reading = views.ids.filter((id) => kindOf(id, views) === 'reading');
+  const shows = (id: string) => !(views.empty[views.ids.indexOf(id)]?.(tab) ?? false);
   const named = open === undefined ? undefined : `${open}.view`;
-  if (named !== undefined && reading.includes(named)) return named;
-  const showing = reading.find((id) => !(views.empty[views.ids.indexOf(id)]?.(tab) ?? false));
+  if (named !== undefined && reading.includes(named) && shows(named)) return named;
+  const showing = reading.find(shows);
   return showing ?? (reading.includes(INSTEAD) ? INSTEAD : reading[0]);
 }
 

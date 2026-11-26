@@ -87,6 +87,15 @@ export function currentBlock(overview: DrawnOverview): HTMLElement | undefined {
   return focusedBlock(overview) ?? onScreen(overview)[0];
 }
 
+/** Where on the page the block the reader is at sits, by its number, to keep it there. */
+export function placeIn(overview: DrawnOverview): { block: number; top: number } | undefined {
+  const block = currentBlock(overview);
+  const index = block && blockNumber(block);
+  return block && index !== undefined
+    ? { block: index, top: block.getBoundingClientRect().top }
+    : undefined;
+}
+
 /** The blocks with any of themselves on screen, first to last. */
 function onScreen(overview: DrawnOverview): HTMLElement[] {
   const scroller = overview.scroller();

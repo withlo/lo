@@ -645,12 +645,14 @@ test('o puts the diff beside the overview, inline, which follows the blocks, foc
   await test.step('o puts the diff beside the overview, and the overview keeps focus', async () => {
     await toBlock(page, BLOCK.parser);
     await expect(button).toHaveAttribute('aria-pressed', 'false');
+    const top = await topOf(page, BLOCK.parser);
     await press(page, 'o');
     await expect(views).toHaveAttribute('data-lo-views', 'two');
     await expect(button).toHaveAttribute('aria-pressed', 'true');
     await expect(lines.first()).toBeVisible({ timeout: 20_000 });
-    // The outline gives way in the narrower sheet.
+    // The outline gives way in the narrower sheet; the block stays where it was, with focus.
     await expect(toc).toBeHidden();
+    expect(Math.abs((await topOf(page, BLOCK.parser)) - top)).toBeLessThanOrEqual(1);
     expect(await focused(page)).toMatchObject({ block: BLOCK.parser, own: true });
   });
 
@@ -678,7 +680,13 @@ test('o puts the diff beside the overview, inline, which follows the blocks, foc
     // The diff beside is inline, whatever Settings says.
     await press(page, 'g', 'i');
     await expect(said(page, 'Code beside is inline')).toBeVisible();
+    // Back on the block it came from, the diff stays where the reader left it.
+    await press(page, 'ArrowDown', 'ArrowDown');
+    const left = await diffCursor(page);
+    expect(left?.line).not.toBe(7);
     await back(page, BLOCK.parser, top);
+    await page.waitForTimeout(300);
+    expect(await diffCursor(page)).toEqual(left);
   });
 
   await test.step('Esc leaves code beside on, and o takes it away, the block keeping focus', async () => {
@@ -687,10 +695,12 @@ test('o puts the diff beside the overview, inline, which follows the blocks, foc
     await expect(views).toHaveAttribute('data-lo-views', 'two');
     await shown(page).locator('.lo-ov').focus();
     await toBlock(page, BLOCK.parser);
+    const top = await topOf(page, BLOCK.parser);
     await press(page, 'o');
     await expect(views).toHaveAttribute('data-lo-views', 'one');
     await expect(button).toHaveAttribute('aria-pressed', 'false');
     await expect(toc).toBeVisible();
+    expect(Math.abs((await topOf(page, BLOCK.parser)) - top)).toBeLessThanOrEqual(1);
     expect(await focused(page)).toMatchObject({ block: BLOCK.parser, own: true });
     // The header's button puts it back.
     await button.click();

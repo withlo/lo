@@ -27,6 +27,7 @@ import { inCodeOf, registry, setMiddle, useKeys } from '../../../window/commands
 import {
   besideNow,
   focusNowhere,
+  focusNowhereFor,
   MiddlePlaceholder,
   tabState,
   useLocalCopy,
@@ -103,18 +104,10 @@ function headerOf(open: Opened): Target {
 }
 
 /**
- * Whether focus is nowhere in particular, on the view itself, or left behind in a middle view now
- * hidden, so the code can take it.
+ * Whether focus is on the view itself, or nowhere in particular for it, so the code can take it.
  */
 function focusIsFree(own: HTMLElement | null): boolean {
-  const focused = document.activeElement;
-  return (
-    !focused ||
-    focused === document.body ||
-    focused === own ||
-    focused.hasAttribute('data-lo-middle') ||
-    focused.closest('[inert]') !== null
-  );
+  return (own !== null && document.activeElement === own) || focusNowhereFor(own);
 }
 
 /** The first key `id` has now, as this system shows it, if it has one. */

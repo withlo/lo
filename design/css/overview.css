@@ -296,7 +296,6 @@
 .lo-walk__title { font: 600 13px/1 var(--lo-font-ui); color: var(--lo-fg); }
 .lo-walk__nav { margin-left: auto; display: flex; align-items: center; gap: 4px; }
 .lo-walk__body { display: grid; grid-template-columns: minmax(0, 290px) minmax(0, 1fr); }
-@container lo-middle (width < 900px) { .lo-walk__body { grid-template-columns: minmax(0, 1fr); } }
 .lo-walk__steps { list-style: none; margin: 0; padding: 8px; counter-reset: step; border-right: 1px solid var(--lo-border-subtle); }
 .lo-walk__step {
   counter-increment: step;
@@ -319,6 +318,14 @@
 .lo-walk__step[aria-current="step"] { background: var(--lo-current); color: var(--lo-fg); }
 .lo-walk__step[aria-current="step"]::before { background: var(--lo-accent); color: var(--lo-on-accent); box-shadow: none; }
 .lo-walk__step code { font-family: var(--lo-font-mono); font-variant-ligatures: none; font-size: var(--lo-code-inline-size); }
+/* Under 900px of the view's own box, the steps go above the code, across the walkthrough: after the
+   steps' own rules and the prose measure, which would otherwise keep them to the measure, short of
+   its edge. Their text keeps to the measure. */
+@container lo-middle (width < 900px) {
+  .lo-walk__body { grid-template-columns: minmax(0, 1fr); }
+  .lo-walk__steps, .lo-walk__step { max-width: none; }
+  .lo-walk__steps { border-right: 0; border-bottom: 1px solid var(--lo-border-subtle); }
+}
 .lo-walk__code { min-width: 0; background: var(--lo-code-bg); }
 .lo-walk__codehead {
   display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 12px;

@@ -20,7 +20,7 @@ import {
 } from '../contract.ts';
 import { blocked } from './banners.ts';
 import { makeTabState, type TabState, useKept } from './kept.ts';
-import { besideDrawn, panelDrawn, SHEET } from './layout.ts';
+import { besideDrawn, layout, panelDrawn, SHEET, viewFocus } from './layout.ts';
 import { main } from './main.ts';
 import {
   bringView,
@@ -189,6 +189,15 @@ export function showMiddle(tab: string, id: string): boolean {
   return true;
 }
 
+/**
+ * Brings reading view `id` back beside the code in the tab on screen, while the code is beside one,
+ * as `⌃o` back to a place in the code left with it there does. Focus stays where it is.
+ */
+export function bringBeside(id: string): void {
+  const tab = activeOf(tabsStore.getState());
+  if (tab?.kind === 'pull' && besideDrawn()) showMiddle(tab.id, id);
+}
+
 /** The middle views on screen in each pull request's tab, as it last drew them, left to right. */
 const onScreen = makeTabState<readonly string[]>(() => []);
 
@@ -226,6 +235,35 @@ export function besideNow(): boolean {
  */
 export function focusInView(): boolean {
   return (document.activeElement?.closest(SHEET) ?? null) !== null;
+}
+
+/**
+ * Calls `before` as the code is put beside a reading view or taken away, before the views take
+ * their new widths: so the reading view can note where the reader is in it, and keep it there.
+ * Returns a function that stops.
+ */
+export function beforeBeside(before: () => void): () => void {
+  return layout.subscribe((now, was) => {
+    if (now.beside !== was.beside) before();
+  });
+}
+
+/**
+ * Whether focus is nowhere in particular for the middle view drawn in `own` to take as it draws: on
+ * the window's middle, or left behind in a view now hidden. With the code beside a reading view it
+ * goes to the one with focus, so the other, drawn first, leaves it there. Focus on a view's note
+ * while it waits is that view's, for it to take back once it's drawn, not the view's beside it.
+ */
+export function focusNowhereFor(own: Element | null): boolean {
+  const focused = document.activeElement;
+  const nowhere =
+    !focused ||
+    focused === document.body ||
+    focused.matches('main[data-lo-middle]') ||
+    focused.closest('[inert]') !== null;
+  if (!nowhere) return false;
+  const sheet = own?.closest(SHEET)?.getAttribute('data-lo-sheet');
+  return !sheet || sheet === viewFocus.now;
 }
 
 /**

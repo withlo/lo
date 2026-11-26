@@ -197,6 +197,10 @@ describe('code beside', () => {
     expect(viewsOf('t1', fromDiff, 'timeline', true, views)).toMatchObject({
       reading: 'timeline.view',
     });
+    // Settings naming an overview the pull request doesn't have: the timeline.
+    expect(viewsOf('none', fromDiff, 'overview', true, views)).toMatchObject({
+      reading: 'timeline.view',
+    });
     // Settings naming the diff: the overview where the pull request has one, else the timeline.
     expect(viewsOf('t1', fromDiff, 'diff', true, views)).toMatchObject({
       reading: 'overview.view',

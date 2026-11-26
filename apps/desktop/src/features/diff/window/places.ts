@@ -156,9 +156,10 @@ export function showThread(tab: string, thread: string, when: ShowWhen): boolean
 /**
  * Shows review thread `thread` in tab `tab`'s diff, as a link to code does, `how` says how: to `go`
  * is a jump, its line at the top of the screen with the cursor on it and focus in the code; to
- * `follow` brings its line on screen only if it's off it. Either opens it, and with code beside a
- * reading view, its line Lands. A diff not on screen comes on screen, and shows it once it's drawn
- * with it. Says whether the diff on screen has the thread.
+ * `follow` brings its line on screen only if it's off it, once a key held to get there is let go.
+ * Either opens it, and with code beside a reading view, its line Lands. A diff not on screen comes
+ * on screen, and shows it once it's drawn with it. Says whether the diff on screen has the thread;
+ * to `follow`, whether there's a diff on screen to follow it in.
  */
 export function goToThread(tab: string, thread: string, how: ShowHow): boolean {
   const drawn = drawnFor(tab);
@@ -168,16 +169,16 @@ export function goToThread(tab: string, thread: string, how: ShowHow): boolean {
     showMiddle(tab, DIFF_VIEW);
     return true;
   }
-  if (!drawn.view.openThread(thread, true)) return false;
   const at = { kind: 'thread', thread } as const;
   if (how === 'follow') {
     whenRested(() => {
-      if (drawnFor(tab) !== drawn) return;
+      if (drawnFor(tab) !== drawn || !drawn.view.openThread(thread, true)) return;
       drawn.view.reveal(at);
       if (besideNow()) drawn.view.land(at);
     });
     return true;
   }
+  if (!drawn.view.openThread(thread, true)) return false;
   leave();
   shown(tab);
   drawn.view.revealAtTop(at);

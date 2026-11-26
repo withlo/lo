@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 import type * as TabShared from '../../tab/window/shared.ts';
 import type { DiffState, FileVersions } from '../contract.ts';
 import { keyOf, Loader } from './loader.ts';
-import { keepPlaces, showPlace, showThread } from './places.ts';
+import { goToThread, keepPlaces, showPlace, showThread } from './places.ts';
 import type * as Tabs from './tabs.ts';
 import { opened } from './whole.ts';
 
@@ -270,7 +270,10 @@ function drawnDiff() {
     view: {
       reveal: (at: { kind: string }) => asked.push(`reveal ${at.kind}`),
       revealAtTop: (at: { kind: string }) => asked.push(`top ${at.kind}`),
-      openThread: () => true,
+      openThread: (id: string) => {
+        asked.push(`open ${id}`);
+        return true;
+      },
       land: (at: { kind: string }) => asked.push(`land ${at.kind}`),
       focus: () => asked.push('focus'),
     },
@@ -313,11 +316,25 @@ describe('with code beside', () => {
     const asked = drawnDiff();
     seen.inView = false;
     expect(showThread('t1', 'T1', 'now')).toBe(true);
-    expect(asked).toEqual(['top thread', 'land thread']);
+    expect(asked).toEqual(['open T1', 'top thread', 'land thread']);
     // From a view, as from the palette there, the code takes focus.
     asked.length = 0;
     seen.inView = true;
     showThread('t1', 'T1', 'now');
-    expect(asked).toEqual(['top thread', 'land thread', 'focus']);
+    expect(asked).toEqual(['open T1', 'top thread', 'land thread', 'focus']);
+  });
+
+  it('follows to a thread, opening only the last asked for, once a key that repeats comes up', () => {
+    const asked = drawnDiff();
+    expect(goToThread('t1', 'T1', 'follow')).toBe(true);
+    expect(asked).toEqual(['open T1', 'reveal thread', 'land thread']);
+    asked.length = 0;
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', repeat: true }));
+    goToThread('t1', 'T2', 'follow');
+    goToThread('t1', 'T3', 'follow');
+    expect(asked).toEqual([]);
+    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'j' }));
+    expect(asked).toEqual(['open T3', 'reveal thread', 'land thread']);
+    expect(seen.recorded).toEqual([]);
   });
 });

@@ -289,7 +289,8 @@ export function showThread(tab: string, thread: string, when: ShowWhen = 'now'):
  * `⌃o` comes back from; to `follow`, as the code beside a reading view follows what has focus
  * there, brings it on screen if it's off it, records nothing and leaves focus where it is. With
  * code beside, its line Lands. A diff not on screen comes on screen and shows it once it's drawn
- * with it. Says whether the diff on screen has the thread.
+ * with it. Says whether the diff on screen has the thread; to `follow`, whether there's a diff on
+ * screen to follow it in.
  */
 export function goToThread(tab: string, thread: string, how: ShowHow = 'go'): boolean {
   return goToThreadAt(tab, thread, how);

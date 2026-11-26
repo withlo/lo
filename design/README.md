@@ -702,9 +702,10 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
   unpressed, and pressing it asks for it, so the others give way. One that can't fit beside a view
   at its minimum is dimmed: "Widen the window first".
 - A view comes on screen through `showMiddle`, which never changes the layout: a view already drawn
-  is scrolled, not switched to. A link to code gives the code focus, and with code beside, its line
-  Lands. What only follows, as the code beside follows what has focus in the reading view, leaves
-  focus where it is and records no history.
+  is scrolled, not switched to. A link to code from a view gives the code focus, one from a panel
+  leaves focus in the panel, and with code beside, its line Lands. What only follows, as the code
+  beside follows what has focus in the reading view, leaves focus where it is and records no
+  history.
 - Every edge in the row, the gap between two views among them, is a `Splitter` in a `Panes` row, and
   the seam of a side-by-side diff, which the view draws, drags with the same `dragEdge`: 8 px to
   grab, no line at rest, a 2 px `lo-border` line under the pointer, `lo-accent` while pressed. Only
