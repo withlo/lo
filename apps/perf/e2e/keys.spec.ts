@@ -1,6 +1,6 @@
 // The diff view's keys, pressed for real, through the registry's listener as in the app, on a small
-// pull request: the cursor stays on screen, a comment box keeps its keys and stays level as it
-// grows, a key Lo holds still reaches Vim when it isn't Lo's, and `PageDown` and `PageUp` go on past
+// pull request: the cursor stays on screen, a comment box keeps its keys and, between lines, stays
+// level as it grows, a key Lo holds still reaches Vim when it isn't Lo's, and `PageDown` and `PageUp` go on past
 // what's taller than the screen.
 
 import type { Spot } from '@lo/ui/code';
@@ -53,7 +53,11 @@ test('j, ]f, ]t and G keep the cursor on screen', async ({ page }) => {
   expect(fileOf((await cursor(page))?.at)).toBe('src/removed.ts');
 });
 
-test('a comment box grows as you type, and the sides stay level', async ({ page }) => {
+test('a comment box between lines grows as you type, and the sides stay level', async ({
+  page,
+}) => {
+  // Between lines the box takes room in the flow, which the other side keeps level with.
+  await page.evaluate(() => window.perfThreadsMode('between'));
   await focusSide(page, 'old');
   await press(page, 'g', 'g', ']', 'c', 'c');
   await expect.poll(() => inBox(page)).toBe(true);

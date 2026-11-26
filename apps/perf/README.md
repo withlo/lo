@@ -104,16 +104,16 @@ pnpm nx run perf:e2e
 
 This writes a small PR of its own, a few files with a rename, a move and threads on both sides,
 opens it with `LO_PERF_PULL` naming the file, so nothing is fetched, and presses real keys: the
-cursor stays on screen, a comment box keeps its keys and stays level as it grows, and `y w` still
-reaches Vim. One more PR has a line that wraps taller than the screen, a file only one side has and
-spacers taller than the screen: held `PageDown` and `Ctrl-d` go to the end and `PageUp` and `Ctrl-u`
-to the top, on each side, never moving what's on screen back or more than a screen at a press, and
-every line passes through the screen. The last hands the view an overview's markers part way down
-(`window.perfOverview`), and opens notes from their balls and closes them above the screen, and a
-thread, between lines (`window.perfThreadsMode`), arrives and grows above the screen
-(`window.perfThread`): nothing on screen moves, side by side or inline. CI runs them on Linux, where
-each worker opens the suite on an Xvfb display of its own (`@lo/testing/display`), so a run there
-needs Xvfb, and shows nothing on the screen.
+cursor stays on screen, a comment box keeps its keys and, between lines, stays level as it grows,
+and `y w` still reaches Vim. One more PR has a line that wraps taller than the screen, a file only
+one side has and spacers taller than the screen: held `PageDown` and `Ctrl-d` go to the end and
+`PageUp` and `Ctrl-u` to the top, on each side, never moving what's on screen back or more than a
+screen at a press, and every line passes through the screen. The last hands the view an overview's
+markers part way down (`window.perfOverview`), and opens notes from their balls and closes them
+above the screen, and a thread, between lines (`window.perfThreadsMode`), arrives and grows above
+the screen (`window.perfThread`): nothing on screen moves, side by side or inline. CI runs them on
+Linux, where each worker opens the suite on an Xvfb display of its own (`@lo/testing/display`), so a
+run there needs Xvfb, and shows nothing on the screen.
 
 The specs check the diff view's behaviour through the full pipeline, and set no time budget: timing
 is judged by the bench, on a Mac.

@@ -422,9 +422,18 @@ function cardShown(view: string, thread: string): boolean {
   return [...cards].some(seen);
 }
 
-/** Whether some of `element` is on screen: drawn, and not scrolled out of anything that clips it. */
+/**
+ * Whether some of `element` is on screen: drawn and visible, not in a view kept unseen and inert,
+ * as a middle view not shown is, and not scrolled out of anything that clips it.
+ */
 function seen(element: Element): boolean {
-  if (typeof element.checkVisibility === 'function' && !element.checkVisibility()) return false;
+  if (
+    typeof element.checkVisibility === 'function' &&
+    !element.checkVisibility({ visibilityProperty: true })
+  ) {
+    return false;
+  }
+  if (element.closest('[inert]') !== null) return false;
   const drawn = element.getBoundingClientRect();
   if (drawn.width === 0 || drawn.height === 0) return false;
   if (drawn.bottom <= 0 || drawn.top >= window.innerHeight) return false;

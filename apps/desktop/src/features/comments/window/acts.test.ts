@@ -248,6 +248,17 @@ describe('a resolve that didn’t go', () => {
     expect(said.toasts).toEqual([]);
   });
 
+  test('its card in a view kept unseen and inert, as a middle view not shown, a toast says it', () => {
+    const view = document.createElement('div');
+    view.className = 'invisible';
+    view.setAttribute('inert', '');
+    view.append(card());
+    document.body.append(view);
+    takeActs({ id: VIEW, acts: [resolving('sending')] });
+    takeActs({ id: VIEW, acts: [resolving('notDone')] });
+    expect(said.toasts).toHaveLength(1);
+  });
+
   test('its card scrolled out of what holds it, or hidden, a toast says it', () => {
     card(500, true);
     const hidden = card();
