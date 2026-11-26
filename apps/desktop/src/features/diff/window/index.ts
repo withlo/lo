@@ -35,7 +35,7 @@ import { main } from './main.ts';
 import { fromMoved, movedNow } from './moved.ts';
 import { keepPlaces, openWhole, showTreeFiles } from './places.ts';
 import { DiffStatus } from './Status.tsx';
-import { drawnFor, keepOnly, keysDiff, loaderOf, takeState, type Drawn } from './tabs.ts';
+import { drawnFor, keepOnly, loaderOf, takeState, type Drawn } from './tabs.ts';
 import { threader } from './threads.ts';
 import { markViewed, viewedAt, viewedEnabled } from './viewed.ts';
 import { spansOf } from './spans.ts';

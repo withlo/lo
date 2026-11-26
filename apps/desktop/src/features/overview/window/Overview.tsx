@@ -163,11 +163,12 @@ export function OverviewView({ tab, shown }: { tab: PullTab; shown: boolean }) {
 /** The view in a run of layers: no overview, and the way to the diff. */
 function InRun({ tab, shown }: { tab: PullTab; shown: boolean }) {
   const root = useRef<HTMLDivElement>(null);
-  // While it's on screen, it's the middle view `Esc` gives focus back to.
+  // While it's on screen, it's the middle view `Esc` gives focus back to, and it takes focus that's
+  // free as it comes: not from the code beside it.
   useEffect(() => {
     if (!shown) return undefined;
     const take = () => root.current?.focus({ preventScroll: true });
-    take();
+    if (root.current && focusIsFree(root.current)) take();
     return setMiddle({
       focus: take,
       root: () => root.current,

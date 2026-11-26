@@ -680,12 +680,12 @@ test('o puts the diff beside the overview, inline, which follows the blocks, foc
     // The diff beside is inline, whatever Settings says.
     await press(page, 'g', 'i');
     await expect(said(page, 'Code beside is inline')).toBeVisible();
-    // Back on the block it came from, the diff stays where the reader left it.
+    // Back on the block it came from, the diff stays where the reader left it: a follow would have
+    // moved it as focus came back, with no key held.
     await press(page, 'ArrowDown', 'ArrowDown');
     const left = await diffCursor(page);
     expect(left?.line).not.toBe(7);
     await back(page, BLOCK.parser, top);
-    await page.waitForTimeout(300);
     expect(await diffCursor(page)).toEqual(left);
   });
 

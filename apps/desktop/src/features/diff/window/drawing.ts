@@ -589,8 +589,8 @@ export function draw(options: DrawOptions): Drawing {
   };
   /**
    * What the diff waits to show, once this view is on screen and can: a thread another feature
-   * asked for, once it has it, opened, its line at the top of the screen, with focus staying where
-   * it is; or a place in the tab's history, in a view of another comparison than the one it was
+   * asked for, once it has it, shown as a jump to it shows it, with focus staying where it is, or in
+   * the code where a link from a view asked for it; or a place in the tab's history, in a view of another comparison than the one it was
    * asked for in front of, with the cursor on it and focus in it. With code beside a reading view,
    * the line Lands.
    */
@@ -602,6 +602,7 @@ export function draw(options: DrawOptions): Drawing {
       shownWanted(tab.id);
       view.showThread(wanted.thread);
       if (besideNow()) view.land({ kind: 'thread', thread: wanted.thread });
+      if (wanted.focus) view.focus();
       return;
     }
     if (wanted.left === drawnName(at, comparison)) return;

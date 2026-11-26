@@ -14,6 +14,7 @@ import type { DiffState, FileVersions } from '../contract.ts';
 import { keyOf, Loader } from './loader.ts';
 import { goToThread, keepPlaces, showPlace, showThread } from './places.ts';
 import type * as Tabs from './tabs.ts';
+import { wantedIn } from './wanted.ts';
 import { opened } from './whole.ts';
 
 const seen = vi.hoisted(() => ({
@@ -270,6 +271,7 @@ function drawnDiff() {
     view: {
       reveal: (at: { kind: string }) => asked.push(`reveal ${at.kind}`),
       revealAtTop: (at: { kind: string }) => asked.push(`top ${at.kind}`),
+      showThread: (id: string) => asked.push(`show ${id}`),
       openThread: (id: string) => {
         asked.push(`open ${id}`);
         return true;
@@ -316,12 +318,26 @@ describe('with code beside', () => {
     const asked = drawnDiff();
     seen.inView = false;
     expect(showThread('t1', 'T1', 'now')).toBe(true);
-    expect(asked).toEqual(['open T1', 'top thread', 'land thread']);
+    expect(asked).toEqual(['open T1', 'show T1', 'land thread']);
     // From a view, as from the palette there, the code takes focus.
     asked.length = 0;
     seen.inView = true;
     showThread('t1', 'T1', 'now');
-    expect(asked).toEqual(['open T1', 'top thread', 'land thread', 'focus']);
+    expect(asked).toEqual(['open T1', 'show T1', 'land thread', 'focus']);
+  });
+
+  it('asks a diff not on screen for a thread, with focus in the code for a link, not a follow', () => {
+    seen.beside = true;
+    seen.inView = true;
+    expect(goToThread('t1', 'T1', 'go')).toBe(true);
+    expect(wantedIn('t1')).toEqual({ kind: 'thread', thread: 'T1', focus: true });
+    expect(seen.middles).toEqual(['diff.view']);
+    goToThread('t1', 'T2', 'follow');
+    expect(wantedIn('t1')).toEqual({ kind: 'thread', thread: 'T2', focus: false });
+    // From the threads panel, focus stays there.
+    seen.inView = false;
+    showThread('t1', 'T3', 'now');
+    expect(wantedIn('t1')).toEqual({ kind: 'thread', thread: 'T3', focus: false });
   });
 
   it('follows to a thread, opening only the last asked for, once a key that repeats comes up', () => {

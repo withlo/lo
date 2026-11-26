@@ -546,6 +546,30 @@ describe('a run of a stack’s layers on screen as one diff', () => {
     expect(view.textContent).toContain('Each layer has its own.');
     expect(openings.get(tab.id).on).toBeUndefined();
   });
+
+  it('takes focus that’s free as it comes on screen, but not from the code beside it', () => {
+    const middle = windowMiddle();
+    const sheet = (name: string) => {
+      const element = document.createElement('section');
+      element.setAttribute('data-lo-sheet', name);
+      middle.append(element);
+      return element;
+    };
+    const reading = sheet('reading');
+    const code = document.createElement('div');
+    code.tabIndex = -1;
+    sheet('code').append(code);
+    const tab: PullTab = { ...tabOf(), run: { layers: [6, 7], start: 'a'.repeat(40), from: 7 } };
+    // Brought beside the code, as `` ` `` there brings it.
+    code.focus();
+    const view = render(tab, reading);
+    expect(document.activeElement).toBe(code);
+    // Shown again with focus nowhere in particular, it takes it.
+    view.shown(false);
+    middle.focus();
+    view.shown(true);
+    expect(document.activeElement).toBe(view.querySelector('[data-lo-overview="run"]'));
+  });
 });
 
 describe('the blocks a tab’s overview has', () => {

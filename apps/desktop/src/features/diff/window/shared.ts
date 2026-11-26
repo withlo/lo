@@ -36,7 +36,7 @@ import {
   type ShowHow,
   type ShowWhen,
 } from './places.ts';
-import { drawnFor, keysDiff, loaderOf, onDrawn, useSnapshot } from './tabs.ts';
+import { drawnFor, loaderOf, onDrawn, useSnapshot } from './tabs.ts';
 import {
   changed as changedThreads,
   changedEverywhere,
