@@ -1210,6 +1210,63 @@ test('what’s drawn under the edge between the sides keeps the pointer and the 
   expect(await page.evaluate(() => window.harness.shares())).toHaveLength(1);
 });
 
+test('after a press on the edge between the sides, a key on a comment box’s button still clicks it', async () => {
+  const page = await open('split');
+  const { top } = await viewBox(page);
+  await page.evaluate(() => window.harness.compose(24));
+  await frames(page);
+  const x = (await seam(page))!.x;
+  const code = top + (await lineTop(page, 30))! + 5;
+  await page.mouse.move(x, code);
+  await page.mouse.down();
+  await page.mouse.move(x - 40, code, { steps: 2 });
+  await page.mouse.up();
+  expect(await page.evaluate(() => window.harness.shares())).toHaveLength(1);
+  // A button in the box's foot, as the app draws there, with focus.
+  await page.evaluate(() => {
+    const button = document.createElement('button');
+    button.textContent = 'Close';
+    const clicks: number[] = [];
+    Reflect.set(window, 'loClicks', clicks);
+    button.addEventListener('click', (event) => clicks.push(event.detail));
+    document.querySelector('.lo-diffcomposer__foot')!.append(button);
+    button.focus();
+  });
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Space');
+  await page.evaluate(() =>
+    document.querySelector<HTMLButtonElement>('.lo-diffcomposer__foot button')!.click(),
+  );
+  const clicks = await page.evaluate(() => {
+    const kept: unknown = Reflect.get(window, 'loClicks');
+    return Array.isArray(kept) ? kept.map(Number) : [];
+  });
+  expect(clicks).toEqual([0, 0, 0]);
+});
+
+test('a text selection dragged across the edge between the sides doesn’t draw it, and at rest there after, it does', async () => {
+  const page = await open('split');
+  const { top } = await viewBox(page);
+  const x = (await seam(page))!.x;
+  const code = top + (await lineTop(page, 30))! + 5;
+  /** Whether the edge is drawn under the pointer, and the view says which cursor it shows. */
+  const shown = () =>
+    page.evaluate(() => ({
+      near: document.querySelector('.lo-diffseam > .splitter')!.classList.contains('is-near'),
+      seam: document.querySelector<HTMLElement>('.lo-diffview')!.dataset.loSeam,
+    }));
+  await page.mouse.move(x - 120, code);
+  await page.mouse.down();
+  await page.mouse.move(x, code, { steps: 4 });
+  expect(await shown()).toEqual({ near: false, seam: undefined });
+  await page.mouse.move(x + 60, code + 20, { steps: 2 });
+  await page.mouse.move(x, code, { steps: 2 });
+  expect(await shown()).toEqual({ near: false, seam: undefined });
+  await page.mouse.up();
+  expect(await shown()).toEqual({ near: true, seam: 'col' });
+  expect(await page.evaluate(() => window.harness.shares())).toEqual([]);
+});
+
 test('a drag whose view goes out of sight keeps a share of the width it began at, never one that isn’t a number', async () => {
   const page = await open('split', { wrapped: 300 });
   const { left, top, room } = await viewBox(page);

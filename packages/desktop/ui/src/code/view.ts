@@ -719,10 +719,10 @@ class View implements DiffView {
   /** Half the width of the edge's grip, `lo-splitter-w`, once read. */
   #gripHalf: number | undefined;
   /**
-   * Where the pointer last was over the view, to see what's under the edge as the code scrolls or
-   * the view draws anew under it.
+   * Where the pointer last was over the view, and the buttons held then, to see what's under the
+   * edge as the code scrolls or the view draws anew under it.
    */
-  #pointer: { x: number; y: number } | undefined;
+  #pointer: { x: number; y: number; buttons: number } | undefined;
   /** Stops drawing the edge between the sides pressed, as a key that moved it does, while it is. */
   #unpress: (() => void) | undefined;
 
@@ -858,6 +858,7 @@ class View implements DiffView {
     this.dom.addEventListener('click', this.#clickSeam, { capture: true });
     this.dom.addEventListener('dblclick', this.#resetSeam, { capture: true });
     this.dom.addEventListener('pointermove', this.#followSeam, { passive: true, capture: true });
+    this.dom.addEventListener('pointerup', this.#followSeam, { passive: true, capture: true });
     this.dom.addEventListener('pointerleave', this.#leaveSeam, { passive: true });
     this.dom.addEventListener('scroll', this.#seamScrolled, { passive: true });
     // The view's own controls: the viewed ball in a file's header and the `+` in the gutter.
@@ -5268,7 +5269,7 @@ class View implements DiffView {
    * so nothing that arrived under a pointer at rest ever loses one to it.
    */
   readonly #pressSeam = (event: PointerEvent): void => {
-    this.#pointer = { x: event.clientX, y: event.clientY };
+    this.#pointer = { x: event.clientX, y: event.clientY, buttons: event.buttons };
     const on =
       event.button === 0 &&
       !this.#seamDrag &&
@@ -5307,9 +5308,12 @@ class View implements DiffView {
     if (!this.#seamDrag) this.#aligner.release();
   };
 
-  /** A click whose press was the edge's: nothing under it hears it. */
+  /**
+   * A click whose press was the edge's: nothing under it hears it. A key's click, or a script's,
+   * had no press, and goes where it's sent: on a focused button in a thread or a box.
+   */
   readonly #clickSeam = (event: MouseEvent): void => {
-    if (this.#seamPressed) event.stopPropagation();
+    if (this.#seamPressed && event.detail > 0) event.stopPropagation();
   };
 
   /** A double-click on the edge between the sides: even again, kept so. Nothing under it hears it. */
@@ -5323,8 +5327,9 @@ class View implements DiffView {
     this.#on.sides?.(undefined);
   };
 
+  /** The pointer moved over the view, or let go of a button there. */
   readonly #followSeam = (event: PointerEvent): void => {
-    this.#pointer = { x: event.clientX, y: event.clientY };
+    this.#pointer = { x: event.clientX, y: event.clientY, buttons: event.buttons };
     this.#hoverSeam();
   };
 
@@ -5340,12 +5345,14 @@ class View implements DiffView {
 
   /**
    * Draws the edge between the sides under the pointer, and its cursor over whatever is under it,
-   * while the pointer is on it over code; or neither. A drag under way draws its own.
+   * while the pointer is on it over code, no button held; or neither. A drag under way draws its
+   * own, and a button held for anything else, as a text selection is dragged across, keeps it from
+   * the edge.
    */
   #hoverSeam(): void {
     if (resizing(this.dom.ownerDocument)) return;
     const at = this.#pointer;
-    const near = at !== undefined && this.#onSeam(at.x, at.y);
+    const near = at !== undefined && at.buttons === 0 && this.#onSeam(at.x, at.y);
     this.#grip.classList.toggle('is-near', near);
     const limit = this.#grip.dataset.at;
     if (!near) delete this.dom.dataset.loSeam;

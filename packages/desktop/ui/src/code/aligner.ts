@@ -336,7 +336,7 @@ export class Aligner {
   #holds = 0;
   /**
    * Whether the last hold was let go while a pass that ran out of rounds was still to finish: the
-   * held line stays held until a pass settles.
+   * held line stays held until a pass settles, or the scroll moves.
    */
   #lettingGo = false;
   /** Whether the last pass ran out of rounds, and goes round again the next frame. */
@@ -360,8 +360,10 @@ export class Aligner {
       'scroll',
       () => {
         const top = this.#scroller.scrollTop;
+        if (this.#running || top === this.#anchor?.scrollTop) return;
+        // A hold let go, still settling, has nothing left to keep once the scroll moves.
+        if (this.#lettingGo && this.#holds === 0) this.#letGo();
         const anchor = this.#anchor;
-        if (this.#running || top === anchor?.scrollTop) return;
         if (anchor) this.#direction = top > anchor.scrollTop ? 1 : -1;
         // The wheel, as the editors' text has changed width since the last pass: what's on screen
         // has moved as the lines wrapped anew, which the pass puts back, so the line anchored
