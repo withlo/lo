@@ -274,6 +274,11 @@ describe('choiceOf and useChoice', () => {
       description: 'A name.',
     });
     expect(() => choiceOf(name)).toThrow('isn’t a choice with a row in Settings');
+    // A line for each option's card, where the feature gives one.
+    expect(choiceOf(layout, { split: 'Two columns.', inline: 'One column.' }).options).toEqual([
+      { value: 'split', label: 'Side by side', description: 'Two columns.' },
+      { value: 'inline', label: 'Inline', description: 'One column.' },
+    ]);
   });
 
   it('read the value on file, or the default until main has said or for one not an option', () => {

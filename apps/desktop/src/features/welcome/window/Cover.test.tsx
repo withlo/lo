@@ -16,6 +16,7 @@ import { defineView, Slot, Slots } from '../../../window/slots.tsx';
 import { installBridge as install, type FakeBridge } from '../../../window/test/bridge.ts';
 import type { AccountSummary, GhAccount } from '../../accounts/contract.ts';
 import type { GitInfo } from '../../app/contract.ts';
+import { threadsChoice } from '../../comments/window/shared.ts';
 import type * as OverviewShared from '../../overview/window/shared.ts';
 import type * as TabShared from '../../tab/window/shared.ts';
 import { cover, dialogs, type Tab } from '../../tab/window/shared.ts';
@@ -792,8 +793,19 @@ const focused = () => ({
 const writes = (bridge: FakeBridge) =>
   bridge.calls.filter(([channel]) => channel === 'settings.set').map(([, input]) => input);
 
+/** The threads cards' words: each option's label, then its line. */
+const THREADS = {
+  beside: 'Beside linesA mark beside the code. Point at it or click it to read the thread.',
+  between: 'Between linesThe whole thread under its line, as on GitHub.',
+} as const;
+
+/** The threads card that's chosen with nothing on file, and the other. */
+const threadsFallback = threadsChoice.valueIn(undefined);
+const threadsDefault = THREADS[threadsFallback];
+const threadsOther = threadsFallback === 'beside' ? 'between' : 'beside';
+
 describe('the look step', () => {
-  it('offers the theme and the diff’s layout as cards, named by their settings, with their places', async () => {
+  it('offers the theme, the diff’s layout and how threads show as cards, named by their settings, with their places', async () => {
     await first();
     await goTo('look');
     expect(onScreen().querySelector('h1')?.textContent).toBe('Choose how Lo looks');
@@ -802,12 +814,29 @@ describe('the look step', () => {
     expect(groups()).toEqual([
       { name: 'Theme', cards: ['Dark', 'Light', 'System'], chosen: 'System' },
       { name: 'Diff layout', cards: ['Side by side', 'Inline'], chosen: 'Side by side' },
+      {
+        name: 'Threads in code',
+        cards: [THREADS.beside, THREADS.between],
+        chosen: threadsDefault,
+      },
     ]);
     expect(onScreen().textContent).toContain('Settings › Appearance');
     expect(onScreen().textContent).toContain('Settings › Pull requests');
     // Each card has its picture, which a screen reader skips.
     const pictures = onScreen().querySelectorAll('[role="radio"] [aria-hidden="true"].rounded-sm');
-    expect(pictures).toHaveLength(5);
+    expect(pictures).toHaveLength(7);
+  });
+
+  it('writes how threads show in code as its card is pressed', async () => {
+    const { bridge } = await first({ 'settings.set': () => undefined });
+    await goTo('look');
+    const card = [...onScreen().querySelectorAll('[role="radio"]')].find(
+      (each) => each.textContent === THREADS[threadsOther],
+    );
+    click(card ?? document.body);
+    expect(groups()[2]?.chosen).toBe(THREADS[threadsOther]);
+    await settle();
+    expect(writes(bridge)).toEqual([{ key: 'comments.threads', value: threadsOther }]);
   });
 
   it('writes a card as it’s pressed, showing it until the file has it', async () => {
@@ -843,8 +872,12 @@ describe('the look step', () => {
     await settle();
     pressKey('j');
     expect(focused()).toEqual({ group: 'Diff layout', card: 'Side by side' });
-    // Nothing past the last group.
     pressKey('ArrowDown');
+    expect(focused()).toEqual({ group: 'Threads in code', card: threadsDefault });
+    // Nothing past the last group.
+    pressKey('j');
+    expect(focused()).toEqual({ group: 'Threads in code', card: threadsDefault });
+    pressKey('k');
     expect(focused()).toEqual({ group: 'Diff layout', card: 'Side by side' });
     pressKey('k');
     expect(focused()).toEqual({ group: 'Theme', card: 'System' });

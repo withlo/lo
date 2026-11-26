@@ -1171,8 +1171,9 @@ or with `⏎` and `⇧⏎`. It opens by itself until it's finished or an account
    in with GitHub…" (`⏎`) starts GitHub's device flow, and "Import from GitHub CLI" is there when
    `gh` is found. When Git is missing or too old, a notice says how to install it, with a "Check
    again" button that finds Git without restarting Lo.
-2. **The look.** The theme and the diff's layout, each a row of cards with a small drawing of what
-   it does. A card changes the setting as it's pressed, and Continue changes nothing.
+2. **The look.** The theme, the diff's layout and how threads show in code, each a row of cards with
+   a small drawing of what it does. A card changes the setting as it's pressed, and Continue changes
+   nothing.
 3. **Keys.** Standard keys or Vim keys for code and comment boxes, and a short diff to try `j`, `k`
    and `c` on. Nothing typed there is sent.
 4. **Overviews.** Two lines on what an overview is and who writes it, the top of one drawn at its
