@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { parseOid, type Repo } from '@lo/git';
-import { GithubClient, Token } from '@lo/github';
+import { FilesUnwanted, GithubClient, readPullFiles, Token } from '@lo/github';
 import { replayFetch } from '@lo/testing';
 import { APP_PULL, gitProgram, RepoServer, writeAppRemote } from '@lo/testing/git';
 import { describe, expect, it, onTestFinished } from 'vitest';
@@ -108,12 +108,21 @@ function e2eInfo(
 function diffTab(reads: Partial<DiffReads>) {
   const sent: DiffState[] = [];
   const drawn: string[] = [];
+  const github =
+    reads.github ?? (() => Promise.reject(new Error('this test reads nothing from GitHub')));
   const diff = new DiffTab({
     id: 't1',
     reads: {
       clone: reads.clone ?? (() => undefined),
-      github:
-        reads.github ?? (() => Promise.reject(new Error('this test reads nothing from GitHub'))),
+      github,
+      pullFiles:
+        reads.pullFiles ??
+        ((acting, pull, _head, limits, wanted) =>
+          github(acting, (client) =>
+            wanted()
+              ? readPullFiles(client, pull, limits)
+              : Promise.reject(new FilesUnwanted(pull)),
+          )),
     },
     publish: (state) => sent.push(state),
     drawn: (head) => drawn.push(head),

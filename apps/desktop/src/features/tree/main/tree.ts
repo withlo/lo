@@ -19,9 +19,10 @@ import {
   MAX_FILES,
   MAX_PAGES,
   type PullFile,
+  type PullFiles,
   PullRef,
   readComparison,
-  readPullFiles,
+  type ReadFiles,
   RepoRef,
   repoTree,
   saidBy,
@@ -68,6 +69,18 @@ export interface TreeReads {
   clone(): Promise<Repo> | undefined;
   /** Runs `request` with GitHub's client for `acting`, in its turn. */
   github<T>(acting: Acting, request: (client: GithubClient) => Promise<T>): Promise<T>;
+  /**
+   * The pull request's files at `head` as GitHub lists them, read as `acting`, within `limits`:
+   * read once for the tree and the diff, and only while one of them still `wanted` them when a request's
+   * turn comes.
+   */
+  pullFiles(
+    acting: Acting,
+    pull: PullRef,
+    head: string,
+    limits: ReadFiles,
+    wanted: () => boolean,
+  ): Promise<PullFiles>;
 }
 
 export interface TreeTabOptions {
@@ -554,7 +567,9 @@ export class TreeTab {
    * The files `at`'s pull request changes, as GitHub lists them: for a stack's layer compared with
    * another commit, those GitHub's comparison with it lists, or the pull request's own once GitHub
    * couldn't compare them, as when it no longer has the commit, as the local copy does then.
-   * Nothing once `at` is no longer the tree on screen when the request's turn comes.
+   * Once `at` is no longer the tree on screen when a request's turn comes: nothing for the
+   * comparison, and for the pull request's files a rejection with `FilesUnwanted`, as their read
+   * stops, unless someone else still wants them.
    */
   async #changedOnGithub(
     at: At,
@@ -578,21 +593,17 @@ export class TreeTab {
         at.uncompared = true;
       }
     }
-    const listed = await reads.github(acting, (client) =>
-      this.#current(at)
-        ? readPullFiles(client, pull, {
-            maxPages: MAX_PAGES,
-            // Without an account, GitHub allows 60 requests an hour, and nothing else polls.
-            keepRequests: acting.kind === 'anonymous' ? KEEP_ANONYMOUS : KEEP_REQUESTS,
-          })
-        : Promise.resolve(undefined),
-    );
-    return (
-      listed && {
-        files: listed.files,
-        partial: listed.cutShort !== undefined || listed.files.length >= MAX_FILES,
-      }
-    );
+    if (!this.#current(at)) return undefined;
+    const limits = {
+      maxPages: MAX_PAGES,
+      // Without an account, GitHub allows 60 requests an hour, and nothing else polls.
+      keepRequests: acting.kind === 'anonymous' ? KEEP_ANONYMOUS : KEEP_REQUESTS,
+    };
+    const listed = await reads.pullFiles(acting, pull, at.head, limits, () => this.#current(at));
+    return {
+      files: listed.files,
+      partial: listed.cutShort !== undefined || listed.files.length >= MAX_FILES,
+    };
   }
 
   #publish(): void {

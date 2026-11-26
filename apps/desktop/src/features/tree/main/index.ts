@@ -2,7 +2,7 @@
 // screen and the files the pull request changes, sent to the window each time they change, with a
 // folder's files and a search by name on request.
 
-import type { GithubClient } from '@lo/github';
+import type { FilesAsker, GithubClient } from '@lo/github';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { defineFeature, type FeatureContext } from '../../../main/features.ts';
@@ -16,6 +16,8 @@ import { mode } from '../settings.ts';
 import { TreeTab } from './tree.ts';
 
 const trees = new Map<string, TreeTab>();
+/** The tabs whose Files panel is drawn, as the window says. */
+const panels = new Set<string>();
 const unfollow: (() => void)[] = [];
 
 const log = (line: string) => console.error(`tree: ${line}`);
@@ -33,6 +35,7 @@ function follow(context: FeatureContext<typeof contract>, id: string): void {
   if (!info) {
     trees.get(id)?.close();
     trees.delete(id);
+    panels.delete(id);
     return;
   }
   let tree = trees.get(id);
@@ -47,6 +50,21 @@ function follow(context: FeatureContext<typeof contract>, id: string): void {
           const client = await access.client(acting.login);
           const poller = await access.poller(acting.login);
           return poller.queue.read(() => request(client));
+        },
+        async pullFiles(acting, pull, head, limits, wanted) {
+          // While the Files panel is on screen with its tab, its list goes right after what the
+          // view on screen waits on first, ahead of polls; hidden, it waits its turn. The diff on
+          // screen asks for them sooner.
+          const asker: FilesAsker = {
+            wanted,
+            priority: () =>
+              service.list().active === id && panels.has(id) ? 'next' : 'background',
+          };
+          if (acting.kind === 'anonymous') {
+            return access.anonymousPullFiles(pull, head, limits, asker);
+          }
+          const poller = await access.poller(acting.login);
+          return poller.pullFiles(pull, head, limits, asker);
         },
       },
       publish: (state) => context.publish('state', state),
@@ -66,6 +84,10 @@ export default defineFeature(contract, {
     async find({ id, query }) {
       return { query, ...(await treeOf(id).find(query)) };
     },
+    shown({ id, shown }) {
+      if (shown) panels.add(id);
+      else panels.delete(id);
+    },
   },
   start(context) {
     // The window lists the files as the setting says, so main only declares it, for it to change.
@@ -81,5 +103,6 @@ export default defineFeature(contract, {
     for (const stop of unfollow.splice(0)) stop();
     for (const tree of trees.values()) tree.close();
     trees.clear();
+    panels.clear();
   },
 });

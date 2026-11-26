@@ -226,6 +226,11 @@ export const contract = defineContract('tree', {
       input: z.strictObject({ id: tabId, query: z.string().max(1000) }),
       reply: reply<{ query: string; at: string | null; found: Found[]; total: number }>(),
     },
+    /**
+     * Tab `id`'s Files panel is drawn, or no longer: while it is, and its tab is on screen, the
+     * pull request's files GitHub lists go right after what the view on screen waits on first.
+     */
+    shown: { input: z.strictObject({ id: tabId, shown: z.boolean() }), reply: reply<void>() },
   },
   topics: {
     /** A pull request's tab's tree, each time it changes. */

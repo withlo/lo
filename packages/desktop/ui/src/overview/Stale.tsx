@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import { Icon } from '../Icon.tsx';
 import { Tooltip } from '../Tooltip.tsx';
 
 /**
@@ -20,10 +21,7 @@ export function OutOfDate({
   return (
     <div className="lo-ov-stales">
       <div className="lo-ov-stale" role="status" data-lo-stale="">
-        <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M7.13 2.5a1 1 0 0 1 1.74 0l5.2 9.5a1 1 0 0 1-.87 1.5H2.8a1 1 0 0 1-.87-1.5Z" />
-          <path d="M8 6.25v3M8 11.25v.01" />
-        </svg>
+        <Icon name="triangle-exclamation-point" size={16} />
         <Tooltip label={title} cut>
           <div className="lo-ov-stale__title">{title}</div>
         </Tooltip>

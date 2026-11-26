@@ -15,6 +15,7 @@ import { fileKey, type TreeState } from '../contract.ts';
 import { mode as modeSetting } from '../settings.ts';
 import { type FileThreads, useCounts } from './counts.ts';
 import { model as modelOf, type Row } from './model.ts';
+import { main } from './main.ts';
 import { useViewedCount } from './shared.ts';
 import { problemWords, unlistedWords, type TreeWords } from './words.ts';
 import {
@@ -152,6 +153,19 @@ export function Files({
 
   useEffect(() => {
     if (states.get(tab.id) === undefined) catchUp(tab.id);
+  }, [tab.id]);
+
+  // While the panel is drawn, main reads its list right after what the view on screen waits on.
+  useEffect(() => {
+    const say = (open: boolean) => {
+      main()
+        .shown({ id: tab.id, shown: open })
+        .catch((error: unknown) => console.error("Lo couldn't say the files were shown:", error));
+    };
+    say(true);
+    return () => {
+      say(false);
+    };
   }, [tab.id]);
 
   // GitHub's marks with Lo's writes on top, by GitHub's paths, kept only while they're short

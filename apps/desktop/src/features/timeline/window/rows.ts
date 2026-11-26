@@ -136,7 +136,10 @@ export type Row =
 export interface RowsContext {
   /** What goes beside the description, once read. */
   readonly sidebar: Sidebar | undefined;
-  /** The tab's revisions, once read. */
+  /**
+   * The tab's revisions, once read. Pushes split by them, and say them, only once they're settled,
+   * so a row doesn't split one way and then another as the local copy's commits come.
+   */
   readonly revisions: ComparisonView | undefined;
   /** The pull request's author, as its header names them. */
   readonly author: string | undefined;
@@ -223,9 +226,9 @@ export function reviewersOf(
 }
 
 /** Each revision with a number, by its head. */
-function revisionsByHead(revisions: ComparisonView | undefined): Map<string, RevisionMark> {
+function revisionsByHead(revisions: ComparisonView['revisions']): Map<string, RevisionMark> {
   const byHead = new Map<string, RevisionMark>();
-  for (const revision of revisions?.revisions ?? []) {
+  for (const revision of revisions) {
     if (revision.number !== null)
       byHead.set(revision.head, { number: revision.number, head: revision.head });
   }
@@ -540,9 +543,10 @@ function eventOf(key: string, item: Item, repository: string): Row | undefined {
  * is `owner/name`, which a mention from the same repository leaves out.
  */
 export function rowsOf(timeline: Timeline, repository: string, context: RowsContext): Row[] {
-  const byHead = revisionsByHead(context.revisions);
+  const settled = context.revisions?.settled ? context.revisions.revisions : [];
+  const byHead = revisionsByHead(settled);
   const pushers = new Map<string, string>();
-  for (const revision of context.revisions?.revisions ?? []) {
+  for (const revision of settled) {
     if (revision.pusher !== null) pushers.set(revision.head, revision.pusher);
   }
   const { description } = timeline;
@@ -594,13 +598,9 @@ export function rowsOf(timeline: Timeline, repository: string, context: RowsCont
     }
   };
 
-  const positions = new Map(
-    (context.revisions?.revisions ?? []).map((revision, at) => [revision.head, at]),
-  );
+  const positions = new Map(settled.map((revision, at) => [revision.head, at]));
   const available = new Set(
-    (context.revisions?.revisions ?? []).flatMap((revision) =>
-      revision.available ? [revision.head] : [],
-    ),
+    settled.flatMap((revision) => (revision.available ? [revision.head] : [])),
   );
 
   for (const { cursor, item } of timeline.items) {

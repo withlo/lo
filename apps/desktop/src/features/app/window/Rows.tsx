@@ -1,7 +1,7 @@
 // The app feature's rows of Settings: the window's zoom, in Appearance, which `⌘+`, `⌘-` and `⌘0`
 // change too, and the licenses, in About.
 
-import { Setting, SettingsCommand } from '@lo/ui';
+import { Icon, Setting, SettingsCommand } from '@lo/ui';
 
 import { defineRow, settingRow, type ControlProps } from '../../settings/window/shared.ts';
 import { zoom } from '../settings.ts';
@@ -14,9 +14,7 @@ function Zoom({ value }: ControlProps<number>) {
   return (
     <div className="flex items-center gap-4">
       <SettingsCommand command="app.zoomOut" size="sm" icon aria-label="Zoom out">
-        <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M4 8h8" />
-        </svg>
+        <Icon name="minus" size={16} />
       </SettingsCommand>
       <span className="inline-grid justify-items-center tabular-nums">
         <span className="col-start-1 row-start-1" aria-live="polite">
@@ -27,9 +25,7 @@ function Zoom({ value }: ControlProps<number>) {
         </span>
       </span>
       <SettingsCommand command="app.zoomIn" size="sm" icon aria-label="Zoom in">
-        <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M8 4v8M4 8h8" />
-        </svg>
+        <Icon name="plus" size={16} />
       </SettingsCommand>
     </div>
   );

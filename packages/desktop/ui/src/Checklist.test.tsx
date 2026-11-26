@@ -153,7 +153,8 @@ describe('Checklist', () => {
     const host = render(<Checklist id="reasons" label="Checks" rows={blockers()} />);
     const running = host.querySelector('li[data-key="running"]');
     expect(running?.querySelector('.spinner')).not.toBeNull();
-    expect(running?.querySelector('svg')).toBeNull();
+    // Its icon is the ring alone; the arrow of its run's link is the link's.
+    expect(running?.firstElementChild?.querySelector('svg')).toBeNull();
     const pending = host.querySelector('li[data-key="pending"]');
     expect(pending?.querySelector('.hollow')).not.toBeNull();
     expect(pending?.querySelector('.spinner')).toBeNull();

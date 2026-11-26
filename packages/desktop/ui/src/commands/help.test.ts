@@ -263,6 +263,10 @@ describe('keyboard shortcuts', () => {
     expect(ids('next file')).toEqual(['diff.nextFile']);
     expect(ids('whole pull request')).toEqual(['diff.merge']);
     expect(ids('nothing like it')).toEqual([]);
+    // What's matched as written is the keys each row shows, one for one, and nothing more.
+    for (const row of groups.flatMap((group) => group.rows)) {
+      expect(row.written).toHaveLength(row.keys.length);
+    }
   });
 
   it('reads a label without its backticks', () => {

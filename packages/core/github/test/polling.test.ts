@@ -28,6 +28,7 @@ import {
   withBody,
   type Logged,
 } from './support/polling.ts';
+import { readPullSummary, type PullSummary } from '../src/pulls.ts';
 import { unresolvedThreads } from '../src/queries.ts';
 
 beforeEach(useFakeClock);
@@ -419,6 +420,80 @@ test('opening a pr while its watched poll is in flight polls it at once', async 
     ),
   );
   expect(t.events()).toEqual(['check #2', 'details #2: layer B']);
+});
+
+/**
+ * A tab opening a pull request reads it itself, for what its local copy is fetched by: its first
+ * poll waits for that read, with nothing going before it, and takes the summary from it, so the
+ * pull request is read once. The next poll asks again as ever.
+ */
+test('the summary a tab read as it opened a pr is its first polls', async () => {
+  const t = await Polling.start('opened_read', recorded(), { delay: 1000 });
+  /** What was asked about PR #1, in order. */
+  const asked = () =>
+    t
+      .requests()
+      .map(([, what]) => what)
+      .filter((what) => /^(GET \/pulls\/1\b|PullRequestCheck$|PullRequest$)/.test(what));
+  const reading = Promise.withResolvers<PullSummary | undefined>();
+  void t.poller.setOpen(pr(1), reading.promise);
+  await t.run();
+  await t.runUntil(4);
+  // Nothing goes before it, the repository's poll included.
+  expect(t.requests()).toEqual([]);
+  reading.resolve(readPullSummary(at(recorded(), 0).response.body));
+  await t.run();
+  await t.runUntil(8);
+  expect(asked()).toEqual(['PullRequestCheck', 'PullRequest']);
+  expect(t.events().filter((event) => event.endsWith('#1') || event.includes('#1:'))).toEqual([
+    'summary #1: feat: stack layer A',
+    'check #1',
+    'details #1: feat: stack layer A',
+  ]);
+  // The next poll asks again, as ever.
+  await t.runUntil(30);
+  expect(asked()).toContain('GET /pulls/1 (since)');
+});
+
+/** A tab's read that failed leaves its first poll to read the pull request itself. */
+test('a tabs read of a pr opened that failed leaves the first poll to read it', async () => {
+  const t = await Polling.start('opened_read_failed', recorded(), { delay: 1000 });
+  const asked = () =>
+    t
+      .requests()
+      .map(([, what]) => what)
+      .filter((what) => /^(GET \/pulls\/1\b|PullRequestCheck$|PullRequest$)/.test(what));
+  const reading = Promise.withResolvers<PullSummary | undefined>();
+  void t.poller.setOpen(pr(1), reading.promise);
+  await t.run();
+  await t.runUntil(2);
+  expect(t.requests()).toEqual([]);
+  reading.resolve(undefined);
+  await t.run();
+  await t.runUntil(8);
+  expect(asked()).toEqual(['GET /pulls/1', 'PullRequestCheck', 'PullRequest']);
+});
+
+/**
+ * The summary a tab read stands in for a poll's GET only within a few seconds of it: a poll that
+ * comes later, as the next one does for a tab that read its pull request again, asks GitHub.
+ */
+test('the summary a tab read stands in for a polls GET only for a few seconds', async () => {
+  const t = await Polling.start('opened_read_late', recorded(), { delay: 1000 });
+  /** What was asked about PR #1 since last asked, in order. */
+  const asked = () =>
+    t
+      .requests()
+      .map(([, what]) => what)
+      .filter((what) => /^(GET \/pulls\/1\b|PullRequestCheck$|PullRequest$)/.test(what));
+  void t.poller.setOpen(pr(1));
+  await t.run();
+  await t.runUntil(4);
+  expect(asked()).toEqual(['GET /pulls/1', 'PullRequestCheck', 'PullRequest']);
+  void t.poller.setOpen(pr(1), Promise.resolve(readPullSummary(at(recorded(), 0).response.body)));
+  await t.run();
+  await t.runUntil(30);
+  expect(asked()).toEqual(['GET /pulls/1 (since)', 'PullRequestCheck']);
 });
 
 /** One poll of everything at `secs`: the open PR, the other PR and the repository. */

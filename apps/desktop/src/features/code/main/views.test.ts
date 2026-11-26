@@ -3,7 +3,7 @@
 // later and once it's pushed to or reloaded, and a read that fails leaves them untrusted, tried
 // again after a wait that doubles.
 
-import type { PullRequestRepositories } from '@lo/github';
+import type { PullRequestRepositories, ReadPriority } from '@lo/github';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Status } from '../contract.ts';
@@ -46,7 +46,7 @@ function follow(
   const reads = vi.fn<
     (
       view: ViewInfo,
-      priority: 'foreground' | 'background',
+      priority: ReadPriority,
       signal: AbortSignal | undefined,
     ) => Promise<PullRequestRepositories>
   >((view) => read(view));

@@ -2,9 +2,10 @@ import { cva } from 'class-variance-authority';
 import type { HTMLAttributes, ReactNode, Ref } from 'react';
 
 import { withoutBidi, withoutBidiNode } from './controls.ts';
+import { Icon } from './Icon.tsx';
+import type { IconName } from './icons.ts';
 import { LinkButton } from './LinkButton.tsx';
 import { Spinner } from './Spinner.tsx';
-import { StateIcon } from './StatePill.tsx';
 import { Tooltip } from './Tooltip.tsx';
 
 /**
@@ -113,61 +114,22 @@ const icon = cva('flex-none', {
   },
 });
 
-/** The shapes of an icon, for an `svg` on a 16 grid. */
-function Shape({ glyph }: { glyph: Exclude<CheckGlyph, 'running' | 'pending' | 'draft'> }) {
-  switch (glyph) {
-    case 'ok':
-      return <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />;
-    case 'review':
-      return (
-        <>
-          <circle cx="8" cy="5.25" r="2.75" />
-          <path d="M3 13.5c.5-2.5 2.5-4 5-4s4.5 1.5 5 4" />
-        </>
-      );
-    case 'failed':
-      return (
-        <>
-          <circle cx="8" cy="8" r="6.25" />
-          <path d="M5.75 5.75l4.5 4.5M10.25 5.75l-4.5 4.5" />
-        </>
-      );
-    case 'conversation':
-      return (
-        <path d="M2.75 3.25c0-.55.45-1 1-1h8.5c.55 0 1 .45 1 1v6.5c0 .55-.45 1-1 1H7.5L4.75 13v-2.25h-1c-.55 0-1-.45-1-1Z" />
-      );
-    case 'behind':
-      return (
-        <>
-          <path d="M13 3.5v3h-3M3 12.5v-3h3" />
-          <path d="M12.6 6.5A5 5 0 0 0 3.6 5.2M3.4 9.5a5 5 0 0 0 9 1.3" />
-        </>
-      );
-    case 'conflict':
-      return (
-        <>
-          <path d="M5 2.5v6.5a2 2 0 0 0 2 2h4M11 11l-2-2M11 11l-2 2" />
-          <circle cx="5" cy="13" r="1.25" />
-        </>
-      );
-    case 'rule':
-      return <path d="M8 1.75 13 3.5v4c0 3.2-2.1 5.6-5 6.75C5.1 13.1 3 10.7 3 7.5v-4Z" />;
-    case 'unknown':
-      return (
-        <>
-          <circle cx="8" cy="8" r="6.25" />
-          <path d="M6.25 6.25a1.75 1.75 0 1 1 2.5 1.6c-.5.25-.75.6-.75 1.15M8 11.25v.01" />
-        </>
-      );
-    default:
-      glyph satisfies never;
-      throw new Error(`A checklist icon Lo doesn’t know: ${String(glyph)}.`);
-  }
-}
+/** Each glyph's icon, but those drawn as a ball: the thing a reason is about. */
+const GLYPH_ICONS: Readonly<Record<Exclude<CheckGlyph, 'running' | 'pending'>, IconName>> = {
+  ok: 'check',
+  review: 'user-round',
+  failed: 'circle-x',
+  conversation: 'message-square',
+  behind: 'refresh-cw',
+  conflict: 'git-merge-conflict',
+  draft: 'git-pull-request-draft',
+  rule: 'shield',
+  unknown: 'circle-question-mark',
+};
 
 /**
- * A row's icon. A check still running is a ring turning, and one that hasn't reported a hollow
- * ball, as the design draws "not yet".
+ * A row's icon, beside its title's `text-ui`. A check still running is a ring turning, and one
+ * that hasn't reported a hollow ball, as the design draws "not yet".
  */
 export function CheckIcon({ glyph }: { glyph: CheckGlyph }) {
   if (glyph === 'running') return <Spinner />;
@@ -176,11 +138,7 @@ export function CheckIcon({ glyph }: { glyph: CheckGlyph }) {
       <span className="inline-block size-12 flex-none rounded-pill hollow" aria-hidden="true" />
     );
   }
-  return (
-    <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-      {glyph === 'draft' ? <StateIcon state="draft" /> : <Shape glyph={glyph} />}
-    </svg>
-  );
+  return <Icon name={GLYPH_ICONS[glyph]} size={14} />;
 }
 
 /** The words of a link's label without its arrow, for a screen reader to say with the check's name. */

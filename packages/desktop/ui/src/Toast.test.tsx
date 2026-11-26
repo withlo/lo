@@ -56,8 +56,19 @@ describe('Toast', () => {
 
   it('colors the icon by its tone, and leaves out the body and buttons it hasn’t got', () => {
     const markup = renderToStaticMarkup(<Toast tone="danger" icon={icon} title="Nothing merged" />);
-    expect(markup).toContain('class="flex-none text-danger"');
+    expect(markup).toContain('class="toast-icon flex-none text-danger"');
     expect(markup).not.toContain('col-start-2');
+  });
+
+  it('draws an arrow in a title or body as an icon, and keeps the arrow for a screen reader', () => {
+    const markup = renderToStaticMarkup(
+      <Toast tone="danger" title="Couldn’t compare r1 → r3" body="Nothing between r1 → r3." />,
+    );
+    // The title's arrow is 14 px, as its `text-ui` is; the body's 12 px, beside `text-small`.
+    const svg = '" viewBox="0 0 24 24" aria-hidden="true">';
+    expect(markup).toContain(`wrap-anywhere">Couldn’t compare r1 <svg class="lo-i lo-i--sm${svg}`);
+    expect(markup).toContain(`line-clamp-3">Nothing between r1 <svg class="lo-i lo-i--xs${svg}`);
+    expect(markup.match(/<span class="sr-only">→<\/span> r3/g)).toHaveLength(2);
   });
 
   it('floats in a live region that is there with nothing in it', () => {

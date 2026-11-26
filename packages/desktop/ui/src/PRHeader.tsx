@@ -11,6 +11,8 @@ import {
 import { Branch } from './Branch.tsx';
 import { besideIn, handOffFocus } from './focus.ts';
 import { useGiveUp } from './giveUp.ts';
+import { Icon } from './Icon.tsx';
+import type { IconName } from './icons.ts';
 import { Popover } from './Popover.tsx';
 import { Skeleton } from './Spinner.tsx';
 import { StatePill, type PullRequestState } from './StatePill.tsx';
@@ -154,8 +156,8 @@ export function PRHeader({
                   merged into
                 </span>
               ) : (
-                <span data-gives="branches" className="flex-none text-fg-subtle" aria-label="into">
-                  →
+                <span data-gives="branches" className="flex flex-none text-fg-subtle">
+                  <Icon name="arrow-right" size={12} label="into" />
                 </span>
               )}
               <BranchAtLeast name={base.branch} base />
@@ -199,7 +201,7 @@ function ConnectionChip({ connection }: { connection: HeaderConnection }) {
   const self = useRef<HTMLElement | null>(null);
   const face = (
     <>
-      <ConnectionIcon kind={connection.kind} />
+      <Icon name={CONNECTION_ICONS[connection.kind]} size={12} />
       {connection.label}
     </>
   );
@@ -275,44 +277,13 @@ function ChipDetails({
   );
 }
 
-/** The chip's icon for what's wrong: a struck cloud offline, a clock for the rate limit. */
-function ConnectionIcon({ kind }: { kind: HeaderConnection['kind'] }) {
-  return (
-    <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true" data-icon={kind}>
-      <ConnectionPaths kind={kind} />
-    </svg>
-  );
-}
-
-function ConnectionPaths({ kind }: { kind: HeaderConnection['kind'] }) {
-  switch (kind) {
-    case 'offline':
-      return (
-        <path d="M5.2 5.3a3.75 3.75 0 0 0-.7 7.2h6.7M9.6 4.1a3.75 3.75 0 0 1 3.9 6.6M2 2l12 12" />
-      );
-    case 'signedOut':
-      return (
-        <>
-          <circle cx="8" cy="8" r="6.25" />
-          <path d="M8 4.75v3.5M8 10.75v.01" />
-        </>
-      );
-    case 'rateLimited':
-      return (
-        <>
-          <circle cx="8" cy="8" r="6.25" />
-          <path d="M8 4.75V8l2.25 1.5" />
-        </>
-      );
-    case 'failed':
-      return (
-        <>
-          <path d="M8 2.25 14.25 13.25H1.75Z" />
-          <path d="M8 6.5v3M8 11.25v.01" />
-        </>
-      );
-    default:
-      kind satisfies never;
-      return null;
-  }
-}
+/**
+ * The chip's icon for what's wrong: a struck cloud offline, a clock for the rate limit, a triangle
+ * for a failure, and a ring with a mark when signed out.
+ */
+const CONNECTION_ICONS: Readonly<Record<HeaderConnection['kind'], IconName>> = {
+  offline: 'cloud-off',
+  signedOut: 'circle-exclamation-point',
+  rateLimited: 'clock',
+  failed: 'triangle-exclamation-point',
+};

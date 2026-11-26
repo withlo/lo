@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
 
 import { parseSync, Visitor } from 'oxc-parser';
 import { expect, test } from 'vitest';
@@ -7,8 +7,8 @@ import { expect, test } from 'vitest';
 import plugin, {
   APOSTROPHE_MESSAGE,
   ICON_MESSAGE,
-  inlineIcon,
   loSubject,
+  noInlineIcon,
   MESSAGE,
   SCROLL_MESSAGE,
   SUBJECT_MESSAGE,
@@ -16,7 +16,6 @@ import plugin, {
   TITLE_MESSAGE,
 } from './plugin.ts';
 import { LO_SUBJECTS } from './subjects.ts';
-import { OWN_SVGS } from './svgs.ts';
 
 /** The repository's root. */
 const ROOT = join(import.meta.dirname, '..', '..');
@@ -509,17 +508,10 @@ test('the strings that still make Lo their subject are listed, and only they', (
   }).toEqual({ gone: [], unlisted: [], repeated: [] });
 });
 
-/**
- * The source of each icon `lo/no-inline-icon` reports in `source`, a file at `path`, letting
- * through the files `known` lists.
- */
-function icons(
-  source: string,
-  path = join(ROOT, 'apps/desktop/src/file.tsx'),
-  known: ReadonlySet<string> = new Set(),
-): string[] {
+/** The source of each icon `lo/no-inline-icon` reports in `source`, a file at `path`. */
+function icons(source: string, path = join(ROOT, 'apps/desktop/src/file.tsx')): string[] {
   const found: string[] = [];
-  const rule = inlineIcon(known).create({
+  const rule = noInlineIcon.create({
     report: ({ node, message }) => {
       expect(message).toBe(ICON_MESSAGE);
       const start: unknown = Reflect.get(node, 'start');
@@ -534,6 +526,8 @@ function icons(
   new Visitor({
     JSXOpeningElement: (node) => rule.JSXOpeningElement(node),
     CallExpression: (node) => rule.CallExpression(node),
+    Literal: (node) => rule.Literal(node),
+    TemplateLiteral: (node) => rule.TemplateLiteral(node),
     ImportDeclaration: (node) => rule.ImportDeclaration(node),
     ImportExpression: (node) => rule.ImportExpression(node),
     ExportAllDeclaration: (node) => rule.ExportAllDeclaration(node),
@@ -566,39 +560,67 @@ test('an svg of its own is refused, in JSX or made in the DOM, and so is lucide 
   ]);
 });
 
-test('Icon, iconElement, the mark, figures, the list of icons and a listed file are let through', () => {
-  const svg = 'const drawn = <svg viewBox="0 0 24 24" />;';
-  const ui = (file: string) => join(ROOT, 'packages/desktop/ui/src', file);
-  for (const file of ['Icon.tsx', 'Mark.tsx', 'LogoMotion.tsx', 'figures/Figure.tsx']) {
-    expect(icons(svg, ui(file))).toEqual([]);
-  }
-  expect(icons("const made = document.createElementNS(SVG, 'svg');", ui('iconElement.ts'))).toEqual(
-    [],
-  );
-  expect(icons("import { Check } from 'lucide';", ui('icons.ts'))).toEqual([]);
-  // The list of icons draws none, and Icon imports none.
-  expect(icons("const made = document.createElementNS(SVG, 'svg');", ui('icons.ts'))).toHaveLength(
-    1,
-  );
-  expect(icons("import { Check } from 'lucide';", ui('Icon.tsx'))).toHaveLength(1);
-  const known = new Set(['apps/desktop/src/features/old.tsx']);
-  expect(icons(svg, join(ROOT, 'apps/desktop/src/features/old.tsx'), known)).toEqual([]);
-  expect(icons(svg, join(ROOT, 'apps/desktop/src/features/new.tsx'), known)).toHaveLength(1);
-  // Outside the desktop app, nothing is checked.
-  expect(icons(svg, join(ROOT, 'scripts/file.tsx'))).toEqual([]);
+test('an svg is refused as markup or a data URL in a string, as a file, or made under a worked-out name', () => {
+  const source = `
+    host.innerHTML = '<svg viewBox="0 0 24 24"><path d="M5 12h14" /></svg>';
+    host.insertAdjacentHTML('beforeend', \`<SVG class="lo-i" viewBox="\${box}">\`);
+    const drawn = <div dangerouslySetInnerHTML={{ __html: '<svg></svg>' }} />;
+    const ground = { backgroundImage: 'url("data:image/svg+xml;utf8,%3Csvg%3E")' };
+    import mark from './mark.svg';
+    import url from '../brand/mark.svg?url';
+    const raw = await import('./mark.svg?raw');
+    const shape = document.createElementNS(SVG, tag);
+    const built = document.createElementNS(SVG, \`\${kind}\`);
+    const whole = document.createElementNS(SVG, \`svg\`);
+    const compiled = jsx('svg', { viewBox: '0 0 24 24' });
+    const made = createElement(\`svg\`);
+  `;
+  expect(icons(source)).toEqual([
+    `'<svg viewBox="0 0 24 24"><path d="M5 12h14" /></svg>'`,
+    '`<SVG class="lo-i" viewBox="${box}">`',
+    "'<svg></svg>'",
+    `'url("data:image/svg+xml;utf8,%3Csvg%3E")'`,
+    "import mark from './mark.svg';",
+    "import url from '../brand/mark.svg?url';",
+    "import('./mark.svg?raw')",
+    'document.createElementNS(SVG, tag)',
+    'document.createElementNS(SVG, `${kind}`)',
+    'document.createElementNS(SVG, `svg`)',
+    "jsx('svg', { viewBox: '0 0 24 24' })",
+    'createElement(`svg`)',
+  ]);
+  // Words about an svg, an element made by a name worked out as it runs, and a file that isn't one
+  // are let through.
+  const plain = `
+    const said = 'An svg figure can’t be drawn here.';
+    const kind = 'image/svg';
+    const element = document.createElement(tag);
+    import styles from './svgs.css';
+  `;
+  expect(icons(plain)).toEqual([]);
 });
 
-test('the files that still draw an svg of their own are listed, and only they', () => {
-  const found = new Set(
-    SOURCES.flatMap((folder) => sourceFiles(join(ROOT, folder)))
-      .filter((path) => icons(readFileSync(path, 'utf8'), path).length > 0)
-      .map((path) => relative(ROOT, path)),
-  );
-  // A listed file no longer found moved its icons onto Icon: take it off the list. One found but
-  // not listed is new: `lo/no-inline-icon` refuses it, so draw its icons with Icon.
-  expect({
-    gone: OWN_SVGS.filter((each) => !found.has(each)),
-    unlisted: [...found].filter((each) => !OWN_SVGS.includes(each)),
-    repeated: OWN_SVGS.filter((each, index) => OWN_SVGS.indexOf(each) !== index),
-  }).toEqual({ gone: [], unlisted: [], repeated: [] });
+test('Icon, iconElement, the mark, what draws figures and the list of icons are let through', () => {
+  const svg = 'const drawn = <svg viewBox="0 0 24 24" />;';
+  const made = "const made = document.createElementNS(SVG, 'svg');";
+  const ui = (file: string) => join(ROOT, 'packages/desktop/ui/src', file);
+  for (const file of ['Icon.tsx', 'Mark.tsx', 'LogoMotion.tsx']) {
+    expect(icons(svg, ui(file))).toEqual([]);
+  }
+  expect(icons(made, ui('iconElement.ts'))).toEqual([]);
+  expect(icons(made, ui('figures/svg.ts'))).toEqual([]);
+  // They make an svg's shapes by the names they're given, and hold its markup in strings.
+  const shapes = "const shape = document.createElementNS(SVG, node.name); const tag = '<svg>';";
+  expect(icons(shapes, ui('iconElement.ts'))).toEqual([]);
+  expect(icons(shapes, ui('figures/svg.ts'))).toEqual([]);
+  expect(icons(shapes, ui('figures/Figure.tsx'))).toHaveLength(2);
+  expect(icons("import { Check } from 'lucide';", ui('icons.ts'))).toEqual([]);
+  // A figure's frame draws its icons with Icon, as everything else does: only its drawing is let
+  // through.
+  expect(icons(svg, ui('figures/Figure.tsx'))).toHaveLength(1);
+  // The list of icons draws none, and Icon imports none.
+  expect(icons(made, ui('icons.ts'))).toHaveLength(1);
+  expect(icons("import { Check } from 'lucide';", ui('Icon.tsx'))).toHaveLength(1);
+  // Outside the desktop app, nothing is checked.
+  expect(icons(svg, join(ROOT, 'scripts/file.tsx'))).toEqual([]);
 });

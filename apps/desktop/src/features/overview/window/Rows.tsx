@@ -34,14 +34,6 @@ import {
 } from './skill.ts';
 import { ABOUT, installedEverywhere, installLabel, notSetUp, standing } from './words.ts';
 
-function SkillIcon() {
-  return (
-    <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M4.5 2.5h5l3 3v8h-8zM9.5 2.5v3h3M6.5 8.5h4M6.5 11h4" />
-    </svg>
-  );
-}
-
 /**
  * Where the skill stands, asked for as a row appears and again whenever Lo comes to the front, since
  * its folders change outside Lo: a link taken away, or an agent set up, while Lo was behind.
@@ -90,7 +82,7 @@ export function SkillStep() {
   const stopped = state === undefined ? [] : standing(state).flatMap((each) => each.why ?? []);
   return (
     <SetupItem
-      icon={<SkillIcon />}
+      icon="file-text"
       title="Overview skill"
       description={ABOUT}
       done={installedEverywhere(state) ? 'Installed' : undefined}

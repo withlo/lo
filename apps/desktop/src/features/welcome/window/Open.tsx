@@ -41,17 +41,6 @@ export const SAMPLE = {
   where: 'withlo/lo#182',
 } as const;
 
-function PullIcon() {
-  return (
-    <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-      <circle cx="4.5" cy="4" r="1.75" />
-      <circle cx="4.5" cy="12" r="1.75" />
-      <circle cx="11.5" cy="12" r="1.75" />
-      <path d="M4.5 5.75v4.5M11.5 10.25V7a2 2 0 0 0-2-2H8M9.5 3.5 8 5l1.5 1.5" />
-    </svg>
-  );
-}
-
 type Busy = 'field' | 'paste' | 'sample' | undefined;
 
 /**
@@ -217,7 +206,7 @@ export function OpenStep({ shown }: { shown: boolean }): ReactNode {
       </form>
       <SetupList label="Sample pull request">
         <SetupItem
-          icon={<PullIcon />}
+          icon="git-pull-request"
           title={SAMPLE.title}
           description={withOverview ? `${SAMPLE.where} · has an overview` : SAMPLE.where}
         >

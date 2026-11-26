@@ -11,6 +11,7 @@ import {
 import { Button } from './Button.tsx';
 import { DismissButton } from './Dismiss.tsx';
 import { handOffFocus, type FocusTarget } from './focus.ts';
+import { Icon } from './Icon.tsx';
 import { Key } from './Key.tsx';
 
 const banner = cva('flex min-w-0 items-center gap-12 py-6 ps-16 pe-12 text-fg text-ui', {
@@ -227,18 +228,10 @@ export function Banner(props: BannerProps) {
 
 function BannerIcon({ tone }: { tone: BannerProps['tone'] }) {
   return (
-    <svg className={`lo-i ${icon({ tone })}`} viewBox="0 0 16 16" aria-hidden="true">
-      {tone === 'info' ? (
-        <>
-          <circle cx="8" cy="8" r="6.25" />
-          <path d="M8 7.25v4M8 4.75v.01" />
-        </>
-      ) : (
-        <>
-          <path d="M8 2.25 14.25 13.25H1.75Z" />
-          <path d="M8 6.5v3M8 11.25v.01" />
-        </>
-      )}
-    </svg>
+    <Icon
+      name={tone === 'info' ? 'info' : 'triangle-exclamation-point'}
+      size={14}
+      className={icon({ tone })}
+    />
   );
 }

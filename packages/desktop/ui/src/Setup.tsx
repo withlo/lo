@@ -2,6 +2,8 @@ import { cva } from 'class-variance-authority';
 import type { ReactNode } from 'react';
 
 import { Collapse } from './Collapse.tsx';
+import { Icon } from './Icon.tsx';
+import type { IconName } from './icons.ts';
 
 export type SetupListProps = {
   /** The `SetupItem`s. */
@@ -50,9 +52,7 @@ const fact = cva('inline-flex items-center gap-6 text-fg-muted', {
 export function SetupDone({ children, size = 'sm' }: SetupDoneProps) {
   return (
     <span className={fact({ size })}>
-      <svg className="lo-i lo-i--sm flex-none text-success" viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />
-      </svg>
+      <Icon name="check" size={size === 'sm' ? 12 : 14} className="text-success" />
       {children}
     </span>
   );
@@ -60,10 +60,10 @@ export function SetupDone({ children, size = 'sm' }: SetupDoneProps) {
 
 export interface SetupItemProps {
   /**
-   * An icon drawn on a 16 px grid, as the design's icons are. A row that's a setting, with the
-   * control its row in Settings has, has none.
+   * Its icon, by its name in `icons.ts`, at 16 px beside its title and line, as an empty list's
+   * is. A row that's a setting, with the control its row in Settings has, has none.
    */
-  icon?: ReactNode;
+  icon?: IconName | undefined;
   /** What the step is, in six words at most. */
   title: ReactNode;
   /** What it adds, in a line. */
@@ -104,8 +104,8 @@ export function SetupItem({ icon, title, description, done, below, children }: S
   return (
     <li className={item({ icon: drawn })}>
       {drawn && (
-        <span className="row-span-2 text-icon-muted" aria-hidden="true">
-          {icon}
+        <span className="row-span-2 flex text-icon-muted">
+          <Icon name={icon} size={16} />
         </span>
       )}
       <span className={`${columns.words} text-ui-strong`}>{title}</span>

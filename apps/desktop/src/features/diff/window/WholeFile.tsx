@@ -9,6 +9,7 @@ import {
   Button,
   bytes,
   EmptyState,
+  Icon,
   Key,
   Loading,
   Problem,
@@ -409,9 +410,7 @@ function Bar({
         hint={back?.off ?? null}
         onClick={() => registry().run('keys.back', NO_TARGET)}
       >
-        <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M9.5 4 5.5 8l4 4" />
-        </svg>
+        <Icon name="chevron-left" size={12} />
         Back
         <KeyFor id="keys.back" />
       </Button>

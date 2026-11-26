@@ -226,13 +226,13 @@ describe('notices', () => {
     });
     const icons = [...(status()?.querySelectorAll('.toast > span:first-child') ?? [])];
     expect(icons.map((icon) => icon.className)).toEqual([
-      'flex-none text-danger',
-      'flex-none text-danger',
-      'flex-none text-warning',
+      'toast-icon flex-none text-danger',
+      'toast-icon flex-none text-danger',
+      'toast-icon flex-none text-warning',
     ]);
     act(() => refuse('Sign in to comment'));
     const newest = [...(status()?.querySelectorAll('.toast > span:first-child') ?? [])].at(-1);
-    expect(newest?.className).toBe('flex-none text-info');
+    expect(newest?.className).toBe('toast-icon flex-none text-info');
   });
 
   it('keep a note with Details or a button twice as long, whether or not a window draws it', () => {

@@ -3,10 +3,12 @@ import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } 
 
 import { Button } from './Button.tsx';
 import { Collapse } from './Collapse.tsx';
+import { Glyphs, Icon } from './Icon.tsx';
+import type { IconName } from './icons.ts';
 import { Key } from './Key.tsx';
 import { useDetails } from './Problem.tsx';
 
-const icon = cva('flex-none', {
+const icon = cva('toast-icon flex-none', {
   variants: {
     tone: {
       info: 'text-info',
@@ -20,31 +22,11 @@ const icon = cva('flex-none', {
 export type ToastTone = 'info' | 'success' | 'warning' | 'danger';
 
 /** The icon each tone shows, so a status color never stands without one. */
-const ICONS: Readonly<Record<ToastTone, ReactNode>> = {
-  info: (
-    <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-      <circle cx="8" cy="8" r="6.25" />
-      <path d="M8 7.25v4M8 4.75v.01" />
-    </svg>
-  ),
-  success: (
-    <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-      <circle cx="8" cy="8" r="6.25" />
-      <path d="m5.5 8.25 1.75 1.75 3.25-3.5" />
-    </svg>
-  ),
-  warning: (
-    <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M7.13 2.5a1 1 0 0 1 1.74 0l5.2 9.5a1 1 0 0 1-.87 1.5H2.8a1 1 0 0 1-.87-1.5Z" />
-      <path d="M8 6.25v3M8 11.25v.01" />
-    </svg>
-  ),
-  danger: (
-    <svg className="lo-i" viewBox="0 0 16 16" aria-hidden="true">
-      <circle cx="8" cy="8" r="6.25" />
-      <path d="M8 4.75v4M8 11.25v.01" />
-    </svg>
-  ),
+const ICONS: Readonly<Record<ToastTone, IconName>> = {
+  info: 'info',
+  success: 'circle-check',
+  warning: 'triangle-exclamation-point',
+  danger: 'circle-exclamation-point',
 };
 
 /** The one thing a toast offers to do: "Undo", "Open". */
@@ -58,17 +40,20 @@ export interface ToastAction {
 export interface ToastProps {
   /** What the icon says, as its color: a status color never stands without an icon and a word. */
   tone: ToastTone;
-  /** A 16 px icon, an `svg` with the `lo-i` class and `aria-hidden`. Without one, the tone's. */
+  /**
+   * An `Icon` of 14 px, beside the title's `text-ui`, or a `Spinner`, either centred on the title's
+   * first line. Without one, the tone's.
+   */
   icon?: ReactNode;
   /**
    * What happened, in a few words: the result, never the name of a command. A toast that goes by
-   * itself is this one line.
+   * itself is this one line. A string is drawn through `Glyphs`, so `r1 → r3`'s arrow is an icon.
    */
   title: ReactNode;
   /**
    * More about it, for a toast that waits for the reader. Plain words wrap, anywhere a long path
-   * needs to, and show three lines at most; a body of its own markup, such as a command to copy,
-   * shows whole.
+   * needs to, and show three lines at most, through `Glyphs` as the title is; a body of its own
+   * markup, such as a command to copy, shows whole.
    */
   body?: ReactNode;
   /** Buttons for what to do about it, for a toast that waits for the reader. */
@@ -108,8 +93,10 @@ export function Toast({
   useEffect(() => onDetails?.(open), [open, onDetails]);
   return (
     <div className="grid w-toast-w toast items-start rounded-md bg-bg-overlay text-fg shadow-pop text-ui">
-      <span className={icon({ tone })}>{mark ?? ICONS[tone]}</span>
-      <div className="line-clamp-3 min-w-0 font-semibold wrap-anywhere">{title}</div>
+      <span className={icon({ tone })}>{mark ?? <Icon name={ICONS[tone]} size={14} />}</span>
+      <div className="line-clamp-3 min-w-0 font-semibold wrap-anywhere">
+        {typeof title === 'string' ? <Glyphs text={title} size={14} /> : title}
+      </div>
       {action !== undefined && (
         <Button size="sm" variant="ghost" onClick={action.onClick}>
           {action.label}
@@ -117,7 +104,9 @@ export function Toast({
         </Button>
       )}
       {body !== undefined && (
-        <div className={more({ plain: typeof body === 'string' })}>{body}</div>
+        <div className={more({ plain: typeof body === 'string' })}>
+          {typeof body === 'string' ? <Glyphs text={body} /> : body}
+        </div>
       )}
       {actions !== undefined && <div className="col-start-2 mt-8 flex gap-6">{actions}</div>}
       {details !== undefined && (

@@ -1,14 +1,6 @@
-import { COMMENT_PATH, threadWords } from './counts.ts';
+import { threadWords } from './counts.ts';
+import { Icon } from './Icon.tsx';
 import { Tooltip } from './Tooltip.tsx';
-
-/** A speech bubble on the 16 grid, the mark of a comment. */
-export function CommentIcon() {
-  return (
-    <svg className="lo-i lo-i--xs" viewBox="0 0 16 16" aria-hidden="true">
-      <path d={COMMENT_PATH} />
-    </svg>
-  );
-}
 
 export interface ThreadCountProps {
   /** How many threads there are. */
@@ -33,7 +25,7 @@ export function ThreadCount({ total, unresolved }: ThreadCountProps) {
         data-open={open ? '' : undefined}
         className={`lo-num inline-flex flex-none items-center gap-2 text-micro ${open ? 'text-fg' : 'text-fg-muted'}`}
       >
-        <CommentIcon />
+        <Icon name="message-square" size={12} />
         {total}
       </span>
     </Tooltip>

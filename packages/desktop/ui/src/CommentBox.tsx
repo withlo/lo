@@ -13,6 +13,8 @@ import type { BannerAction } from './Banner.tsx';
 import { Button } from './Button.tsx';
 import { EmptyState } from './EmptyState.tsx';
 import { useGiveUp } from './giveUp.ts';
+import { Icon } from './Icon.tsx';
+import type { IconName } from './icons.ts';
 import { onVim, vimOn } from './vim.ts';
 import { Key } from './Key.tsx';
 import { Meter } from './Meter.tsx';
@@ -252,58 +254,33 @@ const FOOT_STEPS = ['keys', 'labels', 'hint', 'actions', 'fill'];
  */
 const HEAD_STEPS = ['hint', 'keys', 'labels'];
 
-/** The actions' icons, on the 16 grid. */
-const ACTION_ICONS = {
-  // A paper plane.
-  send: 'M2.5 7.5 13.5 2.5 9 13.5 7.25 8.75 2.5 7.5ZM7.25 8.75 13.5 2.5',
-  // A plus beside the lines of the review it goes in.
-  review: 'M2.5 4h6M2.5 8h6M2.5 12h4M12 9v5M9.5 11.5h5',
-  // A tick.
-  save: 'M3 8.5 6.5 12 13 4.5',
-} as const;
+/** The actions' icons: a paper plane, a plus beside the lines of the review it goes in, a tick. */
+const ACTION_ICONS: Readonly<Record<NonNullable<CommentBoxAction['icon']>, IconName>> = {
+  send: 'send',
+  review: 'list-plus',
+  save: 'check',
+};
 
 /** What a box's head and foot give up so far: whether each of `steps` is given up, of `given`. */
 function givenUp(steps: readonly string[], given: number): (step: string) => boolean {
   return (step) => steps.indexOf(step) < given;
 }
 
-/** The icons a note takes, on the 16 grid. */
+/** The icon a note takes, beside its `text-small`: its own, or its tone's. */
 function NoteIcon({
   tone,
   icon,
   titled,
 }: Pick<CommentBoxNote, 'tone' | 'icon'> & { titled: boolean }) {
-  const shapes =
-    icon === 'clock' ? (
-      <>
-        <circle cx="8" cy="8" r="6.25" />
-        <path d="M8 4.75V8l2 1.5" />
-      </>
-    ) : icon === 'blocked' ? (
-      <>
-        <circle cx="8" cy="8" r="6.25" />
-        <path d="M5.75 5.75l4.5 4.5M10.25 5.75l-4.5 4.5" />
-      </>
-    ) : tone !== 'info' ? (
-      <>
-        <path d="M7.13 2.5a1 1 0 0 1 1.74 0l5.2 9.5a1 1 0 0 1-.87 1.5H2.8a1 1 0 0 1-.87-1.5Z" />
-        <path d="M8 6.25v3M8 11.25v.01" />
-      </>
-    ) : (
-      <>
-        <circle cx="8" cy="8" r="6.25" />
-        <path d="M8 7.25v4M8 4.75v.01" />
-      </>
-    );
-  return (
-    <svg
-      className={`lo-i lo-i--sm ${noteIcon({ tone, titled })}`}
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-    >
-      {shapes}
-    </svg>
-  );
+  const name: IconName =
+    icon === 'clock'
+      ? 'clock'
+      : icon === 'blocked'
+        ? 'circle-x'
+        : tone !== 'info'
+          ? 'triangle-exclamation-point'
+          : 'info';
+  return <Icon name={name} size={12} className={noteIcon({ tone, titled })} />;
 }
 
 /**
@@ -345,16 +322,6 @@ function Note({ each, id }: { each: CommentBoxNote; id?: string | undefined }) {
   );
 }
 
-/** A small picture, the mark of a file in the uploads. */
-function FileIcon() {
-  return (
-    <svg className="lo-i lo-i--sm flex-none text-icon-muted" viewBox="0 0 16 16" aria-hidden="true">
-      <rect x="2.25" y="3" width="11.5" height="10" rx="1.5" />
-      <path d="M2.5 11 6 7.5l3 3 2-2 2.5 2.5" />
-    </svg>
-  );
-}
-
 /**
  * How far an upload is, as its row says it: "Uploading · 62%" while its bytes go, and "Uploading…"
  * where that isn't known, or once they've all gone and GitHub hasn't answered: it isn't done at
@@ -371,7 +338,8 @@ function Upload({ each }: { each: CommentBoxUpload }) {
   return (
     // As tall as its buttons, so it doesn't change height as it lands.
     <li className="flex h-control-h-sm items-center gap-8 text-small">
-      <FileIcon />
+      {/* A small picture, the mark of a file in the uploads. */}
+      <Icon name="image" size={12} className="text-icon-muted" />
       <span className="flex min-w-0 flex-1 items-baseline gap-6">
         <span className="truncate">{each.name}</span>
         <span className="lo-num flex-none text-fg-muted">{each.size}</span>
@@ -424,9 +392,7 @@ function Attach({ attach }: { attach: CommentBoxAttach }) {
         if (!off) attach.onClick?.();
       }}
     >
-      <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M10.5 4.5 5.75 9.25a1.25 1.25 0 0 0 1.77 1.77l5.3-5.3a2.5 2.5 0 0 0-3.54-3.54L3.9 7.6a3.75 3.75 0 0 0 5.3 5.3l3.55-3.55" />
-      </svg>
+      <Icon name="paperclip" size={16} />
     </Button>
   );
 }
@@ -457,9 +423,13 @@ function Discard({
         if (!off) discard.onClick?.();
       }}
     >
-      <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-        <path d="M3 4.5h10M6.5 4.5V3.25a.75.75 0 0 1 .75-.75h1.5a.75.75 0 0 1 .75.75V4.5M4.5 4.5l.5 8a1 1 0 0 0 1 .95h4a1 1 0 0 0 1-.95l.5-8" />
-      </svg>
+      {/* Beside its words, at their size; alone, at a control's. */}
+      <span data-gives="labels" className="inline-flex">
+        <Icon name="trash" size={12} />
+      </span>
+      <span data-takes="labels" className="inline-flex">
+        <Icon name="trash" size={16} />
+      </span>
       <span data-gives="labels">Discard draft</span>
     </Button>
   );
@@ -502,9 +472,7 @@ function ActionButton({
     >
       {action.icon !== undefined && (
         <span data-takes={step} className="inline-flex">
-          <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-            <path d={ACTION_ICONS[action.icon]} />
-          </svg>
+          <Icon name={ACTION_ICONS[action.icon]} size={16} />
         </span>
       )}
       <span data-gives={step}>{action.label}</span>
@@ -557,16 +525,14 @@ export function CommentBoxHeadBar({
   const row = useRef<HTMLDivElement | null>(null);
   const iconic = givenUp(HEAD_STEPS, useGiveUp(row, HEAD_STEPS))('labels');
   // Each with its icon, which it's drawn as alone in a narrow head, its words then its tooltip.
-  const segment = (value: 'write' | 'preview', label: string, path: string) => ({
+  const segment = (value: 'write' | 'preview', label: string, icon: IconName) => ({
     value,
     name: label,
     tip: iconic ? label : null,
     label: (
       <>
         <span data-takes="labels" className="inline-flex">
-          <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-            <path d={path} />
-          </svg>
+          <Icon name={icon} size={16} />
         </span>
         <span data-gives="labels">{label}</span>
       </>
@@ -606,20 +572,7 @@ export function CommentBoxHeadBar({
             onChange={(value) => head.onPreviewing?.(value === 'preview')}
             keys={head.previewKeys}
             disabled={head.held}
-            items={[
-              // A pencil.
-              segment(
-                'write',
-                'Write',
-                'M10.25 3.25 12.75 5.75M3 13l.6-2.9 7.15-7.15a1.06 1.06 0 0 1 1.5 0l1 1a1.06 1.06 0 0 1 0 1.5L6.1 12.4 3 13Z',
-              ),
-              // An eye.
-              segment(
-                'preview',
-                'Preview',
-                'M1.75 8S4 3.75 8 3.75 14.25 8 14.25 8 12 12.25 8 12.25 1.75 8 1.75 8ZM8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z',
-              ),
-            ]}
+            items={[segment('write', 'Write', 'pencil'), segment('preview', 'Preview', 'eye')]}
           />
         </span>
         {head.close !== undefined && (
@@ -632,9 +585,7 @@ export function CommentBoxHeadBar({
             hintKeys={head.close.keys}
             onClick={head.close.onClick}
           >
-            <svg className="lo-i lo-i--sm" viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M4 4l8 8M12 4l-8 8" />
-            </svg>
+            <Icon name="x" size={16} />
           </Button>
         )}
       </div>
