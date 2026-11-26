@@ -566,20 +566,24 @@ that floats.
 - **`ThreadPopover`** is the review threads that end on a line, over the code, beside lines: a
   thread, a reply and a new comment's box open in it, and nothing in the flow moves. A code view
   draws one, in a layer of its own scroll, so it moves with its line and passes under the pinned
-  file header as code does. It's 520 px wide (`lo-thread-pop-w`) at every window width, in its
-  side's column where that has room, else over the other side, 8 px inside the pane; as tall as its
-  threads up to `lo-thread-pop-h`, past which they scroll inside it, a box's foot staying at its
-  foot. Its top is 4 px under the range's last line and its left edge on the thread lane's, so the
-  bubble sits at its corner. It never covers its lines unless they fill the pane: under the last
-  line, else its foot 4 px above the first, else at the pane's foot. A preview takes the first with
-  room and never scrolls; opened by a click or a key, it goes under the last line and the pane
-  scrolls the least that shows it whole. The pointer resting on a mark previews it, with no key
-  chips and no Close, never taking focus, and it closes when the pointer leaves mark and popover, on
-  a key, a press elsewhere or a scroll. A click on the mark or in the preview pins it: Close and the
-  chips Swap in, in the room the preview kept for them. Pinned, it stays through pointer moves and
-  scrolling, and closes on `Esc`, Close, a click on its mark, a press outside, or the cursor leaving
-  its lines; with a comment box open in it, only the box closing closes it. To a screen reader it's
-  a dialog that doesn't hold focus in, named for its first thread.
+  file header as code does. Several threads on the line share it, unresolved first, then oldest,
+  `lo-sp-12` apart with a `lo-border-subtle` hairline between. It's 520 px wide (`lo-thread-pop-w`)
+  at every window width, in its side's column where that has room, else over the other side, 8 px
+  inside the pane; as tall as its threads up to `lo-thread-pop-h`, past which they scroll inside it,
+  a box's foot staying at its foot. Its top is 4 px under the range's last line and its left edge on
+  the thread lane's, so the bubble sits at its corner. It never covers its lines unless they fill
+  the pane: under the last line, else its foot 4 px above the first, else at the pane's foot. A
+  preview takes the first with room and never scrolls; opened by a click or a key, it goes under the
+  last line and the pane scrolls the least that shows it whole, with the range's first line too
+  where both fit; only at a file's end does it go above. The pointer resting on a mark previews it,
+  with no key chips and no Close, never taking focus, and it closes when the pointer leaves mark and
+  popover, on a key, a press elsewhere or a scroll. A click on the mark or in the preview pins it:
+  Close and the chips Swap in, in the room the preview kept for them. Pinned, it stays through
+  pointer moves and scrolling, and closes on `Esc`, Close, a click on its mark, a press outside, or
+  the cursor leaving its lines; with a comment box open in it, only the box closing closes it. While
+  one is pinned no preview opens: a click on another mark, or `] t`, moves the pin, a box open in it
+  closing first and keeping its draft. To a screen reader it's a dialog that doesn't hold focus in,
+  named for its first thread.
 - **`Tooltip`** names a control and its key: see [Controls](#controls).
 - **`ToastStack`** shows results at the bottom right, above the status bar: three at most, four
   seconds each, paused under the pointer or focus. One with an action or Details stays eight
@@ -932,10 +936,11 @@ text is read-only in `lo-fg-muted`, and Write | Preview and "Attach files…" di
   control is its own again, and the card still shows what was asked until they're read again. One
   change to a thread at a time: while one is at work, resolving it or deleting from it is dimmed,
   with what's at work as the reason ("Resolving…").
-- **Said where it's seen.** Beside lines, a send, an edit, a resolve or a delete that fails, or
-  can't be confirmed, once its popover has closed is said in one toast, in its note's tone, whose
-  "Show thread" opens the thread where its card or box says the rest. Its thread's mark has the dot
-  while the card or box says it. Nothing is sent again from the toast.
+- **Said where it's seen.** A send, an edit, a resolve or a delete that fails, or can't be
+  confirmed, where its card or box isn't on screen to say it, as beside lines once its popover has
+  closed, is said in one toast, in its note's tone, whose "Show thread" opens the thread where its
+  card or box says the rest. Its thread's mark has the dot while the card or box says it. Nothing is
+  sent again from the toast.
 - **Attached files.** A file goes in at the cursor as a placeholder while it uploads. If the upload
   fails or is refused, Lo takes the placeholder out itself and the file's row says what happened. A
   comment isn't sent while a placeholder is in its text. What Lo changes in the text itself, as a

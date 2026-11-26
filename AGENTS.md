@@ -1585,9 +1585,10 @@ panel's `x` resolves the thread the keyboard is on, through the same function.
 - A thread the reader acts on is claimed in the diff (`claimThread`), so what their write changes
   there comes at once and keeps their line in place, as what comes under a sent box's line does.
 - A change that didn't go, or may not have, puts the dot on its thread's mark while the card says
-  so, the note's title ending the mark's name (`ThreadMark.failed`). Beside lines, when what came of
-  one the reader saw go comes back with its popover closed, or its tab not on screen, one toast says
-  it too, whose "Show thread" shows the card. Nothing is sent from the toast.
+  so, the note's title ending the mark's name (`ThreadMark.failed`). When what came of one the
+  reader saw go comes back with no card of its thread on screen, as beside lines once its popover
+  has closed, one toast says it too, whose "Show thread" shows the card. Nothing is sent from the
+  toast.
 
 ### Writing on the pull request itself
 

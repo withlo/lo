@@ -3690,6 +3690,21 @@ describe('writing beside lines', () => {
     shown.setThreadsMode('between');
     expect(layer().querySelector('[data-thread-id]')).toBeNull();
   });
+
+  test('a popover open as threads go between lines goes at once, with no empty shell fading', () => {
+    const shown = open(events(), { threads: 'beside' });
+    shown.setThreads([ranged('one', at('a', 'new', 8), undefined)], plain().render, {
+      popover: popped().render,
+    });
+    newBubble().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(layer().hidden).toBe(false);
+    // Its fade would run, and the popover wait for it to end before it hides.
+    Object.assign(layer(), { getAnimations: () => [] });
+    shown.setThreadsMode('between');
+    expect(layer().hidden).toBe(true);
+    expect(layer().dataset.endingStyle).toBeUndefined();
+    expect(layer().querySelector('[data-thread-id]')).toBeNull();
+  });
 });
 
 /** An overview mark on file `a`'s lines `from` to `to` of `side`, from block `block`. */

@@ -7,8 +7,8 @@
 // change shows on its thread's card from the moment it's asked for, with its control at work until
 // GitHub answers, and on until the view's threads show it: the card never goes back to what it was
 // in between. One that didn't go, or may not have, puts the card back and says so on it, and puts
-// the dot on the thread's mark while it does. Beside lines, where the card isn't on screen to say
-// it, as its popover has closed, a toast says it too, whose "Show thread" shows the card.
+// the dot on the thread's mark while it does. Where the card isn't on screen to say it, as beside
+// lines once its popover has closed, a toast says it too, whose "Show thread" shows the card.
 
 import { deleteFacts, newestYours, changeRefusal, type ThreadComment } from '@lo/review';
 import type { ThreadView } from '@lo/ui/code';
@@ -29,7 +29,6 @@ import {
   openAt,
 } from './boxes.ts';
 import { main } from './main.ts';
-import { threadsMode } from './mode.ts';
 import { showThread } from './panel.ts';
 import { threadOf } from './placing.ts';
 import { tell } from './Said.tsx';
@@ -414,13 +413,27 @@ const SHOW_THREAD = 'Show thread';
 
 /**
  * Whether view `view`'s thread `thread` has its card on screen, to say what came of a change asked
- * of it: between lines it's in the flow; beside lines, only in its popover, pinned in the tab on
- * screen.
+ * of it: in the tab on screen, wherever a code view draws it, under its line, in a popover pinned
+ * or previewed, or in an overview's code block.
  */
 function cardShown(view: string, thread: string): boolean {
-  if (threadsMode() !== 'beside') return true;
   if (activeTab()?.id !== view) return false;
-  return writingDiff(view)?.pinned().includes(thread) ?? false;
+  const cards = document.querySelectorAll(`[data-thread-id="${CSS.escape(thread)}"]`);
+  return [...cards].some(seen);
+}
+
+/** Whether some of `element` is on screen: drawn, and not scrolled out of anything that clips it. */
+function seen(element: Element): boolean {
+  if (typeof element.checkVisibility === 'function' && !element.checkVisibility()) return false;
+  const drawn = element.getBoundingClientRect();
+  if (drawn.width === 0 || drawn.height === 0) return false;
+  if (drawn.bottom <= 0 || drawn.top >= window.innerHeight) return false;
+  for (let box = element.parentElement; box; box = box.parentElement) {
+    if (getComputedStyle(box).overflowY === 'visible') continue;
+    const clip = box.getBoundingClientRect();
+    if (drawn.bottom <= clip.top || drawn.top >= clip.bottom) return false;
+  }
+  return true;
 }
 
 /**

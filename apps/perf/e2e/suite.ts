@@ -5,7 +5,7 @@ import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { onOwnDisplay } from '@lo/testing/display';
-import type { CursorReading, Mark, Place, Probe, Spot } from '@lo/ui/code';
+import type { CursorReading, Mark, Place, Probe, Spot, ThreadsMode } from '@lo/ui/code';
 import { _electron as electron, test as base, expect, type Page } from '@playwright/test';
 // Imported from Node, the electron package is the path to its binary, whatever its types say.
 import electronPackage from 'electron';
@@ -97,6 +97,8 @@ declare global {
     perfCloseNote(): boolean;
     /** Puts a thread of `comments` under the line at `at`, in place of the one there. */
     perfThread(at: Place, comments: readonly { author: string; body: string }[]): void;
+    /** Shows the threads beside lines, as Lo starts, or between them. */
+    perfThreadsMode(mode: ThreadsMode): void;
     /** What moved on screen while a test watched, on a frame with no input. */
     perfMoved?: string[];
     /** Stops watching. */

@@ -376,7 +376,8 @@ const harness = {
         },
       })),
       render,
-      { popover },
+      // Those on lines on screen come at once too, so nothing waits to be measured.
+      { popover, now: true },
     );
   },
   /** Shows threads beside lines or between them, as the setting does. */
@@ -392,12 +393,16 @@ const harness = {
     return view().closePopover();
   },
   /**
-   * How each editor the diff shows lays out its rows: each line drawn, its text, where it starts below
-   * the top of the editor's text and how tall it is, what's drawn between lines counted in where
-   * the next starts; and how tall the editor's text is in all, lines not drawn too.
+   * How each editor the diff shows lays out its rows: each line drawn, its text, where it starts
+   * below the top of what the diff's scroll holds, so a shift of the whole diff shows too, and how
+   * tall it is, what's drawn between lines counted in where the next starts; and how tall the
+   * editor's text is in all, lines not drawn too.
    */
   rows(): { editor: string; lines: string[]; height: number }[] {
-    return [...document.querySelectorAll<HTMLElement>('.lo-diffview .cm-content[aria-label]')]
+    const scroller = document.querySelector<HTMLElement>('.lo-diffview');
+    if (!scroller) throw new Error('The page has no diff yet.');
+    const top = scroller.getBoundingClientRect().top - scroller.scrollTop;
+    return [...scroller.querySelectorAll<HTMLElement>('.cm-content[aria-label]')]
       .filter(
         (content) =>
           ['Before', 'After', 'Changes'].includes(content.getAttribute('aria-label') ?? '') &&
@@ -407,7 +412,7 @@ const harness = {
         const text = content.getBoundingClientRect();
         const lines = [...content.querySelectorAll(':scope > .cm-line')].map((line) => {
           const drawn = line.getBoundingClientRect();
-          return `${line.textContent} ${(drawn.top - text.top).toFixed(1)} ${drawn.height.toFixed(1)}`;
+          return `${line.textContent} ${(drawn.top - top).toFixed(1)} ${drawn.height.toFixed(1)}`;
         });
         return {
           editor: content.getAttribute('aria-label') ?? '',

@@ -9,6 +9,7 @@ import {
   checkRoutes,
   checkToggles,
   checkVim,
+  commandsOf,
   defineCommands,
   type Declarations,
 } from '@lo/ui/commands';
@@ -68,6 +69,26 @@ describe("every feature's commands", () => {
 
   it('say when they’re checked, each switch and choice, and nothing else does', () => {
     expect(checkToggles(features, given)).toEqual([]);
+  });
+
+  it('put each choice in a section of the app menu of its own, the one choice it holds', () => {
+    // Electron makes one choice of every radio item between two separators, so two choices in a
+    // section would check one item of the two. A new choice fails this until it's listed, in a
+    // section of its own.
+    const sections = new Map<string, string[]>();
+    for (const command of features.flatMap(commandsOf)) {
+      if (command.toggle !== 'choice' || !command.bar) continue;
+      const at = `${command.bar.menu} ${command.bar.section}`;
+      sections.set(at, [...(sections.get(at) ?? []), command.id].toSorted());
+    }
+    expect(Object.fromEntries(sections)).toEqual({
+      // The pull request's view.
+      'View views': ['diff.show', 'overview.show', 'timeline.show'],
+      // The diff's layout.
+      'View diff': ['diff.inline', 'diff.sideBySide'],
+      // How review threads show in code.
+      'View threads': ['comments.threadsBeside', 'comments.threadsBetween'],
+    });
   });
 
   it('claim no key or start of a sequence twice, in any scope, mode or system', () => {

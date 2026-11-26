@@ -755,9 +755,9 @@ trust.
 
 - **Where.** `c` comments on the current line, and `v` then `c` on a range of lines, on either side
   of the diff. `c` on a file's header, or on its row in the file tree, leaves a file-level comment,
-  written under the header. GitHub takes line comments only on lines in the PR's diff, so on any
-  other line Lo says so, and `⏎` then comments on the file instead. Comments can also be written on
-  an overview's code blocks (section 8).
+  its box under the header, in the header's popover beside lines. GitHub takes line comments only on
+  lines in the PR's diff, so on any other line Lo says so, and `⏎` then comments on the file
+  instead. Comments can also be written on an overview's code blocks (section 8).
 - **In the diff.** A thread is its mark beside the code, and opens over the code in a popover under
   its last line: the pointer resting on the mark previews it, and a click, `⏎` on its line or `]t`
   pins it. A reply's, an edit's and a new comment's box open in the popover too, so no line moves
@@ -774,14 +774,16 @@ trust.
 - **Threads.** You can reply, resolve and unresolve, and edit or delete your own comments, from the
   thread's buttons, its right-click menu or its keys. A key acts on the thread `]t` landed on, or
   the only thread on screen on the cursor's line, or under the file's header; where there's more
-  than one, Lo says to pick one with `]t`. `r` opens a reply box right after the thread, whose
-  buttons add the reply to your pending review or post it at once. `x` resolves the thread, or
-  unresolves it, here and in the threads panel, where GitHub lets you. `i` opens a box with your
-  newest comment's text, and saving it replaces the comment on GitHub. `dd` asks first, showing the
-  comment's first line, whether it leaves your pending review and whether its thread goes with it:
-  `⏎` deletes it and `Esc` leaves it, and a held or repeated key never confirms. Lo changes only
-  your own comments, even where GitHub would let you change someone else's: theirs are for GitHub's
-  page. A reply box and a comment box on the same line can both be open.
+  than one, Lo says to pick one with `]t`. `r` opens a reply box in the thread's card in its popover
+  beside lines, or right after the card between lines, whose buttons add the reply to your pending
+  review or post it at once. `x` resolves the thread, or unresolves it, here and in the threads
+  panel, where GitHub lets you. `i` opens a box with your newest comment's text, and saving it
+  replaces the comment on GitHub. `dd` asks first, showing the comment's first line, whether it
+  leaves your pending review and whether its thread goes with it: `⏎` deletes it and `Esc` leaves
+  it, and a held or repeated key never confirms. Lo changes only your own comments, even where
+  GitHub would let you change someone else's: theirs are for GitHub's page. Between lines, a reply
+  box and a comment box on the same line can both be open; beside lines the popover holds one box at
+  a time, and the one open closes as another opens, keeping its draft.
 - **Edits and deletes.** An edit keeps the text it started from with its draft, through a restart.
   GitHub's edit doesn't check what it replaces, so before saving Lo reads the comment again, and
   saves only if GitHub's text is still the one the edit started from. If it was edited elsewhere
@@ -1109,7 +1111,7 @@ the keymap file, `~/.config/lo/keymap`. `?` shows every key.
 | Overview        | `]b`/`[b` next and previous block, `⏎` follow a block to its code, `c` comment on a block's lines, `⇥` next part of a figure, `←`/`→` walkthrough step or tab, `ya` copy a prompt for an agent                                                                                                                                         |
 | Timeline        | `j`/`k` move between events, `⇥` through its links and buttons, `Esc` back to the list, `⏎` show a review's comments in the diff, `gx` open the one you're on on GitHub, `c` comment on the PR, `i` edit your comment, `dd` delete your comment                                                                                        |
 | Panels          | `⌘\` left panel, `⌘⇧\` threads panel. In the threads panel: `j`/`k` move, `⏎` show the thread in the diff, `x` resolve or unresolve, `f` unresolved, all or yours. In the stack tree: `j`/`k` move, `⏎` show the layer, `gx` open it on GitHub, `Esc` back, `v` choose a run of layers, `j`/`k` to grow it, `⏎` to view it as one diff |
-| Diff view       | `gi` inline or side by side, `gw` hide or show whitespace, `zo`/`zc` expand and collapse unchanged code, `zR` the whole file, `za` open or close a collapsed file or the thread at the cursor                                                                                                                                          |
+| Diff view       | `gi` inline or side by side, `gw` hide or show whitespace, `zo`/`zc` expand and collapse unchanged code, `zR` the whole file, `za` open or close a collapsed file, or between lines the thread at the cursor                                                                                                                           |
 | Comment box     | `⌘⏎` add to review (in the timeline's box, comment), `⌥⏎` comment now, `⌘⇧V` write or preview, `⌘⇧A` attach files, `Esc` leave insert mode, `Esc Esc` close and keep the draft                                                                                                                                                         |
 | Merge panel     | `⏎` merge or add to the merge queue, `a` turn auto-merge on or off, `⌥⏎` merge without the rules, `⇥`/`⇧⇥` next and previous method, `e` edit the commit's title and message, `j`/`k` move between reasons, `o` open the reason's page, `]t` next unresolved conversation, `Esc` close, or back from the commit's fields               |
 | Merge queue     | `j`/`k` move, `⏎` open the PR, `x` remove, `J` to the front (admins), `a` turn auto-merge off, or on for a PR that left the queue, `⇥`/`⇧⇥` next and previous branch, `gx` open on GitHub                                                                                                                                              |

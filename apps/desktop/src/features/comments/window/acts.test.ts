@@ -1,6 +1,8 @@
-// What a change to a thread that didn't go, or may not have, shows beside lines once its popover has
-// closed: the dot on its thread's mark, its name saying what failed, while the card says it; and one
-// toast, whose "Show thread" shows the card and asks nothing of GitHub again.
+// @vitest-environment jsdom
+// What a change to a thread that didn't go, or may not have, shows where its card isn't on screen,
+// as beside lines once its popover has closed: the dot on its thread's mark, its name saying what
+// failed, while the card says it; and one toast, whose "Show thread" shows the card and asks nothing
+// of GitHub again. Wherever its card is on screen, in a popover or the flow, the card says it alone.
 
 import type { ThreadView } from '@lo/ui/code';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -25,8 +27,6 @@ const said = vi.hoisted(() => ({
   shown: [] as string[],
   inPanel: [] as string[],
   resolves: 0,
-  mode: 'beside' as 'beside' | 'between',
-  pinned: [] as string[],
   screen: 'v0' as string | undefined,
   resolve: (() => Promise.resolve({ kind: 'done' })) as () => Promise<unknown>,
 }));
@@ -37,7 +37,6 @@ vi.mock('../../../window/commands/notices.tsx', async (original) => ({
     said.toasts.push({ title, body, more }),
 }));
 vi.mock('./Said.tsx', () => ({ tell: (text: string) => said.told.push(text) }));
-vi.mock('./mode.ts', () => ({ threadsMode: () => said.mode }));
 vi.mock('./panel.ts', () => ({ showThread: (_tab: unknown, id: string) => said.inPanel.push(id) }));
 vi.mock('./main.ts', () => ({
   main: () => ({
@@ -58,7 +57,7 @@ vi.mock('./boxes.ts', () => ({
   openAt: () => {},
 }));
 vi.mock('../../diff/window/shared.ts', () => ({
-  writingDiff: () => ({ pinned: () => said.pinned, claimThread: () => () => {} }),
+  writingDiff: () => ({ claimThread: () => () => {} }),
   goToThread: (view: string, thread: string) => {
     said.shown.push(`${view} ${thread}`);
     return true;
@@ -155,8 +154,6 @@ beforeEach(() => {
     shown: [],
     inPanel: [],
     resolves: 0,
-    mode: 'beside',
-    pinned: [],
     screen: VIEW,
     resolve: () => Promise.resolve({ kind: 'done' }),
   });
@@ -165,9 +162,30 @@ beforeEach(() => {
 afterEach(() => {
   acting.set(VIEW, new Map());
   threw.set(VIEW, new Map());
+  document.body.replaceChildren();
 });
 
-describe('a resolve that didn’t go, beside lines', () => {
+/**
+ * T1's card, as a code view draws it, at `top` on the page, 120 px tall: in a box 400 px tall
+ * that clips what's scrolled out of it, where `clipped`.
+ */
+function card(top = 100, clipped = false): HTMLElement {
+  const drawn = document.createElement('div');
+  drawn.dataset.threadId = 'T1';
+  drawn.getBoundingClientRect = () => new DOMRect(0, top, 400, 120);
+  if (!clipped) {
+    document.body.append(drawn);
+    return drawn;
+  }
+  const box = document.createElement('div');
+  box.style.overflowY = 'auto';
+  box.getBoundingClientRect = () => new DOMRect(0, 0, 400, 400);
+  box.append(drawn);
+  document.body.append(box);
+  return drawn;
+}
+
+describe('a resolve that didn’t go', () => {
   test('with its popover closed, one toast says so at danger tone, and its mark has the dot', () => {
     takeActs({ id: VIEW, acts: [resolving('sending')] });
     takeActs({ id: VIEW, acts: [resolving('notDone')] });
@@ -202,8 +220,8 @@ describe('a resolve that didn’t go, beside lines', () => {
     expect(failedOn()).toBe('resolve not confirmed');
   });
 
-  test('with its popover pinned, the card says it, and a screen reader hears it: no toast', () => {
-    said.pinned = ['T1'];
+  test('with its popover open, the card says it, and a screen reader hears it: no toast', () => {
+    card();
     takeActs({ id: VIEW, acts: [resolving('sending')] });
     takeActs({ id: VIEW, acts: [resolving('notDone')] });
     expect(said.toasts).toEqual([]);
@@ -216,18 +234,28 @@ describe('a resolve that didn’t go, beside lines', () => {
   });
 
   test('in a tab not on screen, a toast says it', () => {
-    said.pinned = ['T1'];
+    card();
     said.screen = 'v1';
     takeActs({ id: VIEW, acts: [resolving('sending')] });
     takeActs({ id: VIEW, acts: [resolving('notDone')] });
     expect(said.toasts).toHaveLength(1);
   });
 
-  test('between lines, its card in the flow says it: no toast', () => {
-    said.mode = 'between';
+  test('its card on screen in the flow, between lines or in a code block, says it: no toast', () => {
+    card(300, true);
     takeActs({ id: VIEW, acts: [resolving('sending')] });
     takeActs({ id: VIEW, acts: [resolving('notDone')] });
     expect(said.toasts).toEqual([]);
+  });
+
+  test('its card scrolled out of what holds it, or hidden, a toast says it', () => {
+    card(500, true);
+    const hidden = card();
+    hidden.hidden = true;
+    hidden.checkVisibility = () => false;
+    takeActs({ id: VIEW, acts: [resolving('sending')] });
+    takeActs({ id: VIEW, acts: [resolving('notDone')] });
+    expect(said.toasts).toHaveLength(1);
   });
 
   test('one Lo didn’t see go, as main says how they stand as the window starts, has no toast', () => {
@@ -272,8 +300,8 @@ describe('a resolve whose write failed in Lo', () => {
     expect(said.resolves).toBe(1);
   });
 
-  test('with its popover pinned, only the card says it', async () => {
-    said.pinned = ['T1'];
+  test('with its popover open, only the card says it', async () => {
+    card();
     said.resolve = () => Promise.reject(new Error('The window lost main.'));
     await resolveThread(TAB, row());
     expect(said.toasts).toEqual([]);

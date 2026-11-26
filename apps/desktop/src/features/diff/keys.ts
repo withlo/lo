@@ -204,7 +204,7 @@ export default defineCommands('diff', {
   toggleThread: {
     label: 'Collapse thread',
     group: 'Comments',
-    control: 'the bubble beside a thread’s last line',
+    control: 'the bubble beside a thread’s last line, between lines',
     keys: ['z a'],
     targets: ['thread'],
     when: { scope: 'diff', mode: 'normal', on: 'thread' },
