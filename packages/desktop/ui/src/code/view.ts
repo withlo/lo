@@ -46,7 +46,6 @@ import {
   type Target,
 } from '../commands/index.ts';
 import { cutShort } from '../cut.ts';
-import { land } from '../land.ts';
 import { EDIT_SLOT_EVENT } from '../edits.ts';
 import { type Tip, TIPPED, tips } from './tip.ts';
 import type {
@@ -113,6 +112,7 @@ import { codeEditor } from './editor.ts';
 import { gutterReach, gutterWidth, HEADER_HEIGHT, Pin } from './heads.ts';
 import { type FileTokens, highlighting, lineStarts, tokensChanged } from './highlight.ts';
 import { columnAt, type FileHints, hintRanges, hintsOf, sameHints } from './hints.ts';
+import { landLine } from './landing.ts';
 import { InlineLayout, inlineLines, inlineText } from './inline.ts';
 import {
   addCodeEditor,
@@ -2386,16 +2386,7 @@ class View implements DiffView {
     if (!found) return;
     const pane: Pane = this.#pane === 'inline' ? 'inline' : found.place.side;
     const view = this.#viewOf(pane);
-    const pos = view.state.doc.line(this.#docLine(pane, found.place)).from;
-    // Once the editor has scrolled to it and drawn it.
-    view.requestMeasure({
-      read: () => undefined,
-      write: () => {
-        const { node } = view.domAtPos(pos);
-        const line = (node instanceof Element ? node : node.parentElement)?.closest('.cm-line');
-        if (line) land(line);
-      },
-    });
+    landLine(view, this.#docLine(pane, found.place));
   }
 
   /**

@@ -998,6 +998,11 @@ export interface FileView extends KeySource {
    */
   reveal(at: Target): boolean;
   /**
+   * Marks the line `at` names with the Land move once the editor has drawn it where it is, as
+   * `DiffView.land` does. Nothing for a place the view doesn't have.
+   */
+  land(at: Target): void;
+  /**
    * Scrolls the view's own box, and nothing around it, so line `line` is near the top of what it
    * shows, or as near as the file's end lets it: for a view inside something else that scrolls,
    * such as a walkthrough's code in an overview. Moves neither the cursor nor focus, and isn't a
