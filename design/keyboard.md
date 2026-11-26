@@ -92,6 +92,9 @@ in Settings.
   `toggle` says when it's checked, and a test fails on one that doesn't. The window sends the menu
   again after every command that runs and every click in the page, and a click on a check or radio
   item in the menu has main draw it again from what the window last sent, so the mark never drifts.
+- **Each choice is a section of its own.** Electron makes one choice of every radio item between two
+  separators, so two choices in one section would check one item of the two. A test lists the
+  choices in the menu by section, and fails on a new one until it's listed there.
 - **Full screen on macOS is the system's own item,** which says "Enter Full Screen" or "Exit Full
   Screen" for what a click does, so it shows no check. Linux's Full screen is Lo's, and checked.
 - **Linux gets the same tree,** from the menu button at the end of the tab strip, or `F10`. It acts

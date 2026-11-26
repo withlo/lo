@@ -6,14 +6,17 @@
 // A write main sends claims its thread in the diff, so what it changes there comes at once. A
 // change shows on its thread's card from the moment it's asked for, with its control at work until
 // GitHub answers, and on until the view's threads show it: the card never goes back to what it was
-// in between. One that didn't go, or may not have, puts the card back and says so on it.
+// in between. One that didn't go, or may not have, puts the card back and says so on it, and puts
+// the dot on the thread's mark while it does. Where the card isn't on screen to say it, as beside
+// lines once its popover has closed, a toast says it too, whose "Show thread" shows the card.
 
 import { deleteFacts, newestYours, changeRefusal, type ThreadComment } from '@lo/review';
+import type { ThreadView } from '@lo/ui/code';
 import type { HeaderTarget, LineTarget, ThreadTarget } from '@lo/ui/commands';
 
-import { refuse } from '../../../window/commands/notices.tsx';
-import { writingDiff } from '../../diff/window/shared.ts';
-import { tabState, type PullTab } from '../../tab/window/shared.ts';
+import { notify, refuse } from '../../../window/commands/notices.tsx';
+import { goToThread, writingDiff } from '../../diff/window/shared.ts';
+import { activeTab, showTabOf, tabState, type PullTab } from '../../tab/window/shared.ts';
 import type { ActRefusal, ActRow, ActsView, ThreadRow } from '../contract.ts';
 import {
   canWrite,
@@ -26,6 +29,7 @@ import {
   openAt,
 } from './boxes.ts';
 import { main } from './main.ts';
+import { showThread } from './panel.ts';
 import { threadOf } from './placing.ts';
 import { tell } from './Said.tsx';
 import { held, shownAt } from './threads.ts';
@@ -173,6 +177,7 @@ export function keepActsOf(kept: ReadonlySet<string>): void {
     for (const timer of waits.values()) clearTimeout(timer);
     settling.delete(view);
   }
+  for (const view of marked.keys()) if (!kept.has(view)) marked.delete(view);
 }
 
 /**
@@ -225,11 +230,14 @@ export function takeActs(view: ActsView): void {
     const thread = (before ?? after)?.thread;
     if (before?.stands === after?.stands) continue;
     if (diff && thread != null) claimBriefly(diff, thread);
-    // Said as it comes: the card's control and its note are drawn with their words on them.
+    // Said as it comes: the card's control and its note are drawn with their words on them. A
+    // change the reader saw go that didn't, or may not have, with its card off screen, in a toast.
     if (underWay(after) && !underWay(before)) tell(AT_WORK[after.change]);
     else if (after && !underWay(after)) {
       const note = noteOf(after, false, false);
-      if (note) tell(`${note.title}. ${note.text}`);
+      if (note && !(underWay(before) && toastAct(view.id, after, note))) {
+        tell(`${note.title}. ${note.text}`);
+      }
     }
   }
   acting.set(view.id, now);
@@ -335,6 +343,154 @@ export function noteOf(row: ActRow, asked: boolean, isClosed: boolean): ActNote 
     text: 'GitHub didn’t respond.',
     again: known ? 'try' : 'check',
   };
+}
+
+/**
+ * What the mark of view `view`'s thread `row` says of a change the reader asked of it that didn't
+ * go, or may not have, while its card says so: the card's title for it, lower case, as a mark's
+ * name says it after `·`, "resolve not confirmed". Nothing otherwise.
+ */
+export function failureOf(view: string, row: ThreadRow): string | undefined {
+  const asked = acting.get(view).get(row.id);
+  const title =
+    threw.get(view).get(row.id)?.title ??
+    (asked && actNote(asked, row, closedActs.get(view).has(noteKey(asked))))?.title;
+  return title && title.charAt(0).toLowerCase() + title.slice(1);
+}
+
+/** What each view's marks said of failed changes as its threads were last marked, by thread. */
+const marked = new Map<string, string>();
+
+/** What view `view`'s marks say of failed changes now, as one line a thread, to tell a change by. */
+function failuresIn(view: string): string {
+  const rows = held.get(view).threads?.threads ?? [];
+  const keys = new Set([...threw.get(view).keys(), ...acting.get(view).keys()]);
+  return rows
+    .flatMap((row) => {
+      const failure = keys.has(row.id) ? failureOf(view, row) : undefined;
+      return failure === undefined ? [] : [`${row.id} ${failure}`];
+    })
+    .join('\n');
+}
+
+/**
+ * View `view`'s `threads`, each mark saying what failed of a change asked of its thread while its
+ * card says so ({@link failureOf}): `threads` itself where none did.
+ */
+export function markFailures(view: string, threads: readonly ThreadView[]): readonly ThreadView[] {
+  marked.set(view, failuresIn(view));
+  const rows = held.get(view).threads?.threads;
+  if (!rows || (threw.get(view).size === 0 && acting.get(view).size === 0)) return threads;
+  return threads.map((thread) => {
+    const row = rows.find((each) => each.id === thread.id);
+    const failure = row && failureOf(view, row);
+    return failure === undefined || !thread.mark
+      ? thread
+      : { ...thread, mark: { ...thread.mark, failed: failure } };
+  });
+}
+
+/**
+ * Calls `changed` with each view whose marks no longer say what failed as its cards do, as a change
+ * fails, is asked again, or its note is dismissed, so its threads are marked again.
+ */
+export function followFailures(changed: (view: string) => void): void {
+  const check = () => {
+    for (const [view, was] of marked) {
+      const now = failuresIn(view);
+      if (now === was) continue;
+      marked.set(view, now);
+      changed(view);
+    }
+  };
+  acting.subscribe(check);
+  threw.subscribe(check);
+  closedActs.subscribe(check);
+}
+
+/** The toast's button that shows a thread whose card wasn't on screen to say what failed. */
+const SHOW_THREAD = 'Show thread';
+
+/**
+ * Whether view `view`'s thread `thread` has its card on screen, to say what came of a change asked
+ * of it: in the tab on screen, wherever a code view draws it, under its line, in a popover pinned
+ * or previewed, or in an overview's code block.
+ */
+function cardShown(view: string, thread: string): boolean {
+  if (activeTab()?.id !== view) return false;
+  const cards = document.querySelectorAll(`[data-thread-id="${CSS.escape(thread)}"]`);
+  return [...cards].some(seen);
+}
+
+/**
+ * Whether some of `element` is on screen: drawn and visible, not in a view kept unseen and inert,
+ * as a middle view not shown is, and not scrolled out of anything that clips it.
+ */
+function seen(element: Element): boolean {
+  if (
+    typeof element.checkVisibility === 'function' &&
+    !element.checkVisibility({ visibilityProperty: true })
+  ) {
+    return false;
+  }
+  if (element.closest('[inert]') !== null) return false;
+  const drawn = element.getBoundingClientRect();
+  if (drawn.width === 0 || drawn.height === 0) return false;
+  if (drawn.bottom <= 0 || drawn.top >= window.innerHeight) return false;
+  for (let box = element.parentElement; box; box = box.parentElement) {
+    if (getComputedStyle(box).overflowY === 'visible') continue;
+    const clip = box.getBoundingClientRect();
+    if (drawn.bottom <= clip.top || drawn.top >= clip.bottom) return false;
+  }
+  return true;
+}
+
+/**
+ * Says in a toast what failed of a change asked of view `view`'s thread `thread`, where its card
+ * isn't on screen to say it: its words as the card has them, at danger tone, or warning where
+ * nobody knows whether it went. Its "Show thread" shows the card, which offers what to do: nothing
+ * is asked of GitHub from the toast. Says whether it did.
+ */
+function toastAway(
+  view: string,
+  thread: string,
+  note: { title: string; text: string; details?: string; again: 'try' | 'check' },
+): boolean {
+  if (cardShown(view, thread)) return false;
+  notify(note.title, note.text, {
+    action: { label: SHOW_THREAD, onClick: () => showActed(view, thread) },
+    details: note.details,
+    tone: note.again === 'check' ? 'warning' : 'danger',
+  });
+  return true;
+}
+
+/**
+ * A toast for `row`, a change of view `view`'s that didn't go, or may not have, where its thread's
+ * card says so and isn't on screen. Says whether it did.
+ */
+function toastAct(view: string, row: ActRow, note: ActNote): boolean {
+  if (row.thread === null) return false;
+  const thread = held.get(view).threads?.threads.find((each) => each.id === row.thread);
+  return thread !== undefined && actNote(row, thread, false) !== undefined
+    ? toastAway(view, row.thread, note)
+    : false;
+}
+
+/**
+ * A toast's "Show thread": the thread in its view's diff, which comes on screen first, its popover
+ * pinned, focus on its line; compared first where the diff on screen doesn't have it, as the threads
+ * panel shows one.
+ */
+function showActed(view: string, thread: string): void {
+  showTabOf(view).then(
+    () => {
+      const tab = activeTab();
+      if (tab?.kind !== 'pull' || tab.id !== view) return;
+      if (!goToThread(view, thread)) showThread(tab, thread);
+    },
+    (error: unknown) => console.error("Lo couldn't show the tab:", error),
+  );
 }
 
 /** A key's target that names a thread, or may, as `]t` or the cursor's line does. */
@@ -448,6 +604,10 @@ export function failed(
   console.error(`Lo couldn't change ${key}:`, error);
   const details = error instanceof Error ? error.message : String(error);
   threw.update(view, (was) => new Map(was).set(key, { title, details, again, run }));
+  // A thread's card that isn't on screen can't say it.
+  if (held.get(view).threads?.threads.some((each) => each.id === key)) {
+    toastAway(view, key, { title, text: '', details, again });
+  }
 }
 
 /** Takes away what the card of view `view`'s thread or comment `key` says of a write that failed. */

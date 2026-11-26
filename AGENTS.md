@@ -1108,6 +1108,9 @@ changing, as when the local copy marks one generated, doesn't reorder a drawn vi
   that head on screen, even one it took from what it saved: a newer one from GitHub is offered as a
   newer push.
 - `diff.layout` and `diff.whitespace` are settings; `gi` and `gw` change them.
+- With `comments.threads` at `beside`, a thread or a comment box never reaches the aligner: the code
+  view draws markers in its gutter and one `ThreadPopover` in a layer of its scroll. A test fails if
+  a diff with threads lays out its rows differently from the same diff without them.
 
 ### Revisions
 
@@ -1588,6 +1591,11 @@ panel's `x` resolves the thread the keyboard is on, through the same function.
   shows, with "Try again" once Lo found it didn't go or can't tell.
 - A thread the reader acts on is claimed in the diff (`claimThread`), so what their write changes
   there comes at once and keeps their line in place, as what comes under a sent box's line does.
+- A change that didn't go, or may not have, puts the dot on its thread's mark while the card says
+  so, the note's title ending the mark's name (`ThreadMark.failed`). When what came of one the
+  reader saw go comes back with no card of its thread on screen, as beside lines once its popover
+  has closed, one toast says it too, whose "Show thread" shows the card. Nothing is sent from the
+  toast.
 
 ### Writing on the pull request itself
 

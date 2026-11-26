@@ -31,7 +31,8 @@
 // `thread` scope, where `j` and `k` move the ring between its comments, which `i` and `dd` act on,
 // `r` and `x` act on its thread, and `Esc` closes it, focus going back to the line. From the line,
 // with its popover closed, `x` and `dd` pin it first: a key never changes a thread that isn't on
-// screen. Between lines the popover's keys are off.
+// screen. Between lines the popover's keys are off. "Threads beside lines" and "Threads between
+// lines", in the View menu and the palette, change the setting.
 //
 // In the threads panel, the `threads` scope: `j` and `k` move between its threads, `⏎` shows the
 // one the keyboard is on in the diff, and `f` steps through what it lists: the unresolved threads,
@@ -186,6 +187,25 @@ export default defineCommands(
       keys: ['k', 'up'],
       when: popover,
       repeat: true,
+    },
+    /**
+     * Shows review threads in code beside their lines, as the `comments.threads` setting: with
+     * `threadsBetween`, a choice of two, in the View menu beside the diff's layout.
+     */
+    threadsBeside: {
+      label: 'Threads beside lines',
+      group: 'View',
+      keys: [],
+      bar: { menu: 'View', section: 'threads', order: 10 },
+      toggle: 'choice',
+    },
+    /** Shows review threads in code between their lines, the whole thread under its line. */
+    threadsBetween: {
+      label: 'Threads between lines',
+      group: 'View',
+      keys: [],
+      bar: { menu: 'View', section: 'threads', order: 20 },
+      toggle: 'choice',
     },
     /** A reply box in the thread, right after its card. */
     reply: {

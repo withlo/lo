@@ -120,11 +120,14 @@ test('a first launch shows the welcome over Recent, and its six steps are walked
     await expect(layout.getByRole('radio', { name: 'Side by side' })).toBeChecked();
     await layout.getByRole('radio', { name: 'Inline' }).click();
     await expect(layout.getByRole('radio', { name: 'Inline' })).toBeChecked();
-    // Down again to how threads show in code, whose cards each have a line under their name. Each
-    // is pressed in turn, so Beside lines is written whichever is the default.
+    // Down again to how threads show in code, whose cards each have a line under their name. Beside
+    // lines, as Lo starts, is chosen; each is pressed in turn, and Beside lines is written.
     await page.keyboard.press('j');
     const threads = step(page).getByRole('radiogroup', { name: 'Threads in code' });
     await expect(threads.getByRole('radio', { checked: true })).toBeFocused();
+    await expect(threads.getByRole('radio', { checked: true })).toHaveAccessibleName(
+      /^Beside lines/,
+    );
     await threads.getByRole('radio', { name: /^Between lines/ }).click();
     await threads.getByRole('radio', { name: /^Beside lines/ }).click();
     await expect(

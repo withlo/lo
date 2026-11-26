@@ -17,6 +17,7 @@ import {
   type Place,
   setVim,
   type Span,
+  type ThreadsMode,
 } from '@lo/ui/code';
 import { type Entry, listen, Registry } from '@lo/ui/commands';
 
@@ -85,7 +86,14 @@ setVim(true);
 
 view = createDiffView(
   root,
-  { files: pull.files.map(diffFile), layout: 'split', vimKeys: registry.vimKeys(), nonce },
+  // Threads beside lines, as Lo starts.
+  {
+    files: pull.files.map(diffFile),
+    layout: 'split',
+    threads: 'beside',
+    vimKeys: registry.vimKeys(),
+    nonce,
+  },
   {
     cursor() {},
     mode() {},
@@ -206,6 +214,7 @@ Object.assign(window, {
     threads.put(at, comments);
     threads.show(opened());
   },
+  perfThreadsMode: (mode: ThreadsMode) => opened().setThreadsMode(mode),
   perfOpenNote: (at: Place) => opened().openNote(at),
   perfCloseNote: () => opened().closeNote(),
 });

@@ -155,7 +155,7 @@ export default defineCommands('diff', {
     keys: ['g w'],
     overVim: true,
     when: normal,
-    bar: { menu: 'View', section: 'diff', order: 30 },
+    bar: { menu: 'View', section: 'shows', order: 10 },
     toggle: 'switch',
   },
   openRun: {
@@ -204,7 +204,7 @@ export default defineCommands('diff', {
   toggleThread: {
     label: 'Collapse thread',
     group: 'Comments',
-    control: 'the bubble beside a thread’s last line',
+    control: 'the bubble beside a thread’s last line, between lines',
     keys: ['z a'],
     targets: ['thread'],
     when: { scope: 'diff', mode: 'normal', on: 'thread' },

@@ -48,10 +48,11 @@ pnpm nx run perf:open -- kubernetes-125488
 This builds the app and the grammars, fetches what's missing, and opens the PR's whole diff in one
 window, through `@lo/ui/code`'s `createDiffView`, as the app's diff opens one: both sides of every
 file in one scroll, each side one CodeMirror editor, with the PR's review threads, and made-up ones
-on the left side, where recorded PRs have few. Each file starts collapsed, and fills in as worker
-threads in a background process diff and highlight it; the moved code comes last. A file with more
-than 5,000 changed lines stays out of the documents until `za` loads it, and a binary file shows
-only its header.
+on the left side, where recorded PRs have few. The threads show beside lines, as Lo starts: each is
+a mark beside its last line, which opens it in a popover over the code. Each file starts collapsed,
+and fills in as worker threads in a background process diff and highlight it; the moved code comes
+last. A file with more than 5,000 changed lines stays out of the documents until `za` loads it, and
+a binary file shows only its header.
 
 The two sides stay level through a spacer pass, which runs only over the rows both editors draw:
 rows with lines on both sides start at the same height on both, so a block of added lines faces
@@ -103,15 +104,16 @@ pnpm nx run perf:e2e
 
 This writes a small PR of its own, a few files with a rename, a move and threads on both sides,
 opens it with `LO_PERF_PULL` naming the file, so nothing is fetched, and presses real keys: the
-cursor stays on screen, a comment box keeps its keys and stays level as it grows, and `y w` still
-reaches Vim. One more PR has a line that wraps taller than the screen, a file only one side has and
-spacers taller than the screen: held `PageDown` and `Ctrl-d` go to the end and `PageUp` and `Ctrl-u`
-to the top, on each side, never moving what's on screen back or more than a screen at a press, and
-every line passes through the screen. The last hands the view an overview's markers part way down
-(`window.perfOverview`), and opens notes from their balls and closes them above the screen, and a
-thread arrives and grows above the screen (`window.perfThread`): nothing on screen moves, side by
-side or inline. CI runs them on Linux, where each worker opens the suite on an Xvfb display of its
-own (`@lo/testing/display`), so a run there needs Xvfb, and shows nothing on the screen.
+cursor stays on screen, a comment box keeps its keys and, between lines, stays level as it grows,
+and `y w` still reaches Vim. One more PR has a line that wraps taller than the screen, a file only
+one side has and spacers taller than the screen: held `PageDown` and `Ctrl-d` go to the end and
+`PageUp` and `Ctrl-u` to the top, on each side, never moving what's on screen back or more than a
+screen at a press, and every line passes through the screen. The last hands the view an overview's
+markers part way down (`window.perfOverview`), and opens notes from their balls and closes them
+above the screen, and a thread, between lines (`window.perfThreadsMode`), arrives and grows above
+the screen (`window.perfThread`): nothing on screen moves, side by side or inline. CI runs them on
+Linux, where each worker opens the suite on an Xvfb display of its own (`@lo/testing/display`), so a
+run there needs Xvfb, and shows nothing on the screen.
 
 The specs check the diff view's behaviour through the full pipeline, and set no time budget: timing
 is judged by the bench, on a Mac.

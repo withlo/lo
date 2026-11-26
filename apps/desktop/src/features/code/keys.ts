@@ -68,7 +68,7 @@ export default defineCommands(
       group: 'View',
       keys: ['g h'],
       when: code,
-      bar: { menu: 'View', section: 'diff', order: 40 },
+      bar: { menu: 'View', section: 'shows', order: 20 },
       toggle: 'switch',
     },
     /** The cursor's file's definitions, nested, in a palette that finds them as you type. */

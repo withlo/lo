@@ -478,6 +478,19 @@ export class ThreadPop<At extends PopAt> {
   }
 
   /**
+   * Closes it at once, with no fade, and takes down what it holds, built ahead or fading: nothing
+   * will open it, and an empty shell mustn't fade out over the code.
+   */
+  clear(): void {
+    this.close(false);
+    this.#leaving?.();
+    this.#leaving = undefined;
+    this.dom.hidden = true;
+    delete this.dom.dataset.endingStyle;
+    this.#drop();
+  }
+
+  /**
    * What it shows changed, as its threads did: drawn again, and placed again. Its threads gone, it
    * closes, focus in it going to the line.
    */

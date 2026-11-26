@@ -1,4 +1,5 @@
-// Review threads in the diff view, on the small pull request, side by side and inline. The line at
+// Review threads in the diff view between lines, on the small pull request, side by side and
+// inline; the suite starts beside lines, as Lo does, where a thread takes no room. The line at
 // the top of the screen and the one in its middle are watched every frame while a thread arrives
 // above the screen, and then grows there: neither may move. And what the reader sends from a
 // comment box on screen, a thread and then a reply in it, comes at once and whole, the box's line
@@ -23,6 +24,7 @@ import {
 test('a thread that arrives or grows above the screen moves nothing on it, side by side and inline', async ({
   page,
 }) => {
+  await page.evaluate(() => window.perfThreadsMode('between'));
   for (const layout of ['split', 'inline'] as const) {
     await partWay(page, layout);
     const above = await lineAbove(page, 200);
@@ -53,6 +55,7 @@ test('a thread that arrives or grows above the screen moves nothing on it, side 
 test('a comment and a reply sent from a box on screen come at once and whole, side by side and inline', async ({
   page,
 }) => {
+  await page.evaluate(() => window.perfThreadsMode('between'));
   for (const layout of ['split', 'inline'] as const) {
     await partWay(page, layout);
     // The cursor on a line in the middle of the screen, as a click puts it.

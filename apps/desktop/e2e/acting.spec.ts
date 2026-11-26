@@ -1,9 +1,12 @@
 // Acting on review threads in the diff: Lo, started on the replay server as rozed-bot, on the
 // comments fixture (`testing/fixtures/comments.sh`), rozed-dev/e2e#94, as `app_comments_act`
-// recorded from the app. On line 2's thread, `r` opens a reply box right after its card, and `⌥⏎`
-// posts the reply; `i` opens a box with the reply's text, and `⌘⏎` saves the edit over it; `dd`
-// asks first, and `⏎` deletes it. On line 5's resolved thread, `x` unresolves it, and `x` again
-// resolves it. Each change comes into the card as GitHub reads it back. In the timeline, as
+// recorded from the app, beside lines, as Lo starts, and between lines. On line 2's thread, `r`
+// opens a reply box, beside lines in its popover where its card offers a reply, between lines
+// right after its card, and `⌥⏎` posts the reply; `i` opens a box with the reply's text in its
+// place, and `⌘⏎` saves the edit over it; `dd` asks first, and `⏎` deletes it. On line 5's
+// resolved thread, `x` unresolves it, and `x` again resolves it; beside lines, the first `x` from
+// the line pins its popover, changing nothing. Each change comes into the card as GitHub reads it
+// back. In the timeline, as
 // `app_comments_box` recorded, `c` puts focus in the box at its end, and `⌘⏎` posts a comment on
 // the pull request itself, which `i` edits in its card and `dd` deletes.
 
@@ -13,7 +16,7 @@ import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { Page } from '@playwright/test';
 import { writeFileSync } from 'node:fs';
 
-import { DIFF_FIRST, expect, test as base } from './app.ts';
+import { DIFF_FIRST, DIFF_FIRST_BETWEEN, expect, test as base } from './app.ts';
 import { type BodiesServer, serveBodies } from './bodies.ts';
 import { Staged } from './staged.ts';
 
@@ -139,10 +142,22 @@ const boxes = (page: Page) => page.locator('[data-lo-diff] .lo-diffcomposer');
 const card = (page: Page, text: string) =>
   page.locator('[data-lo-diff] [data-thread-state]').filter({ hasText: text });
 
-test('`r` replies, `i` edits the reply, `dd` deletes it, and `x` unresolves and resolves a thread', async ({
-  page,
-}) => {
+for (const mode of ['beside', 'between'] as const) {
+  test.describe(`${mode} lines`, () => {
+    if (mode === 'between') test.use({ settings: DIFF_FIRST_BETWEEN });
+
+    test('`r` replies, `i` edits the reply, `dd` deletes it, and `x` unresolves and resolves a thread', async ({
+      page,
+    }) => {
+      await actOnThreads(page, mode);
+    });
+  });
+}
+
+/** The thread test, with threads `mode` lines. */
+async function actOnThreads(page: Page, mode: 'beside' | 'between'): Promise<void> {
   test.setTimeout(120_000);
+  const beside = mode === 'beside';
   await open(page);
   await expect.poll(() => threadsUnder(page, 2), { timeout: 30_000 }).toBe(1);
   await expect
@@ -161,11 +176,22 @@ test('`r` replies, `i` edits the reply, `dd` deletes it, and `x` unresolves and 
   // The threads that came while their lines were on screen come in as the layout changes.
   for (const key of ['g', 'i', 'g', 'i']) await page.keyboard.press(key);
   const thread = card(page, 'Start a little higher?');
-  await expect(thread).toBeVisible();
+  if (beside) {
+    // Its card is in the popover its mark opens, which is closed: made as the cursor came to its
+    // line, and hidden.
+    await expect(
+      page.getByRole('button', { name: 'Unresolved thread · line 2', exact: true }),
+    ).toBeVisible();
+    await expect(thread).toBeHidden();
+  } else {
+    await expect(thread).toBeVisible();
+  }
   const box = boxes(page);
 
-  await test.step('`r` opens a reply box after the card, and `⌥⏎` posts the reply', async () => {
+  const where = beside ? 'the popover with a reply box in the card' : 'a reply box after the card';
+  await test.step(`\`r\` opens ${where}, and \`⌥⏎\` posts the reply`, async () => {
     await page.keyboard.press('r');
+    await expect(thread).toBeVisible();
     await expect(box).toHaveCount(1);
     await expect(box.locator('.lo-diffcomposer__head')).toContainText('Reply');
     await expect(box.getByRole('button', { name: /Send now/ })).toBeVisible();
@@ -211,21 +237,31 @@ test('`r` replies, `i` edits the reply, `dd` deletes it, and `x` unresolves and 
     for (const key of ['j', 'j', 'j']) await page.keyboard.press(key);
     await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 5');
     const fifth = card(page, 'Is doubling enough?');
+    if (beside) {
+      // The cursor left line 2's lines: its popover closed.
+      await expect(thread).toBeHidden();
+      await expect(fifth).toBeHidden();
+      // A key never changes a thread that isn't on screen: the first `x` pins its popover.
+      await page.keyboard.press('x');
+    }
     await expect(fifth).toHaveAttribute('data-thread-state', 'resolved');
     await page.keyboard.press('x');
     await expect(fifth).toHaveAttribute('data-thread-state', 'unresolved', { timeout: 20_000 });
-    // The card shows what was asked at once, and opens, its button at rest, once GitHub answers:
-    // `x` again is for after that.
+    // The card shows what was asked at once, its button at rest once GitHub answers, named for
+    // what it does next: `x` again is for after that. Between lines it opens, as it's unresolved.
     const working = fifth.locator('button[aria-busy="true"]');
-    await expect(fifth.getByRole('button', { name: 'Collapse thread' })).toBeVisible({
-      timeout: 20_000,
-    });
+    if (!beside) {
+      await expect(fifth.getByRole('button', { name: 'Collapse thread' })).toBeVisible({
+        timeout: 20_000,
+      });
+    }
     await expect(working).toHaveCount(0, { timeout: 20_000 });
+    await expect(fifth.getByRole('button', { name: 'Resolve', exact: true })).toBeVisible();
     await page.keyboard.press('x');
     await expect(fifth).toHaveAttribute('data-thread-state', 'resolved', { timeout: 20_000 });
     await expect(working).toHaveCount(0, { timeout: 20_000 });
   });
-});
+}
 
 test.describe('in the timeline', () => {
   test.use({ cassette: BOX });

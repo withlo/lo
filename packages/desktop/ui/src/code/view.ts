@@ -1442,9 +1442,11 @@ class View implements DiffView {
   setThreadsMode(mode: ThreadsMode): void {
     if (mode === this.#mode) return;
     // A box open closes, keeping its draft, wherever it's drawn: in the popover, or in the flow,
-    // where what boxes sent and closed still show goes too.
+    // where what boxes sent and closed still show goes too. Between lines nothing opens the
+    // popover, so what it built ahead goes with it.
     this.#pop.close();
     this.#releasePopBox();
+    if (mode === 'between') this.#pop.clear();
     for (const { box } of this.#boxes.values()) box.composer.leave();
     if (this.#rooms.size > 0) this.#dropRooms(new Set(this.#rooms.keys()));
     const pane = this.#activePane();
