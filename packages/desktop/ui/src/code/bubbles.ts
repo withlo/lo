@@ -3,7 +3,8 @@
 // grey once it's resolved or out of date, and as a control that opens or collapses it. The lane
 // beside the lines draws it (`lanes.ts`), and a file's header draws a file's own threads' bubble.
 // Beside lines, words of yours not sent put the dot on a thread's bubble, and a draft on lines with
-// no thread has a bubble of its own, dashed and muted, whose click opens its box again.
+// no thread has a bubble of its own, dashed and muted, whose click opens its box again. A change you
+// asked of a thread that didn't go, or may not have, puts the dot on it too, while its card says so.
 
 import { iconElement } from '../iconElement.ts';
 import type { IconName } from '../icons.ts';
@@ -64,9 +65,10 @@ function joined(...words: readonly string[]): string {
  * The bubble beside a line where `threads` end, in their order: its icon, colour and name. One
  * thread's says what it is: `message-square` unresolved, `message-square-check` resolved,
  * `message-square-dot` holding words of yours not sent, comments pending in your review or a
- * `draft` in a box that's closed, grey once it's resolved or out of date, and amber while all of it
- * is pending. Several are `messages-square`, amber while any is unresolved or pending. No digits:
- * the count is in its name, and in the file's header. With no threads, it's the `draft`'s own,
+ * `draft` in a box that's closed, or a change you asked of it that `failed`, grey once it's
+ * resolved or out of date, and amber while all of it is pending. Its name ends with what failed.
+ * Several are `messages-square`, amber while any is unresolved or pending. No digits: the count is
+ * in its name, and in the file's header. With no threads, it's the `draft`'s own,
  * `message-square-dashed`, muted, named for its lines, `draft.words`.
  */
 export function bubbleOf(
@@ -85,6 +87,8 @@ export function bubbleOf(
   }
   const marks = threads.map(markOf);
   const drafted = draft === undefined ? '' : DRAFT.toLowerCase();
+  // What a change asked of one of them that failed says: the first's, of several.
+  const failed = marks.find((mark) => mark.failed !== undefined)?.failed ?? '';
   if (threads.length > 1) {
     const unresolved = marks.filter((mark) => !mark.resolved).length;
     const where = marks[0]!.words.line;
@@ -96,13 +100,14 @@ export function bubbleOf(
         where,
         unresolved > 0 ? `${unresolved} unresolved` : '',
         drafted,
+        failed,
       ),
       thread: first.id,
     };
   }
   const mark = marks[0]!;
   const icon: IconName =
-    mark.pending !== undefined || draft !== undefined
+    mark.pending !== undefined || draft !== undefined || failed !== ''
       ? 'message-square-dot'
       : mark.resolved
         ? 'message-square-check'
@@ -111,7 +116,7 @@ export function bubbleOf(
   return {
     icon,
     tone: amber ? 'warn' : 'quiet',
-    name: joined(kind(mark), mark.words.lines, drafted),
+    name: joined(kind(mark), mark.words.lines, drafted, failed),
     thread: first.id,
   };
 }

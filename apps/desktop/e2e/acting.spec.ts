@@ -1,9 +1,11 @@
 // Acting on review threads in the diff: Lo, started on the replay server as rozed-bot, on the
 // comments fixture (`testing/fixtures/comments.sh`), rozed-dev/e2e#94, as `app_comments_act`
-// recorded from the app. On line 2's thread, `r` opens a reply box right after its card, and `⌥⏎`
-// posts the reply; `i` opens a box with the reply's text, and `⌘⏎` saves the edit over it; `dd`
-// asks first, and `⏎` deletes it. On line 5's resolved thread, `x` unresolves it, and `x` again
-// resolves it. Each change comes into the card as GitHub reads it back. In the timeline, as
+// recorded from the app, beside lines, as Lo starts. On line 2's thread, `r` opens its popover with
+// a reply box where its card offers a reply, and `⌥⏎` posts the reply; `i` opens a box with the
+// reply's text in its place, and `⌘⏎` saves the edit over it; `dd` asks first, and `⏎` deletes it.
+// On line 5's resolved thread, `x` from the line pins its popover, changing nothing; `x` again
+// unresolves it, and once more resolves it. Each change comes into the card as GitHub reads it
+// back. In the timeline, as
 // `app_comments_box` recorded, `c` puts focus in the box at its end, and `⌘⏎` posts a comment on
 // the pull request itself, which `i` edits in its card and `dd` deletes.
 
@@ -160,12 +162,18 @@ test('`r` replies, `i` edits the reply, `dd` deletes it, and `x` unresolves and 
   await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 2');
   // The threads that came while their lines were on screen come in as the layout changes.
   for (const key of ['g', 'i', 'g', 'i']) await page.keyboard.press(key);
+  // Beside lines, its card is in the popover its mark opens, which is closed: made as the cursor
+  // came to its line, and hidden.
+  await expect(
+    page.getByRole('button', { name: 'Unresolved thread · line 2', exact: true }),
+  ).toBeVisible();
   const thread = card(page, 'Start a little higher?');
-  await expect(thread).toBeVisible();
+  await expect(thread).toBeHidden();
   const box = boxes(page);
 
-  await test.step('`r` opens a reply box after the card, and `⌥⏎` posts the reply', async () => {
+  await test.step('`r` opens the popover with a reply box in the card, and `⌥⏎` posts the reply', async () => {
     await page.keyboard.press('r');
+    await expect(thread).toBeVisible();
     await expect(box).toHaveCount(1);
     await expect(box.locator('.lo-diffcomposer__head')).toContainText('Reply');
     await expect(box.getByRole('button', { name: /Send now/ })).toBeVisible();
@@ -207,20 +215,23 @@ test('`r` replies, `i` edits the reply, `dd` deletes it, and `x` unresolves and 
     await expect(thread).not.toContainText('Three tries at most.', { timeout: 20_000 });
   });
 
-  await test.step('`x` on a resolved thread unresolves it, and `x` again resolves it', async () => {
+  await test.step('`x` on a resolved thread pins its popover, then unresolves it, and `x` again resolves it', async () => {
     for (const key of ['j', 'j', 'j']) await page.keyboard.press(key);
     await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 5');
+    // The cursor left line 2's lines: its popover closed.
+    await expect(thread).toBeHidden();
     const fifth = card(page, 'Is doubling enough?');
+    await expect(fifth).toBeHidden();
+    // A key never changes a thread that isn't on screen: the first `x` pins its popover.
+    await page.keyboard.press('x');
     await expect(fifth).toHaveAttribute('data-thread-state', 'resolved');
     await page.keyboard.press('x');
     await expect(fifth).toHaveAttribute('data-thread-state', 'unresolved', { timeout: 20_000 });
-    // The card shows what was asked at once, and opens, its button at rest, once GitHub answers:
-    // `x` again is for after that.
+    // The card shows what was asked at once, its button at rest once GitHub answers, named for
+    // what it does next: `x` again is for after that.
     const working = fifth.locator('button[aria-busy="true"]');
-    await expect(fifth.getByRole('button', { name: 'Collapse thread' })).toBeVisible({
-      timeout: 20_000,
-    });
     await expect(working).toHaveCount(0, { timeout: 20_000 });
+    await expect(fifth.getByRole('button', { name: 'Resolve', exact: true })).toBeVisible();
     await page.keyboard.press('x');
     await expect(fifth).toHaveAttribute('data-thread-state', 'resolved', { timeout: 20_000 });
     await expect(working).toHaveCount(0, { timeout: 20_000 });

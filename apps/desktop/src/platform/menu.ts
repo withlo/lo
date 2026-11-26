@@ -89,13 +89,16 @@ export const barMenus: readonly BarMenu[] = [
   {
     menu: 'View',
     // Overview, Diff and Timeline; the panels and code beside; the width of what has focus; the
-    // diff's layout and what it shows; the command palette; zoom; and full screen, which is a command
-    // of Lo's on Linux.
+    // diff's layout; how review threads show in it; what it shows; the command palette; zoom; and
+    // full screen, which is a command of Lo's on Linux. Each choice of two is a part of its own:
+    // Electron makes one choice of every radio item between two separators.
     parts: [
       { section: 'views' },
       { section: 'panels' },
       { section: 'layout' },
       { section: 'diff' },
+      { section: 'threads' },
+      { section: 'shows' },
       { section: 'palette' },
       { section: 'zoom' },
       { roles: [{ role: 'toggleDevTools', label: 'Developer tools' }], dev: true },

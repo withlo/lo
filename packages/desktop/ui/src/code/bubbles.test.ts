@@ -60,6 +60,25 @@ describe('a thread’s bubble', () => {
     });
   });
 
+  test('a change asked of it that failed puts the dot on it, in its colour, and its name says what', () => {
+    expect(bubbleOf([marked('a', { failed: 'couldn’t resolve the thread' })])).toEqual({
+      icon: 'message-square-dot',
+      tone: 'warn',
+      name: 'Unresolved thread · lines 10–35 · couldn’t resolve the thread',
+      thread: 'a',
+    });
+    const resolved = marked('a', { resolved: true, failed: 'unresolve not confirmed' });
+    expect(bubbleOf([resolved])).toMatchObject({ icon: 'message-square-dot', tone: 'quiet' });
+    // With a draft too, it's said after the draft.
+    expect(bubbleOf([resolved], { words: '' })).toMatchObject({
+      name: 'Resolved thread · lines 10–35 · draft · unresolve not confirmed',
+    });
+    expect(bubbleOf([marked('b'), resolved])).toMatchObject({
+      icon: 'messages-square',
+      name: '2 threads · line 35 · 1 unresolved · unresolve not confirmed',
+    });
+  });
+
   test('a draft on lines with no thread has its own, dashed and muted, named for its lines', () => {
     const bubble = bubbleOf([], { words: 'lines 4–6' });
     expect(bubble).toEqual({

@@ -231,8 +231,9 @@ export interface ThreadView {
 
 /**
  * What a review thread's mark in the gutter shows: whether it's resolved, holds comments of the
- * reader's not yet sent, or is out of date, and the lines it covers. Its bubble is amber while it's
- * unresolved or pending, and grey once it's resolved or out of date.
+ * reader's not yet sent, or is out of date, whether a change they asked of it failed, and the lines
+ * it covers. Its bubble is amber while it's unresolved or pending, and grey once it's resolved or
+ * out of date.
  */
 export interface ThreadMark {
   readonly resolved: boolean;
@@ -243,6 +244,12 @@ export interface ThreadMark {
   readonly pending?: 'some' | 'all' | undefined;
   /** Whether its lines changed after it was written: it shows on its revision alone. */
   readonly outdated?: boolean | undefined;
+  /**
+   * What its card says of a change the reader asked of it that didn't go, or may not have, until
+   * they dismiss it or ask again: the note's title, lower case, `resolve not confirmed`. Its bubble
+   * has the dot, as for words of theirs not sent, and its name ends with it.
+   */
+  readonly failed?: string | undefined;
   /**
    * The first line of its range, where it covers more than the line it's under: on that line's
    * side, which for a range from a removed line to an added one is the other side.

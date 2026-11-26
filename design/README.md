@@ -563,6 +563,23 @@ that floats.
   "Unresolve thread" on a resolved thread. Its foot's `PaletteHint`s say what a key does, then the
   key, and one given `onClick` is that key's control too. Its field shows no key: the key that
   opened it is in the menu bar and Keyboard shortcuts.
+- **`ThreadPopover`** is the review threads that end on a line, over the code, beside lines: a
+  thread, a reply and a new comment's box open in it, and nothing in the flow moves. A code view
+  draws one, in a layer of its own scroll, so it moves with its line and passes under the pinned
+  file header as code does. It's 520 px wide (`lo-thread-pop-w`) at every window width, in its
+  side's column where that has room, else over the other side, 8 px inside the pane; as tall as its
+  threads up to `lo-thread-pop-h`, past which they scroll inside it, a box's foot staying at its
+  foot. Its top is 4 px under the range's last line and its left edge on the thread lane's, so the
+  bubble sits at its corner. It never covers its lines unless they fill the pane: under the last
+  line, else its foot 4 px above the first, else at the pane's foot. A preview takes the first with
+  room and never scrolls; opened by a click or a key, it goes under the last line and the pane
+  scrolls the least that shows it whole. The pointer resting on a mark previews it, with no key
+  chips and no Close, never taking focus, and it closes when the pointer leaves mark and popover, on
+  a key, a press elsewhere or a scroll. A click on the mark or in the preview pins it: Close and the
+  chips Swap in, in the room the preview kept for them. Pinned, it stays through pointer moves and
+  scrolling, and closes on `Esc`, Close, a click on its mark, a press outside, or the cursor leaving
+  its lines; with a comment box open in it, only the box closing closes it. To a screen reader it's
+  a dialog that doesn't hold focus in, named for its first thread.
 - **`Tooltip`** names a control and its key: see [Controls](#controls).
 - **`ToastStack`** shows results at the bottom right, above the status bar: three at most, four
   seconds each, paused under the pointer or focus. One with an action or Details stays eight
@@ -785,7 +802,7 @@ tokens. Their code is the source for how each one looks.
 | Panels           | StackTree, FileTree                                                                             |
 | Controls         | Button, CommandButton, HintButton, MoreButton, CopyButton, Key, SegmentedControl, Switch, Input |
 | Marks            | Icon, Glyphs, StatePill, Tag, Avatar, Marks                                                     |
-| Floating         | Dialog, Popover, ContextMenu, Palette, Tooltip, ToastStack                                      |
+| Floating         | Dialog, Popover, ThreadPopover, ContextMenu, Palette, Tooltip, ToastStack                       |
 | Motion and waits | Collapse, Swap, Loading, Skeleton, Spinner, LogoMotion, Problem, EmptyState                     |
 | Review           | Thread, Diff, CodeView, CommentBox                                                              |
 | Overview         | OverviewDocument, CodeBlock, Figure, Walkthrough, TabsAndFolds, Glossary                        |
@@ -803,13 +820,19 @@ first, so a card drawn again doesn't flash them.
 - Every code view is CodeMirror 6, themed by `css/code.css`. Lo's own decorations use `.lo-*`
   classes; CodeMirror's merge classes (`cm-changedLine`, `cm-changedText`, `cm-mergeSpacer`,
   `cm-collapsedLines`) share the same rules.
-- Side by side by default. Both sides stay on one row grid: a thread or a wrapped line on one side
-  leaves space (`lo-spacer`) on the other.
+- Side by side by default. Both sides stay on one row grid: a wrapped line, or a thread between
+  lines, on one side leaves space (`lo-spacer`) on the other.
 - **A marker sits against the code it's about.** Line numbers, then the thread lane, then the
   overview lane on a side that shows new lines, then the code. A lane is as wide empty as full.
 - **A thread is a bubble, the overview is a ball.** A thread's mark is a `message-square` icon with
   a bracket up its range, amber while unresolved or pending, grey once resolved or out of date. The
   overview's is the Powder ball and rail. Neither borrows from the other.
+- **A thread opens over the code, not in it.** With Threads in code at "Beside lines", the default,
+  a thread, a reply and a new comment's box open in `ThreadPopover` under the last line they're
+  about, and no line of code moves. It never covers its own lines unless they fill the pane.
+  "Between lines" draws them in the flow, with space on the other side.
+- **A hover previews, a click pins.** A preview is the pinned popover without its keys, so pinning
+  moves nothing. One popover per code view.
 - **Filler is quieter than code.** Everything in a diff that isn't code (that space, folds of
   unchanged lines, the row under a file's header) sits on one flat ground, `lo-diff-filler`, in type
   smaller and dimmer than code. Only a run of space three lines tall or less is hatched, so a line
@@ -874,13 +897,13 @@ text is read-only in `lo-fg-muted`, and Write | Preview and "Attach files…" di
 - **Foot.** "Attach files…" as an icon button at the left, then "Discard draft"; the actions at the
   right, each with its key, always in one order, "Send now", then "Add to review", however the box
   was opened. Only the fill moves, to the main one.
-- **Narrow.** Side by side, a box is never narrower than 256px: where its side of the diff is, it
-  takes both sides, over the room kept for it on the other. The head and the foot are one line each
-  at any width, and give up what they must (`useGiveUp`): the foot its key chips, then the words of
-  "Discard draft", then its hint, then the actions' words for their icons, the filled one's last;
-  the head who it's from, then the switch's key chip, then the words of Write and Preview for their
-  icons, before what the comment is on is cut short. In a box taller than its pane, the foot stays
-  at the pane's foot.
+- **Narrow.** Between lines, side by side, a box is never narrower than 256px: where its side of the
+  diff is, it takes both sides, over the room kept for it on the other. The head and the foot are
+  one line each at any width, and give up what they must (`useGiveUp`): the foot its key chips, then
+  the words of "Discard draft", then its hint, then the actions' words for their icons, the filled
+  one's last; the head who it's from, then the switch's key chip, then the words of Write and
+  Preview for their icons, before what the comment is on is cut short. In a box taller than its
+  pane, the foot stays at the pane's foot.
 - **Actions.** "Add to review" and "Send now" under a line or a thread, "Send" under the pull
   request, "Save" in an edit. While a review is pending GitHub adds every comment to it, so the box
   has "Add to review" alone. A dimmed action says why in its tooltip.
@@ -909,6 +932,10 @@ text is read-only in `lo-fg-muted`, and Write | Preview and "Attach files…" di
   control is its own again, and the card still shows what was asked until they're read again. One
   change to a thread at a time: while one is at work, resolving it or deleting from it is dimmed,
   with what's at work as the reason ("Resolving…").
+- **Said where it's seen.** Beside lines, a send, an edit, a resolve or a delete that fails, or
+  can't be confirmed, once its popover has closed is said in one toast, in its note's tone, whose
+  "Show thread" opens the thread where its card or box says the rest. Its thread's mark has the dot
+  while the card or box says it. Nothing is sent again from the toast.
 - **Attached files.** A file goes in at the cursor as a placeholder while it uploads. If the upload
   fails or is refused, Lo takes the placeholder out itself and the file's row says what happened. A
   comment isn't sent while a placeholder is in its text. What Lo changes in the text itself, as a

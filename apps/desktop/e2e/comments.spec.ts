@@ -1,14 +1,15 @@
 // Review threads in the diff: Lo, started on the replay server as rozed-bot, reads the threads on
-// the comments fixture (`testing/fixtures/comments.sh`), rozed-dev/e2e#94, and draws them under
-// their lines, or a file's under its header, unresolved ones open and resolved ones collapsed, with
-// an outdated one left out, those on the first screen with it, each with its bubble beside it.
-// Each file's header and its row in the tree count them, `]t` and `[t` walk them, and `za` opens
-// or collapses the one the cursor is on. Comments are drawn as GitHub renders them, images and all.
-// A renamed file's thread under one of its old lines shows there. A stack's layer shows its own
-// threads, and its overview's code block the one on its lines. The threads panel, `⌘⇧\`, lists
-// them, without moving the diff's lines, and shows one in the diff, an outdated one in the whole
-// diff of the revision it was written on, which `⌃o` and `⌃i` compare again; the last thread asked
-// for wins. The stack's rows count each layer's unresolved threads.
+// the comments fixture (`testing/fixtures/comments.sh`), rozed-dev/e2e#94, and marks each beside
+// its lines, with an outdated one left out, as Lo starts: a bubble that opens the thread over the
+// code, moving no line. Between lines, from Settings or the View menu, it draws them under their
+// lines, or a file's under its header, unresolved ones open and resolved ones collapsed, those on
+// the first screen with it. Each file's header and its row in the tree count them, `]t` and `[t`
+// walk them, and `za` opens or collapses the one the cursor is on. Comments are drawn as GitHub
+// renders them, images and all. A renamed file's thread under one of its old lines shows there. A
+// stack's layer shows its own threads, and its overview's code block the one on its lines. The
+// threads panel, `⌘⇧\`, lists them, without moving the diff's lines, and shows one in the diff, an
+// outdated one in the whole diff of the revision it was written on, which `⌃o` and `⌃i` compare
+// again; the last thread asked for wins. The stack's rows count each layer's unresolved threads.
 
 import { writeFileSync } from 'node:fs';
 
@@ -18,8 +19,12 @@ import type { Page } from '@playwright/test';
 
 import {
   appFolder,
+  barItem,
+  clickBarItem,
   DIFF_FIRST,
+  DIFF_FIRST_BETWEEN,
   expect,
+  keepMenus,
   KEYCHAIN,
   onStacks,
   STACK,
@@ -163,16 +168,19 @@ function inPanel(page: Page): Promise<boolean> {
   return page.evaluate(() => document.activeElement?.closest('[data-lo-scope="threads"]') !== null);
 }
 
-/** How far below the top of the diff's box src/backoff.ts's new line 10 is drawn, to the pixel. */
-function lineTop(page: Page): Promise<number> {
-  return page.evaluate(() => {
+/**
+ * How far below the top of the diff's box src/backoff.ts's new line `line`, or line 10, is drawn,
+ * to the pixel.
+ */
+function lineTop(page: Page, line = 10): Promise<number> {
+  return page.evaluate((at) => {
     const diff = window.loDiff;
     const file = diff?.files.find((each) => each.path === 'src/backoff.ts')?.id;
     const box = document.querySelector('.lo-diffview')?.getBoundingClientRect().top;
     if (!diff || file === undefined || box === undefined) return Number.NaN;
-    const at = diff.probe.spotTop({ kind: 'line', at: { file, side: 'new', line: 10 } });
-    return at === undefined ? Number.NaN : Math.round(at - box);
-  });
+    const top = diff.probe.spotTop({ kind: 'line', at: { file, side: 'new', line: at } });
+    return top === undefined ? Number.NaN : Math.round(top - box);
+  }, line);
 }
 
 /** How far src/backoff.ts's new line 10 has moved since it was `before` below the diff's top. */
@@ -231,97 +239,101 @@ async function settled(page: Page): Promise<void> {
     .toBe(true);
 }
 
-test('draws threads under their lines, resolved ones collapsed, and counts them', async ({
-  page,
-}) => {
-  await open(page, COMMENTS_PULL.number);
-  // Every thread on a line the diff of the latest push shows, and the one on docs/usage.md, which
-  // is on the file, under its header: the outdated one isn't.
-  await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(AT_HEAD);
-  // The threads on the first screen come with it. An unresolved thread is open, its text drawn as
-  // GitHub renders it, a suggestion as the change it suggests; the resolved one is collapsed to one
-  // line.
-  await expect(card(page, 'Start a little higher?')).toContainText('Suggested change');
-  await expect(openCard(page, 'Is doubling enough?')).toBeVisible();
-  await expect(card(page, 'Is doubling enough?')).toContainText('1 reply');
-  await expect(page.getByText('This grows without bound')).toHaveCount(0);
-  // Each line's threads have a bubble in the gutter, a button a screen reader reaches, named for
-  // the thread and saying whether it's open; the file's own, in its header.
-  const bubble = (name: string) => page.getByRole('button', { name, exact: true });
-  await expect(bubble('Unresolved thread · line 2')).toHaveAttribute('aria-expanded', 'true');
-  await expect(bubble('Resolved thread · line 5')).toHaveAttribute('aria-expanded', 'false');
-  await expect(bubble('Unresolved thread · file')).toHaveAttribute('aria-expanded', 'true');
+test.describe('between lines', () => {
+  test.use({ settings: DIFF_FIRST_BETWEEN });
 
-  // A file's header and its row in the tree count its threads, and how many are unresolved.
-  // The file's own header, whose right column has the count: the copy pinned under the diff bar
-  // is hidden from screen readers.
-  const header = page
-    .locator('[data-lo-diff] .cm-editor .lo-diffhead--end[data-path="src/backoff.ts"]')
-    .first();
-  await expect(header.getByRole('img', { name: '4 / 5 threads unresolved' })).toHaveClass(
-    /is-open/,
-  );
-  const tree = page.locator('[data-lo-scope="tree"]');
-  await expect(tree.getByRole('img', { name: '4 / 5 threads unresolved' })).toBeVisible();
-  await expect(tree.getByRole('img', { name: '1 unresolved' })).toHaveCount(1);
-});
+  test('draws threads under their lines, resolved ones collapsed, and counts them', async ({
+    page,
+  }) => {
+    await open(page, COMMENTS_PULL.number);
+    // Every thread on a line the diff of the latest push shows, and the one on docs/usage.md, which
+    // is on the file, under its header: the outdated one isn't.
+    await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(AT_HEAD);
+    // The threads on the first screen come with it. An unresolved thread is open, its text drawn as
+    // GitHub renders it, a suggestion as the change it suggests; the resolved one is collapsed to one
+    // line.
+    await expect(card(page, 'Start a little higher?')).toContainText('Suggested change');
+    await expect(openCard(page, 'Is doubling enough?')).toBeVisible();
+    await expect(card(page, 'Is doubling enough?')).toContainText('1 reply');
+    await expect(page.getByText('This grows without bound')).toHaveCount(0);
+    // Each line's threads have a bubble in the gutter, a button a screen reader reaches, named for
+    // the thread and saying whether it's open; the file's own, in its header.
+    const bubble = (name: string) => page.getByRole('button', { name, exact: true });
+    await expect(bubble('Unresolved thread · line 2')).toHaveAttribute('aria-expanded', 'true');
+    await expect(bubble('Resolved thread · line 5')).toHaveAttribute('aria-expanded', 'false');
+    await expect(bubble('Unresolved thread · file')).toHaveAttribute('aria-expanded', 'true');
 
-test('walks the threads with ]t and [t, and opens or collapses one with za', async ({ page }) => {
-  await open(page, COMMENTS_PULL.number);
-  await expect.poll(() => placed(page), { timeout: 20_000 }).toHaveLength(10);
-  await settled(page);
-  await page.keyboard.press(']');
-  await page.keyboard.press('t');
-  await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 2');
-  await page.keyboard.press(']');
-  await page.keyboard.press('t');
-  await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 5');
+    // A file's header and its row in the tree count its threads, and how many are unresolved.
+    // The file's own header, whose right column has the count: the copy pinned under the diff bar
+    // is hidden from screen readers.
+    const header = page
+      .locator('[data-lo-diff] .cm-editor .lo-diffhead--end[data-path="src/backoff.ts"]')
+      .first();
+    await expect(header.getByRole('img', { name: '4 / 5 threads unresolved' })).toHaveClass(
+      /is-open/,
+    );
+    const tree = page.locator('[data-lo-scope="tree"]');
+    await expect(tree.getByRole('img', { name: '4 / 5 threads unresolved' })).toBeVisible();
+    await expect(tree.getByRole('img', { name: '1 unresolved' })).toHaveCount(1);
+  });
 
-  // The resolved thread there opens, and collapses again.
-  await page.keyboard.press('z');
-  await page.keyboard.press('a');
-  await expect(openCard(page, 'Is doubling enough?')).toHaveCount(0);
-  await expect(card(page, 'Is doubling enough?')).toContainText('It is for three tries.');
-  await page.keyboard.press('z');
-  await page.keyboard.press('a');
-  await expect(openCard(page, 'Is doubling enough?')).toBeVisible();
-
-  // An image attached to a comment loads, through main, as rozed-bot.
-  for (const at of ['src/backoff.ts new 8', 'src/backoff.ts new 15']) {
+  test('walks the threads with ]t and [t, and opens or collapses one with za', async ({ page }) => {
+    await open(page, COMMENTS_PULL.number);
+    await expect.poll(() => placed(page), { timeout: 20_000 }).toHaveLength(10);
+    await settled(page);
     await page.keyboard.press(']');
     await page.keyboard.press('t');
-    await expect.poll(() => cursor(page)).toBe(at);
-  }
-  const image = card(page, 'The spread, as measured').getByRole('img', { name: 'two by two' });
-  await expect
-    .poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth), {
-      timeout: 20_000,
-    })
-    .toBe(2);
-
-  await page.keyboard.press('[');
-  await page.keyboard.press('t');
-  await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 8');
-
-  // Side by side, ]t goes on through the files to a thread under the base's line, landing beside
-  // it, and za there collapses that thread.
-  for (const at of [
-    'src/backoff.ts new 15',
-    'src/backoff.ts new 17',
-    'src/queue.ts new 10',
-    'src/queue.ts new 35',
-  ]) {
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 2');
     await page.keyboard.press(']');
     await page.keyboard.press('t');
-    await expect.poll(() => cursor(page)).toBe(at);
-  }
-  await page.keyboard.press(']');
-  await page.keyboard.press('t');
-  await expect.poll(() => cursor(page)).toMatch(/^src\/retry\.ts new \d+$/);
-  await expect(openCard(page, 'The fixed second is gone')).toHaveCount(0);
-  await page.keyboard.press('z');
-  await page.keyboard.press('a');
-  await expect(openCard(page, 'The fixed second is gone')).toBeVisible();
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 5');
+
+    // The resolved thread there opens, and collapses again.
+    await page.keyboard.press('z');
+    await page.keyboard.press('a');
+    await expect(openCard(page, 'Is doubling enough?')).toHaveCount(0);
+    await expect(card(page, 'Is doubling enough?')).toContainText('It is for three tries.');
+    await page.keyboard.press('z');
+    await page.keyboard.press('a');
+    await expect(openCard(page, 'Is doubling enough?')).toBeVisible();
+
+    // An image attached to a comment loads, through main, as rozed-bot.
+    for (const at of ['src/backoff.ts new 8', 'src/backoff.ts new 15']) {
+      await page.keyboard.press(']');
+      await page.keyboard.press('t');
+      await expect.poll(() => cursor(page)).toBe(at);
+    }
+    const image = card(page, 'The spread, as measured').getByRole('img', { name: 'two by two' });
+    await expect
+      .poll(() => image.evaluate((element: HTMLImageElement) => element.naturalWidth), {
+        timeout: 20_000,
+      })
+      .toBe(2);
+
+    await page.keyboard.press('[');
+    await page.keyboard.press('t');
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 8');
+
+    // Side by side, ]t goes on through the files to a thread under the base's line, landing beside
+    // it, and za there collapses that thread.
+    for (const at of [
+      'src/backoff.ts new 15',
+      'src/backoff.ts new 17',
+      'src/queue.ts new 10',
+      'src/queue.ts new 35',
+    ]) {
+      await page.keyboard.press(']');
+      await page.keyboard.press('t');
+      await expect.poll(() => cursor(page)).toBe(at);
+    }
+    await page.keyboard.press(']');
+    await page.keyboard.press('t');
+    await expect.poll(() => cursor(page)).toMatch(/^src\/retry\.ts new \d+$/);
+    await expect(openCard(page, 'The fixed second is gone')).toHaveCount(0);
+    await page.keyboard.press('z');
+    await page.keyboard.press('a');
+    await expect(openCard(page, 'The fixed second is gone')).toBeVisible();
+  });
 });
 
 test.describe('beside lines', () => {
@@ -332,12 +344,7 @@ test.describe('beside lines', () => {
     await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(AT_HEAD);
     await settled(page);
     await localCopy(page, id);
-    // Threads in code, beside lines: the diff draws its threads as their bubbles alone, at once.
-    await expect(card(page, 'Start a little higher?')).toBeVisible();
-    const set = await page.evaluate(() =>
-      window.lo.invoke('settings.set', { key: 'comments.threads', value: 'beside' }),
-    );
-    expect(set.ok).toBe(true);
+    // Beside lines, as Lo starts, the diff draws its threads as their bubbles alone.
     await expect(card(page, 'Start a little higher?')).toHaveCount(0);
     const bubble = page.getByRole('button', { name: 'Unresolved thread · line 2', exact: true });
     await expect(bubble).toHaveAttribute('aria-expanded', 'false');
@@ -410,12 +417,53 @@ test.describe('beside lines', () => {
     await settled(page);
     expect(await moved(page, before)).toBe(0);
   });
+
+  test('the View menu’s pair puts threads between lines and back, each checked while it’s on, the cursor’s row staying put', async ({
+    app,
+    page,
+  }) => {
+    if (process.platform !== 'darwin') await keepMenus(app);
+    const id = await open(page, COMMENTS_PULL.number);
+    await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(AT_HEAD);
+    await settled(page);
+    await localCopy(page, id);
+    const checked = async () => ({
+      beside: await barItem(app, page, 'comments.threadsBeside'),
+      between: await barItem(app, page, 'comments.threadsBetween'),
+    });
+    await expect.poll(checked).toEqual({ beside: true, between: false });
+    // The cursor on line 2, whose thread's card comes under it.
+    const bubble = page.getByRole('button', { name: 'Unresolved thread · line 2', exact: true });
+    await bubble.click();
+    await page.keyboard.press('Escape');
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 2');
+    await settled(page);
+    const top = await lineTop(page, 2);
+    await expect(card(page, 'Start a little higher?')).toBeHidden();
+
+    await clickBarItem(app, page, 'comments.threadsBetween');
+    await expect(card(page, 'Start a little higher?')).toBeVisible();
+    await expect.poll(checked).toEqual({ beside: false, between: true });
+    expect(Math.abs((await lineTop(page, 2)) - top)).toBeLessThanOrEqual(1);
+
+    await clickBarItem(app, page, 'comments.threadsBeside');
+    await expect(card(page, 'Start a little higher?')).toBeHidden();
+    await expect.poll(checked).toEqual({ beside: true, between: false });
+    expect(Math.abs((await lineTop(page, 2)) - top)).toBeLessThanOrEqual(1);
+  });
 });
 
 test('a thread under a renamed file’s old line shows in its older column', async ({ page }) => {
   // GitHub names it by the file's new path, docs/guide.md, on the base's side.
   await open(page, COMMENTS_RENAME_PULL.number);
   await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(['docs/guide.md old 5']);
+  // Its bubble is in the older column's lane.
+  const bubble = page
+    .locator('[data-lo-diff] .cm-editor')
+    .filter({ has: page.locator('.cm-content[aria-label="Before"]') })
+    .getByRole('button', { name: 'Unresolved thread · line 5, removed', exact: true });
+  await expect(bubble).toBeVisible();
+  await bubble.click();
   await expect(card(page, 'The old wording said a second apart.')).toBeVisible();
   const tree = page.locator('[data-lo-scope="tree"]');
   await expect(tree.getByRole('img', { name: '1 unresolved' })).toBeVisible();
@@ -427,7 +475,8 @@ onStacks(
     test.setTimeout(60_000);
     await open(page, STACK.b);
     await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(['src/cost.ts new 5']);
-    await expect(card(page, 'GitHub rounds each 100 nodes up')).toBeVisible();
+    const bubble = page.getByRole('button', { name: 'Unresolved thread · line 5', exact: true });
+    await expect(bubble).toBeVisible();
 
     await test.step('its overview’s code block on those lines shows the thread under its line', async () => {
       await settled(page);
@@ -456,7 +505,7 @@ onStacks(
       })
       .toEqual(['src/plans.ts']);
     await expect.poll(() => placed(page)).toEqual([]);
-    await expect(card(page, 'GitHub rounds each 100 nodes up')).toHaveCount(0);
+    await expect(bubble).toHaveCount(0);
   },
 );
 

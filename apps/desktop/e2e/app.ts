@@ -621,6 +621,12 @@ export async function rowOver(page: Page, height = 34): Promise<() => Promise<vo
 export const DIFF_FIRST = '{ "tab.open": "diff" }\n';
 
 /**
+ * `DIFF_FIRST` with review threads between lines, each in the flow under its line as GitHub draws
+ * it, for tests of how threads and comment boxes draw there: Lo starts with them beside lines.
+ */
+export const DIFF_FIRST_BETWEEN = '{ "tab.open": "diff", "comments.threads": "between" }\n';
+
+/**
  * `DIFF_FIRST` with Vim keys on, for tests of Vim's modes and motions in the code, which Lo starts
  * without.
  */

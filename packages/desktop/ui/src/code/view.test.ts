@@ -3677,6 +3677,19 @@ describe('writing beside lines', () => {
     expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
     expect(layer().hidden).toBe(true);
   });
+
+  test('what the popover holds closed, built ahead or fading, goes as threads go between lines', () => {
+    const shown = open(events(), { threads: 'beside' });
+    shown.setThreads([ranged('one', at('a', 'new', 8), undefined)], plain().render, {
+      popover: popped().render,
+    });
+    // The pointer came to its mark: the popover's built, unseen.
+    newBubble().dispatchEvent(new MouseEvent('pointerover', { bubbles: true }));
+    expect(layer().hidden).toBe(true);
+    expect(layer().querySelector('[data-thread-id="one"]')).not.toBeNull();
+    shown.setThreadsMode('between');
+    expect(layer().querySelector('[data-thread-id]')).toBeNull();
+  });
 });
 
 /** An overview mark on file `a`'s lines `from` to `to` of `side`, from block `block`. */

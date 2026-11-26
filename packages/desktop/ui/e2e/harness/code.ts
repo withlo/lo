@@ -1,8 +1,8 @@
 // The page the code view's spec drives: a diff of one file, a line in every four changed, or the
 // file's new version whole, in a box 600 px tall, its threads drawn as cards as tall as the spec
-// says, with Lo's key listener, as the window runs it, which tells the view of each key once it's
-// the reader's input. The first lines can run on past the box's width, so they wrap. The spec works
-// it through `window.harness`.
+// says, or beside lines as marks that open a popover, with Lo's key listener, as the window runs
+// it, which tells the view of each key once it's the reader's input. The first lines can run on
+// past the box's width, so they wrap. The spec works it through `window.harness`.
 
 import { diffText } from '@lo/diff';
 
@@ -16,7 +16,9 @@ import {
   type PeekFrame,
   type PeekView,
   type Place,
+  type RenderPopover,
   type RenderThread,
+  type ThreadsMode,
 } from '../../src/code/index.ts';
 import { listen, Registry } from '../../src/commands/index.ts';
 import { setVim } from '../../src/vim.ts';
@@ -74,6 +76,28 @@ const render: RenderThread = (host, thread) => {
 };
 
 const ignore = (): void => {};
+
+/**
+ * The threads' popover, beside lines, as a caller draws it: a card 120 px tall for each thread, and
+ * the slot a new comment's box goes in, where one is open in it.
+ */
+const popover: RenderPopover = (host, shown) => {
+  const draw = (now: typeof shown): void => {
+    const drawn = now.threads.map(({ id }) => {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.dataset.threadId = id;
+      card.textContent = id;
+      card.style.height = '120px';
+      return card;
+    });
+    const slot = document.createElement('div');
+    slot.setAttribute('data-new-slot', '');
+    host.replaceChildren(...drawn, ...(now.box && now.box.thread === undefined ? [slot] : []));
+  };
+  draw(shown);
+  return { update: draw, destroy: () => host.replaceChildren() };
+};
 
 /**
  * A peek's frame, as the caller draws it: its head and foot at once, and its list of answers a
@@ -324,6 +348,73 @@ const harness = {
       render,
       { now },
     );
+  },
+  /**
+   * Gives threads with their marks, each ending on `side`'s line `line`, from line `from` where it
+   * covers more, or on the file, under its header, where it has no line; beside lines they open in
+   * the popover.
+   */
+  markedThreads(
+    threads: {
+      id: string;
+      side?: 'old' | 'new';
+      line?: number;
+      from?: number;
+      resolved?: boolean;
+    }[],
+  ): void {
+    view().setThreads(
+      threads.map(({ id, side = 'new', line, from, resolved = false }) => ({
+        id,
+        at: line === undefined ? { file: 'a' } : { file: 'a', side, line },
+        open: true,
+        version: 1,
+        mark: {
+          resolved,
+          from: from === undefined ? undefined : { side, line: from },
+          words: { lines: `line ${line ?? 0}`, line: `line ${line ?? 0}` },
+        },
+      })),
+      render,
+      { popover },
+    );
+  },
+  /** Shows threads beside lines or between them, as the setting does. */
+  threadsMode(mode: ThreadsMode): void {
+    view().setThreadsMode(mode);
+  },
+  /** Pins thread `id`'s popover, beside lines, as a key does. */
+  pin(id: string): boolean {
+    return view().pinThread(id);
+  },
+  /** Closes the threads' popover, as `Esc` does. */
+  closePopover(): boolean {
+    return view().closePopover();
+  },
+  /**
+   * How each editor the diff shows lays out its rows: each line drawn, its text, where it starts below
+   * the top of the editor's text and how tall it is, what's drawn between lines counted in where
+   * the next starts; and how tall the editor's text is in all, lines not drawn too.
+   */
+  rows(): { editor: string; lines: string[]; height: number }[] {
+    return [...document.querySelectorAll<HTMLElement>('.lo-diffview .cm-content[aria-label]')]
+      .filter(
+        (content) =>
+          ['Before', 'After', 'Changes'].includes(content.getAttribute('aria-label') ?? '') &&
+          content.getClientRects().length > 0,
+      )
+      .map((content) => {
+        const text = content.getBoundingClientRect();
+        const lines = [...content.querySelectorAll(':scope > .cm-line')].map((line) => {
+          const drawn = line.getBoundingClientRect();
+          return `${line.textContent} ${(drawn.top - text.top).toFixed(1)} ${drawn.height.toFixed(1)}`;
+        });
+        return {
+          editor: content.getAttribute('aria-label') ?? '',
+          lines,
+          height: Math.round(text.height * 10) / 10,
+        };
+      });
   },
   /** What thread `id` shows grows to `height`, as when an image in it loads. */
   grow(id: string, height: number): void {

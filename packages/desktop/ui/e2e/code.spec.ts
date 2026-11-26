@@ -5,7 +5,9 @@
 // leaves the line at the top of the screen where it is, and the reader's own scroll as it narrows,
 // by key, wheel or jump, goes where it says. A peek opens under its line and closes, leaving the
 // line where it is, the sides level, unless it would end below the foot of the screen: then the
-// least scroll shows it whole. A word is found where it's drawn, and under the pointer.
+// least scroll shows it whole. A word is found where it's drawn, and under the pointer. Beside
+// lines, threads, their popover and a comment box in it lay out no row other than the same diff
+// does without them.
 
 import { readFileSync } from 'node:fs';
 
@@ -1008,3 +1010,44 @@ test('side by side and narrow, a box takes both sides, and two boxes, one on eac
   for (const each of both) expect(each).toMatchObject({ whole: true });
   expect(Math.max(...both.map((each) => each.width))).toBeLessThan(280);
 });
+
+for (const layout of ['split', 'inline'] as const) {
+  test(`${layout}, beside lines, threads, a pinned popover and a comment box lay out every row as the same diff without them`, async () => {
+    const page = await open(layout, { wrapped: 6 });
+    const rows = () => page.evaluate(() => window.harness.rows());
+    await page.evaluate(() => window.harness.threadsMode('beside'));
+    await frames(page);
+    const bare = await rows();
+    // Every line the threads go on is drawn, so its row is measured.
+    for (const editor of bare) expect(editor.lines.length).toBeGreaterThan(50);
+    // A thread on a line of each side, one up a range, a resolved one and one on the file.
+    await page.evaluate(() =>
+      window.harness.markedThreads([
+        { id: 'one', line: 9 },
+        { id: 'range', line: 41, from: 33 },
+        { id: 'old', side: 'old', line: 22, resolved: true },
+        { id: 'file' },
+      ]),
+    );
+    await frames(page);
+    // Each has its mark, the file's in its header.
+    await expect(page.locator('.lo-threadlane .lo-bubble')).toHaveCount(3);
+    await expect(page.locator('.lo-diffhead__bubble').first()).toBeAttached();
+    expect(await rows()).toEqual(bare);
+    expect(await page.evaluate(() => window.harness.pin('range'))).toBe(true);
+    await expect(page.locator('.lo-threadpop [data-thread-id="range"]')).toBeVisible();
+    await frames(page);
+    expect(await rows()).toEqual(bare);
+    await page.evaluate(() => {
+      window.harness.closePopover();
+      window.harness.compose(26, 'A new comment');
+    });
+    await frames(page);
+    await expect(page.locator('.lo-threadpop .lo-diffcomposer')).toHaveCount(1);
+    expect(await rows()).toEqual(bare);
+    // Between lines the same threads take room in the flow, which the rows show.
+    await page.evaluate(() => window.harness.threadsMode('between'));
+    await frames(page);
+    expect(await rows()).not.toEqual(bare);
+  });
+}

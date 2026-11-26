@@ -1,7 +1,8 @@
 // Writing comments in the diff: Lo, started on the replay server as rozed-bot, on the comments
-// fixture (`testing/fixtures/comments.sh`), rozed-dev/e2e#94. `c` on a line opens a box under it,
-// whose head says what the comment is on, typed in at once, and `⌘⏎` adds it to a pending review
-// it starts, as `app_comments_write` recorded from the app; the thread comes under the line. `C`
+// fixture (`testing/fixtures/comments.sh`), rozed-dev/e2e#94. With threads between lines, `c` on a
+// line opens a box under it, whose head says what the comment is on, typed in at once, and `⌘⏎`
+// adds it to a pending review it starts, as `app_comments_write` recorded from the app; the thread
+// comes under the line. `C`
 // opens one whose button sends it at once, as `app_comments_now` recorded. `c` with lines selected
 // opens one on them, `s` one with them in a suggestion block, and `c` on a file's header one on
 // the file. A box closed with `Esc` keeps its draft on this computer, and after a restart, here
@@ -11,8 +12,8 @@
 // rozed-bot's own pull request Approve and Request changes are dimmed, and "Submit review" submits
 // the review as `app_comments_write` recorded; Approve can be chosen, and goes, on
 // `app_comments_write_others`, derived from it as if someone else had opened the pull request
-// (`testing/src/derivations.ts`), and the dialog stays to show it's done. With threads beside
-// lines, a box opens in its line's popover over the code, moving no line, sends there, and leaves
+// (`testing/src/derivations.ts`), and the dialog stays to show it's done. Beside lines, as Lo
+// starts, a box opens in its line's popover over the code, moving no line, sends there, and leaves
 // its draft's mark as it closes, which opens it again.
 
 import { writeFileSync } from 'node:fs';
@@ -32,6 +33,7 @@ import {
   appFolder,
   dataFolder,
   DIFF_FIRST,
+  DIFF_FIRST_BETWEEN,
   DIFF_FIRST_VIM,
   expect,
   KEYCHAIN,
@@ -174,14 +176,6 @@ async function onLineTwo(page: Page): Promise<void> {
 /** The comment boxes in the diff. */
 const boxes = (page: Page) => page.locator('[data-lo-diff] .lo-diffcomposer');
 
-/** Shows threads in code beside their lines, as the `comments.threads` setting does. */
-async function threadsBeside(page: Page): Promise<void> {
-  const set = await page.evaluate(() =>
-    window.lo.invoke('settings.set', { key: 'comments.threads', value: 'beside' }),
-  );
-  expect(set.ok).toBe(true);
-}
-
 /**
  * How far below src/backoff.ts's new line 1 its line 10 is drawn, to the pixel: it grows as
  * anything comes between them in the flow, and stays as the pane scrolls.
@@ -252,8 +246,8 @@ async function openSubmit(page: Page): Promise<Locator> {
   return dialog;
 }
 
-test.describe('with a write recorded', () => {
-  test.use({ cassette: 'app_comments_write' });
+test.describe('between lines, with a write recorded', () => {
+  test.use({ cassette: 'app_comments_write', settings: DIFF_FIRST_BETWEEN });
 
   test('`c` on a line opens a box under it, `⌘⏎` adds the comment to a pending review, and `⌘⏎` again submits it', async ({
     page,
@@ -289,7 +283,6 @@ test.describe('beside lines, with a write recorded', () => {
     page,
   }) => {
     await open(page);
-    await threadsBeside(page);
     await onLineTwo(page);
     const before = await lineGap(page);
     await page.keyboard.press('c');
@@ -437,18 +430,10 @@ async function closeEmpty(page: Page, where: string): Promise<void> {
 test('the `+` the pointer brings beside a line opens a box on that line', async ({ page }) => {
   await open(page);
   await onLineTwo(page);
-  // Line 2 of src/backoff.ts is the line over its thread.
-  const thread = await page.evaluate(() => {
-    const diff = window.loDiff;
-    const file = diff?.files.find((each) => each.path === 'src/backoff.ts')?.id;
-    return diff
-      ?.threads()
-      .find((each) => 'line' in each.at && each.at.file === file && each.at.line === 2)?.id;
-  });
-  expect(thread).toBeDefined();
+  // Line 2 of src/backoff.ts, which has a thread.
   const line = page
-    .locator(`[data-lo-diff] .cm-content[aria-label="After"] [data-thread-id="${thread}"]`)
-    .locator('xpath=preceding::div[contains(concat(" ", @class, " "), " cm-line ")][1]');
+    .locator('[data-lo-diff] .cm-content[aria-label="After"] .cm-line')
+    .filter({ hasText: /^const FIRST = 250;$/ });
   const add = page.locator('[data-lo-diff] .lo-gutteradd');
   await expect(add).toBeHidden();
   // A scroll takes the `+` away until the pointer next moves, so the pointer moves once the line
@@ -483,141 +468,146 @@ function footRoom(page: Page): Promise<number> {
     });
 }
 
-test('a box being written in stays on screen whole as the window narrows and the code over it wraps again', async ({
-  app,
-  page,
-}) => {
-  await open(page);
-  await onLineTwo(page);
-  // A short window, so the box opens at the foot of the diff.
-  await app.evaluate(({ BrowserWindow }) =>
-    BrowserWindow.getAllWindows()[0]?.setContentSize(1400, 560),
-  );
-  await expect.poll(() => page.evaluate(() => window.innerHeight)).toBe(560);
-  await page.keyboard.press('c');
-  const box = boxes(page);
-  await expect(box).toHaveCount(1);
-  await page.keyboard.type('Wraps');
-  // Whole on screen, 8 px over the pane's foot.
-  await expect.poll(() => footRoom(page)).toBeGreaterThanOrEqual(7.5);
-  // Narrower, the code over it wraps again, a frame or more after the box did, and moves it down:
-  // its foot comes back on screen.
-  for (const width of [1100, 900, 760]) {
-    await app.evaluate(
-      ({ BrowserWindow }, across) => BrowserWindow.getAllWindows()[0]?.setContentSize(across, 560),
-      width,
+// A box in the flow, under its line: where it stays, and how it comes back.
+test.describe('between lines', () => {
+  test.use({ settings: DIFF_FIRST_BETWEEN });
+
+  test('a box being written in stays on screen whole as the window narrows and the code over it wraps again', async ({
+    app,
+    page,
+  }) => {
+    await open(page);
+    await onLineTwo(page);
+    // A short window, so the box opens at the foot of the diff.
+    await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0]?.setContentSize(1400, 560),
     );
-    await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(width);
-    await expect.poll(() => footRoom(page)).toBeGreaterThanOrEqual(7.5);
-  }
-  await expect(box.locator('.cm-content')).toBeFocused();
-});
-
-test('`c` on lines selected, `s` and a header’s `c` open their boxes; one kept with `Esc` is back after a restart, offline, sending nothing until it’s discarded', async ({
-  app,
-  page,
-  front,
-  remote,
-}) => {
-  test.setTimeout(90_000);
-  const tab = await open(page);
-  await onLineTwo(page);
-  // Shift selects, as in text anywhere, and `c` opens a box under the last of the lines selected,
-  // on them all. Closed, the cursor is there.
-  for (const key of ['Shift+ArrowDown', 'Shift+ArrowDown', 'c']) await page.keyboard.press(key);
-  await closeEmpty(page, 'Lines 2–3');
-  await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 3');
-  // `s`: the line in a suggestion block, the cursor in it.
-  await page.keyboard.press('s');
-  await expect(boxes(page).locator('.cm-content')).toContainText('```suggestion');
-  await closeEmpty(page, 'Line 3');
-  // `c` on the file's header: on the file, under it.
-  for (const key of ['g', 'g', ']', 'f']) await page.keyboard.press(key);
-  await expect.poll(() => cursor(page)).toBe('src/backoff.ts header');
-  await page.keyboard.press('c');
-  await closeEmpty(page, 'File');
-  for (const key of ['j', 'j']) await page.keyboard.press(key);
-  await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 2');
-  await page.keyboard.press('c');
-  const kept = boxes(page);
-  await expect(kept).toHaveCount(1);
-  // The box opens in view, all of it, with its controls for closing and discarding.
-  await expect(kept).toBeInViewport({ ratio: 1 });
-  await expect(kept.getByRole('button', { name: 'Close comment box' })).toBeVisible();
-  await expect(kept.getByRole('button', { name: 'Discard draft' })).toBeVisible();
-  await page.keyboard.type('Kept for later.');
-  // One `Esc` closes it, and keeps the draft.
-  await page.keyboard.press('Escape');
-  await expect(kept).toHaveCount(0);
-  // Saved on this computer, as the box closed.
-  await expect
-    .poll(async () =>
-      JSON.stringify(
-        await page.evaluate((id) => window.lo.invoke('comments.current', { id }), tab),
-      ),
-    )
-    .toContain('Kept for later.');
-  await app.close();
-
-  // GitHub goes away, at the same address.
-  await front.close();
-  const again = await launchOffline(front.origin, remote);
-  try {
-    const box = boxes(again.page);
-    await expect(box).toHaveCount(1, { timeout: 30_000 });
-    await expect(box).toContainText(/Draft from .+/);
-    await expect(box.locator('.cm-content')).toHaveText('Kept for later.');
-    await expect
-      .poll(() =>
-        again.page.evaluate(() => document.activeElement?.closest('.lo-diffcomposer') === null),
-      )
-      .toBe(true);
-    // Offline, its buttons are dimmed, saying why, and `⌘⏎` sends nothing: the draft stays.
-    const add = box.getByRole('button', { name: /Add to review/ });
-    await expect(add).toHaveAccessibleDescription('Offline', { timeout: 20_000 });
-    await box.locator('.cm-content').click();
-    await again.page.keyboard.press(`${cmd}+Enter`);
+    await expect.poll(() => page.evaluate(() => window.innerHeight)).toBe(560);
+    await page.keyboard.press('c');
+    const box = boxes(page);
     await expect(box).toHaveCount(1);
+    await page.keyboard.type('Wraps');
+    // Whole on screen, 8 px over the pane's foot.
+    await expect.poll(() => footRoom(page)).toBeGreaterThanOrEqual(7.5);
+    // Narrower, the code over it wraps again, a frame or more after the box did, and moves it down:
+    // its foot comes back on screen.
+    for (const width of [1100, 900, 760]) {
+      await app.evaluate(
+        ({ BrowserWindow }, across) =>
+          BrowserWindow.getAllWindows()[0]?.setContentSize(across, 560),
+        width,
+      );
+      await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(width);
+      await expect.poll(() => footRoom(page)).toBeGreaterThanOrEqual(7.5);
+    }
+    await expect(box.locator('.cm-content')).toBeFocused();
+  });
+
+  test('`c` on lines selected, `s` and a header’s `c` open their boxes; one kept with `Esc` is back after a restart, offline, sending nothing until it’s discarded', async ({
+    app,
+    page,
+    front,
+    remote,
+  }) => {
+    test.setTimeout(90_000);
+    const tab = await open(page);
+    await onLineTwo(page);
+    // Shift selects, as in text anywhere, and `c` opens a box under the last of the lines selected,
+    // on them all. Closed, the cursor is there.
+    for (const key of ['Shift+ArrowDown', 'Shift+ArrowDown', 'c']) await page.keyboard.press(key);
+    await closeEmpty(page, 'Lines 2–3');
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 3');
+    // `s`: the line in a suggestion block, the cursor in it.
+    await page.keyboard.press('s');
+    await expect(boxes(page).locator('.cm-content')).toContainText('```suggestion');
+    await closeEmpty(page, 'Line 3');
+    // `c` on the file's header: on the file, under it.
+    for (const key of ['g', 'g', ']', 'f']) await page.keyboard.press(key);
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts header');
+    await page.keyboard.press('c');
+    await closeEmpty(page, 'File');
+    for (const key of ['j', 'j']) await page.keyboard.press(key);
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 2');
+    await page.keyboard.press('c');
+    const kept = boxes(page);
+    await expect(kept).toHaveCount(1);
+    // The box opens in view, all of it, with its controls for closing and discarding.
+    await expect(kept).toBeInViewport({ ratio: 1 });
+    await expect(kept.getByRole('button', { name: 'Close comment box' })).toBeVisible();
+    await expect(kept.getByRole('button', { name: 'Discard draft' })).toBeVisible();
+    await page.keyboard.type('Kept for later.');
+    // One `Esc` closes it, and keeps the draft.
+    await page.keyboard.press('Escape');
+    await expect(kept).toHaveCount(0);
+    // Saved on this computer, as the box closed.
     await expect
       .poll(async () =>
         JSON.stringify(
-          await again.page.evaluate((id) => window.lo.invoke('comments.current', { id }), tab),
+          await page.evaluate((id) => window.lo.invoke('comments.current', { id }), tab),
         ),
       )
-      .toMatch(/"text":"Kept for later\.".*"sending":null/);
-    // What the foot's "Discard draft" does is on the frame's right-click menu too, and only what
-    // the box offers.
-    await box.locator('.lo-diffcomposer__head').click({ button: 'right' });
-    const menu = again.page.getByRole('menu', { name: 'Comment box actions' });
-    await expect(menu.getByRole('menuitem', { name: /^Discard draft/ })).toBeVisible();
-    await expect(menu.getByRole('menuitem', { name: /^Send it anyway/ })).toHaveCount(0);
-    await again.page.keyboard.press('Escape');
-    await expect(menu).toHaveCount(0);
-    await box.getByRole('button', { name: 'Discard draft' }).click();
-    await expect(box).toHaveCount(0);
-    // A toast says so, and its "Undo" opens the box again where it was, with its text.
-    const discarded = again.page.locator('.toast', { hasText: 'Discarded draft' });
-    await discarded.getByRole('button', { name: 'Undo' }).click();
-    await expect(box).toHaveCount(1);
-    await expect(box.locator('.cm-content')).toHaveText('Kept for later.');
-    await expect(discarded).toHaveCount(0);
-    // Emptied, the box has nothing to discard, and says so.
-    await box.locator('.cm-content').click();
-    await again.page.keyboard.press(`${cmd}+a`);
-    await again.page.keyboard.press('Backspace');
-    const discard = box.getByRole('button', { name: 'Discard draft' });
-    await expect(discard).toBeDisabled();
-    await expect(discard).toHaveAccessibleDescription('Nothing to discard');
-  } finally {
-    await again.app.close();
-  }
+      .toContain('Kept for later.');
+    await app.close();
+
+    // GitHub goes away, at the same address.
+    await front.close();
+    const again = await launchOffline(front.origin, remote);
+    try {
+      const box = boxes(again.page);
+      await expect(box).toHaveCount(1, { timeout: 30_000 });
+      await expect(box).toContainText(/Draft from .+/);
+      await expect(box.locator('.cm-content')).toHaveText('Kept for later.');
+      await expect
+        .poll(() =>
+          again.page.evaluate(() => document.activeElement?.closest('.lo-diffcomposer') === null),
+        )
+        .toBe(true);
+      // Offline, its buttons are dimmed, saying why, and `⌘⏎` sends nothing: the draft stays.
+      const add = box.getByRole('button', { name: /Add to review/ });
+      await expect(add).toHaveAccessibleDescription('Offline', { timeout: 20_000 });
+      await box.locator('.cm-content').click();
+      await again.page.keyboard.press(`${cmd}+Enter`);
+      await expect(box).toHaveCount(1);
+      await expect
+        .poll(async () =>
+          JSON.stringify(
+            await again.page.evaluate((id) => window.lo.invoke('comments.current', { id }), tab),
+          ),
+        )
+        .toMatch(/"text":"Kept for later\.".*"sending":null/);
+      // What the foot's "Discard draft" does is on the frame's right-click menu too, and only what
+      // the box offers.
+      await box.locator('.lo-diffcomposer__head').click({ button: 'right' });
+      const menu = again.page.getByRole('menu', { name: 'Comment box actions' });
+      await expect(menu.getByRole('menuitem', { name: /^Discard draft/ })).toBeVisible();
+      await expect(menu.getByRole('menuitem', { name: /^Send it anyway/ })).toHaveCount(0);
+      await again.page.keyboard.press('Escape');
+      await expect(menu).toHaveCount(0);
+      await box.getByRole('button', { name: 'Discard draft' }).click();
+      await expect(box).toHaveCount(0);
+      // A toast says so, and its "Undo" opens the box again where it was, with its text.
+      const discarded = again.page.locator('.toast', { hasText: 'Discarded draft' });
+      await discarded.getByRole('button', { name: 'Undo' }).click();
+      await expect(box).toHaveCount(1);
+      await expect(box.locator('.cm-content')).toHaveText('Kept for later.');
+      await expect(discarded).toHaveCount(0);
+      // Emptied, the box has nothing to discard, and says so.
+      await box.locator('.cm-content').click();
+      await again.page.keyboard.press(`${cmd}+a`);
+      await again.page.keyboard.press('Backspace');
+      const discard = box.getByRole('button', { name: 'Discard draft' });
+      await expect(discard).toBeDisabled();
+      await expect(discard).toHaveAccessibleDescription('Nothing to discard');
+    } finally {
+      await again.app.close();
+    }
+  });
 });
 
 test('beside lines, `c` opens a box alone over the code, and `Esc` leaves its draft’s mark, which opens it again', async ({
   page,
 }) => {
   await open(page);
-  await threadsBeside(page);
   await onLineTwo(page);
   await page.keyboard.press('j');
   await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 3');

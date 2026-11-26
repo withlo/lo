@@ -155,7 +155,7 @@ export default defineCommands('diff', {
     keys: ['g w'],
     overVim: true,
     when: normal,
-    bar: { menu: 'View', section: 'diff', order: 30 },
+    bar: { menu: 'View', section: 'shows', order: 10 },
     toggle: 'switch',
   },
   openRun: {

@@ -27,7 +27,7 @@ import {
   setBlockThreads,
 } from '../../overview/window/shared.ts';
 import { revisionLabel, revisionsOf } from '../../revisions/window/shared.ts';
-import { settingRow } from '../../settings/window/shared.ts';
+import { changeSetting, settingNow, settingRow } from '../../settings/window/shared.ts';
 import { setLayerCounts } from '../../stacks/window/shared.ts';
 import { viewIds } from '../../tab/contract.ts';
 import {
@@ -47,7 +47,9 @@ import KeptRow from './KeptRow.tsx';
 import {
   atWork,
   edit,
+  followFailures,
   keepActsOf,
+  markFailures,
   remove,
   reply,
   resolve,
@@ -253,6 +255,14 @@ export default {
     closeThread: { run: closePopover, enabled: popoverPinned },
     nextComment: { run: moveRing(1) },
     previousComment: { run: moveRing(-1) },
+    threadsBeside: {
+      run: () => void changeSetting(threadsSetting, 'beside'),
+      checked: () => settingNow(threadsSetting) === 'beside',
+    },
+    threadsBetween: {
+      run: () => void changeSetting(threadsSetting, 'between'),
+      checked: () => settingNow(threadsSetting) === 'between',
+    },
     reply: { run: actOn(reply), enabled: enabled(writable) },
     resolve: {
       // From the line beside lines, the thread's popover pins first, and that's all: where it
@@ -403,6 +413,8 @@ export default {
     });
     main().subscribe('review', takeReview);
     main().subscribe('acts', takeActs);
+    // A thread's mark has the dot while its card says a change asked of it failed.
+    followFailures(changed);
     setThreader({
       threadsIn(view, drawn) {
         // A view drawn before main said anything of it asks main once.
@@ -410,7 +422,7 @@ export default {
         const before = countsIn(view);
         const placed = placedIn(view, drawn);
         if (!sameCounts(before, placed.byKey)) fileCountsChanged(view);
-        return placed;
+        return { ...placed, threads: markFailures(view, placed.threads) };
       },
       render(tab, toggle) {
         knowPull(tab);
@@ -433,7 +445,8 @@ export default {
         if (threads === undefined) catchUp(block.tab, () => changed(block.tab));
         if (threads?.status === 'run') return [];
         const known = revisionsOf(block.tab);
-        return threadsOnBlock(threads?.threads ?? [], block, (head) => revisionLabel(known, head));
+        const label = (head: string) => revisionLabel(known, head);
+        return markFailures(block.tab, threadsOnBlock(threads?.threads ?? [], block, label));
       },
       settled,
       render(tab, toggle) {

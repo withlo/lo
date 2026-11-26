@@ -303,11 +303,18 @@ test('while an upload is held on its way, nothing is sent; its row stays as tall
   await expect(addToReview).not.toHaveAttribute('aria-disabled');
 
   // Another, held as the window is loaded again: the draft comes back without its placeholder,
-  // which Lo takes out, and the box says which file to attach again.
+  // which Lo takes out, and the box says which file to attach again. Beside lines, as Lo starts,
+  // the draft is the dot on its line's thread, which opens it.
   gate.shut();
   await drop(page, [{ name: 'lo-attachment.png', bytes: PNG }]);
   await expect.poll(() => gate.holding, { timeout: 20_000 }).toBe(1);
   await page.reload();
+  const mark = page.getByRole('button', {
+    name: 'Unresolved thread · line 2 · draft',
+    exact: true,
+  });
+  await expect(mark).toBeVisible({ timeout: 20_000 });
+  await mark.click();
   await expect(box).toContainText('Couldn’t attach lo-attachment.png', { timeout: 20_000 });
   // The note has the button, beside the foot's own.
   await expect(
