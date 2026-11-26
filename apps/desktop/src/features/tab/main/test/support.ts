@@ -17,7 +17,7 @@ import {
   type PollEvent,
   type RepoAccount,
 } from '@lo/github';
-import { MemoryPollCache, replayFetch } from '@lo/testing';
+import { fileFolders, MemoryPollCache, replayFetch } from '@lo/testing';
 import { gitProgram, writeAppRemote } from '@lo/testing/git';
 import { onTestFinished } from 'vitest';
 
@@ -43,11 +43,12 @@ export function folder(prefix = 'lo-tab-'): string {
   return path;
 }
 
+const remoteFolder = fileFolders('lo-tab-remote-');
 let remote: string | undefined;
 
 /** The e2e pull request's remote, made once for the test file. */
 export function appRemote(): string {
-  remote ??= writeAppRemote(realpathSync(mkdtempSync(join(tmpdir(), 'lo-tab-remote-'))));
+  remote ??= writeAppRemote(remoteFolder());
   return remote;
 }
 

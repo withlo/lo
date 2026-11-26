@@ -51,15 +51,16 @@ async function fixture(build: (remote: RemoteRepo) => string): Promise<Fixture> 
 
 /** A pull request of `count` files with long paths, each a different size. */
 function manyFiles(count: number): Promise<Fixture> {
-  return fixture((remote) => {
-    for (let i = 0; i < count; i++) {
-      const path =
+  return fixture((remote) =>
+    remote.commitFiles(
+      Array.from({ length: count }, (_, i) => [
         `packages/${'component'.repeat(4)}-${String(i % 50).padStart(2, '0')}/source/` +
-        `${'directory'.repeat(4)}/file-${String(i).padStart(5, '0')}.txt`;
-      remote.write(path, `file ${i}\n${'x'.repeat(i % 97)}\n`);
-    }
-    return remote.commit('head');
-  });
+          `${'directory'.repeat(4)}/file-${String(i).padStart(5, '0')}.txt`,
+        `file ${i}\n${'x'.repeat(i % 97)}\n`,
+      ]),
+      'head',
+    ),
+  );
 }
 
 /** The paths of `entries` that are files, as `downloadFiles` takes them. */
@@ -240,11 +241,15 @@ test('five thousand files download in one fetch', async () => {
 });
 
 test('past ten thousand files a download takes another fetch', async () => {
-  const f = await fixture((remote) => {
-    for (let i = 0; i < 10_001; i++)
-      remote.write(`d${String(i % 100).padStart(3, '0')}/f${i}.txt`, `${i}\n`);
-    return remote.commit('head');
-  });
+  const f = await fixture((remote) =>
+    remote.commitFiles(
+      Array.from({ length: 10_001 }, (_, i) => [
+        `d${String(i % 100).padStart(3, '0')}/f${i}.txt`,
+        `${i}\n`,
+      ]),
+      'head',
+    ),
+  );
   const paths = filePaths(await f.repo.tree(f.head));
   expect(paths).toHaveLength(10_002);
   const before = { packs: packs(f.repo.folder), fetches: f.git.count('fetch') };
@@ -440,19 +445,21 @@ test('paths that arent files are refused and submodules skipped', async () => {
 });
 
 test('a trees attributes are answered by one check attr', async () => {
-  const f = await fixture((remote) => {
-    remote.write('.gitattributes', '*.gen.txt linguist-generated\n');
-    remote.write('a/.gitattributes', '*.txt linguist-generated=false\n');
-    for (let i = 0; i < 3000; i++) {
-      const name = i % 10 === 0 ? 'gen' : 'plain';
-      remote.write(
-        `packages/${'component'.repeat(4)}-${String(i % 50).padStart(2, '0')}/` +
-          `${'directory'.repeat(3)}/file-${String(i).padStart(5, '0')}.${name}.txt`,
-        `${i}\n`,
-      );
-    }
-    return remote.write('a/x.gen.txt', 'x\n').commit('head');
-  });
+  const f = await fixture((remote) =>
+    remote.commitFiles(
+      [
+        ['.gitattributes', '*.gen.txt linguist-generated\n'],
+        ['a/.gitattributes', '*.txt linguist-generated=false\n'],
+        ...Array.from({ length: 3000 }, (_, i): [string, string] => [
+          `packages/${'component'.repeat(4)}-${String(i % 50).padStart(2, '0')}/` +
+            `${'directory'.repeat(3)}/file-${String(i).padStart(5, '0')}.${i % 10 === 0 ? 'gen' : 'plain'}.txt`,
+          `${i}\n`,
+        ]),
+        ['a/x.gen.txt', 'x\n'],
+      ],
+      'head',
+    ),
+  );
   const paths = (await f.repo.tree(f.head)).map((entry) => entry.path);
   expect(paths).toHaveLength(3004);
   expect(await f.repo.downloadAttributes(f.head, paths)).toEqual([]);

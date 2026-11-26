@@ -14,7 +14,7 @@ import {
   Token,
   unchecked,
 } from '@lo/github';
-import { replayFetch } from '@lo/testing';
+import { fileFolders, replayFetch } from '@lo/testing';
 import { APP_PULL, gitProgram, writeAppRemote } from '@lo/testing/git';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 
@@ -47,6 +47,7 @@ function folder(prefix = 'lo-revisions-'): string {
   return path;
 }
 
+const remoteFolder = fileFolders('lo-revisions-remote-');
 const remotes = new Map<boolean, string>();
 
 /**
@@ -56,9 +57,7 @@ const remotes = new Map<boolean, string>();
 async function e2eClone(firstPush = true): Promise<Repo> {
   let remote = remotes.get(firstPush);
   if (remote === undefined) {
-    remote = writeAppRemote(realpathSync(mkdtempSync(join(tmpdir(), 'lo-revisions-remote-'))), {
-      firstPush,
-    });
+    remote = writeAppRemote(remoteFolder(), { firstPush });
     remotes.set(firstPush, remote);
   }
   const git = createGit({

@@ -106,6 +106,36 @@ export class RemoteRepo {
   }
 
   /**
+   * Commits `files`, by path, over the last commit, and returns the commit, in one git
+   * (`fast-import`), where writing thousands and `git add` take seconds. Unlike {@link commit}, it
+   * commits nothing else from the working copy, and takes each file's bytes and name as given: no
+   * `.gitattributes` filter or line-ending conversion, and a Mac's decomposed name stays so. Then
+   * the working copy's tracked files are the commit's, losing any change to them; untracked files
+   * stay.
+   */
+  commitFiles(files: Iterable<readonly [string, string]>, message: string): string {
+    const branch = git(this.work, 'symbolic-ref', '-q', 'HEAD');
+    const stream: Buffer[] = [];
+    const data = (text: string) => {
+      const bytes = Buffer.from(text);
+      stream.push(Buffer.from(`data ${bytes.length}\n`), bytes, Buffer.from('\n'));
+    };
+    stream.push(Buffer.from(`commit ${branch}\ncommitter Lo test <test@lo.invalid> now\n`));
+    // As `git commit -m` stores it.
+    data(`${message}\n`);
+    stream.push(Buffer.from(`from ${branch}^0\n`));
+    for (const [path, contents] of files) {
+      // Unquoted, a path runs to the end of its line.
+      if (path.includes('\n') || path.startsWith('"')) throw new Error(`can't import ${path}`);
+      stream.push(Buffer.from(`M 100644 inline ${path}\n`));
+      data(contents);
+    }
+    gitBytes(this.work, ['fast-import', '--quiet', '--date-format=now'], Buffer.concat(stream));
+    git(this.work, 'reset', '-q', '--hard');
+    return this.head();
+  }
+
+  /**
    * Commits the working copy and `files`, whose names a disk may refuse (a name that isn't
    * UTF-8), which go straight into the index.
    */
