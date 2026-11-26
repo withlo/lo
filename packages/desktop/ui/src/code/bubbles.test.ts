@@ -42,6 +42,41 @@ describe('a thread’s bubble', () => {
     });
   });
 
+  test('a draft in a closed box puts the dot on its thread, in the thread’s colour, and says so', () => {
+    const draft = { words: '' };
+    expect(bubbleOf([marked('a')], draft)).toEqual({
+      icon: 'message-square-dot',
+      tone: 'warn',
+      name: 'Unresolved thread · lines 10–35 · draft',
+      thread: 'a',
+    });
+    expect(bubbleOf([marked('a', { resolved: true })], draft)).toMatchObject({
+      icon: 'message-square-dot',
+      tone: 'quiet',
+    });
+    expect(bubbleOf([marked('a', { resolved: true }), marked('b')], draft)).toMatchObject({
+      icon: 'messages-square',
+      name: '2 threads · line 35 · 1 unresolved · draft',
+    });
+  });
+
+  test('a draft on lines with no thread has its own, dashed and muted, named for its lines', () => {
+    const bubble = bubbleOf([], { words: 'lines 4–6' });
+    expect(bubble).toEqual({
+      icon: 'message-square-dashed',
+      tone: 'muted',
+      name: 'Draft · lines 4–6',
+      thread: '',
+      draft: true,
+    });
+    // Its click runs Comment on its line, as `c` there does, which opens its box again.
+    const control = bubbleElement(bubble, { open: false, className: 'lo-lanebubble' });
+    expect(control.dataset.command).toBe('comments.comment');
+    expect(control.dataset.draft).toBe('');
+    expect(control.dataset.thread).toBeUndefined();
+    expect(control.classList.contains('lo-bubble--muted')).toBe(true);
+  });
+
   test('out of date, it keeps its state’s icon in grey, and says its revision', () => {
     const words = { lines: 'line 9 · r1', line: 'line 9 · r1' };
     expect(bubbleOf([marked('a', { outdated: true, words })])).toEqual({

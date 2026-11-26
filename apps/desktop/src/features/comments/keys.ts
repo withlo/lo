@@ -123,7 +123,8 @@ export default defineCommands(
     },
     /**
      * Just after a line refused a comment, as GitHub takes none there, a comment on its file instead.
-     * Otherwise it's Vim's `⏎`.
+     * Beside lines, on a line a draft's mark is on, its box opened again, as a click on the mark
+     * does. Otherwise it's Vim's `⏎`.
      */
     onFileInstead: {
       label: 'Comment on file',

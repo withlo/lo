@@ -20,13 +20,15 @@ function diffOnScreen(): ReturnType<typeof writingDiff> {
 }
 
 /**
- * `⏎` on a thread: its popover pinned, focus in it on its first comment. Just after a line refused
- * a comment, a comment on its file instead, as `⏎` is on a line with no mark.
+ * `⏎` on a thread: its popover pinned, focus in it on its first comment, and a draft of yours in
+ * it, in a box that's closed, opened again there, focus in its box. Just after a line refused a
+ * comment, a comment on its file instead, as `⏎` is on a line with no mark.
  */
 export function showPopover(target: Target): void {
   const tab = activeTab();
   if (tab?.kind !== 'pull' || takeOffer(tab) || target.kind !== 'thread') return;
-  diffOnScreen()?.pinThread(target.thread, true);
+  const diff = diffOnScreen();
+  if (diff?.pinThread(target.thread, true)) diff.openDraft({ thread: target.thread });
 }
 
 /** Whether a thread's popover can open: the diff is drawn. */
@@ -39,9 +41,9 @@ export function closePopover(): void {
   diffOnScreen()?.closePopover();
 }
 
-/** Whether a thread's popover is pinned, which `Esc` closes. */
+/** Whether a thread's popover is pinned, or a new comment's, which `Esc` closes. */
 export function popoverPinned(): true | string {
-  return (diffOnScreen()?.pinned().length ?? 0) > 0 ? true : '';
+  return diffOnScreen()?.popoverPinned() ? true : '';
 }
 
 /** `j` or `k` in a thread's popover: the ring goes to the next comment, or the one before. */

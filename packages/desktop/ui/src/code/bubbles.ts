@@ -2,13 +2,18 @@
 // gutter, as an icon that says what the thread is, in amber while it's unresolved or pending and in
 // grey once it's resolved or out of date, and as a control that opens or collapses it. The lane
 // beside the lines draws it (`lanes.ts`), and a file's header draws a file's own threads' bubble.
+// Beside lines, words of yours not sent put the dot on a thread's bubble, and a draft on lines with
+// no thread has a bubble of its own, dashed and muted, whose click opens its box again.
 
 import { iconElement } from '../iconElement.ts';
 import type { IconName } from '../icons.ts';
 import { type ThreadMark, type ThreadView, viewControls } from './api.ts';
 
-/** A mark's colour: amber while its thread is unresolved or pending, grey otherwise. */
-export type LaneTone = 'warn' | 'quiet';
+/**
+ * A mark's colour: amber while its thread is unresolved or pending, grey otherwise, and a draft's
+ * own, with no thread, muted.
+ */
+export type LaneTone = 'warn' | 'quiet' | 'muted';
 
 /** What a bubble's tooltip says a click does: the thread's command, by what it would do. */
 export const COLLAPSE_THREAD = 'Collapse thread';
@@ -20,9 +25,14 @@ export interface Bubble {
   readonly tone: LaneTone;
   /** What a screen reader hears it as: what the threads are, and where. */
   readonly name: string;
-  /** The thread a click opens or collapses: the first of those there. */
+  /** The thread a click opens or collapses: the first of those there. None for a draft's own. */
   readonly thread: string;
+  /** It's a draft's own, on lines with no thread: a click opens its box again. */
+  readonly draft?: boolean | undefined;
 }
+
+/** What a mark says of a draft: the draft's own, "Draft · line 3", and of a thread's, after it. */
+export const DRAFT = 'Draft';
 
 /** A thread as its mark shows it: what the caller said of it, unresolved on one line without. */
 function markOf(thread: ThreadView): ThreadMark {
@@ -53,13 +63,28 @@ function joined(...words: readonly string[]): string {
 /**
  * The bubble beside a line where `threads` end, in their order: its icon, colour and name. One
  * thread's says what it is: `message-square` unresolved, `message-square-check` resolved,
- * `message-square-dot` holding comments not yet sent, grey once it's resolved or out of date, and
- * amber while all of it is pending. Several are `messages-square`, amber while any is unresolved
- * or pending. No digits: the count is in its name, and in the file's header.
+ * `message-square-dot` holding words of yours not sent, comments pending in your review or a
+ * `draft` in a box that's closed, grey once it's resolved or out of date, and amber while all of it
+ * is pending. Several are `messages-square`, amber while any is unresolved or pending. No digits:
+ * the count is in its name, and in the file's header. With no threads, it's the `draft`'s own,
+ * `message-square-dashed`, muted, named for its lines, `draft.words`.
  */
-export function bubbleOf(threads: readonly ThreadView[]): Bubble {
-  const first = threads[0]!;
+export function bubbleOf(
+  threads: readonly ThreadView[],
+  draft?: { readonly words: string },
+): Bubble {
+  const first = threads[0];
+  if (first === undefined) {
+    return {
+      icon: 'message-square-dashed',
+      tone: 'muted',
+      name: joined(DRAFT, draft?.words ?? ''),
+      thread: '',
+      draft: true,
+    };
+  }
   const marks = threads.map(markOf);
+  const drafted = draft === undefined ? '' : DRAFT.toLowerCase();
   if (threads.length > 1) {
     const unresolved = marks.filter((mark) => !mark.resolved).length;
     const where = marks[0]!.words.line;
@@ -70,13 +95,14 @@ export function bubbleOf(threads: readonly ThreadView[]): Bubble {
         `${threads.length} threads`,
         where,
         unresolved > 0 ? `${unresolved} unresolved` : '',
+        drafted,
       ),
       thread: first.id,
     };
   }
   const mark = marks[0]!;
   const icon: IconName =
-    mark.pending !== undefined
+    mark.pending !== undefined || draft !== undefined
       ? 'message-square-dot'
       : mark.resolved
         ? 'message-square-check'
@@ -85,7 +111,7 @@ export function bubbleOf(threads: readonly ThreadView[]): Bubble {
   return {
     icon,
     tone: amber ? 'warn' : 'quiet',
-    name: joined(kind(mark), mark.words.lines),
+    name: joined(kind(mark), mark.words.lines, drafted),
     thread: first.id,
   };
 }
@@ -93,7 +119,13 @@ export function bubbleOf(threads: readonly ThreadView[]): Bubble {
 /** Whether two bubbles draw the same. */
 export function sameBubble(a: Bubble | undefined, b: Bubble | undefined): boolean {
   if (!a || !b) return a === b;
-  return a.icon === b.icon && a.tone === b.tone && a.name === b.name && a.thread === b.thread;
+  return (
+    a.icon === b.icon &&
+    a.tone === b.tone &&
+    a.name === b.name &&
+    a.thread === b.thread &&
+    a.draft === b.draft
+  );
 }
 
 /** `element`'s colour, as its style has it now: reading it works its style out. */
@@ -122,7 +154,8 @@ export interface BubbleDrawing {
  * A bubble as a control: a click opens or collapses its thread, as `z a` does, and its tooltip
  * says which, with the key, or without one where the view runs the click itself. A screen reader
  * hears it as a button named for its threads, which says whether the thread is open. It's no stop
- * for `Tab`.
+ * for `Tab`. A draft's own runs Comment on its line, as `c` there does, which opens its box again,
+ * and its tooltip says so.
  */
 export function bubbleElement(
   bubble: Bubble,
@@ -143,12 +176,16 @@ export function bubbleElement(
   }
   control.setAttribute('role', 'button');
   control.setAttribute('aria-label', bubble.name);
-  control.dataset.thread = bubble.thread;
   control.setAttribute('aria-expanded', String(open));
-  if (beside) {
+  if (bubble.draft) {
+    control.dataset.command = viewControls.comment;
+    control.dataset.draft = '';
+  } else if (beside) {
+    control.dataset.thread = bubble.thread;
     control.dataset.command = viewControls.popover;
     control.dataset.beside = '';
   } else {
+    control.dataset.thread = bubble.thread;
     if (command) control.dataset.command = viewControls.thread;
     control.dataset.tip = open ? COLLAPSE_THREAD : EXPAND_THREAD;
   }

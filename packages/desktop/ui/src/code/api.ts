@@ -287,8 +287,50 @@ export type ThreadsMode = 'beside' | 'between';
 export interface PopoverView {
   readonly threads: readonly ThreadView[];
   readonly pinned: boolean;
-  /** What a screen reader calls it: its first thread's mark's name, "Unresolved thread · line 5". */
+  /**
+   * What a screen reader calls it: its first thread's mark's name, "Unresolved thread · line 5", or
+   * a draft's alone, "Draft · line 5".
+   */
   readonly label: string;
+  /**
+   * The comment box open in it, if one is: in thread `thread`, a reply's in place of the row that
+   * offers one, or an edit's in place of comment `edits`; or, in no thread it shows, a new
+   * comment's, after the threads. The caller draws the slot the view puts the box in: the reply's
+   * (`REPLY_SLOT`), the comment's (`EDIT_SLOT`) or the new comment's (`NEW_SLOT`). A popover may
+   * hold the box alone.
+   */
+  readonly box?: PopoverBox | undefined;
+}
+
+/** Where a comment box goes in a popover: see {@link PopoverView.box}. */
+export interface PopoverBox {
+  /** The thread it's written in, if it's a reply's or an edit's. */
+  readonly thread?: string | undefined;
+  /** The comment of that thread it edits. */
+  readonly edits?: string | undefined;
+}
+
+/**
+ * Beside lines, a comment not sent, which its lines' mark shows: a new comment's while its box is
+ * open, and a draft once its box closed. On lines, or on a file, with no thread there, it's a
+ * `message-square-dashed` on its last line, its range bracketed; in a thread, or ending on a line a
+ * thread ends on too, the dot on the thread's bubble.
+ */
+export interface DraftMark {
+  /** Where it is: a line, lines, a file, or a thread it's a reply or an edit in. */
+  readonly at: Place | Span | OnFile | { readonly thread: string };
+  /** Its lines as a mark's name says them, after "Draft": `lines 10–35`, `line 3`, `file`. */
+  readonly words: string;
+  /**
+   * Its box is open, a new comment's: where its lines have no thread its mark is the popover's the
+   * box is in, and it puts no dot on a thread's.
+   */
+  readonly shown?: boolean | undefined;
+  /**
+   * Opens its box again, focused: a click on its mark or `⏎` on its line does, where the mark is
+   * its own, or a thread's that it's in.
+   */
+  readonly open: () => void;
 }
 
 /** What the caller drew in a popover, which the view keeps up to date and takes down. */
@@ -649,10 +691,22 @@ export interface DiffView extends KeySource {
    * the code, drawn by the `popover` `setThreads` was last given. Its pointer resting on a mark
    * previews its threads, and a click, `pinThread` or `]t` pins them, until `Esc`, Close, a click
    * on the mark again, a press outside, or the cursor leaving their lines closes it. A popover never
-   * covers its lines unless they fill the pane. A box opened beside lines is still drawn under its
-   * line, where the popover goes under it.
+   * covers its lines unless they fill the pane. Beside lines a comment box opens in the popover too
+   * (`compose`). A box open as the mode changes closes, keeping its draft.
    */
   setThreadsMode(mode: ThreadsMode): void;
+  /**
+   * Replaces the drafts the marks show beside lines: a new comment's while its box is open, and the
+   * words of each comment not sent once its box closed. Nothing on screen moves for them, and
+   * between lines nothing draws them.
+   */
+  setDrafts(drafts: readonly DraftMark[]): void;
+  /**
+   * Beside lines, opens the box of the draft whose mark is on line `at`, or on thread `thread`'s
+   * line, as a click on the mark does: one in a thread the popover there shows first. Says whether
+   * there was one.
+   */
+  openDraft(at: Place | { readonly thread: string }): boolean;
   /**
    * Beside lines, pins the popover of the line thread `id` is on, as a key opens it: under the
    * line, the pane scrolled the least that shows it whole, the cursor on the line. One pinned there
@@ -668,10 +722,16 @@ export interface DiffView extends KeySource {
    * the view has it.
    */
   showThread(id: string): boolean;
-  /** The threads of the popover pinned, by their ids: none while it's closed or a preview. */
-  pinned(): readonly string[];
   /**
-   * Closes the popover, as `Esc` does: focus in it goes to its line. Says whether one was open.
+   * The threads of the popover pinned, by their ids: none while it's closed or a preview, or while
+   * it holds a new comment's box alone.
+   */
+  pinned(): readonly string[];
+  /** Whether the popover is pinned, with threads in it or a comment box alone. */
+  popoverPinned(): boolean;
+  /**
+   * Closes the popover, as `Esc` does: focus in it goes to its line. A comment box open in it
+   * closes first, keeping its draft. Says whether one was open.
    */
   closePopover(): boolean;
   /**
@@ -779,6 +839,17 @@ export interface DiffView extends KeySource {
    * boxes of their own, as a reply's in a thread is beside a comment on its line. The box's line or
    * header stays where it is as it opens, grows and closes. A box on a file goes where its threads
    * do, whether or not the file shows its lines.
+   *
+   * Beside lines, nothing opens between lines: the box opens in the popover, pinned under its last
+   * line, and no line moves. A new comment's comes after the line's threads, or alone, its lines
+   * tinted and bracketed; a reply's takes the place of its thread's row that offers one, and an
+   * edit's the comment's. One box is open at a time: one open already closes first, keeping its
+   * draft, and so does one in a popover that moves to another line. Opened by the reader, the pane
+   * scrolls the least that shows the popover whole; opened for them, as one opened as it was, it
+   * scrolls nothing. While a box is open in it, only the box closing closes the popover: a press
+   * outside, or the cursor leaving its lines, leaves it be. A new comment's popover, opened for its
+   * box, closes with it, unless what it sent is in it. Focus in a box closing goes back where it
+   * came from: into the popover, or to its line.
    */
   compose(
     at: Place | Span | { thread: string } | OnFile,

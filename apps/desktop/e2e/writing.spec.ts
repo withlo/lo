@@ -11,7 +11,9 @@
 // rozed-bot's own pull request Approve and Request changes are dimmed, and "Submit review" submits
 // the review as `app_comments_write` recorded; Approve can be chosen, and goes, on
 // `app_comments_write_others`, derived from it as if someone else had opened the pull request
-// (`testing/src/derivations.ts`), and the dialog stays to show it's done.
+// (`testing/src/derivations.ts`), and the dialog stays to show it's done. With threads beside
+// lines, a box opens in its line's popover over the code, moving no line, sends there, and leaves
+// its draft's mark as it closes, which opens it again.
 
 import { writeFileSync } from 'node:fs';
 
@@ -172,6 +174,30 @@ async function onLineTwo(page: Page): Promise<void> {
 /** The comment boxes in the diff. */
 const boxes = (page: Page) => page.locator('[data-lo-diff] .lo-diffcomposer');
 
+/** Shows threads in code beside their lines, as the `comments.threads` setting does. */
+async function threadsBeside(page: Page): Promise<void> {
+  const set = await page.evaluate(() =>
+    window.lo.invoke('settings.set', { key: 'comments.threads', value: 'beside' }),
+  );
+  expect(set.ok).toBe(true);
+}
+
+/**
+ * How far below src/backoff.ts's new line 1 its line 10 is drawn, to the pixel: it grows as
+ * anything comes between them in the flow, and stays as the pane scrolls.
+ */
+function lineGap(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const diff = window.loDiff;
+    const file = diff?.files.find((each) => each.path === 'src/backoff.ts')?.id;
+    if (!diff || file === undefined) return Number.NaN;
+    const top = (line: number) =>
+      diff.probe.spotTop({ kind: 'line', at: { file, side: 'new', line } });
+    const [first, tenth] = [top(1), top(10)];
+    return first === undefined || tenth === undefined ? Number.NaN : Math.round(tenth - first);
+  });
+}
+
 /** The toast that says `text`. */
 const toast = (page: Page, text: string) => page.getByRole('status').filter({ hasText: text });
 
@@ -253,6 +279,36 @@ test.describe('with a write recorded', () => {
       await expect(page.getByTestId('submit-review')).toBeHidden();
       await expect(thread).not.toContainText('Pending', { timeout: 20_000 });
     });
+  });
+});
+
+test.describe('beside lines, with a write recorded', () => {
+  test.use({ cassette: 'app_comments_write' });
+
+  test('`c` opens the box in the popover after the line’s thread, and `⌘⏎` makes its card there, moving no line', async ({
+    page,
+  }) => {
+    await open(page);
+    await threadsBeside(page);
+    await onLineTwo(page);
+    const before = await lineGap(page);
+    await page.keyboard.press('c');
+    const popover = page.getByRole('dialog', { name: /line 2/ });
+    const box = popover.locator('.lo-diffcomposer');
+    await expect(box).toHaveCount(1);
+    await expect(popover).toContainText('Start a little higher?');
+    await expect(box.locator('.lo-diffcomposer__head')).toContainText('Line 2');
+    await page.keyboard.type(COMMENT);
+    expect(await lineGap(page)).toBe(before);
+    await page.keyboard.press(`${cmd}+Enter`);
+    // The box is the comment from the send, in the popover, which stays as GitHub's thread takes
+    // its place there; focus goes to the line.
+    await expect.poll(() => threadsUnder(page, 'src/backoff.ts', 2), { timeout: 20_000 }).toBe(2);
+    await expect(box).toHaveCount(0, { timeout: 20_000 });
+    const made = popover.locator('[data-thread-id]').filter({ hasText: COMMENT });
+    await expect(made).toContainText('Pending', { timeout: 20_000 });
+    await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 2');
+    expect(await lineGap(page)).toBe(before);
   });
 });
 
@@ -555,6 +611,40 @@ test('`c` on lines selected, `s` and a header’s `c` open their boxes; one kept
   } finally {
     await again.app.close();
   }
+});
+
+test('beside lines, `c` opens a box alone over the code, and `Esc` leaves its draft’s mark, which opens it again', async ({
+  page,
+}) => {
+  await open(page);
+  await threadsBeside(page);
+  await onLineTwo(page);
+  await page.keyboard.press('j');
+  await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 3');
+  const before = await lineGap(page);
+  await page.keyboard.press('c');
+  const popover = page.getByRole('dialog', { name: 'Draft · line 3', exact: true });
+  await expect(popover.locator('.lo-diffcomposer')).toHaveCount(1);
+  await expect(popover.locator('.lo-diffcomposer__head')).toContainText('Line 3');
+  await page.keyboard.type('A draft to finish');
+  expect(await lineGap(page)).toBe(before);
+  // `Esc` closes the box, keeping its draft, and the popover it opened; focus goes back to the line.
+  await page.keyboard.press('Escape');
+  await expect(popover).toBeHidden();
+  await expect(boxes(page)).toHaveCount(0);
+  await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 3');
+  const mark = page.getByRole('button', { name: 'Draft · line 3', exact: true });
+  await expect(mark).toBeVisible();
+  expect(await lineGap(page)).toBe(before);
+  // Its mark opens it again, with its words.
+  await mark.click();
+  await expect(popover.locator('.lo-diffcomposer')).toContainText('A draft to finish');
+  await page.keyboard.press('Escape');
+  await expect(popover).toBeHidden();
+  // So does `⏎` on its line.
+  await page.keyboard.press('Enter');
+  await expect(popover.locator('.lo-diffcomposer')).toContainText('A draft to finish');
+  expect(await lineGap(page)).toBe(before);
 });
 
 test.describe('with Vim keys on', () => {

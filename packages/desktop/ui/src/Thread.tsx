@@ -10,7 +10,7 @@ import { Key, keyAria } from './Key.tsx';
 import { MoreButton } from './MoreButton.tsx';
 import { Spinner } from './Spinner.tsx';
 import { Tag, type TagTone } from './Tag.tsx';
-import { EDIT_SLOT, EDIT_SLOT_EVENT } from './edits.ts';
+import { announceSlot, EDIT_SLOT } from './edits.ts';
 import { Tooltip } from './Tooltip.tsx';
 
 /** One comment of a thread, as its card shows it. */
@@ -636,9 +636,4 @@ function EditSlot({ comment, first }: { comment: string; first: boolean }) {
       className={`px-12 py-8 empty:hidden ${first ? '' : 'border-t border-border-subtle'}`}
     />
   );
-}
-
-/** Tells the code view a slot was drawn, so it moves the box in. */
-function announceSlot(slot: HTMLDivElement | null): void {
-  slot?.dispatchEvent(new Event(EDIT_SLOT_EVENT, { bubbles: true }));
 }

@@ -246,6 +246,11 @@ const COULDNT: Readonly<Record<'comment' | 'edit', string>> = {
   edit: 'Couldn’t save the comment',
 };
 
+/** What says a comment, or an edit, wasn't sent: "Couldn’t send the comment". */
+export function couldnt(doing: 'comment' | 'edit'): string {
+  return COULDNT[doing];
+}
+
 /** What a box's note is titled while nobody knows whether GitHub took its text. */
 const NOT_CONFIRMED: Readonly<Record<'comment' | 'edit', string>> = {
   comment: 'Comment not confirmed',

@@ -616,6 +616,11 @@ export class CommentBox implements BoxHost, KeySource {
    * `text`, it stays as it was written, head and foot too, its text read-only and muted, and
    * `text.empty` where it has none.
    */
+  /** Whether it's held, as while what it sent is on its way. */
+  get held(): boolean {
+    return this.#holding;
+  }
+
   hold(on: boolean, text?: HeldText): void {
     if (on === this.#holding) return;
     const focused = this.dom.contains(this.dom.ownerDocument.activeElement);

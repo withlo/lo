@@ -5,7 +5,7 @@
 // is drawn as GitHub renders it, through `Post`.
 
 import { lineRefText } from '@lo/review';
-import { ago, Button, Callout, Problem, Thread, type ThreadComment } from '@lo/ui';
+import { ago, Button, Callout, Problem, ReplySlot, Thread, type ThreadComment } from '@lo/ui';
 import { keyLabels } from '@lo/ui/commands';
 import { useRef, type MouseEvent, type ReactNode } from 'react';
 
@@ -33,12 +33,15 @@ import {
   unfailed,
   unshown,
 } from './acts.ts';
-import { editing, replacedIn, replying } from './boxes.ts';
+import { drafted, editing, replacedIn, replying } from './boxes.ts';
 import { useExcerpt } from './excerpts.ts';
 import { landed } from './landed.ts';
 import { refOf } from './marks.ts';
 import { Post, type PostPull } from './Post.tsx';
 import { held } from './threads.ts';
+
+/** The tag on a thread holding a draft in a box that's closed, in a popover's head. */
+const DRAFT = 'Draft';
 
 /** How tall a comment's avatar is drawn, in pixels: `Avatar`'s small size. */
 const AVATAR = 20;
@@ -71,6 +74,11 @@ export interface CardProps {
   readonly popover?: boolean;
   /** In a popover, its Close: the popover's, on its first thread. */
   readonly onClose?: (() => void) | undefined;
+  /**
+   * In a popover, the comment box the code view puts in it: a reply's, in place of the row that
+   * offers one, or, with `edits`, an edit's, in place of that comment.
+   */
+  readonly box?: { readonly edits?: string | undefined } | undefined;
 }
 
 /** View `tab`'s thread `id`, as main last sent it: nothing once it's gone. */
@@ -82,6 +90,7 @@ export function Card({
   onToggle,
   popover = false,
   onClose,
+  box,
 }: CardProps): ReactNode {
   const view = tab.id;
   const pull: PostPull = { owner: tab.owner, repo: tab.repo, number: tab.number };
@@ -93,6 +102,9 @@ export function Card({
   const revisions = useRevisions(view);
   const replied = useTabState(replying, view, (ids) => ids.has(id));
   const edited = useTabState(editing, view);
+  // In a popover, a draft in a box that's closed shares the dot with a pending comment: a tag says
+  // which.
+  const hasDraft = useTabState(drafted, view, (ids) => popover && ids.has(id));
   const asked = useTabState(acting, view, (acts) => acts.get(id));
   const kept = useTabState(unshown, view, (keys) => keys.has(id));
   const isClosed = useTabState(
@@ -150,7 +162,10 @@ export function Card({
         }
         login={login}
         replying={replied}
-        editing={edited}
+        // The box goes in its slot as the popover is drawn, before the boxes say it's open.
+        editing={box?.edits === undefined ? edited : new Set([...edited, box.edits])}
+        reply={box && box.edits === undefined ? <ReplySlot thread={id} /> : undefined}
+        drafted={hasDraft}
         actions={{
           onReply: () => reply(tab, thread),
           onResolve: () => void resolveThread(tab, row),
@@ -294,6 +309,8 @@ export function ThreadCard({
   login,
   replying: replied = false,
   editing: edited,
+  reply: replySlot,
+  drafted: hasDraft = false,
   actions,
   popover,
   now = Date.now(),
@@ -338,6 +355,10 @@ export function ThreadCard({
    * meanwhile, so the card draws without it, and offers no reply.
    */
   editing?: ReadonlySet<string> | undefined;
+  /** A reply's box in it, in place of its row that offers one, in a popover: the box's slot. */
+  reply?: ReactNode;
+  /** A draft of yours in it, a reply's or an edit's, waits in a box that's closed: a tag says so. */
+  drafted?: boolean;
   /** What its buttons do: it has none without. */
   actions?: CardActions | undefined;
   now?: number;
@@ -376,7 +397,10 @@ export function ThreadCard({
       open={open}
       focused={focused}
       outdated={row.outdated}
-      tags={newer === undefined ? undefined : [{ label: `On ${newer}`, tone: 'warning' }]}
+      tags={[
+        ...(newer === undefined ? [] : [{ label: `On ${newer}`, tone: 'warning' as const }]),
+        ...(hasDraft ? [{ label: DRAFT }] : []),
+      ]}
       excerpt={excerpt === '' ? undefined : excerpt}
       canResolve={
         actions !== undefined &&
@@ -400,6 +424,7 @@ export function ThreadCard({
       lines={popover?.lines}
       onClose={popover?.onClose}
       closeKeys={popover?.onClose && keysOf('comments.closeThread')}
+      reply={replySlot}
       onToggle={onToggle}
       onReply={actions?.onReply}
       onResolve={actions?.onResolve}

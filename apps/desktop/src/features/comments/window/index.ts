@@ -72,6 +72,7 @@ import {
   keptAway,
   landBoxes,
   knowPull,
+  markDrafts,
   noDiff,
   restore,
   reopenAll,
@@ -232,12 +233,14 @@ export default {
       },
       enabled: enabled(writable),
     },
-    // `⏎` is Vim's but just after a line refused a comment.
+    // `⏎` is Vim's but just after a line refused a comment, and, beside lines, on a draft's mark.
     onFileInstead: {
-      run: () => {
+      run: (target) => {
         const tab = activeTab();
         if (tab?.kind !== 'pull' || takeOffer(tab)) return;
-        writingDiff(tab.id, true)?.vim(['<CR>']);
+        const diff = writingDiff(tab.id, true);
+        if (target.kind === 'line' && 'line' in target.at && diff?.openDraft(target.at)) return;
+        diff?.vim(['<CR>']);
       },
     },
     openThread: { run: showPopover, enabled: canShowPopover },
@@ -367,6 +370,8 @@ export default {
     frameWith(frameOf);
     onDiffDrawn((view) => {
       catchUpDrafts(view);
+      // Beside lines, its marks show the drafts no box shows.
+      markDrafts(view);
       // Before a box opens, main says whether the account can upload, so its box says so as it's
       // drawn, not after.
       void checkUploads(view);
