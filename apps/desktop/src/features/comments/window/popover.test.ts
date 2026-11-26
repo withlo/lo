@@ -33,7 +33,7 @@ vi.mock('../../tab/window/shared.ts', () => ({ activeTab: () => undefined }));
 
 const { pinFirst } = await import('./popover.ts');
 
-const TAB = { id: 'tab', kind: 'pull' } as PullTab;
+const TAB: PullTab = { id: 'tab', kind: 'pull', owner: 'rozed-dev', repo: 'e2e', number: 94 };
 
 /** A key on the cursor's line, line 5 of `a`'s new side. */
 const LINE = { kind: 'line', at: { file: 'a', side: 'new', line: 5 } } as const;
