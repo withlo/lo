@@ -73,7 +73,10 @@ export function pullComment(
   return undefined;
 }
 
-/** A comment on the pull request itself as a thread's comment row has it, to judge a change to it. */
+/**
+ * A comment on the pull request itself as a thread's comment row has it, to judge a change to it.
+ * It came with no review.
+ */
 export function pullCommentRow(comment: TimelineComment): ThreadCommentRow {
   return {
     id: comment.id,
@@ -86,6 +89,7 @@ export function pullCommentRow(comment: TimelineComment): ThreadCommentRow {
     hidden: comment.hidden ?? null,
     viewerCanUpdate: comment.viewerCanUpdate,
     viewerCanDelete: comment.viewerCanDelete,
+    review: null,
   };
 }
 

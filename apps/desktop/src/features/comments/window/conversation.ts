@@ -54,6 +54,7 @@ export function pullChangeRefusal(
       hidden: undefined,
       viewerCanUpdate: comment.viewerCanUpdate,
       viewerCanDelete: comment.viewerCanDelete,
+      review: undefined,
     },
     login ?? '',
     change,

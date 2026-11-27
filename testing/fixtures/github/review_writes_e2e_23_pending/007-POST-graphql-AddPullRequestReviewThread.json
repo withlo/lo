@@ -4,7 +4,7 @@
     "url": "https://api.github.com/graphql",
     "operation": "AddPullRequestReviewThread",
     "variables": {
-      "pullRequestReviewId": "PRR_kwDOVleUfc8AAAABXON7uA",
+      "pullRequestReviewId": "PRR_kwDOVleUfc8AAAABaqBRJA",
       "path": "e11/review.txt",
       "body": "Fixture E11: line 25, outside the diff's hunks.",
       "subjectType": "LINE",
@@ -18,10 +18,10 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4994",
-      "x-ratelimit-reset": "1794371223",
+      "x-ratelimit-remaining": "4984",
+      "x-ratelimit-reset": "1795760687",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "6"
+      "x-ratelimit-used": "16"
     },
     "body": {
       "data": {

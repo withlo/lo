@@ -4,8 +4,8 @@
     "url": "https://api.github.com/graphql",
     "operation": "ReviewComment",
     "variables": {
-      "comment": "PRRC_kwDOVleUfc8AAAABDS3tXg",
-      "thread": "PRRT_kwDOVleUfc61YAU0"
+      "comment": "PRRC_kwDOVleUfc8AAAABGRhEHQ",
+      "thread": "PRRT_kwDOVleUfc68p__H"
     },
     "query_sha256": "deb080fbc9303856335b2b46188101e005c63af244908404be8dd0ce21d51e6c"
   },
@@ -14,23 +14,23 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4926",
-      "x-ratelimit-reset": "1794247211",
+      "x-ratelimit-remaining": "4934",
+      "x-ratelimit-reset": "1795760687",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "74"
+      "x-ratelimit-used": "66"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4926,
-          "used": 74,
-          "resetAt": "2026-11-09T18:00:11Z"
+          "remaining": 4934,
+          "used": 66,
+          "resetAt": "2026-11-27T06:24:47Z"
         },
         "comment": {
           "__typename": "PullRequestReviewComment",
-          "id": "PRRC_kwDOVleUfc8AAAABDS3tXg",
+          "id": "PRRC_kwDOVleUfc8AAAABGRhEHQ",
           "author": {
             "__typename": "User",
             "login": "rozed-bot"

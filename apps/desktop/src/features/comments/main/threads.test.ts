@@ -54,6 +54,7 @@ function node(id: string, path = 'src/backoff.ts'): ReviewThread {
           viewerCanDelete: true,
           commit: { oid: HEAD },
           originalCommit: { oid: HEAD },
+          pullRequestReview: { id: `${id}-review` },
         },
       ],
     },
@@ -298,11 +299,15 @@ test('a closed view is let go', async () => {
   expect(github.listeners.size).toBe(0);
 });
 
-test('rows leave out a path longer than any file’s, and keep each author’s kind', () => {
+test('rows leave out a path longer than any file’s, and keep each author’s kind and review', () => {
   const long = node('LONG', 'x'.repeat(4097));
   const rows = threadRows({ nodes: [node('T1'), long], missing: 1 });
   expect(rows.map((row) => row.id)).toEqual(['T1']);
-  expect(rows[0]?.comments[0]).toMatchObject({ author: 'rozed-bot', authorType: 'User' });
+  expect(rows[0]?.comments[0]).toMatchObject({
+    author: 'rozed-bot',
+    authorType: 'User',
+    review: 'T1-review',
+  });
   expect(reviewRow({ kind: 'unknown', why: 'left out' })).toEqual({ kind: 'unknown' });
 });
 

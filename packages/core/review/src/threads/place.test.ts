@@ -37,6 +37,7 @@ function thread(writtenOn: string, originalLine: number, line: number | undefine
         hidden: undefined,
         viewerCanUpdate: false,
         viewerCanDelete: false,
+        review: undefined,
       },
     ],
     viewerCanReply: false,

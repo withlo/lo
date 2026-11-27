@@ -175,11 +175,7 @@ export function hasCode(row: Row): boolean {
  */
 export function showReviewInDiff(tab: string, row: Row, how: ShowHow): void {
   if (row.kind !== 'review') return;
-  const author = row.author?.login;
-  const thread =
-    author === undefined
-      ? undefined
-      : firstThreadOf(tab, { author, from: row.started, to: row.at });
+  const thread = firstThreadOf(tab, row.id);
   if (thread !== undefined && goToThread(tab, thread, how)) return;
   if (how === 'go') showDiff(tab);
 }

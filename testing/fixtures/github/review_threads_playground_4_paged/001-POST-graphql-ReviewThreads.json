@@ -10,26 +10,26 @@
       "first": 2,
       "after": null
     },
-    "query_sha256": "89476c194892866c84d28316d05a62244432d190b6b0fce18fc3df748b08fb5d"
+    "query_sha256": "6503da183c3f389d85fbf264adc75b266838dd98efbd1c134ac46e46c14fb4a8"
   },
   "response": {
     "status": 200,
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4995",
-      "x-ratelimit-reset": "1794032211",
+      "x-ratelimit-remaining": "4970",
+      "x-ratelimit-reset": "1795756948",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "5"
+      "x-ratelimit-used": "30"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4995,
-          "used": 5,
-          "resetAt": "2026-11-07T06:16:51Z"
+          "remaining": 4970,
+          "used": 30,
+          "resetAt": "2026-11-27T05:22:28Z"
         },
         "repository": {
           "pullRequest": {
@@ -81,6 +81,9 @@
                         },
                         "originalCommit": {
                           "oid": "fc0f4b4b42bbc15db99629271361589110885c56"
+                        },
+                        "pullRequestReview": {
+                          "id": "PRR_kwDOVk6v9M8AAAABWeeb1A"
                         }
                       },
                       {
@@ -102,6 +105,9 @@
                         },
                         "originalCommit": {
                           "oid": "fc0f4b4b42bbc15db99629271361589110885c56"
+                        },
+                        "pullRequestReview": {
+                          "id": "PRR_kwDOVk6v9M8AAAABWeefqA"
                         }
                       }
                     ]
@@ -148,6 +154,9 @@
                         },
                         "originalCommit": {
                           "oid": "fc0f4b4b42bbc15db99629271361589110885c56"
+                        },
+                        "pullRequestReview": {
+                          "id": "PRR_kwDOVk6v9M8AAAABWeekHA"
                         }
                       }
                     ]

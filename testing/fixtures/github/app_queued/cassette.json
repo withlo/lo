@@ -1,5 +1,8 @@
 {
   "description": "What the app's tests of a queued pull request read from GitHub, recorded from the app on generation 6 of fixtures/merge.sh's pull requests, rozed-dev/e2e#192 to #208, while #205, which rozed-bot added to e4/queued's merge queue, was first there and #207, which rozed-bot added after it, second: #205's tab, its merge panel and the queue it showed; and #204, ready for the queue, and its panel, which read what's ahead of it. Each stayed on screen long enough for its polls to repeat. rozed-bot then took #205 out of the queue, and GitHub took #207 out once ci failed on it there, so neither merged.",
   "recorded_at": "2026-11-17T02:31:51Z",
-  "repo": "rozed-dev/e2e"
+  "repo": "rozed-dev/e2e",
+  "rerecorded": {
+    "ReviewThreads": "2026-11-27T05:15:31Z"
+  }
 }

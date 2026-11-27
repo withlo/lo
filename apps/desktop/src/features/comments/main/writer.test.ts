@@ -121,6 +121,7 @@ function node(
           viewerCanDelete: true,
           commit: { oid: HEAD },
           originalCommit: { oid: HEAD },
+          pullRequestReview: null,
         },
       ],
     },

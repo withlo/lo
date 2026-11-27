@@ -73,4 +73,8 @@ fragment ReviewComment on PullRequestReviewComment {
   originalCommit {
     oid
   }
+  # The review it came with: Show in diff goes to the thread of a review's first comment.
+  pullRequestReview {
+    id
+  }
 }

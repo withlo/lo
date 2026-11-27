@@ -106,6 +106,7 @@ function thread(
         viewerCanDelete: each.author === 'rozed-bot',
         commit: { oid: HEAD },
         originalCommit: { oid: HEAD },
+        pullRequestReview: null,
       })),
     },
     ...overrides,
@@ -576,6 +577,7 @@ test('Lo changes only your own comments, and checks a delete against what the qu
     hidden: null,
     viewerCanUpdate: true,
     viewerCanDelete: false,
+    review: null,
   };
   expect(changeRefused(row, 'rozed-bot', 'edit')).toBeUndefined();
   expect(changeRefused(row, 'rozed-bot', 'delete')).toEqual({ kind: 'notAllowed', reasons: [] });

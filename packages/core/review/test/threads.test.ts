@@ -119,6 +119,7 @@ function thread(node: Node): Thread {
         viewerCanDelete: author === 'alice',
         commit: node.commit === null ? null : { oid: node.commit },
         originalCommit: node.originalCommit === null ? null : { oid: node.originalCommit },
+        pullRequestReview: { id: `PRR_${author}` },
       })),
     },
   };
@@ -742,6 +743,14 @@ function writtenAt(all: Thread[], path: string, originalLine: number): Thread[] 
   return all.filter((each) => each.path === path && each.originalLine === originalLine);
 }
 
+/** The one review all of `each`'s comments came with. */
+function oneReview(each: Thread): string {
+  const distinct = [...new Set(each.comments.map((comment) => comment.review))];
+  expect(distinct).toHaveLength(1);
+  expect(distinct[0]).toMatch(/^PRR_/);
+  return distinct[0]!;
+}
+
 /** The one commit all of `shas` are, checking that it starts with `short`. */
 function oneCommit(shas: (string | undefined)[], short: string): string {
   const distinct = [...new Set(shas)];
@@ -761,23 +770,37 @@ function sameLines(a: Lines | undefined, b: Lines): boolean {
   );
 }
 
-test('fd 2212s threads are outdated by the second push', async () => {
+test('fd 2212s first review is outdated by the second push, and its second is on it', async () => {
   const fetch = replayFetch('review_threads_fd_2212');
   const all = threadsFromGithub(
     await reviewThreads(client(fetch), new PullRef('sharkdp', 'fd', 2212)),
   );
 
-  expect(all).toHaveLength(6);
-  expect(all.flatMap((each) => each.comments)).toHaveLength(7);
-  // Every thread was written on the first push and is outdated since: GitHub leaves its first
-  // comment on the commit it was written on, with no current lines.
+  expect(all).toHaveLength(10);
+  expect(all.flatMap((each) => each.comments)).toHaveLength(11);
+  // Each review's comments name it: six threads of the first, four of the second.
+  const [earlier = [], later = []] = Map.groupBy(all, (each) => oneReview(each)).values();
+  expect([earlier.length, later.length]).toEqual([6, 4]);
+  // The first review's threads were written on the first push and are outdated since: GitHub
+  // leaves its first comment on the commit it was written on, with no current lines.
   const firstPush = oneCommit(
-    all.flatMap((each) => [each.currentOn, each.writtenOn]),
+    earlier.flatMap((each) => [each.currentOn, each.writtenOn]),
     '15635d6',
   );
-  for (const each of all) {
+  // The second review's were written on the second push, and are on it.
+  const head = oneCommit(
+    later.flatMap((each) => [each.currentOn, each.writtenOn]),
+    '22c70ac',
+  );
+  for (const each of earlier) {
     expect(each.outdated).toBe(true);
     expect(Thread.currentLines(each)).toBeUndefined();
+  }
+  for (const each of later) {
+    expect(each.outdated).toBe(false);
+    expect(Thread.currentLines(each)?.end).toEqual(Line.right(each.line!));
+  }
+  for (const each of all) {
     expect(each.subject).toBe('LINE');
     expect(each.side).toBe('RIGHT');
     expect(each.resolved).toBe(false);
@@ -793,14 +816,14 @@ test('fd 2212s threads are outdated by the second push', async () => {
       expect(comment.url).toMatch(/^https:\/\/github\.com\/sharkdp\/fd\/pull\/2212#discussion_r/);
     }
   }
-  const makefile = writtenAt(all, 'Makefile', 17);
+  const makefile = writtenAt(earlier, 'Makefile', 17);
   expect(makefile).toHaveLength(1);
   const [first, second] = makefile[0]!.comments;
   expect(makefile[0]!.comments).toHaveLength(2);
   expect(Date.parse(first!.createdAt)).toBeLessThanOrEqual(Date.parse(second!.createdAt));
 
-  // They show where they were written on the first push, and only in the panel on the second.
-  const head = '22c70acc6992c0c51cb68527b87adf114d01acbc';
+  // The first review's show where they were written on the first push, and only in the panel on
+  // the second.
   const workflow = writtenAt(all, '.github/workflows/CICD.yml', 187)[0]!;
   expect(place(workflow, Screen.full(firstPush))).toEqual(lines(Lines.one(Line.right(187))));
   expect(place(workflow, Screen.between(firstPush, head))).toEqual(
@@ -831,6 +854,9 @@ test('the playgrounds review checks read two threads and two comments a page', a
   // review that was then submitted.
   const replied = all.find((each) => each.comments.length > 2)!;
   expect(replied.comments).toHaveLength(3);
+  // Each came with a review of its own: the thread's, the reply's and the pending one's.
+  expect(new Set(replied.comments.map((comment) => comment.review)).size).toBe(3);
+  for (const comment of replied.comments) expect(comment.review).toMatch(/^PRR_/);
   expect(Thread.currentLines(replied)).toEqual(Lines.one(Line.right(30)));
   for (const comment of replied.comments) {
     expect(comment.author).toBe(BOT);

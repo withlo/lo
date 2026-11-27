@@ -1,5 +1,8 @@
 {
   "description": "What the app's tests of a pull request that left the merge queue read from GitHub, recorded from the app on generation 6 of fixtures/merge.sh's pull requests, rozed-dev/e2e#192 to #208, while #207, which rozed-bot added to e4/queued's merge queue behind #205, failed ci there: #207's tab and its merge panel, which said it would be removed; then, once rozed-bot took #205 out of the queue and GitHub took #207 out, its banner and its panel again, which said why. It stayed on screen long enough for its polls to repeat. Neither merged.",
   "recorded_at": "2026-11-17T02:34:02Z",
-  "repo": "rozed-dev/e2e"
+  "repo": "rozed-dev/e2e",
+  "rerecorded": {
+    "ReviewThreads": "2026-11-27T05:15:32Z"
+  }
 }

@@ -8,26 +8,26 @@
       "first": 2,
       "after": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0wNlQxNjoyMTowN1rPAAAAAQvpCFw="
     },
-    "query_sha256": "be22e0e5d112617f052c03df245b8168cfa0419bc7f4d7db7b39c1c9d9fb5aaa"
+    "query_sha256": "e6c61d61ec958a7777a60b5c5420ea38570b5fa8f7c321a9368bc90a651f45a2"
   },
   "response": {
     "status": 200,
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4988",
-      "x-ratelimit-reset": "1794032211",
+      "x-ratelimit-remaining": "4915",
+      "x-ratelimit-reset": "1795756943",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "12"
+      "x-ratelimit-used": "85"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4988,
-          "used": 12,
-          "resetAt": "2026-11-07T06:16:51Z"
+          "remaining": 4915,
+          "used": 85,
+          "resetAt": "2026-11-27T05:22:23Z"
         },
         "node": {
           "__typename": "PullRequestReviewThread",
@@ -57,6 +57,9 @@
                 },
                 "originalCommit": {
                   "oid": "fc0f4b4b42bbc15db99629271361589110885c56"
+                },
+                "pullRequestReview": {
+                  "id": "PRR_kwDOVk6v9M8AAAABWefTwQ"
                 }
               }
             ]

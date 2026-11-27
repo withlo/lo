@@ -9,9 +9,9 @@
       "event": "COMMENT",
       "threads": [
         {
+          "path": "e11/review.txt",
           "body": "Fixture E11: a line thread posted at once, on line 50.",
           "line": 50,
-          "path": "e11/review.txt",
           "side": "RIGHT"
         }
       ]
@@ -23,21 +23,21 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4979",
-      "x-ratelimit-reset": "1794201713",
+      "x-ratelimit-remaining": "4973",
+      "x-ratelimit-reset": "1795760687",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "21"
+      "x-ratelimit-used": "27"
     },
     "body": {
       "data": {
         "addPullRequestReview": {
           "pullRequestReview": {
-            "id": "PRR_kwDOVleUfc8AAAABWv7-YA",
+            "id": "PRR_kwDOVleUfc8AAAABaqBZfg",
             "state": "COMMENTED",
             "comments": {
               "nodes": [
                 {
-                  "id": "PRRC_kwDOVleUfc8AAAABDMhPZg"
+                  "id": "PRRC_kwDOVleUfc8AAAABGRg1zw"
                 }
               ]
             }

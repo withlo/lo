@@ -28,6 +28,7 @@ function thread(id: string, resolved: boolean, authors: (string | undefined)[]):
       hidden: undefined,
       viewerCanUpdate: false,
       viewerCanDelete: false,
+      review: undefined,
     })),
     viewerCanReply: false,
     viewerCanResolve: false,

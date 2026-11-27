@@ -16,16 +16,16 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4978",
-      "x-ratelimit-reset": "1794201713",
+      "x-ratelimit-remaining": "4972",
+      "x-ratelimit-reset": "1795760687",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "22"
+      "x-ratelimit-used": "28"
     },
     "body": {
       "data": {
         "addPullRequestReview": {
           "pullRequestReview": {
-            "id": "PRR_kwDOVleUfc8AAAABWv7-9Q",
+            "id": "PRR_kwDOVleUfc8AAAABaqBaKA",
             "state": "COMMENTED",
             "comments": {
               "nodes": []

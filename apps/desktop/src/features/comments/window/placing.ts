@@ -50,6 +50,7 @@ export function threadOf(row: ThreadRow): Thread {
       hidden: comment.hidden ?? undefined,
       viewerCanUpdate: comment.viewerCanUpdate,
       viewerCanDelete: comment.viewerCanDelete,
+      review: comment.review ?? undefined,
     })),
     viewerCanReply: row.viewerCanReply,
     viewerCanResolve: row.viewerCanResolve,

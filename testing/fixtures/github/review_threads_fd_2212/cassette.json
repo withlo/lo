@@ -1,6 +1,9 @@
 {
-  "description": "sharkdp/fd#2212's review threads as rozed-bot, read only: a maintainer's changes-requested review on the first push, six threads and seven comments, all outdated by the second push",
+  "description": "sharkdp/fd#2212's review threads as rozed-bot, read only: a maintainer's changes-requested review on the first push, six threads and seven comments, all outdated by the second push; and their later review on the second push, four threads",
   "recorded_at": "2026-11-07T05:16:56Z",
   "repo": "sharkdp/fd",
-  "schema": "github/docs@03caf3ce9bc56af9d147500036b0bb6dda352674"
+  "schema": "github/docs@03caf3ce9bc56af9d147500036b0bb6dda352674",
+  "rerecorded": {
+    "ReviewThreads": "2026-11-27T05:15:39Z"
+  }
 }

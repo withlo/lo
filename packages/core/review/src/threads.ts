@@ -177,6 +177,11 @@ export interface ThreadComment {
   viewerCanUpdate: boolean;
   /** `viewerCanDelete`: whether you can delete it. */
   viewerCanDelete: boolean;
+  /**
+   * The review it came with, by ID (`pullRequestReview.id`): a pending review's while it's
+   * pending. Missing when GitHub gives none.
+   */
+  review: string | undefined;
 }
 
 /** Reading {@link Thread}s. */
@@ -270,6 +275,7 @@ export function commentFromGithub(comment: ReviewThreadComment): ThreadComment {
     hidden: comment.isMinimized ? (comment.minimizedReason ?? '') : undefined,
     viewerCanUpdate: comment.viewerCanUpdate,
     viewerCanDelete: comment.viewerCanDelete,
+    review: comment.pullRequestReview?.id,
   };
 }
 

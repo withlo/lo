@@ -32,6 +32,7 @@ function comment(overrides: Partial<ThreadCommentRow> = {}): ThreadCommentRow {
     hidden: null,
     viewerCanUpdate: false,
     viewerCanDelete: false,
+    review: null,
     ...overrides,
   };
 }

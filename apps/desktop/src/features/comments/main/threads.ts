@@ -144,6 +144,7 @@ export function threadRows(list: ReviewThreadList): ThreadRow[] {
         hidden: comment.hidden?.slice(0, 64) ?? null,
         viewerCanUpdate: comment.viewerCanUpdate,
         viewerCanDelete: comment.viewerCanDelete,
+        review: comment.review ?? null,
       })),
       viewerCanReply: thread.viewerCanReply,
       viewerCanResolve: thread.viewerCanResolve,

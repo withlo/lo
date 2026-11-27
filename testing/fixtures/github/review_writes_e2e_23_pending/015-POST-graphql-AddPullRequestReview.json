@@ -23,10 +23,10 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4986",
-      "x-ratelimit-reset": "1794371223",
+      "x-ratelimit-remaining": "4978",
+      "x-ratelimit-reset": "1795760687",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "14"
+      "x-ratelimit-used": "22"
     },
     "body": {
       "data": {

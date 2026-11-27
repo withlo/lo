@@ -1,5 +1,8 @@
 {
   "description": "What the app's merge queue tests read from GitHub, recorded from the app on generation 4 of fixtures/merge.sh's pull requests, rozed-dev/e2e#156 to #172, while #169 and #168, which rozed-bot added to e4/queued's merge queue, were tested together there, and #170, whose ci rozed-bot ran again, waited to join it with auto-merge on: #156's tab and `gq`, which showed merge/4/base has no queue; #169's tab and `gq`, which showed e4/queued's queue in the same tab; `j` and Enter, which opened #168; `Tab` to merge/4/base and back; and Lo restarted on the queue's tab. Each stayed on screen long enough for its polls to repeat. rozed-bot then took #169 and #168 out of the queue and turned #170's auto-merge off, so none merged.",
   "recorded_at": "2026-11-17T00:58:47Z",
-  "repo": "rozed-dev/e2e"
+  "repo": "rozed-dev/e2e",
+  "rerecorded": {
+    "ReviewThreads": "2026-11-27T05:15:29Z"
+  }
 }

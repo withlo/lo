@@ -1,5 +1,8 @@
 {
   "description": "What the app’s merge tests send and read, recorded from the app with writes on generation 5 of fixtures/merge.sh’s pull requests, rozed-dev/e2e#174 to #190, each from a copy of Lo of its own, with each tab open long enough for its polls to repeat before and after: Lo squash-merged #174 with a commit title typed in the panel, merged #175 with a merge commit, and rebased #176 onto its base; and on #183, with its confirmation open, merge.sh 5 --push added a commit just before ⏎ confirmed it, so GitHub took the merge of the head Lo showed and then failed it, as not mergeable, and Lo then read the newer push.",
   "recorded_at": "2026-11-17T01:00:57Z",
-  "repo": "rozed-dev/e2e"
+  "repo": "rozed-dev/e2e",
+  "rerecorded": {
+    "ReviewThreads": "2026-11-27T05:15:27Z"
+  }
 }

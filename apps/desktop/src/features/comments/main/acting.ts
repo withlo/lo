@@ -82,6 +82,7 @@ export function coreComment(row: ThreadCommentRow): ThreadComment {
     hidden: row.hidden ?? undefined,
     viewerCanUpdate: row.viewerCanUpdate,
     viewerCanDelete: row.viewerCanDelete,
+    review: row.review ?? undefined,
   };
 }
 

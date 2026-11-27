@@ -144,6 +144,7 @@ function comment(overrides: Partial<ThreadCommentRow> = {}): ThreadCommentRow {
     hidden: null,
     viewerCanUpdate: true,
     viewerCanDelete: true,
+    review: null,
     ...overrides,
   };
 }
