@@ -7,7 +7,7 @@ import { join } from 'node:path';
 
 import { writeAppRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
-import type { Page } from '@playwright/test';
+import type { ElectronApplication, Page } from '@playwright/test';
 
 import {
   appFolder,
@@ -348,10 +348,10 @@ test('“Show rules” opens the rules for Finicky, Velja and Choosy, which copy
   });
 });
 
-test.describe('at 200 % zoom', () => {
+test.describe('zoomed in', () => {
   test.use({ settings: '{ "window.zoom": 200 }\n' });
 
-  test('in a window 720 by 480, a heading on two lines keeps the line under it, and the last step’s link field has its own line, with its buttons under it', async ({
+  test('at 200 % in a window 720 by 480, a heading on two lines keeps the line under it, and the last step’s link field has its own line, with its buttons under it together, and stays in view as the zoom changes', async ({
     app,
     page,
   }) => {
@@ -384,21 +384,56 @@ test.describe('at 200 % zoom', () => {
     // At least one heading wraps there, as "An overview explains a pull request" does.
     expect(wrapped).toBeGreaterThan(0);
 
-    // The last step: the field has the line, and its buttons start the next, 8 px under it.
+    // The last step: the field has the line, and its buttons start the next together, 8 px under it.
     const paste = step(page).getByRole('button', { name: /^Paste link/ });
-    const open = step(page)
-      .getByRole('button', { name: /^Open$/ })
-      .first();
-    const [field, pasted, opened] = await Promise.all(
-      [linkField(page), paste, open].map(async (each) => (await each.boundingBox())!),
-    );
-    expect(Math.round(pasted!.y - (field!.y + field!.height))).toBe(8);
-    expect(Math.round(pasted!.x)).toBe(Math.round(field!.x));
-    expect(Math.round(opened!.y)).toBe(Math.round(pasted!.y));
+    const open = step(page).locator('form button[type="submit"]');
+    const under = async () => {
+      const [field, pasted, opened] = await Promise.all(
+        [linkField(page), paste, open].map(async (each) => (await each.boundingBox())!),
+      );
+      expect(Math.round(pasted!.y - (field!.y + field!.height))).toBe(8);
+      expect(Math.round(pasted!.x)).toBe(Math.round(field!.x));
+      expect(Math.round(opened!.y)).toBe(Math.round(pasted!.y));
+    };
+    await under();
     // Focus on the field's buttons brings them into view in the steps' pane.
     await linkField(page).focus();
     await page.keyboard.press('Tab');
     await expect(paste).toBeFocused();
-    await expect(paste).toBeInViewport();
+    await expect(paste).toBeInViewport({ ratio: 1 });
+
+    await test.step('with room for the field and "Paste link" but not "Open" too, both buttons go under the field, typed into or not', async () => {
+      // The field's row 384 px wide: wider than the field with "Paste link" beside it, narrower than
+      // with "Open" too, with its key chip or without it. At 200 % the row grows by half what the
+      // window does.
+      const row = linkField(page).locator('xpath=../..');
+      const wide = () =>
+        row.evaluate((element) => Math.round(element.getBoundingClientRect().width));
+      await sizeWindow(app, 720 + (384 - (await wide())) * 2, 480);
+      await expect.poll(wide).toBe(384);
+      await under();
+      await linkField(page).fill('https://github.com/withlo/lo/pull/1');
+      await expect(open).toBeEnabled();
+      await under();
+    });
+
+    await test.step('the field with focus stays whole in view as the zoom changes', async () => {
+      await sizeWindow(app, 720, 480);
+      await linkField(page).focus();
+      await page.keyboard.press(`${cmd}+Minus`);
+      await expect.poll(() => zoomOf(app)).toBe(1.75);
+      await expect(linkField(page)).toBeInViewport({ ratio: 1 });
+      await page.keyboard.press(`${cmd}+Equal`);
+      await expect.poll(() => zoomOf(app)).toBe(2);
+      await expect(linkField(page)).toBeInViewport({ ratio: 1 });
+    });
   });
 });
+
+/** The window's zoom, as a fraction of its actual size, to the hundredth. */
+function zoomOf(app: ElectronApplication): Promise<number | undefined> {
+  return app.evaluate(({ BrowserWindow }) => {
+    const factor = BrowserWindow.getAllWindows()[0]?.webContents.getZoomFactor();
+    return factor === undefined ? undefined : Math.round(factor * 100) / 100;
+  });
+}

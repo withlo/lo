@@ -159,7 +159,7 @@ export function OpenStep({ shown }: { shown: boolean }): ReactNode {
       />
       <form className="flex flex-col gap-8" onSubmit={submit}>
         {/* The field asks for `lo-field-w`: with less room beside it, as at 200 % zoom, it has the
-            line and its buttons go under it, from the row's start. */}
+            line and its buttons go under it together, from the row's start. */}
         <div className="flex flex-wrap gap-8">
           <div className="flex min-w-0 grow basis-field-w">
             <Input
@@ -176,20 +176,22 @@ export function OpenStep({ shown }: { shown: boolean }): ReactNode {
               }}
             />
           </div>
-          <Button busy={busy === 'paste'} onClick={paste}>
-            Paste link
-          </Button>
-          <Button
-            type="submit"
-            variant={typed ? 'primary' : 'secondary'}
-            {...(typed ? { 'data-welcome-default': true } : {})}
-            busy={busy === 'field'}
-            working="Opening…"
-            disabled={busy === undefined && !typed}
-          >
-            Open
-            {typed && key && <Key keys={key} decorative className="text-on-accent" />}
-          </Button>
+          <div className="flex flex-none gap-8">
+            <Button busy={busy === 'paste'} onClick={paste}>
+              Paste link
+            </Button>
+            <Button
+              type="submit"
+              variant={typed ? 'primary' : 'secondary'}
+              {...(typed ? { 'data-welcome-default': true } : {})}
+              busy={busy === 'field'}
+              working="Opening…"
+              disabled={busy === undefined && !typed}
+            >
+              Open
+              {typed && key && <Key keys={key} decorative className="text-on-accent" />}
+            </Button>
+          </div>
         </div>
         <Collapse open={failure !== undefined}>
           {failure?.kind === 'notPull' && <NotPullNote id={why} why={failure.why} />}

@@ -134,8 +134,8 @@ Dark (Lo Glow Dark) is the default. Every color comes from `tokens.json` through
   what's beside it, as a welcome step's heading is beside the mark, takes that as its least height
   (`min-h-40`, never `h-40`), so a heading on two lines never runs into the line under it. A field
   with its buttons on one row, as the welcome's link field, is in a row that wraps, and asks for
-  `lo-field-w` (`grow basis-field-w`): with less room, it has the line, and its buttons go under it,
-  from the row's start.
+  `lo-field-w` (`grow basis-field-w`), with its buttons in one group that doesn't wrap: with less
+  room, it has the line, and its buttons go under it together, from the row's start.
 - Corners are round like the mark: `lo-r-xs` (3) keys and tags, `lo-r-sm` (6) controls and rows,
   `lo-r-md` (9) threads, cards and popovers, `lo-r-lg` (12) the sheet and dialogs, `lo-r-pill`
   segmented controls, chips and avatars.
@@ -235,25 +235,25 @@ where the action's target is.
   each step (`data-gives`), what comes in its place, as an icon for words (`data-takes`), and what
   it must keep whole until nothing else is left to give up, such as an author's name (`data-fit`).
   What it gave up comes back as soon as there's room for it, however the room came: the window
-  widened, a panel closed, or what's beside it got shorter. A row as wide as what it draws, as one
-  beside a spacer is, doesn't grow with the window, so `useGiveUp` also watches what's beside it,
-  out to the first box as wide as its container lets it be; never fit a row only as it's drawn. Key
-  chips go first; a control that gives up its words is the small control's square, with its words as
-  its tooltip. What's cut short keeps `min-w-cut` at least, 48 px or all of its words where they're
-  shorter, so `main` isn't padded, and what can't keep that goes whole: the PR header gives up its
-  branches, with "wants to merge" and the arrow, and the merge status its detail, never cut to a
-  letter. What it gives up that nothing else in the row says, as the merge status's detail or the
-  note's facts, is still heard (`data-heard`), as a given-up title is. What's cut only at a step of
-  its own is marked `data-cuts`, and drawn whole until the row gives up `cut`. The PR header's first
-  row gives up "Submit review…"'s key chip, then the merge status's detail, then cuts its title,
-  then gives up the status's words, which leave its ball with the verdict and the reasons as its
-  tooltip, so nothing overlaps it. The diff bar is the revisions note, then Compare revisions and
-  the view's own controls, 16 px apart, one `HintRow`: narrow, it drops the hint's chips, then the
-  hint, then the note's facts after its first `·`, last first, so "base → r2" never cuts and no two
-  groups touch. A diff's file header gives up what follows its name (the counts, where a rename was,
-  the tags), then cuts its folders, then drops them, leaving the name with the whole path as its
-  tooltip, and only then cuts the name at its end; its end, from the threads to the `⋯`, is never
-  cut.
+  widened, a panel closed, what's beside it got shorter, or a face loaded late. A row as wide as
+  what it draws, as one beside a spacer is, doesn't grow with the window, so `useGiveUp` also
+  watches what's beside it, out to the first box as wide as its container lets it be; never fit a
+  row only as it's drawn. Key chips go first; a control that gives up its words is the small
+  control's square, with its words as its tooltip. What's cut short keeps `min-w-cut` at least, 48
+  px or all of its words where they're shorter, so `main` isn't padded, and what can't keep that
+  goes whole: the PR header gives up its branches, with "wants to merge" and the arrow, and the
+  merge status its detail, never cut to a letter. What it gives up that nothing else in the row
+  says, as the merge status's detail or the note's facts, is still heard (`data-heard`), as a
+  given-up title is. What's cut only at a step of its own is marked `data-cuts`, and drawn whole
+  until the row gives up `cut`. The PR header's first row gives up "Submit review…"'s key chip, then
+  the merge status's detail, then cuts its title, then gives up the status's words, which leave its
+  ball with the verdict and the reasons as its tooltip, so nothing overlaps it. The diff bar is the
+  revisions note, then Compare revisions and the view's own controls, 16 px apart, one `HintRow`:
+  narrow, it drops the hint's chips, then the hint, then the note's facts after its first `·`, last
+  first, so "base → r2" never cuts and no two groups touch. A diff's file header gives up what
+  follows its name (the counts, where a rename was, the tags), then cuts its folders, then drops
+  them, leaving the name with the whole path as its tooltip, and only then cuts the name at its end;
+  its end, from the threads to the `⋯`, is never cut.
 - **A choice of two to four is one `SegmentedControl`,** never buttons or pills drawn by hand: the
   header's view switch, the Files panel's Tree and Review order, the threads' filter, a comment
   box's Write and Preview, and Settings' choices are all one. Its thumb slides to the segment

@@ -89,16 +89,17 @@ async function statusTip(page: Page): Promise<string> {
   return (await tip.textContent()) ?? '';
 }
 
-/** What the header's first row had given up at one width, and whether its title was cut. */
+/** What the header's first row had given up at one width, whether its title was cut, and how wide. */
 interface Fitted {
   readonly width: number;
   readonly steps: readonly string[];
   readonly cut: boolean;
+  readonly title: number;
 }
 
 /**
  * Makes the header's frame each of `widths` wide in turn, and says at each what its first row has
- * given up and whether its title is cut. Each width takes one frame: the row fits itself in its own
+ * given up and whether its title is cut, and how wide it is. Each width takes one frame: the row fits itself in its own
  * resize observer, made before the one that waits for the frame, so it has run by the time that one
  * does.
  */
@@ -121,6 +122,7 @@ function fittedAt(page: Page, widths: readonly number[]): Promise<Fitted[]> {
         width,
         steps: (row.getAttribute('data-gave-up') ?? '').split(' ').filter(Boolean),
         cut: heading.scrollWidth > heading.clientWidth,
+        title: heading.clientWidth,
       });
     }
     return seen;
@@ -165,7 +167,7 @@ test('narrowed from 1440 to 600 px, the header’s first row gives up its key ch
   expect([apart, heard]).toEqual([true, true]);
 });
 
-test('the header’s first row says what it gave up in the merge status’s tooltip, and nothing in it is drawn over another', async () => {
+test('the header’s first row says what it gave up in the merge status’s tooltip, gives up the status’s words only once its title is as short as it gets, and nothing in it is drawn over another', async () => {
   const page = await open();
   expect(await at(page, 1440, TOP)).toEqual(['']);
   expect(await status(page)).toEqual({ apart: true, whole: true, heard: true });
@@ -176,8 +178,13 @@ test('the header’s first row says what it gave up in the merge status’s tool
   expect([detail!.steps, detail!.cut]).toEqual([['keys', 'detail'], false]);
   expect(await status(page)).toEqual({ apart: true, whole: true, heard: true });
   expect(await statusTip(page)).toContain('Ready to merge · Merge commit into comments/base');
+  // The verdict's words go only once the title is as short as it gets: a pixel wider, they're there.
+  const widest = await widestGivingUp(page, 4);
+  const [title] = await fittedAt(page, [widest + 1]);
+  expect(title!.steps).toEqual(['keys', 'detail', 'cut']);
+  expect(title!.title).toBeLessThanOrEqual(49);
   // At last the verdict, which leaves its dot beside "Submit review…", what it says its tooltip.
-  const [words] = await fittedAt(page, [await widestGivingUp(page, 4)]);
+  const [words] = await fittedAt(page, [widest]);
   expect(words!.steps).toEqual(ORDER);
   const narrow = await status(page);
   expect([narrow.apart, narrow.heard]).toEqual([true, true]);
