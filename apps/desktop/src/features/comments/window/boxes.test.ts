@@ -2115,6 +2115,11 @@ describe('beside lines', () => {
   });
 });
 
+/** Of the marks `marks`, the one on a line. */
+function lineMark(marks: readonly DraftMark[]): DraftMark {
+  return marks.find((mark) => 'file' in mark.at)!;
+}
+
 /** Thread t1, written on the block's commit, on its line 5 there, and outdated since. */
 function outdatedOnTheBlock(): ThreadRow {
   return threadRow('t1', 5, {
@@ -2382,7 +2387,7 @@ describe('beside lines, on a code block', () => {
     expect(drawn[1]!.composer.text).toBe('A reply');
   });
 
-  test('of two blocks drawn the same, a reply asked for in the second opens there, and both mark a draft', async () => {
+  test('of two blocks drawn the same, a box asked for in the second opens there, by Reply, `c` or a mark, and each marks its draft', async () => {
     withThreads(outdatedOnTheBlock());
     const first = fakeBlock();
     const second = fakeBlock(OLDER, 'x1');
@@ -2390,18 +2395,63 @@ describe('beside lines, on a code block', () => {
     openInBlock(VIEW, home, { kind: 'reply', thread: 't1' }, '', second.writing);
     expect(first.drawn).toEqual([]);
     expect(second.drawn).toHaveLength(1);
-    shut(second.drawn[0]!, false);
+    second.drawn[0]!.on.change('A reply');
+    shut(second.drawn[0]!, true);
+    await marked();
+    expect(first.marks.map((mark) => mark.at)).toEqual([{ thread: 't1' }]);
+    expect(second.marks.map((mark) => mark.at)).toEqual([{ thread: 't1' }]);
+    // The second's mark opens it in the second.
+    second.marks[0]!.open();
+    expect(first.drawn).toEqual([]);
+    expect(second.drawn).toHaveLength(2);
+    expect(second.drawn[1]!.composer.text).toBe('A reply');
+    shut(second.drawn[1]!, true);
+    await marked();
+    // `c` on the second's line 5 opens there too.
     await onBlock(
       second.writing,
       { from: 5, to: 5 },
       { kind: 'lines', path: PATH, side: 'new', from: 5, to: 5 },
     );
-    const box = first.drawn[0] ?? second.drawn[1];
-    box!.on.change('On line 5');
-    shut(box!, true);
+    expect(first.drawn).toEqual([]);
+    expect(second.drawn).toHaveLength(3);
+    second.drawn[2]!.on.change('On line 5');
+    shut(second.drawn[2]!, true);
     await marked();
-    expect(first.marks.map((mark) => mark.at)).toEqual([{ file: 'x0', side: 'new', line: 5 }]);
-    expect(second.marks.map((mark) => mark.at)).toEqual([{ file: 'x1', side: 'new', line: 5 }]);
+    expect(lineMark(first.marks).at).toEqual({ file: 'x0', side: 'new', line: 5 });
+    expect(lineMark(second.marks).at).toEqual({ file: 'x1', side: 'new', line: 5 });
+    // Each block's mark opens it in that block.
+    lineMark(second.marks).open();
+    expect(first.drawn).toEqual([]);
+    expect(second.drawn).toHaveLength(4);
+    expect(second.drawn[3]!.composer.text).toBe('On line 5');
+    shut(second.drawn[3]!, true);
+    await marked();
+    lineMark(first.marks).open();
+    expect(first.drawn).toHaveLength(1);
+    expect(first.drawn[0]!.composer.text).toBe('On line 5');
+    expect(second.drawn).toHaveLength(4);
+  });
+
+  test('a box asked for in a block no longer drawn opens in one drawn the same', async () => {
+    withThreads(outdatedOnTheBlock());
+    const first = fakeBlock();
+    const second = fakeBlock(OLDER, 'x1');
+    const home = homeInBlock(VIEW, second.writing, 't1')!;
+    overview.blocks.delete('x1');
+    expect(openInBlock(VIEW, home, { kind: 'reply', thread: 't1' }, '', second.writing)).toBe(true);
+    expect(second.drawn).toEqual([]);
+    expect(first.drawn).toHaveLength(1);
+    // `c` asked on it as it goes opens nothing.
+    first.drawn[0]!.on.change('A reply');
+    shut(first.drawn[0]!, true);
+    await marked();
+    await onBlock(
+      second.writing,
+      { from: 5, to: 5 },
+      { kind: 'lines', path: PATH, side: 'new', from: 5, to: 5 },
+    );
+    expect(first.drawn).toHaveLength(1);
   });
 
   test('as threads go between lines, a new comment’s draft closed beside them opens under its line, and a reply’s not on the block', async () => {

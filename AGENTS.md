@@ -1548,14 +1548,14 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
   (`dropStartedEdit`), as an untouched edit's box does closing; and `c` on a block nothing once its
   tab or its overview is off screen. Asked for in the diff, with the code beside, a reply or an edit
   is the diff's, whatever a block has pinned. Of blocks drawn the same, which share a key, the one
-  asked in draws the box, and each marks the draft. A popover draws one box at a time: a reply's or
-  an edit's is on no line of its own, so it opens whatever other boxes are drawn, taking the place
-  of one in the same popover, while a new comment waits for one already on its line. A draft's "Show
-  thread", its mark's click or `⏎` on its line opens the box at once where its block is drawn, or
-  leaves it its mark (`showOnBlock`); otherwise it brings the overview on screen, and opens the box
-  as its block is drawn if no input came first (`askedAt`). A block taken down closes its box,
-  keeping its draft, and its mark comes back with the block; a send on its way then says how it went
-  in a toast.
+  asked in, by a key, a button or a draft's mark, draws the box while it's drawn (`blockDrawn`), and
+  each marks the draft. A popover draws one box at a time: a reply's or an edit's is on no line of
+  its own, so it opens whatever other boxes are drawn, taking the place of one in the same popover,
+  while a new comment waits for one already on its line. A draft's "Show thread", its mark's click
+  or `⏎` on its line opens the box at once where its block is drawn, or leaves it its mark
+  (`showOnBlock`); otherwise it brings the overview on screen, and opens the box as its block is
+  drawn if no input came first (`askedAt`). A block taken down closes its box, keeping its draft,
+  and its mark comes back with the block; a send on its way then says how it went in a toast.
 - `comments.send` plans each write with `@lo/review`'s `YourReview` and sends it with the poller's
   `sendReview`, one write to a pull request at a time, each planned from your pending review as read
   after the last one's answer. The box's text is held, read-only, while it's sent. A refusal keeps
