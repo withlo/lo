@@ -24,6 +24,7 @@ import {
   DIFF_FIRST,
   DIFF_FIRST_BETWEEN,
   expect,
+  frontOf,
   keepMenus,
   KEYCHAIN,
   onStacks,
@@ -578,8 +579,32 @@ function rowsOf(block: ReturnType<typeof codeBlock>): Promise<{ others: number; 
   });
 }
 
-/** Nothing opened for a reply or an edit: no box anywhere, the thread's card as it was. */
-async function nothingOpened(page: Page) {
+/**
+ * `onStacks`, with each request to resolve a thread held back unanswered, `resolves` listing their
+ * bodies: the cassette has none.
+ */
+const resolving = onStacks.extend<{ resolves: string[] }>({
+  // oxlint-disable-next-line no-empty-pattern
+  resolves: async ({}, use) => {
+    await use([]);
+  },
+  githubOrigin: async ({ github, resolves }, use) => {
+    const front = await frontOf(new URL(github.urls.api).origin, (_, body) => {
+      if (!/\bmutation ResolveReviewThread\b/.test(body)) return undefined;
+      resolves.push(body);
+      return new Promise<void>(() => undefined);
+    });
+    await use(front.origin);
+    await front.close();
+  },
+});
+
+/**
+ * Nothing opened for a reply or an edit: no box anywhere, the thread's card as it was, and `x`
+ * after resolves the thread, as in any popover, rather than going to a box. `resolves` lists the
+ * requests to resolve a thread.
+ */
+async function nothingOpened(page: Page, resolves: readonly string[]) {
   const popover = page.locator('[data-lo-middle-view="overview.view"] .lo-ov > .lo-threadpop');
   await expect(page.getByText('Go to the diff first')).toBeVisible();
   // None in the overview, nor in a diff drawn and hidden.
@@ -591,14 +616,19 @@ async function nothingOpened(page: Page) {
   await expect
     .poll(() => page.evaluate(() => document.activeElement?.closest('.lo-threadpop') !== null))
     .toBe(true);
+  expect(resolves).toHaveLength(0);
+  await page.keyboard.press('x');
+  await expect.poll(() => resolves.length).toBe(1);
+  await expect(page.locator('.lo-diffcomposer')).toHaveCount(0);
+  await expect(page.locator('.lo-diffview')).toBeHidden();
 }
 
 test.describe('a reply or an edit asked for in a code block’s popover', () => {
-  onStacks.use({ settings: '{ "tab.open": "overview" }\n' });
+  resolving.use({ settings: '{ "tab.open": "overview" }\n' });
 
-  onStacks(
+  resolving(
     'opened on the overview, Reply says to go to the diff first, and opens nothing',
-    async ({ page }) => {
+    async ({ page, resolves }) => {
       test.setTimeout(60_000);
       await open(page, STACK.b);
       const block = codeBlock(page, 'src/cost.ts');
@@ -606,13 +636,13 @@ test.describe('a reply or an edit asked for in a code block’s popover', () => 
       await block.getByRole('button', { name: 'Unresolved thread · line 5', exact: true }).click();
       const popover = page.locator('[data-lo-middle-view="overview.view"] .lo-ov > .lo-threadpop');
       await popover.getByRole('button', { name: 'Reply', exact: true }).click();
-      await nothingOpened(page);
+      await nothingOpened(page, resolves);
     },
   );
 
-  onStacks(
+  resolving(
     'with the diff drawn and hidden again, `i` in a code block’s popover says to go to the diff first, and opens nothing',
-    async ({ page }) => {
+    async ({ page, resolves }) => {
       test.setTimeout(60_000);
       await open(page, STACK.b);
       const block = codeBlock(page, 'src/cost.ts');
@@ -627,7 +657,7 @@ test.describe('a reply or an edit asked for in a code block’s popover', () => 
       const popover = page.locator('[data-lo-middle-view="overview.view"] .lo-ov > .lo-threadpop');
       await expect(popover).toBeVisible();
       await page.keyboard.press('i');
-      await nothingOpened(page);
+      await nothingOpened(page, resolves);
     },
   );
 });
