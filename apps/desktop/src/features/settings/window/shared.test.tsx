@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, type ReactNode } from 'react';
+import { act, useLayoutEffect, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 
@@ -14,6 +14,8 @@ import {
   defineRow,
   rows,
   settingRow,
+  shownAtOnce,
+  type ShownAtOnce,
   useChoice,
   useProblems,
   useKnownSetting,
@@ -246,6 +248,83 @@ describe('watchSetting', () => {
     expect(heard).toEqual(['split', 'inline']);
   });
 });
+
+describe('shownAtOnce', () => {
+  it('shows two quick changes at once, and their values said back after the second change nothing', async () => {
+    showSettings(state({ 'diff.layout': 'split' }));
+    // Main's answers, held until the test lets them go.
+    const answers: (() => void)[] = [];
+    installBridge({ 'settings.set': () => new Promise<void>((answer) => answers.push(answer)) });
+    const view = viewOf(shownAtOnce(layout));
+    const saved: Promise<boolean>[] = [];
+    act(() => void saved.push(view.press('inline')));
+    act(() => void saved.push(view.press('split')));
+    // Main saves each in turn, and says it back before it answers.
+    act(() => showSettings(state({ 'diff.layout': 'inline' })));
+    act(() => showSettings(state({ 'diff.layout': 'split' })));
+    await act(async () => {
+      for (const answer of answers) answer();
+      expect(await Promise.all(saved)).toEqual([true, true]);
+    });
+    expect(view.changes).toEqual(['split', 'inline', 'split']);
+    // Changed elsewhere, in Settings or the file, while none of the window's changes is saving.
+    act(() => showSettings(state({ 'diff.layout': 'inline' })));
+    expect(view.changes).toEqual(['split', 'inline', 'split', 'inline']);
+  });
+
+  it('goes back to main’s value when main refuses the change, and a toast says why', async () => {
+    showSettings(state({ 'diff.layout': 'split' }));
+    let refuse: (() => void) | undefined;
+    installBridge({
+      'settings.set': () =>
+        new Promise<void>((_, reject) => {
+          refuse = () => reject(new IpcError('unsaved', '\nEIO'));
+        }),
+    });
+    const shown = shownAtOnce(layout);
+    const view = viewOf(shown);
+    let changed: Promise<boolean> | undefined;
+    act(() => {
+      changed = view.press('inline');
+    });
+    expect(shown.shownNow()).toBe('inline');
+    await act(async () => {
+      refuse?.();
+      expect(await changed).toBe(false);
+    });
+    expect(view.changes).toEqual(['split', 'inline', 'split']);
+    expect(shown.shownNow()).toBe('split');
+    expect(notice()?.title).toMatch(/\bsaved\b/);
+  });
+});
+
+/**
+ * A view of the diff's layout, as the diff lays itself out: in the layout `shown` says, and at once
+ * in the one `press` asks for, as `gi` does, before it changes the setting. `changes` is each layout
+ * it changed to, in order.
+ */
+function viewOf(shown: ShownAtOnce<'split' | 'inline'>) {
+  let now: string | undefined;
+  const changes: string[] = [];
+  const lay = (next: string) => {
+    if (next === now) return;
+    now = next;
+    changes.push(next);
+  };
+  function View() {
+    const value = shown.useShown();
+    useLayoutEffect(() => lay(value), [value]);
+    return value;
+  }
+  render(<View />);
+  return {
+    changes,
+    press(next: 'split' | 'inline') {
+      lay(next);
+      return shown.change(next);
+    },
+  };
+}
 
 describe('choiceOf and useChoice', () => {
   const choice = choiceOf(layout);

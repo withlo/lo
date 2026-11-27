@@ -14,9 +14,16 @@ import { cassette as recorded, recordedKey } from '@lo/testing';
 import { COMMENTS_PULL, writeCommentsRemote } from '@lo/testing/git';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import type { Page } from '@playwright/test';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 
-import { DIFF_FIRST, DIFF_FIRST_BETWEEN, expect, test as base } from './app.ts';
+import {
+  dataFolder,
+  DIFF_FIRST,
+  DIFF_FIRST_BETWEEN,
+  expect,
+  settingsPath,
+  test as base,
+} from './app.ts';
 import { type BodiesServer, serveBodies } from './bodies.ts';
 import { Staged } from './staged.ts';
 
@@ -135,6 +142,15 @@ function cursor(page: Page): Promise<string | undefined> {
   });
 }
 
+/** The settings file as an object, or nothing while there's no file. */
+function saved(): unknown {
+  try {
+    return JSON.parse(readFileSync(settingsPath(dataFolder()), 'utf8'));
+  } catch {
+    return undefined;
+  }
+}
+
 /** The comment boxes in the diff. */
 const boxes = (page: Page) => page.locator('[data-lo-diff] .lo-diffcomposer');
 
@@ -173,8 +189,12 @@ async function actOnThreads(page: Page, mode: 'beside' | 'between'): Promise<voi
   }).toPass({ timeout: 30_000 });
   for (const key of ['j', 'j']) await page.keyboard.press(key);
   await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 2');
-  // The threads that came while their lines were on screen come in as the layout changes.
-  for (const key of ['g', 'i', 'g', 'i']) await page.keyboard.press(key);
+  // The threads that came while their lines were on screen come in as the layout changes: inline,
+  // then side by side again, each saved before the next.
+  for (const layout of ['inline', 'split']) {
+    for (const key of ['g', 'i']) await page.keyboard.press(key);
+    await expect.poll(saved).toMatchObject({ 'diff.layout': layout });
+  }
   const thread = card(page, 'Start a little higher?');
   if (beside) {
     // Its card is in the popover its mark opens, which is closed: made as the cursor came to its

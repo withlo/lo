@@ -31,6 +31,7 @@ import keys from '../keys.ts';
 import { layout, whitespace } from '../settings.ts';
 import { Diff } from './Diff.tsx';
 import { drawnElsewhere, linesElsewhere } from './elsewhere.ts';
+import { setLayout, shownLayout } from './layout.ts';
 import { changesLink, fileLink } from './links.ts';
 import { main } from './main.ts';
 import { fromMoved, movedNow } from './moved.ts';
@@ -230,12 +231,6 @@ const foldNames: Record<FileFold, string | undefined> = {
   show: 'Show large file',
 };
 
-/** The diff's layout, at once in the view on screen, then for every tab, as the setting. */
-async function setLayout({ view }: Drawn, next: 'split' | 'inline'): Promise<void> {
-  view.setLayout(next);
-  await changeSetting(layout, next);
-}
-
 /**
  * Whether the diff on screen can change its layout: code beside a reading view is inline, and so is
  * a diff too narrow for two sides, until the window is wider.
@@ -340,14 +335,14 @@ export default {
     sideBySide: {
       run: withDiff((drawn) => setLayout(drawn, 'split')),
       enabled: layoutNow,
-      checked: () => !besideNow() && !narrowNow() && settingNow(layout) === 'split',
+      checked: () => !besideNow() && !narrowNow() && shownLayout.shownNow() === 'split',
     },
     inline: {
       run: withDiff((drawn) =>
         setLayout(drawn, drawn.view.probe.layout === 'split' ? 'inline' : 'split'),
       ),
       enabled: layoutNow,
-      checked: () => besideNow() || narrowNow() || settingNow(layout) === 'inline',
+      checked: () => besideNow() || narrowNow() || shownLayout.shownNow() === 'inline',
     },
     whitespace: {
       run: withDiff(async ({ loader }) => {
