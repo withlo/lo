@@ -128,7 +128,7 @@ export {
   type SettingsNavItem,
   type SettingsPageProps,
 } from './Settings.tsx';
-export { Avatar, avatarHue, initials, type AvatarProps } from './Avatar.tsx';
+export { Avatar, avatarHue, initials, redrawPictures, type AvatarProps } from './Avatar.tsx';
 export { Callout, type CalloutProps, type CalloutTone } from './Callout.tsx';
 export { Choices, type ChoiceItem, type ChoicesProps } from './Choices.tsx';
 export { LayoutPicture, type PictureLayout } from './pictures/LayoutPicture.tsx';

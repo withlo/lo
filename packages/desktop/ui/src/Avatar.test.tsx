@@ -6,7 +6,7 @@ import { act } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { cleanUp, render, rerender } from '../test/dom.ts';
-import { Avatar } from './Avatar.tsx';
+import { Avatar, avatarHue, redrawPictures } from './Avatar.tsx';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -38,8 +38,8 @@ describe('Avatar', () => {
     // No initials meanwhile, and none of their hue: only the disc.
     expect(host.textContent).toBe('');
     const disc = host.firstElementChild;
-    expect(disc?.className).toContain('bg-raised');
-    expect(disc?.className).not.toContain('bg-avatar');
+    expect(disc?.classList.contains('bg-bg-raised')).toBe(true);
+    expect(disc?.classList.contains(`bg-avatar-${avatarHue('mira-chen')}-bg`)).toBe(false);
     const img = picture(host);
     expect(img?.getAttribute('src')).toBe('lo-image://avatar/mira-chen?s=24');
     expect(img?.className).toContain('opacity-0');
@@ -85,7 +85,61 @@ describe('Avatar', () => {
     const host = render(<Avatar login="mira-chen" image="lo-image://avatar/mira-chen?s=56" />);
     happens(picture(host)!, 'error');
     expect(host.textContent).toBe('MC');
-    expect(host.firstElementChild?.className).toContain('bg-avatar');
+    expect(
+      host.firstElementChild?.classList.contains(`bg-avatar-${avatarHue('mira-chen')}-bg`),
+    ).toBe(true);
+    expect(host.firstElementChild?.classList.contains('bg-bg-raised')).toBe(false);
+    expect(picture(host)).toBeNull();
+  });
+
+  it('fades in every avatar drawn with a picture new to the window, not only the first to load', () => {
+    const address = 'lo-image://bot/cursor?s=48';
+    const one = render(<Avatar login="cursor" image={address} />);
+    const two = render(<Avatar login="cursor" image={address} />);
+    happens(picture(one)!, 'load');
+    happens(picture(two)!, 'load');
+    expect(picture(one)?.classList.contains('move-swap')).toBe(true);
+    expect(picture(two)?.classList.contains('move-swap')).toBe(true);
+  });
+
+  it('draws an avatar again from an empty disc, with the Swap, at the address it’s given anew', () => {
+    const address = 'lo-image://bot/coderabbitai?s=40';
+    const other = 'lo-image://avatar/mira-chen?s=48';
+    const host = render(<Avatar login="coderabbitai" image={address} />);
+    const beside = render(<Avatar login="mira-chen" image={other} />);
+    happens(picture(host)!, 'load');
+    happens(picture(beside)!, 'load');
+    const untouched = picture(beside);
+    act(() => {
+      redrawPictures((drawn) => (drawn === address ? `${address}&r=1` : undefined));
+    });
+    const again = picture(host);
+    expect(again?.getAttribute('src')).toBe(`${address}&r=1`);
+    expect(again?.className).toContain('opacity-0');
+    happens(again!, 'load');
+    expect(picture(host)?.classList.contains('move-swap')).toBe(true);
+    // Another address isn't drawn again.
+    expect(picture(beside)).toBe(untouched);
+    // An avatar drawn later with the address it had draws the new one, as drawn before.
+    const later = render(<Avatar login="coderabbitai" image={address} />);
+    expect(picture(later)?.getAttribute('src')).toBe(`${address}&r=1`);
+    // Given the same again, nothing is drawn again.
+    const now = picture(host);
+    act(() => {
+      redrawPictures((drawn) => (drawn === address ? `${address}&r=1` : undefined));
+    });
+    expect(picture(host)).toBe(now);
+  });
+
+  it('draws the initials when a redrawn address no longer loads', () => {
+    const address = 'lo-image://bot/gone-bot?s=40';
+    const host = render(<Avatar login="gone-bot" image={address} />);
+    happens(picture(host)!, 'load');
+    act(() => {
+      redrawPictures((drawn) => (drawn === address ? `${address}&r=1` : undefined));
+    });
+    happens(picture(host)!, 'error');
+    expect(host.textContent).toBe('GB');
     expect(picture(host)).toBeNull();
   });
 

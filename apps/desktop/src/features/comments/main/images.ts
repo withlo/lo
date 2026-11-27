@@ -110,6 +110,11 @@ export interface ImagesOptions {
    */
   botPicture?: ((login: string) => Promise<URL>) | undefined;
   /**
+   * Bot `login`'s picture didn't load from `address`, where `botPicture` said it was, though the
+   * avatars' host answered: it has nothing there, or what it sent isn't an image.
+   */
+  botMissing?: ((login: string, address: URL) => void) | undefined;
+  /**
    * Where to send a request for `address`, on one of GitHub's image hosts: the address itself, or
    * in a test run, a stand-in for the host. Redirects are read against the host's own address.
    */
@@ -123,6 +128,7 @@ export class Images {
   readonly #acting: (view: string) => string | undefined;
   readonly #token: (login: string) => Promise<Token | undefined>;
   readonly #botPicture: ((login: string) => Promise<URL>) | undefined;
+  readonly #botMissing: (login: string, address: URL) => void;
   readonly #route: (address: URL) => string;
   readonly #limits: ImageLimits;
   /** The images kept, the one served last at the end. */
@@ -139,6 +145,7 @@ export class Images {
     this.#acting = (view) => options.acting(view);
     this.#token = (login) => options.token(login);
     this.#botPicture = options.botPicture;
+    this.#botMissing = (login, address) => options.botMissing?.(login, address);
     this.#route = options.route ?? ((address) => address.href);
     this.#limits = { ...IMAGE_LIMITS, ...options.limits };
   }
@@ -171,6 +178,17 @@ export class Images {
       this.#loading.set(key, loading);
     }
     return loading;
+  }
+
+  /** Keeps no picture of bot `login`'s, at any size, as when it has moved: the next ask fetches it. */
+  forgetBot(login: string): void {
+    // As `keyOf` keeps a bot's picture: by its slug, then its size.
+    const prefix = `bot ${login.toLowerCase()} `;
+    for (const [key, { bytes }] of this.#kept) {
+      if (!key.startsWith(prefix)) continue;
+      this.#kept.delete(key);
+      this.#keptBytes -= bytes.length;
+    }
   }
 
   /** Runs `fetch` once fewer than the most images are being fetched. */
@@ -239,10 +257,22 @@ export class Images {
         continue;
       }
       if (response.status !== 200) {
+        this.#answeredWithout(asked, first);
         throw new ImageError('failed', `${address.host} answered ${response.status}`);
       }
-      return this.#checked(address, await this.#body(address, response, deadline));
+      const bytes = await this.#body(address, response, deadline);
+      try {
+        return this.#checked(address, bytes);
+      } catch (error) {
+        this.#answeredWithout(asked, first);
+        throw error;
+      }
     }
+  }
+
+  /** Tells, for a bot's picture, that the host answered `asked` at `first` without it. */
+  #answeredWithout(asked: ImageAsked, first: URL): void {
+    if (asked.kind === 'bot') this.#botMissing(asked.login, first);
   }
 
   /** The address an image is first asked for at. */

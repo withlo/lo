@@ -28,6 +28,7 @@ function pictures(
   kept?: KeptBots,
 ) {
   const asked: string[] = [];
+  const changes: string[] = [];
   const clock = { now: 0 };
   const bots = new BotPictures({
     ask: async (login) => {
@@ -37,8 +38,9 @@ function pictures(
     now: () => clock.now,
     limits,
     kept,
+    changed: (slug) => changes.push(slug),
   });
-  return { bots, asked, clock };
+  return { bots, asked, changes, clock };
 }
 
 /** Bots' pictures kept from an earlier run, as `given` says, and what's kept since. */
@@ -46,7 +48,30 @@ function keptBots(given: Readonly<Record<string, string>> = {}): KeptBots & {
   kept: Map<string, string>;
 } {
   const kept = new Map(Object.entries(given));
-  return { kept, read: (slug) => kept.get(slug), keep: (slug, path) => kept.set(slug, path) };
+  return {
+    kept,
+    read: (slug) => kept.get(slug),
+    keep: (slug, path) => kept.set(slug, path),
+    forget: (slug) => kept.delete(slug),
+  };
+}
+
+/** Lets what's under way go on, a few turns of the event loop. */
+async function settle(): Promise<void> {
+  for (let turns = 0; turns < 10; turns++) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+}
+
+/** An answer the test gives when it likes, and the asks waiting on it. */
+function waiting() {
+  const asks: ((answer: BotAnswer) => void)[] = [];
+  return {
+    answer: () => new Promise<BotAnswer>((resolve) => asks.push(resolve)),
+    give(answer: BotAnswer) {
+      for (const resolve of asks.splice(0)) resolve(answer);
+    },
+  };
 }
 
 const found = (avatar = CURSOR): BotAnswer => ({ kind: 'found', avatar });
@@ -243,12 +268,90 @@ describe('BotPictures', () => {
 });
 
 describe('BotPictures, from run to run', () => {
-  it('draws a bot whose picture an earlier run kept without asking GitHub', async () => {
-    const { bots, asked } = pictures(() => found(), undefined, keptBots({ cursor: '/in/1210556' }));
+  it('draws a bot an earlier run kept at once, before GitHub answers, and asks about it once a run', async () => {
+    const github = waiting();
+    const kept = keptBots({ cursor: '/in/1210556' });
+    const { bots, asked, changes } = pictures(github.answer, undefined, kept);
     expect((await bots.picture('Cursor')).href).toBe(
       'https://avatars.githubusercontent.com/in/1210556',
     );
-    expect(asked).toEqual([]);
+    await settle();
+    expect(asked).toEqual(['Cursor']);
+    github.give(found());
+    await settle();
+    await bots.picture('cursor');
+    await settle();
+    // The same picture: nothing to draw again, and nothing more asked this run.
+    expect(asked).toEqual(['Cursor']);
+    expect(changes).toEqual([]);
+    expect([...kept.kept]).toEqual([['cursor', '/in/1210556']]);
+  });
+
+  it('keeps where a bot’s picture moved to, and draws it again', async () => {
+    const kept = keptBots({ cursor: '/in/1' });
+    const { bots, changes } = pictures(() => found(), undefined, kept);
+    expect((await bots.picture('cursor')).pathname).toBe('/in/1');
+    await settle();
+    expect(changes).toEqual(['cursor']);
+    expect(kept.kept.get('cursor')).toBe('/in/1210556');
+    expect((await bots.picture('cursor')).pathname).toBe('/in/1210556');
+  });
+
+  it('keeps no more a bot GitHub has no more, and draws it again, as its initials', async () => {
+    const kept = keptBots({ cursor: '/in/1210556', renovate: '/in/2740' });
+    const { bots, changes } = pictures(() => ({ kind: 'none' }), undefined, kept);
+    expect((await bots.picture('cursor')).pathname).toBe('/in/1210556');
+    await settle();
+    expect(changes).toEqual(['cursor']);
+    expect([...kept.kept.keys()]).toEqual(['renovate']);
+    expect(await refusal(bots.picture('cursor'))).toMatchObject({ reason: 'refused' });
+  });
+
+  it('keeps no more a kept picture that didn’t load before GitHub answered, and draws where GitHub says', async () => {
+    const github = waiting();
+    const kept = keptBots({ cursor: '/in/1' });
+    const { bots, asked, changes } = pictures(github.answer, undefined, kept);
+    expect((await bots.picture('cursor')).pathname).toBe('/in/1');
+    bots.missing('cursor', new URL('https://avatars.githubusercontent.com/in/1?s=40'));
+    expect(kept.kept.has('cursor')).toBe(false);
+    // Drawn again meanwhile, it waits for the ask already under way.
+    const again = bots.picture('cursor');
+    await settle();
+    github.give(found());
+    expect((await again).pathname).toBe('/in/1210556');
+    await settle();
+    expect(asked).toEqual(['cursor']);
+    expect(changes).toEqual(['cursor']);
+    expect(kept.kept.get('cursor')).toBe('/in/1210556');
+  });
+
+  it('keeps a picture GitHub said is where it is this run, though it didn’t load', async () => {
+    const kept = keptBots({ cursor: '/in/1210556' });
+    const { bots } = pictures(() => found(), undefined, kept);
+    await bots.picture('cursor');
+    await settle();
+    bots.missing('cursor', new URL('https://avatars.githubusercontent.com/in/1210556?s=40'));
+    expect(kept.kept.get('cursor')).toBe('/in/1210556');
+    expect((await bots.picture('cursor')).pathname).toBe('/in/1210556');
+  });
+
+  it('keeps what was kept while GitHub can’t say, and asks again the next time it’s drawn', async () => {
+    let answers = 0;
+    const kept = keptBots({ cursor: '/in/1210556' });
+    const { bots, asked, changes } = pictures(
+      () => (++answers === 1 ? { kind: 'unanswered', why: 'GitHub can’t be reached' } : found()),
+      undefined,
+      kept,
+    );
+    expect((await bots.picture('cursor')).pathname).toBe('/in/1210556');
+    await settle();
+    expect(kept.kept.get('cursor')).toBe('/in/1210556');
+    expect((await bots.picture('cursor')).pathname).toBe('/in/1210556');
+    await settle();
+    await bots.picture('cursor');
+    await settle();
+    expect(asked).toEqual(['cursor', 'cursor']);
+    expect(changes).toEqual([]);
   });
 
   it("keeps where GitHub said a bot's picture is, and not that it has no such bot", async () => {
@@ -269,6 +372,9 @@ describe('BotPictures, from run to run', () => {
         throw new Error('database is closed');
       },
       keep: () => {
+        throw new Error('database is closed');
+      },
+      forget: () => {
         throw new Error('database is closed');
       },
     };
@@ -323,6 +429,19 @@ describe('BotTable', () => {
     expect(later.read('cursor')).toBe('/in/1210557');
     expect(later.read('renovate')).toBeUndefined();
     expect(later.read('dependabot')).toBe('/in/29110');
+  });
+
+  it('forgets a bot, and every bot once the cache is cleared', () => {
+    const table = new BotTable(database());
+    table.keep('cursor', '/in/1210556');
+    table.keep('renovate', '/in/2740');
+    table.forget('cursor');
+    expect(table.read('cursor')).toBeUndefined();
+    expect(table.read('renovate')).toBe('/in/2740');
+    table.keep('cursor', '/in/1210556');
+    table.clear();
+    expect(table.read('cursor')).toBeUndefined();
+    expect(table.read('renovate')).toBeUndefined();
   });
 });
 

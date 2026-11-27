@@ -1,5 +1,5 @@
 import { cva } from 'class-variance-authority';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import { swapIn } from './Collapse.tsx';
 
@@ -23,7 +23,7 @@ const avatar = cva(
         5: 'bg-avatar-5-bg text-avatar-5',
         6: 'bg-avatar-6-bg text-avatar-6',
         // Their picture, on its way: an empty disc, with no initials.
-        none: 'bg-raised',
+        none: 'bg-bg-raised',
       },
     },
   },
@@ -69,8 +69,24 @@ export function Avatar({ login, size = 'lg', image }: AvatarProps) {
       </span>
     );
   }
-  // A new address starts again, from the empty disc.
-  return <Picture key={image} login={login} size={size} image={image} />;
+  return <Drawn login={login} size={size} image={image} />;
+}
+
+/**
+ * An avatar with an address: the one it's given, or the one `redrawPictures` gave for it since,
+ * each drawn from the empty disc.
+ */
+function Drawn({ login, size, image }: { login: string; size: 'xl' | 'lg' | 'sm'; image: string }) {
+  const address = useSyncExternalStore(watchRedraws, () => replaced.get(image) ?? image);
+  useLayoutEffect(() => {
+    drawing.set(image, (drawing.get(image) ?? 0) + 1);
+    return () => {
+      const left = (drawing.get(image) ?? 1) - 1;
+      if (left > 0) drawing.set(image, left);
+      else drawing.delete(image);
+    };
+  }, [image]);
+  return <Picture key={address} login={login} size={size} image={address} />;
 }
 
 /**
@@ -78,6 +94,39 @@ export function Avatar({ login, size = 'lg', image }: AvatarProps) {
  * collapses, one comes back as it loads, without the move a picture new to the window makes.
  */
 const drawnBefore = new Set<string>();
+
+/** The addresses avatars are given, each with how many on screen are. */
+const drawing = new Map<string, number>();
+/** What `redrawPictures` gave for an address, which its avatars draw instead. */
+const replaced = new Map<string, string>();
+/** The avatars watching `replaced`. */
+const watchers = new Set<() => void>();
+
+function watchRedraws(changed: () => void): () => void {
+  watchers.add(changed);
+  return () => {
+    watchers.delete(changed);
+  };
+}
+
+/**
+ * Has each avatar whose address `change` gives a new one for draw that one instead, on screen now
+ * or later, as a picture new to the window: the empty disc, then the picture with the Swap, or the
+ * initials if it can't be loaded. For a picture that changed behind its address: the window keeps
+ * each picture it has drawn by its address, whatever the answer said, so only a new address loads
+ * it anew.
+ */
+export function redrawPictures(change: (address: string) => string | undefined): void {
+  let changed = false;
+  for (const address of new Set([...drawing.keys(), ...replaced.keys(), ...drawnBefore])) {
+    const now = change(address);
+    if (now === undefined || now === (replaced.get(address) ?? address)) continue;
+    replaced.set(address, now);
+    changed = true;
+  }
+  if (!changed) return;
+  for (const watcher of watchers) watcher();
+}
 
 /**
  * The picture, in an empty disc until it has loaded, which it then fades in over (Swap), or the
@@ -96,9 +145,13 @@ function Picture({
 }) {
   const [state, setState] = useState<'loading' | 'loaded' | 'failed'>('loading');
   const picture = useRef<HTMLImageElement>(null);
+  // Whether the window hadn't drawn the picture before this avatar was, and so it fades in as it
+  // loads: read as it's first drawn, so every avatar new with it fades in, not only the first.
+  const fresh = useRef(false);
   // Whether it loaded after it was drawn, and so fades in.
   const arrived = useRef(false);
   useLayoutEffect(() => {
+    fresh.current = !drawnBefore.has(image);
     const drawn = picture.current;
     if (!drawn?.complete || drawn.naturalWidth === 0) return;
     drawnBefore.add(image);
@@ -129,7 +182,7 @@ function Picture({
         className={`size-full object-cover ${state === 'loaded' ? '' : 'opacity-0'}`}
         onLoad={() => {
           if (state !== 'loading') return;
-          arrived.current = !drawnBefore.has(image);
+          arrived.current = fresh.current;
           drawnBefore.add(image);
           setState('loaded');
         }}

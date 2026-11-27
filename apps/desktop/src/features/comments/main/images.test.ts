@@ -92,6 +92,7 @@ function images(
 ) {
   const tokens = options.tokens ?? { octocat: TOKEN, hubot: OTHER };
   const sent: Sent[] = [];
+  const missing: [string, string][] = [];
   const read: string[] = [];
   const ask = options.bots;
   const bots =
@@ -124,8 +125,9 @@ function images(
     },
     limits: options.limits,
     botPicture: bots === undefined ? undefined : (login) => bots.picture(login),
+    botMissing: (login, address) => missing.push([login, address.href]),
   });
-  return { loader, sent, read };
+  return { loader, sent, read, missing };
 }
 
 /** GitHub's answer to an attachment's address: the signed address to an account, 404 to nobody. */
@@ -230,6 +232,48 @@ describe('Images', () => {
     ]);
     held[1]?.(image(png()));
     expect(await cursor).toMatchObject({ type: 'png' });
+  });
+
+  it("says when the avatars' host answers for a bot's picture without it, and not when it can't be reached", async () => {
+    let answer: 'gone' | 'text' | 'down' = 'gone';
+    const { loader, missing } = images(
+      () => {
+        if (answer === 'gone') return new Response('Not Found', { status: 404 });
+        if (answer === 'text') return new Response('not an image');
+        return Promise.reject(new TypeError('fetch failed'));
+      },
+      { bots: () => Promise.resolve('https://avatars.githubusercontent.com/in/1') },
+    );
+    await refusal(loader.load(bot('cursor')));
+    answer = 'text';
+    await refusal(loader.load(bot('cursor', 40)));
+    answer = 'down';
+    await refusal(loader.load(bot('cursor', 24)));
+    expect(missing).toEqual([
+      ['cursor', 'https://avatars.githubusercontent.com/in/1?s=56'],
+      ['cursor', 'https://avatars.githubusercontent.com/in/1?s=40'],
+    ]);
+  });
+
+  it("fetches a bot's picture anew, at every size, once it's forgotten", async () => {
+    const { loader, sent } = images(() => image(png(56, 56)), {
+      bots: () => Promise.resolve('https://avatars.githubusercontent.com/in/1210556'),
+    });
+    const all = async () => {
+      await loader.load(bot('cursor'));
+      await loader.load(bot('cursor', 40));
+      await loader.load(avatar('cursor'));
+    };
+    await all();
+    await all();
+    expect(sent).toHaveLength(3);
+    loader.forgetBot('Cursor');
+    await all();
+    // A person's avatar by the same name is kept apart, and stays.
+    expect(sent.map(({ url }) => url).slice(3)).toEqual([
+      'https://avatars.githubusercontent.com/in/1210556?s=56',
+      'https://avatars.githubusercontent.com/in/1210556?s=40',
+    ]);
   });
 
   it("follows a bot's avatar's redirects only on the avatars' host", async () => {

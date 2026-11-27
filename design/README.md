@@ -829,7 +829,10 @@ An `Avatar` with its picture's address is an empty disc on `lo-bg-raised` until 
 loaded, which then fades in over it in one Swap. Its initials show only with no address, or once the
 picture can't be loaded, so a picture on its way never shows as someone's letters. One whose picture
 the window already holds shows it from the first frame, and one the window has drawn before, as on a
-card drawn again, comes back without the Swap.
+card drawn again, comes back without the Swap. Each avatar drawn with a picture new to the window
+fades in, however many share its address. A picture that changes behind its address, as a bot's does
+when its app's moves, is drawn again at a new address (`redrawPictures`), since the window keeps
+each picture it has drawn by its address: the empty disc, then the Swap, once.
 
 ## Code and diffs
 

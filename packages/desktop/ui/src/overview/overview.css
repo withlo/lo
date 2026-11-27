@@ -364,11 +364,9 @@
 }
 
 /*
- * The banner over an overview written for an older push is as tall from its first frame as it
- * stays, whatever it says, at any width: its title is one line, and what changed since has its
- * lines kept free until it comes, more where the banner is narrow. Its actions never wrap by what
- * their labels say: beside the text where there's room, in a row of their own under it where
- * there's room for the longest labels side by side, and one above the other where there isn't.
+ * The banner over an overview written for an older push: its title is one line, and what changed
+ * since has its two lines held free until it comes, so nothing moves when it does. Its button is
+ * beside the text while it shows whole there, as `useGiveUp` measures it (`OutOfDate`).
  */
 .lo-ov .lo-ov-stales {
   margin-top: 16px;
