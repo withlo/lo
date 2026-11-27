@@ -11,6 +11,20 @@ export const LOADING_DELAY_MS = 300;
 /** How long a wait runs before `Loading` says what's slow and offers to cancel. */
 export const LOADING_SLOW_MS = 8000;
 
+/** What marks a `Loading` on the page. */
+const LOADING_ATTRIBUTE = 'data-lo-loading';
+
+/**
+ * Whether `element` shows a `Loading`, or holds one: a view with nothing to draw yet, which hasn't
+ * laid out what it will show. A switch to it keeps what it replaces drawn meanwhile.
+ */
+export function loadingIn(element: Element): boolean {
+  return (
+    element.matches(`[${LOADING_ATTRIBUTE}]`) ||
+    element.querySelector(`[${LOADING_ATTRIBUTE}]`) !== null
+  );
+}
+
 export interface LoadingProps {
   /** The wait, as a progress label: "Fetching diff…". */
   status: string;
@@ -104,6 +118,7 @@ export function Loading({
     <div
       role="status"
       className="flex h-full min-h-0 flex-col items-center justify-center gap-16 px-16"
+      {...{ [LOADING_ATTRIBUTE]: '' }}
     >
       {stage !== 'early' && (
         <>

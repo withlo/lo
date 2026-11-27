@@ -4,10 +4,11 @@
 // them, and its status bar, which ends with the keys held for a command still to come, and Vim's
 // mode while code has focus. With the code beside, the middle is a reading view on the left and
 // the code on the right, each a sheet. It opens on the middle view Settings names, once Settings is
-// known. Until the diff and the threads arrive, the middle says what's coming, and a pull request
-// the tab can't show says why there.
+// known. A switch to another middle view keeps the one it leaves on screen until the other has laid
+// out (`hold.ts`). Until the diff and the threads arrive, the middle says what's coming, and a pull
+// request the tab can't show says why there.
 
-import { Panes, PRHeader, StatusBar, StatusKeys, StatusMode, Swap, type ViewFocus } from '@lo/ui';
+import { Panes, PRHeader, StatusBar, StatusKeys, StatusMode, swapIn, type ViewFocus } from '@lo/ui';
 import { focusedMode, onFocusedMode } from '@lo/ui/code';
 import {
   useCallback,
@@ -51,7 +52,16 @@ import {
   useTabPanels,
   viewsOf,
 } from './panels.ts';
-import { layout, row, useBesideDrawn, usePanelDrawn, viewCounts, viewFocus } from './layout.ts';
+import { useHold, type Drawn } from './hold.ts';
+import {
+  layout,
+  row,
+  SHEET,
+  useBesideDrawn,
+  usePanelDrawn,
+  viewCounts,
+  viewFocus,
+} from './layout.ts';
 import { MiddleViewOf, Placeholder, useAllWaiting } from './Placeholder.tsx';
 import { LeftPanel, RightPanel, ViewsRow, type Sheet } from './Row.tsx';
 import { BesideToggle, LeftToggle, RightToggle } from './Toggles.tsx';
@@ -72,6 +82,23 @@ const setRowWidth = (width: number) => row.setState({ width });
 /** Which sheet a middle view is drawn in: code on the right, anything else on the left. */
 function sheetOf(id: string): Sheet {
   return kindOf(id) === 'code' ? 'code' : 'reading';
+}
+
+/**
+ * A middle view's box, as it's drawn: each fills its sheet, on the sheet's ground, so one that comes
+ * covers the one under it as it fades in. Only the one on screen takes input; the one coming is
+ * drawn unseen, and takes focus and keys, but not the pointer.
+ */
+const VIEW: Record<Drawn, string> = {
+  seen: 'absolute inset-0 bg-bg middle-view',
+  coming: 'pointer-events-none absolute inset-0 bg-bg opacity-0 middle-view',
+  under: 'absolute inset-0 -z-1 bg-bg middle-view',
+  hidden: 'invisible absolute inset-0 bg-bg middle-view',
+};
+
+/** Where middle view `id` is drawn among `views`, if it's drawn. */
+function viewIn(views: HTMLElement | null, id: string): HTMLElement | null {
+  return views?.querySelector<HTMLElement>(`[data-lo-middle-view="${CSS.escape(id)}"]`) ?? null;
 }
 
 /**
@@ -181,6 +208,34 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
   // Focus left in a view as it's hidden goes where keys typed meanwhile go on.
   const views = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => catchHidden(views.current));
+  // A view shown in another's place comes once it has laid out, over the one it replaces: in the
+  // same sheet, it fades in over that view; in the other, its sheet fades in over that one's.
+  const drawnOf = useHold(onScreen, {
+    holds: !failed,
+    element: (id) => viewIn(views.current, id),
+    swap: (came, went) =>
+      came.flatMap((id) => {
+        const element = viewIn(views.current, id);
+        if (!element) return [];
+        if (!went.some((each) => sheetOf(each) === sheetOf(id))) {
+          return [element.closest(SHEET) ?? element];
+        }
+        swapIn(element);
+        return [element];
+      }),
+  });
+  const sheetsOf = (drawn: Drawn) =>
+    new Set(middles.filter((each) => drawnOf(each.id) === drawn).map((each) => sheetOf(each.id)));
+  const seenSheets = sheetsOf('seen');
+  const underSheets = sheetsOf('under');
+  const drawnSheets: Sheet | 'both' = two ? 'both' : sheetOf(shownId ?? '');
+  // The sheet that comes on screen with the view coming, while it lays out, and the one it replaces.
+  const comingSheet = [...sheetsOf('coming')].find(
+    (sheet) => !seenSheets.has(sheet) && !underSheets.has(sheet),
+  );
+  const goingSheet = [...underSheets].find(
+    (sheet) => drawnSheets !== 'both' && drawnSheets !== sheet,
+  );
   // Focus coming into one of two views makes it the one with focus, which stays as the code goes.
   const onViewFocus = useCallback(
     (event: FocusEvent<HTMLElement>) => {
@@ -195,29 +250,24 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
     const drawnHere = middles.filter(
       (each) => sheetOf(each.id) === sheet && (each.id === here || drawnViews.includes(each.id)),
     );
-    // One shown in another's place fades in over it, a Swap that keeps them all drawn; the first
-    // the sheet shows is just there.
     return (
-      <Swap id={here} keep className="absolute inset-0">
+      <div className="absolute inset-0 isolate">
         {drawnHere.map((each) => {
-          const shown = each.id === here;
-          const seen = shown && !failed;
+          const drawn = failed ? 'hidden' : drawnOf(each.id);
           return (
             <div
               key={each.id}
-              className={
-                seen ? 'absolute inset-0 middle-view' : 'invisible absolute inset-0 middle-view'
-              }
-              inert={!seen}
+              className={VIEW[drawn]}
+              inert={drawn === 'under' || drawn === 'hidden'}
               data-lo-middle-view={each.id}
             >
               <MiddleViewOf value={each.id}>
-                <each.render tab={tab} shown={shown} />
+                <each.render tab={tab} shown={each.id === here} />
               </MiddleViewOf>
             </div>
           );
         })}
-      </Swap>
+      </div>
     );
   };
   const readingLabel = middles.find((each) => each.id === onScreen[0])?.label ?? 'Pull request';
@@ -266,7 +316,9 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
           <ViewsRow
             there={there}
             focus={focus}
-            drawn={two ? 'both' : sheetOf(shownId ?? '')}
+            drawn={drawnSheets}
+            coming={failed ? undefined : comingSheet}
+            going={failed ? undefined : goingSheet}
             failed={failed}
             reading={shownMiddle ? sheetViews('reading') : <Placeholder tab={tab.id} />}
             code={sheetViews('code')}

@@ -12,7 +12,7 @@ import { cleanUp, click, render, rerender, tipOf } from '../test/dom.ts';
 import { Button } from './Button.tsx';
 import { COPIED_MS, CopyButton, CopyRoute } from './CopyButton.tsx';
 import { Dialog, type DialogState } from './Dialog.tsx';
-import { Loading, LOADING_DELAY_MS, LOADING_SLOW_MS } from './Loading.tsx';
+import { Loading, LOADING_DELAY_MS, LOADING_SLOW_MS, loadingIn } from './Loading.tsx';
 import { LogoMotion } from './LogoMotion.tsx';
 import { logoSeconds } from './logoFrames.ts';
 import { setMotion } from './motion.ts';
@@ -919,6 +919,22 @@ describe('Loading', () => {
     expect(cancel).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
     expect(await missingRules(host)).toEqual([]);
+  });
+
+  it('says a view that shows it has nothing to draw yet, even before it shows', () => {
+    const host = render(
+      <>
+        <section id="waiting">
+          <Loading status="Reading timeline…" />
+        </section>
+        <section id="drawn">
+          <p>Opened by octocat</p>
+        </section>
+      </>,
+    );
+    expect(loadingIn(host.querySelector('#waiting')!)).toBe(true);
+    expect(loadingIn(host.querySelector('[role="status"]')!)).toBe(true);
+    expect(loadingIn(host.querySelector('#drawn')!)).toBe(false);
   });
 });
 
