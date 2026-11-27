@@ -4398,7 +4398,8 @@ class View implements DiffView {
    * change of layout.
    */
   #refitLayout(): void {
-    const top = this.viewport();
+    // What the reader saw at the top, before the new width wrapped the lines anew.
+    const top = this.#seenTop() ?? this.viewport();
     const jumped = this.#jumped !== undefined && this.#samePlace(this.#jumped.at, top.at);
     this.#beside.close();
     this.#letThreadsGo('all', false);
@@ -4421,6 +4422,19 @@ class View implements DiffView {
     this.#lastPane = shown;
     this.#hold(top, jumped);
     this.#putBack(top);
+  }
+
+  /**
+   * Where the line at the top of the screen was before the lines wrapped anew at the box's new
+   * width, as the layout shown noted it, if they have: side by side, the first line the spacer
+   * pass last left on screen; inline, the one `#rewrappedTop` puts back.
+   */
+  #seenTop(): Viewport | undefined {
+    if (this.#pane === 'inline') return this.#rewrappedTop();
+    const kept = this.#aligner.seenTop();
+    if (!kept) return undefined;
+    const line = this.#viewOf(kept.side).state.doc.lineAt(kept.pos).number;
+    return { at: this.#spot(this.#placeAt(kept.side, line)), offset: -kept.offset };
   }
 
   /**

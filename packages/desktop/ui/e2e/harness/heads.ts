@@ -214,6 +214,16 @@ const heads = {
     if (pinned) found.push(read(pinned, 'pinned'));
     return found;
   },
+  /** What every header drawn shows at each of `widths`, the box made that wide in turn. */
+  async across(widths: readonly number[]): Promise<{ width: number; drawn: Drawn[] }[]> {
+    const found: { width: number; drawn: Drawn[] }[] = [];
+    for (const width of widths) {
+      heads.size(width);
+      await heads.frames(2);
+      found.push({ width, drawn: heads.read() });
+    }
+    return found;
+  },
   /** Waits for `count` frames. */
   frames(count: number): Promise<void> {
     return new Promise((resolve) => {

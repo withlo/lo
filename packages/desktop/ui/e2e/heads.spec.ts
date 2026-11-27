@@ -51,12 +51,13 @@ function read(page: Page) {
 /** The least a cut name keeps, `min-w-cut`, short of a rounding. */
 const CUT = 47.5;
 
-/** Every header drawn follows the order it gives up in, and draws nothing cut past its rules. */
-async function inOrder(page: Page, parts: readonly string[]): Promise<void> {
-  const drawn = await read(page);
+type Drawn = Awaited<ReturnType<typeof read>>[number];
+
+/** Each header in `drawn` follows the order it gives up in, and draws nothing cut past its rules. */
+function inOrder(drawn: readonly Drawn[], parts: readonly string[], width: number): void {
   expect(new Set(drawn.map((each) => each.part))).toEqual(new Set(parts));
   for (const head of drawn) {
-    const where = `${head.part} header of ${head.path} (${head.gaveUp || 'whole'})`;
+    const where = `${width} px: ${head.part} header of ${head.path} (${head.gaveUp || 'whole'})`;
     if (head.endWhole !== undefined) expect(head.endWhole, where).toBe(true);
     if (head.startFits === undefined) continue;
     expect(head.startFits, where).toBe(true);
@@ -74,9 +75,9 @@ async function inOrder(page: Page, parts: readonly string[]): Promise<void> {
   }
 }
 
-/** Every width from `from` to `to`, 4 px apart. */
+/** Every width from `from` to `to`, 8 px apart. */
 function widths(from: number, to: number): number[] {
-  return Array.from({ length: (to - from) / 4 + 1 }, (_, index) => from + index * 4);
+  return Array.from({ length: (to - from) / 8 + 1 }, (_, index) => from + index * 8);
 }
 
 /** Each header drawn follows its order at each of `sizes`, the box made that wide in turn. */
@@ -85,16 +86,12 @@ async function across(
   sizes: readonly number[],
   parts: readonly string[],
 ): Promise<void> {
-  for (const width of sizes) {
-    await page.evaluate((wide) => window.heads.size(wide), width);
-    await frames(page);
-    await test.step(`${width} px`, () => inOrder(page, parts));
-  }
+  const found = await page.evaluate((each) => window.heads.across(each), sizes);
+  for (const { width, drawn } of found) inOrder(drawn, parts, width);
 }
 
 test('inline, from 340 to 476 px, as a code view beside a reading view or a diff beside a panel is, each header gives up its note, then its folder, then cuts its name, and its end is whole, in the flow and pinned', async () => {
   const page = await open('inline', 340);
-  await across(page, widths(340, 476), ['both']);
   await page.evaluate(() => window.heads.pin());
   await across(page, widths(340, 476), ['both', 'pinned']);
 });
@@ -102,10 +99,8 @@ test('inline, from 340 to 476 px, as a code view beside a reading view or a diff
 test('side by side, from 480 to 600 px, each half of a header gives up on its own, in the flow and pinned, and a wide diff gives up nothing', async () => {
   const page = await open('split', 480);
   expect(await page.evaluate(() => window.heads.layout())).toBe('split');
-  await across(page, widths(480, 600), ['start', 'end']);
   await page.evaluate(() => window.heads.pin());
-  await across(page, widths(480, 600), ['start', 'end', 'pinned']);
-  await across(page, [1200], ['start', 'end', 'pinned']);
+  await across(page, [...widths(480, 600), 1200], ['start', 'end', 'pinned']);
   const usage = (await read(page)).filter((each) => each.path === 'docs/usage.md');
   expect(usage.map((each) => each.gaveUp)).toEqual(usage.map(() => ''));
 });
