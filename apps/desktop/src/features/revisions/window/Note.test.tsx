@@ -44,11 +44,13 @@ beforeAll(() => {
   holdRegistry(createRegistry(feature.commands, 'mac'));
 });
 
-let root: ReturnType<typeof createRoot> | undefined;
+/** The bars drawn in this test, each taken down after it. */
+const roots: ReturnType<typeof createRoot>[] = [];
 
 afterEach(() => {
-  act(() => root?.unmount());
-  root = undefined;
+  act(() => {
+    for (const root of roots.splice(0)) root.unmount();
+  });
   document.body.replaceChildren();
 });
 
@@ -74,8 +76,9 @@ function barAt(room: number): HTMLElement {
   });
   const host = document.createElement('div');
   document.body.append(host);
-  root = createRoot(host);
-  act(() => root!.render(<Note tab={TAB} />));
+  const root = createRoot(host);
+  roots.push(root);
+  act(() => root.render(<Note tab={TAB} />));
   return host.querySelector<HTMLElement>('.give-up')!;
 }
 

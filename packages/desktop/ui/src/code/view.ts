@@ -4719,7 +4719,9 @@ class View implements DiffView {
    * a jump from line `from` of `start`.
    */
   #moveTo(pane: Pane, line: number, from: number, start: Pane = pane): void {
+    // A jump of its own: what was held at the top, or put there by a jump before, isn't any more.
     this.#holding = undefined;
+    this.#jumped = undefined;
     const view = this.#viewOf(pane);
     const before = this.#placeAt(start, from);
     this.#aligner.follow();

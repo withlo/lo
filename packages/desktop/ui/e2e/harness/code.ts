@@ -343,6 +343,10 @@ const harness = {
   scrollTo(line: number, below = 0): void {
     view().scrollTo({ at: { kind: 'line', at: { file: 'a', side: 'new', line } }, offset: -below });
   },
+  /** `count` changes on from the cursor, as `]c` or the menu bar's Next Change. */
+  jump(count: number): void {
+    view().jump('change', count);
+  },
   /** The unchanged lines whose text is all on screen, and how far down it each starts. */
   onScreen(): { line: number; top: number }[] {
     const { height } = screen();

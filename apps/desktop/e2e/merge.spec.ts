@@ -69,8 +69,10 @@ test('the header gives up its branches and the merge status its detail whole as 
     // Narrow, each goes whole, never cut to a letter.
     await sizeWindow(app, 760, 800);
     await expect.poll(drawnWidth).toBeLessThanOrEqual(1);
-    await expect(detail).toBeAttached();
-    await expect(detail).toHaveText('1 check failed · 1 unresolved · review required');
+    // Still part of what the status says: gone from the page, it wouldn't be.
+    await expect(status(page)).toHaveAccessibleName(
+      /1 check failed · 1 unresolved · review required/,
+    );
     await expect.poll(shown).toBe(0);
     // Wide again, both come back, though nothing in their rows was drawn again.
     await sizeWindow(app, 1440, 900);

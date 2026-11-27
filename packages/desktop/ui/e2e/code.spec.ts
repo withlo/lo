@@ -1243,6 +1243,19 @@ test('a jump’s line stays where the jump put it as the diff crosses 480 px', a
   }
 });
 
+test('a jump to a change after a scroll put a line at the top leaves the jump’s screen as the diff crosses 480 px, not the line the scroll put there', async () => {
+  // Line 20 is put at the top, as the file tree puts a file's top there; then a jump from the menu
+  // bar goes 30 changes on, off the screen.
+  const page = await open('split');
+  await page.evaluate(() => window.harness.jump(30));
+  await frames(page);
+  const [first] = await onScreen(page);
+  expect(first!.line).toBeGreaterThan(60);
+  await page.evaluate(() => window.harness.narrow(400));
+  await frames(page);
+  near([await lineTop(page, first!.line)], [first!.top]);
+});
+
 test('a diff asked for side by side while too narrow stays inline until it’s 480 px, and one asked for inline stays inline', async () => {
   const page = await open('inline', { below: 10 });
   await page.evaluate(() => window.harness.narrow(400));
