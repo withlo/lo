@@ -1754,19 +1754,19 @@ address, which the window builds and main reads, and the `comments` feature serv
   100 bots at most, and keeps what GitHub said for the run, a bot it doesn't have included. Where a
   bot's picture is, once GitHub has said, is kept from run to run in the feature's table
   (`comments_bots`, the 500 GitHub said last), so a bot seen before draws at once: only one never
-  seen waits for its ask, behind the reads its tab opens with. A kept bot is still asked about once
-  a run, in the background as any bot is. A picture that moved is kept where it is now, main lets go
-  of the bytes it kept of it, and the `bots` topic has every window draw the bot's avatars again
-  (`redrawPictures`: an empty disc, then the Swap) at a new address
-  (`lo-image://bot/<slug>?s=<px>&r=<n>`), since Chromium keeps each picture a page has drawn by its
-  address, whatever `no-store` says; a bot GitHub has no more is no longer kept, and is drawn again
-  as its initials; and a kept picture the avatars' host answers for without an image, before GitHub
-  has said, is no longer kept. "Clear the cache" clears the table. After an ask GitHub answered with
-  an error it asks nothing for a minute, twice as long after each failure in a row, an hour at most,
-  or until an account is added or signs in again; one the account then shows (GitHub out of reach, a
-  rate limit) waits on the account's status instead, until its poller hears from GitHub again, and a
-  kept bot stays as it was kept meanwhile. With no account signed in, a bot that isn't kept keeps
-  its initials.
+  seen waits for its ask, behind the reads its tab opens with, and before the kept bots waiting to
+  be checked. A kept bot is still asked about once a run, in the background as any bot is. A picture
+  that moved is kept where it is now, main lets go of the bytes it kept of it, and the `bots` topic
+  has every window draw the bot's avatars again (`redrawPictures`: an empty disc, then the Swap) at
+  a new address (`lo-image://bot/<slug>?s=<px>&r=<n>`), since Chromium keeps each picture a page has
+  drawn by its address, whatever `no-store` says; a bot GitHub has no more is no longer kept, and is
+  drawn again as its initials; and a kept picture the avatars' host answers with a 404 or 410, or
+  bytes that aren't an image, before GitHub has said, is no longer kept. "Clear the cache" clears
+  the table. After an ask GitHub answered with an error it asks nothing for a minute, twice as long
+  after each failure in a row, an hour at most, or until an account is added or signs in again; one
+  the account then shows (GitHub out of reach, a rate limit) waits on the account's status instead,
+  until its poller hears from GitHub again, and a kept bot stays as it was kept meanwhile. With no
+  account signed in, a bot that isn't kept keeps its initials.
 - An image is drawn as GitHub draws it: at the `width` and `height` the post gives it, its height
   following its width, inline in its text, and never wider than the text. A `<picture>` with a
   source for each `prefers-color-scheme` shows the one for Lo's theme: the window's color scheme

@@ -357,7 +357,7 @@ describe('BotPictures, from run to run', () => {
     expect((await bots.picture('cursor')).pathname).toBe('/in/1210556');
   });
 
-  it('keeps what was kept while GitHub can’t say, and asks again the next time it’s drawn', async () => {
+  it('keeps what was kept while GitHub can’t say, and asks again the next time its picture is fetched', async () => {
     let answers = 0;
     const kept = keptBots({ cursor: '/in/1210556' });
     const { bots, asked, changes } = pictures(

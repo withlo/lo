@@ -287,6 +287,41 @@ describe('Images', () => {
     ]);
   });
 
+  it("joins the fetch of a bot's new picture once the old one ends, rather than fetching it again", async () => {
+    let where = 'https://avatars.githubusercontent.com/in/1';
+    const held: ((response: Response) => void)[] = [];
+    const sent: string[] = [];
+    const loader = new Images({
+      fetch: (input) => {
+        const { url } = new Request(input);
+        sent.push(url);
+        return new Promise((resolve) => held.push(resolve));
+      },
+      acting: () => undefined,
+      token: () => Promise.resolve(undefined),
+      botPicture: () => Promise.resolve(new URL(where)),
+    });
+    const old = loader.load(bot('cursor'));
+    await until(() => held.length === 1);
+    where = 'https://avatars.githubusercontent.com/in/2';
+    loader.forgetBot('cursor');
+    const now = loader.load(bot('cursor'));
+    await until(() => held.length === 2);
+    // The old fetch ends while the new one is under way: asked for again, it's the new one's.
+    held[0]?.(image(png(56, 56)));
+    expect(await old).toMatchObject({ type: 'png' });
+    const again = loader.load(bot('cursor'));
+    await until(() => true);
+    expect(sent).toHaveLength(2);
+    held[1]?.(image(gif(3, 3), 'image/gif'));
+    expect(await now).toMatchObject({ type: 'gif' });
+    expect(await again).toMatchObject({ type: 'gif' });
+    expect(sent).toEqual([
+      'https://avatars.githubusercontent.com/in/1?s=56',
+      'https://avatars.githubusercontent.com/in/2?s=56',
+    ]);
+  });
+
   it("doesn't join a fetch of a bot's old picture asked for before it was let go of", async () => {
     let where = 'https://avatars.githubusercontent.com/in/1';
     const held: ((response: Response) => void)[] = [];

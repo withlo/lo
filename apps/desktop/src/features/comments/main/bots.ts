@@ -19,7 +19,7 @@
 //   again. After an ask GitHub answered with an error, nothing is asked for a minute, then for
 //   twice as long after each failure in a row, an hour at most, unless an account is added or
 //   signs in again first (`release`). A bot not asked about keeps its initials, and is asked about
-//   the next time it's drawn.
+//   the next time its picture is fetched: at another size, or next run.
 
 import { botAvatar, type Poller } from '@lo/github';
 
@@ -202,7 +202,8 @@ export class BotPictures {
    * Asks GitHub about bot `login`, drawn from where it was kept, as any bot is asked about, after
    * the bots with nothing to draw: once it answers, what's kept follows what it said, and a change
    * is told (`changed`). While GitHub can't say, what was kept stays, and it's asked again the next
-   * time it's drawn, as a bot not asked about is.
+   * time its picture is fetched: at another size, or next run. Main serves the bytes it kept without
+   * asking here, and the window never asks again for an address it has drawn.
    */
   #check(login: string, key: string): void {
     if (this.#asking.has(key)) return;
