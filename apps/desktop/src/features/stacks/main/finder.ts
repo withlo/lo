@@ -143,7 +143,7 @@ interface Followed {
   start: LayerStart | undefined;
   /** The start its banner offers, if any, and the start the stack says it is. */
   offered: { readonly offer: Offer; readonly start: LayerStart | undefined } | undefined;
-  /** Which offer its stack's tree makes, dismissed or not, if any. */
+  /** Which offer its stack's tree makes, or will once its layers are read, dismissed or not. */
   callout: CalloutKind | undefined;
 }
 
@@ -244,7 +244,10 @@ export class StackFinder {
     return this.#followed.get(id)?.state;
   }
 
-  /** Which offer tab `id`'s stack's tree makes now, dismissed or not, if any. */
+  /**
+   * Which offer tab `id`'s stack's tree makes now, or will once its layers are read, dismissed or
+   * not, if any.
+   */
   callout(id: string): CalloutKind | undefined {
     return this.#followed.get(id)?.callout;
   }
@@ -361,9 +364,10 @@ export class StackFinder {
   }
 
   /**
-   * `view` and `offer`, as tab `tab` offers them: the offer its stack's tree makes (`callout`),
-   * unless that one is dismissed for one of the stack's layers or turned off, and the start
-   * offered, unless it's dismissed for its layer or turned off.
+   * `view` and `offer`, as tab `tab` offers them: the offer of a GitHub stack, which its stack's
+   * tree makes (`callout`) and its merge panel too, unless the one the tree makes, or would, is
+   * dismissed for one of the stack's layers or turned off, and the start offered, unless it's
+   * dismissed for its layer or turned off.
    */
   #offered(
     tab: FinderTab,
@@ -376,13 +380,12 @@ export class StackFinder {
     const repo = tab.pull.repo.key;
     const convert =
       view.kind === 'stack' &&
-      view.callout !== null &&
       !offers(
         callout ?? 'convert',
         repo,
         view.rows.map((row) => row.number),
       )
-        ? { ...view, callout: null }
+        ? { ...view, offered: false, callout: null }
         : view;
     const start = offer !== null && !offers('start', repo, [tab.pull.number]) ? null : offer;
     return { view: convert, offer: start };

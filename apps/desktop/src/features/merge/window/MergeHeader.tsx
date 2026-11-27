@@ -2,25 +2,28 @@
 // does: the verdict and what it merges into, a row for each reason it can't merge, the methods the
 // repository allows, the squash commit's text, and what merging would do: with the layers below it
 // in a GitHub stack, or, for a chain that isn't one, after converting it to one, which `gS` does
-// from here as from anywhere in the tab, or a layer at a time from its bottom one. Where it sits is
-// asked each time the panel opens and as its stack's layers move, and until main first says, the
-// main button is busy, "Checking…". It reads the same whatever is in the way, dimmed, with why as
-// its tooltip. Before the first read the status says "Checking…", and once a read failed the panel
-// says why. For a pull request in a merge queue, or ready to join one, its place there or what's
-// ahead, and why it left. Each of the panel's keys has its control there.
+// from here as from anywhere in the tab, offered here while the stacks offer it, or a layer at a
+// time from its bottom one. Where it sits is asked each time the panel opens and as its stack's
+// layers move, and until main first says, the main button is busy, "Checking…". It reads the same
+// whatever is in the way, dimmed, with why as its tooltip. Before the first read the status says
+// "Checking…", and once a read failed the panel says why. For a pull request in a merge queue, or
+// ready to join one, its place there or what's ahead, and why it left. Each of the panel's keys has
+// its control there.
 
 import {
   Branch,
   Button,
-  Callout,
   Checklist,
+  Collapse,
   CommitText,
+  handOffFocus,
   HintButton,
   Key,
   MergeFoot,
   MergeMethods,
   MergePanel,
   MergeStatus,
+  Offer,
   Problem,
   type CheckItem,
   type MergeFootProps,
@@ -29,6 +32,7 @@ import { controlOf, keyLabels, runControl } from '@lo/ui/commands';
 import {
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type MouseEvent,
@@ -40,6 +44,7 @@ import { useStore } from 'zustand';
 import { currentMenu, useMenuTarget } from '../../../window/commands/menus.tsx';
 import { registry, useKeys } from '../../../window/commands/registry.ts';
 import stacks from '../../stacks/keys.ts';
+import { useConvertOffer } from '../../stacks/window/shared.ts';
 import { usePull, useTabState, withoutBidi, type PullTab } from '../../tab/window/shared.ts';
 import type { InQueue, MergeState, MergeView, Placement } from '../contract.ts';
 import {
@@ -173,6 +178,53 @@ function convert(id: string): void {
   registry().run(CONVERT, { kind: 'none' });
 }
 
+/**
+ * The offer to convert the chain to a GitHub stack first, `line`, made as the stack's tree makes it
+ * and only while the stacks offer it (`stacks.offerConvert` on, and not dismissed for the stack):
+ * Dismiss, whose menu is the tree offer's, and "Convert to GitHub stack…", which `gS` runs too.
+ * Otherwise nothing, and no room; the main button still says why it can't merge. A dismissal here
+ * or over the tree takes it away from both in the same frame.
+ */
+function ConvertOffer({ tab, line }: { tab: PullTab; line: string }) {
+  const notice = useConvertOffer(tab);
+  const keys = keyOf(CONVERT);
+  // The offer leaving with focus in it, as one dismissed from its own Dismiss, whose menu gave focus
+  // back there, gives the panel focus, its reasons where it has them, not the page: it goes inert
+  // as its move starts, while it's still on the page.
+  const box = useRef<HTMLDivElement>(null);
+  const made = notice !== undefined;
+  const had = useRef(made);
+  useLayoutEffect(() => {
+    if (had.current && !made) {
+      const panel = box.current?.closest<HTMLElement>('[data-lo-scope="merge"]');
+      handOffFocus([box.current], () => [
+        panel?.querySelector<HTMLElement>('[role="listbox"]'),
+        panel,
+      ]);
+    }
+    had.current = made;
+  });
+  return (
+    <Collapse open={made}>
+      {notice && (
+        <div ref={box} className="pb-8">
+          <Offer
+            {...notice}
+            boxed
+            line={withoutBidi(line)}
+            action={
+              <Button size="sm" onClick={() => convert(tab.id)}>
+                Convert to GitHub stack…
+                {keys && <Key keys={keys} decorative />}
+              </Button>
+            }
+          />
+        </div>
+      )}
+    </Collapse>
+  );
+}
+
 /** What the panel says of where the pull request sits, when that changes what merging does. */
 function placeOf(tab: PullTab, state: MergeState, placement: Placement | undefined): ReactNode {
   switch (placement?.kind) {
@@ -186,22 +238,8 @@ function placeOf(tab: PullTab, state: MergeState, placement: Placement | undefin
           it in the GitHub stack.
         </p>
       );
-    case 'convert': {
-      const keys = keyOf(CONVERT);
-      return (
-        <div key="place" className="pb-8">
-          <Callout tone="info">
-            <p className="m-0">{withoutBidi(placement.offer)}</p>
-            <div className="mt-8">
-              <Button size="sm" onClick={() => convert(tab.id)}>
-                Convert to GitHub stack…
-                {keys && <Key keys={keys} decorative />}
-              </Button>
-            </div>
-          </Callout>
-        </div>
-      );
-    }
+    case 'convert':
+      return <ConvertOffer key="place" tab={tab} line={placement.offer} />;
     case 'chain':
       return (
         <div key="place" className="pb-8 text-fg-muted text-small">

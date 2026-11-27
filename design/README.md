@@ -504,9 +504,14 @@ A feature that needs set-up adds a step to the welcome flow and a row in Setting
 Something Lo offers or advises unasked, such as converting a branch stack to a GitHub stack, sits on
 the control or panel it belongs to, and the reader can dismiss it, here or everywhere.
 
-- **It's an `Offer`:** its line, Dismiss at the line's end, and its command's button under it. An
+- **It's an `Offer`:** its line, Dismiss at the line's end, and its command's button under it. In a
+  panel among other parts, such as the merge panel, it's `boxed`, in an info `Callout`'s box. An
   offer that's a change to what's on screen, such as where a layer's diff starts, is a `Banner` with
   `dismissChoices`.
+- **One offer, wherever it's made.** An offer made in more than one place, as converting a branch
+  stack is over its tree and in its merge panel, shows in each only while it's offered, with the
+  same Dismiss and menu, so a dismissal in either place takes it from both in the same frame. The
+  feature that owns it shares whether it's offered; the other never keeps a list of its own.
 - **Dismiss asks where.** It opens the offer's menu, which its right-click opens too (a `notice`
   target, in a `notice` scope: `useNoticeTarget`): "Dismiss for #264", or "Dismiss for this stack",
   where the offer is tied to one pull request or stack, then "Dismiss for all stacks", or for all of
