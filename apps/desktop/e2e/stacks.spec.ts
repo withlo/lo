@@ -303,14 +303,29 @@ test('the merge panel offers the GitHub stack the tree offers, and a dismissal i
 test.describe('with moves on', () => {
   test.use({ motion: 'on' });
 
-  test('the merge panel keeps the keys once its offer of a GitHub stack, dismissed there, has gone', async ({
+  test('the tree and the merge panel keep the keys once their offer of a GitHub stack, dismissed there, has gone', async ({
     app,
     page,
   }) => {
     test.setTimeout(90_000);
     await convertible(app);
     await open(page, STACK.c);
+    const tree = page.getByRole('region', { name: 'Stack' });
     const panel = mergePanel(page);
+    await expect(convertIn(tree)).toBeVisible({ timeout: 20_000 });
+    // Over the tree, for all stacks: once the offer and the menu have gone, the tree has focus.
+    await tree.getByRole('button', { name: 'Dismiss' }).click();
+    await dismissChoices(page)
+      .filter({ hasText: /^Dismiss for all stacks/ })
+      .click();
+    await expect(tree.locator('[data-lo-scope="notice"]')).toHaveCount(0);
+    await expect(page.getByRole('menu', { name: 'Dismiss' })).toHaveCount(0);
+    await expect(tree.getByRole('tree', { name: 'Layers' })).toBeFocused();
+    await page.evaluate(() =>
+      window.lo.invoke('settings.set', { key: 'stacks.offerConvert', value: true }),
+    );
+    await expect(convertIn(tree)).toBeVisible({ timeout: 10_000 });
+
     await expect(mergeStatus(page)).toContainText('Ready to merge', { timeout: 20_000 });
     await mergeStatus(page).click();
     await expect(convertIn(panel)).toBeVisible({ timeout: 20_000 });

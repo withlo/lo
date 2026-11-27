@@ -560,6 +560,28 @@ it('makes the offer to convert only while the stacks make it, and otherwise has 
   expect(panel()?.querySelector('button[aria-label="Dismiss"]')).toBeNull();
 });
 
+it('gives the panel focus as its offer to convert leaves with focus in it, as once it’s dismissed there', async () => {
+  views.set('t23', { kind: 'known', state: state() });
+  places.set('t23', {
+    kind: 'convert',
+    offer: 'These PRs share commits but aren’t a GitHub stack. As one, they’d merge together.',
+  });
+  offerConvert('t23', true);
+  const page = draw(<MergeHeader tab={tabOf('t23')} />);
+  await until(() => page.querySelector('button') !== null);
+  act(() => page.querySelector('button')?.click());
+  await until(() => panel()?.querySelector('button[aria-label="Dismiss"]') != null);
+  panel()?.querySelector<HTMLButtonElement>('button[aria-label="Dismiss"]')?.focus();
+  expect(document.activeElement?.getAttribute('aria-label')).toBe('Dismiss');
+  offerConvert('t23', false);
+  await act(async () => {
+    await Promise.resolve();
+  });
+  // In the panel, and not in the offer, which takes no focus as it goes.
+  expect(document.activeElement?.closest('[data-lo-scope="merge"]')).toBe(panel());
+  expect(document.activeElement?.closest('[inert]')).toBeNull();
+});
+
 it('says a chain’s bottom layer merges alone, and why it can’t be a GitHub stack', async () => {
   views.set('t16', { kind: 'known', state: state() });
   places.set('t16', {

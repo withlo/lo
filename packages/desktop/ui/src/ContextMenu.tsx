@@ -45,7 +45,9 @@ export interface ContextMenuProps {
   sections: readonly (readonly ContextMenuItem[])[];
   /**
    * Where focus goes when the menu closes: the element that had it when the menu was asked to
-   * open, of the page or of a drawing in it. Without one, wherever Base UI found focus to give back.
+   * open, of the page or of a drawing in it. Without one, or once it has left the page, wherever
+   * Base UI found focus to give back. Either way only while focus is still the menu's: focus that an
+   * action moved somewhere else, such as into the panel an offer it dismissed was in, stays there.
    */
   finalFocus?: HTMLElement | SVGElement | undefined;
   /**
