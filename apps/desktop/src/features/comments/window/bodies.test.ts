@@ -66,6 +66,8 @@ describe('BodyStore', () => {
     });
     expect(store.held('v1', DESCRIPTION, TEXT)?.html).toBe('<p>Description</p>');
     expect(store.gone('v1', post('gone'), TEXT)).toBe(true);
+    expect(store.missing('v1', post('gone'), TEXT)).toBe(true);
+    expect(store.missing('v1', post('a'), TEXT)).toBe(false);
     expect(heard).toHaveBeenCalledTimes(1);
 
     store.want('v1', post('a'), TEXT);
@@ -169,6 +171,26 @@ describe('BodyStore', () => {
     await tick();
     expect(asks).toHaveLength(3);
     expect(store.held('v1', post('a'), TEXT)).toBeDefined();
+  });
+
+  it('says a post is missing while its last ask failed, and not once an ask brings it', async () => {
+    let fail = 1;
+    const { store, tick } = storeOf((posts, description) =>
+      fail-- > 0 ? Promise.reject(new Error('offline')) : answered(posts, description),
+    );
+    const heard = vi.fn<() => void>();
+    store.subscribe('v1', post('a'), heard);
+    store.want('v1', post('a'), TEXT);
+    expect(store.missing('v1', post('a'), TEXT)).toBe(false);
+    await tick();
+    expect(store.missing('v1', post('a'), TEXT)).toBe(true);
+    expect(heard).toHaveBeenCalledTimes(1);
+    // Edited meanwhile: the new text's HTML is on its way.
+    expect(store.missing('v1', post('a'), 'Edited text')).toBe(false);
+    await tick();
+    expect(store.missing('v1', post('a'), TEXT)).toBe(false);
+    expect(store.held('v1', post('a'), TEXT)).toBeDefined();
+    expect(heard).toHaveBeenCalledTimes(2);
   });
 
   it('forgets a closed tab’s views, and asks nothing more for them', async () => {

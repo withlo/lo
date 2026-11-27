@@ -6,7 +6,8 @@
 // edited, its HTML is no longer the post's, so it shows from its new Markdown, and is asked for
 // again. A post whose images are on screen is asked for again once its HTML is `STALE_AFTER` old,
 // before their addresses lapse. An ask that fails is tried again after a wait that doubles each
-// time, as long as the posts are still wanted.
+// time, as long as the posts are still wanted, and its posts are missing meanwhile, as those GitHub
+// gave nothing for are.
 
 import { POSTS_AN_ASK, type Bodies } from '../contract.ts';
 
@@ -60,6 +61,8 @@ interface ViewBodies {
    * each was asked for.
    */
   readonly gone: Map<string, string>;
+  /** Posts whose last ask failed, with the version each was asked for, until one brings them. */
+  readonly failed: Map<string, string>;
   /** Posts to ask for at the next ask, with the version of each. */
   readonly wanted: Map<string, string>;
   /**
@@ -110,6 +113,16 @@ export class BodyStore {
   }
 
   /**
+   * Whether no HTML of `post` at `version` is on its way for now, so it shows from its Markdown:
+   * GitHub gave none for it, or the last ask for it failed, until it's asked for again and comes.
+   */
+  missing(view: string, post: PostRef, version: string): boolean {
+    const bodies = this.#views.get(view);
+    const key = keyOf(post);
+    return bodies?.gone.get(key) === version || bodies?.failed.get(key) === version;
+  }
+
+  /**
    * Asks for `post`'s HTML at `version` soon, unless the window holds it for that version, or GitHub
    * gave none for it.
    */
@@ -157,6 +170,7 @@ export class BodyStore {
       bodies = {
         held: new Map(),
         gone: new Map(),
+        failed: new Map(),
         wanted: new Map(),
         shown: new Map(),
         listeners: new Map(),
@@ -213,15 +227,18 @@ export class BodyStore {
       (error: unknown) => {
         bodies.asking = false;
         bodies.failures += 1;
-        // What was asked is wanted still, unless a newer version of it is wanted since.
+        // What was asked is wanted still, unless a newer version of it is wanted since, and
+        // missing meanwhile.
         for (const [key, version] of asked) {
           if (!bodies.wanted.has(key)) bodies.wanted.set(key, version);
+          bodies.failed.set(key, version);
         }
         const wait = Math.min(LONGEST_WAIT, FIRST_WAIT * 2 ** (bodies.failures - 1));
         this.#log(
           `Lo couldn't read posts' HTML, and tries again in ${wait / 1000} s: ${error instanceof Error ? error.message : String(error)}`,
         );
         if (this.#views.get(view) !== bodies) return;
+        this.#tell(bodies, asked.keys());
         bodies.waiting = this.#later(() => {
           bodies.waiting = undefined;
           this.#send(view, bodies);
@@ -237,6 +254,7 @@ export class BodyStore {
     const hold = (key: string, html: string | null) => {
       const version = asked.get(key);
       if (version === undefined) return;
+      bodies.failed.delete(key);
       if (html === null) {
         bodies.held.delete(key);
         bodies.gone.set(key, version);
@@ -256,7 +274,12 @@ export class BodyStore {
         bodies.wanted.set(key, shown);
       }
     }
-    for (const key of changed) {
+    this.#tell(bodies, changed);
+  }
+
+  /** Tells what listens to each post in `keys` that what the window has of it changed. */
+  #tell(bodies: ViewBodies, keys: Iterable<string>): void {
+    for (const key of keys) {
       for (const listener of bodies.listeners.get(key) ?? []) {
         try {
           listener();

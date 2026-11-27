@@ -1,5 +1,6 @@
-// The window's posts: their HTML as main read it, and their trees as the background process made
-// them, for each view of a pull request's tab, each forgotten as its tab closes.
+// The window's posts: their HTML as main read it, their trees as the background process made them,
+// and how tall each was last drawn from GitHub's rendering, for each view of a pull request's tab,
+// each forgotten as its tab closes.
 
 import type { Rendered } from '../jobs.ts';
 import { BodyStore, type PostRef } from './bodies.ts';
@@ -19,6 +20,7 @@ export interface Drawn {
 }
 
 const drawn = new Map<string, Map<string, Drawn>>();
+const heights = new Map<string, Map<string, number>>();
 
 function keyOf(post: PostRef): string {
   return post.kind === 'description' ? '#description' : post.id;
@@ -29,18 +31,37 @@ export function drawnOf(view: string, post: PostRef): Drawn | undefined {
   return drawn.get(view)?.get(keyOf(post));
 }
 
-/** Keeps the tree made for `post` on view `view`. */
-export function keepDrawn(view: string, post: PostRef, made: Drawn): void {
-  let own = drawn.get(view);
+/** `view`'s own map in `all`, made as it's first needed. */
+function ownOf<T>(all: Map<string, Map<string, T>>, view: string): Map<string, T> {
+  let own = all.get(view);
   if (!own) {
     own = new Map();
-    drawn.set(view, own);
+    all.set(view, own);
   }
-  own.set(keyOf(post), made);
+  return own;
+}
+
+/** Keeps the tree made for `post` on view `view`. */
+export function keepDrawn(view: string, post: PostRef, made: Drawn): void {
+  ownOf(drawn, view).set(keyOf(post), made);
+}
+
+/**
+ * How tall `post` on view `view` was last drawn from GitHub's rendering, in pixels, so it can hold
+ * that room while its rendering of an edit comes.
+ */
+export function heightOf(view: string, post: PostRef): number | undefined {
+  return heights.get(view)?.get(keyOf(post));
+}
+
+/** Keeps how tall `post` on view `view` is, drawn from GitHub's rendering. */
+export function keepHeight(view: string, post: PostRef, height: number): void {
+  ownOf(heights, view).set(keyOf(post), height);
 }
 
 /** Forgets the posts of every view but those in `kept`, as their tabs close. */
 export function keepOnly(kept: ReadonlySet<string>): void {
   bodies.keepOnly(kept);
   for (const view of drawn.keys()) if (!kept.has(view)) drawn.delete(view);
+  for (const view of heights.keys()) if (!kept.has(view)) heights.delete(view);
 }

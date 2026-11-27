@@ -1471,6 +1471,13 @@ description's, for the timeline and the diff's threads alike, with its `Post` co
 - A post shows its Markdown, through `@lo/markdown`, until the HTML GitHub renders for it arrives,
   then GitHub's rendering, read as untrusted (`githubTree`). Both become a tree in the background
   process (`comments.render`), with the pull request's repository as what references refer to.
+- `@lo/markdown` shows a tag in Markdown as written, so a post whose Markdown holds one (`<` then a
+  letter, `/` or `!`, outside code: `holdsTag`, in `window/tags.ts`) never shows its Markdown. Three
+  `Skeleton` lines at its line height hold its place until GitHub's rendering is in, which takes
+  theirs in one Swap. It shows its Markdown only when no rendering is coming: GitHub gave none, the
+  read failed (`BodyStore.missing`, until a read brings it), or it's longer than Lo reads. One drawn
+  from GitHub's rendering before, as before an edit, holds that height meanwhile. Where it can't
+  tell code for sure, `holdsTag` reads text, so a tag is never missed.
 - The window asks main for posts' HTML (`comments.bodies`, read by the poller's `renderedBodies`) as
   they come on screen or near it, a hundred at most an ask, one ask at a time for each view. The
   HTML stays in the window's memory, never in main's or the poll cache, since its images' addresses
