@@ -1,7 +1,7 @@
 // How far each view's code index has got, as main last said: kept with the view, and gone when its
 // tab closes. What its status bar item says follows from it, as a plain function tested alone.
 
-import { ago, bytes } from '@lo/ui';
+import { agoAlone, bytes } from '@lo/ui';
 
 import { tabState } from '../../tab/window/shared.ts';
 import type { IndexState, Indexed, PartialWhy } from '../contract.ts';
@@ -81,22 +81,26 @@ const WHY: Readonly<Record<PartialWhy, string>> = {
 
 /**
  * What a ready index covers, the head's files it read in each language, and when its trees were
- * built, as facts, `now` being the time now.
+ * built, as facts, `now` being the time now: the files in all, only beside two languages or more,
+ * which they'd only say again; then a language a line, most files first; then when.
  */
 function covered(state: Extract<IndexState, { kind: 'ready' }>, now: number): IndexFact[] {
   const read = state.languages.reduce((sum, language) => sum + language.files, 0);
+  const languages = state.languages.toSorted((a, b) => b.files - a.files);
   return [
     // A partial one's state counts its files already.
-    ...(state.partial || read === 0 ? [] : [{ label: 'Files', value: count(read) }]),
-    ...(state.languages.length === 0
+    ...(state.partial || read === 0 || languages.length < 2
+      ? []
+      : [{ label: 'Files', value: count(read) }]),
+    ...(languages.length === 0
       ? []
       : [
           {
             label: 'Languages',
-            value: state.languages.map((language) => `${language.name} · ${files(language.files)}`),
+            value: languages.map((language) => `${language.name} · ${files(language.files)}`),
           },
         ]),
-    ...(state.at > 0 ? [{ label: 'Built', value: ago(state.at, now) }] : []),
+    ...(state.at > 0 ? [{ label: 'Built', value: agoAlone(state.at, now) }] : []),
   ];
 }
 

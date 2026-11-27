@@ -1121,8 +1121,10 @@ changing, as when the local copy marks one generated, doesn't reorder a drawn vi
   draws a side-by-side diff inline without writing `diff.layout` (`DiffView.narrow`, which
   `DiffEvents.narrowed` says has changed, so the menu dims both layouts: "Widen the window first").
 - With `comments.threads` at `beside`, a thread or a comment box never reaches the aligner: the code
-  view draws markers in its gutter and one `ThreadPopover` in a layer of its scroll. A test fails if
-  a diff with threads lays out its rows differently from the same diff without them.
+  view draws markers in its gutter and one `ThreadPopover` in a layer of its scroll. An overview's
+  code blocks share one, in a layer of the overview's scroll, so no block clips it. A test fails if
+  a diff with threads lays out its rows differently from the same diff without them, and if a code
+  block is taller with threads beside its lines than without them.
 
 ### Revisions
 
@@ -1590,6 +1592,10 @@ panel's `x` resolves the thread the keyboard is on, through the same function.
 - A reply's box and an edit's are comment boxes, kept by their thread (`reply` and `edit` places),
   and drawn right after the thread's card. The code view keeps a box for each place and name, so a
   reply's box and a new comment's on the same line both stay open.
+- A reply or an edit is written only in the diff on screen (`diffOnScreen`): a diff drawn but hidden
+  is inert, and a box opened in it would leave the keys typed for it to the thread. Asked for on an
+  overview's code block while the diff isn't on screen, it's refused with "Go to the diff first",
+  opening nothing; with the code beside, it's written in the diff.
 - An edit's draft keeps the text it started from (`base`, in `comments_drafts`), GitHub's as the
   card showed it when `i` started it (`comments.editing`), through a restart. `comments.edit` reads
   the comment afresh (`reviewComment`) and saves only if GitHub's text is still that one
@@ -1763,11 +1769,22 @@ address, which the window builds and main reads, and the `comments` feature serv
   only while its rate limit is normal and GitHub answers; it fetches the picture its `avatar_url`
   gives, on the avatars' host alone, once it has the address, so asking takes none of an image's
   turns or time. `comments/main/bots.ts` asks about each bot at most once a run, one at a time, and
-  100 bots at most, and keeps what GitHub said for the run, a bot it doesn't have included. After an
-  ask GitHub answered with an error it asks nothing for a minute, twice as long after each failure
-  in a row, an hour at most, or until an account is added or signs in again; one the account then
-  shows (GitHub out of reach, a rate limit) waits on the account's status instead, until its poller
-  hears from GitHub again. With no account signed in, a bot keeps its initials.
+  100 bots at most, and keeps what GitHub said for the run, a bot it doesn't have included. Where a
+  bot's picture is, once GitHub has said, is kept from run to run in the feature's table
+  (`comments_bots`, the 500 GitHub said last), so a bot seen before draws at once: only one never
+  seen waits for its ask, behind the reads its tab opens with, and before the kept bots waiting to
+  be checked. A kept bot is still asked about once a run, in the background as any bot is. A picture
+  that moved is kept where it is now, main lets go of the bytes it kept of it, and the `bots` topic
+  has every window draw the bot's avatars again (`redrawPictures`: an empty disc, then the Swap) at
+  a new address (`lo-image://bot/<slug>?s=<px>&r=<n>`), since Chromium keeps each picture a page has
+  drawn by its address, whatever `no-store` says; a bot GitHub has no more is no longer kept, and is
+  drawn again as its initials; and a kept picture the avatars' host answers with a 404 or 410, or
+  bytes that aren't an image, before GitHub has said, is no longer kept. "Clear the cache" clears
+  the table. After an ask GitHub answered with an error it asks nothing for a minute, twice as long
+  after each failure in a row, an hour at most, or until an account is added or signs in again; one
+  the account then shows (GitHub out of reach, a rate limit) waits on the account's status instead,
+  until its poller hears from GitHub again, and a kept bot stays as it was kept meanwhile. With no
+  account signed in, a bot that isn't kept keeps its initials.
 - An image is drawn as GitHub draws it: at the `width` and `height` the post gives it, its height
   following its width, inline in its text, and never wider than the text. A `<picture>` with a
   source for each `prefers-color-scheme` shows the one for Lo's theme: the window's color scheme
@@ -1886,8 +1903,9 @@ parse them under `@lo/syntax`'s limits.
 - The status bar says how far a view's index has got (`code.index`, the `indexed` topic): "Indexing
   code · 1,204 / 3,880" while it builds, again from the start once the cache is cleared, "Code
   index" once it's ready, with how many files a partial one has. Its details say what it is, its
-  state, and once it's ready, how many of the head's files it read are in each language, by path and
-  leaving out those it skipped, and when its trees were last built, from what it read or kept.
+  state, and once it's ready, how many of the head's files it read are in each language, a language
+  a line, most files first, by path and leaving out those it skipped, with the files in all beside
+  two languages or more, and when its trees were last built, from what it read or kept.
 - The window asks over the code port (`port.ts`): a port main makes with each load of the page,
   handed over through the preload as `lo:code`, in the jobs protocol's shapes (`{ id, job, input }`,
   replies, `{ cancel }`). Main checks every message as plain data and each input against the

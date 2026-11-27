@@ -161,7 +161,8 @@ export default defineCommands(
       keys: ['enter'],
       targets: ['thread'],
       overVim: true,
-      when: { scope: 'diff', mode: 'normal', on: 'thread' },
+      // In the diff, or an overview's code block.
+      when: { scope: ['diff', 'file'], mode: 'normal', on: 'thread' },
     },
     /** Closes the thread's popover, as its Close does: focus goes back to its line. */
     closeThread: {

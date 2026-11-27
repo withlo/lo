@@ -1,14 +1,18 @@
 import { GithubClient, GithubError, Token, type PollStatus, type ReadPriority } from '@lo/github';
 import { describe, expect, it } from 'vitest';
 
+import { openDatabase } from '../../../main/database.ts';
+import { migrate } from '../../../main/migrations.ts';
 import {
   askGitHub,
   BotPictures,
+  BotTable,
   type BotAccounts,
   type BotAccountState,
   type BotAnswer,
   type BotLimits,
   type BotPoller,
+  type KeptBots,
 } from './bots.ts';
 import { ImageError } from './images.ts';
 
@@ -21,8 +25,10 @@ const CURSOR = 'https://avatars.githubusercontent.com/in/1210556?v=4';
 function pictures(
   answer: (login: string) => BotAnswer | Promise<BotAnswer>,
   limits?: Partial<BotLimits>,
+  kept?: KeptBots,
 ) {
   const asked: string[] = [];
+  const changes: string[] = [];
   const clock = { now: 0 };
   const bots = new BotPictures({
     ask: async (login) => {
@@ -31,8 +37,41 @@ function pictures(
     },
     now: () => clock.now,
     limits,
+    kept,
+    changed: (slug) => changes.push(slug),
   });
-  return { bots, asked, clock };
+  return { bots, asked, changes, clock };
+}
+
+/** Bots' pictures kept from an earlier run, as `given` says, and what's kept since. */
+function keptBots(given: Readonly<Record<string, string>> = {}): KeptBots & {
+  kept: Map<string, string>;
+} {
+  const kept = new Map(Object.entries(given));
+  return {
+    kept,
+    read: (slug) => kept.get(slug),
+    keep: (slug, path) => kept.set(slug, path),
+    forget: (slug) => kept.delete(slug),
+  };
+}
+
+/** Lets what's under way go on, a few turns of the event loop. */
+async function settle(): Promise<void> {
+  for (let turns = 0; turns < 10; turns++) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+}
+
+/** An answer the test gives when it likes, and the asks waiting on it. */
+function waiting() {
+  const asks: ((answer: BotAnswer) => void)[] = [];
+  return {
+    answer: () => new Promise<BotAnswer>((resolve) => asks.push(resolve)),
+    give(answer: BotAnswer) {
+      for (const resolve of asks.splice(0)) resolve(answer);
+    },
+  };
 }
 
 const found = (avatar = CURSOR): BotAnswer => ({ kind: 'found', avatar });
@@ -225,6 +264,206 @@ describe('BotPictures', () => {
     // It was asked about, so it counts.
     expect(await refusal(bots.picture('renovate'))).toMatchObject({ reason: 'refused' });
     expect(asked).toEqual(['cursor', 'cursor']);
+  });
+});
+
+describe('BotPictures, from run to run', () => {
+  it('draws a bot an earlier run kept at once, before GitHub answers, and asks about it once a run', async () => {
+    const github = waiting();
+    const kept = keptBots({ cursor: '/in/1210556' });
+    const { bots, asked, changes } = pictures(github.answer, undefined, kept);
+    expect((await bots.picture('Cursor')).href).toBe(
+      'https://avatars.githubusercontent.com/in/1210556',
+    );
+    await settle();
+    expect(asked).toEqual(['Cursor']);
+    github.give(found());
+    await settle();
+    await bots.picture('cursor');
+    await settle();
+    // The same picture: nothing to draw again, and nothing more asked this run.
+    expect(asked).toEqual(['Cursor']);
+    expect(changes).toEqual([]);
+    expect([...kept.kept]).toEqual([['cursor', '/in/1210556']]);
+  });
+
+  it('asks about a bot with nothing to draw before the kept bots waiting to be asked about', async () => {
+    const github = waiting();
+    const kept = keptBots({ cursor: '/in/1', renovate: '/in/2', sonarcloud: '/in/3' });
+    const { bots, asked } = pictures(github.answer, undefined, kept);
+    for (const login of ['cursor', 'renovate', 'sonarcloud']) await bots.picture(login);
+    const fresh = bots.picture('coderabbitai');
+    // A kept picture that didn't load has nothing to draw either: its check goes first too.
+    bots.missing('sonarcloud', new URL('https://avatars.githubusercontent.com/in/3?s=40'));
+    const reloaded = bots.picture('sonarcloud');
+    await settle();
+    // Cursor's check was under way already.
+    expect(asked).toEqual(['cursor']);
+    for (let answers = 1; answers < 4; answers++) {
+      github.give(found());
+      await settle();
+    }
+    expect(asked).toEqual(['cursor', 'coderabbitai', 'sonarcloud', 'renovate']);
+    github.give(found());
+    expect((await fresh).pathname).toBe('/in/1210556');
+    expect((await reloaded).pathname).toBe('/in/1210556');
+  });
+
+  it('keeps where a bot’s picture moved to, and draws it again', async () => {
+    const kept = keptBots({ cursor: '/in/1' });
+    const { bots, changes } = pictures(() => found(), undefined, kept);
+    expect((await bots.picture('cursor')).pathname).toBe('/in/1');
+    await settle();
+    expect(changes).toEqual(['cursor']);
+    expect(kept.kept.get('cursor')).toBe('/in/1210556');
+    expect((await bots.picture('cursor')).pathname).toBe('/in/1210556');
+  });
+
+  it('keeps no more a bot GitHub has no more, and draws it again, as its initials', async () => {
+    const kept = keptBots({ cursor: '/in/1210556', renovate: '/in/2740' });
+    const { bots, changes } = pictures(() => ({ kind: 'none' }), undefined, kept);
+    expect((await bots.picture('cursor')).pathname).toBe('/in/1210556');
+    await settle();
+    expect(changes).toEqual(['cursor']);
+    expect([...kept.kept.keys()]).toEqual(['renovate']);
+    expect(await refusal(bots.picture('cursor'))).toMatchObject({ reason: 'refused' });
+  });
+
+  it('keeps no more a kept picture that didn’t load before GitHub answered, and draws where GitHub says', async () => {
+    const github = waiting();
+    const kept = keptBots({ cursor: '/in/1' });
+    const { bots, asked, changes } = pictures(github.answer, undefined, kept);
+    expect((await bots.picture('cursor')).pathname).toBe('/in/1');
+    bots.missing('cursor', new URL('https://avatars.githubusercontent.com/in/1?s=40'));
+    expect(kept.kept.has('cursor')).toBe(false);
+    // Drawn again meanwhile, it waits for the ask already under way.
+    const again = bots.picture('cursor');
+    await settle();
+    github.give(found());
+    expect((await again).pathname).toBe('/in/1210556');
+    await settle();
+    expect(asked).toEqual(['cursor']);
+    expect(changes).toEqual(['cursor']);
+    expect(kept.kept.get('cursor')).toBe('/in/1210556');
+  });
+
+  it('keeps a picture GitHub said is where it is this run, though it didn’t load', async () => {
+    const kept = keptBots({ cursor: '/in/1210556' });
+    const { bots } = pictures(() => found(), undefined, kept);
+    await bots.picture('cursor');
+    await settle();
+    bots.missing('cursor', new URL('https://avatars.githubusercontent.com/in/1210556?s=40'));
+    expect(kept.kept.get('cursor')).toBe('/in/1210556');
+    expect((await bots.picture('cursor')).pathname).toBe('/in/1210556');
+  });
+
+  it('keeps what was kept while GitHub can’t say, and asks again the next time its picture is fetched', async () => {
+    let answers = 0;
+    const kept = keptBots({ cursor: '/in/1210556' });
+    const { bots, asked, changes } = pictures(
+      () => (++answers === 1 ? { kind: 'unanswered', why: 'GitHub can’t be reached' } : found()),
+      undefined,
+      kept,
+    );
+    expect((await bots.picture('cursor')).pathname).toBe('/in/1210556');
+    await settle();
+    expect(kept.kept.get('cursor')).toBe('/in/1210556');
+    expect((await bots.picture('cursor')).pathname).toBe('/in/1210556');
+    await settle();
+    await bots.picture('cursor');
+    await settle();
+    expect(asked).toEqual(['cursor', 'cursor']);
+    expect(changes).toEqual([]);
+  });
+
+  it("keeps where GitHub said a bot's picture is, and not that it has no such bot", async () => {
+    const kept = keptBots();
+    const { bots } = pictures(
+      (login) => (login === 'gone' ? { kind: 'none' } : found()),
+      undefined,
+      kept,
+    );
+    await bots.picture('Cursor');
+    await refusal(bots.picture('gone'));
+    expect([...kept.kept]).toEqual([['cursor', '/in/1210556']]);
+  });
+
+  it('draws a bot as GitHub says, whether or not its picture can be kept or read back', async () => {
+    const broken: KeptBots = {
+      read: () => {
+        throw new Error('database is closed');
+      },
+      keep: () => {
+        throw new Error('database is closed');
+      },
+      forget: () => {
+        throw new Error('database is closed');
+      },
+    };
+    const { bots, asked } = pictures(() => found(), undefined, broken);
+    expect((await bots.picture('cursor')).pathname).toBe('/in/1210556');
+    expect((await bots.picture('cursor')).pathname).toBe('/in/1210556');
+    expect(asked).toEqual(['cursor']);
+  });
+
+  it('asks about a bot whose kept place isn’t a picture on the avatars’ host', async () => {
+    const kept = keptBots({ cursor: '.evil.example/in/1', renovate: '/in/1/../../users' });
+    const { bots, asked } = pictures(() => found(), undefined, kept);
+    expect((await bots.picture('cursor')).pathname).toBe('/in/1210556');
+    expect((await bots.picture('renovate')).pathname).toBe('/in/1210556');
+    expect(asked).toEqual(['cursor', 'renovate']);
+  });
+});
+
+describe('BotTable', () => {
+  // The feature's migrations, named by their paths in the app, as main finds them.
+  const migrations = Object.fromEntries(
+    Object.entries(
+      import.meta.glob<string>('../migrations/*.sql', {
+        eager: true,
+        query: '?raw',
+        import: 'default',
+      }),
+    ).map(([path, sql]) => [path.replace(/^\.\.\//, '/src/features/comments/'), sql]),
+  );
+
+  function database() {
+    const opened = openDatabase(':memory:');
+    migrate(opened, migrations);
+    return opened;
+  }
+
+  it("keeps where each bot's picture is for the next run, the newest at most", () => {
+    const db = database();
+    const clock = { now: 1 };
+    const table = new BotTable(db, () => clock.now, 2);
+    table.keep('cursor', '/in/1210556');
+    clock.now = 2;
+    table.keep('renovate', '/in/2740');
+    expect(new BotTable(db).read('cursor')).toBe('/in/1210556');
+    expect(new BotTable(db).read('dependabot')).toBeUndefined();
+    // Said again, it's the newest.
+    clock.now = 3;
+    table.keep('cursor', '/in/1210557');
+    clock.now = 4;
+    table.keep('dependabot', '/in/29110');
+    const later = new BotTable(db);
+    expect(later.read('cursor')).toBe('/in/1210557');
+    expect(later.read('renovate')).toBeUndefined();
+    expect(later.read('dependabot')).toBe('/in/29110');
+  });
+
+  it('forgets a bot, and every bot once the cache is cleared', () => {
+    const table = new BotTable(database());
+    table.keep('cursor', '/in/1210556');
+    table.keep('renovate', '/in/2740');
+    table.forget('cursor');
+    expect(table.read('cursor')).toBeUndefined();
+    expect(table.read('renovate')).toBe('/in/2740');
+    table.keep('cursor', '/in/1210556');
+    table.clear();
+    expect(table.read('cursor')).toBeUndefined();
+    expect(table.read('renovate')).toBeUndefined();
   });
 });
 

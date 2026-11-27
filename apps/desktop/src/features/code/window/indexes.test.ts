@@ -20,14 +20,15 @@ describe('the code index’s status item', () => {
       text: 'Indexing code…',
       facts: [{ label: 'State', value: 'Indexing rozed-dev/e2e…' }],
     });
-    // Once it's ready, its details say what it covers, a language a line, and when it was built.
+    // Once it's ready, its details say what it covers: the files in all, beside two languages or
+    // more, then a language a line, most files first, and when it was built.
     expect(
       item({
         kind: 'ready',
         partial: null,
         languages: [
-          { name: 'TypeScript', files: 3102 },
-          { name: 'JavaScript', files: 640 },
+          { name: 'Python', files: 676 },
+          { name: 'TypeScript', files: 3204 },
         ],
         at: NOW - 5 * 60_000,
       }),
@@ -36,11 +37,24 @@ describe('the code index’s status item', () => {
       text: 'Code index',
       facts: [
         { label: 'State', value: 'Ready' },
-        { label: 'Files', value: '3,742' },
-        { label: 'Languages', value: ['TypeScript · 3,102 files', 'JavaScript · 640 files'] },
+        { label: 'Files', value: '3,880' },
+        { label: 'Languages', value: ['TypeScript · 3,204 files', 'Python · 676 files'] },
         { label: 'Built', value: '5 min ago' },
       ],
     });
+    // Beside one language, the files in all would say its count again.
+    expect(
+      item({
+        kind: 'ready',
+        partial: null,
+        languages: [{ name: 'TypeScript', files: 3 }],
+        at: NOW - 30_000,
+      })?.facts,
+    ).toEqual([
+      { label: 'State', value: 'Ready' },
+      { label: 'Languages', value: ['TypeScript · 3 files'] },
+      { label: 'Built', value: 'Just now' },
+    ]);
     expect(
       item({
         kind: 'ready',
@@ -61,7 +75,7 @@ describe('the code index’s status item', () => {
           why: ['The 20,000 files nearest the changes are indexed.', 'Offline.'],
         },
         { label: 'Languages', value: ['Go · 19,999 files', 'Python · 1 file'] },
-        { label: 'Built', value: 'just now' },
+        { label: 'Built', value: 'Just now' },
       ],
     });
     // A tree too large to list has no files to count.
@@ -77,7 +91,7 @@ describe('the code index’s status item', () => {
       text: 'Code index',
       facts: [
         { label: 'State', value: 'Partial', why: ['The repo has too many files to list.'] },
-        { label: 'Built', value: 'just now' },
+        { label: 'Built', value: 'Just now' },
       ],
     });
   });

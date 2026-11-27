@@ -465,16 +465,16 @@
   background-color: var(--lo-selected);
 }
 /*
- * The threads' popover, beside lines: in a layer of the view's own scroll (which the view's box is
- * the frame of), over the code and under the pinned file header, so it moves with its line and
- * passes under the header as code does.
+ * The threads' popover, beside lines: in a layer of the scroll the code is in (which the box that
+ * scrolls is the frame of), the diff's own or an overview's, over the code and under the diff's
+ * pinned file header, so it moves with its line and passes under the header as code does.
  */
-.lo-diffview > .lo-threadpop {
+.lo-threadpop {
   position: absolute;
   z-index: calc(var(--lo-z-sticky) - 1);
   outline: none;
 }
-.lo-diffview > .lo-threadpop[hidden] {
+.lo-threadpop[hidden] {
   display: none;
 }
 /* A note under the lines it's about, in the block that holds the line's threads. */

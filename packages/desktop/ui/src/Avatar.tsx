@@ -1,5 +1,7 @@
 import { cva } from 'class-variance-authority';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+
+import { swapIn } from './Collapse.tsx';
 
 const avatar = cva(
   'inline-grid flex-none place-items-center overflow-hidden rounded-pill text-micro',
@@ -20,6 +22,8 @@ const avatar = cva(
         4: 'bg-avatar-4-bg text-avatar-4',
         5: 'bg-avatar-5-bg text-avatar-5',
         6: 'bg-avatar-6-bg text-avatar-6',
+        // Their picture, on its way: an empty disc, with no initials.
+        none: 'bg-bg-raised',
       },
     },
   },
@@ -47,56 +51,143 @@ export interface AvatarProps {
   login: string;
   size?: 'xl' | 'lg' | 'sm' | undefined;
   /**
-   * The address of their picture. The initials show until it has loaded, and stay if it can't be.
-   * Without one, only the initials show.
+   * The address of their picture. An empty disc shows until it has loaded, and their initials if it
+   * can't be. Without one, only the initials show.
    */
   image?: string | undefined;
 }
 
 /**
- * A person's picture, as their initials in a hue of their own until the picture is there: pair it
- * with their login wherever they matter. It's decorative, since the login beside it says who it is.
+ * A person's picture, or with none to show, their initials in a hue of their own: pair it with
+ * their login wherever they matter. It's decorative, since the login beside it says who it is.
  */
 export function Avatar({ login, size = 'lg', image }: AvatarProps) {
-  return (
-    <span className={avatar({ size, hue: avatarHue(login) })} aria-hidden="true">
-      {image === undefined || image === '' ? (
-        initials(login)
-      ) : (
-        // A new address starts again from the initials.
-        <Picture key={image} login={login} image={image} />
-      )}
-    </span>
-  );
+  if (image === undefined || image === '') {
+    return (
+      <span className={avatar({ size, hue: avatarHue(login) })} aria-hidden="true">
+        {initials(login)}
+      </span>
+    );
+  }
+  return <Drawn login={login} size={size} image={image} />;
 }
 
 /**
- * The picture over the initials. The image is laid out from the start, unseen, so it loads at
- * once, and takes the initials' place only when it has. One the window already holds, as an avatar
- * drawn elsewhere on the page is, shows from the first frame, with no initials first.
+ * An avatar with an address: the one it's given, or the one `redrawPictures` gave for it since,
+ * each drawn from the empty disc.
  */
-function Picture({ login, image }: { login: string; image: string }) {
+function Drawn({ login, size, image }: { login: string; size: 'xl' | 'lg' | 'sm'; image: string }) {
+  const address = useSyncExternalStore(watchRedraws, () => replaced.get(image) ?? image);
+  useLayoutEffect(() => {
+    drawing.set(image, (drawing.get(image) ?? 0) + 1);
+    return () => {
+      const left = (drawing.get(image) ?? 1) - 1;
+      if (left > 0) drawing.set(image, left);
+      else drawing.delete(image);
+    };
+  }, [image]);
+  return <Picture key={address} login={login} size={size} image={address} />;
+}
+
+/**
+ * The pictures the window has drawn, by address: drawn again, as a card is when its thread
+ * collapses, one comes back as it loads, without the move a picture new to the window makes.
+ */
+const drawnBefore = new Set<string>();
+
+/** The addresses avatars are given, each with how many on screen are. */
+const drawing = new Map<string, number>();
+/** What `redrawPictures` gave for an address, which its avatars draw instead. */
+const replaced = new Map<string, string>();
+/** The avatars watching `replaced`. */
+const watchers = new Set<() => void>();
+
+function watchRedraws(changed: () => void): () => void {
+  watchers.add(changed);
+  return () => {
+    watchers.delete(changed);
+  };
+}
+
+/**
+ * Has each avatar whose address `change` gives a new one for draw that one instead, on screen now
+ * or later, as a picture new to the window: the empty disc, then the picture with the Swap, or the
+ * initials if it can't be loaded. For a picture that changed behind its address: the window keeps
+ * each picture it has drawn by its address, whatever the answer said, so only a new address loads
+ * it anew.
+ */
+export function redrawPictures(change: (address: string) => string | undefined): void {
+  let changed = false;
+  for (const address of new Set([...drawing.keys(), ...replaced.keys(), ...drawnBefore])) {
+    const now = change(address);
+    if (now === undefined || now === (replaced.get(address) ?? address)) continue;
+    replaced.set(address, now);
+    changed = true;
+  }
+  if (!changed) return;
+  for (const watcher of watchers) watcher();
+}
+
+/**
+ * The picture, in an empty disc until it has loaded, which it then fades in over (Swap), or the
+ * initials if it can't be loaded. The image is laid out from the start, unseen, so it loads at
+ * once. One the window already holds shows from the first frame, and one it has drawn before
+ * comes back without the move.
+ */
+function Picture({
+  login,
+  size,
+  image,
+}: {
+  login: string;
+  size: 'xl' | 'lg' | 'sm';
+  image: string;
+}) {
   const [state, setState] = useState<'loading' | 'loaded' | 'failed'>('loading');
   const picture = useRef<HTMLImageElement>(null);
+  // Whether the window hadn't drawn the picture before this avatar was, and so it fades in as it
+  // loads: read as it's first drawn, so every avatar new with it fades in, not only the first.
+  const fresh = useRef(false);
+  // Whether it loaded after it was drawn, and so fades in.
+  const arrived = useRef(false);
+  useLayoutEffect(() => {
+    fresh.current = !drawnBefore.has(image);
+    const drawn = picture.current;
+    if (!drawn?.complete || drawn.naturalWidth === 0) return;
+    drawnBefore.add(image);
+    setState('loaded');
+  }, [image]);
+  // Once the picture's classes are drawn without what hid it, so the move stays on it.
   useLayoutEffect(() => {
     const drawn = picture.current;
-    if (drawn?.complete && drawn.naturalWidth > 0) setState('loaded');
-  }, []);
+    if (state !== 'loaded' || !arrived.current || !drawn) return undefined;
+    arrived.current = false;
+    return swapIn(drawn);
+  }, [state]);
+  if (state === 'failed') {
+    return (
+      <span className={avatar({ size, hue: avatarHue(login) })} aria-hidden="true">
+        {initials(login)}
+      </span>
+    );
+  }
   return (
-    <>
-      {state !== 'loaded' && <span className="col-start-1 row-start-1">{initials(login)}</span>}
-      {state !== 'failed' && (
-        <img
-          ref={picture}
-          src={image}
-          alt=""
-          decoding="async"
-          draggable={false}
-          className={`col-start-1 row-start-1 size-full object-cover ${state === 'loaded' ? '' : 'opacity-0'}`}
-          onLoad={() => setState('loaded')}
-          onError={() => setState('failed')}
-        />
-      )}
-    </>
+    <span className={avatar({ size, hue: 'none' })} aria-hidden="true">
+      <img
+        ref={picture}
+        src={image}
+        alt=""
+        decoding="async"
+        draggable={false}
+        className={`size-full object-cover ${state === 'loaded' ? '' : 'opacity-0'}`}
+        onLoad={() => {
+          if (state !== 'loading') return;
+          arrived.current = fresh.current;
+          drawnBefore.add(image);
+          setState('loaded');
+        }}
+        onError={() => setState('failed')}
+      />
+    </span>
   );
 }

@@ -44,7 +44,7 @@ import { Aligner } from './aligner.ts';
 import { createComposer } from './composer.ts';
 import { editsText, setVim } from './keys.ts';
 import { focusedMode } from './mode.ts';
-import { REST } from './popover.ts';
+import { REST, ThreadPop } from './popover.ts';
 import { swapping } from './lines.ts';
 import { TIP_DELAY } from './tip.ts';
 import { createDiffView } from './view.ts';
@@ -3289,19 +3289,29 @@ function newBubble(): HTMLElement {
 }
 
 describe('threads beside lines', () => {
-  test('the editors draw their files from the first with nothing failing, the popover’s layer first in the scroll', () => {
+  test('the editors draw their files from the first with nothing failing', () => {
     const failed = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
-      // Each file's diff known as it opens, so the editors mark its lines as they're made.
+      // Each file's diff known as it opens, so the editors mark its lines as they're made: their
+      // first drawing reads the lanes' marks, which fails unless what works them out is made first.
       const known = files.map((file) =>
         file.lines ? { ...file, diff: diffOf(file.lines) } : file,
       );
       open(events(), { threads: 'beside', files: known });
       expect(failed).not.toHaveBeenCalled();
-      expect(parent!.querySelector('.lo-diffview')!.firstElementChild).toBe(layer());
     } finally {
       failed.mockRestore();
     }
+  });
+
+  test('its popover’s layer is made only as a thread first shows, first in the scroll', () => {
+    const shown = open(events(), { threads: 'beside' });
+    shown.setThreads([ranged('one', at('a', 'new', 8), undefined)], plain().render, {
+      popover: popped().render,
+    });
+    expect(parent!.querySelector('.lo-threadpop')).toBeNull();
+    shown.pinThread('one');
+    expect(parent!.querySelector('.lo-diffview')!.firstElementChild).toBe(layer());
   });
 
   test('a thread takes no room under its line: its mark alone is drawn, which runs no tip', () => {
@@ -3443,6 +3453,60 @@ describe('threads beside lines', () => {
     expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 'short' });
     shown.reveal(onLine('a', 'new', 3));
     expect(shown.keyState().target).toMatchObject({ kind: 'line', thread: 'long' });
+  });
+
+  test('side by side, the cursor going to the other side’s row of its lines keeps it pinned', () => {
+    const shown = open(events(), { threads: 'beside' });
+    shown.setThreads([ranged('one', at('a', 'new', 8), undefined)], plain().render, {
+      popover: popped().render,
+    });
+    shown.reveal(onLine('a', 'new', 8));
+    shown.focus();
+    shown.pinThread('one');
+    // Old line 8 is in new line 8's row.
+    shown.otherSide();
+    expect(shown.probe.cursor()).toMatchObject({ pane: 'old', at: onLine('a', 'old', 8) });
+    expect(shown.pinned()).toEqual(['one']);
+    shown.reveal(onLine('a', 'old', 2));
+    expect(shown.pinned()).toEqual([]);
+  });
+
+  test('a file’s own thread’s popover is its header’s, in the left column', () => {
+    const shown = open(events(), { threads: 'beside' });
+    shown.setThreads([onFile('one', 'a')], plain().render, { popover: popped().render });
+    shown.reveal(onLine('a', 'new', 8));
+    expect(shown.pinThread('one')).toBe(true);
+    expect(shown.pinned()).toEqual(['one']);
+    // The cursor goes to the header its bubble is in.
+    expect(shown.probe.cursor()).toMatchObject({ pane: 'old', at: { kind: 'header', file: 'a' } });
+  });
+
+  test('inline, its marks are in the one editor’s lane, whose lines it opens on', () => {
+    const shown = open(events(), { threads: 'beside', layout: 'inline' });
+    shown.setThreads([ranged('one', at('a', 'new', 8), { side: 'new', line: 6 })], plain().render, {
+      popover: popped().render,
+    });
+    expect(lane('Changes').at(-1)).toBe('edge-bubble amber, amber Unresolved thread · lines 6–8');
+    const content = parent!.querySelector('.cm-content[aria-label="Changes"]')!;
+    const editor = content.closest('.cm-editor')!;
+    editor
+      .querySelector('.lo-threadlane .lo-bubble')!
+      .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(shown.pinned()).toEqual(['one']);
+    expect(
+      editor.querySelectorAll('.cm-lineNumbers .cm-gutterElement.is-popped').length,
+    ).toBeGreaterThan(0);
+  });
+
+  test('a file that shows a note in its lines’ place opens no popover on them, but on its header', () => {
+    const shown = open(events(), { threads: 'beside' });
+    shown.setThreads([thread('line', at('d', 'new', 3)), onFile('file', 'd')], plain().render, {
+      popover: popped().render,
+    });
+    expect(shown.pinThread('line')).toBe(false);
+    expect(shown.pinned()).toEqual([]);
+    expect(shown.pinThread('file')).toBe(true);
+    expect(shown.pinned()).toEqual(['file']);
   });
 });
 
@@ -3680,6 +3744,70 @@ describe('writing beside lines', () => {
     box.close();
     expect(layer().querySelector('.lo-diffcomposer')).toBeNull();
     expect(shown.pinned()).toEqual(['made']);
+  });
+
+  test.each([
+    ['key', KEY_EVENT],
+    ['press', 'pointerdown'],
+    ['wheel', 'wheel'],
+  ])(
+    'a sent box’s comment goes on the next %s outside the popover, not in it, and stops listening',
+    (_, type) => {
+      const shown = open(events(), { threads: 'beside' });
+      shown.setThreads([], plain().render, { popover: slotted().render });
+      const box = shown.compose(at('a', 'new', 7), 'Sent', composerEvents());
+      const added = vi.spyOn(document, 'addEventListener');
+      const removed = vi.spyOn(document, 'removeEventListener');
+      try {
+        box.hold(true);
+        box.close();
+        const listening = added.mock.calls.filter(([, , capture]) => capture === true);
+        expect(listening.map(([each]) => each)).toEqual([KEY_EVENT, 'pointerdown', 'wheel']);
+        layer().dispatchEvent(new Event(type, { bubbles: true }));
+        expect(layer().querySelector('.lo-diffcomposer')).not.toBeNull();
+        vimIn('After').content.dispatchEvent(new Event(type, { bubbles: true }));
+        expect(layer().querySelector('.lo-diffcomposer')).toBeNull();
+        for (const [each, listener] of listening) {
+          expect(removed).toHaveBeenCalledWith(each, listener, true);
+        }
+      } finally {
+        added.mockRestore();
+        removed.mockRestore();
+      }
+    },
+  );
+
+  test('taken down, it takes its popover’s layer, a pin waiting on a scroll and a sent box’s listeners with it', async () => {
+    const shown = open(events(), { threads: 'beside' });
+    shown.setThreads([ranged('one', at('a', 'new', 8), undefined)], plain().render, {
+      popover: slotted().render,
+    });
+    const box = shown.compose(at('a', 'new', 7), 'Sent', composerEvents());
+    const added = vi.spyOn(document, 'addEventListener');
+    const removed = vi.spyOn(document, 'removeEventListener');
+    const pinned = vi.spyOn(ThreadPop.prototype, 'pin');
+    try {
+      box.hold(true);
+      box.close();
+      const listening = added.mock.calls.filter(([, , capture]) => capture === true);
+      expect(listening).toHaveLength(3);
+      // Asked to pin once the editor has scrolled, in a frame to come.
+      expect(shown.showThread('one')).toBe(true);
+      pinned.mockClear();
+      shown.destroy();
+      view = undefined;
+      expect(parent!.querySelector('.lo-threadpop')).toBeNull();
+      for (const [each, listener] of listening) {
+        expect(removed).toHaveBeenCalledWith(each, listener, true);
+      }
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      expect(pinned).not.toHaveBeenCalled();
+    } finally {
+      added.mockRestore();
+      removed.mockRestore();
+      pinned.mockRestore();
+    }
   });
 
   test('a box open as threads go between lines closes, keeping its draft', () => {

@@ -1,12 +1,14 @@
 // The keys of a thread's popover, beside lines: `⏎` on a line with a mark pins its popover and
 // moves focus into it, `Esc` closes it, and `j` and `k` move the ring between its comments, which
 // `i` and `dd` act on. From the line, `x` and `dd` pin the popover first, so a key never changes a
-// thread that isn't on screen.
+// thread that isn't on screen. In an overview's code block, its own popover: the keys go to the
+// block with focus in its code or its popover, and otherwise to the diff.
 
 import { ringComment } from '@lo/ui';
 import type { Target } from '@lo/ui/commands';
 
 import { writingDiff } from '../../diff/window/shared.ts';
+import { blockWithFocus } from '../../overview/window/shared.ts';
 import { activeTab, type PullTab } from '../../tab/window/shared.ts';
 import { threadFor, type ThreadKeyTarget } from './acts.ts';
 import { takeOffer } from './boxes.ts';
@@ -19,31 +21,43 @@ function diffOnScreen(): ReturnType<typeof writingDiff> {
   return writingDiff(tab.id);
 }
 
+/** The code block of the pull request on screen with focus in its code or its popover, if one has. */
+function blockHere(): ReturnType<typeof blockWithFocus> {
+  const tab = activeTab();
+  return tab?.kind === 'pull' ? blockWithFocus(tab.id) : undefined;
+}
+
 /**
  * `⏎` on a thread: its popover pinned, focus in it on its first comment, and a draft of yours in
  * it, in a box that's closed, opened again there, focus in its box. Just after a line refused a
- * comment, a comment on its file instead, as `⏎` is on a line with no mark.
+ * comment, a comment on its file instead, as `⏎` is on a line with no mark. On a code block's line,
+ * the block's own popover.
  */
 export function showPopover(target: Target): void {
+  const block = blockHere();
+  if (block) {
+    if (target.kind === 'thread') block.pinThread(target.thread, true);
+    return;
+  }
   const tab = activeTab();
   if (tab?.kind !== 'pull' || takeOffer(tab) || target.kind !== 'thread') return;
   const diff = diffOnScreen();
   if (diff?.pinThread(target.thread, true)) diff.openDraft({ thread: target.thread });
 }
 
-/** Whether a thread's popover can open: the diff is drawn. */
+/** Whether a thread's popover can open: a code block has focus, or the diff is drawn. */
 export function canShowPopover(): true | string {
-  return diffOnScreen() ? true : '';
+  return blockHere() || diffOnScreen() ? true : '';
 }
 
 /** `Esc` in a thread's popover: it closes, focus going to its line. */
 export function closePopover(): void {
-  diffOnScreen()?.closePopover();
+  (blockHere() ?? diffOnScreen())?.closePopover();
 }
 
 /** Whether a thread's popover is pinned, or a new comment's, which `Esc` closes. */
 export function popoverPinned(): true | string {
-  return diffOnScreen()?.popoverPinned() ? true : '';
+  return (blockHere() ?? diffOnScreen())?.popoverPinned() ? true : '';
 }
 
 /** `j` or `k` in a thread's popover: the ring goes to the next comment, or the one before. */

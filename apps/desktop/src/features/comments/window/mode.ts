@@ -1,12 +1,14 @@
 // How review threads show in code, in the window: the `comments.threads` setting, beside lines, as
 // a mark in the gutter that opens over the code, or between them, in the flow. Every pull request's
-// diff follows it as it changes, and the keys that only work beside lines are off between them.
+// diff and overview code block follows it as it changes, and the keys that only work beside lines
+// are off between them.
 
 import type { ThreadsMode } from '@lo/ui/code';
 
 import { registry } from '../../../window/commands/registry.ts';
 import { client } from '../../../window/ipc.ts';
 import { threadsShowChanged } from '../../diff/window/shared.ts';
+import { blockThreadsShowChanged } from '../../overview/window/shared.ts';
 import { contract as settings, type SettingsState } from '../../settings/contract.ts';
 import { threads } from '../settings.ts';
 
@@ -26,12 +28,16 @@ let changed: ((next: ThreadsMode) => void) | undefined;
 /** Whether main has said what the settings are since the window asked. */
 let told = false;
 
-/** Shows threads as `next` says: the diffs draw them so, and the popover's keys are on beside. */
+/**
+ * Shows threads as `next` says: the diffs and code blocks draw them so, and the popover's keys are
+ * on beside.
+ */
 function show(next: ThreadsMode): void {
   registry().setOff(BESIDE, next !== 'beside');
   if (next === mode) return;
   mode = next;
   threadsShowChanged();
+  blockThreadsShowChanged();
   changed?.(next);
 }
 

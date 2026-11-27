@@ -163,7 +163,7 @@ import {
 import { lineKey, marking, marksChanged, rowKey } from './marks.ts';
 import { otherLine } from './moves.ts';
 import { PeekBlock, peekShownAt } from './peek.ts';
-import type { PopRoom } from './popover.ts';
+import { type PopRoom, ThreadPop } from './popover.ts';
 import {
   collapsedRuns,
   type FileRows,
@@ -185,13 +185,11 @@ import {
   type HeaderProblem,
   type HeaderRing,
   headerRow,
-  HeaderWidget,
   MOVED_ATTRIBUTE,
   movedTo,
   NOTE_BLOCK_ATTRIBUTE,
   type NoteDraw,
   RING_CLASS,
-  SpacerWidget,
   ThreadSizes,
 } from './widgets.ts';
 import { watchRests, type Word, wordAnchor, wordUnder } from './words.ts';
@@ -226,24 +224,6 @@ function wholeRuns(diff: FileDiff, keep: Keep, gaps: readonly Gap[]): number[] {
   return collapsedRuns(diff, keep, 2, gaps).flatMap((run) =>
     inGap(run, gaps) ? [] : [run.old.first],
   );
-}
-
-/**
- * Where a line's own row is in its block, from the document's top: its text, or a file's header
- * band, with what's drawn under it, as a comment box, but not the room that lines the sides up.
- */
-function rowOf(block: BlockInfo): { top: number; bottom: number } {
-  const parts = Array.isArray(block.type) ? (block.type as readonly BlockInfo[]) : [block];
-  const own = parts.findIndex(
-    (part) => part.type === BlockType.Text || part.widget instanceof HeaderWidget,
-  );
-  if (own < 0) return { top: block.top, bottom: block.bottom };
-  let bottom = parts[own]!.bottom;
-  for (const part of parts.slice(own + 1)) {
-    if (part.widget instanceof SpacerWidget) break;
-    bottom = part.bottom;
-  }
-  return { top: parts[own]!.top, bottom };
 }
 
 /** Whether two sets of lines are the same. */
@@ -677,8 +657,7 @@ class View implements DiffView {
     this.#shownSides = sides;
     if (sides !== undefined) this.dom.style.setProperty('--lo-sides', String(sides));
     parent.append(this.dom);
-    // Before the editors, whose first drawing reads what the lanes' and headers' marks show. Its
-    // popover's layer goes first in the scroll, before the edge between the sides.
+    // Before the editors, whose first drawing reads what the lanes' and headers' marks show.
     this.#beside = new Beside(this.#besideHost());
     const make = (side: Side): EditorView =>
       new EditorView({
@@ -2584,6 +2563,9 @@ class View implements DiffView {
       root: this.dom,
       scroller: this.dom,
       nonce: this.#nonce,
+      // Its own, made as a thread first shows, first in the scroll: before the edge between the
+      // sides.
+      popover: (pop) => new ThreadPop(pop),
       mode: () => this.#mode,
       threadsIn: (file) => this.#threads[file],
       fileOf: (id) => this.#index.get(id),
@@ -2607,7 +2589,6 @@ class View implements DiffView {
         return { pane: pane === 'old' ? 'new' : 'old', line: this.#otherSideLine(pane, line) };
       },
       laneRange: (pane, file, from, end) => this.#laneRange(pane, file, from, end),
-      row: (view, line) => rowOf(view.lineBlockAt(view.state.doc.line(line).from)),
       room: (): PopRoom => ({
         scroll: this.dom.scrollTop,
         height: this.dom.clientHeight,

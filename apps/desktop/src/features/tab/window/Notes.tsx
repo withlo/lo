@@ -25,6 +25,7 @@ import {
   handOffFocus,
   useCopySaid,
   useDetails,
+  WholePath,
   type BannerPlace,
   type BannerProps,
   type EmptyAction,
@@ -388,12 +389,7 @@ export function LocalItem({
         details={problem.details}
       />
     ) : note.at !== undefined ? (
-      <>
-        <StatusLine>
-          At <code className="text-fg code-small">{note.at}</code>
-        </StatusLine>
-        <Where id={tab.id} folder={note.folder} />
-      </>
+      <Where id={tab.id} commit={note.at} folder={note.folder} />
     ) : (
       <Fetching line={note.line} said={note.said} />
     );
@@ -405,17 +401,20 @@ export function LocalItem({
 }
 
 /**
- * Where a local copy that's there is: its folder, `~` for the home folder, which Show in Finder
- * shows and Copy path copies whole, as their commands do from the palette. Copy path reads "Copied"
- * for a copy made either way while it's drawn.
+ * Where a local copy that's there is, as two facts: the commit it's at, and its folder, `~` for the
+ * home folder, which Show in Finder shows and Copy path copies whole, as their commands do from the
+ * palette. Copy path reads "Copied" for a copy made either way while it's drawn.
  */
-function Where({ id, folder }: { id: string; folder: string }) {
+function Where({ id, commit, folder }: { id: string; commit: string; folder: string }) {
   const [said, say] = useCopySaid();
   useEffect(() => answerLocalCopies(id, say), [id, say]);
   return (
     <>
       <StatusFacts
-        items={[{ label: 'Folder', value: <code className="text-fg code-small">{folder}</code> }]}
+        items={[
+          { label: 'Commit', value: <code className="text-fg code-small">{commit}</code> },
+          { label: 'Folder', value: <WholePath path={folder} className="text-fg code-small" /> },
+        ]}
       />
       <StatusActions>
         <StatusCommand command="tab.showLocalCopy">

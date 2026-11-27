@@ -22,7 +22,7 @@ import type { ReactNode } from 'react';
 
 import { defineSlot } from '../../../window/slots.tsx';
 import { choiceOf } from '../../settings/window/shared.ts';
-import { showMiddle, type PullTab } from '../../tab/window/shared.ts';
+import { showMiddle, viewsShown, type PullTab } from '../../tab/window/shared.ts';
 import type { DiffState } from '../contract.ts';
 import { FILES_PER_JOB, type FileResult } from '../jobs.ts';
 import { layout } from '../settings.ts';
@@ -74,6 +74,11 @@ export const notes = defineSlot<{ tab: PullTab; end?: ReactNode; held?: boolean 
  */
 export function showDiff(tab: string): boolean {
   return showMiddle(tab, DIFF_VIEW);
+}
+
+/** Whether pull request's tab `tab`'s diff is on screen, alone or beside a reading view. */
+export function diffOnScreen(tab: string): boolean {
+  return viewsShown(tab).includes(DIFF_VIEW);
 }
 
 /**

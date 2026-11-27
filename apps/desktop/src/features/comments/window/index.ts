@@ -16,6 +16,7 @@ import { createElement } from 'react';
 
 import { registry } from '../../../window/commands/registry.ts';
 import type { WindowFeature } from '../../../window/features.ts';
+import { redrawBot } from '../../../window/images.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { onDiffDrawn, setThreader, threadsChanged, writingDiff } from '../../diff/window/shared.ts';
 import {
@@ -386,6 +387,7 @@ export default {
     main().subscribe('drafts', takeDrafts);
     main().subscribe('joined', takeJoined);
     main().subscribe('uploads', takeProgress);
+    main().subscribe('bots', ({ login }) => redrawBot(login));
     frameWith(frameOf);
     onDiffDrawn((view) => {
       catchUpDrafts(view);
@@ -452,6 +454,11 @@ export default {
       render(tab, toggle) {
         knowPull(tab);
         return renderThreads(tab, toggle);
+      },
+      mode: threadsMode,
+      popover(tab) {
+        knowPull(tab);
+        return renderPopover(tab);
       },
       drawn: restoreBlock,
     });

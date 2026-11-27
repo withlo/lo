@@ -164,6 +164,7 @@ const diff = vi.hoisted(() => ({
 }));
 vi.mock('../../diff/window/shared.ts', () => ({
   writingDiff: () => diff.current,
+  diffOnScreen: () => diff.current !== undefined,
   showDiff: (view: string) => diff.shown.push(view),
   diffStateOf: () => undefined,
 }));

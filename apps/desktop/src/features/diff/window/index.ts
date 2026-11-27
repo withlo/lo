@@ -13,7 +13,7 @@ import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
 import { registry } from '../../../window/commands/registry.ts';
 import { defineView } from '../../../window/slots.tsx';
-import { followOverviews } from '../../overview/window/shared.ts';
+import { blockWithFocus, followOverviews } from '../../overview/window/shared.ts';
 import { changeSetting, settingNow, settingRow } from '../../settings/window/shared.ts';
 import { contract as tabContract, viewIds } from '../../tab/contract.ts';
 import {
@@ -79,6 +79,18 @@ function withDiff<T = undefined>(
 function drawnNow(): true | string {
   const drawn = onScreen();
   return typeof drawn === 'string' ? drawn : true;
+}
+
+/**
+ * Whether `]t` and `[t` go to the diff's next thread: not from a code block's threads' popover,
+ * whose block has only its own.
+ */
+function threadStops(target: Target): true | string {
+  const tab = activeTab();
+  if (target.kind === 'thread' && tab?.kind === 'pull' && blockWithFocus(tab.id)) {
+    return 'Go to the diff first';
+  }
+  return drawnNow();
 }
 
 /** The code Find… searches, a file whole on screen or the diff, or why there's none. */
@@ -294,8 +306,8 @@ export default {
     previousChange: { run: withDiff(({ view }) => view.jump('change', -1)), enabled: drawnNow },
     nextFile: { run: withDiff(({ view }) => view.jump('file', 1)), enabled: drawnNow },
     previousFile: { run: withDiff(({ view }) => view.jump('file', -1)), enabled: drawnNow },
-    nextThread: { run: withDiff(({ view }) => view.jump('thread', 1)), enabled: drawnNow },
-    previousThread: { run: withDiff(({ view }) => view.jump('thread', -1)), enabled: drawnNow },
+    nextThread: { run: withDiff(({ view }) => view.jump('thread', 1)), enabled: threadStops },
+    previousThread: { run: withDiff(({ view }) => view.jump('thread', -1)), enabled: threadStops },
     otherEnd: {
       run: withDiff((drawn, target: LineTarget) => fromMoved(drawn, placeOf(target.at))),
       enabled: otherEndNow,

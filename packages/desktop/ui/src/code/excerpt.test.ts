@@ -21,6 +21,8 @@ import type {
   ExcerptInit,
   ExcerptView,
   Place,
+  PopoverView,
+  RenderPopover,
   RenderThread,
   Spot,
   ThreadView,
@@ -28,6 +30,7 @@ import type {
 } from './api.ts';
 import { createExcerptView, excerptLines } from './excerpt.ts';
 import { setVim } from './keys.ts';
+import { REST } from './popover.ts';
 
 const noRects = (): DOMRectList => Object.assign([], { item: () => null });
 
@@ -1002,3 +1005,232 @@ function composerEvents() {
 function inBox(element: Element | null): boolean {
   return element?.closest('.lo-diffcomposer') != null;
 }
+
+/** A caller's popover: one comment per thread, with what it was asked to draw in turn. */
+function popped() {
+  const painted: string[] = [];
+  const render: RenderPopover = (host, popover) => {
+    const draw = (shown: PopoverView): void => {
+      host.innerHTML = shown.threads
+        .map(
+          ({ id }) =>
+            `<div data-thread-id="${id}"><p data-comment="${id}.1" tabindex="-1">${id}</p></div>`,
+        )
+        .join('');
+      painted.push(
+        `${shown.threads.map(({ id }) => id).join(' ')} ${shown.pinned ? 'pinned' : 'preview'}`,
+      );
+    };
+    draw(popover);
+    return { update: draw, destroy: () => host.replaceChildren() };
+  };
+  return { render, painted };
+}
+
+/**
+ * Excerpts of `a`, each of new lines 4 to 17, beside lines, in one box that scrolls, as an
+ * overview's code blocks are: each with a thread on its line 6, and its lane's bubble.
+ */
+function inScroll(count: number) {
+  const scroller = document.createElement('div');
+  scroller.style.overflowY = 'auto';
+  document.body.append(scroller);
+  const { render, painted } = popped();
+  const shown = Array.from({ length: count }, (_, index) => {
+    const host = document.createElement('div');
+    scroller.append(host);
+    const excerpt = createExcerptView(
+      host,
+      {
+        id: `a${index}`,
+        path: 'src/a.ts',
+        lines: { old, new: added },
+        diff,
+        range: { side: 'new', from: 4, to: 17 },
+        vimKeys: motions,
+        nonce: 'excerpt-nonce',
+        threads: 'beside',
+      },
+      events(),
+    );
+    for (const content of host.querySelectorAll<HTMLElement>('.cm-content')) content.tabIndex = 0;
+    excerpt.setThreads(
+      [{ ...thread(`t${index}`, 6), at: { file: `a${index}`, side: 'new', line: 6 } }],
+      plain().render,
+      { popover: render },
+    );
+    const mark = () => host.querySelector<HTMLElement>('.lo-threadlane .lo-bubble')!;
+    return { excerpt, host, mark };
+  });
+  onTestFinished(() => {
+    for (const { excerpt } of shown) excerpt.destroy();
+    scroller.remove();
+  });
+  const layers = () => scroller.querySelectorAll<HTMLElement>(':scope > .lo-threadpop');
+  return { scroller, shown, painted, layers };
+}
+
+/** Brings the pointer over `mark`. */
+function hover(mark: HTMLElement): void {
+  mark.dispatchEvent(new MouseEvent('pointerover', { bubbles: true }));
+}
+
+describe('threads beside lines', () => {
+  test('a thread takes no room under its line: its mark alone, which a click pins in the scroll around it, and again closes', () => {
+    const { shown, painted, layers } = inScroll(1);
+    const { excerpt, host, mark } = shown[0]!;
+    expect(host.querySelector('[data-thread-id]')).toBeNull();
+    expect(mark().dataset.beside).toBe('');
+    // Nothing's made for the popover until a thread needs it.
+    expect(layers()).toHaveLength(0);
+    mark().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(layers()).toHaveLength(1);
+    expect(layers()[0]!.hidden).toBe(false);
+    expect(painted.at(-1)).toBe('t0 pinned');
+    expect(excerpt.pinned()).toEqual(['t0']);
+    expect(mark().getAttribute('aria-expanded')).toBe('true');
+    expect(excerpt.keyState().target).toMatchObject({
+      kind: 'line',
+      at: { file: 'a0', side: 'new', line: 6 },
+      thread: 't0',
+    });
+    // Focus is in it, which is the excerpt's.
+    expect(layers()[0]!.contains(document.activeElement)).toBe(true);
+    expect(excerpt.hasFocus()).toBe(true);
+    mark().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(excerpt.pinned()).toEqual([]);
+    expect(layers()[0]!.hidden).toBe(true);
+  });
+
+  test('the cursor coming to a thread’s line builds its popover ahead; closed, focus goes back to the line', () => {
+    const { shown, painted, layers } = inScroll(1);
+    const { excerpt, host } = shown[0]!;
+    excerpt.reveal({ kind: 'line', at: { file: 'a0', side: 'new', line: 6 } });
+    excerpt.focus();
+    expect(layers()[0]!.hidden).toBe(true);
+    expect(painted).toEqual(['t0 preview']);
+    expect(excerpt.pinThread('t0', true)).toBe(true);
+    expect(document.activeElement?.getAttribute('data-comment')).toBe('t0.1');
+    expect(excerpt.closePopover()).toBe(true);
+    expect(document.activeElement).toBe(host.querySelector('.cm-content'));
+    expect(excerpt.popoverPinned()).toBe(false);
+    // Pinned, the cursor leaving its lines closes it.
+    excerpt.pinThread('t0');
+    excerpt.passKeys(['j', 'j', 'j']);
+    expect(excerpt.pinned()).toEqual([]);
+  });
+
+  test('switching between lines draws its threads under them, and back takes them away', () => {
+    const { shown } = inScroll(1);
+    const { excerpt, host } = shown[0]!;
+    excerpt.pinThread('t0');
+    excerpt.setThreadsMode('between');
+    expect(excerpt.popoverPinned()).toBe(false);
+    expect(host.querySelector('[data-thread-id]')?.textContent).toBe('t0');
+    expect(excerpt.pinThread('t0')).toBe(false);
+    excerpt.setThreadsMode('beside');
+    expect(host.querySelector('[data-thread-id]')).toBeNull();
+    expect(excerpt.pinThread('t0')).toBe(true);
+  });
+
+  test('excerpts in one scroll share one popover: one opened closes another’s, and one pinned stops their previews', () => {
+    vi.useFakeTimers();
+    onTestFinished(() => void vi.useRealTimers());
+    const { shown, painted, layers } = inScroll(2);
+    const first = shown[0]!;
+    const second = shown[1]!;
+    first.mark().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    second.mark().dispatchEvent(new MouseEvent('pointerover', { bubbles: true }));
+    vi.advanceTimersByTime(REST);
+    expect(first.excerpt.pinned()).toEqual(['t0']);
+    expect(second.excerpt.popoverPinned()).toBe(false);
+    expect(painted).not.toContain('t1 preview');
+    second.mark().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(layers()).toHaveLength(1);
+    expect(first.excerpt.pinned()).toEqual([]);
+    expect(first.mark().getAttribute('aria-expanded')).toBe('false');
+    expect(second.excerpt.pinned()).toEqual(['t1']);
+    expect(second.excerpt.hasFocus()).toBe(true);
+    expect(first.excerpt.hasFocus()).toBe(false);
+    // The layer stays with the excerpts that have it, and goes with the last.
+    first.excerpt.destroy();
+    expect(second.excerpt.pinned()).toEqual(['t1']);
+    second.excerpt.destroy();
+    expect(layers()).toHaveLength(0);
+  });
+
+  test('the popover they share takes the listeners it put on the page and the window with the last', () => {
+    const { shown } = inScroll(2);
+    const [first, second] = [shown[0]!, shown[1]!];
+    const on = [document, window].map((target) => ({
+      adds: vi.spyOn(target, 'addEventListener'),
+      removes: vi.spyOn(target, 'removeEventListener'),
+    }));
+    // The first mark clicked makes it, and the second's click takes it there.
+    first.mark().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    second.mark().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const listening = on.flatMap(({ adds }) =>
+      adds.mock.calls.map(([type, listener]) => ({ type, listener })),
+    );
+    expect(listening.map(({ type }) => type)).toEqual(
+      expect.arrayContaining(['pointerdown', KEY_EVENT, 'keydown']),
+    );
+    const gone = () =>
+      listening.filter(({ type, listener }) =>
+        on.some(({ removes }) =>
+          removes.mock.calls.some((call) => call[0] === type && call[1] === listener),
+        ),
+      );
+    first.excerpt.destroy();
+    expect(gone()).toEqual([]);
+    second.excerpt.destroy();
+    expect(gone()).toEqual(listening);
+    for (const { adds, removes } of on) {
+      adds.mockRestore();
+      removes.mockRestore();
+    }
+  });
+
+  test('one taken down as the pointer rests on its mark previews nothing', () => {
+    vi.useFakeTimers();
+    onTestFinished(() => void vi.useRealTimers());
+    const { shown, layers } = inScroll(2);
+    const [first, second] = [shown[0]!, shown[1]!];
+    // The pointer comes over the second's mark, and on to the first's, which it rests on.
+    hover(second.mark());
+    hover(first.mark());
+    first.excerpt.destroy();
+    vi.advanceTimersByTime(REST);
+    expect(layers()).toHaveLength(1);
+    expect(layers()[0]!.hidden).toBe(true);
+    // The other one's still previews as the pointer rests on its mark.
+    hover(second.mark());
+    vi.advanceTimersByTime(REST);
+    expect(layers()[0]!.hidden).toBe(false);
+    expect(layers()[0]!.textContent).toBe('t1');
+  });
+
+  test('one taken down with focus in its code, its popover never made, hands focus to the scroll around it', async () => {
+    const { scroller, shown, layers } = inScroll(1);
+    const { excerpt, host } = shown[0]!;
+    excerpt.focus();
+    expect(excerpt.hasFocus()).toBe(true);
+    expect(layers()).toHaveLength(0);
+    // Taken down, then off the page with what drew it, as the overview lets a block go.
+    excerpt.destroy();
+    host.remove();
+    await Promise.resolve();
+    expect(document.activeElement).toBe(scroller);
+  });
+
+  test('one taken down pinned, with focus in its popover, hands focus to the scroll around it', async () => {
+    const { scroller, shown, layers } = inScroll(1);
+    const { excerpt, mark } = shown[0]!;
+    mark().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(excerpt.hasFocus()).toBe(true);
+    expect(layers()[0]!.contains(document.activeElement)).toBe(true);
+    excerpt.destroy();
+    await Promise.resolve();
+    expect(document.activeElement).toBe(scroller);
+  });
+});
