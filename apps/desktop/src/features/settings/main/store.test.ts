@@ -125,6 +125,7 @@ describe('reading', () => {
     expect(await settings.state()).toEqual({
       file: '~/.config/lo/settings.json',
       values: { theme: 'light', 'diff.layout': 'split' },
+      inFile: ['theme'],
       problems: [],
     });
   });
@@ -135,6 +136,7 @@ describe('reading', () => {
     expect(await settings.state()).toEqual({
       file: '~/.config/lo/settings.json',
       values: { theme: 'system' },
+      inFile: [],
       problems: [],
     });
     expect(changes.at(-1)).toEqual(await settings.state());
@@ -161,6 +163,7 @@ describe('reading', () => {
     expect(await settings.state()).toEqual({
       file: '~/.config/lo/settings.json',
       values: { theme: 'system', 'diff.layout': 'inline', 'cache.cap': 10 },
+      inFile: ['theme', 'diff.layout', 'cache.cap'],
       problems: [
         {
           key: 'theme',
@@ -207,6 +210,7 @@ describe('reading', () => {
     expect(await settings.state()).toEqual({
       file: '~/.config/lo/settings.json',
       values: { theme: 'dark' },
+      inFile: ['theme'],
       problems: [],
     });
   });
@@ -849,6 +853,23 @@ describe('a setting only main changes', () => {
     const { settings } = open();
     await settings.update(names, (now) => [...now, 'sh']);
     expect(JSON.parse(contents())).toEqual({ 'code.names': ['sh'] });
+  });
+
+  it('tells the change whether the file has the setting, which a value at its default can’t', async () => {
+    const told: [string[], boolean][] = [];
+    const keep = (now: string[], inFile: boolean) => {
+      told.push([now, inFile]);
+      return now;
+    };
+    write('{}');
+    const { settings } = open();
+    await settings.update(names, keep);
+    write('{ "code.names": [] }');
+    await settings.update(names, keep);
+    expect(told).toEqual([
+      [[], false],
+      [[], true],
+    ]);
   });
 
   it('refuses a change the schema refuses, writing nothing', async () => {

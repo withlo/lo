@@ -42,7 +42,12 @@ const layout = defineSetting(
 );
 
 const state = (values: SettingsState['values'], problems: SettingsState['problems'] = []) =>
-  ({ file: '~/.config/lo/settings.json', values, problems }) satisfies SettingsState;
+  ({
+    file: '~/.config/lo/settings.json',
+    values,
+    inFile: Object.keys(values),
+    problems,
+  }) satisfies SettingsState;
 
 afterEach(() => {
   // Back to before main said anything.

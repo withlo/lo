@@ -47,14 +47,15 @@ export interface SettingsStore {
   /**
    * Changes `setting` from main, as only main may change one the window can only read: declares it
    * if it isn't, reads the file afresh, and writes `change` of its value there (its default when
-   * the file has none). `change` may be called again on the file as a person saved it meanwhile,
+   * the file has none), told whether the file has it (`inFile`), which a value equal to the
+   * default doesn't say. `change` may be called again on the file as a person saved it meanwhile,
    * so it makes its answer from what it's given alone. Other settings, and what Lo doesn't know
    * of, stay in the file as they are. Fails with an `IpcError` as Settings' changes do: `invalid`
    * when `change` makes a value the schema refuses, and `unwritable`, as an {@link Unwritten} that
    * says why, when the file has a problem, holds a value the schema refuses, which Lo never
    * replaces with one made from nothing, or can't be written.
    */
-  update<T>(setting: Setting<T>, change: (value: T) => T): Promise<void>;
+  update<T>(setting: Setting<T>, change: (value: T, inFile: boolean) => T): Promise<void>;
 }
 
 export const settings = defineService<SettingsStore>('settings.file');

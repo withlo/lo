@@ -401,8 +401,10 @@ the window find them with `import.meta.glob`.
   refuses comes back as `settingsFile` or `unsaved`, with main's reason and its details, and the row
   says it as a `Problem`. A setting declared with `{ window: 'read' }`, such as which repositories
   are trusted, the window shows but can't change: `settings.set` refuses it as `unwritable`, and
-  only main writes it, with `use(settings).update(setting, change)`. `docs/settings.md` lists every
-  setting; a test fails when one is missing.
+  only main writes it, with `use(settings).update(setting, change)`. Where a value the file has must
+  tell apart from the default it equals, `change` is told whether the file has it, and the window
+  reads the same with `useInFile`. `docs/settings.md` lists every setting; a test fails when one is
+  missing.
 - `migrations/001-<name>.sql`, `002-<name>.sql` and on create and change the feature's tables. At
   startup, before any handler can be asked anything, each feature's new migrations run in order,
   each in a transaction, and are recorded with their SHA-256.
@@ -930,8 +932,9 @@ status bar.
   middle view by id (`Panels.middle`): while that view isn't there, as the overview isn't with
   `overview.on` off, the timeline stands in, and the tab goes back to it when it returns. The key
   `tab.open` replaced, `overview.open`, stays declared, file-only: main carries a `diff` saved there
-  over once, where `tab.open` is still its default, then sets it to `null` (`tab/main/carry.ts`),
-  and the window reads it meanwhile.
+  over once, while the file has no `tab.open`, then sets it to `null` (`tab/main/carry.ts`). A
+  `tab.open` the file has stays, even `overview`, its default. Until it's carried, the window reads
+  it the same way (`useOpensOn`), for the tab and for Settings' row, so both show where tabs open.
 - The row's layout is the window's, every pull request's tab alike: each panel open or not, and its
   width, unset while it's the default. Main keeps it in `tab_window` (`tab.layout`,
   `tab.keepLayout`), clamping each width to its limits as it's read, and a layout that won't read is

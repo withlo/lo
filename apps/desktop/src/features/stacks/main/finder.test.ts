@@ -423,6 +423,33 @@ describe('the stacks tabs show', () => {
     expect(poller.forgotten).toEqual(['rozed-dev/e2e#4', 'rozed-dev/e2e#8']);
   });
 
+  it('stop reading which have an overview once the tab closes, or its pull request leaves the stack', async () => {
+    const found = await recorded('stacks_e2e', E2E, LAYERS);
+    const poller = new FakePoller();
+    poller.set(E2E, { list: found.list, rules: found.rules });
+    let now = 1_000_000;
+    const { finder } = started(poller, () => now);
+    finder.follow([tab(4, { onScreen: true }), tab(8)]);
+    await settle();
+    expect(poller.overviewsAsked).toEqual(['rozed-dev/e2e#4']);
+    finder.follow([tab(8)]);
+    expect(poller.forgottenReads).toEqual([['rozed-dev/e2e#4', OVERVIEW_REFS.name]]);
+
+    // Past the refresh, #8's tab reads them, until #8 is in no stack.
+    now += OVERVIEW_REFRESH;
+    finder.follow([tab(8, { onScreen: true })]);
+    expect(poller.overviewsAsked).toEqual(['rozed-dev/e2e#4', 'rozed-dev/e2e#8']);
+    poller.set(E2E, {
+      list: changePull(found.list, 8, (pr) => ({ ...pr, stackEntry: null, baseRefName: 'e2/z' })),
+    });
+    await settle();
+    expect(rows(finder, 't8')).toBe('none');
+    expect(poller.forgottenReads).toEqual([
+      ['rozed-dev/e2e#4', OVERVIEW_REFS.name],
+      ['rozed-dev/e2e#8', OVERVIEW_REFS.name],
+    ]);
+  });
+
   it('link layers through the merged pull requests their read found', async () => {
     const found = await recorded('stacks_e2e', E2E, LAYERS);
     const poller = new FakePoller();

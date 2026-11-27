@@ -337,6 +337,41 @@ test('a cached read nothing needs any more is made no more, and its cache stays'
 });
 
 /**
+ * A read let go of while GitHub answers it, as a stack's overviews are once its tab closes: what
+ * that run reads goes nowhere when it ends, not even to the read asked for since, which reads
+ * afresh.
+ */
+test('a cached read let go of while it runs keeps nothing of that run', async () => {
+  const t = await Polling.start('cached_read_let_go', recorded());
+  const first = Promise.withResolvers<number>();
+  const again = Promise.withResolvers<number>();
+  const ran: string[] = [];
+  void t.poller.setOpen(pr(1));
+  void t.poller.readCached(pr(1), COUNTED, () => {
+    ran.push('first');
+    return first.promise;
+  });
+  await t.run();
+  expect(ran).toEqual(['first']);
+  t.events();
+
+  t.poller.forgetRead(pr(1), COUNTED);
+  void t.poller.readCached(pr(1), COUNTED, () => {
+    ran.push('again');
+    return again.promise;
+  });
+  first.resolve(1);
+  await t.run();
+  expect(ran).toEqual(['first', 'again']);
+  expect(cachedCount(t)).toBeUndefined();
+  expect(t.events()).not.toContain('read Counted #1');
+  again.resolve(2);
+  await t.run();
+  expect(cachedCount(t)).toBe(2);
+  expect(t.events()).toEqual(['read Counted #1']);
+});
+
+/**
  * A refresh that gives the same value says so, with when GitHub confirmed it: so does a read that
  * works again after one failed, though its value hasn't changed.
  */

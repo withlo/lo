@@ -80,15 +80,18 @@ and keeps it across a restart.
 | `editor.vim`          | true or false                             | `false`      | Whether code and comment boxes take Vim's keys. Off, they have a plain caret, and a box takes typing as soon as it has focus. Lo's own keys work either way.                                                                           |
 | `updates.check`       | true or false                             | `true`       | Whether Lo checks GitHub Releases for a newer version by itself: 30 s after it starts, then every 6 hours. Off, it checks only when you ask.                                                                                           |
 | `app.gpu`             | true or false                             | `true`       | Whether Lo draws with the graphics card. Off, it draws with the processor alone, for a window that stays blank. It applies at the next start.                                                                                          |
-| `overview.open`       | overview, diff or null                    | `null`       | Replaced by `tab.open`. Lo carries a `"diff"` saved here over to `tab.open` once, unless `tab.open` is chosen already, then sets this to `null`.                                                                                       |
+| `overview.open`       | overview, diff or null                    | `null`       | Replaced by `tab.open`. Lo carries a `"diff"` saved here over to `tab.open` once, while the file has no `tab.open`, then sets this to `null`.                                                                                          |
 
 `app.gpu` is only in the file, since a window that draws nothing couldn't reach it in Settings. Lo
 reads it as it starts, before it draws anything, so a change applies the next time Lo starts. It
 does what Chromium's `--disable-gpu` does, since an installed Lo takes no command-line switches.
 
 `overview.open` is the key `tab.open` replaced, from when a pull request opened on its overview or
-its diff. It's only in the file, and only Lo writes it: once it has carried its value over, it's
-`null`, so a later change to `tab.open` stands.
+its diff. It's only in the file, and only Lo writes it. Lo carries a `"diff"` there over to
+`tab.open` while the file has no `tab.open`, and leaves a `tab.open` the file has as it is, even
+`"overview"`. Then it sets this to `null`, so a later change to `tab.open` stands. If the file can't
+be written, Lo carries it at the next start, and until then pull requests open on the diff, as
+Settings shows, while the file has no `tab.open`.
 
 ## Trusted repos and pull requests
 

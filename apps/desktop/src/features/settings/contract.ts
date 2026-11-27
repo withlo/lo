@@ -168,12 +168,18 @@ export type Problem = z.output<typeof problem>;
 
 /**
  * The settings as main has them: where the file is, the value of every setting a feature
- * declared (the file's, or its default), and what is wrong with the file.
+ * declared (the file's, or its default), which of them the file has, and what is wrong with the
+ * file.
  */
 export const settingsState = z.strictObject({
   /** The file's place as a person would write it: `~/.config/lo/settings.json`. */
   file: z.string().max(1024),
   values: z.record(settingKey, settingValue),
+  /**
+   * The keys of the declared settings the file has, whatever it holds for them: a value written
+   * there, even the default, isn't one left out.
+   */
+  inFile: z.array(settingKey),
   problems: z.array(problem).max(200),
 });
 export type SettingsState = z.output<typeof settingsState>;

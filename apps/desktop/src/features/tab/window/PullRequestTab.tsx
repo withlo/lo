@@ -23,10 +23,9 @@ import { useStore } from 'zustand';
 
 import { registry } from '../../../window/commands/registry.ts';
 import { Slot, useViews } from '../../../window/slots.tsx';
-import { useKnownSetting } from '../../settings/window/shared.ts';
-import { before, open as openOn } from '../settings.ts';
 import { blocked } from './banners.ts';
 import { Banners, LimitItem, LocalItem, TabFailed, useHeaderConnection } from './Notes.tsx';
+import { useOpensOn } from './OpenOn.tsx';
 import {
   focusNowhere,
   header,
@@ -149,10 +148,7 @@ export function PullRequestTab({ tab }: { tab: PullTab }) {
     threads: rights.length > 0,
     beside: readings > 0 && codes > 0,
   };
-  const saved = useKnownSetting(openOn);
-  // A `diff` saved under the key `tab.open` replaced, until main has carried it over.
-  const earlier = useKnownSetting(before);
-  const open = saved === openOn.fallback && earlier === 'diff' ? 'diff' : saved;
+  const open = useOpensOn();
   viewCounts.left = lefts.length;
   viewCounts.middle = middles.length;
   viewCounts.right = rights.length;
