@@ -297,8 +297,9 @@ export function ViewsRow({
     const unseen = sheet === coming ? 'pointer-events-none opacity-0' : '';
     return `flex min-h-0 flex-col overflow-hidden sheet ${grows} ${unseen}`;
   };
-  // With the bar of what's seen until what comes is.
-  const overIn: Sheet = both ? 'code' : coming !== undefined && going !== undefined ? going : drawn;
+  // Over the code with two views, or the one view; while a switch goes from one sheet to the
+  // other, over both, so neither moves as one fades in over the other.
+  const overIn = (sheet: Sheet) => (both ? sheet === 'code' : sheet === drawn || sheet === going);
   const sheetOf = (sheet: Sheet, content: ReactNode) => (
     <section
       ref={sheets[sheet]}
@@ -309,7 +310,7 @@ export function ViewsRow({
       data-lo-sheet={sheet}
       onFocus={onFocus}
     >
-      {overIn === sheet && over}
+      {overIn(sheet) && over}
       <div className="relative min-h-0 flex-1">{content}</div>
     </section>
   );

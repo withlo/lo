@@ -272,25 +272,29 @@ describe('a switch to a view in the other sheet', () => {
     const draw = (props: Switch) => settle(() => root.render(<Views {...props} />));
     const sheet = (name: Sheet) =>
       container.querySelector<HTMLElement>(`[data-lo-sheet="${name}"]`)!;
-    const bar = () => container.querySelector('[data-bar]')?.closest('[data-lo-sheet]');
+    const bars = () =>
+      [...container.querySelectorAll('[data-bar]')].map((bar) =>
+        bar.closest('[data-lo-sheet]')?.getAttribute('data-lo-sheet'),
+      );
     await draw({ drawn: 'reading' });
     // The diff lays out unseen, taking focus but not the pointer, over the overview, which takes
-    // nothing and keeps the run's bar.
+    // nothing; the run's bar is over both, so neither moves.
     await draw({ drawn: 'code', coming: 'code', going: 'reading' });
     expect(sheet('code').classList).toContain('opacity-0');
     expect(sheet('code').hasAttribute('inert')).toBe(false);
     expect(sheet('reading').classList).not.toContain('invisible');
     expect(sheet('reading').classList).toContain('-z-1');
     expect(sheet('reading').hasAttribute('inert')).toBe(true);
-    expect(bar()).toBe(sheet('reading'));
+    expect(bars()).toEqual(['reading', 'code']);
     // Laid out, it fades in over the overview, which stays under it.
     await draw({ drawn: 'code', going: 'reading' });
     expect(sheet('code').classList).not.toContain('opacity-0');
     expect(sheet('code').classList).toContain('move-swap');
     expect(sheet('reading').classList).not.toContain('invisible');
-    expect(bar()).toBe(sheet('code'));
+    expect(bars()).toEqual(['reading', 'code']);
     await draw({ drawn: 'code' });
     expect(sheet('reading').classList).toContain('invisible');
+    expect(bars()).toEqual(['code']);
   });
 
   it('puts the sheet it left back with no move when it’s asked for again meanwhile', async () => {

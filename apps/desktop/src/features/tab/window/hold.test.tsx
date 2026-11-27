@@ -110,12 +110,17 @@ function render(props: Props) {
   document.body.append(container);
   const root = createRoot(container);
   act(() => root.render(<Middle {...props} />));
-  onTestFinished(() => {
+  let there = true;
+  const unmount = () => {
+    if (!there) return;
+    there = false;
     act(() => root.unmount());
     container.remove();
-  });
+  };
+  onTestFinished(unmount);
   const view = (id: string) => container.querySelector(`[data-view="${id}"]`)!;
   return {
+    unmount,
     show: (next: Props) => act(() => root.render(<Middle {...next} />)),
     view,
     drawn: (id: string) => view(id).getAttribute('data-drawn'),
@@ -224,6 +229,62 @@ describe('a switch of the middle view', () => {
     middle.show({ want: ['diff'] });
     expect(middle.drawn('overview')).toBe('hidden');
     expect(middle.drawn('diff')).toBe('seen');
+  });
+
+  it('still lets the view it left go when another view comes during the move, as the code beside', async () => {
+    const middle = render({ want: ['overview'] });
+    middle.show({ want: ['diff'] });
+    frame();
+    const diff = middle.view('diff');
+    middle.show({ want: ['diff', 'timeline'] });
+    expect(middle.drawn('timeline')).toBe('seen');
+    expect(middle.drawn('overview')).toBe('under');
+    frame();
+    await endMove(diff);
+    expect(middle.drawn('overview')).toBe('hidden');
+  });
+
+  it('still lets the view it left go when a view goes during the move', async () => {
+    const middle = render({ want: ['overview', 'diff'] });
+    middle.show({ want: ['timeline', 'diff'] });
+    frame();
+    const timeline = middle.view('timeline');
+    expect(middle.drawn('overview')).toBe('under');
+    middle.show({ want: ['diff'] });
+    expect(middle.drawn('timeline')).toBe('hidden');
+    frame();
+    await endMove(timeline);
+    expect(middle.drawn('overview')).toBe('hidden');
+  });
+
+  it('leaves nothing under once a switch made during the last move is taken back', () => {
+    const middle = render({ want: ['overview'] });
+    middle.show({ want: ['diff'] });
+    frame();
+    middle.show({ want: ['timeline'], loading: ['timeline'] });
+    middle.show({ want: ['diff'] });
+    expect(middle.drawn('diff')).toBe('seen');
+    expect(middle.drawn('overview')).toBe('hidden');
+    expect(middle.drawn('timeline')).toBe('hidden');
+  });
+
+  it('leaves no frame or timer behind when it goes mid-switch', () => {
+    const middle = render({ want: ['overview'] });
+    middle.show({ want: ['diff'], loading: ['diff'] });
+    expect(frames.size).toBeGreaterThan(0);
+    middle.unmount();
+    expect(frames.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('leaves no frame behind when it goes mid-move', () => {
+    const middle = render({ want: ['overview'] });
+    middle.show({ want: ['diff'] });
+    frame();
+    // The wait for the move's end.
+    expect(frames.size).toBe(1);
+    middle.unmount();
+    expect(frames.size).toBe(0);
   });
 
   it('holds nothing while the views aren’t drawn', () => {

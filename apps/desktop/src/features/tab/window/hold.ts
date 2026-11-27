@@ -32,6 +32,8 @@ interface Shown {
   readonly under: readonly string[];
   /** The views that replaced them. */
   readonly came: readonly string[];
+  /** Which switch's move that is: each reveal is a new one. */
+  readonly move: number;
 }
 
 export interface HoldOptions {
@@ -64,22 +66,24 @@ function finish(elements: readonly Element[]): void {
  * laid out, then swaps it in over it.
  */
 export function useHold(want: readonly string[], options: HoldOptions): (id: string) => Drawn {
-  const [shown, setShown] = useState<Shown>(() => ({ seen: want, under: [], came: [] }));
+  const [shown, setShown] = useState<Shown>(() => ({ seen: want, under: [], came: [], move: 0 }));
   const coming = want.filter((id) => !shown.seen.includes(id));
   const leaving = shown.seen.filter((id) => !want.includes(id));
   const switching = options.holds && coming.length > 0 && leaving.length > 0;
+  // A view that only comes or goes, even while a switch's move runs, as the code does beside a
+  // view: that move goes on, and what it left goes once it has run.
   if (!switching && !same(shown.seen, want)) {
-    setShown({ seen: want, under: shown.under.filter((id) => !want.includes(id)), came: [] });
+    setShown({ ...shown, seen: want, under: shown.under.filter((id) => !want.includes(id)) });
   }
   // While a switch holds, what it leaves is under what's coming, and what an earlier switch left is
   // gone: that switch's move ends as this one starts.
   const under = switching ? leaving : shown.under;
 
-  const latest = useRef({ want, coming, options });
-  latest.current = { want, coming, options };
+  const latest = useRef({ want, coming, options, shown });
+  latest.current = { want, coming, options, shown };
   /** When the switch under way began, holding since. */
   const since = useRef<number | undefined>(undefined);
-  /** Ends the last switch's move, and stops waiting for it. */
+  /** Ends the last switch's move where it would end, while it runs. */
   const moving = useRef<(() => void) | undefined>(undefined);
 
   const comingKey = switching ? coming.join('\n') : '';
@@ -99,6 +103,7 @@ export function useHold(want: readonly string[], options: HoldOptions): (id: str
           seen: now,
           under: was.seen.filter((id) => !now.includes(id)),
           came: now.filter((id) => !was.seen.includes(id)),
+          move: was.move + 1,
         })),
       );
     };
@@ -122,26 +127,34 @@ export function useHold(want: readonly string[], options: HoldOptions): (id: str
 
   // As what came is seen, it fades in over what it replaced, which goes once the move has run.
   useLayoutEffect(() => {
-    if (shown.came.length === 0 || shown.under.length === 0) return undefined;
-    const moves = latest.current.options.swap(shown.came, shown.under);
-    const gone = () => setShown((was) => (was === shown ? { ...was, under: [], came: [] } : was));
-    let left = moves.length;
-    if (left === 0) gone();
+    const { came, under: left, move } = latest.current.shown;
+    if (came.length === 0 || left.length === 0) return undefined;
+    const moves = latest.current.options.swap(came, left);
+    const gone = () => {
+      moving.current = undefined;
+      setShown((was) => (was.move === move ? { ...was, under: [], came: [] } : was));
+    };
+    let running = moves.length;
     const stops = moves.map((element) =>
       whenSettled(element, () => {
-        left -= 1;
-        if (left === 0) gone();
+        running -= 1;
+        if (running === 0) gone();
       }),
     );
     const stop = () => {
       for (const each of stops) each();
     };
-    moving.current = () => {
-      stop();
-      finish(moves);
-    };
+    if (moves.length === 0) gone();
+    else {
+      // A switch made before it has run ends it where it would end, and what it left goes then.
+      moving.current = () => {
+        stop();
+        finish(moves);
+        gone();
+      };
+    }
     return stop;
-  }, [shown]);
+  }, [shown.move]);
 
   return (id) => {
     if (want.includes(id)) return switching && !shown.seen.includes(id) ? 'coming' : 'seen';
