@@ -89,44 +89,65 @@ async function statusTip(page: Page): Promise<string> {
   return (await tip.textContent()) ?? '';
 }
 
-/** What the header's first row has given up, in order, at `width`, and how its title is drawn. */
-async function top(page: Page, width: number) {
-  const [gave = ''] = await at(page, width, TOP);
-  const title = await page.evaluate(() => {
-    const heading = document.querySelector<HTMLElement>('#header h1')!;
-    return { cut: heading.scrollWidth > heading.clientWidth, width: heading.clientWidth };
-  });
-  return { steps: gave.split(' ').filter(Boolean), title };
+/** What the header's first row had given up at one width, and how its title was drawn. */
+interface Fitted {
+  readonly width: number;
+  readonly steps: readonly string[];
+  readonly cut: boolean;
+  readonly title: number;
+}
+
+/**
+ * Narrows the header's frame from `from` px to `to` px, `step` px at a time, and says at each width
+ * what its first row has given up and how its title is drawn. Each width takes one frame: the row
+ * fits itself in its own resize observer, made before the one that waits for the frame, so it has
+ * run by the time that one does.
+ */
+function sweep(page: Page, from: number, to: number, step = 20): Promise<Fitted[]> {
+  return page.evaluate(
+    async ({ start, end, by }) => {
+      const frame = document.getElementById('header')!;
+      const row = frame.querySelector('.give-up:has(h1)')!;
+      const heading = frame.querySelector('h1')!;
+      const seen: Fitted[] = [];
+      for (let width = start; width >= end; width -= by) {
+        frame.style.width = `${width}px`;
+        await new Promise<void>((resolve) => {
+          const sized = new ResizeObserver(() => {
+            sized.disconnect();
+            resolve();
+          });
+          sized.observe(frame);
+        });
+        seen.push({
+          width,
+          steps: (row.getAttribute('data-gave-up') ?? '').split(' ').filter(Boolean),
+          cut: heading.scrollWidth > heading.clientWidth,
+          title: heading.clientWidth,
+        });
+      }
+      return seen;
+    },
+    { start: from, end: to, by: step },
+  );
 }
 
 /** The first row's steps, in the order it takes them. */
 const ORDER = ['keys', 'detail', 'cut', 'title'];
 
-/**
- * Narrows the header's frame from `from` px, 10 px at a time, until its first row has given up
- * `count` steps, and says how wide it is then.
- */
-async function narrowTo(page: Page, count: number, from = 1440): Promise<number> {
-  for (let width = from; width >= 300; width -= 10) {
-    if ((await top(page, width)).steps.length >= count) return width;
-  }
-  throw new Error(`The header's first row never gave up ${count} steps.`);
-}
-
 test('narrowed from 1440 to 600 px, the header’s first row gives up its key chips, then the merge status’s detail, then cuts its title, and its title is cut only after the first two', async () => {
   const page = await open();
   const seen: string[] = [];
   let before = 0;
-  for (let width = 1440; width >= 600; width -= 10) {
-    const { steps, title } = await top(page, width);
+  for (const { width, steps, cut, title } of await sweep(page, 1440, 600)) {
     // A step at a time, in its order, and none back as the row narrows.
     expect(steps, `${width} px`).toEqual(ORDER.slice(0, steps.length));
     expect(steps.length, `${width} px`).toBeGreaterThanOrEqual(before);
     before = steps.length;
     // Whole until the chips and the detail have gone; cut once they have and it still doesn't fit,
     // and at its least width once the status's words have gone too.
-    expect(title.cut, `${width} px`).toBe(steps.includes('cut'));
-    if (steps.includes('title')) expect(title.width, `${width} px`).toBeLessThanOrEqual(49);
+    expect(cut, `${width} px`).toBe(steps.includes('cut'));
+    if (steps.includes('title')) expect(title, `${width} px`).toBeLessThanOrEqual(49);
     const said = steps.join(' ');
     if (seen.at(-1) !== said) seen.push(said);
   }
@@ -142,14 +163,17 @@ test('the header’s first row says what it gave up in the merge status’s tool
   expect(await at(page, 1440, TOP)).toEqual(['']);
   expect(await status(page)).toEqual({ apart: true, whole: true, heard: true });
   expect(await statusTip(page)).toContain('Merge panel');
+  // Where it takes each step, narrowing.
+  const fitted = await sweep(page, 1440, 300);
+  const first = (count: number) => fitted.find(({ steps }) => steps.length >= count)!;
   // The key chips go, and the detail, still heard and in the tooltip; the title and the verdict
   // stay whole.
-  const width = await narrowTo(page, 2);
-  expect((await top(page, width)).title.cut).toBe(false);
+  expect(first(2).cut).toBe(false);
+  expect(await at(page, first(2).width, TOP)).toEqual(['keys detail']);
   expect(await status(page)).toEqual({ apart: true, whole: true, heard: true });
   expect(await statusTip(page)).toContain('Ready to merge · Merge commit into comments/base');
   // At last the verdict, which leaves its dot beside "Submit review…", what it says its tooltip.
-  await narrowTo(page, 4, width);
+  expect(await at(page, first(4).width, TOP)).toEqual(['keys detail cut title']);
   const narrow = await status(page);
   expect([narrow.apart, narrow.heard]).toEqual([true, true]);
   expect(await statusTip(page)).toContain('Ready to merge · Merge commit into comments/base');
