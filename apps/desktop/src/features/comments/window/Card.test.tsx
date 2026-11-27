@@ -7,13 +7,20 @@ import { createRoot } from 'react-dom/client';
 import { beforeAll, expect, onTestFinished, test, vi } from 'vitest';
 
 import { installBridge } from '../../../window/test/bridge.ts';
+import type * as TabShared from '../../tab/window/shared.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
 import type { ThreadCommentRow, ThreadRow, ThreadsView } from '../contract.ts';
+import { editing, replying } from './boxes.ts';
 import { Card, ThreadCard } from './Card.tsx';
 import { held } from './threads.ts';
 
 vi.mock('../../../window/commands/registry.ts', () => ({
   registry: () => ({ keysOf: () => [], system: 'mac' }),
+}));
+vi.mock('../../tab/window/shared.ts', async (original) => ({
+  ...(await original<typeof TabShared>()),
+  // Signed in as rozed-bot, who may reply.
+  usePull: () => ({ acting: { kind: 'account', login: 'rozed-bot' } }),
 }));
 
 beforeAll(() => {
@@ -255,6 +262,62 @@ test('a card drawn as its row goes, and comes back, draws nothing meanwhile', ()
   expect(element.innerHTML).toBe('');
   act(() => shown([row()]));
   expect(element.querySelector('[data-comment="C1"]')).not.toBeNull();
+});
+
+test('in a popover, only the box it holds takes a reply’s row or a comment’s place, not one open elsewhere', () => {
+  installBridge();
+  const tab: PullTab = {
+    id: 'view-popover',
+    kind: 'pull',
+    owner: 'rozed-dev',
+    repo: 'e2e',
+    number: 94,
+  };
+  const threads: ThreadsView = {
+    id: tab.id,
+    status: 'ready',
+    threads: [row()],
+    missing: 0,
+    compared: null,
+    problem: null,
+  };
+  held.set(tab.id, { threads });
+  // A reply and an edit of C1 open in the view, as in a diff out of sight.
+  replying.set(tab.id, new Set(['T1']));
+  editing.set(tab.id, new Set(['C1']));
+  const element = document.createElement('div');
+  document.body.append(element);
+  const root = createRoot(element);
+  onTestFinished(() => {
+    act(() => root.unmount());
+    element.remove();
+    held.set(tab.id, {});
+    replying.set(tab.id, new Set());
+    editing.set(tab.id, new Set());
+  });
+  const draw = (popover: boolean, box?: { edits?: string }) =>
+    act(() =>
+      root.render(
+        <Card tab={tab} id="T1" open popover={popover} onToggle={() => undefined} box={box} />,
+      ),
+    );
+  const offers = () =>
+    [...element.querySelectorAll('button')].some((button) =>
+      button.textContent.startsWith('Reply'),
+    );
+  const shows = () => element.querySelector('[data-comment="C1"]') !== null;
+  draw(true);
+  expect(offers()).toBe(true);
+  expect(shows()).toBe(true);
+  // Its own reply's box takes the row's place; its own edit's, the comment's.
+  draw(true, {});
+  expect(offers()).toBe(false);
+  draw(true, { edits: 'C1' });
+  expect(shows()).toBe(false);
+  // In the flow, one open anywhere in the view takes them.
+  draw(false);
+  expect(offers()).toBe(false);
+  expect(shows()).toBe(false);
 });
 
 test('when a comment was written, in the largest whole unit only', () => {

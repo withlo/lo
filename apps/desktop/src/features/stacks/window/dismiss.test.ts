@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 // Dismissing the stacks' offers: each one's menu lists its own rows, which act on the tab the offer
-// is in, from the palette on the tab on screen, and only while it offers them; "for this stack" or
-// "for #84" asks main to keep it, and "for all stacks" turns its setting off.
+// is in, from the palette on the tab on screen, and only while it offers them, the offer of a
+// GitHub stack wherever it's made; "for this stack" or "for #84" asks main to keep it, and "for all
+// stacks" turns its setting off.
 
 import { expect, it, vi } from 'vitest';
 
@@ -9,6 +10,7 @@ import { installBridge } from '../../../window/test/bridge.ts';
 import type * as SettingsShared from '../../settings/window/shared.ts';
 import type * as TabShared from '../../tab/window/shared.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
+import type { StackView } from '../contract.ts';
 import { offerConvert, offerStart } from '../settings.ts';
 import {
   convertNotice,
@@ -85,6 +87,7 @@ it('dismisses an offer for the stack or layer on screen, only while it’s offer
     githubStack: false,
     rows: [],
     notes: [],
+    offered: true,
     callout: 'This branch stack merges one layer at a time.',
   });
   offers.set(TAB.id, { title: 'This diff includes #83’s changes', action: 'Hide', commit: null });
@@ -99,6 +102,26 @@ it('dismisses an offer for the stack or layer on screen, only while it’s offer
   ]);
 });
 
+it('lists the offer of a GitHub stack’s dismissal in its menu while it’s offered, as in the merge panel where the tree makes none, and in the palette while the tree makes it', () => {
+  on.tab = TAB;
+  const stack: StackView = {
+    kind: 'stack',
+    root: 'main',
+    githubStack: false,
+    rows: [],
+    notes: [],
+    offered: true,
+    callout: null,
+  };
+  stacks.set(TAB.id, stack);
+  expect(dismissConvert.enabled?.(CONVERT_NOTICE)).toBe(true);
+  expect(dismissConvert.enabled?.(NONE)).toBe('');
+  // Dismissed for the stack, or turned off: neither the tree nor the merge panel makes it.
+  stacks.set(TAB.id, { ...stack, offered: false });
+  expect(dismissConvert.enabled?.(CONVERT_NOTICE)).toBe('');
+  expect(dismissConvert.enabled?.(NONE)).toBe('');
+});
+
 it('dismisses an offer in the tab its menu was opened in, though another is on screen by then', async () => {
   on.tab = TAB;
   stacks.set(TAB.id, {
@@ -107,6 +130,7 @@ it('dismisses an offer in the tab its menu was opened in, though another is on s
     githubStack: false,
     rows: [],
     notes: [],
+    offered: true,
     callout: 'This branch stack merges one layer at a time.',
   });
   offers.set(TAB.id, { title: 'This diff includes #83’s changes', action: 'Hide', commit: null });

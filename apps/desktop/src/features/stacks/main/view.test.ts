@@ -306,10 +306,33 @@ describe('the offer to convert the chain to a GitHub stack', () => {
 
   it("isn't made until the layers' state says none is in a merge queue, nor while one is", async () => {
     const found = await recorded('stacks_e2e', E2E, LAYERS);
-    expect(viewOf(input(found, 4, { layers: undefined })).view).toMatchObject({ callout: null });
+    const unread = viewOf(input(found, 4, { layers: undefined }));
+    expect(unread.view).toMatchObject({ callout: null });
+    // Which offer it will be is known, for the merge panel's, which is dismissed as that one.
+    expect(unread.callout).toBe('convert');
     const layers =
       found.layers && changeLayer(found.layers, 3, (layer) => ({ ...layer, isInMergeQueue: true }));
     expect(viewOf(input(found, 4, { layers })).view).toMatchObject({ callout: null });
+  });
+
+  it('knows, before the layers are read, that it will offer to add the chain to the GitHub stack below', async () => {
+    const found = await recorded('stacks_e2e', E2E, LAYERS);
+    // #2 and #3 GitHub stack #9, and #7 and #8 on a branch of their own.
+    const stack = { number: 9, size: 2, baseRefName: 'main' };
+    let list = changePull(found.list, 2, (pr) => ({ ...pr, stackEntry: { position: 1, stack } }));
+    list = changePull(list, 3, (pr) => ({ ...pr, stackEntry: { position: 2, stack } }));
+    for (const number of [7, 8]) {
+      list = changePull(list, number, (pr) => ({ ...pr, stackEntry: null, baseRefName: 'z' }));
+    }
+    const forest = stacksOf(list, found.rules);
+    const unread = viewOf(input(found, 6, { forest, list, layers: undefined }));
+    expect(unread.view).toMatchObject({ callout: null });
+    expect(unread.callout).toBe('add');
+    const read = viewOf(input(found, 6, { forest, list }));
+    expect(read.view).toMatchObject({
+      callout: '#4 and #6 aren’t in the GitHub stack below them.',
+    });
+    expect(read.callout).toBe('add');
   });
 
   it("isn't made for what's a GitHub stack already", async () => {

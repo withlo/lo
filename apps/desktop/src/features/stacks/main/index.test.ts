@@ -1,7 +1,7 @@
 // The stacks feature's offers in main: the finder offers each only once Settings says it's on, works
 // the tabs out again as a switch turns, and `stacks.dismiss` keeps what's dismissed, the tree's
-// offer by which it is, for each of the stack's layers, and the start for its layer. The finder is a
-// stand-in that hands back the options main gave it.
+// offer by which it is, or the plain one where the tree makes none, for each of the stack's layers,
+// and the start for its layer. The finder is a stand-in that hands back the options main gave it.
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -14,7 +14,7 @@ import { github } from '../../accounts/service.ts';
 import { overviews } from '../../overview/service.ts';
 import { settings } from '../../settings/service.ts';
 import { tabs } from '../../tab/service.ts';
-import type { Row, StackState } from '../contract.ts';
+import type { Row, StackState, StackView } from '../contract.ts';
 import type * as Finder from './finder.ts';
 import type { FinderOptions } from './finder.ts';
 import feature from './index.ts';
@@ -95,18 +95,16 @@ function row(number: number): Row {
 }
 
 /** Tab `t1`'s stack, #82 to #85, on #84, with the offer to convert it over its tree. */
-const STACK: StackState = {
-  id: 't1',
-  stack: {
-    kind: 'stack',
-    root: 'stack/root',
-    githubStack: false,
-    rows: [82, 83, 84, 85].map(row),
-    notes: [],
-    callout: 'This branch stack merges one layer at a time.',
-  },
-  offer: null,
+const STACKED: Extract<StackView, { kind: 'stack' }> = {
+  kind: 'stack',
+  root: 'stack/root',
+  githubStack: false,
+  rows: [82, 83, 84, 85].map(row),
+  notes: [],
+  offered: true,
+  callout: 'This branch stack merges one layer at a time.',
 };
+const STACK: StackState = { id: 't1', stack: STACKED, offer: null };
 
 /**
  * Starts the feature on `database`, with tab `t1` on #84 of rozed-dev/e2e, as rozed-bot, and
@@ -234,10 +232,25 @@ describe('stacks in main', () => {
       return undefined;
     };
     expect(refusal('t9', 'start')).toEqual(['notFound', 'There’s no pull request in that tab.']);
-    // A stack whose tree offers nothing now.
-    finder.states.set('t1', STACK);
+    finder.states.set('t1', { id: 't1', stack: { kind: 'none' }, offer: null });
+    expect(refusal('t1', 'convert')).toEqual(['missing', 'That offer is no longer there.']);
+    // Dismissed or turned off since its menu opened: nothing more is kept.
+    finder.states.set('t1', { ...STACK, stack: { ...STACKED, offered: false, callout: null } });
     expect(refusal('t1', 'convert')).toEqual(['missing', 'That offer is no longer there.']);
     await feature.stop?.(context);
     expect(refusal('t1', 'start')).toEqual(['stopped', 'Lo is quitting.']);
+  });
+
+  it('dismisses the merge panel’s offer of a GitHub stack, where the tree makes none, as the plain one', async () => {
+    const opened = migrated();
+    const { context, watchers, finder } = started(opened);
+    watchers.get('stacks.offerConvert')?.(true);
+    finder.states.set('t1', STACK);
+    feature.handlers['dismiss']?.({ id: 't1', notice: 'convert' }, context, NO_WINDOW);
+    expect(
+      opened.prepare('SELECT notice, number FROM stacks_dismissed ORDER BY rowid').all(),
+    ).toEqual([82, 83, 84, 85].map((number) => ({ notice: 'convert', number })));
+    expect(finder.options.offers!('convert', REPO, [84])).toBe(false);
+    await feature.stop?.(context);
   });
 });

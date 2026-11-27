@@ -4,11 +4,11 @@
 // shows, which it keeps whatever the overview does, and that draft opening under its block once the
 // timeline goes; and how tall it's held between the reader's inputs.
 
-import type { Composer, ComposerEvents, ComposerInit } from '@lo/ui/code';
+import type { Composer, ComposerEvents, ComposerInit, DraftMark } from '@lo/ui/code';
 import { KEY_EVENT } from '@lo/ui/commands';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { afterEach, beforeAll, beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, expect, onTestFinished, test, vi } from 'vitest';
 
 import { installBridge } from '../../../window/test/bridge.ts';
 import type * as OverviewShared from '../../overview/window/shared.ts';
@@ -63,6 +63,10 @@ vi.mock('@lo/ui/code', () => ({
   },
 }));
 
+/** How threads show: these tests are between lines, but where one says otherwise. */
+const threadsShow = vi.hoisted(() => ({ mode: 'between' as 'beside' | 'between' }));
+vi.mock('./mode.ts', () => ({ threadsMode: () => threadsShow.mode }));
+
 const said = vi.hoisted(() => ({ pull: undefined as unknown }));
 vi.mock('../../tab/window/shared.ts', async (original) => ({
   ...(await original<typeof TabShared>()),
@@ -79,6 +83,7 @@ const overview = vi.hoisted(() => ({
 vi.mock('../../overview/window/shared.ts', async (original) => ({
   ...(await original<typeof OverviewShared>()),
   writingBlock: (_tab: string, key: string) => overview.blocks.get(key),
+  writingBlocks: () => [...overview.blocks.values()],
   blockInOverview: (_tab: string, key: string) =>
     overview.blocks.has(key) || (overview.has.get(key) ?? false),
   revisionName: (_tab: string, commit: string) => (commit === HEAD ? 'r2' : 'r1'),
@@ -142,9 +147,10 @@ function draft(): DraftRow {
   };
 }
 
-/** The block, drawn: the texts of the boxes it draws under its lines. */
-function drawBlock(): { writing: WritingBlock; texts: string[] } {
+/** The block, drawn: the texts of the boxes it draws on its lines, and the drafts its marks show. */
+function drawBlock(): { writing: WritingBlock; texts: string[]; marks: DraftMark[] } {
   const texts: string[] = [];
+  const marks: DraftMark[] = [];
   const writing: WritingBlock = {
     block: {
       tab: VIEW,
@@ -174,9 +180,13 @@ function drawBlock(): { writing: WritingBlock; texts: string[] } {
         keep: () => ({ text, editor: undefined }),
       } satisfies Composer;
     },
+    setDrafts(drafts) {
+      marks.splice(0, marks.length, ...drafts);
+    },
+    openDraft: () => false,
   };
   overview.blocks.set(KEY, writing);
-  return { writing, texts };
+  return { writing, texts, marks };
 }
 
 /** Lets what's under way settle: what's queued, the page's nonce, and what React draws. */
@@ -238,7 +248,25 @@ test('while Lo is still checking the overview, the box says so, not that the dra
   const block = drawBlock();
   await overviewChanged();
   expect(block.texts).toEqual(['On the pull request']);
-  expect(box.textContent).toContain('Draft open in the overview');
+  expect(box.textContent).toContain('Draft in the overview');
+  expect(editors.drawn).toEqual([]);
+});
+
+test('beside lines, a draft whose block is drawn stays closed there, its mark on the line it was written on', async () => {
+  threadsShow.mode = 'beside';
+  onTestFinished(() => {
+    threadsShow.mode = 'between';
+  });
+  takeDrafts({ id: VIEW, drafts: [draft()] });
+  const block = drawBlock();
+  restoreBlock(block.writing);
+  const { box } = await drawBox();
+  await overviewChanged();
+  expect(block.texts).toEqual([]);
+  expect(block.marks.map(({ at, words, shown }) => ({ at, words, shown }))).toEqual([
+    { at: { file: 'x0', side: 'new', line: 7 }, words: 'line 7', shown: false },
+  ]);
+  expect(box.textContent).toContain('Draft in the overview');
   expect(editors.drawn).toEqual([]);
 });
 

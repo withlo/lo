@@ -313,6 +313,24 @@ export class Registry {
     }
   }
 
+  /**
+   * What the palette and keyboard shortcuts say under `id`'s label on `target` now, where its
+   * handler's `described` says.
+   */
+  described(id: string, target: Target): string | undefined {
+    const command = this.byId.get(id);
+    const handler = command?.handler;
+    if (!command || !handler?.described) return undefined;
+    const fitted = fit(command.targets ?? ['none'], target);
+    if (!fitted) return undefined;
+    try {
+      return handler.described(fitted);
+    } catch (error) {
+      this.onError(error, command);
+      return undefined;
+    }
+  }
+
   /** What a right-click menu calls `id` on `target` now, where its handler's `named` says. */
   named(id: string, target: Target): string | undefined {
     const command = this.byId.get(id);

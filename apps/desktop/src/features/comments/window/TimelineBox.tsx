@@ -130,7 +130,7 @@ export interface PullBoxProps {
  * was written on, or, while Lo is still checking whether the overview has that block, in no box yet.
  */
 const AWAY: Readonly<Record<'block' | 'waits', string>> = {
-  block: 'Draft open in the overview',
+  block: 'Draft in the overview',
   waits: 'Checking overview…',
 };
 

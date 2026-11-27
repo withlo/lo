@@ -57,6 +57,7 @@ import {
   comment,
   commentOnBlock,
   frameWith,
+  homeInBlock,
   keepBoxesOf,
   keptAway,
   keptCount,
@@ -71,7 +72,10 @@ import {
   undiscarding,
   UNDO_TIME,
   offering,
+  openAt,
+  openInBlock,
   restore,
+  restoreBlock,
   SAVE_AFTER,
   send,
   sendingNow,
@@ -80,6 +84,7 @@ import {
   takeDrafts,
   takeJoined,
   takenDown,
+  drawnInTimeline,
   takeOffer,
   drafted,
   editing,
@@ -170,21 +175,27 @@ vi.mock('../../diff/window/shared.ts', () => ({
 }));
 
 const overview = vi.hoisted(() => ({
-  /** The blocks drawn, by their keys. */
-  blocks: new Map<string, unknown>(),
+  /** The blocks drawn, by their code views' files: two can be drawn the same, with one key. */
+  blocks: new Map<string, { block: { key: string } }>(),
   /** Whether the tab's overview has each block, by its key, drawn or not; else, whether it's drawn. */
   has: new Map<string, boolean | 'unknown'>(),
   /** What `c` on a block names: the block and its lines. */
   found: undefined as unknown,
   /** Where the lines are at the head on screen. */
   onHead: undefined as unknown,
+  /** Whether the tab's overview is on screen. */
+  onScreen: true,
 }));
 vi.mock('../../overview/window/shared.ts', async (original) => ({
   ...(await original<typeof OverviewShared>()),
   blockLines: () => overview.found,
   commentOnHead: () => Promise.resolve(overview.onHead),
-  writingBlock: (_tab: string, key: string) => overview.blocks.get(key),
-  blockInOverview: (_tab: string, key: string) => overview.has.get(key) ?? overview.blocks.has(key),
+  writingBlock: (_tab: string, key: string) =>
+    [...overview.blocks.values()].find((each) => each.block.key === key),
+  writingBlocks: () => [...overview.blocks.values()],
+  overviewOnScreen: () => overview.onScreen,
+  blockInOverview: (_tab: string, key: string) =>
+    overview.has.get(key) ?? [...overview.blocks.values()].some((each) => each.block.key === key),
   revisionName: (_tab: string, commit: string) => (commit === HEAD ? 'r2' : 'r1'),
 }));
 
@@ -308,18 +319,22 @@ function where(at: Place | OnFile): string {
 const PATH = 'src/backoff.ts';
 
 /**
- * A code block of the overview at `OLDER`, on `src/backoff.ts`'s lines 3 to 9, that draws boxes as
- * an excerpt does: one under a line, which `c` there again gives.
+ * A code block of the overview at `commit`, on `src/backoff.ts`'s lines 3 to 9, that draws boxes as
+ * an excerpt does: one under a line, which `c` there again gives; none while it `fails`, as on a
+ * line it holds out of sight.
  */
-function fakeBlock() {
+function fakeBlock(commit = OLDER, file = 'x0') {
   const drawn: Drawn[] = [];
+  /** The drafts its marks show, as it was last told of them. */
+  const marks: DraftMark[] = [];
+  const state = { fails: false };
   const block: DrawnBlock = {
     tab: VIEW,
-    key: blockKey(OLDER, PATH, 3, 9),
-    block: 'b0',
-    file: 'x0',
+    key: blockKey(commit, PATH, 3, 9),
+    block: `b${file}`,
+    file,
     path: PATH,
-    commit: OLDER,
+    commit,
     from: null,
     lines: { start: 3, end: 9 },
     named: { start: 3, end: 9 },
@@ -327,9 +342,14 @@ function fakeBlock() {
   const writing: WritingBlock = {
     block,
     compose(at, draft, on, _frame, options) {
+      if (state.fails) throw new Error('A comment box goes under a line the excerpt shows.');
       const open = drawn.find(
         (each) =>
-          sideOf(each.at) === at.side && lineOf(each.at) === lineOf(at) && !each.composer.closed,
+          sideOf(each.at) === sideOf(at) &&
+          lineOf(each.at) === lineOf(at) &&
+          threadIn(each.at) === threadIn(at) &&
+          each.options?.name === options?.name &&
+          !each.composer.closed,
       );
       if (open) {
         if (options?.focus !== false) open.composer.focus();
@@ -339,9 +359,22 @@ function fakeBlock() {
       drawn.push({ at, on, options, composer });
       return composer;
     },
+    setDrafts(drafts) {
+      marks.splice(0, marks.length, ...drafts);
+    },
+    openDraft(at) {
+      const mark = marks.find((each) => JSON.stringify(each.at) === JSON.stringify(at));
+      mark?.open();
+      return mark !== undefined;
+    },
   };
-  overview.blocks.set(block.key, writing);
-  return { drawn, writing, block };
+  overview.blocks.set(file, writing);
+  return { drawn, writing, block, marks, state };
+}
+
+/** The thread a box on `at` is written in, a reply's or an edit's. */
+function threadIn(at: unknown): unknown {
+  return typeof at === 'object' && at !== null && 'thread' in at ? at.thread : undefined;
 }
 
 /** The side of a box's line or span. */
@@ -510,6 +543,7 @@ beforeEach(() => {
   answers['comments.discard'] = () => undefined;
   overview.blocks.clear();
   overview.has.clear();
+  overview.onScreen = true;
   threadsShow.mode = 'between';
 });
 
@@ -816,6 +850,28 @@ describe('a box on a code block', () => {
     expect(asked('comments.draft')).toEqual([
       { id: VIEW, place: onLines(null, 5), text: 'Mine', home: blockHome(5) },
     ]);
+  });
+
+  test('`c` on a block opens nothing once its tab or its overview is off screen, as another came while its lines were read', async () => {
+    const { drawn, writing } = fakeBlock();
+    const asking = onBlock(
+      writing,
+      { from: 5, to: 5 },
+      { kind: 'lines', path: PATH, side: 'new', from: 5, to: 5 },
+    );
+    said.screen = 'other';
+    await asking;
+    expect(drawn).toEqual([]);
+    // Nor once the diff is on screen in its place.
+    said.screen = VIEW;
+    const again = onBlock(
+      writing,
+      { from: 5, to: 5 },
+      { kind: 'lines', path: PATH, side: 'new', from: 5, to: 5 },
+    );
+    overview.onScreen = false;
+    await again;
+    expect(drawn).toEqual([]);
   });
 
   test('it goes on the file, or the pull request, saying why, where it can’t go on the lines', async () => {
@@ -2059,6 +2115,369 @@ describe('beside lines', () => {
   });
 });
 
+/** Of the marks `marks`, the one on a line. */
+function lineMark(marks: readonly DraftMark[]): DraftMark {
+  return marks.find((mark) => 'file' in mark.at)!;
+}
+
+/** Thread t1, written on the block's commit, on its line 5 there, and outdated since. */
+function outdatedOnTheBlock(): ThreadRow {
+  return threadRow('t1', 5, {
+    outdated: true,
+    currentOn: null,
+    writtenOn: OLDER,
+    line: null,
+    originalLine: 5,
+  });
+}
+
+/** Hears nothing. */
+function none(): void {
+  // Nothing to hear.
+}
+
+/** What a box drawn for a test is told nothing through. */
+function noEvents(): ComposerEvents {
+  return { change: none, submit: none, close: none };
+}
+
+/** Thread t1 of the view, written on the block's commit, on its line 5 there. */
+function onTheBlock(): void {
+  threads.held.set(VIEW, {
+    threads: {
+      id: VIEW,
+      status: 'ready',
+      threads: [
+        threadRow('t1', 5, {
+          outdated: true,
+          currentOn: null,
+          writtenOn: OLDER,
+          line: null,
+          originalLine: 5,
+        }),
+      ],
+      missing: 0,
+      compared: null,
+      problem: null,
+    },
+  });
+}
+
+describe('beside lines, on a code block', () => {
+  beforeEach(() => {
+    threadsShow.mode = 'beside';
+  });
+
+  test('a box closed with words in it is a mark on its lines, which `c` on its last line opens again', async () => {
+    const { drawn, writing, marks } = fakeBlock();
+    const onRange = { kind: 'lines', path: PATH, side: 'new', from: 4, to: 6 } as const;
+    await onBlock(writing, { from: 4, to: 6 }, onRange);
+    expect(drawn[0]!.at).toEqual({ file: 'x0', side: 'new', from: 4, to: 6 });
+    drawn[0]!.on.change('On a range');
+    await marked();
+    // Open, its mark is the popover's.
+    expect(marks).toMatchObject([
+      { at: { file: 'x0', side: 'new', from: 4, to: 6 }, words: 'lines 4–6', shown: true },
+    ]);
+    shut(drawn[0]!, true);
+    await marked();
+    expect(marks).toMatchObject([{ words: 'lines 4–6', shown: false }]);
+    await onBlock(writing, { from: 6, to: 6 }, { ...onRange, from: 6 });
+    expect(drawn).toHaveLength(2);
+    expect(drawn[1]!.at).toEqual({ file: 'x0', side: 'new', from: 4, to: 6 });
+    expect(drawn[1]!.composer.text).toBe('On a range');
+  });
+
+  test('a draft restored stays closed, its mark on its lines, which opens it focused', async () => {
+    const { drawn, writing, marks } = fakeBlock();
+    takeDrafts({
+      id: VIEW,
+      drafts: [row(onLines(null, 5), 'Kept', { restored: true, home: blockHome(5) })],
+    });
+    restoreBlock(writing);
+    await marked();
+    await marked();
+    expect(drawn).toEqual([]);
+    expect(marks).toMatchObject([
+      { at: { file: 'x0', side: 'new', line: 5 }, words: 'line 5', shown: false },
+    ]);
+    marks[0]!.open();
+    await marked();
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0]).toMatchObject({ options: { focus: true } });
+    expect(drawn[0]!.composer.text).toBe('Kept');
+  });
+
+  test('a reply asked for there is written in its thread, and kept with the block, on the thread’s line', async () => {
+    const { drawn, writing, marks } = fakeBlock();
+    onTheBlock();
+    const home = homeInBlock(VIEW, writing, 't1');
+    expect(home).toEqual({ kind: 'block', block: blockHome(5) });
+    openAt(VIEW, undefined, home!, { kind: 'reply', thread: 't1' }, 'review');
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0]).toMatchObject({ at: { thread: 't1' }, options: { focus: true } });
+    drawn[0]!.on.change('A reply');
+    shut(drawn[0]!, true);
+    expect(asked('comments.draft').at(-1)).toEqual({
+      id: VIEW,
+      place: { kind: 'reply', thread: 't1' },
+      text: 'A reply',
+      home: blockHome(5),
+    });
+    // Closed with words, it's the dot on its thread's mark, and its popover's tag.
+    await marked();
+    expect(marks).toMatchObject([{ at: { thread: 't1' }, words: '' }]);
+    expect(drafted.get(VIEW)).toEqual(new Set(['t1']));
+    // Its mark opens it again there.
+    marks[0]!.open();
+    await marked();
+    expect(drawn).toHaveLength(2);
+    expect(drawn[1]).toMatchObject({ at: { thread: 't1' } });
+    expect(drawn[1]!.composer.text).toBe('A reply');
+  });
+
+  test('between lines, or on a thread the block doesn’t show, a reply has no home there', () => {
+    const { writing } = fakeBlock();
+    onTheBlock();
+    expect(homeInBlock(VIEW, writing, 't2')).toBeUndefined();
+    threadsShow.mode = 'between';
+    expect(homeInBlock(VIEW, writing, 't1')).toBeUndefined();
+  });
+
+  test('a reply open in the diff, asked for on the block, comes there with its words, and none stays in the diff', () => {
+    const diffs = withThreads(threadRow('t1', 5));
+    acts.reply(tab(), { kind: 'line', at: { file: 'f0', side: 'new', line: 5 } });
+    expect(diffs.drawn).toHaveLength(1);
+    diffs.drawn[0]!.composer.replace(0, 0, 'From the diff');
+    const { drawn, writing } = fakeBlock(HEAD);
+    const home = homeInBlock(VIEW, writing, 't1');
+    expect(home).toMatchObject({ kind: 'block', block: { commit: HEAD, at: { from: 5, to: 5 } } });
+    expect(openInBlock(VIEW, home!, { kind: 'reply', thread: 't1' }, '')).toBe(true);
+    // Hidden or not, the diff's box goes: none's left there to take what's typed for it.
+    expect(diffs.drawn[0]!.composer.closed).toBe('dismiss');
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0]).toMatchObject({ at: { thread: 't1' }, options: { focus: true } });
+    expect(drawn[0]!.composer.text).toBe('From the diff');
+  });
+
+  test('where the block can’t draw a box asked for there, nothing’s left open to come later', async () => {
+    const { drawn, writing, marks, state } = fakeBlock();
+    onTheBlock();
+    const home = homeInBlock(VIEW, writing, 't1')!;
+    state.fails = true;
+    const edit = { kind: 'edit', thread: 't1', comment: 'c1' } as const;
+    expect(openInBlock(VIEW, home, { kind: 'reply', thread: 't1' }, '')).toBe(false);
+    expect(openInBlock(VIEW, home, edit, 'GitHub’s text')).toBe(false);
+    // The edit's draft, saved as its box came to the block, goes with it.
+    expect(asked('comments.discard')).toEqual([{ id: VIEW, place: edit }]);
+    // The block drawn again draws neither, and marks no draft.
+    state.fails = false;
+    restoreBlock(writing);
+    await marked();
+    await marked();
+    expect(drawn).toEqual([]);
+    expect(marks).toEqual([]);
+    // Asked for again, it opens.
+    expect(openInBlock(VIEW, home, { kind: 'reply', thread: 't1' }, '')).toBe(true);
+    expect(drawn).toHaveLength(1);
+  });
+
+  test('Reply and Edit there open in its popover, whatever other boxes are drawn: the timeline’s, one in the diff, one in the popover', () => {
+    const diffs = withThreads(threadRow('t2', 2), outdatedOnTheBlock());
+    const { drawn, writing } = fakeBlock();
+    // The timeline's box for the pull request, drawn as it was visited, and a reply in the diff.
+    const pulls = timelineBox(VIEW, { kind: 'conversation' })!;
+    drawnInTimeline(pulls, composerOf('', noEvents()), () => undefined);
+    acts.reply(tab(), { kind: 'line', at: { file: 'f0', side: 'new', line: 2 } });
+    expect(diffs.drawn).toHaveLength(1);
+    const home = homeInBlock(VIEW, writing, 't1')!;
+    expect(openInBlock(VIEW, home, { kind: 'reply', thread: 't1' }, '', writing)).toBe(true);
+    const edit = { kind: 'edit', thread: 't1', comment: 't1_C1' } as const;
+    expect(openInBlock(VIEW, home, edit, 'GitHub’s text', writing)).toBe(true);
+    expect(drawn.map(({ at, options }) => [at, options?.focus])).toEqual([
+      [{ thread: 't1' }, true],
+      [{ thread: 't1' }, true],
+    ]);
+    // What's typed is the box's.
+    drawn[1]!.composer.replace(0, 0, 'Edited: ');
+    expect(boxIn(drawn[1]!).state.text).toBe('Edited: GitHub’s text');
+  });
+
+  test('a draft there opens again by its mark in its popover, focused, whatever else is drawn, or stays its mark', async () => {
+    withThreads(outdatedOnTheBlock());
+    const { drawn, writing, marks, state } = fakeBlock();
+    const pulls = timelineBox(VIEW, { kind: 'conversation' })!;
+    drawnInTimeline(pulls, composerOf('', noEvents()), () => undefined);
+    const home = homeInBlock(VIEW, writing, 't1')!;
+    openInBlock(VIEW, home, { kind: 'reply', thread: 't1' }, '', writing);
+    drawn[0]!.on.change('A reply');
+    shut(drawn[0]!, true);
+    await marked();
+    // Its mark's click, `⏎` on its line, and a toast's "Show thread" all open it so.
+    marks[0]!.open();
+    expect(drawn).toHaveLength(2);
+    expect(drawn[1]).toMatchObject({ at: { thread: 't1' }, options: { focus: true } });
+    expect(drawn[1]!.composer.text).toBe('A reply');
+    shut(drawn[1]!, true);
+    await marked();
+    // Where the block can't draw it, nothing's left to open later.
+    state.fails = true;
+    marks[0]!.open();
+    state.fails = false;
+    restoreBlock(writing);
+    await marked();
+    expect(drawn).toHaveLength(2);
+    expect(marks).toHaveLength(1);
+  });
+
+  test('a draft asked for before its block is drawn opens as it is, unless the reader did something first', async () => {
+    withThreads(outdatedOnTheBlock());
+    const { drawn, writing, marks } = fakeBlock();
+    const home = homeInBlock(VIEW, writing, 't1')!;
+    openInBlock(VIEW, home, { kind: 'reply', thread: 't1' }, '', writing);
+    drawn[0]!.on.change('A reply');
+    shut(drawn[0]!, true);
+    await marked();
+    const open = marks[0]!.open;
+    // The block made anew: in the overview, but not drawn yet as its draft is asked for.
+    overview.has.set(writing.block.key, true);
+    overview.blocks.delete(writing.block.file);
+    open();
+    overview.blocks.set(writing.block.file, writing);
+    restoreBlock(writing);
+    await marked();
+    expect(drawn).toHaveLength(2);
+    expect(drawn[1]).toMatchObject({ options: { focus: true } });
+    shut(drawn[1]!, true);
+    await marked();
+    overview.blocks.delete(writing.block.file);
+    open();
+    window.dispatchEvent(new Event('pointerdown'));
+    overview.blocks.set(writing.block.file, writing);
+    restoreBlock(writing);
+    await marked();
+    expect(drawn).toHaveLength(2);
+  });
+
+  test('a send that fails after its block was made anew says so in a toast, whose “Show thread” opens it in the block', async () => {
+    withThreads(outdatedOnTheBlock());
+    const { drawn, writing } = fakeBlock();
+    const home = homeInBlock(VIEW, writing, 't1')!;
+    openInBlock(VIEW, home, { kind: 'reply', thread: 't1' }, '', writing);
+    drawn[0]!.on.change('A reply');
+    const box = boxIn(drawn[0]!);
+    let answer: ((outcome: SendOutcome) => void) | undefined;
+    answers['comments.send'] = () => new Promise<SendOutcome>((resolve) => (answer = resolve));
+    const sent = send(box, 'review');
+    // The block goes as it went, its box with it, and is drawn anew, the box closed, as beside lines.
+    drawn[0]!.composer.closed = 'dismiss';
+    takenDown(box, drawn[0]!.composer);
+    restoreBlock(writing);
+    await marked();
+    expect(box.composer).toBeUndefined();
+    answer?.({ kind: 'refused', refusal: { kind: 'github', message: 'Validation failed' } });
+    await sent;
+    expect(notice()).toMatchObject({
+      title: 'Couldn’t send the comment',
+      action: { label: 'Show thread' },
+    });
+    notice()!.action!.onClick();
+    expect(drawn).toHaveLength(2);
+    expect(drawn[1]).toMatchObject({ at: { thread: 't1' }, options: { focus: true } });
+    expect(drawn[1]!.composer.text).toBe('A reply');
+  });
+
+  test('of two blocks drawn the same, a box asked for in the second opens there, by Reply, `c` or a mark, and each marks its draft', async () => {
+    withThreads(outdatedOnTheBlock());
+    const first = fakeBlock();
+    const second = fakeBlock(OLDER, 'x1');
+    const home = homeInBlock(VIEW, second.writing, 't1')!;
+    openInBlock(VIEW, home, { kind: 'reply', thread: 't1' }, '', second.writing);
+    expect(first.drawn).toEqual([]);
+    expect(second.drawn).toHaveLength(1);
+    second.drawn[0]!.on.change('A reply');
+    shut(second.drawn[0]!, true);
+    await marked();
+    expect(first.marks.map((mark) => mark.at)).toEqual([{ thread: 't1' }]);
+    expect(second.marks.map((mark) => mark.at)).toEqual([{ thread: 't1' }]);
+    // The second's mark opens it in the second.
+    second.marks[0]!.open();
+    expect(first.drawn).toEqual([]);
+    expect(second.drawn).toHaveLength(2);
+    expect(second.drawn[1]!.composer.text).toBe('A reply');
+    shut(second.drawn[1]!, true);
+    await marked();
+    // `c` on the second's line 5 opens there too.
+    await onBlock(
+      second.writing,
+      { from: 5, to: 5 },
+      { kind: 'lines', path: PATH, side: 'new', from: 5, to: 5 },
+    );
+    expect(first.drawn).toEqual([]);
+    expect(second.drawn).toHaveLength(3);
+    second.drawn[2]!.on.change('On line 5');
+    shut(second.drawn[2]!, true);
+    await marked();
+    expect(lineMark(first.marks).at).toEqual({ file: 'x0', side: 'new', line: 5 });
+    expect(lineMark(second.marks).at).toEqual({ file: 'x1', side: 'new', line: 5 });
+    // Each block's mark opens it in that block.
+    lineMark(second.marks).open();
+    expect(first.drawn).toEqual([]);
+    expect(second.drawn).toHaveLength(4);
+    expect(second.drawn[3]!.composer.text).toBe('On line 5');
+    shut(second.drawn[3]!, true);
+    await marked();
+    lineMark(first.marks).open();
+    expect(first.drawn).toHaveLength(1);
+    expect(first.drawn[0]!.composer.text).toBe('On line 5');
+    expect(second.drawn).toHaveLength(4);
+  });
+
+  test('a box asked for in a block no longer drawn opens in one drawn the same', async () => {
+    withThreads(outdatedOnTheBlock());
+    const first = fakeBlock();
+    const second = fakeBlock(OLDER, 'x1');
+    const home = homeInBlock(VIEW, second.writing, 't1')!;
+    overview.blocks.delete('x1');
+    expect(openInBlock(VIEW, home, { kind: 'reply', thread: 't1' }, '', second.writing)).toBe(true);
+    expect(second.drawn).toEqual([]);
+    expect(first.drawn).toHaveLength(1);
+    // `c` asked on it as it goes opens nothing.
+    first.drawn[0]!.on.change('A reply');
+    shut(first.drawn[0]!, true);
+    await marked();
+    await onBlock(
+      second.writing,
+      { from: 5, to: 5 },
+      { kind: 'lines', path: PATH, side: 'new', from: 5, to: 5 },
+    );
+    expect(first.drawn).toHaveLength(1);
+  });
+
+  test('as threads go between lines, a new comment’s draft closed beside them opens under its line, and a reply’s not on the block', async () => {
+    const { drawn, writing, marks } = fakeBlock();
+    onTheBlock();
+    takeDrafts({
+      id: VIEW,
+      drafts: [
+        row(onLines(null, 7), 'On a line', { restored: true, home: blockHome(7) }),
+        row({ kind: 'reply', thread: 't1' }, 'A reply', { restored: true, home: blockHome(5) }),
+      ],
+    });
+    restoreBlock(writing);
+    await marked();
+    await marked();
+    expect(drawn).toEqual([]);
+    expect(marks).toHaveLength(2);
+    threadsShow.mode = 'between';
+    openDraftsBetween();
+    await marked();
+    expect(drawn.map(({ at, composer }) => [at, composer.text])).toEqual([
+      [{ file: 'x0', side: 'new', line: 7 }, 'On a line'],
+    ]);
+  });
+});
+
 describe('files attached', () => {
   /** Each upload's answer, given by the test once main is asked. */
   const uploads: ((outcome: UploadOutcome) => void)[] = [];
@@ -2445,6 +2864,40 @@ describe('acting on a thread', () => {
     expect(asked('comments.discard')).toEqual([
       { id: VIEW, place: { kind: 'edit', thread: 'T2', comment: 'T2_C1' } },
     ]);
+  });
+
+  test('an edit that gives up before its box opens leaves no draft and no dot', async () => {
+    withThreads(threadRow('T2', 2));
+    const place = { kind: 'edit', thread: 'T2', comment: 'T2_C1' } as const;
+    // Main starts the edit's draft with GitHub's text, and says so, before `i` hears back.
+    const started = () => takeDrafts({ id: VIEW, drafts: [row(place, 'GitHub’s text')] });
+    takeDrafts({ id: VIEW, drafts: [] });
+    answers['comments.editing'] = (): ActOutcome => {
+      started();
+      return { kind: 'done' };
+    };
+    // Another tab came on screen meanwhile.
+    const asking = acts.edit(tab(), ON_TWO);
+    said.screen = 'other';
+    await asking;
+    expect(asked('comments.discard')).toEqual([{ id: VIEW, place }]);
+    await marked();
+    expect(drafted.get(VIEW).has('T2')).toBe(false);
+    // What main sent before it heard brings nothing back.
+    started();
+    await marked();
+    expect(drafted.get(VIEW).has('T2')).toBe(false);
+    // Once main has let it go, a draft of the edit kept from before stays.
+    takeDrafts({ id: VIEW, drafts: [] });
+    said.screen = VIEW;
+    takeDrafts({ id: VIEW, drafts: [row(place, 'Mine, half edited')] });
+    answers['comments.editing'] = (): ActOutcome => ({ kind: 'done' });
+    const again = acts.edit(tab(), ON_TWO);
+    said.screen = 'other';
+    await again;
+    expect(asked('comments.discard')).toHaveLength(1);
+    await marked();
+    expect(drafted.get(VIEW).has('T2')).toBe(true);
   });
 
   test('`dd` asks first, and Delete deletes the comment as the question showed it', async () => {

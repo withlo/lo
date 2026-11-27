@@ -34,6 +34,7 @@ const VIEW: StackView = {
   githubStack: false,
   rows: [row(82, []), row(83, [82]), row(84, [82, 83], 'stack/c‮'), row(85, [82])],
   notes: [],
+  offered: true,
   callout: null,
 };
 

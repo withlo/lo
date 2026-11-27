@@ -146,7 +146,8 @@ export default defineCommands(
       keys: ['enter'],
       targets: ['draft'],
       overVim: true,
-      when: { scope: 'diff', mode: 'normal', on: 'draft' },
+      // In the diff, or an overview's code block.
+      when: { scope: ['diff', 'file'], mode: 'normal', on: 'draft' },
     },
     /**
      * Beside lines, the popover of the thread on the cursor's line, pinned if it isn't, with focus

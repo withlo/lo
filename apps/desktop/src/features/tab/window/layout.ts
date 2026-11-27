@@ -225,6 +225,14 @@ export function besideDrawable(): true | string {
 }
 
 /**
+ * What Code beside says it does in the palette and keyboard shortcuts where its declaration's words
+ * aren't true: with overviews off, the timeline is the one reading view the code goes beside.
+ */
+export function besideDescription(overviews: boolean): string | undefined {
+  return overviews ? undefined : 'The diff to the right of the timeline.';
+}
+
+/**
  * Why panel `edge` can't be drawn in the tab on screen: it isn't, and doesn't fit beside one view
  * at its minimum. `true` when it's drawn, or can be.
  */

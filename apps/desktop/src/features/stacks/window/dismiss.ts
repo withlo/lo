@@ -1,8 +1,10 @@
-// Dismissing the stacks' offers: the offer over the stack's tree to convert it to a GitHub stack,
-// and the message that offers to hide the changes of the layer below. Each one's Dismiss opens its
-// menu, a right-click target of its own (`notice`) that names the tab it's in, whose rows dismiss
-// it there, for this stack or layer, which main keeps through restarts, or for all stacks, which
-// turns its setting off until Settings turns it on. From the palette, they act on the tab on screen.
+// Dismissing the stacks' offers: the offer to convert the stack to a GitHub stack, over its tree
+// and in its merge panel, and the message that offers to hide the changes of the layer below. Each
+// one's Dismiss opens its menu, a right-click target of its own (`notice`) that names the tab it's
+// in, whose rows dismiss it there, for this stack or layer, which main keeps through restarts, or
+// for all stacks, which turns its setting off until Settings turns it on. The offer of a GitHub
+// stack has one menu wherever it's made, so a dismissal in either place takes it away in both. From
+// the palette, they act on the tab on screen.
 
 import type { Handler, NoticeTarget, NoTarget } from '@lo/ui/commands';
 
@@ -17,13 +19,16 @@ import { main } from './main.ts';
 import { offerFor } from './offers.ts';
 import { pullOnScreen } from './walk.ts';
 
-/** The offer over the stack's tree to convert it to a GitHub stack, as its menu names it. */
+/** The offer to convert the stack to a GitHub stack, as its menu names it, wherever it's made. */
 const CONVERT = 'stacks.convert';
 
 /** The message that offers to hide the changes of the layer below, as its menu names it. */
 const START = 'stacks.start';
 
-/** The menu of the offer over tab `tab`'s stack's tree to convert it to a GitHub stack. */
+/**
+ * The menu of the offer to convert tab `tab`'s stack to a GitHub stack, over its tree or in its
+ * merge panel.
+ */
 export function convertNotice(tab: PullTab): NoticeTarget {
   return { kind: 'notice', notice: CONVERT, tab: tab.id };
 }
@@ -50,13 +55,18 @@ function tabOf(target: Target): { id: string; number: number | undefined } | und
   return typeof tab === 'string' ? undefined : { id: tab.id, number: tab.number };
 }
 
-/** Whether `target`'s tab offers `notice` now: `true`, or an empty reason, which lists nothing. */
+/**
+ * Whether `target`'s tab offers `notice` now: `true`, or an empty reason, which lists nothing. The
+ * offer of a GitHub stack's menu is there while it's offered, as the merge panel can make it where
+ * the tree makes none; the palette lists it while the tree makes it.
+ */
 function offering(notice: Notice, target: Target): true | string {
   const tab = tabOf(target);
   if (!tab) return '';
   if (notice === 'start') return offerFor(tab.id) === null ? '' : true;
   const view = stacks.get(tab.id);
-  return view?.kind === 'stack' && view.callout !== null ? true : '';
+  if (view?.kind !== 'stack') return '';
+  return (target.kind === 'notice' ? view.offered : view.callout !== null) ? true : '';
 }
 
 /** Dismisses `notice` for the stack or the layer of `target`'s tab, as main keeps it. */

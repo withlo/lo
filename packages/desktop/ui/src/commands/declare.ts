@@ -207,6 +207,13 @@ export interface Handler<T extends Target = Target> {
    */
   labelled?(target: T): string | undefined;
   /**
+   * What the palette and keyboard shortcuts say under its label on `target` now, for a command
+   * whose doing changes with a setting, as Code beside's does with overviews off: "The diff to the
+   * right of the timeline." Keyboard shortcuts asks with no target. Nothing, or without this, its
+   * `description`.
+   */
+  described?(target: T): string | undefined;
+  /**
    * Whether it's checked on `target` now, for a command declared as a `toggle`: the switch is on,
    * or the option is the one chosen. Every toggle has it, and nothing else does.
    */

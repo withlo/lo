@@ -1319,9 +1319,22 @@ export interface ExcerptView extends KeySource {
    * Shows review threads beside lines or between them, as the diff view does (`DiffView`'s
    * `setThreadsMode`). Beside lines, the popover is in a layer of the scroll around the excerpt,
    * shared by every excerpt in it, so no excerpt clips it: one open for an excerpt closes another's,
-   * and the pointer previews nothing while one is pinned.
+   * and the pointer previews nothing while one is pinned. A box open as the mode changes closes,
+   * keeping its draft.
    */
   setThreadsMode(mode: ThreadsMode): void;
+  /**
+   * Replaces the drafts the marks show beside lines, as the diff view's do (`DiffView`'s
+   * `setDrafts`): a new comment's while its box is open, and the words of each comment not sent
+   * once its box closed. A click on a draft's own mark runs its command on its line, as `⏎` there
+   * does, which the line's target says (`draft`).
+   */
+  setDrafts(drafts: readonly DraftMark[]): void;
+  /**
+   * Beside lines, opens the box of the draft whose mark is on line `at`, or on thread `thread`'s
+   * line, as a click on the mark does. Says whether there was one.
+   */
+  openDraft(at: Place | { readonly thread: string }): boolean;
   /**
    * Beside lines, pins the popover of the line thread `id` is on, as a key opens it, the scroll
    * around it scrolled the least that shows it whole, the cursor on the line. With `focus`, focus
@@ -1345,9 +1358,13 @@ export interface ExcerptView extends KeySource {
    * Opens a comment box with `draft` in it, under a line the excerpt shows, the last line of a
    * span, or a thread, with `frame` drawn around its editor, and focuses it unless
    * `options.focus` is false. A box already open there is the one it gives, as it is. Throws for a
-   * line the excerpt doesn't show. A box closed once its comment was sent (`close()`) on screen
-   * keeps its room, as the threads that come there wait; the thread right above it, as a reply's
-   * comes, grows into it, where it's tall enough.
+   * line the excerpt doesn't show. Between lines, a box closed once its comment was sent
+   * (`close()`) on screen keeps its room, as the threads that come there wait; the thread right
+   * above it, as a reply's comes, grows into it, where it's tall enough. Beside lines, it opens in
+   * the popover, as the diff view's does (`DiffView`'s `compose`): a new comment's under its last
+   * line, its lines tinted and bracketed, a reply's in place of its thread's row that offers one,
+   * and an edit's, named by `options.edits`, in place of that comment; one at a time in the scroll
+   * around it, and no line moves.
    */
   compose(
     at: Place | Span | { thread: string },
