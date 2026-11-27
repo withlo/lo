@@ -23,6 +23,7 @@ import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 
 import { registry, useKeys } from '../../../window/commands/registry.ts';
+import { blocked } from './banners.ts';
 import { main } from './main.ts';
 import { pullsStore } from './store.ts';
 
@@ -157,7 +158,8 @@ function closeKeys(): string[] | undefined {
  * "Opening pull request…" unless the view that draws it gives its own `status`, for what it reads
  * once the pull request is there. One GitHub hasn't answered for after eight seconds says so. From
  * then it offers to give up, which closes its tab. A tab that can't open draws nothing here: its
- * banner says why, once.
+ * banner says why, once. A read that fails once the pull request is drawn leaves the wait going, as
+ * the header's chip says why: the read tried again may bring what the view waits for.
  */
 export function Placeholder({ tab, status }: { tab: string; status?: string | undefined }) {
   const view = useStore(pullsStore, (state) => state.views.get(tab));
@@ -178,7 +180,7 @@ export function Placeholder({ tab, status }: { tab: string; status?: string | un
     [tab],
   );
   useKeys();
-  const waiting = !view?.problem;
+  const waiting = !blocked(view);
   return (
     <div ref={box} className="h-full" data-lo-placeholder aria-busy={waiting || undefined}>
       {waiting && (

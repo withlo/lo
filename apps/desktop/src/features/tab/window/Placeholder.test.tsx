@@ -7,7 +7,9 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 
 import { createRegistry } from '../../../window/commands/registry.ts';
 import keys from '../keys.ts';
+import type { PullView } from '../contract.ts';
 import { Placeholder } from './Placeholder.tsx';
+import { pullsStore } from './store.ts';
 
 const close = vi.hoisted(() => vi.fn<(tab: { id: string }) => Promise<void>>());
 vi.mock('./main.ts', () => ({ main: () => ({ close }) }));
@@ -171,5 +173,43 @@ describe('a tab’s placeholder', () => {
     expect(again.box.textContent).toBe('');
     wait(LOADING_DELAY_MS);
     expect(again.box.textContent).toContain('Opening pull request…');
+  });
+});
+
+/** What main says of tab `fd`, with `problem`, drawn at `shown` or not yet. */
+const pullView = (problem: PullView['problem'], shown: string | null): PullView => ({
+  id: 'fd',
+  loading: false,
+  acting: { kind: 'account', login: 'rozed-bot' },
+  header: null,
+  connection: { kind: 'live' },
+  problem,
+  shown,
+  newer: null,
+});
+/** A read that failed, with no retry set. */
+const failed: PullView['problem'] = { kind: 'failed', cause: { kind: 'unknown' }, retryAt: null };
+/** Has main say `pull`. */
+const show = (pull: PullView) => {
+  act(() => pullsStore.setState({ views: new Map([[pull.id, pull]]) }));
+};
+
+describe('a tab’s placeholder once a read fails', () => {
+  afterEach(() => {
+    pullsStore.setState({ views: new Map() });
+  });
+
+  it('keeps waiting where the pull request was drawn, since the read tried again may answer', () => {
+    show(pullView(failed, 'a'.repeat(40)));
+    const { box } = draw('fd');
+    expect(box.querySelector('[data-lo-placeholder]')?.getAttribute('aria-busy')).toBe('true');
+    expect(box.querySelector('[role="status"]')).not.toBeNull();
+  });
+
+  it('draws nothing where the pull request can’t be shown, as its banner says why', () => {
+    show(pullView(failed, null));
+    const { box } = draw('fd');
+    expect(box.querySelector('[data-lo-placeholder]')?.hasAttribute('aria-busy')).toBe(false);
+    expect(box.querySelector('[role="status"]')).toBeNull();
   });
 });

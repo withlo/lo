@@ -194,7 +194,13 @@ export {
   type CopyRouteProps,
   type CopySaid,
 } from './CopyButton.tsx';
-export { Loading, LOADING_DELAY_MS, LOADING_SLOW_MS, type LoadingProps } from './Loading.tsx';
+export {
+  Loading,
+  LOADING_DELAY_MS,
+  LOADING_SLOW_MS,
+  loadingIn,
+  type LoadingProps,
+} from './Loading.tsx';
 export { LogoMotion, type LogoMotionProps, type LogoPlay } from './LogoMotion.tsx';
 export {
   LAND_CLASS,
