@@ -438,7 +438,7 @@ jobs:
           fi
 
       - if: steps.changed.outputs.run == 'true'
-        uses: Homebrew/actions/setup-homebrew@ceec4e8419bb3c97ce96e9dda7738499ed5f869d # 2026.11.14.1
+        uses: Homebrew/actions/setup-homebrew@61b401267256bb9c047d6d1481b176d5772a0ba7 # 2026.11.23.1
 
       # In a Casks folder, where Homebrew's rules for casks apply, with cask.test.ts's values.
       - name: Render the cask and check its style
