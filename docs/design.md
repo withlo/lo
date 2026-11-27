@@ -407,9 +407,10 @@ rebase-aware comparisons and moved code. Both sides stay aligned, including arou
   even the side the cursor is on. The share is the window's, kept for every diff and across
   restarts. Each side keeps at least 240 px or a quarter of the diff, and a diff 480 px wide splits
   evenly. A narrower one draws inline, keeping the layout chosen, and side by side again as soon as
-  it's 480 px, the line at the top of the screen staying where it is; meanwhile the menu's Side by
-  side says to widen the window first. As the sides change width, the first row under the file's
-  header stays where it is, and the rows stay level.
+  it's 480 px, the line at the top of the screen staying where it is; meanwhile Side by side and
+  Inline both refuse, saying to widen the window first: the menu dims them and the palette leaves
+  them out. As the sides change width, the first row under the file's header stays where it is, and
+  the rows stay level.
 - **Changes.** Changed words are highlighted within changed lines.
 - **Context.** Unchanged code is collapsed and expands in place. One key shows the whole file.
 - **Whitespace.** Whitespace changes are shown, and a key hides them.

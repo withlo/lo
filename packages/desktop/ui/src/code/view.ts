@@ -2815,14 +2815,8 @@ class View implements DiffView {
   }
 
   viewport(): Viewport {
-    // While the view is putting a line back at the top, or has just, that's where it belongs,
-    // unless the screen has since scrolled away from it.
-    if (this.#holding && performance.now() < this.#holdEnds && !this.#scrolledAway(this.#holding)) {
-      return {
-        at: this.#holding.at,
-        offset: this.dom.getBoundingClientRect().top - this.#heldAt(this.#holding.at),
-      };
-    }
+    const held = this.#heldTop();
+    if (held) return held;
     this.#holding = undefined;
     this.#measured();
     const pane: Pane = this.#pane === 'inline' ? 'inline' : 'new';
@@ -4391,11 +4385,11 @@ class View implements DiffView {
 
   /**
    * Draws the layout the box now fits, as it changes width, keeping what the reader reads where it
-   * is: the line at the top of the screen, or the line the view holds there, stays, and is held as
-   * the new layout settles, the rows level side by side; a jump's line stays a jump's. The cursor
-   * keeps its line, off screen or on, and focus stays where it was: in the code, it's in the code
-   * drawn now. Lines, threads and hints waiting to change on screen change with it, as with any
-   * change of layout.
+   * is: the line at the top of the screen as they saw it, or the line the view holds there, stays,
+   * and is held as the new layout settles, the rows level side by side; a jump's line stays a
+   * jump's. The cursor keeps its line and column, off screen or on, and focus stays where it was:
+   * in the code, it's in the code drawn now. Lines, threads and hints waiting to change on screen
+   * change with it, and the threads' popover closes, as with any change of layout.
    */
   #refitLayout(): void {
     // What the reader saw at the top, before the new width wrapped the lines anew.
@@ -4408,16 +4402,17 @@ class View implements DiffView {
     const pane = this.#activePane();
     const view = this.#viewOf(pane);
     const focused = view.hasFocus;
-    const cursor = this.#placeAt(
-      pane,
-      view.state.doc.lineAt(view.state.selection.main.head).number,
-    );
+    const { head } = view.state.selection.main;
+    const from = view.state.doc.lineAt(head);
+    const cursor = this.#placeAt(pane, from.number);
+    // The cursor moves with the layout, not the reader: a key just pressed, as one that opened a
+    // panel and narrowed the box, doesn't bring it on screen.
+    this.#aligner.unfollow();
     this.#drawLayout(this.#fitted());
     const shown: Pane = this.#pane === 'inline' ? 'inline' : cursor.side;
     const next = this.#viewOf(shown);
-    next.dispatch({
-      selection: { anchor: next.state.doc.line(this.#docLine(shown, cursor)).from },
-    });
+    const line = next.state.doc.line(this.#docLine(shown, cursor));
+    next.dispatch({ selection: { anchor: line.from + Math.min(head - from.from, line.length) } });
     if (focused) next.focus();
     this.#lastPane = shown;
     this.#hold(top, jumped);
@@ -4425,15 +4420,37 @@ class View implements DiffView {
   }
 
   /**
-   * Where the line at the top of the screen was before the lines wrapped anew at the box's new
-   * width, as the layout shown noted it, if they have: side by side, the first line the spacer
-   * pass last left on screen; inline, the one `#rewrappedTop` puts back.
+   * While the view is putting a line back at the top, or has just, the line: that's where it
+   * belongs, unless the screen has since scrolled away from it.
+   */
+  #heldTop(): Viewport | undefined {
+    const held = this.#holding;
+    if (!held || performance.now() >= this.#holdEnds || this.#scrolledAway(held)) return undefined;
+    return { at: held.at, offset: this.dom.getBoundingClientRect().top - this.#heldAt(held.at) };
+  }
+
+  /**
+   * What the reader saw at the top of the screen, though the lines may have wrapped anew at the
+   * box's new width since: a jump's line, where the jump put it; a line the view holds there; or
+   * the line the layout shown noted, if they've wrapped anew: side by side, the first line the
+   * spacer pass last left on screen, and inline, the one `#rewrappedTop` puts back.
    */
   #seenTop(): Viewport | undefined {
+    const jumped = this.#jumped;
+    if (jumped && this.#atOf(jumped.at)) {
+      return {
+        at: jumped.at,
+        offset: this.dom.getBoundingClientRect().top - this.#jumpedAt(jumped),
+      };
+    }
+    const held = this.#heldTop();
+    if (held) return held;
     if (this.#pane === 'inline') return this.#rewrappedTop();
     const kept = this.#aligner.seenTop();
     if (!kept) return undefined;
-    const line = this.#viewOf(kept.side).state.doc.lineAt(kept.pos).number;
+    // Noted before any change to the file since, so no further than its end.
+    const { doc } = this.#viewOf(kept.side).state;
+    const line = doc.lineAt(Math.min(kept.pos, doc.length)).number;
     return { at: this.#spot(this.#placeAt(kept.side, line)), offset: -kept.offset };
   }
 

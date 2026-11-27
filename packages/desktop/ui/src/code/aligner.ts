@@ -583,6 +583,9 @@ export class Aligner {
   set paused(paused: boolean) {
     this.#paused = paused;
     this.#anchor = undefined;
+    // What the screen showed while it ran says nothing of what it shows next.
+    this.#topSeen = undefined;
+    this.#topBefore = undefined;
     this.#topTaken = false;
     this.#chosen = false;
     this.#given = false;

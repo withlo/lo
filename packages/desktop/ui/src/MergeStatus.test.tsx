@@ -93,7 +93,7 @@ describe('MergeStatus', () => {
     expect(host.textContent).toBe('Merged');
   });
 
-  it('is never cut: the row it’s in gives up its reasons, then its verdict, each whole', () => {
+  it('is never cut: the row it’s in gives up its reasons, then its verdict, each whole and still heard', () => {
     const host = render(
       <MergeStatus
         kind="waiting"
@@ -110,6 +110,8 @@ describe('MergeStatus', () => {
     expect(reasons?.textContent).toBe('Review required · 2 checks running');
     expect(reasons?.className).toContain('flex-none');
     expect(reasons?.className).not.toContain('truncate');
+    // Given up, it's out of sight, not gone: nothing else says it.
+    expect(reasons?.hasAttribute('data-heard')).toBe(true);
   });
 
   it('draws what a branch’s name says without the characters that turn text around', () => {

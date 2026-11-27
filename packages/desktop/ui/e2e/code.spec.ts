@@ -1200,6 +1200,49 @@ test('a side-by-side diff narrower than 480 px draws inline, and side by side ag
   expect((await drawnLayout(page)).said).toEqual([true, false, true, false]);
 });
 
+// A key pressed in the code that opens or closes a panel beside it, as `⌘⇧\` does, takes the box
+// across 480 px in the frame after: the layout changes, and the cursor moves to it, though not as
+// the key moved it.
+for (const [from, to] of [
+  [400, 720],
+  [720, 400],
+] as const) {
+  test(`a key that ${to > from ? 'widens' : 'narrows'} the diff across 480 px leaves the line at the top where it is, and a cursor the wheel took off screen off it`, async () => {
+    const page = await open('split', { below: 10 });
+    await page.evaluate((wide) => window.harness.narrow(wide), from);
+    await frames(page);
+    // Focus in the code, the cursor on line 26, and then the wheel takes it off screen.
+    await page.evaluate(() => window.harness.cursor(26));
+    await frames(page);
+    await page.mouse.move(150, 300);
+    await page.mouse.wheel(0, 600);
+    await frames(page);
+    expect(await page.evaluate(() => window.harness.cursorOnScreen())).toBe(false);
+    const [first] = await onScreen(page);
+
+    await page.evaluate((wide) => window.harness.narrowOnKey(wide), to);
+    // A key nothing is bound to, the reader's all the same; and past the frames the view holds the
+    // line at the top for, as a key keeps the cursor on screen for a while.
+    await page.keyboard.press('F2');
+    await page.evaluate(() => window.harness.frames(40));
+    expect((await drawnLayout(page)).layout).toBe(to < 480 ? 'inline' : 'split');
+    near([await lineTop(page, first!.line)], [first!.top]);
+    expect(await page.evaluate(() => window.harness.cursorOnScreen())).toBe(false);
+  });
+}
+
+test('a jump’s line stays where the jump put it as the diff crosses 480 px', async () => {
+  const page = await open('split', { below: 10 });
+  for (const width of [400, 720]) {
+    await page.evaluate((wide) => {
+      window.harness.scrollTo(60);
+      window.harness.narrow(wide);
+    }, width);
+    await frames(page);
+    expect(Math.abs((await lineTop(page, 60))!)).toBeLessThan(1);
+  }
+});
+
 test('a diff asked for side by side while too narrow stays inline until it’s 480 px, and one asked for inline stays inline', async () => {
   const page = await open('inline', { below: 10 });
   await page.evaluate(() => window.harness.narrow(400));

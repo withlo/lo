@@ -75,8 +75,9 @@ export function Note({
             </span>
             {rest.map((fact, index) => (
               <span
-                // The last fact goes first.
+                // The last fact goes first, and given up, it's still heard.
                 data-gives={`drop${count - index}`}
+                data-heard
                 key={`${index}:${fact}`}
                 className="flex-none whitespace-pre"
               >

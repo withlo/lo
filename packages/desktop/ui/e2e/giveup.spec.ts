@@ -63,34 +63,48 @@ test('a row that gave something up has it back as the room beside it grows, thou
 /** The first row of the header in its own frame, which holds the merge status. */
 const TOP = '#header .give-up:has(h1)';
 
-/** Whether the merge status is drawn beside "Submit review…", not under it, and its verdict whole. */
-function status(page: Page): Promise<{ apart: boolean; whole: boolean }> {
+/**
+ * Whether the merge status is drawn beside "Submit review…", not under it, its verdict whole, and
+ * its words, the verdict and the detail, there to be heard, drawn or not.
+ */
+function status(page: Page): Promise<{ apart: boolean; whole: boolean; heard: boolean }> {
   return page.evaluate(() => {
     const [merge, submit] = [...document.querySelectorAll<HTMLElement>('#header button')];
     const verdict = merge!.querySelector('strong')!;
+    const detail = merge!.querySelector<HTMLElement>('[data-gives="detail"]')!;
     return {
       apart: merge!.getBoundingClientRect().right <= submit!.getBoundingClientRect().left,
       whole: verdict.offsetWidth > 1 && verdict.scrollWidth <= verdict.clientWidth,
+      heard: [verdict, detail].every((each) => getComputedStyle(each).display !== 'none'),
     };
   });
 }
 
-test('the header’s first row cuts its title, then gives up its key chips, the merge status’s detail and then its verdict, and nothing in it is drawn over another', async () => {
+/** What the merge status's tooltip says, pointed at. */
+async function statusTip(page: Page): Promise<string> {
+  await page.mouse.move(0, 0);
+  await page.locator('#header button').first().hover();
+  const tip = page.locator('.tooltip');
+  await expect(tip).toBeVisible();
+  return (await tip.textContent()) ?? '';
+}
+
+test('the header’s first row cuts its title, then gives up its key chips, the merge status’s detail and then its verdict, each still heard and in its tooltip, and nothing in it is drawn over another', async () => {
   const page = await open();
   expect(await at(page, 1440, TOP)).toEqual(['']);
-  expect(await status(page)).toEqual({ apart: true, whole: true });
+  expect(await status(page)).toEqual({ apart: true, whole: true, heard: true });
+  expect(await statusTip(page)).toContain('Merge panel');
   // The title gives way first, keeping a few letters.
   expect(await at(page, 1000, TOP)).toEqual(['']);
-  // Then the key chips go, and the detail; the verdict stays whole.
-  const given = (await at(page, 720, TOP))[0]!.split(' ');
-  expect(given).toContain('keys');
-  expect(given).not.toContain('title');
-  expect(await status(page)).toEqual({ apart: true, whole: true });
-  // At last the verdict, which leaves its dot beside "Submit review…", the verdict its tooltip.
+  // Then the key chips go, and the detail, still heard and in the tooltip; the verdict stays whole.
+  expect(await at(page, 720, TOP)).toEqual(['keys detail']);
+  expect(await status(page)).toEqual({ apart: true, whole: true, heard: true });
+  expect(await statusTip(page)).toContain('Ready to merge · Merge commit into comments/base');
+  // At last the verdict, which leaves its dot beside "Submit review…", what it says its tooltip.
   expect(await at(page, 440, TOP)).toEqual(['keys detail title']);
-  expect((await status(page)).apart).toBe(true);
-  await page.locator('#header button').first().hover();
-  await expect(page.locator('.tooltip')).toContainText('Ready to merge');
+  const narrow = await status(page);
+  expect([narrow.apart, narrow.heard]).toEqual([true, true]);
+  expect(await statusTip(page)).toContain('Ready to merge · Merge commit into comments/base');
   // And back, as the room grows.
   expect(await at(page, 1440, TOP)).toEqual(['']);
 });

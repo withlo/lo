@@ -84,7 +84,8 @@ const line =
  * Whether a pull request can merge, as a dot and one line in the header: a strong verdict, then the
  * reasons or the method after it. A click, or its key, opens the merge panel, which lists every
  * reason. It's never cut: the row it's in gives up its key chip, its detail (`detail`) and then its
- * verdict (`title`), each whole, which leaves the dot alone, the verdict heard and its tooltip.
+ * verdict (`title`), each whole, which leaves the dot alone. Both are still heard, and its tooltip
+ * says them.
  */
 export function MergeStatus({
   kind,
@@ -99,6 +100,7 @@ export function MergeStatus({
   const said = withoutBidi(verdict);
   const reasons = detail === undefined ? undefined : withoutBidi(detail);
   const words = useRef<HTMLElement>(null);
+  const more = useRef<HTMLElement>(null);
   const content = (
     <span className="flex items-center gap-8">
       {/* A new dot as it lands, so its fill plays then and only then. */}
@@ -107,7 +109,8 @@ export function MergeStatus({
         {said}
       </strong>
       {reasons !== undefined && reasons !== '' && (
-        <span data-gives="detail" className="flex-none">
+        // Given up, still heard: nothing else says it.
+        <span ref={more} data-gives="detail" data-heard className="flex-none">
           {reasons}
         </span>
       )}
@@ -124,7 +127,7 @@ export function MergeStatus({
     );
   }
   return (
-    <Tooltip label={<StatusTip said={said} words={words} />} keys={keys}>
+    <Tooltip label={<StatusTip said={said} reasons={reasons} parts={[words, more]} />} keys={keys}>
       <button
         ref={ref}
         type="button"
@@ -142,8 +145,18 @@ export function MergeStatus({
 
 /**
  * The status's tooltip, read as it opens: what it's a control for, or, once the row it's in has
- * given up its verdict, the verdict.
+ * given up its detail or its verdict, what it says: the verdict and the reasons.
  */
-function StatusTip({ said, words }: { said: string; words: RefObject<HTMLElement | null> }) {
-  return <span>{words.current !== null && givenUp(words.current) ? said : 'Merge panel'}</span>;
+function StatusTip({
+  said,
+  reasons,
+  parts,
+}: {
+  said: string;
+  reasons: string | undefined;
+  parts: readonly RefObject<HTMLElement | null>[];
+}) {
+  const cut = parts.some(({ current }) => current !== null && givenUp(current));
+  if (!cut) return <span>Merge panel</span>;
+  return <span>{reasons ? `${said} · ${reasons}` : said}</span>;
 }

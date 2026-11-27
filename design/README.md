@@ -236,14 +236,16 @@ where the action's target is.
   its tooltip. What's cut short keeps `min-w-cut` at least, 48 px or all of its words where they're
   shorter, so `main` isn't padded, and what can't keep that goes whole: the PR header gives up its
   branches, with "wants to merge" and the arrow, and the merge status its detail, never cut to a
-  letter. The PR header's first row cuts its title, and gives up "Submit review…"'s key chip, then
-  the merge status's detail, then its words, which leave its ball with the words as its tooltip, so
-  nothing overlaps it. The diff bar is the revisions note, then Compare revisions and the view's own
-  controls, 16 px apart, one `HintRow`: narrow, it drops the hint's chips, then the hint, then the
-  note's facts after its first `·`, last first, so "base → r2" never cuts and no two groups touch. A
-  diff's file header gives up what follows its name (the counts, where a rename was, the tags), then
-  cuts its folders, then drops them, leaving the name with the whole path as its tooltip, and only
-  then cuts the name at its end; its end, from the threads to the `⋯`, is never cut.
+  letter. What it gives up that nothing else in the row says, as the merge status's detail or the
+  note's facts, is still heard (`data-heard`), as a given-up title is. The PR header's first row
+  cuts its title, and gives up "Submit review…"'s key chip, then the merge status's detail, then its
+  words, which leave its ball with the verdict and the reasons as its tooltip, so nothing overlaps
+  it. The diff bar is the revisions note, then Compare revisions and the view's own controls, 16 px
+  apart, one `HintRow`: narrow, it drops the hint's chips, then the hint, then the note's facts
+  after its first `·`, last first, so "base → r2" never cuts and no two groups touch. A diff's file
+  header gives up what follows its name (the counts, where a rename was, the tags), then cuts its
+  folders, then drops them, leaving the name with the whole path as its tooltip, and only then cuts
+  the name at its end; its end, from the threads to the `⋯`, is never cut.
 - **A choice of two to four is one `SegmentedControl`,** never buttons or pills drawn by hand: the
   header's view switch, the Files panel's Tree and Review order, the threads' filter, a comment
   box's Write and Preview, and Settings' choices are all one. Its thumb slides to the segment
