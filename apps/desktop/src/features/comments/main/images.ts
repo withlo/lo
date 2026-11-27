@@ -110,6 +110,11 @@ export interface ImagesOptions {
    */
   botPicture?: ((login: string) => Promise<URL>) | undefined;
   /**
+   * Bot `login`'s picture didn't load from `address`, where `botPicture` said it was, though the
+   * avatars' host answered: it has nothing there (404, 410), or what it sent isn't an image.
+   */
+  botMissing?: ((login: string, address: URL) => void) | undefined;
+  /**
    * Where to send a request for `address`, on one of GitHub's image hosts: the address itself, or
    * in a test run, a stand-in for the host. Redirects are read against the host's own address.
    */
@@ -123,6 +128,7 @@ export class Images {
   readonly #acting: (view: string) => string | undefined;
   readonly #token: (login: string) => Promise<Token | undefined>;
   readonly #botPicture: ((login: string) => Promise<URL>) | undefined;
+  readonly #botMissing: (login: string, address: URL) => void;
   readonly #route: (address: URL) => string;
   readonly #limits: ImageLimits;
   /** The images kept, the one served last at the end. */
@@ -130,6 +136,11 @@ export class Images {
   #keptBytes = 0;
   /** The images being fetched, or waiting their turn, so two asks at once fetch once. */
   readonly #loading = new Map<string, Promise<LoadedImage>>();
+  /**
+   * How many times each bot's picture was let go of (`forgetBot`), by its slug in lowercase: a
+   * fetch begun before keeps nothing, since it may be of the picture the bot had.
+   */
+  readonly #botForgotten = new Map<string, number>();
   /** How many images are being fetched now, and those waiting their turn, oldest first. */
   #fetching = 0;
   readonly #waiting: (() => void)[] = [];
@@ -139,6 +150,7 @@ export class Images {
     this.#acting = (view) => options.acting(view);
     this.#token = (login) => options.token(login);
     this.#botPicture = options.botPicture;
+    this.#botMissing = (login, address) => options.botMissing?.(login, address);
     this.#route = options.route ?? ((address) => address.href);
     this.#limits = { ...IMAGE_LIMITS, ...options.limits };
   }
@@ -157,20 +169,48 @@ export class Images {
       this.#kept.set(key, kept);
       return kept;
     }
-    let loading = this.#loading.get(key);
-    if (!loading) {
-      // A bot's picture's address is found first, so asking GitHub takes no turn, and no time,
-      // of the image's.
-      loading = this.#firstAddress(asked)
-        .then((address) => this.#inTurn(() => this.#fetched(asked, address, as)))
-        .then((image) => {
-          this.#keep(key, image);
-          return image;
-        })
-        .finally(() => this.#loading.delete(key));
-      this.#loading.set(key, loading);
+    const loading = this.#loading.get(key);
+    if (loading) return loading;
+    const forgotten = this.#forgottenTimes(asked);
+    // A bot's picture's address is found first, so asking GitHub takes no turn, and no time, of
+    // the image's.
+    const fetching: Promise<LoadedImage> = this.#firstAddress(asked)
+      .then((address) => this.#inTurn(() => this.#fetched(asked, address, as)))
+      .then((image) => {
+        if (this.#forgottenTimes(asked) === forgotten) this.#keep(key, image);
+        return image;
+      })
+      .finally(() => {
+        // Unless a later ask, after the bot's picture was let go of, fetches it again.
+        if (this.#loading.get(key) === fetching) this.#loading.delete(key);
+      });
+    this.#loading.set(key, fetching);
+    return fetching;
+  }
+
+  /**
+   * Lets go of bot `login`'s picture, at every size, as when it has moved: what's kept, and any
+   * fetch under way, which goes on for those that asked for it but keeps nothing. The next ask
+   * fetches it from where it is now.
+   */
+  forgetBot(login: string): void {
+    const slug = login.toLowerCase();
+    this.#botForgotten.set(slug, (this.#botForgotten.get(slug) ?? 0) + 1);
+    // As `keyOf` keeps a bot's picture: by its slug, then its size.
+    const prefix = `bot ${slug} `;
+    for (const [key, { bytes }] of this.#kept) {
+      if (!key.startsWith(prefix)) continue;
+      this.#kept.delete(key);
+      this.#keptBytes -= bytes.length;
     }
-    return loading;
+    for (const key of this.#loading.keys()) {
+      if (key.startsWith(prefix)) this.#loading.delete(key);
+    }
+  }
+
+  /** How many times `asked`'s picture was let go of, for a bot's: none for anything else. */
+  #forgottenTimes(asked: ImageAsked): number {
+    return asked.kind === 'bot' ? (this.#botForgotten.get(asked.login.toLowerCase()) ?? 0) : 0;
   }
 
   /** Runs `fetch` once fewer than the most images are being fetched. */
@@ -239,10 +279,27 @@ export class Images {
         continue;
       }
       if (response.status !== 200) {
+        // Only an answer that there's nothing there: an error that passes, such as 429 or 503, says
+        // nothing of where the picture is.
+        if (response.status === 404 || response.status === 410) this.#answeredWithout(asked, first);
         throw new ImageError('failed', `${address.host} answered ${response.status}`);
       }
-      return this.#checked(address, await this.#body(address, response, deadline));
+      const bytes = await this.#body(address, response, deadline);
+      try {
+        return this.#checked(address, bytes);
+      } catch (error) {
+        this.#answeredWithout(asked, first);
+        throw error;
+      }
     }
+  }
+
+  /**
+   * Tells, for a bot's picture, that the host answered `asked` at `first` without it: it has nothing
+   * there (404, 410), or what it sent isn't an image.
+   */
+  #answeredWithout(asked: ImageAsked, first: URL): void {
+    if (asked.kind === 'bot') this.#botMissing(asked.login, first);
   }
 
   /** The address an image is first asked for at. */

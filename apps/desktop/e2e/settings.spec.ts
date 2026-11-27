@@ -1,5 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
 import {
   currentPlatform,
@@ -414,11 +415,23 @@ test('Settings lists the toolchains, and deletes one that’s downloaded', async
   }
 });
 
+/** What `sql` reads of Lo's database, as Lo has it open. */
+function query(sql: string): unknown[] {
+  const database = new DatabaseSync(join(dataFolder(), 'lo.db'), { timeout: 5_000 });
+  try {
+    return database.prepare(sql).all();
+  } finally {
+    database.close();
+  }
+}
+
 test.describe('with git', () => {
   test.use({ launch: { env: { LO_GIT: gitProgram() } } });
 
   test('Settings says how much room the local copies take, and clears them', async ({ page }) => {
     await openSettings(page);
+    // Where a bot's picture is, as a run kept it, goes with the cache.
+    query("INSERT INTO comments_bots (slug, picture, at) VALUES ('cursor', '/in/1210556', 1)");
     const cache = row(page, 'settings.cache');
     await expect(cache.getByRole('meter')).toBeVisible({ timeout: 15_000 });
     await expect(cache.getByText(/of 10 GB/)).toBeVisible();
@@ -428,5 +441,6 @@ test.describe('with git', () => {
     );
     await expect(cache.getByRole('meter')).toBeVisible();
     await expect(cache.getByRole('alert')).toHaveCount(0);
+    expect(query('SELECT slug FROM comments_bots')).toEqual([]);
   });
 });

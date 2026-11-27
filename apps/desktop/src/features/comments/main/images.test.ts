@@ -92,6 +92,7 @@ function images(
 ) {
   const tokens = options.tokens ?? { octocat: TOKEN, hubot: OTHER };
   const sent: Sent[] = [];
+  const missing: [string, string][] = [];
   const read: string[] = [];
   const ask = options.bots;
   const bots =
@@ -124,8 +125,9 @@ function images(
     },
     limits: options.limits,
     botPicture: bots === undefined ? undefined : (login) => bots.picture(login),
+    botMissing: (login, address) => missing.push([login, address.href]),
   });
-  return { loader, sent, read };
+  return { loader, sent, read, missing };
 }
 
 /** GitHub's answer to an attachment's address: the signed address to an account, 404 to nobody. */
@@ -230,6 +232,147 @@ describe('Images', () => {
     ]);
     held[1]?.(image(png()));
     expect(await cursor).toMatchObject({ type: 'png' });
+  });
+
+  it("says when the avatars' host has no bot's picture where it was, and not for an error that passes", async () => {
+    let answer: number | 'text' | 'down' = 404;
+    const { loader, missing } = images(
+      () => {
+        if (typeof answer === 'number') return new Response('', { status: answer });
+        if (answer === 'text') return new Response('not an image');
+        return Promise.reject(new TypeError('fetch failed'));
+      },
+      { bots: () => Promise.resolve('https://avatars.githubusercontent.com/in/1') },
+    );
+    const sizes = [56, 40, 24, 20, 16, 12, 8];
+    for (const [at, given] of ([404, 410, 'text', 429, 403, 503, 'down'] as const).entries()) {
+      answer = given;
+      await refusal(loader.load(bot('cursor', sizes[at])));
+    }
+    expect(missing).toEqual([
+      ['cursor', 'https://avatars.githubusercontent.com/in/1?s=56'],
+      ['cursor', 'https://avatars.githubusercontent.com/in/1?s=40'],
+      ['cursor', 'https://avatars.githubusercontent.com/in/1?s=24'],
+    ]);
+  });
+
+  it("fetches a bot's picture from where it is now once it's let go of, keeping nothing of the old fetch", async () => {
+    let where = 'https://avatars.githubusercontent.com/in/1';
+    const held: ((response: Response) => void)[] = [];
+    const sent: string[] = [];
+    const loader = new Images({
+      fetch: (input) => {
+        const { url } = new Request(input);
+        sent.push(url);
+        if (url.includes('/in/1?')) return new Promise((resolve) => held.push(resolve));
+        return Promise.resolve(image(gif(3, 3), 'image/gif'));
+      },
+      acting: () => undefined,
+      token: () => Promise.resolve(undefined),
+      botPicture: () => Promise.resolve(new URL(where)),
+    });
+    const old = loader.load(bot('cursor'));
+    await until(() => held.length === 1);
+    // It moved while its old picture was being fetched.
+    where = 'https://avatars.githubusercontent.com/in/2';
+    loader.forgetBot('Cursor');
+    held[0]?.(image(png(56, 56)));
+    // Whoever asked before still gets what they asked for.
+    expect(await old).toMatchObject({ type: 'png' });
+    expect(await loader.load(bot('cursor'))).toMatchObject({ type: 'gif' });
+    expect(await loader.load(bot('cursor'))).toMatchObject({ type: 'gif' });
+    expect(sent).toEqual([
+      'https://avatars.githubusercontent.com/in/1?s=56',
+      'https://avatars.githubusercontent.com/in/2?s=56',
+    ]);
+  });
+
+  it("joins the fetch of a bot's new picture once the old one ends, rather than fetching it again", async () => {
+    let where = 'https://avatars.githubusercontent.com/in/1';
+    const held: ((response: Response) => void)[] = [];
+    const sent: string[] = [];
+    const loader = new Images({
+      fetch: (input) => {
+        const { url } = new Request(input);
+        sent.push(url);
+        return new Promise((resolve) => held.push(resolve));
+      },
+      acting: () => undefined,
+      token: () => Promise.resolve(undefined),
+      botPicture: () => Promise.resolve(new URL(where)),
+    });
+    const old = loader.load(bot('cursor'));
+    await until(() => held.length === 1);
+    where = 'https://avatars.githubusercontent.com/in/2';
+    loader.forgetBot('cursor');
+    const now = loader.load(bot('cursor'));
+    await until(() => held.length === 2);
+    // The old fetch ends while the new one is under way: asked for again, it's the new one's.
+    held[0]?.(image(png(56, 56)));
+    expect(await old).toMatchObject({ type: 'png' });
+    const again = loader.load(bot('cursor'));
+    await until(() => true);
+    expect(sent).toHaveLength(2);
+    held[1]?.(image(gif(3, 3), 'image/gif'));
+    expect(await now).toMatchObject({ type: 'gif' });
+    expect(await again).toMatchObject({ type: 'gif' });
+    expect(sent).toEqual([
+      'https://avatars.githubusercontent.com/in/1?s=56',
+      'https://avatars.githubusercontent.com/in/2?s=56',
+    ]);
+  });
+
+  it("doesn't join a fetch of a bot's old picture asked for before it was let go of", async () => {
+    let where = 'https://avatars.githubusercontent.com/in/1';
+    const held: ((response: Response) => void)[] = [];
+    const sent: string[] = [];
+    const loader = new Images({
+      fetch: (input) => {
+        const { url } = new Request(input);
+        sent.push(url);
+        return new Promise((resolve) => held.push(resolve));
+      },
+      acting: () => undefined,
+      token: () => Promise.resolve(undefined),
+      botPicture: () => Promise.resolve(new URL(where)),
+    });
+    const old = loader.load(bot('cursor'));
+    await until(() => held.length === 1);
+    where = 'https://avatars.githubusercontent.com/in/2';
+    loader.forgetBot('cursor');
+    const now = loader.load(bot('cursor'));
+    await until(() => held.length === 2);
+    // The new fetch ends first, then the old one: what's kept is the new picture.
+    held[1]?.(image(gif(3, 3), 'image/gif'));
+    expect(await now).toMatchObject({ type: 'gif' });
+    held[0]?.(new Response('Not Found', { status: 404 }));
+    await refusal(old);
+    expect(await loader.load(bot('cursor'))).toMatchObject({ type: 'gif' });
+    expect(sent).toEqual([
+      'https://avatars.githubusercontent.com/in/1?s=56',
+      'https://avatars.githubusercontent.com/in/2?s=56',
+    ]);
+  });
+
+  it("fetches a bot's picture anew, at every size, once it's forgotten", async () => {
+    const { loader, sent } = images(() => image(png(56, 56)), {
+      bots: () => Promise.resolve('https://avatars.githubusercontent.com/in/1210556'),
+    });
+    const all = async () => {
+      await loader.load(bot('cursor'));
+      await loader.load(bot('cursor', 40));
+      await loader.load(avatar('cursor'));
+    };
+    await all();
+    await all();
+    expect(sent).toHaveLength(3);
+    loader.forgetBot('Cursor');
+    await all();
+    // A person's avatar by the same name is kept apart, and stays.
+    expect(sent.map(({ url }) => url).slice(3)).toEqual([
+      'https://avatars.githubusercontent.com/in/1210556?s=56',
+      'https://avatars.githubusercontent.com/in/1210556?s=40',
+    ]);
   });
 
   it("follows a bot's avatar's redirects only on the avatars' host", async () => {

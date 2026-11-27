@@ -128,10 +128,13 @@ test('opens a pull request with its header, and fetches its local copy at the he
   // All's well, so there's no banner.
   await expect(tabBanners(page)).toHaveCount(0);
 
-  // The local copy's details say where it is, `~` for the home folder, and copy it whole.
+  // The local copy's details say the commit it's at and where it is, `~` for the home folder, and
+  // copy it whole.
   await status(page).getByRole('button', { name: 'Local copy' }).click();
   const details = page.getByRole('dialog', { name: 'Local copy' });
-  const folder = details.locator('dd code');
+  await expect(details.locator('dt')).toHaveText(['Commit', 'Folder']);
+  await expect(details.locator('dd code').first()).toHaveText(APP_PULL.head.slice(0, 7));
+  const folder = details.locator('dd code').last();
   await expect(folder).toHaveText(/\/repos\/github\.com\/rozed-dev\/e2e\.git$/);
   await details.getByRole('button', { name: 'Copy path' }).click();
   await expect(details.getByRole('button', { name: 'Copied' })).toBeVisible();

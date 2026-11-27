@@ -5,17 +5,25 @@
 // - **How often:** each bot is asked about at most once a run, and 100 bots at most, one at a
 //   time. What GitHub said is kept for the run: where the picture is, or that it has none, as for
 //   a bot it doesn't have (`404`).
+// - **From run to run:** where a bot's picture is, once GitHub has said, is kept in the feature's
+//   table (`BotTable`), so a bot seen before is drawn at once. It's still asked about once a run,
+//   as any bot is, and what's kept follows: a picture that moved is kept where it is now and drawn
+//   again (`changed`), and a bot GitHub has no more, or whose kept picture didn't load before
+//   GitHub answered (`missing`), is no longer kept. Only a bot never seen waits for its ask,
+//   behind the reads the tab opens with, and before the kept bots waiting to be asked about.
+//   Clearing the cache clears the table.
 // - **As whom** (`askGitHub`): the first account signed in, in its queue as a background read, and
 //   only while GitHub answers it and its rate limit is normal. With no account signed in, a bot
-//   keeps its initials: a tab acting as nobody shows no comments.
+//   not kept keeps its initials: a tab acting as nobody shows no comments.
 // - **When not:** while the account can't ask, nothing is, until its poller hears from GitHub
 //   again. After an ask GitHub answered with an error, nothing is asked for a minute, then for
 //   twice as long after each failure in a row, an hour at most, unless an account is added or
 //   signs in again first (`release`). A bot not asked about keeps its initials, and is asked about
-//   the next time it's drawn.
+//   the next time its picture is fetched: at another size, or next run.
 
 import { botAvatar, type Poller } from '@lo/github';
 
+import type { Database } from '../../../main/database.ts';
 import { AVATAR_HOST, ImageError } from './images.ts';
 
 /** What asking GitHub about a bot came to. */
@@ -62,6 +70,19 @@ export interface BotPicturesOptions {
   /** Milliseconds, only ever forward. */
   now?: (() => number) | undefined;
   limits?: Partial<BotLimits> | undefined;
+  /** Where bots' pictures are kept from run to run. Without it, only for the run. */
+  kept?: KeptBots | undefined;
+  /**
+   * Called when bot `slug`'s picture, drawn from where an earlier run kept it, changes once GitHub
+   * is asked: it moved, or GitHub has no such bot now, or no picture for it.
+   */
+  changed?: ((slug: string) => void) | undefined;
+}
+
+/** An ask waiting its turn: the bot's, and what starts it. */
+interface Waiting {
+  key: string;
+  start: () => void;
 }
 
 /** Finds and keeps where each bot's picture is. */
@@ -69,6 +90,10 @@ export class BotPictures {
   readonly #ask: (login: string) => Promise<BotAnswer>;
   readonly #now: () => number;
   readonly #limits: BotLimits;
+  readonly #kept: KeptBots | undefined;
+  readonly #changed: (slug: string) => void;
+  /** The bots drawn from where an earlier run kept their picture, that GitHub hasn't answered for. */
+  readonly #unchecked = new Set<string>();
   /**
    * What GitHub said of each bot, by its slug in lowercase: where its picture is, or why there's
    * none.
@@ -78,8 +103,13 @@ export class BotPictures {
   readonly #asking = new Map<string, Promise<URL>>();
   /** The bots GitHub was asked about this run, or is being asked about. */
   readonly #asked = new Set<string>();
-  /** The asks, one at a time: each starts once the one before has ended. */
-  #line: Promise<unknown> = Promise.resolve();
+  /**
+   * The asks waiting their turn, one at a time: each starts once the one before has ended, those
+   * for a bot with nothing to draw (`first`) before those checking a kept one (`later`).
+   */
+  readonly #waiting = { first: [] as Waiting[], later: [] as Waiting[] };
+  /** Whether an ask is under way. */
+  #busy = false;
   /** How many asks in a row failed. */
   #failures = 0;
   /** Until when, by `#now`, nothing is asked. */
@@ -89,28 +119,136 @@ export class BotPictures {
     this.#ask = (login) => options.ask(login);
     this.#now = options.now ?? (() => performance.now());
     this.#limits = { ...BOT_LIMITS, ...options.limits };
+    this.#kept = options.kept;
+    this.#changed = (slug) => options.changed?.(slug);
   }
 
   /**
-   * Where bot `login`'s picture is, on the avatars' host, with no size: kept, or asked about.
-   * Throws an {@link ImageError}.
+   * Where bot `login`'s picture is, on the avatars' host, with no size: known this run, kept from
+   * an earlier one, or asked about. Throws an {@link ImageError}.
    */
   picture(login: string): Promise<URL> {
     const key = login.toLowerCase();
-    const known = this.#known.get(key);
+    const known = this.#known.get(key) ?? this.#keptPicture(key);
     if (known !== undefined) {
+      // Drawn from where it was kept, and asked about all the same, in its turn.
+      if (this.#unchecked.has(key)) this.#check(login, key);
       return typeof known === 'string'
         ? Promise.reject(new ImageError('refused', known))
         : Promise.resolve(new URL(known));
     }
-    let asking = this.#asking.get(key);
-    if (!asking) {
-      const turn = this.#line.then(() => this.#lookUp(login, key));
-      this.#line = turn.catch(() => undefined);
-      asking = turn.finally(() => this.#asking.delete(key));
-      this.#asking.set(key, asking);
+    return this.#inLine(login, key, 'first').then((address) => new URL(address));
+  }
+
+  /**
+   * Bot `login`'s picture didn't load from `address`: where an earlier run kept it goes, if that's
+   * where it was drawn from and GitHub hasn't answered for it yet, and GitHub is asked.
+   */
+  missing(login: string, address: URL): void {
+    const key = login.toLowerCase();
+    const known = this.#known.get(key);
+    if (!this.#unchecked.has(key) || !(known instanceof URL)) return;
+    if (known.pathname !== address.pathname) return;
+    this.#unchecked.delete(key);
+    this.#known.delete(key);
+    this.#forget(key);
+  }
+
+  /**
+   * Asks GitHub about bot `login` in its turn, once at a time: `first` for a bot with nothing to
+   * draw, which goes before every check of a kept one waiting (`later`). Asked for again with
+   * nothing to draw, a check waiting goes first.
+   */
+  #inLine(login: string, key: string, turn: 'first' | 'later'): Promise<URL> {
+    const asking = this.#asking.get(key);
+    if (asking) {
+      if (turn === 'first') this.#hurry(key);
+      return asking;
     }
-    return asking.then((address) => new URL(address));
+    const asked = this.#turn(key, turn)
+      .then(() => this.#lookUp(login, key))
+      .finally(() => {
+        this.#asking.delete(key);
+        this.#next();
+      });
+    this.#asking.set(key, asked);
+    return asked;
+  }
+
+  /** Waits for bot `key`'s turn to be asked about, among those of `turn`. */
+  #turn(key: string, turn: 'first' | 'later'): Promise<void> {
+    if (!this.#busy) {
+      this.#busy = true;
+      return Promise.resolve();
+    }
+    return new Promise((start) => this.#waiting[turn].push({ key, start }));
+  }
+
+  /** Moves the check of bot `key` that waits among the first. */
+  #hurry(key: string): void {
+    const at = this.#waiting.later.findIndex((waiting) => waiting.key === key);
+    if (at === -1) return;
+    this.#waiting.first.push(...this.#waiting.later.splice(at, 1));
+  }
+
+  /** Starts the next ask waiting, once one has ended. */
+  #next(): void {
+    const next = this.#waiting.first.shift() ?? this.#waiting.later.shift();
+    if (next) next.start();
+    else this.#busy = false;
+  }
+
+  /**
+   * Asks GitHub about bot `login`, drawn from where it was kept, as any bot is asked about, after
+   * the bots with nothing to draw: once it answers, what's kept follows what it said, and a change
+   * is told (`changed`). While GitHub can't say, what was kept stays, and it's asked again the next
+   * time its picture is fetched: at another size, or next run. Main serves the bytes it kept without
+   * asking here, and the window never asks again for an address it has drawn.
+   */
+  #check(login: string, key: string): void {
+    if (this.#asking.has(key)) return;
+    const kept = this.#known.get(key);
+    void this.#inLine(login, key, 'later').then(
+      (address) => {
+        this.#unchecked.delete(key);
+        if (!(kept instanceof URL) || kept.href !== address.href) this.#changed(key);
+      },
+      () => {
+        // Only an answer that there's no picture to draw is a change: GitHub has no such bot.
+        if (typeof this.#known.get(key) !== 'string') return;
+        this.#unchecked.delete(key);
+        this.#forget(key);
+        this.#changed(key);
+      },
+    );
+  }
+
+  /** Keeps bot `key` no more. A table that can't be written keeps it until it's asked about. */
+  #forget(key: string): void {
+    try {
+      this.#kept?.forget(key);
+    } catch {
+      // Asked about again next run, which corrects it.
+    }
+  }
+
+  /** Where bot `key`'s picture is, as kept from an earlier run, now known for this one. */
+  #keptPicture(key: string): URL | undefined {
+    let path: string | undefined;
+    try {
+      path = this.#kept?.read(key);
+    } catch {
+      // What can't be read is asked about, as if it had never been kept.
+      return undefined;
+    }
+    // Read as GitHub's answer is: only an app's or an account's picture, on the avatars' host.
+    const address =
+      path === undefined ? undefined : pictureAddress(`https://${AVATAR_HOST}${path}`);
+    if (address) {
+      this.#known.set(key, address);
+      this.#unchecked.add(key);
+    }
+    return address;
   }
 
   /** Asks again at once, after a failure: something changed that may let an ask go. */
@@ -156,6 +294,11 @@ export class BotPictures {
     const address = answer.kind === 'found' ? pictureAddress(answer.avatar) : undefined;
     if (address) {
       this.#known.set(key, address);
+      try {
+        this.#kept?.keep(key, address.pathname);
+      } catch {
+        // Known for the run all the same: a picture that can't be kept for later is drawn now.
+      }
       return address;
     }
     const why =
@@ -185,6 +328,66 @@ function pictureAddress(given: string): URL | undefined {
     return undefined;
   }
   return new URL(address.pathname, address.origin);
+}
+
+/**
+ * Where bots' pictures are kept from run to run: where GitHub said each one's is, on the avatars'
+ * host, as a path (`/in/1210556`), by the bot's slug in lowercase.
+ */
+export interface KeptBots {
+  /** Where bot `slug`'s picture is, as kept, or nothing. */
+  read(slug: string): string | undefined;
+  /** Keeps where bot `slug`'s picture is, `path` on the avatars' host. */
+  keep(slug: string, path: string): void;
+  /** Keeps bot `slug` no more. */
+  forget(slug: string): void;
+}
+
+/** The most bots whose pictures are kept: those GitHub was asked about last. */
+export const KEPT_BOTS = 500;
+
+/** Bots' pictures, kept in the feature's table (`comments_bots`), the newest {@link KEPT_BOTS}. */
+export class BotTable implements KeptBots {
+  readonly #database: Database;
+  readonly #now: () => number;
+  readonly #most: number;
+
+  constructor(database: Database, now: () => number = Date.now, most = KEPT_BOTS) {
+    this.#database = database;
+    this.#now = now;
+    this.#most = most;
+  }
+
+  read(slug: string): string | undefined {
+    const row = this.#database
+      .prepare('SELECT picture FROM comments_bots WHERE slug = ?')
+      .get(slug);
+    return row === undefined ? undefined : String(row.picture);
+  }
+
+  keep(slug: string, path: string): void {
+    this.#database.transaction(() => {
+      this.#database
+        .prepare(
+          'INSERT INTO comments_bots (slug, picture, at) VALUES (?, ?, ?) ON CONFLICT (slug) DO UPDATE SET picture = excluded.picture, at = excluded.at',
+        )
+        .run(slug, path, this.#now());
+      this.#database
+        .prepare(
+          'DELETE FROM comments_bots WHERE slug NOT IN (SELECT slug FROM comments_bots ORDER BY at DESC, slug LIMIT ?)',
+        )
+        .run(this.#most);
+    });
+  }
+
+  forget(slug: string): void {
+    this.#database.prepare('DELETE FROM comments_bots WHERE slug = ?').run(slug);
+  }
+
+  /** Keeps no bot, as clearing the cache does. */
+  clear(): void {
+    this.#database.prepare('DELETE FROM comments_bots').run();
+  }
 }
 
 /** An account as asking needs it: its login, and whether its token can be used. */

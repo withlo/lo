@@ -496,6 +496,13 @@ export const actsView = z.strictObject({ id: tabId, acts: z.array(actRow) });
 export type ActsView = z.output<typeof actsView>;
 
 /**
+ * A bot whose picture changed from the one drawn: it moved, or GitHub has none for it now. Its
+ * avatars load it again (`redrawPictures`). `login` is its app's slug, in lowercase.
+ */
+export const botPicture = z.strictObject({ login: z.string().regex(/^[a-z0-9-]{1,39}$/) });
+export type BotPicture = z.output<typeof botPicture>;
+
+/**
  * What a question to delete a comment said of it, from what Lo last read: its text, whether it's
  * in your pending review, and whether it's its thread's only comment, so the thread goes too. A
  * comment on the pull request itself is neither. GitHub's comment is read again as it's answered,
@@ -687,5 +694,7 @@ export const contract = defineContract('comments', {
     uploads: uploadProgress,
     /** How the changes asked of a view's pull request stand, each time they change. */
     acts: actsView,
+    /** A bot's picture changed from the one drawn, once GitHub was asked about it. */
+    bots: botPicture,
   },
 });

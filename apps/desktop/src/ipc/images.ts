@@ -5,6 +5,8 @@
 //   lo-image://post/<view>/<address>   an image in a post, shown in a pull request's tab's view
 //   lo-image://avatar/<login>?s=<px>   an account's avatar, `px` pixels a side
 //   lo-image://bot/<slug>?s=<px>       a GitHub App's bot's avatar, by the app's slug
+//   lo-image://bot/<slug>?s=<px>&r=<n> the same, once its picture has changed `n` times while the
+//                                      window was open: a new address, which the window loads anew
 //
 // A post's address is one of GitHub's image hosts' (`imageAddress`), checked again here and by
 // main. The view says which account main fetches it as.
@@ -63,14 +65,17 @@ export function avatarImageAddress(login: string, size: number): string | undefi
 }
 
 /**
- * The address the window loads bot `login`'s avatar from, `size` pixels a side: `login` is the
- * app's slug, as GraphQL gives it, or the bot's login as REST does, with `[bot]` after it. Nothing
- * for a login that isn't one or a size GitHub doesn't serve.
+ * The address the window loads bot `login`'s avatar from, `size` pixels a side, once its picture
+ * has changed `changes` times while the window was open: `login` is the app's slug, as GraphQL
+ * gives it, or the bot's login as REST does, with `[bot]` after it. Nothing for a login that isn't
+ * one or a size GitHub doesn't serve.
  */
-export function botImageAddress(login: string, size: number): string | undefined {
+export function botImageAddress(login: string, size: number, changes = 0): string | undefined {
   const slug = login.endsWith('[bot]') ? login.slice(0, -'[bot]'.length) : login;
-  if (!isLogin(slug) || !isSize(size)) return undefined;
-  return `${imageScheme}://bot/${slug}?s=${size}`;
+  if (!isLogin(slug) || !isSize(size) || !Number.isSafeInteger(changes) || changes < 0) {
+    return undefined;
+  }
+  return `${imageScheme}://bot/${slug}?s=${size}${changes === 0 ? '' : `&r=${changes}`}`;
 }
 
 function isSize(size: number): boolean {
@@ -102,11 +107,17 @@ export function readImageAddress(address: string): ImageAsked | undefined {
     case 'bot': {
       const [login] = parts;
       const params = [...url.searchParams];
-      const [size] = params;
+      const [size, changes] = params;
       if (parts.length !== 1 || login === undefined || !isLogin(login)) return undefined;
-      if (params.length !== 1 || size?.[0] !== 's' || !/^[1-9]\d*$/.test(size[1])) {
-        return undefined;
-      }
+      if (size?.[0] !== 's' || !/^[1-9]\d*$/.test(size[1])) return undefined;
+      // How many times a bot's picture changed says only that it's a new address: main serves
+      // the picture as it is now, whatever it says.
+      const changed =
+        url.hostname === 'bot' &&
+        changes?.[0] === 'r' &&
+        /^[1-9]\d{0,8}$/.test(changes[1]) &&
+        params.length === 2;
+      if (params.length !== 1 && !changed) return undefined;
       const pixels = Number(size[1]);
       if (!isSize(pixels)) return undefined;
       return { kind: url.hostname === 'bot' ? 'bot' : 'avatar', login, size: pixels };

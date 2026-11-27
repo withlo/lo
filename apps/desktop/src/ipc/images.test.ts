@@ -91,10 +91,29 @@ describe('image addresses', () => {
     expect(botImageAddress('cursor', MAX_AVATAR + 1)).toBeUndefined();
   });
 
+  it("names a bot's avatar anew once its picture has changed, as the same picture", () => {
+    expect(botImageAddress('cursor', 56, 0)).toBe('lo-image://bot/cursor?s=56');
+    expect(botImageAddress('cursor[bot]', 56, 2)).toBe('lo-image://bot/cursor?s=56&r=2');
+    expect(readImageAddress('lo-image://bot/cursor?s=56&r=2')).toEqual({
+      kind: 'bot',
+      login: 'cursor',
+      size: 56,
+    });
+    for (const changes of [-1, 1.5, Number.NaN]) {
+      expect(botImageAddress('cursor', 56, changes)).toBeUndefined();
+    }
+  });
+
   it.each([
     'lo-image://bot/cursor%5Bbot%5D?s=56',
     'lo-image://bot/cursor',
     'lo-image://bot/cursor?s=56&v=4',
+    'lo-image://bot/cursor?r=2&s=56',
+    'lo-image://bot/cursor?s=56&r=0',
+    'lo-image://bot/cursor?s=56&r=02',
+    'lo-image://bot/cursor?s=56&r=2&r=3',
+    'lo-image://bot/cursor?s=56&r=1234567890',
+    'lo-image://avatar/octocat?s=56&r=2',
     'lo-image://bot/in/1210556?s=56',
     'lo-image://avatar/dependabot%5Bbot%5D?s=56',
     'lo-image://avatar/..%2Fu%2F1?s=56',

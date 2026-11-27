@@ -364,14 +364,11 @@
 }
 
 /*
- * The banner over an overview written for an older push is as tall from its first frame as it
- * stays, whatever it says, at any width: its title is one line, and what changed since has its
- * lines kept free until it comes, more where the banner is narrow. Its actions never wrap by what
- * their labels say: beside the text where there's room, in a row of their own under it where
- * there's room for the longest labels side by side, and one above the other where there isn't.
+ * The banner over an overview written for an older push: its title is one line, and what changed
+ * since has its two lines held free until it comes, so nothing moves when it does. Its button is
+ * beside the text while it shows whole there, as `useGiveUp` measures it (`OutOfDate`).
  */
 .lo-ov .lo-ov-stales {
-  container: lo-ov-stale / inline-size;
   margin-top: 16px;
   max-width: var(--lo-read-measure);
 }
@@ -392,42 +389,38 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
-@container lo-ov-stale (width < 560px) {
-  .lo-ov .lo-ov-stale {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-  .lo-ov .lo-ov-stale__actions {
-    grid-column: 2;
-    grid-row: 3;
-    min-width: 0;
-    margin-top: 8px;
-    overflow: clip;
-    overflow-clip-margin: 4px;
-  }
+/*
+ * Where its button doesn't fit beside its text (`OutOfDate` gives up `beside`), one column: the
+ * icon centred on the first line, what changed since on the line under it, held whether or not
+ * it's come, and the button `lo-sp-8` under that, its left edge on the text's. No more room is held.
+ * Too narrow for its whole label, the button is cut at its end, keeping its focus ring.
+ */
+.lo-ov .lo-ov-stale[data-gave-up~='beside'] {
+  grid-template-columns: auto minmax(0, 1fr);
+  row-gap: 0;
 }
-@container lo-ov-stale (width < 480px) {
-  .lo-ov .lo-ov-stale__actions {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  /* Too narrow for a whole label, it's cut at its end: centered, it would be cut at both. */
-  .lo-ov .lo-ov-stale__actions > button {
-    justify-content: flex-start !important;
-    max-width: 100%;
-    overflow: hidden;
-  }
+.lo-ov .lo-ov-stale[data-gave-up~='beside'] > .lo-i {
+  grid-row: 1;
 }
-@container lo-ov-stale (width < 300px) {
-  .lo-ov .lo-ov-stale__sub {
-    height: 4lh;
-    -webkit-line-clamp: 4;
-  }
+.lo-ov .lo-ov-stale[data-gave-up~='beside'] .lo-ov-stale__sub {
+  display: block;
+  height: 1lh;
+  margin-top: 2px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-@container lo-ov-stale (width < 200px) {
-  .lo-ov .lo-ov-stale__sub {
-    height: 6lh;
-    -webkit-line-clamp: 6;
-  }
+.lo-ov .lo-ov-stale[data-gave-up~='beside'] .lo-ov-stale__actions {
+  grid-column: 2;
+  grid-row: 3;
+  min-width: 0;
+  margin-top: var(--lo-sp-8);
+  overflow: clip;
+  overflow-clip-margin: 4px;
+}
+.lo-ov .lo-ov-stale[data-gave-up~='beside'] .lo-ov-stale__actions > button {
+  justify-content: flex-start !important;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 /* A code block's flag: what changed, then the way to the comparison, at its end. */

@@ -24,13 +24,13 @@ import { serveImages, type ServedImage } from '../../../main/security.ts';
 import { provides } from '../../../main/services.ts';
 import { github } from '../../accounts/service.ts';
 import { comparisons } from '../../revisions/service.ts';
-import { settings } from '../../settings/service.ts';
+import { clearing, settings } from '../../settings/service.ts';
 import { tabs } from '../../tab/service.ts';
 import { contract } from '../contract.ts';
 import { bodies, drafts, reviews } from '../service.ts';
 import { threads as threadsSetting, vim } from '../settings.ts';
 import { readBodies } from './bodies.ts';
-import { askGitHub, BotPictures } from './bots.ts';
+import { askGitHub, BotPictures, BotTable } from './bots.ts';
 import { CommentableReads } from './commentable.ts';
 import { DraftStore } from './drafts.ts';
 import { IMAGE_LIMITS, ImageError, Images } from './images.ts';
@@ -63,7 +63,7 @@ function started<T>(made: T | undefined): T {
 }
 
 export default defineFeature(contract, {
-  uses: [github, tabs, comparisons, settings],
+  uses: [github, tabs, comparisons, settings, clearing],
   provide: (context) => [
     provides(bodies, {
       read: (id, posts, options) =>
@@ -216,12 +216,23 @@ export default defineFeature(contract, {
     // In a test run, GitHub's image hosts are the test's server, as GitHub itself is. A packaged
     // build always fetches from the hosts.
     const { images: stand } = githubSettings({ packaged: app.isPackaged, env: process.env });
-    const bots = new BotPictures({ ask: (login) => askGitHub(use(github), login) });
+    const keptBots = new BotTable(database);
+    const bots = new BotPictures({
+      ask: (login) => askGitHub(use(github), login),
+      kept: keptBots,
+      // A picture that moved is fetched anew, and drawn again, in every window.
+      changed(slug) {
+        images.forgetBot(slug);
+        publish('bots', { login: slug });
+      },
+    });
     stops.push(
       // An account added, or signed in again, may ask what the others couldn't.
       use(github).onEvent((event) => {
         if (event.kind === 'added') bots.release();
       }),
+      // Where bots' pictures are goes with the rest of the cache.
+      use(clearing).onClear(() => keptBots.clear()),
     );
     const images = new Images({
       fetch,
@@ -237,6 +248,7 @@ export default defineFeature(contract, {
         return (await use(github).client(login)).token;
       },
       botPicture: (login) => bots.picture(login),
+      botMissing: (login, address) => bots.missing(login, address),
     });
     stopServing = serveImages(
       session.fromPartition(windowPartition),
