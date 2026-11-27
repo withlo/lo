@@ -49,10 +49,14 @@ test('a row that gave something up has it back as the room beside it grows, thou
   expect(await at(page, 1440)).toEqual(['', '']);
   expect(await at(page, 160)).toEqual(['branches', 'detail']);
   expect(await at(page, 1440)).toEqual(['', '']);
-  // A step at a time: the detail comes back once there's room for it, then the branches.
-  expect(await at(page, 240)).toEqual(['branches', '']);
+  // A step at a time: the detail comes back once there's room for it, then the branches. The room
+  // is the merge status whole and its spacer's 8 px, as fonts make it, with a few to spare.
+  const room = await page.evaluate(
+    () => Math.ceil(document.getElementById('status')!.getBoundingClientRect().width) + 12,
+  );
+  expect(await at(page, room)).toEqual(['branches', '']);
   expect(await at(page, 160)).toEqual(['branches', 'detail']);
-  expect(await at(page, 240)).toEqual(['branches', '']);
+  expect(await at(page, room)).toEqual(['branches', '']);
   expect(await at(page, 1440)).toEqual(['', '']);
 });
 

@@ -19,7 +19,7 @@ function StatusRow() {
   const row = useRef<HTMLDivElement>(null);
   useGiveUp(row, DETAIL_STEPS);
   return (
-    <div ref={row} className="give-up flex min-w-0 items-center">
+    <div id="status" ref={row} className="give-up flex min-w-0 items-center">
       <MergeStatus
         kind="blocked"
         verdict="Can’t merge"

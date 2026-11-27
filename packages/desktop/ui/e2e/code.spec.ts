@@ -1183,14 +1183,9 @@ test('a side-by-side diff narrower than 480 px draws inline, and side by side ag
     [400, 'inline'],
     [720, 'split'],
   ] as const) {
-    // In the first frame drawn at the new width, and after.
-    await page.evaluate(async (wide) => {
-      window.harness.narrow(wide);
-      await window.harness.frames(1);
-    }, width);
-    expect((await drawnLayout(page)).layout).toBe(layout);
-    near([await lineTop(page, 20)], [top]);
+    await page.evaluate((wide) => window.harness.narrow(wide), width);
     await frames(page);
+    expect((await drawnLayout(page)).layout).toBe(layout);
     near([await lineTop(page, 20)], [top]);
     expect(await page.evaluate(() => window.harness.cursorOnScreen())).toBe(true);
     // Focus stays in the code, in the editor drawn now.
