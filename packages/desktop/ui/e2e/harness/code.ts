@@ -142,6 +142,8 @@ const rests: (Place | undefined)[] = [];
 
 /** Each share the view said to keep as the edge between the sides moved, or none put back. */
 const shares: (number | undefined)[] = [];
+/** Each time the view said its box became too narrow for two sides, or wide enough again. */
+const narrows: boolean[] = [];
 
 let shown: DiffView | undefined;
 let whole: FileView | undefined;
@@ -231,6 +233,7 @@ const harness = {
         menu: ignore,
         rested: (at) => rests.push(at),
         sides: (share) => shares.push(share),
+        narrowed: (narrow) => narrows.push(narrow),
       },
     );
     shown.setDiff('a', diffText(textOf(old), textOf(changed)));
@@ -503,6 +506,13 @@ const harness = {
   /** Shows the view in `layout`, as when the setting changes, with no input. */
   layout(layout: DiffLayout): void {
     view().setLayout(layout);
+  },
+  /**
+   * The layout drawn, whether the view says its box is too narrow for two sides, and each time it
+   * said that changed.
+   */
+  drawn(): { layout: DiffLayout; narrow: boolean; said: boolean[] } {
+    return { layout: view().probe.layout, narrow: view().narrow, said: [...narrows] };
   },
   /** How far down the screen the top of the cursor's row is. */
   cursorTop(): number | undefined {

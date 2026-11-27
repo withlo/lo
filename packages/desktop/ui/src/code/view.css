@@ -16,8 +16,9 @@
   /*
    * The old side's width: its share of the view's (`--lo-sides`, half until the reader moves the
    * edge between the sides), each side keeping its minimum, `lo-side-min-w` or a quarter of the
-   * width, whichever is wider. Under twice the minimum the sides split evenly. `fitSides` works out
-   * the same. A percentage is of the box that uses it, and each that does is as wide as the view.
+   * width, whichever is wider. At twice the minimum the sides split evenly, and under it the diff
+   * is drawn inline. `fitSides` works out the same. A percentage is of the box that uses it, and
+   * each that does is as wide as the view.
    */
   --lo-side-old: clamp(
     min(50%, max(var(--lo-side-min-w), 25%)),
@@ -513,15 +514,15 @@
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-.lo-diffhead .lo-path,
+/*
+ * A moved label's place is a button that goes there, drawn as the design draws its link, and cut
+ * at its end where the label is narrow.
+ */
 .lo-movedlabel__to {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-/* A moved label's place is a button that goes there, drawn as the design draws its link. */
-.lo-movedlabel__to {
   font: 400 11px/14px var(--lo-font-mono);
   font-variant-ligatures: none;
   color: var(--lo-fg-muted);

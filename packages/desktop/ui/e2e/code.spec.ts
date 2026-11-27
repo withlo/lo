@@ -1146,7 +1146,7 @@ test('`Esc` puts the edge between the sides back where the press found it, and a
   expect(await page.evaluate(() => window.harness.misalignment())).toBeLessThan(1);
 });
 
-test('the sides shared anew leave the first line under the pinned header where it is, and under 480 px split evenly with no edge', async () => {
+test('the sides shared anew leave the first line under the pinned header where it is, and at 480 px split evenly with no edge', async () => {
   const page = await wrappedUnderPin();
   const { room } = await viewBox(page);
   const before = await lineTop(page, 20);
@@ -1159,12 +1159,71 @@ test('the sides shared anew leave the first line under the pinned header where i
   }
   await page.evaluate(() => {
     window.harness.sides(0.3);
-    window.harness.narrow(470);
+    window.harness.narrow(480);
   });
   await frames(page);
   const { old, new: added } = await sideWidths(page);
   expect(Math.abs(old - added)).toBeLessThan(1);
   expect(await seam(page)).toBeUndefined();
+});
+
+/** The layout drawn, whether the view says it's too narrow for two sides, and what it said so. */
+function drawnLayout(page: Page) {
+  return page.evaluate(() => window.harness.drawn());
+}
+
+test('a side-by-side diff narrower than 480 px draws inline, and side by side again at 480, the line at the top of the screen staying where it is, the cursor and focus too', async () => {
+  const page = await open('split', { below: 10 });
+  await page.evaluate(() => window.harness.cursor(26));
+  await frames(page);
+  const top = await lineTop(page, 20);
+  for (const [width, layout] of [
+    [479, 'inline'],
+    [480, 'split'],
+    [400, 'inline'],
+    [720, 'split'],
+  ] as const) {
+    // In the first frame drawn at the new width, and after.
+    await page.evaluate(async (wide) => {
+      window.harness.narrow(wide);
+      await window.harness.frames(1);
+    }, width);
+    expect((await drawnLayout(page)).layout).toBe(layout);
+    near([await lineTop(page, 20)], [top]);
+    await frames(page);
+    near([await lineTop(page, 20)], [top]);
+    expect(await page.evaluate(() => window.harness.cursorOnScreen())).toBe(true);
+    // Focus stays in the code, in the editor drawn now.
+    expect(await page.evaluate(() => document.activeElement?.closest('.cm-content') !== null)).toBe(
+      true,
+    );
+    if (layout === 'split') {
+      expect(await page.evaluate(() => window.harness.misalignment())).toBeLessThan(1);
+    } else expect(await seam(page)).toBeUndefined();
+  }
+  // It said so each time the box crossed 480 px, and never changed what it was asked for.
+  expect((await drawnLayout(page)).said).toEqual([true, false, true, false]);
+});
+
+test('a diff asked for side by side while too narrow stays inline until it’s 480 px, and one asked for inline stays inline', async () => {
+  const page = await open('inline', { below: 10 });
+  await page.evaluate(() => window.harness.narrow(400));
+  await frames(page);
+  expect(await drawnLayout(page)).toMatchObject({ layout: 'inline', narrow: true });
+  await page.evaluate(() => window.harness.layout('split'));
+  await frames(page);
+  expect((await drawnLayout(page)).layout).toBe('inline');
+  await page.evaluate(() => window.harness.narrow(600));
+  await frames(page);
+  expect(await drawnLayout(page)).toMatchObject({ layout: 'split', narrow: false });
+  await page.evaluate(() => {
+    window.harness.layout('inline');
+    window.harness.narrow(400);
+  });
+  await frames(page);
+  await page.evaluate(() => window.harness.narrow(600));
+  await frames(page);
+  expect((await drawnLayout(page)).layout).toBe('inline');
 });
 
 test('a row the new side alone has, first under the pinned header, stays where it is as the sides are shared anew, with focus on the old side', async () => {

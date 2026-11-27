@@ -224,11 +224,22 @@ async function setLayout({ view }: Drawn, next: 'split' | 'inline'): Promise<voi
   await changeSetting(layout, next);
 }
 
-/** Whether the diff on screen can change its layout: code beside a reading view is inline. */
+/**
+ * Whether the diff on screen can change its layout: code beside a reading view is inline, and so is
+ * a diff too narrow for two sides, until the window is wider.
+ */
 function layoutNow(): true | string {
   const drawn = onScreen();
   if (typeof drawn === 'string') return drawn;
-  return !besideNow() || 'Code beside is inline';
+  if (besideNow()) return 'Code beside is inline';
+  // As the header's toggles say of a panel there's no room for.
+  return !drawn.view.narrow || 'Widen the window first';
+}
+
+/** Whether the diff on screen is inline though Settings says side by side: it's too narrow. */
+function narrowNow(): boolean {
+  const drawn = onScreen();
+  return typeof drawn !== 'string' && drawn.view.narrow;
 }
 
 /** What a copy says once it's done, or what failed, in a note: no button in view says it. */
@@ -312,18 +323,19 @@ export default {
         return typeof code === 'string' ? code : true;
       },
     },
-    // Checked as the diff is drawn: inline beside a reading view, whatever Settings says.
+    // Checked as the diff is drawn: inline beside a reading view, or too narrow for two sides,
+    // whatever Settings says.
     sideBySide: {
       run: withDiff((drawn) => setLayout(drawn, 'split')),
       enabled: layoutNow,
-      checked: () => !besideNow() && settingNow(layout) === 'split',
+      checked: () => !besideNow() && !narrowNow() && settingNow(layout) === 'split',
     },
     inline: {
       run: withDiff((drawn) =>
         setLayout(drawn, drawn.view.probe.layout === 'split' ? 'inline' : 'split'),
       ),
       enabled: layoutNow,
-      checked: () => besideNow() || settingNow(layout) === 'inline',
+      checked: () => besideNow() || narrowNow() || settingNow(layout) === 'inline',
     },
     whitespace: {
       run: withDiff(async ({ loader }) => {

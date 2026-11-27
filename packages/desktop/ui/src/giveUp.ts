@@ -12,18 +12,9 @@ import { useCallback, useEffect, useLayoutEffect, useState, type RefObject } fro
  */
 export function useGiveUp(row: RefObject<HTMLElement | null>, steps: readonly string[]): number {
   const [given, setGiven] = useState(0);
-  // Drawn whole and measured, then without each step until it fits, in one go, so no frame shows
-  // it cut short.
   const fit = useCallback(() => {
     const element = row.current;
-    if (!element) return;
-    let count = 0;
-    element.removeAttribute('data-gave-up');
-    while (count < steps.length && !fits(element)) {
-      count += 1;
-      element.setAttribute('data-gave-up', steps.slice(0, count).join(' '));
-    }
-    setGiven(count);
+    if (element) setGiven(giveUp(element, steps));
   }, [row, steps]);
   useLayoutEffect(fit);
   useEffect(() => {
@@ -56,6 +47,22 @@ export function useGiveUp(row: RefObject<HTMLElement | null>, steps: readonly st
     };
   }, [row, fit]);
   return given;
+}
+
+/**
+ * Has `row` give up what it draws, a step at a time in `steps`' order, until it fits, as
+ * `useGiveUp` does, for a row React doesn't draw, such as a code view's file header: drawn whole and
+ * measured, then without each step until it fits, in one go, so no frame shows it cut short. Call it
+ * as the row is drawn and each time its room changes. Says how many steps it gave up.
+ */
+export function giveUp(row: HTMLElement, steps: readonly string[]): number {
+  let count = 0;
+  row.removeAttribute('data-gave-up');
+  while (count < steps.length && !fits(row)) {
+    count += 1;
+    row.setAttribute('data-gave-up', steps.slice(0, count).join(' '));
+  }
+  return count;
 }
 
 /** How far out {@link roomOf} looks for a box as wide as its container lets it be. */

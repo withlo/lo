@@ -5,7 +5,7 @@
 import { type Extension } from '@codemirror/state';
 import { type EditorView, ViewPlugin, type ViewUpdate } from '@codemirror/view';
 
-import { drawHeader, type HeaderInfo } from './widgets.ts';
+import { drawHeader, fitHeader, type HeaderInfo, unwatchHeader } from './widgets.ts';
 
 /** A file header's height, the design's `lo-file-header-h`: the pinned row's too. */
 export const HEADER_HEIGHT = 38;
@@ -73,6 +73,8 @@ export interface Pinned {
 export class Pin {
   readonly dom: HTMLElement;
   #shown: Pinned | undefined;
+  /** Where its path starts and the right column's gutters, as last shown: its room. */
+  #room = '';
 
   constructor() {
     this.dom = document.createElement('div');
@@ -88,6 +90,11 @@ export class Pin {
     return this.#shown?.file;
   }
 
+  /** The header it draws, if it draws one. */
+  #head(): HTMLElement | undefined {
+    return this.dom.querySelector<HTMLElement>(':scope > .lo-diffhead') ?? undefined;
+  }
+
   /**
    * Shows `pinned`, its path `start` pixels in from the sheet's edge, as its column's header has
    * it, or nothing. Side by side, with `end`, how wide the right column's gutters are, it's two
@@ -97,13 +104,22 @@ export class Pin {
    * in place.
    */
   show(pinned: Pinned | undefined, start: number, end?: number): void {
+    const room = `${start} ${end}`;
+    const moved = room !== this.#room;
+    this.#room = room;
     this.dom.style.setProperty('--lo-pin-start', `${start}px`);
     this.dom.classList.toggle('is-split', end !== undefined);
     if (end !== undefined) this.dom.style.setProperty('--lo-pin-end', `${end}px`);
     const was = this.#shown;
     this.#shown = pinned;
     this.dom.style.transform = pinned && pinned.shift < 0 ? `translateY(${pinned.shift}px)` : '';
-    if (was?.file === pinned?.file && was?.info === pinned?.info) return;
+    const drawn = this.#head();
+    if (was?.file === pinned?.file && was?.info === pinned?.info) {
+      // Laid out anew, as two halves or one band, or with other room: it fits itself again.
+      if (moved && drawn) fitHeader(drawn);
+      return;
+    }
+    if (drawn) unwatchHeader(drawn);
     if (!pinned) {
       this.dom.hidden = true;
       this.dom.replaceChildren();
@@ -117,5 +133,11 @@ export class Pin {
     if (was !== undefined && was.file !== pinned.file && !passed) head.classList.add('move-swap');
     this.dom.replaceChildren(head);
     this.dom.hidden = false;
+  }
+
+  /** Takes its header down, with the view. */
+  destroy(): void {
+    const drawn = this.#head();
+    if (drawn) unwatchHeader(drawn);
   }
 }

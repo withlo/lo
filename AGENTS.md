@@ -961,10 +961,11 @@ status bar.
   (`focusNowhereFor`), and a waiting view's note keeps focus for that view, not the one beside it.
 - So is the old side's share of a side-by-side diff (`sides`, unset while even), for every diff in
   every tab: the view draws it (`DiffView.setSides`) and says when its seam's drag or double-click
-  changes it (`DiffEvents.sides`). `fitSides` keeps each side at its minimum. `>`, `<` and `=` size
-  the side the cursor is on through the edge the diff gives `sizeInView` (`diff/window/sides.ts`),
-  as they size a panel or a view, while focus is in it. As the sides change width, the spacer pass
-  holds the first line under the pinned header where it is (`Aligner.holdUnder`).
+  changes it (`DiffEvents.sides`). `fitSides` keeps each side at its minimum; under twice it, the
+  diff is inline. `>`, `<` and `=` size the side the cursor is on through the edge the diff gives
+  `sizeInView` (`diff/window/sides.ts`), as they size a panel or a view, while focus is in it. As
+  the sides change width, the spacer pass holds the first line under the pinned header where it is
+  (`Aligner.holdUnder`).
 - Other features' banners go in the `tab.banners` slot. Each view there says whether it shows a
   banner for a tab (`shows`) and when that may change (`subscribe`), so the tab makes room only for
   the banners it has.
@@ -1107,7 +1108,9 @@ changing, as when the local copy marks one generated, doesn't reorder a drawn vi
 - Once the view is drawn, the window says so (`diff.drawn`, with where it starts), and the tab keeps
   that head on screen, even one it took from what it saved: a newer one from GitHub is offered as a
   newer push.
-- `diff.layout` and `diff.whitespace` are settings; `gi` and `gw` change them.
+- `diff.layout` and `diff.whitespace` are settings; `gi` and `gw` change them. A box under 480 px
+  draws a side-by-side diff inline without writing `diff.layout` (`DiffView.narrow`, which
+  `DiffEvents.narrowed` says has changed, so the menu dims both layouts: "Widen the window first").
 - With `comments.threads` at `beside`, a thread or a comment box never reaches the aligner: the code
   view draws markers in its gutter and one `ThreadPopover` in a layer of its scroll. A test fails if
   a diff with threads lays out its rows differently from the same diff without them.

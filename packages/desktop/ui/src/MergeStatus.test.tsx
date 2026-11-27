@@ -93,7 +93,7 @@ describe('MergeStatus', () => {
     expect(host.textContent).toBe('Merged');
   });
 
-  it('cuts its reasons short, never its verdict, and to a few letters at most before it gives them up', () => {
+  it('is never cut: the row it’s in gives up its reasons, then its verdict, each whole', () => {
     const host = render(
       <MergeStatus
         kind="waiting"
@@ -102,12 +102,14 @@ describe('MergeStatus', () => {
         onClick={vi.fn<() => void>()}
       />,
     );
-    expect(host.querySelector('strong')?.className).toContain('flex-none');
+    expect(host.querySelector('button')?.className).toContain('flex-none');
+    const verdict = host.querySelector('strong');
+    expect(verdict?.className).toContain('flex-none');
+    expect(verdict?.getAttribute('data-gives')).toBe('title');
     const reasons = host.querySelector('[data-gives="detail"]');
     expect(reasons?.textContent).toBe('Review required · 2 checks running');
-    expect(reasons?.className).toContain('truncate');
-    expect(reasons?.className).toContain('min-w-cut');
-    expect(reasons?.parentElement?.className).toContain('give-up');
+    expect(reasons?.className).toContain('flex-none');
+    expect(reasons?.className).not.toContain('truncate');
   });
 
   it('draws what a branch’s name says without the characters that turn text around', () => {
