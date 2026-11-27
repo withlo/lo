@@ -110,7 +110,8 @@ export function PRHeader({
           missing === undefined && <Skeleton className="w-48 flex-none" />
         )}
         {title !== undefined || missing !== undefined ? (
-          <h1 className="lo-selectable min-w-cut truncate text-fg text-title">
+          // Whole until the key chips and the merge status's detail have gone (`cut`).
+          <h1 data-cuts className="lo-selectable min-w-cut truncate text-fg text-title">
             {title ?? missing?.repo}
           </h1>
         ) : (
@@ -182,12 +183,13 @@ function mergeWords(state: Exclude<PullRequestState, 'merged'> | undefined): str
 }
 
 /**
- * What the header's first row gives up where its title is cut to `min-w-cut` and it still doesn't
- * fit, a step at a time: the key chips, as on "Submit review…"; then the merge status's detail; then
- * its verdict, which leaves its dot alone, with the words as its tooltip (`MergeStatus`). Nothing in
- * it is ever drawn over another.
+ * What the header's first row gives up as soon as its title would otherwise be cut, a step at a
+ * time: the key chips, as on "Submit review…"; then the merge status's detail; then its title's end,
+ * which is cut down to `min-w-cut` (`cut`); then the merge status's words, which leave its dot alone,
+ * with the verdict and the reasons as its tooltip (`MergeStatus`). Nothing in it is ever drawn over
+ * another.
  */
-const TOP_STEPS = ['keys', 'detail', 'title'] as const;
+const TOP_STEPS = ['keys', 'detail', 'cut', 'title'] as const;
 
 /**
  * What the header's second row gives up where its branches can't show a few letters each: "wants

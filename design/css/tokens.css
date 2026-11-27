@@ -401,6 +401,7 @@
   --lo-settings-nav-w: 220px; /* Width of the list of groups beside Settings. */
   --lo-settings-w: 720px; /* Widest Settings' column of rows grows, in the middle of the room beside its list. */
   --lo-choice-min-w: 144px; /* Least width of a choice's card with a picture. */
+  --lo-field-w: 240px; /* Width a field asks for in a row that wraps, as the welcome's link field: with less beside it, its buttons go under it. */
   --lo-overview-example-h: 200px; /* Height inside the welcome's example of an overview, which cuts its code short. */
   --lo-dialog-w: 540px; /* Width of a medium dialog, the default: signing in, importing accounts, choosing an account. */
   --lo-dialog-w-sm: 420px; /* Width of a small dialog: one question and its two buttons. */

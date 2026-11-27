@@ -1,6 +1,6 @@
 // What narrows in Chromium itself, where it's laid out: jsdom lays nothing out. An out-of-date
-// overview's callout is one column only where its button doesn't fit beside its text, and a path
-// wraps only after a slash.
+// overview's callout and a code block's flag are one column only where the button doesn't fit beside
+// the text, and a path wraps only after a slash.
 
 import type { ElectronApplication, Page } from '@playwright/test';
 
@@ -85,6 +85,62 @@ test('the callout keeps its button beside its text while it fits, and is one col
 
   // Wide again, the button is beside its text again.
   expect((await callout(page, 680)).gaveUp).toBe('');
+});
+
+/** Where a code block's flag's parts are, once its frame is `width` wide and laid out. */
+function flag(page: Page, width: number) {
+  return page.evaluate(async (wide) => {
+    document.querySelector<HTMLElement>('#flagframe')!.style.width = `${wide}px`;
+    for (let frame = 0; frame < 3; frame += 1) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+    const box = document.querySelector<HTMLElement>('#flagframe .lo-codeblock__flag')!;
+    const text = box.querySelector<HTMLElement>('.lo-codeblock__flagtext')!;
+    const line = Number.parseFloat(getComputedStyle(text).lineHeight);
+    const [strip, icon, words, button] = [
+      box.getBoundingClientRect(),
+      box.querySelector('.lo-i')!.getBoundingClientRect(),
+      text.getBoundingClientRect(),
+      box.querySelector('button')!.getBoundingClientRect(),
+    ];
+    return {
+      gaveUp: box.getAttribute('data-gave-up') ?? '',
+      // The icon's middle on the text's first line's.
+      iconOff: icon.top + icon.height / 2 - (words.top + line / 2),
+      lines: Math.round(words.height / line),
+      cut: text.scrollWidth > text.clientWidth,
+      under: button.top - words.bottom,
+      left: button.left - words.left,
+      below: strip.bottom - button.bottom,
+      // Its padding and the line under it, and no more.
+      padding:
+        Number.parseFloat(getComputedStyle(box).paddingBottom) +
+        Number.parseFloat(getComputedStyle(box).borderBottomWidth),
+      beside: button.left > words.right && button.top < words.bottom,
+    };
+  }, width);
+}
+
+test('a code block’s flag keeps its button beside its text while the text shows whole, and is one column once it doesn’t', async () => {
+  const page = await open();
+  const wide = await flag(page, 680);
+  expect(wide.gaveUp).toBe('');
+  expect(wide.beside).toBe(true);
+  expect([wide.lines, wide.cut]).toEqual([1, false]);
+
+  // As narrow as a code block beside the code in a window 720 px wide.
+  const narrow = await flag(page, 300);
+  expect(narrow.gaveUp).toBe('beside');
+  expect(narrow.beside).toBe(false);
+  expect(narrow.lines).toBeGreaterThan(1);
+  expect(narrow.cut).toBe(false);
+  expect(Math.abs(narrow.iconOff)).toBeLessThanOrEqual(1);
+  expect(narrow.under).toBeCloseTo(8, 0);
+  expect(narrow.left).toBeCloseTo(0, 0);
+  expect(narrow.below).toBeCloseTo(narrow.padding, 0);
+
+  // Wide again, the button is beside its text again.
+  expect((await flag(page, 680)).gaveUp).toBe('');
 });
 
 test('a path wraps only after a slash, and inside a name only where the name is longer than the line', async () => {

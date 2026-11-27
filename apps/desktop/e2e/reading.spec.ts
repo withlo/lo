@@ -768,10 +768,9 @@ test('goes from the tab, its menus and the palette while Settings turns overview
     await expect(input).toBeFocused();
     await input.fill(text);
   };
-  // Code beside's description names the overview among what the diff goes beside: it's not one.
-  const overviews = palette
-    .getByRole('option', { name: /overview|^Copy prompt/i })
-    .filter({ hasNotText: /^Code beside/ });
+  // Anything that names the overview, Code beside's description among them, or offers its prompt.
+  const overviews = palette.getByRole('option', { name: /overview|^Copy prompt/i });
+  const beside = palette.getByRole('option', { name: /^Code beside/ });
 
   await test.step('Settings turns them off: the choice of first view has no Overview', async () => {
     await turn();
@@ -800,6 +799,10 @@ test('goes from the tab, its menus and the palette while Settings turns overview
     await expect(overviews).toHaveCount(0);
     await input.fill('copy prompt');
     await expect(overviews).toHaveCount(0);
+    // Code beside goes beside the timeline alone.
+    await input.fill('code beside');
+    await expect(beside).toContainText(/\btimeline\b/);
+    await expect(beside).not.toContainText(/\boverview\b/i);
     await page.keyboard.press('Escape');
     await expect(palette).toBeHidden();
     // Main reads no overview for the tab.
@@ -817,6 +820,7 @@ test('goes from the tab, its menus and the palette while Settings turns overview
     await expect.poll(() => barItem(app, page, 'overview.show')).toBe(true);
     await typed('overview');
     await expect(palette.getByRole('option', { name: /^Overview/ })).toBeVisible();
+    await expect(beside).toContainText(/\boverview\b/);
     await page.keyboard.press('Escape');
   });
 });

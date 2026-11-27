@@ -5,11 +5,12 @@
  * illustration.
  */
 
-import type { ReactNode, Ref } from 'react';
+import { useRef, type ReactNode, type Ref } from 'react';
 
 import type { CodeRange } from '@lo/artifact';
 import type { Code } from '@lo/markdown';
 
+import { useGiveUp } from '../giveUp.ts';
 import { Icon } from '../Icon.tsx';
 import { lineRange } from './placeholders.tsx';
 import { ExcerptSpace } from './space.tsx';
@@ -67,16 +68,26 @@ export function CodeBlock({
   );
 }
 
+/** What a code block's flag gives up where it's narrow: its button beside its text, for a column. */
+const FLAG_STEPS = ['beside'] as const;
+
 /**
  * Under a code block's head, when lines it shows changed since the commit it shows: which, in
- * `children`, and the way to the comparison, `action`.
+ * `children`, and the way to the comparison, `action`, at the line's end while the text shows whole
+ * beside it. Where it doesn't, measured as `OutOfDate` measures, it's one column: the icon centred
+ * on the first line, the text wrapping, and the button under its last line, on the text's left edge.
  */
 export function CodeFlag({ children, action }: { children: ReactNode; action?: ReactNode }) {
+  const row = useRef<HTMLDivElement>(null);
+  useGiveUp(row, FLAG_STEPS);
   return (
-    <div className="lo-codeblock__flag" role="note" data-lo-code-flag="">
+    <div ref={row} className="lo-codeblock__flag" role="note" data-lo-code-flag="">
       <Icon name="triangle-exclamation-point" size={12} />
-      <span className="lo-codeblock__flagtext">{children}</span>
-      {action}
+      {/* Beside the button only while it shows whole. */}
+      <span className="lo-codeblock__flagtext" data-fit="">
+        {children}
+      </span>
+      {action !== undefined && <span className="lo-codeblock__flagaction">{action}</span>}
     </div>
   );
 }

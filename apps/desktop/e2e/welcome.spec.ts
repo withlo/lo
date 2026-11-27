@@ -17,6 +17,7 @@ import {
   KEYCHAIN,
   middleOf,
   settingsPath,
+  sizeWindow,
   test as base,
 } from './app.ts';
 
@@ -344,5 +345,60 @@ test('“Show rules” opens the rules for Finicky, Velja and Choosy, which copy
   await test.step('the rules link to the documentation, which opens in the browser', async () => {
     await dialog.getByRole('button', { name: 'Open documentation' }).click();
     await expect.poll(browsed).toEqual([DOCS]);
+  });
+});
+
+test.describe('at 200 % zoom', () => {
+  test.use({ settings: '{ "window.zoom": 200 }\n' });
+
+  test('in a window 720 by 480, a heading on two lines keeps the line under it, and the last step’s link field has its own line, with its buttons under it', async ({
+    app,
+    page,
+  }) => {
+    await expect(heading(page)).toHaveText('Review pull requests from the keyboard');
+    await sizeWindow(app, 720, 480);
+    /** How far the heading's last line is above the line under it, and how many lines it takes. */
+    const apart = () =>
+      heading(page).evaluate((title) => {
+        const line = title.parentElement?.nextElementSibling;
+        const lines = Math.round(
+          title.getBoundingClientRect().height /
+            Number.parseFloat(getComputedStyle(title).lineHeight),
+        );
+        return {
+          gap: (line?.getBoundingClientRect().top ?? 0) - title.getBoundingClientRect().bottom,
+          lines,
+        };
+      });
+    let wrapped = 0;
+    for (const each of ['look', 'keys', 'overviews', 'setup', 'open']) {
+      await go(page).click();
+      await expect(welcome(page).locator(`[data-welcome-step="${each}"]:not([inert])`)).toHaveCount(
+        1,
+      );
+      // The heading's row and its line, 6 px apart, however many lines the heading takes.
+      const { gap, lines } = await apart();
+      expect(gap, each).toBeGreaterThanOrEqual(6);
+      if (lines > 1) wrapped += 1;
+    }
+    // At least one heading wraps there, as "An overview explains a pull request" does.
+    expect(wrapped).toBeGreaterThan(0);
+
+    // The last step: the field has the line, and its buttons start the next, 8 px under it.
+    const paste = step(page).getByRole('button', { name: /^Paste link/ });
+    const open = step(page)
+      .getByRole('button', { name: /^Open$/ })
+      .first();
+    const [field, pasted, opened] = await Promise.all(
+      [linkField(page), paste, open].map(async (each) => (await each.boundingBox())!),
+    );
+    expect(Math.round(pasted!.y - (field!.y + field!.height))).toBe(8);
+    expect(Math.round(pasted!.x)).toBe(Math.round(field!.x));
+    expect(Math.round(opened!.y)).toBe(Math.round(pasted!.y));
+    // Focus on the field's buttons brings them into view in the steps' pane.
+    await linkField(page).focus();
+    await page.keyboard.press('Tab');
+    await expect(paste).toBeFocused();
+    await expect(paste).toBeInViewport();
   });
 });
