@@ -97,18 +97,20 @@ export function PRHeader({
   status,
   children,
 }: PRHeaderProps) {
+  const top = useRef<HTMLDivElement>(null);
+  useGiveUp(top, TOP_STEPS);
   const merges = useRef<HTMLSpanElement>(null);
   useGiveUp(merges, BRANCH_STEPS);
   return (
     <header className="pr-header h-header-h min-w-0 flex-none bg-bg-chrome ps-16 pe-12 pb-6">
-      <div className="flex min-w-0 items-center gap-12">
+      <div ref={top} className="give-up flex min-w-0 items-center gap-12">
         {state !== undefined ? (
           <StatePill state={state} />
         ) : (
           missing === undefined && <Skeleton className="w-48 flex-none" />
         )}
         {title !== undefined || missing !== undefined ? (
-          <h1 className="lo-selectable min-w-0 truncate text-fg text-title">
+          <h1 className="lo-selectable min-w-cut truncate text-fg text-title">
             {title ?? missing?.repo}
           </h1>
         ) : (
@@ -178,6 +180,14 @@ export function PRHeader({
 function mergeWords(state: Exclude<PullRequestState, 'merged'> | undefined): string {
   return state === 'closed' ? 'wanted to merge' : 'wants to merge';
 }
+
+/**
+ * What the header's first row gives up where its title is cut to `min-w-cut` and it still doesn't
+ * fit, a step at a time: the key chips, as on "Submit review…"; then the merge status's detail; then
+ * its verdict, which leaves its dot alone, with the words as its tooltip (`MergeStatus`). Nothing in
+ * it is ever drawn over another.
+ */
+const TOP_STEPS = ['keys', 'detail', 'title'] as const;
 
 /**
  * What the header's second row gives up where its branches can't show a few letters each: "wants

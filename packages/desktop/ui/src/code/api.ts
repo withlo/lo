@@ -691,15 +691,23 @@ export interface DiffView extends KeySource {
    * Lays the diff out again, keeping the cursor's line on screen: or, with focus in the peek, the
    * peek's line, where the cursor goes, as it does as the peek closes, and focus stays in the peek.
    * The reader changed it, so focus comes to the code, unless `focus` is false, as when the code
-   * goes beside another view: then focus stays where it is.
+   * goes beside another view: then focus stays where it is. Side by side is drawn only while the
+   * box is wide enough for it (`narrow`): until then the diff stays inline.
    */
   setLayout(layout: DiffLayout, options?: { readonly focus?: boolean }): void;
   /**
+   * Whether the box is too narrow to draw side by side: under 480 px, twice the narrowest a side is
+   * drawn. Meanwhile a diff asked for side by side draws inline, and is side by side again as soon
+   * as the box is 480 px, keeping the line at the top of the screen where it is; `narrowed` says
+   * when this changes.
+   */
+  readonly narrow: boolean;
+  /**
    * Shares the width between the sides, side by side: the old side `share` of it, or half with
    * none, as the reader keeps it for every side-by-side diff. Each side keeps its minimum, the
-   * larger of 240 px and a quarter of the width, and at 480 px or less they split evenly, with no
-   * edge between them. The code under the file's header pinned at the top of the screen stays where
-   * it is, the rows level as the lines wrap anew.
+   * larger of 240 px and a quarter of the width, and at 480 px they split evenly, with no edge
+   * between them; narrower, the diff is inline (`narrow`). The code under the file's header pinned
+   * at the top of the screen stays where it is, the rows level as the lines wrap anew.
    */
   setSides(share: number | undefined): void;
   /**
@@ -992,6 +1000,12 @@ export interface DiffEvents {
    * default, half, with none, as for sides let go at even, and hand it back through `setSides`.
    */
   sides?(share: number | undefined): void;
+  /**
+   * The box became too narrow to draw side by side, and the diff inline if it was side by side, or
+   * wide enough again (`narrow`): for what offers the layout, which says why it can't be side by
+   * side meanwhile.
+   */
+  narrowed?(narrow: boolean): void;
   /**
    * Someone else's new thread came to a line on screen, where it waits for the reader's next
    * input with its line marked "New thread": for the host to tell a screen reader, which isn't

@@ -49,7 +49,7 @@ import {
 import { cutShort } from '../cut.ts';
 import { dragEdge, limitOf, resizing } from '../drag.ts';
 import { EDIT_SLOT_EVENT } from '../edits.ts';
-import { fitSides, shareOf } from '../fit.ts';
+import { fitSides, shareOf, SIDE_MIN } from '../fit.ts';
 import { type Tip, TIPPED, tips } from './tip.ts';
 import type {
   Anchor,
@@ -505,6 +505,13 @@ class View implements DiffView {
   /** The sizes of the threads each side's editor draws. */
   readonly #sizes: Record<Side, ThreadSizes>;
   #pane: DiffLayout = 'split';
+  /** The layout asked for, which is drawn while the box is wide enough for it. */
+  #chosen: DiffLayout = 'split';
+  /**
+   * Whether the box is too narrow to draw side by side, under twice the narrowest a side is drawn,
+   * as last measured: a side-by-side diff draws inline meanwhile.
+   */
+  #narrow = false;
   /** The editor that last had focus, or the cursor was last revealed in. */
   #lastPane: Pane = 'new';
   /** The side that last had the cursor, which a header in the inline layout, on both, keeps. */
@@ -771,8 +778,11 @@ class View implements DiffView {
     // A face that loads later, such as a script's subset when its first character shows, changes
     // the width of text, and so where lines wrap: measure again.
     document.fonts.addEventListener('loadingdone', this.#measure);
-    // Drawn inline from the start, it takes no focus: only a reader's change of layout does.
-    if (init.layout === 'inline') this.#toggleLayout(false);
+    // Drawn inline from the start, as asked or with too little room, it takes no focus: only a
+    // reader's change of layout does.
+    this.#chosen = init.layout;
+    this.#narrow = this.#tooNarrow() ?? false;
+    if (this.#fitted() === 'inline') this.#toggleLayout(false);
     this.#watchFile();
 
     this.probe = new ViewProbe({
@@ -946,6 +956,7 @@ class View implements DiffView {
    * out of the box's top, as the first file's header at the top would go: the scroll stays.
    */
   readonly #keepPlace = (): void => {
+    this.#fitLayout();
     this.#reach();
     this.#drawSeam();
     // A scroll whose event hasn't come yet is the reader's, or the view's, not the box's.
@@ -1116,7 +1127,40 @@ class View implements DiffView {
   }
 
   setLayout(layout: DiffLayout, options: { readonly focus?: boolean } = {}): void {
-    if (layout !== this.#pane) this.#toggleLayout(options.focus ?? true);
+    this.#chosen = layout;
+    if (this.#fitted() !== this.#pane) this.#toggleLayout(options.focus ?? true);
+  }
+
+  get narrow(): boolean {
+    return this.#narrow;
+  }
+
+  /** The layout to draw: the one asked for, or inline while the box is too narrow for two sides. */
+  #fitted(): DiffLayout {
+    return this.#narrow ? 'inline' : this.#chosen;
+  }
+
+  /**
+   * Whether the box is too narrow to draw side by side: under twice the narrowest a side is drawn.
+   * Its whole width counts, a scrollbar's too, so one coming or going as the layout changes can't
+   * change it back. Nothing while it's out of sight.
+   */
+  #tooNarrow(): boolean | undefined {
+    const width = this.dom.offsetWidth;
+    return width > 0 ? width < 2 * SIDE_MIN : undefined;
+  }
+
+  /**
+   * As the box changes width: a diff asked for side by side draws inline while the box is too
+   * narrow for two sides, and side by side again once it's wide enough, which `narrowed` tells the
+   * caller. The layout asked for stays as it was.
+   */
+  #fitLayout(): void {
+    const narrow = this.#tooNarrow();
+    if (narrow === undefined || narrow === this.#narrow) return;
+    this.#narrow = narrow;
+    if (this.#fitted() !== this.#pane) this.#refitLayout();
+    this.#on.narrowed?.(narrow);
   }
 
   setSides(given: number | undefined): void {
@@ -2752,14 +2796,8 @@ class View implements DiffView {
   }
 
   viewport(): Viewport {
-    // While the view is putting a line back at the top, or has just, that's where it belongs,
-    // unless the screen has since scrolled away from it.
-    if (this.#holding && performance.now() < this.#holdEnds && !this.#scrolledAway(this.#holding)) {
-      return {
-        at: this.#holding.at,
-        offset: this.dom.getBoundingClientRect().top - this.#heldAt(this.#holding.at),
-      };
-    }
+    const held = this.#heldTop();
+    if (held) return held;
     this.#holding = undefined;
     this.#measured();
     const pane: Pane = this.#pane === 'inline' ? 'inline' : 'new';
@@ -3064,6 +3102,7 @@ class View implements DiffView {
     for (const problem of this.#problems.values()) problem.content.destroy();
     this.#problems.clear();
     for (const sizes of [this.#sizes.old, this.#sizes.new, this.#inline?.sizes]) sizes?.destroy();
+    this.#pin.destroy();
     for (const view of this.#editors()) view.destroy();
     this.dom.remove();
   }
@@ -4306,25 +4345,10 @@ class View implements DiffView {
           cursor.line === peek.place.line);
     let shown: Pane;
     if (this.#pane === 'split') {
-      const inline = this.#inline ?? this.#makeInline();
-      this.#pane = 'inline';
-      this.#aligner.paused = true;
-      this.views.old.dom.hidden = true;
-      this.views.new.dom.hidden = true;
-      inline.view.dom.hidden = false;
-      this.#reach();
-      this.#drawSeam();
-      this.#moveBoxes();
+      this.#drawLayout('inline');
       shown = 'inline';
     } else {
-      this.#pane = 'split';
-      if (this.#inline) this.#inline.view.dom.hidden = true;
-      this.views.old.dom.hidden = false;
-      this.views.new.dom.hidden = false;
-      this.#aligner.paused = false;
-      this.#reach();
-      this.#drawSeam();
-      this.#moveBoxes();
+      this.#drawLayout('split');
       // The cursor stays on screen as the sides settle, as after any key that moves it.
       this.#aligner.follow();
       shown = from.side;
@@ -4338,6 +4362,122 @@ class View implements DiffView {
     // Drawn now, where the editor scrolls to, so it can take focus.
     this.#viewOf(shown).lineBlockAtHeight(0);
     peek.block.focus();
+  }
+
+  /**
+   * Draws the layout the box now fits, as it changes width, keeping what the reader reads where it
+   * is: the line at the top of the screen as they saw it, or the line the view holds there, stays,
+   * and is held as the new layout settles, the rows level side by side; a jump's line stays a
+   * jump's. The cursor keeps its line and column, off screen or on, and focus stays where it was:
+   * in the code, it's in the code drawn now. Lines, threads and hints waiting to change on screen
+   * change with it, and the threads' popover closes, as with any change of layout.
+   */
+  #refitLayout(): void {
+    // What the reader saw at the top, before the new width wrapped the lines anew.
+    const top = this.#seenTop() ?? this.viewport();
+    const jumped = this.#jumped !== undefined && this.#samePlace(this.#jumped.at, top.at);
+    this.#beside.close();
+    this.#letThreadsGo('all', false);
+    this.#letHintsGo();
+    this.#inlineTop = undefined;
+    const pane = this.#activePane();
+    const view = this.#viewOf(pane);
+    const focused = view.hasFocus;
+    const { head } = view.state.selection.main;
+    const from = view.state.doc.lineAt(head);
+    const cursor = this.#placeAt(pane, from.number);
+    // The cursor moves with the layout, not the reader: a key just pressed, as one that opened a
+    // panel and narrowed the box, doesn't bring it on screen.
+    this.#aligner.unfollow();
+    this.#drawLayout(this.#fitted());
+    const shown: Pane = this.#pane === 'inline' ? 'inline' : cursor.side;
+    const next = this.#viewOf(shown);
+    const line = next.state.doc.line(this.#docLine(shown, cursor));
+    next.dispatch({ selection: { anchor: line.from + Math.min(head - from.from, line.length) } });
+    if (focused) next.focus();
+    this.#lastPane = shown;
+    this.#hold(top, jumped);
+    this.#putBack(top);
+  }
+
+  /**
+   * While the view is putting a line back at the top, or has just, the line: that's where it
+   * belongs, unless the screen has since scrolled away from it.
+   */
+  #heldTop(): Viewport | undefined {
+    const held = this.#holding;
+    if (!held || performance.now() >= this.#holdEnds || this.#scrolledAway(held)) return undefined;
+    return { at: held.at, offset: this.dom.getBoundingClientRect().top - this.#heldAt(held.at) };
+  }
+
+  /**
+   * What the reader saw at the top of the screen, though the lines may have wrapped anew at the
+   * box's new width since: a jump's line, where the jump put it; a line the view holds there; or
+   * the line the layout shown noted, if they've wrapped anew: side by side, the first line the
+   * spacer pass last left on screen, and inline, the one `#rewrappedTop` puts back.
+   */
+  #seenTop(): Viewport | undefined {
+    const jumped = this.#jumped;
+    if (jumped && this.#atOf(jumped.at)) {
+      return {
+        at: jumped.at,
+        offset: this.dom.getBoundingClientRect().top - this.#jumpedAt(jumped),
+      };
+    }
+    const held = this.#heldTop();
+    if (held) return held;
+    if (this.#pane === 'inline') return this.#rewrappedTop();
+    const kept = this.#aligner.seenTop();
+    if (!kept) return undefined;
+    // Noted before any change to the file since, so no further than its end.
+    const { doc } = this.#viewOf(kept.side).state;
+    const line = doc.lineAt(Math.min(kept.pos, doc.length)).number;
+    return { at: this.#spot(this.#placeAt(kept.side, line)), offset: -kept.offset };
+  }
+
+  /**
+   * Puts the line `#hold` holds, `top`, where it goes before the frame is drawn, the layout having
+   * just changed: the editors measure what they now draw, the sides line up, and the scroll takes
+   * what the line moved, again as what comes on screen is measured. The hold keeps it there after.
+   */
+  #putBack(top: Viewport): void {
+    const found = this.#atOf(top.at);
+    if (!found) return;
+    const split = this.#pane === 'split';
+    const pane: Pane = split ? found.place.side : 'inline';
+    const view = this.#viewOf(pane);
+    for (let tries = 0; tries < 3; tries += 1) {
+      for (const each of this.#panes()) {
+        this.#viewOf(each).requestMeasure();
+        this.#viewOf(each).lineBlockAtHeight(0);
+      }
+      if (split) this.#aligner.run();
+      const moved = this.#lineTop(pane, view, found.place) - this.#heldAt(top.at);
+      if (Math.abs(moved) < 0.5) return;
+      if (this.#jumped) this.#makeRoom(moved);
+      this.#scrollBy(moved);
+    }
+  }
+
+  /** Draws `layout`'s editors, and hides the other's, with the edge and the boxes as it has them. */
+  #drawLayout(layout: DiffLayout): void {
+    if (layout === 'inline') {
+      const inline = this.#inline ?? this.#makeInline();
+      this.#pane = 'inline';
+      this.#aligner.paused = true;
+      this.views.old.dom.hidden = true;
+      this.views.new.dom.hidden = true;
+      inline.view.dom.hidden = false;
+    } else {
+      this.#pane = 'split';
+      if (this.#inline) this.#inline.view.dom.hidden = true;
+      this.views.old.dom.hidden = false;
+      this.views.new.dom.hidden = false;
+      this.#aligner.paused = false;
+    }
+    this.#reach();
+    this.#drawSeam();
+    this.#moveBoxes();
   }
 
   /**
@@ -4579,7 +4719,9 @@ class View implements DiffView {
    * a jump from line `from` of `start`.
    */
   #moveTo(pane: Pane, line: number, from: number, start: Pane = pane): void {
+    // A jump of its own: what was held at the top, or put there by a jump before, isn't any more.
     this.#holding = undefined;
+    this.#jumped = undefined;
     const view = this.#viewOf(pane);
     const before = this.#placeAt(start, from);
     this.#aligner.follow();

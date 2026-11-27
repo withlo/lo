@@ -2,7 +2,14 @@
 // main, on the image scheme, never from its host. Main fetches each from GitHub's image hosts and
 // serves it once it has checked it's an image.
 
-import { avatarImageAddress, botImageAddress, postImageAddress } from '../ipc/images.ts';
+import { redrawPictures } from '@lo/ui';
+
+import {
+  avatarImageAddress,
+  botImageAddress,
+  postImageAddress,
+  readImageAddress,
+} from '../ipc/images.ts';
 
 /**
  * Where to load an image in a post from, in view `view` of a pull request's tab, whose account
@@ -33,6 +40,30 @@ export function avatarImage(account: Account, size: number): string | undefined 
   if (account.type === 'User' || account.type === 'Organization') {
     return avatarImageAddress(account.login, pixels);
   }
-  if (account.type === 'Bot') return botImageAddress(account.login, pixels);
+  if (account.type === 'Bot') {
+    const slug = account.login.replace(/\[bot\]$/, '').toLowerCase();
+    return botImageAddress(account.login, pixels, botChanges.get(slug));
+  }
   return undefined;
+}
+
+/**
+ * How many times each bot's picture changed while the window was open, by its slug in lowercase:
+ * its avatars' addresses say so, since the window keeps a picture it has drawn by its address.
+ */
+const botChanges = new Map<string, number>();
+
+/**
+ * Draws again each avatar of bot `slug`'s, its app's slug in lowercase, whose picture changed from
+ * the one drawn: at a new address, which loads it anew from main, which fetches it from where it is
+ * now. Its avatars drawn later have the new address too.
+ */
+export function redrawBot(slug: string): void {
+  const changes = (botChanges.get(slug) ?? 0) + 1;
+  botChanges.set(slug, changes);
+  redrawPictures((address) => {
+    const asked = readImageAddress(address);
+    if (asked?.kind !== 'bot' || asked.login.toLowerCase() !== slug) return undefined;
+    return botImageAddress(asked.login, asked.size, changes);
+  });
 }

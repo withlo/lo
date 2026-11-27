@@ -590,7 +590,8 @@ What an action did.
 | Write                 | For                                                                                                     |
 | --------------------- | ------------------------------------------------------------------------------------------------------- |
 | 20 s, 5 min, 2 h, 3 d | The units, after a space. The largest whole unit only: never “2 h 14 min”.                              |
-| just now              | Under a minute ago.                                                                                     |
+| just now              | Under a minute ago, after other words: “Checked just now”.                                              |
+| Just now              | The same, standing alone, as a fact’s value: Built “Just now”. `agoAlone` writes it.                    |
 | 5 min ago, 2 h ago    | The past.                                                                                               |
 | Checked 5 min ago     | When something was last read from GitHub. Never “Updated” or “Refreshed”.                               |
 | Nov 12                | More than 30 days ago: the date.                                                                        |

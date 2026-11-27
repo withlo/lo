@@ -67,6 +67,15 @@ export function ago(at: number, now: number): string {
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year });
 }
 
+/**
+ * {@link ago} where it stands alone, as a fact's value does, and so starts with a capital: "Just
+ * now", then "5 min ago", "2 h ago", "Nov 12". In a line, after other words, it's {@link ago}'s.
+ */
+export function agoAlone(at: number, now: number): string {
+  const said = ago(at, now);
+  return `${said.charAt(0).toUpperCase()}${said.slice(1)}`;
+}
+
 let timeFormat: Intl.DateTimeFormat | undefined;
 
 /** A time of day, as the system writes one: "14:05", or "2:05 PM". */

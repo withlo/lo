@@ -1,8 +1,8 @@
 // Settings' Keyboard rows that are this feature's: the keymap file, where it is and what's wrong
 // with it, and the list of every key. Vim keys' row is the comments feature's.
 
-import { Setting, SettingsCommand } from '@lo/ui';
-import { Fragment, useSyncExternalStore } from 'react';
+import { Setting, SettingsCommand, WholePath } from '@lo/ui';
+import { useSyncExternalStore } from 'react';
 
 import { keymapState, subscribeKeymap } from '../../../window/commands/keymap.ts';
 import { useKeys } from '../../../window/commands/registry.ts';
@@ -31,19 +31,7 @@ function KeymapFile({ label, description }: { label: string; description: string
       }
       below={
         path === undefined ? undefined : (
-          // It wraps after a slash, and mid-name only where a name is longer than the line.
-          <span className="break-words text-fg-muted code-small">
-            {path.split('/').map((part, index) => (
-              <Fragment key={index}>
-                {index > 0 && (
-                  <>
-                    /<wbr />
-                  </>
-                )}
-                {part}
-              </Fragment>
-            ))}
-          </span>
+          <WholePath path={path} className="text-fg-muted code-small" />
         )
       }
     >

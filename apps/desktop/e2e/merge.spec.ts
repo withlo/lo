@@ -56,6 +56,8 @@ test('the header gives up its branches and the merge status its detail whole as 
   await test.step('the header gives up its branches and the detail whole as the window narrows, and has them back as it widens', async () => {
     const detail = status(page).locator('[data-gives="detail"]');
     await expect(detail).toHaveText('1 check failed · 1 unresolved · review required');
+    // Given up, the detail is out of sight, still there to be heard: nothing else says it.
+    const drawnWidth = () => detail.evaluate((each) => each.getBoundingClientRect().width);
     // The branches, each a chip, and the words and the arrow between them.
     const branches = header(page).locator('[data-gives="branches"]');
     await expect(branches.first()).toBeVisible();
@@ -66,11 +68,15 @@ test('the header gives up its branches and the merge status its detail whole as 
 
     // Narrow, each goes whole, never cut to a letter.
     await sizeWindow(app, 760, 800);
-    await expect(detail).toBeHidden();
+    await expect.poll(drawnWidth).toBeLessThanOrEqual(1);
+    // Still part of what the status says: gone from the page, it wouldn't be.
+    await expect(status(page)).toHaveAccessibleName(
+      /1 check failed · 1 unresolved · review required/,
+    );
     await expect.poll(shown).toBe(0);
     // Wide again, both come back, though nothing in their rows was drawn again.
     await sizeWindow(app, 1440, 900);
-    await expect(detail).toBeVisible();
+    await expect.poll(drawnWidth).toBeGreaterThan(1);
     await expect.poll(shown).toBe(all);
   });
 

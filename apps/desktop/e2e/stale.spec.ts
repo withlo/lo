@@ -340,8 +340,8 @@ test('says it was written for r1 from its first frame, and flags the block on li
 test.describe('while the local copy comes late', () => {
   test.use({ cassette: 'app_e2e_late', lateRemote: true });
 
-  // Narrow, the actions go one above the other, under four lines kept for them, which a wide window
-  // doesn't need: beside what changed since, it takes both its lines.
+  // What changed since has its line held from the first frame, beside the button or, where the
+  // button doesn't fit beside the text, over it.
   test('nothing on screen moves from the first frame as what changed since fills in, at 760 wide', async ({
     app,
     page,

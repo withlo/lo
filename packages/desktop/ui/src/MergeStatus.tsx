@@ -1,8 +1,8 @@
 import { cva } from 'class-variance-authority';
-import { useRef, type Ref } from 'react';
+import { useRef, type Ref, type RefObject } from 'react';
 
 import { withoutBidi } from './controls.ts';
-import { useGiveUp } from './giveUp.ts';
+import { givenUp } from './cut.ts';
 import { Key, keyAria } from './Key.tsx';
 import { Tooltip } from './Tooltip.tsx';
 
@@ -78,15 +78,14 @@ export interface MergeStatusProps {
 }
 
 const line =
-  'inline-flex h-control-h min-w-0 items-center rounded-sm border border-border px-8 whitespace-nowrap text-fg-muted text-small';
-
-/** What the status gives up where its detail can't show a few letters: the detail, whole. */
-const DETAIL_STEPS = ['detail'] as const;
+  'inline-flex h-control-h flex-none items-center rounded-sm border border-border px-8 whitespace-nowrap text-fg-muted text-small';
 
 /**
  * Whether a pull request can merge, as a dot and one line in the header: a strong verdict, then the
  * reasons or the method after it. A click, or its key, opens the merge panel, which lists every
- * reason.
+ * reason. It's never cut: the row it's in gives up its key chip, its detail (`detail`) and then its
+ * verdict (`title`), each whole, which leaves the dot alone. Both are still heard, and its tooltip
+ * says them.
  */
 export function MergeStatus({
   kind,
@@ -100,26 +99,35 @@ export function MergeStatus({
 }: MergeStatusProps) {
   const said = withoutBidi(verdict);
   const reasons = detail === undefined ? undefined : withoutBidi(detail);
-  const row = useRef<HTMLSpanElement>(null);
-  useGiveUp(row, DETAIL_STEPS);
+  const words = useRef<HTMLElement>(null);
+  const more = useRef<HTMLElement>(null);
   const content = (
-    <span ref={row} className="give-up flex min-w-0 items-center gap-8">
+    <span className="flex items-center gap-8">
       {/* A new dot as it lands, so its fill plays then and only then. */}
       <MergeDot key={landed ? 'landed' : 'still'} kind={kind} fills={landed} />
-      <strong className="flex-none font-semibold text-fg">{said}</strong>
+      <strong ref={words} data-gives="title" className="flex-none font-semibold text-fg">
+        {said}
+      </strong>
       {reasons !== undefined && reasons !== '' && (
-        // Cut short no further than a few letters, then given up whole.
-        <span data-gives="detail" className="min-w-cut truncate">
+        // Given up, still heard: nothing else says it.
+        <span ref={more} data-gives="detail" data-heard className="flex-none">
           {reasons}
         </span>
       )}
       {keys !== undefined && onClick !== undefined && <Key keys={keys} decorative />}
     </span>
   );
-  // Not a control, with nothing to name: what it says is all there is.
-  if (onClick === undefined) return <span className={line}>{content}</span>;
+  // Not a control, with nothing to name: what it says is all there is, and its tooltip once it's
+  // given up some of it.
+  if (onClick === undefined) {
+    return (
+      <Tooltip label={reasons ? `${said} · ${reasons}` : said} cut>
+        <span className={line}>{content}</span>
+      </Tooltip>
+    );
+  }
   return (
-    <Tooltip label="Merge panel" keys={keys}>
+    <Tooltip label={<StatusTip said={said} reasons={reasons} parts={[words, more]} />} keys={keys}>
       <button
         ref={ref}
         type="button"
@@ -133,4 +141,22 @@ export function MergeStatus({
       </button>
     </Tooltip>
   );
+}
+
+/**
+ * The status's tooltip, read as it opens: what it's a control for, or, once the row it's in has
+ * given up its detail or its verdict, what it says: the verdict and the reasons.
+ */
+function StatusTip({
+  said,
+  reasons,
+  parts,
+}: {
+  said: string;
+  reasons: string | undefined;
+  parts: readonly RefObject<HTMLElement | null>[];
+}) {
+  const cut = parts.some(({ current }) => current !== null && givenUp(current));
+  if (!cut) return <span>Merge panel</span>;
+  return <span>{reasons ? `${said} · ${reasons}` : said}</span>;
 }

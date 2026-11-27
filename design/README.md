@@ -236,9 +236,16 @@ where the action's target is.
   its tooltip. What's cut short keeps `min-w-cut` at least, 48 px or all of its words where they're
   shorter, so `main` isn't padded, and what can't keep that goes whole: the PR header gives up its
   branches, with "wants to merge" and the arrow, and the merge status its detail, never cut to a
-  letter. The diff bar is the revisions note, then a `HintRow` of Compare revisions and the view's
-  own controls, 16 px apart: narrow, it drops the hint's chips, then the hint, so no two groups
-  touch.
+  letter. What it gives up that nothing else in the row says, as the merge status's detail or the
+  note's facts, is still heard (`data-heard`), as a given-up title is. The PR header's first row
+  cuts its title, and gives up "Submit review…"'s key chip, then the merge status's detail, then its
+  words, which leave its ball with the verdict and the reasons as its tooltip, so nothing overlaps
+  it. The diff bar is the revisions note, then Compare revisions and the view's own controls, 16 px
+  apart, one `HintRow`: narrow, it drops the hint's chips, then the hint, then the note's facts
+  after its first `·`, last first, so "base → r2" never cuts and no two groups touch. A diff's file
+  header gives up what follows its name (the counts, where a rename was, the tags), then cuts its
+  folders, then drops them, leaving the name with the whole path as its tooltip, and only then cuts
+  the name at its end; its end, from the threads to the `⋯`, is never cut.
 - **A choice of two to four is one `SegmentedControl`,** never buttons or pills drawn by hand: the
   header's view switch, the Files panel's Tree and Review order, the threads' filter, a comment
   box's Write and Preview, and Settings' choices are all one. Its thumb slides to the segment
@@ -716,9 +723,11 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
   (`StatusActions` of `StatusCommand`s, a command's button with its key in its tooltip), or a
   `Problem` once it failed. Work under way names what it works on and how far it has got there
   ("Fetching rozed-dev/e2e · 62%"), not the label again. A path is code, whole, with a way to show
-  it in Finder and to copy it. The details are as wide as they say, 280 to 420 px. Items keep their
-  place: one that has nothing to say yet shows its ring, and one that comes and goes, as "Rate limit
-  low", goes last on the left.
+  it in Finder and to copy it: `WholePath`, which wraps only after a `/`, never at a hyphen or a
+  space in a name. A fact is a fact once: no count beside a list that says it again, as Files beside
+  one language would, and a commit or a folder is a fact, not the line of state. The details are as
+  wide as they say, 280 to 420 px. Items keep their place: one that has nothing to say yet shows its
+  ring, and one that comes and goes, as "Rate limit low", goes last on the left.
 - The body is one row: the left panel (stack, then files), one view or two, and the threads panel.
   Two views are a reading view, Overview or Timeline, with the diff beside it on the right, inline:
   Code beside. Nothing else tiles. Each panel, and Code beside, opens and closes with a key and with
@@ -740,8 +749,12 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
   on the seam (a header, the `+`, a marker, a fold, a thread, a box), which keeps the pointer and
   every press, even one that arrived under a pointer at rest. It shares the diff's width: each side
   keeps `lo-side-min-w` or a quarter of the diff, whichever is wider, and at twice `lo-side-min-w`
-  or less the sides split evenly with no handle. As it moves, the first row under the pinned header
-  keeps its place and the rows stay level in every frame. Sides let go at even keep no share, as the
+  the sides split evenly with no handle. A diff narrower than that draws inline, without writing the
+  layout asked for (`diff.layout`), and side by side again as soon as it's that wide, the line at
+  the top of the screen staying where it is. Meanwhile Side by side and Inline refuse, "Widen the
+  window first": the menu dims them and the palette leaves them out, while Settings' Diff layout,
+  the preference, still changes it. As the seam moves, the first row under the pinned header keeps
+  its place and the rows stay level in every frame. Sides let go at even keep no share, as the
   default.
 - Widths never animate: a width re-wraps code. A change lands in one frame, and what arrives fades
   in with Swap. Nothing draws under its minimum: `fit` puts away the threads panel, then the left
@@ -826,8 +839,14 @@ tokens. Their code is the source for how each one looks.
 Build new screens from these. If something new is needed, make it from the same tokens and keep it
 to one job.
 
-An `Avatar` whose picture the window already holds shows it from the first frame, with no initials
-first, so a card drawn again doesn't flash them.
+An `Avatar` with its picture's address is an empty disc on `lo-bg-raised` until the picture has
+loaded, which then fades in over it in one Swap. Its initials show only with no address, or once the
+picture can't be loaded, so a picture on its way never shows as someone's letters. One whose picture
+the window already holds shows it from the first frame, and one the window has drawn before, as on a
+card drawn again, comes back without the Swap. Each avatar drawn with a picture new to the window
+fades in, however many share its address. A picture that changes behind its address, as a bot's does
+when its app's moves, is drawn again at a new address (`redrawPictures`), since the window keeps
+each picture it has drawn by its address: the empty disc, then the Swap, once.
 
 ## Code and diffs
 
@@ -976,6 +995,10 @@ editor given as its child.
   assume the default five.
 - Code blocks show the real code at the overview's commit, as a diff. Flag lines that changed since;
   say plainly when code is missing or a reference doesn't resolve.
+- An overview written for an older push says so over its text (`OutOfDate`), with Compare beside.
+  Where the button doesn't fit beside the text, measured as `useGiveUp` measures, never at a width,
+  it's one column: the icon centred on the first line, the button `lo-sp-8` under the last line, its
+  left edge on the text's, and no more room held than its lines take.
 - Figures use the `fig-*` colors only. `figures.md` is the contract for agents that draw them.
 
 ## Writing

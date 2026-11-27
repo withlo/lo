@@ -363,27 +363,54 @@
   background: var(--lo-diff-file-header-bg);
   box-shadow: inset 0 -1px 0 var(--lo-border-subtle);
 }
-.lo-diffhead__start { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 0 1 auto; }
-.lo-diffhead .lo-path { display: flex; flex: 0 1 auto; }
-.lo-diffhead .lo-path b { flex: none; }
-.lo-diffhead .lo-path__dir { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-/* A rename's old path gives way before the folder does. */
+/* Each group is as tall as the band, so what it cuts at its end is never cut above or below. */
+.lo-diffhead__start { display: flex; align-items: center; align-self: stretch; gap: 8px; min-width: 0; flex: 0 1 auto; overflow: hidden; }
+/* Whole until its note is given up, so a path too long for its note never runs under it. */
+.lo-diffhead .lo-path { display: flex; flex: none; overflow: visible; line-height: 16px; }
+.lo-diffhead .lo-path > * { flex: none; overflow: hidden; text-overflow: ellipsis; }
+/* Where a rename's path was, after it. */
 .lo-path__was {
-  flex: 0 1000 auto; min-width: 0;
-  overflow: hidden; text-overflow: ellipsis;
+  flex: none;
   font: 400 12px/1 var(--lo-font-mono); font-variant-ligatures: none;
   color: var(--lo-fg-subtle);
+}
+/*
+ * Narrow, a header gives up what it draws, a step at a time, each step whole, and nothing past its
+ * end (`fitHeader` measures, and names each step given up in `data-gave-up`, on the band or, in the
+ * pinned copy side by side, on each half):
+ * 1. `note`: what's after the name goes, the counts and where a rename was, and the tags and
+ *    "Changed since viewed" (still heard) at the end;
+ * 2. `folders`: the folder is cut short, keeping `min-w-cut`, and then goes, leaving the name, with
+ *    the whole path as its tooltip;
+ * 3. only then is the name cut at its end, keeping `min-w-cut`.
+ * The end group, from the threads to the ⋯, is never cut.
+ */
+:is(.lo-diffhead[data-gave-up~="note"], .lo-diffhead [data-gave-up~="note"]) [data-gives="note"]:not(.lo-diffhead__changed),
+:is(.lo-diffhead[data-gave-up~="folders"], .lo-diffhead [data-gave-up~="folders"]) [data-gives="folders"] {
+  display: none;
+}
+:is(.lo-diffhead[data-gave-up~="note"], .lo-diffhead [data-gave-up~="note"]) .lo-diffhead__changed {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
+}
+:is(.lo-diffhead[data-gave-up~="note"], .lo-diffhead [data-gave-up~="note"]) .lo-path {
+  flex: 0 1 auto; min-width: 0;
+}
+:is(.lo-diffhead[data-gave-up~="note"], .lo-diffhead [data-gave-up~="note"]) .lo-path__dir,
+:is(.lo-diffhead[data-gave-up~="folders"], .lo-diffhead [data-gave-up~="folders"]) .lo-path b {
+  flex: 0 1 auto; min-width: calc-size(max-content, min(size, var(--lo-sp-48)));
 }
 .lo-diffhead.is-deleted .lo-path b {
   color: var(--lo-fg-muted);
   text-decoration: line-through; text-decoration-color: var(--lo-fg-subtle);
 }
-/* Narrow, the end group never wraps: its tags give way first. */
-.lo-diffhead .lo-filehead__end { gap: 8px; flex: 0 1 auto; min-width: 0; }
+/*
+ * The end group never wraps, and is never cut: beside the start, it keeps its room, and alone in
+ * its column, side by side, it's as wide as the column, and gives up its tags whole.
+ */
+.lo-diffhead .lo-filehead__end { gap: 8px; flex: none; align-self: stretch; overflow: hidden; }
+.lo-diffhead--end > .lo-filehead__end { flex: 0 1 auto; min-width: 0; }
 .lo-diffhead .lo-filehead__end > * { flex: none; }
 .lo-diffhead .lo-filehead__end > .lo-diffhead__tags {
-  flex: 0 1 auto; min-width: 0;
-  overflow: hidden; text-overflow: ellipsis;
   font: var(--lo-text-micro); color: var(--lo-fg-muted);
 }
 /* The tree's own letter for the change. */
