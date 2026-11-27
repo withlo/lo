@@ -23,6 +23,7 @@
 // read needs; the room goes once it's off screen, or as what grows later makes it unneeded.
 
 import { KEY_EVENT } from '../commands/index.ts';
+import { SHOW_EVENT, type Shown, shownIn } from '../reveal.ts';
 
 /** What keeps an overview's place: told as a block in it changes height. */
 interface Place {
@@ -274,6 +275,19 @@ export function holdPlace(scroller: HTMLElement): () => void {
 // the reader asks; contents grown shorter leave room under them. It takes its contents' height once
 // that moves nothing again, when the reader asks, or when its width changes, which only the
 // reader's window or page does.
+//
+// It takes it too as soon as what's in it shows something in the part cut off (`askToShow`): the
+// cursor of its code going there, by any key, or a thread or a comment box opening on a line there,
+// however it was asked for. It does at once, before what opens is placed, so that opens where it
+// belongs and its opener brings it into view as it always does. Something shown as the contents
+// grow, as a box opening again as the block's code comes, keeps them from being cut off: what's
+// asked to be shown counts until two frames on, by when what it grew is laid out and measured.
+
+/** Whether what `shown` says is shown reaches down past `foot` on the page. */
+function reachesPast(shown: Shown, foot: number): boolean {
+  const span = shown();
+  return span !== undefined && span.bottom > foot + 0.5;
+}
 
 /** A block's height, held: `release` gives it its contents' height now, as the reader asked. */
 export interface HeldHeight {
@@ -284,7 +298,8 @@ export interface HeldHeight {
 /**
  * Holds `box`'s height as its contents, `inner`, change size, while taking their height would move
  * something on screen in `scroller`, and says through `cut` whether contents taller than it are cut
- * off. With no `scroller`, the screen is the window's.
+ * off, which they are at the foot of the element around them. With no `scroller`, the screen is the
+ * window's. What's shown in it (`SHOW_EVENT`) in the part cut off, or that would be, lets it go.
  */
 export function holdHeight(
   box: HTMLElement,
@@ -340,14 +355,25 @@ export function holdHeight(
     return view.end <= bottom + 0.5;
   };
 
-  /** Takes the contents' height, unless that would move something on screen and nobody asked. */
+  /** What was shown in it lately while it wasn't cut, until two frames on. */
+  const showing = new Set<Shown>();
+  const page = box.ownerDocument.defaultView ?? window;
+  const frames = new Set<number>();
+
+  /**
+   * Takes the contents' height, unless that would move something on screen and nobody asked, or
+   * showed something in them that it would cut off.
+   */
   const settle = (asked: boolean) => {
     const now = natural();
     if (Math.abs(now - held) < 0.5) {
       setCut(false);
       return;
     }
-    if (!asked && !taking(now)) {
+    const shown =
+      now > held &&
+      [...showing].some((each) => reachesPast(each, box.getBoundingClientRect().top + held));
+    if (!asked && !shown && !taking(now)) {
       setCut(now > held);
       return;
     }
@@ -379,12 +405,39 @@ export function holdHeight(
         });
   seen?.observe(box);
 
+  // Something shown in the part cut off lets it go, as the reader's asking does. Not cut, what's
+  // shown counts until two frames on: contents that grow past it in that time aren't cut off.
+  const show = (event: Event) => {
+    const each = shownIn(event);
+    if (!each) return;
+    if (isCut) {
+      const clip = inner.parentElement ?? box;
+      if (reachesPast(each, clip.getBoundingClientRect().bottom)) settle(true);
+      return;
+    }
+    showing.add(each);
+    const first = page.requestAnimationFrame(() => {
+      frames.delete(first);
+      const second = page.requestAnimationFrame(() => {
+        frames.delete(second);
+        showing.delete(each);
+      });
+      frames.add(second);
+    });
+    frames.add(first);
+  };
+  box.addEventListener(SHOW_EVENT, show);
+
   return {
     release: () => settle(true),
     stop() {
       contents.disconnect();
       sized.disconnect();
       seen?.disconnect();
+      box.removeEventListener(SHOW_EVENT, show);
+      for (const frame of frames) page.cancelAnimationFrame(frame);
+      frames.clear();
+      showing.clear();
       box.style.height = '';
     },
   };

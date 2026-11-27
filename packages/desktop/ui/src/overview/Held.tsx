@@ -19,7 +19,9 @@ function scrollerOf(element: HTMLElement): HTMLElement | null {
  * A block of the overview whose contents change size by themselves, as a code block's do when its
  * code comes: it takes their height whenever that moves nothing on screen (`hold.ts`). Wholly on
  * screen with something under it, it keeps its height instead, and contents grown taller are cut
- * off above a row of its own, in the same room, with a button that shows them whole.
+ * off above a row of its own, in the same room, with a button that shows them whole. So does
+ * anything in it shown in the part cut off, as its code's cursor going there, or a thread or a
+ * comment box opening on a line there (`askToShow`).
  */
 export function Held({ children }: { children: ReactNode }) {
   const box = useRef<HTMLDivElement>(null);

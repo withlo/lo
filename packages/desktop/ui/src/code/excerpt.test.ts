@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { EditorView } from '@codemirror/view';
+import { BlockInfo, BlockType, EditorView } from '@codemirror/view';
 import { diffText } from '@lo/diff';
 import tokenNames from '@lo/design/syntax.json' with { type: 'json' };
 import { getCM, Vim } from '@replit/codemirror-vim';
@@ -15,6 +15,7 @@ import {
 } from 'vitest';
 
 import { findScope, isKeySource, KEY_EVENT } from '../commands/index.ts';
+import { SHOW_EVENT, shownIn } from '../reveal.ts';
 import type {
   ComposerEvents,
   ExcerptEvents,
@@ -127,13 +128,55 @@ function open(on: ExcerptEvents = events(), init: Partial<ExcerptInit> = {}): Ex
   return view;
 }
 
-/** The excerpt's editor, as only this folder's tests may reach it. */
-function editor(): EditorView {
-  const content = parent!.querySelector<HTMLElement>('.cm-content');
+/** The excerpt's editor, in `root`, as only this folder's tests may reach it. */
+function editor(root: Element = parent!): EditorView {
+  const content = root.querySelector<HTMLElement>('.cm-content');
   if (!content) throw new Error('The excerpt has no editor.');
   const found: unknown = Reflect.get(Reflect.get(Reflect.get(content, 'cmTile'), 'root'), 'view');
   if (!(found instanceof EditorView)) throw new Error('The excerpt has no editor.');
   return found;
+}
+
+/**
+ * The document lines the excerpt in `root` says are shown (`askToShow`) as `run` runs, in turn, as
+ * where they are says; each with what `then` says as it's said, if it's given. Where they are is
+ * read laid out as jsdom can't: each line a row of text 10 pixels tall, line `n` from `10n` on the
+ * page.
+ */
+function shownLines(root: Element, run: () => unknown, then?: () => string): string[] {
+  const code = editor(root);
+  const lineBlockAt: unknown = Reflect.get(EditorView.prototype, 'lineBlockAt');
+  const said: string[] = [];
+  const listen = (event: Event) => {
+    const shown = shownIn(event);
+    if (!shown) return;
+    Object.defineProperty(code, 'documentTop', { get: () => 0, configurable: true });
+    const rows = vi.spyOn(code, 'lineBlockAt').mockImplementation((pos) => {
+      const block: unknown =
+        typeof lineBlockAt === 'function' ? Reflect.apply(lineBlockAt, code, [pos]) : undefined;
+      if (!(block instanceof BlockInfo)) throw new Error('The editor has no line there.');
+      const row: unknown = Object.create(block, {
+        top: { value: code.state.doc.lineAt(pos).number * 10 },
+        height: { value: 10 },
+        type: { value: BlockType.Text },
+      });
+      if (!(row instanceof BlockInfo)) throw new Error('The line could not be laid out.');
+      return row;
+    });
+    const span = shown();
+    rows.mockRestore();
+    Reflect.deleteProperty(code, 'documentTop');
+    if (!span) return;
+    const line = Math.round(span.top / 10);
+    said.push(then ? `${line} ${then()}` : `${line}`);
+  };
+  root.addEventListener(SHOW_EVENT, listen);
+  try {
+    run();
+  } finally {
+    root.removeEventListener(SHOW_EVENT, listen);
+  }
+  return said;
 }
 
 /** Vim in the excerpt's editor. */
@@ -717,6 +760,28 @@ describe('threads and comment boxes', () => {
     expect(asked).toEqual(['draw here', 'update here collapsed', 'destroy here']);
   });
 
+  test('the cursor coming to a line, and a thread or a box opening under it, say the line is shown', () => {
+    const shown = open();
+    const { render } = plain();
+    shown.setThreads([{ ...thread('here', 6), open: false }], render);
+    // New line 4, old line 5, new line 5, then new 6 on: new line 6 is the fourth, 8 the sixth.
+    expect(shownLines(parent!, () => shown.reveal({ kind: 'line', at: at(8) }))).toEqual(['6']);
+    // By a key: `G` to the last line, the sixteenth.
+    shown.focus();
+    expect(shownLines(parent!, () => shown.passKeys(['G']))).toEqual(['16']);
+    // A thread opening, before the box under line 9, once it's drawn.
+    expect(shownLines(parent!, () => shown.openThread('here', true))).toEqual(['4']);
+    expect(shownLines(parent!, () => shown.openThread('here', false))).toEqual([]);
+    const options = { focus: false };
+    expect(
+      shownLines(
+        parent!,
+        () => shown.compose(at(9), '', composerEvents(), undefined, options),
+        () => `${boxes().length} box`,
+      ),
+    ).toEqual(['7 1 box']);
+  });
+
   test('a box under a thread acts on it, and Esc Esc closes it, keeping the draft', () => {
     const shown = open();
     shown.setThreads([thread('here', 6)], plain().render);
@@ -1127,6 +1192,26 @@ describe('threads beside lines', () => {
     excerpt.pinThread('t0');
     excerpt.passKeys(['j', 'j', 'j']);
     expect(excerpt.pinned()).toEqual([]);
+  });
+
+  test('a thread’s popover, or a box in it, says its line is shown before it opens there', () => {
+    const { shown } = inScroll(1);
+    const { excerpt, host } = shown[0]!;
+    const pinned = () => (excerpt.popoverPinned() ? 'pinned' : 'closed');
+    // New line 6 is the excerpt's fourth; the cursor comes to it as the popover is pinned.
+    expect(shownLines(host, () => excerpt.pinThread('t0'), pinned)).toEqual([
+      '4 closed',
+      '4 pinned',
+    ]);
+    excerpt.closePopover();
+    // A new comment's box on new line 8, the sixth.
+    const said = shownLines(
+      host,
+      () => excerpt.compose({ file: 'a0', side: 'new', line: 8 }, '', composerEvents()),
+      pinned,
+    );
+    expect(said[0]).toBe('6 closed');
+    expect(said.at(-1)).toBe('6 pinned');
   });
 
   test('switching between lines draws its threads under them, and back takes them away', () => {

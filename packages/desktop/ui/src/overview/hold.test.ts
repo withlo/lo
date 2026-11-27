@@ -7,12 +7,14 @@
 // screen as its contents change size: it takes their height unseen, off screen, past the screen's
 // bottom edge, above its top with the scroll taking the change, and with nothing under it; wholly
 // on screen with more under it, contents grown taller are cut off until the reader asks to see
-// them whole, its width changes, or taking their height moves nothing.
+// them whole, its width changes, taking their height moves nothing, or something in them is shown
+// in the part cut off, which also keeps contents that grow past it as it's shown from being cut.
 
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { FakeIntersectionObserver, FakeResizeObserver, resize } from '../../test/figures.ts';
 import { KEY_EVENT } from '../commands/index.ts';
+import { askToShow } from '../reveal.ts';
 import { holdHeight, holdPlace } from './hold.ts';
 
 /**
@@ -274,6 +276,7 @@ function blockOf(contents: number, place: { top?: number; end?: number } = {}) {
   onTestFinished(() => held.stop());
   return {
     box,
+    inner,
     held,
     cuts,
     height,
@@ -505,9 +508,59 @@ describe('a block’s height', () => {
     expect(block.height()).toBe(300);
   });
 
+  it('shows its contents whole at once as something in them is shown in the part cut off', () => {
+    // Its foot is at 150 on the page, where its contents are cut off.
+    const block = blockOf(100, { top: 50 });
+    block.grow(300);
+    expect(block.cuts).toEqual([true]);
+    // The cursor on a line in view, or something no longer drawn: it stays cut.
+    askToShow(block.inner, () => ({ top: 120, bottom: 140 }));
+    askToShow(block.inner, () => undefined);
+    expect(block.height()).toBe(100);
+    // A line that goes on past its foot, as one the cursor came to or a thread opens on: whole
+    // before anything opens there.
+    askToShow(block.inner, () => ({ top: 140, bottom: 160 }));
+    expect(block.height()).toBe(300);
+    expect(block.cuts).toEqual([true, false]);
+    // Nothing else changed: grown on screen again, it's cut again.
+    block.grow(400);
+    expect(block.height()).toBe(300);
+    expect(block.cuts).toEqual([true, false, true]);
+  });
+
+  it('takes contents that grow past what was shown in them in the last two frames, uncut', () => {
+    const frames = framesOf();
+    const block = blockOf(100, { top: 50 });
+    // A box opens on a line as the block's code comes, and the contents grow past its foot with it.
+    askToShow(block.inner, () => ({ top: 130, bottom: 220 }));
+    frames.run();
+    block.grow(300);
+    expect(block.height()).toBe(300);
+    expect(block.cuts).toEqual([]);
+    // Grown past it, with nothing shown there, it's cut as before.
+    block.grow(400);
+    expect(block.height()).toBe(300);
+    expect(block.cuts).toEqual([true]);
+  });
+
+  it('forgets what was shown in it two frames on', () => {
+    const frames = framesOf();
+    const block = blockOf(100, { top: 50 });
+    askToShow(block.inner, () => ({ top: 130, bottom: 220 }));
+    frames.run();
+    frames.run();
+    block.grow(300);
+    expect(block.height()).toBe(100);
+    expect(block.cuts).toEqual([true]);
+  });
+
   it('is let go once stopped', () => {
     const block = blockOf(100);
     block.held.stop();
+    expect(block.box.style.height).toBe('');
+    // What's shown in it no longer reaches it.
+    askToShow(block.inner, () => ({ top: 150, bottom: 300 }));
+    expect(block.cuts).toEqual([]);
     expect(block.box.style.height).toBe('');
     const watching = [...FakeResizeObserver.all, ...FakeIntersectionObserver.all].filter(
       (observer) => observer.targets.some((target) => block.box.contains(target)),

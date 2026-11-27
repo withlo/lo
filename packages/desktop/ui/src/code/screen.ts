@@ -108,7 +108,7 @@ function crosses(span: Span, screen: Span): boolean {
 }
 
 /** The row's line, header or collapsed block, without what's drawn around it. */
-function bodyOf(row: BlockInfo): BlockInfo {
+export function bodyOf(row: BlockInfo): BlockInfo {
   const parts = Array.isArray(row.type) ? row.type : [row];
   return (
     parts.find((part) => part.type === BlockType.Text || part.type === BlockType.WidgetRange) ?? row
@@ -190,7 +190,7 @@ function wraps(view: EditorView, body: BlockInfo): boolean {
  * character after it. `updating` while the editor updates, as when it brings the cursor into view:
  * it refuses to say where text is then, so the row is read from what it drew.
  */
-function caretOf(view: EditorView, offset: number, updating = false): Span {
+export function caretOf(view: EditorView, offset: number, updating = false): Span {
   const body = bodyOf(view.lineBlockAt(offset));
   if (!wraps(view, body)) return body;
   const rect = updating ? drawnAt(view, offset) : view.coordsAtPos(offset, 1);

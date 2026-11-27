@@ -8,7 +8,13 @@ import { buffer } from 'node:stream/consumers';
 import { fileURLToPath } from 'node:url';
 
 import { onOwnDisplay } from '@lo/testing/display';
-import { MERGE_PULLS, STACK_PULLS, writeMergeRemote, writeStackRemote } from '@lo/testing/git';
+import {
+  gitProgram,
+  MERGE_PULLS,
+  STACK_PULLS,
+  writeMergeRemote,
+  writeStackRemote,
+} from '@lo/testing/git';
 import { fakeServer, readReport, type Scenario, type Seen } from '@lo/testing/lsp';
 import { serveReplay, type ReplayServer } from '@lo/testing/server';
 import {
@@ -687,7 +693,12 @@ export const STACK = {
   g2: STACK_PULLS.g2.number,
 } as const;
 
-/** What GitHub holds back in a test of the stacks, until the test lets go. */
+/** `text`, quoted for a shell script. */
+function shellQuoted(text: string): string {
+  return `'${text.replaceAll("'", `'\\''`)}'`;
+}
+
+/** What GitHub, or git's fetches, hold back in a test of the stacks, until the test lets go. */
 export interface Held {
   /** Resolves once the test lets go. */
   released(): Promise<void>;
@@ -776,10 +787,17 @@ export const onStacks = test.extend<{
    * stack is known until then.
    */
   holdStacks: boolean;
-  /** Lets go of what GitHub holds back. */
+  /**
+   * Whether git's fetches wait until the test lets go of them, so the local copy, and an overview's
+   * code with it, comes once the test says.
+   */
+  holdFetches: boolean;
+  /** Lets go of what GitHub, or git's fetches, hold back. */
   held: Held;
   /** Where Lo finds GitHub: the replay server, or one in front of it that holds requests back. */
   githubOrigin: string;
+  /** The git Lo runs: the one on this machine, or one whose fetches wait for the test. */
+  git: string | undefined;
 }>({
   // Its pull requests have no overview, and the cassette doesn't answer for their timelines.
   settings: DIFF_FIRST,
@@ -788,6 +806,7 @@ export const onStacks = test.extend<{
   noGit: [false, { option: true }],
   lateRemote: [false, { option: true }],
   holdStacks: [false, { option: true }],
+  holdFetches: [false, { option: true }],
   github: async ({ cassette }, use) => {
     const server = await serveReplay(cassette);
     await use(server);
@@ -827,7 +846,40 @@ export const onStacks = test.extend<{
     const folder = base.info().outputPath('remote');
     await use(lateRemote ? `file://${folder}` : writeStackRemote(folder));
   },
-  launch: async ({ githubOrigin, remote, noGit, account }, use) => {
+  git: async ({ noGit, holdFetches, held }, use) => {
+    if (noGit) {
+      await use('none');
+      return;
+    }
+    if (!holdFetches) {
+      await use(undefined);
+      return;
+    }
+    // A git that runs this machine's, each fetch once a file the test writes as it lets go is there.
+    const folder = base.info().outputPath('git');
+    mkdirSync(folder, { recursive: true });
+    const gate = join(folder, 'fetch');
+    const program = join(folder, 'git');
+    writeFileSync(
+      program,
+      [
+        '#!/bin/sh',
+        'for each in "$@"; do',
+        '  if [ "$each" = fetch ]; then',
+        `    while [ ! -e ${shellQuoted(gate)} ]; do sleep 0.1; done`,
+        '    break',
+        '  fi',
+        'done',
+        `exec ${shellQuoted(gitProgram())} "$@"`,
+        '',
+      ].join('\n'),
+    );
+    chmodSync(program, 0o755);
+    // Let go as the test ends too, so no fetch waits on past it.
+    void held.released().then(() => writeFileSync(gate, ''));
+    await use(program);
+  },
+  launch: async ({ githubOrigin, remote, git, account }, use) => {
     const tokenFile = base.info().outputPath('token');
     writeFileSync(tokenFile, `${TOKEN}\n`);
     await use({
@@ -836,7 +888,7 @@ export const onStacks = test.extend<{
         LO_GITHUB: githubOrigin,
         ...(account ? { LO_TEST_TOKEN_FILE: tokenFile } : {}),
         LO_GIT_REMOTE: remote,
-        ...(noGit ? { LO_GIT: 'none' } : {}),
+        ...(git === undefined ? {} : { LO_GIT: git }),
       },
     });
   },
