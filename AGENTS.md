@@ -388,21 +388,24 @@ the window find them with `import.meta.glob`.
   every comment and space around it, and writes the file whole, atomically. Main reaches the values
   through the settings feature's `service.ts` (`use(settings).watch(setting, listener)`, which also
   declares the setting), the window through its `window/shared.ts` (`useSetting`, `changeSetting`,
-  `watchSetting`), where a feature puts its rows of Settings in the `settings.rows` slot:
-  `settingRow(setting, { order })` draws a setting's row from the setting itself, and `defineRow`
-  makes any other, such as a list, with the same one line. A row whose line depends on what's there
-  takes `useLine`, a hook for it, while search still reads the setting's own line, and a row that
-  comes and goes with a part of Lo takes that part's `present`. A screen besides Settings that
-  offers a setting of a few options, as the welcome does, takes it as a `SettingChoice`: the feature
-  that owns the setting makes one with `choiceOf` in its `window/shared.ts`, rather than handing the
-  setting on, and the screen reads and writes it with `useChoice`, which says a change main refused
-  as the row's `Problem`, never in a toast. A feature's own row of a setting on such a screen, as
-  the welcome's overviews step has, changes it with `useSettingChange` the same way. A change main
-  refuses comes back as `settingsFile` or `unsaved`, with main's reason and its details, and the row
-  says it as a `Problem`. A setting declared with `{ window: 'read' }`, such as which repositories
-  are trusted, the window shows but can't change: `settings.set` refuses it as `unwritable`, and
-  only main writes it, with `use(settings).update(setting, change)`. `docs/settings.md` lists every
-  setting; a test fails when one is missing.
+  `watchSetting`). Main says each value back as it saves it, so a view that shows a change at once,
+  before it's saved, as `gi` lays the diff out, reads and changes the setting through `shownAtOnce`:
+  the value it asked for while a change of it from the window is saving, then main's, so two quick
+  changes never come back as two more. Features put their rows of Settings in the `settings.rows`
+  slot: `settingRow(setting, { order })` draws a setting's row from the setting itself, and
+  `defineRow` makes any other, such as a list, with the same one line. A row whose line depends on
+  what's there takes `useLine`, a hook for it, while search still reads the setting's own line, and
+  a row that comes and goes with a part of Lo takes that part's `present`. A screen besides Settings
+  that offers a setting of a few options, as the welcome does, takes it as a `SettingChoice`: the
+  feature that owns the setting makes one with `choiceOf` in its `window/shared.ts`, rather than
+  handing the setting on, and the screen reads and writes it with `useChoice`, which says a change
+  main refused as the row's `Problem`, never in a toast. A feature's own row of a setting on such a
+  screen, as the welcome's overviews step has, changes it with `useSettingChange` the same way. A
+  change main refuses comes back as `settingsFile` or `unsaved`, with main's reason and its details,
+  and the row says it as a `Problem`. A setting declared with `{ window: 'read' }`, such as which
+  repositories are trusted, the window shows but can't change: `settings.set` refuses it as
+  `unwritable`, and only main writes it, with `use(settings).update(setting, change)`.
+  `docs/settings.md` lists every setting; a test fails when one is missing.
 - `migrations/001-<name>.sql`, `002-<name>.sql` and on create and change the feature's tables. At
   startup, before any handler can be asked anything, each feature's new migrations run in order,
   each in a transaction, and are recorded with their SHA-256.

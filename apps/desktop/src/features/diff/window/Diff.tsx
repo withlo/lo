@@ -45,9 +45,10 @@ import {
 } from '../../tab/window/shared.ts';
 import { holdTree, orderIn, useOrderMode } from '../../tree/window/shared.ts';
 import type { DiffProblem } from '../contract.ts';
-import { layout as layoutSetting, whitespace as whitespaceSetting } from '../settings.ts';
+import { whitespace as whitespaceSetting } from '../settings.ts';
 import { draw, type DrawOptions, type Drawing, type Place } from './drawing.ts';
 import { drawsView, inOrder, keepsBox, keptOrder, type KeptOrder, viewKey } from './files.ts';
+import { shownLayout } from './layout.ts';
 import { problemSays, type Snapshot } from './loader.ts';
 import { main } from './main.ts';
 import { usePage } from './page.ts';
@@ -112,9 +113,10 @@ export function Diff({ tab, shown }: { tab: PullTab; shown: boolean }) {
     orders.set(tab.id, kept);
     return kept.order;
   }, [ready, mode, tab.id]);
-  // Code beside a reading view is inline, whatever Settings says: it's half the width.
+  // Code beside a reading view is inline, whatever Settings says: it's half the width. The layout
+  // `gi` asks for shows at once, so what main says back as it saves it changes nothing.
   const beside = useBeside(tab.id);
-  const chosen = useSetting(layoutSetting);
+  const chosen = shownLayout.useShown();
   const layout = beside ? 'inline' : chosen;
   const besideWas = useRef(beside);
   const whitespace = useSetting(whitespaceSetting);

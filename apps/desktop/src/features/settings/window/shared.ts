@@ -1,10 +1,11 @@
 // What the settings feature shares with other features' window code: the slot they put their rows
-// of Settings in, the settings themselves, read, changed and followed, a setting of a few options
-// as another screen offers it, the theme among them, a setting as a row outside Settings changes
-// it, and the file, to open.
+// of Settings in, the settings themselves, read, changed and followed, a setting a view shows
+// changed at once, a setting of a few options as another screen offers it, the theme among them, a
+// setting as a row outside Settings changes it, and the file, to open.
 
 import { createElement, useMemo, type ReactElement, type ReactNode } from 'react';
 import { useStore } from 'zustand';
+import { createStore } from 'zustand/vanilla';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import { refuse } from '../../../window/commands/notices.tsx';
@@ -200,6 +201,56 @@ export async function changeSetting<T>(setting: Setting<T>, value: T): Promise<b
   const refusal = await setValue(setting, value);
   if (refusal !== undefined) refuse(refusalLine(refusal, setting));
   return refusal === undefined;
+}
+
+/**
+ * A setting a view shows changed at once, before main has saved it, as `gi` lays the diff out
+ * inline. `change` writes a value as {@link changeSetting} does, and `useShown` and `shownNow` read
+ * the setting as the view shows it: the value last asked for while a change from this window is
+ * saving, then main's. Main says each value back as it saves it, so two quick changes would
+ * otherwise both come back after the second, and the view would go back to the first, then on to
+ * the second. A change main refuses goes back to main's value once none is saving, as its toast
+ * says why.
+ */
+export interface ShownAtOnce<T> {
+  /** Writes `value`, shown at once, and resolves `false` when main refused it. */
+  readonly change: (value: T) => Promise<boolean>;
+  /** The value as the view shows it, as a hook: it follows changes. */
+  readonly useShown: () => T;
+  /** The value as the view shows it now, read once. */
+  readonly shownNow: () => T;
+}
+
+/** {@link ShownAtOnce} for `setting`, made once, where the feature keeps its window's state. */
+export function shownAtOnce<T>(setting: Setting<T>): ShownAtOnce<T> {
+  // How many of this window's changes are saving, and the last one asked for. Main says a value
+  // back before it answers the change, so once none is saving, main's is the latest.
+  const saving = createStore<{ readonly count: number; readonly asked: T }>()(() => ({
+    count: 0,
+    asked: setting.fallback,
+  }));
+  const shown = (count: number, asked: T, values: Record<string, unknown> | undefined): T =>
+    count > 0 ? asked : valueIn(setting, values);
+  return {
+    async change(value) {
+      saving.setState(({ count }) => ({ count: count + 1, asked: value }));
+      try {
+        return await changeSetting(setting, value);
+      } finally {
+        saving.setState(({ count }) => ({ count: count - 1 }));
+      }
+    },
+    useShown() {
+      const values = useStore(settingsStore, (state) => state.settings?.values);
+      const count = useStore(saving, (state) => state.count);
+      const asked = useStore(saving, (state) => state.asked);
+      return shown(count, asked, values);
+    },
+    shownNow() {
+      const { count, asked } = saving.getState();
+      return shown(count, asked, settingsStore.getState().settings?.values);
+    },
+  };
 }
 
 /**
