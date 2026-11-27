@@ -1,27 +1,28 @@
 // @vitest-environment jsdom
-// A post's text: drawn from its Markdown until GitHub's rendering of it is in, unless its Markdown
-// holds a tag, which only GitHub's rendering draws: then three skeleton lines hold its place, and
-// its rendering takes theirs in one Swap.
+// A post's text: drawn from its Markdown until GitHub's rendering of it is in, unless the tree of
+// its Markdown shows a tag, which only GitHub's rendering draws: then three skeleton lines hold its
+// place, and its rendering takes theirs in one Swap.
 
 import { githubTree, markdownTree } from '@lo/markdown';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, expect, onTestFinished, test, vi } from 'vitest';
 
+import { IpcError } from '../../../ipc/contract.ts';
 import type { Bodies } from '../contract.ts';
 import { HTML_LIMIT, type RenderInput, type Rendered } from '../jobs.ts';
 import { FIRST_WAIT } from './bodies.ts';
-import { Post } from './Post.tsx';
+import { FIRST_RETRY, Post, RETRIES } from './Post.tsx';
 import { keepOnly, wroteText } from './store.ts';
 
 /**
- * What the test does with each ask for posts' HTML, each tree asked of the background, and whether
- * a tree from HTML fails to be made, as a job does when the background process restarts.
+ * What the test does with each ask for posts' HTML, each tree asked of the background, and what a
+ * tree's job fails with, if it does.
  */
 const fake = vi.hoisted(() => ({
   ask: undefined as ((posts: string[]) => Promise<Bodies>) | undefined,
   renders: [] as RenderInput[],
-  failHtml: false,
+  failing: undefined as ((input: RenderInput) => Error | undefined) | undefined,
 }));
 
 vi.mock('./main.ts', () => ({
@@ -32,9 +33,8 @@ vi.mock('./main.ts', () => ({
   commentsJobs: () => ({
     render: (input: RenderInput): Promise<Rendered> => {
       fake.renders.push(input);
-      if (input.html !== null && fake.failHtml) {
-        return Promise.reject(new Error('The background process restarted.'));
-      }
+      const error = fake.failing?.(input);
+      if (error) return Promise.reject(error);
       const options = { repo: { owner: 'rozed-dev', name: 'e2e' }, page: input.page };
       const tree =
         input.html === null
@@ -52,7 +52,7 @@ beforeAll(() => {
 beforeEach(() => {
   fake.ask = undefined;
   fake.renders = [];
-  fake.failHtml = false;
+  fake.failing = undefined;
 });
 
 afterEach(() => {
@@ -118,6 +118,64 @@ async function pass(ms: number): Promise<void> {
   });
 }
 
+/** What each tree asked of the background was made from, in order. */
+function sources(): ('markdown' | 'html')[] {
+  return fake.renders.map((input) => (input.html === null ? 'markdown' : 'html'));
+}
+
+/** Every text `post` has shown from now on, as each change to it left it. */
+function textsFrom(post: Element | null): () => string[] {
+  const texts = [post?.textContent ?? ''];
+  const watching = new MutationObserver(() => texts.push(post?.textContent ?? ''));
+  if (post) watching.observe(post, { childList: true, subtree: true, characterData: true });
+  onTestFinished(() => watching.disconnect());
+  return () => texts;
+}
+
+/** Puts in an observer that has posts near the screen only once `near` says, and returns `near`. */
+function stubNear(): (post: Element | null, near: boolean) => void {
+  const watched = new Map<Element, { callback: IntersectionObserverCallback; by: Watcher }>();
+  class Watcher implements IntersectionObserver {
+    readonly root = null;
+    readonly rootMargin = '';
+    readonly scrollMargin = '';
+    readonly thresholds = [];
+    readonly #callback: IntersectionObserverCallback;
+    constructor(callback: IntersectionObserverCallback) {
+      this.#callback = callback;
+    }
+    observe(target: Element) {
+      watched.set(target, { callback: this.#callback, by: this });
+    }
+    unobserve(target: Element) {
+      watched.delete(target);
+    }
+    disconnect() {}
+    takeRecords() {
+      return [];
+    }
+  }
+  vi.stubGlobal('IntersectionObserver', Watcher);
+  onTestFinished(() => {
+    vi.unstubAllGlobals();
+  });
+  return (post, near) => {
+    const found = post ? watched.get(post) : undefined;
+    if (!post || !found) throw new Error('That post isn’t watched.');
+    const rect = new DOMRectReadOnly();
+    const entry: IntersectionObserverEntry = {
+      target: post,
+      isIntersecting: near,
+      intersectionRatio: near ? 1 : 0,
+      boundingClientRect: rect,
+      intersectionRect: rect,
+      rootBounds: null,
+      time: 0,
+    };
+    act(() => found.callback([entry], found.by));
+  };
+}
+
 /** Answers each ask with `html` for every post asked for. */
 function answering(html: string): (posts: string[]) => Promise<Bodies> {
   return (posts) =>
@@ -143,10 +201,11 @@ test('a post whose Markdown holds a tag holds three skeleton lines, then its ren
   ]);
   expect(lines.every((line) => line.parentElement?.classList.contains('h-1lh'))).toBe(true);
   await settle();
-  // Asked for, not answered yet: still the lines, and no tree of its Markdown made meanwhile.
+  // Asked for, not answered yet: still the lines, though the tree of its Markdown is made, which
+  // says it shows a tag.
   expect(answer).toBeDefined();
   expect(post?.querySelectorAll('.skeleton')).toHaveLength(3);
-  expect(fake.renders.filter((input) => input.html === null)).toEqual([]);
+  expect(sources()).toEqual(['markdown']);
 
   answer?.();
   await settle();
@@ -168,6 +227,18 @@ test('a post with no tag shows its Markdown at once, and its rendering in its pl
   expect(post?.textContent).toBe('Plain words, rendered.');
   expect(post?.querySelector('.move-swap')).toBeNull();
   expect(post?.hasAttribute('aria-busy')).toBe(false);
+});
+
+test('a post with a tag only in code holds its lines only until the tree of its Markdown says so', async () => {
+  fake.ask = () => new Promise<Bodies>(() => undefined);
+  const { post } = drawn('Use `<div>` here.');
+  // Until its tree is made, it may hold a tag.
+  expect(post?.querySelectorAll('.skeleton')).toHaveLength(3);
+  await settle();
+  expect(post?.querySelector('.skeleton')).toBeNull();
+  expect(post?.textContent).toBe('Use <div> here.');
+  expect(post?.querySelector('code')?.textContent).toBe('<div>');
+  expect(post?.firstElementChild?.classList.contains('move-swap')).toBe(true);
 });
 
 test('a post whose Markdown holds a tag shows its Markdown when its rendering can’t be read', async () => {
@@ -202,16 +273,68 @@ test('a comment with a tag that this window sent shows its text from the first f
 
 test('a post with a tag whose tree can’t be made from its rendering shows its Markdown', async () => {
   fake.ask = answering(RENDERED);
-  fake.failHtml = true;
+  fake.failing = (input) => (input.html === null ? undefined : new Error('It threw.'));
   const { post } = drawn(TAGGED);
   expect(post?.querySelectorAll('.skeleton')).toHaveLength(3);
   await settle();
   expect(post?.querySelector('.skeleton')).toBeNull();
   expect(post?.textContent).toBe(AS_WRITTEN);
-  expect(fake.renders.map((input) => (input.html === null ? 'markdown' : 'html'))).toEqual([
-    'html',
-    'markdown',
-  ]);
+  expect(sources()).toEqual(['markdown', 'html']);
+});
+
+test('a post whose trees can’t be made from either shows its text, and asks for neither again', async () => {
+  fake.ask = answering(RENDERED);
+  fake.failing = () => new Error('It threw.');
+  const { post } = drawn(TAGGED);
+  await settle();
+  expect(sources()).toEqual(['markdown', 'html']);
+  expect(post?.querySelector('.skeleton')).toBeNull();
+  expect(post?.textContent).toBe(TAGGED);
+  await settle();
+  expect(sources()).toEqual(['markdown', 'html']);
+});
+
+test('a tree lost to a restart is asked for again after a wait, while the post holds its lines', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  fake.ask = answering(RENDERED);
+  let lost = 1;
+  fake.failing = (input) =>
+    input.html !== null && lost-- > 0
+      ? new IpcError('restarted', 'The background process stopped during comments.render.')
+      : undefined;
+  const { post } = drawn(TAGGED);
+  const texts = textsFrom(post);
+  await pass(0);
+  expect(sources()).toEqual(['markdown', 'html']);
+  expect(post?.querySelectorAll('.skeleton')).toHaveLength(3);
+  await pass(FIRST_RETRY);
+  expect(sources()).toEqual(['markdown', 'html', 'html']);
+  expect(post?.textContent).toBe('Reviewed by Bugbot for commit 73ae3d3.');
+  expect(texts().filter((text) => text.includes('<sup>'))).toEqual([]);
+});
+
+test('a tree whose job stays busy is asked for a few times, each after a longer wait, and then no more', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  fake.ask = () => new Promise<Bodies>(() => undefined);
+  fake.failing = () => new IpcError('busy', 'Too many jobs were waiting.');
+  const { post } = drawn(TAGGED);
+  await pass(0);
+  for (let tried = 0; tried < RETRIES; tried += 1) {
+    expect(sources()).toHaveLength(1 + tried);
+    await pass(FIRST_RETRY * 2 ** tried - 1);
+    expect(sources()).toHaveLength(1 + tried);
+    await pass(1);
+  }
+  await pass(10 * 60_000);
+  expect(sources()).toEqual(Array.from({ length: 1 + RETRIES }, () => 'markdown'));
+  // Its rendering may come yet: its lines hold its place until then.
+  expect(post?.querySelectorAll('.skeleton')).toHaveLength(3);
 });
 
 test('a post with a tag whose read failed keeps its Markdown, with no skeleton lines, until a read again brings its rendering', async () => {
@@ -229,6 +352,32 @@ test('a post with a tag whose read failed keeps its Markdown, with no skeleton l
   await pass(FIRST_WAIT);
   expect(post?.textContent).toBe('Reviewed by Bugbot for commit 73ae3d3.');
   expect(lines()).toBe(0);
+});
+
+test('after a read failed, a post with a tag off screen holds its lines until its rendering, and never shows its Markdown', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  const near = stubNear();
+  fake.ask = () => Promise.reject(new Error('offline'));
+  const seen = drawn(TAGGED, 'SEEN').post;
+  const off = drawn(TAGGED, 'OFF').post;
+  const texts = textsFrom(off);
+  near(seen, true);
+  await pass(0);
+  // The read of the one on screen failed: it shows its Markdown, the other its lines still.
+  expect(seen?.textContent).toBe(AS_WRITTEN);
+  expect(off?.querySelectorAll('.skeleton')).toHaveLength(3);
+  fake.ask = answering(RENDERED);
+  await pass(FIRST_WAIT);
+  expect(seen?.textContent).toBe('Reviewed by Bugbot for commit 73ae3d3.');
+  expect(off?.querySelectorAll('.skeleton')).toHaveLength(3);
+  near(off, true);
+  await pass(0);
+  expect(off?.textContent).toBe('Reviewed by Bugbot for commit 73ae3d3.');
+  expect(off?.firstElementChild?.classList.contains('move-swap')).toBe(true);
+  expect(texts().filter((text) => text.includes('<sup>'))).toEqual([]);
 });
 
 test('a post with a tag GitHub gave nothing for, or whose rendering is longer than Lo reads, shows its Markdown', async () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { Bodies } from '../contract.ts';
+import { POSTS_AN_ASK, type Bodies } from '../contract.ts';
 import { BodyStore, FIRST_WAIT } from './bodies.ts';
 
 const DESCRIPTION = { kind: 'description' } as const;
@@ -193,7 +193,7 @@ describe('BodyStore', () => {
     expect(heard).toHaveBeenCalledTimes(2);
   });
 
-  it('counts a post it holds nothing of as missing while asks fail, though it was never asked for', async () => {
+  it('counts a post wanted while asks fail as missing, though not asked for yet, and one never wanted not', async () => {
     let fail = 1;
     const { store, tick } = storeOf((posts, description) =>
       fail-- > 0 ? Promise.reject(new Error('offline')) : answered(posts, description),
@@ -202,14 +202,39 @@ describe('BodyStore', () => {
     store.subscribe('v1', post('b'), heard);
     store.want('v1', post('a'), TEXT);
     await tick();
-    // The ask for another post failed: this one is told, and missing until a read brings it.
-    expect(heard).toHaveBeenCalledTimes(1);
-    expect(store.missing('v1', post('b'), TEXT)).toBe(true);
+    // The ask for another post failed: this one, never wanted, as off screen, isn't missing.
+    expect(store.missing('v1', post('b'), TEXT)).toBe(false);
+    expect(heard).not.toHaveBeenCalled();
+    // Wanted now, it waits for an ask that works: it's told it's missing, until a read brings it.
     store.want('v1', post('b'), TEXT);
+    expect(heard).toHaveBeenCalledTimes(1);
     expect(store.missing('v1', post('b'), TEXT)).toBe(true);
     await tick();
     expect(store.held('v1', post('b'), TEXT)).toBeDefined();
     expect(store.missing('v1', post('b'), TEXT)).toBe(false);
+  });
+
+  it('tells a post wanted while asks failed, left for a later ask, once one works that it isn’t missing', async () => {
+    let asked = 0;
+    const { store, tick } = storeOf((posts, description) => {
+      asked += 1;
+      if (asked === 1) return Promise.reject(new Error('offline'));
+      // The ask after is never answered.
+      return asked === 2 ? answered(posts, description) : new Promise<Bodies>(() => undefined);
+    });
+    store.want('v1', post('first'), TEXT);
+    await tick();
+    for (let n = 0; n < POSTS_AN_ASK; n += 1) store.want('v1', post(`p${n}`), TEXT);
+    const heard = vi.fn<() => void>();
+    store.subscribe('v1', post('last'), heard);
+    store.want('v1', post('last'), TEXT);
+    expect(store.missing('v1', post('last'), TEXT)).toBe(true);
+    await tick();
+    // The ask that worked had no room for it: it's asked for next, and on its way again.
+    expect(store.held('v1', post('first'), TEXT)).toBeDefined();
+    expect(store.held('v1', post('last'), TEXT)).toBeUndefined();
+    expect(store.missing('v1', post('last'), TEXT)).toBe(false);
+    expect(heard).toHaveBeenCalledTimes(2);
   });
 
   it('forgets a closed tab’s views, and asks nothing more for them', async () => {

@@ -868,3 +868,82 @@ describe('raw HTML as words', () => {
     expect(plainText(markdownTree(html, { html: 'words' }))).toBe(html);
   });
 });
+
+/** Whether `source`'s tree says it shows raw HTML, which GitHub's rendering would draw. */
+function raw(source: string, options: MarkdownOptions = {}): boolean {
+  return tree(source, options).raw === true;
+}
+
+describe('whether it shows raw HTML', () => {
+  test('a tag outside code shows, in text, a table, a link, a footnote or an HTML block', () => {
+    const sources = [
+      '<sup>Reviewed by **Bugbot** for commit 73ae3d3.</sup>',
+      'The type is `string | null`, so <b>check</b> it with `isNull`.',
+      'Run `ls | grep x`, press <kbd>Enter</kbd>, then `exit`.',
+      'Call `handlers[0](event)` <b>first</b>, then `next()`.',
+      'Use Array<string> here.',
+      'a <?php echo 1; ?> b',
+      '\\`<b>x</b>\\`',
+      'Use `a\n\n<b>x</b> b`',
+      // Not code: a line indented in a paragraph goes on with it.
+      'a\n    <b>x</b>',
+      // A fence closed three spaces in.
+      '```\na\n   ```\n<b>x</b>',
+      '| a | b |\n|---|---|\n| `x \\| y` | <b>z</b> |',
+      '[<b>x</b>](https://e.com/)',
+      'x[^1]\n\n[^1]: <b>note</b>',
+      '<details>\n<summary>More</summary>\n\nHidden.\n\n</details>',
+      // Comments, with HTML or text that reads as a tag after them.
+      '<!-- note --> `<b>x</b>`',
+      '<!-- a --> <https://x.y>',
+      '\\<!-- <b>x</b> -->',
+      '<!--> <b>x</b> -->',
+      '<!--\n> ```\n-->\n<b>x</b>',
+    ];
+    expect(sources.filter((source) => !raw(source))).toEqual([]);
+  });
+
+  test('a tag in code, a comment, an autolink, an escape or a link’s address or title doesn’t', () => {
+    const sources = [
+      'Plain **words**.',
+      '`<b>x</b>`',
+      '``a `<b>` b``',
+      'Use `a\n<b>` here',
+      '```html\n<b>x</b>\n```',
+      '~~~\n<b>x</b>\n~~~',
+      '- item\n\n  ```\n  <b>x</b>\n  ```',
+      '> ```\n> <b>x</b>\n> ```',
+      '    <b>x</b>',
+      // A close four spaces in closes nothing.
+      '```\n<b>x</b>\n    ```\n<i>y</i>',
+      '| `<b>` | c |\n|---|---|',
+      '<!-- hidden -->',
+      'a <!-- b --> c',
+      '<!--\nline one\nline two\n-->',
+      '<!-- a --> b',
+      '<?php echo 1; ?>',
+      '<https://example.com>',
+      '<a@b.co>',
+      '\\<b>x\\</b>',
+      '&lt;b&gt;',
+      'a < b, x <3, <1> and a <b',
+      '[x](<https://e.com/a b>)',
+      '[x](https://e.com/ "<b>t</b>")',
+    ];
+    expect(sources.filter((source) => raw(source))).toEqual([]);
+  });
+
+  test('a tag in text that shows as its lines shows, though in code, and one cut off doesn’t', () => {
+    expect(raw(`${'> '.repeat(MAX_DEPTH + 5)}\`<b>x</b>\``)).toBe(true);
+    expect(raw(`para\n\n${'x *y* '.repeat(20)}\n\n\`<b>x</b>\``, { limits: { nodes: 20 } })).toBe(
+      true,
+    );
+    expect(markdownTree('`<b>x</b>`', { syntax: { plugins: [overflow] } }).raw).toBe(true);
+    expect(markdownTree('x', { syntax: { plugins: [overflow] } }).raw).toBeUndefined();
+    expect(raw(`${'x'.repeat(MAX_LENGTH)}<b>y</b>`)).toBe(false);
+  });
+
+  test('a tag shown as its words shows too', () => {
+    expect(raw('a <b>b</b>', { html: 'words' })).toBe(true);
+  });
+});

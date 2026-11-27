@@ -37,6 +37,12 @@ export interface Tree<X extends Extension = Plain> {
   notes: Note[];
   /** What was refused or changed, for a checker to report. At most `MAX_DIAGNOSTICS`. */
   diagnostics: Diagnostic[];
+  /**
+   * Set when it shows raw HTML from the text, as written or as its words, where GitHub's rendering
+   * would draw it: a tag outside code that isn't a comment, as markdown-it reads the text, or a tag
+   * in text that shows as its own lines. Only a tree made from Markdown sets it.
+   */
+  raw?: true;
 }
 
 /**
