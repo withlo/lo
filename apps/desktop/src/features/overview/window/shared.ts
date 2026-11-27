@@ -10,12 +10,13 @@ import { createElement, type ReactNode } from 'react';
 
 import type { Presence } from '../../../window/slots.tsx';
 import { settingNow, watchSetting } from '../../settings/window/shared.ts';
-import { usePull } from '../../tab/window/shared.ts';
+import { showMiddle, usePull } from '../../tab/window/shared.ts';
 import { on } from '../settings.ts';
 import { Example } from './Example.tsx';
 import { markOf, newestHead, standingOf, type MarkKind } from './facts.ts';
-import { blockAt, drawnIn } from './follow.ts';
+import { blockAt, drawnIn, onDrawn } from './follow.ts';
 import { useStanding } from './hooks.ts';
+import { OVERVIEW_VIEW } from './labels.ts';
 import type { CommentOnHead } from './mapping.ts';
 import { commentLinesOnHead } from './since.ts';
 import { codeBlocksIn, labelOf } from './stale.ts';
@@ -23,7 +24,6 @@ import { checked, revisions, states } from './store.ts';
 import {
   blockKey as keyOfBlock,
   blockLinesOf,
-  blockPinned as pinnedBlock,
   blockThreadsWith,
   blockWithFocus as withFocus,
   changed,
@@ -32,6 +32,10 @@ import {
   type BlockPopover,
   type BlockThreads,
   writingBlockKeyed,
+  writingBlockOf,
+  writingBlocksOf,
+  writingPinnedWith,
+  writingWithFocus,
   type WritingBlock,
 } from './threaded.ts';
 
@@ -129,14 +133,13 @@ export function blockWithFocus(tab: string): BlockPopover | undefined {
 }
 
 /**
- * Whether a key or a control on thread `thread` of pull request's tab `tab` is one of its
- * overview's code blocks': one with focus in its code, as on a card under its lines, or in its
+ * The code block of pull request's tab `tab`'s overview a key or a control on thread `thread` is
+ * asked for in, if it's one's: one with focus in its code, as on a card under its lines, or in its
  * popover, or, with the overview on screen, one whose popover is pinned with the thread in it, as
  * from a menu over it.
  */
-export function askedInBlock(tab: string, thread: string): boolean {
-  if (withFocus(tab)) return true;
-  return drawnIn(tab) !== undefined && (pinnedBlock(tab)?.pinned().includes(thread) ?? false);
+export function writingBlockAsked(tab: string, thread: string): WritingBlock | undefined {
+  return writingWithFocus(tab) ?? (drawnIn(tab) ? writingPinnedWith(tab, thread) : undefined);
 }
 
 /**
@@ -204,6 +207,40 @@ export function revisionName(tab: string, commit: string): string {
 /** Tab `tab`'s code block known by `key` (`DrawnBlock.key`), while it's drawn. */
 export function writingBlock(tab: string, key: string): WritingBlock | undefined {
   return writingBlockKeyed(tab, key);
+}
+
+/** Tab `tab`'s code blocks drawn, as comments are written on them and their drafts marked. */
+export function writingBlocks(tab: string): readonly WritingBlock[] {
+  return writingBlocksOf(tab);
+}
+
+/**
+ * Tab `tab`'s code block drawn whose code view names its file `file`, as a line target in it does,
+ * if one is.
+ */
+export function writingBlockIn(tab: string, file: string): WritingBlock | undefined {
+  return writingBlockOf(tab, file);
+}
+
+/** Whether tab `tab`'s overview is on screen, drawn. */
+export function overviewOnScreen(tab: string): boolean {
+  return drawnIn(tab) !== undefined;
+}
+
+/**
+ * Brings tab `tab`'s overview into sight, as `~` steps to it, the layout as it is. Says whether the
+ * tab has one.
+ */
+export function showOverview(tab: string): boolean {
+  return showMiddle(tab, OVERVIEW_VIEW);
+}
+
+/**
+ * Calls `listener` with a tab's id each time its overview is drawn on screen, as it comes into
+ * sight. Returns a function that stops it.
+ */
+export function onOverviewShown(listener: (tab: string) => void): () => void {
+  return onDrawn(listener);
 }
 
 /**

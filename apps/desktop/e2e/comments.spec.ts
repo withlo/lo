@@ -24,7 +24,6 @@ import {
   DIFF_FIRST,
   DIFF_FIRST_BETWEEN,
   expect,
-  frontOf,
   keepMenus,
   KEYCHAIN,
   onStacks,
@@ -580,69 +579,61 @@ function rowsOf(block: ReturnType<typeof codeBlock>): Promise<{ others: number; 
 }
 
 /**
- * `onStacks`, with each request to resolve a thread held back unanswered, `resolves` listing their
- * bodies: the cassette has none.
+ * The comment box an overview's code block draws, beside lines, in the popover over the overview,
+ * which has focus, the diff hidden.
  */
-const resolving = onStacks.extend<{ resolves: string[] }>({
-  // oxlint-disable-next-line no-empty-pattern
-  resolves: async ({}, use) => {
-    await use([]);
-  },
-  githubOrigin: async ({ github, resolves }, use) => {
-    const front = await frontOf(new URL(github.urls.api).origin, (_, body) => {
-      if (!/\bmutation ResolveReviewThread\b/.test(body)) return undefined;
-      resolves.push(body);
-      return new Promise<void>(() => undefined);
-    });
-    await use(front.origin);
-    await front.close();
-  },
-});
-
-/**
- * Nothing opened for a reply or an edit: no box anywhere, the thread's card as it was, and `x`
- * after resolves the thread, as in any popover, rather than going to a box. `resolves` lists the
- * requests to resolve a thread.
- */
-async function nothingOpened(page: Page, resolves: readonly string[]) {
-  const popover = page.locator('[data-lo-middle-view="overview.view"] .lo-ov > .lo-threadpop');
-  await expect(page.getByText('Go to the diff first')).toBeVisible();
-  // None in the overview, nor in a diff drawn and hidden.
-  await expect(page.locator('.lo-diffcomposer')).toHaveCount(0);
+async function popoverBox(page: Page) {
+  const box = page.locator(
+    '[data-lo-middle-view="overview.view"] .lo-ov > .lo-threadpop .lo-diffcomposer',
+  );
+  await expect(box).toHaveCount(1, { timeout: 20_000 });
+  await expect(box.locator('.cm-content')).toBeFocused();
   await expect(page.locator('.lo-diffview')).toBeHidden();
-  await expect(popover.getByRole('button', { name: 'Reply', exact: true })).toBeVisible();
-  await expect(popover).toContainText('GitHub rounds each 100 nodes up');
-  // Focus stays in the popover, whose keys act on its thread as they do there.
-  await expect
-    .poll(() => page.evaluate(() => document.activeElement?.closest('.lo-threadpop') !== null))
-    .toBe(true);
-  expect(resolves).toHaveLength(0);
-  await page.keyboard.press('x');
-  await expect.poll(() => resolves.length).toBe(1);
-  await expect(page.locator('.lo-diffcomposer')).toHaveCount(0);
-  await expect(page.locator('.lo-diffview')).toBeHidden();
+  return box;
 }
 
-test.describe('a reply or an edit asked for in a code block’s popover', () => {
-  resolving.use({ settings: '{ "tab.open": "overview" }\n' });
+test.describe('writing in a code block’s popover', () => {
+  onStacks.use({ settings: '{ "tab.open": "overview" }\n' });
 
-  resolving(
-    'opened on the overview, Reply says to go to the diff first, and opens nothing',
-    async ({ page, resolves }) => {
+  onStacks(
+    'opened on the overview, Reply opens its box in the thread there, which takes what’s typed, and keeps it as a draft',
+    async ({ page }) => {
       test.setTimeout(60_000);
       await open(page, STACK.b);
       const block = codeBlock(page, 'src/cost.ts');
       await expect(block.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 30_000 });
+      const height = await block.evaluate((element) => element.getBoundingClientRect().height);
       await block.getByRole('button', { name: 'Unresolved thread · line 5', exact: true }).click();
       const popover = page.locator('[data-lo-middle-view="overview.view"] .lo-ov > .lo-threadpop');
       await popover.getByRole('button', { name: 'Reply', exact: true }).click();
-      await nothingOpened(page, resolves);
+      const box = await popoverBox(page);
+      await expect(box.locator('.lo-diffcomposer__head')).toContainText('Reply');
+      // In its thread, under its comments, where the card offered the reply.
+      await expect(popover.getByRole('button', { name: 'Reply', exact: true })).toHaveCount(0);
+      await expect(popover).toContainText('GitHub rounds each 100 nodes up');
+      // What's typed is the box's: `x` resolves nothing.
+      await page.keyboard.type('Rounded up, x');
+      await expect(box.locator('.cm-content')).toHaveText('Rounded up, x');
+      // Nothing in the overview moved.
+      expect(await block.evaluate((element) => element.getBoundingClientRect().height)).toBe(
+        height,
+      );
+      // `Esc Esc` closes it, keeping its draft: the thread's mark says so, and opens it again.
+      await page.keyboard.press('Escape');
+      await page.keyboard.press('Escape');
+      await expect(box).toHaveCount(0);
+      const mark = block.getByRole('button', { name: /^Unresolved thread · line 5 · draft/ });
+      await expect(mark).toBeVisible();
+      // `⏎` on its line shows the thread, the draft open in it.
+      await page.keyboard.press('Enter');
+      const again = await popoverBox(page);
+      await expect(again.locator('.cm-content')).toHaveText('Rounded up, x');
     },
   );
 
-  resolving(
-    'with the diff drawn and hidden again, `i` in a code block’s popover says to go to the diff first, and opens nothing',
-    async ({ page, resolves }) => {
+  onStacks(
+    'with the diff drawn and hidden again, `i` in a code block’s popover opens the edit there, which takes what’s typed',
+    async ({ page }) => {
       test.setTimeout(60_000);
       await open(page, STACK.b);
       const block = codeBlock(page, 'src/cost.ts');
@@ -657,7 +648,96 @@ test.describe('a reply or an edit asked for in a code block’s popover', () => 
       const popover = page.locator('[data-lo-middle-view="overview.view"] .lo-ov > .lo-threadpop');
       await expect(popover).toBeVisible();
       await page.keyboard.press('i');
-      await nothingOpened(page, resolves);
+      const box = await popoverBox(page);
+      await expect(box.locator('.cm-content')).toContainText('GitHub rounds each 100 nodes up');
+      await page.keyboard.type(' x');
+      await expect(box.locator('.cm-content')).toHaveText(/nodes up.* x$/s);
+      await expect(
+        block.getByRole('button', { name: 'Unresolved thread · line 5', exact: true }),
+      ).toBeVisible();
+    },
+  );
+
+  onStacks(
+    'with a reply open in the diff, hidden again, Reply in a code block’s popover brings its box there, words and all',
+    async ({ page }) => {
+      test.setTimeout(60_000);
+      await open(page, STACK.b);
+      const block = codeBlock(page, 'src/cost.ts');
+      await expect(block.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 30_000 });
+      // The diff is drawn, a reply open in it, with words, and the overview comes back over it.
+      await page.keyboard.press('`');
+      await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(['src/cost.ts new 5']);
+      await settled(page);
+      await page.keyboard.press(']');
+      await page.keyboard.press('t');
+      await page.keyboard.press('r');
+      const inDiff = page.locator('[data-lo-middle-view="diff.view"] .lo-diffcomposer');
+      await expect(inDiff.locator('.cm-content')).toBeFocused();
+      await page.keyboard.type('From the diff');
+      await page
+        .getByRole('tablist', { name: 'View' })
+        .getByRole('tab')
+        .filter({ hasText: 'Overview' })
+        .click();
+      await expect(page.locator('.lo-diffview')).toBeHidden();
+      await expect(inDiff).toHaveCount(1);
+      await block.getByRole('button', { name: 'Unresolved thread · line 5', exact: true }).click();
+      const popover = page.locator('[data-lo-middle-view="overview.view"] .lo-ov > .lo-threadpop');
+      // Its card offers a reply: the box open in the diff isn't the block's.
+      await popover.getByRole('button', { name: 'Reply', exact: true }).click();
+      // The box comes to the block, its words with it, and takes what's typed: none's in the diff.
+      const box = await popoverBox(page);
+      await expect(inDiff).toHaveCount(0);
+      await page.keyboard.type(', x');
+      await expect(box.locator('.cm-content')).toHaveText('From the diff, x');
+    },
+  );
+
+  onStacks(
+    '`c` on a code block’s line opens its box in the popover; closed with words, its mark stays beside the line, and opens it again',
+    async ({ page }) => {
+      test.setTimeout(60_000);
+      await open(page, STACK.b);
+      const block = codeBlock(page, 'src/cost.ts');
+      await expect(block.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 30_000 });
+      const height = await block.evaluate((element) => element.getBoundingClientRect().height);
+      await block.locator('.cm-line:visible').nth(1).click();
+      await page.keyboard.press('c');
+      const box = await popoverBox(page);
+      await page.keyboard.type('A note');
+      expect(await block.evaluate((element) => element.getBoundingClientRect().height)).toBe(
+        height,
+      );
+      await page.keyboard.press('Escape');
+      await page.keyboard.press('Escape');
+      await expect(box).toHaveCount(0);
+      const mark = block.getByRole('button', { name: /^Draft · line/ });
+      await expect(mark).toBeVisible();
+      await mark.click();
+      const again = await popoverBox(page);
+      await expect(again.locator('.cm-content')).toHaveText('A note');
+    },
+  );
+});
+
+test.describe('a code block between lines', () => {
+  onStacks.use({ settings: '{ "tab.open": "overview", "comments.threads": "between" }\n' });
+
+  onStacks(
+    'Reply on a code block’s card says to go to the diff first, and opens nothing',
+    async ({ page }) => {
+      test.setTimeout(60_000);
+      await open(page, STACK.b);
+      const block = codeBlock(page, 'src/cost.ts');
+      await expect(block.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 30_000 });
+      const thread = block.locator('[role="group"][aria-label$="thread by rozed-bot"]');
+      await thread.getByRole('button', { name: 'Reply', exact: true }).click();
+      await expect(page.getByText('Go to the diff first')).toBeVisible();
+      // None in the overview, nor in the diff.
+      await expect(page.locator('.lo-diffcomposer')).toHaveCount(0);
+      await expect(page.locator('.lo-diffview')).toBeHidden();
+      await expect(thread.getByRole('button', { name: 'Reply', exact: true })).toBeVisible();
     },
   );
 });

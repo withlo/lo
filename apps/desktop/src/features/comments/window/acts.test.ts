@@ -32,16 +32,29 @@ const said = vi.hoisted(() => ({
   resolves: 0,
   screen: 'v0' as string | undefined,
   resolve: (() => Promise.resolve({ kind: 'done' })) as () => Promise<unknown>,
-  /** The boxes opened: where, with a diff to draw them in or none yet, and what's in them. */
-  opened: [] as { place: unknown; diff: boolean; draft: unknown }[],
+  /**
+   * The boxes opened: where, with a diff to draw them in or none yet, in the diff or on a block,
+   * and what's in them.
+   */
+  opened: [] as { place: unknown; diff: boolean; home: unknown; draft: unknown }[],
   /** Whether the diff is drawn, whether it's on screen, and whether it shows T1. */
   drawn: true,
   diffShown: false,
   placed: false,
   /** Whether a key or control on a thread is a code block's. */
   inBlock: false,
+  /** Whether that block shows the thread, beside lines, where a box is written on it. */
+  writesInBlock: false,
+  /** Whether the block draws a box it's asked to. */
+  blockDraws: true,
+  /** How many keys, clicks and wheel turns the reader has made. */
+  inputs: 0,
   /** What was refused, and said so. */
   refused: [] as string[],
+  /** Whether a draft of the edit was kept from before. */
+  hadDraft: false,
+  /** The edits whose drafts `i` started went, as no box opened for them. */
+  dropped: [] as unknown[],
 }));
 
 vi.mock('../../../window/commands/notices.tsx', async (original) => ({
@@ -68,7 +81,11 @@ vi.mock('./main.ts', () => ({
 vi.mock('./boxes.ts', () => ({
   canWrite: () => true,
   claimBriefly: () => {},
-  IN_DIFF: {},
+  IN_DIFF: { kind: 'diff' },
+  dropStartedEdit: (_view: string, place: unknown) => said.dropped.push(place),
+  hasBox: () => said.hadDraft,
+  homeInBlock: () => (said.writesInBlock ? { kind: 'block' } : undefined),
+  inputsSoFar: () => said.inputs,
   knowPull: () => {},
   loginOf: () => 'rozed-bot',
   noDiff: () => 'Go to the diff first',
@@ -76,11 +93,15 @@ vi.mock('./boxes.ts', () => ({
   openAt: (
     _view: string,
     diff: unknown,
-    _home: unknown,
+    home: { kind: string },
     place: unknown,
     _how: unknown,
     draft = '',
-  ) => said.opened.push({ place, diff: diff !== undefined, draft }),
+  ) => said.opened.push({ place, diff: diff !== undefined, home: home.kind, draft }),
+  openInBlock: (_view: string, home: { kind: string }, place: unknown, draft: string) => {
+    if (said.blockDraws) said.opened.push({ place, diff: false, home: home.kind, draft });
+    return said.blockDraws;
+  },
 }));
 vi.mock('../../diff/window/shared.ts', () => ({
   writingDiff: () =>
@@ -91,7 +112,9 @@ vi.mock('../../diff/window/shared.ts', () => ({
     return true;
   },
 }));
-vi.mock('../../overview/window/shared.ts', () => ({ askedInBlock: () => said.inBlock }));
+vi.mock('../../overview/window/shared.ts', () => ({
+  writingBlockAsked: () => (said.inBlock ? {} : undefined),
+}));
 vi.mock('../../tab/window/shared.ts', async (original) => ({
   ...(await original<typeof TabShared>()),
   activeTab: () =>
@@ -190,7 +213,12 @@ beforeEach(() => {
     diffShown: false,
     placed: false,
     inBlock: false,
+    writesInBlock: false,
+    blockDraws: true,
+    inputs: 0,
     refused: [],
+    hadDraft: false,
+    dropped: [],
   });
 });
 
@@ -355,10 +383,57 @@ describe('a resolve whose write failed in Lo', () => {
   });
 });
 
+/** T1's reply's box, as opened in the diff or on a block, with a diff to draw it in or none. */
+function replyIn(home: string, diff = false) {
+  return { place: { kind: 'reply', thread: 'T1' }, diff, home, draft: '' };
+}
+
+/** T1's C1's edit's box, as opened in the diff or on a block, with GitHub's text in it. */
+function editIn(home: string, diff = false) {
+  const place = { kind: 'edit', thread: 'T1', comment: 'C1' };
+  return { place, diff, home, draft: 'Fixture C: Is doubling enough?' };
+}
+
 describe('a reply or an edit asked for on a code block', () => {
   const thread = { kind: 'thread', thread: 'T1' } as const;
 
-  test('with the diff never drawn, says to go to the diff first, and opens nothing', async () => {
+  test('beside lines, is written on the block, in its popover, the diff on screen or not', async () => {
+    said.inBlock = true;
+    said.writesInBlock = true;
+    reply(TAB, thread);
+    await edit(TAB, thread);
+    said.diffShown = true;
+    said.placed = true;
+    reply(TAB, thread);
+    expect(said.opened).toEqual([replyIn('block'), editIn('block'), replyIn('block')]);
+    expect(said.refused).toEqual([]);
+    expect(said.shown).toEqual([]);
+  });
+
+  test('where the block can’t draw it, with the diff off screen, says to go to the diff first, and opens nothing', async () => {
+    said.inBlock = true;
+    said.writesInBlock = true;
+    said.blockDraws = false;
+    said.placed = true;
+    reply(TAB, thread);
+    await edit(TAB, thread);
+    expect(said.refused).toEqual(['Go to the diff first', 'Go to the diff first']);
+    expect(said.opened).toEqual([]);
+  });
+
+  test('where the block can’t draw it, with the diff on screen, writes in the diff', async () => {
+    said.inBlock = true;
+    said.writesInBlock = true;
+    said.blockDraws = false;
+    said.diffShown = true;
+    said.placed = true;
+    reply(TAB, thread);
+    await edit(TAB, thread);
+    expect(said.opened).toEqual([replyIn('diff', true), editIn('diff', true)]);
+    expect(said.refused).toEqual([]);
+  });
+
+  test('between lines, with the diff never drawn, says to go to the diff first, and opens nothing', async () => {
     said.inBlock = true;
     said.drawn = false;
     reply(TAB, thread);
@@ -368,7 +443,7 @@ describe('a reply or an edit asked for on a code block', () => {
     expect(said.shown).toEqual([]);
   });
 
-  test('with the diff drawn but hidden, says the same, and opens nothing in it', async () => {
+  test('between lines, with the diff drawn but hidden, says the same, and opens nothing in it', async () => {
     said.inBlock = true;
     said.placed = true;
     reply(TAB, thread);
@@ -378,20 +453,13 @@ describe('a reply or an edit asked for on a code block', () => {
     expect(said.shown).toEqual([]);
   });
 
-  test('with the diff on screen, as with the code beside, writes in the diff', async () => {
+  test('between lines, with the diff on screen, as with the code beside, writes in the diff', async () => {
     said.inBlock = true;
     said.diffShown = true;
     said.placed = true;
     reply(TAB, thread);
     await edit(TAB, thread);
-    expect(said.opened).toEqual([
-      { place: { kind: 'reply', thread: 'T1' }, diff: true, draft: '' },
-      {
-        place: { kind: 'edit', thread: 'T1', comment: 'C1' },
-        diff: true,
-        draft: 'Fixture C: Is doubling enough?',
-      },
-    ]);
+    expect(said.opened).toEqual([replyIn('diff', true), editIn('diff', true)]);
     expect(said.refused).toEqual([]);
   });
 
@@ -407,12 +475,53 @@ describe('a reply or an edit asked for on a code block', () => {
   });
 
   test('an edit the reader moved on from while it was asked for opens nothing', async () => {
+    said.inBlock = true;
+    said.writesInBlock = true;
+    // Focus gone from its block.
+    let asked = edit(TAB, thread);
+    said.inBlock = false;
+    await asked;
+    // Between lines, written in the diff, which went off screen.
+    said.inBlock = true;
+    said.writesInBlock = false;
     said.diffShown = true;
     said.placed = true;
-    const asked = edit(TAB, thread);
+    asked = edit(TAB, thread);
     said.diffShown = false;
+    await asked;
+    said.writesInBlock = true;
+    // A key typed meanwhile.
+    asked = edit(TAB, thread);
+    said.inputs += 1;
+    await asked;
+    // Another tab on screen, as when its own has closed.
+    asked = edit(TAB, thread);
+    said.screen = 'v1';
     await asked;
     expect(said.opened).toEqual([]);
     expect(said.refused).toEqual([]);
+    // Each draft main started for it goes, as an untouched edit's does.
+    const place = { kind: 'edit', thread: 'T1', comment: 'C1' };
+    expect(said.dropped).toEqual([place, place, place, place]);
+    // One kept from before stays.
+    said.hadDraft = true;
+    asked = edit(TAB, thread);
+    await asked;
+    expect(said.dropped).toHaveLength(4);
+    // Nothing done meanwhile, it opens.
+    said.hadDraft = false;
+    said.screen = VIEW;
+    await edit(TAB, thread);
+    expect(said.opened).toEqual([editIn('block')]);
+    expect(said.dropped).toHaveLength(4);
+  });
+
+  test('an edit the block can’t draw, with the diff off screen, lets the draft it started go', async () => {
+    said.inBlock = true;
+    said.writesInBlock = true;
+    said.blockDraws = false;
+    await edit(TAB, thread);
+    expect(said.refused).toEqual(['Go to the diff first']);
+    expect(said.dropped).toEqual([{ kind: 'edit', thread: 'T1', comment: 'C1' }]);
   });
 });

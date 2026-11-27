@@ -1,17 +1,18 @@
 // The review threads on an overview's code blocks, which another feature, such as the comments,
-// places and draws, and the comments written on a block, under its lines. A block asks for its
-// threads as it's drawn, and again each time they change or how they show does, and gives them to
-// its code view, which shows them as the diff does: beside its lines, in a popover the threader
-// draws, one for every block in the overview, or between them, each in an element of its own; what
-// would move a line on screen waits in the view. A block waits a moment for its tab's threads
-// before it's first drawn, so those on its lines come with it. Each block drawn is kept here while
-// it is, as the keys and menus find it.
+// places and draws, and the comments written on a block, where its threads show, with the marks of
+// drafts not sent. A block asks for its threads as it's drawn, and again each time they change or
+// how they show does, and gives them to its code view, which shows them as the diff does: beside
+// its lines, in a popover the threader draws, one for every block in the overview, or between them,
+// each in an element of its own; what would move a line on screen waits in the view. A block waits
+// a moment for its tab's threads before it's first drawn, so those on its lines come with it. Each
+// block drawn is kept here while it is, as the keys and menus find it.
 
 import type {
   BoxFrame,
   ComposeOptions,
   Composer,
   ComposerEvents,
+  DraftMark,
   ExcerptView,
   Place,
   RenderPopover,
@@ -51,21 +52,30 @@ export interface DrawnBlock {
   readonly named: { readonly start: number; readonly end: number };
 }
 
-/** A code block on screen, where a comment is written under one of its lines. */
+/** A code block on screen, where a comment is written on its lines or in a thread on them. */
 export interface WritingBlock {
   readonly block: DrawnBlock;
   /**
-   * Opens a comment box with `draft` in it, under a line the block shows or the last line of a
-   * span, with `frame` drawn around its editor, focused unless `options.focus` is false. A box
-   * already open there is the one it gives. It throws for a line the block doesn't show.
+   * Opens a comment box with `draft` in it, on a line the block shows or the last line of a span,
+   * or, beside lines, in a thread on its lines, a reply's or an edit's, with `frame` drawn around
+   * its editor, focused unless `options.focus` is false: beside lines in its popover, between them
+   * under the line. A box already open there is the one it gives. It throws for a line the block
+   * doesn't show.
    */
   compose(
-    at: Place | Span,
+    at: Place | Span | { readonly thread: string },
     draft: string,
     on: ComposerEvents,
     frame?: BoxFrame,
     options?: ComposeOptions,
   ): Composer;
+  /** Replaces the drafts its marks show beside lines, those whose boxes open in it. */
+  setDrafts(drafts: readonly DraftMark[]): void;
+  /**
+   * Beside lines, opens the box of the draft whose mark is on line `at`, or on thread `thread`'s
+   * line, as a click on the mark does. Says whether there was one.
+   */
+  openDraft(at: Place | { readonly thread: string }): boolean;
 }
 
 /** What places and draws the review threads on overview blocks, and opens the boxes there. */
@@ -94,6 +104,11 @@ export interface BlockPopover {
    * goes into it. Says whether there was one to pin.
    */
   pinThread(id: string, focus?: boolean): boolean;
+  /**
+   * Opens the box of the draft whose mark is on thread `thread`'s line, as a click on the mark
+   * does. Says whether there was one.
+   */
+  openDraft(at: { readonly thread: string }): boolean;
   /** The threads of its popover pinned, by their ids. */
   pinned(): readonly string[];
   /** Whether its popover is pinned. */
@@ -209,6 +224,8 @@ export function drawBlock(block: DrawnBlock, view: ExcerptView, element: HTMLEle
   const writing: WritingBlock = {
     block,
     compose: (at, draft, on, frame, options) => view.compose(at, draft, on, frame, options),
+    setDrafts: (drafts) => view.setDrafts(drafts),
+    openDraft: (at) => view.openDraft(at),
   };
   const entry: Drawn = { writing, view, element };
   drawnBlocks.set(block.file, entry);
@@ -227,6 +244,35 @@ export function blockWithFocus(tab: string): BlockPopover | undefined {
     if (writing.block.tab === tab && view.hasFocus()) return view;
   }
   return undefined;
+}
+
+/** Tab `tab`'s block drawn with focus in its code or its threads' popover, as comments are written. */
+export function writingWithFocus(tab: string): WritingBlock | undefined {
+  for (const { writing, view } of drawnBlocks.values()) {
+    if (writing.block.tab === tab && view.hasFocus()) return writing;
+  }
+  return undefined;
+}
+
+/** Tab `tab`'s block drawn whose threads' popover is pinned with thread `thread` in it, if one is. */
+export function writingPinnedWith(tab: string, thread: string): WritingBlock | undefined {
+  for (const { writing, view } of drawnBlocks.values()) {
+    if (writing.block.tab === tab && view.pinned().includes(thread)) return writing;
+  }
+  return undefined;
+}
+
+/** Tab `tab`'s blocks drawn, as comments are written on them. */
+export function writingBlocksOf(tab: string): WritingBlock[] {
+  return [...drawnBlocks.values()].flatMap(({ writing }) =>
+    writing.block.tab === tab ? [writing] : [],
+  );
+}
+
+/** Tab `tab`'s block drawn whose code view names its file `file`, if one is. */
+export function writingBlockOf(tab: string, file: string): WritingBlock | undefined {
+  const drawn = drawnBlocks.get(file);
+  return drawn?.writing.block.tab === tab ? drawn.writing : undefined;
 }
 
 /** Tab `tab`'s block drawn whose threads' popover is pinned, if one is: one at most. */

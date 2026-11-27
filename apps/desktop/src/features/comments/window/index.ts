@@ -25,6 +25,7 @@ import {
   isCodeBlock,
   onOverviewChanged,
   setBlockThreads,
+  writingBlockIn,
 } from '../../overview/window/shared.ts';
 import { revisionLabel, revisionsOf } from '../../revisions/window/shared.ts';
 import { changeSetting, settingNow, settingRow } from '../../settings/window/shared.ts';
@@ -248,7 +249,10 @@ export default {
     openDraft: {
       run: (target) => {
         const tab = activeTab();
-        if (tab?.kind === 'pull') writingDiff(tab.id)?.openDraft(target.at);
+        if (tab?.kind !== 'pull') return;
+        // On a code block's line, the block's own mark, by its code view's name for its file.
+        const block = writingBlockIn(tab.id, target.at.file);
+        (block ?? writingDiff(tab.id))?.openDraft(target.at);
       },
     },
     openThread: { run: showPopover, enabled: canShowPopover },

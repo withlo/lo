@@ -9,7 +9,9 @@
 // the threads' lane (`lanes.ts`) that opens a popover over the code (`beside.ts`), one shared by
 // every excerpt in the scroll around it, so no excerpt clips it; or between them, each under its
 // line in an element the caller draws it in, its bubble in the lane collapsing it or expanding it
-// again, as the thread's own chevron does. Comment boxes open under its lines. Nothing on screen
+// again, as the thread's own chevron does. Comment boxes open where its threads do: beside lines in
+// the popover, a new comment's under its last line and a reply's or an edit's in its thread, with
+// a draft's mark in the lane once it's closed; between lines under its line. Nothing on screen
 // moves without the reader: threads that come, go or move on a line on screen, a thread that
 // changes size there by itself, as an image loading, and the room a box left as it closed once its
 // comment was sent wait until what they'd move is off screen, or the reader acts in the excerpt,
@@ -26,10 +28,12 @@ import { Decoration, type DecorationSet, EditorView, gutter, GutterMarker } from
 import type { FileDiff } from '@lo/diff';
 
 import {
+  controlOf,
   type HeaderTarget,
   KEY_EVENT,
   type KeySource,
   type LineTarget,
+  runControl,
   SCOPE_ATTRIBUTE,
   setScopeSource,
   type Target,
@@ -40,6 +44,7 @@ import type {
   ComposeOptions,
   Composer,
   ComposerEvents,
+  DraftMark,
   ExcerptEvents,
   ExcerptInit,
   ExcerptView,
@@ -55,7 +60,7 @@ import type {
   VimKey,
 } from './api.ts';
 import { type At, Beside, type BesideHost, type Pane } from './beside.ts';
-import { CommentBox } from './comments.ts';
+import { CommentBox, placeKey } from './comments.ts';
 import { fileMarks } from './decorations.ts';
 import { codeEditor } from './editor.ts';
 import { type FileTokens, highlighting, lineStarts, tokensChanged } from './highlight.ts';
@@ -307,6 +312,8 @@ class Excerpt implements ExcerptView {
   readonly #rooms = new Map<number, CommentBox>();
   /** Whether it's been on the page a frame: until then, what it's given is how it comes. */
   #drawn = false;
+  /** While the mode changes: its boxes close, focus going to a line only from one that had it. */
+  #switching = false;
 
   constructor(parent: HTMLElement, init: ExcerptInit, on: ExcerptEvents) {
     installVim();
@@ -568,7 +575,7 @@ class Excerpt implements ExcerptView {
       },
       focusLine: (at) => this.#focusLine(this.#docLine(at.side, at.line) ?? 1),
       marksChanged: () => this.#view.dispatch({ effects: setLane.of([this.#lane()]) }),
-      // Its comment boxes open under its lines, which keep no line shown and hold none.
+      // It folds no line, so a box's line is always shown, and nothing holds the line a box left.
       keep: () => {},
       showLine: () => {},
       boxShown: () => {},
@@ -584,18 +591,52 @@ class Excerpt implements ExcerptView {
     return undefined;
   }
 
-  /** A bubble's tip: what a click on it does. */
+  /**
+   * A bubble's tip: what a click on it does. A draft's own runs its command, whose label and key it
+   * says, or why it can't run, which also dims it. A thread's mark beside lines has none: what the
+   * pointer resting on it shows is its thread.
+   */
   #tipOf(control: HTMLElement): Tip | undefined {
-    const { tip } = control.dataset;
-    return tip === undefined ? undefined : { label: tip };
+    const { tip, command } = control.dataset;
+    if (control.dataset.beside !== undefined) return undefined;
+    if (command === undefined) return tip === undefined ? undefined : { label: tip };
+    const target = this.#markTarget(control);
+    const shown = target ? controlOf(command, target) : undefined;
+    if (!shown) return undefined;
+    if (shown.off === undefined) control.removeAttribute('aria-disabled');
+    else control.setAttribute('aria-disabled', 'true');
+    if (shown.off !== undefined) return { label: shown.off };
+    return { label: tip ?? shown.label, keys: shown.keys };
+  }
+
+  /** What a mark in the lane runs its command on: the line it's beside, by where it is. */
+  #markTarget(control: HTMLElement): LineTarget | HeaderTarget | undefined {
+    const cell = control.closest('.cm-gutterElement');
+    if (!cell || !this.#view.dom.contains(cell)) return undefined;
+    const view = this.#view;
+    const height = cell.getBoundingClientRect().top + 1 - view.documentTop;
+    return this.#targetAt(view.state.doc.lineAt(view.lineBlockAtHeight(height).from).number);
   }
 
   /**
-   * A click on a thread's bubble collapses its thread, or expands it again; beside lines, a click on
-   * a thread's mark pins its popover and takes focus into it, or closes it.
+   * A click on a thread's bubble collapses its thread, or expands it again. Beside lines, a click
+   * on a thread's mark pins its popover and takes focus into it, or closes it, and one on a draft's
+   * own opens its box again, as `⏎` on its line does.
    */
   readonly #clicked = (event: MouseEvent): void => {
     if (this.#mode === 'beside') {
+      const draft =
+        event.target instanceof Element
+          ? event.target.closest<HTMLElement>('.lo-bubble[data-draft]')
+          : null;
+      const command = draft?.dataset.command;
+      if (draft && command !== undefined && event.button === 0 && this.dom.contains(draft)) {
+        const target = this.#markTarget(draft);
+        if (!target) return;
+        event.preventDefault();
+        runControl(command, target);
+        return;
+      }
       const marked = this.#beside.markOf(event.target);
       if (!marked || event.button !== 0) return;
       event.preventDefault();
@@ -721,8 +762,19 @@ class Excerpt implements ExcerptView {
 
   setThreadsMode(mode: ThreadsMode): void {
     if (mode === this.#mode) return;
-    // A box open in the popover closes, keeping its draft; between lines nothing opens it.
+    // A box open closes, keeping its draft, wherever it's drawn: in the popover, or under its line,
+    // where what boxes sent and closed still show goes too. Between lines nothing opens the
+    // popover. Focus in a box goes to its line.
     this.#beside.switching(mode);
+    this.#switching = true;
+    try {
+      // Each one leaving takes it out of the map this goes through, which a `Map` allows.
+      for (const box of this.#boxes.values()) box.composer.leave();
+    } finally {
+      this.#switching = false;
+    }
+    for (const box of this.#rooms.values()) box.destroy();
+    this.#rooms.clear();
     this.#mode = mode;
     this.dom.classList.toggle('is-beside', mode === 'beside');
     // What waited or was held is drawn as threads show now.
@@ -791,6 +843,7 @@ class Excerpt implements ExcerptView {
     frame?: BoxFrame,
     options: ComposeOptions = {},
   ): Composer {
+    if (this.#mode === 'beside') return this.#composeBeside(at, draft, on, frame, options);
     const line = this.#boxLine(at);
     if (line === undefined) throw new Error('A comment box goes under a line the excerpt shows.');
     const focus = options.focus !== false;
@@ -818,7 +871,7 @@ class Excerpt implements ExcerptView {
       hint: options.hint,
       escape: (closed) => {
         const keep = closed.text.trim() !== '';
-        this.#closeBox(closed, 'escape');
+        this.#closeBox(closed, this.#switching ? 'dismiss' : 'escape');
         on.close(keep);
       },
       // Held, the box stays, and focus goes back to its line.
@@ -837,6 +890,53 @@ class Excerpt implements ExcerptView {
     this.#drawBlocks();
     if (focus) box.focus();
     return box.composer;
+  }
+
+  /**
+   * Beside lines, a box in the popover (`Beside.compose`), pinned: a new comment's under the last
+   * line it's on, a reply's or an edit's in its thread.
+   */
+  #composeBeside(
+    at: Place | Span | { thread: string },
+    draft: string,
+    on: ComposerEvents,
+    frame: BoxFrame | undefined,
+    options: ComposeOptions,
+  ): Composer {
+    const written = 'thread' in at ? at.thread : undefined;
+    const place = 'thread' in at ? this.#threadPlace(at.thread) : this.#boxPlace(at);
+    const line = place && this.#docLine(place.side, place.line);
+    if (!place || line === undefined) {
+      throw new Error('A comment box goes under a line the excerpt shows.');
+    }
+    // A box the caller named is one of its own: a reply's beside a comment on the same line.
+    const key = options.name === undefined ? placeKey(place) : `${placeKey(place)}|${options.name}`;
+    const from =
+      'from' in at && Math.min(at.from, at.to) !== place.line
+        ? { side: at.side, line: Math.min(at.from, at.to) }
+        : undefined;
+    const spot = 'thread' in at ? this.#spot(line) : { kind: 'line' as const, at };
+    if (spot.kind !== 'line') throw new Error('A comment box goes under a line the excerpt shows.');
+    const thread = written ?? this.#threadOn(line);
+    const target: LineTarget =
+      thread === undefined ? { kind: 'line', at: spot.at } : { kind: 'line', at: spot.at, thread };
+    // A key in the box names it too, for the caller's commands on the box.
+    if (options.name !== undefined) target.box = options.name;
+    return this.#beside.compose({ key, place, from, target, written }, draft, on, frame, options);
+  }
+
+  /** The line `at` names, or a span's last, as the popover places a box, if the excerpt has it. */
+  #boxPlace(at: Place | Span): At | undefined {
+    if (at.file !== this.#id) return undefined;
+    return { file: 0, side: at.side, line: 'line' in at ? at.line : Math.max(at.from, at.to) };
+  }
+
+  setDrafts(drafts: readonly DraftMark[]): void {
+    this.#beside.setDrafts(drafts);
+  }
+
+  openDraft(at: Place | { readonly thread: string }): boolean {
+    return this.#beside.openDraft(at);
   }
 
   /** The document line a box for `at` goes under: a line, a span's last line, or a thread's. */
@@ -1253,14 +1353,18 @@ class Excerpt implements ExcerptView {
     return spans;
   }
 
-  /** What a key or a click on document line `line` acts on: its line and thread, or the header. */
+  /**
+   * What a key or a click on document line `line` acts on: its line and thread, or the header.
+   * Beside lines, a draft's own mark on a line with no thread is said too (`draft`).
+   */
   #targetAt(line: number, column?: number): LineTarget | HeaderTarget {
     const spot = this.#spot(line, column);
     if (spot.kind !== 'line') return spot;
     const thread = this.#threadOn(line);
-    return thread === undefined
-      ? { kind: 'line', at: spot.at }
-      : { kind: 'line', at: spot.at, thread };
+    if (thread !== undefined) return { kind: 'line', at: spot.at, thread };
+    const target: LineTarget = { kind: 'line', at: spot.at };
+    if (this.#beside.draftOn(this.#placeAt(line))) target.draft = true;
+    return target;
   }
 
   // Events -----------------------------------------------------------------------------------

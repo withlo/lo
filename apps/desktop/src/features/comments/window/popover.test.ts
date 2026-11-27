@@ -85,14 +85,16 @@ describe('the popover’s keys', () => {
   test('go to a code block with focus in its code or its popover, before the diff', () => {
     state.tab = TAB;
     state.block = {
-      pinThread: (id: string, focus: boolean) => state.asked.push(`block ${id} ${focus}`),
+      pinThread: (id: string, focus: boolean) => state.asked.push(`block ${id} ${focus}`) > 0,
+      openDraft: ({ thread }: { thread: string }) => state.asked.push(`block draft ${thread}`) < 0,
       closePopover: () => state.asked.push('block closed'),
       popoverPinned: () => true,
     };
     showPopover({ kind: 'thread', thread: 'one' });
     closePopover();
     expect(popoverPinned()).toBe(true);
-    expect(state.asked).toEqual(['block one true', 'block closed']);
+    // Pinned, a draft of yours in the thread opens there, as in the diff.
+    expect(state.asked).toEqual(['block one true', 'block draft one', 'block closed']);
     // With no block's, the diff's.
     state.block = undefined;
     showPopover({ kind: 'thread', thread: 'one' });
@@ -100,6 +102,7 @@ describe('the popover’s keys', () => {
     expect(popoverPinned()).toBe('');
     expect(state.asked).toEqual([
       'block one true',
+      'block draft one',
       'block closed',
       'one',
       'diff draft',
