@@ -287,6 +287,28 @@ describe('BotPictures, from run to run', () => {
     expect([...kept.kept]).toEqual([['cursor', '/in/1210556']]);
   });
 
+  it('asks about a bot with nothing to draw before the kept bots waiting to be asked about', async () => {
+    const github = waiting();
+    const kept = keptBots({ cursor: '/in/1', renovate: '/in/2', sonarcloud: '/in/3' });
+    const { bots, asked } = pictures(github.answer, undefined, kept);
+    for (const login of ['cursor', 'renovate', 'sonarcloud']) await bots.picture(login);
+    const fresh = bots.picture('coderabbitai');
+    // A kept picture that didn't load has nothing to draw either: its check goes first too.
+    bots.missing('sonarcloud', new URL('https://avatars.githubusercontent.com/in/3?s=40'));
+    const reloaded = bots.picture('sonarcloud');
+    await settle();
+    // Cursor's check was under way already.
+    expect(asked).toEqual(['cursor']);
+    for (let answers = 1; answers < 4; answers++) {
+      github.give(found());
+      await settle();
+    }
+    expect(asked).toEqual(['cursor', 'coderabbitai', 'sonarcloud', 'renovate']);
+    github.give(found());
+    expect((await fresh).pathname).toBe('/in/1210556');
+    expect((await reloaded).pathname).toBe('/in/1210556');
+  });
+
   it('keeps where a bot’s picture moved to, and draws it again', async () => {
     const kept = keptBots({ cursor: '/in/1' });
     const { bots, changes } = pictures(() => found(), undefined, kept);

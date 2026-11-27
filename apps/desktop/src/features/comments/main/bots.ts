@@ -9,8 +9,9 @@
 //   table (`BotTable`), so a bot seen before is drawn at once. It's still asked about once a run,
 //   as any bot is, and what's kept follows: a picture that moved is kept where it is now and drawn
 //   again (`changed`), and a bot GitHub has no more, or whose kept picture didn't load before
-//   GitHub was asked (`missing`), is no longer kept. Only a bot never seen waits for its ask,
-//   behind the reads the tab opens with. Clearing the cache clears the table.
+//   GitHub answered (`missing`), is no longer kept. Only a bot never seen waits for its ask,
+//   behind the reads the tab opens with, and before the kept bots waiting to be asked about.
+//   Clearing the cache clears the table.
 // - **As whom** (`askGitHub`): the first account signed in, in its queue as a background read, and
 //   only while GitHub answers it and its rate limit is normal. With no account signed in, a bot
 //   not kept keeps its initials: a tab acting as nobody shows no comments.
@@ -78,6 +79,12 @@ export interface BotPicturesOptions {
   changed?: ((slug: string) => void) | undefined;
 }
 
+/** An ask waiting its turn: the bot's, and what starts it. */
+interface Waiting {
+  key: string;
+  start: () => void;
+}
+
 /** Finds and keeps where each bot's picture is. */
 export class BotPictures {
   readonly #ask: (login: string) => Promise<BotAnswer>;
@@ -96,8 +103,13 @@ export class BotPictures {
   readonly #asking = new Map<string, Promise<URL>>();
   /** The bots GitHub was asked about this run, or is being asked about. */
   readonly #asked = new Set<string>();
-  /** The asks, one at a time: each starts once the one before has ended. */
-  #line: Promise<unknown> = Promise.resolve();
+  /**
+   * The asks waiting their turn, one at a time: each starts once the one before has ended, those
+   * for a bot with nothing to draw (`first`) before those checking a kept one (`later`).
+   */
+  readonly #waiting = { first: [] as Waiting[], later: [] as Waiting[] };
+  /** Whether an ask is under way. */
+  #busy = false;
   /** How many asks in a row failed. */
   #failures = 0;
   /** Until when, by `#now`, nothing is asked. */
@@ -125,7 +137,7 @@ export class BotPictures {
         ? Promise.reject(new ImageError('refused', known))
         : Promise.resolve(new URL(known));
     }
-    return this.#inLine(login, key).then((address) => new URL(address));
+    return this.#inLine(login, key, 'first').then((address) => new URL(address));
   }
 
   /**
@@ -142,27 +154,60 @@ export class BotPictures {
     this.#forget(key);
   }
 
-  /** Asks GitHub about bot `login` in turn, once at a time. */
-  #inLine(login: string, key: string): Promise<URL> {
-    let asking = this.#asking.get(key);
-    if (!asking) {
-      const turn = this.#line.then(() => this.#lookUp(login, key));
-      this.#line = turn.catch(() => undefined);
-      asking = turn.finally(() => this.#asking.delete(key));
-      this.#asking.set(key, asking);
+  /**
+   * Asks GitHub about bot `login` in its turn, once at a time: `first` for a bot with nothing to
+   * draw, which goes before every check of a kept one waiting (`later`). Asked for again with
+   * nothing to draw, a check waiting goes first.
+   */
+  #inLine(login: string, key: string, turn: 'first' | 'later'): Promise<URL> {
+    const asking = this.#asking.get(key);
+    if (asking) {
+      if (turn === 'first') this.#hurry(key);
+      return asking;
     }
-    return asking;
+    const asked = this.#turn(key, turn)
+      .then(() => this.#lookUp(login, key))
+      .finally(() => {
+        this.#asking.delete(key);
+        this.#next();
+      });
+    this.#asking.set(key, asked);
+    return asked;
+  }
+
+  /** Waits for bot `key`'s turn to be asked about, among those of `turn`. */
+  #turn(key: string, turn: 'first' | 'later'): Promise<void> {
+    if (!this.#busy) {
+      this.#busy = true;
+      return Promise.resolve();
+    }
+    return new Promise((start) => this.#waiting[turn].push({ key, start }));
+  }
+
+  /** Moves the check of bot `key` that waits among the first. */
+  #hurry(key: string): void {
+    const at = this.#waiting.later.findIndex((waiting) => waiting.key === key);
+    if (at === -1) return;
+    this.#waiting.first.push(...this.#waiting.later.splice(at, 1));
+  }
+
+  /** Starts the next ask waiting, once one has ended. */
+  #next(): void {
+    const next = this.#waiting.first.shift() ?? this.#waiting.later.shift();
+    if (next) next.start();
+    else this.#busy = false;
   }
 
   /**
-   * Asks GitHub about bot `login`, drawn from where it was kept, as any bot is asked about: once
-   * it answers, what's kept follows what it said, and a change is told (`changed`). While GitHub
-   * can't say, what was kept stays, and it's asked again the next time it's drawn.
+   * Asks GitHub about bot `login`, drawn from where it was kept, as any bot is asked about, after
+   * the bots with nothing to draw: once it answers, what's kept follows what it said, and a change
+   * is told (`changed`). While GitHub can't say, what was kept stays, and it's asked again the next
+   * time it's drawn, as a bot not asked about is.
    */
   #check(login: string, key: string): void {
     if (this.#asking.has(key)) return;
     const kept = this.#known.get(key);
-    void this.#inLine(login, key).then(
+    void this.#inLine(login, key, 'later').then(
       (address) => {
         this.#unchecked.delete(key);
         if (!(kept instanceof URL) || kept.href !== address.href) this.#changed(key);

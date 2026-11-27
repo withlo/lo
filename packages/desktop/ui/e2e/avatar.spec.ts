@@ -1,7 +1,7 @@
 // An avatar's picture as Chromium loads it. Chromium keeps each picture a page has drawn by its
-// address, though main serves it for nothing to keep (`no-store`): drawn again at the same address,
-// an avatar shows the picture it had. Drawn again at a new one (`redrawPictures`), it fetches the
-// picture anew. That's how a bot's picture that moved shows where it is now.
+// address, though main serves it for nothing to keep (`no-store`): new avatars at the same address
+// show the picture it had, without asking for it. Drawn again at a new address (`redrawPictures`),
+// they fetch the picture anew. That's how a bot's picture that moved shows where it is now.
 
 import { buildPage, expect, launch, test, utilities } from './electron.ts';
 
@@ -35,6 +35,19 @@ test('avatars drawn again at a new address fetch their picture anew, and show wh
       );
     await page.evaluate(() => window.dispatchEvent(new Event('show')));
     await expect.poll(sides).toEqual([2, 2]);
+    expect(served).toBe(1);
+    // New avatars at the same address, though the picture there has changed: Chromium draws the
+    // one it kept, without asking.
+    await page.evaluate(() => {
+      for (const img of document.querySelectorAll<HTMLImageElement>('#avatars img')) {
+        img.dataset['before'] = '';
+      }
+      window.dispatchEvent(new Event('again'));
+    });
+    await page.waitForSelector('#avatars img[data-before]', { state: 'detached' });
+    await expect.poll(sides).toEqual([2, 2]);
+    expect(served).toBe(1);
+    // At a new address, it's fetched anew.
     await page.evaluate(() => window.dispatchEvent(new Event('redraw')));
     await expect.poll(sides).toEqual([3, 3]);
     expect(served).toBe(2);

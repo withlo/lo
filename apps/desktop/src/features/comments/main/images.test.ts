@@ -234,24 +234,88 @@ describe('Images', () => {
     expect(await cursor).toMatchObject({ type: 'png' });
   });
 
-  it("says when the avatars' host answers for a bot's picture without it, and not when it can't be reached", async () => {
-    let answer: 'gone' | 'text' | 'down' = 'gone';
+  it("says when the avatars' host has no bot's picture where it was, and not for an error that passes", async () => {
+    let answer: number | 'text' | 'down' = 404;
     const { loader, missing } = images(
       () => {
-        if (answer === 'gone') return new Response('Not Found', { status: 404 });
+        if (typeof answer === 'number') return new Response('', { status: answer });
         if (answer === 'text') return new Response('not an image');
         return Promise.reject(new TypeError('fetch failed'));
       },
       { bots: () => Promise.resolve('https://avatars.githubusercontent.com/in/1') },
     );
-    await refusal(loader.load(bot('cursor')));
-    answer = 'text';
-    await refusal(loader.load(bot('cursor', 40)));
-    answer = 'down';
-    await refusal(loader.load(bot('cursor', 24)));
+    const sizes = [56, 40, 24, 20, 16, 12, 8];
+    for (const [at, given] of ([404, 410, 'text', 429, 403, 503, 'down'] as const).entries()) {
+      answer = given;
+      await refusal(loader.load(bot('cursor', sizes[at])));
+    }
     expect(missing).toEqual([
       ['cursor', 'https://avatars.githubusercontent.com/in/1?s=56'],
       ['cursor', 'https://avatars.githubusercontent.com/in/1?s=40'],
+      ['cursor', 'https://avatars.githubusercontent.com/in/1?s=24'],
+    ]);
+  });
+
+  it("fetches a bot's picture from where it is now once it's let go of, keeping nothing of the old fetch", async () => {
+    let where = 'https://avatars.githubusercontent.com/in/1';
+    const held: ((response: Response) => void)[] = [];
+    const sent: string[] = [];
+    const loader = new Images({
+      fetch: (input) => {
+        const { url } = new Request(input);
+        sent.push(url);
+        if (url.includes('/in/1?')) return new Promise((resolve) => held.push(resolve));
+        return Promise.resolve(image(gif(3, 3), 'image/gif'));
+      },
+      acting: () => undefined,
+      token: () => Promise.resolve(undefined),
+      botPicture: () => Promise.resolve(new URL(where)),
+    });
+    const old = loader.load(bot('cursor'));
+    await until(() => held.length === 1);
+    // It moved while its old picture was being fetched.
+    where = 'https://avatars.githubusercontent.com/in/2';
+    loader.forgetBot('Cursor');
+    held[0]?.(image(png(56, 56)));
+    // Whoever asked before still gets what they asked for.
+    expect(await old).toMatchObject({ type: 'png' });
+    expect(await loader.load(bot('cursor'))).toMatchObject({ type: 'gif' });
+    expect(await loader.load(bot('cursor'))).toMatchObject({ type: 'gif' });
+    expect(sent).toEqual([
+      'https://avatars.githubusercontent.com/in/1?s=56',
+      'https://avatars.githubusercontent.com/in/2?s=56',
+    ]);
+  });
+
+  it("doesn't join a fetch of a bot's old picture asked for before it was let go of", async () => {
+    let where = 'https://avatars.githubusercontent.com/in/1';
+    const held: ((response: Response) => void)[] = [];
+    const sent: string[] = [];
+    const loader = new Images({
+      fetch: (input) => {
+        const { url } = new Request(input);
+        sent.push(url);
+        return new Promise((resolve) => held.push(resolve));
+      },
+      acting: () => undefined,
+      token: () => Promise.resolve(undefined),
+      botPicture: () => Promise.resolve(new URL(where)),
+    });
+    const old = loader.load(bot('cursor'));
+    await until(() => held.length === 1);
+    where = 'https://avatars.githubusercontent.com/in/2';
+    loader.forgetBot('cursor');
+    const now = loader.load(bot('cursor'));
+    await until(() => held.length === 2);
+    // The new fetch ends first, then the old one: what's kept is the new picture.
+    held[1]?.(image(gif(3, 3), 'image/gif'));
+    expect(await now).toMatchObject({ type: 'gif' });
+    held[0]?.(new Response('Not Found', { status: 404 }));
+    await refusal(old);
+    expect(await loader.load(bot('cursor'))).toMatchObject({ type: 'gif' });
+    expect(sent).toEqual([
+      'https://avatars.githubusercontent.com/in/1?s=56',
+      'https://avatars.githubusercontent.com/in/2?s=56',
     ]);
   });
 
