@@ -548,7 +548,40 @@ describe('where the layer on screen starts', () => {
   });
 });
 
+/** Whether tab `t84`'s stack says Lo offers to convert it to a GitHub stack, anywhere. */
+function offeredHere(finder: StackFinder): boolean | undefined {
+  const stack = finder.state('t84')?.stack;
+  return stack?.kind === 'stack' ? stack.offered : undefined;
+}
+
 describe('what a tab offers', () => {
+  it('says the offer of a GitHub stack is dismissed or turned off, where its tree makes none yet', async () => {
+    const found = await recorded('app_stack', E2E);
+    const poller = new FakePoller();
+    const dismissed = new Set<string>();
+    const off = new Set<string>();
+    const { finder } = started(
+      poller,
+      undefined,
+      undefined,
+      (notice, repo, numbers) =>
+        !off.has(notice) && !numbers.some((number) => dismissed.has(`${notice} ${repo} ${number}`)),
+    );
+    // The layers' state isn't read, so the tree makes no offer yet.
+    finder.follow([tab(84, { onScreen: true, head: headIn(found.list, 84) })]);
+    poller.set(E2E, { list: found.list, rules: found.rules });
+    await settle();
+    expect(finder.state('t84')?.stack).toMatchObject({ kind: 'stack', callout: null });
+    expect(offeredHere(finder)).toBe(true);
+    off.add('convert');
+    finder.noticesChanged();
+    expect(offeredHere(finder)).toBe(false);
+    off.delete('convert');
+    dismissed.add('convert rozed-dev/e2e 85');
+    finder.noticesChanged();
+    expect(offeredHere(finder)).toBe(false);
+  });
+
   it('leaves out an offer dismissed for its stack or its layer, or turned off, and says so', async () => {
     const found = await recorded('app_stack', E2E, [82, 83, 84, 85]);
     const { list, rules, layers } = found;
@@ -580,10 +613,13 @@ describe('what a tab offers', () => {
       'This diff includes #83’s changes',
     ]);
     const before = sent.length;
-    // The offer to convert is the stack's: dismissed for a layer below, it goes on #84 too.
+    // The offer to convert is the stack's: dismissed for a layer below, it goes on #84 too, and the
+    // stack says it's no longer offered, for the merge panel's.
+    expect(offeredHere(finder)).toBe(true);
     dismissed.add('convert rozed-dev/e2e 82');
     finder.noticesChanged();
     expect(offered()).toEqual([null, 'This diff includes #83’s changes']);
+    expect(offeredHere(finder)).toBe(false);
     // Where #84 starts is #84's own: dismissed for #83, it stays.
     dismissed.add('start rozed-dev/e2e 83');
     finder.noticesChanged();

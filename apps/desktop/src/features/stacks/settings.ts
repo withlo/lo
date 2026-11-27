@@ -6,7 +6,10 @@ import { z } from 'zod';
 
 import { defineSetting } from '../settings/contract.ts';
 
-/** Whether the stack's tree offers to convert a branch stack it could convert to a GitHub stack. */
+/**
+ * Whether the stack's tree, and its merge panel, offer to convert a branch stack Lo could convert
+ * to a GitHub stack.
+ */
 export const offerConvert = defineSetting(
   'stacks.offerConvert',
   z.boolean(),
@@ -16,7 +19,8 @@ export const offerConvert = defineSetting(
     group: 'pullRequests',
     label: 'Offer GitHub stacks',
     named: 'the offer of GitHub stacks',
-    description: 'Over a branch stack’s tree, an offer to convert it to a GitHub stack.',
+    description:
+      'Over a branch stack’s tree and merge panel, an offer to convert it to a GitHub stack.',
   },
 );
 

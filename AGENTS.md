@@ -1236,6 +1236,11 @@ and nothing while there's no stack.
   not yet in the GitHub stack below them), so dismissing one leaves the other. "For all stacks"
   turns off its setting, `stacks.offerConvert` or `stacks.offerStart`, whose switch in Settings ›
   Pull requests turns it back on; main sends no offer before it has read the file.
+- The merge panel makes the tree's offer too, for a chain it merges only once it's a GitHub stack,
+  and only while the stack says it's offered (`offered`: on in Settings, and not dismissed for one
+  of its layers, by which offer the tree makes, or `convert` where it makes none). It reads that
+  through `useConvertOffer` in `window/shared.ts`, which gives its Dismiss the tree offer's menu, so
+  a dismissal in either place takes both away in the same frame.
 
 `gS` makes the chain the pull request on screen is in a GitHub stack
 (`features/stacks/main/conversion.ts`), and the confirmation is the only way anything is sent.

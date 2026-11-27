@@ -14,10 +14,10 @@
 // The arrows in the stack panel's head step through the layers as `]s` and `[s` do, and while
 // layers are selected a hint row under them has the selection's keys.
 //
-// The offer to convert a branch stack, over its tree, and the message that offers to hide the
-// changes of the layer below each have Dismiss, whose menu dismisses it for this stack or layer, or
-// for all stacks, which turns its setting off. Each is done once, so none has a key; the palette
-// has them too, and the keymap file can give them one.
+// The offer to convert a branch stack, over its tree and in its merge panel, and the message that
+// offers to hide the changes of the layer below each have Dismiss, whose menu dismisses it for this
+// stack or layer, or for all stacks, which turns its setting off. Each is done once, so none has a
+// key; the palette has them too, and the keymap file can give them one.
 
 import { defineCommands, type When } from '@lo/ui/commands';
 
@@ -176,8 +176,8 @@ export default defineCommands(
       menu: { on: 'layer', order: 40 },
     },
     /**
-     * Dismisses the offer over the stack's tree to convert the stack on screen to a GitHub stack,
-     * for each layer it has, through restarts.
+     * Dismisses the offer to convert the stack on screen to a GitHub stack, over its tree and in
+     * its merge panel, for each layer it has, through restarts.
      */
     dismissConvert: {
       label: 'Dismiss for this stack',
@@ -188,8 +188,8 @@ export default defineCommands(
       menu: { on: 'notice', order: 0 },
     },
     /**
-     * Whether the stack's tree offers to convert a branch stack to a GitHub stack, as Settings'
-     * switch says. Its row in the offer's Dismiss menu turns it off.
+     * Whether the stack's tree and its merge panel offer to convert a branch stack to a GitHub
+     * stack, as Settings' switch says. Its row in the offer's Dismiss menu turns it off.
      */
     offerConvert: {
       label: 'Offer GitHub stacks',

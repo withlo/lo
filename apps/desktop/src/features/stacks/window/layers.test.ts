@@ -40,6 +40,7 @@ const STACK: StackView = {
     { ...row(85, [82]), branch: true, on: 82 },
   ],
   notes: [],
+  offered: true,
   callout: null,
 };
 

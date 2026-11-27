@@ -124,10 +124,11 @@ export type Note = z.output<typeof note>;
  * - `none` when its pull request isn't in a stack: a stack shows when it has two layers or more,
  *   when the pull request is in a GitHub stack, or when it needs a rebase;
  * - `stack`: the root branch its bottom layer sits on; whether every layer is in one GitHub stack
- *   (`githubStack`), which its head then says; its rows and its notes; and `callout`, the line the
- *   offer to convert it to a GitHub stack says, while Lo could convert the chain through the layer
- *   on screen, unless the offer was dismissed for one of its layers or turned off
- *   (`stacks.offerConvert`).
+ *   (`githubStack`), which its head then says; its rows and its notes; `offered`, whether Lo offers
+ *   to convert it to a GitHub stack at all, over its tree or in its merge panel:
+ *   `stacks.offerConvert` on, and the offer not dismissed for one of its layers; and `callout`, the
+ *   line the offer over the tree says, while it's offered and Lo could convert the chain through
+ *   the layer on screen.
  */
 export const stackView = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('unknown') }),
@@ -138,6 +139,7 @@ export const stackView = z.discriminatedUnion('kind', [
     githubStack: z.boolean(),
     rows: z.array(row).min(1),
     notes: z.array(note),
+    offered: z.boolean(),
     callout: z.string().nullable(),
   }),
 ]);
@@ -165,9 +167,9 @@ export type StackState = z.output<typeof stack>;
 
 /**
  * An offer the stacks make unasked, which the reader can dismiss for one stack or layer, or turn
- * off: `convert`, the offer over the stack's tree to convert it to a GitHub stack, dismissed for
- * every layer it has; `start`, the banner's offer to hide the changes of the layer below, dismissed
- * for the layer.
+ * off: `convert`, the offer to convert it to a GitHub stack, over the stack's tree and in its merge
+ * panel, dismissed for every layer it has; `start`, the banner's offer to hide the changes of the
+ * layer below, dismissed for the layer.
  */
 export const notice = z.enum(['convert', 'start']);
 export type Notice = z.output<typeof notice>;

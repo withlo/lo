@@ -11,9 +11,9 @@
 // left, a banner says so, and the panel's first row says why. One ready for a queue says what's
 // ahead of it, read once as the panel opens. Where the pull request sits says what its main button
 // merges: a GitHub stack's layers below it too, a chain's bottom layer alone, or nothing until the
-// chain is a GitHub stack. That's asked each time the panel opens and as the stack's layers move,
-// the button is busy until the first answer, and `⏎` asks again where what the panel heard keeps it
-// from merging.
+// chain is a GitHub stack, which the panel offers while the stacks offer it over the tree. That's
+// asked each time the panel opens and as the stack's layers move, the button is busy until the
+// first answer, and `⏎` asks again where what the panel heard keeps it from merging.
 
 import { handlers, holdRegistry } from '@lo/ui/commands';
 import { act, type ReactNode } from 'react';
@@ -26,6 +26,7 @@ import { createRegistry } from '../../../window/commands/registry.ts';
 import { installBridge } from '../../../window/test/bridge.ts';
 import queueKeys from '../../queue/keys.ts';
 import type { StackView } from '../../stacks/contract.ts';
+import type * as StacksShared from '../../stacks/window/shared.ts';
 import type * as TabShared from '../../tab/window/shared.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
 import type { InQueue, JobView, MergeState, MergeView, Placement } from '../contract.ts';
@@ -35,6 +36,7 @@ import { LeftBanner } from './LeftBanner.tsx';
 import { MergeHeader } from './MergeHeader.tsx';
 import { mergeFromPanel } from './merging.ts';
 import { merging, panels } from './store.ts';
+import { placedWhy } from './words.ts';
 
 // The tab on screen, as the tab feature names it: none, unless a test says.
 const on = vi.hoisted(() => ({ tab: undefined as unknown }));
@@ -42,6 +44,42 @@ vi.mock('../../tab/window/shared.ts', async (original) => ({
   ...(await original<typeof TabShared>()),
   activeTab: () => on.tab,
 }));
+
+// The views whose stack the stacks offer to convert to a GitHub stack, standing in for the stacks
+// feature, which offers it over the tree too: none, unless a test says.
+const offered = vi.hoisted(() => {
+  const ids = new Set<string>();
+  const listeners = new Set<() => void>();
+  return {
+    ids,
+    listeners,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    // What the offer's element takes: a `notice` scope, whose menu the stacks list.
+    props: { ref: () => undefined, 'data-lo-scope': 'notice', onContextMenu: () => undefined },
+  };
+});
+vi.mock('../../stacks/window/shared.ts', async (original) => {
+  const { useSyncExternalStore } = await import('react');
+  return {
+    ...(await original<typeof StacksShared>()),
+    useConvertOffer: (tab: PullTab) =>
+      useSyncExternalStore(offered.subscribe, () => offered.ids.has(tab.id))
+        ? offered.props
+        : undefined,
+  };
+});
+
+/** Has the stacks offer, or not, to convert view `id`'s stack to a GitHub stack. */
+function offerConvert(id: string, made: boolean): void {
+  act(() => {
+    if (made) offered.ids.add(id);
+    else offered.ids.delete(id);
+    for (const listener of offered.listeners) listener();
+  });
+}
 
 /** When the tests' statuses were read: now, so none is out of date unless a test says. */
 const NOW = Date.now();
@@ -476,14 +514,50 @@ it('offers to convert a chain to a GitHub stack first, and merges nothing until 
     kind: 'convert',
     offer: 'These PRs share commits but aren’t a GitHub stack. As one, they’d merge together.',
   });
+  offerConvert('t15', true);
   const page = draw(<MergeHeader tab={tabOf('t15')} />);
   await until(() => page.querySelector('button') !== null);
   act(() => page.querySelector('button')?.click());
   await until(() => panel()?.textContent?.includes('As one, they’d merge together.') === true);
   expect(buttonSaying('Convert to GitHub stack…', panel() ?? undefined)).toBeDefined();
+  // Dismiss, at its line's end, asks where, in the menu the offer over the stack's tree has.
+  const offer = panel()?.querySelector('[data-lo-scope="notice"]');
+  expect(offer?.querySelector('button[aria-label="Dismiss"]')?.getAttribute('aria-haspopup')).toBe(
+    'menu',
+  );
   expect(primary()?.textContent).toContain('Merge #138…');
   expect(primary()?.getAttribute('aria-disabled')).toBe('true');
   expect(primary()?.getAttribute('aria-description')).toBe('Convert to GitHub stack first');
+});
+
+it('makes the offer to convert only while the stacks make it, and otherwise has nothing and no room in its place', async () => {
+  const placement: Placement = {
+    kind: 'convert',
+    offer: 'These PRs share commits but aren’t a GitHub stack. As one, they’d merge together.',
+  };
+  views.set('t22', { kind: 'known', state: state() });
+  places.set('t22', placement);
+  const page = draw(<MergeHeader tab={tabOf('t22')} />);
+  await until(() => page.querySelector('button') !== null);
+  act(() => page.querySelector('button')?.click());
+  await until(() => panels.get('t22').place.kind === 'read');
+  // Turned off, or dismissed for the stack: under the head, the method switch, and no Dismiss.
+  const body = () => panel()?.children[1];
+  expect(body()?.firstElementChild?.querySelector('[role="radiogroup"]')).not.toBeNull();
+  expect(panel()?.textContent).not.toContain('As one, they’d merge together.');
+  expect(buttonSaying('Convert to GitHub stack…', panel() ?? undefined)).toBeUndefined();
+  expect(panel()?.querySelector('button[aria-label="Dismiss"]')).toBeNull();
+  // It still merges nothing until the chain is a GitHub stack, and says so on its main button.
+  expect(primary()?.getAttribute('aria-disabled')).toBe('true');
+  expect(primary()?.getAttribute('aria-description')).toBe(placedWhy(placement));
+  // Offered, as when Settings turns it on again, it's first; dismissed over the tree, it goes.
+  offerConvert('t22', true);
+  await until(() => panel()?.textContent?.includes('As one, they’d merge together.') === true);
+  expect(body()?.firstElementChild?.querySelector('[data-lo-scope="notice"]')).not.toBeNull();
+  offerConvert('t22', false);
+  await until(() => panel()?.textContent?.includes('As one, they’d merge together.') === false);
+  expect(body()?.firstElementChild?.querySelector('[role="radiogroup"]')).not.toBeNull();
+  expect(panel()?.querySelector('button[aria-label="Dismiss"]')).toBeNull();
 });
 
 it('says a chain’s bottom layer merges alone, and why it can’t be a GitHub stack', async () => {
@@ -578,6 +652,7 @@ function chainOf(layers: readonly number[]): StackView {
       threads: null,
     })),
     notes: [],
+    offered: true,
     callout: null,
   };
 }
@@ -602,6 +677,7 @@ const CONVERT: Placement = {
 it('asks afresh where it sits each time the panel opens, and as its stack’s layers move', async () => {
   views.set('t18', { kind: 'known', state: state() });
   places.set('t18', CONVERT);
+  offerConvert('t18', true);
   act(() =>
     bridge.push('stacks.stack', { id: 't18', stack: chainOf([137, 138, 139]), offer: null }),
   );
@@ -651,6 +727,7 @@ it('is busy checking what merges with it until main first says, and `⏎` waits 
 it('`⏎` asks again where it sits when what the panel heard keeps it from merging', async () => {
   views.set('t20', { kind: 'known', state: state() });
   places.set('t20', CONVERT);
+  offerConvert('t20', true);
   onScreen(tabOf('t20'));
   const page = draw(<MergeHeader tab={tabOf('t20')} />);
   await until(() => page.querySelector('button') !== null);

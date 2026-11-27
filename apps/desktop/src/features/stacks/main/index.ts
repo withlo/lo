@@ -112,13 +112,14 @@ export default defineFeature(contract, {
       const tab = tabsOf(context.use(tabs)).find((each) => each.id === id);
       if (!tab) throw new IpcError('notFound', 'There’s no pull request in that tab.');
       const stack = finder.state(id)?.stack;
-      // The tree's offer is dismissed by which it is now, so a different one can still be made.
-      const which = notice === 'start' ? 'start' : finder.callout(id);
-      if (which === undefined || (which !== 'start' && stack?.kind !== 'stack')) {
+      // The offer of a GitHub stack is dismissed by which the tree makes now, so a different one
+      // can still be made, or as the plain one where the tree makes none, as the merge panel's can.
+      const which = notice === 'start' ? 'start' : (finder.callout(id) ?? 'convert');
+      if (which !== 'start' && stack?.kind !== 'stack') {
         throw new IpcError('missing', 'That offer is no longer there.');
       }
-      // The tree's offer is the stack's, so it's dismissed for each of its layers; the start is the
-      // layer's own.
+      // The offer of a GitHub stack is the stack's, so it's dismissed for each of its layers; the
+      // start is the layer's own.
       const numbers =
         which !== 'start' && stack?.kind === 'stack'
           ? stack.rows.map((row) => row.number)

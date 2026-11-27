@@ -1,7 +1,7 @@
 // The stacks feature's offers in main: the finder offers each only once Settings says it's on, works
 // the tabs out again as a switch turns, and `stacks.dismiss` keeps what's dismissed, the tree's
-// offer by which it is, for each of the stack's layers, and the start for its layer. The finder is a
-// stand-in that hands back the options main gave it.
+// offer by which it is, or the plain one where the tree makes none, for each of the stack's layers,
+// and the start for its layer. The finder is a stand-in that hands back the options main gave it.
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -103,6 +103,7 @@ const STACK: StackState = {
     githubStack: false,
     rows: [82, 83, 84, 85].map(row),
     notes: [],
+    offered: true,
     callout: 'This branch stack merges one layer at a time.',
   },
   offer: null,
@@ -222,7 +223,7 @@ describe('stacks in main', () => {
     await feature.stop?.(again.context);
   });
 
-  it('says why it can’t dismiss: no pull request in that tab, no offer there now, or Lo quitting', async () => {
+  it('says why it can’t dismiss: no pull request in that tab, no stack there now, or Lo quitting', async () => {
     const { context, finder } = started(migrated());
     /** What dismissing `notice` in tab `id` throws, by its code and message. */
     const refusal = (id: string, notice: 'convert' | 'start') => {
@@ -234,10 +235,22 @@ describe('stacks in main', () => {
       return undefined;
     };
     expect(refusal('t9', 'start')).toEqual(['notFound', 'There’s no pull request in that tab.']);
-    // A stack whose tree offers nothing now.
-    finder.states.set('t1', STACK);
+    finder.states.set('t1', { id: 't1', stack: { kind: 'none' }, offer: null });
     expect(refusal('t1', 'convert')).toEqual(['missing', 'That offer is no longer there.']);
     await feature.stop?.(context);
     expect(refusal('t1', 'start')).toEqual(['stopped', 'Lo is quitting.']);
+  });
+
+  it('dismisses the merge panel’s offer of a GitHub stack, where the tree makes none, as the plain one', async () => {
+    const opened = migrated();
+    const { context, watchers, finder } = started(opened);
+    watchers.get('stacks.offerConvert')?.(true);
+    finder.states.set('t1', STACK);
+    feature.handlers['dismiss']?.({ id: 't1', notice: 'convert' }, context, NO_WINDOW);
+    expect(
+      opened.prepare('SELECT notice, number FROM stacks_dismissed ORDER BY rowid').all(),
+    ).toEqual([82, 83, 84, 85].map((number) => ({ notice: 'convert', number })));
+    expect(finder.options.offers!('convert', REPO, [84])).toBe(false);
+    await feature.stop?.(context);
   });
 });

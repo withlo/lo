@@ -208,6 +208,8 @@ function drawn(
       githubStack: oneGithubStack(layers),
       rows: placed.map(({ row }) => row),
       notes: [...githubNotes(layers), ...notesOf(input, forest, list, stack)],
+      // Until the finder hears what the reader dismissed or turned off.
+      offered: true,
       callout: callout?.line ?? null,
     },
     callout: callout?.kind,

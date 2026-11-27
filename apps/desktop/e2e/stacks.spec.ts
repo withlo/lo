@@ -1,11 +1,12 @@
 // The stacks in the app: Lo, started on the replay server as rozed-bot, finds the stack each pull
 // request's tab is in, among rozed-dev/e2e's open pull requests and the merged ones they link
 // through, reads the state of the layers of the stack on screen, and draws the stack's tree above
-// the files. `]s` and `[s` walk it, `-` from the file tree goes up to it, and a link to any layer
-// shows that layer in the stack's tab. A run of layers chosen in the tree, or the stack up to a
-// layer, shows as one diff, and `Esc` comes back. A layer's diff leaves out the layers below it,
-// from GitHub's comparison until the local copy is ready, and a stack found only once the diff is
-// drawn offers that in a banner.
+// the files, with its offer of a GitHub stack, which the merge panel makes too, and a dismissal in
+// either place takes from both. `]s` and `[s` walk it, `-` from the file tree goes up to it, and a
+// link to any layer shows that layer in the stack's tab. A run of layers chosen in the tree, or the
+// stack up to a layer, shows as one diff, and `Esc` comes back. A layer's diff leaves out the layers
+// below it, from GitHub's comparison until the local copy is ready, and a stack found only once the
+// diff is drawn offers that in a banner.
 
 import { STACK_PULLS, writeStackRemote } from '@lo/testing/git';
 import type { Page } from '@playwright/test';
@@ -185,6 +186,91 @@ test('draws the stack above the files, with each layer’s marks, the offer and 
   await open(page, STACK.g2);
   await expect(stack).toContainText(/GitHub.*\b2 layers/, { timeout: 20_000 });
   await expect(stack.getByRole('button', { name: /^Convert to GitHub stack/ })).toHaveCount(0);
+});
+
+test('the merge panel offers the GitHub stack the tree offers, and a dismissal in either place takes both', async ({
+  app,
+  page,
+}) => {
+  test.setTimeout(90_000);
+  // The cassette has none of what main reads to say where a layer sits in its merge panel: main
+  // says #C could merge once its chain is a GitHub stack, as it would from those reads.
+  await app.evaluate(({ ipcMain }, offer) => {
+    ipcMain.removeHandler('merge.place');
+    ipcMain.handle('merge.place', () => ({ ok: true, value: { kind: 'convert', offer } }));
+  }, 'This branch stack merges one layer at a time.');
+  await open(page, STACK.c);
+  const tree = page.getByRole('region', { name: 'Stack' });
+  const status = page.locator('header.pr-header:visible button[aria-haspopup="dialog"]');
+  const panel = page.locator('[data-lo-scope="merge"]');
+  /** The offer's button, over the tree or in the merge panel. */
+  const convert = (place: typeof tree) =>
+    place.getByRole('button', { name: /^Convert to GitHub stack/ });
+  await expect(convert(tree)).toBeVisible({ timeout: 20_000 });
+  await expect(status).toContainText('Ready to merge', { timeout: 20_000 });
+  await status.click();
+  await expect(panel.getByText('This branch stack merges one layer at a time.')).toBeVisible();
+  await expect(convert(panel)).toBeVisible();
+  // Each change to the page, noted as whether each offer is there and not leaving: none has one
+  // without the other.
+  await page.evaluate(() => {
+    const seen: string[] = [];
+    Reflect.set(window, 'offersSeen', seen);
+    new MutationObserver(() => {
+      const made = ['section[aria-label="Stack"]', '[data-lo-scope="merge"]'].map((place) =>
+        [...document.querySelectorAll(`${place} [data-lo-scope="notice"]`)].some(
+          (offer) => offer.closest('[inert]') === null,
+        ),
+      );
+      seen.push(made.join(' '));
+    }).observe(document.body, { subtree: true, childList: true, attributes: true });
+  });
+  const offersSeen = () =>
+    page.evaluate(() => {
+      const seen: unknown = Reflect.get(window, 'offersSeen');
+      return Array.isArray(seen) ? seen.map(String) : [];
+    });
+
+  // The panel's Dismiss asks where, as the tree's does. For all stacks, both go, and the panel
+  // stays, with its keys, the method switch under its head.
+  await panel.getByRole('button', { name: 'Dismiss' }).click();
+  const choices = page.getByRole('menu', { name: 'Dismiss' }).getByRole('menuitem');
+  await expect(choices).toHaveText([/^Dismiss for this stack/, /^Dismiss for all stacks/]);
+  await choices.filter({ hasText: /^Dismiss for all stacks/ }).click();
+  await expect(convert(tree)).toHaveCount(0);
+  await expect(convert(panel)).toHaveCount(0);
+  await expect(panel.getByRole('radiogroup')).toBeVisible();
+  await expect.poll(() => scopeOf(page)).toBe('merge');
+  expect(await offersSeen()).toContain('true true');
+  expect((await offersSeen()).at(-1)).toBe('false false');
+  expect(await offersSeen()).not.toContain('true false');
+  expect(await offersSeen()).not.toContain('false true');
+
+  // Settings turns it on again: both come back together.
+  await page.evaluate(() =>
+    window.lo.invoke('settings.set', { key: 'stacks.offerConvert', value: true }),
+  );
+  await expect(convert(panel)).toBeVisible({ timeout: 10_000 });
+  await expect(convert(tree)).toBeVisible();
+  expect((await offersSeen()).at(-1)).toBe('true true');
+  expect(await offersSeen()).not.toContain('true false');
+  expect(await offersSeen()).not.toContain('false true');
+
+  // Dismissed over the tree for this stack, it's gone from the panel too, which still merges
+  // nothing until the chain is a GitHub stack.
+  await page.keyboard.press('Escape');
+  await expect(panel).toHaveCount(0);
+  await tree.getByRole('button', { name: 'Dismiss' }).click();
+  await choices.filter({ hasText: /^Dismiss for this stack/ }).click();
+  await expect(convert(tree)).toHaveCount(0);
+  await status.click();
+  await expect(panel.getByRole('radiogroup')).toBeVisible();
+  await expect(panel.getByRole('button', { name: /^Merge #/ })).toHaveAttribute(
+    'aria-description',
+    /\bConvert\b/,
+  );
+  await expect(convert(panel)).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: 'Dismiss' })).toHaveCount(0);
 });
 
 test(']s and [s walk the layers in the tree’s order, in one tab, and stop at the ends; and a link to any layer shows it in the tab its stack is in', async ({
