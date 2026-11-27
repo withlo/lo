@@ -1118,8 +1118,10 @@ changing, as when the local copy marks one generated, doesn't reorder a drawn vi
   newer push.
 - `diff.layout` and `diff.whitespace` are settings; `gi` and `gw` change them.
 - With `comments.threads` at `beside`, a thread or a comment box never reaches the aligner: the code
-  view draws markers in its gutter and one `ThreadPopover` in a layer of its scroll. A test fails if
-  a diff with threads lays out its rows differently from the same diff without them.
+  view draws markers in its gutter and one `ThreadPopover` in a layer of its scroll. An overview's
+  code blocks share one, in a layer of the overview's scroll, so no block clips it. A test fails if
+  a diff with threads lays out its rows differently from the same diff without them, and if a code
+  block is taller with threads beside its lines than without them.
 
 ### Revisions
 
@@ -1587,6 +1589,10 @@ panel's `x` resolves the thread the keyboard is on, through the same function.
 - A reply's box and an edit's are comment boxes, kept by their thread (`reply` and `edit` places),
   and drawn right after the thread's card. The code view keeps a box for each place and name, so a
   reply's box and a new comment's on the same line both stay open.
+- A reply or an edit is written only in the diff on screen (`diffOnScreen`): a diff drawn but hidden
+  is inert, and a box opened in it would leave the keys typed for it to the thread. Asked for on an
+  overview's code block while the diff isn't on screen, it's refused with "Go to the diff first",
+  opening nothing; with the code beside, it's written in the diff.
 - An edit's draft keeps the text it started from (`base`, in `comments_drafts`), GitHub's as the
   card showed it when `i` started it (`comments.editing`), through a restart. `comments.edit` reads
   the comment afresh (`reviewComment`) and saves only if GitHub's text is still that one

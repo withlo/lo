@@ -1272,6 +1272,8 @@ export interface ExcerptInit {
   vimKeys: readonly VimKey[];
   /** The nonce the window's content security policy lets the view's style elements carry. */
   nonce: string;
+  /** How it shows review threads: between lines unless said. `setThreadsMode` changes it. */
+  threads?: ThreadsMode | undefined;
 }
 
 /**
@@ -1285,15 +1287,45 @@ export interface ExcerptView extends KeySource {
   /** Replaces the lines on the range's side marked as changed since. */
   setStale(lines: readonly number[]): void;
   /**
-   * Replaces the threads drawn under the lines the excerpt shows, each drawn by `render` as the
-   * diff view's are. Threads on lines it doesn't show are left out. Once the excerpt has been on
-   * the page, threads that would come, go or move on a line on screen wait, until none of the lines
-   * they change is on screen, the reader acts in the excerpt, or acts anywhere while no scroll can
-   * take those lines off screen, a key `listen` hands the registry counting; then they come
-   * together.
+   * Replaces the threads on the lines the excerpt shows. Threads on lines it doesn't show are left
+   * out. Between lines each is drawn under its line by `render`, as the diff view's are: once the
+   * excerpt has been on the page, threads that would come, go or move on a line on screen wait,
+   * until none of the lines they change is on screen, the reader acts in the excerpt, or acts
+   * anywhere while no scroll can take those lines off screen, a key `listen` hands the registry
+   * counting; then they come together. Beside lines they come at once, as marks, since nothing
+   * moves for them, and the popover shows them as `popover` draws them, which stays until another
+   * is given.
    */
-  setThreads(threads: readonly ThreadView[], render: RenderThread): void;
-  /** Opens a thread, collapses it, or the other of the two. Says whether the excerpt has it. */
+  setThreads(
+    threads: readonly ThreadView[],
+    render: RenderThread,
+    options?: { readonly popover?: RenderPopover },
+  ): void;
+  /**
+   * Shows review threads beside lines or between them, as the diff view does (`DiffView`'s
+   * `setThreadsMode`). Beside lines, the popover is in a layer of the scroll around the excerpt,
+   * shared by every excerpt in it, so no excerpt clips it: one open for an excerpt closes another's,
+   * and the pointer previews nothing while one is pinned.
+   */
+  setThreadsMode(mode: ThreadsMode): void;
+  /**
+   * Beside lines, pins the popover of the line thread `id` is on, as a key opens it, the scroll
+   * around it scrolled the least that shows it whole, the cursor on the line. With `focus`, focus
+   * goes into it, its first comment ringed. Says whether there was one to pin.
+   */
+  pinThread(id: string, focus?: boolean): boolean;
+  /** The threads of its popover pinned, by their ids: none while it's closed or a preview. */
+  pinned(): readonly string[];
+  /** Whether its popover is pinned. */
+  popoverPinned(): boolean;
+  /** Closes its popover, as `Esc` does: focus in it goes to its line. Says whether one was open. */
+  closePopover(): boolean;
+  /** Whether focus is in it: its code, a comment box under its lines, or its popover. */
+  hasFocus(): boolean;
+  /**
+   * Opens a thread, collapses it, or the other of the two; beside lines, closing it closes its
+   * popover. Says whether the excerpt has it.
+   */
   openThread(id: string, open: boolean | 'toggle'): boolean;
   /**
    * Opens a comment box with `draft` in it, under a line the excerpt shows, the last line of a

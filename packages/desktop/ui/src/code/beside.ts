@@ -11,7 +11,7 @@
 // A code view keeps its threads by where they are, says where its lines are drawn (`BesideHost`),
 // and hands this the reader's pointer and the cursor's moves.
 
-import type { EditorView } from '@codemirror/view';
+import { type BlockInfo, BlockType, type EditorView } from '@codemirror/view';
 
 import { type HeaderTarget, KEY_EVENT, type LineTarget } from '../commands/index.ts';
 import { NEW_SLOT, REPLY_SLOT } from '../edits.ts';
@@ -35,8 +35,8 @@ import { CommentBox } from './comments.ts';
 import type { HeaderThreads } from './decorations.ts';
 import { endSelection } from './keys.ts';
 import { besideMarker, type LaneBubble, type LaneRange, setPopped } from './lanes.ts';
-import { type PopHost, type PopLines, type PopRoom, ThreadPop } from './popover.ts';
-import { editSlot } from './widgets.ts';
+import type { Popover, PopHost, PopLines, PopRoom } from './popover.ts';
+import { editSlot, HeaderWidget, SpacerWidget } from './widgets.ts';
 
 /** An editor of a code view: one side's, side by side, or the one with both sides' lines. */
 export type Pane = Side | 'inline';
@@ -142,6 +142,24 @@ function sameDrafts(before: readonly DraftMark[], after: readonly DraftMark[]): 
   );
 }
 
+/**
+ * Where a line's own row is in its block, from the document's top: its text, or a file's header
+ * band, with what's drawn under it, as a comment box, but not the room that lines the sides up.
+ */
+function rowOf(block: BlockInfo): { top: number; bottom: number } {
+  const parts = Array.isArray(block.type) ? (block.type as readonly BlockInfo[]) : [block];
+  const own = parts.findIndex(
+    (part) => part.type === BlockType.Text || part.widget instanceof HeaderWidget,
+  );
+  if (own < 0) return { top: block.top, bottom: block.bottom };
+  let bottom = parts[own]!.bottom;
+  for (const part of parts.slice(own + 1)) {
+    if (part.widget instanceof SpacerWidget) break;
+    bottom = part.bottom;
+  }
+  return { top: parts[own]!.top, bottom };
+}
+
 /** Whether document line `line` is in `span`, if there's one. */
 function inSpan(span: { from: number; to: number } | undefined, line: number): boolean {
   return span !== undefined && line >= span.from && line <= span.to;
@@ -206,6 +224,11 @@ export interface BesideHost {
   readonly scroller: HTMLElement;
   /** The nonce the window's content security policy lets a comment box's style elements carry. */
   readonly nonce: string;
+  /**
+   * The view's popover, made as it's first needed, for `pop` to place and fill: one of its own, or
+   * its handle on one it shares with the views in its scroll.
+   */
+  popover(pop: PopHost<PopPlace>): Popover<PopPlace>;
   /** How the view shows threads now. */
   mode(): ThreadsMode;
   /** The threads drawn in file `file`, by where they are (`side:line`, or `new:0` on the file). */
@@ -245,8 +268,6 @@ export interface BesideHost {
     from: { side: Side; line: number },
     end: { side: Side; line: number },
   ): Omit<LaneRange, 'tone'> | undefined;
-  /** Where document line `line`'s own row is in `view`, from its document's top. */
-  row(view: EditorView, line: number): { top: number; bottom: number };
   /** The pane the popover is placed in, as it is now. */
   room(): PopRoom;
   /** Scrolls the pane by `by`, down or up, as the view's own scroll. */
@@ -273,8 +294,10 @@ export class Beside {
   /** The colour each bubble was drawn in last, so one whose thread changes state tints. */
   readonly tones = new Tones();
   readonly #host: BesideHost;
-  /** The threads' popover, beside lines: one per view. */
-  readonly #pop: ThreadPop<PopPlace>;
+  /** The threads' popover, beside lines, once something has needed it. */
+  #pop: Popover<PopPlace> | undefined;
+  /** What draws the popover's threads, as the caller gave it. */
+  #render: RenderPopover | undefined;
   /** Threads drawn since the last frame, with the view seen: their marks fade in. */
   readonly #arriving = new Set<string>();
   /** Where the popover was last shown open, whose lines and marks say so. */
@@ -292,27 +315,34 @@ export class Beside {
 
   constructor(host: BesideHost) {
     this.#host = host;
-    this.#pop = new ThreadPop(this.#popHost());
   }
 
-  /** What draws the popover's threads. */
+  /** The popover, made as it's first needed: until a thread shows, the view makes nothing. */
+  #popover(): Popover<PopPlace> {
+    this.#pop ??= this.#host.popover(this.#popHost());
+    return this.#pop;
+  }
+
+  /** What draws the popover's threads: what it shows is drawn anew as it changes. */
   set render(render: RenderPopover | undefined) {
-    this.#pop.render = render;
+    if (render === this.#render) return;
+    this.#render = render;
+    this.#pop?.redraw();
   }
 
   /** Places the popover again by its lines as they're drawn now, as tall as the pane lets it be. */
   place(): void {
-    this.#pop.place();
+    this.#pop?.place();
   }
 
-  /** Whether focus is in the popover. */
+  /** Whether focus is in the popover, open at the view's lines. */
   hasFocus(): boolean {
-    return this.#pop.hasFocus();
+    return this.#pop?.hasFocus() ?? false;
   }
 
   /** Closes the popover, the comment box in it first, keeping its draft. */
   close(): void {
-    this.#pop.close();
+    this.#pop?.close();
   }
 
   /** The line of the popover's comment box, if one is open. */
@@ -488,7 +518,7 @@ export class Beside {
 
   /** What the popover shows changed, as its threads did: drawn again, and placed again. */
   refresh(): void {
-    this.#pop.refresh();
+    this.#pop?.refresh();
   }
 
   /**
@@ -496,9 +526,9 @@ export class Beside {
    * lines nothing opens the popover, so what it built ahead goes with it.
    */
   switching(mode: ThreadsMode): void {
-    this.#pop.close();
+    this.#pop?.close();
     this.#releaseBox();
-    if (mode === 'between') this.#pop.clear();
+    if (mode === 'between') this.#pop?.clear();
   }
 
   /**
@@ -507,7 +537,7 @@ export class Beside {
    */
   openThread(id: string, open: boolean | 'toggle'): boolean {
     const at = this.#popOf(id);
-    if (at && open === false && this.#pop.at?.key === at.key) this.#pop.close();
+    if (at && open === false && this.#pop?.at?.key === at.key) this.#pop.close();
     return at !== undefined;
   }
 
@@ -516,22 +546,23 @@ export class Beside {
   pinThread(id: string, focus = false): boolean {
     const at = this.#host.mode() === 'beside' ? this.#popOf(id) : undefined;
     if (!at || !this.#popLines(at)) return false;
-    this.#pop.pin(at);
-    if (focus) this.#pop.focus();
-    return this.#pop.at?.key === at.key;
+    const pop = this.#popover();
+    pop.pin(at);
+    if (focus) pop.focus();
+    return pop.at?.key === at.key;
   }
 
   pinned(): readonly string[] {
-    const at = this.#pop.pinned ? this.#pop.at : undefined;
+    const at = this.#pop?.pinned ? this.#pop.at : undefined;
     return at ? this.#poppedThreads(at).map((thread) => thread.id) : [];
   }
 
   popoverPinned(): boolean {
-    return this.#pop.pinned;
+    return this.#pop?.pinned ?? false;
   }
 
   closePopover(): boolean {
-    if (!this.#pop.open) return false;
+    if (!this.#pop?.open) return false;
     this.#pop.close();
     return true;
   }
@@ -541,6 +572,7 @@ export class Beside {
     const host = this.#host;
     return {
       scroller: host.scroller,
+      render: () => this.#render,
       lines: (at) => this.#popLines(at),
       room: () => host.room(),
       view: (at, pinned): PopoverView => {
@@ -587,7 +619,7 @@ export class Beside {
     // A file's own draft's bubble is in its header, which draws the same height with or without.
     this.#host.marksChanged(files, heads);
     // What the popover is called names the draft in it.
-    if (this.#pop.open) this.#pop.refresh();
+    if (this.#pop?.open) this.#pop.refresh();
   }
 
   openDraft(at: Place | { readonly thread: string }): boolean {
@@ -725,8 +757,8 @@ export class Beside {
     const box = scroller.getBoundingClientRect();
     const top = box.top + scroller.clientTop - scroller.scrollTop - view.documentTop;
     const left = box.left + scroller.clientLeft - scroller.scrollLeft;
-    const first = host.row(view, span.from);
-    const last = host.row(view, span.to);
+    const first = rowOf(view.lineBlockAt(view.state.doc.line(span.from).from));
+    const last = rowOf(view.lineBlockAt(view.state.doc.line(span.to).from));
     return { first: first.top - top, last: last.bottom - top, lane: lane.left - left };
   }
 
@@ -747,7 +779,7 @@ export class Beside {
     // A file's own threads' bubble is in its header.
     const heads = new Set([was, at].flatMap((each) => (each?.line === 0 ? [each.file] : [])));
     host.marksChanged(files, heads);
-    if (at && this.#pop.pinned) this.#cursorOnto(at);
+    if (at && this.#pop?.pinned) this.#cursorOnto(at);
   }
 
   /** Puts the cursor on the bubble's line of the popover at `at`, unless it's on its lines. */
@@ -766,15 +798,15 @@ export class Beside {
    * left closes, and the popover of the line it's on is drawn ahead, to open whole.
    */
   cursorMoved(pane: Pane, line: number, at: At): void {
-    const open = this.#pop.at;
+    const open = this.#pop?.at;
     // One holding a comment box being written stays: only the box closing closes it.
     const holds = open !== undefined && this.#box?.at.key === open.key && !this.#box.sent;
-    if (open && this.#pop.pinned && !holds && !this.#onPopLines(open, pane, line)) {
+    if (open && this.#pop?.pinned && !holds && !this.#onPopLines(open, pane, line)) {
       this.#pop.close();
     }
     const key = at.line === 0 ? 'new:0' : `${at.side}:${at.line}`;
     const ending = this.#host.threadsIn(at.file)?.get(key);
-    if (ending?.length) this.#pop.build({ ...at, key: waitKey(at.file, key) });
+    if (ending?.length) this.#popover().build({ ...at, key: waitKey(at.file, key) });
   }
 
   /**
@@ -784,7 +816,7 @@ export class Beside {
   markOf(target: EventTarget | null): { at: PopPlace; thread: string } | undefined {
     const host = this.#host;
     if (host.mode() !== 'beside' || !(target instanceof Element)) return undefined;
-    if (!host.root.contains(target) || this.#pop.dom.contains(target)) return undefined;
+    if (!host.root.contains(target) || this.#pop?.dom.contains(target)) return undefined;
     // A draft's own bubble is a control of its own, which opens its box again.
     if (target.closest('.lo-bubble[data-draft]') !== null) return undefined;
     let thread = target.closest<HTMLElement>('.lo-bubble[data-beside]')?.dataset.thread;
@@ -804,7 +836,10 @@ export class Beside {
   /** The pointer came over something, or left the view: a mark it rests on previews its popover. */
   hover(event: PointerEvent): void {
     if (this.#host.mode() !== 'beside') return;
-    this.#pop.hover(event.type === 'pointerleave' ? undefined : this.markOf(event.target)?.at);
+    const at = event.type === 'pointerleave' ? undefined : this.markOf(event.target)?.at;
+    // Off a mark, with no popover made, there's nothing to tell.
+    if (at === undefined && !this.#pop) return;
+    this.#popover().hover(at);
   }
 
   /**
@@ -812,8 +847,9 @@ export class Beside {
    * draft there opens in its box again: one in a thread it shows first.
    */
   clicked(at: PopPlace): void {
-    if (!this.#pop.clicked(at)) return;
-    this.#pop.focus(false);
+    const pop = this.#popover();
+    if (!pop.clicked(at)) return;
+    pop.focus(false);
     this.#draftsAt(at)
       .find((draft) => draft.shown !== true)
       ?.open();
@@ -824,7 +860,7 @@ export class Beside {
    * staying where it was, which in a popover is in the one pinned next.
    */
   land(id: string): void {
-    this.pinAfterScroll(id, this.#pop.hasFocus());
+    this.pinAfterScroll(id, this.hasFocus());
   }
 
   /**
@@ -840,8 +876,9 @@ export class Beside {
         if (asked !== this.#popping || this.#host.mode() !== 'beside') return;
         const at = this.#popOf(id);
         if (!at) return;
-        this.#pop.pin(at);
-        if (focus && this.#pop.at?.key === at.key) this.#pop.focus();
+        const pop = this.#popover();
+        pop.pin(at);
+        if (focus && pop.at?.key === at.key) pop.focus();
         this.#landLine(at);
       }),
     );
@@ -876,10 +913,11 @@ export class Beside {
     const { key, place, from, target, written } = where;
     const focus = options.focus !== false;
     const { kept } = options;
+    const pop = this.#popover();
     const was = this.#box;
     if (was && was.key === key && !was.sent) {
       if (focus) {
-        this.#pop.pin(was.at);
+        pop.pin(was.at);
         was.box.focus();
       }
       return was.box.composer;
@@ -891,8 +929,8 @@ export class Beside {
       written === undefined &&
       (was !== undefined && !was.sent && was.at.key === at.key
         ? was.opened
-        : !(this.#pop.pinned && this.#pop.at?.key === at.key));
-    const within = this.#pop.hasFocus();
+        : !(pop.pinned && pop.at?.key === at.key));
+    const within = pop.hasFocus();
     // One box at a time: the one open closes first, keeping its draft, and what one sent goes.
     this.#releaseBox();
     const box = new CommentBox({
@@ -939,9 +977,9 @@ export class Beside {
     host.showLine(place);
     // Opened by the reader, the pane scrolls the least that shows it whole; opened for them, as
     // one opened as it was, nothing on screen moves.
-    if (this.#pop.pinned && this.#pop.at?.key === at.key) this.#pop.refresh();
-    else this.#pop.pin(at, focus && !kept);
-    if (this.#box !== popBox || this.#pop.at?.key !== at.key || !box.dom.isConnected) {
+    if (pop.pinned && pop.at?.key === at.key) pop.refresh();
+    else pop.pin(at, focus && !kept);
+    if (this.#box !== popBox || pop.at?.key !== at.key || !box.dom.isConnected) {
       if (this.#box === popBox) this.#box = undefined;
       box.destroy();
       host.keep(place.file);
@@ -971,23 +1009,24 @@ export class Beside {
    */
   placeBox(): void {
     const popBox = this.#box;
-    if (!popBox || this.#pop.at?.key !== popBox.at.key) return;
+    const pop = this.#pop;
+    if (!popBox || !pop || pop.at?.key !== popBox.at.key) return;
     const { box } = popBox;
-    const slot = this.#popSlot(box) ?? this.#pop.dom.querySelector<HTMLElement>(`[${NEW_SLOT}]`);
+    const slot = this.#popSlot(pop, box) ?? pop.dom.querySelector<HTMLElement>(`[${NEW_SLOT}]`);
     if (!slot) return;
     if (box.dom.parentElement !== slot) box.attach(slot);
     const { focus } = popBox;
     // Not while the popover is laid out unseen, as it's measured: nothing there takes focus.
-    if (focus === false || !box.dom.isConnected || this.#pop.dom.hidden) return;
-    if (this.#pop.dom.style.visibility === 'hidden') return;
+    if (focus === false || !box.dom.isConnected || pop.dom.hidden) return;
+    if (pop.dom.style.visibility === 'hidden') return;
     popBox.focus = false;
     if (focus === 'shown') box.focusShown();
     else box.focus();
   }
 
-  /** The slot in the popover the caller drew for `box`, if it's drawn. */
-  #popSlot(box: CommentBox): HTMLElement | undefined {
-    const pop = this.#pop.dom;
+  /** The slot in popover `popover` the caller drew for `box`, if it's drawn. */
+  #popSlot(popover: Popover<PopPlace>, box: CommentBox): HTMLElement | undefined {
+    const pop = popover.dom;
     if (box.thread === undefined) {
       return pop.querySelector<HTMLElement>(`[${NEW_SLOT}]`) ?? undefined;
     }
@@ -1039,18 +1078,20 @@ export class Beside {
     this.#box = undefined;
     box.destroy();
     this.#boxDropped(place);
-    const here = this.#pop.open && this.#pop.at?.key === popBox.at.key;
+    // A box is in the popover, made as the box opened.
+    const pop = this.#popover();
+    const here = pop.open && pop.at?.key === popBox.at.key;
     if (here && popBox.opened) {
-      this.#pop.close(false);
+      pop.close(false);
       if (back) this.#host.focusLine(place);
       return;
     }
-    if (here) this.#pop.refresh();
+    if (here) pop.refresh();
     if (!back) return;
-    if (popBox.within && this.#pop.open && this.#pop.at?.key === popBox.at.key) {
+    if (popBox.within && pop.open && pop.at?.key === popBox.at.key) {
       const comment = box.edits === undefined ? undefined : this.#popComment(box.edits);
       if (comment) comment.focus({ preventScroll: true });
-      else this.#pop.focus(false);
+      else pop.focus(false);
     } else {
       this.#host.focusLine(place);
     }
@@ -1058,7 +1099,7 @@ export class Beside {
 
   /** The comment `id` in the popover, as its card draws it, if it's drawn. */
   #popComment(id: string): HTMLElement | undefined {
-    for (const comment of this.#pop.dom.querySelectorAll<HTMLElement>('[data-comment]')) {
+    for (const comment of this.#popover().dom.querySelectorAll<HTMLElement>('[data-comment]')) {
       if (comment.dataset.comment === id) return comment;
     }
     return undefined;
@@ -1082,7 +1123,7 @@ export class Beside {
     this.#box = undefined;
     popBox.box.destroy();
     this.#boxDropped(popBox.place);
-    if (redraw) this.#pop.refresh();
+    if (redraw) this.#pop?.refresh();
   }
 
   /**
@@ -1120,7 +1161,7 @@ export class Beside {
     const page = this.#host.root.ownerDocument;
     const moved = (event: Event): void => {
       const { target } = event;
-      if (target instanceof Node && this.#pop.dom.contains(target)) return;
+      if (target instanceof Node && this.#pop?.dom.contains(target)) return;
       if (this.#box?.sent) this.#dropBox();
       else stop();
     };
@@ -1139,6 +1180,7 @@ export class Beside {
     this.#sentWait?.();
     this.#box?.box.destroy();
     this.#box = undefined;
-    this.#pop.destroy();
+    this.#pop?.destroy();
+    this.#pop = undefined;
   }
 }

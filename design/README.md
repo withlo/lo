@@ -568,24 +568,25 @@ that floats.
 - **`ThreadPopover`** is the review threads that end on a line, over the code, beside lines: a
   thread, a reply and a new comment's box open in it, and nothing in the flow moves. A code view
   draws one, in a layer of its own scroll, so it moves with its line and passes under the pinned
-  file header as code does. Several threads on the line share it, unresolved first, then oldest,
-  `lo-sp-12` apart with a `lo-border-subtle` hairline between. It's 520 px wide (`lo-thread-pop-w`)
-  at every window width, in its side's column where that has room, else over the other side, 8 px
-  inside the pane; as tall as its threads up to `lo-thread-pop-h`, past which they scroll inside it,
-  a box's foot staying at its foot. Its top is 4 px under the range's last line and its left edge on
-  the thread lane's, so the bubble sits at its corner. It never covers its lines unless they fill
-  the pane: under the last line, else its foot 4 px above the first, else at the pane's foot. A
-  preview takes the first with room and never scrolls; opened by a click or a key, it goes under the
-  last line and the pane scrolls the least that shows it whole, with the range's first line too
-  where both fit; only at a file's end does it go above. The pointer resting on a mark previews it,
-  with no key chips and no Close, never taking focus, and it closes when the pointer leaves mark and
-  popover, on a key, a press elsewhere or a scroll. A click on the mark or in the preview pins it:
-  Close and the chips Swap in, in the room the preview kept for them. Pinned, it stays through
-  pointer moves and scrolling, and closes on `Esc`, Close, a click on its mark, a press outside, or
-  the cursor leaving its lines; with a comment box open in it, only the box closing closes it. While
-  one is pinned no preview opens: a click on another mark, or `] t`, moves the pin, a box open in it
-  closing first and keeping its draft. To a screen reader it's a dialog that doesn't hold focus in,
-  named for its first thread.
+  file header as code does. An overview's code blocks share one, in a layer of the overview's
+  scroll, so no block clips it: one opened in a block closes another's. Several threads on the line
+  share it, unresolved first, then oldest, `lo-sp-12` apart with a `lo-border-subtle` hairline
+  between. It's 520 px wide (`lo-thread-pop-w`) at every window width, in its side's column where
+  that has room, else over the other side, 8 px inside the pane; as tall as its threads up to
+  `lo-thread-pop-h`, past which they scroll inside it, a box's foot staying at its foot. Its top is
+  4 px under the range's last line and its left edge on the thread lane's, so the bubble sits at its
+  corner. It never covers its lines unless they fill the pane: under the last line, else its foot 4
+  px above the first, else at the pane's foot. A preview takes the first with room and never
+  scrolls; opened by a click or a key, it goes under the last line and the pane scrolls the least
+  that shows it whole, with the range's first line too where both fit; only at a file's end does it
+  go above. The pointer resting on a mark previews it, with no key chips and no Close, never taking
+  focus, and it closes when the pointer leaves mark and popover, on a key, a press elsewhere or a
+  scroll. A click on the mark or in the preview pins it: Close and the chips Swap in, in the room
+  the preview kept for them. Pinned, it stays through pointer moves and scrolling, and closes on
+  `Esc`, Close, a click on its mark, a press outside, or the cursor leaving its lines; with a
+  comment box open in it, only the box closing closes it. While one is pinned no preview opens: a
+  click on another mark, or `] t`, moves the pin, a box open in it closing first and keeping its
+  draft. To a screen reader it's a dialog that doesn't hold focus in, named for its first thread.
 - **`Tooltip`** names a control and its key: see [Controls](#controls).
 - **`ToastStack`** shows results at the bottom right, above the status bar: three at most, four
   seconds each, paused under the pointer or focus. One with an action or Details stays eight
@@ -845,7 +846,7 @@ first, so a card drawn again doesn't flash them.
   about, and no line of code moves. It never covers its own lines unless they fill the pane.
   "Between lines" draws them in the flow, with space on the other side.
 - **A hover previews, a click pins.** A preview is the pinned popover without its keys, so pinning
-  moves nothing. One popover per code view.
+  moves nothing. One popover per code view, and one for an overview's code blocks, in its scroll.
 - **Filler is quieter than code.** Everything in a diff that isn't code (that space, folds of
   unchanged lines, the row under a file's header) sits on one flat ground, `lo-diff-filler`, in type
   smaller and dimmer than code. Only a run of space three lines tall or less is hatched, so a line

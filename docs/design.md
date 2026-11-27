@@ -537,7 +537,15 @@ A repo's or a user's instructions can drop, add or reorder everything except the
   can't misquote the PR. A block may point at changed lines, unchanged lines, or a file the PR
   doesn't touch.
 - **Threads on a block.** A code block shows the review threads on its lines at the overview's
-  commit, under the line each is on. An out-of-date overview's blocks show only the threads on that
+  commit as the diff shows its own (section 10): beside its lines, each a mark in the thread lane
+  that opens over the code in a popover, or between lines, under the line each is on, as Settings
+  says. The popover is the overview's, over its blocks, so no block cuts it off, and there's one:
+  one opened in a block closes another's, and while one is pinned, no mark previews. The pointer
+  resting on a mark previews it, and a click or `⏎` on its line pins it, its card drawn ahead as the
+  cursor comes to the line. Its keys are the diff popover's, but `]t` and `[t`, which move between
+  the diff's threads, say to go to the diff first. Reply and Edit there, by key, button or menu,
+  write in the diff while it's on screen, as with the code beside, and otherwise say to go to the
+  diff first and open nothing. An out-of-date overview's blocks show only the threads on that
   commit's lines. `c` on a block, or on lines of its code, writes a comment under them, in the same
   box as the diff's. It's an ordinary review comment on those lines at the head, where they're there
   unchanged and in the diff. Otherwise it goes on the file when the PR changes or deletes it, and on

@@ -4,15 +4,17 @@
 // file, so the first is numbered as the range starts. It's a code view's own editor, as the diff's
 // and the whole file's are (`editor.ts`, `keys.ts`): no key changes its text or enters insert or
 // replace mode, its jumps go to the caller as places, its style elements carry the window's nonce,
-// and its cursor doesn't blink. The cursor shows only while the excerpt has focus. Under its lines
-// it draws review threads, each in an element the caller draws it in, and comment boxes, as the
-// diff view does, and beside them the threads' lane (`lanes.ts`), whose bubble collapses its
-// thread or expands it again, as the thread's own chevron does. Nothing on screen moves without
-// the reader: threads that come, go or move on a line on screen, a thread that changes size there
-// by itself, as an image loading, and the room a box left as it closed once its comment was sent
-// wait until what they'd move is off screen, or the reader acts in the excerpt, or anywhere when no
-// scroll can take them off. Whatever scrolls around it keeps the rest where it is as the excerpt
-// changes height.
+// and its cursor doesn't blink. The cursor shows only while the excerpt has focus. Its review
+// threads show as the diff's do, as its caller says (`ThreadsMode`): beside its lines, a mark in
+// the threads' lane (`lanes.ts`) that opens a popover over the code (`beside.ts`), one shared by
+// every excerpt in the scroll around it, so no excerpt clips it; or between them, each under its
+// line in an element the caller draws it in, its bubble in the lane collapsing it or expanding it
+// again, as the thread's own chevron does. Comment boxes open under its lines. Nothing on screen
+// moves without the reader: threads that come, go or move on a line on screen, a thread that
+// changes size there by itself, as an image loading, and the room a box left as it closed once its
+// comment was sent wait until what they'd move is off screen, or the reader acts in the excerpt,
+// or anywhere when no scroll can take them off. Whatever scrolls around it keeps the rest where it
+// is as the excerpt changes height.
 //
 // Callers see none of this: they name the file by their own id, places by that id, a side and a
 // line, and reach the excerpt only through `ExcerptView` (`api.ts`). Keys reach it through the
@@ -32,6 +34,7 @@ import {
   setScopeSource,
   type Target,
 } from '../commands/index.ts';
+import { handOffFocus } from '../focus.ts';
 import type {
   BoxFrame,
   ComposeOptions,
@@ -42,14 +45,16 @@ import type {
   ExcerptView,
   Mode,
   Place,
+  RenderPopover,
   RenderThread,
   Side,
   Span,
   Spot,
+  ThreadsMode,
   ThreadView,
   VimKey,
 } from './api.ts';
-import { bubbleOf, rangeTone, Tones } from './bubbles.ts';
+import { type At, Beside, type BesideHost, type Pane } from './beside.ts';
 import { CommentBox } from './comments.ts';
 import { fileMarks } from './decorations.ts';
 import { codeEditor } from './editor.ts';
@@ -69,15 +74,9 @@ import {
   vimOn,
   vimPending,
 } from './keys.ts';
-import {
-  type LaneBubble,
-  type LaneRange,
-  type LaneUpdate,
-  laneUpdate,
-  setLane,
-  threadLane,
-} from './lanes.ts';
+import { type LaneRange, type LaneUpdate, laneUpdate, setLane, threadLane } from './lanes.ts';
 import { marking } from './marks.ts';
+import { type PopRoom, sharedPop } from './popover.ts';
 import { type ThreadHost, Threads } from './threads.ts';
 import { type Tip, tips } from './tip.ts';
 import { FileNoteWidget, ThreadSizes, ThreadWidget } from './widgets.ts';
@@ -245,6 +244,18 @@ const INPUT = [KEY_EVENT, 'pointerdown', 'wheel'] as const;
 /** The reader's pointer or keys in the excerpt, which let go of what waits in it. */
 const TOUCH = ['pointerdown', KEY_EVENT] as const;
 
+/** An excerpt's one editor, with both sides' lines: its one pane. */
+const PANES: readonly Pane[] = ['inline'];
+
+/** The nearest box around `element` that scrolls up and down, or else its page's body. */
+function scrollerOf(element: HTMLElement): HTMLElement {
+  for (let at = element.parentElement; at; at = at.parentElement) {
+    const { overflowY } = getComputedStyle(at);
+    if (overflowY === 'auto' || overflowY === 'scroll') return at;
+  }
+  return element.ownerDocument.body;
+}
+
 class Excerpt implements ExcerptView {
   readonly dom: HTMLElement;
   readonly #view: EditorView;
@@ -265,8 +276,18 @@ class Excerpt implements ExcerptView {
   readonly #nonce: string;
   /** Each thread's element, and what the caller drew in it. */
   readonly #hosts: Threads;
-  /** The threads drawn, by the document line they're under. */
+  /** How it shows threads now. */
+  #mode: ThreadsMode;
+  /** Its threads beside its lines: their marks, and the popover they open. */
+  readonly #beside: Beside;
+  /** The threads last given, which it shows again as the mode changes. */
+  #given: readonly ThreadView[] = [];
+  /** The threads drawn, by the document line they're under: between lines, under it. */
   #threads = new Map<number, ThreadView[]>();
+  /** The threads drawn, by where they are (`side:line`), as their marks are worked out. */
+  #byPlace = new Map<string, ThreadView[]>();
+  /** The box that scrolls around it, once something has asked. */
+  #scroller: HTMLElement | undefined;
   /** The comment boxes open, by the document line they're under. */
   readonly #boxes = new Map<number, CommentBox>();
   /** How tall what's drawn under lines is, made as the first thread or box comes. */
@@ -286,8 +307,6 @@ class Excerpt implements ExcerptView {
   readonly #rooms = new Map<number, CommentBox>();
   /** Whether it's been on the page a frame: until then, what it's given is how it comes. */
   #drawn = false;
-  /** The colour each bubble was drawn in last, so one whose thread changes state tints. */
-  readonly #tones = new Tones();
 
   constructor(parent: HTMLElement, init: ExcerptInit, on: ExcerptEvents) {
     installVim();
@@ -351,6 +370,9 @@ class Excerpt implements ExcerptView {
     this.dom.className = 'lo-excerpt';
     this.dom.setAttribute(SCOPE_ATTRIBUTE, 'file');
     parent.append(this.dom);
+    this.#mode = init.threads ?? 'between';
+    this.dom.classList.toggle('is-beside', this.#mode === 'beside');
+    this.#beside = new Beside(this.#besideHost());
     // Both sides' numbers with a diff; the range's side's alone without one.
     const sides: readonly Side[] = init.diff ? ['old', 'new'] : [this.#side];
     const view = new EditorView({
@@ -401,6 +423,8 @@ class Excerpt implements ExcerptView {
     );
     this.dom.addEventListener('contextmenu', (event) => this.#contextMenu(event));
     this.dom.addEventListener('click', this.#clicked);
+    this.dom.addEventListener('pointerover', this.#hoverMark, { passive: true });
+    this.dom.addEventListener('pointerleave', this.#hoverMark, { passive: true });
     // The reader's pointer or key in the excerpt lets go of what waits in it; in a thread, what
     // becomes of the thread's size next is theirs.
     for (const type of TOUCH) this.dom.addEventListener(type, this.#touched, { capture: true });
@@ -456,36 +480,108 @@ class Excerpt implements ExcerptView {
   }
 
   /**
-   * What the threads' lane draws: a bubble beside each line threads are drawn under, and a bracket
-   * up each thread's range from its first line, or from the first line shown where the excerpt
-   * starts after it. The excerpt runs its bubbles' clicks itself.
+   * What the threads' lane draws, as the diff's does (`Beside.lane`): a bubble beside each line
+   * threads end on, and a bracket up each thread's range from its first line, or from the first
+   * line shown where the excerpt starts after it. The excerpt runs its bubbles' clicks itself.
    */
   #lane(): LaneUpdate {
-    const ranges: LaneRange[] = [];
-    const bubbles = new Map<number, LaneBubble>();
-    for (const [line, threads] of this.#threads) {
-      const bubble = bubbleOf(threads);
-      bubbles.set(line, {
-        bubble,
-        open: this.#hosts.get(bubble.thread)?.open ?? false,
-        was: this.#tones.was(bubble.thread, bubble.tone),
-      });
-      for (const thread of threads) {
-        const from = thread.mark?.from;
-        if (!from) continue;
-        const shown = this.#docLine(from.side, from.line);
-        const start = shown ?? (from.line < this.#docLines[from.side].first ? 1 : undefined);
-        if (start === undefined || start === line) continue;
-        ranges.push({
-          from: Math.min(start, line),
-          to: Math.max(start, line),
-          tick: shown !== undefined,
-          tone: rangeTone(thread),
-        });
-      }
-    }
+    const { ranges, bubbles } = this.#beside.lane('inline', 0);
     const { doc } = this.#view.state;
-    return laneUpdate(doc, { from: 0, to: doc.length }, ranges, bubbles, false);
+    const beside = this.#mode === 'beside';
+    return laneUpdate(doc, { from: 0, to: doc.length }, ranges, bubbles, false, beside);
+  }
+
+  /**
+   * The document lines a range from `from` to `end` covers, as its bracket draws it: from the top
+   * where it starts before the first line shown, with no tick there. None where the excerpt shows
+   * neither end.
+   */
+  #laneRange(
+    from: { side: Side; line: number },
+    end: { side: Side; line: number },
+  ): Omit<LaneRange, 'tone'> | undefined {
+    const last = this.#docLine(end.side, end.line);
+    if (last === undefined) return undefined;
+    const shown = this.#docLine(from.side, from.line);
+    const start = shown ?? (from.line < this.#docLines[from.side].first ? 1 : undefined);
+    if (start === undefined) return undefined;
+    return { from: Math.min(start, last), to: Math.max(start, last), tick: shown !== undefined };
+  }
+
+  /** The line of the excerpt document line `line` shows, or, with none, the header's place. */
+  #placeAt(line: number): At {
+    const spot = this.#spot(line);
+    return spot.kind === 'line'
+      ? { file: 0, side: spot.at.side, line: spot.at.line }
+      : { file: 0, side: this.#side, line: 0 };
+  }
+
+  /** The box that scrolls around it, as it's first asked for. */
+  #scrollBox(): HTMLElement {
+    this.#scroller ??= scrollerOf(this.dom);
+    return this.#scroller;
+  }
+
+  /** What its threads beside lines ask of it: its one editor, and the scroll around it. */
+  #besideHost(): BesideHost {
+    const box = (): HTMLElement => this.#scrollBox();
+    return {
+      root: this.dom,
+      get scroller() {
+        return box();
+      },
+      nonce: this.#nonce,
+      // One popover for every excerpt in the scroll, as an overview's code blocks have.
+      popover: (pop) => sharedPop(pop),
+      mode: () => this.#mode,
+      threadsIn: (file) => (file === 0 ? this.#byPlace : undefined),
+      fileOf: (id) => (id === this.#id ? 0 : undefined),
+      threadPlace: (id) => this.#threadPlace(id),
+      threadOpen: (id) => this.#hosts.get(id)?.open ?? false,
+      panes: () => PANES,
+      lanePanes: () => PANES,
+      activePane: () => 'inline',
+      popPane: () => 'inline',
+      viewOf: () => this.#view,
+      hasLines: (_pane, file) => file === 0,
+      drawsLine: (at) => at.line > 0,
+      docLine: (_pane, at) => this.#docLine(at.side, at.line) ?? 1,
+      placeAt: (_pane, line) => this.#placeAt(line),
+      otherRow: () => undefined,
+      laneRange: (_pane, _file, from, end) => this.#laneRange(from, end),
+      room: (): PopRoom => {
+        const scroller = box();
+        return {
+          scroll: scroller.scrollTop,
+          height: scroller.clientHeight,
+          width: scroller.clientWidth,
+          edge: scroller.offsetWidth - scroller.clientLeft,
+          end: scroller.scrollHeight,
+          header: 0,
+        };
+      },
+      scrollBy: (by) => {
+        box().scrollTop += by;
+      },
+      putCursor: (_pane, line) => {
+        this.#view.dispatch({ selection: { anchor: this.#view.state.doc.line(line).from } });
+      },
+      focusLine: (at) => this.#focusLine(this.#docLine(at.side, at.line) ?? 1),
+      marksChanged: () => this.#view.dispatch({ effects: setLane.of([this.#lane()]) }),
+      // Its comment boxes open under its lines, which keep no line shown and hold none.
+      keep: () => {},
+      showLine: () => {},
+      boxShown: () => {},
+    };
+  }
+
+  /** Where thread `id` ends, if it's drawn. */
+  #threadPlace(id: string): At | undefined {
+    for (const threads of this.#byPlace.values()) {
+      const at = threads.find((thread) => thread.id === id)?.at;
+      if (at && 'line' in at) return { file: 0, side: at.side, line: at.line };
+    }
+    return undefined;
   }
 
   /** A bubble's tip: what a click on it does. */
@@ -494,8 +590,18 @@ class Excerpt implements ExcerptView {
     return tip === undefined ? undefined : { label: tip };
   }
 
-  /** A click on a thread's bubble collapses its thread, or expands it again. */
+  /**
+   * A click on a thread's bubble collapses its thread, or expands it again; beside lines, a click on
+   * a thread's mark pins its popover and takes focus into it, or closes it.
+   */
   readonly #clicked = (event: MouseEvent): void => {
+    if (this.#mode === 'beside') {
+      const marked = this.#beside.markOf(event.target);
+      if (!marked || event.button !== 0) return;
+      event.preventDefault();
+      this.#beside.clicked(marked.at);
+      return;
+    }
     const bubble =
       event.target instanceof Element ? event.target.closest<HTMLElement>('.lo-bubble') : null;
     const id = bubble?.dataset.thread;
@@ -503,6 +609,9 @@ class Excerpt implements ExcerptView {
     event.preventDefault();
     this.openThread(id, 'toggle');
   };
+
+  /** The pointer came over something, or left: a mark it rests on beside lines previews it. */
+  readonly #hoverMark = (event: PointerEvent): void => this.#beside.hover(event);
 
   /** The document line that shows line `number` of `side`, if the excerpt shows it. */
   #docLine(side: Side, number: number): number | undefined {
@@ -522,9 +631,19 @@ class Excerpt implements ExcerptView {
     this.#view.dispatch({ effects: staleChanged.of(null) });
   }
 
-  setThreads(threads: readonly ThreadView[], render: RenderThread): void {
+  setThreads(
+    threads: readonly ThreadView[],
+    render: RenderThread,
+    options: { readonly popover?: RenderPopover } = {},
+  ): void {
     this.#hosts.render = render;
+    this.#given = threads;
+    if (options.popover) this.#beside.render = options.popover;
     const next = this.#placed(threads);
+    if (this.#mode === 'beside') {
+      this.#placeBeside(next);
+      return;
+    }
     for (const placed of next.values()) for (const thread of placed) this.#hosts.take(thread);
     // Threads that would come, go or move on a line on screen wait for it to leave the screen.
     // What comes under the line of a box, open or sent and still drawn, is what the reader sent:
@@ -559,9 +678,85 @@ class Excerpt implements ExcerptView {
   /** Draws `next` as the threads under their lines, in place of those drawn. */
   #showThreads(next: Map<number, ThreadView[]>): void {
     this.#waiting = undefined;
-    this.#threads = next;
+    this.#setDrawn(next);
     this.#dropThreads();
     this.#drawBlocks();
+  }
+
+  /** `next` is what's drawn now, by the document line each is under, and by where each is. */
+  #setDrawn(next: Map<number, ThreadView[]>): void {
+    this.#threads = next;
+    const byPlace = new Map<string, ThreadView[]>();
+    for (const threads of next.values()) {
+      for (const thread of threads) {
+        if (!('line' in thread.at)) continue;
+        const key = `${thread.at.side}:${thread.at.line}`;
+        byPlace.set(key, [...(byPlace.get(key) ?? []), thread]);
+      }
+    }
+    this.#byPlace = byPlace;
+  }
+
+  /**
+   * Beside lines, `next` is what's drawn, at once, since nothing moves for it: marks of threads new
+   * to a line fade in, once the excerpt is on the page, and the popover shows what changed. Not
+   * yet drawn, as the mode changes, what it draws then is drawn.
+   */
+  #placeBeside(next: Map<number, ThreadView[]>, switching = false): void {
+    const seen = this.#drawn && !switching;
+    // A sent box in the popover goes as the threads at its line change, which bring what it sent.
+    this.#beside.takeThreads(() => {
+      const was = this.#byPlace;
+      this.#setDrawn(next);
+      if (!seen) return;
+      for (const [key, threads] of this.#byPlace) {
+        const before = new Set((was.get(key) ?? []).map(({ id }) => id));
+        for (const { id } of threads) if (!before.has(id)) this.#beside.arrive(id);
+      }
+    });
+    if (switching) return;
+    this.#drawBlocks();
+    this.#beside.refresh();
+  }
+
+  setThreadsMode(mode: ThreadsMode): void {
+    if (mode === this.#mode) return;
+    // A box open in the popover closes, keeping its draft; between lines nothing opens it.
+    this.#beside.switching(mode);
+    this.#mode = mode;
+    this.dom.classList.toggle('is-beside', mode === 'beside');
+    // What waited or was held is drawn as threads show now.
+    this.#waiting = undefined;
+    this.#held.clear();
+    const next = this.#placed(this.#given);
+    if (mode === 'beside') {
+      this.#hosts.drop(() => true);
+      this.#placeBeside(next, true);
+      this.#drawBlocks();
+      return;
+    }
+    for (const placed of next.values()) for (const thread of placed) this.#hosts.take(thread);
+    this.#showThreads(next);
+  }
+
+  pinThread(id: string, focus = false): boolean {
+    return this.#beside.pinThread(id, focus);
+  }
+
+  pinned(): readonly string[] {
+    return this.#beside.pinned();
+  }
+
+  popoverPinned(): boolean {
+    return this.#beside.popoverPinned();
+  }
+
+  closePopover(): boolean {
+    return this.#beside.closePopover();
+  }
+
+  hasFocus(): boolean {
+    return this.dom.contains(document.activeElement) || this.#beside.hasFocus();
   }
 
   /** Takes down the threads neither drawn nor waiting to be. */
@@ -577,6 +772,7 @@ class Excerpt implements ExcerptView {
   }
 
   openThread(id: string, open: boolean | 'toggle'): boolean {
+    if (this.#mode === 'beside') return this.#beside.openThread(id, open);
     const host = this.#hosts.get(id);
     if (!host) return false;
     // The reader's doing: it takes its own height.
@@ -655,8 +851,15 @@ class Excerpt implements ExcerptView {
     return this.#docLine(at.side, 'line' in at ? at.line : Math.max(at.from, at.to));
   }
 
-  /** The thread a key on document line `line` acts on: the only one there. */
+  /**
+   * The thread a key on document line `line` acts on: the only one under it, or beside lines, of
+   * those whose mark is on it, the first the popover lists, or else the shortest range over it.
+   */
   #threadOn(line: number): string | undefined {
+    if (this.#mode === 'beside') {
+      const at = this.#placeAt(line);
+      return at.line === 0 ? undefined : this.#beside.threadAt(at);
+    }
     const threads = this.#threads.get(line);
     return threads?.length === 1 ? threads[0]!.id : undefined;
   }
@@ -865,8 +1068,10 @@ class Excerpt implements ExcerptView {
   #drawBlocks(): void {
     const { doc } = this.#view.state;
     const draw = (host: ThreadHost): void => this.#hosts.draw(host);
+    // Beside lines, no thread is drawn in the flow.
+    const under = this.#mode === 'between' ? this.#threads : new Map<number, ThreadView[]>();
     const lines = [
-      ...new Set([...this.#threads.keys(), ...this.#boxes.keys(), ...this.#rooms.keys()]),
+      ...new Set([...under.keys(), ...this.#boxes.keys(), ...this.#rooms.keys()]),
     ].toSorted((a, b) => a - b);
     if (lines.length === 0) {
       this.#view.dispatch({ effects: [setBlocks.of([]), setLane.of([this.#lane()])] });
@@ -874,7 +1079,7 @@ class Excerpt implements ExcerptView {
     }
     const sizes = (this.#sizes ??= new ThreadSizes(this.#view.contentDOM));
     const blocks = lines.map((line) => {
-      const hosts = (this.#threads.get(line) ?? []).flatMap((thread) => {
+      const hosts = (under.get(line) ?? []).flatMap((thread) => {
         const host = this.#hosts.get(thread.id);
         return host ? [host] : [];
       });
@@ -944,7 +1149,18 @@ class Excerpt implements ExcerptView {
   }
 
   destroy(): void {
+    // Focus in its code or its popover goes to the scroll around it, as the overview, not to the
+    // page, once they're gone: the scroll found now, while the excerpt is in it.
+    const active = this.dom.ownerDocument.activeElement;
+    if (active && this.hasFocus()) {
+      const scroller = this.#scrollBox();
+      handOffFocus([active], () => [scroller]);
+    }
+    // Its popover goes first, with what it held, while its lines are there to say so.
+    this.#beside.destroy();
     this.dom.removeEventListener('click', this.#clicked);
+    this.dom.removeEventListener('pointerover', this.#hoverMark);
+    this.dom.removeEventListener('pointerleave', this.#hoverMark);
     for (const type of TOUCH) this.dom.removeEventListener(type, this.#touched, { capture: true });
     document.removeEventListener('scroll', this.#scrolled, { capture: true });
     for (const type of INPUT) {
@@ -1068,6 +1284,9 @@ class Excerpt implements ExcerptView {
     const { state } = this.#view;
     const head = state.selection.main.head;
     const line = state.doc.lineAt(head);
+    if (this.#mode === 'beside') {
+      this.#beside.cursorMoved('inline', line.number, this.#placeAt(line.number));
+    }
     const spot = this.#spot(line.number, head - line.from);
     const said = JSON.stringify(spot);
     if (said !== this.#said.cursor) {
@@ -1098,6 +1317,13 @@ class Excerpt implements ExcerptView {
         event.clientX,
         event.clientY,
       );
+      return;
+    }
+    // A mark beside lines: its thread's menu, as on its card.
+    const marked = this.#beside.markOf(target);
+    if (marked) {
+      event.preventDefault();
+      this.#on.menu({ kind: 'thread', thread: marked.thread }, event.clientX, event.clientY);
       return;
     }
     const pos = this.#view.posAtCoords({ x: event.clientX, y: event.clientY });

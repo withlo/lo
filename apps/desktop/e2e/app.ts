@@ -695,6 +695,62 @@ export interface Held {
   release(): void;
 }
 
+/** A server in front of a replay server, and what closes it. */
+export interface Front {
+  /** Where Lo finds it. */
+  origin: string;
+  /** Closes it, a request it holds back going unanswered. */
+  close(): Promise<void>;
+}
+
+/**
+ * A server in front of the replay server at `origin`, passing each request on to it once the
+ * promise `wait` returns for its path and body settles, or at once if it returns none.
+ */
+export async function frontOf(
+  origin: string,
+  wait: (url: string, body: string) => Promise<void> | undefined,
+): Promise<Front> {
+  const front = createHttpServer((incoming, outgoing) => {
+    void (async () => {
+      const body = await buffer(incoming);
+      await wait(incoming.url ?? '/', body.toString('utf8'));
+      const headers = new Headers();
+      for (const [name, value] of Object.entries(incoming.headers)) {
+        if (typeof value === 'string' && name !== 'host') headers.set(name, value);
+      }
+      const method = incoming.method ?? 'GET';
+      const response = await fetch(`${origin}${incoming.url ?? '/'}`, {
+        method,
+        headers,
+        body: method === 'GET' || method === 'HEAD' ? undefined : new Uint8Array(body),
+        redirect: 'manual',
+      });
+      const out: Record<string, string> = {};
+      response.headers.forEach((value, name) => {
+        if (!['content-length', 'content-encoding', 'transfer-encoding'].includes(name)) {
+          out[name] = value;
+        }
+      });
+      outgoing.writeHead(response.status, out);
+      outgoing.end(Buffer.from(await response.arrayBuffer()));
+    })().catch(() => {
+      // The test has ended, and the replay server with it: the request goes unanswered.
+      outgoing.destroy();
+    });
+  });
+  await new Promise<void>((resolve) => front.listen(0, '127.0.0.1', resolve));
+  const address = front.address();
+  if (address === null || typeof address === 'string') throw new Error('no port');
+  return {
+    origin: `http://127.0.0.1:${address.port}`,
+    close: async () => {
+      front.closeAllConnections();
+      await new Promise((resolve) => front.close(resolve));
+    },
+  };
+}
+
 /**
  * `test`, with Lo signed in as rozed-bot on a replay server that answers from `app_stack`, recorded
  * from the app on the stacks, or the cassette `cassette` names, and fetching from their repository,
@@ -757,42 +813,11 @@ export const onStacks = test.extend<{
     }
     // Passes each request on to the replay server, holding the repository's rulesets back until the
     // test lets go of them: until they're read once, no stack is known.
-    const front = createHttpServer((incoming, outgoing) => {
-      void (async () => {
-        const body = await buffer(incoming);
-        if (incoming.url?.endsWith('/graphql') && body.toString('utf8').includes('TrunkRules')) {
-          await held.released();
-        }
-        const headers = new Headers();
-        for (const [name, value] of Object.entries(incoming.headers)) {
-          if (typeof value === 'string' && name !== 'host') headers.set(name, value);
-        }
-        const method = incoming.method ?? 'GET';
-        const response = await fetch(`${origin}${incoming.url ?? '/'}`, {
-          method,
-          headers,
-          body: method === 'GET' || method === 'HEAD' ? undefined : new Uint8Array(body),
-          redirect: 'manual',
-        });
-        const out: Record<string, string> = {};
-        response.headers.forEach((value, name) => {
-          if (!['content-length', 'content-encoding', 'transfer-encoding'].includes(name)) {
-            out[name] = value;
-          }
-        });
-        outgoing.writeHead(response.status, out);
-        outgoing.end(Buffer.from(await response.arrayBuffer()));
-      })().catch(() => {
-        // The test has ended, and the replay server with it: the request goes unanswered.
-        outgoing.destroy();
-      });
-    });
-    await new Promise<void>((resolve) => front.listen(0, '127.0.0.1', resolve));
-    const address = front.address();
-    if (address === null || typeof address === 'string') throw new Error('no port');
-    await use(`http://127.0.0.1:${address.port}`);
-    front.closeAllConnections();
-    await new Promise((resolve) => front.close(resolve));
+    const front = await frontOf(origin, (url, body) =>
+      url.endsWith('/graphql') && body.includes('TrunkRules') ? held.released() : undefined,
+    );
+    await use(front.origin);
+    await front.close();
   },
   remote: async ({ lateRemote }, use) => {
     const folder = base.info().outputPath('remote');
