@@ -22,6 +22,17 @@ export interface ImageExtras {
   light?: string | undefined;
 }
 
+/** How each kind of raw HTML starts: `<` and a letter, `/`, `!` or `?`. */
+const TAG = /<[a-z/!?]/i;
+
+/**
+ * Whether `text` may hold raw HTML: it has what every kind starts with. Text without it holds none,
+ * as Markdown or as text shown as written.
+ */
+export function mayHoldHtml(text: string): boolean {
+  return TAG.test(text);
+}
+
 /** What building has used up, to put back when what was built is thrown away. */
 export interface Snapshot {
   images: number;
@@ -38,6 +49,11 @@ export class Builder<X extends Extension = Plain> {
   readonly references = new Map<string, string>();
   /** The line being built, from 1, when the source has lines. */
   line: number | undefined;
+  /**
+   * Whether what's built shows raw HTML from the text, as written or as its words. It's never put
+   * back: what shows in place of what was built is its text as written, tags and all.
+   */
+  raw = false;
   private readonly page: string | undefined;
   private readonly claim: ((href: string) => X['target'] | undefined) | undefined;
   private images = 0;
@@ -67,6 +83,12 @@ export class Builder<X extends Extension = Plain> {
     this.images = snapshot.images;
     this.addresses = snapshot.addresses;
     this.diagnostics.length = snapshot.diagnostics;
+  }
+
+  /** `text`, which shows as it's written: raw HTML, where it holds a tag. */
+  asWritten(text: string): string {
+    if (mayHoldHtml(text)) this.raw = true;
+    return text;
   }
 
   diagnose(code: Diagnostic['code']): void {

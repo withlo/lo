@@ -1,5 +1,6 @@
-// The window's posts: their HTML as main read it, and their trees as the background process made
-// them, for each view of a pull request's tab, each forgotten as its tab closes.
+// The window's posts: their HTML as main read it, their trees as the background process made them,
+// and the text of the comments the window itself sent or saved, for each view of a pull request's
+// tab, each forgotten as its tab closes.
 
 import type { Rendered } from '../jobs.ts';
 import { BodyStore, type PostRef } from './bodies.ts';
@@ -19,6 +20,10 @@ export interface Drawn {
 }
 
 const drawn = new Map<string, Map<string, Drawn>>();
+const written = new Map<string, string[]>();
+
+/** How many comments' text the window keeps of each view's that it sent or saved: the newest. */
+const WRITTEN_KEPT = 50;
 
 function keyOf(post: PostRef): string {
   return post.kind === 'description' ? '#description' : post.id;
@@ -39,8 +44,30 @@ export function keepDrawn(view: string, post: PostRef, made: Drawn): void {
   own.set(keyOf(post), made);
 }
 
+/** A comment's text to compare, as GitHub may give back what was sent: line ends alike, trimmed. */
+function plain(text: string): string {
+  return text.replaceAll(/\r\n?/g, '\n').trim();
+}
+
+/**
+ * Notes that the window sent or saved a comment of `text` on view `view`, which then shows its text
+ * from the moment it's sent until its card from GitHub is drawn: that card's text isn't held back
+ * for GitHub's rendering, so it never leaves the screen.
+ */
+export function wroteText(view: string, text: string): void {
+  const own = written.get(view) ?? [];
+  const kept = plain(text);
+  written.set(view, [...own.filter((each) => each !== kept), kept].slice(-WRITTEN_KEPT));
+}
+
+/** Whether the window sent or saved a comment of `text` on view `view`, of those it keeps. */
+export function wroteHere(view: string, text: string): boolean {
+  return written.get(view)?.includes(plain(text)) ?? false;
+}
+
 /** Forgets the posts of every view but those in `kept`, as their tabs close. */
 export function keepOnly(kept: ReadonlySet<string>): void {
   bodies.keepOnly(kept);
   for (const view of drawn.keys()) if (!kept.has(view)) drawn.delete(view);
+  for (const view of written.keys()) if (!kept.has(view)) written.delete(view);
 }

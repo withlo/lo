@@ -3,14 +3,14 @@
  * HTML is too long to read. The text comes from anyone, so every step is bounded: the text is cut
  * to a length, nothing nested far past the depth limit reaches a step that recurses, and the tree
  * is assembled under the depth and node limits as built. The mapping is a closed switch over the
- * parser's tokens, each kind with only the fields Lo sets. Raw HTML shows as its text, and links
- * and images pass Lo's rules or become text.
+ * parser's tokens, each kind with only the fields Lo sets. Raw HTML shows as its text, which the
+ * tree says (`raw`), and links and images pass Lo's rules or become text.
  */
 
 import type { Token } from 'markdown-it';
 
 import { append, assemble, plainBlocks, type FootnotePart, type Part } from './assemble.ts';
-import { Builder } from './build.ts';
+import { Builder, mayHoldHtml } from './build.ts';
 import { htmlWords, withoutComments } from './html.ts';
 import { cut, resolveLimits, type Limits } from './limits.ts';
 import { environment, parser, type Plugin } from './parser.ts';
@@ -110,13 +110,14 @@ export function markdownTree<X extends Extension = Plain>(
     const nesting = limits.depth + SLACK + 2;
     const tokens = parser(nesting, options.syntax?.plugins).parse(source, env);
     const mapper = new Mapper<X>(tokens, source, options, limits, notes);
-    return finish(mapper.map(), notes, mapper.builder.diagnostics);
+    const blocks = mapper.map();
+    return finish(blocks, notes, mapper.builder.diagnostics, mapper.builder.raw);
   } catch (error) {
     // Nothing recurses far past the depth limit, so this is a backstop: text that overflows the
     // stack anyway shows as plain text rather than failing the job, saying only that.
     if (!(error instanceof RangeError)) throw error;
     const fallback = new Set<Note>(kept.cut ? ['cut', 'deep'] : ['deep']);
-    return finish(plainBlocks(source), fallback, []);
+    return finish(plainBlocks(source), fallback, [], mayHoldHtml(source));
   }
 }
 
@@ -124,9 +125,12 @@ export function finish<X extends Extension>(
   blocks: Block<X>[],
   notes: ReadonlySet<Note>,
   diagnostics: Diagnostic[],
+  raw = false,
 ): Tree<X> {
   const order: Note[] = ['cut', 'deep', 'nodes'];
-  return { blocks, notes: order.filter((note) => notes.has(note)), diagnostics };
+  const tree: Tree<X> = { blocks, notes: order.filter((note) => notes.has(note)), diagnostics };
+  if (raw) tree.raw = true;
+  return tree;
 }
 
 /** A stretch of tokens, `[start, end)`. */
@@ -210,7 +214,8 @@ class Mapper<X extends Extension> {
       from === undefined || to === undefined ? '' : this.lines(from, to);
     if (this.nesting(region, depth) > this.limits.depth + SLACK) {
       this.builder.notes.add('deep');
-      return { region: { start: 0, end: 0 }, build: () => plainBlocks(plain()), plain, line: from };
+      const build = () => plainBlocks<X>(this.builder.asWritten(plain()));
+      return { region: { start: 0, end: 0 }, build, plain, line: from };
     }
     return { region, build: () => this.blocks(region.start, region.end), plain, line: from };
   }
@@ -316,7 +321,7 @@ class Mapper<X extends Extension> {
         return [{ kind: 'rule' }];
       case 'html_block': {
         this.builder.diagnose('html');
-        const html = withoutComments(token.content, 4 * this.limits.nodes);
+        const html = this.builder.asWritten(withoutComments(token.content, 4 * this.limits.nodes));
         return plainBlocks(this.words ? htmlWords(html, HTML_ELEMENTS) : html);
       }
       case 'table_open':
@@ -473,7 +478,7 @@ class Mapper<X extends Extension> {
             builder.diagnose('html');
             // An inline HTML comment is a token of its own, which GitHub never shows.
             if (!token.content.startsWith('<!--')) {
-              const html = token.content;
+              const html = builder.asWritten(token.content);
               push(out, [
                 { kind: 'text', value: this.words ? htmlWords(html, HTML_ELEMENTS) : html },
               ]);

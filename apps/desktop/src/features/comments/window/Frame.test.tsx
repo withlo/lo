@@ -9,6 +9,7 @@ import type * as TabShared from '../../tab/window/shared.ts';
 import type { DraftPlaceRow } from '../contract.ts';
 import { Box } from './boxes.ts';
 import { frameOf } from './Frame.tsx';
+import { wroteHere } from './store.ts';
 
 vi.mock('../../../window/commands/registry.ts', () => ({
   registry: () => ({ keysOf: () => [], system: 'mac' }),
@@ -68,6 +69,35 @@ test('the frame is drawn as the box is made, not after', () => {
 afterEach(() => {
   said.accounts = 1;
   said.pending = false;
+});
+
+test('a box sending its comment notes its text, so the comment’s card shows it until GitHub’s rendering is in', async () => {
+  const box = new Box(
+    'v9',
+    {
+      kind: 'thread',
+      commit: 'a'.repeat(40),
+      path: 'src/backoff.ts',
+      lines: { start: null, end: { side: 'RIGHT', number: 5 } },
+    },
+    'review',
+    '<sup>Sent</sup> with a tag',
+  );
+  const parts = {
+    head: part(),
+    note: part(),
+    preview: part(),
+    sent: part(),
+    dropzone: part(),
+    uploads: part(),
+    foot: part(),
+  };
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the frame reads none of it here.
+  const frame = frameOf(box)(parts, {} as Composer);
+  expect(wroteHere('v9', '<sup>Sent</sup> with a tag')).toBe(false);
+  box.set({ busy: true });
+  await vi.waitFor(() => expect(wroteHere('v9', '<sup>Sent</sup> with a tag')).toBe(true));
+  frame.destroy();
 });
 
 const ON_LINE: DraftPlaceRow = {

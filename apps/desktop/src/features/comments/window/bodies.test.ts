@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { Bodies } from '../contract.ts';
+import { POSTS_AN_ASK, type Bodies } from '../contract.ts';
 import { BodyStore, FIRST_WAIT } from './bodies.ts';
 
 const DESCRIPTION = { kind: 'description' } as const;
@@ -66,6 +66,8 @@ describe('BodyStore', () => {
     });
     expect(store.held('v1', DESCRIPTION, TEXT)?.html).toBe('<p>Description</p>');
     expect(store.gone('v1', post('gone'), TEXT)).toBe(true);
+    expect(store.missing('v1', post('gone'), TEXT)).toBe(true);
+    expect(store.missing('v1', post('a'), TEXT)).toBe(false);
     expect(heard).toHaveBeenCalledTimes(1);
 
     store.want('v1', post('a'), TEXT);
@@ -169,6 +171,70 @@ describe('BodyStore', () => {
     await tick();
     expect(asks).toHaveLength(3);
     expect(store.held('v1', post('a'), TEXT)).toBeDefined();
+  });
+
+  it('says a post is missing while its last ask failed, and not once an ask brings it', async () => {
+    let fail = 1;
+    const { store, tick } = storeOf((posts, description) =>
+      fail-- > 0 ? Promise.reject(new Error('offline')) : answered(posts, description),
+    );
+    const heard = vi.fn<() => void>();
+    store.subscribe('v1', post('a'), heard);
+    store.want('v1', post('a'), TEXT);
+    expect(store.missing('v1', post('a'), TEXT)).toBe(false);
+    await tick();
+    expect(store.missing('v1', post('a'), TEXT)).toBe(true);
+    expect(heard).toHaveBeenCalledTimes(1);
+    // Edited meanwhile: nothing is held of its new text either, so it's missing too.
+    expect(store.missing('v1', post('a'), 'Edited text')).toBe(true);
+    await tick();
+    expect(store.missing('v1', post('a'), TEXT)).toBe(false);
+    expect(store.held('v1', post('a'), TEXT)).toBeDefined();
+    expect(heard).toHaveBeenCalledTimes(2);
+  });
+
+  it('counts a post wanted while asks fail as missing, though not asked for yet, and one never wanted not', async () => {
+    let fail = 1;
+    const { store, tick } = storeOf((posts, description) =>
+      fail-- > 0 ? Promise.reject(new Error('offline')) : answered(posts, description),
+    );
+    const heard = vi.fn<() => void>();
+    store.subscribe('v1', post('b'), heard);
+    store.want('v1', post('a'), TEXT);
+    await tick();
+    // The ask for another post failed: this one, never wanted, as off screen, isn't missing.
+    expect(store.missing('v1', post('b'), TEXT)).toBe(false);
+    expect(heard).not.toHaveBeenCalled();
+    // Wanted now, it waits for an ask that works: it's told it's missing, until a read brings it.
+    store.want('v1', post('b'), TEXT);
+    expect(heard).toHaveBeenCalledTimes(1);
+    expect(store.missing('v1', post('b'), TEXT)).toBe(true);
+    await tick();
+    expect(store.held('v1', post('b'), TEXT)).toBeDefined();
+    expect(store.missing('v1', post('b'), TEXT)).toBe(false);
+  });
+
+  it('tells a post wanted while asks failed, left for a later ask, once one works that it isn’t missing', async () => {
+    let asked = 0;
+    const { store, tick } = storeOf((posts, description) => {
+      asked += 1;
+      if (asked === 1) return Promise.reject(new Error('offline'));
+      // The ask after is never answered.
+      return asked === 2 ? answered(posts, description) : new Promise<Bodies>(() => undefined);
+    });
+    store.want('v1', post('first'), TEXT);
+    await tick();
+    for (let n = 0; n < POSTS_AN_ASK; n += 1) store.want('v1', post(`p${n}`), TEXT);
+    const heard = vi.fn<() => void>();
+    store.subscribe('v1', post('last'), heard);
+    store.want('v1', post('last'), TEXT);
+    expect(store.missing('v1', post('last'), TEXT)).toBe(true);
+    await tick();
+    // The ask that worked had no room for it: it's asked for next, and on its way again.
+    expect(store.held('v1', post('first'), TEXT)).toBeDefined();
+    expect(store.held('v1', post('last'), TEXT)).toBeUndefined();
+    expect(store.missing('v1', post('last'), TEXT)).toBe(false);
+    expect(heard).toHaveBeenCalledTimes(2);
   });
 
   it('forgets a closed tab’s views, and asks nothing more for them', async () => {

@@ -1482,6 +1482,24 @@ description's, for the timeline and the diff's threads alike, with its `Post` co
 - A post shows its Markdown, through `@lo/markdown`, until the HTML GitHub renders for it arrives,
   then GitHub's rendering, read as untrusted (`githubTree`). Both become a tree in the background
   process (`comments.render`), with the pull request's repository as what references refer to.
+- `@lo/markdown` shows raw HTML in Markdown as written, and its tree says when it does (`raw`: a tag
+  outside code that isn't a comment, as markdown-it reads the text, or a tag in text shown as its
+  lines). A post never draws such a tree: three `Skeleton` lines at its line height hold its place
+  until GitHub's rendering is in, which takes theirs in one Swap. Until the tree of its Markdown is
+  made, Markdown that may hold a tag (`mayHoldHtml`: `<` then a letter, `/`, `!` or `?`) holds the
+  lines too, and Markdown without one shows as text, as before.
+- Such a post shows its Markdown, as one with no tag does, when the window sent or saved its text
+  (`wroteText`, from the box's `Sent` part), which showed in the box from the moment it was sent, so
+  it never leaves the screen; and when no rendering is coming: GitHub gave none, it's longer than Lo
+  reads, its tree couldn't be made from it, or reads are failing (`BodyStore.missing`: the posts a
+  failed ask asked for, and, until an ask works, every post wanted since and not held; a post never
+  wanted, off screen, isn't missing). Once it shows its Markdown on screen or near it, it keeps it
+  until the tree from GitHub's rendering takes its place, with no lines between. A post drawn from
+  GitHub's rendering keeps the height it was drawn at while the rendering of an edit comes.
+- A tree's job lost to a restart, a busy process or no answer (`restarted`, `busy`, `unanswered`) is
+  asked for again after 1 s, doubling, four times. A tree that can't be made from GitHub's rendering
+  is made from the Markdown, and one that can't be made from either shows the Markdown as text; each
+  failure is kept for its source, so neither is asked for again.
 - The window asks main for posts' HTML (`comments.bodies`, read by the poller's `renderedBodies`) as
   they come on screen or near it, a hundred at most an ask, one ask at a time for each view. The
   HTML stays in the window's memory, never in main's or the poll cache, since its images' addresses

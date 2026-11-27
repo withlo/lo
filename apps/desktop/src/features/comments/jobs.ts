@@ -1,5 +1,6 @@
 // The comments' jobs in the background process: a post's text as Lo's tree, from GitHub's rendering
-// of it once main has read that, and from its Markdown until then, so text is never blank; comments'
+// of it once main has read that, or from its Markdown, which shows until then unless its tree says
+// it shows raw HTML (`raw`), or when the rendering can't be read or made into a tree; comments'
 // openings as one line of plain text; and a file attached to a comment, checked and with its
 // metadata taken out, as it's uploaded. Nothing here calls Node or Electron.
 

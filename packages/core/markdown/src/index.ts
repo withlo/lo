@@ -7,6 +7,7 @@ export {
   type Limits,
 } from './limits.ts';
 export { slug } from './anchors.ts';
+export { mayHoldHtml } from './build.ts';
 export { isWebLink, webLink } from './links.ts';
 export {
   imageAddress,

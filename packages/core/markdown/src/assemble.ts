@@ -76,7 +76,7 @@ export function assemble<X extends Extension>(
     // What it used is put back, since what shows instead is only its text.
     builder.restore(snapshot);
     notes.add('deep');
-    const plain = plainBlocks<X>(part.plain());
+    const plain = plainBlocks<X>(builder.asWritten(part.plain()));
     return { built: plain, nodes: plain.length * PLAIN_NODES };
   };
 
@@ -86,7 +86,7 @@ export function assemble<X extends Extension>(
     if (nodes + size > budget) {
       builder.restore(snapshot);
       notes.add('nodes');
-      append(blocks, plainBlocks<X>(rest(index)));
+      append(blocks, plainBlocks<X>(builder.asWritten(rest(index))));
       cut = { line: part.line };
       break;
     }
@@ -118,7 +118,7 @@ export function assemble<X extends Extension>(
     if (!shown) dropped.push(footnote.plain());
   }
   if (items.length > 0) blocks.push({ kind: 'footnotes', items });
-  append(blocks, plainBlocks<X>(dropped.join('\n\n')));
+  append(blocks, plainBlocks<X>(builder.asWritten(dropped.join('\n\n'))));
   return settle(blocks, builder);
 }
 

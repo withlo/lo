@@ -168,8 +168,8 @@ export function walk(tree: unknown, limits: Limits = DEFAULT_LIMITS): Walked {
   const walked = { depth: 0, nodes: 0, images: 0, addresses: 0 };
   if (!isRecord(tree)) return { problems: ['the tree is not a plain object'], ...walked };
   const keys = Object.keys(tree).toSorted();
-  if (!isDeepStrictEqual(keys, ['blocks', 'diagnostics', 'notes']))
-    problem('tree', `has ${keys.join(', ')}`);
+  const expected = ['blocks', 'diagnostics', 'notes', ...(tree['raw'] === true ? ['raw'] : [])];
+  if (!isDeepStrictEqual(keys, expected)) problem('tree', `has ${keys.join(', ')}`);
   checkNotes(tree['notes'], problem);
   checkDiagnostics(tree['diagnostics'], problem);
 
