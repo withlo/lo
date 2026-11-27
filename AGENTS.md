@@ -1109,8 +1109,10 @@ changing, as when the local copy marks one generated, doesn't reorder a drawn vi
   newer push.
 - `diff.layout` and `diff.whitespace` are settings; `gi` and `gw` change them.
 - With `comments.threads` at `beside`, a thread or a comment box never reaches the aligner: the code
-  view draws markers in its gutter and one `ThreadPopover` in a layer of its scroll. A test fails if
-  a diff with threads lays out its rows differently from the same diff without them.
+  view draws markers in its gutter and one `ThreadPopover` in a layer of its scroll. An overview's
+  code blocks share one, in a layer of the overview's scroll, so no block clips it. A test fails if
+  a diff with threads lays out its rows differently from the same diff without them, and if a code
+  block is taller with threads beside its lines than without them.
 
 ### Revisions
 

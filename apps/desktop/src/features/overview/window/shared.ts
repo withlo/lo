@@ -23,6 +23,7 @@ import { checked, revisions, states } from './store.ts';
 import {
   blockKey as keyOfBlock,
   blockLinesOf,
+  blockPinned as pinnedBlock,
   blockThreadsWith,
   blockWithFocus as withFocus,
   changed,
@@ -125,6 +126,17 @@ export function blockThreadsShowChanged(): void {
  */
 export function blockWithFocus(tab: string): BlockPopover | undefined {
   return withFocus(tab);
+}
+
+/**
+ * Whether a key or a control on thread `thread` of pull request's tab `tab` is one of its
+ * overview's code blocks': one with focus in its code, as on a card under its lines, or in its
+ * popover, or, with the overview on screen, one whose popover is pinned with the thread in it, as
+ * from a menu over it.
+ */
+export function askedInBlock(tab: string, thread: string): boolean {
+  if (withFocus(tab)) return true;
+  return drawnIn(tab) !== undefined && (pinnedBlock(tab)?.pinned().includes(thread) ?? false);
 }
 
 /**

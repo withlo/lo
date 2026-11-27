@@ -13,8 +13,10 @@ import type { ActRow, ThreadCommentRow, ThreadRow } from '../contract.ts';
 import {
   acting,
   closeAct,
+  edit,
   followFailures,
   markFailures,
+  reply,
   resolveThread,
   takeActs,
   threw,
@@ -29,6 +31,13 @@ const said = vi.hoisted(() => ({
   resolves: 0,
   screen: 'v0' as string | undefined,
   resolve: (() => Promise.resolve({ kind: 'done' })) as () => Promise<unknown>,
+  /** The boxes opened: where, with a diff to draw them in or none yet, and what's in them. */
+  opened: [] as { place: unknown; diff: boolean; draft: unknown }[],
+  /** Whether the diff is on screen, and the tabs it was brought on screen in. */
+  diffShown: false,
+  diffs: [] as string[],
+  /** Whether a key or control on a thread is a code block's. */
+  inBlock: false,
 }));
 
 vi.mock('../../../window/commands/notices.tsx', async (original) => ({
@@ -44,6 +53,7 @@ vi.mock('./main.ts', () => ({
       said.resolves += 1;
       return said.resolve();
     },
+    editing: () => Promise.resolve({ kind: 'editing' }),
   }),
 }));
 vi.mock('./boxes.ts', () => ({
@@ -54,15 +64,25 @@ vi.mock('./boxes.ts', () => ({
   loginOf: () => 'rozed-bot',
   noDiff: () => 'No diff',
   offline: () => undefined,
-  openAt: () => {},
+  openAt: (
+    _view: string,
+    diff: unknown,
+    _home: unknown,
+    place: unknown,
+    _how: unknown,
+    draft = '',
+  ) => said.opened.push({ place, diff: diff !== undefined, draft }),
 }));
 vi.mock('../../diff/window/shared.ts', () => ({
-  writingDiff: () => ({ claimThread: () => () => {} }),
-  goToThread: (view: string, thread: string) => {
-    said.shown.push(`${view} ${thread}`);
+  writingDiff: () => ({ claimThread: () => () => {}, openThread: () => true }),
+  diffOnScreen: () => said.diffShown,
+  showDiff: (view: string) => said.diffs.push(view),
+  goToThread: (view: string, thread: string, how = 'go') => {
+    said.shown.push(`${view} ${thread}${how === 'go' ? '' : ` ${how}`}`);
     return true;
   },
 }));
+vi.mock('../../overview/window/shared.ts', () => ({ askedInBlock: () => said.inBlock }));
 vi.mock('../../tab/window/shared.ts', async (original) => ({
   ...(await original<typeof TabShared>()),
   activeTab: () =>
@@ -156,6 +176,10 @@ beforeEach(() => {
     resolves: 0,
     screen: VIEW,
     resolve: () => Promise.resolve({ kind: 'done' }),
+    opened: [],
+    diffShown: false,
+    diffs: [],
+    inBlock: false,
   });
 });
 
@@ -319,3 +343,38 @@ describe('a resolve whose write failed in Lo', () => {
     expect(failedOn()).toBe('couldn’t resolve the thread');
   });
 });
+
+describe('a reply or an edit asked for on a code block', () => {
+  const thread = { kind: 'thread', thread: 'T1' } as const;
+
+  test('with the diff off screen, brings the diff on screen, where its box opens once it can', async () => {
+    said.inBlock = true;
+    reply(TAB, thread);
+    expect(said.opened).toEqual([
+      { place: { kind: 'reply', thread: 'T1' }, diff: false, draft: '' },
+    ]);
+    expect(said.diffs).toEqual([VIEW]);
+    // Shown there as the box opens, focus left for the box.
+    expect(said.shown).toEqual([`${VIEW} T1 follow`]);
+    await edit(TAB, thread);
+    expect(said.opened[1]).toEqual({
+      place: { kind: 'edit', thread: 'T1', comment: 'C1' },
+      diff: false,
+      draft: 'Fixture C: Is doubling enough?',
+    });
+    expect(said.diffs).toEqual([VIEW, VIEW]);
+    expect(toastsSaid()).toEqual([]);
+  });
+
+  test('from anywhere else, with the diff off screen, nothing opens and nothing moves', async () => {
+    reply(TAB, thread);
+    await edit(TAB, thread);
+    expect(said.opened).toEqual([]);
+    expect(said.diffs).toEqual([]);
+  });
+});
+
+/** The toasts said so far, by their titles. */
+function toastsSaid(): string[] {
+  return said.toasts.map(({ title }) => title);
+}

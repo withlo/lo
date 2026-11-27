@@ -503,14 +503,20 @@ for (const mode of ['beside', 'between'] as const) {
                   element.closest('.cm-content > *')?.previousElementSibling?.textContent,
               );
             expect(above).toBe('  return Math.max(1, Math.ceil(nodes / 100));');
+            // Under its line, it takes room of its own.
+            expect((await rowsOf(block)).gap).toBeGreaterThan(20);
           } else {
-            // Its mark beside line 5, and nothing under the line.
+            // Its mark beside line 5, and nothing under the line: the block is as tall as its lines,
+            // as it would be with no thread.
             const mark = block.getByRole('button', {
               name: 'Unresolved thread · line 5',
               exact: true,
             });
             await expect(mark).toBeVisible();
             await expect(block.locator(thread)).toHaveCount(0);
+            const drawn = await rowsOf(block);
+            expect(drawn.others).toBe(0);
+            expect(Math.abs(drawn.gap)).toBeLessThanOrEqual(1);
             // A click pins its popover, over the code in the overview's own scroll.
             await mark.click();
             const popover = page.locator(
@@ -551,6 +557,99 @@ for (const mode of ['beside', 'between'] as const) {
     );
   });
 }
+
+/** A stack layer's overview's code block on `path`. */
+function codeBlock(page: Page, path: string) {
+  return page
+    .locator('[data-lo-middle-view="overview.view"] .lo-codeblock')
+    .filter({ has: page.locator('.lo-codeblock__path', { hasText: path }) });
+}
+
+/**
+ * What a code block's code draws besides its lines, and how much taller it is than its lines: none
+ * and 0 where nothing but its code is in its flow.
+ */
+function rowsOf(block: ReturnType<typeof codeBlock>): Promise<{ others: number; gap: number }> {
+  return block.locator('.cm-content[role="textbox"]').evaluate((content) => {
+    const children = [...content.children];
+    const lines = children.filter((child) => child.classList.contains('cm-line'));
+    const height = lines.reduce((sum, line) => sum + line.getBoundingClientRect().height, 0);
+    const style = getComputedStyle(content);
+    const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+    return {
+      others: children.length - lines.length,
+      gap: Math.round(content.getBoundingClientRect().height - padding - height),
+    };
+  });
+}
+
+/** The comment box the diff on screen draws, which has focus. */
+async function focusedBox(page: Page) {
+  await expect(page.locator('.lo-diffview')).toBeVisible({ timeout: 20_000 });
+  const box = page.locator('[data-lo-diff] .lo-diffcomposer');
+  await expect(box).toHaveCount(1, { timeout: 20_000 });
+  await expect(box.locator('.cm-content')).toBeFocused();
+  return box;
+}
+
+test.describe('a reply or an edit asked for in a code block’s popover', () => {
+  onStacks.use({ settings: '{ "tab.open": "overview" }\n' });
+
+  onStacks(
+    'opened on the overview, Reply brings the diff on screen, its box there taking what’s typed',
+    async ({ page }) => {
+      test.setTimeout(60_000);
+      await open(page, STACK.b);
+      const block = codeBlock(page, 'src/cost.ts');
+      await expect(block.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 30_000 });
+      const mark = block.getByRole('button', { name: 'Unresolved thread · line 5', exact: true });
+      await mark.click();
+      const popover = page.locator('[data-lo-middle-view="overview.view"] .lo-ov > .lo-threadpop');
+      await popover.getByRole('button', { name: 'Reply', exact: true }).click();
+      // The diff, never drawn till now, comes on screen, the reply's box in its thread there.
+      const box = await focusedBox(page);
+      await expect(box.locator('.lo-diffcomposer__head')).toContainText('Reply');
+      // What's typed is the box's: `x` resolves nothing.
+      await page.keyboard.type('Rounded up, x');
+      await expect(box.locator('.cm-content')).toHaveText('Rounded up, x');
+      await expect(
+        page.locator('[data-lo-diff]').getByRole('button', {
+          name: 'Unresolved thread · line 5',
+          exact: true,
+        }),
+      ).toBeVisible();
+    },
+  );
+});
+
+onStacks(
+  'with the diff drawn and the overview on screen, `i` in a code block’s popover brings the diff back, the edit’s box there taking what’s typed',
+  async ({ page }) => {
+    test.setTimeout(60_000);
+    await open(page, STACK.b);
+    await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(['src/cost.ts new 5']);
+    await settled(page);
+    await page.keyboard.press('~');
+    await expect(page.locator('.lo-diffview')).toBeHidden();
+    const block = codeBlock(page, 'src/cost.ts');
+    await expect(block.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 20_000 });
+    await block.getByRole('button', { name: 'Unresolved thread · line 5', exact: true }).click();
+    const popover = page.locator('[data-lo-middle-view="overview.view"] .lo-ov > .lo-threadpop');
+    await expect(popover).toBeVisible();
+    await page.keyboard.press('i');
+    const box = await focusedBox(page);
+    await expect(box.locator('.cm-content')).toContainText('GitHub rounds each 100 nodes up');
+    await page.keyboard.type(' x');
+    await expect(box.locator('.cm-content')).toContainText('nodes up');
+    expect(await box.locator('.cm-content').textContent()).toMatch(/ x$/);
+    await expect(
+      page.locator('[data-lo-diff]').getByRole('button', {
+        name: 'Unresolved thread · line 5',
+        exact: true,
+      }),
+    ).toBeVisible();
+  },
+);
 
 onStacks(
   'the threads panel shows the layer on screen’s threads, and the stack counts each layer’s',

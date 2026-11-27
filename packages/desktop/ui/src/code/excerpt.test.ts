@@ -1070,6 +1070,11 @@ function inScroll(count: number) {
   return { scroller, shown, painted, layers };
 }
 
+/** Brings the pointer over `mark`. */
+function hover(mark: HTMLElement): void {
+  mark.dispatchEvent(new MouseEvent('pointerover', { bubbles: true }));
+}
+
 describe('threads beside lines', () => {
   test('a thread takes no room under its line: its mark alone, which a click pins in the scroll around it, and again closes', () => {
     const { shown, painted, layers } = inScroll(1);
@@ -1152,5 +1157,67 @@ describe('threads beside lines', () => {
     expect(second.excerpt.pinned()).toEqual(['t1']);
     second.excerpt.destroy();
     expect(layers()).toHaveLength(0);
+  });
+
+  test('the popover they share takes the listeners it put on the page and the window with the last', () => {
+    const { shown } = inScroll(2);
+    const [first, second] = [shown[0]!, shown[1]!];
+    const on = [document, window].map((target) => ({
+      adds: vi.spyOn(target, 'addEventListener'),
+      removes: vi.spyOn(target, 'removeEventListener'),
+    }));
+    // The first mark clicked makes it, and the second's click takes it there.
+    first.mark().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    second.mark().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const listening = on.flatMap(({ adds }) =>
+      adds.mock.calls.map(([type, listener]) => ({ type, listener })),
+    );
+    expect(listening.map(({ type }) => type)).toEqual(
+      expect.arrayContaining(['pointerdown', KEY_EVENT, 'keydown']),
+    );
+    const gone = () =>
+      listening.filter(({ type, listener }) =>
+        on.some(({ removes }) =>
+          removes.mock.calls.some((call) => call[0] === type && call[1] === listener),
+        ),
+      );
+    first.excerpt.destroy();
+    expect(gone().map(({ type }) => type)).not.toContain('pointerdown');
+    second.excerpt.destroy();
+    expect(gone()).toEqual(listening);
+    for (const { adds, removes } of on) {
+      adds.mockRestore();
+      removes.mockRestore();
+    }
+  });
+
+  test('one taken down as the pointer rests on its mark previews nothing', () => {
+    vi.useFakeTimers();
+    onTestFinished(() => void vi.useRealTimers());
+    const { shown, layers } = inScroll(2);
+    const [first, second] = [shown[0]!, shown[1]!];
+    // The pointer comes over the second's mark, and on to the first's, which it rests on.
+    hover(second.mark());
+    hover(first.mark());
+    first.excerpt.destroy();
+    vi.advanceTimersByTime(REST);
+    expect(layers()).toHaveLength(1);
+    expect(layers()[0]!.hidden).toBe(true);
+    // The other one's still previews as the pointer rests on its mark.
+    hover(second.mark());
+    vi.advanceTimersByTime(REST);
+    expect(layers()[0]!.hidden).toBe(false);
+    expect(layers()[0]!.textContent).toBe('t1');
+  });
+
+  test('one taken down pinned, with focus in its popover, hands focus to the scroll around it', async () => {
+    const { scroller, shown, layers } = inScroll(1);
+    const { excerpt, mark } = shown[0]!;
+    mark().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(excerpt.hasFocus()).toBe(true);
+    expect(layers()[0]!.contains(document.activeElement)).toBe(true);
+    excerpt.destroy();
+    await Promise.resolve();
+    expect(document.activeElement).toBe(scroller);
   });
 });
