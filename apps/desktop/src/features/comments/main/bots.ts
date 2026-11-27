@@ -5,9 +5,13 @@
 // - **How often:** each bot is asked about at most once a run, and 100 bots at most, one at a
 //   time. What GitHub said is kept for the run: where the picture is, or that it has none, as for
 //   a bot it doesn't have (`404`).
+// - **From run to run:** where a bot's picture is, once GitHub has said, is kept in the feature's
+//   table (`BotTable`), so a bot seen before is drawn at once, with nothing asked: an app's picture
+//   stays at its id's address. Only a bot never seen waits for its ask, behind the reads the tab
+//   opens with. That GitHub has no such bot is kept for the run alone.
 // - **As whom** (`askGitHub`): the first account signed in, in its queue as a background read, and
 //   only while GitHub answers it and its rate limit is normal. With no account signed in, a bot
-//   keeps its initials: a tab acting as nobody shows no comments.
+//   not kept keeps its initials: a tab acting as nobody shows no comments.
 // - **When not:** while the account can't ask, nothing is, until its poller hears from GitHub
 //   again. After an ask GitHub answered with an error, nothing is asked for a minute, then for
 //   twice as long after each failure in a row, an hour at most, unless an account is added or
@@ -16,6 +20,7 @@
 
 import { botAvatar, type Poller } from '@lo/github';
 
+import type { Database } from '../../../main/database.ts';
 import { AVATAR_HOST, ImageError } from './images.ts';
 
 /** What asking GitHub about a bot came to. */
@@ -62,6 +67,8 @@ export interface BotPicturesOptions {
   /** Milliseconds, only ever forward. */
   now?: (() => number) | undefined;
   limits?: Partial<BotLimits> | undefined;
+  /** Where bots' pictures are kept from run to run. Without it, only for the run. */
+  kept?: KeptBots | undefined;
 }
 
 /** Finds and keeps where each bot's picture is. */
@@ -69,6 +76,7 @@ export class BotPictures {
   readonly #ask: (login: string) => Promise<BotAnswer>;
   readonly #now: () => number;
   readonly #limits: BotLimits;
+  readonly #kept: KeptBots | undefined;
   /**
    * What GitHub said of each bot, by its slug in lowercase: where its picture is, or why there's
    * none.
@@ -89,15 +97,16 @@ export class BotPictures {
     this.#ask = (login) => options.ask(login);
     this.#now = options.now ?? (() => performance.now());
     this.#limits = { ...BOT_LIMITS, ...options.limits };
+    this.#kept = options.kept;
   }
 
   /**
-   * Where bot `login`'s picture is, on the avatars' host, with no size: kept, or asked about.
-   * Throws an {@link ImageError}.
+   * Where bot `login`'s picture is, on the avatars' host, with no size: known this run, kept from
+   * an earlier one, or asked about. Throws an {@link ImageError}.
    */
   picture(login: string): Promise<URL> {
     const key = login.toLowerCase();
-    const known = this.#known.get(key);
+    const known = this.#known.get(key) ?? this.#keptPicture(key);
     if (known !== undefined) {
       return typeof known === 'string'
         ? Promise.reject(new ImageError('refused', known))
@@ -111,6 +120,22 @@ export class BotPictures {
       this.#asking.set(key, asking);
     }
     return asking.then((address) => new URL(address));
+  }
+
+  /** Where bot `key`'s picture is, as kept from an earlier run, now known for this one. */
+  #keptPicture(key: string): URL | undefined {
+    let path: string | undefined;
+    try {
+      path = this.#kept?.read(key);
+    } catch {
+      // What can't be read is asked about, as if it had never been kept.
+      return undefined;
+    }
+    // Read as GitHub's answer is: only an app's or an account's picture, on the avatars' host.
+    const address =
+      path === undefined ? undefined : pictureAddress(`https://${AVATAR_HOST}${path}`);
+    if (address) this.#known.set(key, address);
+    return address;
   }
 
   /** Asks again at once, after a failure: something changed that may let an ask go. */
@@ -156,6 +181,11 @@ export class BotPictures {
     const address = answer.kind === 'found' ? pictureAddress(answer.avatar) : undefined;
     if (address) {
       this.#known.set(key, address);
+      try {
+        this.#kept?.keep(key, address.pathname);
+      } catch {
+        // Known for the run all the same: a picture that can't be kept for later is drawn now.
+      }
       return address;
     }
     const why =
@@ -185,6 +215,55 @@ function pictureAddress(given: string): URL | undefined {
     return undefined;
   }
   return new URL(address.pathname, address.origin);
+}
+
+/**
+ * Where bots' pictures are kept from run to run: where GitHub said each one's is, on the avatars'
+ * host, as a path (`/in/1210556`), by the bot's slug in lowercase.
+ */
+export interface KeptBots {
+  /** Where bot `slug`'s picture is, as kept, or nothing. */
+  read(slug: string): string | undefined;
+  /** Keeps where bot `slug`'s picture is, `path` on the avatars' host. */
+  keep(slug: string, path: string): void;
+}
+
+/** The most bots whose pictures are kept: those GitHub was asked about last. */
+export const KEPT_BOTS = 500;
+
+/** Bots' pictures, kept in the feature's table (`comments_bots`), the newest {@link KEPT_BOTS}. */
+export class BotTable implements KeptBots {
+  readonly #database: Database;
+  readonly #now: () => number;
+  readonly #most: number;
+
+  constructor(database: Database, now: () => number = Date.now, most = KEPT_BOTS) {
+    this.#database = database;
+    this.#now = now;
+    this.#most = most;
+  }
+
+  read(slug: string): string | undefined {
+    const row = this.#database
+      .prepare('SELECT picture FROM comments_bots WHERE slug = ?')
+      .get(slug);
+    return row === undefined ? undefined : String(row.picture);
+  }
+
+  keep(slug: string, path: string): void {
+    this.#database.transaction(() => {
+      this.#database
+        .prepare(
+          'INSERT INTO comments_bots (slug, picture, at) VALUES (?, ?, ?) ON CONFLICT (slug) DO UPDATE SET picture = excluded.picture, at = excluded.at',
+        )
+        .run(slug, path, this.#now());
+      this.#database
+        .prepare(
+          'DELETE FROM comments_bots WHERE slug NOT IN (SELECT slug FROM comments_bots ORDER BY at DESC, slug LIMIT ?)',
+        )
+        .run(this.#most);
+    });
+  }
 }
 
 /** An account as asking needs it: its login, and whether its token can be used. */

@@ -1,14 +1,18 @@
 import { GithubClient, GithubError, Token, type PollStatus, type ReadPriority } from '@lo/github';
 import { describe, expect, it } from 'vitest';
 
+import { openDatabase } from '../../../main/database.ts';
+import { migrate } from '../../../main/migrations.ts';
 import {
   askGitHub,
   BotPictures,
+  BotTable,
   type BotAccounts,
   type BotAccountState,
   type BotAnswer,
   type BotLimits,
   type BotPoller,
+  type KeptBots,
 } from './bots.ts';
 import { ImageError } from './images.ts';
 
@@ -21,6 +25,7 @@ const CURSOR = 'https://avatars.githubusercontent.com/in/1210556?v=4';
 function pictures(
   answer: (login: string) => BotAnswer | Promise<BotAnswer>,
   limits?: Partial<BotLimits>,
+  kept?: KeptBots,
 ) {
   const asked: string[] = [];
   const clock = { now: 0 };
@@ -31,8 +36,17 @@ function pictures(
     },
     now: () => clock.now,
     limits,
+    kept,
   });
   return { bots, asked, clock };
+}
+
+/** Bots' pictures kept from an earlier run, as `given` says, and what's kept since. */
+function keptBots(given: Readonly<Record<string, string>> = {}): KeptBots & {
+  kept: Map<string, string>;
+} {
+  const kept = new Map(Object.entries(given));
+  return { kept, read: (slug) => kept.get(slug), keep: (slug, path) => kept.set(slug, path) };
 }
 
 const found = (avatar = CURSOR): BotAnswer => ({ kind: 'found', avatar });
@@ -225,6 +239,90 @@ describe('BotPictures', () => {
     // It was asked about, so it counts.
     expect(await refusal(bots.picture('renovate'))).toMatchObject({ reason: 'refused' });
     expect(asked).toEqual(['cursor', 'cursor']);
+  });
+});
+
+describe('BotPictures, from run to run', () => {
+  it('draws a bot whose picture an earlier run kept without asking GitHub', async () => {
+    const { bots, asked } = pictures(() => found(), undefined, keptBots({ cursor: '/in/1210556' }));
+    expect((await bots.picture('Cursor')).href).toBe(
+      'https://avatars.githubusercontent.com/in/1210556',
+    );
+    expect(asked).toEqual([]);
+  });
+
+  it("keeps where GitHub said a bot's picture is, and not that it has no such bot", async () => {
+    const kept = keptBots();
+    const { bots } = pictures(
+      (login) => (login === 'gone' ? { kind: 'none' } : found()),
+      undefined,
+      kept,
+    );
+    await bots.picture('Cursor');
+    await refusal(bots.picture('gone'));
+    expect([...kept.kept]).toEqual([['cursor', '/in/1210556']]);
+  });
+
+  it('draws a bot as GitHub says, whether or not its picture can be kept or read back', async () => {
+    const broken: KeptBots = {
+      read: () => {
+        throw new Error('database is closed');
+      },
+      keep: () => {
+        throw new Error('database is closed');
+      },
+    };
+    const { bots, asked } = pictures(() => found(), undefined, broken);
+    expect((await bots.picture('cursor')).pathname).toBe('/in/1210556');
+    expect((await bots.picture('cursor')).pathname).toBe('/in/1210556');
+    expect(asked).toEqual(['cursor']);
+  });
+
+  it('asks about a bot whose kept place isn’t a picture on the avatars’ host', async () => {
+    const kept = keptBots({ cursor: '.evil.example/in/1', renovate: '/in/1/../../users' });
+    const { bots, asked } = pictures(() => found(), undefined, kept);
+    expect((await bots.picture('cursor')).pathname).toBe('/in/1210556');
+    expect((await bots.picture('renovate')).pathname).toBe('/in/1210556');
+    expect(asked).toEqual(['cursor', 'renovate']);
+  });
+});
+
+describe('BotTable', () => {
+  // The feature's migrations, named by their paths in the app, as main finds them.
+  const migrations = Object.fromEntries(
+    Object.entries(
+      import.meta.glob<string>('../migrations/*.sql', {
+        eager: true,
+        query: '?raw',
+        import: 'default',
+      }),
+    ).map(([path, sql]) => [path.replace(/^\.\.\//, '/src/features/comments/'), sql]),
+  );
+
+  function database() {
+    const opened = openDatabase(':memory:');
+    migrate(opened, migrations);
+    return opened;
+  }
+
+  it("keeps where each bot's picture is for the next run, the newest at most", () => {
+    const db = database();
+    const clock = { now: 1 };
+    const table = new BotTable(db, () => clock.now, 2);
+    table.keep('cursor', '/in/1210556');
+    clock.now = 2;
+    table.keep('renovate', '/in/2740');
+    expect(new BotTable(db).read('cursor')).toBe('/in/1210556');
+    expect(new BotTable(db).read('dependabot')).toBeUndefined();
+    // Said again, it's the newest.
+    clock.now = 3;
+    table.keep('cursor', '/in/1210557');
+    clock.now = 4;
+    table.keep('dependabot', '/in/29110');
+    const later = new BotTable(db);
+    expect(later.read('cursor')).toBe('/in/1210557');
+    expect(later.read('renovate')).toBeUndefined();
+    expect(later.read('dependabot')).toBe('/in/29110');
   });
 });
 

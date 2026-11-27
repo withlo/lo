@@ -112,7 +112,7 @@ export { Button, type ButtonProps } from './Button.tsx';
 export { CommandButton, type CommandButtonProps } from './CommandButton.tsx';
 export { Input, type InputProps } from './Input.tsx';
 export { Meter, type MeterProps } from './Meter.tsx';
-export { about, ago, bytes, clock, duration } from './formats.ts';
+export { about, ago, agoAlone, bytes, clock, duration } from './formats.ts';
 export {
   Setting,
   SettingsCommand,
@@ -374,6 +374,7 @@ export { hoverLinks, type HoverLink } from './hoverDocs.ts';
 export { ShownText } from './ShownText.tsx';
 export { Ticks } from './Ticks.tsx';
 export { PathName, SourceMark, sourceName, type AnswerSource } from './Source.tsx';
+export { WholePath } from './WholePath.tsx';
 export {
   TypeHover,
   TypeHoverWaiting,

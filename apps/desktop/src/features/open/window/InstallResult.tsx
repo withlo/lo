@@ -1,7 +1,7 @@
 // What the last install of the `lo` command a row asked for left to say under the row: the folder
 // to add to `PATH`, or why it failed. Settings' row and the welcome's both show it.
 
-import { Problem, Ticks } from '@lo/ui';
+import { Problem, Ticks, WholePath } from '@lo/ui';
 import type { ReactNode } from 'react';
 
 import type { Installed } from '../contract.ts';
@@ -13,7 +13,7 @@ export function InstallResult({ done }: { done: Installed | undefined }): ReactN
     if (done.onPath) return null;
     return (
       <p className="m-0 text-fg-muted text-small">
-        Add <span className="break-all text-fg code-small">{folderOf(done.path)}</span> to{' '}
+        Add <WholePath path={folderOf(done.path)} className="text-fg code-small" /> to{' '}
         <span className="text-fg code-small">PATH</span>.
       </p>
     );

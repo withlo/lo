@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { about, ago, bytes, duration } from './formats.ts';
+import { about, ago, agoAlone, bytes, duration } from './formats.ts';
 
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
@@ -30,6 +30,18 @@ describe('ago', () => {
   it('says "just now" for a time from a clock running ahead, and nothing for one that isn’t a time', () => {
     expect(ago(now + 5 * MINUTE, now)).toBe('just now');
     expect(ago(Number.NaN, now)).toBe('');
+  });
+});
+
+describe('agoAlone', () => {
+  const now = new Date(2025, 10, 30, 12).getTime();
+
+  it('says it as ago does, starting with a capital, as a value of its own', () => {
+    expect(agoAlone(now, now)).toBe('Just now');
+    expect(agoAlone(now - 5 * MINUTE, now)).toBe('5 min ago');
+    expect(agoAlone(now - 2 * HOUR, now)).toBe('2 h ago');
+    expect(agoAlone(new Date(2025, 9, 12).getTime(), now)).toBe('Oct 12');
+    expect(agoAlone(Number.NaN, now)).toBe('');
   });
 });
 
