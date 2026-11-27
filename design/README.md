@@ -914,7 +914,10 @@ each picture it has drawn by its address: the empty disc, then the Swap, once.
   with `scrollIntoView`. One taller than its pane shows from its top. A comment box does this itself
   whenever it takes focus (`Composer.focus()`), and keeps itself in view as it's laid out, until the
   reader's next key, press or scroll. It keeps `lo-sp-8` under it (its `scroll-margin-bottom`, which
-  `reveal` honours), so its ring shows whole above the pane's foot.
+  `reveal` honours), so its ring shows whole above the pane's foot. What cuts off what it holds, as
+  an overview's code block keeping its height as its code comes, shows it whole first: a code view
+  says what it's showing (`askToShow`) as its cursor moves and before a thread or a box opens on a
+  line, and the holder lets go when that's in the part cut off.
 - **A box that grows keeps its foot in view**, as an editor keeps its caret. With focus in it, a box
   that grows as a line is typed, its preview is drawn or its text wraps in less width scrolls its
   pane the least that keeps `lo-sp-8` under it. One that shrinks moves nothing, and one whose foot

@@ -72,3 +72,41 @@ export function reveal(element: Element, options: RevealOptions = {}): void {
   }
   if (options.land ?? block !== 'nearest') land(element);
 }
+
+/** Where something is on the page, from its top to its bottom. */
+export interface Span {
+  readonly top: number;
+  readonly bottom: number;
+}
+
+/**
+ * Where what a view shows is on the page, read when it's asked, after anything around it has moved:
+ * none once it's gone.
+ */
+export type Shown = () => Span | undefined;
+
+/**
+ * The event a view sends up the page as it shows something in it, a `CustomEvent` whose detail is
+ * the {@link Shown} that says where: an overview's block that keeps its height, cutting off what
+ * grew in it, shows it whole first if any of that is in the part cut off (`holdHeight`).
+ */
+export const SHOW_EVENT = 'lo-show';
+
+/**
+ * Says that what `shown` says is being shown in `from`: the cursor coming to a line, or a thread
+ * or a comment box opening on one. Whatever holds `from` makes room for it at once, before it
+ * opens, so it opens where it's seen. Its opener brings it into view as it always does.
+ */
+export function askToShow(from: Element, shown: Shown): void {
+  from.dispatchEvent(new CustomEvent<Shown>(SHOW_EVENT, { bubbles: true, detail: shown }));
+}
+
+/** What `event`, one {@link askToShow} sent, says is being shown, if it's one. */
+export function shownIn(event: Event): Shown | undefined {
+  const shown: unknown = event instanceof CustomEvent ? event.detail : undefined;
+  return isShown(shown) ? shown : undefined;
+}
+
+function isShown(value: unknown): value is Shown {
+  return typeof value === 'function';
+}

@@ -12,7 +12,8 @@
 // again; the last thread asked for wins. The stack's rows count each layer's unresolved threads.
 // Beside lines, Reply and Edit in a code block's popover write there, whatever other boxes are
 // drawn, in the timeline or the diff, and a draft opens there again by its mark, `⏎` on its line or
-// a toast's "Show thread".
+// a toast's "Show thread". A code block cut off as its code came shows whole as the cursor goes
+// into what's cut off, and `⏎` there opens the thread's popover under its line.
 
 import { writeFileSync } from 'node:fs';
 
@@ -702,6 +703,68 @@ async function timelineVisited(page: Page) {
   await showView(page, 'Overview');
   await expect(box).toBeHidden();
 }
+
+test.describe('a code block whose code came while it was on screen', () => {
+  onStacks.use({ settings: '{ "tab.open": "overview" }\n', holdFetches: true });
+
+  onStacks(
+    'shows whole as the cursor comes to a line it cut off, and `⏎` there opens the popover under the line',
+    async ({ app, page, held }) => {
+      test.setTimeout(90_000);
+      // Narrow, so its lines wrap, and its code is taller than the room it kept for it.
+      await app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()[0]?.setContentSize(720, 900),
+      );
+      await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(720);
+      await open(page, STACK.b);
+      const block = codeBlock(page, 'src/cost.ts');
+      // The local copy is held: it waits, wholly on screen, with a paragraph under it.
+      await expect(block.locator('.lo-codeblock__skeleton')).toBeVisible({ timeout: 30_000 });
+      await block.evaluate((element) => element.scrollIntoView({ block: 'center' }));
+      held.release();
+      await expect(block.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 30_000 });
+      const lines = block.locator('[data-lo-excerpt] .cm-line');
+      /** How the block is cut: whether it is, and whether line 5 goes on past where it's cut. */
+      const cut = () =>
+        lines.nth(2).evaluate((line) => {
+          const box = line.closest('.lo-held');
+          const foot = box?.querySelector('.lo-held__clip')?.getBoundingClientRect().bottom ?? 0;
+          return {
+            cut: box?.classList.contains('is-cut') ?? false,
+            hidden: line.getBoundingClientRect().bottom > foot + 0.5,
+          };
+        });
+      await expect.poll(cut, { timeout: 10_000 }).toEqual({ cut: true, hidden: true });
+      const whole = page.getByRole('button', { name: 'Show whole block', exact: true });
+      await expect(whole).toBeVisible();
+
+      // The cursor on line 3's first row, which shows: it stays cut. On to line 5, past the cut:
+      // it's whole.
+      await lines.first().click({ position: { x: 24, y: 6 } });
+      expect((await cut()).cut).toBe(true);
+      await page.keyboard.press('j');
+      await page.keyboard.press('j');
+      await expect.poll(cut).toEqual({ cut: false, hidden: false });
+      await expect(whole).toHaveCount(0);
+
+      // `⏎` opens its thread's popover under line 5, all of it in sight.
+      await page.keyboard.press('Enter');
+      const popover = page.locator('[data-lo-middle-view="overview.view"] .lo-ov > .lo-threadpop');
+      await expect(popover).toContainText('GitHub rounds each 100 nodes up');
+      await expect(popover).toContainText('Line 5');
+      const where = await lines.nth(2).evaluate((line) => {
+        const pop = document.querySelector('.lo-ov > .lo-threadpop')!.getBoundingClientRect();
+        const scroller = line.closest('.lo-ov')!.getBoundingClientRect();
+        const { bottom } = line.getBoundingClientRect();
+        return {
+          under: pop.top >= bottom - 0.5 && pop.top - bottom <= 12,
+          seen: pop.top >= scroller.top && pop.bottom <= scroller.bottom + 0.5,
+        };
+      });
+      expect(where).toEqual({ under: true, seen: true });
+    },
+  );
+});
 
 test.describe('writing in a code block’s popover', () => {
   onStacks.use({ settings: '{ "tab.open": "overview" }\n' });

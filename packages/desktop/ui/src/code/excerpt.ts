@@ -16,7 +16,9 @@
 // changes size there by itself, as an image loading, and the room a box left as it closed once its
 // comment was sent wait until what they'd move is off screen, or the reader acts in the excerpt,
 // or anywhere when no scroll can take them off. Whatever scrolls around it keeps the rest where it
-// is as the excerpt changes height.
+// is as the excerpt changes height. A thread or a box opening on a line, as the cursor coming
+// there, says so first (`askToShowLine`), so a block around the excerpt that cut the line off shows
+// it whole before anything opens on it.
 //
 // Callers see none of this: they name the file by their own id, places by that id, a side and a
 // line, and reach the excerpt only through `ExcerptView` (`api.ts`). Keys reach it through the
@@ -62,7 +64,7 @@ import type {
 import { type At, Beside, type BesideHost, type Pane } from './beside.ts';
 import { CommentBox, placeKey } from './comments.ts';
 import { fileMarks } from './decorations.ts';
-import { codeEditor } from './editor.ts';
+import { askToShowLine, codeEditor } from './editor.ts';
 import { type FileTokens, highlighting, lineStarts, tokensChanged } from './highlight.ts';
 import {
   addCodeEditor,
@@ -792,6 +794,11 @@ class Excerpt implements ExcerptView {
   }
 
   pinThread(id: string, focus = false): boolean {
+    if (this.#mode === 'beside') {
+      const place = this.#threadPlace(id);
+      const line = place && this.#docLine(place.side, place.line);
+      if (line !== undefined) this.#show(line);
+    }
     return this.#beside.pinThread(id, focus);
   }
 
@@ -833,6 +840,8 @@ class Excerpt implements ExcerptView {
     host.setOpen(open === 'toggle' ? !host.open : open);
     // Its bubble says so.
     this.#view.dispatch({ effects: setLane.of([this.#lane()]) });
+    const line = host.open ? this.#lineUnder(host) : undefined;
+    if (line !== undefined) this.#show(line, host.dom);
     return true;
   }
 
@@ -849,6 +858,7 @@ class Excerpt implements ExcerptView {
     const focus = options.focus !== false;
     const open = this.#boxes.get(line);
     if (open) {
+      this.#show(line, open.dom);
       if (focus) open.focus();
       return open.composer;
     }
@@ -888,6 +898,7 @@ class Excerpt implements ExcerptView {
     // The lines `v` selected are the box's now.
     if (focus) endSelection(this.#view);
     this.#drawBlocks();
+    this.#show(line, box.dom);
     if (focus) box.focus();
     return box.composer;
   }
@@ -922,6 +933,7 @@ class Excerpt implements ExcerptView {
       thread === undefined ? { kind: 'line', at: spot.at } : { kind: 'line', at: spot.at, thread };
     // A key in the box names it too, for the caller's commands on the box.
     if (options.name !== undefined) target.box = options.name;
+    this.#show(line);
     return this.#beside.compose({ key, place, from, target, written }, draft, on, frame, options);
   }
 
@@ -1052,6 +1064,14 @@ class Excerpt implements ExcerptView {
   #lineOnScreen(line: number): boolean {
     const { top, bottom } = this.#lineSpan(line);
     return this.#spanOnScreen(top, bottom);
+  }
+
+  /**
+   * Says document line `line` is being shown, with `under`, what opens under it, if anything does:
+   * a block around the excerpt that cut any of it off shows whole first (`askToShowLine`).
+   */
+  #show(line: number, under?: Element): void {
+    askToShowLine(this.#view, line, under);
   }
 
   /**

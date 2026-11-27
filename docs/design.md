@@ -591,8 +591,12 @@ has one, it opens first. Without one, the PR opens on its timeline, where its de
 A setting makes the timeline or the diff open first instead, and another turns overviews off: then
 there's no Overview view, no overview anywhere else in Lo, and Lo reads none.
 
-It appears as soon as its text arrives, and its code blocks fill in as the code loads. Every block
-and link can be reached and opened from the keyboard.
+It appears as soon as its text arrives, and its code blocks fill in as the code loads. A block on
+screen, with more under it, whose code comes taller than the room it kept, keeps that room, so
+nothing you're reading moves: the rest is cut off above "Show whole block". It shows whole when you
+press that, when your cursor goes into the part cut off, and when a thread or a comment box opens on
+a line there, first, so it opens under its line. Every block and link can be reached and opened from
+the keyboard.
 
 ### When the PR moves on
 
