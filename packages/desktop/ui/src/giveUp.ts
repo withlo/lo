@@ -6,7 +6,8 @@ import { useCallback, useEffect, useLayoutEffect, useState, type RefObject } fro
  * short. Each step given up is named in the row's `data-gave-up`, which the stylesheet hides what
  * it draws by (`give-up`). It's measured, never given a width to give a step up at, since what it
  * draws is wider on one system than another and with one name than another: as it's drawn, as what
- * it says changes, as a key chip shows on focus, and as it's made narrower or wider.
+ * it says changes, as a key chip shows on focus, as a face loads, and as it's made narrower or
+ * wider.
  *
  * Returns how many steps it has given up. Pass `steps` that stay the same from draw to draw.
  */
@@ -40,10 +41,15 @@ export function useGiveUp(row: RefObject<HTMLElement | null>, steps: readonly st
     if (typeof ResizeObserver !== 'undefined') sized = new ResizeObserver(refit);
     const said = new MutationObserver(refit);
     said.observe(element, { subtree: true, childList: true, characterData: true });
+    // A face that loads later changes how wide text is, and something held whole, as a title until
+    // a step cuts it, doesn't give that width back by itself: fit again. A test's page has no
+    // `document.fonts`.
+    document.fonts?.addEventListener('loadingdone', refit);
     watch();
     return () => {
       said.disconnect();
       sized?.disconnect();
+      document.fonts?.removeEventListener('loadingdone', refit);
     };
   }, [row, fit]);
   return given;

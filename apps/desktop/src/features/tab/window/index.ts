@@ -9,6 +9,7 @@ import type { WindowFeature } from '../../../window/features.ts';
 import { client } from '../../../window/ipc.ts';
 import { defineView } from '../../../window/slots.tsx';
 import { contract as app } from '../../app/contract.ts';
+import { overviews } from '../../overview/window/shared.ts';
 import { settingRow } from '../../settings/window/shared.ts';
 import { overviewRows } from '../../welcome/window/shared.ts';
 import { layerOf, viewIds, type Choice, type PlaceChoice, type Tab } from '../contract.ts';
@@ -22,6 +23,7 @@ import { choosable, chooseAccount } from './Notes.tsx';
 import { OpenOnChoice, OpenOnRow, useOpenOnLine } from './OpenOn.tsx';
 import { blocked } from './banners.ts';
 import {
+  besideDescription,
   besideDrawable,
   besideDrawn,
   drawable,
@@ -334,6 +336,7 @@ export default {
       },
       enabled: besideSwitch,
       checked: () => rowless() === undefined && besideDrawn(),
+      described: () => besideDescription(overviews.now()),
     },
     otherView: { run: goToOtherView, enabled: () => otherView() !== '' || '' },
     widen: { run: () => stepWidth(1), enabled: () => steppable(1) },

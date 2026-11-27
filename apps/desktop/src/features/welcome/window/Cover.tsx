@@ -122,7 +122,11 @@ function Held({ away, children }: { away: boolean; children: ReactNode }) {
  * scope of its own, as the practice's comment box does, keeps its own scrolling.
  */
 function revealFocused(event: FocusEvent<HTMLElement>): void {
-  const { target } = event;
+  revealInStep(event.target);
+}
+
+/** Brings `target`, in a step, into view, as {@link revealFocused} says. */
+function revealInStep(target: Element): void {
   if (target.closest('[data-lo-scope]')?.getAttribute('data-lo-scope') !== 'welcome') return;
   reveal(target);
 }
@@ -238,6 +242,19 @@ function Welcome(): ReactNode {
   useLayoutEffect(() => {
     if (pane.current) pane.current.scrollTop = 0;
   }, [step]);
+
+  // What has focus in a step stays in view as the pane's room changes, as on a zoom, which moves
+  // everything in it.
+  useEffect(() => {
+    const element = pane.current;
+    if (!element || typeof ResizeObserver === 'undefined') return undefined;
+    const sized = new ResizeObserver(() => {
+      const focused = document.activeElement;
+      if (focused && element.contains(focused)) revealInStep(focused);
+    });
+    sized.observe(element);
+    return () => sized.disconnect();
+  }, []);
 
   // Each step starts with focus on its own first control, once nothing is over the welcome.
   useEffect(

@@ -5,7 +5,7 @@
 import { groups, isOwned, listOf, type Command, type Group } from './declare.ts';
 import { ariaShortcut, keyLabels, writeStrokes } from './notation.ts';
 import type { Registry } from './registry.ts';
-import type { Target } from './targets.ts';
+import { NO_TARGET, type Target } from './targets.ts';
 
 /** One line of keyboard shortcuts: a command, or the commands of one area with one label. */
 export interface HelpRow {
@@ -146,9 +146,9 @@ function grouped(registry: Registry, commands: readonly Command[], vim: boolean)
         .keysOf(command.id)
         .map((strokes) => writeStrokes(strokes, registry.system));
       const label = command.series ?? command.label;
-      const at = rows.findIndex(
-        (row) => row.label === label && row.description === command.description,
-      );
+      // What it says it does now, which a setting can change, as overviews off does Code beside's.
+      const description = registry.described(command.id, NO_TARGET) ?? command.description;
+      const at = rows.findIndex((row) => row.label === label && row.description === description);
       const same = rows[at];
       if (same) {
         const known = new Set(same.keys.map((each) => each.join(' ')));
@@ -169,7 +169,7 @@ function grouped(registry: Registry, commands: readonly Command[], vim: boolean)
         id: command.id,
         ids: [command.id],
         label,
-        description: command.description,
+        description,
         keys,
         written,
         range: command.series !== undefined && keys.length === 1,
@@ -323,7 +323,7 @@ export function paletteItems(registry: Registry, scope: string, target: Target):
           registry.labelled(command.id, target) ?? command.label,
           registry.detail(command.id, target),
         ),
-        description: command.description,
+        description: registry.described(command.id, target) ?? command.description,
         group,
         keys: liveKeys(registry, command)[0],
         shortcut: liveShortcut(registry, command),

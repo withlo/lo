@@ -3,6 +3,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 
 import { FIRST_LAYOUT, type WindowLayout } from '../contract.ts';
 import {
+  besideDescription,
   closePanel,
   drawable,
   drawnRow,
@@ -296,5 +297,12 @@ describe('the window’s layout', () => {
       { left: { open: true, width: 260 }, threads: { open: true }, beside: true },
     ]);
     stop();
+  });
+});
+
+describe('Code beside’s description', () => {
+  it('is its declaration’s while there are overviews, and names the timeline alone while they’re off', () => {
+    expect(besideDescription(true)).toBeUndefined();
+    expect(besideDescription(false)).toBe('The diff to the right of the timeline.');
   });
 });

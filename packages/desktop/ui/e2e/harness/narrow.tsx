@@ -1,10 +1,12 @@
-// The page the narrow spec drives: an out-of-date overview's callout, in an overview's frame the
-// spec narrows and widens, and a long path in a box of its own.
+// The page the narrow spec drives: an out-of-date overview's callout, and a code block whose lines
+// changed since, each in an overview's frame the spec narrows and widens, and a long path in a box
+// of its own.
 
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { Button } from '../../src/Button.tsx';
+import { CodeBlock, CodeBody, CodeFlag } from '../../src/overview/CodeBlock.tsx';
 import { OutOfDate } from '../../src/overview/Stale.tsx';
 import { WholePath } from '../../src/WholePath.tsx';
 
@@ -24,6 +26,20 @@ function Scene() {
             detail={detail}
             actions={<Button size="sm">Compare r1 → r2</Button>}
           />
+        </article>
+      </div>
+      <div id="flagframe" className="lo-ov grid-cols-1" style={{ width: '680px', height: 'auto' }}>
+        <article className="lo-ov__article p-0">
+          <CodeBlock
+            target={{ kind: 'code', path: 'src/parser.ts', lines: { start: 7, end: 10 } }}
+            flag={
+              <CodeFlag action={<Button size="sm">Compare r1 → r2</Button>}>
+                Line 7 changed in r2 · lines added after line 8 · showing r1
+              </CodeFlag>
+            }
+          >
+            <CodeBody rows={2} />
+          </CodeBlock>
         </article>
       </div>
       <div id="path" className="text-small" style={{ width: '200px' }}>

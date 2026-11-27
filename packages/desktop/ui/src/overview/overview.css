@@ -423,13 +423,53 @@
   overflow: hidden;
 }
 
-/* A code block's flag: what changed, then the way to the comparison, at its end. */
-.lo-codeblock__flagtext {
-  flex: 1 1 240px;
-  min-width: 0;
+/*
+ * A code block's flag: what changed on one line, then the way to the comparison at its end, while
+ * the text shows whole beside it, as `useGiveUp` measures it (`CodeFlag`).
+ */
+.lo-codeblock__flag {
+  flex-wrap: nowrap;
 }
-.lo-codeblock__flag > button {
-  margin-left: auto;
+.lo-codeblock__flagtext {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lo-codeblock__flagaction {
+  display: flex;
+  flex: none;
+}
+/*
+ * Where the button doesn't fit beside the text (`CodeFlag` gives up `beside`), one column, as the
+ * out-of-date callout's: the icon centred on the first line, the text wrapping beside it, and the
+ * button `lo-sp-8` under its last line, its left edge on the text's. No more room is held. Too narrow
+ * for its whole label, the button is cut at its end, keeping its focus ring.
+ */
+.lo-codeblock__flag[data-gave-up~='beside'] {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  row-gap: 0;
+}
+.lo-codeblock__flag[data-gave-up~='beside'] > .lo-i {
+  margin-top: calc((1lh - 12px) / 2);
+}
+.lo-codeblock__flag[data-gave-up~='beside'] .lo-codeblock__flagtext {
+  white-space: normal;
+}
+.lo-codeblock__flag[data-gave-up~='beside'] .lo-codeblock__flagaction {
+  grid-column: 2;
+  min-width: 0;
+  margin-top: var(--lo-sp-8);
+  overflow: clip;
+  overflow-clip-margin: 4px;
+}
+.lo-codeblock__flag[data-gave-up~='beside'] .lo-codeblock__flagaction > button {
+  justify-content: flex-start !important;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 /*

@@ -716,8 +716,13 @@
    go at `keys`. A row whose items go one at a time, in an order it works out as it draws, as the
    queue's hints go, marks each with its turn, `drop1` first. What says something nothing else in
    the row says, as a status's detail or a note's fact does, is marked `data-heard` too: given up,
-   it goes out of sight and out of the way as a title does, still heard. */
+   it goes out of sight and out of the way as a title does, still heard. What's marked `data-cuts`,
+   as the PR header's title is, is drawn whole until the row gives up `cut`, so the steps before it
+   go first, and is cut at its end after, down to its least width (`min-w-cut`). */
 @utility give-up {
+  &:not([data-gave-up~='cut']) [data-cuts] {
+    flex-shrink: 0;
+  }
   &[data-gave-up~='keys'] :is(kbd, .key-focus),
   &[data-gave-up~='drop1'] [data-gives='drop1']:not([data-heard]),
   &[data-gave-up~='drop2'] [data-gives='drop2']:not([data-heard]),

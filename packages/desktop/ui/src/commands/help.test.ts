@@ -395,6 +395,41 @@ describe('the palette', () => {
     expect(item?.label).toBe('Merge again · 3 queued');
   });
 
+  it('says under a label what its handler says it does now, in the palette and keyboard shortcuts alike, which a search matches', () => {
+    let off = false;
+    const said = new Registry({
+      system: 'mac',
+      commands: handlers(declared, {
+        markViewed: run,
+        nextFile: run,
+        palette: run,
+        open: run,
+        quit: run,
+        escape: run,
+        merge: { run() {}, described: () => (off ? 'Merges the one layer.' : undefined) },
+      }),
+    });
+    const item = () =>
+      paletteItems(said, 'window', NO_TARGET).find(({ id }) => id === 'diff.merge');
+    const row = () =>
+      helpAll(said, vim)
+        .flatMap((group) => group.rows)
+        .find(({ id }) => id === 'diff.merge');
+    // Without a word from its handler, its declaration's.
+    expect([item()?.description, row()?.description]).toEqual([
+      'Merges the whole pull request.',
+      'Merges the whole pull request.',
+    ]);
+    off = true;
+    expect([item()?.description, row()?.description]).toEqual([
+      'Merges the one layer.',
+      'Merges the one layer.',
+    ]);
+    const items = paletteItems(said, 'window', NO_TARGET);
+    expect(filterPalette(items, 'layer').map(({ item: each }) => each.id)).toEqual(['diff.merge']);
+    expect(filterPalette(items, 'whole')).toEqual([]);
+  });
+
   it('gives each command’s key as aria-keyshortcuts too, for one key or a chord only', () => {
     expect(shortcutOf('mac', 'diff.palette')).toBe('Meta+Shift+P');
     expect(shortcutOf('mac', 'diff.escape')).toBe('Escape');

@@ -1415,7 +1415,7 @@ set-up, and opening a pull request.
   grid cell, so the foot's buttons never move; the steps off screen are `inert`. "Continue" holds
   the room of its label with its key in every state. The foot stays on screen: in a window too short
   for a step, the steps scroll in a pane of their own above it, and what takes focus there comes
-  into view with `reveal()`.
+  into view with `reveal()`, as it does again each time the pane's room changes, as on a zoom.
 - **A feature that needs set-up** adds a row to the set-up step and a row in Settings. It doesn't
   put up a banner or a dialog of its own.
 

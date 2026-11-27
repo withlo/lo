@@ -464,7 +464,9 @@ One label per command, the same everywhere. Only a control on the thing may fill
   “Merge #264”, “Compare r2 → r5”. `…` follows its own rule on each: the merge panel’s button opens
   the confirmation, so it reads “Merge #264…”. The dialog’s primary acts, so it reads “Merge #264”.
 - **A name that’s code stays code inside a label:** “Install `lo` command”.
-- **A description,** where a command has one, is one line that adds what the label can’t.
+- **A description,** where a command has one, is one line that adds what the label can’t. Where a
+  setting changes what the command does, its handler says it then (`described`): Code beside is “The
+  diff to the right of the timeline.” with overviews off.
 - **Never** “OK”, “Yes” or a bare “Submit”.
 
 `diff/keys.ts`:
