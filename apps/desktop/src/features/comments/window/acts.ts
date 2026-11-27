@@ -2,8 +2,9 @@
 // box right after the thread's card), resolving or unresolving, editing your comment (a box with
 // GitHub's text) and deleting it, after a dialog asks. Each acts on the thread `]t` landed on, the
 // only one the diff draws on the cursor's line or under the header, or the card that was pressed or
-// right-clicked: never on one placed there that hasn't come on screen yet. A reply or an edit asked
-// for on an overview's code block is written in the diff, which comes on screen first.
+// right-clicked: never on one placed there that hasn't come on screen yet. A reply or an edit is
+// written in the diff on screen, as from an overview's code block with the code beside; asked for
+// on a block while the diff isn't on screen, it says to go to the diff first, and opens nothing.
 // A write main sends claims its thread in the diff, so what it changes there comes at once. A
 // change shows on its thread's card from the moment it's asked for, with its control at work until
 // GitHub answers, and on until the view's threads show it: the card never goes back to what it was
@@ -16,10 +17,15 @@ import type { ThreadView } from '@lo/ui/code';
 import type { HeaderTarget, LineTarget, ThreadTarget } from '@lo/ui/commands';
 
 import { notify, refuse } from '../../../window/commands/notices.tsx';
-import { diffOnScreen, goToThread, showDiff, writingDiff } from '../../diff/window/shared.ts';
+import {
+  diffOnScreen,
+  goToThread,
+  writingDiff,
+  type WritingDiff,
+} from '../../diff/window/shared.ts';
 import { askedInBlock } from '../../overview/window/shared.ts';
 import { activeTab, showTabOf, tabState, type PullTab } from '../../tab/window/shared.ts';
-import type { ActRefusal, ActRow, ActsView, DraftPlaceRow, ThreadRow } from '../contract.ts';
+import type { ActRefusal, ActRow, ActsView, ThreadRow } from '../contract.ts';
 import {
   canWrite,
   claimBriefly,
@@ -551,46 +557,26 @@ export function reply(tab: PullTab, target: ThreadKeyTarget): void {
     refuse(noReply(loginOf(tab.id)));
     return;
   }
-  const where = whereToWrite(tab.id, row.id);
-  if (!where) {
-    refuse(NOT_HERE);
+  const diff = diffToWrite(tab.id, row.id);
+  if (typeof diff === 'string') {
+    refuse(diff);
     return;
   }
   knowPull(tab);
-  where.open({ kind: 'reply', thread: row.id }, '');
+  diff.openThread(row.id, true);
+  openAt(tab.id, diff, IN_DIFF, { kind: 'reply', thread: row.id }, 'review');
 }
 
 /**
- * Where a reply's or an edit's box in thread `thread` of view `view` is written: in the diff on
- * screen, where it has the thread; or, asked for on an overview's code block with the diff not on
- * screen, in the diff, which comes on screen first, the box opening there, focused, once the diff
- * is drawn with the thread. Nowhere for a diff on screen without the thread, nor from anywhere else
- * while the diff isn't on screen.
+ * The diff a reply's or an edit's box in thread `thread` of view `view` is written in: the diff on
+ * screen, where it shows the thread. Or why there's none: asked for on an overview's code block,
+ * the diff not on screen, to go to the diff first; otherwise, that the diff doesn't have the thread.
+ * A diff drawn but hidden is none: its boxes are out of reach.
  */
-function whereToWrite(
-  view: string,
-  thread: string,
-): { open: (place: DraftPlaceRow, draft: string) => void } | undefined {
+function diffToWrite(view: string, thread: string): WritingDiff | string {
   const diff = diffOnScreen(view) ? writingDiff(view) : undefined;
-  if (diff) {
-    if (shownAt(view, thread) === undefined) return undefined;
-    return {
-      open(place, draft) {
-        diff.openThread(thread, true);
-        openAt(view, diff, IN_DIFF, place, 'review', draft);
-      },
-    };
-  }
-  if (!askedInBlock(view, thread)) return undefined;
-  return {
-    open(place, draft) {
-      // Asked for, it opens focused as soon as the diff draws the thread's line, which the diff
-      // brings on screen, with focus left for the box.
-      openAt(view, undefined, IN_DIFF, place, 'review', draft);
-      goToThread(view, thread, 'follow');
-      showDiff(view);
-    },
-  };
+  if (diff) return shownAt(view, thread) === undefined ? NOT_HERE : diff;
+  return askedInBlock(view, thread) ? noDiff(view) : NOT_HERE;
 }
 
 /** Whether every comment of a thread waits in your pending review: nothing's on GitHub yet. */
@@ -759,9 +745,9 @@ export async function edit(tab: PullTab, target: ThreadKeyTarget, comment?: stri
   if (!row) return;
   const chosen = yours(view, row, 'edit', comment);
   if (!chosen) return;
-  const where = whereToWrite(view, row.id);
-  if (!where) {
-    refuse(NOT_HERE);
+  const asked = diffToWrite(view, row.id);
+  if (typeof asked === 'string') {
+    refuse(asked);
     return;
   }
   const place = { kind: 'edit' as const, thread: row.id, comment: chosen.id };
@@ -776,8 +762,13 @@ export async function edit(tab: PullTab, target: ThreadKeyTarget, comment?: stri
     failed(view, row.id, COULDNT_EDIT, error, () => void edit(tab, target, chosen.id));
     return;
   }
+  // The reader moved on meanwhile, as to another tab, or the diff's no longer on screen: nothing
+  // opens.
+  const diff = diffToWrite(view, row.id);
+  if (typeof diff === 'string') return;
   knowPull(tab);
-  where.open(place, chosen.body);
+  diff.openThread(row.id, true);
+  openAt(view, diff, IN_DIFF, place, 'review', chosen.body);
 }
 
 /** What the dialog that asks before a comment is deleted shows, while it's open. */

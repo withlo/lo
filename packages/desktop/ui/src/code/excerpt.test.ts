@@ -1182,7 +1182,7 @@ describe('threads beside lines', () => {
         ),
       );
     first.excerpt.destroy();
-    expect(gone().map(({ type }) => type)).not.toContain('pointerdown');
+    expect(gone()).toEqual([]);
     second.excerpt.destroy();
     expect(gone()).toEqual(listening);
     for (const { adds, removes } of on) {
@@ -1208,6 +1208,19 @@ describe('threads beside lines', () => {
     vi.advanceTimersByTime(REST);
     expect(layers()[0]!.hidden).toBe(false);
     expect(layers()[0]!.textContent).toBe('t1');
+  });
+
+  test('one taken down with focus in its code, its popover never made, hands focus to the scroll around it', async () => {
+    const { scroller, shown, layers } = inScroll(1);
+    const { excerpt, host } = shown[0]!;
+    excerpt.focus();
+    expect(excerpt.hasFocus()).toBe(true);
+    expect(layers()).toHaveLength(0);
+    // Taken down, then off the page with what drew it, as the overview lets a block go.
+    excerpt.destroy();
+    host.remove();
+    await Promise.resolve();
+    expect(document.activeElement).toBe(scroller);
   });
 
   test('one taken down pinned, with focus in its popover, hands focus to the scroll around it', async () => {

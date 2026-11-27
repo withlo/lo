@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import type * as Notices from '../../../window/commands/notices.tsx';
 import type * as TabShared from '../../tab/window/shared.ts';
+import type * as Threads from './threads.ts';
 import type { ActRow, ThreadCommentRow, ThreadRow } from '../contract.ts';
 import {
   acting,
@@ -33,17 +34,25 @@ const said = vi.hoisted(() => ({
   resolve: (() => Promise.resolve({ kind: 'done' })) as () => Promise<unknown>,
   /** The boxes opened: where, with a diff to draw them in or none yet, and what's in them. */
   opened: [] as { place: unknown; diff: boolean; draft: unknown }[],
-  /** Whether the diff is on screen, and the tabs it was brought on screen in. */
+  /** Whether the diff is drawn, whether it's on screen, and whether it shows T1. */
+  drawn: true,
   diffShown: false,
-  diffs: [] as string[],
+  placed: false,
   /** Whether a key or control on a thread is a code block's. */
   inBlock: false,
+  /** What was refused, and said so. */
+  refused: [] as string[],
 }));
 
 vi.mock('../../../window/commands/notices.tsx', async (original) => ({
   ...(await original<typeof Notices>()),
   notify: (title: string, body: string, more: Parameters<typeof Notices.notify>[2]) =>
     said.toasts.push({ title, body, more }),
+  refuse: (title: string) => said.refused.push(title),
+}));
+vi.mock('./threads.ts', async (original) => ({
+  ...(await original<typeof Threads>()),
+  shownAt: () => (said.placed ? { file: 'a', side: 'new', line: 2 } : undefined),
 }));
 vi.mock('./Said.tsx', () => ({ tell: (text: string) => said.told.push(text) }));
 vi.mock('./panel.ts', () => ({ showThread: (_tab: unknown, id: string) => said.inPanel.push(id) }));
@@ -62,7 +71,7 @@ vi.mock('./boxes.ts', () => ({
   IN_DIFF: {},
   knowPull: () => {},
   loginOf: () => 'rozed-bot',
-  noDiff: () => 'No diff',
+  noDiff: () => 'Go to the diff first',
   offline: () => undefined,
   openAt: (
     _view: string,
@@ -74,9 +83,9 @@ vi.mock('./boxes.ts', () => ({
   ) => said.opened.push({ place, diff: diff !== undefined, draft }),
 }));
 vi.mock('../../diff/window/shared.ts', () => ({
-  writingDiff: () => ({ claimThread: () => () => {}, openThread: () => true }),
+  writingDiff: () =>
+    said.drawn ? { claimThread: () => () => {}, openThread: () => true } : undefined,
   diffOnScreen: () => said.diffShown,
-  showDiff: (view: string) => said.diffs.push(view),
   goToThread: (view: string, thread: string, how = 'go') => {
     said.shown.push(`${view} ${thread}${how === 'go' ? '' : ` ${how}`}`);
     return true;
@@ -177,9 +186,11 @@ beforeEach(() => {
     screen: VIEW,
     resolve: () => Promise.resolve({ kind: 'done' }),
     opened: [],
+    drawn: true,
     diffShown: false,
-    diffs: [],
+    placed: false,
     inBlock: false,
+    refused: [],
   });
 });
 
@@ -347,34 +358,61 @@ describe('a resolve whose write failed in Lo', () => {
 describe('a reply or an edit asked for on a code block', () => {
   const thread = { kind: 'thread', thread: 'T1' } as const;
 
-  test('with the diff off screen, brings the diff on screen, where its box opens once it can', async () => {
+  test('with the diff never drawn, says to go to the diff first, and opens nothing', async () => {
     said.inBlock = true;
+    said.drawn = false;
     reply(TAB, thread);
-    expect(said.opened).toEqual([
-      { place: { kind: 'reply', thread: 'T1' }, diff: false, draft: '' },
-    ]);
-    expect(said.diffs).toEqual([VIEW]);
-    // Shown there as the box opens, focus left for the box.
-    expect(said.shown).toEqual([`${VIEW} T1 follow`]);
     await edit(TAB, thread);
-    expect(said.opened[1]).toEqual({
-      place: { kind: 'edit', thread: 'T1', comment: 'C1' },
-      diff: false,
-      draft: 'Fixture C: Is doubling enough?',
-    });
-    expect(said.diffs).toEqual([VIEW, VIEW]);
-    expect(toastsSaid()).toEqual([]);
+    expect(said.refused).toEqual(['Go to the diff first', 'Go to the diff first']);
+    expect(said.opened).toEqual([]);
+    expect(said.shown).toEqual([]);
   });
 
-  test('from anywhere else, with the diff off screen, nothing opens and nothing moves', async () => {
+  test('with the diff drawn but hidden, says the same, and opens nothing in it', async () => {
+    said.inBlock = true;
+    said.placed = true;
     reply(TAB, thread);
     await edit(TAB, thread);
+    expect(said.refused).toEqual(['Go to the diff first', 'Go to the diff first']);
     expect(said.opened).toEqual([]);
-    expect(said.diffs).toEqual([]);
+    expect(said.shown).toEqual([]);
+  });
+
+  test('with the diff on screen, as with the code beside, writes in the diff', async () => {
+    said.inBlock = true;
+    said.diffShown = true;
+    said.placed = true;
+    reply(TAB, thread);
+    await edit(TAB, thread);
+    expect(said.opened).toEqual([
+      { place: { kind: 'reply', thread: 'T1' }, diff: true, draft: '' },
+      {
+        place: { kind: 'edit', thread: 'T1', comment: 'C1' },
+        diff: true,
+        draft: 'Fixture C: Is doubling enough?',
+      },
+    ]);
+    expect(said.refused).toEqual([]);
+  });
+
+  test('from anywhere else, with the diff off screen, the diff hasn’t the thread', async () => {
+    said.placed = true;
+    reply(TAB, thread);
+    await edit(TAB, thread);
+    expect(said.refused).toEqual([
+      'This thread isn’t in this diff',
+      'This thread isn’t in this diff',
+    ]);
+    expect(said.opened).toEqual([]);
+  });
+
+  test('an edit the reader moved on from while it was asked for opens nothing', async () => {
+    said.diffShown = true;
+    said.placed = true;
+    const asked = edit(TAB, thread);
+    said.diffShown = false;
+    await asked;
+    expect(said.opened).toEqual([]);
+    expect(said.refused).toEqual([]);
   });
 });
-
-/** The toasts said so far, by their titles. */
-function toastsSaid(): string[] {
-  return said.toasts.map(({ title }) => title);
-}

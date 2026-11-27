@@ -471,27 +471,23 @@ test('a thread under a renamed file’s old line shows in its older column', asy
 
 for (const mode of ['beside', 'between'] as const) {
   test.describe(`${mode} lines`, () => {
-    if (mode === 'between') onStacks.use({ settings: DIFF_FIRST_BETWEEN });
+    // On the overview first, drawn on screen before the diff is.
+    onStacks.use({
+      settings:
+        mode === 'between'
+          ? '{ "tab.open": "overview", "comments.threads": "between" }\n'
+          : '{ "tab.open": "overview" }\n',
+    });
 
     onStacks(
-      'a layer of a stack shows its own threads, in its diff and on its overview’s code block',
+      'a layer of a stack shows its own threads, on its overview’s code block and in its diff',
       async ({ page }) => {
         test.setTimeout(60_000);
         await open(page, STACK.b);
-        await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(['src/cost.ts new 5']);
-        const bubble = page.getByRole('button', {
-          name: 'Unresolved thread · line 5',
-          exact: true,
-        });
-        await expect(bubble).toBeVisible();
 
         await test.step(`its overview’s code block on those lines shows the thread ${mode} lines`, async () => {
-          await settled(page);
-          await page.keyboard.press('~');
-          const block = page
-            .locator('[data-lo-middle-view="overview.view"] .lo-codeblock')
-            .filter({ has: page.locator('.lo-codeblock__path', { hasText: 'src/cost.ts' }) });
-          await expect(block.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 20_000 });
+          const block = codeBlock(page, 'src/cost.ts');
+          await expect(block.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 30_000 });
           const thread = '[role="group"][aria-label$="thread by rozed-bot"]';
           if (mode === 'between') {
             await expect(block.locator(thread)).toContainText('GitHub rounds each 100 nodes up');
@@ -539,20 +535,19 @@ for (const mode of ['beside', 'between'] as const) {
               )
               .toContain('src/cost.ts');
           }
-          await page.keyboard.press('`');
-          await expect(page.locator('.lo-diffview')).toBeVisible();
         });
 
-        await settled(page);
-        await page.keyboard.press('[');
-        await page.keyboard.press('s');
-        await expect
-          .poll(() => page.evaluate(() => window.loDiff?.files.map((file) => file.path)), {
-            timeout: 20_000,
-          })
-          .toEqual(['src/plans.ts']);
-        await expect.poll(() => placed(page)).toEqual([]);
-        await expect(bubble).toHaveCount(0);
+        // Its diff has it too. (The layer below, whose overview the cassette hasn't, is the
+        // threads panel's test's, from the diff.)
+        await page.keyboard.press('`');
+        await expect(page.locator('.lo-diffview')).toBeVisible({ timeout: 20_000 });
+        await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(['src/cost.ts new 5']);
+        await expect(
+          page.locator('[data-lo-diff]').getByRole('button', {
+            name: 'Unresolved thread · line 5',
+            exact: true,
+          }),
+        ).toBeVisible();
       },
     );
   });
@@ -583,46 +578,40 @@ function rowsOf(block: ReturnType<typeof codeBlock>): Promise<{ others: number; 
   });
 }
 
-/** The comment box the diff on screen draws, which has focus. */
-async function focusedBox(page: Page) {
-  await expect(page.locator('.lo-diffview')).toBeVisible({ timeout: 20_000 });
-  const box = page.locator('[data-lo-diff] .lo-diffcomposer');
-  await expect(box).toHaveCount(1, { timeout: 20_000 });
-  await expect(box.locator('.cm-content')).toBeFocused();
-  return box;
+/** Nothing opened for a reply or an edit: no box anywhere, the thread's card as it was. */
+async function nothingOpened(page: Page) {
+  const popover = page.locator('[data-lo-middle-view="overview.view"] .lo-ov > .lo-threadpop');
+  await expect(page.getByText('Go to the diff first')).toBeVisible();
+  // None in the overview, nor in a diff drawn and hidden.
+  await expect(page.locator('.lo-diffcomposer')).toHaveCount(0);
+  await expect(page.locator('.lo-diffview')).toBeHidden();
+  await expect(popover.getByRole('button', { name: 'Reply', exact: true })).toBeVisible();
+  await expect(popover).toContainText('GitHub rounds each 100 nodes up');
+  // Focus stays in the popover, whose keys act on its thread as they do there.
+  await expect
+    .poll(() => page.evaluate(() => document.activeElement?.closest('.lo-threadpop') !== null))
+    .toBe(true);
 }
 
 test.describe('a reply or an edit asked for in a code block’s popover', () => {
   onStacks.use({ settings: '{ "tab.open": "overview" }\n' });
 
   onStacks(
-    'opened on the overview, Reply brings the diff on screen, its box there taking what’s typed',
+    'opened on the overview, Reply says to go to the diff first, and opens nothing',
     async ({ page }) => {
       test.setTimeout(60_000);
       await open(page, STACK.b);
       const block = codeBlock(page, 'src/cost.ts');
       await expect(block.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 30_000 });
-      const mark = block.getByRole('button', { name: 'Unresolved thread · line 5', exact: true });
-      await mark.click();
+      await block.getByRole('button', { name: 'Unresolved thread · line 5', exact: true }).click();
       const popover = page.locator('[data-lo-middle-view="overview.view"] .lo-ov > .lo-threadpop');
       await popover.getByRole('button', { name: 'Reply', exact: true }).click();
-      // The diff, never drawn till now, comes on screen, the reply's box in its thread there.
-      const box = await focusedBox(page);
-      await expect(box.locator('.lo-diffcomposer__head')).toContainText('Reply');
-      // What's typed is the box's: `x` resolves nothing.
-      await page.keyboard.type('Rounded up, x');
-      await expect(box.locator('.cm-content')).toHaveText('Rounded up, x');
-      await expect(
-        page.locator('[data-lo-diff]').getByRole('button', {
-          name: 'Unresolved thread · line 5',
-          exact: true,
-        }),
-      ).toBeVisible();
+      await nothingOpened(page);
     },
   );
 
   onStacks(
-    'with the diff drawn and hidden again, `i` in a code block’s popover brings the diff back, the edit’s box there taking what’s typed',
+    'with the diff drawn and hidden again, `i` in a code block’s popover says to go to the diff first, and opens nothing',
     async ({ page }) => {
       test.setTimeout(60_000);
       await open(page, STACK.b);
@@ -638,16 +627,7 @@ test.describe('a reply or an edit asked for in a code block’s popover', () => 
       const popover = page.locator('[data-lo-middle-view="overview.view"] .lo-ov > .lo-threadpop');
       await expect(popover).toBeVisible();
       await page.keyboard.press('i');
-      const box = await focusedBox(page);
-      await expect(box.locator('.cm-content')).toContainText('GitHub rounds each 100 nodes up');
-      await page.keyboard.type(' x');
-      await expect(box.locator('.cm-content')).toHaveText(/nodes up.* x$/s);
-      await expect(
-        page.locator('[data-lo-diff]').getByRole('button', {
-          name: 'Unresolved thread · line 5',
-          exact: true,
-        }),
-      ).toBeVisible();
+      await nothingOpened(page);
     },
   );
 });
@@ -677,6 +657,10 @@ onStacks(
         timeout: 20_000,
       })
       .toEqual(['src/plans.ts']);
+    await expect.poll(() => placed(page)).toEqual([]);
+    await expect(
+      page.getByRole('button', { name: 'Unresolved thread · line 5', exact: true }),
+    ).toHaveCount(0);
     // #A, the layer below, has none of its own, and #B's row, off screen now, still counts its one,
     // as read with the layers.
     await expect(panel(page)).toContainText('No threads yet');

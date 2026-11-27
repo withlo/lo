@@ -543,27 +543,29 @@ A repo's or a user's instructions can drop, add or reorder everything except the
   one opened in a block closes another's, and while one is pinned, no mark previews. The pointer
   resting on a mark previews it, and a click or `⏎` on its line pins it, its card drawn ahead as the
   cursor comes to the line. Its keys are the diff popover's, but `]t` and `[t`, which move between
-  the diff's threads, say to go to the diff first. An out-of-date overview's blocks show only the
-  threads on that commit's lines. `c` on a block, or on lines of its code, writes a comment under
-  them, in the same box as the diff's. It's an ordinary review comment on those lines at the head,
-  where they're there unchanged and in the diff. Otherwise it goes on the file when the PR changes
-  or deletes it, and on the PR itself when it doesn't touch the file. The box says where the comment
-  goes and why: GitHub takes line comments only in the diff, the lines changed after the overview's
-  revision, or Lo can't tell where they are now. Once sent, a comment that won't show under the
-  block says where it went. A comment on the PR itself is posted at once, since it joins no review.
-  A draft keeps the block it was written from, and reopens there after a restart while the overview
-  still has that block; otherwise it opens where it would have without one, in the diff for lines
-  and files, and in the timeline's box for the PR. A draft opens in one box only, and an open box
-  keeps its draft, whatever the overview does. When the diff is drawn again without your asking, as
-  once the local copy's files replace GitHub's, a box open there comes back as it was, in the same
-  mode with the same caret and undo history, on its line. Where the diff drawn anew doesn't show
-  that line, as in a file closed as viewed, it goes under its file's header, still a comment on the
-  line; only where the diff has neither does the draft open under its block, if the overview has it.
-  Until one of them is shown, as while the diff is drawn anew, the draft is in no box, and the
-  status bar counts it as a kept draft: one item for all such drafts ("2 kept drafts"), which opens
-  their list, where each is ("retry.ts · line 41 · r2"). Focus comes back only to a box that had it,
-  and only if you've done nothing since. Threads that arrive, grow or go while a block is on screen
-  move nothing you're reading.
+  the diff's threads, say to go to the diff first. Reply and Edit there, by key, button or menu,
+  write in the diff while it's on screen, as with the code beside, and otherwise say to go to the
+  diff first and open nothing. An out-of-date overview's blocks show only the threads on that
+  commit's lines. `c` on a block, or on lines of its code, writes a comment under them, in the same
+  box as the diff's. It's an ordinary review comment on those lines at the head, where they're there
+  unchanged and in the diff. Otherwise it goes on the file when the PR changes or deletes it, and on
+  the PR itself when it doesn't touch the file. The box says where the comment goes and why: GitHub
+  takes line comments only in the diff, the lines changed after the overview's revision, or Lo can't
+  tell where they are now. Once sent, a comment that won't show under the block says where it went.
+  A comment on the PR itself is posted at once, since it joins no review. A draft keeps the block it
+  was written from, and reopens there after a restart while the overview still has that block;
+  otherwise it opens where it would have without one, in the diff for lines and files, and in the
+  timeline's box for the PR. A draft opens in one box only, and an open box keeps its draft,
+  whatever the overview does. When the diff is drawn again without your asking, as once the local
+  copy's files replace GitHub's, a box open there comes back as it was, in the same mode with the
+  same caret and undo history, on its line. Where the diff drawn anew doesn't show that line, as in
+  a file closed as viewed, it goes under its file's header, still a comment on the line; only where
+  the diff has neither does the draft open under its block, if the overview has it. Until one of
+  them is shown, as while the diff is drawn anew, the draft is in no box, and the status bar counts
+  it as a kept draft: one item for all such drafts ("2 kept drafts"), which opens their list, where
+  each is ("retry.ts · line 41 · r2"). Focus comes back only to a box that had it, and only if
+  you've done nothing since. Threads that arrive, grow or go while a block is on screen move nothing
+  you're reading.
 - **From the block to the code.** Following a block jumps to the diff at that spot, or to the
   whole-file view when the code is outside the diff. `⌃o` returns to the same place in the overview.
   With code beside, the diff on the right goes there and the line Lands, nothing switches, and

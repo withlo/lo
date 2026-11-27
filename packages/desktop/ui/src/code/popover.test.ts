@@ -16,6 +16,7 @@ import {
   popMax,
   type PopRoom,
   REST,
+  sharedPop,
   ThreadPop,
 } from './popover.ts';
 
@@ -434,5 +435,48 @@ describe('ThreadPop', () => {
     pop.pin(mark(5).at);
     pop.focus(false);
     expect(document.activeElement?.hasAttribute('data-thread-pop')).toBe(true);
+  });
+});
+
+/**
+ * Two views' handles on the popover of one scroll, whose lines are always somewhere, as a view
+ * that's gone still says.
+ */
+function shared() {
+  const one = hostOf();
+  const other = hostOf();
+  const { render, drawn } = drawing();
+  const first = sharedPop(drawnBy(one.host, render));
+  const second = sharedPop(drawnBy({ ...other.host, scroller: one.host.scroller }, render));
+  const layer = () => one.scroller.querySelector<HTMLElement>(':scope > *');
+  return { first, second, one, other, drawn, layer };
+}
+
+describe('sharedPop', () => {
+  test('a view leaving as the pointer rests on its mark, another’s popover built, opens nothing of it', () => {
+    vi.useFakeTimers();
+    const { first, second, one, other, drawn, layer } = shared();
+    first.hover(one.mark(5).at);
+    second.build(other.mark(9).at);
+    expect(drawn).toEqual(['t5 preview', 't9 preview']);
+    first.destroy();
+    vi.advanceTimersByTime(REST);
+    expect(second.open).toBe(false);
+    expect(layer()?.hidden).toBe(true);
+    expect(drawn).toEqual(['t5 preview', 't9 preview']);
+    second.destroy();
+  });
+
+  test('a view leaving with its popover built leaves the preview due on another’s mark', () => {
+    vi.useFakeTimers();
+    const { first, second, one, other, layer } = shared();
+    second.hover(other.mark(9).at);
+    first.build(one.mark(5).at);
+    first.destroy();
+    vi.advanceTimersByTime(REST);
+    expect(second.open).toBe(true);
+    expect(second.at?.key).toBe('l9');
+    expect(layer()?.hidden).toBe(false);
+    second.destroy();
   });
 });

@@ -526,13 +526,9 @@ export class ThreadPop<At extends PopAt> implements Popover<At> {
 
   /**
    * Closes it at once, with no fade, and takes down what it holds, built ahead or fading: nothing
-   * will open it, and an empty shell mustn't fade out over the code. A mark the pointer rests on
-   * opens nothing once it's done.
+   * will open it, and an empty shell mustn't fade out over the code.
    */
   clear(): void {
-    clearTimeout(this.#rest);
-    this.#rest = undefined;
-    this.#hovered = undefined;
     this.close(false);
     this.#leaving?.();
     this.#leaving = undefined;
@@ -837,10 +833,10 @@ class SharedPop {
   /** A view lets its handle go: what it drew for the view goes, and with the last view, it all. */
   leave(member: Member): void {
     if (!this.#members.delete(member)) return;
-    // Nothing of a view that's gone opens: what's drawn for it goes, and a mark of its the pointer
-    // rests on is left.
+    // Nothing of a view that's gone opens: a mark of its the pointer rests on is left, and what's
+    // drawn for it goes. Another view's mark the pointer rests on still previews.
+    if (this.pop.hovered?.member === member) this.pop.hover(undefined);
     if (this.pop.built?.member === member) this.pop.clear();
-    else if (this.pop.hovered?.member === member) this.pop.hover(undefined);
     if (this.#shownFor === member) this.#shownFor = undefined;
     if (this.#members.size > 0) return;
     this.pop.destroy();

@@ -1150,9 +1150,12 @@ class Excerpt implements ExcerptView {
 
   destroy(): void {
     // Focus in its code or its popover goes to the scroll around it, as the overview, not to the
-    // page, once they're gone.
+    // page, once they're gone: the scroll found now, while the excerpt is in it.
     const active = this.dom.ownerDocument.activeElement;
-    if (active && this.hasFocus()) handOffFocus([active], () => [this.#scrollBox()]);
+    if (active && this.hasFocus()) {
+      const scroller = this.#scrollBox();
+      handOffFocus([active], () => [scroller]);
+    }
     // Its popover goes first, with what it held, while its lines are there to say so.
     this.#beside.destroy();
     this.dom.removeEventListener('click', this.#clicked);

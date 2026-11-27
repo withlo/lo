@@ -1580,6 +1580,10 @@ panel's `x` resolves the thread the keyboard is on, through the same function.
 - A reply's box and an edit's are comment boxes, kept by their thread (`reply` and `edit` places),
   and drawn right after the thread's card. The code view keeps a box for each place and name, so a
   reply's box and a new comment's on the same line both stay open.
+- A reply or an edit is written only in the diff on screen (`diffOnScreen`): a diff drawn but hidden
+  is inert, and a box opened in it would leave the keys typed for it to the thread. Asked for on an
+  overview's code block while the diff isn't on screen, it's refused with "Go to the diff first",
+  opening nothing; with the code beside, it's written in the diff.
 - An edit's draft keeps the text it started from (`base`, in `comments_drafts`), GitHub's as the
   card showed it when `i` started it (`comments.editing`), through a restart. `comments.edit` reads
   the comment afresh (`reviewComment`) and saves only if GitHub's text is still that one
