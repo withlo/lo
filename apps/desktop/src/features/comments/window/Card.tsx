@@ -161,9 +161,11 @@ export function Card({
             : undefined
         }
         login={login}
-        replying={replied}
-        // The box goes in its slot as the popover is drawn, before the boxes say it's open.
-        editing={box?.edits === undefined ? edited : new Set([...edited, box.edits])}
+        // In a popover, only the box it holds takes the place of the row that offers a reply, or of
+        // a comment, as it goes in its slot as the popover is drawn, before the boxes say it's open.
+        // One open elsewhere, as in the diff while this is a code block's, leaves the card whole.
+        replying={popover ? box !== undefined && box.edits === undefined : replied}
+        editing={popover ? new Set(box?.edits === undefined ? [] : [box.edits]) : edited}
         reply={box && box.edits === undefined ? <ReplySlot thread={id} /> : undefined}
         drafted={hasDraft}
         actions={{

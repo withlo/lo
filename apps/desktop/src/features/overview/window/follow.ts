@@ -44,9 +44,26 @@ export interface DrawnOverview {
 
 const drawn = new Map<string, DrawnOverview>();
 
+/** What's told of each overview drawn on screen, by its tab's id. */
+const drawnListeners = new Set<(tab: string) => void>();
+
+/**
+ * Calls `listener` with a tab's id each time its overview is drawn on screen. Returns a function
+ * that stops it.
+ */
+export function onDrawn(listener: (tab: string) => void): () => void {
+  drawnListeners.add(listener);
+  return () => {
+    drawnListeners.delete(listener);
+  };
+}
+
 /** Records the overview drawn in tab `tab` while it's on screen. Returns a function that forgets it. */
 export function setDrawn(overview: DrawnOverview): () => void {
   drawn.set(overview.tab, overview);
+  // One that stops itself as it's told is taken out of the set this goes through, which a `Set`
+  // allows.
+  for (const listener of drawnListeners) listener(overview.tab);
   return () => {
     if (drawn.get(overview.tab) === overview) drawn.delete(overview.tab);
   };

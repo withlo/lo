@@ -1535,6 +1535,27 @@ or a file's header, `C` to post right away, `s` for a suggestion, and `c` on a f
   send that fails, or isn't confirmed, after its box was closed while it was on its way, in either
   mode, says so in a toast whose "Show thread" opens it; one the diff took down to draw it again
   says so in the box.
+- An overview's code blocks write the same way, in the popover they share: the window tells each
+  block drawn its own drafts' marks, and a box written there keeps the block as its home
+  (`DraftHomeRow`), a reply's or an edit's on its thread's line (`homeInBlock`). Beside lines, a
+  reply or an edit asked for in a block's popover, or with focus in the block, is written there
+  (`writingBlockAsked`), never in a diff out of sight: a box open for the same comment in the diff,
+  hidden or not, comes to the block. A card in a popover gives way only to the box that popover
+  holds (`Card`'s `box`), so one open elsewhere leaves its Reply and its comment. Where the block
+  can't draw it, `openInBlock` leaves nothing open to come later, and the diff on screen writes it,
+  as between lines. An edit opens nothing if any input came while its text was read (`inputsSoFar`),
+  or its tab is no longer on screen, and lets go of the draft main started for it
+  (`dropStartedEdit`), as an untouched edit's box does closing; and `c` on a block nothing once its
+  tab or its overview is off screen. Asked for in the diff, with the code beside, a reply or an edit
+  is the diff's, whatever a block has pinned. Of blocks drawn the same, which share a key, the one
+  asked in, by a key, a button or a draft's mark, draws the box while it's drawn (`blockDrawn`), and
+  each marks the draft. A popover draws one box at a time: a reply's or an edit's is on no line of
+  its own, so it opens whatever other boxes are drawn, taking the place of one in the same popover,
+  while a new comment waits for one already on its line. A draft's "Show thread", its mark's click
+  or `⏎` on its line opens the box at once where its block is drawn, or leaves it its mark
+  (`showOnBlock`); otherwise it brings the overview on screen, and opens the box as its block is
+  drawn if no input came first (`askedAt`). A block taken down closes its box, keeping its draft,
+  and its mark comes back with the block; a send on its way then says how it went in a toast.
 - `comments.send` plans each write with `@lo/review`'s `YourReview` and sends it with the poller's
   `sendReview`, one write to a pull request at a time, each planned from your pending review as read
   after the last one's answer. The box's text is held, read-only, while it's sent. A refusal keeps
@@ -1592,10 +1613,10 @@ panel's `x` resolves the thread the keyboard is on, through the same function.
 - A reply's box and an edit's are comment boxes, kept by their thread (`reply` and `edit` places),
   and drawn right after the thread's card. The code view keeps a box for each place and name, so a
   reply's box and a new comment's on the same line both stay open.
-- A reply or an edit is written only in the diff on screen (`diffOnScreen`): a diff drawn but hidden
-  is inert, and a box opened in it would leave the keys typed for it to the thread. Asked for on an
-  overview's code block while the diff isn't on screen, it's refused with "Go to the diff first",
-  opening nothing; with the code beside, it's written in the diff.
+- A reply or an edit is written only in the diff on screen (`diffOnScreen`), or in a code block's
+  popover beside lines: a diff drawn but hidden is inert, and a box opened in it would leave the
+  keys typed for it to the thread. Asked for on a block that can't write it while the diff isn't on
+  screen, it's refused with "Go to the diff first", opening nothing.
 - An edit's draft keeps the text it started from (`base`, in `comments_drafts`), GitHub's as the
   card showed it when `i` started it (`comments.editing`), through a restart. `comments.edit` reads
   the comment afresh (`reviewComment`) and saves only if GitHub's text is still that one
@@ -1626,14 +1647,14 @@ your comment there edit and delete it (`window/conversation.ts`, `window/Timelin
   among the pull request's writes, with the poller's `addConversationComment`
   (`main/conversation.ts`). Its answer lost, main reads the timeline afresh 10 s or more after, and
   looks for your comment with its text made since, by GitHub's clock.
-- The draft is the one an overview's code block writes on the pull request too. It opens under that
-  block while the overview has it (`opensUnderBlock`), and otherwise in this box (`isPullsOwn`),
-  checked again as the overview changes. A draft the box shows stays in it while it's open, whatever
-  the overview does, so nothing moves and focus stays. One in no box waits while Lo reads or checks
-  the overview, which the box says. A draft the box lets go while it's still open, as the timeline
-  goes, opens where it opens now (`leftTimeline`), though its block was drawn first. While it's
-  under the block, the box says so, and `c` or its "Write it here" brings the draft into the box
-  (`bringToTimeline`).
+- The draft is the one an overview's code block writes on the pull request too. It opens on that
+  block while the overview has it (`opensUnderBlock`), beside lines as a mark there until it's asked
+  for, and otherwise in this box (`isPullsOwn`), checked again as the overview changes. A draft the
+  box shows stays in it while it's open, whatever the overview does, so nothing moves and focus
+  stays. One in no box waits while Lo reads or checks the overview, which the box says. A draft the
+  box lets go while it's still open, as the timeline goes, opens where it opens now
+  (`leftTimeline`), though its block was drawn first. While it's on the block, the box says so, and
+  `c` or its "Write it here" brings the draft into the box (`bringToTimeline`).
 - An edit of your comment there is an `edit` place with no thread, drawn in the comment's card. It,
   and a delete, read the comment afresh from a full read of the timeline (`readPullComment`); one
   the read may have left out among older events settles nothing. A delete's question is the diff's

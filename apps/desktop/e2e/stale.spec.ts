@@ -267,7 +267,9 @@ test('says it was written for r1 from its first frame, and flags the block on li
   });
 
   await test.step('a comment on a block whose lines r2 changed goes on the file, and on a file the pull request leaves alone, on the pull request', async () => {
-    const boxes = shown(page).locator('.lo-codeblock .lo-diffcomposer');
+    const boxes = shown(page).locator('.lo-diffcomposer');
+    // Beside lines, as threads show, a block's box opens in the popover over the overview.
+    const popover = shown(page).locator('.lo-ov > .lo-threadpop');
     // The block's menu, on the parser's lines r2 changed: on the file, under the block's last line.
     const parser = codeBlock(page, 'src/parser.ts', ':7–10');
     await parser.scrollIntoViewIfNeeded();
@@ -277,7 +279,7 @@ test('says it was written for r1 from its first frame, and flags the block on li
       .getByRole('menu', { name: 'Block actions' })
       .getByRole('menuitem', { name: /^Comment on lines/ })
       .click();
-    const onFile = parser.locator('.lo-diffcomposer');
+    const onFile = popover.locator('.lo-diffcomposer');
     const head = onFile.locator('.lo-diffcomposer__head');
     await expect(head).toContainText('File', { timeout: 20_000 });
     await expect(head).toContainText('These lines changed since r1.');
@@ -290,7 +292,7 @@ test('says it was written for r1 from its first frame, and flags the block on li
     await readme.scrollIntoViewIfNeeded();
     await readme.locator('.cm-line:visible').first().click();
     await page.keyboard.press('c');
-    const onPull = readme.locator('.lo-diffcomposer');
+    const onPull = popover.locator('.lo-diffcomposer');
     await expect(onPull.locator('.lo-diffcomposer__head')).toContainText('Pull request', {
       timeout: 20_000,
     });

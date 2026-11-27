@@ -1006,17 +1006,26 @@ function inBox(element: Element | null): boolean {
   return element?.closest('.lo-diffcomposer') != null;
 }
 
-/** A caller's popover: one comment per thread, with what it was asked to draw in turn. */
+/**
+ * A caller's popover: one comment per thread, and a comment box's slot, a reply's after its thread
+ * and a new comment's after them all, with what it was asked to draw in turn. It draws again only
+ * what changed, as React does, so a box in a slot stays in it.
+ */
 function popped() {
   const painted: string[] = [];
   const render: RenderPopover = (host, popover) => {
+    let last = '';
     const draw = (shown: PopoverView): void => {
-      host.innerHTML = shown.threads
-        .map(
-          ({ id }) =>
-            `<div data-thread-id="${id}"><p data-comment="${id}.1" tabindex="-1">${id}</p></div>`,
-        )
-        .join('');
+      const { box } = shown;
+      const html = [
+        ...shown.threads.map(({ id }) => {
+          const reply = box?.thread === id ? `<div data-reply-slot="${id}"></div>` : '';
+          return `<div data-thread-id="${id}"><p data-comment="${id}.1" tabindex="-1">${id}</p>${reply}</div>`;
+        }),
+        box !== undefined && box.thread === undefined ? '<div data-new-slot=""></div>' : '',
+      ].join('');
+      if (html !== last) host.innerHTML = html;
+      last = html;
       painted.push(
         `${shown.threads.map(({ id }) => id).join(' ')} ${shown.pinned ? 'pinned' : 'preview'}`,
       );
@@ -1208,6 +1217,82 @@ describe('threads beside lines', () => {
     vi.advanceTimersByTime(REST);
     expect(layers()[0]!.hidden).toBe(false);
     expect(layers()[0]!.textContent).toBe('t1');
+  });
+
+  test('a comment box opens in the popover, pinned with focus in it: a new comment’s under its line, a reply’s in its thread, one at a time', () => {
+    const { shown, layers } = inScroll(1);
+    const { excerpt, host } = shown[0]!;
+    const first = composerEvents();
+    const composer = excerpt.compose({ file: 'a0', side: 'new', line: 8 }, 'Hi', first);
+    expect(composer.text).toBe('Hi');
+    // Nothing goes under the line: the box is in the scroll's layer.
+    expect(host.querySelector('.lo-diffcomposer')).toBeNull();
+    expect(layers()).toHaveLength(1);
+    expect(layers()[0]!.hidden).toBe(false);
+    expect(inBox(document.activeElement)).toBe(true);
+    expect(layers()[0]!.contains(document.activeElement)).toBe(true);
+    expect(excerpt.popoverPinned()).toBe(true);
+    // A box already open there is the one it gives.
+    expect(excerpt.compose({ file: 'a0', side: 'new', line: 8 }, '', composerEvents())).toBe(
+      composer,
+    );
+    // A reply's opens in its thread, the other closing and keeping its draft.
+    const reply = excerpt.compose({ thread: 't0' }, '', composerEvents(), undefined, {
+      name: 'r',
+    });
+    expect(first.close).toHaveBeenCalledWith(true);
+    expect(reply).not.toBe(composer);
+    expect(excerpt.pinned()).toEqual(['t0']);
+    expect(layers()[0]!.querySelector('[data-thread-id="t0"]')).not.toBeNull();
+    expect(inBox(document.activeElement)).toBe(true);
+    // A line the excerpt doesn't show takes none.
+    expect(() =>
+      excerpt.compose({ file: 'a0', side: 'new', line: 30 }, '', composerEvents()),
+    ).toThrow('A comment box goes under a line');
+  });
+
+  test('a box open closes as threads change how they show, keeping its draft, in the popover or under its line', () => {
+    const { shown, layers } = inScroll(1);
+    const { excerpt, host } = shown[0]!;
+    const beside = composerEvents();
+    excerpt.compose({ file: 'a0', side: 'new', line: 8 }, 'Kept', beside);
+    excerpt.setThreadsMode('between');
+    expect(beside.close).toHaveBeenCalledWith(true);
+    expect(layers()[0]!.hidden).toBe(true);
+    expect(host.querySelector('.lo-diffcomposer')).toBeNull();
+    // Between lines it opens under its line, and goes as they're beside them again.
+    const between = composerEvents();
+    excerpt.compose({ file: 'a0', side: 'new', line: 8 }, '', between);
+    expect(host.querySelector('.lo-diffcomposer')).not.toBeNull();
+    excerpt.setThreadsMode('beside');
+    expect(between.close).toHaveBeenCalledWith(false);
+    expect(host.querySelector('.lo-diffcomposer')).toBeNull();
+  });
+
+  test('a draft’s own mark is beside its line, which says so to its keys, and opens its box', () => {
+    const { shown } = inScroll(1);
+    const { excerpt, host } = shown[0]!;
+    const opened = vi.fn<() => void>();
+    excerpt.setDrafts([
+      { at: { file: 'a0', side: 'new', line: 8 }, words: 'line 8', open: opened },
+    ]);
+    const own = host.querySelector<HTMLElement>('.lo-threadlane .lo-bubble[data-draft]');
+    expect(own?.getAttribute('aria-label')).toBe('Draft · line 8');
+    expect(own?.dataset.command).toBe('comments.openDraft');
+    excerpt.reveal({ kind: 'line', at: { file: 'a0', side: 'new', line: 8 } });
+    expect(excerpt.keyState().target).toMatchObject({
+      kind: 'line',
+      at: { file: 'a0', side: 'new', line: 8 },
+      draft: true,
+    });
+    expect(excerpt.openDraft({ file: 'a0', side: 'new', line: 8 })).toBe(true);
+    expect(opened).toHaveBeenCalledTimes(1);
+    expect(excerpt.openDraft({ file: 'a0', side: 'new', line: 9 })).toBe(false);
+    // On a thread's line, the draft in it puts the dot on its mark, which opens it too.
+    excerpt.setDrafts([{ at: { thread: 't0' }, words: '', open: opened }]);
+    expect(host.querySelector('.lo-bubble[data-draft]')).toBeNull();
+    expect(excerpt.openDraft({ thread: 't0' })).toBe(true);
+    expect(opened).toHaveBeenCalledTimes(2);
   });
 
   test('one taken down with focus in its code, its popover never made, hands focus to the scroll around it', async () => {

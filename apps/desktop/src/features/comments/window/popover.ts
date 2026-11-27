@@ -36,7 +36,9 @@ function blockHere(): ReturnType<typeof blockWithFocus> {
 export function showPopover(target: Target): void {
   const block = blockHere();
   if (block) {
-    if (target.kind === 'thread') block.pinThread(target.thread, true);
+    if (target.kind === 'thread' && block.pinThread(target.thread, true)) {
+      block.openDraft({ thread: target.thread });
+    }
     return;
   }
   const tab = activeTab();
