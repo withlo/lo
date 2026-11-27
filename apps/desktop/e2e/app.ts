@@ -705,27 +705,31 @@ export interface Front {
 
 /**
  * A server in front of the replay server at `origin`, passing each request on to it once the
- * promise `wait` returns for its path and body settles, or at once if it returns none.
+ * promise `wait` returns for its path and body settles, or at once if it returns none; one whose
+ * promise settles to a `Response` it answers with that itself.
  */
 export async function frontOf(
   origin: string,
-  wait: (url: string, body: string) => Promise<void> | undefined,
+  wait: (url: string, body: string) => Promise<unknown> | undefined,
 ): Promise<Front> {
   const front = createHttpServer((incoming, outgoing) => {
     void (async () => {
       const body = await buffer(incoming);
-      await wait(incoming.url ?? '/', body.toString('utf8'));
+      const own = await wait(incoming.url ?? '/', body.toString('utf8'));
       const headers = new Headers();
       for (const [name, value] of Object.entries(incoming.headers)) {
         if (typeof value === 'string' && name !== 'host') headers.set(name, value);
       }
       const method = incoming.method ?? 'GET';
-      const response = await fetch(`${origin}${incoming.url ?? '/'}`, {
-        method,
-        headers,
-        body: method === 'GET' || method === 'HEAD' ? undefined : new Uint8Array(body),
-        redirect: 'manual',
-      });
+      const response =
+        own instanceof Response
+          ? own
+          : await fetch(`${origin}${incoming.url ?? '/'}`, {
+              method,
+              headers,
+              body: method === 'GET' || method === 'HEAD' ? undefined : new Uint8Array(body),
+              redirect: 'manual',
+            });
       const out: Record<string, string> = {};
       response.headers.forEach((value, name) => {
         if (!['content-length', 'content-encoding', 'transfer-encoding'].includes(name)) {

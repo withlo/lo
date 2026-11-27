@@ -136,10 +136,17 @@ export function blockWithFocus(tab: string): BlockPopover | undefined {
  * The code block of pull request's tab `tab`'s overview a key or a control on thread `thread` is
  * asked for in, if it's one's: one with focus in its code, as on a card under its lines, or in its
  * popover, or, with the overview on screen, one whose popover is pinned with the thread in it, as
- * from a menu over it.
+ * from a menu over it. Not that one while focus is `elsewhere`, as in the diff beside it, whose own
+ * thread it is then.
  */
-export function writingBlockAsked(tab: string, thread: string): WritingBlock | undefined {
-  return writingWithFocus(tab) ?? (drawnIn(tab) ? writingPinnedWith(tab, thread) : undefined);
+export function writingBlockAsked(
+  tab: string,
+  thread: string,
+  elsewhere = false,
+): WritingBlock | undefined {
+  const focused = writingWithFocus(tab);
+  if (focused || elsewhere || !drawnIn(tab)) return focused;
+  return writingPinnedWith(tab, thread);
 }
 
 /**

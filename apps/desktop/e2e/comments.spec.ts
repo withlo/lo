@@ -10,6 +10,9 @@
 // threads panel, `⌘⇧\`, lists them, without moving the diff's lines, and shows one in the diff, an
 // outdated one in the whole diff of the revision it was written on, which `⌃o` and `⌃i` compare
 // again; the last thread asked for wins. The stack's rows count each layer's unresolved threads.
+// Beside lines, Reply and Edit in a code block's popover write there, whatever other boxes are
+// drawn, in the timeline or the diff, and a draft opens there again by its mark, `⏎` on its line or
+// a toast's "Show thread".
 
 import { writeFileSync } from 'node:fs';
 
@@ -24,6 +27,7 @@ import {
   DIFF_FIRST,
   DIFF_FIRST_BETWEEN,
   expect,
+  frontOf,
   keepMenus,
   KEYCHAIN,
   onStacks,
@@ -32,6 +36,8 @@ import {
   test as base,
 } from './app.ts';
 import { serveBodies } from './bodies.ts';
+
+const cmd = process.platform === 'darwin' ? 'Meta' : 'Control';
 
 /** A stand-in token, never a real one: the cassette was recorded with the same. */
 const TOKEN = 'gho_FAKE_E2E_ACCOUNT';
@@ -592,6 +598,111 @@ async function popoverBox(page: Page) {
   return box;
 }
 
+/** A write Lo sends GitHub, held on its way. */
+interface HeldWrite {
+  /** Resolves once Lo has sent one. */
+  sent: Promise<void>;
+  /** Cuts each write held, and those to come, unanswered, as a network gone would. */
+  drop(): void;
+  /** Holds a write until it's dropped. */
+  hold(): Promise<void>;
+}
+
+/** When GitHub's answers below were made. */
+const AT = '2026-11-01T00:00:00Z';
+
+/**
+ * What GitHub answers for a pull request's timeline and what goes beside it, which the cassette
+ * hasn't, by the query's name: nothing on either.
+ */
+const EMPTY: Readonly<Record<string, unknown>> = {
+  Timeline: {
+    author: { __typename: 'User', login: 'rozed-bot' },
+    body: '',
+    createdAt: AT,
+    lastEditedAt: null,
+    timelineEvents: { updatedAt: AT },
+    timelineItems: {
+      filteredCount: 0,
+      pageInfo: { hasPreviousPage: false, startCursor: null },
+      edges: [],
+    },
+  },
+  PullRequestSidebar: {
+    isDraft: false,
+    labels: { nodes: [] },
+    reviewRequests: { nodes: [] },
+    latestReviews: { nodes: [] },
+    assignees: { nodes: [] },
+  },
+};
+
+/** GitHub's answer for `query`, if it's one of {@link EMPTY}'s. */
+function emptyFor(query: string): Response | undefined {
+  const name = /\bquery (\w+)/.exec(query)?.[1];
+  const pullRequest = name === undefined ? undefined : EMPTY[name];
+  if (pullRequest === undefined) return undefined;
+  return Response.json({
+    data: {
+      rateLimit: { cost: 1, limit: 5000, remaining: 4999, used: 1, resetAt: AT },
+      repository: { pullRequest },
+    },
+  });
+}
+
+/**
+ * `onStacks`, with GitHub answering for a pull request's timeline, which the cassette hasn't, with
+ * an empty one: the timeline, once visited, draws its box. Each write is held on its way until the
+ * test drops it.
+ */
+const withTimeline = onStacks.extend<{ write: HeldWrite }>({
+  // oxlint-disable-next-line no-empty-pattern
+  write: async ({}, use) => {
+    const sent = Promise.withResolvers<void>();
+    const dropped = Promise.withResolvers<void>();
+    await use({
+      sent: sent.promise,
+      drop: () => dropped.resolve(),
+      hold: async () => {
+        sent.resolve();
+        await dropped.promise;
+        throw new Error('dropped');
+      },
+    });
+    dropped.resolve();
+  },
+  githubOrigin: async ({ github, write }, use) => {
+    const origin = new URL(github.urls.api).origin;
+    const front = await frontOf(origin, (url, body) => {
+      // The timeline's mark of the reader, larger than the cassette has it.
+      if (url.includes('rozed-bot?s=64')) return fetch(`${origin}${url.replace('s=64', 's=40')}`);
+      const empty = emptyFor(body);
+      if (empty) return Promise.resolve(empty);
+      return /\bmutation \w+/.test(body) ? write.hold() : undefined;
+    });
+    await use(front.origin);
+    await front.close();
+  },
+});
+
+/** Shows the view the header's view switch names `name`. */
+async function showView(page: Page, name: 'Overview' | 'Diff' | 'Timeline') {
+  await page
+    .getByRole('tablist', { name: 'View' })
+    .getByRole('tab')
+    .filter({ hasText: name })
+    .click();
+}
+
+/** Shows the timeline, which draws its box for the pull request, then the overview again. */
+async function timelineVisited(page: Page) {
+  await showView(page, 'Timeline');
+  const box = page.locator('[data-lo-middle-view="timeline.view"] .lo-diffcomposer');
+  await expect(box).toHaveCount(1, { timeout: 20_000 });
+  await showView(page, 'Overview');
+  await expect(box).toBeHidden();
+}
+
 test.describe('writing in a code block’s popover', () => {
   onStacks.use({ settings: '{ "tab.open": "overview" }\n' });
 
@@ -675,11 +786,7 @@ test.describe('writing in a code block’s popover', () => {
       const inDiff = page.locator('[data-lo-middle-view="diff.view"] .lo-diffcomposer');
       await expect(inDiff.locator('.cm-content')).toBeFocused();
       await page.keyboard.type('From the diff');
-      await page
-        .getByRole('tablist', { name: 'View' })
-        .getByRole('tab')
-        .filter({ hasText: 'Overview' })
-        .click();
+      await showView(page, 'Overview');
       await expect(page.locator('.lo-diffview')).toBeHidden();
       await expect(inDiff).toHaveCount(1);
       await block.getByRole('button', { name: 'Unresolved thread · line 5', exact: true }).click();
@@ -691,6 +798,131 @@ test.describe('writing in a code block’s popover', () => {
       await expect(inDiff).toHaveCount(0);
       await page.keyboard.type(', x');
       await expect(box.locator('.cm-content')).toHaveText('From the diff, x');
+    },
+  );
+
+  withTimeline(
+    'with the Timeline visited first, Reply opens its box in the popover, and its draft opens again there by its mark and by `⏎`, each taking what’s typed',
+    async ({ page }) => {
+      test.setTimeout(60_000);
+      await open(page, STACK.b);
+      const block = codeBlock(page, 'src/cost.ts');
+      await expect(block.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 30_000 });
+      await timelineVisited(page);
+      await block.getByRole('button', { name: 'Unresolved thread · line 5', exact: true }).click();
+      const popover = page.locator('[data-lo-middle-view="overview.view"] .lo-ov > .lo-threadpop');
+      await popover.getByRole('button', { name: 'Reply', exact: true }).click();
+      let box = await popoverBox(page);
+      await page.keyboard.type('Rounded up, x');
+      await expect(box.locator('.cm-content')).toHaveText('Rounded up, x');
+      // Closed, its draft opens again by its mark.
+      await page.keyboard.press('Escape');
+      await page.keyboard.press('Escape');
+      await expect(box).toHaveCount(0);
+      await block.getByRole('button', { name: /^Unresolved thread · line 5 · draft/ }).click();
+      box = await popoverBox(page);
+      await page.keyboard.type(' twice');
+      await expect(box.locator('.cm-content')).toContainText('Rounded up, x');
+      await expect(box.locator('.cm-content')).toContainText('twice');
+      // And by `⏎` on its line.
+      await page.keyboard.press('Escape');
+      await page.keyboard.press('Escape');
+      await expect(box).toHaveCount(0);
+      await page.keyboard.press('Enter');
+      box = await popoverBox(page);
+      await page.keyboard.type(' and again');
+      await expect(box.locator('.cm-content')).toContainText('Rounded up, x');
+      await expect(box.locator('.cm-content')).toContainText('and again');
+    },
+  );
+
+  withTimeline(
+    'with the Timeline visited first, `i` opens the edit in the popover, and Edit opens it again there in a reply’s place, each taking what’s typed',
+    async ({ page }) => {
+      test.setTimeout(60_000);
+      await open(page, STACK.b);
+      const block = codeBlock(page, 'src/cost.ts');
+      await expect(block.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 30_000 });
+      await timelineVisited(page);
+      await block.getByRole('button', { name: 'Unresolved thread · line 5', exact: true }).click();
+      const popover = page.locator('[data-lo-middle-view="overview.view"] .lo-ov > .lo-threadpop');
+      await expect(popover).toBeVisible();
+      await page.keyboard.press('i');
+      let edit = await popoverBox(page);
+      await expect(edit.locator('.lo-diffcomposer__head')).toContainText('Edit');
+      await page.keyboard.type(' x');
+      await expect(edit.locator('.cm-content')).toHaveText(/nodes up.* x$/s);
+      // Closed, its draft kept, and a reply open in its place, Edit brings the edit back there.
+      await page.keyboard.press('Escape');
+      await expect(edit).toHaveCount(0);
+      await popover.getByRole('button', { name: 'Reply', exact: true }).click();
+      const reply = await popoverBox(page);
+      await expect(reply.locator('.lo-diffcomposer__head')).toContainText('Reply');
+      await page.keyboard.type('A reply');
+      await expect(reply.locator('.cm-content')).toHaveText('A reply');
+      await popover.getByRole('button', { name: /^Edit comment from/ }).click();
+      edit = await popoverBox(page);
+      await expect(edit.locator('.lo-diffcomposer__head')).toContainText('Edit');
+      await page.keyboard.type(' y');
+      await expect(edit.locator('.cm-content')).toContainText(' x');
+      await expect(edit.locator('.cm-content')).toContainText(' y');
+    },
+  );
+
+  withTimeline(
+    'with the Timeline visited first, a reply whose popover closed on its way, then went nowhere, says so in a toast, whose “Show thread” opens it in the popover again, taking what’s typed',
+    async ({ page, write }) => {
+      test.setTimeout(60_000);
+      await open(page, STACK.b);
+      const block = codeBlock(page, 'src/cost.ts');
+      await expect(block.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 30_000 });
+      await timelineVisited(page);
+      await block.getByRole('button', { name: 'Unresolved thread · line 5', exact: true }).click();
+      const popover = page.locator('[data-lo-middle-view="overview.view"] .lo-ov > .lo-threadpop');
+      await popover.getByRole('button', { name: 'Reply', exact: true }).click();
+      let box = await popoverBox(page);
+      await page.keyboard.type('Rounded up, x');
+      await page.keyboard.press(`${cmd}+Enter`);
+      await write.sent;
+      // The popover closes while the reply's on its way, which then goes nowhere.
+      await page.keyboard.press('Escape');
+      await page.keyboard.press('Escape');
+      await expect(popover).toBeHidden();
+      write.drop();
+      const show = page.getByRole('button', { name: 'Show thread', exact: true });
+      await expect(show).toBeVisible({ timeout: 20_000 });
+      await show.click();
+      box = await popoverBox(page);
+      await expect(box.locator('.cm-content')).toContainText('Rounded up, x');
+      await page.keyboard.type(' again');
+      await expect(box.locator('.cm-content')).toContainText('again');
+    },
+  );
+
+  onStacks(
+    'with an edit open in the diff, hidden again, Reply in a code block’s popover opens its own box there, which takes what’s typed',
+    async ({ page }) => {
+      test.setTimeout(60_000);
+      await open(page, STACK.b);
+      const block = codeBlock(page, 'src/cost.ts');
+      await expect(block.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 30_000 });
+      await page.keyboard.press('`');
+      await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(['src/cost.ts new 5']);
+      await settled(page);
+      await page.keyboard.press(']');
+      await page.keyboard.press('t');
+      await page.keyboard.press('i');
+      const inDiff = page.locator('[data-lo-middle-view="diff.view"] .lo-diffcomposer');
+      await expect(inDiff.locator('.cm-content')).toBeFocused();
+      await showView(page, 'Overview');
+      await expect(page.locator('.lo-diffview')).toBeHidden();
+      await block.getByRole('button', { name: 'Unresolved thread · line 5', exact: true }).click();
+      const popover = page.locator('[data-lo-middle-view="overview.view"] .lo-ov > .lo-threadpop');
+      await popover.getByRole('button', { name: 'Reply', exact: true }).click();
+      const box = await popoverBox(page);
+      await expect(box.locator('.lo-diffcomposer__head')).toContainText('Reply');
+      await page.keyboard.type('A reply, x');
+      await expect(box.locator('.cm-content')).toHaveText('A reply, x');
     },
   );
 

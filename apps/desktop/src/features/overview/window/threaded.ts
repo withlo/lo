@@ -93,7 +93,11 @@ export interface BlockThreads {
   mode?(): ThreadsMode;
   /** What draws the threads of `tab`'s blocks in their popover, beside lines. */
   popover?(tab: PullTab): RenderPopover;
-  /** `block` was drawn: the boxes open under its lines open again there, unfocused. */
+  /**
+   * `block` was drawn: the boxes open on its lines open again there, between lines under them,
+   * unfocused; beside lines only one the reader asked for opens, in its popover, and the rest are
+   * the marks of their drafts.
+   */
   drawn(block: WritingBlock): void;
 }
 

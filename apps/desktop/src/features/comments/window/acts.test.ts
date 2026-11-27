@@ -43,6 +43,8 @@ const said = vi.hoisted(() => ({
   placed: false,
   /** Whether a key or control on a thread is a code block's. */
   inBlock: false,
+  /** Whether focus is in the diff, and the block's is only its popover pinned. */
+  diffFocused: false,
   /** Whether that block shows the thread, beside lines, where a box is written on it. */
   writesInBlock: false,
   /** Whether the block draws a box it's asked to. */
@@ -105,7 +107,9 @@ vi.mock('./boxes.ts', () => ({
 }));
 vi.mock('../../diff/window/shared.ts', () => ({
   writingDiff: () =>
-    said.drawn ? { claimThread: () => () => {}, openThread: () => true } : undefined,
+    said.drawn
+      ? { claimThread: () => () => {}, openThread: () => true, hasFocus: () => said.diffFocused }
+      : undefined,
   diffOnScreen: () => said.diffShown,
   goToThread: (view: string, thread: string, how = 'go') => {
     said.shown.push(`${view} ${thread}${how === 'go' ? '' : ` ${how}`}`);
@@ -113,7 +117,8 @@ vi.mock('../../diff/window/shared.ts', () => ({
   },
 }));
 vi.mock('../../overview/window/shared.ts', () => ({
-  writingBlockAsked: () => (said.inBlock ? {} : undefined),
+  writingBlockAsked: (_tab: string, _thread: string, elsewhere: boolean) =>
+    said.inBlock && !(elsewhere && said.diffFocused) ? {} : undefined,
 }));
 vi.mock('../../tab/window/shared.ts', async (original) => ({
   ...(await original<typeof TabShared>()),
@@ -213,6 +218,7 @@ beforeEach(() => {
     diffShown: false,
     placed: false,
     inBlock: false,
+    diffFocused: false,
     writesInBlock: false,
     blockDraws: true,
     inputs: 0,
@@ -408,6 +414,18 @@ describe('a reply or an edit asked for on a code block', () => {
     expect(said.opened).toEqual([replyIn('block'), editIn('block'), replyIn('block')]);
     expect(said.refused).toEqual([]);
     expect(said.shown).toEqual([]);
+  });
+
+  test('with the code beside, asked for in the diff on a thread a block has pinned, writes in the diff', async () => {
+    // The block's popover is pinned on T1, and focus is in the diff.
+    said.inBlock = true;
+    said.writesInBlock = true;
+    said.diffFocused = true;
+    said.diffShown = true;
+    said.placed = true;
+    reply(TAB, thread);
+    await edit(TAB, thread);
+    expect(said.opened).toEqual([replyIn('diff', true), editIn('diff', true)]);
   });
 
   test('where the block can’t draw it, with the diff off screen, says to go to the diff first, and opens nothing', async () => {

@@ -582,13 +582,14 @@ interface Writer {
  * popover; otherwise, as where the block can't draw the box, in the diff on screen ({@link inDiff}).
  */
 function whereToWrite(view: string, thread: string): Writer | string {
-  const block = writingBlockAsked(view, thread);
+  // Asked for in the diff, as with the code beside, it's the diff's, whatever a block has pinned.
+  const block = writingBlockAsked(view, thread, writingDiff(view)?.hasFocus() ?? false);
   const home = block && homeInBlock(view, block, thread);
   const diff = inDiff(view, thread, block !== undefined);
   if (!home) return diff;
   return {
     open(place, draft) {
-      if (openInBlock(view, home, place, draft)) return true;
+      if (openInBlock(view, home, place, draft, block)) return true;
       // The block couldn't draw it, as on a line it holds out of sight, and nothing's open for it
       // there.
       if (typeof diff !== 'string') return diff.open(place, draft);
