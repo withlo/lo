@@ -966,6 +966,15 @@ status bar.
   `sizeInView` (`diff/window/sides.ts`), as they size a panel or a view, while focus is in it. As
   the sides change width, the spacer pass holds the first line under the pinned header where it is
   (`Aligner.holdUnder`).
+- A switch from one middle view to another keeps the view it leaves on screen, `inert`, until the
+  one it shows has laid out (`tab/window/hold.ts`): a frame after it's drawn, once it shows no
+  `Loading`, or as a wait would show that `Loading` (`LOADING_DELAY_MS` after the key), whichever
+  comes first, so a switch never holds longer. The view coming is drawn unseen over the other
+  meanwhile, not `inert`, so it takes focus that's free and keys typed meanwhile land in it; then it
+  fades in over the other, itself in its sheet or its sheet over the other's, and the other goes
+  once the move has run. A view that only comes or only goes, as the code beside one does, does so
+  at once. A middle view with nothing to draw yet draws `Loading` or `MiddlePlaceholder`, never
+  nothing, or a switch to it shows it empty.
 - Other features' banners go in the `tab.banners` slot. Each view there says whether it shows a
   banner for a tab (`shows`) and when that may change (`subscribe`), so the tab makes room only for
   the banners it has.

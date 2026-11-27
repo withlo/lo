@@ -75,52 +75,24 @@ export function Collapse({ open, appear = false, children, onGone, className }: 
 const SWAP_CLASS = 'move-swap';
 
 export interface SwapProps {
-  /**
-   * Names what's shown: `loading`, `diff`. What's shown fades in when it changes. With `keep`,
-   * nothing named yet is `undefined`, and what it first names doesn't move either.
-   */
-  id: string | undefined;
-  /**
-   * Keeps what it holds, rather than drawing it anew, as `id` changes: for content that holds its
-   * own state, or that's drawn outside React, such as a code view, or middle views kept drawn while
-   * hidden. The box fades in as it is, once its content has changed.
-   */
-  keep?: boolean | undefined;
+  /** Names what's shown: `loading`, `diff`. What's shown fades in when it changes. */
+  id: string;
   children?: ReactNode;
-  /** Classes for the box, which is the same box whatever it shows. */
+  /** Classes for the box, which is drawn anew whatever it shows. */
   className?: string | undefined;
 }
 
 /**
  * The Swap move: what replaces something in the same box fades in over it, and nothing slides. A
- * skeleton gives way to its content, and Overview to Diff, in one. What's there when it first draws
- * doesn't move.
+ * skeleton gives way to its content in one. What's there when it first draws doesn't move.
  *
- * It draws what it holds anew for each `id`, so the move starts with it. With `keep`, it keeps what
- * it holds, and starts the move on the box itself in the frame `id` changes: the caller changes the
- * content in that frame too.
+ * It draws what it holds anew for each `id`, so the move starts with it. Content that must not be
+ * drawn anew, such as a code view or a middle view kept drawn while hidden, goes in a layer of its
+ * own over what it replaces instead, and takes `swapIn` once it's laid out.
  */
-export function Swap({ id, keep = false, children, className }: SwapProps) {
+export function Swap({ id, children, className }: SwapProps) {
   const first = useRef<string | undefined>(id);
   if (first.current !== id) first.current = undefined;
-  const box = useRef<HTMLDivElement>(null);
-  const named = useRef(id);
-  useLayoutEffect(() => {
-    const before = named.current;
-    named.current = id;
-    const element = box.current;
-    if (!keep || !element || before === undefined || id === undefined || before === id) {
-      return undefined;
-    }
-    return swapIn(element);
-  }, [keep, id]);
-  if (keep) {
-    return (
-      <div ref={box} className={className}>
-        {children}
-      </div>
-    );
-  }
   const move = first.current === undefined ? SWAP_CLASS : '';
   return (
     <div key={id} className={className === undefined ? move : `${move} ${className}`}>
