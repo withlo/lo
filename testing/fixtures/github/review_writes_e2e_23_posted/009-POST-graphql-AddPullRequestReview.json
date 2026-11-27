@@ -15,10 +15,10 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4975",
-      "x-ratelimit-reset": "1794201713",
+      "x-ratelimit-remaining": "4969",
+      "x-ratelimit-reset": "1795760687",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "25"
+      "x-ratelimit-used": "31"
     },
     "body": {
       "data": {
@@ -32,8 +32,8 @@
           ],
           "locations": [
             {
-              "line": 13,
-              "column": 4
+              "line": 3,
+              "column": 3
             }
           ],
           "message": ""

@@ -61,15 +61,11 @@ export type { PullBoxProps, PullEditProps, PullNoteProps } from './TimelineBox.t
 export type { PullWrite } from './written.ts';
 
 /**
- * The review thread a review's first comment is in, in pull request's tab `tab`, as far as Lo can
- * tell from the threads main has sent: the earliest comment its author wrote from when they started
- * it, `from`, to when they submitted it, `to`. None while the threads aren't read, or with none
- * that fits.
+ * The review thread review `review`'s first comment is in, by the review's ID, in pull request's
+ * tab `tab`, among the threads main has sent. None while the threads aren't read, or when none of
+ * their comments came with it.
  */
-export function firstThreadOf(
-  tab: string,
-  review: { readonly author: string; readonly from: string; readonly to: string },
-): string | undefined {
+export function firstThreadOf(tab: string, review: string): string | undefined {
   return threadOfReview(held.get(tab).threads?.threads ?? [], review);
 }
 

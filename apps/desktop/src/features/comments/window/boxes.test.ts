@@ -2573,6 +2573,7 @@ function threadComment(id: string, author: string, body: string): ThreadRow['com
     hidden: null,
     viewerCanUpdate: author === 'rozed-bot',
     viewerCanDelete: author === 'rozed-bot',
+    review: null,
   };
 }
 

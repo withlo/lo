@@ -8,9 +8,9 @@
       "commitOID": "5a48d2255817f0f19dfdfc3168925f0cdb85c630",
       "threads": [
         {
+          "path": "e11/review.txt",
           "body": "Fixture E11: a pending comment, to edit and then delete.",
           "line": 30,
-          "path": "e11/review.txt",
           "side": "RIGHT"
         }
       ]
@@ -22,21 +22,21 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4929",
-      "x-ratelimit-reset": "1794247211",
+      "x-ratelimit-remaining": "4936",
+      "x-ratelimit-reset": "1795760687",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "71"
+      "x-ratelimit-used": "64"
     },
     "body": {
       "data": {
         "addPullRequestReview": {
           "pullRequestReview": {
-            "id": "PRR_kwDOVleUfc8AAAABW4LrZQ",
+            "id": "PRR_kwDOVleUfc8AAAABaqBrXw",
             "state": "PENDING",
             "comments": {
               "nodes": [
                 {
-                  "id": "PRRC_kwDOVleUfc8AAAABDS3tXg"
+                  "id": "PRRC_kwDOVleUfc8AAAABGRhEHQ"
                 }
               ]
             }

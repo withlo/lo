@@ -10,26 +10,26 @@
       "first": 100,
       "after": null
     },
-    "query_sha256": "89476c194892866c84d28316d05a62244432d190b6b0fce18fc3df748b08fb5d"
+    "query_sha256": "6503da183c3f389d85fbf264adc75b266838dd98efbd1c134ac46e46c14fb4a8"
   },
   "response": {
     "status": 200,
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4965",
-      "x-ratelimit-reset": "1794600600",
+      "x-ratelimit-remaining": "4971",
+      "x-ratelimit-reset": "1795756948",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "35"
+      "x-ratelimit-used": "29"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4965,
-          "used": 35,
-          "resetAt": "2026-11-13T20:10:00Z"
+          "remaining": 4971,
+          "used": 29,
+          "resetAt": "2026-11-27T05:22:28Z"
         },
         "repository": {
           "pullRequest": {
@@ -81,6 +81,9 @@
                         },
                         "originalCommit": {
                           "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                        },
+                        "pullRequestReview": {
+                          "id": "PRR_kwDOVleUfc8AAAABWu3aNQ"
                         }
                       }
                     ]
@@ -127,6 +130,9 @@
                         },
                         "originalCommit": {
                           "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                        },
+                        "pullRequestReview": {
+                          "id": "PRR_kwDOVleUfc8AAAABWu3eKg"
                         }
                       }
                     ]
@@ -173,6 +179,9 @@
                         },
                         "originalCommit": {
                           "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                        },
+                        "pullRequestReview": {
+                          "id": "PRR_kwDOVleUfc8AAAABWu3rDg"
                         }
                       }
                     ]
@@ -219,6 +228,9 @@
                         },
                         "originalCommit": {
                           "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                        },
+                        "pullRequestReview": {
+                          "id": "PRR_kwDOVleUfc8AAAABXON7uA"
                         }
                       },
                       {
@@ -240,6 +252,9 @@
                         },
                         "originalCommit": {
                           "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                        },
+                        "pullRequestReview": {
+                          "id": "PRR_kwDOVleUfc8AAAABXON7uA"
                         }
                       },
                       {
@@ -261,6 +276,9 @@
                         },
                         "originalCommit": {
                           "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                        },
+                        "pullRequestReview": {
+                          "id": "PRR_kwDOVleUfc8AAAABXON7uA"
                         }
                       }
                     ]
@@ -307,6 +325,9 @@
                         },
                         "originalCommit": {
                           "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                        },
+                        "pullRequestReview": {
+                          "id": "PRR_kwDOVleUfc8AAAABXON7uA"
                         }
                       }
                     ]
@@ -353,6 +374,9 @@
                         },
                         "originalCommit": {
                           "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
+                        },
+                        "pullRequestReview": {
+                          "id": "PRR_kwDOVleUfc8AAAABXON7uA"
                         }
                       }
                     ]

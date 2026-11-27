@@ -50,29 +50,18 @@ function list(view: ThreadsView): void {
   });
 }
 
-/** How far apart GitHub's times of a review and its comments can be: it times them to the second. */
-const SLACK = 1000;
-
 /**
  * The review thread a review's first comment is in, among `threads`: the thread of the earliest
- * comment the review's author wrote while the review was open, from when they started it, `from`,
- * to when they submitted it, `to`. None when none fits. GitHub does say which review a comment came
- * with (`PullRequestReviewComment.pullRequestReview`), but the threads Lo reads don't ask for it,
- * and asking would change the query every recorded reply is matched by; the times say the same.
+ * comment that came with review `review`, by its ID, and of those GitHub timed alike, the first in
+ * GitHub's order. None when none did.
  */
-export function threadOfReview(
-  threads: readonly ThreadRow[],
-  review: { readonly author: string; readonly from: string; readonly to: string },
-): string | undefined {
-  const from = Date.parse(review.from) - SLACK;
-  const to = Date.parse(review.to) + SLACK;
-  const author = review.author.toLowerCase();
+export function threadOfReview(threads: readonly ThreadRow[], review: string): string | undefined {
   let first: { thread: string; at: number } | undefined;
   for (const thread of threads) {
     for (const comment of thread.comments) {
-      if (comment.state !== 'SUBMITTED' || comment.author?.toLowerCase() !== author) continue;
+      if (comment.review !== review) continue;
       const at = Date.parse(comment.createdAt);
-      if (at >= from && at <= to && (!first || at < first.at)) first = { thread: thread.id, at };
+      if (!first || at < first.at) first = { thread: thread.id, at };
     }
   }
   return first?.thread;

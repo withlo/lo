@@ -9,9 +9,9 @@
       "event": "COMMENT",
       "threads": [
         {
+          "path": "e11/review.txt",
           "body": "Fixture E11: a thread posted at once, whose first comment goes under a reply.",
           "line": 50,
-          "path": "e11/review.txt",
           "side": "RIGHT"
         }
       ]
@@ -23,21 +23,21 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4924",
-      "x-ratelimit-reset": "1794247211",
+      "x-ratelimit-remaining": "4931",
+      "x-ratelimit-reset": "1795760687",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "76"
+      "x-ratelimit-used": "69"
     },
     "body": {
       "data": {
         "addPullRequestReview": {
           "pullRequestReview": {
-            "id": "PRR_kwDOVleUfc8AAAABW4L0JA",
+            "id": "PRR_kwDOVleUfc8AAAABaqBvRA",
             "state": "COMMENTED",
             "comments": {
               "nodes": [
                 {
-                  "id": "PRRC_kwDOVleUfc8AAAABDS30Vg"
+                  "id": "PRRC_kwDOVleUfc8AAAABGRhHcg"
                 }
               ]
             }

@@ -88,6 +88,7 @@ export const threadComment = z.strictObject({
   hidden: z.string().max(64).nullable(),
   viewerCanUpdate: z.boolean(),
   viewerCanDelete: z.boolean(),
+  review: nodeId.nullable(),
 });
 export type ThreadCommentRow = z.output<typeof threadComment>;
 

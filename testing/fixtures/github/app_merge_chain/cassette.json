@@ -1,5 +1,8 @@
 {
   "description": "What the app’s tests of a chain’s merge a layer at a time send and read, recorded from the app with writes on generation 8 of fixtures/merge.sh’s pull requests, rozed-dev/e2e#222 to #244, with the tab open long enough for its polls to repeat before and after. #230, the draft, had been moved onto merge/8/chain-1 first, so #235, the chain’s bottom layer, had two layers on it, #236 and #230, and couldn’t be made a GitHub stack. Lo merged #235 alone into merge/8/base, with a merge commit, then moved #236 and #230 onto merge/8/base.",
   "recorded_at": "2026-11-17T04:22:20Z",
-  "repo": "rozed-dev/e2e"
+  "repo": "rozed-dev/e2e",
+  "rerecorded": {
+    "ReviewThreads": "2026-11-27T05:15:23Z"
+  }
 }

@@ -120,6 +120,7 @@ function comment(state: CommentState): ThreadComment {
     hidden: undefined,
     viewerCanUpdate: true,
     viewerCanDelete: true,
+    review: undefined,
   };
 }
 

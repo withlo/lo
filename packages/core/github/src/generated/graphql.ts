@@ -2479,7 +2479,7 @@ export type ReviewThreadCommentsQuery = { rateLimit: { cost: number, limit: numb
             | { __typename: 'Mannequin', login: string }
             | { __typename: 'Organization', login: string }
             | { __typename: 'User', login: string }
-           | null, commit: { oid: string } | null, originalCommit: { oid: string } | null } | null> | null } }
+           | null, commit: { oid: string } | null, originalCommit: { oid: string } | null, pullRequestReview: { id: string } | null } | null> | null } }
     | { __typename: 'PullRequestStack' }
     | { __typename: 'PullRequestStackEntry' }
     | { __typename: 'PullRequestThread' }
@@ -2581,7 +2581,7 @@ export type ReviewCommentFragment = { id: string, body: string, state: PullReque
     | { __typename: 'Mannequin', login: string }
     | { __typename: 'Organization', login: string }
     | { __typename: 'User', login: string }
-   | null, commit: { oid: string } | null, originalCommit: { oid: string } | null };
+   | null, commit: { oid: string } | null, originalCommit: { oid: string } | null, pullRequestReview: { id: string } | null };
 
 export type ReviewThreadsQueryVariables = Exact<{
   owner: string;
@@ -2598,7 +2598,7 @@ export type ReviewThreadsQuery = { rateLimit: { cost: number, limit: number, rem
                 | { __typename: 'Mannequin', login: string }
                 | { __typename: 'Organization', login: string }
                 | { __typename: 'User', login: string }
-               | null, commit: { oid: string } | null, originalCommit: { oid: string } | null } | null> | null } } | null> | null } } | null } | null };
+               | null, commit: { oid: string } | null, originalCommit: { oid: string } | null, pullRequestReview: { id: string } | null } | null> | null } } | null> | null } } | null } | null };
 
 export type StackLayersQueryVariables = Exact<{
   ids: Array<string> | string;
@@ -3497,6 +3497,9 @@ export const ReviewCommentFragmentDoc = new TypedDocumentString(`
   }
   originalCommit {
     oid
+  }
+  pullRequestReview {
+    id
   }
 }
     `, {"fragmentName":"ReviewComment"}) as unknown as TypedDocumentString<ReviewCommentFragment, unknown>;
@@ -5061,6 +5064,9 @@ export const ReviewThreadCommentsDocument = new TypedDocumentString(`
   originalCommit {
     oid
   }
+  pullRequestReview {
+    id
+  }
 }`) as unknown as TypedDocumentString<ReviewThreadCommentsQuery, ReviewThreadCommentsQueryVariables>;
 export const ReviewThreadsDocument = new TypedDocumentString(`
     query ReviewThreads($owner: String!, $name: String!, $number: Int!, $first: Int!, $after: String) {
@@ -5128,6 +5134,9 @@ export const ReviewThreadsDocument = new TypedDocumentString(`
   }
   originalCommit {
     oid
+  }
+  pullRequestReview {
+    id
   }
 }`) as unknown as TypedDocumentString<ReviewThreadsQuery, ReviewThreadsQueryVariables>;
 export const StackLayersDocument = new TypedDocumentString(`

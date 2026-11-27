@@ -4,7 +4,7 @@
     "url": "https://api.github.com/graphql",
     "operation": "AddPullRequestReviewThread",
     "variables": {
-      "pullRequestReviewId": "PRR_kwDOVleUfc8AAAABXON7uA",
+      "pullRequestReviewId": "PRR_kwDOVleUfc8AAAABaqBRJA",
       "path": "e11/review.txt",
       "body": "Fixture E11: a range from the base's line 10 to the head's line 11.",
       "subjectType": "LINE",
@@ -20,25 +20,25 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4996",
-      "x-ratelimit-reset": "1794371223",
+      "x-ratelimit-remaining": "4986",
+      "x-ratelimit-reset": "1795760687",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "4"
+      "x-ratelimit-used": "14"
     },
     "body": {
       "data": {
         "addPullRequestReviewThread": {
           "thread": {
-            "id": "PRRT_kwDOVleUfc62A2HE",
+            "id": "PRRT_kwDOVleUfc68p_Nf",
             "comments": {
               "nodes": [
                 {
-                  "id": "PRRC_kwDOVleUfc8AAAABDjlycA",
+                  "id": "PRRC_kwDOVleUfc8AAAABGRgv3w",
                   "commit": {
                     "oid": "5a48d2255817f0f19dfdfc3168925f0cdb85c630"
                   },
                   "pullRequestReview": {
-                    "id": "PRR_kwDOVleUfc8AAAABXON7uA"
+                    "id": "PRR_kwDOVleUfc8AAAABaqBRJA"
                   }
                 }
               ]

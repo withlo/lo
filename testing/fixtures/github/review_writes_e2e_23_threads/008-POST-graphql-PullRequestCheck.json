@@ -15,23 +15,23 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4995",
-      "x-ratelimit-reset": "1794201720",
+      "x-ratelimit-remaining": "4957",
+      "x-ratelimit-reset": "1795760687",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "5"
+      "x-ratelimit-used": "43"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4995,
-          "used": 5,
-          "resetAt": "2026-11-09T05:22:00Z"
+          "remaining": 4957,
+          "used": 43,
+          "resetAt": "2026-11-27T06:24:47Z"
         },
         "repository": {
           "pullRequest": {
-            "updatedAt": "2026-11-09T04:22:22Z",
+            "updatedAt": "2026-11-27T05:27:35Z",
             "state": "OPEN",
             "isDraft": false,
             "baseRefName": "e11/base",
@@ -43,8 +43,8 @@
             "checkCounts": null,
             "mergeQueueEntry": null,
             "timelineItems": {
-              "updatedAt": "2026-11-09T04:22:18Z",
-              "totalCount": 15
+              "updatedAt": "2026-11-27T05:27:32Z",
+              "totalCount": 24
             },
             "revisionEvents": {
               "filteredCount": 0
@@ -53,10 +53,10 @@
               "totalCount": 1
             },
             "reviews": {
-              "totalCount": 13
+              "totalCount": 16
             },
             "submittedReviews": {
-              "totalCount": 13
+              "totalCount": 16
             },
             "reviewThreads": {
               "totalCount": 8,
@@ -120,8 +120,8 @@
             "changedFiles": 2,
             "lastEditedAt": null,
             "timelineEvents": {
-              "filteredCount": 12,
-              "updatedAt": "2026-11-09T04:22:18Z"
+              "filteredCount": 17,
+              "updatedAt": "2026-11-27T05:27:32Z"
             }
           }
         }

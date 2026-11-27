@@ -27,6 +27,7 @@ function comment(
     hidden: undefined,
     viewerCanUpdate: update,
     viewerCanDelete: remove,
+    review: undefined,
   };
 }
 

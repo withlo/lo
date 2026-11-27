@@ -36,6 +36,7 @@ function comment(body: string): ThreadCommentRow {
     hidden: null,
     viewerCanUpdate: false,
     viewerCanDelete: false,
+    review: null,
   };
 }
 
@@ -184,30 +185,42 @@ describe('the threads a panel lists', () => {
   });
 });
 
-/** A thread with one comment by `author`, written at `at`, in `state`. */
-function written(id: string, author: string, at: string, state: 'SUBMITTED' | 'PENDING') {
+/** A thread with one comment, written at `at`, that came with review `review`. */
+function written(id: string, review: string | null, at: string) {
   const made = thread(id, id);
-  return { ...made, comments: [{ ...comment(id), author, createdAt: at, state }] };
+  return { ...made, comments: [{ ...comment(id), createdAt: at, review }] };
 }
 
 describe('the thread a review’s first comment is in', () => {
-  it('is the earliest its author wrote between starting and submitting it', () => {
+  it('is the earliest comment’s that came with the review', () => {
     const threads = [
-      written('T_before', 'ravi-k', '2026-11-13T10:00:00Z', 'SUBMITTED'),
-      written('T_later', 'ravi-k', '2026-11-13T11:05:00Z', 'SUBMITTED'),
-      written('T_first', 'Ravi-K', '2026-11-13T11:01:00Z', 'SUBMITTED'),
-      written('T_other', 'mira-chen', '2026-11-13T11:00:30Z', 'SUBMITTED'),
-      written('T_pending', 'ravi-k', '2026-11-13T11:00:10Z', 'PENDING'),
+      written('T_other', 'PRR_other', '2026-11-13T10:00:00Z'),
+      written('T_later', 'PRR_1', '2026-11-13T11:05:00Z'),
+      written('T_first', 'PRR_1', '2026-11-13T11:01:00Z'),
+      written('T_none', null, '2026-11-13T11:00:30Z'),
     ];
-    const review = { author: 'ravi-k', from: '2026-11-13T11:00:00Z', to: '2026-11-13T11:10:00Z' };
-    expect(threadOfReview(threads, review)).toBe('T_first');
+    expect(threadOfReview(threads, 'PRR_1')).toBe('T_first');
+    expect(threadOfReview(threads, 'PRR_other')).toBe('T_other');
   });
 
-  it('takes a single comment GitHub timed a second after its review, and nothing with none', () => {
-    const threads = [written('T_1', 'ravi-k', '2026-11-13T11:00:01Z', 'SUBMITTED')];
+  it('tells apart two reviews left within the same second, by one author', () => {
     const at = '2026-11-13T11:00:00Z';
-    expect(threadOfReview(threads, { author: 'ravi-k', from: at, to: at })).toBe('T_1');
-    expect(threadOfReview(threads, { author: 'mira-chen', from: at, to: at })).toBeUndefined();
-    expect(threadOfReview([], { author: 'ravi-k', from: at, to: at })).toBeUndefined();
+    const second = '2026-11-13T11:00:01Z';
+    // GitHub's order puts the second review's thread first.
+    const threads = [
+      written('T_second', 'PRR_second', at),
+      written('T_first', 'PRR_first', at),
+      written('T_first_reply', 'PRR_second', second),
+    ];
+    expect(threadOfReview(threads, 'PRR_first')).toBe('T_first');
+    expect(threadOfReview(threads, 'PRR_second')).toBe('T_second');
+  });
+
+  it('takes the first in GitHub’s order of comments timed alike, and nothing with none', () => {
+    const at = '2026-11-13T11:00:00Z';
+    const threads = [written('T_1', 'PRR_1', at), written('T_2', 'PRR_1', at)];
+    expect(threadOfReview(threads, 'PRR_1')).toBe('T_1');
+    expect(threadOfReview(threads, 'PRR_gone')).toBeUndefined();
+    expect(threadOfReview([], 'PRR_1')).toBeUndefined();
   });
 });

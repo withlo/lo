@@ -36,6 +36,7 @@ function row(overrides: Partial<ThreadRow> = {}): ThreadRow {
         hidden: null,
         viewerCanUpdate: true,
         viewerCanDelete: true,
+        review: null,
       },
     ],
     viewerCanReply: true,

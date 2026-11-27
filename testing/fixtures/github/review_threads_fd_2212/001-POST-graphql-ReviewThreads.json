@@ -10,34 +10,34 @@
       "first": 100,
       "after": null
     },
-    "query_sha256": "89476c194892866c84d28316d05a62244432d190b6b0fce18fc3df748b08fb5d"
+    "query_sha256": "6503da183c3f389d85fbf264adc75b266838dd98efbd1c134ac46e46c14fb4a8"
   },
   "response": {
     "status": 200,
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4975",
-      "x-ratelimit-reset": "1794031052",
+      "x-ratelimit-remaining": "4927",
+      "x-ratelimit-reset": "1795756943",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "25"
+      "x-ratelimit-used": "73"
     },
     "body": {
       "data": {
         "rateLimit": {
           "cost": 1,
           "limit": 5000,
-          "remaining": 4975,
-          "used": 25,
-          "resetAt": "2026-11-07T05:57:32Z"
+          "remaining": 4927,
+          "used": 73,
+          "resetAt": "2026-11-27T05:22:23Z"
         },
         "repository": {
           "pullRequest": {
             "reviewThreads": {
-              "totalCount": 6,
+              "totalCount": 10,
               "pageInfo": {
                 "hasNextPage": false,
-                "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0wM1QwODo1NjoyNFrOswrisg=="
+                "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xNFQwNjozOTowN1rOt2hdcw=="
               },
               "nodes": [
                 {
@@ -81,6 +81,9 @@
                         },
                         "originalCommit": {
                           "oid": "15635d66ba7ff3d2da0e50392fbcd37c90d83de5"
+                        },
+                        "pullRequestReview": {
+                          "id": "PRR_kwDOBWllys8AAAABVqux2w"
                         }
                       }
                     ]
@@ -127,6 +130,9 @@
                         },
                         "originalCommit": {
                           "oid": "15635d66ba7ff3d2da0e50392fbcd37c90d83de5"
+                        },
+                        "pullRequestReview": {
+                          "id": "PRR_kwDOBWllys8AAAABVqux2w"
                         }
                       }
                     ]
@@ -173,6 +179,9 @@
                         },
                         "originalCommit": {
                           "oid": "15635d66ba7ff3d2da0e50392fbcd37c90d83de5"
+                        },
+                        "pullRequestReview": {
+                          "id": "PRR_kwDOBWllys8AAAABVqux2w"
                         }
                       }
                     ]
@@ -219,6 +228,9 @@
                         },
                         "originalCommit": {
                           "oid": "15635d66ba7ff3d2da0e50392fbcd37c90d83de5"
+                        },
+                        "pullRequestReview": {
+                          "id": "PRR_kwDOBWllys8AAAABVqux2w"
                         }
                       }
                     ]
@@ -265,6 +277,9 @@
                         },
                         "originalCommit": {
                           "oid": "15635d66ba7ff3d2da0e50392fbcd37c90d83de5"
+                        },
+                        "pullRequestReview": {
+                          "id": "PRR_kwDOBWllys8AAAABVqux2w"
                         }
                       }
                     ]
@@ -311,6 +326,9 @@
                         },
                         "originalCommit": {
                           "oid": "15635d66ba7ff3d2da0e50392fbcd37c90d83de5"
+                        },
+                        "pullRequestReview": {
+                          "id": "PRR_kwDOBWllys8AAAABVqux2w"
                         }
                       },
                       {
@@ -332,6 +350,205 @@
                         },
                         "originalCommit": {
                           "oid": "15635d66ba7ff3d2da0e50392fbcd37c90d83de5"
+                        },
+                        "pullRequestReview": {
+                          "id": "PRR_kwDOBWllys8AAAABVqux2w"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "PRRT_kwDOBWllys63ZuME",
+                  "path": "scripts/build-features.sh",
+                  "subjectType": "LINE",
+                  "diffSide": "RIGHT",
+                  "startDiffSide": null,
+                  "line": 6,
+                  "startLine": 6,
+                  "originalLine": 6,
+                  "originalStartLine": null,
+                  "isOutdated": false,
+                  "isResolved": false,
+                  "viewerCanReply": true,
+                  "viewerCanResolve": false,
+                  "viewerCanUnresolve": false,
+                  "comments": {
+                    "totalCount": 1,
+                    "pageInfo": {
+                      "hasNextPage": false,
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xNFQwNjowODowMFrPAAAAARCA_Io="
+                    },
+                    "nodes": [
+                      {
+                        "id": "PRRC_kwDOBWllys8AAAABEID8ig",
+                        "author": {
+                          "__typename": "User",
+                          "login": "tmccombs"
+                        },
+                        "body": "nit:  I think the second `:-` is unnecessary. Without it, it will still expand to an empty string.\n```suggestion\ntarget=${1:-${CARGO_BUILD_TARGET}}\n```",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-14T06:08:00Z",
+                        "url": "https://github.com/sharkdp/fd/pull/2212#discussion_r4571856010",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": false,
+                        "viewerCanDelete": false,
+                        "commit": {
+                          "oid": "22c70acc6992c0c51cb68527b87adf114d01acbc"
+                        },
+                        "originalCommit": {
+                          "oid": "22c70acc6992c0c51cb68527b87adf114d01acbc"
+                        },
+                        "pullRequestReview": {
+                          "id": "PRR_kwDOBWllys8AAAABX8uoig"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "PRRT_kwDOBWllys63Z6R-",
+                  "path": "CHANGELOG.md",
+                  "subjectType": "LINE",
+                  "diffSide": "RIGHT",
+                  "startDiffSide": null,
+                  "line": 7,
+                  "startLine": 7,
+                  "originalLine": 7,
+                  "originalStartLine": null,
+                  "isOutdated": false,
+                  "isResolved": false,
+                  "viewerCanReply": true,
+                  "viewerCanResolve": false,
+                  "viewerCanUnresolve": false,
+                  "comments": {
+                    "totalCount": 1,
+                    "pageInfo": {
+                      "hasNextPage": false,
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xNFQwNjoyNDozM1rPAAAAARCCIyg="
+                    },
+                    "nodes": [
+                      {
+                        "id": "PRRC_kwDOBWllys8AAAABEIIjKA",
+                        "author": {
+                          "__typename": "User",
+                          "login": "tmccombs"
+                        },
+                        "body": "> source builds now use the system allocator by default while release builds retain their allocator choices\n\nhmm, yeah, that's a little unfortunate. \n\nIt's also possibly a little misleading, since CI will still be using jemalloc. ",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-14T06:24:33Z",
+                        "url": "https://github.com/sharkdp/fd/pull/2212#discussion_r4571931432",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": false,
+                        "viewerCanDelete": false,
+                        "commit": {
+                          "oid": "22c70acc6992c0c51cb68527b87adf114d01acbc"
+                        },
+                        "originalCommit": {
+                          "oid": "22c70acc6992c0c51cb68527b87adf114d01acbc"
+                        },
+                        "pullRequestReview": {
+                          "id": "PRR_kwDOBWllys8AAAABX8uoig"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "PRRT_kwDOBWllys63Z8CT",
+                  "path": "Makefile",
+                  "subjectType": "LINE",
+                  "diffSide": "RIGHT",
+                  "startDiffSide": null,
+                  "line": 7,
+                  "startLine": 7,
+                  "originalLine": 7,
+                  "originalStartLine": null,
+                  "isOutdated": false,
+                  "isResolved": false,
+                  "viewerCanReply": true,
+                  "viewerCanResolve": false,
+                  "viewerCanUnresolve": false,
+                  "comments": {
+                    "totalCount": 1,
+                    "pageInfo": {
+                      "hasNextPage": false,
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xNFQwNjoyNjo0M1rPAAAAARCCU0E="
+                    },
+                    "nodes": [
+                      {
+                        "id": "PRRC_kwDOBWllys8AAAABEIJTQQ",
+                        "author": {
+                          "__typename": "User",
+                          "login": "tmccombs"
+                        },
+                        "body": "I think if we move this up above where we source build-features, we don't need to explicitly inject it in the shell command.",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-14T06:26:43Z",
+                        "url": "https://github.com/sharkdp/fd/pull/2212#discussion_r4571943745",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": false,
+                        "viewerCanDelete": false,
+                        "commit": {
+                          "oid": "22c70acc6992c0c51cb68527b87adf114d01acbc"
+                        },
+                        "originalCommit": {
+                          "oid": "22c70acc6992c0c51cb68527b87adf114d01acbc"
+                        },
+                        "pullRequestReview": {
+                          "id": "PRR_kwDOBWllys8AAAABX8uoig"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "id": "PRRT_kwDOBWllys63aF1z",
+                  "path": "Makefile",
+                  "subjectType": "LINE",
+                  "diffSide": "RIGHT",
+                  "startDiffSide": "RIGHT",
+                  "line": 32,
+                  "startLine": 30,
+                  "originalLine": 32,
+                  "originalStartLine": 30,
+                  "isOutdated": false,
+                  "isResolved": false,
+                  "viewerCanReply": true,
+                  "viewerCanResolve": false,
+                  "viewerCanUnresolve": false,
+                  "comments": {
+                    "totalCount": 1,
+                    "pageInfo": {
+                      "hasNextPage": false,
+                      "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0xMS0xNFQwNjozOTowN1rPAAAAARCDRLs="
+                    },
+                    "nodes": [
+                      {
+                        "id": "PRRC_kwDOBWllys8AAAABEINEuw",
+                        "author": {
+                          "__typename": "User",
+                          "login": "tmccombs"
+                        },
+                        "body": "nit: could be:\n```suggestion\n\t@printf '%s\\n' \"$(FEATURES)\" | cmp -s - \"$@\" || \\\n\t\tprintf '%s\\n' \"$(FEATURES)\" > \"$@\"\n```",
+                        "state": "SUBMITTED",
+                        "createdAt": "2026-11-14T06:39:07Z",
+                        "url": "https://github.com/sharkdp/fd/pull/2212#discussion_r4572005563",
+                        "isMinimized": false,
+                        "minimizedReason": null,
+                        "viewerCanUpdate": false,
+                        "viewerCanDelete": false,
+                        "commit": {
+                          "oid": "22c70acc6992c0c51cb68527b87adf114d01acbc"
+                        },
+                        "originalCommit": {
+                          "oid": "22c70acc6992c0c51cb68527b87adf114d01acbc"
+                        },
+                        "pullRequestReview": {
+                          "id": "PRR_kwDOBWllys8AAAABX8uoig"
                         }
                       }
                     ]

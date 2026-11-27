@@ -47,13 +47,15 @@ function comments(thread: ReviewThread): ReviewThreadComment[] {
   return (thread.comments.nodes ?? []).filter((comment) => comment !== null);
 }
 
-test('fd 2212s threads are outdated by the second push', async () => {
+test('fd 2212s threads come from two reviews, each comment naming its own', async () => {
   const fetch = replayFetch('review_threads_fd_2212');
   const list = await reviewThreads(client(fetch), new PullRef('sharkdp', 'fd', 2212));
 
   expect(operations(fetch)).toEqual(['ReviewThreads']);
-  expect(list.nodes).toHaveLength(6);
-  expect(list.nodes.flatMap(comments)).toHaveLength(7);
+  expect(list.nodes).toHaveLength(10);
+  expect(list.nodes.flatMap(comments)).toHaveLength(11);
+  const reviews = new Set(list.nodes.flatMap(comments).map((each) => each.pullRequestReview?.id));
+  expect(reviews.size).toBe(2);
 });
 
 test('the playgrounds review checks read two threads and two comments a page', async () => {

@@ -4,7 +4,7 @@
     "url": "https://api.github.com/graphql",
     "operation": "AddPullRequestReviewThreadReply",
     "variables": {
-      "pullRequestReviewThreadId": "PRRT_kwDOVleUfc62A2C9",
+      "pullRequestReviewThreadId": "PRRT_kwDOVleUfc68p_KR",
       "body": "Fixture E11: a reply sent to be posted at once, which joined the pending review."
     },
     "query_sha256": "97014655e17706c750cecd7cfe27c306828f75b5c3e3285520aa2aebadac5136"
@@ -14,19 +14,19 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4985",
-      "x-ratelimit-reset": "1794371223",
+      "x-ratelimit-remaining": "4977",
+      "x-ratelimit-reset": "1795760687",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "15"
+      "x-ratelimit-used": "23"
     },
     "body": {
       "data": {
         "addPullRequestReviewThreadReply": {
           "comment": {
-            "id": "PRRC_kwDOVleUfc8AAAABDjl3xQ",
+            "id": "PRRC_kwDOVleUfc8AAAABGRgzVw",
             "state": "PENDING",
             "pullRequestReview": {
-              "id": "PRR_kwDOVleUfc8AAAABXON7uA",
+              "id": "PRR_kwDOVleUfc8AAAABaqBRJA",
               "state": "PENDING"
             }
           }

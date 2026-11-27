@@ -219,6 +219,7 @@ function comment(body: string, state: 'PENDING' | 'SUBMITTED', author = 'rozed-b
     hidden: null,
     viewerCanUpdate: true,
     viewerCanDelete: true,
+    review: null,
   };
 }
 

@@ -16,10 +16,10 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4976",
-      "x-ratelimit-reset": "1794201713",
+      "x-ratelimit-remaining": "4970",
+      "x-ratelimit-reset": "1795760687",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "24"
+      "x-ratelimit-used": "30"
     },
     "body": {
       "data": {
@@ -33,8 +33,8 @@
           ],
           "locations": [
             {
-              "line": 13,
-              "column": 4
+              "line": 3,
+              "column": 3
             }
           ],
           "message": "Review Can not request changes on your own pull request"

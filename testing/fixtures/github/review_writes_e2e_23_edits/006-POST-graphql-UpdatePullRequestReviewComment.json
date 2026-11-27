@@ -4,7 +4,7 @@
     "url": "https://api.github.com/graphql",
     "operation": "UpdatePullRequestReviewComment",
     "variables": {
-      "id": "PRRC_kwDOVleUfc8AAAABDS3tXg",
+      "id": "PRRC_kwDOVleUfc8AAAABGRhEHQ",
       "body": "Fixture E11: a pending comment, edited."
     },
     "query_sha256": "f226015b42ef9fdb473c8e5918862f87d8250b28bf33bd0734654232255c5eef"
@@ -14,16 +14,16 @@
     "headers": {
       "content-type": "application/json; charset=utf-8",
       "x-ratelimit-limit": "5000",
-      "x-ratelimit-remaining": "4927",
-      "x-ratelimit-reset": "1794247211",
+      "x-ratelimit-remaining": "4935",
+      "x-ratelimit-reset": "1795760687",
       "x-ratelimit-resource": "graphql",
-      "x-ratelimit-used": "73"
+      "x-ratelimit-used": "65"
     },
     "body": {
       "data": {
         "updatePullRequestReviewComment": {
           "pullRequestReviewComment": {
-            "id": "PRRC_kwDOVleUfc8AAAABDS3tXg"
+            "id": "PRRC_kwDOVleUfc8AAAABGRhEHQ"
           }
         }
       }

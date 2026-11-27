@@ -1,5 +1,8 @@
 {
   "description": "Approve and ship on rozed-dev/e2e#277, generation 10 of the merge fixture: rozed-bot's own pull request into e4/queued, which merges through a merge queue, while its ci ran again, so nothing is approved: Lo turned on Merge when ready from one confirmation, recorded with writes. rozed-bot turned auto-merge off on GitHub after, before ci passed, so #277 never joined the queue.",
   "recorded_at": "2026-11-20T04:42:45Z",
-  "repo": "rozed-dev/e2e"
+  "repo": "rozed-dev/e2e",
+  "rerecorded": {
+    "ReviewThreads": "2026-11-27T05:15:26Z"
+  }
 }
