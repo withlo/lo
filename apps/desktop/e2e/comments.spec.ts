@@ -620,36 +620,37 @@ test.describe('a reply or an edit asked for in a code block’s popover', () => 
       ).toBeVisible();
     },
   );
-});
 
-onStacks(
-  'with the diff drawn and the overview on screen, `i` in a code block’s popover brings the diff back, the edit’s box there taking what’s typed',
-  async ({ page }) => {
-    test.setTimeout(60_000);
-    await open(page, STACK.b);
-    await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(['src/cost.ts new 5']);
-    await settled(page);
-    await page.keyboard.press('~');
-    await expect(page.locator('.lo-diffview')).toBeHidden();
-    const block = codeBlock(page, 'src/cost.ts');
-    await expect(block.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 20_000 });
-    await block.getByRole('button', { name: 'Unresolved thread · line 5', exact: true }).click();
-    const popover = page.locator('[data-lo-middle-view="overview.view"] .lo-ov > .lo-threadpop');
-    await expect(popover).toBeVisible();
-    await page.keyboard.press('i');
-    const box = await focusedBox(page);
-    await expect(box.locator('.cm-content')).toContainText('GitHub rounds each 100 nodes up');
-    await page.keyboard.type(' x');
-    await expect(box.locator('.cm-content')).toContainText('nodes up');
-    expect(await box.locator('.cm-content').textContent()).toMatch(/ x$/);
-    await expect(
-      page.locator('[data-lo-diff]').getByRole('button', {
-        name: 'Unresolved thread · line 5',
-        exact: true,
-      }),
-    ).toBeVisible();
-  },
-);
+  onStacks(
+    'with the diff drawn and hidden again, `i` in a code block’s popover brings the diff back, the edit’s box there taking what’s typed',
+    async ({ page }) => {
+      test.setTimeout(60_000);
+      await open(page, STACK.b);
+      const block = codeBlock(page, 'src/cost.ts');
+      await expect(block.locator('[data-lo-code="drawn"]')).toBeAttached({ timeout: 30_000 });
+      // The diff is drawn, and the overview comes back over it.
+      await page.keyboard.press('`');
+      await expect.poll(() => placed(page), { timeout: 20_000 }).toEqual(['src/cost.ts new 5']);
+      await settled(page);
+      await page.keyboard.press('~');
+      await expect(page.locator('.lo-diffview')).toBeHidden();
+      await block.getByRole('button', { name: 'Unresolved thread · line 5', exact: true }).click();
+      const popover = page.locator('[data-lo-middle-view="overview.view"] .lo-ov > .lo-threadpop');
+      await expect(popover).toBeVisible();
+      await page.keyboard.press('i');
+      const box = await focusedBox(page);
+      await expect(box.locator('.cm-content')).toContainText('GitHub rounds each 100 nodes up');
+      await page.keyboard.type(' x');
+      await expect(box.locator('.cm-content')).toHaveText(/nodes up.* x$/s);
+      await expect(
+        page.locator('[data-lo-diff]').getByRole('button', {
+          name: 'Unresolved thread · line 5',
+          exact: true,
+        }),
+      ).toBeVisible();
+    },
+  );
+});
 
 onStacks(
   'the threads panel shows the layer on screen’s threads, and the stack counts each layer’s',
