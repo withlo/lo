@@ -1,6 +1,6 @@
-// The key `tab.open` replaced, carried over once: a saved `diff` becomes `tab.open`'s unless that
-// was chosen already, the old key is then `null` so it's never carried again, and one that can't
-// be written is left to try at the next start.
+// The key `tab.open` replaced, carried over once: a saved `diff` becomes `tab.open`'s while the
+// file has no `tab.open`, the old key is then `null` so it's never carried again, and one that
+// can't be written is left to try at the next start.
 
 import { describe, expect, it } from 'vitest';
 
@@ -12,11 +12,12 @@ import { carryOver } from './carry.ts';
 function fileOf(values: Record<string, unknown>, refuses = false) {
   return {
     values,
-    update<T>(setting: Setting<T>, change: (value: T) => T): Promise<void> {
+    update<T>(setting: Setting<T>, change: (value: T, inFile: boolean) => T): Promise<void> {
       if (refuses) return Promise.reject(new Error('The file can’t be written.'));
+      const inFile = Object.hasOwn(values, setting.key);
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the test's own values.
-      const now = (setting.key in values ? values[setting.key] : setting.fallback) as T;
-      values[setting.key] = change(now);
+      const now = (inFile ? values[setting.key] : setting.fallback) as T;
+      values[setting.key] = change(now, inFile);
       return Promise.resolve();
     },
   };
@@ -33,6 +34,12 @@ describe('the key tab.open replaced', () => {
     const file = fileOf({ [before.key]: 'diff', [open.key]: 'timeline' });
     await carryOver(file, 'diff', () => undefined);
     expect(file.values).toEqual({ [before.key]: null, [open.key]: 'timeline' });
+  });
+
+  it('leaves a tab.open of overview, its default, as it is, since the file has it', async () => {
+    const file = fileOf({ [before.key]: 'diff', [open.key]: 'overview' });
+    await carryOver(file, 'diff', () => undefined);
+    expect(file.values).toEqual({ [before.key]: null, [open.key]: 'overview' });
   });
 
   it('carries nothing for the overview, which is tab.open’s default, and is null', async () => {

@@ -1,6 +1,7 @@
 // The key `tab.open` replaced, `overview.open`, carried over once: a `diff` saved there becomes
-// `tab.open`'s, where that's still its default, and then the old key is `null`, so a later choice
-// stands. One that can't be written is carried at the next start.
+// `tab.open`'s while the file has no `tab.open`, and then the old key is `null`, so a later choice
+// stands. A `tab.open` in the file stays as it is, even `overview`, its default. One that can't be
+// written is carried at the next start.
 
 import type { SettingsStore } from '../../settings/service.ts';
 import { before, open } from '../settings.ts';
@@ -18,7 +19,7 @@ export async function carryOver(
   carrying = true;
   try {
     if (value === 'diff') {
-      await file.update(open, (now) => (now === open.fallback ? 'diff' : now));
+      await file.update(open, (now, inFile) => (inFile ? now : 'diff'));
     }
     await file.update(before, () => null);
   } catch (error) {

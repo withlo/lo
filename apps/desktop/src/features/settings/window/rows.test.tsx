@@ -27,7 +27,12 @@ beforeAll(() => {
 });
 
 const settings = (values: SettingsState['values'] = {}) =>
-  ({ file: '~/.config/lo/settings.json', values, problems: [] }) satisfies SettingsState;
+  ({
+    file: '~/.config/lo/settings.json',
+    values,
+    inFile: Object.keys(values),
+    problems: [],
+  }) satisfies SettingsState;
 
 beforeEach(() => {
   showSettings(settings());
@@ -568,7 +573,7 @@ describe('Keys', () => {
   });
 
   it('has nowhere to say where the file is until main says where the settings are', () => {
-    showSettings({ file: '', values: {}, problems: [] });
+    showSettings({ file: '', values: {}, inFile: [], problems: [] });
     const container = render(Keys);
     expect(container.textContent).toContain('keymap');
   });

@@ -23,7 +23,12 @@ beforeAll(() => {
 });
 
 const settings = (problems: SettingsState['problems'] = []) =>
-  ({ file: '~/.config/lo/settings.json', values: {}, problems }) satisfies SettingsState;
+  ({
+    file: '~/.config/lo/settings.json',
+    values: {},
+    inFile: [],
+    problems,
+  }) satisfies SettingsState;
 
 afterEach(() => {
   showSettings(settings());

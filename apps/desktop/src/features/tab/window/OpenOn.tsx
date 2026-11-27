@@ -1,21 +1,37 @@
-// The row of Settings for what a pull request's tab opens on: a choice of the middle views Settings
-// can name that are there now, so Overview isn't one while overviews are off, and a line on where
-// a tab opens when Overview can't be: for a pull request with none, or while overviews are off. The
-// welcome's step that says what an overview is has the same row.
+// What a pull request's tab opens on, and the row of Settings for it: a choice of the middle views
+// Settings can name that are there now, so Overview isn't one while overviews are off, and a line
+// on where a tab opens when Overview can't be: for a pull request with none, or while overviews are
+// off. The welcome's step that says what an overview is has the same row. Both show what tabs open
+// on, which a value saved under the key `tab.open` replaced decides until main has carried it.
 
 import { SegmentedControl, SetupItem } from '@lo/ui';
 
 import { useViews } from '../../../window/slots.tsx';
 import {
+  useInFile,
   useKnownSetting,
   useSettingChange,
   type ControlProps,
 } from '../../settings/window/shared.ts';
-import { open, type OpenOn } from '../settings.ts';
+import { before, open, type OpenOn } from '../settings.ts';
 import { middle } from './shared.ts';
 
 /** The view Overview names, which comes and goes with overviews. */
 const OVERVIEW = 'overview.view';
+
+/**
+ * What a pull request's tab opens on, once main has said what the settings file holds, and
+ * `undefined` until then: `tab.open`, or, while the file has no `tab.open`, a `diff` saved under
+ * the key it replaced, as main carries it over (`main/carry.ts`). So it's the same before main has
+ * carried it as after, and while it can't, as when the file can't be written.
+ */
+export function useOpensOn(): OpenOn | undefined {
+  const saved = useKnownSetting(open);
+  const inFile = useInFile(open);
+  const earlier = useKnownSetting(before);
+  if (saved === undefined) return undefined;
+  return inFile === false && earlier === 'diff' ? 'diff' : saved;
+}
 
 /** The ids of the middle views there now, following them as they come and go. */
 function useMiddleIds(): ReadonlySet<string> {
@@ -23,11 +39,13 @@ function useMiddleIds(): ReadonlySet<string> {
 }
 
 /**
- * The choice of the views there now. A value whose view isn't there, Overview while overviews are
- * off, chooses none of them, so any can be chosen; the row's line says where a tab opens meanwhile.
+ * The choice of the views there now, with the one tabs open on chosen ({@link useOpensOn}). A value
+ * whose view isn't there, Overview while overviews are off, chooses none of them, so any can be
+ * chosen; the row's line says where a tab opens meanwhile.
  */
 export function OpenOnChoice({ value, change }: Pick<ControlProps<OpenOn>, 'value' | 'change'>) {
   const there = useMiddleIds();
+  const shown = useOpensOn() ?? value;
   const items = Object.entries(open.options ?? {})
     .filter(([option]) => there.has(`${option}.view`))
     .map(([option, label]) => ({ value: option, label }));
@@ -37,7 +55,7 @@ export function OpenOnChoice({ value, change }: Pick<ControlProps<OpenOn>, 'valu
       kind="choice"
       size="sm"
       items={items}
-      value={value}
+      value={shown}
       onChange={(next) => {
         const parsed = open.schema.safeParse(next);
         if (parsed.success) change(parsed.data);
@@ -52,7 +70,7 @@ export function OpenOnChoice({ value, change }: Pick<ControlProps<OpenOn>, 'valu
  */
 export function useOpenOnLine(): string {
   const there = useMiddleIds().has(OVERVIEW);
-  const value = useKnownSetting(open);
+  const value = useOpensOn();
   if (there) return 'With Overview, a pull request that has none opens on the timeline.';
   if (value === 'overview') return 'Overviews are off, so pull requests open on the timeline.';
   return open.description;

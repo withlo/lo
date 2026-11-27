@@ -337,6 +337,48 @@ test('Try again saves a change that couldn’t be, and focus stays in Settings a
   await expect(page.getByRole('searchbox', { name: 'Search settings' })).toBeFocused();
 });
 
+/** The choice of what a pull request's tab opens on, in Settings › Pull requests. */
+const openChoice = (page: Page) => page.getByRole('radiogroup', { name: 'Open pull requests on' });
+
+/** Expects pull requests to open on `name`, as Settings › Pull requests has it chosen. */
+const opensOn = (page: Page, name: string) =>
+  expect(openChoice(page).getByRole('radio', { name })).toHaveAttribute('aria-checked', 'true');
+
+test('Diff saved under the key tab.open replaced is where pull requests open until it’s carried over, and a choice made meanwhile stands', async () => {
+  // As Lo saved it before `tab.open`, in a folder Lo can't write in, so it isn't carried over yet.
+  edit('{ "overview.open": "diff" }\n');
+  const folder = dirname(settingsPath(dataFolder()));
+  chmodSync(folder, 0o500);
+  const first = await launch();
+  try {
+    const { page } = first;
+    await openSettings(page);
+    await page
+      .getByRole('navigation', { name: 'Settings' })
+      .getByRole('button', { name: 'Pull requests' })
+      .click();
+    await opensOn(page, 'Diff');
+    // Once it can be written, Overview chosen stands, though it's `tab.open`'s default.
+    chmodSync(folder, 0o700);
+    await openChoice(page).getByRole('radio', { name: 'Overview' }).click();
+    await expect.poll(saved).toEqual({ 'overview.open': 'diff', 'tab.open': 'overview' });
+    await opensOn(page, 'Overview');
+  } finally {
+    chmodSync(folder, 0o700);
+    await first.app.close();
+  }
+
+  // At the next start it's carried over, and `tab.open`, which the file has, stays.
+  const second = await launch();
+  try {
+    await expect.poll(saved).toEqual({ 'overview.open': null, 'tab.open': 'overview' });
+    await expect(shown(second.page)).toHaveText('Settings');
+    await opensOn(second.page, 'Overview');
+  } finally {
+    await second.app.close();
+  }
+});
+
 /**
  * Puts Go in the test's cache as Lo would have installed it, as a program of `bytes` bytes, and
  * says where its version's folder is.

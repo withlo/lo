@@ -174,10 +174,11 @@ describe('the contract', () => {
     }
   });
 
-  it('sends the settings with where the file is, every value and what is wrong', () => {
+  it('sends the settings with where the file is, every value, those it has and what is wrong', () => {
     const state = {
       file: '~/.config/lo/settings.json',
       values: { theme: 'dark', 'cache.cap': 10 },
+      inFile: ['cache.cap'],
       problems: [{ key: 'cache.cap', message: 'cache.cap is 2.5.' }, { message: 'Not JSON.' }],
     };
     expect(settingsState.safeParse(state).success).toBe(true);
@@ -187,6 +188,8 @@ describe('the contract', () => {
       { ...state, extra: 1 },
       { ...state, values: { Theme: 'dark' } },
       { ...state, values: { theme: undefined } },
+      { ...state, inFile: undefined },
+      { ...state, inFile: ['Theme'] },
       { ...state, problems: [{ message: '' }] },
       { ...state, problems: [{ message: 'x'.repeat(401) }] },
       { ...state, problems: [{ key: 'theme', message: 'x', extra: 1 }] },

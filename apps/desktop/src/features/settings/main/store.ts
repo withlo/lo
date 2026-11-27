@@ -172,11 +172,13 @@ export function createSettings(options: SettingsOptions): Settings {
 
   const compute = (): SettingsState => {
     const values: Record<string, Json> = {};
+    const inFile: string[] = [];
     const problems: Problem[] = [];
     if (wholeProblem !== undefined) problems.push({ message: wholeProblem });
     for (const [key, entry] of declared) {
       values[key] = entry.fallback;
       if (!Object.hasOwn(raw, key)) continue;
+      inFile.push(key);
       if (repeated.has(key)) problems.push({ key, message: twice(key) });
       const found = raw[key];
       const checked = entry.check(found);
@@ -189,7 +191,7 @@ export function createSettings(options: SettingsOptions): Settings {
         problems.push({ key, message: wrong(entry, found) });
       }
     }
-    return { file: options.shown, values, problems };
+    return { file: options.shown, values, inFile, problems };
   };
 
   /** Tells the watchers what changed for them, and publishes the state if it changed. */
@@ -302,12 +304,13 @@ export function createSettings(options: SettingsOptions): Settings {
 
   /**
    * Writes the file with `entry`'s value as `next` makes it from what the file holds now, read
-   * afresh each try: its value there, or its default when there's none. Made from what's there
-   * (`from`), it refuses a value there the schema refuses, rather than replace what it can't read.
+   * afresh each try: its value there, or its default when there's none, and whether it's there.
+   * Made from what's there (`from`), it refuses a value there the schema refuses, rather than
+   * replace what it can't read.
    */
   const write = (
     entry: Entry,
-    next: (current: Json) => unknown,
+    next: (current: Json, inFile: boolean) => unknown,
     from: 'replace' | 'current' = 'replace',
   ): Promise<void> =>
     enqueue(async () => {
@@ -348,7 +351,9 @@ export function createSettings(options: SettingsOptions): Settings {
             { reason: wrong(entry, values[key]) },
           );
         }
-        const checked = entry.check(next(current?.ok ? current.value : entry.fallback));
+        const checked = entry.check(
+          next(current?.ok ? current.value : entry.fallback, current !== undefined),
+        );
         if (!checked.ok) throw new IpcError('invalid', `${key} must be ${entry.accepts}.`);
         const written = { ...values, [key]: checked.value };
         // Only the setting's value changes: the rest of the file, comments and all, stays as it is.
@@ -449,7 +454,11 @@ export function createSettings(options: SettingsOptions): Settings {
       declare(setting);
       const entry = declared.get(setting.key);
       if (!entry) throw new Error(`The setting ${setting.key} isn’t declared.`);
-      return write(entry, (current) => change(setting.schema.parse(current)), 'current');
+      return write(
+        entry,
+        (current, inFile) => change(setting.schema.parse(current), inFile),
+        'current',
+      );
     },
 
     check,

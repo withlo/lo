@@ -166,6 +166,15 @@ export function useKnownSetting<T>(setting: Setting<T>): T | undefined {
   return settings === undefined ? undefined : valueIn(setting, settings.values);
 }
 
+/**
+ * Whether the settings file has a setting, whatever it holds for it, once main has said, and
+ * `undefined` until then; it follows changes. A value written there, even the default, tells apart
+ * from one left out.
+ */
+export function useInFile<T>(setting: Setting<T>): boolean | undefined {
+  return useStore(settingsStore, (state) => state.settings?.inFile.includes(setting.key));
+}
+
 /** The value of a setting now, read once: main's, or its default until main has said. */
 export function settingNow<T>(setting: Setting<T>): T {
   return valueNow(setting);

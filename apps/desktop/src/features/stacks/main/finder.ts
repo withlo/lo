@@ -199,7 +199,7 @@ export class StackFinder {
 
   /**
    * Follows the pull requests' tabs as they are now: a tab that's new is followed, one that's gone
-   * stops reading its layers, and the tab on screen reads its stack's.
+   * stops reading its layers and which have an overview, and the tab on screen reads its stack's.
    */
   follow(tabs: readonly FinderTab[]): void {
     if (this.#stopped) return;
@@ -422,10 +422,7 @@ export class StackFinder {
     if (!this.#overviewsOn()) {
       this.#overviews.clear();
       this.#overviewsAsked.clear();
-      for (const followed of this.#followed.values()) {
-        followed.overviews?.forgetRead(followed.tab.pull, OVERVIEW_REFS);
-        followed.overviews = undefined;
-      }
+      for (const followed of this.#followed.values()) this.#forgetOverviews(followed);
     }
     this.#refresh();
   }
@@ -524,8 +521,8 @@ export class StackFinder {
    * Has tab `followed`'s poller read the state of the layers whose node IDs are `ids` while it's on
    * screen, and again when a list fetched after it, at `listedAt`, shows a layer at another head
    * than the state, read at `readAt`, and, while there are overviews (`overviewsOn`), which pull
-   * requests in its repository have one, unless that was read for another layer lately. A tab whose pull request is no longer in a stack
-   * stops reading its layers.
+   * requests in its repository have one, unless that was read for another layer lately. A tab
+   * whose pull request is no longer in a stack stops reading its layers, and which have one.
    */
   #read(
     followed: Followed,
@@ -547,6 +544,8 @@ export class StackFinder {
       if (followed.asked) followed.asked.again = true;
       return;
     }
+    // Another poller reads it now: the one before stops, before this one asks.
+    if (followed.asked && followed.asked.poller !== poller) this.#forget(followed);
     const repo = tab.pull.repo;
     const repoKey = forestKey(poller, repo);
     if (overviewsOn && followed.overviews !== poller && this.#overviewsDue(repoKey)) {
@@ -564,8 +563,7 @@ export class StackFinder {
     }
     const key = ids.join('\n');
     const asked = followed.asked;
-    if (!asked || asked.poller !== poller || asked.ids !== key || asked.again) {
-      if (asked && asked.poller !== poller) this.#forget(followed);
+    if (!asked || asked.ids !== key || asked.again) {
       followed.asked = { poller, ids: key, again: false };
       poller.stackLayers(tab.pull, ids).catch((error: unknown) => {
         this.#options.log(`reading ${tab.pull.toString()}'s layers: ${String(error)}`);
@@ -603,12 +601,24 @@ export class StackFinder {
     return (this.#options.now ?? Date.now)();
   }
 
-  /** Stops tab `followed`'s poller reading its layers' state. */
+  /**
+   * Stops tab `followed`'s poller reading its layers' state, and which of its repository's pull
+   * requests have an overview, as for a tab that closed or left its stack.
+   */
   #forget(followed: Followed): void {
     const asked = followed.asked;
     followed.asked = undefined;
     followed.newer = new Set();
     asked?.poller.forgetStackLayers(followed.tab.pull);
+    this.#forgetOverviews(followed);
+  }
+
+  /**
+   * Stops tab `followed`'s poller reading which pull requests in its repository have an overview.
+   */
+  #forgetOverviews(followed: Followed): void {
+    followed.overviews?.forgetRead(followed.tab.pull, OVERVIEW_REFS);
+    followed.overviews = undefined;
   }
 
   /** `login`'s poller, once it's been got: until then, it's asked for, and the tabs wait. */
