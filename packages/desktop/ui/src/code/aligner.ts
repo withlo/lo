@@ -332,6 +332,10 @@ export class Aligner {
   #lined: { old?: { from: number; to: number }; new?: { from: number; to: number } } = {};
   /** How wide each editor's text was when the last pass lined it up, which is where it wraps. */
   #widths: { old: number; new: number } | undefined;
+  /** The first line on screen as the last pass left it (`seenTop`). */
+  #topSeen: Anchor | undefined;
+  /** What `#topSeen` was before a pass this frame lined up a change of width, until it's drawn. */
+  #topBefore: Anchor | undefined;
   /** The holds under way on the first line under the pinned header, as the sides change width. */
   #holds = 0;
   /**
@@ -427,6 +431,22 @@ export class Aligner {
    */
   anchorHere(): void {
     if (!this.#paused) this.#anchor = this.#anchorNow();
+  }
+
+  /**
+   * The first line the reader saw on screen, and how far below the scroller's top, while the
+   * editors' text has changed width since the screen last showed them: what's drawn now is where
+   * the new wrapping put it, not where the reader saw it. A pass may have lined it up already, in a
+   * frame not drawn yet, scrolling to keep its own anchor: the line stays where the reader saw it.
+   * Before that pass, a scroll since moved it. Nothing while the width is as the screen showed it.
+   */
+  seenTop(): { side: Side; pos: number; offset: number } | undefined {
+    const before = this.#topBefore;
+    if (before) return { side: before.side, pos: before.pos, offset: before.offset };
+    const seen = this.#rewrapped() ? this.#topSeen : undefined;
+    if (!seen) return undefined;
+    const scrolled = this.#scroller.scrollTop - seen.scrollTop;
+    return { side: seen.side, pos: seen.pos, offset: seen.offset - scrolled };
   }
 
   /**
@@ -563,6 +583,9 @@ export class Aligner {
   set paused(paused: boolean) {
     this.#paused = paused;
     this.#anchor = undefined;
+    // What the screen showed while it ran says nothing of what it shows next.
+    this.#topSeen = undefined;
+    this.#topBefore = undefined;
     this.#topTaken = false;
     this.#chosen = false;
     this.#given = false;
@@ -628,6 +651,7 @@ export class Aligner {
     // A line given before the editors changed width is drawn where its new wrapping put it, not
     // where the reader saw it: the pass goes as it does with none.
     const given = this.#given && !this.#rewrapped();
+    const widened = this.#rewrapped();
     let changed = false;
     let unsettled = false;
     try {
@@ -711,6 +735,12 @@ export class Aligner {
         this.#anchor = this.#anchorNow();
       }
       this.#widths = this.#widthsNow();
+      // What the reader saw stays known until the frame that lines up a change of width is drawn.
+      if (widened && this.#topBefore === undefined) {
+        this.#topBefore = this.#topSeen;
+        requestAnimationFrame(() => (this.#topBefore = undefined));
+      }
+      this.#topSeen = this.#underNow(0);
     } finally {
       this.#running = false;
       this.#selected = false;

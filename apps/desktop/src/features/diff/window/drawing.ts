@@ -23,6 +23,7 @@ import {
 } from '@lo/ui/code';
 import { plainTarget, type Entry as HistoryEntry } from '@lo/ui/commands';
 
+import { menuStale } from '../../../window/commands/bar.ts';
 import { openMenu } from '../../../window/commands/menus.tsx';
 import { inCodeOf, registry, setMiddle } from '../../../window/commands/registry.ts';
 import {
@@ -521,6 +522,8 @@ export function draw(options: DrawOptions): Drawing {
       },
       // The edge between the sides, let go somewhere new or put back: for every side-by-side diff.
       sides: keepSides,
+      // Too narrow for side by side, or wide enough again: the menu's Side by side says so.
+      narrowed: menuStale,
       arrived() {
         threader()?.arrived?.(tab.id);
       },

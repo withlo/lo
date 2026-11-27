@@ -714,23 +714,25 @@
    marked `data-gives` with it goes, what's marked `data-takes` with it comes, as an icon comes for
    words, and a control marked `data-squares` with it is the small control's square. The key chips
    go at `keys`. A row whose items go one at a time, in an order it works out as it draws, as the
-   queue's hints go, marks each with its turn, `drop1` first. */
+   queue's hints go, marks each with its turn, `drop1` first. What says something nothing else in
+   the row says, as a status's detail or a note's fact does, is marked `data-heard` too: given up,
+   it goes out of sight and out of the way as a title does, still heard. */
 @utility give-up {
   &[data-gave-up~='keys'] :is(kbd, .key-focus),
-  &[data-gave-up~='drop1'] [data-gives='drop1'],
-  &[data-gave-up~='drop2'] [data-gives='drop2'],
-  &[data-gave-up~='drop3'] [data-gives='drop3'],
-  &[data-gave-up~='drop4'] [data-gives='drop4'],
-  &[data-gave-up~='drop5'] [data-gives='drop5'],
-  &[data-gave-up~='drop6'] [data-gives='drop6'],
-  &[data-gave-up~='drop7'] [data-gives='drop7'],
+  &[data-gave-up~='drop1'] [data-gives='drop1']:not([data-heard]),
+  &[data-gave-up~='drop2'] [data-gives='drop2']:not([data-heard]),
+  &[data-gave-up~='drop3'] [data-gives='drop3']:not([data-heard]),
+  &[data-gave-up~='drop4'] [data-gives='drop4']:not([data-heard]),
+  &[data-gave-up~='drop5'] [data-gives='drop5']:not([data-heard]),
+  &[data-gave-up~='drop6'] [data-gives='drop6']:not([data-heard]),
+  &[data-gave-up~='drop7'] [data-gives='drop7']:not([data-heard]),
   &[data-gave-up~='tag'] [data-gives='tag'],
   &[data-gave-up~='time'] [data-gives='time'],
   &[data-gave-up~='hint'] [data-gives='hint'],
   &[data-gave-up~='labels'] [data-gives='labels'],
   &[data-gave-up~='mark'] [data-gives='mark'],
   &[data-gave-up~='branches'] [data-gives='branches'],
-  &[data-gave-up~='detail'] [data-gives='detail'],
+  &[data-gave-up~='detail'] [data-gives='detail']:not([data-heard]),
   &[data-gave-up~='actions'] [data-gives='actions'],
   &[data-gave-up~='fill'] [data-gives='fill'],
   &:not([data-gave-up~='labels']) [data-takes='labels'],
@@ -738,8 +740,17 @@
   &:not([data-gave-up~='fill']) [data-takes='fill'] {
     display: none !important;
   }
-  /* A title given up leaves the row, not its name: out of sight and out of the way, still heard. */
-  &[data-gave-up~='title'] [data-gives='title'] {
+  /* A title given up leaves the row, not its name: out of sight and out of the way, still heard.
+     So does what's marked `data-heard`. */
+  &[data-gave-up~='title'] [data-gives='title'],
+  &[data-gave-up~='drop1'] [data-gives='drop1'][data-heard],
+  &[data-gave-up~='drop2'] [data-gives='drop2'][data-heard],
+  &[data-gave-up~='drop3'] [data-gives='drop3'][data-heard],
+  &[data-gave-up~='drop4'] [data-gives='drop4'][data-heard],
+  &[data-gave-up~='drop5'] [data-gives='drop5'][data-heard],
+  &[data-gave-up~='drop6'] [data-gives='drop6'][data-heard],
+  &[data-gave-up~='drop7'] [data-gives='drop7'][data-heard],
+  &[data-gave-up~='detail'] [data-gives='detail'][data-heard] {
     position: absolute;
     width: 1px;
     min-width: 0;

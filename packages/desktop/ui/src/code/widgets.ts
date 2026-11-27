@@ -10,6 +10,7 @@ import { WidgetType } from '@codemirror/view';
 import { threadWords } from '../counts.ts';
 import { resizing } from '../drag.ts';
 import { EDIT_SLOT } from '../edits.ts';
+import { giveUp } from '../giveUp.ts';
 import { glyphNodes, iconElement } from '../iconElement.ts';
 import { type DrawNote, type FileHeader, viewControls } from './api.ts';
 import { type Bubble, bubbleElement, type LaneTone, sameBubble } from './bubbles.ts';
@@ -47,6 +48,8 @@ function viewedBall(viewed: NonNullable<FileHeader['viewed']>): {
   if (viewed !== 'stale') return { ball, tag: undefined };
   // The words beside it say why it isn't checked, to a screen reader too.
   const tag = element('span', 'lo-diffhead__changed', CHANGED_SINCE);
+  // Part of the header's note: narrow, it's given up from sight, and still heard.
+  tag.dataset.gives = 'note';
   return { ball, tag };
 }
 
@@ -96,18 +99,22 @@ export function moreLabel(path: string): string {
 }
 
 /**
- * A header's start: the path, the folder in `lo-fg-muted` and the name whole, a rename's old path
- * after it, and the counts. The folder gives way to a long name, and the old path before it.
+ * A header's start: the path, the folder in `lo-fg-muted` and the name whole, then its note: a
+ * rename's old path and the counts. Narrow, it gives up its note, then its folder (`headerSteps`).
  */
 function headerStart(info: HeaderInfo): HTMLElement[] {
   const { header } = info;
   const parts: HTMLElement[] = [];
   const path = element('span', 'lo-path');
-  // Its tooltip is the whole path, only while part of it is cut.
+  // Its tooltip is the whole path, only while part of it is cut, or given up.
   path.dataset.tip = info.path;
   path.dataset.tipCut = '';
   const slash = info.path.lastIndexOf('/') + 1;
-  if (slash > 0) path.append(element('span', 'lo-path__dir', info.path.slice(0, slash)));
+  if (slash > 0) {
+    const folder = element('span', 'lo-path__dir', info.path.slice(0, slash));
+    folder.dataset.gives = 'folders';
+    path.append(folder);
+  }
   path.append(element('b', '', info.path.slice(slash)));
   parts.push(path);
   if (info.previousPath && info.previousPath !== info.path) {
@@ -115,6 +122,7 @@ function headerStart(info: HeaderInfo): HTMLElement[] {
     const was = element('span', 'lo-path__was');
     was.append(...glyphNodes(`← ${info.previousPath}`));
     was.dataset.tip = `Renamed from ${info.previousPath}`;
+    was.dataset.gives = 'note';
     parts.push(was);
   }
   if (header.counted !== false) {
@@ -123,6 +131,7 @@ function headerStart(info: HeaderInfo): HTMLElement[] {
       element('span', 'add', `+${header.additions.toLocaleString('en-US')}`),
       element('span', 'del', `−${header.deletions.toLocaleString('en-US')}`),
     );
+    stat.dataset.gives = 'note';
     parts.push(stat);
   }
   return parts;
@@ -130,8 +139,9 @@ function headerStart(info: HeaderInfo): HTMLElement[] {
 
 /**
  * A header's end, in this order: its tags, "Changed since viewed", its threads, the tree's letter
- * for its change, its viewed ball and the `⋯` that opens its menu. It never wraps: narrow, the
- * tags give way first.
+ * for its change, its viewed ball and the `⋯` that opens its menu. It never wraps. Its tags and
+ * "Changed since viewed" are part of the header's note, which it gives up first; the rest is never
+ * cut.
  */
 function headerEnd(info: HeaderInfo): HTMLElement {
   const { header } = info;
@@ -141,6 +151,7 @@ function headerEnd(info: HeaderInfo): HTMLElement {
     // A binary file's sizes read with their arrow drawn as an icon: `1 KB → 2 KB`.
     const said = element('span', 'lo-diffhead__tags');
     said.append(...glyphNodes(tags.join(' · ')));
+    said.dataset.gives = 'note';
     end.append(said);
   }
   const threads = header.threads && header.threads.total > 0 ? header.threads : undefined;
@@ -171,8 +182,61 @@ function headerEnd(info: HeaderInfo): HTMLElement {
 }
 
 /**
+ * What a header gives up where it's too narrow for all it draws, a step at a time, each step whole
+ * (`design/css/code.css`): its note (the counts, a rename's old path, its tags and "Changed since
+ * viewed"); then its folder, which is cut short first, keeping `min-w-cut`; and only then is its
+ * name cut. The end group, from the threads to the `⋯`, is never cut.
+ */
+const HEADER_STEPS = ['note', 'folders'] as const;
+
+/**
+ * Fits a header to its band, as each is drawn and as its room changes: side by side, the pinned
+ * copy's two halves each in its column, as each column's own header is, and otherwise the whole
+ * band at once, so an inline header gives up its tags with its counts.
+ */
+export function fitHeader(head: HTMLElement): void {
+  if (!head.isConnected) return;
+  const parts = [...head.querySelectorAll<HTMLElement>(':scope > [data-fit]')];
+  const halves = head.parentElement?.classList.contains('is-split') === true;
+  for (const each of halves ? [head] : parts) each.removeAttribute('data-gave-up');
+  for (const each of halves ? parts : [head]) giveUp(each, HEADER_STEPS);
+}
+
+/**
+ * Every header drawn, fitted again as its band, or a half of it, changes width: one observer for
+ * all of them, which a header leaves as it's taken down (`unwatchHeader`).
+ */
+const resized =
+  typeof ResizeObserver === 'undefined'
+    ? undefined
+    : new ResizeObserver((entries) => {
+        const heads = new Set<HTMLElement>();
+        for (const { target } of entries) {
+          const head = target.closest<HTMLElement>('.lo-diffhead');
+          if (head) heads.add(head);
+        }
+        for (const head of heads) fitHeader(head);
+      });
+
+/** Fits `head` from the frame it's first laid out in, and each time its room changes after. */
+function watchHeader(head: HTMLElement): void {
+  if (!resized) return;
+  resized.observe(head);
+  // The pinned copy's halves change width with the sides, inside a band that doesn't.
+  for (const part of head.querySelectorAll(':scope > [data-fit]')) resized.observe(part);
+}
+
+/** Stops fitting a header that's taken down. */
+export function unwatchHeader(head: HTMLElement): void {
+  if (!resized) return;
+  resized.unobserve(head);
+  for (const part of head.querySelectorAll(':scope > [data-fit]')) resized.unobserve(part);
+}
+
+/**
  * A file's header band, or the part of it one column draws. `pinned` for the copy the view pins
- * under its bar, which takes no row's key, so nothing lines it up or rings it.
+ * under its bar, which takes no row's key, so nothing lines it up or rings it. It fits itself to its
+ * band from the frame it's first laid out in (`fitHeader`), until `unwatchHeader`.
  */
 export function drawHeader(
   file: number,
@@ -188,12 +252,19 @@ export function drawHeader(
   head.dataset.file = String(file);
   // Each half names its file, though only the left draws the path.
   head.dataset.path = info.path;
+  // Each group draws what it holds whole, or what it gives up gives way: never cut past its end.
   if (part !== 'end') {
     const start = element('span', 'lo-diffhead__start');
+    start.dataset.fit = '';
     start.append(...headerStart(info));
     head.append(start);
   }
-  if (part !== 'start') head.append(headerEnd(info));
+  if (part !== 'start') {
+    const end = headerEnd(info);
+    end.dataset.fit = '';
+    head.append(end);
+  }
+  watchHeader(head);
   return head;
 }
 
@@ -372,6 +443,14 @@ export class HeaderWidget extends WidgetType {
       block.append(threads);
     }
     return block;
+  }
+
+  /** Its header stops fitting itself as it's taken down. */
+  override destroy(dom: HTMLElement): void {
+    const head = dom.matches('.lo-diffhead')
+      ? dom
+      : dom.querySelector<HTMLElement>(':scope > .lo-diffhead');
+    if (head) unwatchHeader(head);
   }
 
   override get estimatedHeight(): number {

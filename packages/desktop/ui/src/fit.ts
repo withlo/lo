@@ -223,8 +223,9 @@ export interface FittedSides {
 /**
  * How a side-by-side diff `width` wide shares it: the old side `share` of it, or half with none,
  * each side keeping its minimum, `SIDE_MIN` or a quarter of the width, whichever is wider. At
- * twice `SIDE_MIN` or less, where the edge couldn't move, the sides split evenly and have no edge.
- * The code view's stylesheet draws the same (`--lo-side-old` in `code/view.css`).
+ * twice `SIDE_MIN` or less, where the edge couldn't move, the sides split evenly and have no edge,
+ * though the code view draws a diff narrower than twice `SIDE_MIN` inline. The code view's
+ * stylesheet draws the same (`--lo-side-old` in `code/view.css`).
  */
 export function fitSides(share: number | undefined, width: number): FittedSides {
   if (width <= 2 * SIDE_MIN) return { old: width / 2 };

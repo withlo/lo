@@ -236,9 +236,16 @@ where the action's target is.
   its tooltip. What's cut short keeps `min-w-cut` at least, 48 px or all of its words where they're
   shorter, so `main` isn't padded, and what can't keep that goes whole: the PR header gives up its
   branches, with "wants to merge" and the arrow, and the merge status its detail, never cut to a
-  letter. The diff bar is the revisions note, then a `HintRow` of Compare revisions and the view's
-  own controls, 16 px apart: narrow, it drops the hint's chips, then the hint, so no two groups
-  touch.
+  letter. What it gives up that nothing else in the row says, as the merge status's detail or the
+  note's facts, is still heard (`data-heard`), as a given-up title is. The PR header's first row
+  cuts its title, and gives up "Submit review…"'s key chip, then the merge status's detail, then its
+  words, which leave its ball with the verdict and the reasons as its tooltip, so nothing overlaps
+  it. The diff bar is the revisions note, then Compare revisions and the view's own controls, 16 px
+  apart, one `HintRow`: narrow, it drops the hint's chips, then the hint, then the note's facts
+  after its first `·`, last first, so "base → r2" never cuts and no two groups touch. A diff's file
+  header gives up what follows its name (the counts, where a rename was, the tags), then cuts its
+  folders, then drops them, leaving the name with the whole path as its tooltip, and only then cuts
+  the name at its end; its end, from the threads to the `⋯`, is never cut.
 - **A choice of two to four is one `SegmentedControl`,** never buttons or pills drawn by hand: the
   header's view switch, the Files panel's Tree and Review order, the threads' filter, a comment
   box's Write and Preview, and Settings' choices are all one. Its thumb slides to the segment
@@ -742,8 +749,12 @@ Every action has a key; see `keyboard.md` for the rules and focus, and section 1
   on the seam (a header, the `+`, a marker, a fold, a thread, a box), which keeps the pointer and
   every press, even one that arrived under a pointer at rest. It shares the diff's width: each side
   keeps `lo-side-min-w` or a quarter of the diff, whichever is wider, and at twice `lo-side-min-w`
-  or less the sides split evenly with no handle. As it moves, the first row under the pinned header
-  keeps its place and the rows stay level in every frame. Sides let go at even keep no share, as the
+  the sides split evenly with no handle. A diff narrower than that draws inline, without writing the
+  layout asked for (`diff.layout`), and side by side again as soon as it's that wide, the line at
+  the top of the screen staying where it is. Meanwhile Side by side and Inline refuse, "Widen the
+  window first": the menu dims them and the palette leaves them out, while Settings' Diff layout,
+  the preference, still changes it. As the seam moves, the first row under the pinned header keeps
+  its place and the rows stay level in every frame. Sides let go at even keep no share, as the
   default.
 - Widths never animate: a width re-wraps code. A change lands in one frame, and what arrives fades
   in with Swap. Nothing draws under its minimum: `fit` puts away the threads panel, then the left
