@@ -2,13 +2,13 @@
 // does: the verdict and what it merges into, a row for each reason it can't merge, the methods the
 // repository allows, the squash commit's text, and what merging would do: with the layers below it
 // in a GitHub stack, or, for a chain that isn't one, after converting it to one, which `gS` does
-// from here as from anywhere in the tab, offered here while the stack's tree offers it, or a layer
-// at a time from its bottom one. Where it sits is asked each time the panel opens and as its
-// stack's layers move, and until main first says, the main button is busy, "Checking…". It reads
-// the same whatever is in the way, dimmed, with why as its tooltip. Before the first read the
-// status says "Checking…", and once a read failed the panel says why. For a pull request in a merge
-// queue, or ready to join one, its place there or what's ahead, and why it left. Each of the
-// panel's keys has its control there.
+// from here as from anywhere in the tab, offered here while the stacks offer it, or a layer at a
+// time from its bottom one. Where it sits is asked each time the panel opens and as its stack's
+// layers move, and until main first says, the main button is busy, "Checking…". It reads the same
+// whatever is in the way, dimmed, with why as its tooltip. Before the first read the status says
+// "Checking…", and once a read failed the panel says why. For a pull request in a merge queue, or
+// ready to join one, its place there or what's ahead, and why it left. Each of the panel's keys has
+// its control there.
 
 import {
   Branch,
@@ -16,6 +16,7 @@ import {
   Checklist,
   Collapse,
   CommitText,
+  handOffFocus,
   HintButton,
   Key,
   MergeFoot,
@@ -31,6 +32,7 @@ import { controlOf, keyLabels, runControl } from '@lo/ui/commands';
 import {
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type MouseEvent,
@@ -186,10 +188,26 @@ function convert(id: string): void {
 function ConvertOffer({ tab, line }: { tab: PullTab; line: string }) {
   const notice = useConvertOffer(tab);
   const keys = keyOf(CONVERT);
+  // The offer leaving with focus in it, as one dismissed from its own Dismiss, whose menu gave focus
+  // back there, gives the panel focus, its reasons where it has them, not the page: it goes inert
+  // as its move starts, while it's still on the page.
+  const box = useRef<HTMLDivElement>(null);
+  const made = notice !== undefined;
+  const had = useRef(made);
+  useLayoutEffect(() => {
+    if (had.current && !made) {
+      const panel = box.current?.closest<HTMLElement>('[data-lo-scope="merge"]');
+      handOffFocus([box.current], () => [
+        panel?.querySelector<HTMLElement>('[role="listbox"]'),
+        panel,
+      ]);
+    }
+    had.current = made;
+  });
   return (
-    <Collapse open={notice !== undefined}>
+    <Collapse open={made}>
       {notice && (
-        <div className="pb-8">
+        <div ref={box} className="pb-8">
           <Offer
             {...notice}
             boxed

@@ -14,7 +14,7 @@ import { github } from '../../accounts/service.ts';
 import { overviews } from '../../overview/service.ts';
 import { settings } from '../../settings/service.ts';
 import { tabs } from '../../tab/service.ts';
-import type { Row, StackState } from '../contract.ts';
+import type { Row, StackState, StackView } from '../contract.ts';
 import type * as Finder from './finder.ts';
 import type { FinderOptions } from './finder.ts';
 import feature from './index.ts';
@@ -95,19 +95,16 @@ function row(number: number): Row {
 }
 
 /** Tab `t1`'s stack, #82 to #85, on #84, with the offer to convert it over its tree. */
-const STACK: StackState = {
-  id: 't1',
-  stack: {
-    kind: 'stack',
-    root: 'stack/root',
-    githubStack: false,
-    rows: [82, 83, 84, 85].map(row),
-    notes: [],
-    offered: true,
-    callout: 'This branch stack merges one layer at a time.',
-  },
-  offer: null,
+const STACKED: Extract<StackView, { kind: 'stack' }> = {
+  kind: 'stack',
+  root: 'stack/root',
+  githubStack: false,
+  rows: [82, 83, 84, 85].map(row),
+  notes: [],
+  offered: true,
+  callout: 'This branch stack merges one layer at a time.',
 };
+const STACK: StackState = { id: 't1', stack: STACKED, offer: null };
 
 /**
  * Starts the feature on `database`, with tab `t1` on #84 of rozed-dev/e2e, as rozed-bot, and
@@ -223,7 +220,7 @@ describe('stacks in main', () => {
     await feature.stop?.(again.context);
   });
 
-  it('says why it can’t dismiss: no pull request in that tab, no stack there now, or Lo quitting', async () => {
+  it('says why it can’t dismiss: no pull request in that tab, no offer there now, or Lo quitting', async () => {
     const { context, finder } = started(migrated());
     /** What dismissing `notice` in tab `id` throws, by its code and message. */
     const refusal = (id: string, notice: 'convert' | 'start') => {
@@ -236,6 +233,9 @@ describe('stacks in main', () => {
     };
     expect(refusal('t9', 'start')).toEqual(['notFound', 'There’s no pull request in that tab.']);
     finder.states.set('t1', { id: 't1', stack: { kind: 'none' }, offer: null });
+    expect(refusal('t1', 'convert')).toEqual(['missing', 'That offer is no longer there.']);
+    // Dismissed or turned off since its menu opened: nothing more is kept.
+    finder.states.set('t1', { ...STACK, stack: { ...STACKED, offered: false, callout: null } });
     expect(refusal('t1', 'convert')).toEqual(['missing', 'That offer is no longer there.']);
     await feature.stop?.(context);
     expect(refusal('t1', 'start')).toEqual(['stopped', 'Lo is quitting.']);

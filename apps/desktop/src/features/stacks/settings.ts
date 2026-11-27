@@ -20,7 +20,7 @@ export const offerConvert = defineSetting(
     label: 'Offer GitHub stacks',
     named: 'the offer of GitHub stacks',
     description:
-      'Over a branch stack’s tree and merge panel, an offer to convert it to a GitHub stack.',
+      'In a branch stack’s tree and merge panel, an offer to convert it to a GitHub stack.',
   },
 );
 

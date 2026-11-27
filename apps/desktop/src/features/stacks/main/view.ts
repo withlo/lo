@@ -66,7 +66,10 @@ export interface ShownRow {
 /** A tab's stack, what to keep of it, and the layers to read the state of. */
 export interface ViewOutput {
   readonly view: StackView;
-  /** Which offer `view`'s callout is, where it has one. */
+  /**
+   * Which offer `view`'s callout is, where it has one, or would be, before the layers' state is
+   * read.
+   */
   readonly callout?: CalloutKind | undefined;
   readonly shown: Shown | undefined;
   /** The node IDs of the layers whose state the tree shows, bottom first: none for no stack. */
@@ -320,22 +323,24 @@ function overviewOf(
 }
 
 /**
- * Which offer to make the chain through the layer on screen a GitHub stack the tree makes, and what
- * it says, while the core would plan it. The Stacks API is taken to be there until `gS` finds otherwise, and the layers'
- * state must have been read, to know none of the chain is in a merge queue.
+ * Which offer to make the chain through the layer on screen a GitHub stack the tree makes, while
+ * the core would plan it, and what it says, once the layers' state has been read, to know none of
+ * the chain is in a merge queue. Before then, which offer it would be, with no line, so an offer
+ * the merge panel makes meanwhile is kept, and dismissed, as the one the tree will make. The Stacks
+ * API is taken to be there until `gS` finds otherwise.
  */
 function calloutOf(
   input: ViewInput,
   forest: Stacks,
-): { readonly kind: CalloutKind; readonly line: string } | null {
+): { readonly kind: CalloutKind; readonly line: string | null } | null {
   const { layers } = input;
-  if (!layers) return null;
-  const queued = layers.layers.flatMap((read) => (read.isInMergeQueue ? [read.number] : []));
+  const queued = layers?.layers.flatMap((read) => (read.isInMergeQueue ? [read.number] : [])) ?? [];
   const conversion = planConversion(forest, input.number, { stacksApi: true, queued });
   if (conversion.kind !== 'plan') return null;
-  const read = new Set(layers.layers.map((layer) => layer.number));
-  if (!conversion.plan.path.every((number) => read.has(number))) return null;
-  return { kind: calloutKind(conversion.plan), line: calloutText(conversion.plan) };
+  const kind = calloutKind(conversion.plan);
+  const read = new Set(layers?.layers.map((layer) => layer.number));
+  if (!conversion.plan.path.every((number) => read.has(number))) return { kind, line: null };
+  return { kind, line: calloutText(conversion.plan) };
 }
 
 /** What the tree says under the rows of `stack`: what Lo couldn't read, and loops. */

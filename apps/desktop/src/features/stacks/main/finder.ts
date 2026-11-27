@@ -143,7 +143,7 @@ interface Followed {
   start: LayerStart | undefined;
   /** The start its banner offers, if any, and the start the stack says it is. */
   offered: { readonly offer: Offer; readonly start: LayerStart | undefined } | undefined;
-  /** Which offer its stack's tree makes, dismissed or not, if any. */
+  /** Which offer its stack's tree makes, or will once its layers are read, dismissed or not. */
   callout: CalloutKind | undefined;
 }
 
@@ -244,7 +244,10 @@ export class StackFinder {
     return this.#followed.get(id)?.state;
   }
 
-  /** Which offer tab `id`'s stack's tree makes now, dismissed or not, if any. */
+  /**
+   * Which offer tab `id`'s stack's tree makes now, or will once its layers are read, dismissed or
+   * not, if any.
+   */
   callout(id: string): CalloutKind | undefined {
     return this.#followed.get(id)?.callout;
   }

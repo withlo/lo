@@ -5,7 +5,7 @@ import { Fragment, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 
 import { useTakeFocus } from './focus.ts';
 import { Key, keyAria } from './Key.tsx';
-import { giveFocusBack, useHeld, useOnClose } from './motion.ts';
+import { focusStillIn, giveFocusBack, useHeld, useOnClose } from './motion.ts';
 
 /** One action in a context menu. */
 export interface ContextMenuItem {
@@ -146,7 +146,10 @@ export function ContextMenu({
         >
           <Menu.Popup
             ref={mounted}
-            finalFocus={() => !finalFocus?.isConnected}
+            // Base UI gives focus back only where Lo couldn't: the element left the page before the
+            // menu had gone, and focus with it. Focus that has gone somewhere else by then, as to
+            // the panel an offer dismissed from its own Dismiss was in, stays there.
+            finalFocus={() => !finalFocus?.isConnected && focusStillIn(popup.current)}
             // Leaving, it takes no focus: a caller that focuses something in it as it closes, a
             // frame or two on, would leave focus on nothing once it's gone.
             inert={!shown}

@@ -9,9 +9,10 @@
 // diff is drawn offers that in a banner.
 
 import { STACK_PULLS, writeStackRemote } from '@lo/testing/git';
-import type { Page } from '@playwright/test';
+import type { ElectronApplication, Page } from '@playwright/test';
 
 import type { DiffState } from '../src/features/diff/contract.ts';
+import type { Placement } from '../src/features/merge/contract.ts';
 import type { StackState } from '../src/features/stacks/contract.ts';
 import { browsed, DIFF_FIRST, expect, onStacks as test, STACK, tabBanners } from './app.ts';
 
@@ -126,6 +127,36 @@ async function inDiff(page: Page): Promise<void> {
   await type(page, 'g', 'g');
 }
 
+/** What the offer of a GitHub stack over #C's tree, and in its merge panel, says. */
+const ONE_AT_A_TIME = 'This branch stack merges one layer at a time.';
+
+/**
+ * Has main say #C could merge once its chain is a GitHub stack, as it would from the reads that
+ * say where a layer sits in its merge panel, which the cassette doesn't have.
+ */
+async function convertible(app: ElectronApplication): Promise<void> {
+  const place = { kind: 'convert', offer: ONE_AT_A_TIME } satisfies Placement;
+  await app.evaluate(({ ipcMain }, value) => {
+    ipcMain.removeHandler('merge.place');
+    ipcMain.handle('merge.place', () => ({ ok: true, value }));
+  }, place);
+}
+
+/** The header's merge status, which opens the merge panel. */
+const mergeStatus = (page: Page) =>
+  page.locator('header.pr-header:visible button[aria-haspopup="dialog"]');
+
+/** The merge panel, once open. */
+const mergePanel = (page: Page) => page.locator('[data-lo-scope="merge"]');
+
+/** The offer of a GitHub stack's button, over the tree or in the merge panel. */
+const convertIn = (place: ReturnType<Page['locator']>) =>
+  place.getByRole('button', { name: /^Convert to GitHub stack/ });
+
+/** The open Dismiss menu's rows. */
+const dismissChoices = (page: Page) =>
+  page.getByRole('menu', { name: 'Dismiss' }).getByRole('menuitem');
+
 test('draws the stack above the files, with each layer’s marks, the offer and the notes', async ({
   page,
 }) => {
@@ -170,6 +201,10 @@ test('draws the stack above the files, with each layer’s marks, the offer and 
   await expect(dismiss).toBeFocused();
   await page.keyboard.press('Shift+F10');
   await expect(choices).toHaveText([/^Dismiss for this stack/, /^Dismiss for all stacks/]);
+  // From the keyboard, the first row is highlighted a frame after the menu draws.
+  await expect(choices.and(page.locator('[data-highlighted]'))).toHaveText(
+    /^Dismiss for this stack/,
+  );
   await page.keyboard.press('Enter');
   await expect(stack.getByRole('button', { name: /^Convert to GitHub stack/ })).toHaveCount(0);
   await expect(treeOf(page)).toBeFocused();
@@ -193,24 +228,16 @@ test('the merge panel offers the GitHub stack the tree offers, and a dismissal i
   page,
 }) => {
   test.setTimeout(90_000);
-  // The cassette has none of what main reads to say where a layer sits in its merge panel: main
-  // says #C could merge once its chain is a GitHub stack, as it would from those reads.
-  await app.evaluate(({ ipcMain }, offer) => {
-    ipcMain.removeHandler('merge.place');
-    ipcMain.handle('merge.place', () => ({ ok: true, value: { kind: 'convert', offer } }));
-  }, 'This branch stack merges one layer at a time.');
+  await convertible(app);
   await open(page, STACK.c);
   const tree = page.getByRole('region', { name: 'Stack' });
-  const status = page.locator('header.pr-header:visible button[aria-haspopup="dialog"]');
-  const panel = page.locator('[data-lo-scope="merge"]');
-  /** The offer's button, over the tree or in the merge panel. */
-  const convert = (place: typeof tree) =>
-    place.getByRole('button', { name: /^Convert to GitHub stack/ });
-  await expect(convert(tree)).toBeVisible({ timeout: 20_000 });
+  const status = mergeStatus(page);
+  const panel = mergePanel(page);
+  await expect(convertIn(tree)).toBeVisible({ timeout: 20_000 });
   await expect(status).toContainText('Ready to merge', { timeout: 20_000 });
   await status.click();
-  await expect(panel.getByText('This branch stack merges one layer at a time.')).toBeVisible();
-  await expect(convert(panel)).toBeVisible();
+  await expect(panel.getByText(ONE_AT_A_TIME)).toBeVisible();
+  await expect(convertIn(panel)).toBeVisible();
   // Each change to the page, noted as whether each offer is there and not leaving: none has one
   // without the other.
   await page.evaluate(() => {
@@ -234,11 +261,11 @@ test('the merge panel offers the GitHub stack the tree offers, and a dismissal i
   // The panel's Dismiss asks where, as the tree's does. For all stacks, both go, and the panel
   // stays, with its keys, the method switch under its head.
   await panel.getByRole('button', { name: 'Dismiss' }).click();
-  const choices = page.getByRole('menu', { name: 'Dismiss' }).getByRole('menuitem');
+  const choices = dismissChoices(page);
   await expect(choices).toHaveText([/^Dismiss for this stack/, /^Dismiss for all stacks/]);
   await choices.filter({ hasText: /^Dismiss for all stacks/ }).click();
-  await expect(convert(tree)).toHaveCount(0);
-  await expect(convert(panel)).toHaveCount(0);
+  await expect(convertIn(tree)).toHaveCount(0);
+  await expect(convertIn(panel)).toHaveCount(0);
   await expect(panel.getByRole('radiogroup')).toBeVisible();
   await expect.poll(() => scopeOf(page)).toBe('merge');
   expect(await offersSeen()).toContain('true true');
@@ -250,8 +277,8 @@ test('the merge panel offers the GitHub stack the tree offers, and a dismissal i
   await page.evaluate(() =>
     window.lo.invoke('settings.set', { key: 'stacks.offerConvert', value: true }),
   );
-  await expect(convert(panel)).toBeVisible({ timeout: 10_000 });
-  await expect(convert(tree)).toBeVisible();
+  await expect(convertIn(panel)).toBeVisible({ timeout: 10_000 });
+  await expect(convertIn(tree)).toBeVisible();
   expect((await offersSeen()).at(-1)).toBe('true true');
   expect(await offersSeen()).not.toContain('true false');
   expect(await offersSeen()).not.toContain('false true');
@@ -262,15 +289,47 @@ test('the merge panel offers the GitHub stack the tree offers, and a dismissal i
   await expect(panel).toHaveCount(0);
   await tree.getByRole('button', { name: 'Dismiss' }).click();
   await choices.filter({ hasText: /^Dismiss for this stack/ }).click();
-  await expect(convert(tree)).toHaveCount(0);
+  await expect(convertIn(tree)).toHaveCount(0);
   await status.click();
   await expect(panel.getByRole('radiogroup')).toBeVisible();
   await expect(panel.getByRole('button', { name: /^Merge #/ })).toHaveAttribute(
     'aria-description',
     /\bConvert\b/,
   );
-  await expect(convert(panel)).toHaveCount(0);
+  await expect(convertIn(panel)).toHaveCount(0);
   await expect(panel.getByRole('button', { name: 'Dismiss' })).toHaveCount(0);
+});
+
+test.describe('with moves on', () => {
+  test.use({ motion: 'on' });
+
+  test('the merge panel keeps the keys once its offer of a GitHub stack, dismissed there, has gone', async ({
+    app,
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    await convertible(app);
+    await open(page, STACK.c);
+    const panel = mergePanel(page);
+    await expect(mergeStatus(page)).toContainText('Ready to merge', { timeout: 20_000 });
+    await mergeStatus(page).click();
+    await expect(convertIn(panel)).toBeVisible({ timeout: 20_000 });
+    // The menu gives focus back to Dismiss, which leaves with the offer, in its move, while the
+    // menu fades: once both have gone, the panel has the keys.
+    await panel.getByRole('button', { name: 'Dismiss' }).click();
+    await dismissChoices(page)
+      .filter({ hasText: /^Dismiss for this stack/ })
+      .click();
+    await expect(panel.locator('[data-lo-scope="notice"]')).toHaveCount(0);
+    await expect(page.getByRole('menu', { name: 'Dismiss' })).toHaveCount(0);
+    await expect.poll(() => scopeOf(page)).toBe('merge');
+    // `⇧⇥` goes to the previous merge method, as it does anywhere in the panel: round to a rebase,
+    // whose commit text isn't read.
+    const chosen = panel.locator('[role="radio"][aria-checked="true"]');
+    await expect(chosen).toHaveText('Merge commit');
+    await page.keyboard.press('Shift+Tab');
+    await expect(chosen).toHaveText('Rebase');
+  });
 });
 
 test(']s and [s walk the layers in the tree’s order, in one tab, and stop at the ends; and a link to any layer shows it in the tab its stack is in', async ({
