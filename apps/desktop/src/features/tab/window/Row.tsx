@@ -206,6 +206,16 @@ export interface ViewsRowProps {
   readonly focus: ViewFocus;
   /** Which sheets are drawn: both, side by side, or one of them alone. */
   readonly drawn: Sheet | 'both';
+  /**
+   * A drawn sheet that a switch brings on screen, drawn unseen while the view it shows lays out:
+   * then it fades in over the sheet it replaces.
+   */
+  readonly coming?: Sheet | undefined;
+  /**
+   * A sheet no longer drawn that a switch leaves on screen, under the drawn ones and inert, until
+   * what replaces it has faded in over it.
+   */
+  readonly going?: Sheet | undefined;
   /** The pull request can't be shown: the edge between two views isn't there. */
   readonly failed: boolean;
   /** What each sheet holds: its views, each drawn by the tab. */
@@ -243,12 +253,15 @@ function draggedViews(room: number): Omit<SplitterProps, 'label' | 'value' | 'ra
  * code's, `lo-sp-8` of chrome apart, that gap being the edge between them. The sheet not drawn
  * stays, unseen and inert, over the one that is, so what it holds keeps its place and is laid out
  * at the width it next comes at. A sheet that comes on screen fades in, unless the window's own
- * widening brought it back, or the tab is first drawn.
+ * widening brought it back, or the tab is first drawn; one a switch brings, once what it shows has
+ * laid out, over the one it replaces, which stays under it until then.
  */
 export function ViewsRow({
   there,
   focus,
   drawn,
+  coming,
+  going,
   failed,
   reading,
   code,
@@ -263,10 +276,12 @@ export function ViewsRow({
   const [readingWidth = 0, codeWidth = 0] = fitted.views;
   const sheets = { reading: useRef<HTMLElement>(null), code: useRef<HTMLElement>(null) };
   const shows = (sheet: Sheet) => both || drawn === sheet;
+  // On screen: drawn and not still coming, or left by a switch, under the one coming.
+  const seen = (sheet: Sheet) => (shows(sheet) && sheet !== coming) || sheet === going;
   const last = useRef<{ reading: boolean; code: boolean; width: number | undefined }>(undefined);
   const width = row.getState().width;
   useLayoutEffect(() => {
-    const now = { reading: shows('reading'), code: shows('code'), width };
+    const now = { reading: seen('reading'), code: seen('code'), width };
     const was = last.current;
     last.current = now;
     if (!was || was.width !== width) return;
@@ -276,11 +291,14 @@ export function ViewsRow({
     }
   });
   const sheetClass = (sheet: Sheet) => {
+    if (sheet === going) return 'absolute inset-0 -z-1 flex flex-col overflow-hidden sheet';
     if (!shows(sheet)) return 'invisible absolute inset-0 flex flex-col overflow-hidden sheet';
     const grows = both && sheet === 'reading' ? 'flex-none' : 'min-w-0 flex-1';
-    return `flex min-h-0 flex-col overflow-hidden sheet ${grows}`;
+    const unseen = sheet === coming ? 'pointer-events-none opacity-0' : '';
+    return `flex min-h-0 flex-col overflow-hidden sheet ${grows} ${unseen}`;
   };
-  const overIn: Sheet = both ? 'code' : drawn;
+  // With the bar of what's seen until what comes is.
+  const overIn: Sheet = both ? 'code' : coming !== undefined && going !== undefined ? going : drawn;
   const sheetOf = (sheet: Sheet, content: ReactNode) => (
     <section
       ref={sheets[sheet]}
@@ -296,7 +314,10 @@ export function ViewsRow({
     </section>
   );
   return (
-    <div className="relative flex min-h-0 min-w-0 flex-1" data-lo-views={both ? 'two' : 'one'}>
+    <div
+      className="relative isolate flex min-h-0 min-w-0 flex-1"
+      data-lo-views={both ? 'two' : 'one'}
+    >
       {sheetOf('reading', reading)}
       {both && !failed && (
         <Splitter

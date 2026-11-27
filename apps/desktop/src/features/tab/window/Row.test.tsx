@@ -15,7 +15,7 @@ import {
   viewCounts,
   type There,
 } from './layout.ts';
-import { LeftPanel, RightPanel } from './Row.tsx';
+import { LeftPanel, RightPanel, ViewsRow, type Sheet } from './Row.tsx';
 import { setRowSizes } from './sizes.testing.ts';
 
 vi.mock('./main.ts', () => ({
@@ -230,5 +230,87 @@ describe('a panel arriving', () => {
     await act(() => new Promise((done) => requestAnimationFrame(() => done(undefined))));
     await settle(() => row.setState({ width: 1440 }));
     expect(tab.right()?.classList.contains('move-swap')).toBe(false);
+  });
+});
+
+interface Switch {
+  readonly drawn: Sheet;
+  readonly coming?: Sheet;
+  readonly going?: Sheet;
+}
+
+/** The middle's two sheets, one drawn alone, with a run's bar over what's seen. */
+function Views({ drawn, coming, going }: Switch) {
+  return (
+    <ViewsRow
+      there={there}
+      focus={drawn}
+      drawn={drawn}
+      coming={coming}
+      going={going}
+      failed={false}
+      reading={<p>The overview</p>}
+      code={<p>The diff</p>}
+      over={<p data-bar="">Layers 2–3</p>}
+      labels={{ reading: 'Overview', code: 'Code beside' }}
+      onFocus={() => {}}
+    />
+  );
+}
+
+describe('a switch to a view in the other sheet', () => {
+  it('keeps the sheet it leaves on screen, under the one coming, until that one has faded in', async () => {
+    layout.setState({ left: { open: false }, threads: { open: false } });
+    row.setState({ width: 1440 });
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    onTestFinished(() => {
+      act(() => root.unmount());
+      container.remove();
+    });
+    const draw = (props: Switch) => settle(() => root.render(<Views {...props} />));
+    const sheet = (name: Sheet) =>
+      container.querySelector<HTMLElement>(`[data-lo-sheet="${name}"]`)!;
+    const bar = () => container.querySelector('[data-bar]')?.closest('[data-lo-sheet]');
+    await draw({ drawn: 'reading' });
+    // The diff lays out unseen, taking focus but not the pointer, over the overview, which takes
+    // nothing and keeps the run's bar.
+    await draw({ drawn: 'code', coming: 'code', going: 'reading' });
+    expect(sheet('code').classList).toContain('opacity-0');
+    expect(sheet('code').hasAttribute('inert')).toBe(false);
+    expect(sheet('reading').classList).not.toContain('invisible');
+    expect(sheet('reading').classList).toContain('-z-1');
+    expect(sheet('reading').hasAttribute('inert')).toBe(true);
+    expect(bar()).toBe(sheet('reading'));
+    // Laid out, it fades in over the overview, which stays under it.
+    await draw({ drawn: 'code', going: 'reading' });
+    expect(sheet('code').classList).not.toContain('opacity-0');
+    expect(sheet('code').classList).toContain('move-swap');
+    expect(sheet('reading').classList).not.toContain('invisible');
+    expect(bar()).toBe(sheet('code'));
+    await draw({ drawn: 'code' });
+    expect(sheet('reading').classList).toContain('invisible');
+  });
+
+  it('puts the sheet it left back with no move when it’s asked for again meanwhile', async () => {
+    layout.setState({ left: { open: false }, threads: { open: false } });
+    row.setState({ width: 1440 });
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container);
+    onTestFinished(() => {
+      act(() => root.unmount());
+      container.remove();
+    });
+    const draw = (props: Switch) => settle(() => root.render(<Views {...props} />));
+    const sheet = (name: Sheet) =>
+      container.querySelector<HTMLElement>(`[data-lo-sheet="${name}"]`)!;
+    await draw({ drawn: 'reading' });
+    await draw({ drawn: 'code', coming: 'code', going: 'reading' });
+    await draw({ drawn: 'reading' });
+    expect(sheet('reading').classList).not.toContain('move-swap');
+    expect(sheet('reading').hasAttribute('inert')).toBe(false);
+    expect(sheet('code').classList).toContain('invisible');
   });
 });

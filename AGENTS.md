@@ -959,6 +959,15 @@ status bar.
   the window's middle (`focusNowhere`), so keys typed meanwhile go on in the view that takes it
   next. With two views, only the one with focus takes focus that's nowhere in particular
   (`focusNowhereFor`), and a waiting view's note keeps focus for that view, not the one beside it.
+- A switch from one middle view to another keeps the view it leaves on screen, `inert`, until the
+  one it shows has laid out (`tab/window/hold.ts`): a frame after it's drawn, once it shows no
+  `Loading`, or as a wait would show that `Loading` (`LOADING_DELAY_MS` after the key), whichever
+  comes first, so a switch never holds longer. The view coming is drawn unseen over the other
+  meanwhile, not `inert`, so it takes focus that's free and keys typed meanwhile land in it; then it
+  fades in over the other, itself in its sheet or its sheet over the other's, and the other goes
+  once the move has run. A view that only comes or only goes, as the code beside one does, does so
+  at once. A middle view with nothing to draw yet draws `MiddlePlaceholder`, never nothing, or a
+  switch to it shows it empty.
 - So is the old side's share of a side-by-side diff (`sides`, unset while even), for every diff in
   every tab: the view draws it (`DiffView.setSides`) and says when its seam's drag or double-click
   changes it (`DiffEvents.sides`). `fitSides` keeps each side at its minimum. `>`, `<` and `=` size

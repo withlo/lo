@@ -316,13 +316,15 @@ time.
 - **`Swap`** (`id`, `className`) is one box whose content fades in when `id` changes:
   `<Swap id={loaded ? 'diff' : 'loading'}>…</Swap>`. What's there when it first draws doesn't move.
   It draws its content anew for each `id`. Content that must not be drawn anew, such as a code view
-  or middle views kept drawn while hidden, takes `keep`: the box and what's in it stay, and the box
-  fades in as it is in the frame `id` changes, so change the content in that frame too. With `keep`,
-  an `id` of `undefined` names nothing yet, and what it names first doesn't move. A box `keep` fades
-  in over nothing, so content that replaces other content it can't draw over, such as a diff's next
-  code view, goes in a layer of its own over the last one instead: it takes `swapIn(layer)` once
-  it's laid out, and the last layer goes once the move has run (`whenSettled`), so no frame shows
-  the box empty. Never put `move-swap` on an element yourself.
+  or middle views kept drawn while hidden, goes in a layer of its own over what it replaces: drawn
+  unseen (`opacity-0`, `pointer-events-none`, not `inert`, so it can take focus and keys meanwhile)
+  until it's laid out, then `swapIn(layer)`, while the last layer stays drawn under it, `inert`,
+  until the move has run (`whenSettled`). So no frame shows the box empty. Never fade a box in over
+  nothing where something was drawn: a box fading in from nothing shows the ground for most of the
+  move. A layer is laid out a frame after it's drawn, once it shows no `Loading` (`loadingIn`); one
+  that still does when a wait would show it (`LOADING_DELAY_MS`) comes then, with its wait, so
+  nothing is held longer. The diff's code views and the switch between a tab's middle views work
+  this way. Never put `move-swap` on an element yourself.
 - **`reveal(element, { block })`** brings an element into view by scrolling its own pane and nothing
   else. Use it in place of `scrollIntoView`, which scrolls the window's shell too. A jump (`start`,
   `center`, `end`) lands; keeping a cursor in view (`nearest`, the default) doesn't. An element
