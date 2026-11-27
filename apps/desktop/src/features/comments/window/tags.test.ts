@@ -12,12 +12,26 @@ const BUGBOT = [
 ].join('\n');
 
 describe('holdsTag', () => {
-  it('finds a tag, a closing tag and a comment: `<` then a letter, `/` or `!`', () => {
+  it('finds a tag, a closing tag, a declaration and an instruction: `<` then a letter, `/`, `!` or `?`', () => {
     expect(holdsTag(BUGBOT)).toBe(true);
     expect(holdsTag('Line one<br>line two')).toBe(true);
     expect(holdsTag('ends here</details>')).toBe(true);
-    expect(holdsTag('<!-- hidden -->Shown')).toBe(true);
+    expect(holdsTag('<!DOCTYPE html>')).toBe(true);
+    expect(holdsTag('<?php echo 1; ?>')).toBe(true);
     expect(holdsTag('<DIV>upper case</DIV>')).toBe(true);
+  });
+
+  it('finds none in a whole HTML comment or an autolink, which Lo’s Markdown shows as GitHub does', () => {
+    expect(holdsTag('<!-- hidden -->Shown')).toBe(false);
+    expect(holdsTag('## Summary\n\n<!--\nWhat changed, and why.\n-->\n\nFixes the thing.')).toBe(
+      false,
+    );
+    expect(holdsTag('See <https://example.com/a?b=1> or mail <me@example.com>.')).toBe(false);
+    // Beside a tag, or one it can’t be sure of: a comment not closed, or that holds a backtick.
+    expect(holdsTag('<!-- note --> and <b>bold</b>')).toBe(true);
+    expect(holdsTag('<!-- not closed')).toBe(true);
+    expect(holdsTag('<!-- holds `code` -->')).toBe(true);
+    expect(holdsTag('<https://example.com> <b>bold</b>')).toBe(true);
   });
 
   it('finds none in text whose `<` starts no tag', () => {
@@ -40,6 +54,15 @@ describe('holdsTag', () => {
     expect(holdsTag('```\ncode\n```\n<b>after</b>')).toBe(true);
     // In a span a backslash is itself, so it ends at the tick after it.
     expect(holdsTag('`a\\` <b>b</b> `c`')).toBe(true);
+    // An escape takes a run's first tick only: the rest of it opens a span.
+    expect(holdsTag('\\`` a ` <b>x</b> `')).toBe(true);
+    // A table's cells are cut at their pipes before their code is read.
+    expect(holdsTag('| a | b |\n| - | - |\n| `x | <b>y</b> | z` |')).toBe(true);
+    // A tick in a link's address or title opens no code.
+    expect(holdsTag('[a](`x) <b>y</b> `z`')).toBe(true);
+    expect(holdsTag('[a](u "`") <b>y</b> `z`')).toBe(true);
+    // A closing fence indented as far as a list's content, past three spaces.
+    expect(holdsTag('- a\n  ```\n  x\n     ```\n  <b>y</b>\n  ```')).toBe(true);
   });
 
   it('reads as text what it can’t tell is code, so no tag is missed', () => {

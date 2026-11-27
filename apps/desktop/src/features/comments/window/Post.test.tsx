@@ -9,14 +9,19 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeAll, beforeEach, expect, onTestFinished, test, vi } from 'vitest';
 
 import type { Bodies } from '../contract.ts';
-import type { RenderInput, Rendered } from '../jobs.ts';
+import { HTML_LIMIT, type RenderInput, type Rendered } from '../jobs.ts';
+import { FIRST_WAIT } from './bodies.ts';
 import { Post } from './Post.tsx';
-import { keepOnly } from './store.ts';
+import { keepOnly, wroteText } from './store.ts';
 
-/** What the test does with each ask for posts' HTML, and each tree asked of the background. */
+/**
+ * What the test does with each ask for posts' HTML, each tree asked of the background, and whether
+ * a tree from HTML fails to be made, as a job does when the background process restarts.
+ */
 const fake = vi.hoisted(() => ({
   ask: undefined as ((posts: string[]) => Promise<Bodies>) | undefined,
   renders: [] as RenderInput[],
+  failHtml: false,
 }));
 
 vi.mock('./main.ts', () => ({
@@ -27,6 +32,9 @@ vi.mock('./main.ts', () => ({
   commentsJobs: () => ({
     render: (input: RenderInput): Promise<Rendered> => {
       fake.renders.push(input);
+      if (input.html !== null && fake.failHtml) {
+        return Promise.reject(new Error('The background process restarted.'));
+      }
       const options = { repo: { owner: 'rozed-dev', name: 'e2e' }, page: input.page };
       const tree =
         input.html === null
@@ -44,6 +52,7 @@ beforeAll(() => {
 beforeEach(() => {
   fake.ask = undefined;
   fake.renders = [];
+  fake.failHtml = false;
 });
 
 afterEach(() => {
@@ -56,6 +65,8 @@ const PULL = { owner: 'rozed-dev', repo: 'e2e', number: 94 };
 /** A review's text with tags in it, as a bot writes one. */
 const TAGGED = '<sup>Reviewed by **Bugbot** for commit 73ae3d3.</sup>';
 const RENDERED = '<p><sup>Reviewed by <strong>Bugbot</strong> for commit 73ae3d3.</sup></p>';
+/** Its words as Lo's reading of its Markdown draws them: its tags as written. */
+const AS_WRITTEN = '<sup>Reviewed by Bugbot for commit 73ae3d3.</sup>';
 
 /** Lets what's waiting run: the store's ask, its answer, and the tree from the background. */
 async function settle(): Promise<void> {
@@ -74,11 +85,37 @@ function drawn(markdown: string, id = 'P1') {
       root.render(<Post view="v1" post={{ kind: 'post', id }} markdown={text} pull={PULL} />),
     );
   draw(markdown);
-  onTestFinished(() => {
+  let gone = false;
+  const unmount = () => {
+    if (gone) return;
+    gone = true;
     act(() => root.unmount());
     element.remove();
+  };
+  onTestFinished(unmount);
+  return { element, post: element.querySelector('[data-lo-post]'), draw, unmount };
+}
+
+/** How many skeleton lines `post` has drawn from now on, those it shows now included. */
+function linesFrom(post: Element | null): () => number {
+  let lines = post?.querySelectorAll('.skeleton').length ?? 0;
+  const watching = new MutationObserver((changes) => {
+    for (const { addedNodes } of changes) {
+      for (const node of addedNodes) {
+        if (node instanceof Element) lines += node.querySelectorAll('.skeleton').length;
+      }
+    }
   });
-  return { element, draw };
+  if (post) watching.observe(post, { childList: true, subtree: true });
+  onTestFinished(() => watching.disconnect());
+  return () => lines;
+}
+
+/** Lets what's waiting run, with the clock faked, `ms` on. */
+async function pass(ms: number): Promise<void> {
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(ms);
+  });
 }
 
 /** Answers each ask with `html` for every post asked for. */
@@ -141,6 +178,86 @@ test('a post whose Markdown holds a tag shows its Markdown when its rendering ca
   await settle();
   expect(post?.querySelector('.skeleton')).toBeNull();
   expect(post?.textContent).toContain('Bugbot');
+});
+
+test('a comment with a tag that this window sent shows its text from the first frame, and never skeleton lines', async () => {
+  wroteText('v1', `${TAGGED}\n`);
+  let answer: (() => void) | undefined;
+  fake.ask = (posts) =>
+    new Promise((resolve) => {
+      answer = () => void answering(RENDERED)(posts).then(resolve);
+    });
+  const { post } = drawn(TAGGED);
+  const lines = linesFrom(post);
+  // As the box showed it as it was sent, then from its Markdown, then GitHub's rendering.
+  expect(post?.textContent).toBe(TAGGED);
+  await settle();
+  expect(post?.textContent).toBe(AS_WRITTEN);
+  answer?.();
+  await settle();
+  expect(post?.textContent).toBe('Reviewed by Bugbot for commit 73ae3d3.');
+  expect(lines()).toBe(0);
+  expect(post?.querySelector('.move-swap')).toBeNull();
+});
+
+test('a post with a tag whose tree can’t be made from its rendering shows its Markdown', async () => {
+  fake.ask = answering(RENDERED);
+  fake.failHtml = true;
+  const { post } = drawn(TAGGED);
+  expect(post?.querySelectorAll('.skeleton')).toHaveLength(3);
+  await settle();
+  expect(post?.querySelector('.skeleton')).toBeNull();
+  expect(post?.textContent).toBe(AS_WRITTEN);
+  expect(fake.renders.map((input) => (input.html === null ? 'markdown' : 'html'))).toEqual([
+    'html',
+    'markdown',
+  ]);
+});
+
+test('a post with a tag whose read failed keeps its Markdown, with no skeleton lines, until a read again brings its rendering', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  onTestFinished(() => {
+    vi.useRealTimers();
+  });
+  fake.ask = () => Promise.reject(new Error('offline'));
+  const { post } = drawn(TAGGED);
+  await pass(0);
+  expect(post?.querySelector('.skeleton')).toBeNull();
+  expect(post?.textContent).toBe(AS_WRITTEN);
+  const lines = linesFrom(post);
+  fake.ask = answering(RENDERED);
+  await pass(FIRST_WAIT);
+  expect(post?.textContent).toBe('Reviewed by Bugbot for commit 73ae3d3.');
+  expect(lines()).toBe(0);
+});
+
+test('a post with a tag GitHub gave nothing for, or whose rendering is longer than Lo reads, shows its Markdown', async () => {
+  const long = `<p>${'x'.repeat(HTML_LIMIT)}</p>`;
+  fake.ask = (posts) =>
+    Promise.resolve({
+      description: null,
+      posts: posts.filter((id) => id === 'LONG').map((id) => ({ id, html: long })),
+      gone: posts.filter((id) => id === 'GONE'),
+    });
+  const gone = drawn(TAGGED, 'GONE').post;
+  const longer = drawn(TAGGED, 'LONG').post;
+  await settle();
+  for (const post of [gone, longer]) {
+    expect(post?.querySelector('.skeleton')).toBeNull();
+    expect(post?.textContent).toBe(AS_WRITTEN);
+  }
+});
+
+test('a post with a tag drawn again shows the tree it was drawn with from its first frame', async () => {
+  fake.ask = answering(RENDERED);
+  const first = drawn(TAGGED, 'AGAIN');
+  await settle();
+  expect(first.post?.textContent).toBe('Reviewed by Bugbot for commit 73ae3d3.');
+  first.unmount();
+  const { post } = drawn(TAGGED, 'AGAIN');
+  expect(post?.querySelector('.skeleton')).toBeNull();
+  expect(post?.textContent).toBe('Reviewed by Bugbot for commit 73ae3d3.');
+  expect(post?.querySelector('.move-swap')).toBeNull();
 });
 
 test('an edited post with a tag holds the room its rendering took while its new one comes', async () => {

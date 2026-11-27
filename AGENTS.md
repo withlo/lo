@@ -1472,12 +1472,19 @@ description's, for the timeline and the diff's threads alike, with its `Post` co
   then GitHub's rendering, read as untrusted (`githubTree`). Both become a tree in the background
   process (`comments.render`), with the pull request's repository as what references refer to.
 - `@lo/markdown` shows a tag in Markdown as written, so a post whose Markdown holds one (`<` then a
-  letter, `/` or `!`, outside code: `holdsTag`, in `window/tags.ts`) never shows its Markdown. Three
-  `Skeleton` lines at its line height hold its place until GitHub's rendering is in, which takes
-  theirs in one Swap. It shows its Markdown only when no rendering is coming: GitHub gave none, the
-  read failed (`BodyStore.missing`, until a read brings it), or it's longer than Lo reads. One drawn
-  from GitHub's rendering before, as before an edit, holds that height meanwhile. Where it can't
-  tell code for sure, `holdsTag` reads text, so a tag is never missed.
+  letter, `/`, `!` or `?`, outside code: `holdsTag`, in `window/tags.ts`) never shows its Markdown.
+  Three `Skeleton` lines at its line height hold its place until GitHub's rendering is in, which
+  takes theirs in one Swap. A whole HTML comment and an autolink aren't tags: `@lo/markdown` drops
+  the one and draws the other as a link. What `holdsTag` can't tell for sure is code, a comment or
+  an autolink, it reads as text, so it holds a post sooner than show a tag.
+- Such a post shows its Markdown, as one with no tag does, when the window sent or saved its text
+  (`wroteText`, from the box's `Sent` part), which showed in the box from the moment it was sent, so
+  it never leaves the screen; and when no rendering is coming: GitHub gave none, it's longer than Lo
+  reads, its tree couldn't be made from it, or reads are failing (`BodyStore.missing`: the posts a
+  failed ask asked for, and, until an ask works, every post not held). Once it shows its Markdown,
+  it keeps it until the tree from GitHub's rendering takes its place, with no lines between. A post
+  drawn from GitHub's rendering keeps the height it was drawn at while the rendering of an edit
+  comes.
 - The window asks main for posts' HTML (`comments.bodies`, read by the poller's `renderedBodies`) as
   they come on screen or near it, a hundred at most an ask, one ask at a time for each view. The
   HTML stays in the window's memory, never in main's or the poll cache, since its images' addresses

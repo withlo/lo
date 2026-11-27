@@ -1,6 +1,6 @@
 // The window's posts: their HTML as main read it, their trees as the background process made them,
-// and how tall each was last drawn from GitHub's rendering, for each view of a pull request's tab,
-// each forgotten as its tab closes.
+// and the text of the comments the window itself sent or saved, for each view of a pull request's
+// tab, each forgotten as its tab closes.
 
 import type { Rendered } from '../jobs.ts';
 import { BodyStore, type PostRef } from './bodies.ts';
@@ -20,7 +20,10 @@ export interface Drawn {
 }
 
 const drawn = new Map<string, Map<string, Drawn>>();
-const heights = new Map<string, Map<string, number>>();
+const written = new Map<string, string[]>();
+
+/** How many comments' text the window keeps of each view's that it sent or saved: the newest. */
+const WRITTEN_KEPT = 50;
 
 function keyOf(post: PostRef): string {
   return post.kind === 'description' ? '#description' : post.id;
@@ -31,37 +34,40 @@ export function drawnOf(view: string, post: PostRef): Drawn | undefined {
   return drawn.get(view)?.get(keyOf(post));
 }
 
-/** `view`'s own map in `all`, made as it's first needed. */
-function ownOf<T>(all: Map<string, Map<string, T>>, view: string): Map<string, T> {
-  let own = all.get(view);
-  if (!own) {
-    own = new Map();
-    all.set(view, own);
-  }
-  return own;
-}
-
 /** Keeps the tree made for `post` on view `view`. */
 export function keepDrawn(view: string, post: PostRef, made: Drawn): void {
-  ownOf(drawn, view).set(keyOf(post), made);
+  let own = drawn.get(view);
+  if (!own) {
+    own = new Map();
+    drawn.set(view, own);
+  }
+  own.set(keyOf(post), made);
+}
+
+/** A comment's text to compare, as GitHub may give back what was sent: line ends alike, trimmed. */
+function plain(text: string): string {
+  return text.replaceAll(/\r\n?/g, '\n').trim();
 }
 
 /**
- * How tall `post` on view `view` was last drawn from GitHub's rendering, in pixels, so it can hold
- * that room while its rendering of an edit comes.
+ * Notes that the window sent or saved a comment of `text` on view `view`, which then shows its text
+ * from the moment it's sent until its card from GitHub is drawn: that card's text isn't held back
+ * for GitHub's rendering, so it never leaves the screen.
  */
-export function heightOf(view: string, post: PostRef): number | undefined {
-  return heights.get(view)?.get(keyOf(post));
+export function wroteText(view: string, text: string): void {
+  const own = written.get(view) ?? [];
+  const kept = plain(text);
+  written.set(view, [...own.filter((each) => each !== kept), kept].slice(-WRITTEN_KEPT));
 }
 
-/** Keeps how tall `post` on view `view` is, drawn from GitHub's rendering. */
-export function keepHeight(view: string, post: PostRef, height: number): void {
-  ownOf(heights, view).set(keyOf(post), height);
+/** Whether the window sent or saved a comment of `text` on view `view`, of those it keeps. */
+export function wroteHere(view: string, text: string): boolean {
+  return written.get(view)?.includes(plain(text)) ?? false;
 }
 
 /** Forgets the posts of every view but those in `kept`, as their tabs close. */
 export function keepOnly(kept: ReadonlySet<string>): void {
   bodies.keepOnly(kept);
   for (const view of drawn.keys()) if (!kept.has(view)) drawn.delete(view);
-  for (const view of heights.keys()) if (!kept.has(view)) heights.delete(view);
+  for (const view of written.keys()) if (!kept.has(view)) written.delete(view);
 }

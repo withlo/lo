@@ -989,10 +989,11 @@ editor given as its child.
 
 **A comment's tags never show as written.** A comment, a review or a description is drawn from its
 Markdown until GitHub's rendering of it is in. One whose Markdown holds an HTML tag, which only
-GitHub's rendering draws, holds three `Skeleton` lines at its line height instead (full, full and 60
-% wide), and its rendering takes their place in one Swap. Its Markdown shows only when no rendering
-is coming. Where it was drawn before, as before an edit, it keeps that height meanwhile. Draw a
-comment's text with the comments feature's `Post`, which does this.
+GitHub's rendering draws, holds three `Skeleton` lines at its line height instead (full, full and
+60%), and its rendering takes their place in one Swap. Its Markdown shows only when no rendering is
+coming, or when the reader just sent or saved it: their own text never leaves the screen. Where it
+was drawn before, as before an edit, it keeps that height meanwhile. Draw a comment's text with the
+comments feature's `Post`, which does this.
 
 ## Overviews
 

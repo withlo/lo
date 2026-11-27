@@ -1,11 +1,12 @@
 // A post's text: a comment's, a review's, a review comment's or a pull request's description, drawn
 // from GitHub's rendering of it, as GitHub's page shows it, and from its Markdown until that's
 // there, so it's never blank. A post whose Markdown holds an HTML tag, which only GitHub's
-// rendering draws, never shows its Markdown: three skeleton lines hold its place until its
-// rendering is in, which takes theirs in one Swap. Its HTML is asked for as it comes near the
-// screen, and again, while its images are on screen, before their addresses lapse. The background
-// process makes the tree; its images load through main, as the view's account, and links open
-// through main.
+// rendering draws, doesn't show its Markdown: three skeleton lines hold its place until its
+// rendering is in, which takes theirs in one Swap. It shows its Markdown all the same when the
+// window sent or saved its text, or when no rendering is coming. Its HTML is asked for as it comes
+// near the screen, and again, while its images are on screen, before their addresses lapse. The
+// background process makes the tree; its images load through main, as the view's account, and links
+// open through main.
 
 import { Skeleton, Swap } from '@lo/ui';
 import { Markdown, secureLink, type Followed } from '@lo/ui/markdown';
@@ -25,7 +26,7 @@ import { HTML_LIMIT, MARKDOWN_LIMIT, type Rendered } from '../jobs.ts';
 import { STALE_AFTER, type PostRef } from './bodies.ts';
 import { commentsJobs } from './main.ts';
 import { seen, watchNear } from './near.ts';
-import { bodies, drawnOf, heightOf, keepDrawn, keepHeight } from './store.ts';
+import { bodies, drawnOf, keepDrawn, wroteHere } from './store.ts';
 import { holdsTag } from './tags.ts';
 
 /** A pull request on github.com. */
@@ -65,7 +66,7 @@ function useHeld(view: string, post: PostRef, version: string) {
   return { held, missing };
 }
 
-/** One observer for the height of every post drawn from GitHub's rendering, and what each keeps. */
+/** One observer for the height of every post drawn from GitHub's rendering, and what each notes. */
 let sizes: ResizeObserver | undefined;
 const measured = new WeakMap<Element, (height: number) => void>();
 
@@ -93,7 +94,7 @@ function watchHeight(element: Element, keep: (height: number) => void): () => vo
 /** How wide each line is that holds a post's place while its rendering comes. */
 const LINES = ['w-full', 'w-full', 'w-3/5'] as const;
 
-/** Where a post's text goes while GitHub's rendering of it comes: three lines of its line height. */
+/** Where a post's text goes while GitHub's rendering of it comes: three lines, its line high. */
 function Waiting() {
   return LINES.map((width, line) => (
     <div key={line} className="flex h-1lh items-center">
@@ -127,37 +128,50 @@ export function Post({ view, post: given, markdown, pull, replaced }: PostProps)
   const [made, setMade] = useState(() => drawnOf(view, post));
   const [near, setNear] = useState(false);
   const image = useCallback((url: string) => postImage(view, url), [view]);
-  // A post whose Markdown holds a tag waits for its tree from GitHub's rendering, unless none is
-  // coming: GitHub gave none, the read failed, or it's longer than Lo reads.
-  const tagged = useMemo(() => holdsTag(text), [text]);
-  const coming = !missing && (held === undefined || html !== null);
+  // The tree it couldn't make, from its HTML or its Markdown: from its HTML, it's made from its
+  // Markdown instead.
+  const [failed, setFailed] = useState<{
+    readonly html: string | null;
+    readonly markdown: string;
+  }>();
+  const broken = failed !== undefined && failed.html === html && failed.markdown === text;
+  const from = broken ? null : html;
+  // A post whose Markdown holds a tag waits for its tree from GitHub's rendering, unless the window
+  // sent or saved its text, which showed until its card came, or no tree from that is coming:
+  // GitHub gave none, the read failed, it's longer than Lo reads, or its tree couldn't be made.
+  const holds = useMemo(() => holdsTag(text) && !wroteHere(view, text), [view, text]);
+  const coming = !missing && !broken && (held === undefined || html !== null);
 
   // Its tree, made anew from its HTML once that's there, or from its Markdown; the one before
   // stays until the new one is made, unless the post was edited since: then its new Markdown shows
   // at once, as text. One that waits for GitHub's rendering needs no tree of its Markdown.
   useEffect(() => {
     const kept = drawnOf(view, post);
-    if (kept && kept.html === html && kept.markdown === text) {
+    if (kept && kept.html === from && kept.markdown === text) {
       setMade(kept);
       return undefined;
     }
-    if (html === null && tagged && coming) return undefined;
+    if (from === null && holds && coming) return undefined;
     const stop = new AbortController();
     const page = `https://github.com/${owner}/${repo}/pull/${number}`;
     commentsJobs()
-      .render({ html, markdown: text, repo: { owner, name: repo }, page }, { signal: stop.signal })
+      .render(
+        { html: from, markdown: text, repo: { owner, name: repo }, page },
+        { signal: stop.signal },
+      )
       .then((rendered: Rendered) => {
         if (stop.signal.aborted) return;
-        const next = { html, markdown: text, rendered };
+        const next = { html: from, markdown: text, rendered };
         keepDrawn(view, post, next);
         setMade(next);
       })
       .catch((error: unknown) => {
         if (stop.signal.aborted) return;
         console.error("Lo couldn't draw a post:", error);
+        setFailed({ html: from, markdown: text });
       });
     return () => stop.abort();
-  }, [view, post, html, text, tagged, coming, owner, repo, number]);
+  }, [view, post, from, text, holds, coming, owner, repo, number]);
 
   const shown = made?.markdown === text ? made : undefined;
 
@@ -166,20 +180,22 @@ export function Post({ view, post: given, markdown, pull, replaced }: PostProps)
   // place, as a post's text without a tag does.
   const showing = useRef<string | undefined>(undefined);
   const waits =
-    tagged && coming && (shown === undefined || shown.html === null) && showing.current !== text;
+    holds && coming && (shown === undefined || shown.html === null) && showing.current !== text;
   useLayoutEffect(() => {
     showing.current = waits ? undefined : text;
   }, [waits, text]);
-  // Where it was drawn from GitHub's rendering before, as before an edit, it holds that room.
-  const room = waits ? heightOf(view, post) : undefined;
+  // Where it was drawn here from GitHub's rendering, as before an edit, it holds that room: as tall
+  // as it was in this place, at this width.
+  const height = useRef<number | undefined>(undefined);
+  const room = waits ? height.current : undefined;
   const rendered = !waits && shown !== undefined && shown.html !== null;
   useLayoutEffect(() => {
     const own = element.current;
     if (!rendered || !own) return undefined;
-    return watchHeight(own, (height) => {
-      if (height > 0) keepHeight(view, post, height);
+    return watchHeight(own, (drawn) => {
+      if (drawn > 0) height.current = drawn;
     });
-  }, [rendered, view, post]);
+  }, [rendered]);
 
   // Whether it's on screen or near it, which asks for its HTML.
   useEffect(() => {

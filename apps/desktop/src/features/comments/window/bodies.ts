@@ -6,8 +6,8 @@
 // edited, its HTML is no longer the post's, so it shows from its new Markdown, and is asked for
 // again. A post whose images are on screen is asked for again once its HTML is `STALE_AFTER` old,
 // before their addresses lapse. An ask that fails is tried again after a wait that doubles each
-// time, as long as the posts are still wanted, and its posts are missing meanwhile, as those GitHub
-// gave nothing for are.
+// time, as long as the posts are still wanted. Meanwhile every post it holds no HTML of is missing,
+// as those GitHub gave nothing for are, the ones not asked for yet too.
 
 import { POSTS_AN_ASK, type Bodies } from '../contract.ts';
 
@@ -114,12 +114,15 @@ export class BodyStore {
 
   /**
    * Whether no HTML of `post` at `version` is on its way for now, so it shows from its Markdown:
-   * GitHub gave none for it, or the last ask for it failed, until it's asked for again and comes.
+   * GitHub gave none for it, or the last ask for it failed, until it's asked for again and comes,
+   * or, while asks fail, it isn't held, though it was never asked for.
    */
   missing(view: string, post: PostRef, version: string): boolean {
     const bodies = this.#views.get(view);
+    if (!bodies) return false;
     const key = keyOf(post);
-    return bodies?.gone.get(key) === version || bodies?.failed.get(key) === version;
+    if (bodies.gone.get(key) === version || bodies.failed.get(key) === version) return true;
+    return bodies.failures > 0 && bodies.held.get(key)?.version !== version;
   }
 
   /**
@@ -238,7 +241,8 @@ export class BodyStore {
           `Lo couldn't read posts' HTML, and tries again in ${wait / 1000} s: ${error instanceof Error ? error.message : String(error)}`,
         );
         if (this.#views.get(view) !== bodies) return;
-        this.#tell(bodies, asked.keys());
+        // Every post not held is missing now, those still to be asked for too.
+        this.#tell(bodies, [...bodies.listeners.keys()]);
         bodies.waiting = this.#later(() => {
           bodies.waiting = undefined;
           this.#send(view, bodies);

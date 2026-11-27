@@ -19,7 +19,7 @@ import {
   type CommentBoxNote,
 } from '@lo/ui';
 import type { BoxFrame, Composer, Mode } from '@lo/ui/code';
-import { useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useSyncExternalStore, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 
@@ -43,6 +43,7 @@ import { boxKeys } from './boxkeys.ts';
 import { Preview as Rendering } from './Preview.tsx';
 import { Dropzone, UploadRows, useUploads } from './Attached.tsx';
 import { holdText, takeAddresses, UPLOADING } from './uploads.ts';
+import { wroteText } from './store.ts';
 import { held } from './threads.ts';
 import {
   BLANK,
@@ -235,6 +236,12 @@ function Sent({ box }: { box: Box }): ReactNode {
   const state = useBox(box);
   const acting = usePull(box.view)?.acting;
   const pull = pullIn(box.view);
+  // Its card, once GitHub's is drawn, shows this text until GitHub's rendering of it is in, as the
+  // box did, rather than wait for that rendering: the text never leaves the screen.
+  const sent = sendingNow(state) ? state.text : undefined;
+  useEffect(() => {
+    if (sent !== undefined) wroteText(box.view, sent);
+  }, [box.view, sent]);
   if (!sendingNow(state)) return null;
   const login = acting?.kind === 'account' ? acting.login : undefined;
   return (
