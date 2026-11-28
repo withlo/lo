@@ -5,6 +5,7 @@ export type {
   Anchor,
   BoxFrame,
   BoxParts,
+  CommentLines,
   ComposeOptions,
   Composer,
   ComposerEvents,
