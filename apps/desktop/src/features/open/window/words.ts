@@ -50,12 +50,14 @@ export function refusalReason(why: Refusal): string | undefined {
 
 /**
  * What the reader can do about a pull request the box can't open: follow GitHub's link, open it
- * anyway, sign in, or look it up again.
+ * anyway, sign in, again for an account signed out, add an account to those that can't see it, or
+ * look it up again.
  */
 export type BlockedWay =
   | { readonly kind: 'link'; readonly label: string; readonly url: string }
   | { readonly kind: 'openAnyway' }
   | { readonly kind: 'signIn'; readonly again: boolean }
+  | { readonly kind: 'addAccount' }
   | { readonly kind: 'retry' };
 
 /** A pull request the box can't open, as an error: its title, one reason, and the way on. */
@@ -100,7 +102,7 @@ export function blockedWords(
         reason: why.signedIn
           ? 'It doesn’t exist, or none of your accounts can see it.'
           : 'It doesn’t exist, or it’s private.',
-        way: { kind: 'signIn', again: false },
+        way: why.signedIn ? { kind: 'addAccount' } : { kind: 'signIn', again: false },
       };
     case 'refused': {
       const [link] = why.links;
@@ -132,6 +134,8 @@ export function wayLabel(way: BlockedWay): string {
       return 'Open anyway';
     case 'signIn':
       return way.again ? 'Sign in again' : 'Sign in with GitHub…';
+    case 'addAccount':
+      return 'Add account…';
     case 'retry':
       return 'Try again';
     default:

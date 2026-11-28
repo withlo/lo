@@ -62,7 +62,7 @@ function Account({ account }: { account: AccountSummary }) {
       note={line === undefined ? undefined : <span className="text-fg-muted">{line}</span>}
     >
       {again && (
-        <Button size="sm" onClick={fromCli ? openImport : openSignIn}>
+        <Button size="sm" onClick={fromCli ? openImport : () => openSignIn({ adds: false })}>
           {fromCli ? 'Import again' : 'Sign in again'}
         </Button>
       )}

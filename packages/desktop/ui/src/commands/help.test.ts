@@ -395,6 +395,30 @@ describe('the palette', () => {
     expect(item?.label).toBe('Merge again · 3 queued');
   });
 
+  it('finds a command named otherwise now by its own label too', () => {
+    const accounts = defineCommands('accounts', {
+      add: { label: 'Sign in with GitHub…', group: 'App', keys: [] },
+    });
+    let listed = false;
+    const items = () =>
+      paletteItems(
+        new Registry({
+          system: 'mac',
+          commands: handlers(accounts, {
+            add: { run() {}, labelled: () => (listed ? 'Add account…' : undefined) },
+          }),
+        }),
+        'window',
+        NO_TARGET,
+      );
+    const found = (query: string) => filterPalette(items(), query).map(({ item }) => item.label);
+    expect(found('sign in')).toEqual(['Sign in with GitHub…']);
+    listed = true;
+    expect(found('sign in')).toEqual(['Add account…']);
+    expect(found('github')).toEqual(['Add account…']);
+    expect(found('add')).toEqual(['Add account…']);
+  });
+
   it('says under a label what its handler says it does now, in the palette and keyboard shortcuts alike, which a search matches', () => {
     let off = false;
     const said = new Registry({
