@@ -450,6 +450,8 @@ class Excerpt implements ExcerptView {
     this.dom.addEventListener('pointerover', this.#hoverMark, { passive: true });
     this.dom.addEventListener('pointermove', this.#hoverMark, { passive: true });
     this.dom.addEventListener('pointerleave', this.#hoverMark, { passive: true });
+    // What's under a still pointer changes as the view scrolls under it, which no move tells.
+    this.dom.addEventListener('pointerover', this.#pointRange, { passive: true });
     this.dom.addEventListener('pointermove', this.#pointRange, { passive: true });
     this.dom.addEventListener('pointerleave', this.#pointRange, { passive: true });
     this.dom.addEventListener('focusin', this.#focusRelight);
@@ -529,19 +531,19 @@ class Excerpt implements ExcerptView {
   #lit: Lit = UNLIT;
   /** The range the pointer is on in the excerpt: a mark, a stem, a card. */
   #pointed: LitRange | undefined;
-  /** Between lines, the line of the comment box that had focus last, while it's open. */
-  #pickedLine: number | undefined;
+  /** Between lines, the new comment's box that had focus last, while it's open. */
+  #pickedBox: CommentBox | undefined;
+  /** Between lines, the document lines each new comment's box is on, first to last. */
+  readonly #boxSpans = new Map<CommentBox, { from: number; to: number }>();
 
   /**
    * Lights what should be lit now, as the diff does: a popover pinned or a comment box open on a
    * line, else what the pointer is on.
    */
   #relight(): void {
-    for (const [line, box] of this.#boxes) if (box.hasFocus) this.#pickedLine = line;
-    if (this.#pickedLine !== undefined && !this.#boxes.has(this.#pickedLine)) {
-      this.#pickedLine = undefined;
-    }
-    const between = this.#mode === 'between' && this.#pickedLine !== undefined;
+    for (const box of this.#boxSpans.keys()) if (box.hasFocus) this.#pickedBox = box;
+    if (this.#pickedBox && !this.#boxSpans.has(this.#pickedBox)) this.#pickedBox = undefined;
+    const between = this.#mode === 'between' && this.#pickedBox !== undefined;
     const lit = lightOf({
       pinned:
         this.#mode === 'beside'
@@ -569,8 +571,9 @@ class Excerpt implements ExcerptView {
       if (this.#mode === 'beside') {
         const box = this.#beside.pickedBox();
         lines = box && { from: box.from ?? box.place, end: box.place };
-      } else if (this.#pickedLine !== undefined) {
-        return { rows: [{ from: this.#pickedLine, to: this.#pickedLine }], picked: true };
+      } else {
+        const span = this.#pickedBox && this.#boxSpans.get(this.#pickedBox);
+        return span ? { rows: [span], picked: true } : null;
       }
     } else if (lit.range?.lane === 'threads') {
       lines = this.#beside.linesOf(lit.range.key);
@@ -1011,6 +1014,12 @@ class Excerpt implements ExcerptView {
     this.#rooms.get(line)?.destroy();
     this.#rooms.delete(line);
     this.#boxes.set(line, box);
+    // A new comment's lines are picked while it has focus, or had it last.
+    if (!('thread' in at)) {
+      const first =
+        'line' in at ? line : (this.#docLine(at.side, Math.min(at.from, at.to)) ?? line);
+      this.#boxSpans.set(box, { from: Math.min(first, line), to: line });
+    }
     // The lines `v` selected are the box's now.
     if (focus) endSelection(this.#view);
     this.#drawBlocks();
@@ -1105,6 +1114,7 @@ class Excerpt implements ExcerptView {
     const [line] = found;
     const focused = how === 'escape' || box.dom.contains(document.activeElement);
     this.#boxes.delete(line);
+    this.#boxSpans.delete(box);
     const kept = (how === 'sent' || how === 'landed') && this.#drawn && this.#lineOnScreen(line);
     if (kept) this.#rooms.set(line, box);
     if (kept && how === 'landed') {
@@ -1401,6 +1411,7 @@ class Excerpt implements ExcerptView {
     this.dom.removeEventListener('pointerover', this.#hoverMark);
     this.dom.removeEventListener('pointermove', this.#hoverMark);
     this.dom.removeEventListener('pointerleave', this.#hoverMark);
+    this.dom.removeEventListener('pointerover', this.#pointRange);
     this.dom.removeEventListener('pointermove', this.#pointRange);
     this.dom.removeEventListener('pointerleave', this.#pointRange);
     this.dom.removeEventListener('focusin', this.#focusRelight);
@@ -1416,6 +1427,7 @@ class Excerpt implements ExcerptView {
     for (const stop of this.#stops) stop();
     for (const box of this.#boxes.values()) box.destroy();
     this.#boxes.clear();
+    this.#boxSpans.clear();
     this.#hosts.destroy();
     this.#sizes?.destroy();
     this.#view.destroy();

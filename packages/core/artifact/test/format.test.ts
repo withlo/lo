@@ -1,6 +1,6 @@
 /**
  * `format.md`, the format's spec, against the parse: every example in it reads clean, and every
- * limit it lists is the parse's.
+ * limit it lists is the parse's, or the store's.
  */
 
 import { readFileSync } from 'node:fs';
@@ -8,7 +8,17 @@ import { readFileSync } from 'node:fs';
 import { DEFAULT_LIMITS, SVG_LIMITS } from '@lo/markdown';
 import { expect, test } from 'vitest';
 
-import { BINARY_WINDOW, FORMAT, LIMITS, MIN_STEPS, MIN_TABS, parseArtifact } from '../src/index.ts';
+import {
+  BINARY_WINDOW,
+  FORMAT,
+  LIMITS,
+  MIN_STEPS,
+  MIN_TABS,
+  parseArtifact,
+  parseStore,
+  STORE_FORMAT,
+  STORE_LIMITS,
+} from '../src/index.ts';
 import { HEADER } from './support.ts';
 import { problems } from './walker.ts';
 
@@ -88,4 +98,21 @@ test('format.md gives the limits figures are checked under', () => {
   expect(spec.replace(/\s+/g, ' ')).toContain(
     `no taller than ${SVG_LIMITS.tallest} times its width or wider than ${SVG_LIMITS.widest} times its height`,
   );
+});
+
+test('format.md’s terms.json reads, and it gives the limits the store keeps', () => {
+  const stores = [...spec.matchAll(/^```json\n([\s\S]*?)^```$/gm)].map((match) => match[1]!);
+  expect(stores).toHaveLength(1);
+  const read = parseStore(stores[0]!);
+  expect(read.ok && read.store.format).toBe(STORE_FORMAT);
+  const row = (what: string, limit: string) =>
+    expect(spec).toMatch(new RegExp(`\\| ${what} +\\| ${limit} +\\|`));
+  row('`terms.json`', `${STORE_LIMITS.size / MIB} MiB of UTF-8`);
+  row('Terms', number(STORE_LIMITS.terms));
+  row("A term's aliases", `${STORE_LIMITS.aliases}`);
+  row("A term's suggestions", `${STORE_LIMITS.suggestions}`);
+  row("A term's changes", `${STORE_LIMITS.changes}`);
+  row('A definition', `${number(STORE_LIMITS.definition)} bytes`);
+  row('A term or an alias', `${number(LIMITS.argument)} bytes`);
+  row('A git name', `${STORE_LIMITS.name} bytes`);
 });

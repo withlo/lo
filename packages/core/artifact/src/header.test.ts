@@ -144,9 +144,62 @@ describe('the header', () => {
     ]);
   });
 
+  test('a stack’s overview has stack in place of pr', () => {
+    const parsed = parseArtifact(headed('format: 1', 'stack: 4790', `commit: ${COMMIT}`));
+    expect(parsed.header).toEqual({ format: 1, stack: 4790, commit: COMMIT });
+    expect(parsed.findings).toEqual([]);
+  });
+
+  test('a pull request’s overview may name the stack it’s a layer of', () => {
+    const parsed = parseArtifact(
+      headed('stack: 4790', 'format: 1', 'pr: 4797', `commit: ${COMMIT}`),
+    );
+    expect(parsed.header).toEqual({ format: 1, pr: 4797, stack: 4790, commit: COMMIT });
+    // A branch stack goes by its bottom layer's number, so that layer names its own.
+    const bottom = parseArtifact(
+      headed('format: 1', 'pr: 4790', 'stack: 4790', `commit: ${COMMIT}`),
+    );
+    expect(bottom.header).toEqual({ format: 1, pr: 4790, stack: 4790, commit: COMMIT });
+  });
+
+  test('a stack given twice, or with neither it nor a pr, is reported', () => {
+    expect(
+      found(parseArtifact(headed('format: 1', 'stack: 1', 'stack: 1', `commit: ${COMMIT}`))),
+    ).toEqual(['header-twice@4']);
+    const neither = parseArtifact(headed('format: 1', `commit: ${COMMIT}`));
+    expect(found(neither)).toEqual(['pr-missing@1']);
+    expect(neither.findings[0]?.message).toContain('stack');
+  });
+
+  test.each([
+    ['a leading zero', '04790'],
+    ['a sign', '-4790'],
+    ['a hash', '#4790'],
+    ['more than GitHub gives', '2147483648'],
+    ['zero', '0'],
+    ['nothing', ''],
+  ])('a stack with %s is invalid, beside a pr or in its place', (_what, value) => {
+    const alone = parseArtifact(headed('format: 1', `stack: ${value}`, `commit: ${COMMIT}`));
+    expect(found(alone)).toEqual(['stack-invalid@3']);
+    expect(alone.header).toBeUndefined();
+    const layer = parseArtifact(
+      headed('format: 1', 'pr: 4797', `stack: ${value}`, `commit: ${COMMIT}`),
+    );
+    expect(found(layer)).toEqual(['stack-invalid@4']);
+    expect(layer.header).toBeUndefined();
+  });
+
+  test('an invalid pr beside a stack leaves no header, not a stack’s overview', () => {
+    const parsed = parseArtifact(headed('format: 1', 'pr: x', 'stack: 4790', `commit: ${COMMIT}`));
+    expect(found(parsed)).toEqual(['pr-invalid@3']);
+    expect(parsed.header).toBeUndefined();
+  });
+
   test('the largest pull request number GitHub gives is taken', () => {
     const parsed = parseArtifact(headed('format: 1', 'pr: 2147483647', `commit: ${COMMIT}`));
     expect(parsed.header?.pr).toBe(2_147_483_647);
+    const stack = parseArtifact(headed('format: 1', 'stack: 2147483647', `commit: ${COMMIT}`));
+    expect(stack.header?.stack).toBe(2_147_483_647);
   });
 });
 

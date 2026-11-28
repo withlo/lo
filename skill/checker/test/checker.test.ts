@@ -162,6 +162,22 @@ describe('check', () => {
     const other = runJson(['check', '--pr', '4798'], dir, env);
     expect(other.status).toBe(1);
     expect(other.findings.map(({ code }) => code)).toEqual(['pr-mismatch']);
+    // A pull request's overview isn't a stack's.
+    const stack = runJson(['check', '--stack', '4797'], dir, env);
+    expect(stack.status).toBe(1);
+    expect(stack.findings.map(({ code }) => code)).toEqual(['stack-mismatch']);
+  });
+
+  test('checks a stack’s overview against its stack when given one', () => {
+    const text = overview(commit).replace('pr: 4797', 'stack: 4790');
+    const dir = folder('stack', { 'artifact.md': text });
+    expect(runChecker(['check', dir, '--stack', '4790'], repo).status).toBe(0);
+    expect(runChecker(['check', dir, '--stack=4790'], repo).status).toBe(0);
+    expect(runChecker(['check', dir], repo).status).toBe(0);
+    const other = runJson(['check', dir, '--stack', '4791'], repo);
+    expect(other.findings.map(({ code }) => code)).toEqual(['stack-mismatch']);
+    const pull = runJson(['check', dir, '--pr', '4790'], repo);
+    expect(pull.findings.map(({ code }) => code)).toEqual(['pr-mismatch']);
   });
 
   test('reads folders and code at odd paths: spaces, newlines, a leading dash, accents', () => {
@@ -318,6 +334,11 @@ describe('check', () => {
       ['check', '--pr', '01'],
       ['check', '--pr', '-1'],
       ['check', '--pr'],
+      ['check', '--stack'],
+      ['check', '--stack', '0'],
+      ['check', '--pr', '1', '--stack', '1'],
+      ['commit', 'dir', '--stack', '1'],
+      ['install', '--stack', '1'],
       ['commit', 'dir'],
       ['commit', 'dir', '--pr', '1e3'],
       ['check', '--repo'],
