@@ -9,8 +9,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { IpcError } from '../../../ipc/contract.ts';
 import type { Acting } from '../../tab/contract.ts';
-import { STORE_BYTES, type StoreState } from '../contract.ts';
-import { KeptStores, STORE_EVERY, STORE_SHOWN, Stores, TabStore } from './terms.ts';
+import { STORE_BYTES, type Problem, type StoreFound, type StoreState } from '../contract.ts';
+import {
+  KeptStores,
+  STORE_EVERY,
+  STORE_SHOWN,
+  Stores,
+  STORES_KEPT_FOR,
+  TabStore,
+} from './terms.ts';
 import { database, FakeGithub, fakeId, idOf, overview } from './test/support.ts';
 
 const ROZED: Acting = { kind: 'account', login: 'rozed-bot' };
@@ -411,5 +418,112 @@ describe("a repository's definitions", () => {
     expect(turns.at(-1)?.split(' ')).toHaveLength(3);
     expect(last()?.found.kind).toBe('file');
     tab.close();
+  });
+
+  it('reads the file again when what’s kept isn’t it, as after a write that failed or another account’s older read', async () => {
+    const github = new FakeGithub();
+    const json = termsJson('Bucket');
+    github.push('rozed-dev/e2e', TERMS, overview('store', { 'terms.json': json }));
+    const { stores, turns, kept } = storesWith(github);
+    const { tab, last } = tabOf(stores);
+    const blob = `rozed-dev/e2e/git/blobs/${idOf(json)}`;
+    const id = idOf(json);
+    // The write fails.
+    vi.spyOn(kept, 'set').mockImplementationOnce(() => {
+      throw new Error('The disk is full.');
+    });
+    tab.read('foreground', true);
+    await settle();
+    expect(last()?.found).toMatchObject({ kind: 'file', id });
+    expect(() => tab.file(id)).toThrow(IpcError);
+    // Read again, found the same: the file is read again by its ID, and kept.
+    await vi.advanceTimersByTimeAsync(STORE_EVERY);
+    tab.read('background', false);
+    await settle();
+    expect(turns.at(-1)).toBe(`rozed-dev/e2e/git/matching-refs/lo/terms ${blob}`);
+    expect(new TextDecoder().decode(tab.file(id))).toBe(json);
+    // Another account's older read, kept after it.
+    kept.set(E2E, { kind: 'none' }, null);
+    expect(() => tab.file(id)).toThrow(IpcError);
+    await vi.advanceTimersByTimeAsync(STORE_EVERY);
+    tab.read('background', false);
+    await settle();
+    expect(turns.at(-1)).toBe(`rozed-dev/e2e/git/matching-refs/lo/terms ${blob}`);
+    expect(new TextDecoder().decode(tab.file(id))).toBe(json);
+    // Kept as found: only the ref is asked.
+    await vi.advanceTimersByTimeAsync(STORE_EVERY);
+    tab.read('background', false);
+    await settle();
+    expect(turns.at(-1)).toBe('rozed-dev/e2e/git/matching-refs/lo/terms');
+    tab.close();
+  });
+
+  it('says why they weren’t read when the overview’s read failed, and reads them once it goes through', async () => {
+    const github = new FakeGithub();
+    const { stores, turns } = storesWith(github);
+    const { tab, last } = tabOf(stores);
+    const problem: Problem = {
+      kind: 'offline',
+      cause: { kind: 'offline' },
+      message: 'Lo is offline.',
+      retryAt: 0,
+    };
+    tab.failed(problem);
+    expect(last()).toMatchObject({ found: { kind: 'unknown' }, problem });
+    expect(turns).toEqual([]);
+    tab.read('background', false);
+    await settle();
+    expect(turns).toEqual(['rozed-dev/e2e/git/matching-refs/lo/terms']);
+    expect(last()).toMatchObject({ found: { kind: 'none' }, problem: null });
+    tab.close();
+  });
+});
+
+/** A repository of rozed-dev's, `name`. */
+function repo(name: string): RepoRef {
+  return new RepoRef('rozed-dev', name);
+}
+
+describe('what’s kept of the definitions', () => {
+  const at = Date.parse('2026-11-27T12:00:00Z');
+  const commit = 'c'.repeat(40);
+  const file = (text: string): [StoreFound, Uint8Array] => {
+    const bytes = new TextEncoder().encode(text);
+    return [{ kind: 'file', commit, id: idOf(bytes), size: bytes.length }, bytes];
+  };
+
+  it('forgets a repository’s not read for 30 days, however small', () => {
+    let now = at;
+    const kept = new KeptStores(database(), { now: () => now });
+    kept.set(repo('old'), { kind: 'none' }, null);
+    kept.set(repo('read'), { kind: 'none' }, null);
+    now += STORES_KEPT_FOR - 1;
+    // Read again, and found as it was.
+    kept.touch(repo('read'));
+    now += 2;
+    kept.set(repo('new'), ...file('{}'));
+    expect(kept.found(repo('old'))).toBeUndefined();
+    expect(kept.found(repo('read'))).toEqual({ kind: 'none' });
+    expect(kept.found(repo('new'))?.kind).toBe('file');
+  });
+
+  it('past its cap, forgets the files read least recently, never the one just kept', () => {
+    let now = at;
+    const kept = new KeptStores(database(), { now: () => now, cap: 20 });
+    kept.set(repo('a'), ...file('0123456789'));
+    now += 1000;
+    kept.set(repo('b'), ...file('abcdefghij'));
+    now += 2 * 60 * 60_000;
+    // Read again: now the latest.
+    kept.touch(repo('a'));
+    kept.set(repo('c'), ...file('klmnopqrst'));
+    expect(kept.found(repo('a'))?.kind).toBe('file');
+    expect(kept.found(repo('b'))).toBeUndefined();
+    expect(kept.found(repo('c'))?.kind).toBe('file');
+    // One past the cap alone stays.
+    kept.set(repo('d'), ...file('x'.repeat(30)));
+    expect(kept.found(repo('d'))?.kind).toBe('file');
+    expect(kept.found(repo('a'))).toBeUndefined();
+    expect(kept.found(repo('c'))).toBeUndefined();
   });
 });

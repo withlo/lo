@@ -151,31 +151,51 @@ describe('which definition shows', () => {
 });
 
 describe('tags', () => {
-  it('on an open pull request, follow the repository as it is now', () => {
+  it('are only the overview’s marks: an unmarked term is never new or changed', () => {
+    const parsed = overviewOf(
+      // Unmarked, and not in them: its own, untagged.
+      '- **Quota**: How much a tenant may take.',
+      // Unmarked, and in them with another definition, as after an edit in Lo: theirs, untagged.
+      '- **Tenant**: Whoever   pays.\n  Monthly.',
+      // Marked, and not in them, or in them otherwise: its own, as marked.
+      '- **Limit** (new): The most a tenant may take.',
+      '- **Bucket** (changed): The tokens a tenant holds.',
+    );
+    const terms = read(stored('Tenant', 'Whoever pays.'), stored('Bucket', 'The tokens.'));
+    for (const subject of [OPEN, MERGED, { kind: 'stack' } as const]) {
+      const definitions = shown(parsed, terms, subject);
+      expect(definitions.of('quota')).toMatchObject({ tag: undefined, source: 'overview' });
+      expect(definitions.of('tenant')).toMatchObject({ tag: undefined, source: 'store' });
+      expect(textOf(definitions, 'tenant')).toBe('"value":"Whoever pays."');
+      expect(definitions.of('limit')).toMatchObject({ tag: 'new', source: 'overview' });
+      expect(definitions.of('bucket')).toMatchObject({ tag: 'changed', source: 'overview' });
+      expect([definitions.added, definitions.changed]).toEqual([1, 1]);
+      expect(definitions.rest.map(({ name }) => name)).toEqual(['Quota', 'Tenant']);
+    }
+  });
+
+  it('on an open pull request, drop a mark the repository has made moot', () => {
     const parsed = overviewOf(
       // Marked new, and in them since with this definition: theirs.
       '- **Bucket** (new): The tokens a tenant has.',
-      // Unmarked, and not in them: new.
-      '- **Quota**: How much a tenant may take.',
-      // Unmarked, and in them with another definition: changed.
-      '- **Tenant**: Whoever   pays.\n  Monthly.',
       // Marked changed, the same but for its spaces: theirs.
       '- **Token** (changed): One   request.',
     );
     const terms = read(
       stored('Bucket', 'The tokens a tenant has.'),
-      stored('Tenant', 'Whoever pays.'),
       stored('Token', 'One request.'),
     );
-    for (const state of ['open', 'draft'] as const) {
-      const definitions = shown(parsed, terms, { kind: 'pull', number: 264, state });
+    const draft = { kind: 'pull', number: 264, state: 'draft' } as const;
+    for (const subject of [OPEN, draft, { kind: 'stack' } as const]) {
+      const definitions = shown(parsed, terms, subject);
       expect(definitions.of('bucket')).toMatchObject({ tag: undefined, source: 'store' });
-      expect(definitions.of('quota')).toMatchObject({ tag: 'new', source: 'overview' });
-      expect(definitions.of('tenant')).toMatchObject({ tag: 'changed', source: 'overview' });
       expect(definitions.of('token')).toMatchObject({ tag: undefined, source: 'store' });
+      expect([definitions.added, definitions.changed]).toEqual([0, 0]);
     }
-    // A stack's overview follows them too.
-    expect(shown(parsed, terms, { kind: 'stack' }).of('quota')?.tag).toBe('new');
+    // Merged, the merge is what took them: the marks stay.
+    const merged = shown(parsed, terms, MERGED);
+    expect(merged.of('bucket')).toMatchObject({ tag: 'new', source: 'overview' });
+    expect(merged.of('token')).toMatchObject({ tag: 'changed', source: 'overview' });
   });
 
   it('merged, closed or without them, are as the overview marks them', () => {

@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Acting } from '../../tab/contract.ts';
 import type { PullTabInfo } from '../../tab/service.ts';
-import type { OverviewState } from '../contract.ts';
+import type { OverviewState, Problem } from '../contract.ts';
 import { Blobs } from './blobs.ts';
 import { SavedRefs } from './saved.ts';
 import {
@@ -63,6 +63,7 @@ function tabWith(client: GithubClient, db = database(), subject?: OverviewSubjec
   const sent: OverviewState[] = [];
   const lines: string[] = [];
   const reads: { priority: ReadPriority; shown: boolean }[] = [];
+  const failures: Problem[] = [];
   const blobs = new Blobs(db);
   const saved = new SavedRefs(db, { of: subject?.kind ?? 'pull' });
   const tab = new OverviewTab({
@@ -73,8 +74,9 @@ function tabWith(client: GithubClient, db = database(), subject?: OverviewSubjec
     log: (line) => lines.push(line),
     onRead: (priority, shown) =>
       reads.push({ priority: typeof priority === 'function' ? priority() : priority, shown }),
+    onFailed: (problem) => failures.push(problem),
   });
-  return { tab, sent, lines, reads, blobs, saved, db, last: () => sent.at(-1) };
+  return { tab, sent, lines, reads, failures, blobs, saved, db, last: () => sent.at(-1) };
 }
 
 /** Lets what the tab started run: its reads, and the timers due by now. */
@@ -1374,6 +1376,42 @@ describe('copies', () => {
     tab.close();
   });
 
+  it("counts a closed pull request's overview's files toward no cap, so they crowd out nothing", async () => {
+    const github = new FakeGithub();
+    const text = artifactText(5, '## tl;dr\n\nLong enough to be past the cap alone.\n');
+    const made = overview('closed', { 'artifact.md': text });
+    github.push('rozed-dev/e2e', 5, made);
+    const db = database();
+    const { tab } = tabWith(github.client, db);
+    tab.update(info({ state: 'closed' }), true, true);
+    await settle();
+
+    // Room for these two, and not for the closed one's text besides.
+    const other = new TextEncoder().encode('another overview');
+    const more = new TextEncoder().encode('and another');
+    const tight = new Blobs(db, { cap: other.length + more.length });
+    expect(text.length).toBeGreaterThan(other.length + more.length);
+    tight.put(idOf(other), other);
+    // Used later than the other.
+    vi.setSystemTime(Date.now() + 1000);
+    tight.put(idOf(more), more);
+    expect([tight.has(idOf(text)), tight.has(idOf(other)), tight.has(idOf(more))]).toEqual([
+      true,
+      true,
+      true,
+    ]);
+    expect(tight.counted()).toBe(other.length + more.length);
+    // Past the cap, the least used of the rest goes.
+    const third = new TextEncoder().encode('a third');
+    tight.put(idOf(third), third);
+    expect([tight.has(idOf(other)), tight.has(idOf(more)), tight.has(idOf(third))]).toEqual([
+      false,
+      true,
+      true,
+    ]);
+    tab.close();
+  });
+
   it('says each read it made, and whether the tab was just shown', async () => {
     const github = new FakeGithub();
     github.push('rozed-dev/e2e', 5, overview('reads', { 'artifact.md': artifactText(5) }));
@@ -1387,9 +1425,9 @@ describe('copies', () => {
     tab.close();
   });
 
-  it('says none while there’s no overview to show, or GitHub is out of reach', async () => {
+  it('says none while there’s no overview to show, or GitHub is out of reach, which it says', async () => {
     const github = new FakeGithub();
-    const { tab, reads } = tabWith(github.client);
+    const { tab, reads, failures } = tabWith(github.client);
     tab.update(info(), true, true);
     await settle();
     expect(reads).toEqual([]);
@@ -1401,6 +1439,7 @@ describe('copies', () => {
     await vi.advanceTimersByTimeAsync(FOREGROUND_EVERY);
     await settle();
     expect(reads).toEqual([]);
+    expect(failures).toEqual([expect.objectContaining({ kind: 'failed' })]);
     github.answer.delete('rozed-dev/e2e/git/matching-refs/lo/pr/5');
     await tab.retry();
     await settle();

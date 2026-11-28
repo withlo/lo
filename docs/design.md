@@ -254,7 +254,8 @@ and the whole-file view.
   never one larger than the store may be. It reads them only for a tab with an overview to show, in
   a turn after the overview's read, so the overview never waits for them: as the tab is shown, if
   they weren't read in the last 30 s, and every 5 minutes while it's on screen. One read serves
-  every tab of the repo that acts as the same account, and what's read is kept.
+  every tab of the repo that acts as the same account. What's read is kept for 30 days after its
+  last read, up to 16 MiB of files in all.
 - **Sign-in.** Git signs in with the account's token, and your git config is never touched.
 - **Checkouts.** Trusted repos get a checkout at the PR head for language servers. The old side is
   read straight from git.
@@ -511,8 +512,9 @@ writes is called an artifact.
 - **Forks.** Lo looks in the base repo, then the PR's fork, then, for a PR from a fork, the base
   repo's copy of the fork's overview (`refs/lo/kept/pr/<n>`), which outlives the fork, and labels an
   overview that came from the fork or the copy.
-- **Closed PRs.** Lo's cache never drops a closed PR's overview to make room. Once GitHub has none
-  anywhere, Lo shows the one it kept, labelled a saved copy.
+- **Closed PRs.** Lo's cache never drops a closed PR's overview to make room, and doesn't count its
+  files toward its cap. Once GitHub has none anywhere, Lo shows the one it kept, labelled a saved
+  copy.
 - **Stacks.** Each layer has its own.
 
 ### The format

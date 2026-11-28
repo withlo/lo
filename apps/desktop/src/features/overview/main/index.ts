@@ -190,6 +190,7 @@ function follow(context: FeatureContext<typeof contract>, id: string): void {
       },
       publish: (state) => context.publish('state', state),
       onRead: (priority, shown) => reading.read(priority, shown),
+      onFailed: (problem) => reading.failed(problem),
       log: (line) =>
         log(`${info.repository.owner}/${info.repository.name}#${info.number}: ${line}`),
     });

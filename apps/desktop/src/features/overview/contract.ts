@@ -206,7 +206,7 @@ export type StoreFound = z.output<typeof storeFound>;
  * - `found`: what `refs/lo/terms` held when main last read it;
  * - `saved`: whether that's what main kept from an earlier read, and GitHub hasn't said since;
  * - `checkedAt`: when GitHub last said what the ref holds, or null if it hasn't since Lo started;
- * - `problem`: why the last read failed, until one succeeds.
+ * - `problem`: why the last read failed, or the overview's read they go with, until one succeeds.
  *
  * Main reads them with the overview, while it has one to show, as the tab's account, in a turn
  * after the overview's read: every 5 minutes while the tab is on screen, and as it's shown if they

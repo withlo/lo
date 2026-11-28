@@ -105,6 +105,8 @@ export interface OverviewTabOptions {
    * says, and `shown` when the tab was just shown, or Retry pressed.
    */
   readonly onRead?: ((priority: ReadPriorityNow, shown: boolean) => void) | undefined;
+  /** Called after each read of the ref that failed, with why, for what's read with the overview. */
+  readonly onFailed?: ((problem: Problem) => void) | undefined;
 }
 
 /**
@@ -473,6 +475,8 @@ export class OverviewTab {
       // What's read with the overview needs one to show, and GitHub within reach.
       const shows = this.#shown !== undefined || this.#newer !== undefined;
       if (through && shows && !this.#closed) this.#options.onRead?.(priority, awaited);
+      const problem = this.#problem;
+      if (!through && problem && !this.#closed) this.#options.onFailed?.(problem);
       if (this.#again) {
         this.#again = false;
         this.#read();

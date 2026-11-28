@@ -45,28 +45,86 @@ export const STORE_EVERY = 5 * 60_000;
 /** The least time between reads as a tab is shown, or Lo comes back on screen. */
 export const STORE_SHOWN = 30_000;
 
+/**
+ * The most bytes of `terms.json` kept, all repositories' together: past it, those read least
+ * recently go, never the one just kept.
+ */
+export const STORES_CAP = 16 * 1024 * 1024;
+
+/** How long a repository's definitions are kept without a read: 30 days. */
+export const STORES_KEPT_FOR = 30 * 24 * 60 * 60_000;
+
+/** How stale a kept read's time may grow before a read that finds it the same says so again. */
+const TOUCH_EVERY = 60 * 60_000;
+
 /** What a repository's definitions are kept as: what the ref held, and `terms.json`'s bytes. */
 export interface KeptStore {
   readonly found: StoreFound;
   readonly bytes: Uint8Array | null;
 }
 
+/** Whether two things the ref was found to hold are the same. */
+export function sameFound(a: StoreFound, b: StoreFound): boolean {
+  switch (a.kind) {
+    case 'unknown':
+    case 'none':
+      return b.kind === a.kind;
+    case 'file':
+      return b.kind === 'file' && b.commit === a.commit && b.id === a.id && b.size === a.size;
+    case 'unreadable':
+      return b.kind === 'unreadable' && b.object === a.object && b.why === a.why;
+    default:
+      a satisfies never;
+      return false;
+  }
+}
+
 /**
  * Each repository's definitions in the database, as main last read them, by `owner/name`: a file
- * is kept only with the bytes it names, and one that no longer reads so is forgotten.
+ * is kept only with the bytes it names, and one that no longer reads so is forgotten. Those not
+ * read for 30 days go, and past a cap on their files' sizes, those read least recently.
  */
 export class KeptStores {
   readonly #database: Database;
   readonly #now: () => number;
   readonly #log: (line: string) => void;
+  readonly #cap: number;
 
   constructor(
     database: Database,
-    options: { now?: () => number; log?: (line: string) => void } = {},
+    options: { now?: () => number; log?: (line: string) => void; cap?: number } = {},
   ) {
     this.#database = database;
     this.#now = options.now ?? Date.now;
     this.#log = options.log ?? (() => {});
+    this.#cap = options.cap ?? STORES_CAP;
+  }
+
+  /**
+   * What was kept of `repository`'s definitions, without reading the file: for a file, only when
+   * its bytes are kept, as many as it has.
+   */
+  found(repository: RepoRef): StoreFound | undefined {
+    const row = this.#database
+      .prepare('SELECT found, length(bytes) AS size FROM overview_stores WHERE repository = ?')
+      .get(repository.toString());
+    if (row === undefined) return undefined;
+    let found: StoreFound;
+    try {
+      found = storeFound.parse(JSON.parse(String(row.found)));
+    } catch {
+      return undefined;
+    }
+    const size = typeof row.size === 'bigint' ? Number(row.size) : row.size;
+    return found.kind === 'file' && size !== found.size ? undefined : found;
+  }
+
+  /** Says `repository`'s definitions were read again, and found as they were kept. */
+  touch(repository: RepoRef): void {
+    const now = Math.round(this.#now());
+    this.#database
+      .prepare('UPDATE overview_stores SET seen_at = ? WHERE repository = ? AND seen_at < ?')
+      .run(now, repository.toString(), now - TOUCH_EVERY);
   }
 
   /** What was kept of `repository`'s definitions, if anything. */
@@ -96,20 +154,47 @@ export class KeptStores {
     return { found, bytes: found.kind === 'file' ? bytes : null };
   }
 
-  /** Keeps `found` as what `repository`'s definitions are, with `terms.json`'s bytes for a file. */
+  /**
+   * Keeps `found` as what `repository`'s definitions are, with `terms.json`'s bytes for a file,
+   * then forgets those not read for 30 days, and past the cap, those read least recently.
+   */
   set(repository: RepoRef, found: StoreFound, bytes: Uint8Array | null): void {
-    this.#database
+    const now = Math.round(this.#now());
+    const name = repository.toString();
+    this.#database.transaction(() => {
+      this.#database
+        .prepare(
+          `INSERT INTO overview_stores (repository, found, bytes, seen_at) VALUES (?, ?, ?, ?)
+           ON CONFLICT (repository) DO UPDATE SET
+             found = excluded.found, bytes = excluded.bytes, seen_at = excluded.seen_at`,
+        )
+        .run(name, JSON.stringify(found), found.kind === 'file' ? bytes : null, now);
+      this.#database
+        .prepare('DELETE FROM overview_stores WHERE seen_at < ? AND repository != ?')
+        .run(now - STORES_KEPT_FOR, name);
+      this.#trim(name);
+    });
+  }
+
+  /** Forgets those read least recently until the files kept fit under the cap, keeping `kept`'s. */
+  #trim(kept: string): void {
+    const total = this.#database
+      .prepare('SELECT coalesce(sum(length(bytes)), 0) AS total FROM overview_stores')
+      .get()?.total;
+    let left = typeof total === 'bigint' ? Number(total) : typeof total === 'number' ? total : 0;
+    if (left <= this.#cap) return;
+    const oldest = this.#database
       .prepare(
-        `INSERT INTO overview_stores (repository, found, bytes, seen_at) VALUES (?, ?, ?, ?)
-         ON CONFLICT (repository) DO UPDATE SET
-           found = excluded.found, bytes = excluded.bytes, seen_at = excluded.seen_at`,
+        `SELECT repository, length(bytes) AS size FROM overview_stores
+         WHERE repository != ? AND bytes IS NOT NULL ORDER BY seen_at, repository`,
       )
-      .run(
-        repository.toString(),
-        JSON.stringify(found),
-        found.kind === 'file' ? bytes : null,
-        Math.round(this.#now()),
-      );
+      .all(kept);
+    const remove = this.#database.prepare('DELETE FROM overview_stores WHERE repository = ?');
+    for (const row of oldest) {
+      if (left <= this.#cap) return;
+      remove.run(String(row.repository));
+      left -= typeof row.size === 'bigint' ? Number(row.size) : Number(row.size ?? 0);
+    }
   }
 
   forget(repository: RepoRef): void {
@@ -258,6 +343,20 @@ export class Stores {
     return reading;
   }
 
+  /**
+   * Says the overview's read, as `acting`, of a pull request of `repository` failed for `problem`,
+   * so its definitions weren't read either: that's why, until a read goes through, and they're read
+   * as soon as the overview's next read does. Nothing changes while they're being read.
+   */
+  failed(acting: Acting, repository: RepoRef, problem: Problem): void {
+    const entry = this.#entry(acting, repository);
+    if (entry.reading) return;
+    // A wait their own failure asked for stays.
+    if (entry.problem === undefined) entry.retryAt = 0;
+    entry.problem = problem;
+    entry.changed();
+  }
+
   /** Forgets every repository's, as clearing the cache does: each is read afresh next time. */
   clear(): void {
     this.#reads.kept.clear();
@@ -341,10 +440,17 @@ export class Stores {
       return;
     }
     const known = entry.found;
-    const same =
-      (known.kind === 'file' && known.commit === ref.sha) ||
-      (known.kind === 'unreadable' && known.object === ref.sha);
-    if (same) return;
+    if (known.kind === 'unreadable' && known.object === ref.sha) {
+      this.#take(entry, known, null);
+      return;
+    }
+    if (known.kind === 'file' && known.commit === ref.sha) {
+      // Kept as read unless another account's older read, a write that failed or the cap took it
+      // since: then the file is read again.
+      if (this.#keeps(entry, known)) return;
+      await this.#readFile(entry, client, ref.sha, known.id);
+      return;
+    }
     const tree = await rootTree(client, repository, ref.sha);
     const items = tree.items.filter(({ path }) => path === STORE_FILE);
     const item = items.length === 1 ? items[0] : undefined;
@@ -365,15 +471,39 @@ export class Stores {
       unreadable('tooLarge', item.size);
       return;
     }
-    const kept = this.#reads.kept.get(repository);
+    await this.#readFile(entry, client, ref.sha, item.sha);
+  }
+
+  /** Takes `terms.json`, the file `id` in `commit`: kept, or else read from GitHub by its ID. */
+  async #readFile(
+    entry: RepoStore,
+    client: GithubClient,
+    commit: string,
+    id: string,
+  ): Promise<void> {
+    const kept = this.#reads.kept.get(entry.repository);
     const bytes =
-      kept?.found.kind === 'file' && kept.found.id === item.sha && kept.bytes
+      kept?.found.kind === 'file' && kept.found.id === id && kept.bytes
         ? kept.bytes
-        : await blobBytes(client, repository, item.sha);
-    if (!isBlob(item.sha, bytes)) {
+        : await blobBytes(client, entry.repository, id);
+    if (!isBlob(id, bytes)) {
       throw new Unexpected('GitHub sent a terms.json that isn’t the one its ID names.');
     }
-    this.#take(entry, { kind: 'file', commit: ref.sha, id: item.sha, size: bytes.length }, bytes);
+    this.#take(entry, { kind: 'file', commit, id, size: bytes.length }, bytes);
+  }
+
+  /** Whether what's kept is `found`, which a read found again: if so, it's kept as read now. */
+  #keeps(entry: RepoStore, found: StoreFound): boolean {
+    let kept: StoreFound | undefined;
+    try {
+      kept = this.#reads.kept.found(entry.repository);
+      if (kept === undefined || !sameFound(kept, found)) return false;
+      this.#reads.kept.touch(entry.repository);
+    } catch (error) {
+      this.#reads.log(`reading what was kept of the definitions: ${describe(error)}`);
+      return false;
+    }
+    return true;
   }
 
   /** The ref, asked with the ETag of the last answer. */
@@ -396,6 +526,8 @@ export class Stores {
 
   #take(entry: RepoStore, found: StoreFound, bytes: Uint8Array | null): void {
     entry.found = found;
+    // A file is kept whole: its bytes are written again unless they're kept.
+    if (found.kind !== 'file' && this.#keeps(entry, found)) return;
     try {
       this.#reads.kept.set(entry.repository, found, bytes);
     } catch (error) {
@@ -450,6 +582,13 @@ export class TabStore {
       return now === 'background' ? 'background' : 'next';
     };
     void this.#stores.read(acting, repository, { priority: soon, shown });
+  }
+
+  /** Says the overview's read failed for `problem`, so they weren't read either. */
+  failed(problem: Problem): void {
+    const [acting, repository] = [this.#acting, this.#repository];
+    if (this.#closed || !acting || !repository) return;
+    this.#stores.failed(acting, repository, problem);
   }
 
   /** Reads them again now, and settles once that read is done, however it went. */

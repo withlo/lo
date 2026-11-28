@@ -1,8 +1,10 @@
 // Which definition an overview shows for each term: the repository's, from its definitions, for
-// every term they hold, in every overview, old ones too; the overview's own for a term it adds or
-// changes, which its review reviews; and the overview's own for every term while the repository
-// has none, or Lo can't read them. A plain function of the overview, the definitions and the pull
-// request, tested alone; the views draw what it says.
+// every term they hold that the overview doesn't mark, in every overview, old ones too; the
+// overview's own for a term it marks new or changed, which its review reviews; and the overview's
+// own for every term while the repository has none, or Lo can't read them. Only the overview's
+// marks tag a term: an unmarked one is never new or changed, whatever the repository holds. A plain
+// function of the overview, the definitions and the pull request, tested alone; the views draw
+// what it says.
 
 import type { Account, Definition, GlossaryEntry, Origin, OverviewBlock } from '@lo/artifact';
 
@@ -33,10 +35,11 @@ export interface Before extends TermByline {
  * - `source`: whose definition shows: the repository's current one (`store`), or the overview's own
  *   (`overview`);
  * - `blocks`: the definition that shows, to draw;
- * - `tag`: whether the pull request adds the term (`new`) or changes it (`changed`). On an open or
- *   draft pull request, and a stack's overview, this follows the repository's definitions as they
- *   are now, once they're read: a term they don't hold is new, one they hold another definition of
- *   is changed. Merged, closed, or without them, it's as the overview marks it;
+ * - `tag`: whether the pull request adds the term (`new`) or changes it (`changed`), as the
+ *   overview marks it: an unmarked term has none. On an open or draft pull request, and a stack's
+ *   overview, a mark the repository's definitions have made moot, as they are now, is dropped: one
+ *   on a term they hold with the same definition, which the pull request then changes nothing in,
+ *   so theirs shows. Merged or closed, every mark stays, since the merge is what took it;
  * - `before`: for a changed term, the definition it replaces, when Lo knows it: the repository's
  *   current one, or for a merged pull request, the one its merge replaced, from the term's earlier
  *   definitions;
@@ -93,8 +96,8 @@ export function definitionsOf(
   subject: Subject,
 ): Definitions {
   const store = terms.kind === 'read' ? terms.terms : undefined;
-  // Tags follow the definitions as they are now only while the pull request can still change them.
-  const live = store !== undefined && (subject.kind === 'stack' || isOpen(subject.state));
+  // A mark is moot only while the pull request can still change the definitions.
+  const live = subject.kind === 'stack' || isOpen(subject.state);
   const written = new Map<string, GlossaryEntry>();
   for (const entry of entries) if (!written.has(entry.key)) written.set(entry.key, entry);
 
@@ -103,7 +106,7 @@ export function definitionsOf(
     if (shown.has(own.key)) continue;
     const stored = store && storedTerm(store, own.key);
     const entry = written.get(own.key);
-    const tag = live ? tagOf(entry, stored) : own.mark;
+    const tag = live && moot(entry, stored) ? undefined : own.mark;
     const theirs = tag === undefined && stored !== undefined;
     shown.set(own.key, {
       key: own.key,
@@ -173,15 +176,16 @@ function isOpen(state: PullState): boolean {
 }
 
 /**
- * A term's tag from the repository's definitions as they are now: new when they don't hold it,
- * changed when the overview defines it otherwise, and none when it's theirs.
+ * Whether the repository's definitions, as they are now, make a glossary entry's mark moot: they
+ * hold its term with the definition the overview gives it.
  */
-function tagOf(entry: GlossaryEntry | undefined, stored: StoredTerm | undefined): ShownTerm['tag'] {
-  if (!stored) return 'new';
+function moot(entry: GlossaryEntry | undefined, stored: StoredTerm | undefined): boolean {
   const definition = entry?.definition;
-  return definition !== undefined && sameDefinition(definition, stored.definition)
-    ? undefined
-    : 'changed';
+  return (
+    stored !== undefined &&
+    definition !== undefined &&
+    sameDefinition(definition, stored.definition)
+  );
 }
 
 /**
