@@ -1200,26 +1200,71 @@ test('shows what the pull request does to the repo’s definitions at the top, i
 test.describe('with the Glossary in every repo’s list of sections that start collapsed', () => {
   test.use({ settings: JSON.stringify({ 'overview.collapsed': { '*': ['Glossary'] } }) });
 
-  test('expands it as Go to glossary goes there', async ({ page, ref }) => {
-    ref.holds = { kind: 'made', overview: overviewOf({ 'artifact.md': DEFINING }) };
+  test('expands it as Go to glossary goes there, by its button and from the palette, and a section Back goes into from the palette', async ({
+    page,
+    ref,
+  }) => {
+    // With a block the keys stop at in How it works, a link's, for history to keep.
+    const linked = DEFINING.replace(
+      '\n## Glossary',
+      'Each request is counted as [After](#after) says.\n\n## Glossary',
+    );
+    ref.holds = { kind: 'made', overview: overviewOf({ 'artifact.md': linked }) };
     ref.terms = overviewOf({ 'terms.json': DEFINED });
     await open(page);
     await overviewTab(page).click();
     const shown = overview(page, 'shown');
-    const head = shown
-      .locator('.lo-section-head')
-      .filter({ has: page.getByRole('heading', { name: 'Glossary', exact: true }) });
-    await expect(head).toHaveAttribute('data-collapsed', '', { timeout: 20_000 });
+    /** The heading of the section called `name`, with its chevron and menu. */
+    const head = (name: string) =>
+      shown
+        .locator('.lo-section-head')
+        .filter({ has: page.getByRole('heading', { name, exact: true }) });
     const rows = shown.locator('[data-lo-glossary] [data-lo-term-row]');
-    await expect(rows).toHaveCount(0);
-    const line = shown.getByRole('note').filter({ hasText: 'definitions' });
-    await line.getByRole('button', { name: 'Go to glossary' }).click();
-    await expect(head).not.toHaveAttribute('data-collapsed');
-    await expect(
-      rows
-        .filter({ has: page.locator('.lo-term-row__term', { hasText: 'Bucket' }) })
-        .locator('.lo-term-row__term'),
-    ).toBeFocused();
+    const bucket = rows
+      .filter({ has: page.locator('.lo-term-row__term', { hasText: 'Bucket' }) })
+      .locator('.lo-term-row__term');
+    const collapse = async (name: string) => {
+      await head(name).getByRole('button', { name: 'Collapse section' }).click();
+      await expect(head(name)).toHaveAttribute('data-collapsed', '');
+    };
+    const palette = page.getByRole('dialog', { name: 'Command palette' });
+    /** Runs the command called `name` from the palette. */
+    const run = async (name: string) => {
+      await page.keyboard.press(process.platform === 'darwin' ? 'Meta+Shift+P' : 'Control+Shift+P');
+      const input = palette.getByRole('combobox', { name: 'Command palette' });
+      await expect(input).toBeFocused();
+      await input.fill(name);
+      await expect(palette.getByRole('option').first()).toHaveText(new RegExp(`^${name}`));
+      await page.keyboard.press('Enter');
+      await expect(palette).toBeHidden();
+    };
+
+    await test.step('Go to glossary’s button expands it, the setting having collapsed it', async () => {
+      await expect(head('Glossary')).toHaveAttribute('data-collapsed', '', { timeout: 20_000 });
+      await expect(rows).toHaveCount(0);
+      const line = shown.getByRole('note').filter({ hasText: 'definitions' });
+      await line.getByRole('button', { name: 'Go to glossary' }).click();
+      await expect(head('Glossary')).not.toHaveAttribute('data-collapsed');
+      await expect(bucket).toBeFocused();
+    });
+
+    const paragraph = shown.locator('[data-lo-block]', { hasText: 'Each request is counted' });
+    await test.step('Go to glossary from the palette expands it, collapsed by hand', async () => {
+      await collapse('Glossary');
+      await paragraph.click();
+      await expect(paragraph).toBeFocused();
+      await run('Go to glossary');
+      await expect(head('Glossary')).not.toHaveAttribute('data-collapsed');
+      await expect(bucket).toBeFocused();
+    });
+
+    await test.step('Back from the palette expands the section it goes back into', async () => {
+      await collapse('How it works');
+      await expect(paragraph).toHaveCount(0);
+      await run('Back');
+      await expect(head('How it works')).not.toHaveAttribute('data-collapsed');
+      await expect(paragraph).toBeFocused();
+    });
   });
 });
 

@@ -87,11 +87,12 @@ export const trees = tabState<number | undefined>(() => undefined);
  * How a tab's overview expands the collapsed section a block is in, by the tab and the block's
  * number, so it's drawn for history or a note to go to: at once, as anything going into one does.
  * The sections' own, from the overview main last said the tab has, whether it's drawn yet or not.
+ * It says whether it expanded one.
  */
-let opener: ((tab: string, block: number) => void) | undefined;
+let opener: ((tab: string, block: number) => boolean) | undefined;
 
 /** Has `open` expand a collapsed section before a block in it is revealed, in any tab. */
-export function setOpener(open: (tab: string, block: number) => void): void {
+export function setOpener(open: (tab: string, block: number) => boolean): void {
   opener = open;
 }
 
@@ -721,16 +722,21 @@ export function placesFor(tab: string): void {
 /**
  * Shows block `index` of the overview tab `tab` shows, as history brings a block back: the overview
  * comes on screen, with the block given focus once it's drawn. A collapsed section it's in expands
- * first, drawn now, so the block is there to go to.
+ * first, drawn now, so the block is there to go to; run from inside React's commit, as the palette
+ * runs Back as it closes, it's drawn only once that's done, and the block is gone to then.
  */
 export function revealBlock(tab: string, index: number): void {
   revealCount += 1;
   const open = opener;
-  if (open) flushSync(() => open(tab, index));
+  const opened = open !== undefined && flushSync(() => open(tab, index));
   reveals.set(tab, { block: index, count: revealCount });
   showMiddle(tab, OVERVIEW_VIEW);
   const overview = drawn.get(tab);
-  if (overview) takeReveal(overview);
+  if (!overview || takeReveal(overview) || !opened) return;
+  queueMicrotask(() => {
+    const now = drawn.get(tab);
+    if (now) takeReveal(now);
+  });
 }
 
 /** Forgets the tabs that closed, those not in `open`. */

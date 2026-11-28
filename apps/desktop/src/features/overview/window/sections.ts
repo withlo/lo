@@ -145,13 +145,16 @@ function expandAtOnce(tab: string, tree: OverviewTree, headings: readonly number
 /**
  * Expands the collapsed section block `block` of `tree` is in at once, in the overview tab `tab`
  * shows, so it's drawn for something to go to it, as `⌃o` back to it, or a note in the diff. Its
- * heading stays collapsed, a block itself. The caller draws it, in `flushSync`.
+ * heading stays collapsed, a block itself. The caller draws it, in `flushSync`. Says whether it
+ * expanded one.
  */
-export function openTo(tab: PullTab, tree: OverviewTree, block: number): void {
+export function openTo(tab: PullTab, tree: OverviewTree, block: number): boolean {
   const section = sectionAt(sectionsOf(tree.blocks), block);
-  if (section?.folds && section.heading !== block && isCollapsed(tab, tree, section)) {
-    expandAtOnce(tab.id, tree, [section.heading]);
+  if (!section?.folds || section.heading === block || !isCollapsed(tab, tree, section)) {
+    return false;
   }
+  expandAtOnce(tab.id, tree, [section.heading]);
+  return true;
 }
 
 /** The block number of the glossary under `tree`'s Glossary heading, if it has one. */
@@ -162,24 +165,28 @@ export function glossaryBlock(tree: OverviewTree): number | undefined {
 
 /**
  * Expands the overview's Glossary in the tab `tab`, if it's collapsed, drawn now, so Go to glossary
- * has its terms to go to.
+ * has its terms to go to. Says whether it expanded it: run from inside React's commit, as the
+ * palette runs a command as it closes, it's drawn only once that's done.
  */
-export function openGlossary(tab: PullTab, overview: DrawnOverview): void {
+export function openGlossary(tab: PullTab, overview: DrawnOverview): boolean {
   const at = glossaryBlock(overview.tree);
-  if (at !== undefined) flushSync(() => openTo(tab, overview.tree, at));
+  return at !== undefined && flushSync(() => openTo(tab, overview.tree, at));
 }
 
 /**
  * As {@link openTo}, in the overview main last said tab `tab` has, whether it's drawn yet or not:
  * history and a note's "Show in overview" go there from the diff or the timeline, before the
- * overview has ever been shown. In the tab on screen, where they are.
+ * overview has ever been shown. In the tab on screen, where they are. Says whether it expanded one.
  */
-export function openShown(tab: string, block: number): void {
+export function openShown(tab: string, block: number): boolean {
   const pull = activeTab();
   const standing = standingOf(states.get(tab), checked.get(tab));
-  if (pull?.kind === 'pull' && pull.id === tab && standing.kind === 'shown') {
-    openTo(pull, standing.parsed.tree, block);
-  }
+  return (
+    pull?.kind === 'pull' &&
+    pull.id === tab &&
+    standing.kind === 'shown' &&
+    openTo(pull, standing.parsed.tree, block)
+  );
 }
 
 /**

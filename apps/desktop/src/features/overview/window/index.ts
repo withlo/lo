@@ -342,11 +342,16 @@ export default {
     pageDown: scrolling('pageDown'),
     pageUp: scrolling('pageUp'),
     goGlossary: {
-      // A collapsed Glossary expands first, at once, as anything going into a section does.
+      // A collapsed Glossary expands first, at once, as anything going into a section does. Run
+      // from the palette, inside React's commit, it's drawn only once that's done: it's gone to
+      // then.
       run: withOverview((overview) => {
         const tab = activeTab();
-        if (tab?.kind === 'pull') openGlossary(tab, overview);
-        goToGlossary(overview);
+        if (tab?.kind === 'pull' && openGlossary(tab, overview)) {
+          queueMicrotask(() => goToGlossary(overview));
+        } else {
+          goToGlossary(overview);
+        }
       }),
       // By the overview's own blocks, which a collapsed Glossary still has.
       enabled: () => {
