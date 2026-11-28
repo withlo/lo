@@ -3,10 +3,10 @@
 // the initials if it can't be.
 
 import { act } from 'react';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 import { cleanUp, render, rerender } from '../test/dom.ts';
-import { Avatar, avatarHue, redrawPictures } from './Avatar.tsx';
+import { Avatar, avatarHue, redrawPictures, useReadyPicture } from './Avatar.tsx';
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -24,6 +24,38 @@ function happens(target: Element, type: 'load' | 'error'): void {
   act(() => {
     target.dispatchEvent(new Event(type));
   });
+}
+
+/** What keeps the picture at `address` ready, while it's drawn. */
+function Ready({ address }: { address: string | undefined }) {
+  useReadyPicture(address);
+  return null;
+}
+
+/**
+ * The images made out of the page from now, as the pictures kept ready are, with only `loaded`
+ * having loaded, as far as the avatars can tell.
+ */
+function images(): { made: HTMLImageElement[]; loaded: Set<HTMLImageElement> } {
+  const made: HTMLImageElement[] = [];
+  const loaded = new Set<HTMLImageElement>();
+  const Real = window.Image;
+  vi.stubGlobal('Image', function Image() {
+    const image = new Real();
+    made.push(image);
+    return image;
+  });
+  vi.spyOn(HTMLImageElement.prototype, 'complete', 'get').mockImplementation(function (
+    this: HTMLImageElement,
+  ) {
+    return loaded.has(this);
+  });
+  vi.spyOn(HTMLImageElement.prototype, 'naturalWidth', 'get').mockImplementation(function (
+    this: HTMLImageElement,
+  ) {
+    return loaded.has(this) ? 56 : 0;
+  });
+  return { made, loaded };
 }
 
 describe('Avatar', () => {
@@ -66,6 +98,44 @@ describe('Avatar', () => {
     expect(picture(host)?.classList.contains('move-swap')).toBe(false);
     complete.mockRestore();
     width.mockRestore();
+  });
+
+  it('draws a picture kept ready from its first frame, with the image loaded for it, and readies another', () => {
+    const { made, loaded } = images();
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+    });
+    const address = 'lo-image://avatar/tess-okafor?s=64';
+    render(<Ready address={address} />);
+    expect(made).toHaveLength(1);
+    const [readied] = made;
+    expect(readied?.getAttribute('src')).toBe(address);
+    loaded.add(readied!);
+    const host = render(<Avatar login="tess-okafor" image={address} />);
+    expect(picture(host)).toBe(readied);
+    expect(picture(host)?.className).not.toContain('opacity-0');
+    expect(picture(host)?.getAttribute('alt')).toBe('');
+    // Another is readied for the next; one drawn before it has loaded draws its own, as any does.
+    expect(made).toHaveLength(2);
+    const next = render(<Avatar login="tess-okafor" image={address} />);
+    expect(picture(next)).not.toBe(made[1]);
+    expect(picture(next)?.className).toContain('opacity-0');
+  });
+
+  it('keeps nothing ready once nothing asks', () => {
+    const { made, loaded } = images();
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+    });
+    const address = 'lo-image://avatar/tess-okafor?s=40';
+    const keeper = render(<Ready address={address} />);
+    loaded.add(made[0]!);
+    rerender(keeper, <Ready address={undefined} />);
+    const host = render(<Avatar login="tess-okafor" image={address} />);
+    expect(picture(host)).not.toBe(made[0]);
+    expect(picture(host)?.className).toContain('opacity-0');
   });
 
   it('brings back a picture the window drew before as it loads, without the move', () => {

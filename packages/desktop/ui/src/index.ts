@@ -148,6 +148,7 @@ export {
   avatarHue,
   initials,
   redrawPictures,
+  useReadyPicture,
   type AvatarProps,
   type AvatarSize,
 } from './Avatar.tsx';
