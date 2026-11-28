@@ -134,8 +134,23 @@ export {
   type SettingsNavItem,
   type SettingsPageProps,
 } from './Settings.tsx';
-export { Avatar, avatarHue, initials, redrawPictures, type AvatarProps } from './Avatar.tsx';
+export {
+  ScopedList,
+  type ScopedEntry,
+  type ScopedKind,
+  type ScopedListProps,
+  type ScopedRepo,
+} from './ScopedList.tsx';
+export {
+  Avatar,
+  avatarHue,
+  initials,
+  redrawPictures,
+  type AvatarProps,
+  type AvatarSize,
+} from './Avatar.tsx';
 export { Callout, type CalloutProps, type CalloutTone } from './Callout.tsx';
+export { COMMIT_NAME_SHOWN, CommitName, plainName } from './CommitName.tsx';
 export { Choices, type ChoiceItem, type ChoicesProps } from './Choices.tsx';
 export { LayoutPicture, type PictureLayout } from './pictures/LayoutPicture.tsx';
 export { ThemePicture, type PictureTheme } from './pictures/ThemePicture.tsx';
