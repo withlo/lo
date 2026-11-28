@@ -15,13 +15,15 @@ export const CLAIM_FOR = 60_000;
 /**
  * A write of the reader's whose change the timeline shows at once, until `until`. For a comment
  * posted, `after` is the cursor of the newest item the timeline on screen held as it went, and
- * `had` how many comments with its text it held.
+ * `had` how many comments with its text it held, of `by`'s, the account that wrote it, when it's
+ * known.
  */
 export interface Claim {
   readonly write: PullWrite;
   readonly until: number;
   readonly had: number;
   readonly after?: string | undefined;
+  readonly by?: string | undefined;
 }
 
 /** A comment's text as GitHub keeps it, to compare: Unix line ends, trimmed. */
@@ -34,10 +36,43 @@ function comments(timeline: Timeline) {
   return timeline.items.flatMap(({ item }) => (item.kind === 'comment' ? [item.comment] : []));
 }
 
-/** How many comments with the text `body` `timeline` holds: none without one. */
-export function holding(timeline: Timeline | null | undefined, body: string): number {
+/**
+ * How many comments with the text `body` `timeline` holds, of account `by`'s when it's given: none
+ * without a timeline.
+ */
+export function holding(timeline: Timeline | null | undefined, body: string, by?: string): number {
   if (!timeline) return 0;
-  return comments(timeline).filter((comment) => text(comment.body) === text(body)).length;
+  const login = by?.toLowerCase();
+  return comments(timeline).filter(
+    (comment) =>
+      (login === undefined || comment.author?.login.toLowerCase() === login) &&
+      text(comment.body) === text(body),
+  ).length;
+}
+
+/** The comment `id` on the pull request itself that `timeline` holds, if it does. */
+export function pullComment(timeline: Timeline, id: string) {
+  return comments(timeline).find((comment) => comment.id === id);
+}
+
+/**
+ * Whether `timeline` holds a comment of account `by`'s with the text `body` made at `since` or
+ * after, by GitHub's clock, in milliseconds since the Unix epoch, give or take `slack`.
+ */
+export function madeSince(
+  timeline: Timeline,
+  body: string,
+  by: string,
+  since: number,
+  slack: number,
+): boolean {
+  const login = by.toLowerCase();
+  return comments(timeline).some(
+    (comment) =>
+      comment.author?.login.toLowerCase() === login &&
+      Date.parse(comment.createdAt) >= since - slack &&
+      text(comment.body) === text(body),
+  );
 }
 
 /** Whether `timeline` shows what `claim`'s write changed. */
@@ -48,8 +83,9 @@ export function shows(timeline: Timeline, claim: Claim): boolean {
       // The post comes after what was on screen as it went. When that was the newest page, the rest
       // of the timeline brings what's older, which may hold a comment with the same text.
       const at = timeline.items.findIndex(({ cursor }) => cursor === claim.after);
-      if (at === -1) return holding(timeline, write.text) > claim.had;
-      return holding({ ...timeline, items: timeline.items.slice(at + 1) }, write.text) > 0;
+      if (at === -1) return holding(timeline, write.text, claim.by) > claim.had;
+      const newer = { ...timeline, items: timeline.items.slice(at + 1) };
+      return holding(newer, write.text, claim.by) > 0;
     }
     case 'edited':
       return comments(timeline).some(

@@ -486,6 +486,31 @@ describe('Timeline', () => {
     ]);
   });
 
+  it('says a comment is on its way in its time’s place, as it will be drawn, with its buttons held back', () => {
+    const host = render(
+      <Timeline>
+        <TimelineComment
+          author="tess-okafor"
+          when="now"
+          mine
+          menu
+          sending="Sending…"
+          body={<p>Mine.</p>}
+        />
+        <TimelineComment author="tess-okafor" when="now" mine menu body={<p>Sent.</p>} />
+      </Timeline>,
+    );
+    const [sending, sent] = [row(host, 0), row(host, 1)];
+    expect(sending.textContent).toContain('tess-okafor (you) commented');
+    expect(sending.textContent).toContain('Sending…');
+    expect(sending.querySelector('time')).toBeNull();
+    expect(sending.querySelector('button')).toBeNull();
+    expect(sending.textContent).toContain('Mine.');
+    // Once GitHub has it, its time shows, and its `⋯` with it.
+    expect(sent.querySelector('time')?.textContent).toBe('now');
+    expect(sent.querySelectorAll('button')).toHaveLength(1);
+  });
+
   it("only uses utilities that Lo's stylesheet has, and runs the rail marker to marker", async () => {
     const host = render(
       <Timeline end={<TimelineEnd marker={{ login: 'a' }}>box</TimelineEnd>}>

@@ -12,6 +12,7 @@ import {
   editPullComment,
   focusCommentBox,
   onCommentWritten,
+  readSentBefore,
 } from '../../comments/window/shared.ts';
 import { middle, showingMiddle, type PullTab } from '../../tab/window/shared.ts';
 import keys from '../keys.ts';
@@ -30,7 +31,8 @@ import {
 } from './actions.ts';
 import { main, revisions } from './main.ts';
 import type { Row } from './rows.ts';
-import { claim, takeRevisions, takeSidebar, takeTimeline } from './store.ts';
+import { beforeOf } from './sent.ts';
+import { claim, shownTimelines, takeRevisions, takeSidebar, takeTimeline } from './store.ts';
 import { TIMELINE_VIEW, TimelineMiddle } from './TimelineView.tsx';
 import { changeTarget, loginOf } from './yours.ts';
 
@@ -133,6 +135,12 @@ export default {
     main().subscribe('timeline', takeTimeline);
     // What the reader's own write changed shows at once, as it comes.
     onCommentWritten(claim);
+    // What the timeline on screen holds as a comment is sent from its box tells GitHub's copy of it.
+    readSentBefore((view, text) => {
+      const shown = shownTimelines.get(view)?.timeline;
+      const login = loginOf(view);
+      return shown && login !== undefined ? beforeOf(shown, text, login) : undefined;
+    });
     main().subscribe('sidebar', takeSidebar);
     revisions().subscribe('comparison', takeRevisions);
   },
