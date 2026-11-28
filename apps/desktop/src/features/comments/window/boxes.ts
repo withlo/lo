@@ -2786,9 +2786,6 @@ export function timelineEvents(box: Box, leave: () => void): ComposerEvents {
     dragging(count) {
       draggingOver(box, count);
     },
-    lines(at) {
-      dragLines(box, at);
-    },
   };
 }
 

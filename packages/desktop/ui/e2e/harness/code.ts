@@ -10,8 +10,10 @@ import {
   createDiffView,
   createFileView,
   type Anchor,
+  type Composer,
   type DiffLayout,
   type DiffView,
+  type DraftMark,
   type FileView,
   type PassStats,
   type PeekFrame,
@@ -19,6 +21,7 @@ import {
   type Place,
   type RenderPopover,
   type RenderThread,
+  type Span,
   type ThreadsMode,
 } from '../../src/code/index.ts';
 import {
@@ -166,10 +169,35 @@ const commenting = defineCommands('comments', {
     targets: ['line'],
     when: { scope: 'diff' },
   },
+  // Lo's keys that change a box's lines, which a handle's tip names.
+  ...Object.fromEntries(
+    (
+      [
+        ['lineAbove', 'Add line above', 'cmd+alt+shift+up'],
+        ['dropFirst', 'Remove first line', 'cmd+alt+shift+down'],
+        ['lineBelow', 'Add line below', 'cmd+alt+down'],
+        ['dropLast', 'Remove last line', 'cmd+alt+up'],
+      ] as const
+    ).map(([name, label, key]) => [
+      name,
+      {
+        label,
+        control: 'a handle',
+        group: 'Comments',
+        keys: [key],
+        targets: ['lines'] as const,
+        when: { scope: 'box' },
+      },
+    ]),
+  ),
 });
 const comments: Target[] = [];
 /** What each right-click menu was opened on, in the scene that picks lines. */
 const menus: Target[] = [];
+/** The lines each new comment's box asked to move to, in the scene that picks lines, in order. */
+const relined: Span[] = [];
+/** The box `composeLines` opened last, and its draft's mark as it is now. */
+let composing: { composer: Composer; mark: (at: Span) => DraftMark } | undefined;
 
 /**
  * The lines of the scene that picks lines that take a comment: on each side, those of its file's
@@ -382,6 +410,54 @@ const harness = {
   /** Which lines the caller says take a comment, in the scene that picks lines, from now on. */
   know(): void {
     known = true;
+  },
+  /**
+   * In the scene that picks lines, threads shown `mode`, opens a new comment's box on `src/a.ts`'s
+   * new lines `from` to `to`, holding `text`, focus in it, with its draft's mark. As Lo does, the
+   * box goes to the lines it asks for (`ComposerEvents.lines`), its mark with it, where they take a
+   * comment: `relined` says which it asked for.
+   */
+  composeLines(from: number, to: number, mode: ThreadsMode, text = ''): void {
+    const diff = view();
+    diff.setThreads([], render, { popover });
+    diff.setThreadsMode(mode);
+    const mark = (at: Span): DraftMark => ({
+      at: at.from === at.to ? { file: at.file, side: at.side, line: at.to } : at,
+      words: at.from === at.to ? `line ${at.to}` : `lines ${at.from}–${at.to}`,
+      shown: true,
+      open: ignore,
+    });
+    const at: Span = { file: 'a', side: 'new', from, to };
+    const composer: Composer = diff.compose(at.from === at.to ? mark(at).at : at, text, {
+      change: ignore,
+      submit: ignore,
+      close: ignore,
+      lines: (to) => {
+        const span =
+          'from' in to ? to : { file: to.file, side: to.side, from: to.line, to: to.line };
+        relined.push(span);
+        if (takes(span.file, span.side, span.from) && takes(span.file, span.side, span.to)) {
+          if (composer.move(to)) diff.setDrafts([mark(span)]);
+        }
+      },
+    });
+    diff.setDrafts([mark(at)]);
+    composing = { composer, mark };
+  },
+  /**
+   * Moves the box `composeLines` opened to new lines `from` to `to`, as a key in it does in Lo,
+   * its draft's mark with it: whether the view moved it, its element the same one.
+   */
+  moveLines(from: number, to: number): { moved: boolean; same: boolean } {
+    const was = document.querySelector('.lo-diffcomposer');
+    const at: Span = { file: 'a', side: 'new', from, to };
+    const moved = composing?.composer.move(at) ?? false;
+    if (moved) view().setDrafts([composing!.mark(at)]);
+    return { moved, same: was !== null && document.querySelector('.lo-diffcomposer') === was };
+  },
+  /** The lines each new comment's box asked to move to, in the scene that picks lines. */
+  relined(): Span[] {
+    return relined;
   },
   /** The lines picked in each editor, by their text. */
   picked(): Record<string, string[]> {

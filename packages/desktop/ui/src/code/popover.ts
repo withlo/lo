@@ -339,6 +339,8 @@ export class ThreadPop<At extends PopAt> implements Popover<At> {
   /** Whether focus is in it, or was until what it was on went, with nothing taking it since. */
   #focusedIn = false;
   #leaving: (() => void) | undefined;
+  /** Whether it's stepped aside, open, as while an end of its box's lines is dragged. */
+  #aside = false;
   readonly #stops: (() => void)[] = [];
   readonly #sized: ResizeObserver | undefined;
 
@@ -534,6 +536,7 @@ export class ThreadPop<At extends PopAt> implements Popover<At> {
     if (!this.open) return;
     if (this.#state === 'preview') this.#closedAt = performance.now();
     this.#state = 'closed';
+    this.#aside = false;
     clearTimeout(this.#crossing);
     this.#host.shown(undefined);
     if (held && focus) this.#host.focusLine(at);
@@ -622,7 +625,8 @@ export class ThreadPop<At extends PopAt> implements Popover<At> {
   }
 
   aside(on: boolean): void {
-    if (this.#state === 'closed') return;
+    if (this.#state === 'closed' || on === this.#aside) return;
+    this.#aside = on;
     this.#leaving?.();
     this.#leaving = undefined;
     if (on) {
@@ -704,6 +708,7 @@ export class ThreadPop<At extends PopAt> implements Popover<At> {
     }
     this.#leaving?.();
     this.#leaving = undefined;
+    this.#aside = false;
     delete this.dom.dataset.endingStyle;
     const room = this.#host.room(at);
     this.dom.style.setProperty('--lo-pop-max', `${popMax(room)}px`);

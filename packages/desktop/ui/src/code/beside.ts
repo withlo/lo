@@ -47,7 +47,14 @@ import type { HeaderThreads } from './decorations.ts';
 import { endSelection } from './keys.ts';
 import { besideMarker, type LaneBubble } from './lanes.ts';
 import type { Popover, PopHost, PopLines, PopRoom } from './popover.ts';
-import { type LaneRange, type Lights, type LitRange, rangeUnder, sameRange } from './ranges.ts';
+import {
+  type LaneHandle,
+  type LaneRange,
+  type Lights,
+  type LitRange,
+  rangeUnder,
+  sameRange,
+} from './ranges.ts';
 import { commentIn } from './threads.ts';
 import { editSlot, HeaderWidget, SpacerWidget } from './widgets.ts';
 
@@ -114,10 +121,34 @@ export function isDraftKey(key: string): boolean {
   return key.startsWith('draft:');
 }
 
-/** A file's threads' marks in one pane, by document line: their ranges, and each line's bubble. */
+/** Where a draft whose bracket's end is dragged is drawn: its last line, and its first on more. */
+function draggedAt(dragged: DraggedLines): { end: At; from?: { side: Side; line: number } } {
+  const { file, side } = dragged;
+  const first = Math.min(dragged.anchor, dragged.end);
+  const end = { file, side, line: Math.max(dragged.anchor, dragged.end) };
+  return first === end.line ? { end } : { end, from: { side, line: first } };
+}
+
+/**
+ * A file's threads' marks in one pane, by document line: their ranges, each line's bubble, and the
+ * cells that are an end of an open comment box's bracket.
+ */
 export interface FileLane {
   readonly ranges: readonly LaneRange[];
   readonly bubbles: ReadonlyMap<number, LaneBubble>;
+  readonly handles: ReadonlyMap<number, LaneHandle>;
+}
+
+/**
+ * An end of an open box's bracket being dragged: the draft's range by its key as the drag started,
+ * in file `file` on side `side`, from the line that stays, `anchor`, to the one that moves, `end`.
+ */
+export interface DraggedLines {
+  readonly key: string;
+  readonly file: number;
+  readonly side: Side;
+  readonly anchor: number;
+  readonly end: number;
 }
 
 /** A line of a file, by the file's index and where in it (`side:line`), as a view keys its lines. */
@@ -380,6 +411,11 @@ export interface BesideHost {
    * where it goes, and moves it there (`moveBox`). Says whether it went.
    */
   moveBox?(box: CommentBox, at: Place | Span): boolean;
+  /**
+   * Whether an open box's lines change by dragging its bracket's ends, which then, between lines
+   * too, draws the bracket of each box open on lines, with its ends as handles.
+   */
+  readonly handles?: boolean;
 }
 
 /**
@@ -404,8 +440,13 @@ export class Beside {
   #box: PopBox | undefined;
   /** Above 0 while the popover lets its box go, as it closes or moves: the popover's own doing. */
   #releasing = 0;
-  /** The drafts the caller gave last, which beside lines the marks show. */
+  /**
+   * The drafts the caller gave last, which beside lines the marks show, and between lines those of
+   * the boxes open on lines.
+   */
   #drafts: readonly DraftMark[] = [];
+  /** An end of an open box's bracket being dragged, whose bracket follows the drag. */
+  #dragged: DraggedLines | undefined;
   /** Stops waiting for the reader's next input, which lets a sent box in the popover go. */
   #sentWait: (() => void) | undefined;
   /** The popover's card the pointer is on, or its first where it's in the popover on none. */
@@ -496,8 +537,9 @@ export class Beside {
     const bubbles = new Map<number, LaneBubble>();
     const drawn = host.threadsIn(file);
     const drafts = this.#draftsIn(pane, file);
-    if ((!drawn || drawn.size === 0) && drafts.size === 0) return { ranges, bubbles };
-    if (!host.hasLines(pane, file)) return { ranges, bubbles };
+    const { handles } = drafts;
+    if ((!drawn || drawn.size === 0) && drafts.size === 0) return { ranges, bubbles, handles };
+    if (!host.hasLines(pane, file)) return { ranges, bubbles, handles };
     // Beside lines, the threads whose popover is open: their bubble says so.
     const shown = this.#shownAt;
     const popped =
@@ -551,13 +593,16 @@ export class Beside {
         was: this.tones.was(`${pane}:${key}`, bubble.tone),
       });
     }
-    return { ranges, bubbles };
+    return { ranges, bubbles, handles };
   }
 
   /**
-   * Beside lines, the marks of file `file`'s drafts in `pane`: by the document line each ends on,
-   * those there, each with its words, and whether the popover at its line is open; and the brackets
-   * of those on more than one line, muted. A file's own are in its header.
+   * The marks of file `file`'s drafts in `pane`: by the document line each ends on, those there,
+   * each with its words, and whether the popover at its line is open; and the brackets of those on
+   * more than one line, muted. Beside lines, every draft's; between lines, where boxes have
+   * handles, those of the boxes open on lines. The bracket of a box open on lines has handles at
+   * its ends, where the host says so: the popover's, beside lines, and each one's between them. One whose end is dragged draws where the drag has it. A
+   * file's own are in its header.
    */
   #draftsIn(
     pane: Pane,
@@ -565,27 +610,78 @@ export class Beside {
   ): {
     bubbles: Map<number, DraftEnd[]>;
     ranges: LaneRange[];
+    handles: Map<number, LaneHandle>;
     size: number;
   } {
     const host = this.#host;
     const bubbles = new Map<number, DraftEnd[]>();
     const ranges: LaneRange[] = [];
-    const none = { bubbles, ranges, size: 0 };
-    if (host.mode() !== 'beside') return none;
+    const handles = new Map<number, LaneHandle>();
+    const none = { bubbles, ranges, handles, size: 0 };
     if (!host.hasLines(pane, file)) return none;
+    const beside = host.mode() === 'beside';
+    const picked = beside ? this.pickedBox() : undefined;
+    const pickedKey =
+      picked &&
+      draftKey(
+        picked.place.file,
+        picked.place.side,
+        picked.from?.line ?? picked.place.line,
+        picked.place.line,
+      );
     for (const draft of this.#drafts) {
-      const at = this.#draftAt(draft);
-      if (!at || at.end.file !== file || at.end.line === 0) continue;
-      const open = this.#shownAt?.key === this.#popKey(at.end);
-      const key = at.key ?? '';
+      if (!beside && (host.handles !== true || draft.shown !== true)) continue;
+      const found = this.#draftAt(draft);
+      if (!found || found.end.file !== file || found.end.line === 0) continue;
+      if (!beside && found.thread !== undefined) continue;
+      const key = found.key ?? '';
+      const dragged = this.#dragged?.key === key ? this.#dragged : undefined;
+      const at = dragged ? draggedAt(dragged) : found;
+      // Between lines its box is open under its line.
+      const open = !beside || this.#shownAt?.key === this.#popKey(found.end);
       const range = at.from && host.laneRange(pane, file, at.from, at.end);
       if (range) ranges.push({ ...range, key, tone: 'muted' });
+      // The popover's box beside lines, and each one open between them, has handles.
+      const handled = host.handles === true && (beside ? key === pickedKey : true);
+      if (handled && range) {
+        const moving = dragged && dragged.end !== dragged.anchor ? dragged.end : undefined;
+        const first = Math.min(at.from!.line, at.end.line);
+        if (range.tick) {
+          handles.set(range.from, { range: key, end: 'first', pressed: moving === first });
+        }
+        if (range.foot) {
+          handles.set(range.to, { range: key, end: 'last', pressed: moving === at.end.line });
+        }
+      }
       if (pane !== 'inline' && at.end.side !== pane) continue;
       const line = host.docLine(pane, at.end);
+      if (handled && !range) {
+        handles.set(line, { range: key, end: 'both', pressed: dragged !== undefined });
+      }
       const mark = { words: draft.words, open, shown: draft.shown, key };
       bubbles.set(line, [...(bubbles.get(line) ?? []), mark]);
     }
-    return { bubbles, ranges, size: bubbles.size + ranges.length };
+    return { bubbles, ranges, handles, size: bubbles.size + ranges.length };
+  }
+
+  /**
+   * An end of an open box's bracket is dragged, `lines` saying where it is now, or the drag is
+   * over, `undefined`: the bracket follows it, drawn again in the lanes.
+   */
+  drag(lines: DraggedLines | undefined): void {
+    const was = this.#dragged;
+    if (
+      was?.key === lines?.key &&
+      was?.anchor === lines?.anchor &&
+      was?.end === lines?.end &&
+      was?.file === lines?.file
+    ) {
+      return;
+    }
+    this.#dragged = lines;
+    const files = new Set<number>();
+    for (const each of [was, lines]) if (each) files.add(each.file);
+    this.#host.marksChanged(files, []);
   }
 
   /**
@@ -784,12 +880,16 @@ export class Beside {
     const was = this.#drafts;
     this.#drafts = drafts;
     // The same marks, as each time a draft is saved while it's typed: nothing to draw again.
-    if (this.#host.mode() !== 'beside' || sameDrafts(was, drafts)) return;
+    if (sameDrafts(was, drafts)) return;
+    const beside = this.#host.mode() === 'beside';
     const files = new Set<number>();
     const heads = new Set<number>();
     for (const each of [...was, ...drafts]) {
+      // Between lines, only a box open on lines has a mark, where it has handles, and no file's
+      // own draft.
+      if (!beside && (this.#host.handles !== true || each.shown !== true)) continue;
       const at = this.#draftAt(each);
-      if (!at) continue;
+      if (!at || (!beside && at.end.line === 0)) continue;
       files.add(at.end.file);
       if (at.end.line === 0) heads.add(at.end.file);
     }
@@ -1009,8 +1109,9 @@ export class Beside {
     const { target } = event;
     if (host.mode() !== 'beside' || !(target instanceof Element)) return undefined;
     if (!host.root.contains(target) || this.#pop?.dom.contains(target)) return undefined;
-    // A draft's own bubble is a control of its own, which opens its box again.
-    if (target.closest('.lo-bubble[data-draft]') !== null) return undefined;
+    // A draft's own bubble is a control of its own, which opens its box again, and an end of an
+    // open box's bracket is a handle.
+    if (target.closest('.lo-bubble[data-draft], .lo-handle') !== null) return undefined;
     let thread = target.closest<HTMLElement>('.lo-bubble[data-beside]')?.dataset.thread;
     if (thread === undefined && besideMarker(target)) {
       // A draft's range opens nothing from the lane: its own bubble opens its box.
@@ -1120,11 +1221,12 @@ export class Beside {
    * The lines of the new comment's box open in the popover, being written: its last line, and its
    * first where it's on more than one.
    */
-  pickedBox(): { place: At; from: { side: Side; line: number } | undefined } | undefined {
+  pickedBox():
+    { box: CommentBox; place: At; from: { side: Side; line: number } | undefined } | undefined {
     const box = this.#box;
     if (!box || box.sent || box.box.thread !== undefined || box.place.line === 0) return undefined;
     if (!this.#pop?.pinned || this.#pop.at?.key !== box.at.key) return undefined;
-    return { place: box.place, from: box.from };
+    return { box: box.box, place: box.place, from: box.from };
   }
 
   /** The thread of the card in the popover the keyboard is on, if focus is in one. */

@@ -476,8 +476,7 @@ export interface ComposerEvents {
   /**
    * The reader dragged an end of the new comment's lines in the gutter, the cell of its bracket's
    * tick or of its mark, to make them `at`, on the box's side: the caller moves the box there with
-   * `move`, in this call, or leaves it where it was, saying why. With this, a box on lines open in a
-   * code view has those two ends to drag, its handles; without it, none.
+   * `move`, in this call, or leaves it where it was, saying why. Unheard, it stays where it was.
    */
   lines?(at: Place | Span): void;
 }

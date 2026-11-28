@@ -138,10 +138,7 @@ export interface BoxOptions {
    * whether it went. Without it, a box stays where it opened.
    */
   move?: ((box: CommentBox, at: Place | Span) => boolean) | undefined;
-  /**
-   * The reader dragged an end of its lines in the gutter to make them `at` (`ComposerEvents.lines`):
-   * a new comment's box on lines with this has those ends to drag.
-   */
+  /** The reader dragged an end of its lines in the gutter, to make them `at` (`lines` event). */
   lines?: ((at: Place | Span) => void) | undefined;
   /** The box scrolled its pane to come on screen whole, as it took focus. */
   shown?: ((box: CommentBox) => void) | undefined;

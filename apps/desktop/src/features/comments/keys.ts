@@ -23,6 +23,11 @@
 // frame's right-click menu, and in the palette while focus is in the box, each only where the box
 // offers it, without a key of its own. Where the kept drafts are, those the diff took down open
 // that no box has taken since, the palette says, as a click on the status bar's note for them does.
+// A new comment's box on lines in the diff changes its lines from its head's lines button, whose
+// menu has them, or by key, in the box: `⌘⌥↓` and `⌘⌥↑` add and remove a last line, and with `⇧`
+// a first, each taking the next line that way that takes a comment. They're Lo's, not the editor's,
+// so a key that can't says why; the box's editor gives up its own add-a-cursor keys for them. Its
+// bracket's two ends in the gutter drag the lines too, as a drag from the `+` does.
 //
 // Vim keys are a setting, `editor.vim`, off as Lo starts: "Vim keys" switches it, from the palette
 // or Settings › Keyboard. Off, code and boxes have a plain caret, a box takes typing as soon as it

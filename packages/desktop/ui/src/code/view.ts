@@ -322,6 +322,38 @@ interface PlusDrag extends Pick {
   stop: (() => void) | undefined;
 }
 
+/**
+ * A drag from an end of a new comment's box's bracket, a handle, which moves that end: from the
+ * other end, which stays (`anchor`), to where the pointer's row has it (`end`).
+ */
+interface EndDrag extends Pick {
+  readonly box: CommentBox;
+  /** The draft's range in the lane as the drag started. */
+  readonly key: string;
+  /**
+   * Up for the first line's handle and down for the last's, never past the other end; either way
+   * on one line.
+   */
+  readonly way: -1 | 0 | 1;
+  /** Where the box is as the drag starts, under its last line, and its first line. */
+  readonly place: At;
+  readonly first: number;
+  /** What had focus as it was pressed, as the box or the popover it's in, which gets it back. */
+  readonly had: Element | null;
+  started: boolean;
+  stop: (() => void) | undefined;
+}
+
+/**
+ * What an end of an open box's bracket says under the pointer, by the end: which it is, and the
+ * keys that move it, by the commands they run. On one line, those that add a line either way.
+ */
+const HANDLE_TIPS = {
+  first: { label: 'First line', commands: ['comments.lineAbove', 'comments.dropFirst'] },
+  last: { label: 'Last line', commands: ['comments.lineBelow', 'comments.dropLast'] },
+  both: { label: 'First and last line', commands: ['comments.lineAbove', 'comments.lineBelow'] },
+} as const;
+
 /** Replaces one file's decorations. */
 /** How long a line put back at the top stays there once it's settled, in milliseconds. */
 const HOLD_AFTER = 2_000;
@@ -620,8 +652,12 @@ class View implements DiffView {
   readonly #add = document.createElement('button');
   #addAt: Target | undefined;
   #addRow: { pane: Pane; line: number } | undefined;
-  /** The lines a drag from the `+` picks, while one is under way. */
-  #pick: PlusDrag | undefined;
+  /** The lines a drag from the `+` or an end of an open box's bracket picks, while one is on. */
+  #pick: PlusDrag | EndDrag | undefined;
+  /** Between lines, the box whose bracket's end is dragged, out of the flow meanwhile. */
+  #aside: CommentBox | undefined;
+  /** Where that box waits, unseen, until it's drawn again. */
+  readonly #parked = document.createElement('div');
   /** Whether the press last made in the view dragged from the `+`: its click is none of the `+`'s. */
   #picked = false;
   /** The file the `+` last came to, whose lines that take a comment the caller was asked for. */
@@ -826,6 +862,9 @@ class View implements DiffView {
     this.#add.addEventListener('pointerdown', this.#pressAdd);
     // A new press is no drag's, whatever ended the last.
     this.dom.addEventListener('pointerdown', this.#unpick, { capture: true });
+    // An end of an open box's bracket drags, and its click does nothing.
+    this.dom.addEventListener('pointerdown', this.#pressHandle);
+    this.dom.addEventListener('click', this.#clickHandle, { capture: true });
     this.dom.append(this.#add);
     this.dom.addEventListener('click', this.#runControl);
     this.dom.addEventListener('click', this.#openMore);
@@ -2753,10 +2792,11 @@ class View implements DiffView {
 
   /** File `file`'s threads' marks in the lane of `pane`, whose text is `doc`. */
   #laneOf(pane: Pane, file: number, doc: Text) {
-    const { ranges, bubbles } = this.#beside.lane(pane, file);
+    const { ranges, bubbles, handles } = this.#beside.lane(pane, file);
     return laneUpdate(doc, this.#fileSpan(pane, file, doc), ranges, bubbles, {
       beside: this.#mode === 'beside',
       lit: this.#lit.stems.threads,
+      handles,
     });
   }
 
@@ -2838,9 +2878,10 @@ class View implements DiffView {
    */
   #relight(): void {
     const lights: Lights = {
-      // Lines a drag from the `+` picks are picked over everything else, like a box's.
+      // Lines a drag picks are picked over everything else, like a box's: a drag from an end of a
+      // box's bracket keeps the bracket lit.
       pinned: this.#pick?.started
-        ? { picked: undefined }
+        ? { picked: 'box' in this.#pick ? { lane: 'threads', key: this.#pick.key } : undefined }
         : this.#mode === 'beside'
           ? this.#beside.pinnedLight()
           : this.#pickedBetween(),
@@ -3127,6 +3168,7 @@ class View implements DiffView {
         this.#aligner.anchorHere();
       },
       moveBox: (box, at) => this.#moveBox(box, at),
+      handles: true,
     };
   }
 
@@ -4489,6 +4531,11 @@ class View implements DiffView {
   #tipOf(control: HTMLElement): Tip | undefined {
     // A mark beside lines has none: what the pointer resting on it shows is its thread.
     if (control.dataset.beside !== undefined) return undefined;
+    const handle = control.dataset.handle;
+    if (handle === 'first' || handle === 'last' || handle === 'both') {
+      const { label, commands } = HANDLE_TIPS[handle];
+      return { label, keys: commands.flatMap((id) => controlOf(id)?.keys ?? []) };
+    }
     const id = control.dataset.command;
     // A mark, or a name cut short, which says what it is, and no key.
     if (id === undefined) {
@@ -4564,14 +4611,7 @@ class View implements DiffView {
     const stop = pickLines(this.#add, event, {
       follow: (y) => this.#followPick(drag, y),
       band: () => this.#pickBand(),
-      scroll: (by) => {
-        const before = this.dom.scrollTop;
-        this.dom.scrollTop = before + by;
-        // The reader's own scroll, made by holding the pointer there.
-        const moved = this.dom.scrollTop - before;
-        this.#asked += moved;
-        return moved !== 0;
-      },
+      scroll: (by) => this.#pickScroll(by),
       // Without a caller to say, a drag keeps to the lines drawn on its side.
       known: () => drag.lines !== undefined || !this.#on.commentLines,
       end: () => {
@@ -4638,6 +4678,204 @@ class View implements DiffView {
     this.#add.style.visibility = '';
     this.#hideAdd();
     this.#relight();
+  }
+
+  /** A drag that picks lines scrolls the pane `by` pixels, held near its edge: whether it moved. */
+  #pickScroll(by: number): boolean {
+    const before = this.dom.scrollTop;
+    this.dom.scrollTop = before + by;
+    // The reader's own scroll, made by holding the pointer there.
+    const moved = this.dom.scrollTop - before;
+    this.#asked += moved;
+    return moved !== 0;
+  }
+
+  /**
+   * A press on an end of an open box's bracket, a handle: a move of 4 px or more drags that end to
+   * the pointer's row, by a drag from the `+`'s edges (`#endOf`), never past the other end, and on
+   * one line either way. The box steps aside meanwhile, and once it's let go goes under the new
+   * last line, as the caller moves it, or back where it was; focus goes back where it was. `Esc`
+   * puts the lines back. A press let go with no move does nothing.
+   */
+  readonly #pressHandle = (event: PointerEvent): void => {
+    const { target } = event;
+    const handle = target instanceof Element ? target.closest<HTMLElement>('.lo-handle') : null;
+    if (!handle || this.#pick || !this.dom.contains(handle)) return;
+    const end = handle.dataset.handle;
+    const key = handle.dataset.handleRange;
+    const pane = this.#panes().find((each) => this.#viewOf(each).dom.contains(handle));
+    const control = handle.closest<HTMLElement>('.cm-gutter');
+    const open = key === undefined ? undefined : this.#handled(key);
+    if (!open || !pane || !control || (end !== 'first' && end !== 'last' && end !== 'both')) {
+      return;
+    }
+    const { box, place } = open;
+    const first = open.from?.line ?? place.line;
+    const drag: EndDrag = {
+      pane,
+      file: place.file,
+      side: place.side,
+      anchor: end === 'first' ? place.line : first,
+      end: end === 'first' ? first : place.line,
+      lines: this.#linesOf(place.file),
+      box,
+      key: key!,
+      way: end === 'first' ? -1 : end === 'last' ? 1 : 0,
+      place,
+      first,
+      had: this.dom.ownerDocument.activeElement,
+      started: false,
+      stop: undefined,
+    };
+    this.#hideAdd();
+    const stop = pickLines(control, event, {
+      follow: (y) => this.#followEnd(drag, y),
+      band: () => this.#pickBand(),
+      scroll: (by) => this.#pickScroll(by),
+      known: () => drag.lines !== undefined || !this.#on.commentLines,
+      end: () => this.#endDrag(drag, true),
+      cancel: () => this.#endDrag(drag, false),
+      click: () => {
+        if (this.#pick === drag) this.#pick = undefined;
+      },
+    });
+    if (!stop) return;
+    drag.stop = stop;
+    this.#pick = drag;
+  };
+
+  /** A click on an end of an open box's bracket does nothing, whatever its cell draws. */
+  readonly #clickHandle = (event: MouseEvent): void => {
+    const { target } = event;
+    if (!(target instanceof Element) || target.closest('.lo-handle') === null) return;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  /**
+   * The new comment's box whose bracket in the lane is range `key`, with handles at its ends: the
+   * popover's, beside lines, or one open in the flow, between them.
+   */
+  #handled(
+    key: string,
+  ): { box: CommentBox; place: At; from: { side: Side; line: number } | undefined } | undefined {
+    const keyOf = (place: At, from: { line: number } | undefined): string =>
+      draftKey(place.file, place.side, from?.line ?? place.line, place.line);
+    if (this.#mode === 'beside') {
+      const picked = this.#beside.pickedBox();
+      return picked && keyOf(picked.place, picked.from) === key ? picked : undefined;
+    }
+    for (const { box, place, from } of this.#boxes.values()) {
+      if (box.thread !== undefined || place.line === 0) continue;
+      if (keyOf(place, from) === key) return { box, place, from };
+    }
+    return undefined;
+  }
+
+  /**
+   * The pointer at `y` in a drag from an end of an open box's bracket: that end goes to the row
+   * there, held as a drag from the `+`'s is, never past the other; the bracket and the picked rows
+   * follow it. The box steps aside as the drag starts. The words its tip says.
+   */
+  #followEnd(drag: EndDrag, y: number): string | undefined {
+    if (this.#pick !== drag) return undefined;
+    const sizes =
+      drag.pane === 'inline'
+        ? this.#inline?.layout.files[drag.file]
+        : this.#layout.files[drag.file]?.[drag.pane];
+    // Drawn anew another way meanwhile, without its file's lines, or its box gone: it's dropped.
+    if (
+      !this.#panes().includes(drag.pane) ||
+      !sizes ||
+      this.#noteOf(drag.file) ||
+      this.#handled(drag.key)?.box !== drag.box
+    ) {
+      this.#endDrag(drag, false);
+      drag.stop?.();
+      return undefined;
+    }
+    if (!drag.started) {
+      drag.started = true;
+      this.#stepAside(drag.box, true);
+    }
+    drag.lines ??= this.#linesOf(drag.file);
+    const view = this.#viewOf(drag.pane);
+    const band = this.#pickBand();
+    const at = Math.max(band.top + 1, Math.min(band.bottom - 1, y));
+    const start = this.#docLine(drag.pane, { file: drag.file, side: drag.side, line: drag.anchor });
+    const row = this.#rowToward(view, at, start);
+    const toward = drag.way < 0 ? Math.min(row, start) : drag.way > 0 ? Math.max(row, start) : row;
+    drag.end = this.#endOf(drag, toward);
+    const { key, file, side, anchor, end } = drag;
+    this.#beside.drag({ key, file, side, anchor, end });
+    this.#relight();
+    return drag.lines?.on(this.#pickSpan(drag));
+  }
+
+  /**
+   * A drag from an end of an open box's bracket let go, `letGo`, or dropped: the bracket is the
+   * box's again, and the box comes back, under the lines picked where the caller moves it there
+   * (`Composer.move`), else where it was. Focus goes back where it was.
+   */
+  #endDrag(drag: EndDrag, letGo: boolean): void {
+    if (this.#pick !== drag) return;
+    this.#pick = undefined;
+    this.#beside.drag(undefined);
+    const { box } = drag;
+    if (!drag.started) {
+      this.#relight();
+      return;
+    }
+    const span = this.#pickSpan(drag);
+    const changed = letGo && (span.from !== drag.first || span.to !== drag.place.line);
+    const before = box.target;
+    // Beside lines the popover comes back first, so it's placed by its size where it goes.
+    this.#stepAside(box, false);
+    if (changed) box.relines?.(span);
+    // Between lines, back where it was, as nothing moved it.
+    if (this.#mode === 'between' && box.target === before) {
+      const open = this.#openBoxOf(box);
+      if (open) this.#keepLine(open.place, () => this.#refresh(open.place.file));
+    }
+    // Focus goes back where it was, which stepping aside took it from.
+    const { had } = drag;
+    if (had && box.dom.contains(had)) {
+      if (!box.hasFocus) box.focusShown();
+    } else if (
+      had instanceof HTMLElement &&
+      had.isConnected &&
+      !had.contains(document.activeElement)
+    ) {
+      had.focus({ preventScroll: true });
+    }
+    this.#relight();
+  }
+
+  /**
+   * Box `box` steps aside while an end of its bracket is dragged, `true`: beside lines the popover
+   * leaves; between lines its block and its room leave the flow, its last line staying where it
+   * is. Or it's let back, `false`: beside lines the popover comes back where it's placed; between
+   * lines it goes back into the flow as its file is next drawn, where it's moved or where it was.
+   */
+  #stepAside(box: CommentBox, aside: boolean): void {
+    if (!aside) {
+      // Whichever way threads show now, as they may have changed meanwhile.
+      this.#beside.stepAside(false);
+      this.#aside = undefined;
+      return;
+    }
+    if (this.#mode === 'beside') {
+      this.#beside.stepAside(true);
+      return;
+    }
+    this.#aside = box;
+    // It waits on the page, unseen, so focus in it is let go, not caught by what's around it as if
+    // the box had gone; its block then draws without it.
+    this.#parked.hidden = true;
+    if (!this.#parked.isConnected) this.dom.append(this.#parked);
+    this.#parked.append(box.dom);
+    const open = this.#openBoxOf(box);
+    if (open) this.#keepLine(open.place, () => this.#refresh(open.place.file));
   }
 
   /** Where the view shows lines: from under the pinned file header to the foot of its box. */
@@ -5699,7 +5937,8 @@ class View implements DiffView {
       ...this.#boxes.values(),
     ];
     for (const { box, place } of boxes) {
-      if (place.file !== file) continue;
+      // One whose bracket's end is dragged steps aside meanwhile, its room with it.
+      if (place.file !== file || box === this.#aside) continue;
       const { side, line } = place;
       const key = `${side}:${line}`;
       const shown = byPlace.get(key) ?? { id: placeKey(place), side, line, threads: [] };
