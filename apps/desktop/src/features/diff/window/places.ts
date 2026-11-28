@@ -319,6 +319,7 @@ function placeOf(target: Target): { file: string; side: Side } | undefined {
   switch (target.kind) {
     case 'line':
     case 'draft':
+    case 'note':
       return { file: target.at.file, side: target.at.side };
     case 'header':
       return { file: target.file, side: target.side };

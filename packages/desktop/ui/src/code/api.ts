@@ -188,6 +188,8 @@ export interface DiffInit {
   hidden?: boolean | undefined;
   /** What draws a file's `problem` under its header. Without it, none is drawn. */
   renderProblem?: RenderProblem | undefined;
+  /** What draws overview notes, in the popover or under their lines. Without it, none opens. */
+  renderNotes?: RenderNotes | undefined;
   /** How it shows review threads: between lines unless said. `setThreadsMode` changes it. */
   threads?: ThreadsMode | undefined;
   /**
@@ -325,6 +327,8 @@ export interface PopoverView {
    * hold the box alone.
    */
   readonly box?: PopoverBox | undefined;
+  /** In place of threads, the overview notes that end on the line, in the overview's order. */
+  readonly notes?: readonly NoteView[] | undefined;
 }
 
 /** Where a comment box goes in a popover: see {@link PopoverView.box}. */
@@ -376,8 +380,59 @@ export type RenderPopover = (
   close: () => void,
 ) => PopoverContent;
 
-/** Where a jump goes: the next change, file or thread, counted from the cursor. */
-export type JumpTo = 'change' | 'file' | 'thread';
+/**
+ * An overview's note on lines of a diff, as a code view shows it: beside lines in its popover, with
+ * the others that end on its last line, or between lines as a card under that line. What draws it
+ * is the caller's (`RenderNotes`).
+ */
+export interface NoteView {
+  /** The view's name for it, which its controls' target gives back (`NoteTarget.note`). */
+  readonly key: string;
+  /** Its lines, on the new side of a file, by the caller's id for the file. */
+  readonly at: Span;
+  /** The caller's id for what explains them, which "Show in overview" gives back. */
+  readonly block: string;
+  /** The section of the overview it's from, by its name. */
+  readonly label: string;
+  /** Its words, plain, which it shows unless `draw` draws them its own way. */
+  readonly text: string;
+  readonly draw?: DrawNote | undefined;
+}
+
+/** Overview notes as a code view shows them at once, in its popover or under a line. */
+export interface NotesView {
+  readonly notes: readonly NoteView[];
+  /**
+   * In the popover, whether it's pinned: its Close and key chips show, in the room a preview
+   * keeps for them. Under a line, whether the keyboard is on the note.
+   */
+  readonly focused: boolean;
+  /** What a screen reader calls them: "Overview note, lines 2–15", "2 overview notes, lines 2–15". */
+  readonly label: string;
+}
+
+/** What the caller drew of notes, which the view keeps up to date and takes down. */
+export interface NotesContent {
+  /** What they show changed: draw them again. */
+  update(view: NotesView): void;
+  destroy(): void;
+}
+
+/**
+ * Draws overview notes in `host`, an element the view makes for them, at once, since the view
+ * measures them as they're drawn: in the `popover`, beside lines, the notes that end on a line,
+ * whose Close calls `close`; or as a `card` under the line, between lines, one note, whose control
+ * that collapses it closes it (`close`).
+ */
+export type RenderNotes = (
+  host: HTMLElement,
+  view: NotesView,
+  how: 'popover' | 'card',
+  close: () => void,
+) => NotesContent;
+
+/** Where a jump goes: the next change, file, thread or overview note, counted from the cursor. */
+export type JumpTo = 'change' | 'file' | 'thread' | 'note';
 
 /**
  * What `fold` does at a place: `open` or `close` the unchanged lines there (`zo`, `zc`), open
@@ -818,20 +873,36 @@ export interface DiffView extends KeySource {
   setMarks(marks: readonly Mark[]): void;
   /** Whether `openNote` would open a note at `at`: an overview marker's on its line, drawn. */
   hasNote(at: Place): boolean;
+  /** Whether the view has an overview note it would draw, which `] o` would step to. */
+  hasNotes(): boolean;
   /**
-   * Opens the notes of the overview markers on `at`'s line, each under its last line, as a click on
-   * a marker's ball does. Says whether there was one to open: a note that wouldn't be drawn, as on
-   * a file kept out, past a file's end or on lines GitHub's diff left out, isn't. What's at the top
-   * of the screen stays where it is; not a jump, and focus stays where it is.
+   * Opens the overview notes on `at`'s line, as `⏎` there does: those that end on it, which share
+   * its ball, else the one with the shortest range over it. Beside lines they open in the popover,
+   * pinned, as `⏎` pins a thread's, focus going into it; between lines, each under its last line,
+   * as a click on its ball does, what's at the top of the screen staying where it is and focus
+   * where it is. Says whether there was one to open: a note that wouldn't be drawn, as on a file
+   * kept out, past a file's end or on lines GitHub's diff left out, isn't. Not a jump.
    */
   openNote(at: Place): boolean;
   /**
-   * Closes the note opened last of those drawn, as `Esc` does in the diff's code. Says whether one
-   * was open. What's at the top of the screen stays where it is.
+   * Between lines, closes the note opened last of those drawn, as `Esc` does in the diff's code.
+   * Says whether one was open. What's at the top of the screen stays where it is.
    */
   closeNote(): boolean;
-  /** Whether a note is drawn open, which `closeNote` would close. */
+  /** Between lines, whether a note is drawn open, which `closeNote` would close. */
   hasOpenNote(): boolean;
+  /**
+   * Whether an open note is on `at`'s line: in the popover, beside lines, or under its last line,
+   * between them. "Show in overview" acts on it there.
+   */
+  noteOpenAt(at: Place): boolean;
+  /**
+   * "Show in overview" for note `note`, by the view's name for it, or else the first of the open
+   * notes on `at`'s line: the caller hears its block (`explained`), with the line it's under. A
+   * note held as it was on screen, its mark changed since, takes the change first: one whose mark
+   * went shows nothing. Says whether there was one.
+   */
+  showInOverview(at: Place, note?: string): boolean;
   /**
    * Moves the cursor to what `at` names, and brings it on screen: a line, the last line `v`
    * selected, a header, a file's header on the side the cursor is on, or a thread's line. Says
@@ -881,7 +952,10 @@ export interface DiffView extends KeySource {
    * pass keeps it on screen, as after any key.
    */
   holdTop(viewport: Viewport): boolean;
-  /** `]c` and kin: `count` changes, files or threads on, or back where it's negative. */
+  /**
+   * `]c` and kin: `count` changes, files, threads or overview notes on, or back where it's
+   * negative. A note `] o` lands on opens, as a thread `] t` lands on does.
+   */
   jump(to: JumpTo, count: number): void;
   /** `Tab`: the cursor goes to its row on the other side. A jump. */
   otherSide(): void;
@@ -1085,6 +1159,11 @@ export interface OverviewMark {
    * its place, as rich text.
    */
   note: { label: string; text: string; draw?: DrawNote | undefined };
+  /**
+   * What a screen reader hears of where it is, after the words for what it is, as the review's
+   * `lineRefText` puts them after other words: `lines 2–15`.
+   */
+  words?: string | undefined;
 }
 
 /**
@@ -1437,4 +1516,6 @@ export const diffMotions: Readonly<Record<string, { to: JumpTo; forward: boolean
   'diff.previousFile': { to: 'file', forward: false },
   'diff.nextThread': { to: 'thread', forward: true },
   'diff.previousThread': { to: 'thread', forward: false },
+  'diff.nextNote': { to: 'note', forward: true },
+  'diff.previousNote': { to: 'note', forward: false },
 };

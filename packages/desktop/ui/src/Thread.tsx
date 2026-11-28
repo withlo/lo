@@ -140,6 +140,11 @@ const card = cva('max-w-read-measure overflow-hidden rounded-md text-fg', {
   ],
 });
 
+/** An open thread card's frame, ringed while the keyboard is on it: an overview note's too. */
+export function threadCard(focused: boolean): string {
+  return card({ view: 'open', ground: focused ? 'focused' : 'rest' });
+}
+
 /** How many comments, and how many of them wait in your review. */
 function counted(comments: readonly ThreadComment[], pendingAll: boolean): string {
   const pending = comments.filter((each) => each.pending).length;

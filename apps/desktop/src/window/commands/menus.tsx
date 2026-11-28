@@ -175,6 +175,7 @@ function nameOf(kind: TargetKind): string {
   switch (kind) {
     case 'line':
     case 'draft':
+    case 'note':
       return 'Line actions';
     case 'header':
     case 'file':
