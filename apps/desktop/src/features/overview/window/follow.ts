@@ -2,8 +2,9 @@
 // each tab, which the keys act on; the block that has focus, or the one at the top of the screen;
 // `]b` and `[b`, `Tab` within a block, stepping a walkthrough or tabs, and the article's scroll;
 // following a block, link or part to its code, which the tab's history records so `⌃o` comes back
-// to the block; and, with code beside, the diff following the block that has focus to its code.
-// Nothing here moves what's on screen but a key, a click or a menu asks it to.
+// to the block, and a collapsed section's heading, which expands it; and, with code beside, the
+// diff following the block that has focus to its code. Nothing here moves what's on screen but a
+// key, a click or a menu asks it to.
 
 import type { OverviewTree } from '@lo/artifact';
 import { land, reveal } from '@lo/ui';
@@ -16,9 +17,11 @@ import {
   glossaryIn,
   hasSteps,
   linksIn,
+  sectionHeadOf,
   stepIn,
   type GlossaryParts,
 } from '@lo/ui/overview';
+import { flushSync } from 'react-dom';
 
 import { refuse } from '../../../window/commands/notices.tsx';
 import { registry } from '../../../window/commands/registry.ts';
@@ -80,6 +83,19 @@ export function drawnIn(tab: string): DrawnOverview | undefined {
 /** The number Lo gave the tree each tab's overview last showed, whose blocks history can reveal. */
 export const trees = tabState<number | undefined>(() => undefined);
 
+/**
+ * How a tab's overview expands the collapsed section a block is in, by the tab and the block's
+ * number, so it's drawn for history or a note to go to: at once, as anything going into one does.
+ * The sections' own, from the overview main last said the tab has, whether it's drawn yet or not.
+ * It says whether it expanded one.
+ */
+let opener: ((tab: string, block: number) => boolean) | undefined;
+
+/** Has `open` expand a collapsed section before a block in it is revealed, in any tab. */
+export function setOpener(open: (tab: string, block: number) => boolean): void {
+  opener = open;
+}
+
 /** A block to show once the tab's overview is drawn, as `⌃o` back to it asks, counted so each is once. */
 export const reveals = tabState<{ block: number; count: number } | undefined>(() => undefined);
 
@@ -94,6 +110,18 @@ function articleOf(overview: DrawnOverview): HTMLElement | null {
 export function blockElement(overview: DrawnOverview, index: number): HTMLElement | undefined {
   const article = articleOf(overview);
   return article ? blockStops(article).find((block) => blockNumber(block) === index) : undefined;
+}
+
+/**
+ * Where block `index`, a place history kept, is in the overview as drawn: the block, or the
+ * heading of a section that's opened since its heading was kept as a block.
+ */
+function placeElement(overview: DrawnOverview, index: number): HTMLElement | undefined {
+  return (
+    blockElement(overview, index) ??
+    articleOf(overview)?.querySelector<HTMLElement>(`[data-lo-section="${index}"]`) ??
+    undefined
+  );
 }
 
 /** The block that has focus, or that holds what has focus, if any. */
@@ -276,9 +304,16 @@ export function nextBlock(
   }
   const stops = blockStops(article);
   const focused = fromScreen ? undefined : focusedBlock(overview);
+  const heading = fromScreen ? undefined : headingWithFocus(article);
   let next: HTMLElement | undefined;
   if (focused) {
     next = stops[stops.indexOf(focused) + by];
+  } else if (heading) {
+    // From an open section's heading, the blocks after it or before it.
+    next =
+      by > 0
+        ? stops.find((block) => after(heading, block))
+        : stops.findLast((block) => after(block, heading));
   } else {
     const top = scroller.getBoundingClientRect().top;
     const below = (block: HTMLElement) => block.getBoundingClientRect().top >= top - 1;
@@ -287,6 +322,20 @@ export function nextBlock(
   if (next) return next;
   if (stops.length === 0) return 'No blocks in this overview';
   return by > 0 ? 'Last block' : 'First block';
+}
+
+/** Whether `later` comes after `earlier` in the page, and isn't in it. */
+function after(earlier: Element, later: Element): boolean {
+  return Boolean(earlier.compareDocumentPosition(later) & Node.DOCUMENT_POSITION_FOLLOWING);
+}
+
+/**
+ * The heading of a section in `article` that has focus, or holds what has focus, where it isn't a
+ * block: an open section's, whose chevron, words or `⋯` has it.
+ */
+function headingWithFocus(article: HTMLElement): HTMLElement | undefined {
+  const head = sectionHeadOf(document.activeElement);
+  return head && article.contains(head) && blockOf(article, head) === undefined ? head : undefined;
 }
 
 /** What `Tab` stops at before the blocks: the outline's sections and the byline's offer. */
@@ -311,11 +360,11 @@ function leadIn(overview: DrawnOverview): (HTMLElement | SVGElement)[] {
     (element): element is HTMLElement | SVGElement =>
       (element instanceof HTMLElement || element instanceof SVGElement) &&
       blockOf(article, element) === undefined &&
-      (first === undefined ||
-        Boolean(element.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING)) &&
+      (first === undefined || after(element, first)) &&
       element.tabIndex >= 0 &&
       !(element instanceof HTMLButtonElement && element.disabled) &&
-      element.closest('[hidden], [data-lo-hints]') === null &&
+      // Not a section's chevron or `⋯`: `z a` and the menu key work there.
+      element.closest('[hidden], [data-lo-hints], [data-lo-section]') === null &&
       drawnOnPage(element),
   );
 }
@@ -336,6 +385,8 @@ export function nextLink(overview: DrawnOverview, by: 1 | -1): HTMLElement | SVG
     const at = order.findIndex((each) => each === active);
     return order[(Math.max(0, at) + by + order.length) % order.length] ?? order[0]!;
   }
+  const article = articleOf(overview);
+  if (article && headingWithFocus(article)) return nextBlock(overview, by);
   const lead = leadIn(overview);
   const at = lead.findIndex((each) => each === active);
   if (at === -1) return (by > 0 ? lead[0] : lead.at(-1)) ?? nextBlock(overview, 1, true);
@@ -386,12 +437,18 @@ export function codeIn(overview: DrawnOverview, element: Element): CodeAt | unde
   return node && codeOf(node);
 }
 
-/** What `⏎` on a block does: the link or control in it with focus, its fold, its code, its first link. */
+/**
+ * What `⏎` on a block does: the link or control in it with focus, its fold, its code, its first
+ * link; or on a collapsed section's heading, expand the section.
+ */
 type Follow =
-  { kind: 'activate'; element: Element } | { kind: 'code'; code: CodeAt; block: HTMLElement };
+  | { kind: 'activate'; element: Element }
+  | { kind: 'code'; code: CodeAt; block: HTMLElement }
+  | { kind: 'section'; block: HTMLElement };
 
 /** What following `block` does, or why it can't be followed. */
 export function followOf(overview: DrawnOverview, block: HTMLElement): Follow | string {
+  if (sectionHeadOf(block) === block) return { kind: 'section', block };
   const own = focusTargetOf(block);
   const active = document.activeElement;
   if (active && active !== own && (linksIn(block) as Element[]).includes(active)) {
@@ -408,12 +465,13 @@ export function followOf(overview: DrawnOverview, block: HTMLElement): Follow | 
 
 /**
  * What `⏎` on `block` is called, by what it does there: "Open link" where it follows a link or a
- * part, and a fold's "Expand" or "Collapse". Nothing where it goes to code, which its label says,
- * or where there's nothing to follow.
+ * part, and a fold's "Expand" or "Collapse", as a collapsed section's "Expand". Nothing where it
+ * goes to code, which its label says, or where there's nothing to follow.
  */
 export function followName(overview: DrawnOverview, block: HTMLElement): string | undefined {
   const found = followOf(overview, block);
   if (typeof found === 'string' || found.kind === 'code') return undefined;
+  if (found.kind === 'section') return 'Expand';
   if (block instanceof HTMLDetailsElement && found.element === focusTargetOf(block)) {
     return block.open ? 'Collapse' : 'Expand';
   }
@@ -430,6 +488,11 @@ export function follow(overview: DrawnOverview, block: HTMLElement): void {
   if (typeof found === 'string') return;
   if (found.kind === 'activate') {
     activate(found.element);
+    return;
+  }
+  if (found.kind === 'section') {
+    const at = targetOf(overview, block);
+    if (at) registry().run('overview.foldSection', at);
     return;
   }
   if (!block.contains(document.activeElement)) focusTargetOf(block).focus({ preventScroll: true });
@@ -658,14 +721,22 @@ export function placesFor(tab: string): void {
 
 /**
  * Shows block `index` of the overview tab `tab` shows, as history brings a block back: the overview
- * comes on screen, with the block given focus once it's drawn.
+ * comes on screen, with the block given focus once it's drawn. A collapsed section it's in expands
+ * first, drawn now, so the block is there to go to; run from inside React's commit, as the palette
+ * runs Back as it closes, it's drawn only once that's done, and the block is gone to then.
  */
 export function revealBlock(tab: string, index: number): void {
   revealCount += 1;
+  const open = opener;
+  const opened = open !== undefined && flushSync(() => open(tab, index));
   reveals.set(tab, { block: index, count: revealCount });
   showMiddle(tab, OVERVIEW_VIEW);
   const overview = drawn.get(tab);
-  if (overview) takeReveal(overview);
+  if (!overview || takeReveal(overview) || !opened) return;
+  queueMicrotask(() => {
+    const now = drawn.get(tab);
+    if (now) takeReveal(now);
+  });
 }
 
 /** Forgets the tabs that closed, those not in `open`. */
@@ -684,7 +755,7 @@ export function keepPlaces(open: ReadonlySet<string>): void {
 export function takeReveal(overview: DrawnOverview): boolean {
   const waiting = reveals.get(overview.tab);
   if (!waiting) return false;
-  const block = blockElement(overview, waiting.block);
+  const block = placeElement(overview, waiting.block);
   if (!block) return false;
   reveals.set(overview.tab, undefined);
   const top = left.get(overview.tab)?.get(blockId(overview.generation, waiting.block));

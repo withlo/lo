@@ -140,12 +140,15 @@ export function SettingRowView<T>({
   setting,
   control,
   list,
+  actions,
   command,
 }: {
   setting: Setting<T>;
   control?: ((props: ControlProps<T>) => ReactNode) | undefined;
   /** The setting is a list, drawn under the row's words. */
   list?: boolean | undefined;
+  /** A list's own controls, at the end of its row, such as a field that adds to it. */
+  actions?: ((props: ControlProps<T>) => ReactNode) | undefined;
   /** The command that changes the setting from a view, whose key the control's tooltip gives. */
   command?: string | undefined;
 }) {
@@ -169,7 +172,14 @@ export function SettingRowView<T>({
   const atDefault = JSON.stringify(value) === JSON.stringify(setting.fallback);
   if (list && control) {
     return (
-      <SettingsList label={setting.label} description={setting.description}>
+      <SettingsList
+        label={setting.label}
+        description={setting.description}
+        actions={actions ? createElement(actions, own) : undefined}
+        wraps={actions !== undefined}
+        note={note}
+        noteId={noteId}
+      >
         <Collapse open={problem !== undefined}>
           {problem && <div className="border-b border-border-subtle p-8">{problem}</div>}
         </Collapse>
