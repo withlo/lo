@@ -4,7 +4,13 @@
 // GitHub can't be made to show on demand is changed from what it said.
 
 import { RepoRef } from '@lo/github';
-import { findStacks, stacksOf, type NativeStackEntry, type PullRequest } from '@lo/stacks';
+import {
+  findStacks,
+  stackPullRequests,
+  stacksOf,
+  type NativeStackEntry,
+  type PullRequest,
+} from '@lo/stacks';
 import { describe, expect, it } from 'vitest';
 
 import { stack as stackSchema, type Row, type StackView } from '../contract.ts';
@@ -141,6 +147,21 @@ describe("a tab's stack", () => {
     const { view } = viewOf(input(found, 8));
     expect(brief(view)).toEqual(['#7', '#8 current']);
     expect(view).toMatchObject({ githubStack: true, root: 'main', notes: [] });
+  });
+
+  it("starts where its bottom layer's changes do, once the pull requests are known", async () => {
+    const found = await recorded('stacks_e2e', E2E, LAYERS);
+    const prs = stackPullRequests(found.list, []);
+    const tip = prs.find((pr) => pr.number === 2)?.baseTip;
+    expect(tip).toMatch(/^[0-9a-f]{40}$/);
+    // a, the bottom layer, starts at main's tip, from #4's tab and from #5's alike.
+    expect(viewOf(input(found, 4, { prs })).view).toMatchObject({ start: tip });
+    expect(viewOf(input(found, 5, { prs })).view).toMatchObject({ start: tip });
+    expect(viewOf(input(found, 4)).view).toMatchObject({ start: null });
+    // #11 sits on the branch of squash-merged #10, so it starts at the last commit of #10 it lists.
+    const commit = forestOf(found).layers[11]?.needsRebase?.compareAgainst;
+    expect(commit).toMatch(/^[0-9a-f]{40}$/);
+    expect(viewOf(input(found, 11, { prs })).view).toMatchObject({ start: commit });
   });
 
   it('shows a layer alone that needs a rebase', async () => {

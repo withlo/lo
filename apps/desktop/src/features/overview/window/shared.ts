@@ -3,14 +3,22 @@
 // one looks like, for the welcome to show; its mark for a tab, as the header's view switch shows
 // it, which the stack's tree shows for the layer on screen; the review threads another feature
 // places and draws on its code blocks, with their popover and the comments written there; and
-// whether a tab's overview has a block now, and when that may have changed.
+// whether a tab's overview has a block now, and when that may have changed; and the stack's
+// overview, which the stack's tree has a row for, shown in place of the layer's own and back.
 
+import type { StackTreeOverview } from '@lo/ui';
 import type { Target } from '@lo/ui/commands';
 import { createElement, type ReactNode } from 'react';
 
 import type { Presence } from '../../../window/slots.tsx';
 import { settingNow, watchSetting } from '../../settings/window/shared.ts';
-import { showMiddle, usePull } from '../../tab/window/shared.ts';
+import {
+  showMiddle,
+  useMiddle,
+  usePull,
+  useTabState,
+  type PullTab,
+} from '../../tab/window/shared.ts';
 import { on } from '../settings.ts';
 import { Example } from './Example.tsx';
 import { markOf, newestHead, standingOf, type MarkKind } from './facts.ts';
@@ -19,6 +27,19 @@ import { useStanding } from './hooks.ts';
 import { OVERVIEW_VIEW } from './labels.ts';
 import type { CommentOnHead } from './mapping.ts';
 import { commentLinesOnHead } from './since.ts';
+import {
+  hasStackOverview as stackOverviewIn,
+  readLayers,
+  setSubject,
+  stackStates,
+  subjectNow,
+  subjects,
+} from './stack.ts';
+import {
+  setStackParts as takeStackParts,
+  stackViewOf,
+  type StackParts as Parts,
+} from './stacked.ts';
 import { codeBlocksIn, labelOf } from './stale.ts';
 import { checked, revisions, states } from './store.ts';
 import {
@@ -155,13 +176,19 @@ export function writingBlockAsked(
  * as its key or menu names it, the lines it points at. Or why there's none.
  */
 export function blockLines(tab: string, target: Target): BlockLines | string {
+  // The stack's overview's code is the whole stack's, which no comment on the layer is on.
+  if (target.kind !== 'line' && subjectNow(tab) === 'stack') return STACK_COMMENTS;
   // A line is a drawn block's, or one of a view that takes no comment, as the whole file's.
   if (target.kind !== 'line' && !drawnIn(tab)) return 'Go to the overview first';
   return blockLinesOf(tab, target);
 }
 
+/** Why a block of the stack's overview takes no comment. */
+const STACK_COMMENTS = 'Comment on a layer’s own code';
+
 /** Whether `target` is a code block of tab `tab`'s overview on screen, drawn yet or not. */
 export function isCodeBlock(tab: string, target: Target): boolean {
+  if (subjectNow(tab) === 'stack') return false;
   const overview = drawnIn(tab);
   if (!overview || target.kind !== 'block') return false;
   return blockAt(overview, target)?.querySelector('[data-lo-excerpt]') != null;
@@ -264,4 +291,52 @@ export function commentOnHead(
   lines: { readonly side: 'old' | 'new'; readonly from: number; readonly to: number },
 ): Promise<CommentOnHead> {
   return commentLinesOnHead(tab, commit, path, lines);
+}
+
+/**
+ * Whether view `id`'s stack has an overview Lo has read, which its row in the stack's tree then
+ * offers.
+ */
+export function hasStackOverview(id: string): boolean {
+  return stackOverviewIn(id);
+}
+
+/** What the stacks give the overview of the stack each view is in. */
+export type StackParts = Parts;
+
+/**
+ * Takes what the stacks give the overview, as they start, until the function it returns takes it
+ * back: the stack each view is in, the way to show a layer, and the way to show the whole stack.
+ */
+export function setStackParts(given: StackParts): () => void {
+  return takeStackParts(given);
+}
+
+/**
+ * The stack overview's row in the stack's tree of view `tab`, while its stack has an overview Lo has
+ * read: whether the Overview shows it now.
+ */
+export function useStackOverviewRow(tab: PullTab): StackTreeOverview | undefined {
+  const present = useTabState(stackStates, tab.id, (state) => (state?.overview ?? null) !== null);
+  const subject = useTabState(subjects, tab.id);
+  const { onScreen } = useMiddle(tab.id);
+  if (!present) return undefined;
+  return { shown: subject === 'stack' && onScreen.includes(OVERVIEW_VIEW) };
+}
+
+/**
+ * Shows the overview of the stack view `tab` is in, in its Overview, as `g s`, the stack's row and
+ * the notice do: a place in its history. Says whether it has one.
+ */
+export function showStackOverview(tab: PullTab): boolean {
+  if (!stackOverviewIn(tab.id)) return false;
+  // What its layers' overviews say is read again, for any pushed since.
+  readLayers(tab.id, stackViewOf(tab.id), true);
+  setSubject(tab.id, 'stack');
+  return showMiddle(tab.id, OVERVIEW_VIEW);
+}
+
+/** Sets view `id`'s Overview back to its layer's own overview, as showing the layer does. */
+export function showOwnOverview(id: string): void {
+  setSubject(id, 'pull');
 }

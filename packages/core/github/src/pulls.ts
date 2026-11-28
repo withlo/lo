@@ -63,6 +63,42 @@ export function readPullSummary(json: unknown): PullSummary {
   };
 }
 
+/** A pull request's description, as its author wrote it, with the answer's ETag. */
+export interface PullBody {
+  /** Its Markdown: empty when it has none. */
+  body: string;
+  /** The answer's ETag, which the next read sends. */
+  etag: string | undefined;
+}
+
+/** GitHub's answer for a pull request, read for its description: empty when it has none. */
+export function readPullBody(json: unknown): string {
+  return new Fields(json, 'pull').maybeText('body') ?? '';
+}
+
+/**
+ * Pull request `pull`'s description, sending `etag`, the ETag of the one read before: none when
+ * GitHub answers that it's unchanged, which costs nothing, so the caller keeps only what it needs
+ * of the one before.
+ */
+export async function pullBody(
+  client: GithubClient,
+  pull: PullRef,
+  etag: string | undefined,
+): Promise<PullBody | undefined> {
+  const response = await client.send('GET', pull.restPath(), {
+    condition: etag === undefined ? undefined : { ifNoneMatch: etag },
+  });
+  if (response.status === 304 && etag !== undefined) return undefined;
+  if (response.status !== 200) {
+    throw new GithubError({
+      kind: 'inconsistent',
+      message: `GitHub answered ${pull.toString()} with ${response.status}`,
+    });
+  }
+  return { body: response.json(readPullBody), etag: response.etag };
+}
+
 /**
  * A pull request as GitHub's REST list of a repository's open pull requests shows it: what the
  * open pull request list holds about it. Comparing these, not the list's ETag, tells whether the

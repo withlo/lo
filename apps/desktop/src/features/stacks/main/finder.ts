@@ -335,6 +335,25 @@ export class StackFinder {
     return runOf(forest.stacks, forest.prs, a, b);
   }
 
+  /**
+   * The layer of the stack tab `id` last showed whose head is `commit`, as the stacks were last
+   * worked out: none when no layer's is, or they aren't known. Another pull request at the same
+   * head, outside the stack, isn't one.
+   */
+  layerAt(id: string, commit: string): number | undefined {
+    const followed = this.#followed.get(id);
+    const tab = followed?.tab;
+    const entry = tab?.login === undefined ? undefined : this.#pollers.get(tab.login.toLowerCase());
+    const forest =
+      tab && entry?.kind === 'ready' ? this.#forest(entry.poller, tab.pull.repo) : undefined;
+    const view = followed?.state?.stack;
+    if (!forest || view?.kind !== 'stack') return undefined;
+    const layers = new Set(view.rows.map((row) => row.number));
+    const at = commit.toLowerCase();
+    return forest.prs.find((pr) => layers.has(pr.number) && pr.headOid.toLowerCase() === at)
+      ?.number;
+  }
+
   /** Forgets what was kept for an account that was removed, whose poller stopped. */
   forgetAccount(login: string): void {
     const lower = login.toLowerCase();
@@ -467,6 +486,7 @@ export class StackFinder {
         number: tab.pull.number,
         repository: tab.repository,
         forest: forest?.stacks,
+        prs: forest?.prs,
         list,
         layers,
         overviews:

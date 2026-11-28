@@ -64,6 +64,7 @@ function through(repo: Repo, changes: Partial<TextsClone> = {}): TextsClone {
       return repo.offline;
     },
     hasCommit: (oid) => repo.hasCommit(oid),
+    fetchCommit: (oid) => repo.fetchCommit(oid),
     mergeBase: (a, b) => repo.mergeBase(a, b),
     compareRevisions: (base, head, options) => repo.compareRevisions(base, head, options),
     fileVersions: (rev, paths) => repo.fileVersions(rev, paths),
@@ -163,6 +164,34 @@ describe('BlockTexts', () => {
     });
     // The base branch changed it after the push branched off: not the pull request's.
     expect(await read('README.md')).toMatchObject({ base: { kind: 'same' } });
+  });
+
+  it("diffs a stack's overview's file from where the stack starts, fetching that first", async () => {
+    const { repo, local } = await fetched();
+    const texts = new BlockTexts();
+    // The stack's bottom layer is the first push, as though the second were a layer on it.
+    const asked: string[] = [];
+    const lacking = through(repo, {
+      hasCommit: async (oid) => oid !== first && repo.hasCommit(oid),
+      fetchCommit: async (oid) => {
+        asked.push(oid);
+        await repo.fetchCommit(oid);
+      },
+    });
+    const read = (path: string) =>
+      texts.read(local, () => Promise.resolve(lacking), second, path, true, first);
+    expect(await read('src/old.ts')).toEqual({
+      kind: 'text',
+      text: 'after\n',
+      base: { kind: 'changed', path: 'src/old.ts', text: 'before\n' },
+    });
+    // The bottom layer's own changes are below the stack's start.
+    expect(await read('src/parser.ts')).toMatchObject({ base: { kind: 'same' } });
+    expect(asked).toEqual([first]);
+    // The pull request's own diff, from the same copy, still starts at the base branch.
+    expect(
+      await texts.read(local, () => Promise.resolve(repo), second, 'src/parser.ts', true),
+    ).toMatchObject({ base: { kind: 'changed', path: 'src/parse.ts' } });
   });
 
   it('reads the file alone without its base', async () => {

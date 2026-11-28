@@ -287,6 +287,7 @@ export {
 } from './FileTree.tsx';
 export { RunBar, type RunBarLayer, type RunBarProps } from './RunBar.tsx';
 export {
+  STACK_OVERVIEW_KEY,
   StackTree,
   type StackChecks,
   type StackOverview,
@@ -294,6 +295,7 @@ export {
   type StackRun,
   type StackTreeLayer,
   type StackTreeNote,
+  type StackTreeOverview,
   type StackTreeProps,
 } from './StackTree.tsx';
 export { Label, labelColor, type LabelProps } from './Label.tsx';

@@ -17,9 +17,11 @@ import {
   matchingRefsPath,
   MAX_POLL_INTERVAL,
   overviewRef,
+  overviewRefCommits,
   overviewRefNumbers,
   pollInterval,
   readOverviewRef,
+  readOverviewRefCommits,
   readOverviewRefNumbers,
   readRef,
   stackOverviewRef,
@@ -253,6 +255,39 @@ describe("a repository's overviews", () => {
       })),
     ];
     expect(readOverviewRefNumbers(answer)).toEqual([1]);
+  });
+
+  test("say the commit each pull request's overview's ref holds", async () => {
+    const [a, b] = ['a'.repeat(40), 'b'.repeat(40)];
+    const answer = [
+      { ref: overviewRef(12), object: { sha: a, type: 'commit' } },
+      { ref: 'refs/lo/pr/12/old', object: { sha: b, type: 'commit' } },
+      { ref: overviewRef(3), object: { sha: b, type: 'commit' } },
+      { ref: overviewRef(4), object: { sha: a, type: 'tag' } },
+    ];
+    expect([...readOverviewRefCommits(answer)]).toEqual([
+      [12, a],
+      [3, b],
+    ]);
+    const etag = 'W/"one"';
+    const client = signedIn(async (input, init) => {
+      const request = new Request(input, init);
+      if (request.headers.get('if-none-match') === etag) {
+        return new Response(null, { status: 304, headers: { etag } });
+      }
+      return Response.json(answer, { headers: { etag } });
+    });
+    const first = await overviewRefCommits(client, E2E, undefined);
+    expect(first).toEqual({
+      commits: new Map([
+        [12, a],
+        [3, b],
+      ]),
+      etag,
+    });
+    const again = await overviewRefCommits(client, E2E, first);
+    expect(again).toEqual(first);
+    expect(again.commits).not.toBe(first.commits);
   });
 
   test("refuse an answer that isn't GitHub's", () => {

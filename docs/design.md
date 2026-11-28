@@ -346,6 +346,14 @@ the next, and stop at either end. Showing a layer isn't a jump, so `⌃o` doesn'
 before. A link to any layer opens the whole stack in one tab, at that layer, and each layer keeps
 its own place.
 
+When the stack has an overview, its row comes first in the tree, above the base branch. Showing it,
+from the row, with `g s`, or from the line on each layer's overview that says the layer is part of a
+stack, puts the stack's overview in the Overview view in place of the layer's own, as a place in the
+tab's history; the header, the diff and the timeline stay the layer's. After its tl;dr, Lo adds
+**Layers**: each layer as the tree draws it, with its overview's tl;dr, else its description's first
+line. Its code blocks show the whole stack's change, and go to all its layers as one diff. Showing a
+layer shows its own overview again.
+
 ### Turning chains into GitHub stacks
 
 "Make this a GitHub stack" lists what will change and asks before doing anything:
@@ -518,7 +526,10 @@ writes is called an artifact.
 - **Closed PRs.** Lo's cache never drops a closed PR's overview to make room, and doesn't count its
   files toward its cap. Once GitHub has none anywhere, Lo shows the one it kept, labelled a saved
   copy.
-- **Stacks.** Each layer has its own.
+- **Stacks.** Each layer has its own, and a stack can have one more, for the whole stack, at
+  `refs/lo/stack/<number>`: the GitHub stack's number, or a branch stack's bottom layer's. Each
+  layer's overview names it in its header. Lo shows the one the layer on screen names, else the one
+  the lowest layer that names one does.
 
 ### The format
 

@@ -1,5 +1,6 @@
-// The overview feature's keys: copying a prompt for a coding agent, anywhere in a pull request's
-// tab; installing the overview skill, which has none; and, in Settings, copying the command that
+// The overview feature's keys: copying a prompt for a coding agent, and showing the overview of the
+// stack the pull request is a layer of, anywhere in a pull request's tab; installing the overview
+// skill, which has none; and, in Settings, copying the command that
 // installs it from a terminal. In the overview's own view, the `overview` scope: moving between its
 // blocks and within one, following a block to its code, scrolling, going to its glossary, which
 // has none, and folding its sections; on a block's menu, showing the latest overview or reading it
@@ -25,6 +26,20 @@ export default defineCommands(
       keys: [],
       bar: { menu: 'View', section: 'views', order: 10 },
       toggle: 'choice',
+    },
+    /**
+     * Shows the overview of the stack the pull request on screen is a layer of, in place of the
+     * layer's own in the Overview view: a place in the tab's history, so `⌃o` comes back. Showing a
+     * layer shows its own again. Refused while the stack has none.
+     */
+    showStack: {
+      label: 'Stack overview',
+      control: 'Stack overview, first in the stack’s tree, and on a layer’s overview',
+      group: 'Go',
+      keys: ['g s'],
+      when: { except: ['menu', 'dialog', 'palette', 'box'], mode: 'normal' },
+      // After Go to file.
+      bar: { menu: 'Go', section: 'find', order: 20 },
     },
     /** The next block that holds something to act on: code, a figure, a link to code or a term. */
     nextBlock: {
