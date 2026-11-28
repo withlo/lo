@@ -191,6 +191,15 @@ export function MiddlePlaceholder({
 }
 
 /**
+ * Whether pull request's tab `tab`'s wait has shown on screen, its first moments run: what a view
+ * draws in place of its placeholder now takes the wait's place in one Swap. A quick load's content
+ * comes at once, as nothing was shown before it.
+ */
+export function waitShown(tab: PullTab): boolean {
+  return (waitedFor(tab.id) ?? 0) >= LOADING_DELAY_MS;
+}
+
+/**
  * Brings the middle view `id`, one of those in {@link middle}, into sight in pull request's tab
  * `tab`, as `` ` `` and `~` step to it, and never changes the layout: with the code beside, a
  * reading view takes the reading view's place and code the code's, and a view on screen already
