@@ -4335,6 +4335,8 @@ class View implements DiffView {
         this.#asked += moved;
         return moved !== 0;
       },
+      // Without a caller to say, a drag keeps to the lines drawn on its side.
+      known: () => drag.lines !== undefined || !this.#on.commentLines,
       end: () => {
         this.#endPick(drag);
         // Back on its own line, it's the `+`'s click there; else Comment on the lines it picked.

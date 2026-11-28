@@ -42,6 +42,11 @@ export interface LinePick {
   band(): Band;
   /** Scrolls the pane `by` pixels, down for more than 0: whether it moved. */
   scroll(by: number): boolean;
+  /**
+   * Whether the view knows yet where the end may rest: until it does, as while it asks which lines
+   * take a comment, the end follows again in each frame, the pointer still or not.
+   */
+  known(): boolean;
   /** Let go after a move: the lines followed last are picked. */
   end(): void;
   /** Dropped after a move: what was drawn for it goes, and nothing else changes. */
@@ -127,8 +132,9 @@ export function pickLines(
     const by = scrollFor(at.y, pick.band());
     const scrolled = by !== 0 && pick.scroll(by);
     drawTip(pick.follow(at.y));
-    // Held near an edge, it scrolls on in the next frame, the pointer still or not.
-    if (scrolled) frame = requestAnimationFrame(tick);
+    // Held near an edge, it scrolls on in the next frame, the pointer still or not, and the end
+    // follows again once the view knows where it may rest.
+    if (scrolled || !pick.known()) frame = requestAnimationFrame(tick);
   };
 
   const soon = (): void => {

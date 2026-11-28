@@ -499,13 +499,21 @@ const views = new Map<string, Map<string, Box>>();
 const pulls = new Map<string, PostPull>();
 
 /**
- * What main said of the comments each file takes, by view, commit and path, with the view: asked,
- * and once it's said, the answer.
+ * What main was asked of the comments a file takes, for view `view`: once it's said, its answer,
+ * and when, by `performance.now()`.
  */
-const commentables = new Map<
-  string,
-  { view: string; asked: Promise<Commentable>; answer?: Commentable | undefined }
->();
+interface Asked {
+  readonly view: string;
+  readonly asked: Promise<Commentable>;
+  answer?: Commentable;
+  when?: number;
+}
+
+/** What main said of the comments each file takes, by view, commit and path. */
+const commentables = new Map<string, Asked>();
+
+/** How long a drag from the `+` waits to ask main again while it can't tell, in milliseconds. */
+const ASK_AGAIN_MS = 1000;
 
 /**
  * Each view's places whose drafts were dropped here, until main says so: drafts it sent before it
@@ -592,7 +600,7 @@ function commentableOf(
   const key = JSON.stringify([view, commit, path, previous]);
   const known = commentables.get(key);
   if (known && known.answer?.kind !== 'unknown') return known.asked;
-  const entry: { view: string; asked: Promise<Commentable>; answer?: Commentable } = {
+  const entry: Asked = {
     view,
     asked: main()
       .commentable({ id: view, commit, path, previous })
@@ -602,6 +610,7 @@ function commentableOf(
       })
       .then((answer) => {
         entry.answer = answer;
+        entry.when = performance.now();
         return answer;
       }),
   };
@@ -611,7 +620,8 @@ function commentableOf(
 
 /**
  * What main last said of which comments a file takes at a revision, once it has, asked as
- * `commentableOf` asks: "can't tell" too, until something that writes a comment asks again.
+ * `commentableOf` asks; while it can't tell, as before its copy of the pull request is in, nothing,
+ * and asked again a second after it last said so.
  */
 function commentableNow(
   view: string,
@@ -620,8 +630,11 @@ function commentableNow(
   previous: string | null,
 ): Commentable | undefined {
   const known = commentables.get(JSON.stringify([view, commit, path, previous]));
-  if (known) return known.answer;
-  void commentableOf(view, commit, path, previous);
+  const answer = known?.answer;
+  if (answer && answer.kind !== 'unknown') return answer;
+  if (!known || (answer && performance.now() - (known.when ?? 0) >= ASK_AGAIN_MS)) {
+    void commentableOf(view, commit, path, previous);
+  }
   return undefined;
 }
 
@@ -630,8 +643,8 @@ const NO_LINES_TAKEN: CommentLines = { on: () => undefined };
 
 /**
  * Which lines of file `id` in view `view`'s diff take a comment, as main says, for a drag from the
- * `+`: nothing until main has said, which it's asked. What a comment on lines goes on is in the
- * words its box's head says, as `comment` places it.
+ * `+`: nothing until main has said, or while it can't tell, which it's asked. What a comment on
+ * lines goes on is in the words its box's head says, as `comment` places it.
  */
 export function linesTaken(view: string, id: string): CommentLines | undefined {
   const diff = writingDiff(view);
