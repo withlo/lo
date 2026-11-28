@@ -22,7 +22,12 @@ import {
   registry,
 } from '../../../window/commands/registry.ts';
 import { client } from '../../../window/ipc.ts';
-import { showDiff } from '../../diff/window/shared.ts';
+import { showDiff, showPlace } from '../../diff/window/shared.ts';
+import {
+  hasStackOverview,
+  showOwnOverview,
+  showStackOverview,
+} from '../../overview/window/shared.ts';
 import { contract as tabContract } from '../../tab/contract.ts';
 import {
   activeTab,
@@ -39,6 +44,8 @@ import {
   focused,
   keyboardLayer,
   layersOf,
+  OVERVIEW_ROW,
+  OVERVIEW_TARGET,
   runTrouble,
   STACK_CHANGED,
   stacks,
@@ -82,12 +89,20 @@ export function takeRefocus(): boolean {
  * layer, made the first time. Focus in the stack's tree stays there, on the layer shown.
  */
 export function showLayer(tab: PullTab, number: number): Promise<string | undefined> {
-  // A run on screen is left for any of its layers, its top one too.
-  if (number === tab.number && !tab.run) return Promise.resolve(tab.id);
+  // A run on screen is left for any of its layers, its top one too. The layer's view shows its
+  // own overview, not the stack's.
+  if (number === tab.number && !tab.run) {
+    showOwnOverview(tab.id);
+    return Promise.resolve(tab.id);
+  }
   const tree = treeOnScreen();
   refocus = tree !== undefined && tree.contains(document.activeElement);
   return tabs()
     .layer({ id: tab.id, number })
+    .then((id) => {
+      if (id !== undefined) showOwnOverview(id);
+      return id;
+    })
     .catch((error: unknown) => {
       refocus = false;
       console.error("Lo couldn't show the layer:", error);
@@ -160,8 +175,14 @@ export function focusedLayer(tab: PullTab): number | undefined {
   return keyboardLayer(stacks.get(tab.id), focused.get(tab.id), tab.number);
 }
 
-/** What a key in the stack's tree acts on: the layer the keyboard is on. */
+/** Whether the keyboard is on the stack overview's row in `tab`'s stack tree, which it has. */
+export function onOverviewRow(tab: PullTab): boolean {
+  return focused.get(tab.id) === OVERVIEW_ROW && hasStackOverview(tab.id);
+}
+
+/** What a key in the stack's tree acts on: the stack overview's row, or the layer the keyboard is on. */
 export function stackTarget(tab: PullTab): Target {
+  if (onOverviewRow(tab)) return OVERVIEW_TARGET;
   const layer = focusedLayer(tab);
   return layer === undefined ? { kind: 'none' } : { kind: 'layer', layer };
 }
@@ -224,10 +245,11 @@ export function moveFocus(by: 1 | -1): void {
     focused.set(tab.id, next.end);
     return;
   }
-  const layers = layersOf(view);
-  const from = focusedLayer(tab);
-  const at = from === undefined ? -1 : layers.indexOf(from);
-  const next = layers[Math.min(Math.max(at + by, 0), layers.length - 1)];
+  // The stack overview's row is first, above the bottom layer, while the stack has one.
+  const rows = hasStackOverview(tab.id) ? [OVERVIEW_ROW, ...layersOf(view)] : layersOf(view);
+  const from = onOverviewRow(tab) ? OVERVIEW_ROW : focusedLayer(tab);
+  const at = from === undefined ? -1 : rows.indexOf(from);
+  const next = rows[Math.min(Math.max(at + by, 0), rows.length - 1)];
   if (next !== undefined) focused.set(tab.id, next);
 }
 
@@ -240,12 +262,37 @@ export function onLayer(target: Target): true | string {
 }
 
 /**
- * `⏎` in the stack's tree, a click, or Show on a layer's menu: shows the layer. While layers are
- * selected, `⏎` shows them instead.
+ * Whether `⏎` in the stack's tree can show `target`: a layer of the stack on screen, or the stack
+ * overview's row while there's one; or why not.
+ */
+export function showable(target: Target): true | string {
+  if (target.kind !== 'row') return onLayer(target);
+  const tab = pullOnScreen();
+  if (typeof tab === 'string') return tab;
+  return target.row === OVERVIEW_TARGET.row && hasStackOverview(tab.id)
+    ? true
+    : 'No stack overview yet';
+}
+
+/** What `⏎` is called on `target`: "Show stack overview" on its row. */
+export function showName(target: Target): string | undefined {
+  return target.kind === 'row' ? 'Show stack overview' : undefined;
+}
+
+/**
+ * `⏎` in the stack's tree, a click, or Show on a layer's menu: shows the layer, or on the stack
+ * overview's row, the stack overview. While layers are selected, `⏎` on a layer shows them instead.
  */
 export function showTarget(target: Target): void {
   const tab = pullOnScreen();
-  if (typeof tab === 'string' || target.kind !== 'layer') return;
+  if (typeof tab === 'string') return;
+  if (target.kind === 'row' && target.row === OVERVIEW_TARGET.row) {
+    choosing.set(tab.id, undefined);
+    focused.set(tab.id, OVERVIEW_ROW);
+    showStackOverview(tab);
+    return;
+  }
+  if (target.kind !== 'layer') return;
   const choice = choosing.get(tab.id);
   if (choice) {
     choosing.set(tab.id, undefined);
@@ -303,6 +350,45 @@ export function openRun(tab: PullTab, layers: readonly number[]): void {
   main()
     .run({ id: tab.id, bottom, top })
     .catch((error: unknown) => failed(error, tab, layers));
+}
+
+/**
+ * Shows the whole stack `tab` is in as one diff, as selecting its layers from the bottom to the
+ * top does, at `path`, its lines `lines` marked: where a stack overview's code goes. A stack that
+ * branches shows its longest branch, the one its overview was most likely written at the top of.
+ * One that's a layer alone shows that layer.
+ */
+export function showStackAt(
+  tab: PullTab,
+  path: string,
+  lines: { readonly start: number; readonly end: number } | undefined,
+): void {
+  const view = stacks.get(tab.id);
+  const rows = view?.kind === 'stack' ? view.rows : [];
+  const layers = rows.reduce<readonly number[]>(
+    (longest, row) => (row.path.length > longest.length ? row.path : longest),
+    [],
+  );
+  const [bottom] = layers;
+  const top = layers.at(-1);
+  if (bottom === undefined || top === undefined) {
+    refuse(STACK_CHANGED);
+    return;
+  }
+  const place = (id: string | undefined) => {
+    if (id === undefined) return;
+    showPlace(id, path, lines?.start, lines && { from: lines.start, to: lines.end });
+  };
+  if (layers.length === 1) {
+    void showLayer(tab, bottom).then(place);
+    return;
+  }
+  const shown = runViewOf(tab.id, layers);
+  if (shown !== undefined) showDiff(shown);
+  runTrouble.set(tab.id, undefined);
+  main()
+    .run({ id: tab.id, bottom, top })
+    .then(place, (error: unknown) => failed(error, tab, layers));
 }
 
 /**

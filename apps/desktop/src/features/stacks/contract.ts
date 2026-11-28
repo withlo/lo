@@ -123,8 +123,11 @@ export type Note = z.output<typeof note>;
  *   tab that acts as nobody, which no poller reads them for;
  * - `none` when its pull request isn't in a stack: a stack shows when it has two layers or more,
  *   when the pull request is in a GitHub stack, or when it needs a rebase;
- * - `stack`: the root branch its bottom layer sits on; whether every layer is in one GitHub stack
- *   (`githubStack`), which its head then says; its rows and its notes; `offered`, whether Lo offers
+ * - `stack`: the root branch its bottom layer sits on; where the stack's changes start, as its bottom
+ *   layer's own do (`start`): its base branch's tip, or the commit the layer below it left off at,
+ *   `null` when that isn't known, which the diff of the stack's overview's code starts from; whether
+ *   every layer is in one GitHub stack (`githubStack`), which its head then says; its rows and its
+ *   notes; `offered`, whether Lo offers
  *   to convert it to a GitHub stack at all, over its tree or in its merge panel:
  *   `stacks.offerConvert` on, and the offer not dismissed for one of its layers; and `callout`, the
  *   line the offer over the tree says, while it's offered and Lo could convert the chain through
@@ -136,6 +139,7 @@ export const stackView = z.discriminatedUnion('kind', [
   z.strictObject({
     kind: z.literal('stack'),
     root: z.string(),
+    start: oid.nullable(),
     githubStack: z.boolean(),
     rows: z.array(row).min(1),
     notes: z.array(note),

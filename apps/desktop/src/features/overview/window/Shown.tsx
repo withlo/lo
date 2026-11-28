@@ -54,6 +54,9 @@ import { OutOfDateBanner } from './OutOfDate.tsx';
 import { AuthorPicture, WhoWrote } from './Author.tsx';
 import { authorOf, linesOf, shortId } from './says.ts';
 import { labelOf, staleAgainst } from './stale.ts';
+import { layersBlockOf, stackStates, type Showing } from './stack.ts';
+import { useStackView } from './stacked.ts';
+import { Layers, StackNotice } from './StackParts.tsx';
 import { revisions, states } from './store.ts';
 
 type ShownStanding = Extract<Standing, { kind: 'shown' }>;
@@ -236,12 +239,17 @@ function Byline({
   tab,
   commit,
   described,
+  stack = false,
 }: {
   tab: PullTab;
   commit: OverviewCommit;
   described: string;
+  /** Whether it's the stack's overview, which says so first, and names no revision. */
+  stack?: boolean;
 }) {
-  const state = useTabState(states, tab.id);
+  const own = useTabState(states, tab.id);
+  const stacked = useTabState(stackStates, tab.id);
+  const state = stack ? stacked : own;
   const known = useTabState(revisions, tab.id);
   // The time it was written ages as the overview stays on screen.
   const now = useNow(true, 60_000);
@@ -249,6 +257,37 @@ function Byline({
   const author = byline && authorOf(byline);
   const copy = copyOf(state);
   const revision = revisionAt(known, described)?.number;
+  const copied = copy !== undefined && (
+    <>
+      <span className="lo-ov-byline__dot" aria-hidden="true">
+        ·
+      </span>
+      {/* The repository's copy of the fork's reads as the fork's, for now. */}
+      {copy === 'saved' ? 'saved copy' : 'from fork'}
+    </>
+  );
+  if (stack) {
+    return (
+      <div className="lo-ov-bylines" data-lo-byline>
+        <div className="lo-ov-byline">
+          <span className="text-fg text-ui-strong">Stack overview</span>
+          {author && byline && (
+            <>
+              <span className="lo-ov-byline__dot" aria-hidden="true">
+                ·
+              </span>
+              <AuthorPicture author={author} />
+              <span className="lo-ov-byline__who">
+                <WhoWrote author={author} when={ago(byline.at, now)} />
+              </span>
+            </>
+          )}
+          {copied && <span className="lo-ov-byline__said">{copied}</span>}
+          {state?.newer && <NewerOffer tab={tab.id} stack />}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="lo-ov-bylines" data-lo-byline>
       <div className="lo-ov-byline">
@@ -273,15 +312,7 @@ function Byline({
           ) : (
             <strong>r{revision}</strong>
           )}
-          {copy !== undefined && (
-            <>
-              <span className="lo-ov-byline__dot" aria-hidden="true">
-                ·
-              </span>
-              {/* The repository's copy of the fork's reads as the fork's, for now. */}
-              {copy === 'saved' ? 'saved copy' : 'from fork'}
-            </>
-          )}
+          {copied}
         </span>
         {state?.newer && <NewerOffer tab={tab.id} />}
       </div>
@@ -289,8 +320,11 @@ function Byline({
   );
 }
 
-/** "Overview updated · Show latest": the latest goes on screen only when asked. */
-export function NewerOffer({ tab }: { tab: string }) {
+/**
+ * "Overview updated · Show latest": the latest goes on screen only when asked. The stack's, with
+ * `stack`.
+ */
+export function NewerOffer({ tab, stack = false }: { tab: string; stack?: boolean }) {
   return (
     <span className="lo-ov-byline__end lo-ov-offer items-center" role="status">
       <span className="lo-ov-offer__text">
@@ -299,7 +333,7 @@ export function NewerOffer({ tab }: { tab: string }) {
           ·
         </span>
       </span>
-      <Button size="sm" variant="ghost" onClick={() => loadNewer(tab)}>
+      <Button size="sm" variant="ghost" onClick={() => loadNewer(tab, stack)}>
         Show latest
       </Button>
     </span>
@@ -308,12 +342,15 @@ export function NewerOffer({ tab }: { tab: string }) {
 
 export function Shown({
   tab,
+  subject = 'pull',
   standing,
   scroller,
   onScreen = true,
   focused,
 }: {
   tab: PullTab;
+  /** Whose overview it is: the layer's own, or its stack's. */
+  subject?: Showing;
   standing: ShownStanding;
   scroller?: Ref<HTMLDivElement> | undefined;
   /** Whether the overview is the middle view on screen, rather than kept drawn behind another. */
@@ -339,9 +376,17 @@ export function Shown({
     ),
     [index, checked, files, figuresComing],
   );
-  // The head on screen, when the overview was written for another commit.
-  const head = staleAgainst(header.commit, usePull(tab.id));
-  const written = labelOf(useTabState(revisions, tab.id), header.commit);
+  // The head on screen, when the overview was written for another commit. The stack's overview
+  // describes the whole stack, which no head of the layer's says is out of date.
+  const stack = subject === 'stack';
+  const pulled = staleAgainst(header.commit, usePull(tab.id));
+  const head = stack ? undefined : pulled;
+  const labelled = labelOf(useTabState(revisions, tab.id), header.commit);
+  const written = stack ? shortId(header.commit) : labelled;
+  // Where the stack's changes start, which its code blocks' diffs start from.
+  const stackView = useStackView(tab.id);
+  const stackFrom =
+    stack && stackView?.kind === 'stack' ? (stackView.start ?? undefined) : undefined;
   // How each block's code stands, the same object for as long as the check's result is.
   const context = useMemo<CodeContext>(
     () => ({
@@ -353,8 +398,9 @@ export function Shown({
       head,
       read: result.code,
       target: targetsOf(code, result.code),
+      stack: stack ? { from: stackFrom } : undefined,
     }),
-    [tab, parsed.tree, header.commit, written, head, result.code, code],
+    [tab, parsed.tree, header.commit, written, head, result.code, code, stack, stackFrom],
   );
   // What each focused block's chip offers, run on that block.
   const generation = context.tree;
@@ -396,6 +442,12 @@ export function Shown({
     },
     [tabId],
   );
+  // The stack's overview's Layers, Lo's own, in place of the block its tree holds for them.
+  const listed = stack ? layersBlockOf(parsed.tree) : undefined;
+  const own = useMemo(
+    () => (listed ? new Map([[listed, <Layers key="layers" tab={tab} />]]) : undefined),
+    [listed, tab],
+  );
   // Seen once the code blocks near the screen have drawn, with the local copy if it's coming, or at
   // the bound, counted from when the tab opened and never again; until then, the tab's placeholder.
   const [drawing, setDrawing] = useState(true);
@@ -431,7 +483,14 @@ export function Shown({
         <OverviewDocument
           ref={scroller}
           tree={parsed.tree}
-          byline={<Byline tab={tab} commit={commit} described={header.commit} />}
+          label={stack ? 'Stack overview' : undefined}
+          own={own}
+          byline={
+            <>
+              <Byline tab={tab} commit={commit} described={header.commit} stack={stack} />
+              {!stack && <StackNotice tab={tab} named={header.stack} />}
+            </>
+          }
           banner={
             head !== undefined && <OutOfDateBanner tab={tab} commit={header.commit} head={head} />
           }

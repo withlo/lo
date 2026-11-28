@@ -467,6 +467,7 @@ export class StackFinder {
         number: tab.pull.number,
         repository: tab.repository,
         forest: forest?.stacks,
+        prs: forest?.prs,
         list,
         layers,
         overviews:

@@ -74,6 +74,14 @@ export interface OverviewViews {
 
 export interface OverviewDocumentProps {
   tree: OverviewTree;
+  /** What the outline is headed: "Overview", or "Stack overview" for a stack's. */
+  label?: string | undefined;
+  /**
+   * Blocks of `tree` whoever shows it draws, in place of what they hold, by the block: each is a
+   * stop for the block keys, drawn with the spacing prose has, as a stack overview's list of its
+   * layers is.
+   */
+  own?: ReadonlyMap<OverviewBlock, ReactNode> | undefined;
   /** Who wrote it and for which commit, at the top of the article. */
   byline?: ReactNode;
   /** What the reader should know first, such as that it was written for an older push. */
@@ -130,6 +138,8 @@ const CURRENT_WITHIN_PX = 48;
  */
 export function OverviewDocument({
   tree,
+  label = 'Overview',
+  own,
   byline,
   banner,
   focused,
@@ -256,7 +266,7 @@ export function OverviewDocument({
           >
             {outline && (
               <nav className="lo-ov__toc" aria-label="Sections">
-                <div className="lo-toc__label">Overview</div>
+                <div className="lo-toc__label">{label}</div>
                 {sections.map((section) => (
                   <button
                     key={section.block}
@@ -286,6 +296,7 @@ export function OverviewDocument({
                   lead={index === lead}
                   focused={focused === index}
                   hints={focused === index ? offered : NO_HINTS}
+                  own={own?.get(block)}
                 />
               ))}
               <MarkdownNotes notes={tree.notes} />
@@ -305,6 +316,8 @@ interface ArticleBlockProps {
   focused: boolean;
   /** What its chip offers, while it's focused. */
   hints: readonly BlockHint[];
+  /** What's drawn in its place, by whoever shows the overview, if they draw it. */
+  own?: ReactNode;
 }
 
 /**
@@ -320,7 +333,20 @@ const ArticleBlock = memo(function ArticleBlock({
   lead,
   focused,
   hints,
+  own,
 }: ArticleBlockProps) {
+  if (own !== undefined) {
+    return (
+      <div
+        className={focused ? 'lo-block lo-block--prose is-focused' : 'lo-block lo-block--prose'}
+        data-lo-block={number}
+        tabIndex={-1}
+      >
+        {own}
+        {focused ? <Hints hints={hints} fold={false} /> : null}
+      </div>
+    );
+  }
   const drawn =
     lead && block.kind === 'paragraph' ? (
       <p className="lo-lead">

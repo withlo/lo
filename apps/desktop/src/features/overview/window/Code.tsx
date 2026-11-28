@@ -95,6 +95,12 @@ export interface CodeContext {
   readonly head?: string | undefined;
   readonly read: CodeRead;
   readonly target: (target: CodeRange) => Target;
+  /**
+   * For the stack's overview: where the stack's changes start, which its blocks' diffs start from,
+   * none while that isn't known. Its blocks show no threads, and take no comments: those are the
+   * layer's.
+   */
+  readonly stack?: { readonly from: string | undefined } | undefined;
 }
 
 /** The events of a code view in an overview: none it acts on yet. */
@@ -195,6 +201,7 @@ export function ExcerptBlock({ node, context }: { node: Excerpt; context: CodeCo
               target={target}
               unread={failing}
               changed={setChanged}
+              stack={context.stack}
             />
           )}
         </CodeBody>
@@ -239,6 +246,7 @@ function ExcerptCode({
   target,
   unread,
   changed,
+  stack,
 }: {
   tab: string;
   pull: PullTab;
@@ -248,6 +256,7 @@ function ExcerptCode({
   target: CodeRange;
   unread: (why: CodeCause) => void;
   changed: (changed: Changed | undefined) => void;
+  stack?: CodeContext['stack'];
 }) {
   const box = useRef<HTMLDivElement>(null);
   const nearness = useNearness(box);
@@ -262,7 +271,9 @@ function ExcerptCode({
   const [measured, setMeasured] = useState(false);
   const drawnView = useRef<ExcerptView>(undefined);
   const want = near || (nearness === 'far' && !measured);
-  const from = useStartOf(tab);
+  const layerStart = useStartOf(tab);
+  const stacked = stack !== undefined;
+  const from = stack ? (stack.from ?? '') : layerStart;
   const { path } = target;
   const { start, end } = target.lines;
   // Who's told the code couldn't be read, which changes without asking for it again.
@@ -302,7 +313,7 @@ function ExcerptCode({
     void (async () => {
       await wait?.ready;
       if (!live) return;
-      hold = holdFile(tab, commit, path, first?.onScreen() ?? true, from);
+      hold = holdFile(tab, commit, path, first?.onScreen() ?? true, from, stacked);
       const found = await hold.code;
       // What changed by the head on screen, so the code is drawn once, with its flag.
       const since =
@@ -313,7 +324,7 @@ function ExcerptCode({
               quick: first?.onScreen() ?? true,
             });
       // Drawn in its own typeface, it's as tall as it stays, with the threads on its lines.
-      await Promise.all([codeTypeface(), threadsSettled(tab)]);
+      await Promise.all([codeTypeface(), stacked ? undefined : threadsSettled(tab)]);
       if (!live) return;
       if (found.kind === 'unread') {
         drawn.current?.();
@@ -330,7 +341,7 @@ function ExcerptCode({
       wait?.done();
       hold?.release();
     };
-  }, [want, near, first, tab, commit, head, path, start, end, from]);
+  }, [want, near, first, tab, commit, head, path, start, end, from, stacked]);
 
   // Its lines that changed, marked on the view it has, which isn't drawn again for them, so it
   // keeps its highlighting; and on the next one it's drawn with.
@@ -363,6 +374,24 @@ function ExcerptCode({
     drawnView.current = view;
     // `yy` copies from it.
     const forget = drawnLines(id, code.lines);
+    // The stack's overview's code shows none of the layer's threads, and takes no comments.
+    if (stacked) {
+      let frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => {
+          setMeasured(true);
+          drawn.current?.();
+        });
+      });
+      const stop = keys.subscribe(() => view.setVimKeys(keys.vimKeys()));
+      return () => {
+        drawnView.current = undefined;
+        cancelAnimationFrame(frame);
+        parent.style.minHeight = `${view.height()}px`;
+        forget();
+        stop();
+        view.destroy();
+      };
+    }
     // The threads on its lines, drawn with it, and as they change; and the comments written on it.
     const block: DrawnBlock = {
       tab,
@@ -414,7 +443,7 @@ function ExcerptCode({
       stop();
       view.destroy();
     };
-  }, [code, page, id, path, start, end, tab, tree, commit, from]);
+  }, [code, page, id, path, start, end, tab, tree, commit, from, stacked]);
 
   // Highlighted near the screen once the diff's job has it, which changes no line's height; drawn
   // only for its height, far from it, it isn't.
@@ -496,6 +525,7 @@ export function WalkthroughBlock({
               commit={context.commit}
               target={step.target}
               written={context.written}
+              stack={context.stack}
             />
           ))
         }
@@ -519,12 +549,14 @@ function StepCode({
   commit,
   target,
   written,
+  stack,
 }: {
   tab: string;
   commit: string;
   target: CodeRange;
   /** The revision the overview describes, as Lo names it. */
   written: string;
+  stack?: CodeContext['stack'];
 }) {
   const box = useRef<HTMLDivElement>(null);
   const near = useNear(box);
@@ -533,7 +565,9 @@ function StepCode({
   const id = `overview-step${useId()}`;
   const view = useRef<FileView>(undefined);
   const [file, setFile] = useState<StepFile | undefined>(undefined);
-  const from = useStartOf(tab);
+  const layerStart = useStartOf(tab);
+  const stacked = stack !== undefined;
+  const from = stack ? (stack.from ?? '') : layerStart;
   const { path } = target;
   const { start, end } = target.lines;
 
@@ -541,7 +575,7 @@ function StepCode({
     setFile(undefined);
     if (!near) return undefined;
     let live = true;
-    const hold = holdFile(tab, commit, path, first?.onScreen() ?? true, from);
+    const hold = holdFile(tab, commit, path, first?.onScreen() ?? true, from, stacked);
     void hold.code.then((found) => {
       if (!live) return;
       setFile(
@@ -558,7 +592,7 @@ function StepCode({
       live = false;
       hold.release();
     };
-  }, [near, first, tab, commit, path, from]);
+  }, [near, first, tab, commit, path, from, stacked]);
 
   const lines = file && 'lines' in file ? file : undefined;
   useLayoutEffect(() => {

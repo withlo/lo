@@ -82,6 +82,17 @@ export interface StackTreeLayer {
   run?: StackRun | undefined;
 }
 
+/** The key of the stack overview's row, which no layer's key is: layers are keyed by number. */
+export const STACK_OVERVIEW_KEY = 'overview';
+
+/**
+ * The stack's own overview, as its row at the top of the tree shows it: whether it's on screen, in
+ * the Overview view, in place of the layer's.
+ */
+export interface StackTreeOverview {
+  shown: boolean;
+}
+
 /** A note under the rows: what Lo looked at, and why the tree may be missing layers. */
 export interface StackTreeNote {
   key: string;
@@ -110,11 +121,17 @@ export interface StackTreeProps extends Omit<HTMLAttributes<HTMLDivElement>, 'ch
   /** The layer on screen, by key. */
   current?: string | undefined;
   /**
+   * The stack's own overview, when it has one: a row of its own first in the tree, above the base
+   * branch, keyed {@link STACK_OVERVIEW_KEY}, which arrives with the Open move. While it's on
+   * screen, it's the row marked current, and the layer on screen keeps only its Powder ball.
+   */
+  overview?: StackTreeOverview | undefined;
+  /**
    * A run is being chosen: the head says how many layers it holds, "2 selected", in place of how many
    * the stack has.
    */
   choosing?: boolean | undefined;
-  /** A layer was clicked, by key. */
+  /** A layer was clicked, by key, or the stack overview's row, by {@link STACK_OVERVIEW_KEY}. */
   onShow?: ((key: string) => void) | undefined;
   /** A right-click on a layer. */
   onMenu?: ((key: string, event: MouseEvent<HTMLElement>) => void) | undefined;
@@ -248,6 +265,14 @@ export const rail = cva('stack-rail', {
       merged: 'stack-ball-merged',
       closed: 'stack-ball-closed',
     },
+  },
+});
+
+/** The stack overview's row: as tall as a control, its icon in the balls' column with no rail. */
+const overviewRow = cva('flex h-control-h items-center gap-8 px-8 move-tint', {
+  variants: {
+    shown: { true: 'rounded-sm bg-on-screen', false: 'rounded-sm hover:bg-hover' },
+    focused: { true: 'group-focus-visible/tree:shadow-ring-inset', false: '' },
   },
 });
 
@@ -406,15 +431,16 @@ function Meta({ layer }: { layer: StackTreeLayer }) {
 
 /**
  * Brings the row with `key` into view in `tree`, scrolling no more than it takes, and says whether
- * the row was there. The first layer brings the root above it too, so walking up to the top shows
- * what the stack sits on.
+ * the row was there. The first row brings what's above it too, so walking up to the top shows what
+ * the stack sits on, and the stack overview's row over it.
  */
 function reveal(tree: HTMLElement | null, key: string | undefined): boolean {
   if (tree === null || key === undefined) return false;
   const items = [...tree.querySelectorAll<HTMLElement>('[role="treeitem"]')];
   const found = items.find((each) => each.dataset['key'] === key);
   if (found === undefined) return false;
-  const top = found === items[0] ? 0 : found.offsetTop;
+  const first = items.find((each) => each.dataset['key'] !== STACK_OVERVIEW_KEY);
+  const top = found === first || found.dataset['key'] === STACK_OVERVIEW_KEY ? 0 : found.offsetTop;
   const bottom = top + found.offsetHeight;
   if (top < tree.scrollTop) tree.scrollTop = top;
   else if (bottom > tree.scrollTop + tree.clientHeight) tree.scrollTop = bottom - tree.clientHeight;
@@ -487,8 +513,8 @@ function useKeptInView(
 
 /**
  * The stack, top of the left panel: a head that says what kind of stack and how many layers, any
- * offer under it, then a tree with the base branch as its
- * root and a rail with a ball for each layer. The head is one line, and never wraps. The tree is
+ * offer under it, then a tree with the stack's own overview first when it has one, the base branch
+ * as its root and a rail with a ball for each layer. The head is one line, and never wraps. The tree is
  * one focusable element with `role="tree"`: the layer the keyboard is on is its active descendant,
  * and the layer on screen is marked `aria-current` and a Powder ball, which is not the same thing. A run of layers chosen to view as one diff, or on screen as one, shares a band, and
  * the rest step back; while it's being chosen, the head says how many it holds: "2 selected".
@@ -504,6 +530,7 @@ export function StackTree({
   actions,
   focused,
   current,
+  overview,
   choosing = false,
   onShow,
   onMenu,
@@ -521,8 +548,16 @@ export function StackTree({
   const focusedIndex =
     focused === undefined ? -1 : layers.findIndex((each) => each.key === focused);
   const rails = railsOf(layers);
+  /** The stack overview is on screen: its row is current, and the layer keeps only its ball. */
+  const overviewShown = overview?.shown === true;
+  const onKeyboard =
+    overview !== undefined && focused === STACK_OVERVIEW_KEY
+      ? `${prefix}-${STACK_OVERVIEW_KEY}`
+      : focusedIndex < 0
+        ? undefined
+        : `${prefix}-${layers[focusedIndex]?.key ?? ''}`;
 
-  useKeptInView(scroller, focused, current);
+  useKeptInView(scroller, focused, overviewShown ? STACK_OVERVIEW_KEY : current);
 
   // The callout leaving with focus in it, as an offer dismissed from its own button, gives the
   // tree focus, not the page.
@@ -574,12 +609,43 @@ export function StackTree({
         aria-label="Layers"
         aria-describedby={`${prefix}-root`}
         aria-multiselectable={banded ? true : undefined}
-        aria-activedescendant={
-          focusedIndex < 0 ? undefined : `${prefix}-${layers[focusedIndex]?.key ?? ''}`
-        }
+        aria-activedescendant={onKeyboard}
         className={`group/tree relative min-h-0 overflow-auto px-6 pb-6 outline-none ${className}`}
         {...rest}
       >
+        <Collapse open={overview !== undefined}>
+          {overview !== undefined && (
+            <div
+              id={`${prefix}-${STACK_OVERVIEW_KEY}`}
+              role="treeitem"
+              aria-level={1}
+              aria-current={overviewShown ? 'true' : undefined}
+              aria-selected={banded ? false : undefined}
+              data-key={STACK_OVERVIEW_KEY}
+              data-dim={banded ? '' : undefined}
+              data-focused={focused === STACK_OVERVIEW_KEY ? '' : undefined}
+              className={overviewRow({
+                shown: overviewShown,
+                focused: focused === STACK_OVERVIEW_KEY,
+              })}
+              onClick={() => onShow?.(STACK_OVERVIEW_KEY)}
+            >
+              <span
+                aria-hidden="true"
+                className={`flex w-16 flex-none justify-center ${overviewShown ? 'text-accent' : 'text-fg-muted'}`}
+              >
+                <Icon name="scroll-text" size={14} />
+              </span>
+              <Tooltip label="Stack overview" cut>
+                <span
+                  className={`min-w-0 truncate text-fg ${overviewShown ? 'text-ui-strong' : 'text-ui'}`}
+                >
+                  Stack overview
+                </span>
+              </Tooltip>
+            </div>
+          )}
+        </Collapse>
         <div role="presentation" className="flex h-row-h items-center gap-8 px-8">
           <span className="flex w-16 flex-none justify-center text-fg-muted">
             <Icon name="git-branch" size={12} />
@@ -593,7 +659,9 @@ export function StackTree({
         {layers.map((layer, index) => {
           const { branch, sprout: sprouts, trunk, last } = rails[index] ?? NO_RAIL;
           const finished = layer.state === 'merged' || layer.state === 'closed';
-          const onScreen = layer.key === current;
+          // The layer in the header keeps its Powder ball while the stack overview is on screen.
+          const inHeader = layer.key === current;
+          const onScreen = inHeader && !overviewShown;
           const outside = banded && layer.run === undefined;
           return (
             <div
@@ -630,7 +698,7 @@ export function StackTree({
                         ? 'closed'
                         : layer.run !== undefined
                           ? 'run'
-                          : onScreen
+                          : inHeader
                             ? 'current'
                             : 'rest',
                 })}

@@ -94,7 +94,8 @@ export function checkOverview(input: CheckInput): Promise<CheckedArtifact> {
     entries: treeEntries(input.entries),
     read: figureReader(input.figures),
   };
-  return checkArtifact(parsed, files, codeReader(input.code), { pr: input.pr });
+  const on = input.stack === undefined ? { pr: input.pr } : { stack: input.stack };
+  return checkArtifact(parsed, files, codeReader(input.code), on);
 }
 
 /** A file of `size` bytes, of which `bytes` are its start, as a reader answers a read of `cap`. */

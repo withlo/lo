@@ -172,9 +172,9 @@ interface Fresh {
 export class Checking {
   readonly #id: string;
   readonly #parts: CheckingParts;
-  /** The overview on screen, and the pull request whose ref holds it. */
+  /** The overview on screen, and the pull request or the stack whose ref holds it. */
   #commit: OverviewCommit | undefined;
-  #pr = 0;
+  #on: RefOf = { pr: 0 };
   #access: CodeAccess = 'waiting';
   #read: Read | undefined;
   /** The code of what was last published for the commit, if anything was. */
@@ -212,18 +212,23 @@ export class Checking {
     const accessChanged = state.code !== this.#access;
     this.#access = state.code;
     const shown = state.overview;
-    const pr = prOf(state.ref);
-    if (!shown || pr === undefined) {
+    const on = refOf(state.ref);
+    if (!shown || on === undefined) {
       this.#forget();
       if (this.#published !== undefined) this.#parts.publish(undefined);
       this.#published = undefined;
       return;
     }
     const current = this.#commit;
-    if (current?.id !== shown.id || current.source !== shown.source || this.#pr !== pr) {
+    if (
+      current?.id !== shown.id ||
+      current.source !== shown.source ||
+      this.#on.pr !== on.pr ||
+      this.#on.stack !== on.stack
+    ) {
       this.#forget();
       this.#commit = shown;
-      this.#pr = pr;
+      this.#on = on;
       this.#start();
     } else if (
       this.#failed ||
@@ -321,7 +326,7 @@ export class Checking {
     const input = (): CheckInput => ({
       artifact: read.artifact,
       entries: commit.entries,
-      pr: this.#pr,
+      ...this.#on,
       figures: read.figures.map(({ path, sent }) => ({ path, file: sent })),
       code:
         fresh.code.kind === 'read' && fresh.answers
@@ -423,7 +428,7 @@ export class Checking {
   async #checkText(commit: OverviewCommit, text: Text, signal: AbortSignal): Promise<void> {
     const code = this.#codeBefore(text.parse);
     const checked = await this.#parts.check(
-      { artifact: text.artifact, entries: commit.entries, pr: this.#pr, figures: [], code: null },
+      { artifact: text.artifact, entries: commit.entries, ...this.#on, figures: [], code: null },
       signal,
     );
     if (signal.aborted) return;
@@ -462,7 +467,7 @@ export class Checking {
     const input = (): CheckInput => ({
       artifact: text.artifact,
       entries: commit.entries,
-      pr: this.#pr,
+      ...this.#on,
       figures: figures.map(({ path, sent }) => ({ path, file: sent })),
       code: null,
     });
@@ -622,6 +627,20 @@ function firstSent(path: string, file: OverviewFile): OverviewFile {
 export function prOf(ref: string): number | undefined {
   const number = /^refs\/lo\/pr\/([1-9]\d{0,9})$/.exec(ref)?.[1];
   return number === undefined ? undefined : Number(number);
+}
+
+/** Whose ref holds an overview: a pull request's, or a stack's, by its number. */
+export type RefOf = { pr: number; stack?: undefined } | { stack: number; pr?: undefined };
+
+/**
+ * Whose ref `ref` is, as the check takes it: pull request `n`'s, `refs/lo/pr/<n>`, or stack `n`'s,
+ * `refs/lo/stack/<n>`.
+ */
+export function refOf(ref: string): RefOf | undefined {
+  const pr = prOf(ref);
+  if (pr !== undefined) return { pr };
+  const stack = /^refs\/lo\/stack\/([1-9]\d{0,9})$/.exec(ref)?.[1];
+  return stack === undefined ? undefined : { stack: Number(stack) };
 }
 
 /**

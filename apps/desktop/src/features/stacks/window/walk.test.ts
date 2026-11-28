@@ -10,7 +10,8 @@ import { installBridge } from '../../../window/test/bridge.ts';
 import type * as TabShared from '../../tab/window/shared.ts';
 import type { PullTab } from '../../tab/window/shared.ts';
 import type { Row, StackView } from '../contract.ts';
-import { choosing, focused, runTrouble, stacks } from './layers.ts';
+import { stackStates, subjects } from '../../overview/window/stack.ts';
+import { choosing, focused, OVERVIEW_ROW, OVERVIEW_TARGET, runTrouble, stacks } from './layers.ts';
 import {
   back,
   backable,
@@ -20,7 +21,11 @@ import {
   goUp,
   moveFocus,
   runAgain,
+  showable,
+  showName,
+  showStackAt,
   showTarget,
+  stackTarget,
   upTo,
   upToNamed,
   upToReady,
@@ -37,7 +42,10 @@ vi.mock('../../tab/window/shared.ts', async (original) => ({
 }));
 const tree = vi.hoisted(() => ({ goToTree: vi.fn<(tab: string) => void>() }));
 vi.mock('../../tree/window/shared.ts', () => tree);
-const diff = vi.hoisted(() => ({ showDiff: vi.fn<(tab: string) => boolean>(() => true) }));
+const diff = vi.hoisted(() => ({
+  showDiff: vi.fn<(tab: string) => boolean>(() => true),
+  showPlace: vi.fn<(tab: string, path: string, line?: number, marked?: unknown) => void>(),
+}));
 vi.mock('../../diff/window/shared.ts', () => diff);
 const middle = vi.hoisted(() => {
   const run = vi.fn<(id: string, target: unknown) => void>();
@@ -47,7 +55,8 @@ const middle = vi.hoisted(() => {
     focusMiddle: vi.fn<() => void>(),
     escapeToMiddle: vi.fn<() => void>(),
     run,
-    registry: () => ({ run }),
+    here: () => undefined,
+    registry: () => ({ run, history: { record: vi.fn<(entry: unknown) => void>() } }),
   };
 });
 vi.mock('../../../window/commands/registry.ts', () => middle);
@@ -83,6 +92,7 @@ function row(number: number, below: number[]): Row {
 const STACK: StackView = {
   kind: 'stack',
   root: 'stack/root',
+  start: null,
   githubStack: false,
   rows: [row(82, []), row(83, [82]), row(84, [82, 83]), row(85, [82])],
   notes: [],
@@ -146,6 +156,75 @@ describe('- in the file tree', () => {
     expect(tree.goToTree).not.toHaveBeenCalled();
     expect(document.activeElement).toBe(drawn);
     expect(focused.get(tab.id)).toBe(84);
+  });
+});
+
+/** What main says of the stack's overview, which Lo has read. */
+function withOverview(tab: PullTab): void {
+  stackStates.set(tab.id, {
+    id: tab.id,
+    ref: 'refs/lo/stack/82',
+    watching: true,
+    found: 'commit',
+    overview: {
+      id: 'a'.repeat(40),
+      source: 'base',
+      repository: { owner: 'rozed-dev', name: 'e2e' },
+      byline: null,
+      entries: [],
+      truncated: false,
+      read: true,
+    },
+    newer: null,
+    saved: false,
+    problem: null,
+    code: 'ready',
+  });
+}
+
+describe('the stack overview’s row', () => {
+  it('is first for j and k while the stack has an overview, and ⏎ there shows it', () => {
+    const tab = showing(82, STACK);
+    moveFocus(-1);
+    // None yet: the bottom layer is as far as the keyboard goes.
+    expect(stackTarget(tab)).toEqual({ kind: 'layer', layer: 82 });
+    expect(showable(OVERVIEW_TARGET)).toBe('No stack overview yet');
+    withOverview(tab);
+    moveFocus(-1);
+    expect(focused.get(tab.id)).toBe(OVERVIEW_ROW);
+    expect(stackTarget(tab)).toEqual(OVERVIEW_TARGET);
+    moveFocus(-1);
+    expect(stackTarget(tab)).toEqual(OVERVIEW_TARGET);
+    expect(showable(OVERVIEW_TARGET)).toBe(true);
+    expect(showName(OVERVIEW_TARGET)).toBe('Show stack overview');
+    expect(showName({ kind: 'layer', layer: 82 })).toBe(undefined);
+    showTarget(OVERVIEW_TARGET);
+    expect(subjects.get(tab.id)).toBe('stack');
+    moveFocus(1);
+    expect(stackTarget(tab)).toEqual({ kind: 'layer', layer: 82 });
+  });
+
+  it('gives way to the layer’s own overview as a layer is shown', async () => {
+    const tab = showing(82, STACK);
+    withOverview(tab);
+    subjects.set(tab.id, 'stack');
+    showTarget({ kind: 'layer', layer: 82 });
+    expect(subjects.get(tab.id)).toBe('pull');
+    // Another layer's view shows that layer's own too.
+    subjects.set('shown', 'stack');
+    showTarget({ kind: 'layer', layer: 83 });
+    await answered();
+    expect(subjects.get('shown')).toBe('pull');
+  });
+});
+
+describe('a stack overview’s code', () => {
+  it('shows the longest branch as one diff, at its lines', async () => {
+    const tab = showing(84, STACK);
+    showStackAt(tab, 'src/limits.ts', { start: 3, end: 9 });
+    await answered();
+    expect(bridge.calls).toContainEqual(['stacks.run', { id: tab.id, bottom: 82, top: 84 }]);
+    expect(diff.showPlace).toHaveBeenCalledWith('run', 'src/limits.ts', 3, { from: 3, to: 9 });
   });
 });
 

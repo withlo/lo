@@ -19,6 +19,7 @@ import { overviews } from '../service.ts';
 import { on as overviewsOn } from '../settings.ts';
 import { Blobs } from './blobs.ts';
 import { codeReply, readKey } from './code.ts';
+import { LayerReads } from './layers.ts';
 import { SavedRefs } from './saved.ts';
 import { installSkill, skillState } from './skill.ts';
 import { Overviews } from './switch.ts';
@@ -47,6 +48,8 @@ interface Kept {
   /** Stacks' overviews. */
   stacked: SavedRefs;
   stores: Stores;
+  /** What stacks' layers' overviews and descriptions were read. */
+  layers: LayerReads;
 }
 
 const log = (line: string) => console.error(`overview: ${line}`);
@@ -93,13 +96,19 @@ function subjectOf(id: string, stack: boolean | undefined): OverviewTab {
 
 /** What's kept, from the database the first time anything asks for it. */
 function keptIn(context: FeatureContext<typeof contract>): Kept {
+  const blobs = kept?.blobs ?? new Blobs(context.database, { log });
   kept ??= {
-    blobs: new Blobs(context.database, { log }),
+    blobs,
     saved: new SavedRefs(context.database, { log }),
     stacked: new SavedRefs(context.database, { log, of: 'stack' }),
     stores: new Stores({
       github: (acting, request, priority) => readAs(context, acting, request, priority),
       kept: new KeptStores(context.database, { log }),
+      log,
+    }),
+    layers: new LayerReads({
+      blobs,
+      github: (acting, request, priority) => readAs(context, acting, request, priority),
       log,
     }),
   };
@@ -229,19 +238,26 @@ export default defineFeature(contract, {
       const stack = stacks.get(id);
       return (stack?.holds(commit) ? stack : tabOf(id)).files(commit, paths);
     },
-    code({ id, commit, files }, context) {
+    code({ id, stack, commit, files }, context) {
       const service = context.use(tabs);
       const info = service.pull(id);
       if (!info) throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
-      return tabOf(id).readCode(readKey(info.local, commit, files), (signal) =>
+      return subjectOf(id, stack).readCode(readKey(info.local, commit, files), (signal) =>
         codeReply(info.local, () => service.clone(id), commit, files, { signal, log }),
       );
     },
-    texts({ id, commit, path, base }, context) {
+    texts({ id, stack, from, commit, path, base }, context) {
       const service = context.use(tabs);
       const info = service.pull(id);
       if (!info) throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
-      return tabOf(id).blocks.read(info.local, () => service.clone(id), commit, path, base);
+      return subjectOf(id, stack).blocks.read(
+        info.local,
+        () => service.clone(id),
+        commit,
+        path,
+        base,
+        stack ? from : undefined,
+      );
     },
     since({ id, commit, head }, context) {
       const service = context.use(tabs);
@@ -265,6 +281,25 @@ export default defineFeature(contract, {
       followStack(context, id, stack);
     },
     currentStack: ({ id }) => stacks.get(id)?.state(),
+    layerOverviews({ id, layers }, context) {
+      const info = context.use(tabs).pull(id);
+      if (!info || !followed.has(id)) {
+        throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
+      }
+      // Until the tab knows who it reads as, nothing is read.
+      if (!info.acting) return layers.map(() => ({ kind: 'unread' as const }));
+      const repo = new RepoRef(info.repository.owner, info.repository.name);
+      return keptIn(context).layers.overviews(info.acting, repo, layers);
+    },
+    layerLines({ id, layers }, context) {
+      const info = context.use(tabs).pull(id);
+      if (!info || !followed.has(id)) {
+        throw new IpcError('missing', 'There’s no pull request’s tab with that id.');
+      }
+      if (!info.acting) return layers.map(() => null);
+      const repo = new RepoRef(info.repository.owner, info.repository.name);
+      return keptIn(context).layers.lines(info.acting, repo, layers);
+    },
     currentStore: ({ id }) => definitions.get(id)?.state(),
     storeFile: ({ id, file }) => definitionsOf(id).file(file),
     retryStore({ id }) {
@@ -279,7 +314,7 @@ export default defineFeature(contract, {
   },
   start(context) {
     const service = context.use(tabs);
-    const { blobs, saved, stacked, stores } = keptIn(context);
+    const { blobs, saved, stacked, stores, layers } = keptIn(context);
     stops.push(
       watchPresence((presence) => setForeground(isOnScreen(presence))),
       service.onPull((id) => follow(context, id)),
@@ -295,6 +330,7 @@ export default defineFeature(contract, {
         saved.clear();
         stacked.clear();
         stores.clear();
+        layers.clear();
       }),
       // Once the file's read: each tab's overview, if they're on.
       context.use(settings).watch(overviewsOn, (value) => turn(context, value)),
