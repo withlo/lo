@@ -480,7 +480,7 @@ describe('what it draws', () => {
       { kind: 'lines', at: { file: 'a', side: 'new', from: 9, to: 9 } },
     ]);
     expect(drawn('lo-line-marked')).toEqual([9]);
-    expect(parent!.querySelector('.lo-ov-marker, .lo-ovnote')).toBeNull();
+    expect(parent!.querySelector('.lo-ov-marker, .lo-diffthread__note')).toBeNull();
   });
 
   test('tokens highlight its text, given at first or later', () => {

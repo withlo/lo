@@ -3,8 +3,9 @@
 // preview and attached files, for a box outside the diff, such as the submit dialog's summary; and
 // writing on a pull request itself, for its timeline: the box at the timeline's end, editing and
 // deleting your comments there, and what your own writes there changed, which the timeline shows
-// at once; the thread a review's first comment is in, for Show in diff; and choosing Vim keys and
-// how threads show in code, for the welcome.
+// at once; the thread a review's first comment is in, for Show in diff; choosing Vim keys and how
+// threads show in code, for the welcome; and the comment on a file a refused line offers, for a
+// key that would take its `⏎`.
 
 import { createElement, type ReactNode } from 'react';
 
@@ -17,6 +18,7 @@ import {
   useUploads as uploadsOf,
 } from './Attached.tsx';
 import type { BoxUploads } from './Attached.tsx';
+import { takeOffer } from './boxes.ts';
 import { boxKeys as keysOf, type BoxKey } from './boxkeys.ts';
 import {
   editOnPull,
@@ -203,6 +205,14 @@ export function editPullComment(tab: PullTab, comment: PullComment): Promise<voi
 /** Asks before deleting your comment, and deletes it once you say so, as `dd` does. */
 export function deletePullComment(tab: PullTab, comment: PullComment): void {
   removeOnPull(tab, comment);
+}
+
+/**
+ * `⏎` just after a line refused a comment, as the toast offers it, for a feature whose own `⏎` on
+ * the line would take the key first: a comment on the file instead. Says whether there was one.
+ */
+export function takeFileOffer(tab: PullTab): boolean {
+  return takeOffer(tab);
 }
 
 /** Puts focus in the box at the end of the tab's timeline, as `c` there does. */

@@ -171,6 +171,7 @@ export {
   together,
   type BlockTarget,
   type DraftTarget,
+  type NoteTarget,
   type FileTarget,
   type HeaderTarget,
   type LayerTarget,

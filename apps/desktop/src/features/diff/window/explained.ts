@@ -4,6 +4,7 @@
 // and each time they change, so marks are always on the lines it draws, and "Read it in the
 // overview" in a note goes back to what explains them.
 
+import { lineRefText } from '@lo/review';
 import type { DrawNote, Mark } from '@lo/ui/code';
 
 /** Lines of a file the diff's newer side shows, and what explains them. */
@@ -94,8 +95,16 @@ export function marksOf(
   return lines.flatMap(({ path, from, to, block, note }): Mark[] => {
     const file = ids.get(path);
     if (file === undefined) return [];
-    return [{ kind: 'overview', at: { file, side: 'new', from, to }, block, note }];
+    const words = noteLines(from, to, true);
+    return [{ kind: 'overview', at: { file, side: 'new', from, to }, block, note, words }];
   });
+}
+
+/** A note's lines in words: "Lines 2–15", or after other words, "lines 2–15". */
+export function noteLines(from: number, to: number, after = false): string {
+  const start = { side: 'RIGHT', number: from } as const;
+  const end = { side: 'RIGHT', number: to } as const;
+  return lineRefText({ lines: { start, end } }, after);
 }
 
 /** Whether two lists of marks mark the same lines the same way, in the same order. */

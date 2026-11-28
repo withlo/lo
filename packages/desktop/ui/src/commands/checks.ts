@@ -454,6 +454,7 @@ function sampleTarget(kind: TargetKind): Target {
     case 'thread':
       return { kind, thread: 't' };
     case 'draft':
+    case 'note':
       return { kind, at: { file: 'f', side: 'new', line: 1 } };
     case 'layer':
       return { kind, layer: 1 };

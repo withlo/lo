@@ -8,6 +8,7 @@ import license from '@lo/skill/LICENSE?raw';
 import skill from '@lo/skill/SKILL.md?raw';
 import figures from '@lo/skill/references/figures.md?raw';
 import format from '@lo/skill/references/format.md?raw';
+import writing from '@lo/skill/references/writing.md?raw';
 
 import { name, version } from '../package.json' with { type: 'json' };
 
@@ -34,5 +35,6 @@ export const SKILL_FILES: readonly SkillFile[] = [
   { path: 'LICENSE', text: license },
   { path: 'references/format.md', text: format },
   { path: 'references/figures.md', text: figures },
+  { path: 'references/writing.md', text: writing },
   { path: 'SKILL.md', text: skill.replaceAll(UNPINNED, PINNED) },
 ];

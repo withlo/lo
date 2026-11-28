@@ -446,9 +446,12 @@ each other ("moved from `api/user.ts:40`"), and only edits inside the block are 
 ### Overview markers
 
 Lines the overview explains carry a marker beside them, in a lane of their own last before the new
-code; the old side has none, since an overview explains new lines. Opening it shows the explanation
-in place, with its code, emphasis and lists drawn as the overview draws them, cut at 600 characters,
-and a link to that point in the overview.
+code; the old side has none, since an overview explains new lines. Its note opens as a thread does,
+by the same setting: over the code, in the threads' popover, beside lines, or as a card under its
+last line between them. The pointer resting on the marker's ball previews it, and a click, `⏎` on
+its lines or `] o` opens it. It shows the explanation with its code, emphasis and lists drawn as the
+overview draws them, cut at 600 characters, and "Show in overview" (`g o`), which goes to that point
+in the overview.
 
 ## 7. Revisions and viewed files
 
@@ -628,14 +631,21 @@ the keyboard.
 The skill teaches a coding agent to write an artifact. It lives in Lo's repo and installs into
 Claude Code and Codex. It tells the agent to:
 
-1. **Read the PR:** its diff, description and commits.
-2. **Read the instructions** for this repo and this user, if there are any.
-3. **Start from the existing artifact** when the PR already has one, since the new one replaces it
+1. **Work in a clone of its own,** which borrows the objects of the clone it starts in and commits
+   with its name and email address, and fetch into refs of its own there, never into the clone
+   someone else works in.
+2. **Read the PR:** its diff, description and commits, and, when the agent that wrote the PR started
+   it, the handoff file that agent wrote and a copy of its session's transcript.
+3. **Read the instructions** for this repo, from its default branch so no PR changes its own, and
+   for this user, if there are any, and the repo's definitions at `refs/lo/terms`.
+4. **Start from the existing artifact** when the PR already has one, since the new one replaces it
    for everyone.
-4. **Write `artifact.md` and its figures.**
-5. **Run the checker** and fix what it reports.
-6. **Push to `refs/lo/pr/<number>`,** in the PR's repo, or in the fork when the agent can't push to
+5. **Write `artifact.md` and its figures,** then read them again against the skill's writing rules.
+6. **Run the checker** and fix what it reports.
+7. **Push to `refs/lo/pr/<number>`,** in the PR's repo, or in the fork when the agent can't push to
    the repo. The agent pushes with its own git credentials, and Lo takes no part.
+8. **Write the stack's overview,** at `refs/lo/stack/<number>`, when the PR is a layer of a stack
+   that has none, or when the PR changes what the stack is for.
 
 ### The checker
 
@@ -655,10 +665,14 @@ the same parser Lo uses, so an artifact that passes will render. It checks that:
   machine.
 - **Plain instructions.** Both are Markdown that the agent reads, for example "write for someone new
   to billing" or "always draw a sequence diagram for API changes".
-- **Glossary.** A "Glossary" heading in either file lists terms and their definitions, so the same
+- **Required and Defaults.** The repo's file has two headings. `## Required` holds what every
+  overview follows, and `## Defaults` what your own file may change. Text under neither counts as
+  Defaults.
+- **Precedence.** The repo's Required first, then your own file, then the repo's Defaults, then the
+  skill's defaults: its writing rules (`skill/references/writing.md`) and its five sections. The
+  tl;dr is always required, and always first.
+- **Definitions** come from the repo's definitions at `refs/lo/terms`, never from these files, so a
   term reads the same in every overview.
-- **Precedence.** The repo's conventions come first, and personal preferences refine them. The tl;dr
-  is always required.
 - **Appearance** isn't customized here. Overviews follow the reader's Lo theme.
 
 ## 9. Code features
@@ -810,10 +824,10 @@ trust.
 - **In the diff.** A thread is its mark beside the code, and opens over the code in a popover under
   its last line: the pointer resting on the mark previews it, and a click, `⏎` on its line or `]t`
   pins it. A reply's, an edit's and a new comment's box open in the popover too, so no line moves
-  for a thread or a box. Settings › Pull requests › Threads in code, or the View menu, puts threads
-  between lines instead, as on GitHub: each under its line, and a file's under its header,
-  unresolved ones open and resolved ones collapsed, `za` opening or collapsing one. A file's header
-  and its row in the file tree count its threads.
+  for a thread or a box. Settings › Pull requests › Threads and overview notes, or the View menu,
+  puts threads between lines instead, as on GitHub: each under its line, and a file's under its
+  header, unresolved ones open and resolved ones collapsed, `za` opening or collapsing one. A file's
+  header and its row in the file tree count its threads.
 - **Marks beside the code.** Each side has a thread lane between its line numbers and its code. A
   thread's mark there is a bubble beside its last line, amber while it's unresolved or holds your
   pending comments, grey once it's resolved or out of date, with a bracket up the lane to its first
