@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 import { act, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { afterEach, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
+
+import { LOADING_DELAY_MS } from '@lo/ui';
 
 import { installBridge } from '../../../window/test/bridge.ts';
 import type { Tab } from '../contract.ts';
 import { viewFocus } from './layout.ts';
-import { middleIds, opening, panels } from './panels.ts';
+import { middleIds, opening, panels, wentAtOnce } from './panels.ts';
 import {
   activeTab,
   focusNowhereFor,
@@ -24,6 +26,14 @@ import {
   type PullView,
 } from './shared.ts';
 import { showPull, showTabs } from './store.ts';
+
+/** How long each tab has waited, as its placeholders say: nothing for one not waiting. */
+const waited = vi.hoisted(() => new Map<string, number>());
+
+vi.mock(import('./Placeholder.tsx'), async (original) => ({
+  ...(await original()),
+  waitedFor: (tab: string) => waited.get(tab),
+}));
 
 beforeAll(() => {
   Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true);
@@ -260,6 +270,29 @@ describe('the middle views', () => {
     expect(middleShown('bat')).toBe('timeline.view');
     middleIds.ids = ['overview.view', 'diff.view', 'timeline.view'];
     expect(middleShown('bat')).toBe('overview.view');
+  });
+
+  it('have the view switch go to the timeline at once where the tab goes there by itself before its wait shows', () => {
+    showTabs({ tabs: [fd, bat], active: 'fd' });
+    const drawn = middleIds.ids;
+    onTestFinished(() => {
+      middleIds.ids = drawn;
+      waited.clear();
+    });
+    middleIds.ids = ['overview.view', 'diff.view', 'timeline.view'];
+    // As it opens, a moment into its wait: the reader has seen nothing to follow.
+    waited.set('fd', LOADING_DELAY_MS - 1);
+    expect(showInstead('fd', true)).toBe(true);
+    expect(wentAtOnce.get('fd')).toBe('timeline.view');
+    wentAtOnce.set('fd', undefined);
+    // Once its wait shows, the thumb slides there, as it does for what the reader does.
+    waited.set('bat', LOADING_DELAY_MS);
+    expect(showInstead('bat', true)).toBe(true);
+    expect(wentAtOnce.get('bat')).toBeUndefined();
+    showMiddle('bat', 'overview.view');
+    waited.set('bat', 0);
+    expect(showInstead('bat')).toBe(true);
+    expect(wentAtOnce.get('bat')).toBeUndefined();
   });
 });
 

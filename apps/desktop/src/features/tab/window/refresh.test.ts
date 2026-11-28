@@ -1,10 +1,10 @@
 // The reader's refresh from the window: main reads the tab on screen again, by its view on screen,
-// while its mark in the strip turns; asking again meanwhile asks nothing more.
+// while its mark in the strip turns, for 400 ms at least; asking again meanwhile asks nothing more.
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Connection, PullView, Tab } from '../contract.ts';
-import { refresh, refreshable, refreshingStore } from './refresh.ts';
+import { MARKED_MS, refresh, refreshable, refreshingStore } from './refresh.ts';
 import { pullsStore, showTabs } from './store.ts';
 
 const seen = vi.hoisted(() => ({
@@ -42,7 +42,12 @@ function onScreen(tab: Tab, connection: Connection = { kind: 'live' }): void {
   pullsStore.setState({ views: new Map([['a:83', view]]) });
 }
 
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+
 afterEach(() => {
+  vi.useRealTimers();
   seen.shown = [];
   refreshingStore.setState({ ids: new Set() });
   vi.clearAllMocks();
@@ -83,17 +88,40 @@ describe('refreshing the tab on screen', () => {
     expect(refreshable()).toBe('');
     await refresh();
     expect(seen.refresh).toHaveBeenCalledOnce();
+    // An answer slower than that stops it as it comes in.
+    vi.advanceTimersByTime(MARKED_MS + 100);
+    expect(refreshingStore.getState().ids).toEqual(new Set(['a']));
     read.resolve(undefined);
     await refreshing;
     expect(refreshingStore.getState().ids).toEqual(new Set());
     expect(refreshable()).toBe(true);
   });
 
+  it('marks the tab for 400 ms from the press at least, so an answer in at once still shows', async () => {
+    expect(MARKED_MS).toBe(400);
+    onScreen(stack);
+    seen.refresh.mockResolvedValue(undefined);
+    let done = false;
+    void refresh().then(() => {
+      done = true;
+    });
+    await vi.advanceTimersByTimeAsync(MARKED_MS - 1);
+    expect(refreshingStore.getState().ids).toEqual(new Set(['a']));
+    // Pressed again meanwhile, nothing more is asked.
+    expect(refreshable()).toBe('');
+    await vi.advanceTimersByTimeAsync(1);
+    expect(done).toBe(true);
+    expect(refreshingStore.getState().ids).toEqual(new Set());
+    expect(seen.refresh).toHaveBeenCalledOnce();
+  });
+
   it('stops marking the tab when main couldn’t be asked', async () => {
     onScreen(queue);
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
     seen.refresh.mockRejectedValue(new Error('main is gone'));
-    await refresh();
+    const refreshing = refresh();
+    await vi.advanceTimersByTimeAsync(MARKED_MS);
+    await refreshing;
     expect(seen.refresh).toHaveBeenCalledExactlyOnceWith({ id: 'q' });
     expect(refreshingStore.getState().ids).toEqual(new Set());
     expect(logged).toHaveBeenCalledOnce();

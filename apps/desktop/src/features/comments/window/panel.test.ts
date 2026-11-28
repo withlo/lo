@@ -167,8 +167,14 @@ describe('the panel with nothing to list', () => {
       title: 'Sign in to see threads',
       action: 'accounts.addAccount',
     });
-    // Once an account is listed, its button adds one, "Add account…", and the title says so.
-    expect(emptyOf(emptyView('signIn'), 'all', undefined, true)).toMatchObject({
+    // With every account listed signed out, as the header's "Not signed in" says, it still asks to
+    // sign in, and its button signs in again rather than adding one.
+    expect(emptyOf(emptyView('signIn'), 'all', undefined, 'signedOut')).toMatchObject({
+      title: 'Sign in to see threads',
+      action: 'accounts.signInAgain',
+    });
+    // While one is signed in, its button adds one, "Add account…", and the title says so.
+    expect(emptyOf(emptyView('signIn'), 'all', undefined, 'signedIn')).toMatchObject({
       title: 'Add an account to see threads',
       action: 'accounts.addAccount',
     });

@@ -69,6 +69,20 @@ export function listedAccounts(): Listed[] {
   }));
 }
 
+/**
+ * How the accounts stand for what needs one: one is signed in (`signedIn`); those listed are all
+ * signed out (`signedOut`); or none is listed (`none`).
+ */
+export type SignedIn = 'signedIn' | 'signedOut' | 'none';
+
+/** How `accounts` stand, as {@link SignedIn} says. */
+export function signedInOf(
+  accounts: readonly Pick<AccountSummary, 'signedOut'>[] | undefined,
+): SignedIn {
+  if (accounts === undefined || accounts.length === 0) return 'none';
+  return accounts.some((account) => account.signedOut === null) ? 'signedIn' : 'signedOut';
+}
+
 /** Main couldn't be asked for the accounts. */
 export function unlistedAccounts(): void {
   accountsStore.setState({ unlisted: true });

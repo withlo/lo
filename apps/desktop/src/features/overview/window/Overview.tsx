@@ -94,7 +94,9 @@ export function useOpening(tab: string, known: Known, shown: boolean): boolean {
     }
     openings.set(tab, { ...current, since: current.since ?? since, on: decided, handing: hands });
     // Where the timeline can't be shown, the overview stays, as it is.
-    if (hands && !showInstead(tab)) openings.update(tab, (was) => ({ ...was, handing: false }));
+    if (hands && !showInstead(tab, true)) {
+      openings.update(tab, (was) => ({ ...was, handing: false }));
+    }
   }, [tab, decided, since, hands]);
 
   // Gone from the screen, it's handed over.
