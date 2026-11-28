@@ -1758,11 +1758,11 @@ function relined(box: Box, how: LinesChange): Lines | string {
   if (typeof relining === 'string') return relining;
   const lines = changedLines(relining.takes, relining.lines, how);
   if (typeof lines === 'string') return lines;
-  return taken(relining, lines) ?? lines;
+  return draftThere(relining, lines) ?? lines;
 }
 
 /** Why a box being relined can't go on `lines`: another draft is on them. */
-function taken({ box, drawn, path }: Relining, lines: Lines): string | undefined {
+function draftThere({ box, drawn, path }: Relining, lines: Lines): string | undefined {
   const other = boxesOf(box.view).get(placeKey(placeOf(drawn.at, path, lines)));
   const there = other !== undefined && other !== box;
   return there && (other.composer !== undefined || other.state.text.trim() !== '')
@@ -1800,7 +1800,7 @@ export function dragLines(box: Box, at: Place | Span): void {
     refuse(NOT_IN_DIFF);
     return;
   }
-  const why = taken(relining, lines);
+  const why = draftThere(relining, lines);
   if (why !== undefined) {
     refuse(why);
     return;
