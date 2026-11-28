@@ -183,6 +183,7 @@ export {
   type Span,
   type RowTarget,
   type BoxTarget,
+  type LinesTarget,
   type TabTarget,
   type Target,
   type TargetKind,

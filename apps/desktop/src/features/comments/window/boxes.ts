@@ -22,6 +22,8 @@
 // uploads are given up as its draft goes.
 
 import {
+  type CommentableLines,
+  Line,
   lineRefText,
   Lines,
   Screen,
@@ -46,6 +48,7 @@ import {
   type Handler,
   type HeaderTarget,
   KEY_EVENT,
+  type LinesTarget,
   type LineTarget,
   runControl,
   type Target,
@@ -123,11 +126,15 @@ import {
   type BoxNote,
   type BoxWhere,
   boxAt,
+  changedLines,
+  CHECK_FIRST,
   commentableOn,
+  draftOn,
   githubPath,
   IN_A_LAYER,
   inTimeline,
   linesAt,
+  type LinesChange,
   NEW_SIDE_ONLY,
   NO_LINES,
   NOT_IN_DIFF,
@@ -375,7 +382,8 @@ function sentWords(place: DraftPlaceRow, how: Send): string {
 /** A comment box of a view's diff. */
 export class Box {
   readonly view: string;
-  readonly key: string;
+  /** Its place's key among its view's boxes, which changes as a new comment's lines do. */
+  key: string;
   /** Its id, which ties its foot's buttons to the notes that say why they're off. */
   readonly id: string;
   /** The box the diff draws, while it does. */
@@ -785,6 +793,9 @@ function eventsOf(box: Box): ComposerEvents {
     },
     dragging(count) {
       draggingOver(box, count);
+    },
+    lines(at) {
+      dragLines(box, at);
     },
   };
 }
@@ -1717,6 +1728,208 @@ export async function commentOnFile(tab: PullTab, key: string): Promise<void> {
   }
   diff.toTop(file.id);
   await comment(tab, { kind: 'header', file: file.id, side: 'new' }, 'review');
+}
+
+/**
+ * What changing box `box`'s lines works from, where they can change now: a new comment's box on
+ * lines, open in its view's diff, not on its way nor maybe on GitHub, with what GitHub takes in its
+ * file as main last said; otherwise why not, or `''` where nothing need be said, as for a box that
+ * isn't on lines.
+ */
+interface Relining {
+  readonly box: Box;
+  readonly diff: WritingDiff;
+  readonly drawn: ReturnType<WritingDiff['drawn']>;
+  readonly path: string;
+  readonly takes: CommentableLines | undefined;
+  readonly lines: Lines;
+}
+
+/** Box `box`'s lines as they can change now, or why they can't. */
+function reliningOf(box: Box): Relining | string {
+  const { view, state } = box;
+  const { place } = state;
+  if (place.kind !== 'thread' || place.lines === null || !box.composer) return '';
+  // In a code block's popover, its lines are the block's.
+  if (box.drawnIn !== 'diff') return '';
+  const why = heldWhere(box);
+  if (why !== undefined) return why;
+  const diff = writingDiff(view);
+  if (!diff) return '';
+  const drawn = diff.drawn();
+  if (place.commit.toLowerCase() !== drawn.at.toLowerCase()) return '';
+  const file = drawn.files.find((each) => githubPath(each) === place.path);
+  if (!file) return '';
+  const answer = commentableNow(view, drawn.at, place.path, previousOf(file));
+  // Main hasn't said which lines take a comment, or can't tell.
+  if (!answer) return '';
+  const takes = commentableOn(screenFor(view, diff, file.since), answer);
+  const { start, end } = place.lines;
+  const last = Line.of(end.side, end.number);
+  const lines = start ? Lines.range(Line.of(start.side, start.number), last) : Lines.one(last);
+  return { box, diff, drawn, path: place.path, takes, lines };
+}
+
+/**
+ * Why box `box`'s comment can't go elsewhere now, if it can't: it's being sent, or main marked it
+ * sent and nobody knows yet whether GitHub has it. Moved then, it would leave a draft that says it
+ * was sent where it was, and could post twice.
+ */
+function heldWhere(box: Box): string | undefined {
+  if (sendingNow(box.state) || drawing.has(box)) return 'Sending…';
+  return box.sentMark ? CHECK_FIRST : undefined;
+}
+
+/**
+ * Where box `box`'s lines go as they change `how`, or why they can't: a new comment's, while it's
+ * open in the diff and not on its way.
+ */
+function relined(box: Box, how: LinesChange): Lines | string {
+  const relining = reliningOf(box);
+  if (typeof relining === 'string') return relining;
+  const lines = changedLines(relining.takes, relining.lines, how);
+  if (typeof lines === 'string') return lines;
+  return draftThere(relining, lines) ?? lines;
+}
+
+/** Why a box being relined can't go on `lines`: another draft is on them. */
+function draftThere({ box, drawn, path }: Relining, lines: Lines): string | undefined {
+  const other = boxesOf(box.view).get(placeKey(placeOf(drawn.at, path, lines)));
+  const there = other !== undefined && other !== box;
+  return there && (other.composer !== undefined || other.state.text.trim() !== '')
+    ? draftOn(lines)
+    : undefined;
+}
+
+/**
+ * Changes box `box`'s lines `how`, as its lines button's menu and its keys do: see
+ * {@link moveTo}. Where they can't change that way, the key's toast says why.
+ */
+export function changeLines(box: Box, how: LinesChange): void {
+  const lines = relined(box, how);
+  if (typeof lines === 'string') {
+    if (lines !== '') refuse(lines);
+    return;
+  }
+  const relining = reliningOf(box);
+  if (typeof relining !== 'string') moveTo(relining, lines);
+}
+
+/**
+ * The reader dragged an end of box `box`'s lines in the gutter, to make them `at`: they're the
+ * lines a comment on `at` goes on, as GitHub takes it, where they can be; else the box stays where
+ * it was, and a toast says why.
+ */
+export function dragLines(box: Box, at: Place | Span): void {
+  const relining = reliningOf(box);
+  if (typeof relining === 'string') {
+    if (relining !== '') refuse(relining);
+    return;
+  }
+  const lines = linesAt(relining.takes, at);
+  if (!lines) {
+    refuse(NOT_IN_DIFF);
+    return;
+  }
+  const why = draftThere(relining, lines);
+  if (why !== undefined) {
+    refuse(why);
+    return;
+  }
+  moveTo(relining, lines);
+}
+
+/**
+ * Moves the box being relined to `lines`, as it is: the diff moves it under their last line, and
+ * its draft goes with it, to its new place, with its text, its uploads and how it's open. Nothing
+ * stays under its old place. A suggestion block whose text is still the old lines' is written
+ * again from the new lines, as no step of the box's undo; one the reader changed is left. A screen
+ * reader hears the new words.
+ */
+function moveTo(relining: Relining, lines: Lines): void {
+  const { box, diff, drawn, path } = relining;
+  const { view, composer } = box;
+  const was = box.state.place;
+  const place = placeOf(drawn.at, path, lines);
+  const key = placeKey(place);
+  if (!composer || key === box.key) return;
+  const at = boxAt(drawn, screenFor(view, diff, false), place)?.at;
+  if (!at || 'thread' in at || !('side' in at)) return;
+  const before = suggestionOf(diff, at, relining.lines);
+  if (!composer.move(at)) return;
+  const own = boxesOf(view);
+  const old = box.key;
+  // An empty box closed there, which nothing shows, gives way.
+  own.get(key)?.dropSave();
+  own.delete(old);
+  box.key = key;
+  own.set(key, box);
+  box.set({ place });
+  box.dropSave();
+  if (before !== undefined) {
+    const { text } = composer;
+    const from = text.indexOf(before);
+    const after = suggestionOf(diff, at, lines);
+    if (from >= 0 && after !== undefined && after !== before) {
+      composer.replace(from, from + before.length, after, false);
+    }
+  }
+  // Its draft is saved at its new place, then leaves its old one, which main may still name until
+  // it hears.
+  dropped.get(view)?.delete(key);
+  if (composer.text.trim() !== '') save(view, place, composer.text, homeRow(box.home));
+  save(view, was, '', null);
+  holdDroppedAt(view, old);
+  markDrafts(view);
+  replyingChanged(view);
+  tell(whereText(place));
+}
+
+/**
+ * The `suggestion` block a box on `at` would open with for `lines`, from the diff's newer lines:
+ * nothing for lines not all on the newer side, which take no suggestion.
+ */
+function suggestionOf(diff: WritingDiff, at: Place | Span, lines: Lines): string | undefined {
+  if (!takesSuggestion(lines)) return undefined;
+  const span = {
+    file: at.file,
+    side: 'new' as const,
+    from: Lines.first(lines).number,
+    to: lines.end.number,
+  };
+  return suggestionBlock(diff.lines(span));
+}
+
+/**
+ * A command that changes a new comment's lines `how`, from its box, as its lines button's menu
+ * and its keys do: dimmed, with why, where they can't change that way.
+ */
+export function changingLines(how: LinesChange): Handler<LinesTarget> {
+  return {
+    run(target) {
+      const box = boxNamed(target.box);
+      if (box) changeLines(box, how);
+    },
+    enabled(target) {
+      const box = boxNamed(target.box);
+      if (!box) return 'The comment box has closed.';
+      const lines = relined(box, how);
+      return typeof lines === 'string' ? lines : true;
+    },
+    listed: (target) => linesChange(target.box),
+  };
+}
+
+/**
+ * Whether box `id`'s lines can change, its head's words a button: a new comment's on lines, open
+ * in the diff.
+ */
+export function linesChange(id: string): boolean {
+  const box = boxNamed(id);
+  if (!box) return false;
+  // One held where it is, as while it's sent, still has its button, its rows dimmed with why.
+  const relining = reliningOf(box);
+  return typeof relining !== 'string' || relining !== '';
 }
 
 /**
@@ -2954,6 +3167,33 @@ export function offering(...among: readonly Offer[]): Handler<BoxTarget> {
     listed: (target) => offerIn(target) !== undefined,
   };
 }
+
+/**
+ * "Move comment to file", as a command on a box: from its lines button's menu, on a new comment's
+ * lines, and where its note offers it, as after GitHub took no comment on its lines.
+ */
+export const movingToFile: Handler<BoxTarget | LinesTarget> = {
+  run(target) {
+    const box = boxNamed(target.box);
+    if (!box) return;
+    if (target.kind === 'box') {
+      void onFileOffered.run(target);
+      return;
+    }
+    if (heldWhere(box) === undefined) act(box, 'onFile');
+  },
+  enabled(target) {
+    if (target.kind === 'box') return onFileOffered.enabled?.(target) ?? true;
+    const box = boxNamed(target.box);
+    if (!box) return 'The comment box has closed.';
+    return heldWhere(box) ?? true;
+  },
+  listed: (target) =>
+    target.kind === 'box' ? (onFileOffered.listed?.(target) ?? true) : linesChange(target.box),
+};
+
+/** "Move comment to file" where a box's note offers it. */
+const onFileOffered = offering('onFile');
 
 /** A file's path in the base at the head on screen, for one the pull request renames there. */
 function previousAt(view: string, path: string): string | null {

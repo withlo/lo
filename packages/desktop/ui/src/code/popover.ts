@@ -298,6 +298,17 @@ export interface Popover<At extends PopAt> {
   redraw(): void;
   /** Placed again where it is, by its lines as they are now. */
   place(): void;
+  /**
+   * Moves it, pinned, to `at`, as the comment box in it goes to other lines: what it shows is drawn
+   * again in place, so the box in it stays as it is, and it's placed under `at`'s lines, the pane
+   * scrolled the least that shows it whole. Closed, it's pinned there.
+   */
+  move(at: At): void;
+  /**
+   * Steps aside, `true`, leaving the screen as it closes but staying open, with what it shows, as
+   * while an end of its box's lines is dragged; or comes back, `false`, where it's placed now.
+   */
+  aside(on: boolean): void;
   destroy(): void;
 }
 
@@ -328,6 +339,8 @@ export class ThreadPop<At extends PopAt> implements Popover<At> {
   /** Whether focus is in it, or was until what it was on went, with nothing taking it since. */
   #focusedIn = false;
   #leaving: (() => void) | undefined;
+  /** Whether it's stepped aside, open, as while an end of its box's lines is dragged. */
+  #aside = false;
   readonly #stops: (() => void)[] = [];
   readonly #sized: ResizeObserver | undefined;
 
@@ -523,6 +536,7 @@ export class ThreadPop<At extends PopAt> implements Popover<At> {
     if (!this.open) return;
     if (this.#state === 'preview') this.#closedAt = performance.now();
     this.#state = 'closed';
+    this.#aside = false;
     clearTimeout(this.#crossing);
     this.#host.shown(undefined);
     if (held && focus) this.#host.focusLine(at);
@@ -582,6 +596,53 @@ export class ThreadPop<At extends PopAt> implements Popover<At> {
     const room = this.#host.room(this.#at);
     this.dom.style.setProperty('--lo-pop-max', `${popMax(room)}px`);
     this.#put(placePop(room, lines, this.#content.offsetHeight, this.#side));
+  }
+
+  move(at: At): void {
+    if (this.#state === 'closed' || !this.#drawn || !this.#at) {
+      this.pin(at);
+      return;
+    }
+    const lines = this.#host.lines(at);
+    if (!lines) {
+      this.close();
+      return;
+    }
+    clearTimeout(this.#rest);
+    clearTimeout(this.#crossing);
+    this.#state = 'pinned';
+    this.#at = at;
+    this.#built = at;
+    this.#drawn.update(this.#host.view(at, true));
+    this.#host.drawn(at);
+    const room = this.#host.room(at);
+    this.dom.style.setProperty('--lo-pop-max', `${popMax(room)}px`);
+    const placed = placePop(room, lines, this.#content.offsetHeight, 'opened');
+    if (placed.scroll !== 0) this.#host.scrollBy(placed.scroll, at);
+    this.#put(placed);
+    this.dom.dataset.side = placed.side === 'above' ? 'top' : 'bottom';
+    this.#host.shown(at);
+  }
+
+  aside(on: boolean): void {
+    if (this.#state === 'closed' || on === this.#aside) return;
+    this.#aside = on;
+    this.#leaving?.();
+    this.#leaving = undefined;
+    if (on) {
+      // It leaves as it closes, staying open.
+      this.dom.dataset.endingStyle = '';
+      this.#leaving = whenSettled(this.dom, () => {
+        this.#leaving = undefined;
+        this.dom.hidden = true;
+      });
+      return;
+    }
+    delete this.dom.dataset.endingStyle;
+    // It comes back with its Pop, as from nothing: its style worked out hidden once.
+    this.dom.hidden = true;
+    void getComputedStyle(this.dom).display;
+    this.dom.hidden = false;
   }
 
   destroy(): void {
@@ -647,6 +708,7 @@ export class ThreadPop<At extends PopAt> implements Popover<At> {
     }
     this.#leaving?.();
     this.#leaving = undefined;
+    this.#aside = false;
     delete this.dom.dataset.endingStyle;
     const room = this.#host.room(at);
     this.dom.style.setProperty('--lo-pop-max', `${popMax(room)}px`);
@@ -940,6 +1002,14 @@ class SharedHandle<At extends PopAt> implements Popover<At> {
 
   place(): void {
     if (this.open) this.#shared.pop.place();
+  }
+
+  move(at: At): void {
+    this.#shared.pop.move(this.#own(at));
+  }
+
+  aside(on: boolean): void {
+    if (this.open) this.#shared.pop.aside(on);
   }
 
   destroy(): void {
