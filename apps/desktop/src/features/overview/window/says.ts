@@ -197,7 +197,8 @@ export function copyLabel(copy: Copy): string {
  * The line at the top of an overview whose glossary adds or changes terms, as a pull request in
  * state `state` does them: "Adds 2 definitions · changes 1", "Changes 3 definitions"; once it's
  * merged, as done: "Added 2 definitions · changed 1"; and closed without merging, as what it
- * would have done: "Would have added 2 definitions · changed 1". None when it does neither.
+ * would have done, one fact: "Would have added 2 definitions and changed 1". None when it does
+ * neither.
  */
 export function definitionsLine(
   added: number,
@@ -206,19 +207,23 @@ export function definitionsLine(
 ): string | undefined {
   const [adds, changes, changesAlone] = LINE_WORDS[state];
   if (added > 0 && changed > 0) {
-    return `${adds} ${counted(added, 'definition')} · ${changes} ${changed.toLocaleString('en-US')}`;
+    return `${adds} ${counted(added, 'definition')}${changes} ${changed.toLocaleString('en-US')}`;
   }
   if (added > 0) return `${adds} ${counted(added, 'definition')}`;
   if (changed > 0) return `${changesAlone} ${counted(changed, 'definition')}`;
   return undefined;
 }
 
-/** The line's words for adding, for changing after `·` and for changing alone, by state. */
+/**
+ * The line's words, by state: for adding; for changing after it, with what joins the two, `·`
+ * between two facts, or "and" within one, for what a closed pull request would have done; and for
+ * changing alone.
+ */
 const LINE_WORDS: Readonly<Record<PullState, readonly [string, string, string]>> = {
-  open: ['Adds', 'changes', 'Changes'],
-  draft: ['Adds', 'changes', 'Changes'],
-  merged: ['Added', 'changed', 'Changed'],
-  closed: ['Would have added', 'changed', 'Would have changed'],
+  open: ['Adds', ' · changes', 'Changes'],
+  draft: ['Adds', ' · changes', 'Changes'],
+  merged: ['Added', ' · changed', 'Changed'],
+  closed: ['Would have added', ' and changed', 'Would have changed'],
 };
 
 /** The title of the Glossary section's note, when the repo's definitions can't be used. */

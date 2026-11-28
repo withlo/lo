@@ -201,7 +201,8 @@ describe('what the pull request does to the repo’s definitions', () => {
   });
 
   it('says what it would have done, closed without merging', () => {
-    expect(definitionsLine(2, 1, 'closed')).toBe('Would have added 2 definitions · changed 1');
+    // One fact: `·` would make "changed 1" a second, as if it had happened.
+    expect(definitionsLine(2, 1, 'closed')).toBe('Would have added 2 definitions and changed 1');
     expect(definitionsLine(1, 0, 'closed')).toBe('Would have added 1 definition');
     expect(definitionsLine(0, 3, 'closed')).toBe('Would have changed 3 definitions');
   });
