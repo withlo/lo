@@ -29,6 +29,16 @@ export function refOf(owner: Owner): string {
   return owner.stack === undefined ? `refs/lo/pr/${owner.pr}` : `refs/lo/stack/${owner.stack}`;
 }
 
+/**
+ * The ref the base repository keeps its copy of a fork's overview of `owner` on:
+ * `refs/lo/kept/pr/<n>`, or `refs/lo/kept/stack/<n>` for a stack's.
+ */
+export function keptRefOf(owner: Owner): string {
+  return owner.stack === undefined
+    ? `refs/lo/kept/pr/${owner.pr}`
+    : `refs/lo/kept/stack/${owner.stack}`;
+}
+
 /** Writes `files` as the overview of `owner`, in the repository `git` runs in. */
 export async function writeCommit(
   git: Git,
