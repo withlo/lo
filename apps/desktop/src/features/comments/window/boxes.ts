@@ -160,6 +160,7 @@ import {
   whyOf,
   NOTHING_TO_DISCARD,
   NOTHING_TO_UNDO,
+  notFollowed,
 } from './writing.ts';
 
 /** How long after the last key a box's text is saved, in milliseconds. */
@@ -2020,7 +2021,7 @@ function placeLater(relining: BlockRelining, at: BlockSpan): void {
   const lines: DraftHomeRow = { ...relining.home, at };
   if (!composer.move(blockAt(writing, lines))) return;
   box.home = { kind: 'block', block: lines };
-  box.set({ where: blockLinesWhere(view, lines) });
+  box.set({ where: blockLinesWhere(lines) });
   const placing: Placing = { settled, where, done: Promise.resolve() };
   placings.set(box, placing);
   markDrafts(view);
@@ -2038,8 +2039,12 @@ function placeLater(relining: BlockRelining, at: BlockSpan): void {
       if (boxesOf(view).get(box.key) !== box) return;
       const here = box.home.kind === 'block' && box.home.block === lines;
       if (!here) return;
+      // A send waiting for this answer holds the box from all but the answer.
+      const holds = sendsWaiting.has(box) ? undefined : heldWhere(box);
       const why =
-        goes === undefined ? '' : (heldWhere(box) ?? clashOf({ ...relining, home: lines }, goes));
+        goes === undefined
+          ? notFollowed(linesOfBlock(at), headName(view))
+          : (holds ?? clashOf({ ...relining, home: lines }, goes));
       // Its comment goes there, whether or not the box is still open.
       if (goes && why === undefined) {
         landOnBlock(box, goes);
@@ -2068,14 +2073,17 @@ function placeLater(relining: BlockRelining, at: BlockSpan): void {
 
 /**
  * What the head of a box moved to its block's lines `home` says while Lo works out where its
- * comment goes on them: those lines, as the block names them, at its revision where that's not the
- * head's.
+ * comment goes on them: those lines, as the block names them, and no revision, as which one its
+ * comment goes on isn't known yet.
  */
-function blockLinesWhere(view: string, home: DraftHomeRow): BoxWhere {
-  const written = revisionName(view, home.commit);
-  const now = revisionName(view, home.head);
-  const lines = linesOfBlock(home.at);
-  return { head: lineRefText({ lines, revision: written === now ? undefined : written }) };
+function blockLinesWhere(home: DraftHomeRow): BoxWhere {
+  return { head: lineRefText({ lines: linesOfBlock(home.at) }) };
+}
+
+/** The name of view `view`'s head on screen, "r2", while there is one. */
+function headName(view: string): string | undefined {
+  const head = pullOf(view)?.shown ?? undefined;
+  return head === undefined ? undefined : revisionName(view, head);
 }
 
 /**
@@ -2269,10 +2277,19 @@ export function linesChange(id: string): boolean {
 }
 
 /**
- * Boxes whose comment's tree is being made as they're sent: held, as one on its way is, from the
- * send, so nothing their notes offer, nor "Discard draft", nor a second send, takes them meanwhile.
+ * Boxes whose comment's tree is being made as they're sent, or whose send waits for where their
+ * lines go: held, as one on its way is, from the send, so nothing their notes offer, nor "Discard
+ * draft", nor a second send, takes them meanwhile.
  */
 const drawing = new WeakSet<Box>();
+
+/**
+ * Boxes whose send waits for where their lines on a code block go, which changed before Lo knew:
+ * held from the press, as one on its way is, however long that takes, so nothing typed after it
+ * goes in the comment, and no key, drag, "Move comment to file", "Discard draft" or second send
+ * takes them meanwhile. The answer they wait for still places them.
+ */
+const sendsWaiting = new WeakSet<Box>();
 
 /** How long a box's comment waits for its tree as it's sent, at most, before it goes as it is. */
 const TREE_WAIT = 150;
@@ -2292,12 +2309,14 @@ async function within(work: Promise<void>, ms: number): Promise<void> {
 
 /**
  * Whether box `box`'s comment can go now: it isn't on its way, nothing it attaches holds it, it has
- * text, and its view can write. What's left of an upload that didn't finish is cleared from it
- * first: that never goes to GitHub, nor holds the comment back.
+ * text, and its view can write. With `own`, the send asking holds it, which doesn't count. What's
+ * left of an upload that didn't finish is cleared from it first: that never goes to GitHub, nor
+ * holds the comment back.
  */
-function sendable(box: Box): boolean {
+function sendable(box: Box, own = false): boolean {
   const { view } = box;
-  if (sendingNow(box.state) || uploadsHold(box) !== undefined) return false;
+  const state = own ? { ...box.state, busy: false } : box.state;
+  if (sendingNow(state) || uploadsHold(box) !== undefined) return false;
   clearStranded(box);
   // Sent before, and nobody knows whether it posted: it's looked up first ("Check again").
   if (box.state.sending === 'unknown') return false;
@@ -2312,15 +2331,30 @@ function sendable(box: Box): boolean {
 export async function send(box: Box, how: Send): Promise<void> {
   const { view } = box;
   if (!sendable(box) || drawing.has(box)) return;
+  // Held from the press, where it waits for where its lines go.
+  const waits = placings.has(box);
   // Its lines changed on a code block before Lo knew where its comment goes on them: it goes where
-  // they end up once Lo knows, the lines the box shows then, whatever changed them meanwhile.
-  if (placings.has(box)) {
-    for (let placing = placings.get(box); placing; placing = placings.get(box)) {
-      await placing.done;
+  // they end up once Lo knows, the lines the box shows then, or those it went back to. It's held
+  // meanwhile, as it's on its way, its text as it was at the press.
+  if (waits) {
+    box.saveNow();
+    box.lastHow = how;
+    drawing.add(box);
+    sendsWaiting.add(box);
+    box.set({ busy: true, refusal: undefined });
+    try {
+      for (let placing = placings.get(box); placing; placing = placings.get(box)) {
+        await placing.done;
+      }
+    } finally {
+      sendsWaiting.delete(box);
+      drawing.delete(box);
     }
-    // Gone meanwhile, as discarded.
-    const gone = boxesOf(view).get(box.key) !== box;
-    if (gone || !sendable(box) || drawing.has(box)) return;
+    // Gone meanwhile, as with its tab, or it can't go now, as offline: it's let go, and nothing goes.
+    if (boxesOf(view).get(box.key) !== box || !sendable(box, true)) {
+      box.set({ busy: false });
+      return;
+    }
   }
   // Its tree is made first, for a moment at most, so what's sent draws formatted from its first
   // frame, as its card from GitHub then does: the box shows it as it is meanwhile.
@@ -2335,7 +2369,10 @@ export async function send(box: Box, how: Send): Promise<void> {
       drawing.delete(box);
     }
     // Gone meanwhile, as with its tab: nothing goes.
-    if (boxesOf(view).get(box.key) !== box || !sendable(box)) return;
+    if (boxesOf(view).get(box.key) !== box || !sendable(box, waits)) {
+      if (waits) box.set({ busy: false });
+      return;
+    }
   }
   const { place, text } = box.state;
   box.dropSave();

@@ -24,6 +24,7 @@ import {
   NO_LINE_ABOVE,
   NO_LINE_BELOW,
   notesOf,
+  notFollowed,
   ONE_LINE,
   placeKey,
   placeOf,
@@ -487,6 +488,8 @@ describe('changing a new comment’s lines', () => {
     expect(changedLines(undefined, right(4, 5), 'lineAbove')).toBe(NO_LINE_ABOVE);
     expect(draftOn(right(35, 38))).toBe('A draft is already on lines 35–38');
     expect(draftOn(Lines.one(Line.right(33)))).toBe('A draft is already on line 33');
+    expect(notFollowed(right(5, 6), 'r2')).toBe('Couldn’t follow lines 5–6 to r2');
+    expect(notFollowed(Lines.one(Line.right(5)), undefined)).toBe('Couldn’t follow line 5');
   });
 
   test('a removed line keeps to the old side', () => {

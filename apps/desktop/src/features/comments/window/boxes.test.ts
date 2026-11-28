@@ -232,7 +232,8 @@ vi.mock('../../overview/window/shared.ts', async (original) => ({
   overviewOnScreen: () => overview.onScreen,
   blockInOverview: (_tab: string, key: string) =>
     overview.has.get(key) ?? [...overview.blocks.values()].some((each) => each.block.key === key),
-  revisionName: (_tab: string, commit: string) => (commit === HEAD ? 'r2' : 'r1'),
+  revisionName: (_tab: string, commit: string) =>
+    commit === HEAD ? 'r2' : commit === NEWER ? 'r3' : 'r1',
 }));
 
 /** Presses letter `key` with nothing focused, as the system would. */
@@ -2397,8 +2398,8 @@ describe('changing a new comment’s lines on a code block', () => {
     const was = box.state.where;
     overview.cold = true;
     void changingLines('lineAbove').run(target);
-    // The block's lines, at the block's revision.
-    expect(box.state.where).toEqual({ head: 'Lines 5–6 · r1' });
+    // The block's lines, as it names them: which revision its comment goes on isn't known yet.
+    expect(box.state.where).toEqual({ head: 'Lines 5–6' });
     expect(block.marks).toContainEqual(
       expect.objectContaining({ at: { file: 'x0', side: 'new', from: 5, to: 6 }, shown: true }),
     );
@@ -2408,6 +2409,41 @@ describe('changing a new comment’s lines on a code block', () => {
     expect(block.marks).toContainEqual(
       expect.objectContaining({ at: { file: 'x0', side: 'new', line: 6 }, shown: true }),
     );
+  });
+
+  test('where Lo couldn’t work out where the comment goes, the box goes back, and a toast says why', async () => {
+    const { drawn, target, moves, box } = await blockOn(5, 5);
+    drawn.composer.replace(0, 0, 'Look here');
+    await marked();
+    const was = box.state.where;
+    overview.cold = true;
+    overview.mapping = () => {
+      throw new Error('GitHub returned an error.');
+    };
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    void changingLines('lineBelow').run(target);
+    await relined();
+    logged.mockRestore();
+    expect(notice()?.title).toBe('Couldn’t follow lines 5–6 to r2');
+    expect(moves.at(-1)).toEqual({ file: 'x0', side: 'new', line: 5 });
+    expect(box.home).toEqual({ kind: 'block', block: blockHome(5) });
+    expect(box.state).toMatchObject({ place: onLines(null, 5), where: was });
+  });
+
+  test('where another head came into view before Lo worked out where the comment goes, the box goes back, and a toast says why', async () => {
+    const { drawn, target, moves, box } = await blockOn(5, 5);
+    drawn.composer.replace(0, 0, 'Look here');
+    await marked();
+    overview.cold = true;
+    const held: (() => void)[] = [];
+    overview.held = held;
+    void changingLines('lineBelow').run(target);
+    said.pull = pull({ shown: NEWER });
+    held[0]!();
+    await relined();
+    expect(notice()?.title).toBe('Couldn’t follow lines 5–6 to r3');
+    expect(moves.at(-1)).toEqual({ file: 'x0', side: 'new', line: 5 });
+    expect(box.home).toEqual({ kind: 'block', block: blockHome(5) });
   });
 
   test('a box discarded while Lo works out where its comment goes leaves nothing behind', async () => {
@@ -2441,8 +2477,8 @@ describe('changing a new comment’s lines on a code block', () => {
     expect(boxIn(moved).state.place).toEqual(onTheFile());
   });
 
-  test('a send while Lo works out where the comment goes posts it on the lines the box ends up on', async () => {
-    const { drawn, target, box } = await blockOn(5, 5);
+  test('a send while Lo works out where the comment goes holds the box from the press, and posts it on the lines the box ends up on', async () => {
+    const { drawn, target, moves, box, id } = await blockOn(5, 5);
     drawn.composer.replace(0, 0, 'Look here');
     await marked();
     overview.cold = true;
@@ -2451,16 +2487,28 @@ describe('changing a new comment’s lines on a code block', () => {
     answers['comments.send'] = () => new Promise<SendOutcome>(() => {});
     void changingLines('lineBelow').run(target);
     void send(box, 'review');
-    // Another key before the answer: the send waits for its answer too.
+    // Held at once, as one on its way is, its button saying so: nothing typed then goes in it, and
+    // nothing moves it or takes it, however long the answer takes.
+    expect(drawn.composer.held).toBe(true);
+    expect(box.state.busy).toBe(true);
+    expect(box.lastHow).toBe('review');
+    expect(changingLines('lineBelow').enabled!(target)).toBe('Sending…');
+    expect(movingToFile.enabled!(target)).toBe('Sending…');
+    expect(discarding.enabled!({ kind: 'box', box: id })).toBe('Sending…');
     void changingLines('lineBelow').run(target);
+    expect(notice()?.title).toBe('Sending…');
+    void movingToFile.run(target);
+    void discarding.run({ kind: 'box', box: id });
+    void send(box, 'now');
+    expect(moves).toEqual([{ file: 'x0', side: 'new', from: 5, to: 6 }]);
+    expect(block.drawn.at(-1)).toBe(drawn);
+    expect(held).toHaveLength(1);
     held[0]!();
-    await relined();
-    expect(asked('comments.send')).toEqual([]);
-    held[1]!();
     await vi.waitFor(() => expect(asked('comments.send')).toHaveLength(1));
     expect(asked('comments.send')).toEqual([
-      { id: VIEW, place: onLines(5, 7), text: 'Look here', how: 'review' },
+      { id: VIEW, place: onLines(5, 6), text: 'Look here', how: 'review' },
     ]);
+    expect(drawn.composer.held).toBe(true);
   });
 
   test('a send while the box moves back posts it on the lines it went back to', async () => {

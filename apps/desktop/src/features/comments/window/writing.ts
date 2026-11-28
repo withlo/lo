@@ -536,6 +536,16 @@ export function draftOn(lines: Lines): string {
 }
 
 /**
+ * Why a box on a code block went back from lines `lines` it was moved to: Lo couldn't work out
+ * where a comment on them goes at `now`, the head in view, as that failed, or as another head came
+ * into view first. "Couldn’t follow lines 5–6 to r2"
+ */
+export function notFollowed(lines: Lines, now: string | undefined): string {
+  const words = lineRefText({ lines }, true);
+  return now === undefined ? `Couldn’t follow ${words}` : `Couldn’t follow ${words} to ${now}`;
+}
+
+/**
  * Why a comment can't go on `place`, which another draft is on: its lines, as {@link draftOn} says,
  * or its file, or the pull request.
  */
