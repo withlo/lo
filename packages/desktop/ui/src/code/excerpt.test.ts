@@ -671,6 +671,11 @@ function lane(): string[] {
   return drawnLane(parent, 'threads');
 }
 
+/** The excerpt's lines on the picked ground, by their text. */
+function picked(): (string | null)[] {
+  return [...parent!.querySelectorAll('.cm-line.lo-picked')].map((line) => line.textContent);
+}
+
 /** A thread under new line `line` from new line `from`, unresolved. */
 function ranged(id: string, from: number, line: number): ThreadView {
   return {
@@ -799,6 +804,19 @@ describe('threads and comment boxes', () => {
     expect(on.close).toHaveBeenCalledWith(true);
     expect(parent!.querySelector('.lo-diffcomposer')).toBeNull();
     expect(() => shown.compose(at(19), '', on)).toThrow('A comment box goes under a line');
+  });
+
+  test('a new comment’s lines take the picked ground while its box has focus, and a reply’s none', async () => {
+    const shown = open();
+    shown.setThreads([thread('here', 6)], plain().render);
+    shown.compose({ thread: 'here' }, 'Reply', composerEvents());
+    // Focus going into a box lights what it's in once it's there.
+    await Promise.resolve();
+    expect(picked()).toEqual([]);
+    shown.compose({ file: 'a', side: 'new', from: 9, to: 11 }, 'New', composerEvents());
+    await Promise.resolve();
+    // New lines 9 to 11, all three.
+    expect(picked()).toEqual(added.slice(8, 11));
   });
 
   test('threads that come on a line on screen wait until the reader acts in the excerpt, or it’s off screen', async () => {

@@ -2972,6 +2972,12 @@ function ranged(
   };
 }
 
+/** The cells of the threads' lane of the editor labelled `label`, top to bottom. */
+function laneCells(label: string): NodeListOf<Element> {
+  const content = parent!.querySelector(`.cm-content[aria-label="${label}"]`);
+  return content!.closest('.cm-editor')!.querySelectorAll('.lo-threadlane .lo-lanemark');
+}
+
 /**
  * What the threads' lane of the editor labelled `label` draws beside each line or block it marks,
  * top to bottom: each stem's piece by its slot, from where to where and in which colour, the tick,
@@ -3167,6 +3173,13 @@ describe('threads’ lane', () => {
       .dispatchEvent(new MouseEvent('pointerleave', { bubbles: false }));
     expect(litLines('After')).toEqual([]);
     expect(lane('After')[2]).toBe('s0 edge-edge amber, s1 edge-edge amber');
+    // A stem coming under a still pointer, as the view scrolls, lights its range too.
+    editor
+      .querySelectorAll('.lo-threadlane .lo-lanemark')[2]!
+      .firstElementChild!.dispatchEvent(
+        new MouseEvent('pointerover', { bubbles: true, clientX: 4 }),
+      );
+    expect(litLines('After')).toEqual(['line 3', 'line 4', 'line 5, changed', 'line 6', 'line 7']);
   });
 
   test('a range is lit where a key landed on it, while the cursor stays on its lines', () => {
@@ -3184,6 +3197,19 @@ describe('threads’ lane', () => {
     vimIn('After').keys('6', 'G');
     expect(litLines('After')).toEqual([]);
     expect(lane('After')[0]).toBe('s0 mid-edge amber, tick s0 amber');
+  });
+
+  test('a key that lands on the other column’s thread lights it while the cursor is on its rows', () => {
+    const shown = open();
+    shown.setThreads([ranged('one', at('a', 'old', 8), { side: 'old', line: 6 })], plain().render);
+    shown.reveal(onLine('a', 'new', 2));
+    shown.focus();
+    vimIn('After').keys(']', 't');
+    expect(litLines('Before')).toEqual(['line 6', 'line 7', 'line 8']);
+    vimIn('After').keys('8', 'G');
+    expect(litLines('Before')).toEqual(['line 6', 'line 7', 'line 8']);
+    vimIn('After').keys('4', 'G');
+    expect(litLines('Before')).toEqual([]);
   });
 
   test('a range from removed lines to added ones draws in each side’s lane, its bubble on the end’s', () => {
@@ -3420,6 +3446,20 @@ describe('threads beside lines', () => {
     ]);
     expect(newBubble().dataset.beside).toBe('');
     expect(newBubble().dataset.tip).toBeUndefined();
+  });
+
+  test('a pinned thread’s lines stay lit as the file’s lines change under them', () => {
+    const shown = open(events(), { threads: 'beside' });
+    shown.setThreads([ranged('one', at('a', 'new', 8), { side: 'new', line: 6 })], plain().render, {
+      popover: popped().render,
+    });
+    expect(shown.pinThread('one')).toBe(true);
+    expect(litLines('After')).toEqual(['line 6', 'line 7', 'line 8']);
+    // A line comes before them: new lines 6 to 8 are what were 5 to 7.
+    const lines = { old: aOld, new: [...aNew.slice(0, 1), 'line 1b', ...aNew.slice(1)] };
+    shown.setLines('a', lines, diffOf(lines));
+    expect(shown.pinned()).toEqual(['one']);
+    expect(litLines('After')).toEqual(['line 5, changed', 'line 6', 'line 7']);
   });
 
   test('a click on its mark pins its popover, the cursor on its line, and again closes it', () => {
@@ -3810,6 +3850,31 @@ describe('writing beside lines', () => {
     expect(shown.openDraft(at('a', 'new', 6))).toBe(false);
   });
 
+  test('in a cell with a draft’s stem or bubble beside a thread’s stem, the pointer means the thread', () => {
+    const shown = open(events(), { threads: 'beside' });
+    shown.setThreads([ranged('one', at('a', 'new', 8), { side: 'new', line: 4 })], plain().render, {
+      popover: slotted().render,
+    });
+    shown.setDrafts([
+      { at: { file: 'a', side: 'new', from: 5, to: 6 }, words: 'lines 5–6', open: () => {} },
+    ]);
+    expect(lane('After').slice(1, 3)).toEqual([
+      's0 edge-edge amber, s1 mid-edge muted, tick s1 muted',
+      's0 under-edge amber, s1 edge-mark muted, muted Draft · lines 5–6',
+    ]);
+    // On new line 5, nearer the draft's stem than the thread's.
+    laneCells('After')[1]!
+      .querySelector('.lo-stem--muted')!
+      .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: 7 }));
+    expect(shown.pinned()).toEqual(['one']);
+    shown.closePopover();
+    // On new line 6, in the draft's bubble's cell but off the bubble.
+    laneCells('After')[2]!.dispatchEvent(
+      new MouseEvent('click', { bubbles: true, cancelable: true }),
+    );
+    expect(shown.pinned()).toEqual(['one']);
+  });
+
   test('a sent box stays as its comment until the thread it made comes in its place', () => {
     const shown = open(events(), { threads: 'beside' });
     shown.setThreads([], plain().render, { popover: slotted().render });
@@ -3962,6 +4027,11 @@ function overview(
   };
 }
 
+/** An overview mark on file `b`'s new lines `from` to `to`. */
+function overviewOnB(from: number, to: number): OverviewMark {
+  return { ...overview('new', from, to), at: { file: 'b', side: 'new', from, to } };
+}
+
 /** The markers' gutter of the editor labelled `label`, if it has one. */
 function markerColumn(label: string): Element | null {
   const content = parent!.querySelector(`.cm-content[aria-label="${label}"]`);
@@ -4107,6 +4177,23 @@ describe('overview marks', () => {
       's0 edge-edge powder',
       's0 edge-mark powder, ball',
     ]);
+  });
+
+  test('a mark past the file’s last line draws to that line, or nothing where it starts past it', () => {
+    // File b, added, has 10 lines.
+    const shown = open(events(), { files: [files[1]!] });
+    shown.setLayout('inline');
+    shown.setMarks([overviewOnB(8, 10)]);
+    const drawn = markers('Changes');
+    expect(drawn).toEqual([
+      's0 mid-edge powder, tick s0 powder',
+      's0 edge-edge powder',
+      's0 edge-mark powder, ball',
+    ]);
+    shown.setMarks([overviewOnB(8, 20)]);
+    expect(markers('Changes')).toEqual(drawn);
+    shown.setMarks([overviewOnB(12, 20)]);
+    expect(markers('Changes')).toEqual([]);
   });
 
   test('a note opens under the range’s last line, and the ball says it’s open', () => {

@@ -139,7 +139,12 @@ export function markerGutter(source: NotesSource): Extension {
           const under = rangeUnder(event);
           if (under?.kind !== 'notes') return false;
           event.preventDefault();
-          if (event.button === 0) source.stem(under.key);
+          if (event.button !== 0) return true;
+          // Anywhere in a ball's cell is the ball: every note ending there.
+          if (under.mark) {
+            const { first, last } = linesOf(view, line.from, line.to);
+            source.clicked(first, last);
+          } else source.stem(under.key);
           return true;
         },
         click: (view, line, event) => {

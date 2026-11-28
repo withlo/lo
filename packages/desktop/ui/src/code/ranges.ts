@@ -356,13 +356,14 @@ export class RangeMarker extends GutterMarker {
 }
 
 /**
- * The range the pointer `event` is on in a lane means, and the lane: a mark's first, else the stem
- * nearest it across the cell. None off a lane's cell, or on one beside no range.
+ * The range the pointer `event` is on in a lane means, and the lane: anywhere in a cell with a
+ * mark, the mark's first, with `mark`; else the stem nearest it across the cell. Only the ranges
+ * `accept` takes count, where it's given. None off a lane's cell, or on one beside no range.
  */
-export function rangeUnder(event: {
-  readonly target: EventTarget | null;
-  readonly clientX: number;
-}): { kind: LaneKind; key: string } | undefined {
+export function rangeUnder(
+  event: { readonly target: EventTarget | null; readonly clientX: number },
+  accept: (key: string) => boolean = () => true,
+): { kind: LaneKind; key: string; mark: boolean } | undefined {
   const { target } = event;
   if (!(target instanceof Element)) return undefined;
   const cell = target.closest<HTMLElement>('.lo-lanemark');
@@ -373,12 +374,12 @@ export function rangeUnder(event: {
     (each) => each.hasAttribute(RANGE_ATTRIBUTE) && !each.classList.contains('lo-stem'),
   );
   const marked = mark?.getAttribute(RANGE_ATTRIBUTE);
-  if (marked) return { kind, key: marked };
-  const stems = [...cell.querySelectorAll<HTMLElement>(`.lo-stem[${RANGE_ATTRIBUTE}]`)].map(
-    (stem) => ({ key: stem.getAttribute(RANGE_ATTRIBUTE)!, slot: Number(stem.dataset.slot) }),
-  );
+  if (marked && accept(marked)) return { kind, key: marked, mark: true };
+  const stems = [...cell.querySelectorAll<HTMLElement>(`.lo-stem[${RANGE_ATTRIBUTE}]`)]
+    .map((stem) => ({ key: stem.getAttribute(RANGE_ATTRIBUTE)!, slot: Number(stem.dataset.slot) }))
+    .filter((stem) => accept(stem.key));
   const key = nearestStem(stems, event.clientX - cell.getBoundingClientRect().left, kind);
-  return key === undefined ? undefined : { kind, key };
+  return key === undefined ? undefined : { kind, key, mark: false };
 }
 
 /** A range's stem in an editor's text, from its first line's start to its last line's end. */
@@ -687,8 +688,15 @@ const pickedCell = new (class extends GutterMarker {
 const litLine = Decoration.line({ class: 'lo-lit move-tint' });
 const pickedLine = Decoration.line({ class: 'lo-picked move-tint' });
 
+/**
+ * Rows lit before the text changed: mapped, they may no longer be the range's, so they're the same
+ * as no rows, and the next lighting sets them again.
+ */
+const STALE: LitRows = Object.freeze({ rows: [], picked: false });
+
 /** Whether two sets of lit rows are the same. */
 export function sameLit(a: LitRows | null, b: LitRows | null): boolean {
+  if (a === STALE || b === STALE) return false;
   if (!a || !b) return a === b;
   return (
     a.picked === b.picked &&
@@ -699,7 +707,7 @@ export function sameLit(a: LitRows | null, b: LitRows | null): boolean {
 
 /**
  * The lit rows as they were set, and their gutter cells and lines, mapped as the text changes until
- * they're set again.
+ * they're set again; once it's changed, the rows are stale, which the next lighting sets anew.
  */
 const litField = StateField.define<{
   rows: LitRows | null;
@@ -710,7 +718,7 @@ const litField = StateField.define<{
   update(lit, transaction) {
     let next = transaction.docChanged
       ? {
-          rows: lit.rows,
+          rows: lit.rows === null ? null : STALE,
           cells: lit.cells.map(transaction.changes),
           lines: lit.lines.map(transaction.changes),
         }
@@ -749,7 +757,7 @@ export function litRows(): Extension {
   return litField;
 }
 
-/** The rows lit in an editor's state, as they were last set. */
+/** The rows lit in an editor's state, as they were last set, or stale ones once the text changed. */
 export function litOf(state: EditorState): LitRows | null {
   return state.field(litField, false)?.rows ?? null;
 }
