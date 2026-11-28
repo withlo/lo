@@ -22,11 +22,15 @@ export default defineRunner(contract, {
     run: ({ artifact }) => parseOverview(artifact),
     // The parse is bounded on any input, within seconds.
     limits: { deadline: 30_000 },
+    // A tab that opens on its overview waits for the parse and the check, within the bound: on
+    // workers started for them, loading would take most of it on a slow machine.
+    warm: true,
   },
   check: {
     run: (input) => checkOverview(input),
     // The parse again, and every figure through `sanitizeSvg`.
     limits: { deadline: 60_000 },
+    warm: true,
   },
 });
 

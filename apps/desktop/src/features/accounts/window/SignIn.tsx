@@ -21,7 +21,6 @@ import {
   Dialog,
   duration,
   Icon,
-  Key,
   Problem,
   Spinner,
   Swap,
@@ -258,10 +257,7 @@ function Body({ dialog }: { dialog: SignInDialog }) {
             </Swap>
             {/* Its room is kept while there's nothing to copy. */}
             <span className={waiting ? 'flex-none' : 'invisible flex-none'} {...{ [COPY]: '' }}>
-              <CopyButton variant="secondary" onCopy={copyCode}>
-                Copy
-                {copy !== undefined && <Key keys={copy} decorative />}
-              </CopyButton>
+              <CopyButton variant="secondary" keys={copy} onCopy={copyCode} />
             </span>
           </div>
           <Status dialog={dialog} />

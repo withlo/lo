@@ -1,6 +1,6 @@
 /**
- * How often to poll: by tier, by whether Lo is in the foreground, and by how much of GitHub's rate
- * limit is left (`docs/design.md`, "Rate limit").
+ * How often to poll: by tier, by where Lo is for the person at the computer, and by how much of
+ * GitHub's rate limit is left (`docs/design.md`, "Polling" and "Rate limit").
  *
  * Times are milliseconds: wall-clock times since the Unix epoch, and waits.
  */
@@ -12,15 +12,20 @@ const RESOURCES = ['core', 'graphql'] as const;
 
 /** The polling schedule and the rate-limit governor's thresholds. */
 export interface PollConfig {
-  /** The open pull request, while Lo is in the foreground: 20 s, within the design's 15–30 s. */
+  /** The open pull request, while Lo is in front: 10 s. */
   openInterval: number;
-  /** Every other watched pull request, and the open pull requests of each watched repository, in the foreground. */
+  /** The open pull request, while Lo is on screen behind or beside the window in front: 20 s. */
+  shownInterval: number;
+  /**
+   * Every other watched pull request, and the open pull requests of each watched repository, while
+   * Lo is on screen.
+   */
   watchedInterval: number;
-  /** Everything, while Lo is in the background. */
+  /** Everything, while Lo isn't on screen. */
   backgroundInterval: number;
   /**
-   * The longest the open pull request's details go without being fetched in full while Lo is in
-   * the foreground. Viewed marks set elsewhere change nothing a cheaper poll sees.
+   * The longest the open pull request's details go without being fetched in full while Lo is on
+   * screen. Viewed marks set elsewhere change nothing a cheaper poll sees.
    */
   detailsMaxAge: number;
   /** Below this share of a rate limit left, every interval doubles. */
@@ -59,7 +64,8 @@ export interface PollConfig {
 /** Lo's polling schedule, with `overrides`. */
 export function pollConfig(overrides: Partial<PollConfig> = {}): PollConfig {
   return {
-    openInterval: 20_000,
+    openInterval: 10_000,
+    shownInterval: 20_000,
     watchedInterval: 2 * 60_000,
     backgroundInterval: 5 * 60_000,
     detailsMaxAge: 5 * 60_000,
@@ -82,6 +88,19 @@ export function pollConfig(overrides: Partial<PollConfig> = {}): PollConfig {
 
 /** Which schedule a poll follows: the pull request in the active tab, or everything else watched. */
 export type Tier = 'open' | 'watched';
+
+/**
+ * Where Lo is for the person at the computer: the window in front, the one they're using
+ * (`front`); on screen, behind or beside the window in front, as Lo is beside a browser showing the
+ * same pull request (`shown`); or not on screen at all, minimized, hidden or behind a locked screen
+ * (`away`).
+ */
+export type Presence = 'front' | 'shown' | 'away';
+
+/** Whether Lo is on screen, in front or not. */
+export function isOnScreen(presence: Presence): boolean {
+  return presence !== 'away';
+}
 
 /** A rate limit running low. */
 export interface LowLimit {
@@ -164,18 +183,24 @@ export function rateLimitState(
   return worst;
 }
 
-/** How long between polls of a tier, or nothing when the tier isn't polled at all. */
+/**
+ * How long between polls of a tier, or nothing when the tier isn't polled at all: the open pull
+ * request most often while Lo is in front, less often while it's only on screen, and everything
+ * least often while it isn't on screen.
+ */
 export function interval(
   tier: Tier,
-  foreground: boolean,
+  presence: Presence,
   state: RateLimitState,
   config: PollConfig,
 ): number | undefined {
-  const base = !foreground
+  const base = !isOnScreen(presence)
     ? config.backgroundInterval
-    : tier === 'open'
-      ? config.openInterval
-      : config.watchedInterval;
+    : tier === 'watched'
+      ? config.watchedInterval
+      : presence === 'front'
+        ? config.openInterval
+        : config.shownInterval;
   switch (state.kind) {
     case 'normal':
       return base;

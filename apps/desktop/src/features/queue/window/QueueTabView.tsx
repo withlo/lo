@@ -125,7 +125,8 @@ function RowButton({
       working={working}
       align="end"
       disabled={off !== undefined}
-      hint={off ?? children}
+      // Its key, with its words, where it has one: its words alone would only say them again.
+      hint={off ?? (control.keys === undefined ? null : children)}
       hintKeys={control.keys}
       {...keyAria(control.keys, control.shortcut)}
       onClick={(event) => {

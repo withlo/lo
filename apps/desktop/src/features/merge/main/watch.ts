@@ -2,7 +2,7 @@
 // `merge_shipped`, a restart included. GitHub keeps auto-merge on when someone with write access
 // pushes, and unless the base branch's rules want a new approval after a push, the push merges with
 // the approvals already given, yours included. So while Lo runs, it reads each watched pull
-// request's merge facts every 2 minutes, 5 while Lo isn't in front, with a tab on it or without, as
+// request's merge facts every 2 minutes, 5 while Lo is off screen, with a tab on it or without, as
 // the account that turned it on, and hands each read that came after auto-merge went on to
 // `@lo/review`'s `afterPush`. On a push that would merge with your approval, Lo turns auto-merge off,
 // in the pull request's turn among merge writes, and says so; when it can't tell, it says that and
@@ -13,6 +13,7 @@
 
 import {
   describeMergeRefusal,
+  isOnScreen,
   MERGE_FACTS,
   PullRef,
   type MergeFacts,
@@ -26,7 +27,10 @@ import type { Confirmed, Method, Watched } from '../contract.ts';
 import type { AutoAnswer, MergingPoller } from './merging.ts';
 import type { Shipped } from './ship.ts';
 
-/** How long between reads of a watched pull request, in milliseconds: 2 minutes in front, 5 not. */
+/**
+ * How long between reads of a watched pull request, in milliseconds: 2 minutes while Lo is on
+ * screen, in front or behind another window, and 5 while it's off screen.
+ */
 export const EVERY = { front: 2 * 60_000, back: 5 * 60_000 } as const;
 
 const METHODS: readonly string[] = ['MERGE', 'SQUASH', 'REBASE'];
@@ -124,8 +128,8 @@ export class ShippedStore {
   }
 }
 
-/** What the watch uses of an account's poller: what merging does, and whether Lo is in front. */
-export type WatchPoller = MergingPoller & Pick<Poller, 'foreground'>;
+/** What the watch uses of an account's poller: what merging does, and where Lo is. */
+export type WatchPoller = MergingPoller & Pick<Poller, 'presence'>;
 
 export interface WatchOptions {
   readonly store: ShippedStore;
@@ -143,7 +147,7 @@ export interface WatchOptions {
   readonly log: (line: string) => void;
   readonly now?: () => number;
   readonly newKey?: () => string;
-  /** How long between reads, in milliseconds, in front and not. */
+  /** How long between reads, in milliseconds, on screen and off it. */
   readonly every?: { readonly front: number; readonly back: number };
 }
 
@@ -294,7 +298,7 @@ export class ShipWatch {
     const every = this.#options.every ?? EVERY;
     watching.timer = setTimeout(
       () => void this.#read(watching),
-      poller.foreground ? every.front : every.back,
+      isOnScreen(poller.presence) ? every.front : every.back,
     );
     try {
       let mark = poller.readAfresh(row.pull, MERGE_FACTS);

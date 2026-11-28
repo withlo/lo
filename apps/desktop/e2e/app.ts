@@ -337,8 +337,8 @@ interface Fixtures {
   motion: Motion;
   /**
    * How often, in milliseconds, Lo reads the pull request on screen, the place of one in a merge
-   * queue and the queue's tab (`LO_POLL_MS`), in place of every 20 s, for a test that waits for
-   * GitHub's recorded answers to change; or `undefined` for Lo's own pace.
+   * queue and the queue's tab (`LO_POLL_MS`), in place of every 10 s and 20 s, for a test that
+   * waits for GitHub's recorded answers to change; or `undefined` for Lo's own pace.
    */
   readEvery: number | undefined;
   /**

@@ -553,10 +553,45 @@ function eventOf(key: string, item: Item, repository: string): Row | undefined {
   }
 }
 
+/** How far apart, in ms, a merge and the close GitHub records with it can be, and be one act. */
+const MERGE_MOMENT = 60_000;
+
+/**
+ * The cursors of the closes GitHub recorded with a merge. GitHub records a close with every merge,
+ * a moment after it, which its page doesn't draw: the merge says it. A merged pull request can't be
+ * reopened, so each close after its merge is the merge's own. A closed one can't be merged until
+ * it's reopened, so a close since the last reopen, at the merge's moment, is the merge's own too,
+ * whichever of the pair GitHub lists first. A close a reopen follows is someone closing it.
+ */
+function closedByMerge(items: Timeline['items']): ReadonlySet<string> {
+  const found = new Set<string>();
+  /** The close since the last reopen, before any merge. */
+  let closed: { cursor: string; at: string } | undefined;
+  let merged = false;
+  for (const { cursor, item } of items) {
+    if (item.kind === 'reopened') {
+      closed = undefined;
+      merged = false;
+    } else if (item.kind === 'closed') {
+      if (merged) found.add(cursor);
+      else closed = { cursor, at: item.event.at };
+    } else if (item.kind === 'merged') {
+      merged = true;
+      // A time that doesn't parse is no moment: the close shows.
+      if (closed && Math.abs(Date.parse(item.event.at) - Date.parse(closed.at)) <= MERGE_MOMENT) {
+        found.add(closed.cursor);
+      }
+      closed = undefined;
+    }
+  }
+  return found;
+}
+
 /**
  * The rows of `timeline`, oldest first: the description card, a note of the older items Lo didn't
- * read, or is still reading, then a row for each item, commits grouped into pushes. `repository`
- * is `owner/name`, which a mention from the same repository leaves out.
+ * read, or is still reading, then a row for each item, commits grouped into pushes, and nothing for
+ * the close GitHub records with a merge (`closedByMerge`). `repository` is `owner/name`, which a
+ * mention from the same repository leaves out.
  */
 export function rowsOf(timeline: Timeline, repository: string, context: RowsContext): Row[] {
   const settled = context.revisions?.settled ? context.revisions.revisions : [];
@@ -619,6 +654,7 @@ export function rowsOf(timeline: Timeline, repository: string, context: RowsCont
     settled.flatMap((revision) => (revision.available ? [revision.head] : [])),
   );
 
+  const mergeCloses = closedByMerge(timeline.items);
   for (const { cursor, item } of timeline.items) {
     if (item.kind === 'commit') {
       push ??= { key: cursor, commits: [] };
@@ -627,7 +663,7 @@ export function rowsOf(timeline: Timeline, repository: string, context: RowsCont
       if (byHead.has(item.commit.oid)) endPush();
       continue;
     }
-    if (item.kind === 'other') continue;
+    if (item.kind === 'other' || mergeCloses.has(cursor)) continue;
     endPush();
     if (item.kind === 'comment') {
       const { comment } = item;

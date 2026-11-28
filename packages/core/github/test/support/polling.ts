@@ -260,7 +260,9 @@ export class Polling {
       accounts: this.accounts,
       login: LOGIN,
       cache: this.cache,
-      config: { jitter: 0, ...this.#options.config },
+      // The open pull request in front every 20 s, the schedule these tests were written to;
+      // the governor's tests hold Lo's own intervals.
+      config: { jitter: 0, openInterval: 20_000, ...this.#options.config },
       log: (message) => this.logs.push(message),
       lookUpMerged: this.#options.lookUpMerged,
       seen: (_login, pull, heads, when) => {
