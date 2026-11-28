@@ -21,6 +21,7 @@ import explain from '@lo/skill/explain.md?raw';
 import hook from '@lo/skill/hook.mjs?raw';
 import figures from '@lo/skill/references/figures.md?raw';
 import format from '@lo/skill/references/format.md?raw';
+import writing from '@lo/skill/references/writing.md?raw';
 
 import { name, version } from '../package.json' with { type: 'json' };
 
@@ -66,6 +67,7 @@ const REFERENCES: readonly SkillFile[] = [
   { path: 'LICENSE', text: license },
   { path: 'references/format.md', text: format },
   { path: 'references/figures.md', text: figures },
+  { path: 'references/writing.md', text: writing },
 ];
 
 /** A repository's copy, with its hook. */

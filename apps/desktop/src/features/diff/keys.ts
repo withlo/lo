@@ -74,8 +74,8 @@ export default defineCommands('diff', {
     group: 'Go',
     bar: { menu: 'Go', section: 'steps', order: 50 },
     keys: ['] t'],
-    // From the line, as Vim's motion; from a thread's popover, beside lines, as a key of its own.
-    targets: ['line', 'thread'],
+    // From the line, as Vim's motion; from the popover, beside lines, as a key of its own.
+    targets: ['line', 'thread', 'note'],
     vim: 'motion',
     when: { scope: ['diff', 'thread'] },
   },
@@ -84,7 +84,31 @@ export default defineCommands('diff', {
     group: 'Go',
     bar: { menu: 'Go', section: 'steps', order: 60 },
     keys: ['[ t'],
-    targets: ['line', 'thread'],
+    targets: ['line', 'thread', 'note'],
+    vim: 'motion',
+    when: { scope: ['diff', 'thread'] },
+  },
+  /**
+   * The next of the overview's notes, by its ball, in the files' order: the cursor goes to the
+   * line it ends on, with Land, and it opens, with the others that end there. Beside lines its
+   * popover is pinned, focus staying where it was; between them it opens under the line.
+   */
+  nextNote: {
+    label: 'Next overview note',
+    group: 'Go',
+    bar: { menu: 'Go', section: 'steps', order: 70 },
+    keys: ['] o'],
+    // From the line, as Vim's motion; from the popover, beside lines, as a key of its own.
+    targets: ['line', 'thread', 'note'],
+    vim: 'motion',
+    when: { scope: ['diff', 'thread'] },
+  },
+  previousNote: {
+    label: 'Previous overview note',
+    group: 'Go',
+    bar: { menu: 'Go', section: 'steps', order: 80 },
+    keys: ['[ o'],
+    targets: ['line', 'thread', 'note'],
     vim: 'motion',
     when: { scope: ['diff', 'thread'] },
   },
@@ -283,17 +307,34 @@ export default defineCommands('diff', {
     menu: { on: 'header', order: 30 },
   },
   /**
-   * The note of an overview's marker on the line: what the overview says about it, under its
-   * lines. In the diff alone, which draws the markers, and on the menu of a line with a marker
-   * only; a click on the marker's ball opens it too.
+   * The overview's note on the line: what the overview says of it, those that end there, else the
+   * one with the shortest range over it. Beside lines it opens in the popover, pinned, focus going
+   * into it; between them, under its last line. `⏎` opens it where no thread or draft takes `⏎`.
+   * In the diff alone, which draws the marks, and on the menu of a line with one only; a click on
+   * its ball opens it too.
    */
   overviewNote: {
     label: 'Show overview note',
+    control: 'the ball beside an overview note’s lines',
     group: 'Code',
-    keys: [],
-    targets: ['line'],
-    when: normal,
+    keys: ['enter'],
+    targets: ['note', 'line'],
+    overVim: true,
+    when: { scope: 'diff', mode: 'normal', on: 'note' },
     menu: { on: 'line', order: 40 },
+  },
+  /**
+   * The overview at what explains the open note on the line, as its "Show in overview" does: with
+   * several open from one ball, the first's. A jump: `⌃o` comes back.
+   */
+  showInOverview: {
+    label: 'Show in overview',
+    control: 'Show in overview on an overview note',
+    group: 'Code',
+    keys: ['g o'],
+    // From the line, or from the popover, beside lines.
+    targets: ['line', 'note'],
+    when: { scope: ['diff', 'thread'] },
   },
   down: { label: 'Next line', group: 'Go', keys: ['j'], vim: 'own', when: code },
   up: { label: 'Previous line', group: 'Go', keys: ['k'], vim: 'own', when: code },

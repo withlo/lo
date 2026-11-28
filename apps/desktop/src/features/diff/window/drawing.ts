@@ -48,6 +48,7 @@ import { diffFileOf, headerOf, startWith } from './files.ts';
 import type { Entry, Loader, Moved, Shown } from './loader.ts';
 import { main } from './main.ts';
 import { followLabel } from './moved.ts';
+import { renderNotes } from './notes.ts';
 import { renderProblem } from './problems.tsx';
 import { setDrawn, takeReveal } from './tabs.ts';
 import { drawnName, shown as shownWanted, wantedIn } from './wanted.ts';
@@ -495,6 +496,7 @@ export function draw(options: DrawOptions): Drawing {
       // Drawn behind another middle view, its place is held once it's first shown.
       hidden: !options.shown,
       renderProblem,
+      renderNotes,
       threads: threader()?.mode?.() ?? 'between',
       // The sides as the window's layout has them for every side-by-side diff, from the first frame.
       sides: sidesKept(),
@@ -527,6 +529,8 @@ export function draw(options: DrawOptions): Drawing {
       arrived() {
         threader()?.arrived?.(tab.id);
       },
+      // Which lines take a comment, for a drag from the `+`: the comments' to say.
+      commentLines: (file) => threader()?.commentLines?.(tab.id, file),
       // "Show in overview": a jump, from the line the note is under.
       explained(block, line) {
         // Beside a reading view, the overview takes its place, and `⌃o` back to the line puts

@@ -12,6 +12,13 @@ export const REPLY_SLOT = 'data-reply-slot';
 /** The attribute on the slot of a new comment's box, after a popover's threads, or alone. */
 export const NEW_SLOT = 'data-new-slot';
 
+/**
+ * The attribute on the element an overview note's card draws its words in: its width says how
+ * many characters a line of a note's words holds, which a code view sizes notes by before they're
+ * drawn.
+ */
+export const NOTE_TEXT = 'data-note-text';
+
 /** What a slot sends up the page as it's drawn: the code view moves its box into it. */
 export const EDIT_SLOT_EVENT = 'lo-edit-slot';
 

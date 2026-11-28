@@ -235,6 +235,6 @@ test('the packed package runs with Node alone, from an empty folder', () => {
   // Its SKILL.md runs this package, at the version it was packed as.
   const shipped = readFileSync(join(skills, 'lo-explain', 'SKILL.md'), 'utf8');
   expect(shipped).toContain(
-    `npx --prefix '<tools>' --yes ${manifest.name}@${manifest.version} check`,
+    `npx --prefix '<work>/tools' --yes ${manifest.name}@${manifest.version} check`,
   );
 });

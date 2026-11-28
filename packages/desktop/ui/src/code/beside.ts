@@ -17,6 +17,7 @@ import {
   type HeaderTarget,
   KEY_EVENT,
   type LineTarget,
+  type NoteTarget,
   type ThreadTarget,
 } from '../commands/index.ts';
 import { NEW_SLOT, REPLY_SLOT } from '../edits.ts';
@@ -27,9 +28,13 @@ import type {
   Composer,
   ComposerEvents,
   DraftMark,
+  NotesView,
+  NoteView,
   OnFile,
   Place,
+  PopoverContent,
   PopoverView,
+  RenderNotes,
   RenderPopover,
   Side,
   ThreadsMode,
@@ -63,10 +68,33 @@ export interface At {
 
 /**
  * Where the threads' popover opens, beside lines: the line threads end on, or a file's header
- * (line 0) for its own, by its `waitKey`.
+ * (line 0) for its own, by its `waitKey`; or, with `notes`, the line overview notes end on, whose
+ * ball opens them there.
  */
 export interface PopPlace extends At {
   readonly key: string;
+  readonly notes?: boolean | undefined;
+}
+
+/** Where the popover of the overview notes that end on line `at` opens. */
+export function notesPlace(at: At): PopPlace {
+  return { ...at, key: waitKey(at.file, `note:${at.side}:${at.line}`), notes: true };
+}
+
+/** What a view with overview notes tells the popover of them, beside lines. */
+export interface NotesHost {
+  /** The notes that end on line `at`, in the overview's order, that the view would draw. */
+  ending(at: At): readonly NoteView[];
+  /** The line note `key` ends on, if the view has it and would draw it. */
+  end(key: string): At | undefined;
+  /** The document lines of `pane` note `key` covers, as its stem draws them, if `pane` has any. */
+  range(pane: Pane, key: string): LaneLines | undefined;
+  /** What a screen reader calls `notes`, which end on one line. */
+  name(notes: readonly NoteView[]): string;
+  /** What a key in the popover of the notes on line `at` acts on: note `note`, or the first. */
+  target(at: At, note: string | undefined): NoteTarget;
+  /** What draws notes, if anything does. */
+  render(): RenderNotes | undefined;
 }
 
 /**
@@ -108,6 +136,11 @@ export function splitKey(each: string): { file: number; key: string } {
  */
 export function placeOf(at: Place | OnFile): { side: Side; line: number } {
   return 'line' in at ? { side: at.side, line: at.line } : { side: 'new', line: 0 };
+}
+
+/** What a popover of notes shows its notes as: pinned, they show as focused. */
+function notesShown(view: PopoverView): NotesView {
+  return { notes: view.notes ?? [], focused: view.pinned, label: view.label };
 }
 
 /** 1 for a resolved thread, which a popover lists after the unresolved, else 0. */
@@ -197,6 +230,17 @@ function rowOf(block: BlockInfo): { top: number; bottom: number } {
   return { top: parts[own]!.top, bottom };
 }
 
+/** What a card in the popover is marked by: a thread's, or an overview note's. */
+const CARD = '[data-thread-id], [data-note-key]';
+
+/** The range of the popover's card `card`, by its thread or its note. */
+function cardOf(card: HTMLElement | null | undefined): LitRange | undefined {
+  const thread = card?.dataset.threadId;
+  if (thread !== undefined) return { lane: 'threads', key: thread };
+  const note = card?.dataset.noteKey;
+  return note === undefined ? undefined : { lane: 'notes', key: note };
+}
+
 /** Whether document line `line` is in `span`, if there's one. */
 function inSpan(span: { from: number; to: number } | undefined, line: number): boolean {
   return span !== undefined && line >= span.from && line <= span.to;
@@ -261,6 +305,8 @@ export interface BesideHost {
   readonly scroller: HTMLElement;
   /** The nonce the window's content security policy lets a comment box's style elements carry. */
   readonly nonce: string;
+  /** The view's overview notes, which open in the popover too, where it has them. */
+  readonly notes?: NotesHost | undefined;
   /**
    * The view's popover, made as it's first needed, for `pop` to place and fill: one of its own, or
    * its handle on one it shares with the views in its scroll.
@@ -649,10 +695,14 @@ export class Beside {
     const host = this.#host;
     return {
       scroller: host.scroller,
-      render: () => this.#render,
+      render: (at) => (at.notes ? this.#notesRender() : this.#render),
       lines: (at) => this.#popLines(at),
       room: () => host.room(),
       view: (at, pinned): PopoverView => {
+        if (at.notes) {
+          const notes = this.#notesAt(at);
+          return { threads: [], pinned, label: host.notes?.name(notes) ?? '', notes };
+        }
         const threads = this.#poppedThreads(at);
         const label = bubbleOf(threads, markedDraft(threads, this.#draftsAt(at))).name;
         const popBox = this.#box?.at.key === at.key ? this.#box.box : undefined;
@@ -671,13 +721,40 @@ export class Beside {
         else host.focusLine(at);
       },
       scrollBy: (by) => host.scrollBy(by),
-      onMark: (event, at) => this.markOf(event)?.at.key === at.key,
+      onMark: (event, at) => (this.markOf(event)?.at ?? this.noteMarkOf(event))?.key === at.key,
+      // A key in the popover of notes acts on the note focus is in, or its first.
+      target: (at, inside) => {
+        if (!at.notes) return undefined;
+        const note = inside?.closest<HTMLElement>('[data-note-key]')?.dataset.noteKey;
+        return host.notes?.target(at, note);
+      },
       holds: (at) => this.#box?.at.key === at.key && !this.#box.sent,
       release: (at) => {
         if (this.#box?.at.key === at.key) this.#releaseBox();
       },
       drawn: () => this.placeBox(),
       menu: (target, x, y) => this.#popMenu(target, x, y),
+    };
+  }
+
+  /** The notes the popover at `at` shows: those that end on its line, in the overview's order. */
+  #notesAt(at: PopPlace): readonly NoteView[] {
+    return at.notes ? (this.#host.notes?.ending(at) ?? []) : [];
+  }
+
+  /**
+   * What draws the popover of notes: the caller's notes, as it draws them in a popover, pinned as
+   * the popover is.
+   */
+  #notesRender(): RenderPopover | undefined {
+    const render = this.#host.notes?.render();
+    if (!render) return undefined;
+    return (host, popover, close): PopoverContent => {
+      const content = render(host, notesShown(popover), 'popover', close);
+      return {
+        update: (next) => content.update(notesShown(next)),
+        destroy: () => content.destroy(),
+      };
     };
   }
 
@@ -770,6 +847,7 @@ export class Beside {
    * then those on lines, or its file, ending where it is.
    */
   #draftsAt(at: PopPlace): DraftMark[] {
+    if (at.notes) return [];
     const threads = this.#poppedThreads(at).map((thread) => thread.id);
     const inThreads: DraftMark[] = [];
     const ending: DraftMark[] = [];
@@ -796,6 +874,7 @@ export class Beside {
 
   /** The threads the popover at `at` shows, as it lists them. */
   #poppedThreads(at: PopPlace): ThreadView[] {
+    if (at.notes) return [];
     const key = at.line === 0 ? 'new:0' : `${at.side}:${at.line}`;
     return listed(this.#host.threadsIn(at.file)?.get(key) ?? []);
   }
@@ -812,6 +891,16 @@ export class Beside {
       return { from: header, to: header };
     }
     let span: { from: number; to: number } | undefined;
+    if (at.notes) {
+      for (const note of this.#notesAt(at)) {
+        const range = host.notes?.range(pane, note.key);
+        if (!range) continue;
+        span = span
+          ? { from: Math.min(span.from, range.from), to: Math.max(span.to, range.to) }
+          : { from: range.from, to: range.to };
+      }
+      return span;
+    }
     const ranges: { from: { side: Side; line: number }; end: { side: Side; line: number } }[] =
       this.#poppedThreads(at).map((thread) => {
         const end = placeOf(thread.at);
@@ -847,7 +936,10 @@ export class Beside {
     const pane = host.popPane(at);
     const view = host.viewOf(pane);
     const span = this.#poppedSpan(pane, at);
-    const lane = view.dom.querySelector('.lo-threadlane')?.getBoundingClientRect();
+    // Its left edge on its mark's lane's: the overview's for notes, so the ball sits at its corner.
+    const lane = view.dom
+      .querySelector(at.notes ? '.lo-ovcolumn' : '.lo-threadlane')
+      ?.getBoundingClientRect();
     if (!span || !lane) return undefined;
     const { scroller } = host;
     const box = scroller.getBoundingClientRect();
@@ -923,6 +1015,54 @@ export class Beside {
     return at && thread !== undefined ? { at, thread } : undefined;
   }
 
+  /**
+   * Beside lines, where the popover of the overview notes the pointer `event` is on opens: their
+   * ball's line, or that of the note whose stem is nearest the pointer.
+   */
+  noteMarkOf(event: Pointed): PopPlace | undefined {
+    const host = this.#host;
+    const { target } = event;
+    if (host.mode() !== 'beside' || !host.notes || !(target instanceof Element)) return undefined;
+    if (!host.root.contains(target) || this.#pop?.dom.contains(target)) return undefined;
+    const under = rangeUnder(event);
+    const end = under?.kind === 'notes' ? host.notes.end(under.key) : undefined;
+    return end && notesPlace(end);
+  }
+
+  /** Whether the popover shows the overview note `key`, open at the view's lines. */
+  noteShown(key: string): boolean {
+    const at = this.#shownAt;
+    return at?.notes === true && this.#notesAt(at).some((note) => note.key === key);
+  }
+
+  /** The line of the overview notes the popover shows, open at the view's lines, if it does. */
+  get notesOpen(): At | undefined {
+    const at = this.#pop?.open ? this.#pop.at : undefined;
+    return at?.notes ? at : undefined;
+  }
+
+  /**
+   * Pins the popover of the overview notes that end on `at`'s line, as `⏎` does, focus going into
+   * it with `focus`. Says whether it's open there.
+   */
+  pinNotes(at: At, focus: boolean): boolean {
+    const place = notesPlace(at);
+    if (this.#host.mode() !== 'beside' || !this.#popLines(place)) return false;
+    const pop = this.#popover();
+    pop.pin(place);
+    if (focus) pop.focus();
+    return pop.at?.key === place.key;
+  }
+
+  /**
+   * Lands on the overview notes that end on `at`'s line, as `] o` does: their popover is pinned
+   * once the jump's scroll is done, focus staying where it was.
+   */
+  landNotes(at: At): void {
+    const place = notesPlace(at);
+    this.#pinLater(() => place, this.hasFocus());
+  }
+
   // What lights the view's ranges ---------------------------------------------------------------
 
   /**
@@ -932,6 +1072,13 @@ export class Beside {
   pinnedLight(): Lights['pinned'] {
     const pop = this.#pop;
     if (!pop?.pinned || !pop.at) return undefined;
+    if (pop.at.notes) {
+      const notes = this.#notesAt(pop.at).map((note): LitRange => ({
+        lane: 'notes',
+        key: note.key,
+      }));
+      return notes.length > 0 ? { cards: notes } : undefined;
+    }
     const box = this.pickedBox();
     if (box) {
       const first = box.from?.line ?? box.place.line;
@@ -979,8 +1126,7 @@ export class Beside {
     const pop = this.#pop;
     const active = pop?.dom.ownerDocument.activeElement;
     if (!pop?.open || !(active instanceof Element) || !pop.dom.contains(active)) return undefined;
-    const id = active.closest<HTMLElement>('[data-thread-id]')?.dataset.threadId;
-    return id === undefined ? undefined : { lane: 'threads', key: id };
+    return cardOf(active.closest<HTMLElement>(CARD));
   }
 
   /**
@@ -990,17 +1136,16 @@ export class Beside {
   cardUnder(target: Element): LitRange | undefined | null {
     const pop = this.#pop;
     if (!pop?.open || !pop.dom.contains(target)) return null;
-    const card =
-      target.closest<HTMLElement>('[data-thread-id]') ??
-      pop.dom.querySelector<HTMLElement>('[data-thread-id]');
-    const id = card?.dataset.threadId;
-    return id === undefined ? undefined : { lane: 'threads', key: id };
+    return cardOf(target.closest<HTMLElement>(CARD) ?? pop.dom.querySelector<HTMLElement>(CARD));
   }
 
   /** The pointer came over something, or left the view: a mark it rests on previews its popover. */
   hover(event: PointerEvent): void {
     if (this.#host.mode() !== 'beside') return;
-    const at = event.type === 'pointerleave' ? undefined : this.markOf(event)?.at;
+    const at =
+      event.type === 'pointerleave'
+        ? undefined
+        : (this.markOf(event)?.at ?? this.noteMarkOf(event));
     // Off a mark, with no popover made, there's nothing to tell.
     if (at === undefined && !this.#pop) return;
     this.#popover().hover(at);
@@ -1033,12 +1178,17 @@ export class Beside {
    * goes into it.
    */
   pinAfterScroll(id: string, focus: boolean): void {
+    this.#pinLater(() => this.#popOf(id), focus);
+  }
+
+  /** Pins the popover `place` says once the jump's scroll is done, as `pinAfterScroll` does. */
+  #pinLater(place: () => PopPlace | undefined, focus: boolean): void {
     const asked = ++this.#popping;
     // The frame the editor scrolls in, after it has: its measure is asked for as the cursor moves.
     queueMicrotask(() =>
       requestAnimationFrame(() => {
         if (asked !== this.#popping || this.#host.mode() !== 'beside') return;
-        const at = this.#popOf(id);
+        const at = place();
         if (!at) return;
         const pop = this.#popover();
         pop.pin(at);

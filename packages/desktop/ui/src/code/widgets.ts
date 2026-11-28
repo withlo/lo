@@ -1,6 +1,6 @@
 // The blocks the diff view draws between lines: file headers, each one band across both sides,
 // with the row under it for what belongs to the file; collapsed code; threads and the comment boxes
-// in them; overview markers' notes; the labels on moved code; and the spacers that keep the two
+// in them; the cards of overview notes; the labels on moved code; and the spacers that keep the two
 // sides lined up. Everything that isn't code sits on one flat ground, quieter than the code. A
 // block that starts a row with lines on both sides carries the row's key as `data-row`, as the
 // first line of a row does, so the alignment drawn on screen can be checked row by row.
@@ -9,11 +9,12 @@ import { WidgetType } from '@codemirror/view';
 
 import { threadWords } from '../counts.ts';
 import { resizing } from '../drag.ts';
-import { EDIT_SLOT } from '../edits.ts';
+import { EDIT_SLOT, NOTE_TEXT } from '../edits.ts';
 import { giveUp } from '../giveUp.ts';
 import { glyphNodes, iconElement } from '../iconElement.ts';
-import { type DrawNote, type FileHeader, viewControls } from './api.ts';
+import { type FileHeader, viewControls } from './api.ts';
 import { type Bubble, bubbleElement, type LaneTone, sameBubble } from './bubbles.ts';
+import type { NoteCard } from './notecards.ts';
 import type { ThreadHost } from './threads.ts';
 
 /** How each viewed mark is drawn: a ring, a filled ball, or an amber ring with a dot. */
@@ -649,6 +650,7 @@ function drawUnder(
   threads: readonly ThreadHost[],
   boxes: readonly BoxHost[],
   draw: (thread: ThreadHost) => void,
+  notes: readonly NoteCard[] = [],
 ): void {
   const ids = new Set(threads.map((thread) => thread.id));
   for (const thread of threads) {
@@ -659,6 +661,7 @@ function drawUnder(
       box.attach(editSlot(thread.dom, box) ?? parent);
     }
   }
+  for (const note of notes) parent.append(note.dom);
   for (const box of boxes) {
     if (box.thread === undefined || !ids.has(box.thread)) box.attach(parent);
   }
@@ -718,10 +721,10 @@ export class ThreadSizes {
         const { target } = entry;
         const size = entry.borderBoxSize[0];
         if (!size || target === content || !(target instanceof HTMLElement)) continue;
-        if (target.classList.contains('lo-ovnote__text')) {
+        const key = target.dataset.thread ?? target.dataset.sized;
+        if (target.hasAttribute(NOTE_TEXT)) {
           if (this.#width > 0 && size.inlineSize > 0) this.#inset = this.#width - size.inlineSize;
-        } else if (target.dataset.thread && size.blockSize > 0) {
-          const key = target.dataset.thread;
+        } else if (key && size.blockSize > 0) {
           if (resizing(this.#document)) {
             this.#passing.set(key, { width: this.#width, height: size.blockSize });
           } else {
@@ -773,27 +776,6 @@ export class ThreadSizes {
   }
 }
 
-/** An overview marker's note, open under the last line the marker covers. */
-export interface NoteDraw {
-  /** Which marker's it is. */
-  readonly key: string;
-  /** The overview's block that explains the lines, which "Show in overview" names. */
-  readonly block: string;
-  readonly label: string;
-  /** Its text, plain, which sizes it before it's drawn, and which it shows unless `draw` draws it. */
-  readonly text: string;
-  /** What draws its text in its place, the caller's way. */
-  readonly draw?: DrawNote | undefined;
-  /** Whether it links back to the overview. */
-  readonly link: boolean;
-}
-
-/** What takes down the text a caller drew in a note, by the element it drew it in. */
-const drawnNotes = new WeakMap<Element, () => void>();
-
-/** The attribute on a note's link that names the overview's block it shows. */
-export const NOTE_BLOCK_ATTRIBUTE = 'data-note-block';
-
 /** The room a block of threads, notes and boxes takes around them, and between each. */
 const BLOCK_PADDING = 16;
 const BLOCK_GAP = 8;
@@ -804,11 +786,11 @@ export interface PeekHost extends BoxHost {
 }
 
 /**
- * What goes under a line: a peek opened there, the notes of the overview markers that end there,
- * the review threads there, each in the element the caller draws it in (`threads.ts`), with the
- * boxes written in each after it, and the comment boxes being written on the line, last. One block
- * a line, for the same reason as a header's note. A peek, threads and boxes are elements that
- * outlive the block, and move into whichever block draws them last.
+ * What goes under a line: a peek opened there, the review threads there, each in the element the
+ * caller draws it in (`threads.ts`), with the boxes written in each after it, then the cards of the
+ * overview notes open that end there (`notecards.ts`), and the comment boxes being written on the
+ * line, last. One block a line, for the same reason as a header's note. A peek, threads, notes and
+ * boxes are elements that outlive the block, and move into whichever block draws them last.
  */
 export class ThreadWidget extends WidgetType {
   readonly id: string;
@@ -816,7 +798,7 @@ export class ThreadWidget extends WidgetType {
   readonly boxes: readonly BoxHost[];
   readonly drawing: number;
   readonly sizes: ThreadSizes;
-  readonly notes: readonly NoteDraw[];
+  readonly notes: readonly NoteCard[];
   readonly peek: PeekHost | undefined;
   readonly #draw: (thread: ThreadHost) => void;
 
@@ -832,7 +814,7 @@ export class ThreadWidget extends WidgetType {
     draw: (thread: ThreadHost) => void,
     boxes: readonly BoxHost[] = [],
     drawing = 0,
-    notes: readonly NoteDraw[] = [],
+    notes: readonly NoteCard[] = [],
     peek?: PeekHost,
   ) {
     super();
@@ -856,7 +838,7 @@ export class ThreadWidget extends WidgetType {
       other.drawing === this.drawing &&
       other.sizes === this.sizes &&
       other.notes.length === this.notes.length &&
-      other.notes.every((note, index) => sameNote(note, this.notes[index]))
+      other.notes.every((note, index) => note === this.notes[index])
     );
   }
 
@@ -864,55 +846,33 @@ export class ThreadWidget extends WidgetType {
     // The space around the card is padding, not margin: the editor measures a block by its box,
     // which leaves margins out.
     const block = element('div', 'lo-diffthread');
-    if (this.#notesOnly) {
-      block.dataset.thread = this.#key;
-      this.sizes.observe(block);
-    }
     // Right under the line, which it's about.
     this.peek?.attach(block);
-    for (const note of this.notes) {
-      const drawn = noteElement(note);
-      block.append(drawn);
-      this.sizes.observe(drawn.querySelector('.lo-ovnote__text')!);
-    }
-    drawUnder(block, this.threads, this.boxes, this.#draw);
+    drawUnder(block, this.threads, this.boxes, this.#draw, this.notes);
+    // Each card's height, as drawn at the editor's width, and what its words wrap at.
+    for (const note of this.notes) note.watch(this.sizes);
     return block;
   }
 
   override destroy(dom: HTMLElement): void {
-    this.sizes.unobserve(dom);
-    for (const text of dom.querySelectorAll('.lo-ovnote__text')) {
-      this.sizes.unobserve(text);
-      drawnNotes.get(text)?.();
-      drawnNotes.delete(text);
+    // A card that's moved into another block is that block's to watch.
+    for (const note of this.notes) {
+      const parent = note.dom.parentElement;
+      if (parent === null || parent === dom) note.unwatch();
     }
   }
 
-  /** Whether it holds notes alone, whose size as drawn is kept for drawing them again. */
-  get #notesOnly(): boolean {
-    return this.threads.length === 0 && this.boxes.length === 0 && !this.peek;
-  }
-
-  /** The notes' size as drawn, for drawing them again. */
-  get #key(): string {
-    const notes = this.notes.map((note) => `${note.key}:${note.text.length}`).join(',');
-    return `${this.id}:${notes}`;
-  }
-
   /**
-   * Notes alone, as tall as they were last drawn in its editor at this width, if they were. Else
-   * the peek as tall as it is, its notes' lines of 21 pixels, at the characters the editor's notes
-   * wrap at, between a label and a foot, its threads as tall as each was drawn, or about as tall,
-   * and the boxes as they are.
+   * The peek as tall as it is, its threads and its notes' cards as tall as each was drawn at the
+   * editor's width, or about as tall, a card's words in lines of 21 pixels at the characters the
+   * editor's notes wrap at, and the boxes as they are.
    */
   override get estimatedHeight(): number {
-    const drawn = this.#notesOnly ? this.sizes.drawn(this.#key) : undefined;
-    if (drawn !== undefined) return drawn;
     let height = BLOCK_PADDING + (this.peek?.height ?? 0);
     const parts = this.notes.length + this.threads.length + this.boxes.length + (this.peek ? 1 : 0);
     height += Math.max(0, parts - 1) * BLOCK_GAP;
     for (const note of this.notes) {
-      height += 70 + Math.max(1, Math.ceil(note.text.length / this.sizes.charsPerLine)) * 21;
+      height += this.sizes.drawn(note.sizeKey) ?? note.guess(this.sizes.charsPerLine);
     }
     for (const thread of this.threads) height += thread.estimate;
     return height + boxesHeight(this.boxes, this.threads);
@@ -922,42 +882,6 @@ export class ThreadWidget extends WidgetType {
   override ignoreEvent(): boolean {
     return true;
   }
-}
-
-function sameNote(a: NoteDraw, b: NoteDraw | undefined): boolean {
-  return (
-    b !== undefined &&
-    a.key === b.key &&
-    a.block === b.block &&
-    a.label === b.label &&
-    a.text === b.text &&
-    a.link === b.link
-  );
-}
-
-/**
- * An overview marker's note: its label, its text, as the caller draws it or else plain, and where
- * it links back, a foot with the way back to the overview.
- */
-function noteElement(note: NoteDraw): HTMLElement {
-  const box = element('div', 'lo-ovnote');
-  box.setAttribute('role', 'note');
-  box.dataset.note = note.key;
-  const label = element('div', 'lo-ovnote__label');
-  label.append(element('span', 'lo-ov-dot'), note.label ? `Overview · ${note.label}` : 'Overview');
-  const text = element('div', 'lo-ovnote__text');
-  if (note.draw) drawnNotes.set(text, note.draw(text));
-  else text.textContent = note.text;
-  box.append(label, text);
-  if (note.link) {
-    const foot = element('div', 'lo-ovnote__foot');
-    const link = element('button', 'lo-ovnote__read', 'Show in overview');
-    link.type = 'button';
-    link.setAttribute(NOTE_BLOCK_ATTRIBUTE, note.block);
-    foot.append(link);
-    box.append(foot);
-  }
-  return box;
 }
 
 /**

@@ -18,29 +18,56 @@ import {
   rangeUnder,
 } from './ranges.ts';
 
-/** What a ball says, as its tooltip and to a screen reader: what a click on it does. */
-export const BALL_TIP = 'Show overview note';
+/**
+ * What a ball's notes are called, and the popover they open in, as a screen reader hears them:
+ * "Overview note, lines 2–15", or for several, which end on one line, "2 overview notes, lines
+ * 2–15", by the lines of the one that starts first, which take in the others'. `words` are those
+ * lines, as `lineRefText` puts them after other words.
+ */
+export function notesName(count: number, words: string): string {
+  const what = count === 1 ? 'Overview note' : `${count} overview notes`;
+  return words === '' ? what : `${what}, ${words}`;
+}
 
-/** The notes that end on a line, by their keys in the overview's order, and whether one is open. */
+/** What a click on a ball does between lines, as its tooltip says: show its notes, or close them. */
+export function ballTip(count: number, open: boolean): string {
+  const verb = open ? 'Close' : 'Show';
+  return count === 1 ? `${verb} overview note` : `${verb} ${count} overview notes`;
+}
+
+/**
+ * The notes that end on a line, by their keys in the overview's order, whether one is open, the
+ * words for the lines of the one that starts first, which take in the others', and whether threads
+ * show between lines: there the ball's tooltip says what a click does, and beside lines it has
+ * none, as a bubble has none there, since the pointer resting on it previews its notes.
+ */
 export interface NoteEnds {
   readonly keys: readonly string[];
   readonly open: boolean;
+  readonly words: string;
+  readonly between: boolean;
 }
 
-/** A ball as the lane's mark. */
+/** A ball as the lane's mark: a control a screen reader hears by its notes' name. */
 class BallMark implements LaneMark {
   readonly keys: readonly string[];
   readonly open: boolean;
+  readonly words: string;
+  readonly between: boolean;
 
-  constructor({ keys, open }: NoteEnds) {
+  constructor({ keys, open, words, between }: NoteEnds) {
     this.keys = keys;
     this.open = open;
+    this.words = words;
+    this.between = between;
   }
 
   same(other: LaneMark): boolean {
     return (
       other instanceof BallMark &&
       other.open === this.open &&
+      other.words === this.words &&
+      other.between === this.between &&
       other.keys.length === this.keys.length &&
       other.keys.every((key, index) => key === this.keys[index])
     );
@@ -49,19 +76,28 @@ class BallMark implements LaneMark {
   draw(): HTMLElement {
     const ball = document.createElement('span');
     ball.className = `lo-ov-marker${this.open ? ' is-open' : ''}`;
-    ball.dataset.tip = BALL_TIP;
-    ball.setAttribute('aria-label', BALL_TIP);
+    ball.setAttribute('role', 'button');
+    ball.setAttribute('aria-label', notesName(this.keys.length, this.words));
+    ball.setAttribute('aria-expanded', String(this.open));
+    if (this.between) ball.dataset.tip = ballTip(this.keys.length, this.open);
     return ball;
   }
 }
 
-/** The overview's lane in each editor's state. A fold holds the ball of every note ending in it. */
+/**
+ * The overview's lane in each editor's state. A fold holds the ball of every note ending in it,
+ * named by the first's lines, as many notes as they are.
+ */
 const lane = defineLane('notes', {
-  foldMark: (marks) =>
-    new BallMark({
-      keys: marks.flatMap((mark) => mark.keys),
-      open: marks.some((mark) => mark instanceof BallMark && mark.open),
-    }),
+  foldMark: (marks) => {
+    const balls = marks.filter((mark) => mark instanceof BallMark);
+    return new BallMark({
+      keys: balls.flatMap((mark) => mark.keys),
+      open: balls.some((mark) => mark.open),
+      words: balls[0]?.words ?? '',
+      between: balls[0]?.between ?? false,
+    });
+  },
   markTarget: true,
 });
 

@@ -41,6 +41,7 @@ import {
   KEY_EVENT,
   type KeySource,
   type LineTarget,
+  type NoteTarget,
   runControl,
   SCOPE_ATTRIBUTE,
   setScopeSource,
@@ -54,6 +55,7 @@ import { type Tip, TIPPED, tips } from './tip.ts';
 import type {
   Anchor,
   BoxFrame,
+  CommentLines,
   ComposeOptions,
   Composer,
   ComposerEvents,
@@ -75,6 +77,7 @@ import type {
   Mode,
   MovedCode,
   Movement,
+  NoteView,
   OnFile,
   PassStats,
   PeekFrame,
@@ -83,6 +86,7 @@ import type {
   Probe,
   ProblemContent,
   ReadFailure,
+  RenderNotes,
   RenderPopover,
   RenderProblem,
   RenderThread,
@@ -113,6 +117,7 @@ import {
   isDraftKey,
   type LaneLines,
   listed,
+  notesPlace,
   type Pane,
   placeOf,
   sameIds,
@@ -156,13 +161,22 @@ import {
 import { laneUpdate, setLane, threadLane } from './lanes.ts';
 import { Layout } from './layout.ts';
 import { swapping } from './lines.ts';
-import { markerGutter, type NoteEnds, notesLaneUpdate, setNotesLane } from './markers.ts';
+import {
+  markerGutter,
+  type NoteEnds,
+  notesLaneUpdate,
+  notesName,
+  setNotesLane,
+} from './markers.ts';
 import { lineKey, marking, marksChanged, rowKey } from './marks.ts';
 import { otherLine } from './moves.ts';
+import { NoteCard } from './notecards.ts';
 import { PeekBlock, peekShownAt } from './peek.ts';
+import { pickLines, restingEnd } from './pick.ts';
 import { type PopRoom, ThreadPop } from './popover.ts';
 import {
   type LaneRange,
+  lineBeside,
   type Lights,
   type Lit,
   litOf,
@@ -198,8 +212,6 @@ import {
   headerRow,
   MOVED_ATTRIBUTE,
   movedTo,
-  NOTE_BLOCK_ATTRIBUTE,
-  type NoteDraw,
   RING_CLASS,
   ThreadSizes,
 } from './widgets.ts';
@@ -266,6 +278,49 @@ const STILL_WITHIN = 0.01;
  * down, and keys as the key listener's event says they're input, a sequence's only as it ends.
  */
 const INPUT = ['wheel', KEY_EVENT, 'pointerdown'] as const;
+
+/** The keys that are no keys alone, as Shift held for a click: they take nothing away. */
+const MODIFIERS: ReadonlySet<string> = new Set([
+  'Shift',
+  'Control',
+  'Alt',
+  'Meta',
+  'CapsLock',
+  'Fn',
+]);
+
+/** Whether document line `line` of `view` is drawn as a line: not in a fold, a header or a note. */
+function drawnAsLine(view: EditorView, line: number): boolean {
+  const at = view.state.doc.line(line).from;
+  const whole = view.lineBlockAt(at);
+  const blocks = Array.isArray(whole.type) ? (whole.type as readonly BlockInfo[]) : [whole];
+  return blocks.some((each) => each.type === BlockType.Text && each.from <= at && at <= each.to);
+}
+
+/**
+ * Lines picked with the pointer, in one pane, of one file, on one side: from the line where it
+ * started, which stays, to its far end, which goes where the pointer does. What a drag from the
+ * `+` picks, and a click with Shift from the cursor's line.
+ */
+interface Pick {
+  readonly pane: Pane;
+  readonly file: number;
+  readonly side: Side;
+  /** The line it started on, on its side. */
+  readonly anchor: number;
+  /** The line its far end rests on now, on its side. */
+  end: number;
+  /** Which of the file's lines take a comment, once the caller says. */
+  lines: CommentLines | undefined;
+}
+
+/** A drag from the `+` that picks lines: whether it has moved far enough to, and what stops it. */
+interface PlusDrag extends Pick {
+  /** What a click on the `+` would have acted on, for a drag that ends on its own line. */
+  readonly target: LineTarget;
+  started: boolean;
+  stop: (() => void) | undefined;
+}
 
 /** Replaces one file's decorations. */
 /** How long a line put back at the top stays there once it's settled, in milliseconds. */
@@ -414,13 +469,20 @@ interface OverviewAt {
   label: string;
   text: string;
   draw: DrawNote | undefined;
+  /** What a screen reader hears of its lines: `lines 2–15`. */
+  words: string;
 }
 
-/** What a note shows, and where: under a line of one side of a file, by its index. */
+/**
+ * What a note shows, and where: under its last line, `line`, of one side of a file, by its index,
+ * from its first, `from`.
+ */
 interface NoteShown {
   file: number;
   side: Side;
+  from: number;
   line: number;
+  words: string;
   block: string;
   label: string;
   text: string;
@@ -483,8 +545,14 @@ class View implements DiffView {
   #marked = new Map<number, { old: OverviewAt[]; new: OverviewAt[] }>();
   /** The same marks, by their keys. */
   #markKeys = new Map<string, OverviewAt>();
-  /** The notes open, in the order they opened. */
+  /** Between lines, the notes open, in the order they opened. */
   #notes: OpenNote[] = [];
+  /** What draws overview notes, as the caller gave it: without it, none opens. */
+  readonly #renderNotes: RenderNotes | undefined;
+  /** Between lines, each open note's card, by the note's key. */
+  readonly #cards = new Map<string, NoteCard>();
+  /** The card the keyboard is on, between lines: its key chips show. */
+  #keyedCard: NoteCard | undefined;
   /** Lines notes were opened under, which stay shown once they close, as a box's do. */
   readonly #noteLines: { old: Set<number>; new: Set<number> }[];
   /** The peek open, under a line of one side of a file, by its index. */
@@ -545,9 +613,19 @@ class View implements DiffView {
   /** What the events last said, so each says only what changed. */
   #said: { cursor?: string; mode: Mode; file: number } = { mode: 'normal', file: -1 };
   readonly #stops: (() => void)[] = [];
-  /** The `+` that follows the pointer down the gutter, and the line it's at. */
+  /**
+   * The `+` that follows the pointer down the gutter, the line it's at, and that line's document
+   * line in the pane it's drawn in.
+   */
   readonly #add = document.createElement('button');
   #addAt: Target | undefined;
+  #addRow: { pane: Pane; line: number } | undefined;
+  /** The lines a drag from the `+` picks, while one is under way. */
+  #pick: PlusDrag | undefined;
+  /** Whether the press last made in the view dragged from the `+`: its click is none of the `+`'s. */
+  #picked = false;
+  /** The file the `+` last came to, whose lines that take a comment the caller was asked for. */
+  #askedLines: number | undefined;
   /** The file whose header's band takes the keyboard's ring: every header reads it as drawn. */
   readonly #ring: HeaderRing = { file: undefined };
   /** The header of the file at the top of the scroll, pinned under the diff bar. */
@@ -608,6 +686,7 @@ class View implements DiffView {
     if (this.#index.size !== this.#ids.length) throw new Error('Two files have the same id.');
     this.#files = init.files.map(viewFile);
     this.#renderProblem = init.renderProblem;
+    this.#renderNotes = init.renderNotes;
     this.#files.forEach((_, file) => this.#takeProblem(file));
     this.#lines = init.files.map((file, index) => {
       if (keptOut(file) || !file.lines) return { old: [], new: [] };
@@ -742,8 +821,11 @@ class View implements DiffView {
     this.#add.hidden = true;
     this.#add.textContent = '+';
     this.#add.dataset.command = viewControls.comment;
-    // A press on it leaves focus, and what's selected, where they are.
+    // A press on it leaves focus, and what's selected, where they are. A drag from it picks lines.
     this.#add.addEventListener('mousedown', (event) => event.preventDefault());
+    this.#add.addEventListener('pointerdown', this.#pressAdd);
+    // A new press is no drag's, whatever ended the last.
+    this.dom.addEventListener('pointerdown', this.#unpick, { capture: true });
     this.dom.append(this.#add);
     this.dom.addEventListener('click', this.#runControl);
     this.dom.addEventListener('click', this.#openMore);
@@ -774,9 +856,18 @@ class View implements DiffView {
     this.dom.addEventListener('focusin', refocused);
     this.dom.addEventListener('focusout', refocused);
     this.dom.addEventListener('mouseleave', this.#hideAdd);
-    for (const type of ['wheel', 'scroll', KEY_EVENT] as const) {
+    for (const type of ['wheel', 'scroll'] as const) {
       this.dom.addEventListener(type, this.#hideAdd, { passive: true, capture: true });
     }
+    // A key takes it away, but for a modifier alone, as Shift held for a click on it. The key
+    // listener tells the view of a key before the view hears the key itself, so it looks after.
+    this.dom.addEventListener(KEY_EVENT, this.#keyHidesAdd, { passive: true, capture: true });
+    const win = this.dom.ownerDocument.defaultView;
+    win?.addEventListener('keydown', this.#hearKey, { capture: true });
+    this.#stops.push(() => {
+      win?.removeEventListener('keydown', this.#hearKey, { capture: true });
+      clearTimeout(this.#keyWait);
+    });
     this.#stops.push(tips(this.dom, (control) => this.#tipOf(control)));
     this.dom.addEventListener('keydown', this.#escape, { capture: true });
     this.dom.addEventListener('scroll', this.#letNotesGo, { passive: true });
@@ -786,8 +877,6 @@ class View implements DiffView {
     for (const type of ['wheel', KEY_EVENT, 'click'] as const) {
       this.dom.addEventListener(type, this.#afterInput, { passive: true, capture: true });
     }
-    this.dom.addEventListener('mousedown', this.#readNote);
-    this.dom.addEventListener('click', this.#readNote);
     this.dom.addEventListener('mousedown', this.#followMove);
     this.dom.addEventListener('click', this.#followMove);
     const { rested } = on;
@@ -1374,6 +1463,9 @@ class View implements DiffView {
       this.#mode = mode;
       this.dom.classList.toggle('is-beside', mode === 'beside');
       if (mode === 'beside') {
+        // Nothing is drawn in the flow for a note: those open go, as they'd open in the popover.
+        this.#notes = [];
+        this.#dropCards();
         // Nothing is drawn in the flow for a thread: what waited, or was held, takes its threads.
         this.#held.clear();
         this.#waiting.clear();
@@ -1830,6 +1922,7 @@ class View implements DiffView {
         label,
         text,
         draw,
+        words: mark.words ?? '',
       };
       keys.set(key, at);
       let byFile = next.get(file);
@@ -1856,7 +1949,7 @@ class View implements DiffView {
           ?.[side].find((each) => each.block === block && !claimed.has(each.key));
       }
       if (mark) claimed.add(mark.key);
-      return mark ? { key: mark.key, shown: shownOf(mark) } : null;
+      return mark ? { key: mark.key, shown: this.#shownOf(mark) } : null;
     });
     // Their marks are in the lanes, which change where they had any or have any now.
     for (const file of [...this.#marked.keys(), ...next.keys()]) this.#laneDirty.add(file);
@@ -1889,6 +1982,8 @@ class View implements DiffView {
     }
     // The marks are in the lanes: no line changes height.
     this.#redrawLanes([...this.#laneDirty]);
+    // Beside lines, the popover shows what ends on its line now, or closes with none.
+    this.#beside.refresh();
     this.#relight();
     this.#takeHints(marks);
   }
@@ -1921,11 +2016,117 @@ class View implements DiffView {
     return this.#noteKeys(at).length > 0;
   }
 
+  hasNotes(): boolean {
+    if (!this.#renderNotes) return false;
+    for (const byFile of this.#marked.values()) {
+      if (byFile.new.some((mark) => this.#drawable(this.#shownOf(mark)))) return true;
+    }
+    return false;
+  }
+
   openNote(at: Place): boolean {
-    const keys = this.#noteKeys(at);
-    if (keys.length === 0) return false;
-    this.#openNotes(keys);
+    const marks = this.#notesFor(at);
+    const [first] = marks;
+    if (!first) return false;
+    if (this.#mode === 'beside') {
+      const { file, side, line } = this.#shownOf(first);
+      return this.#beside.pinNotes({ file, side, line }, true);
+    }
+    this.#openNotes(marks.map((mark) => mark.key));
     return true;
+  }
+
+  noteOpenAt(at: Place): boolean {
+    return this.#openNoteAt(at) !== undefined;
+  }
+
+  showInOverview(at: Place, note?: string): boolean {
+    if (!this.#on.explained) return false;
+    if (this.#mode === 'beside') {
+      const open = this.#beside.notesOpen;
+      const marks = open ? this.#endingAt(open) : [];
+      const key = note ?? this.#openNoteAt(at)?.key;
+      const mark = marks.find((each) => each.key === key);
+      if (!mark) return false;
+      const { file, side, line } = this.#shownOf(mark);
+      this.#on.explained(mark.block, { file: this.#ids[file]!, side, line });
+      return true;
+    }
+    const key = note ?? this.#openNoteAt(at)?.key;
+    const open = this.#notes.find((each) => each.key === key);
+    if (!open) return false;
+    // Held as it was on screen, its mark changed since, it takes the change first: one whose mark
+    // went closes, and shows nothing, since the overview no longer says it.
+    const { next } = open;
+    if (next !== undefined) this.#letHeldGo((each) => each === open);
+    const shown = next === undefined ? open.shown : next?.shown;
+    if (!shown) return false;
+    const { file, side, line, block } = shown;
+    this.#on.explained(block, { file: this.#ids[file]!, side, line });
+    return true;
+  }
+
+  /**
+   * The notes `⏎` on `at`'s line opens: those that end on it, which share its ball, in the
+   * overview's order, or else the one with the shortest range over it.
+   */
+  #notesFor(at: Place): OverviewAt[] {
+    const file = this.#index.get(at.file);
+    if (file === undefined || !this.#renderNotes) return [];
+    const marks = (this.#marked.get(file)?.[at.side] ?? []).filter((mark) =>
+      this.#drawable(this.#shownOf(mark)),
+    );
+    const end = (mark: OverviewAt): number => this.#shownOf(mark).line;
+    const ending = marks.filter((mark) => end(mark) === at.line).toSorted(byOrder);
+    if (ending.length > 0) return ending;
+    let best: OverviewAt | undefined;
+    for (const mark of marks.toSorted(byOrder)) {
+      if (mark.from > at.line || end(mark) < at.line) continue;
+      if (!best || end(mark) - mark.from < end(best) - best.from) best = mark;
+    }
+    return best ? [best] : [];
+  }
+
+  /** The notes that end on line `at`, which share its ball, in the overview's order. */
+  #endingAt(at: At): OverviewAt[] {
+    if (!this.#renderNotes) return [];
+    return (this.#marked.get(at.file)?.[at.side] ?? [])
+      .filter((mark) => {
+        const shown = this.#shownOf(mark);
+        return shown.line === at.line && this.#drawable(shown);
+      })
+      .toSorted(byOrder);
+  }
+
+  /**
+   * The open note on `at`'s line that "Show in overview" acts on: of those open in the popover,
+   * beside lines, or under their lines, between them, the first in the overview's order whose lines
+   * take in `at`'s.
+   */
+  #openNoteAt(at: Place): { key: string; block: string } | undefined {
+    const file = this.#index.get(at.file);
+    if (file === undefined) return undefined;
+    const covers = (shown: { file: number; side: Side; from: number; line: number }): boolean =>
+      shown.file === file &&
+      shown.side === at.side &&
+      shown.from <= at.line &&
+      at.line <= shown.line;
+    if (this.#mode === 'beside') {
+      const open = this.#beside.notesOpen;
+      return (open ? this.#endingAt(open) : []).find((mark) => covers(this.#shownOf(mark)));
+    }
+    return this.#openInOrder()
+      .filter(({ shown }) => this.#drawable(shown) && covers(shown))
+      .map(({ key, shown }) => ({ key, block: shown.block }))[0];
+  }
+
+  /**
+   * The open notes in the overview's order, as their cards stand under a line and as `g o` takes
+   * the first: one whose mark has gone, held as it was on screen, after the rest.
+   */
+  #openInOrder(): OpenNote[] {
+    const order = (key: string): number => this.#markKeys.get(key)?.order ?? Infinity;
+    return this.#notes.toSorted((a, b) => order(a.key) - order(b.key));
   }
 
   closeNote(): boolean {
@@ -1943,10 +2144,11 @@ class View implements DiffView {
   /** The marks on `at`'s line whose notes would be drawn, by their keys. */
   #noteKeys(at: Place): string[] {
     const file = this.#index.get(at.file);
+    if (!this.#renderNotes) return [];
     const marks = file === undefined ? undefined : this.#marked.get(file)?.[at.side];
     return (marks ?? [])
       .filter((mark) => mark.from <= at.line && at.line <= mark.to)
-      .filter((mark) => this.#drawable(shownOf(mark)))
+      .filter((mark) => this.#drawable(this.#shownOf(mark)))
       .map(({ key }) => key);
   }
 
@@ -1967,12 +2169,13 @@ class View implements DiffView {
 
   /** Opens the notes of the marks `keys` names, under each mark's last line, if they're drawn. */
   #openNotes(keys: readonly string[]): void {
+    if (!this.#renderNotes) return;
     const files = new Set<number>();
     for (const key of keys) {
       const mark = this.#markKeys.get(key);
-      if (!mark || this.#noteFor(key) || !this.#drawable(shownOf(mark))) continue;
-      this.#notes.push({ key, shown: shownOf(mark) });
-      this.#noteLines[mark.file]![mark.side].add(mark.to);
+      if (!mark || this.#noteFor(key) || !this.#drawable(this.#shownOf(mark))) continue;
+      this.#notes.push({ key, shown: this.#shownOf(mark) });
+      this.#noteLines[mark.file]![mark.side].add(this.#shownOf(mark).line);
       files.add(mark.file);
       // Its ball says it's open.
       this.#laneDirty.add(mark.file);
@@ -2005,8 +2208,8 @@ class View implements DiffView {
   #noteOnScreen(note: OpenNote): boolean {
     if (!visible(this.dom)) return false;
     const screen = this.dom.getBoundingClientRect();
-    for (const element of this.dom.querySelectorAll<HTMLElement>('.lo-ovnote')) {
-      if (element.dataset.note !== note.key) continue;
+    const element = this.#cards.get(note.key)?.dom;
+    if (element?.isConnected) {
       for (const rect of element.getClientRects()) {
         if (rect.height > 0 && rect.bottom > screen.top && rect.top < screen.bottom) return true;
       }
@@ -2145,8 +2348,8 @@ class View implements DiffView {
 
   /** Whether no scroll can take note `note` off screen. */
   #noteStuck(note: OpenNote): boolean {
-    for (const element of this.dom.querySelectorAll<HTMLElement>('.lo-ovnote')) {
-      if (element.dataset.note !== note.key) continue;
+    const element = this.#cards.get(note.key)?.dom;
+    if (element?.isConnected) {
       for (const rect of element.getClientRects()) {
         if (rect.height > 0 && this.#canLeave(rect.top, rect.bottom)) return false;
       }
@@ -2445,9 +2648,29 @@ class View implements DiffView {
       .map((mark) => mark.key);
   }
 
-  /** A press on the ball beside document lines `first` to `last`: its notes open, or close. */
+  /**
+   * A press on the ball beside document lines `first` to `last`: its notes open, or close. Beside
+   * lines their popover pins, or closes, as a bubble's does.
+   */
   #clickedBall(pane: Pane, first: number, last: number): void {
-    this.#toggleNotes(this.#notesEnding(pane, first, last));
+    const keys = this.#notesEnding(pane, first, last);
+    if (this.#mode === 'beside') this.#clickedNotes(keys[0]);
+    else this.#toggleNotes(keys);
+  }
+
+  /** A press on the stem of note `key`: it opens, or closes, as its ball's press does. */
+  #clickedStem(key: string): void {
+    if (this.#mode === 'beside') this.#clickedNotes(key);
+    else this.#toggleNotes([key]);
+  }
+
+  /** Beside lines, a press on note `key`'s mark: the popover of its ball's line pins, or closes. */
+  #clickedNotes(key: string | undefined): void {
+    const mark = key === undefined ? undefined : this.#markKeys.get(key);
+    if (!mark || !this.#renderNotes) return;
+    this.#hideAdd();
+    const { file, side, line } = this.#shownOf(mark);
+    this.#beside.clicked(notesPlace({ file, side, line }));
   }
 
   /** The notes of `keys` open, or close where one of them is open. */
@@ -2541,16 +2764,26 @@ class View implements DiffView {
   #notesLaneOf(pane: Pane, file: number, doc: Text) {
     const ranges: LaneRange[] = [];
     const ends = new Map<number, NoteEnds>();
-    const marks = (this.#marked.get(file)?.new ?? []).toSorted((a, b) => a.order - b.order);
+    const starts = new Map<number, { from: number; words: string }>();
+    const marks = (this.#marked.get(file)?.new ?? []).toSorted(byOrder);
     for (const mark of marks) {
       const lines = this.#noteRange(pane, mark);
       if (!lines) continue;
       ranges.push({ ...lines, key: mark.key, tone: 'note' });
       const end = ends.get(lines.to);
-      const open = this.#noteFor(mark.key) !== undefined;
+      const open =
+        this.#mode === 'beside'
+          ? this.#beside.noteShown(mark.key)
+          : this.#noteFor(mark.key) !== undefined;
+      // Named by the lines of the one that starts first, which take in the others'.
+      const first = starts.get(lines.to);
+      const earlier = first === undefined || mark.from < first.from;
+      if (earlier) starts.set(lines.to, { from: mark.from, words: mark.words });
       ends.set(lines.to, {
         keys: [...(end?.keys ?? []), mark.key],
         open: (end?.open ?? false) || open,
+        words: earlier ? mark.words : first.words,
+        between: this.#mode === 'between',
       });
     }
     return notesLaneUpdate(
@@ -2605,7 +2838,12 @@ class View implements DiffView {
    */
   #relight(): void {
     const lights: Lights = {
-      pinned: this.#mode === 'beside' ? this.#beside.pinnedLight() : this.#pickedBetween(),
+      // Lines a drag from the `+` picks are picked over everything else, like a box's.
+      pinned: this.#pick?.started
+        ? { picked: undefined }
+        : this.#mode === 'beside'
+          ? this.#beside.pinnedLight()
+          : this.#pickedBetween(),
       focused: this.#beside.focusedCard(),
       keyed: this.#mode === 'between' ? this.#keyLit : undefined,
       pointed: this.#pointed ?? this.#beside.pointedCard,
@@ -2653,8 +2891,21 @@ class View implements DiffView {
     };
   }
 
-  /** The lines of the comment box being written whose lines are picked, as `lightOf` found it. */
+  /**
+   * The lines picked: a drag's from the `+` under way, else those of the comment box being written
+   * whose lines are picked, as `lightOf` found it.
+   */
   #pickedLines(): { file: number; from: { side: Side; line: number }; end: At } | undefined {
+    const pick = this.#pick;
+    if (pick?.started) {
+      const { file, side } = pick;
+      const from = Math.min(pick.anchor, pick.end);
+      return {
+        file,
+        from: { side, line: from },
+        end: { file, side, line: Math.max(pick.anchor, pick.end) },
+      };
+    }
     if (this.#mode === 'beside') {
       const box = this.#beside.pickedBox();
       return box && { file: box.place.file, from: box.from ?? box.place, end: box.place };
@@ -2712,7 +2963,7 @@ class View implements DiffView {
     if (under) return { lane: under.kind, key: under.key };
     const thread = target.closest<HTMLElement>('.lo-diffthread [data-thread-id]')?.dataset.threadId;
     if (thread !== undefined) return { lane: 'threads', key: thread };
-    const note = target.closest<HTMLElement>('.lo-ovnote')?.dataset.note;
+    const note = target.closest<HTMLElement>('.lo-diffthread__note')?.dataset.note;
     if (note !== undefined) return { lane: 'notes', key: note };
     return undefined;
   }
@@ -2797,6 +3048,26 @@ class View implements DiffView {
       // Its own, made as a thread first shows, first in the scroll: before the edge between the
       // sides.
       popover: (pop) => new ThreadPop(pop),
+      notes: {
+        ending: (at) =>
+          this.#endingAt(at).map((mark) => this.#noteView(mark.key, this.#shownOf(mark))),
+        end: (key) => {
+          const mark = this.#markKeys.get(key);
+          const shown = mark && this.#shownOf(mark);
+          return shown && { file: shown.file, side: shown.side, line: shown.line };
+        },
+        range: (pane, key) => {
+          const mark = this.#markKeys.get(key);
+          return mark && this.#noteRange(pane, mark);
+        },
+        name: (notes) => this.#notesName(notes.map((note) => note.key)),
+        target: (at, note) => {
+          const target: NoteTarget = { kind: 'note', at: this.#outward(at) };
+          if (note !== undefined) target.note = note;
+          return target;
+        },
+        render: () => this.#renderNotes,
+      },
       mode: () => this.#mode,
       threadsIn: (file) => this.#threads[file],
       fileOf: (id) => this.#index.get(id),
@@ -2888,31 +3159,6 @@ class View implements DiffView {
     this.closeNote();
   };
 
-  /**
-   * "Show in overview", in a note: the caller shows the overview at the block. A note held
-   * as it was on screen, its mark changed since, takes the change first, as input lets it: one whose
-   * mark went closes, and shows nothing, since the overview no longer says it.
-   */
-  readonly #readNote = (event: MouseEvent): void => {
-    const { target } = event;
-    const link = target instanceof Element ? target.closest(`[${NOTE_BLOCK_ATTRIBUTE}]`) : null;
-    if (!link || !this.dom.contains(link)) return;
-    // Focus stays in the code until the caller moves it.
-    if (event.type === 'mousedown') {
-      event.preventDefault();
-      return;
-    }
-    const key = link.closest<HTMLElement>('.lo-ovnote')?.dataset.note;
-    const note = this.#notes.find((each) => each.key === key);
-    if (!note) return;
-    const { next } = note;
-    if (next !== undefined) this.#letHeldGo((each) => each === note);
-    const shown = next === undefined ? note.shown : next?.shown;
-    if (!shown) return;
-    const { file, side, line, block } = shown;
-    this.#on.explained?.(block, { file: this.#ids[file]!, side, line });
-  };
-
   // Moving -----------------------------------------------------------------------------------
 
   reveal(at: Target): boolean {
@@ -2974,7 +3220,8 @@ class View implements DiffView {
     const fileOf = (id: string): number | undefined => this.#index.get(id);
     switch (at.kind) {
       case 'line':
-      case 'draft': {
+      case 'draft':
+      case 'note': {
         const file = fileOf(at.at.file);
         if (file === undefined) return undefined;
         const line = 'line' in at.at ? at.at.line : Math.max(at.at.from, at.at.to);
@@ -3335,8 +3582,14 @@ class View implements DiffView {
     this.#peek?.block.destroy();
     cancelAnimationFrame(this.#takeFrame);
     cancelAnimationFrame(this.#addFrame);
+    // A drag under way stops with nothing to show it.
+    const pick = this.#pick;
+    this.#pick = undefined;
+    pick?.stop?.();
     this.#beside.destroy();
     this.#hosts.destroy();
+    for (const card of this.#cards.values()) card.destroy();
+    this.#cards.clear();
     for (const problem of this.#problems.values()) problem.content.destroy();
     this.#problems.clear();
     for (const sizes of [this.#sizes.old, this.#sizes.new, this.#inline?.sizes]) sizes?.destroy();
@@ -3451,6 +3704,8 @@ class View implements DiffView {
     if (thread !== undefined) line.thread = thread;
     // A draft's mark on it, beside lines: what `⏎` there, and a click on the mark, open.
     else if (this.#beside.draftOn(at)) line.draft = true;
+    // An overview note over it, which `⏎` opens where neither takes it.
+    else if (this.#noteKeys(this.#outward(at)).length > 0) line.note = true;
     return line;
   }
 
@@ -4191,12 +4446,254 @@ class View implements DiffView {
     if (!control || id === undefined || !this.dom.contains(control)) return;
     // A mark beside lines pins its popover (`#clickMark`).
     if (control.dataset.beside !== undefined) return;
-    const target = this.#controlTarget(control);
+    let target = this.#controlTarget(control);
+    if (control === this.#add) {
+      // A drag from it ran Comment as it was let go, or dropped it: the click it ends in is none.
+      if (this.#picked) {
+        this.#picked = false;
+        event.preventDefault();
+        return;
+      }
+      // With Shift, on the lines from the cursor's to its own.
+      if (event.shiftKey) target = this.#fromCursor() ?? target;
+    }
     if (!target) return;
     event.preventDefault();
     this.#hideAdd();
     runControl(id, target);
   };
+
+  /** A new press in the view: whatever a drag from the `+` ended in has been heard. */
+  readonly #unpick = (): void => {
+    this.#picked = false;
+  };
+
+  /**
+   * A press on the `+`: a move of 4 px or more starts picking lines from its line, whose far end
+   * follows the pointer's row, held on lines that take a comment (`#endOf`), and lets go into
+   * Comment on them. A press let go with no move is the `+`'s click, on its line.
+   */
+  readonly #pressAdd = (event: PointerEvent): void => {
+    const target = this.#addAt;
+    const row = this.#addRow;
+    if (target?.kind !== 'line' || !('line' in target.at) || !row || this.#pick) return;
+    // Dimmed, it comments on nothing: its click says why.
+    if (this.#add.getAttribute('aria-disabled') === 'true') return;
+    const at = this.#placeAt(row.pane, row.line);
+    if (at.line === 0) return;
+    const drag: PlusDrag = {
+      pane: row.pane,
+      file: at.file,
+      side: at.side,
+      anchor: at.line,
+      end: at.line,
+      lines: this.#linesOf(at.file),
+      target,
+      started: false,
+      stop: undefined,
+    };
+    const stop = pickLines(this.#add, event, {
+      follow: (y) => this.#followPick(drag, y),
+      band: () => this.#pickBand(),
+      scroll: (by) => {
+        const before = this.dom.scrollTop;
+        this.dom.scrollTop = before + by;
+        // The reader's own scroll, made by holding the pointer there.
+        const moved = this.dom.scrollTop - before;
+        this.#asked += moved;
+        return moved !== 0;
+      },
+      // Without a caller to say, a drag keeps to the lines drawn on its side.
+      known: () => drag.lines !== undefined || !this.#on.commentLines,
+      end: () => {
+        // Dropped as it was let go, as its file closed: nothing to comment on.
+        if (this.#pick !== drag) return;
+        this.#endPick(drag);
+        // Back on its own line, it's the `+`'s click there; else Comment on the lines it picked.
+        const span = this.#pickSpan(drag);
+        runControl(
+          viewControls.comment,
+          span.from === span.to ? drag.target : { kind: 'line', at: span },
+        );
+      },
+      cancel: () => this.#endPick(drag),
+      click: () => {
+        if (this.#pick === drag) this.#pick = undefined;
+      },
+    });
+    if (!stop) return;
+    drag.stop = stop;
+    this.#pick = drag;
+  };
+
+  /**
+   * The pointer at `y` in a drag from the `+`: its far end goes to the row there (`#endOf`), its
+   * rows take the picked ground, and the `+` stays filled on its first line. The words its tip
+   * says, once the caller has said which lines take a comment.
+   */
+  #followPick(drag: PlusDrag, y: number): string | undefined {
+    if (this.#pick !== drag) return undefined;
+    // Drawn anew another way meanwhile, as inline, or without its file's lines: it's dropped.
+    const sizes =
+      drag.pane === 'inline'
+        ? this.#inline?.layout.files[drag.file]
+        : this.#layout.files[drag.file]?.[drag.pane];
+    if (!this.#panes().includes(drag.pane) || !sizes || this.#noteOf(drag.file)) {
+      this.#endPick(drag);
+      drag.stop?.();
+      return undefined;
+    }
+    if (!drag.started) {
+      drag.started = true;
+      this.#picked = true;
+      this.#add.classList.add('is-pressed');
+    }
+    drag.lines ??= this.#linesOf(drag.file);
+    const view = this.#viewOf(drag.pane);
+    const band = this.#pickBand();
+    // A pointer past the pane's top or foot means the row at that edge.
+    const at = Math.max(band.top + 1, Math.min(band.bottom - 1, y));
+    const start = this.#docLine(drag.pane, { file: drag.file, side: drag.side, line: drag.anchor });
+    const end = this.#endOf(drag, this.#rowToward(view, at, start));
+    if (end !== drag.end) drag.end = end;
+    this.#relight();
+    this.#holdAdd(drag, start, band);
+    return drag.lines?.on(this.#pickSpan(drag));
+  }
+
+  /** A drag from the `+` let go or dropped: what it drew goes. */
+  #endPick(drag: PlusDrag): void {
+    if (this.#pick !== drag) return;
+    this.#pick = undefined;
+    this.#add.classList.remove('is-pressed');
+    this.#add.style.visibility = '';
+    this.#hideAdd();
+    this.#relight();
+  }
+
+  /** Where the view shows lines: from under the pinned file header to the foot of its box. */
+  #pickBand(): { top: number; bottom: number } {
+    const box = this.dom.getBoundingClientRect();
+    const top = box.top + this.dom.clientTop;
+    return { top: top + this.#pinBelow(), bottom: top + this.dom.clientHeight };
+  }
+
+  /** Keeps the `+` on a drag's first line, document line `start`, while that's in `band`. */
+  #holdAdd(drag: PlusDrag, start: number, band: { top: number; bottom: number }): void {
+    const view = this.#viewOf(drag.pane);
+    const whole = view.lineBlockAt(view.state.doc.line(start).from);
+    const text = Array.isArray(whole.type)
+      ? (whole.type.find((each) => each.type === BlockType.Text) ?? whole)
+      : whole;
+    const top = view.documentTop + text.top + (view.defaultLineHeight - 16) / 2;
+    this.#add.style.top = `${top}px`;
+    // Out of sight, it's hidden, not taken away: it holds the pointer until the drag ends.
+    this.#add.style.visibility = top + 16 <= band.top || top >= band.bottom ? 'hidden' : '';
+  }
+
+  /** The lines `pick` covers, as the caller names them. */
+  #pickSpan(pick: Pick, end = pick.end): Span {
+    return {
+      file: this.#ids[pick.file]!,
+      side: pick.side,
+      from: Math.min(pick.anchor, end),
+      to: Math.max(pick.anchor, end),
+    };
+  }
+
+  /** Which lines of file `file` take a comment, as the caller says: nothing until it knows. */
+  #linesOf(file: number): CommentLines | undefined {
+    return this.#on.commentLines?.(this.#ids[file]!);
+  }
+
+  /**
+   * The document line of `view` the row at `y` in the window means, for a range starting on
+   * document line `start`: that row's line, or past what's drawn there between lines, as a fold, a
+   * header, a thread's card, a box or the room a side keeps for the other's, the nearest line on
+   * the range's side of it.
+   */
+  #rowToward(view: EditorView, y: number, start: number): number {
+    const height = y - view.documentTop;
+    const whole = view.lineBlockAtHeight(height);
+    const block = Array.isArray(whole.type)
+      ? (whole.type.find((each) => height < each.bottom) ?? whole.type.at(-1)!)
+      : whole;
+    const { doc } = view.state;
+    if (block.type === BlockType.Text) return doc.lineAt(block.from).number;
+    // Lines a block stands in for, as a fold or a header.
+    if (block.to > block.from) {
+      const first = doc.lineAt(block.from).number;
+      const last = doc.lineAt(block.to).number;
+      return start < first ? first - 1 : start > last ? last + 1 : start;
+    }
+    const { line, after } = lineBeside(view, block);
+    const above = after ? line : line - 1;
+    return start <= above ? above : above + 1;
+  }
+
+  /**
+   * Where `pick`'s far end rests that would be at document line `toward`: in its file, on its side,
+   * on a line drawn as a line (no fold, header or note), which takes a comment from `pick`'s first
+   * line as the caller says, the nearest such toward the first. Its line on its side.
+   */
+  #endOf(pick: Pick, toward: number): number {
+    const view = this.#viewOf(pick.pane);
+    const { doc } = view.state;
+    const sizes =
+      pick.pane === 'inline'
+        ? this.#inline!.layout.files[pick.file]!
+        : this.#layout.files[pick.file]![pick.pane];
+    const start = this.#docLine(pick.pane, { file: pick.file, side: pick.side, line: pick.anchor });
+    // A drag toward another file stops at its own's last line, or first.
+    const clamped = Math.max(sizes.header + 1, Math.min(sizes.header + sizes.count, toward));
+    const end = restingEnd(start, Math.min(doc.lines, clamped), (each) => {
+      const line = this.#sideLine(pick, each);
+      if (line === 0 || !drawnAsLine(view, each)) return false;
+      return pick.lines === undefined || pick.lines.on(this.#pickSpan(pick, line)) !== undefined;
+    });
+    return this.#sideLine(pick, end) || pick.anchor;
+  }
+
+  /**
+   * The line on `pick`'s side of its file that document line `line` of its pane shows, or 0 where
+   * it shows none, as a header, another file's line, or inline, a line of the other side alone.
+   */
+  #sideLine(pick: Pick, line: number): number {
+    if (pick.pane !== 'inline') {
+      const at = this.#placeAt(pick.pane, line);
+      return at.file === pick.file ? at.line : 0;
+    }
+    const shown = this.#inline!.layout.lineAt(line);
+    return shown.file === pick.file ? shown[pick.side] : 0;
+  }
+
+  /**
+   * A click with Shift on the `+`: the lines from the cursor's line to the `+`'s, by a drag's
+   * edges, when the cursor is in the same file and column, on a line that takes a comment; else
+   * nothing, and the click is the `+`'s own line's.
+   */
+  #fromCursor(): LineTarget | undefined {
+    const row = this.#addRow;
+    if (!row || row.pane !== this.#activePane()) return undefined;
+    const view = this.#viewOf(row.pane);
+    const head = view.state.doc.lineAt(view.state.selection.main.head).number;
+    const cursor = this.#placeAt(row.pane, head);
+    const clicked = this.#placeAt(row.pane, row.line);
+    if (cursor.line === 0 || clicked.line === 0 || cursor.file !== clicked.file) return undefined;
+    const pick: Pick = {
+      pane: row.pane,
+      file: cursor.file,
+      side: cursor.side,
+      anchor: cursor.line,
+      end: cursor.line,
+      lines: this.#linesOf(cursor.file),
+    };
+    if (pick.lines && pick.lines.on(this.#pickSpan(pick)) === undefined) return undefined;
+    pick.end = this.#endOf(pick, row.line);
+    // No line toward the clicked one takes the range's end: the click is its own line's.
+    if (pick.end === pick.anchor) return undefined;
+    return { kind: 'line', at: this.#pickSpan(pick) };
+  }
 
   /**
    * Puts the `+` in the gutter beside the line of code the pointer is over, where a click comments
@@ -4219,7 +4716,7 @@ class View implements DiffView {
   #addFrame = 0;
 
   #placeAdd(target: EventTarget | null, y: number, pressed: boolean): void {
-    if (target === this.#add) return;
+    if (target === this.#add || this.#pick) return;
     const pane =
       target instanceof Element && !pressed
         ? this.#panes().find((each) => this.#viewOf(each).dom.contains(target))
@@ -4250,6 +4747,12 @@ class View implements DiffView {
       return;
     }
     this.#addAt = line;
+    this.#addRow = { pane, line: view.state.doc.lineAt(block.from).number };
+    // Which of the file's lines take a comment, asked of the caller before a drag needs it.
+    if (this.#askedLines !== at.file) {
+      this.#askedLines = at.file;
+      this.#linesOf(at.file);
+    }
     const add = this.#add;
     add.setAttribute('aria-label', shown.label);
     if (shown.off === undefined) add.removeAttribute('aria-disabled');
@@ -4259,10 +4762,35 @@ class View implements DiffView {
     add.hidden = false;
   }
 
+  /** The key the window last heard pressed, and the wait to see whether it was a modifier alone. */
+  #lastKey = '';
+  #keyWait: ReturnType<typeof setTimeout> | undefined;
+
+  readonly #hearKey = (event: KeyboardEvent): void => {
+    this.#lastKey = event.key;
+  };
+
+  /**
+   * The reader's key: the `+` goes, unless it was a modifier alone, once the window has heard which
+   * key it was, whichever of the two hears it first.
+   */
+  readonly #keyHidesAdd = (): void => {
+    clearTimeout(this.#keyWait);
+    this.#keyWait = setTimeout(() => {
+      // Read once: a key the key listener takes for a command never reaches the view's listener,
+      // so the modifier heard before it mustn't stand for it.
+      const lone = MODIFIERS.has(this.#lastKey);
+      this.#lastKey = '';
+      if (!lone) this.#hideAdd();
+    }, 0);
+  };
+
   #hideAdd = (): void => {
     // Nor does a move of the pointer still waiting for its frame bring it back.
     cancelAnimationFrame(this.#addFrame);
     this.#addOver = undefined;
+    // A drag from it keeps it, filled, on its first line, through the scroll it makes.
+    if (this.#pick) return;
     this.#add.hidden = true;
     this.#add.removeAttribute('aria-disabled');
   };
@@ -4301,9 +4829,27 @@ class View implements DiffView {
       // At the column clicked, so what acts on a word, as `gd` does, acts on the one clicked.
       const line = view.state.doc.lineAt(pos);
       clicked = this.#lineTarget(this.#placeAt(pane, line.number), pos - line.from);
+      const selected = this.#selectionAt(pane, line.number);
+      if (selected && clicked.kind === 'line') clicked.selected = selected;
     }
     event.preventDefault();
     this.#on.menu(clicked, event.clientX, event.clientY);
+  }
+
+  /**
+   * The lines selected in `pane`, more than one of one file on one side, where document line `line`
+   * is one of them: what a right-click there gives the commands that comment, as a key would.
+   */
+  #selectionAt(pane: Pane, line: number): Span | undefined {
+    const lines = selectedLines(this.#viewOf(pane));
+    if (lines.anchor === lines.head) return undefined;
+    if (line < Math.min(lines.anchor, lines.head) || line > Math.max(lines.anchor, lines.head)) {
+      return undefined;
+    }
+    const target = this.#targetOf(pane);
+    return target.kind === 'line' && 'from' in target.at && target.at.from < target.at.to
+      ? target.at
+      : undefined;
   }
 
   // Panes ------------------------------------------------------------------------------------
@@ -4418,7 +4964,7 @@ class View implements DiffView {
       side === 'new'
         ? markerGutter({
             clicked: (first, last) => this.#clickedBall(side, first, last),
-            stem: (key) => this.#toggleNotes([key]),
+            stem: (key) => this.#clickedStem(key),
           })
         : [],
       alignerFields(),
@@ -4482,7 +5028,7 @@ class View implements DiffView {
           threadLane(),
           markerGutter({
             clicked: (first, last) => this.#clickedBall('inline', first, last),
-            stem: (key) => this.#toggleNotes([key]),
+            stem: (key) => this.#clickedStem(key),
           }),
           marking((doc, first, last) => this.#inlineMarks(doc, first, last)),
           highlighting({
@@ -5091,9 +5637,14 @@ class View implements DiffView {
       const under = [...(shown.boxes ?? []), box];
       byPlace.set(key, { ...shown, boxes: under, drawing: this.#drawing });
     }
-    for (const { key: markKey, shown: mark } of this.#notes) {
+    // Between lines, each open note's card, after the line's threads.
+    this.#dropCards();
+    for (const note of this.#mode === 'between' ? this.#openInOrder() : []) {
+      const { shown: mark } = note;
       const { side, line } = mark;
       if (mark.file !== file || !this.#drawable(mark)) continue;
+      const card = this.#cardOf(note);
+      if (!card) continue;
       const key = `${side}:${line}`;
       const shown = byPlace.get(key) ?? {
         id: placeKey({ file, side, line }),
@@ -5101,15 +5652,8 @@ class View implements DiffView {
         line,
         threads: [],
       };
-      const note: NoteDraw = {
-        key: markKey,
-        block: mark.block,
-        label: mark.label,
-        text: mark.text,
-        draw: mark.draw,
-        link: this.#on.explained !== undefined,
-      };
-      byPlace.set(key, { ...shown, notes: [...(shown.notes ?? []), note] });
+      const notes = [...(shown.notes ?? []), card];
+      byPlace.set(key, { ...shown, notes, drawing: this.#drawing });
     }
     const peek = this.#peek;
     if (peek?.place.file === file && this.#drawable(peek.place)) {
@@ -5119,6 +5663,72 @@ class View implements DiffView {
       byPlace.set(key, { ...shown, peek: peek.block, drawing: this.#drawing });
     }
     return [...byPlace.values()];
+  }
+
+  /**
+   * What the note of overview mark `mark` shows, and where: under its last line, or its side's last
+   * where it runs past it, as its ball is.
+   */
+  #shownOf(mark: OverviewAt): NoteShown {
+    const { file, side, from, to, words, block, label, text, draw } = mark;
+    const line = this.#noteSpan(mark)?.end.line ?? to;
+    return { file, side, from, line, words, block, label, text, draw };
+  }
+
+  /** A note as the caller draws it, by its key: what `shown` shows. */
+  #noteView(key: string, shown: NoteShown): NoteView {
+    const { file, side, from, line: to, block, label, text, draw } = shown;
+    return { key, at: { file: this.#ids[file]!, side, from, to }, block, label, text, draw };
+  }
+
+  /**
+   * What a screen reader calls the notes `keys` names, which end on one line: by the lines of the
+   * one that starts first, which take in the others'.
+   */
+  #notesName(keys: readonly string[]): string {
+    let first: OverviewAt | undefined;
+    for (const key of keys) {
+      const mark = this.#markKeys.get(key);
+      if (mark && (!first || mark.from < first.from)) first = mark;
+    }
+    return notesName(keys.length, first?.words ?? '');
+  }
+
+  /**
+   * Between lines, the card of the open note `note`: made as it's first drawn, and given what it
+   * shows now after that. Its collapse closes it, focus going to its line if it was in it.
+   */
+  #cardOf(note: OpenNote): NoteCard | undefined {
+    const render = this.#renderNotes;
+    if (!render) return undefined;
+    const { key, shown } = note;
+    const view = this.#noteView(key, shown);
+    const label = notesName(1, shown.words);
+    let card = this.#cards.get(key);
+    if (card) {
+      card.give(view, label);
+      return card;
+    }
+    card = new NoteCard(view, label, render, () => {
+      const open = this.#notes.find((each) => each.key === key);
+      if (!open) return;
+      const had = this.#cards.get(key)?.dom.contains(this.dom.ownerDocument.activeElement);
+      this.#closeNotes([open]);
+      if (had)
+        this.#focusLine({ file: open.shown.file, side: open.shown.side, line: open.shown.line });
+    });
+    this.#cards.set(key, card);
+    return card;
+  }
+
+  /** The cards of notes no longer open go. */
+  #dropCards(): void {
+    for (const [key, card] of this.#cards) {
+      if (this.#mode === 'between' && this.#notes.some((note) => note.key === key)) continue;
+      card.destroy();
+      this.#cards.delete(key);
+      if (this.#keyedCard === card) this.#keyedCard = undefined;
+    }
   }
 
   /** What a file's decorations need in any document. */
@@ -5411,8 +6021,8 @@ class View implements DiffView {
   }
 
   /**
-   * Draws the files with threads, comment boxes, a peek or a `Problem` again, so the editors
-   * showing take them.
+   * Draws the files with threads, comment boxes, a peek, a note's card or a `Problem` again, so
+   * the editors showing take them.
    */
   #moveBoxes(): void {
     this.#drawing++;
@@ -5425,6 +6035,8 @@ class View implements DiffView {
       if (byPlace.size > 0) files.add(file);
     });
     for (const file of this.#problems.keys()) files.add(file);
+    // A note's card between lines, alone under its line or not.
+    for (const note of this.#notes) files.add(note.shown.file);
     for (const file of files) this.#refresh(file);
   }
 
@@ -5685,6 +6297,75 @@ class View implements DiffView {
   }
 
   /**
+   * Each ball of file `file` as a stop of `] o` in `pane`, in order: its document line there, and
+   * the last line of the notes that share it. Side by side, the older column stops at the row
+   * beside it.
+   */
+  #noteStops(pane: Pane, file: number): { line: number; end: At }[] {
+    const stops = new Map<number, At>();
+    if (pane === 'inline' && !this.#inline?.layout.lines[file]) return [];
+    for (const mark of this.#marked.get(file)?.new ?? []) {
+      if (!this.#renderNotes || !this.#drawable(this.#shownOf(mark))) continue;
+      const end = { file, side: mark.side, line: this.#shownOf(mark).line };
+      const line = this.#docLine(pane, end);
+      if (!stops.has(line)) stops.set(line, end);
+    }
+    return [...stops].map(([line, end]) => ({ line, end })).toSorted((a, b) => a.line - b.line);
+  }
+
+  /**
+   * The document line `count` balls after (or before) line `line` of `pane`, which it lands on,
+   * opening their notes.
+   */
+  #jumpNote(pane: Pane, forward: boolean, line: number, count: number): number | undefined {
+    const files = this.#ids.length;
+    let left = count;
+    let found: { line: number; end: At } | undefined;
+    for (let file = this.#fileAt(pane, line); file >= 0 && file < files; file += forward ? 1 : -1) {
+      const stops = this.#noteStops(pane, file);
+      if (!forward) stops.reverse();
+      for (const stop of stops) {
+        if (forward ? stop.line <= line : stop.line >= line) continue;
+        found = stop;
+        if (--left === 0) break;
+      }
+      if (left === 0) break;
+    }
+    if (found === undefined) return undefined;
+    this.#landNotes(pane, found.line, found.end);
+    return found.line;
+  }
+
+  /**
+   * Lands on the notes that end on line `end`, at document line `line` of `pane`, as `] o` does:
+   * the line takes Land's tint and their range is lit while the cursor stays on their lines. Beside
+   * lines their popover is pinned, focus staying where it was; between them each opens under the
+   * line, and the first's card comes on screen whole.
+   */
+  #landNotes(pane: Pane, line: number, end: At): void {
+    const keys = this.#endingAt(end).map((mark) => mark.key);
+    const [first] = keys;
+    if (first === undefined) return;
+    this.#land(undefined);
+    if (this.#mode === 'beside') {
+      this.#beside.landNotes(end);
+      return;
+    }
+    this.#openNotes(keys);
+    // Lit once they're open, as what opening them draws tells where the cursor is.
+    this.#keyLit = { lane: 'notes', key: first };
+    this.#relight();
+    const view = this.#viewOf(pane);
+    // The frame after the one the editor brings the cursor's line on screen in.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (view.state.doc.lines >= line) landLine(view, line);
+        this.#showOnScreen(() => this.#cards.get(first)?.dom);
+      }),
+    );
+  }
+
+  /**
    * Lands on a thread, as `]t` does, or on none: of the threads under its line, it's the one the
    * line's keys act on, and its card comes on screen whole.
    */
@@ -5730,6 +6411,15 @@ class View implements DiffView {
     }
     this.#keyed = next;
     if (next !== undefined) this.#hosts.get(next)?.setFocused(true);
+    // Between lines, the card of the open note `g o` acts on, the cursor on its lines.
+    const open =
+      focused && this.#mode === 'between' ? this.#openNoteAt(this.#outward(place)) : undefined;
+    const card = open && this.#cards.get(open.key);
+    if (card !== this.#keyedCard) {
+      this.#keyedCard?.setFocused(false);
+      this.#keyedCard = card;
+      card?.setFocused(true);
+    }
   }
 
   /** The fold of unchanged lines the cursor is on, which takes the active line's ground. */
@@ -5788,20 +6478,31 @@ class View implements DiffView {
    * line leaves the screen.
    */
   #showCard(id: string): void {
-    const show = (): void => {
-      const card = this.#hosts.get(id)?.dom;
-      if (!card?.isConnected || this.#landed?.thread !== id) return;
-      const pane = this.dom.getBoundingClientRect();
-      const under =
-        card.getBoundingClientRect().bottom + CARD_CLEAR - (pane.top + this.dom.clientHeight);
-      if (under <= 0) return;
-      const { top } = this.#cursorReading();
-      // The header pinned at the top of the pane stays over what scrolls under it.
-      const by = Math.min(under, top - pane.top - HEADER_HEIGHT);
-      if (by > 0) this.#scrollBy(by);
-    };
     // The frame after the one the editor brings the cursor's line on screen in.
-    requestAnimationFrame(() => requestAnimationFrame(show));
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() =>
+        this.#showOnScreen(() =>
+          this.#landed?.thread === id ? this.#hosts.get(id)?.dom : undefined,
+        ),
+      ),
+    );
+  }
+
+  /**
+   * Brings the card `card` finds whole on screen, now: by the least scroll that shows its foot,
+   * clear of the pane's, and never so far that the cursor's line leaves the screen.
+   */
+  #showOnScreen(find: () => HTMLElement | undefined): void {
+    const card = find();
+    if (!card?.isConnected) return;
+    const pane = this.dom.getBoundingClientRect();
+    const under =
+      card.getBoundingClientRect().bottom + CARD_CLEAR - (pane.top + this.dom.clientHeight);
+    if (under <= 0) return;
+    const { top } = this.#cursorReading();
+    // The header pinned at the top of the pane stays over what scrolls under it.
+    const by = Math.min(under, top - pane.top - HEADER_HEIGHT);
+    if (by > 0) this.#scrollBy(by);
   }
 
   /** The document line `count` stops of `target` after (or before) line `line` of `pane`. */
@@ -5813,6 +6514,7 @@ class View implements DiffView {
     count: number,
   ): number | undefined {
     if (target === 'thread') return this.#jumpThread(pane, forward, line, count);
+    if (target === 'note') return this.#jumpNote(pane, forward, line, count);
     const files = this.#ids.length;
     let left = count;
     let found: number | undefined;
@@ -6028,17 +6730,18 @@ function viewFile(file: DiffFile): ViewFile {
   return shown;
 }
 
-/** What a mark's note shows, under its last line. */
-function shownOf(mark: OverviewAt): NoteShown {
-  const { file, side, to: line, block, label, text, draw } = mark;
-  return { file, side, line, block, label, text, draw };
+/** Overview marks in the overview's order. */
+function byOrder(a: OverviewAt, b: OverviewAt): number {
+  return a.order - b.order;
 }
 
 function sameShown(a: NoteShown, b: NoteShown): boolean {
   return (
     a.file === b.file &&
     a.side === b.side &&
+    a.from === b.from &&
     a.line === b.line &&
+    a.words === b.words &&
     a.block === b.block &&
     a.label === b.label &&
     a.text === b.text

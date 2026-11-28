@@ -453,6 +453,45 @@ test('the `+` the pointer brings beside a line opens a box on that line', async 
   await expect(add).toBeHidden();
 });
 
+test('a drag from the `+` opens a box on the lines it crossed, the tip by the pointer saying them as its head does, and a right-click on lines selected comments on them', async ({
+  page,
+}) => {
+  await open(page);
+  await onLineTwo(page);
+  const row = (text: RegExp) =>
+    page
+      .locator('[data-lo-diff] .cm-content[aria-label="After"] .cm-line')
+      .filter({ hasText: text });
+  const line = row(/^const FIRST = 250;$/);
+  const add = page.locator('[data-lo-diff] .lo-gutteradd');
+  await line.scrollIntoViewIfNeeded();
+  await expect(async () => {
+    await line.hover({ position: { x: 60, y: 6 } });
+    await line.hover({ position: { x: 64, y: 8 } });
+    await expect(add).toBeVisible({ timeout: 1000 });
+  }).toPass({ timeout: 15_000 });
+  const from = (await add.boundingBox())!;
+  const to = (await row(/^\/\*\* How much longer/).boundingBox())!;
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(from.x + from.width / 2, to.y + to.height / 2, { steps: 6 });
+  const tip = page.locator('.lo-picktip');
+  await expect(tip).toHaveText('Lines 2–4');
+  await expect(add).toHaveClass(/is-pressed/);
+  await page.mouse.up();
+  await expect(tip).toHaveCount(0);
+  await closeEmpty(page, 'Lines 2–4');
+
+  // Lines 2 and 3 selected, a right-click on one of them names them on Comment's row.
+  for (const key of ['g', 'g', ']', 'f', 'j', 'j']) await page.keyboard.press(key);
+  await expect.poll(() => cursor(page)).toBe('src/backoff.ts new 2');
+  // Selected to line 4's start, as text is, the lines are 2 and 3.
+  for (const key of ['Shift+ArrowDown', 'Shift+ArrowDown']) await page.keyboard.press(key);
+  await line.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: /^Comment on lines 2–3/ }).click();
+  await closeEmpty(page, 'Lines 2–3');
+});
+
 /** How far the box's foot is over its pane's: below it where it's less than 0. */
 function footRoom(page: Page): Promise<number> {
   return boxes(page)

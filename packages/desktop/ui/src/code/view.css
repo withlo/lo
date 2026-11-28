@@ -217,8 +217,9 @@
 }
 
 /*
- * The `+` that follows the pointer down the gutter: a click comments on its line. It sits over the
- * start of the line's number, clear of the overview markers, takes no room, and moves nothing.
+ * The `+` that follows the pointer down the gutter: a click comments on its line, and a drag from it
+ * on the lines it crosses. It sits over the start of the line's number, clear of the overview
+ * markers, takes no room, and moves nothing.
  */
 .lo-gutteradd {
   position: fixed;
@@ -238,8 +239,9 @@
   font-variant-ligatures: none;
   cursor: default;
 }
-/* An outline under the pointer, and the accent's fill only while it's pressed. */
-.lo-gutteradd:active:not([aria-disabled='true']) {
+/* An outline under the pointer, and the accent's fill only while it's pressed, or dragged from. */
+.lo-gutteradd:active:not([aria-disabled='true']),
+.lo-gutteradd.is-pressed {
   background: var(--lo-accent);
   box-shadow: none;
   color: var(--lo-on-accent);
@@ -268,6 +270,13 @@
   color: var(--lo-fg);
   font: var(--lo-text-small);
   pointer-events: none;
+}
+/* The lines a drag from the `+` picks, by the pointer: one line, as the box's head says them. */
+.lo-picktip {
+  white-space: nowrap;
+}
+.lo-picktip[hidden] {
+  display: none;
 }
 .lo-tip__keys {
   display: inline-flex;
@@ -505,17 +514,9 @@
 .lo-threadpop[hidden] {
   display: none;
 }
-/* A note under the lines it's about, in the block that holds the line's threads. */
-.lo-diffthread > .lo-ovnote {
-  margin: 0;
-  white-space: normal;
-}
-/* What's under a line, one after another: notes, threads, and the comment box. */
+/* What's under a line, one after another: threads, notes, and the comment box. */
 .lo-diffthread > * + * {
   margin-top: 8px;
-}
-.lo-ovnote__text {
-  overflow-wrap: anywhere;
 }
 /* A note's words as the overview draws them, as tight as its plain text. */
 .lo-ovnote__words > * + * {
@@ -530,15 +531,6 @@
 }
 .lo-ovnote__words :where(a) {
   color: var(--lo-link);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-.lo-ovnote__read {
-  color: var(--lo-link);
-  font: inherit;
-}
-.lo-ovnote__read:hover {
-  color: var(--lo-link-hover);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -650,13 +642,18 @@
   padding: 6px 12px 10px 12px;
 }
 /*
- * A thread, which its caller draws: in the interface's text, not the code's. Held as it was drawn
- * on screen, what grew in it since is cut off until it's let go.
+ * A thread, or an overview note's card, which its caller draws: in the interface's text, not the
+ * code's. Held as it was drawn on screen, what grew in a thread since is cut off until it's let go.
  */
-.lo-diffthread__thread {
+.lo-diffthread__thread,
+.lo-diffthread__note {
   font: var(--lo-text-ui);
   color: var(--lo-fg);
   white-space: normal;
+}
+/* A note's words wrap anywhere, as a path in them would run past the card. */
+.lo-diffthread__note [data-note-text] {
+  overflow-wrap: anywhere;
 }
 .lo-diffthread__thread.is-held {
   overflow: clip;
