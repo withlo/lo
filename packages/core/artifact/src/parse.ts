@@ -16,7 +16,10 @@ import { readSource } from './source.ts';
 import type { OverviewTree } from './tree.ts';
 
 export interface ParsedArtifact {
-  /** The header, when it holds its three keys, each valid, for a format this version reads. */
+  /**
+   * The header, when each key it holds is valid and it names a pull request, a stack or both, for a
+   * format this version reads.
+   */
   header?: Header;
   /**
    * The format the header names, when it names one. Past {@link FORMAT}, nothing after the header

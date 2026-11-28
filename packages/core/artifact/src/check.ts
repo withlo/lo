@@ -8,7 +8,7 @@
 import { checkCode, type CheckedCode } from './code.ts';
 import { article, caseIndex, readCommit, type Sizes } from './commit.ts';
 import { checkFigures, type CheckedFigure } from './figures.ts';
-import { ARTIFACT, Findings, quote, type Finding } from './findings.ts';
+import { ARTIFACT, Findings, quote, type Finding, type FindingCode } from './findings.ts';
 import type { Header } from './header.ts';
 import { ARTIFACT_READ, CHECK_TIMEOUT, FORMAT, LIMITS } from './limits.ts';
 import { tooLong, type ParsedArtifact } from './parse.ts';
@@ -40,9 +40,7 @@ export interface CheckedArtifact {
   findings: Finding[];
 }
 
-export interface CheckOptions {
-  /** The pull request whose ref the overview is on. A header naming another makes it invalid. */
-  pr?: number | undefined;
+export type CheckOptions = {
   /**
    * How long reading its code and figures may take, in milliseconds: {@link CHECK_TIMEOUT} unless
    * given.
@@ -50,7 +48,29 @@ export interface CheckOptions {
   timeout?: number | undefined;
   /** Stops reading its code and figures: what isn't read by then is left unread. */
   signal?: AbortSignal | undefined;
-}
+} & OnRef;
+
+/**
+ * The ref the overview is on, which its header must name: a pull request's, a stack's, or, when
+ * neither is given, any.
+ */
+export type OnRef =
+  | {
+      /**
+       * The pull request whose ref the overview is on, `refs/lo/pr/<pr>`. A header naming another,
+       * or a stack's overview, makes it invalid.
+       */
+      pr?: number | undefined;
+      stack?: undefined;
+    }
+  | {
+      /**
+       * The stack whose ref the overview is on, `refs/lo/stack/<stack>`. A header naming another,
+       * or a pull request's overview, makes it invalid.
+       */
+      stack?: number | undefined;
+      pr?: undefined;
+    };
 
 /**
  * Checks `parsed`, the overview's `artifact.md` parsed, against `files`, the overview's commit, and
@@ -143,15 +163,9 @@ async function check(
 
   const invalid = parsed.findings.some(({ severity }) => severity === 'error');
   const { header } = parsed;
-  let mismatch = false;
-  if (header && options.pr !== undefined && header.pr !== options.pr) {
-    mismatch = true;
-    findings.add(
-      'pr-mismatch',
-      undefined,
-      `The header says pr: ${header.pr}, and the overview is on pull request #${options.pr}.`,
-    );
-  }
+  const other = header ? mismatchOf(header, options) : undefined;
+  if (other) findings.add(other[0], undefined, other[1]);
+  const mismatch = other !== undefined;
   // An invalid overview's figures and code are checked too, so the checker reports all that's
   // wrong at once. Past the limit on figures, the overview is invalid, and the rest aren't looked
   // for.
@@ -172,6 +186,36 @@ async function check(
     return { outcome: { kind: 'invalid' }, findings: findings.list() };
   }
   return { outcome: { kind: 'shown', header, code, figures }, findings: findings.list() };
+}
+
+/** What's wrong with `header` for the ref `options` say the overview is on: a code and a message. */
+function mismatchOf(header: Header, options: CheckOptions): [FindingCode, string] | undefined {
+  const { pr, stack } = options;
+  if (pr !== undefined && header.pr === undefined) {
+    return [
+      'pr-mismatch',
+      `This is the overview of stack ${header.stack}, and it's on pull request #${pr}. A pull request's overview says pr: ${pr}.`,
+    ];
+  }
+  if (pr !== undefined && header.pr !== pr) {
+    return [
+      'pr-mismatch',
+      `The header says pr: ${header.pr}, and the overview is on pull request #${pr}.`,
+    ];
+  }
+  if (stack !== undefined && header.pr !== undefined) {
+    return [
+      'stack-mismatch',
+      `This is the overview of pull request #${header.pr}, and it's on stack ${stack}. A stack's overview says stack: ${stack} in place of pr.`,
+    ];
+  }
+  if (stack !== undefined && header.stack !== stack) {
+    return [
+      'stack-mismatch',
+      `The header says stack: ${header.stack}, and the overview is on stack ${stack}.`,
+    ];
+  }
+  return undefined;
 }
 
 /** Runs `read` with a signal that aborts once `options`' signal does, or its time is up. */

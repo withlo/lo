@@ -30,7 +30,7 @@ import {
   TERM_OPEN,
 } from './syntax.ts';
 import { bytes, CODE, readCode, readFigure, readTerm, TERM, type Read } from './targets.ts';
-import type { CodeRange, CodeTarget, Overview } from './tree.ts';
+import type { CodeRange, CodeTarget, Mark, Overview } from './tree.ts';
 
 /** The kinds of block. */
 export const BLOCKS = ['code', 'figure', 'walkthrough', 'step', 'tabs', 'tab', 'fold'] as const;
@@ -109,7 +109,7 @@ export class Reading {
   /** The blocks kept, by their opening token. */
   readonly blocks = new WeakMap<Token, BlockMeta>();
   /** The glossary's items kept, by their opening token. */
-  readonly terms = new WeakMap<Token, { name: string; key: string }>();
+  readonly terms = new WeakMap<Token, { name: string; key: string; mark?: Mark }>();
   /** A figure's parts kept, by their item's opening token: the part's id. */
   readonly parts = new WeakMap<Token, string>();
 
@@ -642,7 +642,7 @@ export class Reading {
       const line = lineOf(item);
       const found = definition(tokens, close, j);
       if (!found.ok) {
-        this.add('glossary-item', line, found.message);
+        this.add(found.code, line, found.message);
         continue;
       }
       const term = readTerm(found.name);
@@ -662,7 +662,8 @@ export class Reading {
       }
       this.definitions.set(key, { name: found.name, line: line ?? 1 });
       found.take();
-      this.terms.set(item, { name: found.name, key });
+      const { name, mark } = found;
+      this.terms.set(item, mark === undefined ? { name, key } : { name, key, mark });
       item.type = TERM_OPEN;
       tokens[close[j]!]!.type = TERM_CLOSE;
     }
@@ -971,19 +972,53 @@ function singleLink(
   return typeof href === 'string' ? { id, href } : undefined;
 }
 
+const SHAPE = 'Write each glossary item as **Term**: definition.';
+
 /**
- * The glossary item at `j`, when it starts `**Term**:` with a definition after it: the term, and
- * a way to take the term and its colon out of the definition, once it's kept.
+ * The marks a glossary entry may carry, as written between its term and its colon: New, a term the
+ * repository's definitions don't have, and Changed, one whose definition the pull request changes.
+ */
+const MARKS: readonly (readonly [written: string, mark: Mark])[] = [
+  [' (new):', 'new'],
+  [' (changed):', 'changed'],
+];
+
+/**
+ * What follows a glossary item's term, `text`, read up to its colon: its mark, if it has one, and
+ * how many characters the mark and the colon take.
+ */
+function markOf(
+  text: string,
+): { ok: true; mark?: Mark; length: number } | { ok: false; code: FindingCode; message: string } {
+  if (text.startsWith(':')) return { ok: true, length: 1 };
+  for (const [written, mark] of MARKS) {
+    if (text.startsWith(written)) return { ok: true, mark, length: written.length };
+  }
+  // Something in parentheses before the colon is a mark written another way.
+  const other = /^\s*\(([^()]*)\)\s*:/.exec(text);
+  if (other) {
+    return {
+      ok: false,
+      code: 'glossary-mark',
+      message: `"(${quote(other[1]!)})" isn't a mark. A term is marked (new) or (changed), in lower case, between it and its colon: **Bucket** (new): definition.`,
+    };
+  }
+  return { ok: false, code: 'glossary-item', message: SHAPE };
+}
+
+/**
+ * The glossary item at `j`, when it starts `**Term**:`, or `**Term**` and a mark and a colon, with
+ * a definition after it: the term, its mark, and a way to take the term, its mark and its colon out
+ * of the definition, once it's kept.
  */
 function definition(
   tokens: readonly Token[],
   close: Int32Array,
   j: number,
-): { ok: true; name: string; take: () => void } | { ok: false; message: string } {
-  const shape = {
-    ok: false,
-    message: 'Write each glossary item as **Term**: definition.',
-  } as const;
+):
+  | { ok: true; name: string; mark?: Mark; take: () => void }
+  | { ok: false; code: FindingCode; message: string } {
+  const shape = { ok: false, code: 'glossary-item', message: SHAPE } as const;
   const inline = tokens[j + 2];
   if (tokens[j + 1]?.type !== 'paragraph_open' || inline?.type !== 'inline' || !inline.children) {
     return shape;
@@ -1003,21 +1038,28 @@ function definition(
   let name = '';
   for (const child of children.slice(1, end)) {
     if (child.type !== 'text' && child.type !== 'code_inline') {
-      return { ok: false, message: 'A term is plain text, with no links or formatting inside.' };
+      return {
+        ok: false,
+        code: 'glossary-item',
+        message: 'A term is plain text, with no links or formatting inside.',
+      };
     }
     name += child.content;
   }
   const after = children[end + 1];
-  if (after?.type !== 'text' || !after.content.startsWith(':')) return shape;
-  const rest = after.content.slice(1).trimStart();
+  if (after?.type !== 'text') return shape;
+  const marked = markOf(after.content);
+  if (!marked.ok) return marked;
+  const rest = after.content.slice(marked.length).trimStart();
   let next = end + 2;
   while (children[next]?.type === 'softbreak' || children[next]?.type === 'hardbreak') next += 1;
   if (rest === '' && next >= children.length && close[j] === j + 4) {
-    return { ok: false, message: `"${quote(name)}" has no definition.` };
+    return { ok: false, code: 'glossary-item', message: `"${quote(name)}" has no definition.` };
   }
   return {
     ok: true,
     name,
+    ...(marked.mark === undefined ? {} : { mark: marked.mark }),
     take: () => {
       after.content = rest;
       inline.children = rest === '' ? children.slice(next) : [after, ...children.slice(end + 2)];

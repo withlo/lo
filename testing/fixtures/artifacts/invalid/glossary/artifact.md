@@ -21,3 +21,4 @@ Terms:
 - **Hash map**: the same map.
 - Token: no bold.
 - **[Linked](code:src/limiter.ts)**: a link inside.
+- **Quota** (New): a mark in capitals.

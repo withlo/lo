@@ -7,6 +7,7 @@
     { "code": "term-twice", "line": 19 },
     { "code": "term-twice", "line": 21 },
     { "code": "glossary-item", "line": 22 },
-    { "code": "glossary-item", "line": 23 }
+    { "code": "glossary-item", "line": 23 },
+    { "code": "glossary-mark", "line": 24 }
   ]
 }

@@ -1,6 +1,12 @@
 export * from './tree.ts';
 export { parseArtifact, type ParsedArtifact } from './parse.ts';
-export { checkArtifact, type CheckedArtifact, type CheckOptions, type Outcome } from './check.ts';
+export {
+  checkArtifact,
+  type CheckedArtifact,
+  type CheckOptions,
+  type OnRef,
+  type Outcome,
+} from './check.ts';
 export type { CheckedCode, CodeState } from './code.ts';
 export type { CheckedFigure, FigureState, FigureType } from './figures.ts';
 export { imageHeader, imageType, type ImageHeader, type ImageType } from './images.ts';
@@ -14,7 +20,7 @@ export {
   type OverviewFiles,
   type TreeEntry,
 } from './readers.ts';
-export type { Header } from './header.ts';
+export type { Header, PullHeader, StackHeader } from './header.ts';
 export {
   namedFigures,
   type CodeReference,
@@ -41,3 +47,21 @@ export {
   MIN_TABS,
 } from './limits.ts';
 export { FIGURE_TYPES, readCode, readFigure, readPath, readTerm, termKey } from './targets.ts';
+export {
+  parseStore,
+  STORE_FILE,
+  STORE_FORMAT,
+  STORE_LIMITS,
+  STORE_REF,
+  type Account,
+  type Change,
+  type Lock,
+  type Origin,
+  type Store,
+  type StoreProblem,
+  type StoreProblemCode,
+  type StoreRead,
+  type StoreTerm,
+  type Suggestion,
+  type Written,
+} from './store.ts';

@@ -11,6 +11,7 @@ import {
   parseArtifact,
   type CheckedArtifact,
   type CodeReader,
+  type OnRef,
   type ParsedArtifact,
 } from '@lo/artifact';
 
@@ -30,10 +31,11 @@ export interface FolderCheck {
 }
 
 /**
- * Checks the overview in the folder `dir` against the repository `git` runs in, as on pull request
- * `pr`'s ref when it's given. Throws when there's no repository, or the folder can't be listed.
+ * Checks the overview in the folder `dir` against the repository `git` runs in, as on the ref `on`
+ * names, a pull request's or a stack's, when it names one. Throws when there's no repository, or
+ * the folder can't be listed.
  */
-export async function checkFolder(dir: string, git: Git, pr?: number): Promise<FolderCheck> {
+export async function checkFolder(dir: string, git: Git, on: OnRef = {}): Promise<FolderCheck> {
   await inRepository(git);
   const folder = readFolder(dir);
   const incomplete: string[] = [];
@@ -64,7 +66,7 @@ export async function checkFolder(dir: string, git: Git, pr?: number): Promise<F
     read: (path, cap, stop) => folder.read(path, cap, stop).catch(failed(path)),
   };
   try {
-    const checked = await checkArtifact(parsed, files, readCode, { pr });
+    const checked = await checkArtifact(parsed, files, readCode, on);
     const { outcome } = checked;
     // Looked for even when no target reads code, since the header names it all the same.
     const header = parsed?.header;

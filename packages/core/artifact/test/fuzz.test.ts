@@ -1,7 +1,8 @@
 /**
  * Random mixes of the format's pieces, Markdown's and odd characters: whatever they make, the
  * parse never throws, its tree passes the walker, an overview without errors passes it in full,
- * and every finding is one the format defines, quoted harmlessly.
+ * and every finding is one the format defines, quoted harmlessly. Random changes to a store do the
+ * same to reading it.
  */
 
 import { expect, test } from 'vitest';
@@ -11,8 +12,10 @@ import {
   isFindingCode,
   LIMITS,
   parseArtifact,
+  parseStore,
   severityOf,
   type ParsedArtifact,
+  type StoreRead,
 } from '../src/index.ts';
 import { HEADER } from './support.ts';
 import { isPlainPath, problems } from './walker.ts';
@@ -31,6 +34,8 @@ function random(seed: number): () => number {
 
 const STARTS = [
   `${HEADER}\n`,
+  `${HEADER.replace('pr: 4797', 'stack: 4790')}\n`,
+  `${HEADER.replace('pr: 4797', 'pr: 4797\nstack: 4790')}\n`,
   `\uFEFF${HEADER.replaceAll('\n', '\r\n')}`,
   '---\nformat: 1\npr: 1\n---\n',
   '---\nformat: 2\n---\n',
@@ -52,6 +57,11 @@ const PIECES = [
   '\n\n',
   '- **Term**: a definition.\n',
   '- **term**: again.\n',
+  '- **Term** (new): a definition.\n',
+  '- **Term** (changed): another.\n',
+  '- **Term** (New): ',
+  ' (new):',
+  '(changed)',
   '- **Hash  map**:\n  on the next line.\n',
   '- **__proto__**: odd.\n',
   '- not a term\n',
@@ -267,7 +277,9 @@ function valid(seed: number): string {
   }
   if (used.size > 0) {
     text += '## Glossary\n\n';
-    for (const term of used) text += `- **${term}**: what ${term} means.\n`;
+    for (const term of used) {
+      text += `- **${term}**${pick(['', ' (new)', ' (changed)'])}: what ${term} means.\n`;
+    }
   }
   return text;
 }
@@ -278,4 +290,115 @@ test('300 random overviews that keep to the rules read clean', () => {
     expect(parsed.findings, `overview ${seed}`).toEqual([]);
     expect(problems(parsed.tree, { counts: true }), `overview ${seed}`).toEqual([]);
   }
+});
+
+/** A store that reads, for changing at random. */
+const STORE = JSON.stringify(
+  {
+    format: 1,
+    terms: {
+      bucket: {
+        term: 'Bucket',
+        definition: 'The [tokens](term:token) a tenant has, in `Bucket`.',
+        aliases: ['buckets'],
+        written: 'agent',
+        by: { login: 'octocat' },
+        from: '#4797',
+        at: '2026-11-27T10:30:00Z',
+        locked: { by: { login: 'mona' }, at: '2026-11-27T10:30:00Z' },
+        suggestions: [
+          { definition: 'A pool.', by: { name: 'A' }, from: '#2', at: '2026-11-27T10:30:00Z' },
+        ],
+        changes: [
+          {
+            definition: 'Tokens.',
+            written: 'human',
+            by: { login: 'mona' },
+            from: 'lo',
+            at: '2026-11-27T10:30:00.5Z',
+          },
+        ],
+      },
+      token: {
+        term: 'token',
+        definition: 'One request.',
+        written: 'human',
+        by: { login: 'a' },
+        from: 'lo',
+        at: '2026-11-27T10:30:00Z',
+      },
+    },
+  },
+  null,
+  2,
+);
+
+const STORE_PIECES = [
+  '{',
+  '}',
+  '[',
+  ']',
+  '"',
+  ',',
+  ':',
+  '\\',
+  '1',
+  '-1',
+  'null',
+  'true',
+  '"x"',
+  '#',
+  'lo',
+  ' ',
+  '\n',
+  '\u202E',
+  '\u0000',
+  'é',
+  '__proto__',
+];
+
+/** `STORE`, changed at random from `seed`: pieces put in, characters taken out. */
+function changed(seed: number): string | Uint8Array {
+  const next = random(seed);
+  let text = STORE;
+  for (let i = 0; i < 1 + next() * 6; i++) {
+    const at = Math.floor(next() * text.length);
+    const piece = next() < 0.5 ? STORE_PIECES[Math.floor(next() * STORE_PIECES.length)]! : '';
+    text = text.slice(0, at) + piece + text.slice(at + (next() < 0.5 ? 1 : 0));
+  }
+  if (next() < 0.8) return text;
+  const bytes = new TextEncoder().encode(text);
+  bytes[Math.floor(next() * bytes.length)] = Math.floor(next() * 256);
+  return bytes;
+}
+
+/** Everything wrong with `read`, a read of any input. */
+function wrongStore(read: StoreRead): string[] {
+  if (!read.ok) {
+    const { code, message, at } = read.problem;
+    const said = `${message}${at ?? ''}`;
+    return code === 'unreadable' || message === '' || /[\p{Cc}\p{Cf}\u2028\u2029]/u.test(said)
+      ? [`${code}: ${said}`]
+      : [];
+  }
+  const found: string[] = [];
+  for (const [key, term] of read.store.terms) {
+    if (term.key !== key) found.push(`the key ${key}`);
+    if (/[\p{Cc}\p{Cf}]/u.test(term.definition + term.term)) found.push(`the term ${key}`);
+  }
+  return found;
+}
+
+test('300 random changes to a store never throw, and read only what the store allows', () => {
+  let read = 0;
+  for (let seed = 1; seed <= 300; seed++) {
+    const input = changed(seed);
+    const result = parseStore(input);
+    expect(wrongStore(result), `store ${seed}`).toEqual([]);
+    if (result.ok) read += 1;
+  }
+  expect(parseStore(STORE).ok).toBe(true);
+  // Some changes leave a store that reads, as a change inside a definition does.
+  expect(read).toBeGreaterThan(0);
+  expect(read).toBeLessThan(300);
 });

@@ -167,6 +167,77 @@ describe('the glossary', () => {
     expect(problems(parsed.tree)).toEqual([]);
   });
 
+  test('a term may be marked (new) or (changed), between it and its colon', () => {
+    const parsed = parse(
+      'A [bucket](term:bucket), a [token](term:token) and a [map](term:map).',
+      '',
+      '## Glossary',
+      '',
+      '- **Bucket** (new): the tokens a tenant has.',
+      '- **Token** (changed):',
+      '  one request’s worth.',
+      '- **Map**: a map.',
+    );
+    expect(parsed.findings).toEqual([]);
+    expect(collect(parsed, 'glossary')[0]?.terms).toEqual([
+      {
+        name: 'Bucket',
+        key: 'bucket',
+        mark: 'new',
+        children: [
+          { kind: 'paragraph', children: [{ kind: 'text', value: 'the tokens a tenant has.' }] },
+        ],
+      },
+      {
+        name: 'Token',
+        key: 'token',
+        mark: 'changed',
+        children: [
+          { kind: 'paragraph', children: [{ kind: 'text', value: 'one request’s worth.' }] },
+        ],
+      },
+      {
+        name: 'Map',
+        key: 'map',
+        children: [{ kind: 'paragraph', children: [{ kind: 'text', value: 'a map.' }] }],
+      },
+    ]);
+    expect(problems(parsed.tree, { counts: true })).toEqual([]);
+  });
+
+  test('a mark written any other way is invalid', () => {
+    const parsed = parse(
+      '[h](<term:h (new)>)',
+      '',
+      '## Glossary',
+      '',
+      '- **A** (New): capitals.',
+      '- **B**(new): no space.',
+      '- **C**  (new): two spaces.',
+      '- **D** (old): another word.',
+      '- **E** (new) : a space before the colon.',
+      '- **F** (new):',
+      '- **G** (new) and no colon.',
+      '- **H (new)**: a term named so, not a mark.',
+    );
+    expect(found(parsed)).toEqual([
+      `glossary-mark@${LINE + 4}`,
+      `glossary-mark@${LINE + 5}`,
+      `glossary-mark@${LINE + 6}`,
+      `glossary-mark@${LINE + 7}`,
+      `glossary-mark@${LINE + 8}`,
+      `glossary-item@${LINE + 9}`,
+      `glossary-item@${LINE + 10}`,
+    ]);
+    expect(parsed.findings[0]?.message).toBe(
+      '"(New)" isn\'t a mark. A term is marked (new) or (changed), in lower case, between it and its colon: **Bucket** (new): definition.',
+    );
+    expect(parsed.findings[5]?.message).toBe('"F" has no definition.');
+    expect(collect(parsed, 'glossary')[0]?.terms.map(({ key, mark }) => [key, mark])).toEqual([
+      ['h (new)', undefined],
+    ]);
+  });
+
   test('holds one list and nothing else', () => {
     expect(found(parse('## Glossary', '', 'Some text.', '', '- **A**: a. [a](term:a)'))).toEqual([
       `glossary-content@${LINE + 2}`,
